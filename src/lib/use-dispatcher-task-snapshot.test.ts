@@ -16,4 +16,14 @@ describe('dispatcher task snapshot visibility', () => {
       { key: 'task-hidden', code: 'ДЗ-18' },
     ])
   })
+
+  it('does not hide an obligatory system warning', () => {
+    const warning = {
+      kind: 'check',
+      key: 'sp-01:1',
+      systemWarningCode: 'СП-01',
+    }
+
+    expect(filterDismissedDispatcherTasks([warning], new Set([warning.key]))).toEqual([warning])
+  })
 })

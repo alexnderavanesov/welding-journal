@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { GitFork, LoaderCircle, RotateCcw, X } from 'lucide-react'
+import { ArrowLeft, GitFork, LoaderCircle, RotateCcw, X } from 'lucide-react'
 
 import { DialogCloseFooter } from '@/components/dialog-close-footer'
 import { DialogInlineEmptyState } from '@/components/dialog-inline-empty-state'
@@ -7,6 +7,7 @@ import { JointChainCard } from '@/components/joint-chain-card'
 import { JointHistoryOverview } from '@/components/joint-history-overview'
 import type { JointDispatcherTaskActionHandler } from '@/components/joint-dispatcher-tasks-panel'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { LinePictureOverview } from '@/components/line-picture-overview'
 import { Button } from '@/components/ui/button'
 import type {
   RepeatedJointCreateTask,
@@ -38,6 +39,7 @@ type JointChainDialogProps = {
   onOpenRow: (row: WeldRow) => void
   onOpenDocument: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenReport: (row: WeldRow, report: 'weldingJournal' | 'lnk' | 'heatTreatment') => void
+  onOpenLineInDispatcher: (row: WeldRow) => void
   onEditRow: (row: WeldRow) => void
   onRunNextAction: (row: WeldRow, action: JointNextAction) => void
   onRunDispatcherTaskAction: JointDispatcherTaskActionHandler
@@ -67,6 +69,7 @@ export function JointChainDialog({
   onOpenRow,
   onOpenDocument,
   onOpenReport,
+  onOpenLineInDispatcher,
   onEditRow,
   onRunNextAction,
   onRunDispatcherTaskAction,
@@ -83,6 +86,7 @@ export function JointChainDialog({
   onRetry,
 }: JointChainDialogProps) {
   const [selectedRowId, setSelectedRowId] = useState(record.id)
+  const [pictureMode, setPictureMode] = useState<'joint' | 'line'>('joint')
   const selectedRow = rows.find((row) => row.id === selectedRowId)
     ?? rows.find((row) => row.id === record.id)
     ?? rows[0]
@@ -110,6 +114,7 @@ export function JointChainDialog({
 
   useEffect(() => {
     setSelectedRowId(record.id)
+    setPictureMode('joint')
   }, [record.id])
 
   return (
@@ -122,28 +127,64 @@ export function JointChainDialog({
       panelClassName="ml-auto !h-full !max-h-none border-y-0 border-r-0"
     >
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-semibold text-slate-900">Картина стыка {String(selectedRow.joint ?? '-')}</h2>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => onOpenBase(selectedRow)}
-              className="h-7 border-sky-200 bg-sky-50 px-2.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
-            >
-              Показать в отчете
-            </Button>
+        {pictureMode === 'line' ? (
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 px-2 text-xs text-slate-600 hover:bg-slate-100"
+                onClick={() => setPictureMode('joint')}
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                К стыку {String(selectedRow.joint ?? '-')}
+              </Button>
+              <h2 className="text-lg font-semibold text-slate-900">Картина линии {String(selectedRow.line ?? '-')}</h2>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onOpenLineInDispatcher(selectedRow)}
+                className="h-7 border-sky-200 bg-sky-50 px-2.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
+              >
+                Открыть в диспетчере
+              </Button>
+            </div>
+            <p className="mt-1 text-sm text-slate-500">{getLinePictureSubtitle(selectedRow)}</p>
           </div>
-          <p className="mt-1 text-sm text-slate-500">{getJointChainSubtitle(selectedRow)}</p>
-        </div>
-        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Закрыть цепочку стыка">
+        ) : (
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-semibold text-slate-900">Картина стыка {String(selectedRow.joint ?? '-')}</h2>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onOpenBase(selectedRow)}
+                className="h-7 border-sky-200 bg-sky-50 px-2.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
+              >
+                Показать в отчете
+              </Button>
+            </div>
+            <p className="mt-1 text-sm text-slate-500">{getJointChainSubtitle(selectedRow)}</p>
+          </div>
+        )}
+        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Закрыть картину">
           <X className="h-4 w-4" />
         </Button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        {isLoading ? (
+        {pictureMode === 'line' ? (
+          <main className="h-full min-h-0 overflow-y-auto px-5 py-4">
+            <LinePictureOverview
+              row={selectedRow}
+              tasks={dispatcherTasks}
+              onRunAction={onRunDispatcherTaskAction}
+            />
+          </main>
+        ) : isLoading ? (
           <div className="p-5">
             <DialogInlineEmptyState>
               <span className="inline-flex items-center gap-2">
@@ -228,6 +269,7 @@ export function JointChainDialog({
                 onEditRow={onEditRow}
                 onRunNextAction={onRunNextAction}
                 onRunDispatcherTaskAction={onRunDispatcherTaskAction}
+                onOpenLinePicture={() => setPictureMode('line')}
               />
             </main>
           </div>
@@ -237,6 +279,12 @@ export function JointChainDialog({
       <DialogCloseFooter onClose={onClose} borderClassName="border-slate-200" />
     </LargeDialogShell>
   )
+}
+
+function getLinePictureSubtitle(row: WeldRow) {
+  const project = String(row.projectTitle ?? '').trim() || '-'
+  const subtitle = String(row.subtitleCode ?? '').trim() || '-'
+  return `${project} · ${subtitle}`
 }
 
 function CoilContinuationPanel({

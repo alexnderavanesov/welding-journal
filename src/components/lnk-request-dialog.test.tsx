@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { LnkRequestDialog } from '@/components/lnk-request-dialog'
+import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '@/lib/control-process-settings'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { defaultRequestNamingState } from '@/lib/request-naming-state'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
@@ -32,10 +33,13 @@ describe('LnkRequestDialog', () => {
         lnkRowsCount={1}
         filteredRows={[row]}
         filteredAvailableRows={[row]}
+        filteredReadyRows={[row]}
         availableRows={[row]}
+        readyRows={[row]}
         selectedIds={new Set([row.id])}
         isPending={false}
         saveCheckSettings={DEFAULT_SAVE_CHECK_SETTINGS}
+        controlProcessSettings={DEFAULT_CONTROL_PROCESS_SETTINGS}
         onClose={vi.fn()}
         onOpenRequestRegistry={vi.fn()}
         onRequestNamingChange={vi.fn()}
@@ -109,10 +113,13 @@ describe('LnkRequestDialog', () => {
         lnkRowsCount={1}
         filteredRows={[row]}
         filteredAvailableRows={[row]}
+        filteredReadyRows={[row]}
         availableRows={[row]}
+        readyRows={[row]}
         selectedIds={new Set([row.id])}
         isPending={false}
         saveCheckSettings={DEFAULT_SAVE_CHECK_SETTINGS}
+        controlProcessSettings={DEFAULT_CONTROL_PROCESS_SETTINGS}
         onClose={vi.fn()}
         onOpenRequestRegistry={vi.fn()}
         onRequestNamingChange={vi.fn()}
@@ -182,10 +189,13 @@ describe('LnkRequestDialog', () => {
         lnkRowsCount={1}
         filteredRows={[row]}
         filteredAvailableRows={[row]}
+        filteredReadyRows={[row]}
         availableRows={[row]}
+        readyRows={[row]}
         selectedIds={new Set([row.id])}
         isPending={false}
         saveCheckSettings={DEFAULT_SAVE_CHECK_SETTINGS}
+        controlProcessSettings={DEFAULT_CONTROL_PROCESS_SETTINGS}
         onClose={vi.fn()}
         onOpenRequestRegistry={vi.fn()}
         onRequestNamingChange={vi.fn()}
@@ -237,10 +247,13 @@ describe('LnkRequestDialog', () => {
         lnkRowsCount={rows.length}
         filteredRows={rows}
         filteredAvailableRows={rows}
+        filteredReadyRows={rows}
         availableRows={rows}
+        readyRows={rows}
         selectedIds={new Set()}
         isPending={false}
         saveCheckSettings={DEFAULT_SAVE_CHECK_SETTINGS}
+        controlProcessSettings={DEFAULT_CONTROL_PROCESS_SETTINGS}
         onClose={vi.fn()}
         onOpenRequestRegistry={vi.fn()}
         onRequestNamingChange={vi.fn()}
@@ -291,10 +304,13 @@ describe('LnkRequestDialog', () => {
         lnkRowsCount={rows.length}
         filteredRows={[rows[0]]}
         filteredAvailableRows={[rows[0]]}
+        filteredReadyRows={[rows[0]]}
         availableRows={rows}
+        readyRows={rows}
         selectedIds={new Set(rows.map((row) => row.id))}
         isPending={false}
         saveCheckSettings={DEFAULT_SAVE_CHECK_SETTINGS}
+        controlProcessSettings={DEFAULT_CONTROL_PROCESS_SETTINGS}
         onClose={vi.fn()}
         onOpenRequestRegistry={vi.fn()}
         onRequestNamingChange={vi.fn()}

@@ -35,7 +35,7 @@ import {
   type SystemIndexSettings,
 } from '@/lib/system-index-settings'
 import type { WeldInput } from '@/lib/weld-fields'
-import type { RepeatedJointCheckTask, WeldRow } from '@/lib/dispatcher-types'
+import { isSystemDispatcherWarningTask, type RepeatedJointCheckTask, type WeldRow } from '@/lib/dispatcher-types'
 
 type RejectionResolver = (row: WeldInput) => unknown
 type OfficialRejectedChainResolver = (rows: WeldRow[], sourceRow: WeldInput, sourceJoint: string) => WeldRow[]
@@ -130,6 +130,7 @@ export function buildJointChainConsistencyCheckTasks(
 
 export function isBlockingRepeatedJointCheckTask(task: RepeatedJointCheckTask) {
   return (
+    !isSystemDispatcherWarningTask(task) &&
     task.reason !== UNOFFICIAL_REJECTED_WITH_COIL_REASON &&
     task.reason !== 'проверить целостность цепочки' &&
     task.reason !== COIL_CHAIN_INTEGRITY_REASON &&

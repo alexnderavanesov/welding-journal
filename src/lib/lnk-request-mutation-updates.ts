@@ -16,7 +16,13 @@ import { loadSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RowWithId } from '@/lib/lnk-report-mutation-types'
 import { isSameRequestDocument } from '@/lib/request-document-identity'
-import { isPrimaryLnkStageReady } from '@/lib/lnk-control-stage'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
+import { canUsePrimaryLnkStage } from '@/lib/lnk-control-stage'
+import type { LnkChronologyIssueKind } from '@/lib/lnk-chronology-checks'
+
+const PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS = new Set<LnkChronologyIssueKind>([
+  'post-before-psto-cycle',
+])
 
 export type LnkRequestManagerAction = 'rename' | 'delete'
 
@@ -25,18 +31,32 @@ export function buildLnkRequestRows({
   methodKeys,
   requestName,
   requestDate,
+  controlProcessSettings,
 }: {
   records: RowWithId[]
   methodKeys: WeldFieldKey[]
   requestName: string
   requestDate: string
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
 }) {
   if (!requestName.trim()) throw new Error('Укажите наименование заявки ЛНК')
   const requestDateReason = getDateInputValidationReason(requestDate, 'Дата заявки ЛНК')
   if (requestDateReason) throw new Error(requestDateReason)
   const saveCheckSettings = loadSaveCheckSettings()
-  const proposedRecords = buildLnkRequestDraftRows({ records, methodKeys, requestName, requestDate })
-  assertNoLnkChronologyIssues(proposedRecords, saveCheckSettings)
+  const proposedRecords = buildLnkRequestDraftRows({
+    records,
+    methodKeys,
+    requestName,
+    requestDate,
+    controlProcessSettings,
+  })
+  assertNoLnkChronologyIssues(
+    proposedRecords,
+    saveCheckSettings,
+    isPrimaryLnkStageDebtAllowed(controlProcessSettings)
+      ? { ignoredKinds: PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS }
+      : undefined,
+  )
   return proposedRecords
 }
 
@@ -45,11 +65,13 @@ export function buildLnkRequestDraftRows({
   methodKeys,
   requestName,
   requestDate,
+  controlProcessSettings,
 }: {
   records: RowWithId[]
   methodKeys: WeldFieldKey[]
   requestName: string
   requestDate: string
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
 }) {
   const normalizedRequestDate = normalizeDateLikeForStorage(requestDate)
   return records.flatMap((record) => {
@@ -59,7 +81,7 @@ export function buildLnkRequestDraftRows({
       const method = getLnkMethodByRequestKey(requestKey)
       if (!method) continue
       if (!isEnabledControlValue(record[method.enabledKey])) continue
-      if (!isPrimaryLnkStageReady(record, method.code)) continue
+      if (!canUsePrimaryLnkStage(record, method.code, controlProcessSettings)) continue
       const existingRequestName = String(record[method.requestKey] ?? '').trim()
       if (existingRequestName) continue
       nextRecord[method.requestKey] = requestName
@@ -72,6 +94,15 @@ export function buildLnkRequestDraftRows({
     }
     return changed ? [withTouchedLnkTimestamp(nextRecord)] : []
   })
+}
+
+function isPrimaryLnkStageDebtAllowed(
+  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>,
+) {
+  return Boolean(
+    settings?.preHeatTreatmentLnkEnabled &&
+    settings.allowPrimaryLnkBeforePreviousStagesComplete,
+  )
 }
 
 export function buildLnkRequestCorrectionRow({

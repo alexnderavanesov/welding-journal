@@ -1,7 +1,7 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
 import {
-  getDispatcherLnkChronologyIssues,
+  getLnkChronologyIssues,
   type LnkChronologyIssue,
 } from '@/lib/lnk-chronology-checks'
 import {
@@ -10,6 +10,10 @@ import {
   type PreHeatTreatmentLnkMethodCode,
 } from '@/lib/lnk-control-stage'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
+import { isFinalLnkResultValue } from '@/lib/lnk-status'
+import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
+
+export type LnkStageTransferStage = 'primary' | 'beforeHeatTreatment'
 
 export type LnkStageTransferPosition = {
   rowId: number
@@ -24,38 +28,80 @@ export type LnkStageTransferControlWrite = Omit<
 export type LnkDocumentStageTransferPreview = {
   documentId: number
   expectedVersions: WeldRowVersionTarget[]
-  sourceStage: 'primary' | 'beforeHeatTreatment'
-  targetStage: 'primary' | 'beforeHeatTreatment'
+  sourceStage: LnkStageTransferStage
+  targetStage: LnkStageTransferStage
   rowCount: number
   positionCount: number
   completedResultCount: number
   methodCodes: PreHeatTreatmentLnkMethodCode[]
+  transferablePositionCount: number
+  blockedPositionCount: number
+  resultingSystemWarningCount: number
+  positions: LnkStageTransferPositionPreview[]
 }
 
-const EXPLICIT_PRIMARY_STAGE_ISSUE_KINDS = new Set<LnkChronologyIssue['kind']>([
+export type LnkDocumentStageTransferResult = {
+  preview: LnkDocumentStageTransferPreview
+  rows: WeldRow[]
+}
+
+export type LnkStageTransferPackageSnapshot = {
+  requestName: string
+  requestDate: string
+  result: string
+  conclusionDate: string
+  conclusionName: string
+  defectDescription: string
+  rkExposureConfirmedDiameter: number | null
+}
+
+export type LnkStageTransferPositionPreview = LnkStageTransferPosition & {
+  projectTitle: string
+  subtitleCode: string
+  line: string
+  joint: string
+  disabledReason: string | null
+  source: LnkStageTransferPackageSnapshot
+}
+
+const ALLOWABLE_PRIMARY_STAGE_DEBT_ISSUE_KINDS = new Set<LnkChronologyIssue['kind']>([
   'post-before-psto-cycle',
-  'post-before-psto',
-  'post-before-tvmt',
 ])
 
 export function findBlockingLnkStageTransferChronologyIssue({
   previousRows,
   nextRows,
   targetStage,
+  allowPrimaryStageDebt = false,
 }: {
   previousRows: WeldRow[]
   nextRows: WeldRow[]
-  targetStage: 'primary' | 'beforeHeatTreatment'
+  targetStage: LnkStageTransferStage
+  allowPrimaryStageDebt?: boolean
 }) {
   const previousKeys = new Set(
-    getDispatcherLnkChronologyIssues(previousRows).map(getChronologyIssueKey),
+    getTransferChronologyIssues(previousRows).map(getChronologyIssueKey),
   )
-  return getDispatcherLnkChronologyIssues(nextRows).find((issue) => {
+  return getTransferChronologyIssues(nextRows).find((issue) => {
     if (previousKeys.has(getChronologyIssueKey(issue))) return false
     return !(
       targetStage === 'primary' &&
-      EXPLICIT_PRIMARY_STAGE_ISSUE_KINDS.has(issue.kind)
+      allowPrimaryStageDebt &&
+      ALLOWABLE_PRIMARY_STAGE_DEBT_ISSUE_KINDS.has(issue.kind)
     )
+  })
+}
+
+function getTransferChronologyIssues(rows: WeldRow[]) {
+  return getLnkChronologyIssues(rows, {
+    ...DEFAULT_SAVE_CHECK_SETTINGS,
+    lnkResultRequestDateOrder: true,
+    lnkResultVikDateBeforeOther: true,
+    lnkResultVikRequiredBeforeOther: true,
+  }, {
+    includeConclusionBeforeWeldIssue: true,
+    includeInvalidDateIssues: true,
+    includeRequestIntegrityIssues: true,
   })
 }
 
@@ -87,7 +133,7 @@ export function buildPrimaryToPreHeatTreatmentTransfer({
         method: methodCode,
         requestName: textOrNull(row[method.requestKey]),
         requestDate: textOrNull(row[method.requestDateKey]),
-        result: isFinalResult(result) ? result : requestName ? 'ожидает НК' : null,
+        result: isLnkStageTransferResult(result) ? result : requestName ? 'ожидает НК' : null,
         conclusionDate: textOrNull(row[method.conclusionDateKey]),
         conclusionName: textOrNull(row[method.conclusionKey]),
         defectDescription: textOrNull(row[method.defectDescriptionKey]),
@@ -222,7 +268,7 @@ function hasPrimaryTrace(row: WeldRow, methodCode: PreHeatTreatmentLnkMethodCode
     row[method.conclusionDateKey],
     row[method.conclusionKey],
   ]
-  if (isFinalResult(row[method.resultKey])) values.push(row[method.resultKey])
+  if (isLnkStageTransferResult(row[method.resultKey])) values.push(row[method.resultKey])
   values.push(row[method.defectDescriptionKey])
   if (methodCode === 'РК') values.push(row.rkExposureConfirmedDiameter)
   return values.some((value) => text(value).length > 0)
@@ -263,9 +309,8 @@ function positionKey(position: { rowId: number; methodCode: string }) {
   return `${position.rowId}:${normalizeMethodCode(position.methodCode)}`
 }
 
-function isFinalResult(value: unknown) {
-  const result = text(value).toLocaleLowerCase('ru-RU')
-  return result === 'годен' || result === 'ремонт' || result === 'вырез'
+export function isLnkStageTransferResult(value: unknown) {
+  return isFinalLnkResultValue(value) || text(value).toLocaleLowerCase('ru-RU') === 'отменен'
 }
 
 function textOrNull(value: unknown) {

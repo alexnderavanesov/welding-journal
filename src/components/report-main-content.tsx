@@ -3,6 +3,7 @@ import type { WelderStampsRegistryProps } from '@/components/welder-stamps-regis
 import type { DocumentsPageType } from '@/components/documents-page'
 import { WeldTable, type WeldTableProps } from '@/components/weld-table'
 import type { ActiveReport } from '@/lib/home-state'
+import type { DocumentNavigationRequest } from '@/lib/document-navigation'
 import type { PercentageControlMethod } from '@/lib/percentage-line-summary'
 import type { PercentageLineControlScope } from '@/lib/percentage-line-control-update'
 import type {
@@ -11,7 +12,6 @@ import type {
 } from '@/lib/percentage-line-navigation'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
-import type { SystemDocumentNavigationRequest } from '@/lib/system-document-types'
 
 const StatisticsPage = lazy(() => import('@/components/statistics-page').then((module) => ({ default: module.StatisticsPage })))
 const WelderStampsRegistry = lazy(() =>
@@ -55,8 +55,8 @@ type ReportMainContentProps = {
   onOpenDocumentJointHistory?: (rowId: number) => void
   documentsPageType?: DocumentsPageType
   onDocumentsPageTypeChange?: (documentType: DocumentsPageType) => void
-  systemDocumentNavigationRequest?: SystemDocumentNavigationRequest | null
-  onSystemDocumentNavigationRequestHandled?: (requestId: number) => void
+  documentNavigationRequest?: DocumentNavigationRequest | null
+  onDocumentNavigationRequestHandled?: (requestId: number) => void
   reportTaskPanels?: ReactNode
 }
 
@@ -76,8 +76,8 @@ export function ReportMainContent({
   onOpenDocumentJointHistory,
   documentsPageType,
   onDocumentsPageTypeChange,
-  systemDocumentNavigationRequest,
-  onSystemDocumentNavigationRequestHandled,
+  documentNavigationRequest,
+  onDocumentNavigationRequestHandled,
   reportTaskPanels,
 }: ReportMainContentProps) {
   if (activeReport === 'statistics' || activeReport === 'percentageLines') {
@@ -113,8 +113,8 @@ export function ReportMainContent({
           welderStamps={welderStamps}
           initialDocumentType={documentsPageType}
           onDocumentTypeChange={onDocumentsPageTypeChange}
-          navigationRequest={systemDocumentNavigationRequest}
-          onNavigationRequestHandled={onSystemDocumentNavigationRequestHandled}
+          navigationRequest={documentNavigationRequest}
+          onNavigationRequestHandled={onDocumentNavigationRequestHandled}
           onOpenDocumentRows={onOpenDocumentRows}
           onOpenJointHistory={onOpenDocumentJointHistory}
         />

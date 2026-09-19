@@ -20,6 +20,7 @@ import {
   buildLnkResultCompletenessCheckTasks,
   buildPstoChronologyCheckTasks,
   buildPstoResultCompletenessCheckTasks,
+  buildPrimaryLnkStageDebtSystemWarnings,
   buildWelderStampCompatibilityCheckTasks,
 } from '@/lib/repeated-joint-check-tasks'
 import {
@@ -46,6 +47,7 @@ import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welde
 import type { DataListSettings } from '@/lib/data-list-settings'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS, type SystemIndexSettings } from '@/lib/system-index-settings'
 import { encodeIdentityKey } from '@/lib/identity-key'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 
 export { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 export { isUnusedRepeatedJointDraft } from '@/lib/repeated-joint-task-helpers'
@@ -74,6 +76,7 @@ type BuildRepeatedJointTasksOptions = {
   includePercentageLineControlTasks?: boolean
   includePstoResultCompletenessChecks?: boolean
   includeWelderStampCompatibilityChecks?: boolean
+  controlProcessSettings?: ControlProcessSettings
 }
 
 export function buildRepeatedJointTasks(
@@ -103,6 +106,7 @@ export function buildRepeatedJointTasks(
   const orphanGoodRenameTasks = buildOrphanGoodRepeatedJointRenameTasks(rows, systemIndexSettings)
   const orphanGoodRenameRowIds = new Set(orphanGoodRenameTasks.map((task) => task.row.id))
   const chainCheckTasks = [
+    ...buildPrimaryLnkStageDebtSystemWarnings(rows, options.controlProcessSettings),
     ...buildJointChainConsistencyCheckTasks(
       rows,
       { getPrimaryRejectedLnkResult, getOfficialRejectedJointChainRows: getConfiguredOfficialRejectedJointChainRows },

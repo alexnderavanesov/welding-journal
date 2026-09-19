@@ -7,7 +7,12 @@ import {
   type DispatcherTaskCardHandlers,
 } from '@/components/dispatcher-task-card'
 import { buildDispatcherTaskCodeGroups } from '@/lib/dispatcher-code-groups'
-import type { DispatcherTask, RepeatedJointTask, RepeatedJointTaskGroup } from '@/lib/dispatcher-types'
+import {
+  isSystemDispatcherWarningTask,
+  type DispatcherTask,
+  type RepeatedJointTask,
+  type RepeatedJointTaskGroup,
+} from '@/lib/dispatcher-types'
 import {
   DISPATCHER_TASKS_FIELD_KEY,
   DISPATCHER_TASKS_WITH_FILTER,
@@ -42,6 +47,7 @@ export function DispatcherTaskPanel({
   const { visibleGroups, visibleCount, hasMore, loadMore, loadMoreRef } = useIncrementalDispatcherGroups(groups)
   const codeGroups = useMemo(() => buildDispatcherTaskCodeGroups(groups), [groups])
   const dispatcherFilterMode = getDispatcherTaskFilterMode(columnFilters[DISPATCHER_TASKS_FIELD_KEY])
+  const dismissibleTasks = tasks.filter((task) => !isSystemDispatcherWarningTask(task))
 
   if (tasks.length === 0 && dispatcherFilterMode === 'all') return null
 
@@ -93,13 +99,13 @@ export function DispatcherTaskPanel({
                 {isExpanded ? 'Свернуть' : 'Развернуть'}
               </Button>
             ) : null}
-            {tasks.length > 0 ? (
+            {dismissibleTasks.length > 0 ? (
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => onDismissAll(tasks)}
-                title="Убрать карточки до следующего обновления интерфейса. Сами задачи сохранятся."
+                onClick={() => onDismissAll(dismissibleTasks)}
+                title="Убрать карточки ДЗ до следующего обновления интерфейса. Системные предупреждения останутся видимыми."
                 aria-label="Скрыть карточки"
                 className="h-8 w-8 p-0 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
               >

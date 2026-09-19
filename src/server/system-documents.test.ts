@@ -1,9 +1,23 @@
 import { describe, expect, it } from 'vitest'
 
 import { matchesSourcedSystemDocumentReference } from '@/server/system-document-index'
-import { normalizeSystemDocumentReference } from '@/server/system-documents'
+import {
+  normalizeSystemDocumentHistoryRequest,
+  normalizeSystemDocumentReference,
+} from '@/server/system-documents'
 
 describe('system document source navigation', () => {
+  it('keeps only a positive safe document id for exact history navigation', () => {
+    expect(normalizeSystemDocumentHistoryRequest({
+      type: 'pstoRequest',
+      documentId: 77,
+    }).documentId).toBe(77)
+    expect(normalizeSystemDocumentHistoryRequest({
+      type: 'pstoRequest',
+      documentId: Number.MAX_SAFE_INTEGER + 1,
+    })).not.toHaveProperty('documentId')
+  })
+
   it('preserves a supported source stage in a navigation request', () => {
     expect(normalizeSystemDocumentReference({
       type: 'pstoRequest',

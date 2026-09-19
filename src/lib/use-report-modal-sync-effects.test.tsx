@@ -5,12 +5,14 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { createDefaultLnkResultDraft, createDefaultPstoResultDraft } from '@/lib/report-draft-state'
 import { useLnkReportModalSyncEffects } from '@/lib/use-lnk-report-modal-sync-effects'
 import { usePstoReportModalSyncEffects } from '@/lib/use-psto-report-modal-sync-effects'
+import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '@/lib/control-process-settings'
 
 describe('report modal context loading', () => {
   it('does not loop when an open LNK result receives equivalent context arrays', () => {
     const { result } = renderHook(() => {
       const [draft, setDraft] = useState(() => createDefaultLnkResultDraft())
       useLnkReportModalSyncEffects({
+        controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
         availableLnkRequestRows: [],
         isLnkRowsContextReady: true,
         isLnkRequestModalOpen: false,
@@ -45,6 +47,7 @@ describe('report modal context loading', () => {
       ({ entries }) => {
         const [drafts, setDrafts] = useState<Record<string, string>>({})
         useLnkReportModalSyncEffects({
+          controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
           availableLnkRequestRows: [],
           isLnkRowsContextReady: true,
           isLnkRequestModalOpen: false,
@@ -107,6 +110,7 @@ describe('report modal context loading', () => {
     const setSelectedLnkIds = vi.fn()
     const { rerender } = renderHook(
       ({ ready, rows }) => useLnkReportModalSyncEffects({
+        controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
         availableLnkRequestRows: rows,
         isLnkRowsContextReady: ready,
         isLnkRequestModalOpen: true,

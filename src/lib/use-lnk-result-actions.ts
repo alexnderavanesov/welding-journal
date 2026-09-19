@@ -15,6 +15,7 @@ import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 
 export function useLnkResultActions({
+  controlProcessSettings,
   filteredRows,
   lnkRows,
   draft,
@@ -81,7 +82,12 @@ export function useLnkResultActions({
   }
 
   function changeLnkResultMethod(methodKey: WeldFieldKey | '') {
-    setDraft((current) => resolveLnkResultDraftAfterMethodChange(current, lnkRows, methodKey))
+    setDraft((current) => resolveLnkResultDraftAfterMethodChange(
+      current,
+      lnkRows,
+      methodKey,
+      controlProcessSettings,
+    ))
   }
 
   function toggleLnkResultRow(rowId: number) {
@@ -93,6 +99,7 @@ export function useLnkResultActions({
         draft.requestName,
         draft.methodKey,
         draft.requestDate,
+        controlProcessSettings,
       )
     ) return
 
@@ -139,6 +146,7 @@ export function useLnkResultActions({
           current.requestName,
           current.methodKey,
           current.requestDate,
+          controlProcessSettings,
         ))
       }))
       return resolveLnkResultDraftAfterRowIdsChange(current, lnkRows, selectableRowIds)

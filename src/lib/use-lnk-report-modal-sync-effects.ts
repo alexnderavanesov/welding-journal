@@ -16,6 +16,7 @@ import {
   findRequestDocumentIdentity,
   type RequestDocumentIdentity,
 } from '@/lib/request-document-identity'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 
 type SetNumberSet = Dispatch<SetStateAction<Set<number>>>
 
@@ -30,6 +31,7 @@ export type ManagedLnkResultEntry = {
 
 export type LnkReportModalSyncEffectsOptions = {
   availableLnkRequestRows: WeldRow[]
+  controlProcessSettings: ControlProcessSettings
   isLnkRowsContextReady: boolean
   isLnkRequestModalOpen: boolean
   isLnkResultManagerOpen: boolean
@@ -47,6 +49,7 @@ export type LnkReportModalSyncEffectsOptions = {
 
 export function useLnkReportModalSyncEffects({
   availableLnkRequestRows,
+  controlProcessSettings,
   isLnkRowsContextReady,
   isLnkRequestModalOpen,
   isLnkResultManagerOpen,
@@ -123,7 +126,7 @@ export function useLnkReportModalSyncEffects({
           const row = rowsById.get(id)
           return row
             ? !methodKey ||
-                canSelectLnkResultRow(row, requestName, methodKey, requestDate)
+                canSelectLnkResultRow(row, requestName, methodKey, requestDate, controlProcessSettings)
             : false
         }),
       )
@@ -146,7 +149,7 @@ export function useLnkReportModalSyncEffects({
         rowResults,
       }
     })
-  }, [isLnkResultModalOpen, isLnkRowsContextReady, lnkResultRequestOptions, lnkRows, setLnkResultDraft])
+  }, [controlProcessSettings, isLnkResultModalOpen, isLnkRowsContextReady, lnkResultRequestOptions, lnkRows, setLnkResultDraft])
 }
 
 function areNumberSetsEqual(left: ReadonlySet<number>, right: ReadonlySet<number>) {

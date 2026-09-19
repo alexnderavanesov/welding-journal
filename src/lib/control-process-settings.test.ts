@@ -19,10 +19,12 @@ describe('control process settings', () => {
     expect(normalizeControlProcessSettings({ layeredControlEnabled: false })).toEqual({
       layeredControlEnabled: false,
       preHeatTreatmentLnkEnabled: true,
+      allowPrimaryLnkBeforePreviousStagesComplete: false,
     })
     expect(normalizeControlProcessSettings({ preHeatTreatmentLnkEnabled: false })).toEqual({
       layeredControlEnabled: true,
       preHeatTreatmentLnkEnabled: false,
+      allowPrimaryLnkBeforePreviousStagesComplete: false,
     })
   })
 
@@ -30,11 +32,13 @@ describe('control process settings', () => {
     saveControlProcessSettings({
       layeredControlEnabled: false,
       preHeatTreatmentLnkEnabled: true,
+      allowPrimaryLnkBeforePreviousStagesComplete: false,
     }, { syncRemote: false })
 
     expect(loadControlProcessSettings()).toEqual({
       layeredControlEnabled: false,
       preHeatTreatmentLnkEnabled: true,
+      allowPrimaryLnkBeforePreviousStagesComplete: false,
     })
   })
 
@@ -42,11 +46,13 @@ describe('control process settings', () => {
     applyRemoteControlProcessSettings({
       layeredControlEnabled: true,
       preHeatTreatmentLnkEnabled: false,
+      allowPrimaryLnkBeforePreviousStagesComplete: false,
     })
 
     expect(loadControlProcessSettings()).toEqual({
       layeredControlEnabled: true,
       preHeatTreatmentLnkEnabled: false,
+      allowPrimaryLnkBeforePreviousStagesComplete: false,
     })
   })
 })

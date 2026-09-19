@@ -12,16 +12,24 @@ import { isControlEnabledValue } from '@/lib/control-availability-values'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
 import {
+  getPrimaryLnkStageAccess,
+  getPreHeatTreatmentControl,
   isPreHeatTreatmentLnkMethodCode,
+  requiresPreHeatTreatmentLnk,
   type PreHeatTreatmentControlRecord,
   type PreHeatTreatmentLnkMethodCode,
 } from '@/lib/lnk-control-stage'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import {
   buildPreHeatTreatmentToPrimaryTransfer,
   buildPrimaryToPreHeatTreatmentTransfer,
   findBlockingLnkStageTransferChronologyIssue,
+  hasPrimaryLnkStageTrace,
+  isLnkStageTransferResult,
   type LnkDocumentStageTransferPreview,
+  type LnkStageTransferPackageSnapshot,
   type LnkStageTransferPosition,
+  type LnkStageTransferPositionPreview,
 } from '@/lib/lnk-stage-transfer'
 import { ALL_LNK_FIELD_METHODS } from '@/lib/lnk-report-config'
 import {
@@ -31,6 +39,7 @@ import {
 } from '@/lib/system-document-types'
 import { getSystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import { calculateFinalStatus } from '@/lib/weld-status'
+import { attachPreHeatTreatmentReportValues } from '@/lib/pre-heat-treatment-report-fields'
 import { splitWeldImportInsertBatches } from '@/lib/weld-import-limits'
 import {
   getDispatcherDirtyScopes,
@@ -62,13 +71,16 @@ import {
   lockInteractiveWeldRows,
 } from '@/server/weld-row-version'
 import { splitNumberBatches } from '@/server/weld-request-utils'
+import { attachSystemDocumentIds } from '@/server/generated-document-row-fields'
+import { buildPrimaryLnkStageDebtSystemWarnings } from '@/lib/repeated-joint-check-tasks'
 
 type LnkDocumentStageTransferRequest = SystemDocumentReference & {
   expectedVersions?: WeldRowVersionTarget[]
+  positions?: LnkStageTransferPosition[]
 }
 
 type TransferContext = {
-  reference: SystemDocumentReference & { documentId: number }
+  reference: LnkDocumentStageTransferRequest & { documentId: number }
   sourceStage: 'primary' | 'beforeHeatTreatment'
   targetStage: 'primary' | 'beforeHeatTreatment'
   rows: WeldRow[]
@@ -78,26 +90,31 @@ type TransferContext = {
 }
 
 export const previewLnkDocumentStageTransfer = createServerFn({ method: 'POST' })
-  .validator(normalizeReference)
+  .validator(normalizeLnkDocumentStageTransferReference)
   .handler(async ({ data }) => {
     await assertSecurityScope('entry')
     const db = requireDb()
-    return db.transaction(async (tx) => (await loadTransferContext(tx, data)).preview)
+    return db.transaction(async (tx) => {
+      const processSettings = await loadControlProcessSettingsFromTransaction(tx)
+      assertStageTransferEnabled(processSettings)
+      return (await loadTransferContext(tx, data, processSettings)).preview
+    })
   })
 
 export const transferLnkDocumentStage = createServerFn({ method: 'POST' })
-  .validator(normalizeReference)
+  .validator(normalizeLnkDocumentStageTransferReference)
   .handler(async ({ data }) => {
     await assertSecurityScope('edit')
     const db = requireDb()
     return db.transaction(async (tx) => {
       const processSettings = await loadControlProcessSettingsFromTransaction(tx)
-      if (!processSettings.preHeatTreatmentLnkEnabled) {
-        throw new Error('НК до ТО выключен в настройках проекта. Перенос документов этого этапа недоступен.')
-      }
-      const context = await loadTransferContext(tx, data, true)
-      const rowIds = context.rows.map((row) => row.id)
-      assertExpectedInteractiveWeldVersions(rowIds, data.expectedVersions, context.rows)
+      assertStageTransferEnabled(processSettings)
+      const context = await loadTransferContext(tx, data, processSettings, true)
+      if (context.positions.length === 0) throw new Error('Выберите хотя бы одну позицию для переноса этапа.')
+      const allRowIds = context.rows.map((row) => row.id)
+      const affectedRowIds = [...new Set(context.positions.map((position) => position.rowId))]
+      const affectedRowIdSet = new Set(affectedRowIds)
+      assertExpectedInteractiveWeldVersions(allRowIds, data.expectedVersions, context.rows)
       const rowsWithDuplicates = await attachDuplicateControlRelations(context.rows, tx)
       const previousRows = new Map(rowsWithDuplicates.map((row) => [row.id, row]))
       let nextRows: WeldRow[]
@@ -118,7 +135,13 @@ export const transferLnkDocumentStage = createServerFn({ method: 'POST' })
           throw new Error('Не удалось перенести все позиции НК до ТО. Ничего не сохранено.')
         }
         nextRows = attachSavedControls(transfer.rows, savedControls)
-        assertNoNewChronologyIssues(rowsWithDuplicates, nextRows, 'beforeHeatTreatment')
+          .filter((row) => affectedRowIdSet.has(row.id))
+        assertNoNewChronologyIssues(
+          rowsWithDuplicates.filter((row) => affectedRowIdSet.has(row.id)),
+          nextRows,
+          'beforeHeatTreatment',
+          processSettings,
+        )
         nextRows = nextRows.map(withRecalculatedFinalStatus)
         const updatedRows = await persistPrimaryStageRows(tx, nextRows)
         nextRows = mergeAttachedRelations(updatedRows, nextRows)
@@ -133,8 +156,13 @@ export const transferLnkDocumentStage = createServerFn({ method: 'POST' })
           preHeatTreatmentControls: (row.preHeatTreatmentControls ?? []).filter((control) =>
             !context.controls.some((moved) => moved.id === control.id),
           ),
-        }))
-        assertNoNewChronologyIssues(rowsWithDuplicates, nextRows, 'primary')
+        })).filter((row) => affectedRowIdSet.has(row.id))
+        assertNoNewChronologyIssues(
+          rowsWithDuplicates.filter((row) => affectedRowIdSet.has(row.id)),
+          nextRows,
+          'primary',
+          processSettings,
+        )
         nextRows = nextRows.map(withRecalculatedFinalStatus)
         await removeSourcedSystemDocumentPositionsInTransaction({
           tx,
@@ -151,17 +179,23 @@ export const transferLnkDocumentStage = createServerFn({ method: 'POST' })
         await syncSystemDocumentsForWeldChangesInTransaction(tx, nextRows, previousRows)
       }
 
-      await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, rowIds)
+      await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, affectedRowIds)
       await markDispatcherTaskIndexDirty(tx, {
         scopes: getDispatcherDirtyScopes(nextRows, previousRows),
       })
+      nextRows = nextRows.map((row) => attachPreHeatTreatmentReportValues(
+        row,
+        row.preHeatTreatmentControls ?? [],
+      ) as WeldRow)
+      nextRows = await attachSystemDocumentIds(nextRows, tx) as WeldRow[]
       return { preview: context.preview, rows: nextRows }
     })
   })
 
 async function loadTransferContext(
   tx: SystemDocumentSequenceTransaction,
-  reference: SystemDocumentReference & { documentId: number },
+  reference: LnkDocumentStageTransferRequest & { documentId: number },
+  processSettings: ControlProcessSettings,
   lock = false,
 ): Promise<TransferContext> {
   const [document] = await tx
@@ -246,56 +280,87 @@ async function loadTransferContext(
       }
     }
   }
-  await assertPstoWorkflowLinesFullyAssigned(tx, storedRows)
   const rows = await attachHeatTreatmentControlRelations(storedRows as WeldRow[], tx)
-  if (rows.some((row) => !isControlEnabledValue(row.pstoRequired))) {
-    throw new Error('Перенос этапа доступен только для стыков на линиях с назначенным ПСТО.')
+  const pstoRows = rows.filter((row) => isControlEnabledValue(row.pstoRequired))
+  if (pstoRows.length > 0) {
+    await assertPstoWorkflowLinesFullyAssigned(tx, pstoRows)
   }
 
-  let positions: LnkStageTransferPosition[]
+  let allPositions: LnkStageTransferPosition[]
   if (sourceStage === 'primary') {
-    const collected = collectPrimaryPositions(rows, reference)
-    if (collected.unsupportedMethods.length > 0) {
-      throw new Error(
-        `Документ содержит методы, которые не выполняются до ТО: ${collected.unsupportedMethods.join(', ')}. Такой документ нельзя перенести целиком.`,
-      )
-    }
-    positions = collected.positions
-    const transfer = buildPrimaryToPreHeatTreatmentTransfer({ rows, positions })
-    const previewControls = transfer.controls.map((control, index) => ({
-      ...control,
-      id: -(index + 1),
-    }))
-    assertNoNewChronologyIssues(
-      rows,
-      attachSavedControls(transfer.rows, previewControls),
-      'beforeHeatTreatment',
-    )
+    allPositions = collectPrimaryPositions(rows, reference)
   } else {
-    positions = controls.map((control) => ({
+    allPositions = controls.map((control) => ({
       rowId: control.weldJointId,
       methodCode: requirePreMethod(control.method),
     }))
-    const transferredRows = buildPreHeatTreatmentToPrimaryTransfer({ rows, controls })
-      .map((row) => ({
-        ...row,
-        preHeatTreatmentControls: (row.preHeatTreatmentControls ?? []).filter((control) =>
-          !controls.some((moved) => moved.id === control.id),
-        ),
-      }))
-    assertNoNewChronologyIssues(rows, transferredRows, 'primary')
   }
-  if (positions.length === 0) throw new Error('В документе нет позиций, которые можно перенести между этапами.')
+  allPositions = uniquePositions(allPositions)
+  if (allPositions.length === 0) {
+    throw new Error('В документе нет позиций, которые можно перенести между этапами.')
+  }
+
+  const targetStage = sourceStage === 'primary' ? 'beforeHeatTreatment' : 'primary'
+  const rowsById = new Map(rows.map((row) => [row.id, row]))
+  const controlsByPosition = new Map(controls.map((control) => [
+    positionKey({ rowId: control.weldJointId, methodCode: String(control.method) }),
+    control,
+  ]))
+  const positionPreviews = allPositions.map((position) => {
+    const row = rowsById.get(position.rowId)
+    if (!row) throw new Error(`Стык #${position.rowId} больше не существует. Обновите раздел «Документы».`)
+    const control = controlsByPosition.get(positionKey(position))
+    return buildPositionPreview({
+      row,
+      position,
+      control,
+      sourceStage,
+      processSettings,
+    })
+  })
+  const positionPreviewsByKey = new Map(
+    positionPreviews.map((position) => [positionKey(position), position]),
+  )
+  const requestedPositions = reference.positions === undefined
+    ? positionPreviews.filter((position) => !position.disabledReason)
+    : uniquePositions(reference.positions).map((position) => {
+        const preview = positionPreviewsByKey.get(positionKey(position))
+        if (!preview) {
+          throw new Error(`Позиция #${position.rowId} · ${position.methodCode} больше не входит в документ.`)
+        }
+        if (preview.disabledReason) {
+          throw new Error(`Стык ${preview.joint}, ${preview.methodCode}: ${preview.disabledReason}`)
+        }
+        return preview
+      })
+  const positions = requestedPositions.map(({ rowId, methodCode }) => ({ rowId, methodCode }))
+  const selectedKeys = new Set(positions.map(positionKey))
+  const selectedControls = controls.filter((control) => selectedKeys.has(positionKey({
+    rowId: control.weldJointId,
+    methodCode: String(control.method),
+  })))
+  if (sourceStage === 'beforeHeatTreatment' && selectedControls.length !== positions.length) {
+    throw new Error('Часть выбранных позиций НК до ТО уже изменилась. Обновите раздел «Документы».')
+  }
+
+  const simulatedRows = positions.length > 0
+    ? simulateStageTransfer({ rows, positions, controls: selectedControls, sourceStage })
+    : rows
+  if (positions.length > 0 && reference.positions !== undefined) {
+    assertNoNewChronologyIssues(rows, simulatedRows, targetStage, processSettings)
+  }
 
   const methodCodes = [...new Set(positions.map((position) => position.methodCode))]
     .sort(comparePreMethods)
-  const completedResultCount = sourceStage === 'primary'
-    ? positions.filter((position) => {
-        const row = rows.find((candidate) => candidate.id === position.rowId)!
-        const method = ALL_LNK_FIELD_METHODS.find((candidate) => candidate.code === position.methodCode)!
-        return isFinalResult(row[method.resultKey])
-      }).length
-    : controls.filter((control) => isFinalResult(control.result)).length
+  const completedResultCount = requestedPositions.filter(
+    (position) => isLnkStageTransferResult(position.source.result),
+  ).length
+  const affectedRowIds = new Set(positions.map((position) => position.rowId))
+  const resultingSystemWarningCount = positions.length > 0
+    ? buildPrimaryLnkStageDebtSystemWarnings(
+        simulatedRows.filter((row) => affectedRowIds.has(row.id)),
+      ).length
+    : 0
   const preview: LnkDocumentStageTransferPreview = {
     documentId: reference.documentId,
     expectedVersions: rows.map((row) => ({
@@ -303,11 +368,15 @@ async function loadTransferContext(
       version: String(row.rowVersion ?? '').trim(),
     })),
     sourceStage,
-    targetStage: sourceStage === 'primary' ? 'beforeHeatTreatment' : 'primary',
+    targetStage,
     rowCount: new Set(positions.map((position) => position.rowId)).size,
     positionCount: positions.length,
     completedResultCount,
     methodCodes,
+    transferablePositionCount: positionPreviews.filter((position) => !position.disabledReason).length,
+    blockedPositionCount: positionPreviews.filter((position) => Boolean(position.disabledReason)).length,
+    resultingSystemWarningCount,
+    positions: positionPreviews,
   }
   return {
     reference,
@@ -315,9 +384,117 @@ async function loadTransferContext(
     targetStage: preview.targetStage,
     rows,
     positions,
-    controls,
+    controls: selectedControls,
     preview,
   }
+}
+
+function buildPositionPreview({
+  row,
+  position,
+  control,
+  sourceStage,
+  processSettings,
+}: {
+  row: WeldRow
+  position: LnkStageTransferPosition
+  control?: PreHeatTreatmentControlRecord
+  sourceStage: 'primary' | 'beforeHeatTreatment'
+  processSettings: ControlProcessSettings
+}): LnkStageTransferPositionPreview {
+  const method = ALL_LNK_FIELD_METHODS.find((candidate) => candidate.code === position.methodCode)!
+  let disabledReason: string | null = null
+  if (sourceStage === 'primary') {
+    if (!requiresPreHeatTreatmentLnk(row)) {
+      disabledReason = 'для этого стыка этап «До ТО» не применяется.'
+    } else if (getPreHeatTreatmentControl(row, position.methodCode)) {
+      disabledReason = `целевой комплект ${position.methodCode} до ТО уже заполнен.`
+    } else if (!hasPrimaryLnkStageTrace(row, position.methodCode)) {
+      disabledReason = `исходный основной комплект ${position.methodCode} уже пуст.`
+    }
+  } else if (!control) {
+    disabledReason = 'исходный комплект НК до ТО больше не существует.'
+  } else if (hasPrimaryLnkStageTrace(row, position.methodCode)) {
+    disabledReason = `целевой основной комплект ${position.methodCode} уже заполнен.`
+  } else {
+    const currentAccess = getPrimaryLnkStageAccess(row, position.methodCode, processSettings)
+    if (currentAccess.status === 'blocked') {
+      disabledReason = currentAccess.reason
+    } else {
+      const simulated = simulateStageTransfer({
+        rows: [row],
+        positions: [position],
+        controls: [control],
+        sourceStage,
+      })[0]!
+      const nextAccess = getPrimaryLnkStageAccess(simulated, position.methodCode, processSettings)
+      if (nextAccess.status === 'blocked') disabledReason = nextAccess.reason
+    }
+  }
+
+  return {
+    ...position,
+    projectTitle: text(row.projectTitle),
+    subtitleCode: text(row.subtitleCode),
+    line: text(row.line),
+    joint: text(row.joint) || `ID ${row.id}`,
+    disabledReason,
+    source: sourceStage === 'primary'
+      ? {
+          requestName: text(row[method.requestKey]),
+          requestDate: text(row[method.requestDateKey]),
+          result: text(row[method.resultKey]),
+          conclusionDate: text(row[method.conclusionDateKey]),
+          conclusionName: text(row[method.conclusionKey]),
+          defectDescription: method.defectDescriptionKey
+            ? text(row[method.defectDescriptionKey])
+            : '',
+          rkExposureConfirmedDiameter: position.methodCode === 'РК'
+            ? numberOrNull(row.rkExposureConfirmedDiameter)
+            : null,
+        }
+      : buildControlSnapshot(control!),
+  }
+}
+
+function buildControlSnapshot(control: PreHeatTreatmentControlRecord): LnkStageTransferPackageSnapshot {
+  return {
+    requestName: text(control.requestName),
+    requestDate: text(control.requestDate),
+    result: text(control.result),
+    conclusionDate: text(control.conclusionDate),
+    conclusionName: text(control.conclusionName),
+    defectDescription: text(control.defectDescription),
+    rkExposureConfirmedDiameter: numberOrNull(control.rkExposureConfirmedDiameter),
+  }
+}
+
+function simulateStageTransfer({
+  rows,
+  positions,
+  controls,
+  sourceStage,
+}: {
+  rows: WeldRow[]
+  positions: LnkStageTransferPosition[]
+  controls: PreHeatTreatmentControlRecord[]
+  sourceStage: 'primary' | 'beforeHeatTreatment'
+}) {
+  if (sourceStage === 'primary') {
+    const transfer = buildPrimaryToPreHeatTreatmentTransfer({ rows, positions })
+    const previewControls = transfer.controls.map((control, index) => ({
+      ...control,
+      id: -(index + 1),
+    }))
+    return attachSavedControls(transfer.rows, previewControls)
+  }
+  const movedControlIds = new Set(controls.map((control) => control.id))
+  return buildPreHeatTreatmentToPrimaryTransfer({ rows, controls }).map((row) => ({
+    ...row,
+    preHeatTreatmentControls: (row.preHeatTreatmentControls ?? []).filter(
+      (candidate) => !movedControlIds.has(candidate.id),
+    ),
+  }))
 }
 
 async function loadWeldRowsByIds(
@@ -385,7 +562,6 @@ function haveSameSourcePositions(
 
 function collectPrimaryPositions(rows: WeldRow[], reference: SystemDocumentReference) {
   const positions: LnkStageTransferPosition[] = []
-  const unsupportedMethods = new Set<string>()
   for (const row of rows) {
     for (const method of ALL_LNK_FIELD_METHODS) {
       const matches = reference.type === 'lnkRequest'
@@ -395,17 +571,11 @@ function collectPrimaryPositions(rows: WeldRow[], reference: SystemDocumentRefer
           text(row[method.conclusionKey]) === reference.title &&
           text(row[method.conclusionDateKey]) === reference.date
       if (!matches) continue
-      if (!isPreHeatTreatmentLnkMethodCode(method.code)) {
-        unsupportedMethods.add(method.code)
-        continue
-      }
+      if (!isPreHeatTreatmentLnkMethodCode(method.code)) continue
       positions.push({ rowId: row.id, methodCode: method.code })
     }
   }
-  return {
-    positions: uniquePositions(positions),
-    unsupportedMethods: [...unsupportedMethods].sort((left, right) => left.localeCompare(right, 'ru')),
-  }
+  return uniquePositions(positions)
 }
 
 export async function persistPrimaryStageRows(
@@ -528,27 +698,50 @@ function assertNoNewChronologyIssues(
   previousRows: WeldRow[],
   nextRows: WeldRow[],
   targetStage: 'primary' | 'beforeHeatTreatment',
+  processSettings: ControlProcessSettings,
 ) {
   const issue = findBlockingLnkStageTransferChronologyIssue({
     previousRows,
     nextRows,
     targetStage,
+    allowPrimaryStageDebt:
+      targetStage === 'primary' &&
+      processSettings.preHeatTreatmentLnkEnabled &&
+      processSettings.allowPrimaryLnkBeforePreviousStagesComplete,
   })
   if (issue) throw new Error(`Перенос этапа невозможен: ${issue.message}`)
 }
 
-function normalizeReference(value: LnkDocumentStageTransferRequest) {
-  const documentId = Math.floor(Number(value?.documentId))
+function assertStageTransferEnabled(processSettings: ControlProcessSettings) {
+  if (!processSettings.preHeatTreatmentLnkEnabled) {
+    throw new Error('Изменение этапа контроля недоступно: процесс «НК до ТО» выключен в настройках.')
+  }
+}
+
+export function normalizeLnkDocumentStageTransferReference(value: LnkDocumentStageTransferRequest) {
+  const documentId = normalizePositiveSafeInteger(value?.documentId)
   const type = value?.type
   const title = text(value?.title)
   const date = text(value?.date).slice(0, 10)
   const methodCode = text(value?.methodCode).toLocaleUpperCase('ru-RU')
   const sourceKind = value?.sourceKind
-  if (documentId <= 0 || (type !== 'lnkRequest' && type !== 'lnkConclusion') || !title) {
+  if (documentId === null || (type !== 'lnkRequest' && type !== 'lnkConclusion') || !title) {
     throw new Error('Некорректный системный документ ЛНК.')
   }
   if (sourceKind && sourceKind !== 'beforeHeatTreatment') {
     throw new Error('Этот документ не относится к этапам ЛНК.')
+  }
+  if (value?.positions !== undefined && !Array.isArray(value.positions)) {
+    throw new Error('Некорректный список позиций для переноса этапа.')
+  }
+  const positions = value?.positions === undefined
+    ? undefined
+    : uniquePositions(value.positions.map((position) => ({
+        rowId: normalizePositiveSafeInteger(position?.rowId) ?? 0,
+        methodCode: requirePreMethod(position?.methodCode),
+      })))
+  if (positions?.some((position) => position.rowId <= 0)) {
+    throw new Error('Некорректная позиция для переноса этапа.')
   }
   return {
     documentId,
@@ -557,14 +750,20 @@ function normalizeReference(value: LnkDocumentStageTransferRequest) {
     date,
     ...(methodCode ? { methodCode } : {}),
     ...(sourceKind ? { sourceKind } : {}),
+    ...(positions === undefined ? {} : { positions }),
     expectedVersions: (Array.isArray(value?.expectedVersions) ? value.expectedVersions : []).map((entry) => ({
       id: Number(entry?.id),
       version: String(entry?.version ?? '').trim(),
     })),
-  } as SystemDocumentReference & {
+  } as LnkDocumentStageTransferRequest & {
     documentId: number
     expectedVersions: WeldRowVersionTarget[]
   }
+}
+
+function normalizePositiveSafeInteger(value: unknown) {
+  const number = Number(value)
+  return Number.isSafeInteger(number) && number > 0 ? number : null
 }
 
 function parseSourceKind(value: unknown): SystemDocumentSourceKind | undefined {
@@ -585,6 +784,10 @@ function uniquePositions(positions: LnkStageTransferPosition[]) {
     `${position.rowId}:${position.methodCode}`,
     position,
   ])).values()]
+}
+
+function positionKey(position: { rowId: number; methodCode: string }) {
+  return `${position.rowId}:${text(position.methodCode).toLocaleUpperCase('ru-RU')}`
 }
 
 function groupByRowId<Row extends { weldJointId: number }>(records: Row[]) {
@@ -608,11 +811,6 @@ function requirePreMethod(value: unknown): PreHeatTreatmentLnkMethodCode {
 function comparePreMethods(left: PreHeatTreatmentLnkMethodCode, right: PreHeatTreatmentLnkMethodCode) {
   const order: PreHeatTreatmentLnkMethodCode[] = ['ВИК', 'РК', 'УЗК', 'ПВК']
   return order.indexOf(left) - order.indexOf(right)
-}
-
-function isFinalResult(value: unknown) {
-  const result = text(value).toLocaleLowerCase('ru-RU')
-  return result === 'годен' || result === 'ремонт' || result === 'вырез'
 }
 
 function textOrNull(value: unknown) {

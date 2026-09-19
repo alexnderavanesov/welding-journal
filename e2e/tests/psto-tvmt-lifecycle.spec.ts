@@ -16,6 +16,21 @@ const CONCURRENT_PSTO_PROJECT = 'E2E конкурентная линия'
 const CONCURRENT_PSTO_SUBTITLE = 'E2E-010'
 const CONCURRENT_PSTO_LINE = 'E2E-L10'
 const LNK_REPORT_VIEW_STORAGE_KEY = 'welding-report-view:v1:lnk'
+const CONTROL_PROCESS_SETTINGS_KEY = 'control-processes'
+
+type ControlProcessSettingsSnapshot = {
+  value: string
+  updatedAt: Date
+}
+
+let controlProcessSettingsSnapshot: ControlProcessSettingsSnapshot | null | undefined
+
+test.afterEach(async () => {
+  if (controlProcessSettingsSnapshot === undefined) return
+  const snapshot = controlProcessSettingsSnapshot
+  controlProcessSettingsSnapshot = undefined
+  await restoreControlProcessSettings(snapshot)
+})
 
 test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор -> основной НК -> ремонт -> исправление', async ({ page }) => {
   test.setTimeout(180_000)
@@ -418,8 +433,9 @@ test('карточка стыка переносит основной НК на 
   await expect(createPstoRequest).toHaveAttribute('title', /НК до ТО: ВИК/)
 })
 
-test('этап НК одинаково меняется из ПСТО, документов и карточки стыка', async ({ page }) => {
+test('этап НК одинаково меняется из ПСТО, документов, ЛНК и карточки стыка', async ({ page }) => {
   test.setTimeout(300_000)
+  controlProcessSettingsSnapshot = await enablePrimaryLnkBeforePreviousStages()
   await seedStageSynchronizationLines()
   await showOnlyStageSynchronizationFields(page)
 
@@ -462,10 +478,11 @@ test('этап НК одинаково меняется из ПСТО, доку�
 
   const documentRow = await openLnkDocumentRow(page, titles.request, 'request')
   await documentRow.click({ button: 'right' })
-  await page.getByRole('button', { name: 'Перенести в «Основной»', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Перенести комплект на этап «Основной»' })).toBeVisible()
-  await page.getByRole('button', { name: 'Перенести', exact: true }).click()
-  await expect(page.getByText(`Комплект «${titles.request}» перенесен на этап «Основной».`)).toBeVisible()
+  await page.getByRole('button', { name: 'Изменить этап контроля', exact: true })
+    .filter({ hasText: 'Изменить этап контроля' })
+    .click()
+  await completeStageTransfer(page, 'Основной', 1)
+  await expect(page.getByText('Перенесено комплектов: 1. Новый этап: «Основной».')).toBeVisible()
   await expectVikStageEverywhere(page, {
     joint: STAGE_SYNC_JOINT,
     line: STAGE_SYNC_SOURCE_LINE,
@@ -474,12 +491,21 @@ test('этап НК одинаково меняется из ПСТО, доку�
     completed: true,
   })
 
-  const primaryDocumentRow = await openLnkDocumentRow(page, titles.request, 'request')
-  await primaryDocumentRow.click({ button: 'right' })
-  await page.getByRole('button', { name: 'Перенести в «До ТО»', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Перенести комплект на этап «До ТО»' })).toBeVisible()
-  await page.getByRole('button', { name: 'Перенести', exact: true }).click()
-  await expect(page.getByText(`Комплект «${titles.request}» перенесен на этап «До ТО».`)).toBeVisible()
+  await openReport(page, 'ЛНК', '/lnk')
+  await openHeaderMenuItem(page, 'Заявка', 'Все заявки ЛНК')
+  const requestManager = page.getByRole('dialog').filter({
+    has: page.getByRole('heading', { name: 'Редактирование заявок ЛНК' }),
+  })
+  await expect(requestManager).toBeVisible()
+  const requestCard = requestManager
+    .getByText(titles.request, { exact: true })
+    .locator('xpath=ancestor::button')
+  await expect(requestCard).toBeVisible()
+  await requestCard.click({ button: 'right' })
+  await page.getByRole('button', { name: 'Изменить этап контроля', exact: true })
+    .filter({ hasText: 'Изменить этап контроля' })
+    .click()
+  await completeStageTransfer(page, 'До ТО')
   await expectVikStageEverywhere(page, {
     joint: STAGE_SYNC_JOINT,
     line: STAGE_SYNC_SOURCE_LINE,
@@ -716,6 +742,28 @@ async function openLnkDocumentRow(page: Page, title: string, type: 'request' | '
   )
   await expect(row).toBeVisible()
   return row
+}
+
+async function completeStageTransfer(
+  page: Page,
+  targetStage: 'До ТО' | 'Основной',
+  resultingSystemWarningCount = 0,
+) {
+  const dialog = page.getByRole('dialog').filter({
+    has: page.getByRole('heading', { name: 'Изменить этап контроля' }),
+  })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText(targetStage, { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Проверить перенос', exact: true }).click()
+  await expect(dialog.getByText('Вместе с выбранными позициями', { exact: true })).toBeVisible()
+  await expect(dialog.getByText(
+    resultingSystemWarningCount > 0
+      ? `После переноса СП-01 будет у ${resultingSystemWarningCount} стыков`
+      : 'После переноса по выбранным стыкам СП-01 не будет',
+    { exact: true },
+  )).toBeVisible()
+  await dialog.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
+  await expect(dialog).toBeHidden()
 }
 
 async function expectVikStageEverywhere(page: Page, {
@@ -1235,6 +1283,44 @@ async function seedStageSynchronizationLines() {
         '[{"id":"e2e-naks-8","weldType":"РД","materialGroups":"M01","diameterFrom":"1","diameterTo":"1000","thicknessFrom":"1","thicknessTo":"100","validFrom":"2026-01-01","validTo":"2026-12-31","note":"","archived":false}]'
       )
     `)
+  })
+}
+
+async function enablePrimaryLnkBeforePreviousStages(): Promise<ControlProcessSettingsSnapshot | null> {
+  return withE2eDatabase(async (client) => {
+    const previous = await client.query<{ value: string; updated_at: Date }>(`
+      select value, updated_at
+      from app_settings
+      where key = $1
+    `, [CONTROL_PROCESS_SETTINGS_KEY])
+    await client.query(`
+      insert into app_settings (key, value, updated_at)
+      values ($1, $2, now())
+      on conflict (key) do update set value = excluded.value, updated_at = now()
+    `, [CONTROL_PROCESS_SETTINGS_KEY, JSON.stringify({
+      layeredControlEnabled: true,
+      preHeatTreatmentLnkEnabled: true,
+      allowPrimaryLnkBeforePreviousStagesComplete: true,
+    })])
+    const snapshot = previous.rows[0]
+    return snapshot
+      ? { value: snapshot.value, updatedAt: snapshot.updated_at }
+      : null
+  })
+}
+
+async function restoreControlProcessSettings(snapshot: ControlProcessSettingsSnapshot | null) {
+  await withE2eDatabase(async (client) => {
+    if (!snapshot) {
+      await client.query('delete from app_settings where key = $1', [CONTROL_PROCESS_SETTINGS_KEY])
+      return
+    }
+    await client.query(`
+      insert into app_settings (key, value, updated_at)
+      values ($1, $2, $3)
+      on conflict (key) do update
+      set value = excluded.value, updated_at = excluded.updated_at
+    `, [CONTROL_PROCESS_SETTINGS_KEY, snapshot.value, snapshot.updatedAt])
   })
 }
 

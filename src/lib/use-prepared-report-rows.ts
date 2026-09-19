@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import type { ActiveReport } from '@/lib/home-state'
 import { canCreatePstoRequest } from '@/lib/psto-status'
 import { canCreateLnkRequest } from '@/lib/report-control-state'
@@ -18,6 +19,7 @@ interface PreparedReportRowsOptions {
   preservedLnkOrderIds: number[] | null
   pstoRequestSearch: string
   lnkRequestSearch: string
+  controlProcessSettings: ControlProcessSettings
 }
 
 export function usePreparedReportRows({
@@ -30,6 +32,7 @@ export function usePreparedReportRows({
   preservedLnkOrderIds,
   pstoRequestSearch,
   lnkRequestSearch,
+  controlProcessSettings,
 }: PreparedReportRowsOptions) {
   const shouldBuildDerivedReportRows = enableHeatTreatmentRows || enableLnkRows
   const weldedRows = useMemo(
@@ -57,7 +60,11 @@ export function usePreparedReportRows({
     [enableLnkRows, preservedLnkOrderIds, weldedRows],
   )
   const availableLnkRequestRows = useMemo(
-    () => (enableLnkRequestRows ? lnkRows.filter(canCreateLnkRequest) : []),
+    () => (enableLnkRequestRows ? lnkRows.filter((row) => canCreateLnkRequest(row, controlProcessSettings)) : []),
+    [controlProcessSettings, enableLnkRequestRows, lnkRows],
+  )
+  const readyLnkRequestRows = useMemo(
+    () => (enableLnkRequestRows ? lnkRows.filter((row) => canCreateLnkRequest(row)) : []),
     [enableLnkRequestRows, lnkRows],
   )
   const filteredLnkRequestRows = useMemo(
@@ -65,7 +72,13 @@ export function usePreparedReportRows({
     [enableLnkRequestRows, lnkRequestSearch, lnkRows],
   )
   const filteredAvailableLnkRequestRows = useMemo(
-    () => (enableLnkRequestRows ? filteredLnkRequestRows.filter(canCreateLnkRequest) : []),
+    () => (enableLnkRequestRows
+      ? filteredLnkRequestRows.filter((row) => canCreateLnkRequest(row, controlProcessSettings))
+      : []),
+    [controlProcessSettings, enableLnkRequestRows, filteredLnkRequestRows],
+  )
+  const filteredReadyLnkRequestRows = useMemo(
+    () => (enableLnkRequestRows ? filteredLnkRequestRows.filter((row) => canCreateLnkRequest(row)) : []),
     [enableLnkRequestRows, filteredLnkRequestRows],
   )
   const visibleRows = getVisibleReportRows(activeReport, rows, heatTreatmentRows, lnkRows)
@@ -78,8 +91,10 @@ export function usePreparedReportRows({
     filteredAvailablePstoRequestRows,
     lnkRows,
     availableLnkRequestRows,
+    readyLnkRequestRows,
     filteredLnkRequestRows,
     filteredAvailableLnkRequestRows,
+    filteredReadyLnkRequestRows,
     visibleRows,
   }
 }

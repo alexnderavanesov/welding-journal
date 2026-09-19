@@ -1,10 +1,12 @@
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, like } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import { generatedDocuments, generatedDocumentWeldJoints } from '@/db/schema'
 import { ALL_LNK_FIELD_METHODS as LNK_METHODS } from '@/lib/lnk-report-config'
+import { PRE_HEAT_TREATMENT_REPORT_FIELDS } from '@/lib/pre-heat-treatment-report-fields'
 import { getSystemDocumentTemplateIdForField } from '@/lib/system-document-template-types'
-import type { WeldFieldKey } from '@/lib/weld-fields'
+import { getCurrentPstoCycle } from '@/lib/tvmt-cycle'
+import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import { ensureLayeredControlDocumentsInitialized } from '@/server/layered-control-documents'
 import { splitNumberBatches } from '@/server/weld-request-utils'
 
@@ -38,7 +40,28 @@ export type GeneratedDocumentRowAssignment = {
   type: string
   title: string
   periodFrom?: string | null
+  sourceMetadata?: string | null
 }
+
+type SystemDocumentFieldMatch = {
+  fieldKey: WeldFieldKey
+  dateKey: WeldFieldKey
+  sourceStage?: 'primary' | 'beforeHeatTreatment' | 'pstoCycle' | 'pstoRepeat'
+  title?: unknown
+  date?: unknown
+  cycleSequence?: number
+}
+
+const PRE_HEAT_TREATMENT_DOCUMENT_FIELDS: SystemDocumentFieldMatch[] = PRE_HEAT_TREATMENT_REPORT_FIELDS
+  .filter((field) => field.valueKey === 'requestName' || field.valueKey === 'conclusionName')
+  .map((field) => ({
+    fieldKey: field.fieldKey,
+    dateKey: PRE_HEAT_TREATMENT_REPORT_FIELDS.find((candidate) =>
+      candidate.methodCode === field.methodCode &&
+      candidate.valueKey === (field.valueKey === 'requestName' ? 'requestDate' : 'conclusionDate'),
+    )!.fieldKey,
+    sourceStage: 'beforeHeatTreatment',
+  }))
 
 export function applyGeneratedDocumentFields<Row extends GeneratedDocumentCarrier>(
   rows: Row[],
@@ -132,30 +155,68 @@ function buildSystemDocumentIds<Row extends GeneratedDocumentCarrier>(
 ) {
   const values = row as Record<string, unknown>
   const result: Partial<Record<WeldFieldKey, number>> = {}
-  const fields: Array<{ fieldKey: WeldFieldKey; dateKey: WeldFieldKey }> = [
-    ...LNK_METHODS.map((method) => ({
+  const currentCycle = getCurrentPstoCycle(row as WeldInput)
+  const cycleSourceStage = 'pstoCycle' as const
+  const fields: SystemDocumentFieldMatch[] = [
+    ...LNK_METHODS.filter((method) => method.code !== 'ТВМТ').map((method) => ({
       fieldKey: method.requestKey,
       dateKey: method.requestDateKey,
+      sourceStage: 'primary' as const,
     })),
-    ...LNK_METHODS.map((method) => ({
+    ...LNK_METHODS.filter((method) => method.code !== 'ТВМТ').map((method) => ({
       fieldKey: method.conclusionKey,
       dateKey: method.conclusionDateKey,
+      sourceStage: 'primary' as const,
     })),
-    { fieldKey: 'pstoRequest', dateKey: 'pstoRequestDate' },
-    { fieldKey: 'heatTreatmentDiagram', dateKey: 'pstoDate' },
+    ...PRE_HEAT_TREATMENT_DOCUMENT_FIELDS,
+    ...(currentCycle ? [
+      {
+        fieldKey: 'pstoRequest' as const,
+        dateKey: 'pstoRequestDate' as const,
+        sourceStage: cycleSourceStage,
+        title: currentCycle.pstoRequest,
+        date: currentCycle.pstoRequestDate,
+        cycleSequence: currentCycle.sequence,
+      },
+      {
+        fieldKey: 'heatTreatmentDiagram' as const,
+        dateKey: 'pstoDate' as const,
+        sourceStage: cycleSourceStage,
+        title: currentCycle.heatTreatmentDiagram,
+        date: currentCycle.pstoDate,
+        cycleSequence: currentCycle.sequence,
+      },
+      {
+        fieldKey: 'tvmtRequest' as const,
+        dateKey: 'tvmtRequestDate' as const,
+        sourceStage: cycleSourceStage,
+        title: currentCycle.tvmtRequest,
+        date: currentCycle.tvmtRequestDate,
+        cycleSequence: currentCycle.sequence,
+      },
+      {
+        fieldKey: 'tvmtConclusion' as const,
+        dateKey: 'tvmtConclusionDate' as const,
+        sourceStage: cycleSourceStage,
+        title: currentCycle.tvmtConclusion,
+        date: currentCycle.tvmtConclusionDate,
+        cycleSequence: currentCycle.sequence,
+      },
+    ] : []),
   ]
 
-  for (const { fieldKey, dateKey } of fields) {
-    const title = normalizeText(values[fieldKey])
+  for (const { fieldKey, dateKey, sourceStage, title: suppliedTitle, date: suppliedDate, cycleSequence } of fields) {
+    const title = normalizeText(suppliedTitle ?? values[fieldKey])
     if (!title) continue
     const templateId = getSystemDocumentTemplateIdForField(fieldKey)
     if (!templateId) continue
-    const date = normalizeDate(values[dateKey])
+    const date = normalizeDate(suppliedDate ?? values[dateKey])
     const assignment = assignments.find(
       (candidate) =>
         candidate.type === `system:${templateId}` &&
         normalizeText(candidate.title) === title &&
-        normalizeDate(candidate.periodFrom) === date,
+        normalizeDate(candidate.periodFrom) === date &&
+        matchesSystemDocumentSourceStage(candidate.sourceMetadata, sourceStage, cycleSequence),
     )
     if (assignment) result[fieldKey] = assignment.documentId
   }
@@ -169,6 +230,47 @@ function normalizeText(value: unknown) {
 
 function normalizeDate(value: unknown) {
   return String(value ?? '').trim().slice(0, 10)
+}
+
+function matchesSystemDocumentSourceStage(
+  value: string | null | undefined,
+  expected: SystemDocumentFieldMatch['sourceStage'],
+  cycleSequence?: number,
+) {
+  if (!expected) return true
+  const metadata = parseSystemDocumentSourceMetadata(value)
+  const stageMatches = expected === 'primary'
+    ? metadata.sourceKind === null
+    : expected === 'pstoCycle'
+      ? metadata.sourceKind === 'pstoCycle' ||
+        metadata.sourceKind === 'pstoRepeat' ||
+        (metadata.sourceKind === null && cycleSequence === 1)
+    : metadata.sourceKind === expected
+  if (!stageMatches) return false
+  return cycleSequence === undefined ||
+    metadata.cycleSequences.length === 0 ||
+    metadata.cycleSequences.includes(cycleSequence)
+}
+
+function parseSystemDocumentSourceMetadata(value: string | null | undefined) {
+  try {
+    const parsed = value
+      ? JSON.parse(value) as { sourceKind?: unknown; cycleSequences?: unknown }
+      : null
+    const sourceKind = parsed?.sourceKind
+    return {
+      sourceKind: sourceKind === 'beforeHeatTreatment' || sourceKind === 'pstoCycle' || sourceKind === 'pstoRepeat'
+        ? sourceKind
+        : null,
+      cycleSequences: Array.isArray(parsed?.cycleSequences)
+        ? parsed.cycleSequences
+            .map(Number)
+            .filter((sequence) => Number.isInteger(sequence) && sequence > 0)
+        : [],
+    }
+  } catch {
+    return { sourceKind: null, cycleSequences: [] }
+  }
 }
 
 export async function attachGeneratedDocumentFields<Row extends GeneratedDocumentCarrier>(
@@ -189,6 +291,7 @@ export async function attachGeneratedDocumentFields<Row extends GeneratedDocumen
         type: generatedDocuments.type,
         title: generatedDocuments.title,
         periodFrom: generatedDocuments.periodFrom,
+        sourceMetadata: generatedDocuments.sourceMetadata,
       })
       .from(generatedDocumentWeldJoints)
       .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))
@@ -196,6 +299,52 @@ export async function attachGeneratedDocumentFields<Row extends GeneratedDocumen
   }
 
   return applyGeneratedDocumentFields(rows, assignments)
+}
+
+export async function attachSystemDocumentIds<Row extends GeneratedDocumentCarrier>(
+  rows: Row[],
+  db: Pick<ReturnType<typeof requireDb>, 'select'> = requireDb(),
+): Promise<Array<Row & Pick<GeneratedDocumentRowFields, 'systemDocumentIds'>>> {
+  if (rows.length === 0) return rows
+  const ids = [...new Set(rows.map((row) => Number(row.id)).filter(Number.isFinite))]
+  if (ids.length === 0) return rows
+
+  const assignments: GeneratedDocumentRowAssignment[] = []
+  for (const idBatch of splitNumberBatches(ids, 1000)) {
+    assignments.push(...await db
+      .select({
+        weldJointId: generatedDocumentWeldJoints.weldJointId,
+        documentId: generatedDocuments.id,
+        type: generatedDocuments.type,
+        title: generatedDocuments.title,
+        periodFrom: generatedDocuments.periodFrom,
+        sourceMetadata: generatedDocuments.sourceMetadata,
+      })
+      .from(generatedDocumentWeldJoints)
+      .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))
+      .where(and(
+        inArray(generatedDocumentWeldJoints.weldJointId, idBatch),
+        like(generatedDocuments.type, 'system:%'),
+      )))
+  }
+
+  const assignmentsByWeldId = new Map<number, GeneratedDocumentRowAssignment[]>()
+  for (const assignment of assignments) {
+    const current = assignmentsByWeldId.get(assignment.weldJointId) ?? []
+    current.push(assignment)
+    assignmentsByWeldId.set(assignment.weldJointId, current)
+  }
+  return rows.map((row) => {
+    const systemDocumentIds = buildSystemDocumentIds(
+      row,
+      assignmentsByWeldId.get(Number(row.id)) ?? [],
+    )
+    const mergedIds = {
+      ...(row as Row & GeneratedDocumentRowFields).systemDocumentIds,
+      ...systemDocumentIds,
+    }
+    return Object.keys(mergedIds).length > 0 ? { ...row, systemDocumentIds: mergedIds } : row
+  })
 }
 
 function buildLayeredCompositeField(

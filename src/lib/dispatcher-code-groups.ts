@@ -1,8 +1,4 @@
-import {
-  getDispatcherSettingTaskTypeLabel,
-  getDispatcherTaskCode,
-  getDispatcherTaskSettingId,
-} from '@/lib/dispatcher-settings'
+import { getDispatcherTaskCode, getDispatcherTaskTypeLabel } from '@/lib/dispatcher-settings'
 import { compareDispatcherTaskCodes } from '@/lib/dispatcher-task-row-codes'
 import type { DispatcherTask, RepeatedJointTaskGroup } from '@/lib/dispatcher-types'
 
@@ -44,7 +40,7 @@ export function buildDispatcherTaskCodeGroups(
       const firstTask = tasks[0]
       codeGroups.set(code, {
         code,
-        label: getDispatcherSettingTaskTypeLabel(getDispatcherTaskSettingId(firstTask)),
+        label: getDispatcherTaskTypeLabel(firstTask),
         tasks: [...tasks],
         objectGroups: [splitObjectGroup],
         metric: null,

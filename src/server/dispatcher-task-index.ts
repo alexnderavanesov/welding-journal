@@ -61,6 +61,10 @@ import { lockWelderStampRegistry } from '@/server/welder-stamp-registry-lock'
 import { encodeIdentityKey } from '@/lib/identity-key'
 import { WELD_EFFECTIVE_OFFICIALITY } from '@/server/weld-server-shared'
 import { splitNumberBatches } from '@/server/weld-request-utils'
+import {
+  DEFAULT_CONTROL_PROCESS_SETTINGS,
+  normalizeControlProcessSettings,
+} from '@/lib/control-process-settings'
 
 const INSERT_CHUNK_SIZE = 1_000
 const MAX_SCOPED_REBUILD_SCOPES = 500
@@ -293,6 +297,7 @@ export async function calculateFullDispatcherTasks(
     dispatcherReminderSettings: getDispatcherReminderSettings(settingsRows),
     dispatcherSettings: options.dispatcherSettings?.(currentDispatcherSettings) ?? currentDispatcherSettings,
     dataListSettings: getDataListSettings(settingsRows),
+    controlProcessSettings: getControlProcessSettings(settingsRows),
     systemIndexSettings,
     rows: preparedRows,
     welderStamps: stampRows.map(toWelderStampRecord),
@@ -350,6 +355,7 @@ async function rebuildScopedDispatcherTaskIndex(
     dispatcherReminderSettings: getDispatcherReminderSettings(settingsRows),
     dispatcherSettings: getDispatcherSettings(settingsRows),
     dataListSettings: getDataListSettings(settingsRows),
+    controlProcessSettings: getControlProcessSettings(settingsRows),
     systemIndexSettings,
     rows: preparedRows,
     welderStamps: stampRows.map(toWelderStampRecord),
@@ -576,6 +582,12 @@ function getDataListSettings(rows: AppSetting[]) {
 function getSystemIndexSettings(rows: AppSetting[]) {
   return normalizeSystemIndexSettings(
     getStoredSetting(rows, PROJECT_SETTING_KEYS.systemIndex) ?? DEFAULT_SYSTEM_INDEX_SETTINGS,
+  )
+}
+
+function getControlProcessSettings(rows: AppSetting[]) {
+  return normalizeControlProcessSettings(
+    getStoredSetting(rows, PROJECT_SETTING_KEYS.controlProcesses) ?? DEFAULT_CONTROL_PROCESS_SETTINGS,
   )
 }
 

@@ -35,6 +35,7 @@ import type {
 import { normalizeLnkWorkflowRowsRequest } from '@/server/weld-contracts'
 import {
   buildAvailableLnkRequestWhere,
+  buildLnkRequestCandidateWhere,
   buildPstoExecutionHistoryWhere,
   buildReportKindWhere,
   buildServerReportRows,
@@ -42,6 +43,7 @@ import {
   attachDuplicateControlsToPage,
   ENABLED_CONTROL_REPORT_VALUES,
 } from '@/server/weld-read'
+import { attachSystemDocumentIds } from '@/server/generated-document-row-fields'
 import {
   applyCurrentSystemWdi,
   loadServerOtherSettings,
@@ -137,7 +139,7 @@ export async function listLnkWorkflowRows(
     ...rowsWithDuplicateControls[index],
     ...rowsWithHeatTreatmentControls[index],
   }))
-  return compactWeldRowsForTransport(rows)
+  return compactWeldRowsForTransport(await attachSystemDocumentIds(rows))
 }
 
 export async function getLnkWorkflowSummary(): Promise<LnkWorkflowSummary> {
@@ -348,7 +350,7 @@ export function buildPreHeatTreatmentFinalResultWhere() {
 }
 
 function getScopeWhere(scope: LnkWorkflowRowsRequest['scope']) {
-  if (scope === 'requestCandidates') return buildAvailableLnkRequestWhere()
+  if (scope === 'requestCandidates') return buildLnkRequestCandidateWhere()
   if (scope === 'requestRegistry') return buildAnyLnkRequestWhere(false)
   if (scope === 'resultCandidates') return buildPendingPrimaryLnkResultWhere()
   if (scope === 'resultRegistry') return buildFinalPrimaryLnkResultWhere()

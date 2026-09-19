@@ -8,6 +8,7 @@ import type {
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 
 export type RowWithId = WeldRow
 
@@ -20,6 +21,7 @@ export type ManagedLnkResultChangeHintState = {
 } | null
 
 export type UseLnkReportMutationsOptions = {
+  controlProcessSettings: ControlProcessSettings
   lnkRows: RowWithId[]
   lnkRequestOptions: string[]
   setMessage: (value: string) => void

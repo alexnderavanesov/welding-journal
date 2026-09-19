@@ -76,6 +76,7 @@ export type RemoteDocumentHistoryFilterOption = {
 export type RemoteGeneratedDocumentHistoryRequest = {
   type?: GeneratedDocumentType
   types?: GeneratedDocumentType[]
+  documentId?: number
   limit?: number
   columnFilters?: Record<string, string>
 }
@@ -280,7 +281,12 @@ async function loadRemoteGeneratedDocumentHistory(
         on ${generatedDocumentWeldJoints.documentId} = ${generatedDocuments.id}
       left join ${weldJoints}
         on ${weldJoints.id} = ${generatedDocumentWeldJoints.weldJointId}
-      where ${inArray(generatedDocuments.type, data.types)}
+      where ${data.documentId
+        ? and(
+            inArray(generatedDocuments.type, data.types),
+            eq(generatedDocuments.id, data.documentId),
+          )
+        : inArray(generatedDocuments.type, data.types)}
       group by ${generatedDocuments.id}
     ) as "document_aggregate"
   `
@@ -302,9 +308,11 @@ export function normalizeGeneratedDocumentHistoryRequest(
   data: RemoteGeneratedDocumentHistoryRequest | undefined,
 ) {
   const types = normalizeGeneratedDocumentHistoryTypes(data)
+  const documentId = normalizeDocumentHistoryDocumentId(data?.documentId)
   return {
     type: types[0],
     types,
+    ...(documentId ? { documentId } : {}),
     limit: normalizeDocumentHistoryLimit(data?.limit),
     columnFilters: normalizeDocumentHistoryColumnFilters(data?.columnFilters),
   }
@@ -322,6 +330,12 @@ export function normalizeDocumentHistoryLimit(value: unknown) {
   const numeric = Math.floor(Number(value))
   if (!Number.isFinite(numeric)) return 100
   return Math.max(1, numeric)
+}
+
+export function normalizeDocumentHistoryDocumentId(value: unknown) {
+  const numeric = Number(value)
+  if (!Number.isSafeInteger(numeric) || numeric <= 0) return undefined
+  return numeric
 }
 
 export function normalizeDocumentHistoryColumnFilters(value: unknown) {

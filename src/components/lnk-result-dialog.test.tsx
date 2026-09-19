@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { LnkResultDialog } from '@/components/lnk-result-dialog'
+import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '@/lib/control-process-settings'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { LNK_METHODS } from '@/lib/report-config'
 import { createDefaultLnkResultDraft } from '@/lib/report-draft-state'
@@ -52,6 +53,7 @@ describe('LnkResultDialog', () => {
         availableRequestOptions={[]}
         systemDocumentCreationPlan={null}
         saveCheckSettings={DEFAULT_SAVE_CHECK_SETTINGS}
+        controlProcessSettings={DEFAULT_CONTROL_PROCESS_SETTINGS}
         saveBlockReason="Нарушена хронология."
         rootCauseActions={[action]}
         onRunRootCauseAction={onRunRootCauseAction}

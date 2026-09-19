@@ -346,8 +346,13 @@ export function findFirstLnkChronologyIssue(rows: WeldInput[], settings: SaveChe
   return getLnkChronologyIssues(rows, settings)[0]?.message ?? ''
 }
 
-export function findFirstLnkChronologySaveBlockReason(rows: WeldInput[], settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS) {
-  const issue = getLnkChronologyIssues(rows, settings)[0]
+export function findFirstLnkChronologySaveBlockReason(
+  rows: WeldInput[],
+  settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+  options: { ignoredKinds?: ReadonlySet<LnkChronologyIssueKind> } = {},
+) {
+  const issue = getLnkChronologyIssues(rows, settings)
+    .find((candidate) => !options.ignoredKinds?.has(candidate.kind))
   return issue ? formatLnkChronologyIssueSaveBlockReason(issue) : ''
 }
 
@@ -355,26 +360,37 @@ export function findFirstNewLnkChronologySaveBlockReason(
   rows: WeldInput[],
   previousRows: WeldInput[],
   settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+  options: { ignoredKinds?: ReadonlySet<LnkChronologyIssueKind> } = {},
 ) {
   const previousIssueKeys = new Set(
     getLnkChronologyIssues(previousRows, settings).map(getLnkChronologyIssueIdentity),
   )
   const issue = getLnkChronologyIssues(rows, settings)
-    .find((candidate) => !previousIssueKeys.has(getLnkChronologyIssueIdentity(candidate)))
+    .find((candidate) => (
+      !options.ignoredKinds?.has(candidate.kind) &&
+      !previousIssueKeys.has(getLnkChronologyIssueIdentity(candidate))
+    ))
   return issue ? formatLnkChronologyIssueSaveBlockReason(issue) : ''
 }
 
-export function assertNoLnkChronologyIssues(rows: WeldInput[], settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS) {
-  const issue = findFirstLnkChronologySaveBlockReason(rows, settings)
-  if (issue) throw new Error(issue)
+export function assertNoLnkChronologyIssues(
+  rows: WeldInput[],
+  settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+  options: { ignoredKinds?: ReadonlySet<LnkChronologyIssueKind> } = {},
+) {
+  const issue = getLnkChronologyIssues(rows, settings)
+    .find((candidate) => !options.ignoredKinds?.has(candidate.kind))
+  const reason = issue ? formatLnkChronologyIssueSaveBlockReason(issue) : ''
+  if (reason) throw new Error(reason)
 }
 
 export function assertNoNewLnkChronologyIssues(
   rows: WeldInput[],
   previousRows: WeldInput[],
   settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+  options: { ignoredKinds?: ReadonlySet<LnkChronologyIssueKind> } = {},
 ) {
-  const issue = findFirstNewLnkChronologySaveBlockReason(rows, previousRows, settings)
+  const issue = findFirstNewLnkChronologySaveBlockReason(rows, previousRows, settings, options)
   if (issue) throw new Error(issue)
 }
 
@@ -419,7 +435,7 @@ export function getDispatcherLnkChronologyIssues(rows: LnkChronologyRow[]) {
     includeConclusionBeforeWeldIssue: true,
     includeInvalidDateIssues: true,
     includeRequestIntegrityIssues: true,
-  })
+  }).filter((issue) => issue.kind !== 'post-before-psto-cycle')
 }
 
 function getRowRequestDateOrderIssues(

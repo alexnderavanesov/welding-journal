@@ -121,10 +121,12 @@ const SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS = [
 
 export async function loadIndexedSystemDocumentHistory({
   type,
+  documentId,
   limit,
   columnFilters,
 }: {
   type: SystemDocumentType
+  documentId?: number
   limit: number
   columnFilters: Record<string, string>
 }): Promise<SqlDocumentHistoryResult<SystemDocumentSummary>> {
@@ -145,7 +147,7 @@ export async function loadIndexedSystemDocumentHistory({
       }
     }
 
-    const baseQuery = buildIndexedSystemDocumentHistoryBaseQuery(type, storageTypes)
+    const baseQuery = buildIndexedSystemDocumentHistoryBaseQuery(type, storageTypes, documentId)
     const queryResult = await tx.execute(buildDocumentHistorySqlQuery({
       baseQuery,
       columnFilters,
@@ -1477,6 +1479,7 @@ async function ensureSystemDocumentIndexInitializedInTransaction(
 function buildIndexedSystemDocumentHistoryBaseQuery(
   type: SystemDocumentType,
   storageTypes: string[],
+  documentId?: number,
 ) {
   const metadataArray = (key: string) => sql`
     case
@@ -1565,7 +1568,12 @@ function buildIndexedSystemDocumentHistoryBaseQuery(
           ${generatedDocuments.sourceMetadata} as "sourceMetadata",
           ${generatedDocuments.updatedAt} as "updatedAt"
         from ${generatedDocuments}
-        where ${inArray(generatedDocuments.type, storageTypes)}
+        where ${documentId
+          ? and(
+              inArray(generatedDocuments.type, storageTypes),
+              eq(generatedDocuments.id, documentId),
+            )
+          : inArray(generatedDocuments.type, storageTypes)}
       ) as "document_record"
     ) as "document_source"
   `

@@ -20,6 +20,7 @@ import { buildSystemDocumentCreationPlan } from '@/lib/system-document-creation-
 import { getEffectiveLnkResultDraftValueForRow } from '@/lib/lnk-result-draft'
 import { LNK_EMPTY_RESULT_VALUE } from '@/lib/report-config'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 
 type LnkResultDerivedStateParams = {
   lnkRows: WeldRow[]
@@ -32,6 +33,7 @@ type LnkResultDerivedStateParams = {
   requestConclusionSettings: RequestConclusionSettings
   saveCheckSettings: SaveCheckSettings
   isLnkResultSaving: boolean
+  controlProcessSettings: ControlProcessSettings
 }
 
 export function useLnkResultDerivedState({
@@ -45,6 +47,7 @@ export function useLnkResultDerivedState({
   requestConclusionSettings,
   saveCheckSettings,
   isLnkResultSaving,
+  controlProcessSettings,
 }: LnkResultDerivedStateParams) {
   const lnkResultMethodRequestOptions = useMemo(
     () => getLnkResultMethodRequestOptions(lnkRows, lnkResultRequestOptions, lnkResultDraft.methodKey),
@@ -120,13 +123,14 @@ export function useLnkResultDerivedState({
   })
 
   const selectedLnkResultRows = useMemo(
-    () => getSelectedLnkResultRows(lnkRows, lnkResultDraft),
+    () => getSelectedLnkResultRows(lnkRows, lnkResultDraft, controlProcessSettings),
     [
       lnkResultDraft.methodKey,
       lnkResultDraft.requestDate,
       lnkResultDraft.requestName,
       lnkResultDraft.rowIds,
       lnkRows,
+      controlProcessSettings,
     ],
   )
 
@@ -167,6 +171,7 @@ export function useLnkResultDerivedState({
         saveCheckSettings,
         selectedRows: selectedLnkResultRows,
         systemDocumentCreationPlan,
+        controlProcessSettings,
       }),
     [
       isLnkResultSaving,
@@ -179,6 +184,7 @@ export function useLnkResultDerivedState({
       saveCheckSettings,
       selectedLnkResultRows,
       systemDocumentCreationPlan,
+      controlProcessSettings,
     ],
   )
 
@@ -191,6 +197,7 @@ export function useLnkResultDerivedState({
       saveCheckSettings,
       selectedRows: selectedLnkResultRows,
       systemDocumentCreationPlan,
+      controlProcessSettings,
     }),
     [
       lnkResultDraft,
@@ -199,6 +206,7 @@ export function useLnkResultDerivedState({
       saveCheckSettings,
       selectedLnkResultRows,
       systemDocumentCreationPlan,
+      controlProcessSettings,
     ],
   )
 

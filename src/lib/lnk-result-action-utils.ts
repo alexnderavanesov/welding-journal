@@ -9,6 +9,7 @@ import {
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 
 function keepAvailableMethodKey(
   methodKey: WeldFieldKey | '',
@@ -58,6 +59,7 @@ export function resolveLnkResultDraftAfterMethodChange(
   current: LnkResultDraftState,
   lnkRows: WeldRow[],
   methodKey: WeldFieldKey | '',
+  controlProcessSettings?: ControlProcessSettings,
 ): LnkResultDraftState {
   if (!methodKey) return { ...current, methodKey: '' }
   const rowIds = new Set(
@@ -69,6 +71,7 @@ export function resolveLnkResultDraftAfterMethodChange(
             current.requestName,
             methodKey,
             current.requestDate,
+            controlProcessSettings,
           )
         : false
     }),

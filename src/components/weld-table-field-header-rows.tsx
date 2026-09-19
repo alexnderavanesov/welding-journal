@@ -25,10 +25,6 @@ import { listWeldColumnFilterOptions } from '@/server/weld-read-api'
 import type { WeldColumnFilterOption, WeldReportKind } from '@/server/weld-contracts'
 import { buildWeldTableRenderColumns } from '@/lib/weld-table-horizontal-window'
 
-const openFilterMenus: Array<{ id: number; close: () => void }> = []
-let filterMenuId = 0
-let filterMenuEscapeListenerAttached = false
-
 const WELD_FILTER_MENU_WIDTH = 384
 const WELD_FILTER_MENU_VIEWPORT_GUTTER = 16
 
@@ -159,8 +155,8 @@ function WeldColumnFilterControl({
   const [isOpen, setIsOpen] = useState(false)
   const [optionSearch, setOptionSearch] = useState('')
   const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null)
-  const menuIdRef = useRef<number | null>(null)
   const anchorRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
   const optionListRef = useRef<HTMLDivElement | null>(null)
   const optionListScrollTopRef = useRef(0)
   const pendingOptionListScrollTopRef = useRef<number | null>(null)
@@ -286,16 +282,26 @@ function WeldColumnFilterControl({
 
   useEffect(() => {
     if (!isOpen) return undefined
-    const id = ++filterMenuId
-    menuIdRef.current = id
-    const close = () => setIsOpen(false)
-    openFilterMenus.push({ id, close })
-    ensureFilterMenuEscapeListener()
-
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (anchorRef.current?.contains(target) || menuRef.current?.contains(target)) return
+      setIsOpen(false)
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (isModalDialogOpen() || isContextActionMenuOpen()) return
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      setIsOpen(false)
+      window.requestAnimationFrame(() => anchorRef.current?.focus())
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('keydown', handleKeyDown, { capture: true })
     return () => {
-      const menuIndex = openFilterMenus.findIndex((menu) => menu.id === id)
-      if (menuIndex >= 0) openFilterMenus.splice(menuIndex, 1)
-      if (menuIdRef.current === id) menuIdRef.current = null
+      document.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('keydown', handleKeyDown, { capture: true })
     }
   }, [isOpen])
 
@@ -304,15 +310,15 @@ function WeldColumnFilterControl({
       <button
         ref={anchorRef}
         type="button"
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
         onClick={() => {
-          setIsOpen((current) => {
-            if (!current) {
-              optionListScrollTopRef.current = 0
-              pendingOptionListScrollTopRef.current = null
-            }
-            return !current
-          })
-          setOptionSearch('')
+          if (!isOpen && !hasActiveFilter) {
+            optionListScrollTopRef.current = 0
+            pendingOptionListScrollTopRef.current = null
+            setOptionSearch('')
+          }
+          setIsOpen((current) => !current)
         }}
         className={`group/header-filter relative -mx-1 flex h-10 w-[calc(100%+0.5rem)] min-w-0 items-center justify-center overflow-hidden rounded-md px-1 py-1 text-[13px] font-semibold leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 ${
           hasActiveFilter || isOpen ? 'bg-white/45 text-slate-800' : 'text-slate-700 hover:bg-white/35'
@@ -333,14 +339,17 @@ function WeldColumnFilterControl({
 
       {isOpen ? createPortal(
         <div
+          ref={menuRef}
+          role="dialog"
+          aria-label={`Фильтр: ${textLabel}`}
           className="fixed z-[80] w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-slate-200 bg-white text-left shadow-xl shadow-slate-300/40"
           style={menuPosition ?? { left: WELD_FILTER_MENU_VIEWPORT_GUTTER, top: 0, visibility: 'hidden' }}
         >
           <div className="border-b border-slate-100 bg-slate-50/80 px-3 py-2.5">
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <div className="text-sm font-medium text-slate-800">Фильтр по значениям</div>
-                <div className="mt-0.5 text-xs font-normal text-slate-500">
+                <div className="mt-0.5 break-words text-xs font-normal text-slate-500">
                   {hasActiveFilter
                     ? `Активно: ${filterSummary}`
                     : isOptionsLoading
@@ -348,7 +357,7 @@ function WeldColumnFilterControl({
                       : `Найдено значений: ${options.length}`}
                 </div>
               </div>
-              <button type="button" className="text-xs font-normal text-slate-500 hover:text-slate-900" onClick={() => setIsOpen(false)}>
+              <button type="button" className="shrink-0 text-xs font-normal text-slate-500 hover:text-slate-900" onClick={() => setIsOpen(false)}>
                 Закрыть
               </button>
             </div>
@@ -363,9 +372,16 @@ function WeldColumnFilterControl({
             <div className="mt-2 flex items-center gap-2">
               <FilterQuickButton
                 label="Выбрать все"
+                disabled={options.length === 0}
                 onClick={() => setFilterValue(buildWeldColumnValueFilter(options.flatMap((option) => option.values)))}
               />
-              <FilterQuickButton label="Очистить" onClick={() => setFilterValue('')} />
+              <FilterQuickButton
+                label="Очистить"
+                onClick={() => {
+                  setOptionSearch('')
+                  setFilterValue('')
+                }}
+              />
             </div>
           </div>
           <div
@@ -390,6 +406,7 @@ function WeldColumnFilterControl({
                   <button
                     key={isDateTimeField ? option.label : option.value || '__empty__'}
                     type="button"
+                    aria-pressed={checked}
                     onClick={() => toggleValues(option.values)}
                     className={`flex w-full items-center gap-2 border-b border-slate-100 px-3 py-2 text-left text-xs font-normal last:border-b-0 hover:bg-slate-50 ${
                       checked ? 'bg-sky-50/80 text-slate-900' : 'text-slate-700'
@@ -521,6 +538,7 @@ function FilterValueRow({
   return (
     <button
       type="button"
+      aria-pressed={checked}
       onClick={onClick}
       className={`flex w-full items-center gap-2 border-b border-slate-100 px-3 py-2 text-left text-xs font-normal last:border-b-0 hover:bg-slate-50 ${
         checked ? 'bg-sky-50/80 text-slate-900' : 'text-slate-700'
@@ -539,32 +557,25 @@ function FilterValueRow({
   )
 }
 
-function FilterQuickButton({ label, onClick }: { label: string; onClick: () => void }) {
+function FilterQuickButton({
+  label,
+  disabled = false,
+  onClick,
+}: {
+  label: string
+  disabled?: boolean
+  onClick: () => void
+}) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
-      className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-normal text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+      className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-normal text-slate-600 hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
     >
       {label}
     </button>
   )
-}
-
-function ensureFilterMenuEscapeListener() {
-  if (filterMenuEscapeListenerAttached || typeof window === 'undefined') return
-  filterMenuEscapeListenerAttached = true
-  window.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return
-    if (isModalDialogOpen()) return
-    if (isContextActionMenuOpen()) return
-    const firstMenu = openFilterMenus[0]
-    if (!firstMenu) return
-    event.preventDefault()
-    event.stopPropagation()
-    event.stopImmediatePropagation()
-    firstMenu.close()
-  }, { capture: true })
 }
 
 function getColumnFilterOptions(rows: WeldRow[], fieldKey: WeldFieldKey, columnFilters: Record<string, string>): ColumnFilterOption[] {
@@ -679,11 +690,10 @@ function getColumnFilterSummary(
   if (filter) {
     const labels = isDateTimeField
       ? Array.from(new Set(filter.values.map((optionValue) => optionValue ? formatDateTimeWithSeconds(optionValue) : '(пусто)')))
-      : filter.values
+      : filter.values.map((optionValue) => optionValue || '(пусто)')
     if (labels.length === 1) return labels[0] || '(пусто)'
-    if (isDateTimeField) return `${labels.length}`
-    if (filter.values.length === 1) return filter.values[0] || '(пусто)'
-    return `${filter.values.length}`
+    const preview = labels.slice(0, 2).join(', ')
+    return `${labels.length} выбрано: ${preview}${labels.length > 2 ? ` +${labels.length - 2}` : ''}`
   }
 
   const text = value.trim()

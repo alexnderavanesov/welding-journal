@@ -6,7 +6,7 @@ import {
   type DispatcherSettingId,
   type DispatcherSettings,
 } from '@/lib/dispatcher-settings'
-import type { DispatcherTask, WeldRow } from '@/lib/dispatcher-types'
+import { isSystemDispatcherWarningTask, type DispatcherTask, type WeldRow } from '@/lib/dispatcher-types'
 import {
   buildRepeatedJointTasks,
 } from '@/lib/repeated-joint-tasks'
@@ -15,6 +15,7 @@ import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welde
 import type { DataListSettings } from '@/lib/data-list-settings'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
 import { getEarlyCoilDecisionSourceRowIds } from '@/lib/early-coil-decision'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 
 const PERCENTAGE_LINE_DISPATCHER_SETTING_IDS = [
   'percentage-missing',
@@ -40,6 +41,7 @@ export type BuildVisibleDispatcherTasksInput = {
   dispatcherSettings: DispatcherSettings
   dataListSettings?: DataListSettings
   systemIndexSettings?: SystemIndexSettings
+  controlProcessSettings?: ControlProcessSettings
   includeRepeatedJointTasks?: boolean
   includeWelderStampExpiryTasks?: boolean
   rows: WeldRow[]
@@ -54,6 +56,7 @@ export function buildVisibleDispatcherTasks({
   dispatcherSettings,
   dataListSettings,
   systemIndexSettings,
+  controlProcessSettings,
   includeRepeatedJointTasks = true,
   includeWelderStampExpiryTasks = true,
   rows,
@@ -67,6 +70,7 @@ export function buildVisibleDispatcherTasks({
         dataListSettings,
         earlyCoilDecisionSourceRowIds,
         systemIndexSettings,
+        controlProcessSettings,
         includeControlHistoryChecks: isDispatcherSettingEnabled('check-control-history', dispatcherSettings),
         includeIncompleteStampChecks: isDispatcherSettingEnabled('check-incomplete-stamps', dispatcherSettings),
         includeJointCoreDataChecks: isDispatcherSettingEnabled('check-joint-core-data', dispatcherSettings),
@@ -76,7 +80,8 @@ export function buildVisibleDispatcherTasks({
         includePstoResultCompletenessChecks: isDispatcherSettingEnabled('check-psto-result-completeness', dispatcherSettings),
         includeWelderStampCompatibilityChecks: isDispatcherSettingEnabled('check-welder-stamp', dispatcherSettings),
       }).filter(
-        (task) => !hiddenDispatcherTaskKeys.has(task.key) && isDispatcherTaskEnabled(task, dispatcherSettings),
+        (task) => isSystemDispatcherWarningTask(task) ||
+          (!hiddenDispatcherTaskKeys.has(task.key) && isDispatcherTaskEnabled(task, dispatcherSettings)),
       )
     : []
   const welderStampExpiryTasks =

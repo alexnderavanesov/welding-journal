@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { CalendarClock, FileSpreadsheet, Plus, Search, Trash2 } from 'lucide-react'
+import { ArrowLeftRight, CalendarClock, FileSpreadsheet, Plus, Search, Trash2 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
@@ -35,7 +35,10 @@ import { normalizeSearchText } from '@/lib/report-row-utils'
 import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import { usePagePagination } from '@/lib/use-page-pagination'
 import type { WeldFieldKey } from '@/lib/weld-fields'
-import { getSystemDocumentReferenceForField } from '@/lib/system-document-types'
+import {
+  getSystemDocumentReferenceForField,
+  type SystemDocumentReference,
+} from '@/lib/system-document-types'
 import type {
   WorkflowRootCauseAction,
   WorkflowRootCauseTarget,
@@ -67,6 +70,7 @@ export type PreHeatTreatmentResultManagerDialogProps = {
   onDeleteRequest: (row: WeldRow, control: PreHeatTreatmentControlRecord) => void
   onDeleteResult: (row: WeldRow, control: PreHeatTreatmentControlRecord) => void
   onOpenDocument: (row: WeldRow, fieldKey: WeldFieldKey) => void
+  onChangeControlStage?: (reference: SystemDocumentReference & { documentId: number }) => void
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
   onOpenPstoHistory?: (row: WeldRow) => void
   onCopyDocumentName: (documentName: string) => void
@@ -92,6 +96,7 @@ export function PreHeatTreatmentResultManagerDialog({
   onDeleteRequest,
   onDeleteResult,
   onOpenDocument,
+  onChangeControlStage,
   onOpenJournalRows,
   onOpenPstoHistory,
   onCopyDocumentName,
@@ -174,6 +179,9 @@ export function PreHeatTreatmentResultManagerDialog({
       managesResult ? 'conclusionName' : 'requestName',
     )
     const documentName = text(managesResult ? entry.control.conclusionName : entry.control.requestName)
+    const transferReference = documentField
+      ? getSystemDocumentReferenceForField(entry.row, documentField)
+      : null
     const deleteReason = readOnly
       ? 'НК до ТО выключен в настройках проекта. История доступна только для просмотра.'
       : managesResult
@@ -191,19 +199,35 @@ export function PreHeatTreatmentResultManagerDialog({
       documentLabel: managesResult ? 'заключение до ТО' : 'заявку до ТО',
       rows: [entry.row],
       sourceLabel: `НК ${entry.methodCode} до ТО · стык ${text(entry.row.joint) || entry.row.id}`,
-      actions: [{
-        id: 'change-document-date',
-        label: managesResult ? 'Изменить дату заключения' : 'Изменить дату заявки',
-        icon: CalendarClock,
-        disabled: !documentField || isPending || readOnly,
-        onSelect: () => {
-          setSelectedRelationId(entry.control.id)
-          setDateEditorTarget((current) => ({
-            relationId: entry.control.id,
-            token: (current?.token ?? 0) + 1,
-          }))
+      actions: [
+        {
+          id: 'change-document-date',
+          label: managesResult ? 'Изменить дату заключения' : 'Изменить дату заявки',
+          icon: CalendarClock,
+          disabled: !documentField || isPending || readOnly,
+          onSelect: () => {
+            setSelectedRelationId(entry.control.id)
+            setDateEditorTarget((current) => ({
+              relationId: entry.control.id,
+              token: (current?.token ?? 0) + 1,
+            }))
+          },
         },
-      }],
+        ...(onChangeControlStage ? [{
+          id: 'change-control-stage',
+          label: 'Изменить этап контроля',
+          icon: ArrowLeftRight,
+          disabled: !transferReference?.documentId || isPending || readOnly,
+          onSelect: () => {
+            if (transferReference?.documentId) {
+              onChangeControlStage({
+                ...transferReference,
+                documentId: transferReference.documentId,
+              })
+            }
+          },
+        }] : []),
+      ],
       dangerActions: [{
         id: managesResult ? 'delete-pre-result' : 'delete-pre-request',
         label: managesResult ? 'Удалить результат' : 'Удалить заявку',
@@ -495,6 +519,24 @@ export function PreHeatTreatmentResultManagerDialog({
                         Открыть документ
                       </Button>
                     )}
+                    {onChangeControlStage ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={!selectedDocumentReference?.documentId || isPending || readOnly}
+                        onClick={() => {
+                          if (selectedDocumentReference?.documentId) {
+                            onChangeControlStage({
+                              ...selectedDocumentReference,
+                              documentId: selectedDocumentReference.documentId,
+                            })
+                          }
+                        }}
+                      >
+                        <ArrowLeftRight className="mr-2 h-4 w-4" />
+                        Изменить этап
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               </section>

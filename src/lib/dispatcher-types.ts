@@ -100,6 +100,7 @@ export type RepeatedJointCheckTask = {
   reason?: string
   details?: string
   rootCauseActions?: WorkflowRootCauseAction[]
+  systemWarningCode?: 'СП-01'
 }
 
 export type RepeatedJointDuplicateCheckTask = {
@@ -168,6 +169,12 @@ export type WelderStampExpiryTask = {
 }
 
 export type DispatcherTask = RepeatedJointTask | WelderStampExpiryTask
+
+export function isSystemDispatcherWarningTask(
+  task: { kind?: string; systemWarningCode?: string },
+): task is RepeatedJointCheckTask & { systemWarningCode: 'СП-01' } {
+  return task.kind === 'check' && task.systemWarningCode === 'СП-01'
+}
 
 export type RepeatedJointTaskGroup = {
   key: string

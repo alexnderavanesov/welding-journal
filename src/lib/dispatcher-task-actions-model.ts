@@ -1,5 +1,6 @@
 import { getDispatcherTaskSettingId } from '@/lib/dispatcher-settings'
 import type { RepeatedJointTask } from '@/lib/dispatcher-types'
+import { isSystemDispatcherWarningTask } from '@/lib/dispatcher-types'
 import { isUnofficialJoint } from '@/lib/joint-display'
 import type { WorkflowRootCauseAction } from '@/lib/workflow-root-cause-actions'
 
@@ -38,6 +39,15 @@ export function getDispatcherTaskActionSpecs(
   task: RepeatedJointTask,
   options: DispatcherTaskActionOptions = {},
 ): DispatcherTaskActionSpec[] {
+  if (isSystemDispatcherWarningTask(task)) {
+    return (task.rootCauseActions ?? []).map((rootCauseAction) => ({
+      id: 'open-root-cause' as const,
+      key: rootCauseAction.key,
+      label: rootCauseAction.label,
+      tone: rootCauseAction.tone,
+      rootCauseAction,
+    }))
+  }
   if (task.kind === 'create') {
     return compactActions([
       action('create-joint', `Создать ${task.targetJoint}`, 'primary'),

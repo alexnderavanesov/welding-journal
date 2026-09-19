@@ -36,6 +36,7 @@ import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { LnkControlStage } from '@/lib/lnk-control-stage'
 import type { WorkflowRootCauseAction } from '@/lib/workflow-root-cause-actions'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import {
   createRequestDocumentIdentity,
   type RequestDocumentIdentity,
@@ -52,6 +53,7 @@ export type LnkResultDialogProps = {
   availableRequestOptions: RequestDocumentIdentity[]
   systemDocumentCreationPlan: SystemDocumentCreationPlan | null
   saveCheckSettings: SaveCheckSettings
+  controlProcessSettings: ControlProcessSettings
   saveBlockReason: string | null
   rootCauseActions?: WorkflowRootCauseAction[]
   onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
@@ -89,6 +91,7 @@ export function LnkResultDialog({
   availableRequestOptions,
   systemDocumentCreationPlan,
   saveCheckSettings,
+  controlProcessSettings,
   saveBlockReason,
   rootCauseActions = [],
   onRunRootCauseAction,
@@ -188,6 +191,7 @@ export function LnkResultDialog({
       draft.requestName,
       draft.methodKey,
       draft.requestDate,
+      controlProcessSettings,
     )
     contextMenuRef.current?.open(buildDialogRowContextMenu({
       ...point,
@@ -331,6 +335,7 @@ export function LnkResultDialog({
               renderItem={(row) => (
                 <LnkResultRow
                   row={row}
+                  controlProcessSettings={controlProcessSettings}
                   requestName={draft.requestName}
                   requestDate={draft.requestDate}
                   methodKey={draft.methodKey}

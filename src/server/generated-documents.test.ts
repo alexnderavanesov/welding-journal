@@ -164,6 +164,17 @@ describe('generated document history', () => {
     })
     expect(normalizeGeneratedDocumentHistoryRequest({ type: 'checklist' }).types).toEqual(['checklist'])
   })
+
+  it('keeps only a positive safe document id for exact history navigation', () => {
+    expect(normalizeGeneratedDocumentHistoryRequest({
+      type: 'checklist',
+      documentId: 42,
+    }).documentId).toBe(42)
+    expect(normalizeGeneratedDocumentHistoryRequest({
+      type: 'checklist',
+      documentId: 42.5,
+    })).not.toHaveProperty('documentId')
+  })
 })
 
 describe('generated document reassignment database load', () => {

@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LnkResultRow } from '@/components/lnk-result-row'
+import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '@/lib/control-process-settings'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
@@ -35,6 +36,7 @@ describe('LnkResultRow', () => {
       selected: false,
       rowResult: '',
       saveCheckSettings: DEFAULT_SAVE_CHECK_SETTINGS,
+      controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
       onToggleRow: vi.fn(),
       onSetRowResult: vi.fn(),
       onOpenContextMenu: vi.fn(),
@@ -71,6 +73,7 @@ describe('LnkResultRow', () => {
       methodKey: 'vikRequest' as const,
       rowResult: '',
       saveCheckSettings: DEFAULT_SAVE_CHECK_SETTINGS,
+      controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
       onToggleRow: vi.fn(),
       onSetRowResult: vi.fn(),
       onOpenContextMenu: vi.fn(),
@@ -105,6 +108,7 @@ describe('LnkResultRow', () => {
         selected={false}
         rowResult=""
         saveCheckSettings={DEFAULT_SAVE_CHECK_SETTINGS}
+        controlProcessSettings={DEFAULT_CONTROL_PROCESS_SETTINGS}
         onToggleRow={vi.fn()}
         onSetRowResult={vi.fn()}
         onOpenContextMenu={vi.fn()}

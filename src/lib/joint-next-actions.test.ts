@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type {
+  PercentageLineControlTask,
   RepeatedJointCheckTask,
   RepeatedJointCreateTask,
   RepeatedJointDeleteTask,
@@ -109,7 +110,7 @@ describe('joint next actions', () => {
 
     expect(buildJointNextActions(source, [task])[0]).toMatchObject({
       kind: 'dispatcherTask',
-      title: 'ДЗ-20 · Проверить даты ЛНК',
+      title: 'ДЗ-20 · Проверить документы и даты ЛНК',
       taskKey: task.key,
       taskActionId: 'open-root-cause',
       taskAction: {
@@ -553,6 +554,31 @@ describe('joint next actions', () => {
     }))[0]).toMatchObject({
       kind: 'primaryLnkRequest',
       title: 'Создать заявку основного НК',
+    })
+  })
+
+  it('does not use a line-scoped percentage task as the next action of one joint', () => {
+    const current = row({ finalStatus: 'годен', stamp1K: 'A1' })
+    const task: PercentageLineControlTask = {
+      kind: 'percentage-line-control',
+      key: 'percentage-line-control:new-welder:l-1:a1',
+      row: current,
+      issue: 'new-welder',
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-1',
+      stamp: 'A1',
+      title: 'Новый сварщик на процентной линии',
+      details: 'Проверьте клеймо.',
+      requiredControls: 1,
+      coveredControls: 0,
+      assignedControls: 0,
+      count: 1,
+    }
+
+    expect(buildJointNextActions(current, [task])[0]).toMatchObject({
+      kind: 'complete',
+      title: 'Работа по стыку завершена',
     })
   })
 })

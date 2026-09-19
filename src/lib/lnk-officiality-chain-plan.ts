@@ -347,6 +347,7 @@ function isTransitionInAffectedChain(
 function isOfficialityPlanBlockingTask(task: RepeatedJointTask) {
   if (task.kind === 'duplicate-check' || task.kind === 'delete' || task.kind === 'rename') return true
   if (task.kind !== 'check') return false
+  if (task.systemWarningCode) return false
   const settingId = getDispatcherTaskSettingId(task)
   return settingId === 'chain-consistency' ||
     settingId === 'chain-duplicate' ||

@@ -70,6 +70,8 @@ test('shows the protected process tab before locking and keeps RK exposures ther
   await page.getByRole('button', { name: 'Процессы контроля', exact: true }).click()
   await expect(page.getByRole('switch', { name: /^Послойный НК/ })).toBeChecked()
   await expect(page.getByRole('switch', { name: /^НК до ТО/ })).toBeChecked()
+  await expect(page.getByRole('switch', { name: /^Разрешать основной НК/ })).not.toBeChecked()
+  await expect(page.getByRole('switch', { name: /^Разрешать основной НК/ })).toBeEnabled()
   await expect(page.getByRole('heading', { name: 'Параметры РК', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Экспозиции по диаметрам', exact: true })).toBeVisible()
 
@@ -91,6 +93,7 @@ test('shows the protected process tab before locking and keeps RK exposures ther
   await expect.poll(() => loadControlSettings()).toEqual({
     layeredControlEnabled: true,
     preHeatTreatmentLnkEnabled: true,
+    allowPrimaryLnkBeforePreviousStagesComplete: false,
   })
 
   await page.getByLabel('Пароль', { exact: true }).fill(SETTINGS_PASSWORD)
@@ -100,6 +103,7 @@ test('shows the protected process tab before locking and keeps RK exposures ther
   await expect.poll(() => loadControlSettings()).toEqual({
     layeredControlEnabled: false,
     preHeatTreatmentLnkEnabled: true,
+    allowPrimaryLnkBeforePreviousStagesComplete: false,
   })
 
   await layeredSwitch.locator('xpath=..').click()
@@ -154,6 +158,7 @@ test('blocks disabling pre-TO NDT and preserves exemptions only for a started PS
   await expect.poll(() => loadControlSettings()).toEqual({
     layeredControlEnabled: true,
     preHeatTreatmentLnkEnabled: true,
+    allowPrimaryLnkBeforePreviousStagesComplete: false,
   })
 
   await completePreHeatTreatmentBlocker()
@@ -164,6 +169,7 @@ test('blocks disabling pre-TO NDT and preserves exemptions only for a started PS
   await preSwitch.locator('xpath=..').click()
   await page.getByRole('button', { name: 'Выключить', exact: true }).click()
   await expect(preSwitch).not.toBeChecked()
+  await expect(page.getByRole('switch', { name: /^Разрешать основной НК/ })).toBeDisabled()
   await expect.poll(() => loadPreHeatTreatmentExemptions()).toEqual([
     ['F-PRE-A1', true],
     ['F-PRE-A2', true],
@@ -182,6 +188,7 @@ test('blocks disabling pre-TO NDT and preserves exemptions only for a started PS
   await preSwitch.locator('xpath=..').click()
   await page.getByRole('button', { name: 'Включить', exact: true }).click()
   await expect(preSwitch).toBeChecked()
+  await expect(page.getByRole('switch', { name: /^Разрешать основной НК/ })).toBeEnabled()
   await expect.poll(() => loadPreHeatTreatmentExemptions()).toEqual([
     ['F-PRE-A1', true],
     ['F-PRE-A2', true],
@@ -327,11 +334,16 @@ async function loadControlSettings() {
       [CONTROL_SETTINGS_KEY],
     )
     if (!result.rows[0]) {
-      return { layeredControlEnabled: true, preHeatTreatmentLnkEnabled: true }
+      return {
+        layeredControlEnabled: true,
+        preHeatTreatmentLnkEnabled: true,
+        allowPrimaryLnkBeforePreviousStagesComplete: false,
+      }
     }
     return JSON.parse(result.rows[0].value) as {
       layeredControlEnabled: boolean
       preHeatTreatmentLnkEnabled: boolean
+      allowPrimaryLnkBeforePreviousStagesComplete: boolean
     }
   })
 }

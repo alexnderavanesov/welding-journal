@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import type { DuplicateControlDialogProps } from '@/components/duplicate-control-dialog'
 import type { LnkOfficialityDialogProps } from '@/components/lnk-officiality-dialog'
+import type { LnkStageTransferDialogProps } from '@/components/lnk-stage-transfer-dialog'
 import type { LnkRequestDialogProps } from '@/components/lnk-request-dialog'
 import type { LnkRequestManagerDialogProps } from '@/components/lnk-request-manager-dialog'
 import type { LnkResultDialogProps } from '@/components/lnk-result-dialog'
@@ -11,6 +12,7 @@ import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 
 const DuplicateControlDialog = lazy(() => import('@/components/duplicate-control-dialog').then((module) => ({ default: module.DuplicateControlDialog })))
 const LnkOfficialityDialog = lazy(() => import('@/components/lnk-officiality-dialog').then((module) => ({ default: module.LnkOfficialityDialog })))
+const LnkStageTransferDialog = lazy(() => import('@/components/lnk-stage-transfer-dialog').then((module) => ({ default: module.LnkStageTransferDialog })))
 const LnkRequestDialog = lazy(() => import('@/components/lnk-request-dialog').then((module) => ({ default: module.LnkRequestDialog })))
 const LnkRequestManagerDialog = lazy(() => import('@/components/lnk-request-manager-dialog').then((module) => ({ default: module.LnkRequestManagerDialog })))
 const LnkResultDialog = lazy(() => import('@/components/lnk-result-dialog').then((module) => ({ default: module.LnkResultDialog })))
@@ -27,6 +29,7 @@ export type ReportLnkDialogsProps = {
   resultDialogProps: LnkResultDialogProps | null
   preHeatTreatmentWorkflowDialogProps: PreHeatTreatmentLnkWorkflowDialogProps | null
   preHeatTreatmentResultManagerDialogProps: PreHeatTreatmentResultManagerDialogProps | null
+  stageTransferDialogProps?: LnkStageTransferDialogProps | null
 }
 
 export function ReportLnkDialogs({
@@ -38,6 +41,7 @@ export function ReportLnkDialogs({
   resultDialogProps,
   preHeatTreatmentWorkflowDialogProps,
   preHeatTreatmentResultManagerDialogProps,
+  stageTransferDialogProps,
 }: ReportLnkDialogsProps) {
   return (
     <>
@@ -49,6 +53,7 @@ export function ReportLnkDialogs({
         {preHeatTreatmentWorkflowDialogProps ? (
           <PreHeatTreatmentLnkWorkflowDialog {...preHeatTreatmentWorkflowDialogProps} />
         ) : null}
+        {stageTransferDialogProps ? <LnkStageTransferDialog {...stageTransferDialogProps} /> : null}
       </Suspense>
       {requestManagerDialogProps ? (
         <WorkflowDialogShell variant="manager" elevated={requestManagerDialogProps.elevated}>

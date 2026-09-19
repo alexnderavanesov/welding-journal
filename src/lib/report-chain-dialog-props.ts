@@ -15,6 +15,7 @@ type CreateReportChainDialogPropsOptions = {
   onOpenRow: ChainDialogProps['onOpenRow']
   onOpenDocument: ChainDialogProps['onOpenDocument']
   onOpenReport: ChainDialogProps['onOpenReport']
+  onOpenLineInDispatcher: ChainDialogProps['onOpenLineInDispatcher']
   onEditRow: ChainDialogProps['onEditRow']
   onRunNextAction: ChainDialogProps['onRunNextAction']
   onRunDispatcherTaskAction: ChainDialogProps['onRunDispatcherTaskAction']
@@ -44,6 +45,7 @@ export function createReportChainDialogProps({
   onOpenRow,
   onOpenDocument,
   onOpenReport,
+  onOpenLineInDispatcher,
   onEditRow,
   onRunNextAction,
   onRunDispatcherTaskAction,
@@ -74,6 +76,7 @@ export function createReportChainDialogProps({
           onOpenRow,
           onOpenDocument,
           onOpenReport,
+          onOpenLineInDispatcher,
           onEditRow,
           onRunNextAction,
           onRunDispatcherTaskAction,

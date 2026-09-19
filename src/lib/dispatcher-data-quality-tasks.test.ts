@@ -8,11 +8,13 @@ import {
   buildJointCoreDataCheckTasks,
   buildLnkChronologyCheckTasks,
   buildLnkResultCompletenessCheckTasks,
+  buildPrimaryLnkStageDebtSystemWarnings,
   buildPstoChronologyCheckTasks,
   buildPstoResultCompletenessCheckTasks,
   buildWelderStampCompatibilityCheckTasks,
 } from '@/lib/repeated-joint-check-tasks'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '@/lib/control-process-settings'
 
 describe('dispatcher data quality tasks', () => {
   it('moves LNK control-before-weld chronology into one DЗ-20 task and does not emit DЗ-16', () => {
@@ -33,7 +35,7 @@ describe('dispatcher data quality tasks', () => {
     expect(tasks.map(getDispatcherTaskCode)).not.toContain('ДЗ-16')
   })
 
-  it('keeps DZ-20 until a preserved primary LNK set receives its missing pre-TO and PSTO history', () => {
+  it('moves an incomplete staged-control sequence from DZ-20 to the required SP-01 warning', () => {
     const legacyPrimary = row({
       id: 8,
       weldDate: '2026-08-01',
@@ -46,10 +48,12 @@ describe('dispatcher data quality tasks', () => {
       vikConclusion: 'Существующее заключение ВИК основное',
     })
 
-    const pendingTasks = buildLnkChronologyCheckTasks([legacyPrimary])
-    expect(pendingTasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(pendingTasks[0])).toBe('ДЗ-20')
-    expect(pendingTasks[0].details).toContain('до завершения цикла ПСТО и ТВМТ')
+    expect(buildLnkChronologyCheckTasks([legacyPrimary])).toEqual([])
+    const pendingWarnings = buildPrimaryLnkStageDebtSystemWarnings([legacyPrimary])
+    expect(pendingWarnings).toHaveLength(1)
+    expect(getDispatcherTaskCode(pendingWarnings[0])).toBe('СП-01')
+    expect(pendingWarnings[0].details).toContain('основной НК уже оформляется по методам ВИК')
+    expect(pendingWarnings[0].rootCauseActions?.[0].label).toBe('Создать заявку НК до ТО')
 
     const completedTasks = buildLnkChronologyCheckTasks([row({
       ...legacyPrimary,
@@ -74,6 +78,140 @@ describe('dispatcher data quality tasks', () => {
       tvmtConclusion: 'Заключение ТВМТ',
     })])
     expect(completedTasks).toEqual([])
+    expect(buildPrimaryLnkStageDebtSystemWarnings([row({
+      ...legacyPrimary,
+      preHeatTreatmentControls: [{
+        id: 80,
+        weldJointId: 8,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        requestDate: '2026-08-02',
+        result: 'годен',
+        conclusionDate: '2026-08-03',
+        conclusionName: 'Заключение ВИК до ТО',
+      }],
+      pstoRequest: 'Заявка ПСТО',
+      pstoRequestDate: '2026-08-04',
+      pstoResult: 'проведено',
+      pstoDate: '2026-08-05',
+      tvmtRequest: 'Заявка ТВМТ',
+      tvmtRequestDate: '2026-08-05',
+      tvmtResult: 'годен',
+      tvmtConclusionDate: '2026-08-06',
+      tvmtConclusion: 'Заключение ТВМТ',
+    })])).toEqual([])
+  })
+
+  it('keeps real LNK date errors as DZ-20 alongside SP-01', () => {
+    const incomplete = row({
+      weldDate: '2026-08-01',
+      pstoRequired: 'да',
+      hasVik: 'да',
+      vikRequest: 'Основная заявка ВИК',
+      vikRequestDate: '2026-07-31',
+    })
+
+    expect(buildLnkChronologyCheckTasks([incomplete]).map(getDispatcherTaskCode)).toEqual(['ДЗ-20'])
+    expect(buildPrimaryLnkStageDebtSystemWarnings([incomplete]).map(getDispatcherTaskCode)).toEqual(['СП-01'])
+  })
+
+  it('aggregates methods into one SP-01 and advances its contextual action', () => {
+    const base = row({
+      pstoRequired: 'да',
+      hasVik: 'да',
+      hasRk: 'да',
+      vikRequest: 'Основная заявка ВИК',
+      rkRequest: 'Основная заявка РК',
+    })
+
+    const [requestWarning] = buildPrimaryLnkStageDebtSystemWarnings([base])
+    expect(requestWarning.details).toContain('ВИК, РК')
+    expect(requestWarning.rootCauseActions?.[0].label).toBe('Создать заявку НК до ТО')
+
+    const [resultWarning] = buildPrimaryLnkStageDebtSystemWarnings([row({
+      ...base,
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+      }, {
+        id: 2,
+        weldJointId: 1,
+        method: 'РК',
+        requestName: 'Заявка РК до ТО',
+      }],
+    })])
+    expect(resultWarning.rootCauseActions?.[0].label).toBe('Внести результат НК до ТО')
+
+    const [mixedWarning] = buildPrimaryLnkStageDebtSystemWarnings([row({
+      ...base,
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        result: 'годен',
+      }],
+    })])
+    expect(mixedWarning.details).toContain('заявка РК до ТО')
+    expect(mixedWarning.rootCauseActions?.[0]).toMatchObject({
+      label: 'Создать заявку НК до ТО',
+      target: {
+        kind: 'lnk-control',
+        methodCode: 'РК',
+        documentPart: 'request',
+      },
+    })
+
+    const preComplete = row({
+      ...base,
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        result: 'годен',
+      }, {
+        id: 2,
+        weldJointId: 1,
+        method: 'РК',
+        requestName: 'Заявка РК до ТО',
+        result: 'годен',
+      }],
+    })
+    expect(buildPrimaryLnkStageDebtSystemWarnings([preComplete])[0]
+      .rootCauseActions?.[0].label).toBe('Открыть ПСТО')
+
+    expect(buildPrimaryLnkStageDebtSystemWarnings([row({
+      ...preComplete,
+      pstoRequest: 'Заявка ПСТО',
+      pstoResult: 'проведено',
+      pstoDate: '2026-08-05',
+    })])[0].rootCauseActions?.[0].label).toBe('Открыть ТВМТ')
+  })
+
+  it('does not create SP-01 without a primary trace or when the parent process is disabled', () => {
+    const rowWithoutPrimaryTrace = row({ pstoRequired: 'да', hasVik: 'да' })
+    expect(buildPrimaryLnkStageDebtSystemWarnings([rowWithoutPrimaryTrace])).toEqual([])
+
+    const staleTraceForUnassignedMethod = row({
+      pstoRequired: 'да',
+      hasVik: 'нет',
+      vikRequest: 'Старая заявка ВИК',
+    })
+    expect(buildPrimaryLnkStageDebtSystemWarnings([staleTraceForUnassignedMethod])).toEqual([])
+
+    const rowWithPrimaryTrace = row({
+      pstoRequired: 'да',
+      hasVik: 'да',
+      vikRequest: 'Основная заявка ВИК',
+    })
+    expect(buildPrimaryLnkStageDebtSystemWarnings([rowWithPrimaryTrace], {
+      ...DEFAULT_CONTROL_PROCESS_SETTINGS,
+      preHeatTreatmentLnkEnabled: false,
+      allowPrimaryLnkBeforePreviousStagesComplete: false,
+    })).toEqual([])
   })
 
   it('persists exact F5 chronology correction targets on the DZ-20 task', () => {

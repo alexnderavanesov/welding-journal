@@ -19,7 +19,10 @@ import {
   type SystemIndexSettings,
 } from '@/lib/system-index-settings'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
-import { findFirstNewLnkChronologySaveBlockReason } from '@/lib/lnk-chronology-checks'
+import {
+  findFirstNewLnkChronologySaveBlockReason,
+  type LnkChronologyIssueKind,
+} from '@/lib/lnk-chronology-checks'
 import { findFirstNewPstoChronologySaveBlockReason } from '@/lib/psto-chronology-checks'
 import { hasPstoExecutionHistory } from '@/lib/psto-cycle'
 import {
@@ -45,6 +48,7 @@ export function getWeldFormSaveBlockReason(
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
   options: {
     allowSystemJointName?: boolean
+    allowPrimaryLnkStageDebt?: boolean
     systemIndexSettings?: SystemIndexSettings
   } = {},
 ) {
@@ -79,7 +83,14 @@ export function getWeldFormSaveBlockReason(
 
   if (shouldCheckDocumentChronologyForForm(draft, initialValue)) {
     const documentChronologyReason =
-      findFirstNewLnkChronologySaveBlockReason([draft], [initialValue], saveCheckSettings) ||
+      findFirstNewLnkChronologySaveBlockReason(
+        [draft],
+        [initialValue],
+        saveCheckSettings,
+        options.allowPrimaryLnkStageDebt
+          ? { ignoredKinds: PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS }
+          : undefined,
+      ) ||
       findFirstNewPstoChronologySaveBlockReason([draft], [initialValue], saveCheckSettings)
     if (documentChronologyReason) return documentChronologyReason
   }
@@ -112,6 +123,10 @@ export function getWeldFormSaveBlockReason(
     : null
   return manualJointNameReason ? formatSaveCheckBlockReason('manualJointName', manualJointNameReason) : null
 }
+
+const PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS = new Set<LnkChronologyIssueKind>([
+  'post-before-psto-cycle',
+])
 
 function shouldCheckDocumentChronologyForForm(draft: WeldInput, initialValue: WeldDraft) {
   if (!initialValue.id) return true

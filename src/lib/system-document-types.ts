@@ -166,6 +166,7 @@ export function getSystemDocumentReferenceForField(
   if (currentCycle?.source === 'repeat') {
     if (fieldKey === 'pstoRequest') {
       return createReference({
+        documentId,
         type: 'pstoRequest',
         title: currentCycle.pstoRequest,
         date: currentCycle.pstoRequestDate,
@@ -175,6 +176,7 @@ export function getSystemDocumentReferenceForField(
     }
     if (fieldKey === 'heatTreatmentDiagram') {
       return createReference({
+        documentId,
         type: 'pstoConclusion',
         title: currentCycle.heatTreatmentDiagram,
         date: currentCycle.pstoDate,
@@ -184,6 +186,7 @@ export function getSystemDocumentReferenceForField(
     }
     if (fieldKey === 'tvmtRequest') {
       return createReference({
+        documentId,
         type: 'lnkRequest',
         title: currentCycle.tvmtRequest,
         date: currentCycle.tvmtRequestDate,
@@ -194,6 +197,7 @@ export function getSystemDocumentReferenceForField(
     }
     if (fieldKey === 'tvmtConclusion') {
       return createReference({
+        documentId,
         type: 'lnkConclusion',
         title: currentCycle.tvmtConclusion,
         date: currentCycle.tvmtConclusionDate,

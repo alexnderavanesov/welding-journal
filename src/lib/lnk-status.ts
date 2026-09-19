@@ -20,13 +20,14 @@ import { parseJointChainName } from '@/lib/joint-chain'
 import { loadOtherSettings } from '@/lib/other-settings'
 import { getRkExposureSchemeState } from '@/lib/rk-exposure'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { formatFinalStatusDisplay } from '@/lib/weld-status'
 import { getDuplicateControls, getRejectedDuplicateControls } from '@/lib/duplicate-control-utils'
 import { CONTROL_BASIS_SUMMARY_FIELD_KEY, formatControlBasisSummary } from '@/lib/control-assignment-basis'
 import {
   getRejectedPreHeatTreatmentControls,
   getPrimaryPstoStartStatusLabel,
-  isPrimaryLnkStageReady,
+  canUsePrimaryLnkStage,
 } from '@/lib/lnk-control-stage'
 import { getPreHeatTreatmentReportValue } from '@/lib/pre-heat-treatment-report-fields'
 import {
@@ -89,12 +90,20 @@ export function hasPendingLnkRequestResult(row: WeldInput) {
   )
 }
 
-export function getAvailableLnkRequestMethods(row: WeldInput) {
+export function getAvailableLnkRequestMethods(
+  row: WeldInput,
+  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>,
+) {
+  return getLnkRequestCandidateMethods(row).filter((method) =>
+    canUsePrimaryLnkStage(row, method.code, settings),
+  )
+}
+
+export function getLnkRequestCandidateMethods(row: WeldInput) {
   if (hasRejectedLnkResult(row)) return []
   return LNK_METHODS.filter((method) =>
     isEnabledControlValue(row[method.enabledKey]) &&
-    !hasText(row[method.requestKey]) &&
-    isPrimaryLnkStageReady(row, method.code),
+    !hasText(row[method.requestKey]),
   )
 }
 

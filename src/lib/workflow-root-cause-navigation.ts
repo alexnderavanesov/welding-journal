@@ -10,6 +10,7 @@ export type WorkflowRootCauseDestination =
   | 'lnk-result-manager'
   | 'lnk-result-dialog'
   | 'pre-lnk-manager'
+  | 'pre-lnk-workflow'
   | 'psto-request-manager'
   | 'psto-result-manager'
   | 'duplicate-control'
@@ -25,7 +26,9 @@ export function getWorkflowRootCauseDestination(
       ? 'psto-request-manager'
       : 'psto-result-manager'
   }
-  if (target.stage === 'beforeHeatTreatment') return 'pre-lnk-manager'
+  if (target.stage === 'beforeHeatTreatment') {
+    return target.intent === 'complete-stage' ? 'pre-lnk-workflow' : 'pre-lnk-manager'
+  }
   const method = LNK_METHODS.find((candidate) => candidate.code === target.methodCode)
   if (target.documentPart === 'request') {
     if (method && String(row[method.requestKey] ?? '').trim()) return 'lnk-request-manager'

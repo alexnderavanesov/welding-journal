@@ -1369,7 +1369,7 @@ export async function extendLnkRequest({
       name: data.requestName,
       date: data.requestDate,
     }])
-    await loadControlProcessSettingsFromTransaction(tx)
+    const processSettings = await loadControlProcessSettingsFromTransaction(tx)
     const targetIds = [...new Set(data.targets.map((target) => target.rowId))]
     const lockedRows = await tx
       .select()
@@ -1398,6 +1398,7 @@ export async function extendLnkRequest({
       targets: data.targets,
       requestName: data.requestName,
       requestDate: data.requestDate,
+      controlProcessSettings: processSettings,
     })
     const previousRows = new Map(targetRows.map((row) => [row.id, row]))
     const validationContext = await loadServerWeldValidationContext(tx, lockedRows)

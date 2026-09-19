@@ -4,6 +4,7 @@ import { buildDispatcherTaskCodeGroups } from '@/lib/dispatcher-code-groups'
 import type {
   LineConsistencyTask,
   PercentageLineControlTask,
+  RepeatedJointCheckTask,
   RepeatedJointTaskGroup,
   WeldRow,
 } from '@/lib/dispatcher-types'
@@ -50,7 +51,36 @@ describe('buildDispatcherTaskCodeGroups', () => {
     expect(result.objectGroups).toHaveLength(2)
     expect(result.metric).toBe('лишних 7')
   })
+
+  it('keeps mandatory system warnings before configurable dispatcher tasks', () => {
+    const dispatcherTask = createLineTask()
+    const systemWarning = createSystemWarningTask()
+    const groups: RepeatedJointTaskGroup[] = [{
+      key: 'mixed-warnings',
+      baseJoint: 'F18',
+      tasks: [dispatcherTask, systemWarning],
+    }]
+
+    expect(buildDispatcherTaskCodeGroups(groups).map((group) => group.code))
+      .toEqual(['СП-01', 'ДЗ-27'])
+  })
 })
+
+function createSystemWarningTask(): RepeatedJointCheckTask {
+  const currentRow = createRow(18)
+  return {
+    kind: 'check',
+    key: 'sp-01:18',
+    row: currentRow,
+    sourceRow: currentRow,
+    sourceJoint: 'F18',
+    targetJoint: 'F18',
+    baseJoint: 'F18',
+    suffix: 'R',
+    reason: 'Нарушена последовательность контроля.',
+    systemWarningCode: 'СП-01',
+  }
+}
 
 function createLineTask(): LineConsistencyTask {
   return {

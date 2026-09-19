@@ -3,6 +3,10 @@ import type { WeldFilters } from '@/server/weld-contracts'
 import type { ActiveReport } from '@/lib/home-state'
 import type { DispatcherTask, WeldRow } from '@/lib/dispatcher-types'
 import {
+  DISPATCHER_TASKS_FIELD_KEY,
+  DISPATCHER_TASKS_WITH_FILTER,
+} from '@/lib/dispatcher-task-row-codes'
+import {
   buildExactJointFilters,
   buildJointChainFilters,
   buildLineFilters,
@@ -58,6 +62,17 @@ export function useJointChainActions({
     if (task.kind === 'welder-stamp-expiry') return
     setChainRecord(task.row)
     setMessage(`Открыта картина стыка ${String(task.row.joint ?? '-').trim() || '-'}`)
+  }
+
+  function openLineInDispatcher(row: WeldRow) {
+    beginReportNavigation('weldingJournal')
+    setChainRecord(null)
+    setActiveReport('weldingJournal')
+    setColumnFilters({
+      ...buildLineFilters(row),
+      [DISPATCHER_TASKS_FIELD_KEY]: DISPATCHER_TASKS_WITH_FILTER,
+    } as WeldFilters)
+    setMessage(`Открыты задачи линии ${String(row.line ?? '-').trim() || '-'}`)
   }
 
   function showRepeatedJointTask(task: DispatcherTask) {
@@ -206,6 +221,7 @@ export function useJointChainActions({
   return {
     openChainBaseInCurrentReport,
     openChainRowInCurrentReport,
+    openLineInDispatcher,
     openLinkedReportRow,
     openRowInReport,
     openRowsInReport,

@@ -7,6 +7,7 @@ type ReportModalEscapeKeyOptions = {
   isPstoResultManagerOpen: boolean
   isLnkRequestManagerOpen: boolean
   isLnkResultManagerOpen: boolean
+  isLnkStageTransferOpen?: boolean
   isPreHeatTreatmentWorkflowOpen?: boolean
   isPreHeatTreatmentResultManagerOpen?: boolean
   isTvmtWorkflowOpen?: boolean
@@ -24,12 +25,14 @@ type ReportModalEscapeKeyOptions = {
   canClosePstoResultManager: boolean
   canCloseLnkRequestManager: boolean
   canCloseLnkResultManager: boolean
+  canCloseLnkStageTransfer?: boolean
   canClosePreHeatTreatmentResultManager?: boolean
   canCloseRkExposureModal: boolean
   onClosePstoRequestManager: () => void
   onClosePstoResultManager: () => void
   onCloseLnkRequestManager: () => void
   onCloseLnkResultManager: () => void
+  onCloseLnkStageTransfer?: () => void
   onClosePreHeatTreatmentWorkflow?: () => void
   onClosePreHeatTreatmentResultManager?: () => void
   onCloseTvmtWorkflow?: () => void
@@ -51,6 +54,7 @@ export function useReportModalEscapeKey({
   isPstoResultManagerOpen,
   isLnkRequestManagerOpen,
   isLnkResultManagerOpen,
+  isLnkStageTransferOpen = false,
   isPreHeatTreatmentWorkflowOpen = false,
   isPreHeatTreatmentResultManagerOpen = false,
   isTvmtWorkflowOpen = false,
@@ -68,12 +72,14 @@ export function useReportModalEscapeKey({
   canClosePstoResultManager,
   canCloseLnkRequestManager,
   canCloseLnkResultManager,
+  canCloseLnkStageTransfer = true,
   canClosePreHeatTreatmentResultManager = true,
   canCloseRkExposureModal,
   onClosePstoRequestManager,
   onClosePstoResultManager,
   onCloseLnkRequestManager,
   onCloseLnkResultManager,
+  onCloseLnkStageTransfer,
   onClosePreHeatTreatmentWorkflow,
   onClosePreHeatTreatmentResultManager,
   onCloseTvmtWorkflow,
@@ -99,6 +105,10 @@ export function useReportModalEscapeKey({
 
       if (isReportImportModalOpen) {
         onCloseReportImportModal()
+        return
+      }
+      if (isLnkStageTransferOpen) {
+        if (canCloseLnkStageTransfer) onCloseLnkStageTransfer?.()
         return
       }
       if (isPstoLineProgramOpen) {
@@ -174,6 +184,7 @@ export function useReportModalEscapeKey({
     isPstoResultManagerOpen,
     isLnkRequestManagerOpen,
     isLnkResultManagerOpen,
+    isLnkStageTransferOpen,
     isPreHeatTreatmentWorkflowOpen,
     isPreHeatTreatmentResultManagerOpen,
     isTvmtWorkflowOpen,
@@ -191,12 +202,14 @@ export function useReportModalEscapeKey({
     canClosePstoResultManager,
     canCloseLnkRequestManager,
     canCloseLnkResultManager,
+    canCloseLnkStageTransfer,
     canClosePreHeatTreatmentResultManager,
     canCloseRkExposureModal,
     onClosePstoRequestManager,
     onClosePstoResultManager,
     onCloseLnkRequestManager,
     onCloseLnkResultManager,
+    onCloseLnkStageTransfer,
     onClosePreHeatTreatmentWorkflow,
     onClosePreHeatTreatmentResultManager,
     onCloseTvmtWorkflow,
@@ -216,6 +229,7 @@ export function useReportModalEscapeKey({
 export function shouldDeferModalEscape() {
   return Boolean(
     document.querySelector('[data-confirm-action-dialog="true"]') ||
+    document.querySelector('[data-dispatcher-action-menu="true"]') ||
     isContextActionMenuOpen(),
   )
 }

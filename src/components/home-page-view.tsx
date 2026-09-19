@@ -43,8 +43,8 @@ type HomePageViewProps = {
   onOpenDocumentJointHistory: ComponentProps<typeof ReportMainContent>['onOpenDocumentJointHistory']
   documentsPageType: ComponentProps<typeof ReportMainContent>['documentsPageType']
   onDocumentsPageTypeChange: ComponentProps<typeof ReportMainContent>['onDocumentsPageTypeChange']
-  systemDocumentNavigationRequest: ComponentProps<typeof ReportMainContent>['systemDocumentNavigationRequest']
-  onSystemDocumentNavigationRequestHandled: ComponentProps<typeof ReportMainContent>['onSystemDocumentNavigationRequestHandled']
+  documentNavigationRequest: ComponentProps<typeof ReportMainContent>['documentNavigationRequest']
+  onDocumentNavigationRequestHandled: ComponentProps<typeof ReportMainContent>['onDocumentNavigationRequestHandled']
   reportChainDialogProps: ComponentProps<typeof ReportDialogs>['chainDialogProps']
   reportWeldEditorProps: ComponentProps<typeof ReportDialogs>['weldEditorProps']
   reportPstoDialogsProps: ComponentProps<typeof ReportDialogs>['pstoDialogsProps']
@@ -87,8 +87,8 @@ export function HomePageView({
   onOpenDocumentJointHistory,
   documentsPageType,
   onDocumentsPageTypeChange,
-  systemDocumentNavigationRequest,
-  onSystemDocumentNavigationRequestHandled,
+  documentNavigationRequest,
+  onDocumentNavigationRequestHandled,
   reportChainDialogProps,
   reportWeldEditorProps,
   reportPstoDialogsProps,
@@ -120,8 +120,8 @@ export function HomePageView({
     onOpenDocumentJointHistory,
     documentsPageType,
     onDocumentsPageTypeChange,
-    systemDocumentNavigationRequest,
-    onSystemDocumentNavigationRequestHandled,
+    documentNavigationRequest,
+    onDocumentNavigationRequestHandled,
   }, freezeReportBackground)
 
   return (
@@ -184,8 +184,8 @@ type ReportBackgroundProps = Pick<
   | 'onOpenDocumentJointHistory'
   | 'documentsPageType'
   | 'onDocumentsPageTypeChange'
-  | 'systemDocumentNavigationRequest'
-  | 'onSystemDocumentNavigationRequestHandled'
+  | 'documentNavigationRequest'
+  | 'onDocumentNavigationRequestHandled'
 >
 
 const MemoizedReportBackground = memo(ReportBackground)
@@ -212,8 +212,8 @@ function ReportBackground({
   onOpenDocumentJointHistory,
   documentsPageType,
   onDocumentsPageTypeChange,
-  systemDocumentNavigationRequest,
-  onSystemDocumentNavigationRequestHandled,
+  documentNavigationRequest,
+  onDocumentNavigationRequestHandled,
 }: ReportBackgroundProps) {
   const isStandaloneReport =
     activeReport === 'statistics' ||
@@ -254,8 +254,8 @@ function ReportBackground({
         onOpenDocumentJointHistory={onOpenDocumentJointHistory}
         documentsPageType={documentsPageType}
         onDocumentsPageTypeChange={onDocumentsPageTypeChange}
-        systemDocumentNavigationRequest={systemDocumentNavigationRequest}
-        onSystemDocumentNavigationRequestHandled={onSystemDocumentNavigationRequestHandled}
+        documentNavigationRequest={documentNavigationRequest}
+        onDocumentNavigationRequestHandled={onDocumentNavigationRequestHandled}
         reportTaskPanels={isWeldTableReport ? reportTaskPanels : null}
       />
     </>

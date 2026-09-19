@@ -49,6 +49,9 @@ export function getRepeatedJointTaskTitle(task: DispatcherTask) {
   if (task.kind === 'duplicate-check') return { joint: task.baseJoint, type: 'Возможный дубль' }
   if (task.kind === 'line-consistency') return { joint: task.line, type: task.title }
   if (task.kind === 'percentage-line-control') return { joint: task.line, type: task.title }
+  if (task.systemWarningCode === 'СП-01') {
+    return { joint: task.sourceJoint, type: 'Завершить предыдущие этапы контроля' }
+  }
 
   const reason = task.reason ?? ''
   if (reason === 'проверить даты сварки') return { joint: task.sourceJoint, type: 'Проверить даты сварки' }
@@ -59,7 +62,7 @@ export function getRepeatedJointTaskTitle(task: DispatcherTask) {
   if (reason === 'дозаполнить клейма_1') return { joint: task.sourceJoint, type: 'Дозаполнить клейма_1' }
   if (reason === 'дозаполнить клейма_2') return { joint: task.sourceJoint, type: 'Дозаполнить клейма_2' }
   if (reason === 'дозаполнить дату сварки') return { joint: task.sourceJoint, type: 'Дозаполнить дату сварки' }
-  if (reason === LNK_REQUEST_DATE_ORDER_REASON) return { joint: task.sourceJoint, type: 'Проверить даты ЛНК' }
+  if (reason === LNK_REQUEST_DATE_ORDER_REASON) return { joint: task.sourceJoint, type: 'Проверить документы и даты ЛНК' }
   if (reason === LNK_VIK_DATE_ORDER_REASON) return { joint: task.sourceJoint, type: 'Проверить порядок НК' }
   if (reason === LNK_VIK_REQUIRED_REASON) return { joint: task.sourceJoint, type: 'Дозаполнить ВИК' }
   if (reason === PSTO_REQUEST_DATE_ORDER_REASON) return { joint: task.sourceJoint, type: 'Проверить даты ПСТО' }

@@ -296,6 +296,38 @@ describe('getLnkResultSaveBlockReason', () => {
     ).toThrow('пока нет результата ВИК')
   })
 
+  it('allows a primary result before the PSTO cycle only in permissive mode', () => {
+    const row = {
+      ...baseRow,
+      weldDate: '2026-07-01',
+      pstoRequired: 'да',
+      vikRequest: 'Основная заявка ВИК',
+      vikRequestDate: '2026-08-02',
+      vikResult: 'ожидает НК',
+      vikConclusionDate: '',
+      vikConclusion: '',
+    } as WeldRow
+    const input = {
+      records: [row],
+      methodKey: 'vikRequest' as const,
+      controlDate: '2026-08-03',
+      resultById: { 1: 'годен' },
+      conclusionName: 'Заключение ВИК',
+    }
+
+    expect(() => buildLnkResultRows(input)).toThrow('Сначала завершите НК до ТО')
+    expect(buildLnkResultRows({
+      ...input,
+      controlProcessSettings: {
+        preHeatTreatmentLnkEnabled: true,
+        allowPrimaryLnkBeforePreviousStagesComplete: true,
+      },
+    })[0]).toMatchObject({
+      vikResult: 'годен',
+      vikConclusion: 'Заключение ВИК',
+    })
+  })
+
   it('allows saving a VIK result for an old request without a request date', () => {
     const row = {
       ...baseRow,

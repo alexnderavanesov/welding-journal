@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { applyGeneratedDocumentFields } from '@/server/generated-document-row-fields'
+import {
+  applyGeneratedDocumentFields,
+  attachSystemDocumentIds,
+} from '@/server/generated-document-row-fields'
 
 describe('generated document row fields', () => {
   it('attaches each document type independently to the same weld', () => {
@@ -47,5 +50,136 @@ describe('generated document row fields', () => {
         systemDocumentIds: { rkRequest: 4 },
       },
     ])
+  })
+
+  it('keeps primary and pre-TO document ids separate even when their names and dates match', () => {
+    expect(applyGeneratedDocumentFields(
+      [{
+        id: 11,
+        vikRequest: 'Заявка ВИК',
+        vikRequestDate: '2026-09-01',
+        preVikRequest: 'Заявка ВИК',
+        preVikRequestDate: '2026-09-01',
+      }],
+      [
+        {
+          weldJointId: 11,
+          documentId: 7,
+          type: 'system:lnkRequest',
+          title: 'Заявка ВИК',
+          periodFrom: '2026-09-01',
+          sourceMetadata: null,
+        },
+        {
+          weldJointId: 11,
+          documentId: 8,
+          type: 'system:lnkRequest',
+          title: 'Заявка ВИК',
+          periodFrom: '2026-09-01',
+          sourceMetadata: JSON.stringify({ sourceKind: 'beforeHeatTreatment' }),
+        },
+      ],
+    )[0]?.systemDocumentIds).toMatchObject({
+      vikRequest: 7,
+      preVikRequest: 8,
+    })
+  })
+
+  it('attaches document ids from the current repeated PSTO cycle instead of the primary cycle', () => {
+    const metadata = (sourceKind: 'pstoCycle' | 'pstoRepeat', sequence: number) =>
+      JSON.stringify({ sourceKind, cycleSequences: [sequence] })
+    const result = applyGeneratedDocumentFields(
+      [{
+        id: 11,
+        pstoRequest: 'ПСТО основной',
+        pstoRequestDate: '2026-09-01',
+        heatTreatmentDiagram: 'Диаграмма основная',
+        pstoDate: '2026-09-02',
+        tvmtRequest: 'ТВМТ основной',
+        tvmtRequestDate: '2026-09-03',
+        tvmtConclusion: 'Заключение ТВМТ основное',
+        tvmtConclusionDate: '2026-09-04',
+        pstoRepeatCycles: [{
+          id: 91,
+          weldJointId: 11,
+          sequence: 2,
+          pstoRequest: 'ПСТО повтор 2',
+          pstoRequestDate: '2026-09-05',
+          heatTreatmentDiagram: 'Диаграмма повтор 2',
+          pstoDate: '2026-09-06',
+          pstoResult: 'годен',
+          tvmtRequest: 'ТВМТ повтор 2',
+          tvmtRequestDate: '2026-09-07',
+          tvmtConclusion: 'Заключение ТВМТ повтор 2',
+          tvmtConclusionDate: '2026-09-08',
+          tvmtResult: 'годен',
+        }],
+      }],
+      [
+        { weldJointId: 11, documentId: 201, type: 'system:pstoRequest', title: 'ПСТО основной', periodFrom: '2026-09-01', sourceMetadata: metadata('pstoCycle', 1) },
+        { weldJointId: 11, documentId: 202, type: 'system:pstoRequest', title: 'ПСТО повтор 2', periodFrom: '2026-09-05', sourceMetadata: metadata('pstoCycle', 2) },
+        { weldJointId: 11, documentId: 203, type: 'system:pstoConclusion', title: 'Диаграмма основная', periodFrom: '2026-09-02', sourceMetadata: metadata('pstoCycle', 1) },
+        { weldJointId: 11, documentId: 204, type: 'system:pstoConclusion', title: 'Диаграмма повтор 2', periodFrom: '2026-09-06', sourceMetadata: metadata('pstoCycle', 2) },
+        { weldJointId: 11, documentId: 205, type: 'system:tvmtRequest', title: 'ТВМТ основной', periodFrom: '2026-09-03', sourceMetadata: metadata('pstoCycle', 1) },
+        { weldJointId: 11, documentId: 206, type: 'system:tvmtRequest', title: 'ТВМТ повтор 2', periodFrom: '2026-09-07', sourceMetadata: metadata('pstoCycle', 2) },
+        { weldJointId: 11, documentId: 207, type: 'system:tvmtConclusion', title: 'Заключение ТВМТ основное', periodFrom: '2026-09-04', sourceMetadata: metadata('pstoCycle', 1) },
+        { weldJointId: 11, documentId: 208, type: 'system:tvmtConclusion', title: 'Заключение ТВМТ повтор 2', periodFrom: '2026-09-08', sourceMetadata: metadata('pstoCycle', 2) },
+      ],
+    )[0]
+
+    expect(result?.systemDocumentIds).toMatchObject({
+      pstoRequest: 202,
+      heatTreatmentDiagram: 204,
+      tvmtRequest: 206,
+      tvmtConclusion: 208,
+    })
+  })
+
+  it('keeps legacy documents without cycle metadata available for the primary PSTO cycle', () => {
+    const result = applyGeneratedDocumentFields(
+      [{
+        id: 12,
+        pstoRequest: 'ПСТО основной',
+        pstoRequestDate: '2026-09-01',
+        heatTreatmentDiagram: 'Диаграмма основная',
+        pstoDate: '2026-09-02',
+        tvmtRequest: 'ТВМТ основной',
+        tvmtRequestDate: '2026-09-03',
+        tvmtConclusion: 'Заключение ТВМТ основное',
+        tvmtConclusionDate: '2026-09-04',
+      }],
+      [
+        { weldJointId: 12, documentId: 301, type: 'system:pstoRequest', title: 'ПСТО основной', periodFrom: '2026-09-01', sourceMetadata: null },
+        { weldJointId: 12, documentId: 302, type: 'system:pstoConclusion', title: 'Диаграмма основная', periodFrom: '2026-09-02', sourceMetadata: null },
+        { weldJointId: 12, documentId: 303, type: 'system:tvmtRequest', title: 'ТВМТ основной', periodFrom: '2026-09-03', sourceMetadata: null },
+        { weldJointId: 12, documentId: 304, type: 'system:tvmtConclusion', title: 'Заключение ТВМТ основное', periodFrom: '2026-09-04', sourceMetadata: null },
+      ],
+    )[0]
+
+    expect(result?.systemDocumentIds).toMatchObject({
+      pstoRequest: 301,
+      heatTreatmentDiagram: 302,
+      tvmtRequest: 303,
+      tvmtConclusion: 304,
+    })
+  })
+
+  it.each([
+    [2, 1],
+    [100, 1],
+    [1_200, 2],
+  ])('loads system document ids for %i rows with %i bounded queries', async (rowCount, queryCount) => {
+    const where = vi.fn().mockResolvedValue([])
+    const innerJoin = vi.fn(() => ({ where }))
+    const from = vi.fn(() => ({ innerJoin }))
+    const select = vi.fn(() => ({ from }))
+
+    await attachSystemDocumentIds(
+      Array.from({ length: rowCount }, (_, index) => ({ id: index + 1 })),
+      { select } as never,
+    )
+
+    expect(select).toHaveBeenCalledTimes(queryCount)
+    expect(where).toHaveBeenCalledTimes(queryCount)
   })
 })

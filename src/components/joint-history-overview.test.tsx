@@ -195,7 +195,7 @@ describe('JointHistoryOverview', () => {
     )
 
     expect(screen.getByText('Внести результат основного НК')).toBeInTheDocument()
-    expect(screen.getByText('Активные ДЗ')).toBeInTheDocument()
+    expect(screen.getByText('Требует действия')).toBeInTheDocument()
     expect(screen.getAllByText('Дозаполнить результат ЛНК')).toHaveLength(1)
     expect(screen.getByRole('button', { name: 'Исправить в ЛНК' })).toBeInTheDocument()
   })

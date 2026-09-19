@@ -15,11 +15,13 @@ let cachedControlProcessSettings: ControlProcessSettings | undefined
 export type ControlProcessSettings = {
   layeredControlEnabled: boolean
   preHeatTreatmentLnkEnabled: boolean
+  allowPrimaryLnkBeforePreviousStagesComplete: boolean
 }
 
 export const DEFAULT_CONTROL_PROCESS_SETTINGS: ControlProcessSettings = {
   layeredControlEnabled: true,
   preHeatTreatmentLnkEnabled: true,
+  allowPrimaryLnkBeforePreviousStagesComplete: false,
 }
 
 export function useControlProcessSettings() {
@@ -85,9 +87,12 @@ export function normalizeControlProcessSettings(value: unknown): ControlProcessS
   const source = value && typeof value === 'object'
     ? value as Partial<Record<keyof ControlProcessSettings, unknown>>
     : {}
+  const preHeatTreatmentLnkEnabled = source.preHeatTreatmentLnkEnabled !== false
   return {
     layeredControlEnabled: source.layeredControlEnabled !== false,
-    preHeatTreatmentLnkEnabled: source.preHeatTreatmentLnkEnabled !== false,
+    preHeatTreatmentLnkEnabled,
+    allowPrimaryLnkBeforePreviousStagesComplete:
+      preHeatTreatmentLnkEnabled && source.allowPrimaryLnkBeforePreviousStagesComplete === true,
   }
 }
 

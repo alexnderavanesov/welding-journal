@@ -5,7 +5,7 @@ import {
   type DispatcherTaskActionSpec,
 } from '@/lib/dispatcher-task-actions-model'
 import { getDispatcherTaskCode } from '@/lib/dispatcher-settings'
-import { isDispatcherTaskRelatedToRow } from '@/lib/dispatcher-task-row-codes'
+import { isDispatcherTaskDirectlyRelatedToJoint } from '@/lib/dispatcher-task-row-codes'
 import {
   getRepeatedJointTaskDetails,
   getRepeatedJointTaskTitle,
@@ -69,7 +69,7 @@ export function buildJointNextActions(
   dispatcherTasks: readonly RepeatedJointTask[] = [],
 ): JointNextAction[] {
   const rowTasks = dispatcherTasks
-    .filter((task) => isDispatcherTaskRelatedToRow(task, row))
+    .filter((task) => isDispatcherTaskDirectlyRelatedToJoint(task, row))
     .sort(compareTasks)
   const taskActions = rowTasks.map(buildDispatcherAction)
   const chainStructureActions = rowTasks

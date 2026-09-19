@@ -1,23 +1,41 @@
 import { memo, type MouseEvent } from 'react'
 import { DialogRowMenuButton } from '@/components/dialog-row-menu-button'
 import { RequestRowJointHeading } from '@/components/request-row-joint-heading'
-import { getAvailableLnkRequestMethods } from '@/lib/lnk-status'
+import { getAvailableLnkRequestMethods, getLnkRequestCandidateMethods } from '@/lib/lnk-status'
 import { getLnkRowRequestMethods } from '@/lib/report-modal-rows'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
+import { getPrimaryLnkStageAccess } from '@/lib/lnk-control-stage'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 type LnkRequestRowProps = {
   row: WeldRow
+  controlProcessSettings: ControlProcessSettings
   selected: boolean
   selectedMethods: ReadonlySet<WeldFieldKey>
   onToggleRow: (rowId: number) => void
   onOpenContextMenu: (event: MouseEvent<HTMLElement>, row: WeldRow) => void
 }
 
-function LnkRequestRowComponent({ row, selected, selectedMethods, onToggleRow, onOpenContextMenu }: LnkRequestRowProps) {
-  const availableMethods = getAvailableLnkRequestMethods(row)
+function LnkRequestRowComponent({
+  row,
+  controlProcessSettings,
+  selected,
+  selectedMethods,
+  onToggleRow,
+  onOpenContextMenu,
+}: LnkRequestRowProps) {
+  const candidateMethods = getLnkRequestCandidateMethods(row)
+  const availableMethods = getAvailableLnkRequestMethods(row, controlProcessSettings)
   const existingMethods = getLnkRowRequestMethods(row, '')
   const disabled = availableMethods.length === 0
+  const methodAccess = new Map(candidateMethods.map((method) => [
+    method.requestKey,
+    getPrimaryLnkStageAccess(row, method.code, controlProcessSettings),
+  ]))
+  const warningReason = candidateMethods
+    .map((method) => methodAccess.get(method.requestKey))
+    .find((access) => access?.status === 'allowed-with-warning' || access?.status === 'blocked')?.reason
 
   return (
     <div
@@ -44,19 +62,33 @@ function LnkRequestRowComponent({ row, selected, selectedMethods, onToggleRow, o
       />
       <span className="min-w-0">
         <RequestRowJointHeading row={row} />
+        {warningReason ? (
+          <span className="mt-1 block text-xs leading-4 text-amber-700">
+            {warningReason}
+          </span>
+        ) : null}
       </span>
       <span className="flex max-w-[28rem] flex-wrap justify-end gap-1.5">
-        {availableMethods.length > 0 ? (
-          availableMethods.map((method) => {
+        {candidateMethods.length > 0 ? (
+          candidateMethods.map((method) => {
+            const access = methodAccess.get(method.requestKey)
+            const methodAvailable = access?.status !== 'blocked'
             const isSelectedMethod = selected && selectedMethods.has(method.requestKey)
             return (
               <span
                 key={method.requestKey}
                 className={`rounded border px-2 py-1 text-xs font-medium ${
-                  isSelectedMethod
+                  !methodAvailable
+                    ? 'border-amber-200 bg-amber-50 text-amber-700'
+                    : access?.status === 'allowed-with-warning'
+                      ? isSelectedMethod
+                        ? 'border-amber-400 bg-amber-100 text-amber-950'
+                        : 'border-amber-200 bg-amber-50 text-amber-800'
+                      : isSelectedMethod
                     ? 'border-sky-300 bg-sky-100 text-sky-900'
                     : 'border-slate-200 bg-slate-50 text-slate-600'
                 }`}
+                title={access?.reason || undefined}
               >
                 {method.code}
               </span>
@@ -91,6 +123,7 @@ function LnkRequestRowComponent({ row, selected, selectedMethods, onToggleRow, o
 export const LnkRequestRow = memo(LnkRequestRowComponent, (previous, next) => {
   if (
     previous.row !== next.row ||
+    previous.controlProcessSettings !== next.controlProcessSettings ||
     previous.selected !== next.selected ||
     previous.onOpenContextMenu !== next.onOpenContextMenu
   ) return false

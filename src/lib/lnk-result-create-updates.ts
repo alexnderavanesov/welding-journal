@@ -14,8 +14,14 @@ import { applyRkExposureResultTransition } from '@/lib/rk-exposure'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RowWithId } from '@/lib/lnk-report-mutation-types'
 import type { RkExposureTableSettings } from '@/lib/other-settings'
-import { getPrimaryLnkStageBlockReason } from '@/lib/lnk-control-stage'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
+import { getPrimaryLnkStageAccess } from '@/lib/lnk-control-stage'
 import { transitionLnkDefectDescription } from '@/lib/lnk-defect-description'
+import type { LnkChronologyIssueKind } from '@/lib/lnk-chronology-checks'
+
+const PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS = new Set<LnkChronologyIssueKind>([
+  'post-before-psto-cycle',
+])
 
 export function buildLnkResultRows({
   records,
@@ -25,6 +31,7 @@ export function buildLnkResultRows({
   conclusionName,
   rkExposureTable: suppliedRkExposureTable,
   saveCheckSettings = loadSaveCheckSettings(),
+  controlProcessSettings,
 }: {
   records: RowWithId[]
   methodKey: WeldFieldKey
@@ -33,6 +40,7 @@ export function buildLnkResultRows({
   conclusionName: string
   rkExposureTable?: RkExposureTableSettings | null
   saveCheckSettings?: SaveCheckSettings
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
 }) {
   const rkExposureTable = suppliedRkExposureTable === undefined
     ? loadOtherSettings().rkExposureTable
@@ -51,8 +59,10 @@ export function buildLnkResultRows({
   }
   if (saveCheckSettings.lnkResultConclusionRequired && hasNonEmptyResult && !conclusionName.trim()) throw new Error('Укажите наименование заключения')
   if (hasNonEmptyResult) {
-    const blockedRecord = records.find((record) => getPrimaryLnkStageBlockReason(record, method.code))
-    if (blockedRecord) throw new Error(getPrimaryLnkStageBlockReason(blockedRecord, method.code))
+    const blockedAccess = records
+      .map((record) => getPrimaryLnkStageAccess(record, method.code, controlProcessSettings))
+      .find((access) => access.status === 'blocked')
+    if (blockedAccess) throw new Error(blockedAccess.reason)
   }
   records.forEach((record) => assertLnkRepairAllowed(record, resultById[record.id] ?? '', saveCheckSettings))
   const normalizedControlDate = normalizeDateLikeForStorage(controlDate) ?? (controlDate.trim() || null)
@@ -92,6 +102,13 @@ export function buildLnkResultRows({
     }
     return withLnkFinalStatus(proposedRecord)
   })
-  assertNoLnkChronologyIssues(proposedRecords, saveCheckSettings)
+  assertNoLnkChronologyIssues(
+    proposedRecords,
+    saveCheckSettings,
+    controlProcessSettings?.preHeatTreatmentLnkEnabled &&
+      controlProcessSettings.allowPrimaryLnkBeforePreviousStagesComplete
+      ? { ignoredKinds: PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS }
+      : undefined,
+  )
   return proposedRecords
 }

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import { getDispatcherLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
+import { buildPrimaryLnkStageDebtSystemWarnings } from '@/lib/repeated-joint-check-tasks'
 import {
   buildClearedPrimaryLnkStageRows,
   buildPreHeatTreatmentToPrimaryTransfer,
@@ -124,6 +125,25 @@ describe('LNK stage transfer', () => {
     expect(transfer.controls[0]).toMatchObject({
       requestName: 'Заявка-ВИК-1',
       result: 'ожидает НК',
+    })
+  })
+
+  it('preserves a cancelled completed result when moving the package to pre-TO', () => {
+    const transfer = buildPrimaryToPreHeatTreatmentTransfer({
+      rows: [makeRow({
+        vikRequest: 'Заявка-ВИК-1',
+        vikRequestDate: '2026-08-01',
+        vikResult: 'годен (отменен)',
+        vikConclusionDate: '2026-08-02',
+        vikConclusion: 'ЗНК-ВИК-1',
+      })],
+      positions: [{ rowId: 1, methodCode: 'ВИК' }],
+    })
+
+    expect(transfer.controls[0]).toMatchObject({
+      requestName: 'Заявка-ВИК-1',
+      result: 'годен (отменен)',
+      conclusionName: 'ЗНК-ВИК-1',
     })
   })
 
@@ -249,8 +269,8 @@ describe('LNK stage transfer', () => {
     })).toThrow('основной комплект РК уже заполнен')
   })
 
-  it('allows an explicit move to primary while cross-stage dates remain visible in DZ-20', () => {
-    const pendingCycleRow = makeRow({ weldDate: '2026-08-01' })
+  it('allows only sequence debt in permissive mode and keeps real date errors blocking', () => {
+    const pendingCycleRow = makeRow({ weldDate: '2026-08-01', hasVik: 'да' })
     const pendingControl = {
       id: 10,
       weldJointId: 1,
@@ -263,13 +283,22 @@ describe('LNK stage transfer', () => {
       controls: [pendingControl],
     })
 
-    expect(getDispatcherLnkChronologyIssues([pendingNext!])).toContainEqual(
-      expect.objectContaining({ kind: 'post-before-psto-cycle', methodCode: 'ВИК' }),
+    expect(getDispatcherLnkChronologyIssues([pendingNext!])).not.toContainEqual(
+      expect.objectContaining({ kind: 'post-before-psto-cycle' }),
+    )
+    expect(buildPrimaryLnkStageDebtSystemWarnings([pendingNext!])).toContainEqual(
+      expect.objectContaining({ systemWarningCode: 'СП-01' }),
     )
     expect(findBlockingLnkStageTransferChronologyIssue({
       previousRows: [{ ...pendingCycleRow, preHeatTreatmentControls: [pendingControl] }],
       nextRows: [pendingNext!],
       targetStage: 'primary',
+    })).toMatchObject({ kind: 'post-before-psto-cycle', methodCode: 'ВИК' })
+    expect(findBlockingLnkStageTransferChronologyIssue({
+      previousRows: [{ ...pendingCycleRow, preHeatTreatmentControls: [pendingControl] }],
+      nextRows: [pendingNext!],
+      targetStage: 'primary',
+      allowPrimaryStageDebt: true,
     })).toBeUndefined()
 
     const completedCycleRow = makeRow({
@@ -297,7 +326,8 @@ describe('LNK stage transfer', () => {
       previousRows: [{ ...completedCycleRow, preHeatTreatmentControls: [pendingControl] }],
       nextRows: [completedNext!],
       targetStage: 'primary',
-    })).toBeUndefined()
+      allowPrimaryStageDebt: true,
+    })).toMatchObject({ kind: 'post-before-psto', methodCode: 'ВИК' })
   })
 
   it('still blocks ordinary date errors and invalid moves to pre-TO', () => {

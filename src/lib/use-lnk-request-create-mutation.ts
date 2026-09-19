@@ -11,6 +11,7 @@ import type { RowWithId, UseLnkReportMutationsOptions } from '@/lib/lnk-report-m
 import type { SystemDocumentCreationGroup } from '@/lib/system-document-creation-plan'
 
 export function useLnkRequestCreateMutation({
+  controlProcessSettings,
   setMessage,
   setLnkNotice,
   highlightChangedRows,
@@ -54,6 +55,7 @@ export function useLnkRequestCreateMutation({
           methodKeys,
           requestName: group.name,
           requestDate,
+          controlProcessSettings,
         }),
       )
 

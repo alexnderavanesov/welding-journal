@@ -18,9 +18,12 @@ import { getInactiveLnkRequestBadgeClass, getLnkResultBadgeClass } from '@/lib/r
 import { LNK_RESULT_OPTIONS } from '@/lib/report-config'
 import type { SaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
+import { getPrimaryLnkStageAccess } from '@/lib/lnk-control-stage'
 
 type LnkResultRowProps = {
   row: WeldRow
+  controlProcessSettings: ControlProcessSettings
   requestName: string
   requestDate: string
   methodKey: WeldFieldKey | ''
@@ -34,6 +37,7 @@ type LnkResultRowProps = {
 
 function LnkResultRowComponent({
   row,
+  controlProcessSettings,
   requestName,
   requestDate,
   methodKey,
@@ -45,7 +49,16 @@ function LnkResultRowComponent({
   onOpenContextMenu,
 }: LnkResultRowProps) {
   const method = getLnkMethodByRequestKey(methodKey)
-  const disabled = !canSelectLnkResultRow(row, requestName, methodKey, requestDate)
+  const stageAccess = method
+    ? getPrimaryLnkStageAccess(row, method.code, controlProcessSettings)
+    : null
+  const disabled = !canSelectLnkResultRow(
+    row,
+    requestName,
+    methodKey,
+    requestDate,
+    controlProcessSettings,
+  )
   const selected = selectedById && !disabled
   const rowRequestNames = getLnkRowRequestNames(row)
   const rowResult = saveCheckSettings.lnkResultRepairRules && draftRowResult === 'ремонт' && isLnkRepairForbidden(row)
@@ -80,6 +93,11 @@ function LnkResultRowComponent({
       />
       <span className="min-w-0">
         <RequestRowJointHeading row={row} stackMetadata />
+        {stageAccess?.status === 'allowed-with-warning' || stageAccess?.status === 'blocked' ? (
+          <span className="mt-1 block text-xs leading-4 text-amber-700">
+            {stageAccess.reason}
+          </span>
+        ) : null}
         <span className="mt-1 flex min-h-5 flex-wrap items-center gap-1 text-xs text-slate-600">
           {formatLnkResultSummaryItems(row).map((item) => (
             <span
@@ -121,6 +139,8 @@ function LnkResultRowComponent({
                 ? 'Выберите метод контроля.'
                 : hasSavedFinalResult
                   ? 'Результат уже внесен.'
+                  : stageAccess?.status === 'blocked'
+                    ? stageAccess.reason
                   : requestName
                     ? 'Не подходит для заявки.'
                     : 'Нет заявки на этот метод.'}
@@ -140,6 +160,7 @@ function LnkResultRowComponent({
 export const LnkResultRow = memo(LnkResultRowComponent, (previous, next) => {
   if (
     previous.row !== next.row ||
+    previous.controlProcessSettings !== next.controlProcessSettings ||
     previous.requestName !== next.requestName ||
     previous.requestDate !== next.requestDate ||
     previous.methodKey !== next.methodKey ||

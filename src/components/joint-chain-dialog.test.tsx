@@ -1,8 +1,10 @@
+import type { ComponentProps } from 'react'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { JointChainDialog } from '@/components/joint-chain-dialog'
 import type {
+  PercentageLineControlTask,
   RepeatedJointCreateTask,
   RepeatedJointRenameTask,
   RepeatedJointTask,
@@ -306,6 +308,51 @@ describe('JointChainDialog', () => {
 
     expect(screen.queryByRole('button', { name: /Переименовать S1R1/ })).not.toBeInTheDocument()
   })
+
+  it('switches to a grouped line picture and runs each task in its own context', () => {
+    const rows = [row({ id: 1, joint: 'F47', line: '330-MS-02-000' })]
+    const lineTasks = ['9PC6', '9RX9', '9SZN', '9TMP'].map((stamp, index) => percentageTask(
+      row({ id: index + 10, joint: `F${50 + index}`, line: '330-MS-02-000' }),
+      stamp,
+    ))
+    const otherLineTask = percentageTask(
+      row({ id: 99, joint: 'X1', line: 'OTHER-LINE' }),
+      'OTHER',
+    )
+    const onRunDispatcherTaskAction = vi.fn()
+    const onOpenLineInDispatcher = vi.fn()
+
+    renderDialog({
+      rows,
+      dispatcherTasks: [...lineTasks, otherLineTask],
+      onRunDispatcherTaskAction,
+      onOpenLineInDispatcher,
+    })
+
+    expect(screen.getByText('Нет активных задач по стыку.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Картина линии · 4' }))
+
+    expect(screen.getByRole('heading', { name: 'Картина линии 330-MS-02-000' })).toBeInTheDocument()
+    expect(screen.getByText('Задач: 4 · типов проблем: 1')).toBeInTheDocument()
+    expect(screen.queryByText('Клеймо OTHER')).not.toBeInTheDocument()
+    const group = screen.getByRole('region', { name: 'ДЗ-01 Новый сварщик на процентной линии' })
+    expect(within(group).getAllByRole('button', { name: 'Исправить клеймо' })).toHaveLength(3)
+
+    fireEvent.click(within(group).getByRole('button', { name: 'Показать ещё 1' }))
+    expect(within(group).getAllByRole('button', { name: 'Исправить клеймо' })).toHaveLength(4)
+    fireEvent.click(within(group).getAllByRole('button', { name: 'Исправить клеймо' })[0]!)
+    expect(onRunDispatcherTaskAction).toHaveBeenCalledWith(
+      lineTasks[0]!.row,
+      lineTasks[0],
+      expect.objectContaining({ id: 'edit-stamp', label: 'Исправить клеймо' }),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'К стыку F47' }))
+    expect(screen.getByRole('heading', { name: 'Картина стыка F47' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Картина линии · 4' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть в диспетчере' }))
+    expect(onOpenLineInDispatcher).toHaveBeenCalledWith(rows[0])
+  })
 })
 
 function renderDialog({
@@ -321,6 +368,8 @@ function renderDialog({
   onCreateEarlyCoil = vi.fn(),
   onOpenOfficiality = vi.fn(),
   onEditRow = vi.fn(),
+  onRunDispatcherTaskAction = vi.fn(),
+  onOpenLineInDispatcher = vi.fn(),
 }: {
   record?: WeldRow
   rows: WeldRow[]
@@ -346,6 +395,8 @@ function renderDialog({
   }) => void
   onOpenOfficiality?: (row: WeldRow, officiality: 'official' | 'unofficial') => void
   onEditRow?: (row: WeldRow) => void
+  onRunDispatcherTaskAction?: ComponentProps<typeof JointChainDialog>['onRunDispatcherTaskAction']
+  onOpenLineInDispatcher?: (row: WeldRow) => void
 }) {
   return render(
     <JointChainDialog
@@ -367,9 +418,10 @@ function renderDialog({
       onOpenRow={vi.fn()}
       onOpenDocument={vi.fn()}
       onOpenReport={vi.fn()}
+      onOpenLineInDispatcher={onOpenLineInDispatcher}
       onEditRow={onEditRow}
       onRunNextAction={vi.fn()}
-      onRunDispatcherTaskAction={vi.fn()}
+      onRunDispatcherTaskAction={onRunDispatcherTaskAction}
       onCreateRepeatedJoint={onCreateRepeatedJoint}
       onRenameRepeatedJoint={onRenameRepeatedJoint}
       onCreateEarlyCoil={onCreateEarlyCoil}
@@ -389,4 +441,23 @@ function row(values: Partial<WeldRow>): WeldRow {
     weldDate: '2026-09-01',
     ...values,
   } as WeldRow
+}
+
+function percentageTask(taskRow: WeldRow, stamp: string): PercentageLineControlTask {
+  return {
+    kind: 'percentage-line-control',
+    key: `percentage-line-control:new-welder:${String(taskRow.line)}:${stamp}`,
+    row: taskRow,
+    issue: 'new-welder',
+    projectTitle: String(taskRow.projectTitle),
+    subtitleCode: String(taskRow.subtitleCode),
+    line: String(taskRow.line),
+    stamp,
+    title: 'Новый сварщик на процентной линии',
+    details: `Новое клеймо ${stamp}.`,
+    requiredControls: 1,
+    coveredControls: 0,
+    assignedControls: 0,
+    count: 1,
+  }
 }

@@ -50,12 +50,6 @@ export function getSystemDocumentMethodCodes(documentRecord: SystemDocumentSumma
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))]
 }
 
-export function getSystemDocumentStageTransferLabel(documentRecord: SystemDocumentSummary) {
-  return documentRecord.sourceKind === 'beforeHeatTreatment'
-    ? 'Перенести в «Основной»'
-    : 'Перенести в «До ТО»'
-}
-
 export function getSystemDocumentStageClassName(documentRecord: SystemDocumentSummary) {
   if (documentRecord.sourceKind === 'beforeHeatTreatment') {
     return 'border-violet-200 bg-violet-50 text-violet-700'

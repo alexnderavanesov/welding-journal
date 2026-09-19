@@ -11,6 +11,7 @@ import type {
 } from '@/lib/lnk-request-extension'
 import type { LnkRequestComposerMode } from '@/lib/use-lnk-request-modal-state'
 import type { LnkOfficialityChainPlan } from '@/lib/lnk-officiality-chain-plan'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 
 export type LnkRequestMutation = {
   isPending: boolean
@@ -34,6 +35,7 @@ export type LnkRequestExtensionMutation = {
 }
 
 export type UseLnkRequestActionsOptions = {
+  controlProcessSettings: ControlProcessSettings
   draft: LnkRequestDraftState
   filteredRows: WeldRow[]
   lnkRows: WeldRow[]
@@ -61,6 +63,7 @@ export type LnkResultMutation = {
 }
 
 export type UseLnkResultActionsOptions = {
+  controlProcessSettings: ControlProcessSettings
   filteredRows: WeldRow[]
   lnkRows: WeldRow[]
   draft: LnkResultDraftState

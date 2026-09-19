@@ -67,6 +67,26 @@ export function getDispatcherTasksForRow(tasks: readonly RepeatedJointTask[], ro
   return tasks.filter((task) => isDispatcherTaskRelatedToRow(task, row))
 }
 
+export function isDispatcherTaskDirectlyRelatedToJoint(task: RepeatedJointTask, row: WeldRow) {
+  if (task.kind === 'line-consistency' || task.kind === 'percentage-line-control') return false
+  return isDispatcherTaskRelatedToRow(task, row)
+}
+
+export function getDispatcherTasksForJointPicture(tasks: readonly RepeatedJointTask[], row: WeldRow) {
+  return tasks.filter((task) => isDispatcherTaskDirectlyRelatedToJoint(task, row))
+}
+
+export function isDispatcherTaskRelatedToLine(task: RepeatedJointTask, row: WeldRow) {
+  if (task.kind === 'line-consistency' || task.kind === 'percentage-line-control') {
+    return hasSameLineIdentity(task, row)
+  }
+  return hasSameLineIdentity(task.row, row)
+}
+
+export function getDispatcherTasksForLinePicture(tasks: readonly RepeatedJointTask[], row: WeldRow) {
+  return tasks.filter((task) => isDispatcherTaskRelatedToLine(task, row))
+}
+
 export function formatDispatcherTaskCodes(codes: readonly string[] | undefined) {
   return [...(codes ?? [])].sort(compareDispatcherTaskCodes).join(', ')
 }
@@ -131,7 +151,8 @@ export function getDispatcherTaskFilterMode(value: string | undefined) {
 }
 
 export function compareDispatcherTaskCodes(left: string, right: string) {
-  return left.localeCompare(right, 'ru', { numeric: true })
+  const systemWarningOrder = Number(!left.startsWith('СП-')) - Number(!right.startsWith('СП-'))
+  return systemWarningOrder || left.localeCompare(right, 'ru', { numeric: true })
 }
 
 function buildDispatcherCodesByRowId(taskRows: DispatcherTaskCodeRow[]) {
@@ -166,7 +187,7 @@ function getDispatcherTaskTargetRowIds(task: Exclude<DispatcherTask, { kind: 'we
 }
 
 function hasSameLineIdentity(
-  task: Pick<Extract<RepeatedJointTask, { kind: 'line-consistency' | 'percentage-line-control' }>, 'projectTitle' | 'subtitleCode' | 'line'>,
+  task: Pick<WeldRow, 'projectTitle' | 'subtitleCode' | 'line'>,
   row: WeldRow,
 ) {
   return (

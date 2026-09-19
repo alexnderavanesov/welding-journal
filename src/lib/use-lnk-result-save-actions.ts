@@ -13,6 +13,9 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { buildSystemDocumentCreationPlan, type SystemDocumentCreationGroup } from '@/lib/system-document-creation-plan'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
+import { useConfirmAction } from '@/lib/confirm-action-context'
+import { getPrimaryLnkStageAccess } from '@/lib/lnk-control-stage'
 
 type LnkResultMutation = {
   mutate: (variables: {
@@ -27,6 +30,7 @@ type LnkResultMutation = {
 }
 
 type UseLnkResultSaveActionsOptions = {
+  controlProcessSettings: ControlProcessSettings
   lnkRows: WeldRow[]
   draft: LnkResultDraftState
   selectedRows: WeldRow[]
@@ -40,6 +44,7 @@ type UseLnkResultSaveActionsOptions = {
 }
 
 export function useLnkResultSaveActions({
+  controlProcessSettings,
   lnkRows,
   draft,
   selectedRows,
@@ -52,6 +57,7 @@ export function useLnkResultSaveActions({
   setMessage,
 }: UseLnkResultSaveActionsOptions) {
   const saveCheckSettings = useSaveCheckSettings()
+  const confirmAction = useConfirmAction()
 
   function setLnkResultForRow(rowId: number, result: string) {
     setLnkResultForRows([rowId], result)
@@ -73,7 +79,7 @@ export function useLnkResultSaveActions({
     })
   }
 
-  function handleAddLnkResult() {
+  async function handleAddLnkResult() {
     if (saveBlockReason) {
       setMessage(saveBlockReason)
       return
@@ -115,6 +121,25 @@ export function useLnkResultSaveActions({
     if (hasNonEmptyResult && creationPlan.error) {
       setMessage(creationPlan.error)
       return
+    }
+
+    if (method) {
+      const warningRows = selectedRows.filter(
+        (row) =>
+          resultById[row.id] !== LNK_EMPTY_RESULT_VALUE &&
+          getPrimaryLnkStageAccess(row, method.code, controlProcessSettings).status === 'allowed-with-warning',
+      )
+      if (warningRows.length > 0) {
+        const confirmed = await confirmAction({
+          title: 'Продолжить основной НК раньше?',
+          itemName: `Стыков: ${warningRows.length} · Метод: ${method.code}`,
+          description: 'Предыдущие этапы контроля еще не завершены. Результаты и заключения будут оформлены в основном этапе ЛНК.',
+          warning: 'В диспетчере появится системное предупреждение СП-01 до завершения НК до ТО, ПСТО и ТВМТ.',
+          confirmLabel: 'Продолжить',
+          tone: 'warning',
+        })
+        if (!confirmed) return
+      }
     }
 
     resultMutation.mutate({

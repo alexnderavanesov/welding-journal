@@ -30,6 +30,7 @@ type JointHistoryOverviewProps = {
   onEditRow: (row: WeldRow) => void
   onRunNextAction: (row: WeldRow, action: JointNextAction) => void
   onRunDispatcherTaskAction?: JointDispatcherTaskActionHandler
+  onOpenLinePicture?: () => void
 }
 
 export function JointHistoryOverview({
@@ -40,6 +41,7 @@ export function JointHistoryOverview({
   onEditRow,
   onRunNextAction,
   onRunDispatcherTaskAction,
+  onOpenLinePicture,
 }: JointHistoryOverviewProps) {
   const preControls = getPreHeatTreatmentControls(row)
   const cycles = buildPstoCycleTimeline(row, row.pstoRepeatCycles ?? [])
@@ -169,6 +171,7 @@ export function JointHistoryOverview({
           fallbackCodes={dispatcherTaskCodes}
           excludedTaskKeys={nextActions.flatMap((action) => action.taskKey ? [action.taskKey] : [])}
           onRunAction={onRunDispatcherTaskAction}
+          onOpenLinePicture={onOpenLinePicture}
         />
       </div>
     </div>

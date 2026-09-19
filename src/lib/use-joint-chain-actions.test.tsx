@@ -2,7 +2,11 @@ import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { buildJointChainFilters } from '@/lib/report-navigation'
+import {
+  DISPATCHER_TASKS_FIELD_KEY,
+  DISPATCHER_TASKS_WITH_FILTER,
+} from '@/lib/dispatcher-task-row-codes'
+import { buildJointChainFilters, buildLineFilters } from '@/lib/report-navigation'
 import { useJointChainActions } from '@/lib/use-joint-chain-actions'
 
 function createOptions(activeReport: 'weldingJournal' | 'lnk' | 'heatTreatment' = 'lnk') {
@@ -89,5 +93,27 @@ describe('useJointChainActions', () => {
     expect(options.setHeatTreatmentFilters).toHaveBeenCalledWith(buildJointChainFilters(row, 'F5'))
     expect(options.setColumnFilters).not.toHaveBeenCalled()
     expect(options.setLnkFilters).not.toHaveBeenCalled()
+  })
+
+  it('opens the selected line with task rows in the welding journal dispatcher', () => {
+    const row = {
+      id: 21,
+      projectTitle: 'Проект',
+      subtitleCode: 'Шифр',
+      line: 'Линия-7',
+      joint: 'F7',
+    } as WeldRow
+    const options = createOptions('heatTreatment')
+    const { result } = renderHook(() => useJointChainActions(options))
+
+    act(() => result.current.openLineInDispatcher(row))
+
+    expect(options.setChainRecord).toHaveBeenCalledWith(null)
+    expect(options.setActiveReport).toHaveBeenCalledWith('weldingJournal')
+    expect(options.setColumnFilters).toHaveBeenCalledWith({
+      ...buildLineFilters(row),
+      [DISPATCHER_TASKS_FIELD_KEY]: DISPATCHER_TASKS_WITH_FILTER,
+    })
+    expect(options.setMessage).toHaveBeenCalledWith('Открыты задачи линии Линия-7')
   })
 })

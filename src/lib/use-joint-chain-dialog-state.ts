@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { shouldDeferModalEscape } from '@/lib/use-report-modal-escape-key'
 import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { listWeldJointChain } from '@/server/weld-read-api'
@@ -19,6 +20,7 @@ export function useJointChainDialogState({
   })
 
   useWindowEscapeKey(Boolean(chainRecord), (event) => {
+    if (shouldDeferModalEscape()) return
     event.preventDefault()
     event.stopImmediatePropagation()
     onClose()

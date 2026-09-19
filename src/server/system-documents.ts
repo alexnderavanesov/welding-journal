@@ -11,6 +11,7 @@ import {
 } from '@/lib/system-document-types'
 import {
   normalizeDocumentHistoryColumnFilters,
+  normalizeDocumentHistoryDocumentId,
   normalizeDocumentHistoryLimit,
   type RemoteDocumentHistoryFilterOption,
 } from '@/server/generated-documents'
@@ -24,6 +25,7 @@ import { assertSecurityScope } from '@/server/security-functions'
 
 export type RemoteSystemDocumentHistoryRequest = {
   type: SystemDocumentType
+  documentId?: number
   limit?: number
   columnFilters?: Record<string, string>
 }
@@ -44,19 +46,28 @@ export const listSystemDocuments = createServerFn({ method: 'GET' })
   })
 
 export const listSystemDocumentHistory = createServerFn({ method: 'GET' })
-  .validator((data: RemoteSystemDocumentHistoryRequest | undefined) => ({
-    type: requireSystemDocumentType(data?.type),
-    limit: normalizeDocumentHistoryLimit(data?.limit),
-    columnFilters: normalizeDocumentHistoryColumnFilters(data?.columnFilters),
-  }))
+  .validator(normalizeSystemDocumentHistoryRequest)
   .handler(async ({ data }): Promise<RemoteSystemDocumentHistoryResult> => {
     await assertSecurityScope('entry')
     return loadIndexedSystemDocumentHistory({
       type: data.type,
+      documentId: data.documentId,
       columnFilters: data.columnFilters,
       limit: data.limit,
     })
   })
+
+export function normalizeSystemDocumentHistoryRequest(
+  data: RemoteSystemDocumentHistoryRequest | undefined,
+) {
+  const documentId = normalizeDocumentHistoryDocumentId(data?.documentId)
+  return {
+    type: requireSystemDocumentType(data?.type),
+    ...(documentId ? { documentId } : {}),
+    limit: normalizeDocumentHistoryLimit(data?.limit),
+    columnFilters: normalizeDocumentHistoryColumnFilters(data?.columnFilters),
+  }
+}
 
 export const getSystemDocumentRows = createServerFn({ method: 'GET' })
   .validator(normalizeSystemDocumentReference)

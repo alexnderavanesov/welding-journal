@@ -240,6 +240,12 @@ describe('system document grouping', () => {
       tvmtRequestDate: '2026-08-03',
       tvmtConclusion: 'Заключение ТВМТ основное',
       tvmtConclusionDate: '2026-08-04',
+      systemDocumentIds: {
+        pstoRequest: 201,
+        heatTreatmentDiagram: 202,
+        tvmtRequest: 203,
+        tvmtConclusion: 204,
+      },
       pstoRepeatCycles: [{
         id: 21,
         weldJointId: 1,
@@ -256,6 +262,7 @@ describe('system document grouping', () => {
     })
 
     expect(getSystemDocumentReferenceForField(source, 'pstoRequest')).toEqual({
+      documentId: 201,
       type: 'pstoRequest',
       title: 'Заявка ПСТО повтор 2',
       date: '2026-08-05',
@@ -263,6 +270,7 @@ describe('system document grouping', () => {
       cycleSequences: [2],
     })
     expect(getSystemDocumentReferenceForField(source, 'heatTreatmentDiagram')).toEqual({
+      documentId: 202,
       type: 'pstoConclusion',
       title: 'Диаграмма повтор 2',
       date: '2026-08-06',
@@ -270,6 +278,7 @@ describe('system document grouping', () => {
       cycleSequences: [2],
     })
     expect(getSystemDocumentReferenceForField(source, 'tvmtRequest')).toEqual({
+      documentId: 203,
       type: 'lnkRequest',
       title: 'Заявка ТВМТ повтор 2',
       date: '2026-08-07',
@@ -278,6 +287,7 @@ describe('system document grouping', () => {
       cycleSequences: [2],
     })
     expect(getSystemDocumentReferenceForField(source, 'tvmtConclusion')).toEqual({
+      documentId: 204,
       type: 'lnkConclusion',
       title: 'Заключение ТВМТ повтор 2',
       date: '2026-08-08',

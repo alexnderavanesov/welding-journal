@@ -5,6 +5,7 @@ import type {
   RepeatedJointCoilTask,
   RepeatedJointDuplicateCheckTask,
   RepeatedJointRenameTask,
+  PercentageLineControlTask,
   WeldRow,
 } from '@/lib/dispatcher-types'
 import {
@@ -16,6 +17,9 @@ import {
   buildMergedDispatcherTaskCodes,
   buildDispatcherTaskServerFilters,
   buildWeldColumnFilterOptionsRequestFilters,
+  getDispatcherTasksForJointPicture,
+  getDispatcherTasksForLinePicture,
+  isDispatcherTaskDirectlyRelatedToJoint,
   isDispatcherTaskRelatedToRow,
   parseDispatcherTaskServerFilter,
 } from '@/lib/dispatcher-task-row-codes'
@@ -68,6 +72,15 @@ function coreDataTask(rowValue: WeldRow): DispatcherTask {
     ...stampTask(rowValue),
     key: `core-${rowValue.id}`,
     reason: 'проверить основные данные стыка',
+  }
+}
+
+function systemWarningTask(rowValue: WeldRow): RepeatedJointCheckTask {
+  return {
+    ...stampTask(rowValue),
+    key: `sp-01-${rowValue.id}`,
+    reason: 'завершить предыдущие этапы контроля',
+    systemWarningCode: 'СП-01',
   }
 }
 
@@ -207,6 +220,47 @@ describe('dispatcher task row codes', () => {
     expect(isDispatcherTaskRelatedToRow(task, row(3, { line: 'LIN124' }))).toBe(false)
   })
 
+  it('keeps line-scoped tasks out of a joint picture while retaining them in the line picture', () => {
+    const selected = row(2, { projectTitle: ' project ', subtitleCode: 's1', line: 'LIN123' })
+    const source = row(1, { projectTitle: 'Project', subtitleCode: 'S1', line: 'Lin123' })
+    const task: PercentageLineControlTask = {
+      kind: 'percentage-line-control',
+      key: 'percentage-line-control:new-welder:lin123:a1',
+      row: source,
+      issue: 'new-welder',
+      projectTitle: 'Project',
+      subtitleCode: 'S1',
+      line: 'Lin123',
+      stamp: 'A1',
+      title: 'Новый сварщик на процентной линии',
+      details: 'Проверьте клеймо.',
+      requiredControls: 1,
+      coveredControls: 0,
+      assignedControls: 0,
+      count: 2,
+    }
+
+    expect(isDispatcherTaskRelatedToRow(task, selected)).toBe(true)
+    expect(isDispatcherTaskDirectlyRelatedToJoint(task, selected)).toBe(false)
+    expect(getDispatcherTasksForJointPicture([task], selected)).toEqual([])
+    expect(getDispatcherTasksForLinePicture([task], selected)).toEqual([task])
+    expect(getDispatcherTasksForLinePicture([task], row(3, { line: 'LIN124' }))).toEqual([])
+  })
+
+  it('collects joint-specific tasks from every joint of the selected line for the line picture', () => {
+    const first = row(1, { line: 'Линия 1' })
+    const second = row(2, { line: 'Линия 1' })
+    const otherLine = row(3, { line: 'Линия 2' })
+    const firstTask = stampTask(first)
+    const secondTask = stampTask(second)
+    const otherTask = stampTask(otherLine)
+
+    expect(getDispatcherTasksForLinePicture([firstTask, secondTask, otherTask], first)).toEqual([
+      firstTask,
+      secondTask,
+    ])
+  })
+
   it('indexes a duplicate task on every matching joint in the same line', () => {
     const rows = [
       row(1, { projectTitle: 'Project', subtitleCode: 'S1', line: 'Lin123', joint: 'S1' }),
@@ -249,6 +303,21 @@ describe('dispatcher task row codes', () => {
     expect(buildDispatcherTaskIndexRows([coreDataTask(rows[0])], rows)).toEqual([
       { rowId: 1, taskKey: 'core-1', code: 'ДЗ-31' },
     ])
+  })
+
+  it('persists SP-01 in the row index and exposes it through the virtual dispatcher field', () => {
+    const rows = [row(1)]
+    const persistedRows = buildDispatcherTaskIndexRows([systemWarningTask(rows[0])], rows)
+
+    expect(persistedRows).toEqual([
+      { rowId: 1, taskKey: 'sp-01-1', code: 'СП-01' },
+    ])
+    const { activeByRowId, allByRowId } = buildMergedDispatcherTaskCodes(
+      persistedRows.map(({ rowId, code }) => ({ rowId, code })),
+      [],
+    )
+    expect(activeByRowId.get(1)).toBe('СП-01')
+    expect(allByRowId.get(1)).toBe('СП-01')
   })
 
   it('persists an accepted early-coil recovery task as ДЗ-09 in the virtual field', () => {

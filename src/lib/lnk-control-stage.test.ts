@@ -6,6 +6,7 @@ import {
   buildPreHeatTreatmentControlSnapshot,
   buildPrimaryLnkControlSnapshot,
   getRequiredLnkControlStages,
+  getPrimaryLnkStageAccess,
   getPrimaryLnkStageBlockReason,
   getPreHeatTreatmentPendingFinalStatus,
   getPrimaryPstoStartBlockReason,
@@ -150,6 +151,96 @@ describe('LNK control stages', () => {
     expect(getPrimaryLnkStageBlockReason(preComplete, 'ВИК')).toBe('')
     expect(getPrimaryLnkStageBlockReason({ ...preComplete, tvmtResult: 'не годен' }, 'ВИК'))
       .toContain('требуется повторная ПСТО')
+  })
+
+  it('keeps an incomplete staged workflow blocked in strict mode', () => {
+    const access = getPrimaryLnkStageAccess({
+      id: 1,
+      joint: 'F1',
+      pstoRequired: 'да',
+      hasVik: 'да',
+    } as unknown as Parameters<typeof getPrimaryLnkStageAccess>[0], 'ВИК', {
+      preHeatTreatmentLnkEnabled: true,
+      allowPrimaryLnkBeforePreviousStagesComplete: false,
+    })
+
+    expect(access.status).toBe('blocked')
+    expect(access.reason).toContain('Сначала завершите НК до ТО: ВИК')
+    expect(access.debt?.missingPreHeatTreatmentControls).toEqual([
+      { methodCode: 'ВИК', nextAction: 'request' },
+    ])
+  })
+
+  it('allows manual primary LNK with a warning in permissive mode', () => {
+    const access = getPrimaryLnkStageAccess({
+      id: 1,
+      joint: 'F1',
+      pstoRequired: 'да',
+      hasVik: 'да',
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+      }],
+    } as unknown as Parameters<typeof getPrimaryLnkStageAccess>[0], 'ВИК', {
+      preHeatTreatmentLnkEnabled: true,
+      allowPrimaryLnkBeforePreviousStagesComplete: true,
+    })
+
+    expect(access.status).toBe('allowed-with-warning')
+    expect(access.debt?.missingPreHeatTreatmentControls).toEqual([
+      { methodCode: 'ВИК', nextAction: 'result' },
+    ])
+  })
+
+  it('keeps the existing PSTO-to-primary sequence when pre-TO control is disabled', () => {
+    const settings = {
+      preHeatTreatmentLnkEnabled: false,
+      allowPrimaryLnkBeforePreviousStagesComplete: true,
+    }
+    expect(getPrimaryLnkStageAccess({
+      id: 1,
+      joint: 'F1',
+      pstoRequired: 'да',
+      hasVik: 'да',
+      preHeatTreatmentLnkExempt: true,
+    } as unknown as Parameters<typeof getPrimaryLnkStageAccess>[0], 'ВИК', settings).status).toBe('blocked')
+    expect(getPrimaryLnkStageAccess({
+      id: 1,
+      joint: 'F1',
+      pstoRequired: 'да',
+      hasVik: 'да',
+      preHeatTreatmentLnkExempt: true,
+      pstoRequest: 'Заявка ПСТО',
+      pstoResult: 'проведено',
+      tvmtRequest: 'Заявка ТВМТ',
+      tvmtResult: 'годен',
+      tvmtConclusionDate: '2026-09-02',
+    } as unknown as Parameters<typeof getPrimaryLnkStageAccess>[0], 'ВИК', settings)).toEqual({ status: 'ready', reason: '', debt: null })
+  })
+
+  it('keeps a rejected pre-TO result blocked even in permissive mode', () => {
+    const access = getPrimaryLnkStageAccess({
+      id: 1,
+      joint: 'F1',
+      pstoRequired: 'да',
+      hasVik: 'да',
+      preHeatTreatmentControls: [{
+        id: 1,
+        weldJointId: 1,
+        method: 'ВИК',
+        requestName: 'Заявка ВИК до ТО',
+        result: 'вырез',
+      }],
+    } as unknown as Parameters<typeof getPrimaryLnkStageAccess>[0], 'ВИК', {
+      preHeatTreatmentLnkEnabled: true,
+      allowPrimaryLnkBeforePreviousStagesComplete: true,
+    })
+
+    expect(access.status).toBe('blocked')
+    expect(access.reason).toContain('Основной этап НК для этого стыка не требуется')
+    expect(access.debt).toBeNull()
   })
 
   it('does not use duplicate controls in primary-stage readiness', () => {

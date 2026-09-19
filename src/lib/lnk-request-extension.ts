@@ -18,7 +18,8 @@ import {
   isPendingLnkResultValue,
 } from '@/lib/report-value-utils'
 import { hasCompletedLnkRequestPosition } from '@/lib/report-control-state'
-import { getPrimaryLnkStageBlockReason } from '@/lib/lnk-control-stage'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
+import { getPrimaryLnkStageAccess } from '@/lib/lnk-control-stage'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
 export type LnkRequestExtensionTarget = {
@@ -147,11 +148,13 @@ export function analyzeLnkRequestExtensionTargets({
   methodKeys,
   requestName,
   requestDate,
+  controlProcessSettings,
 }: {
   rows: WeldInput[]
   methodKeys: WeldFieldKey[]
   requestName: string
   requestDate: string
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
 }): LnkRequestExtensionAnalysis {
   const targets: LnkRequestExtensionTarget[] = []
   const issues: LnkRequestExtensionIssue[] = []
@@ -162,7 +165,13 @@ export function analyzeLnkRequestExtensionTargets({
 
   for (const row of rows) {
     for (const method of methods) {
-      const reason = getLnkRequestExtensionTargetReason(row, method, requestName, requestDate)
+      const reason = getLnkRequestExtensionTargetReason(
+        row,
+        method,
+        requestName,
+        requestDate,
+        controlProcessSettings,
+      )
       if (reason) {
         issues.push({
           rowId: Number(row.id),
@@ -184,11 +193,13 @@ export function buildLnkRequestExtensionRows({
   targets,
   requestName,
   requestDate,
+  controlProcessSettings,
 }: {
   rows: WeldInput[]
   targets: LnkRequestExtensionTarget[]
   requestName: string
   requestDate: string
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
 }): WeldInput[] {
   const normalizedRequestName = requestName.trim()
   const normalizedRequestDate = normalizeDateLikeForStorage(requestDate) ?? ''
@@ -218,6 +229,7 @@ export function buildLnkRequestExtensionRows({
       method,
       normalizedRequestName,
       normalizedRequestDate,
+      controlProcessSettings,
     )
     if (reason) {
       const joint = String(row.joint ?? '').trim() || `№${rowId}`
@@ -267,12 +279,13 @@ function getLnkRequestExtensionTargetReason(
   method: (typeof LNK_METHODS)[number],
   requestName: string,
   requestDate: string,
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>,
 ) {
   if (!isEnabledControlValue(row[method.enabledKey])) {
     return 'вид НК должен быть назначен как «да» или «дополнительный».'
   }
-  const stageBlockReason = getPrimaryLnkStageBlockReason(row, method.code)
-  if (stageBlockReason) return stageBlockReason
+  const stageAccess = getPrimaryLnkStageAccess(row, method.code, controlProcessSettings)
+  if (stageAccess.status === 'blocked') return stageAccess.reason
   if (hasRejectedLnkResult(row)) {
     return 'стык уже имеет негодный результат, поэтому новые позиции НК для него не создаются.'
   }

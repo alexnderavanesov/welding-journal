@@ -1388,7 +1388,15 @@ function ControlProcessesSettingsPanel({
       )
       if (!saved) return
       await queryClient.invalidateQueries({ queryKey: ['control-process-settings-overview'] })
-      setMessage(`${key === 'layeredControlEnabled' ? 'Послойный НК' : 'НК до ТО'} ${enabled ? 'включен' : 'выключен'} для проекта.`)
+      const settingLabel = key === 'layeredControlEnabled'
+        ? 'Послойный НК'
+        : key === 'preHeatTreatmentLnkEnabled'
+          ? 'НК до ТО'
+          : 'Разрешение основного НК до завершения предыдущих этапов'
+      const stateLabel = key === 'allowPrimaryLnkBeforePreviousStagesComplete'
+        ? enabled ? 'включено' : 'выключено'
+        : enabled ? 'включен' : 'выключен'
+      setMessage(`${settingLabel} ${stateLabel} для проекта.`)
     } catch (error) {
       setMessage(getErrorMessage(error, 'Не удалось изменить процесс контроля.'))
     } finally {
@@ -1410,7 +1418,7 @@ function ControlProcessesSettingsPanel({
           <h3 className="text-base font-semibold text-slate-900">Процессы контроля</h3>
         </div>
         <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-          Два независимых процесса проекта. Изменения защищены общим паролем настроек, если он включен.
+          Процессы контроля и допустимая последовательность их оформления. Изменения защищены общим паролем настроек, если он включен.
         </p>
       </div>
 
@@ -1441,6 +1449,19 @@ function ControlProcessesSettingsPanel({
             busy={savingKey === 'preHeatTreatmentLnkEnabled'}
             warning={Boolean(preHeatTreatmentDisableReason)}
             onChange={(enabled) => void changeProcessSetting('preHeatTreatmentLnkEnabled', enabled)}
+          />
+          <ControlProcessToggle
+            title="Разрешать основной НК до завершения предыдущих этапов"
+            description="Позволяет вручную оформить основной ЛНК, пока обязательные НК до ТО, ПСТО или ТВМТ еще не завершены."
+            detail={settings.preHeatTreatmentLnkEnabled
+              ? settings.allowPrimaryLnkBeforePreviousStagesComplete
+                ? 'Система предупредит перед сохранением и создаст обязательное СП-01 до восстановления последовательности. Реальные противоречия дат и негодный НК до ТО по-прежнему блокируют действие.'
+                : 'Строгий режим: основной ЛНК доступен только после завершения обязательных предыдущих этапов.'
+              : 'Недоступно, пока процесс «НК до ТО» выключен.'}
+            checked={settings.preHeatTreatmentLnkEnabled && settings.allowPrimaryLnkBeforePreviousStagesComplete}
+            disabled={savingKey !== null || !settings.preHeatTreatmentLnkEnabled}
+            busy={savingKey === 'allowPrimaryLnkBeforePreviousStagesComplete'}
+            onChange={(enabled) => void changeProcessSetting('allowPrimaryLnkBeforePreviousStagesComplete', enabled)}
           />
         </div>
         {overviewQuery.error ? (
@@ -1584,6 +1605,24 @@ function getControlProcessSettingConfirmation(
           description: 'Новые заключения послойного контроля создаваться не будут. Основные ВИК и ПВК продолжат работать обычно.',
           warning: 'Существующие документы, история и номера сохранятся и останутся доступными.',
           confirmLabel: 'Выключить',
+        }
+  }
+
+  if (key === 'allowPrimaryLnkBeforePreviousStagesComplete') {
+    return enabled
+      ? {
+          title: 'Разрешить основной НК раньше',
+          itemName: 'Нестрогая последовательность оформления',
+          description: 'В заявках и результатах основного ЛНК можно будет вручную выбрать стык до завершения НК до ТО, ПСТО или ТВМТ.',
+          warning: 'Автоматические годные результаты и документы не создаются. До восстановления последовательности по стыку будет показываться обязательное СП-01.',
+          confirmLabel: 'Разрешить',
+        }
+      : {
+          title: 'Вернуть строгую последовательность',
+          itemName: 'Основной НК только после предыдущих этапов',
+          description: 'Новые ранние заявки и результаты основного ЛНК снова будут заблокированы.',
+          warning: 'Уже существующие нарушения останутся видны как СП-01 до фактического завершения предыдущих этапов.',
+          confirmLabel: 'Вернуть строгий режим',
         }
   }
 
@@ -4144,11 +4183,11 @@ function DispatcherSettingsPanel({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <Bell className="h-5 w-5 text-slate-500" />
-              <h3 className="text-base font-semibold text-slate-900">Диспетчер задач и напоминаний</h3>
+              <h3 className="text-base font-semibold text-slate-900">Настраиваемые задачи диспетчера (ДЗ)</h3>
             </div>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-              Отключение скрывает выбранный тип задач из диспетчера и панели напоминаний. Данные журнала, принятые предупреждения и правила
-              расчета не изменяются.
+              Отключение скрывает выбранный тип ДЗ из диспетчера и панели напоминаний. Системные предупреждения (СП), которые требуют
+              восстановить обязательную последовательность процесса, не отключаются и исчезают автоматически после исправления данных.
             </p>
             <div className="mt-2 text-xs font-semibold text-slate-500">
               Активно: {totalCount - disabledCount} из {totalCount}
@@ -4160,7 +4199,7 @@ function DispatcherSettingsPanel({
               className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
               onClick={() => runProtectedSettingsChange(() => saveDispatcherSettings(DEFAULT_DISPATCHER_SETTINGS))}
             >
-              Включить все
+              Включить все ДЗ
             </button>
             <button
               type="button"
@@ -4170,7 +4209,7 @@ function DispatcherSettingsPanel({
                 runProtectedSettingsChange(() => saveDispatcherSettings(nextSettings))
               }}
             >
-              Отключить все
+              Отключить все ДЗ
             </button>
           </div>
         </div>

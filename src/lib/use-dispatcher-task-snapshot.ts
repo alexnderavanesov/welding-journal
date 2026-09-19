@@ -4,6 +4,7 @@ import { buildDispatcherTaskGroups } from '@/lib/dispatcher-view'
 import { getJointChainConsistencyKey } from '@/lib/repeated-joint-tasks'
 import { DISPATCHER_TASK_SNAPSHOT_QUERY_KEY } from '@/lib/weld-query-utils'
 import { getDispatcherTaskSnapshot } from '@/server/dispatcher-task-snapshot'
+import { isSystemDispatcherWarningTask } from '@/lib/dispatcher-types'
 
 type UseDispatcherTaskSnapshotInput = {
   dismissedRepeatedJointTaskKeys: Set<string>
@@ -55,9 +56,11 @@ export function useDispatcherTaskSnapshot({
   }
 }
 
-export function filterDismissedDispatcherTasks<Task extends { key: string }>(
+export function filterDismissedDispatcherTasks<Task extends { key: string; kind?: string; systemWarningCode?: string }>(
   tasks: readonly Task[] | undefined,
   dismissedTaskKeys: ReadonlySet<string>,
 ) {
-  return (tasks ?? []).filter((task) => !dismissedTaskKeys.has(task.key))
+  return (tasks ?? []).filter((task) =>
+    isSystemDispatcherWarningTask(task) || !dismissedTaskKeys.has(task.key),
+  )
 }

@@ -17,7 +17,7 @@ import {
   LNK_RESULT_COMPLETENESS_REASON,
   PSTO_RESULT_COMPLETENESS_REASON,
 } from '@/lib/dispatcher-check-reasons'
-import type { DispatcherTask } from '@/lib/dispatcher-types'
+import { isSystemDispatcherWarningTask, type DispatcherTask } from '@/lib/dispatcher-types'
 
 export const DISPATCHER_SETTINGS_EVENT = 'dispatcher-settings-change'
 
@@ -140,7 +140,7 @@ export const DISPATCHER_SETTING_TASK_TYPE_LABELS: Record<DispatcherSettingId, st
   'check-repair-diameter': 'Проверить допустимость ремонта',
   'check-welder-stamp': 'Проверить клеймо',
   'check-incomplete-stamps': 'Дозаполнить клейма/дату сварки',
-  'check-lnk-request-date-order': 'Проверить даты ЛНК',
+  'check-lnk-request-date-order': 'Проверить документы и даты ЛНК',
   'check-lnk-vik-date-order': 'Проверить порядок НК',
   'check-lnk-vik-required': 'Дозаполнить ВИК',
   'check-psto-request-date-order': 'Проверить цикл ПСТО/ТВМТ',
@@ -269,7 +269,7 @@ export const DISPATCHER_SETTING_GROUPS: DispatcherSettingGroup[] = [
       },
       {
         id: 'check-lnk-request-date-order',
-        label: 'Проверить даты ЛНК',
+        label: 'Проверить документы и даты ЛНК',
         description: 'Показывать задачи, когда дата ЛНК некорректна, заявка заполнена неполностью, контроль выполнен раньше сварки или нарушен порядок сварка -> заявка ЛНК -> заключение.',
       },
       {
@@ -523,7 +523,7 @@ const ACTION_REMINDER_DETAILS: DispatcherSettingActionHelp = {
 export const DISPATCHER_SETTING_ACTION_HELP: Record<DispatcherSettingId, DispatcherSettingActionHelp[]> = {
   'percentage-new-welder': [
     {
-      label: 'Действия -> Изменить клеймо',
+      label: 'Действия -> Исправить клеймо',
       description: 'Открывает редактирование связанного стыка, чтобы проверить или заменить официальное клеймо.',
     },
     {
@@ -792,6 +792,7 @@ export function applyRemoteDispatcherReminderSettings(settings: unknown) {
 }
 
 export function isDispatcherTaskEnabled(task: DispatcherTask, settings: DispatcherSettings) {
+  if (isSystemDispatcherWarningTask(task)) return true
   return isDispatcherSettingEnabled(getDispatcherTaskSettingId(task), settings)
 }
 
@@ -812,7 +813,13 @@ export function getDispatcherSettingTaskTypeLabel(id: DispatcherSettingId) {
 }
 
 export function getDispatcherTaskCode(task: DispatcherTask) {
+  if (isSystemDispatcherWarningTask(task)) return task.systemWarningCode
   return getDispatcherSettingCode(getDispatcherTaskSettingId(task))
+}
+
+export function getDispatcherTaskTypeLabel(task: DispatcherTask) {
+  if (isSystemDispatcherWarningTask(task)) return 'Завершить предыдущие этапы контроля'
+  return getDispatcherSettingTaskTypeLabel(getDispatcherTaskSettingId(task))
 }
 
 export function normalizeDispatcherSettings(value: unknown): DispatcherSettings {

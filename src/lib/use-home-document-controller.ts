@@ -1,11 +1,11 @@
 import { useCallback, useState, type Dispatch, type SetStateAction } from 'react'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DocumentGenerationRequest } from '@/lib/document-generation'
+import type { DocumentNavigationRequest } from '@/lib/document-navigation'
 import {
   getGeneratedDocumentProfile,
   isGeneratedDocumentFieldKey,
 } from '@/lib/generated-document-types'
-import type { SystemDocumentNavigationRequest } from '@/lib/system-document-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
@@ -24,8 +24,8 @@ export function useHomeDocumentController({
 }: UseHomeDocumentControllerOptions) {
   const [documentGenerationRequest, setDocumentGenerationRequest] =
     useState<DocumentGenerationRequest | null>(null)
-  const [systemDocumentNavigationRequest, setSystemDocumentNavigationRequest] =
-    useState<SystemDocumentNavigationRequest | null>(null)
+  const [documentNavigationRequest, setDocumentNavigationRequest] =
+    useState<DocumentNavigationRequest | null>(null)
 
   const generateDocumentForRows = useCallback((
     type: DocumentGenerationRequest['type'],
@@ -45,8 +45,8 @@ export function useHomeDocumentController({
     setDocumentGenerationRequest((current) => (current?.id === requestId ? null : current))
   }, [])
 
-  const handleSystemDocumentNavigationRequest = useCallback((requestId: number) => {
-    setSystemDocumentNavigationRequest((current) =>
+  const handleDocumentNavigationRequest = useCallback((requestId: number) => {
+    setDocumentNavigationRequest((current) =>
       current?.requestId === requestId ? null : current,
     )
   }, [])
@@ -70,9 +70,9 @@ export function useHomeDocumentController({
     generateDocumentForRows,
     handleDocumentGenerationRequest,
     openReportDocument,
-    systemDocumentNavigationRequest,
-    setSystemDocumentNavigationRequest,
-    handleSystemDocumentNavigationRequest,
+    documentNavigationRequest,
+    setDocumentNavigationRequest,
+    handleDocumentNavigationRequest,
   }
 }
 

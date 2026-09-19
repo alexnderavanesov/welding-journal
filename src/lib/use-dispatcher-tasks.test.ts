@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import { DEFAULT_DISPATCHER_REMINDER_SETTINGS, DEFAULT_DISPATCHER_SETTINGS, type DispatcherSettings } from '@/lib/dispatcher-settings'
-import type { WeldRow } from '@/lib/dispatcher-types'
+import { isSystemDispatcherWarningTask, type WeldRow } from '@/lib/dispatcher-types'
 import { buildVisibleDispatcherTasks, getDispatcherTaskRowIds } from '@/lib/dispatcher-task-builder'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 
 describe('buildVisibleDispatcherTasks', () => {
   it('keeps dispatcher row tasks tied to their individual settings', () => {
@@ -44,6 +45,45 @@ describe('buildVisibleDispatcherTasks', () => {
     )
 
     expect(hiddenTasks.repeatedJointTasks).toEqual([])
+  })
+
+  it('keeps SP-01 visible despite disabled DZ settings and saved hide or accept keys', () => {
+    const rows = [row({
+      id: 1,
+      pstoRequired: 'да',
+      hasVik: 'да',
+      vikRequest: 'Основная заявка ВИК',
+    })]
+    const initial = buildTasks(disabledSettings(), { rows })
+    const warning = initial.repeatedJointTasks.find(isSystemDispatcherWarningTask)
+    expect(warning).toBeTruthy()
+
+    const guarded = buildTasks(disabledSettings(), {
+      rows,
+      acceptedDispatcherWarningKeys: new Set([warning!.key]),
+      dismissedRepeatedJointTaskKeys: new Set([warning!.key]),
+    })
+    expect(guarded.repeatedJointTasks).toContainEqual(
+      expect.objectContaining({ key: warning!.key, systemWarningCode: 'СП-01' }),
+    )
+  })
+
+  it('does not calculate SP-01 while the parent pre-TO process is disabled', () => {
+    const tasks = buildTasks(disabledSettings(), {
+      rows: [row({
+        id: 1,
+        pstoRequired: 'да',
+        hasVik: 'да',
+        vikRequest: 'Основная заявка ВИК',
+      })],
+      controlProcessSettings: {
+        layeredControlEnabled: true,
+        preHeatTreatmentLnkEnabled: false,
+        allowPrimaryLnkBeforePreviousStagesComplete: false,
+      },
+    })
+
+    expect(tasks.repeatedJointTasks.some(isSystemDispatcherWarningTask)).toBe(false)
   })
 
   it('builds compact row id index for table highlighting', () => {
@@ -545,6 +585,7 @@ function buildTasks(
     acceptedDispatcherWarningKeys?: Set<string>
     dismissedRepeatedJointTaskKeys?: Set<string>
     includeRepeatedJointTasks?: boolean
+    controlProcessSettings?: ControlProcessSettings
     rows?: WeldRow[]
     welderStamps?: WelderStampRecord[]
   } = {},
@@ -554,6 +595,7 @@ function buildTasks(
     dismissedRepeatedJointTaskKeys: overrides.dismissedRepeatedJointTaskKeys ?? new Set(),
     dispatcherReminderSettings: DEFAULT_DISPATCHER_REMINDER_SETTINGS,
     dispatcherSettings,
+    controlProcessSettings: overrides.controlProcessSettings,
     includeRepeatedJointTasks: overrides.includeRepeatedJointTasks,
     rows: overrides.rows ?? [
       row({ id: 1, line: 'LIN-1', joint: 'F1', weldControlPercent: '100' }),

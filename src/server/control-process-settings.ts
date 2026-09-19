@@ -143,7 +143,13 @@ export async function prepareControlProcessSettingsChangeInTransaction({
   processLocksAlreadyHeld?: boolean
 }) {
   const current = normalizeControlProcessSettings(currentValue)
-  const next = normalizeControlProcessSettings(nextValue)
+  const requestedNext = normalizeControlProcessSettings(nextValue)
+  const next = requestedNext.preHeatTreatmentLnkEnabled
+    ? requestedNext
+    : {
+        ...requestedNext,
+        allowPrimaryLnkBeforePreviousStagesComplete: false,
+      }
   const preHeatTreatmentChanged = (
     current.preHeatTreatmentLnkEnabled !== next.preHeatTreatmentLnkEnabled
   )

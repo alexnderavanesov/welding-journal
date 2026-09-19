@@ -5,7 +5,7 @@ import {
   REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON,
   WELD_STAMP_COMPLETION_GROUPS,
 } from '@/lib/report-config'
-import { hasText } from '@/lib/report-value-utils'
+import { hasText, isEnabledControlValue } from '@/lib/report-value-utils'
 import {
   formatDisplayDate,
   getDateInputValidationReason,
@@ -37,7 +37,10 @@ import type { DataListSettings } from '@/lib/data-list-settings'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 import {
   getPreHeatTreatmentControls,
+  getPrimaryLnkStageDebt,
   getRejectedPreHeatTreatmentControls,
+  hasPrimaryLnkControlTrace,
+  type PrimaryLnkStageDebt,
 } from '@/lib/lnk-control-stage'
 import { buildPstoCycleTimeline, type PstoRepeatCycleRecord } from '@/lib/psto-cycle'
 import { normalizeTvmtResult } from '@/lib/tvmt-cycle'
@@ -46,8 +49,71 @@ import { getDuplicateControls } from '@/lib/duplicate-control-utils'
 import {
   getLnkChronologyRootCauseActions,
   getPstoChronologyRootCauseActions,
+  getPrimaryLnkStageDebtRootCauseAction,
   type WorkflowRootCauseAction,
 } from '@/lib/workflow-root-cause-actions'
+import { getPstoTvmtWorkflowLabel } from '@/lib/tvmt-cycle'
+import {
+  DEFAULT_CONTROL_PROCESS_SETTINGS,
+  type ControlProcessSettings,
+} from '@/lib/control-process-settings'
+
+export const PRIMARY_LNK_STAGE_DEBT_SYSTEM_WARNING_REASON = 'завершить предыдущие этапы контроля'
+
+export function buildPrimaryLnkStageDebtSystemWarnings(
+  rows: WeldRow[],
+  controlProcessSettings: ControlProcessSettings = DEFAULT_CONTROL_PROCESS_SETTINGS,
+): RepeatedJointCheckTask[] {
+  if (!controlProcessSettings.preHeatTreatmentLnkEnabled) return []
+  return rows.flatMap((row) => {
+    const methodDebts = LNK_METHODS.flatMap((method) => {
+      if (!isEnabledControlValue(row[method.enabledKey])) return []
+      if (!hasPrimaryLnkControlTrace(row, method.code)) return []
+      const debt = getPrimaryLnkStageDebt(row, method.code)
+      return debt ? [{ method, debt }] : []
+    })
+    if (methodDebts.length === 0) return []
+
+    const debt: PrimaryLnkStageDebt = {
+      missingPreHeatTreatmentControls: [...new Map(
+        methodDebts
+          .flatMap((entry) => entry.debt.missingPreHeatTreatmentControls)
+          .map((control) => [`${control.methodCode}:${control.nextAction}`, control]),
+      ).values()],
+      pstoState: methodDebts[0]!.debt.pstoState,
+      reason: [...new Set(methodDebts.map((entry) => entry.debt.reason))].join(' '),
+    }
+    const joint = String(row.joint ?? '').trim() || `ID ${row.id}`
+    const methodCodes = methodDebts.map(({ method }) => method.code)
+    const missingStages = [
+      ...debt.missingPreHeatTreatmentControls.map(({ methodCode, nextAction }) =>
+        `${nextAction === 'request' ? 'заявка' : 'результат'} ${methodCode} до ТО`,
+      ),
+      ...(debt.pstoState !== 'complete' && debt.pstoState !== 'not-required'
+        ? [getPstoTvmtWorkflowLabel(debt.pstoState)]
+        : []),
+    ]
+    const sourceJoint = String(row.joint ?? '').trim() || '-'
+    return [{
+      kind: 'check' as const,
+      key: `sp-01:${row.id}:${methodCodes.join('+')}:${debt.missingPreHeatTreatmentControls
+        .map(({ methodCode, nextAction }) => `${methodCode}:${nextAction}`)
+        .join('+')}:${debt.pstoState}`,
+      row,
+      sourceRow: row,
+      sourceJoint,
+      targetJoint: sourceJoint,
+      baseJoint: sourceJoint,
+      suffix: 'R' as const,
+      reason: PRIMARY_LNK_STAGE_DEBT_SYSTEM_WARNING_REASON,
+      details: `Стык ${joint}: основной НК уже оформляется по методам ${methodCodes.join(', ')}, ` +
+        `но предыдущие этапы еще не завершены: ${missingStages.join(', ')}. ` +
+        'Завершайте этапы по порядку; предупреждение исчезнет автоматически после восстановления последовательности.',
+      rootCauseActions: [getPrimaryLnkStageDebtRootCauseAction(row, debt)],
+      systemWarningCode: 'СП-01' as const,
+    }]
+  })
+}
 
 const WELDER_STAMP_AUDIT_SAVE_CHECK_SETTINGS = {
   ...DEFAULT_SAVE_CHECK_SETTINGS,

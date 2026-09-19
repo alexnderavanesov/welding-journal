@@ -9,7 +9,7 @@ describe('JointDispatcherTasksPanel', () => {
   it('stays hidden for a joint without active dispatcher tasks', () => {
     render(<JointDispatcherTasksPanel row={row()} tasks={[]} onRunAction={vi.fn()} />)
 
-    expect(screen.queryByRole('region', { name: 'Активные задачи диспетчера' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Задачи по стыку' })).not.toBeInTheDocument()
   })
 
   it('shows the concrete action and routes it with the selected task', () => {
@@ -28,7 +28,52 @@ describe('JointDispatcherTasksPanel', () => {
     }))
   })
 
-  it('shows a line-wide task on another row of the same line regardless of letter case', () => {
+  it('shows system warnings first with a separate counter and exact recovery action', () => {
+    const current = row()
+    const dispatcherTask = checkTask(current)
+    const systemWarning: RepeatedJointCheckTask = {
+      ...checkTask(current),
+      key: 'sp-01:1',
+      reason: 'Нарушена последовательность контроля.',
+      systemWarningCode: 'СП-01',
+      rootCauseActions: [{
+        key: 'complete-stage:1:beforeHeatTreatment:ВИК:request',
+        label: 'Создать заявку НК до ТО',
+        tone: 'primary',
+        target: {
+          kind: 'lnk-control',
+          rowId: 1,
+          stage: 'beforeHeatTreatment',
+          methodCode: 'ВИК',
+          documentPart: 'request',
+          focus: 'name',
+          intent: 'complete-stage',
+        },
+      }],
+    }
+    const onRunAction = vi.fn()
+
+    render(
+      <JointDispatcherTasksPanel
+        row={current}
+        tasks={[dispatcherTask, systemWarning]}
+        onRunAction={onRunAction}
+      />,
+    )
+
+    expect(screen.getByText('СП · 1')).toBeInTheDocument()
+    expect(screen.getByText('ДЗ · 1')).toBeInTheDocument()
+    expect(screen.getAllByText(/^(СП-01|ДЗ-32)$/).map((item) => item.textContent))
+      .toEqual(['СП-01', 'ДЗ-32'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Создать заявку НК до ТО' }))
+    expect(onRunAction).toHaveBeenCalledWith(current, systemWarning, expect.objectContaining({
+      id: 'open-root-cause',
+      label: 'Создать заявку НК до ТО',
+    }))
+  })
+
+  it('moves a line-wide task out of the joint list and opens the line picture', () => {
     const current = row({ id: 8, projectTitle: 'project', subtitleCode: 's1', line: 'lin123' })
     const task: LineConsistencyTask = {
       kind: 'line-consistency',
@@ -43,15 +88,22 @@ describe('JointDispatcherTasksPanel', () => {
       values: ['да', 'нет'],
       details: 'Значения различаются.',
     }
-    const onRunAction = vi.fn()
-    render(<JointDispatcherTasksPanel row={current} tasks={[task]} onRunAction={onRunAction} />)
+    const onOpenLinePicture = vi.fn()
+    render(
+      <JointDispatcherTasksPanel
+        row={current}
+        tasks={[task]}
+        fallbackCodes="ДЗ-30"
+        onRunAction={vi.fn()}
+        onOpenLinePicture={onOpenLinePicture}
+      />,
+    )
 
-    expect(screen.getByText('Вся линия')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Открыть программу ПСТО' }))
-    expect(onRunAction).toHaveBeenCalledWith(current, task, expect.objectContaining({
-      id: 'open-psto-program',
-      label: 'Открыть программу ПСТО',
-    }))
+    expect(screen.getByText('Нет активных задач по стыку.')).toBeInTheDocument()
+    expect(screen.queryByText('ДЗ-30')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Открыть программу ПСТО' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Картина линии · 1' }))
+    expect(onOpenLinePicture).toHaveBeenCalledOnce()
   })
 
   it('does not repeat a task that is already shown as the primary next action', () => {
@@ -68,7 +120,7 @@ describe('JointDispatcherTasksPanel', () => {
       />,
     )
 
-    expect(screen.queryByRole('region', { name: 'Активные задачи диспетчера' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Задачи по стыку' })).not.toBeInTheDocument()
   })
 
   it('keeps fallback codes that are not represented by the current task snapshot', () => {
@@ -84,9 +136,39 @@ describe('JointDispatcherTasksPanel', () => {
       />,
     )
 
-    expect(screen.getByText('2')).toBeInTheDocument()
+    expect(screen.getByText('ДЗ · 2')).toBeInTheDocument()
     expect(screen.getByText('ДЗ-32')).toBeInTheDocument()
     expect(screen.getByText('ДЗ-18')).toBeInTheDocument()
+  })
+
+  it('does not present persisted line-scoped codes as joint tasks while the snapshot is unavailable', () => {
+    render(
+      <JointDispatcherTasksPanel
+        row={row()}
+        tasks={[]}
+        fallbackCodes="ДЗ-01, ДЗ-24, ДЗ-18"
+        onRunAction={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('ДЗ-18')).toBeInTheDocument()
+    expect(screen.queryByText('ДЗ-01')).not.toBeInTheDocument()
+    expect(screen.queryByText('ДЗ-24')).not.toBeInTheDocument()
+    expect(screen.getByText('ДЗ · 1')).toBeInTheDocument()
+  })
+
+  it('shows only the first three joint tasks until requested', () => {
+    const current = row()
+    const tasks = Array.from({ length: 4 }, (_, index) => ({
+      ...checkTask(current),
+      key: `check:lnk-completeness:${index}`,
+    }))
+
+    render(<JointDispatcherTasksPanel row={current} tasks={tasks} onRunAction={vi.fn()} />)
+
+    expect(screen.getAllByText('ДЗ-32')).toHaveLength(3)
+    fireEvent.click(screen.getByRole('button', { name: 'Показать ещё 1' }))
+    expect(screen.getAllByText('ДЗ-32')).toHaveLength(4)
   })
 })
 

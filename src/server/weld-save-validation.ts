@@ -9,6 +9,11 @@ import {
   type WeldJoint,
 } from '@/db/schema'
 import {
+  DEFAULT_CONTROL_PROCESS_SETTINGS,
+  normalizeControlProcessSettings,
+  type ControlProcessSettings,
+} from '@/lib/control-process-settings'
+import {
   DEFAULT_DATA_LIST_SETTINGS,
   normalizeDataListOption,
   normalizeDataListSettings,
@@ -64,7 +69,7 @@ import {
 } from '@/lib/control-availability-values'
 import {
   getPreHeatTreatmentControl,
-  getPrimaryLnkStageBlockReason,
+  getPrimaryLnkStageAccess,
   getPrimaryPstoStartBlockReason,
   isPreHeatTreatmentLnkMethodCode,
   PRE_HEAT_TREATMENT_LNK_METHODS,
@@ -96,6 +101,7 @@ const CONTROL_ENABLED_VALUES_SQL = sql.join(
 const PSTO_LINE_VALIDATION_SCOPE_BATCH_SIZE = 500
 
 export type ServerWeldValidationContext = {
+  controlProcessSettings: ControlProcessSettings
   saveCheckSettings: SaveCheckSettings
   dataListSettings: DataListSettings
   otherSettings: OtherSettings
@@ -129,6 +135,7 @@ export async function loadServerWeldValidationContext(
     .from(appSettings)
     .where(inArray(appSettings.key, [
       PROJECT_SETTING_KEYS.saveCheck,
+      PROJECT_SETTING_KEYS.controlProcesses,
       PROJECT_SETTING_KEYS.dataList,
       PROJECT_SETTING_KEYS.other,
       PROJECT_SETTING_KEYS.systemIndex,
@@ -181,6 +188,9 @@ export async function loadServerWeldValidationContext(
     ? normalizeOtherSettings(settingsByKey.get(PROJECT_SETTING_KEYS.other))
     : DEFAULT_OTHER_SETTINGS
   return {
+    controlProcessSettings: settingsByKey.has(PROJECT_SETTING_KEYS.controlProcesses)
+      ? normalizeControlProcessSettings(settingsByKey.get(PROJECT_SETTING_KEYS.controlProcesses))
+      : DEFAULT_CONTROL_PROCESS_SETTINGS,
     saveCheckSettings: settingsByKey.has(PROJECT_SETTING_KEYS.saveCheck)
       ? normalizeSaveCheckSettings(
           settingsByKey.get(PROJECT_SETTING_KEYS.saveCheck),
@@ -466,6 +476,9 @@ export function validateServerWeldRecords({
       context.saveCheckSettings,
       {
         allowSystemJointName: allowSystemJointNames,
+        allowPrimaryLnkStageDebt:
+          context.controlProcessSettings.preHeatTreatmentLnkEnabled &&
+          context.controlProcessSettings.allowPrimaryLnkBeforePreviousStagesComplete,
         systemIndexSettings: context.systemIndexSettings,
       },
     )
@@ -506,6 +519,17 @@ export function getSystemDocumentIntegrityReason(
       label: `заявки ${method.code}`,
     })
     if (reason) return reason
+
+    const hasOutcomeTrace = isFinalLnkResultValue(record[method.resultKey]) ||
+      hasText(record[method.conclusionDateKey]) ||
+      hasText(record[method.conclusionKey])
+    const outcomeOrRequestChanged = hasChangedOptionalField(record, previous, method.requestKey) ||
+      hasChangedOptionalField(record, previous, method.resultKey) ||
+      hasChangedOptionalField(record, previous, method.conclusionDateKey) ||
+      hasChangedOptionalField(record, previous, method.conclusionKey)
+    if (!hasText(record[method.requestKey]) && hasOutcomeTrace && outcomeOrRequestChanged) {
+      return `Результат, дату контроля или заключение ${method.code} нельзя сохранять без заявки ЛНК.`
+    }
   }
 
   const pstoRequestReason = getRequestDocumentIntegrityReason({
@@ -650,7 +674,7 @@ function lowerFirst(value: string) {
 export function getSystemWorkflowStageTransitionReason(
   record: WeldInput,
   previous: WeldJoint | undefined,
-  context: Pick<ServerWeldValidationContext, 'pstoLineAssignments'>,
+  context: Pick<ServerWeldValidationContext, 'controlProcessSettings' | 'pstoLineAssignments'>,
 ) {
   const preControlAssignmentReason = getPreHeatTreatmentAssignmentRemovalReason(record, previous)
   if (preControlAssignmentReason) return preControlAssignmentReason
@@ -697,8 +721,8 @@ export function getSystemWorkflowStageTransitionReason(
         const lineReason = getFullyAssignedPstoLineReason(record, context.pstoLineAssignments)
         if (lineReason) return lineReason
       }
-      const stageReason = getPrimaryLnkStageBlockReason(record, method.code)
-      if (stageReason) return stageReason
+      const stageAccess = getPrimaryLnkStageAccess(record, method.code, context.controlProcessSettings)
+      if (stageAccess.status === 'blocked') return stageAccess.reason
     }
   }
 

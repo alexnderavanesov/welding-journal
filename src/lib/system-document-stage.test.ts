@@ -6,7 +6,6 @@ import {
   getScopedSystemDocumentStageValues,
   getSystemDocumentMethodCodes,
   getSystemDocumentStageLabel,
-  getSystemDocumentStageTransferLabel,
 } from '@/lib/system-document-stage'
 import type { SystemDocumentSummary } from '@/lib/system-document-types'
 
@@ -66,16 +65,13 @@ describe('system document stages', () => {
     }))).toBe('Циклы 1, 3')
   })
 
-  it('normalizes repeated method metadata and uses the approved transfer labels', () => {
+  it('normalizes repeated method metadata', () => {
     const beforeHeatTreatment = summary({
       sourceKind: 'beforeHeatTreatment',
       methodCodes: ['ВИК', ' ВИК ', 'РК'],
     })
 
     expect(getSystemDocumentMethodCodes(beforeHeatTreatment)).toEqual(['ВИК', 'РК'])
-    expect(getSystemDocumentStageTransferLabel(beforeHeatTreatment)).toBe('Перенести в «Основной»')
-    expect(getSystemDocumentStageTransferLabel(summary({ methodCodes: ['ВИК'] })))
-      .toBe('Перенести в «До ТО»')
   })
 })
 

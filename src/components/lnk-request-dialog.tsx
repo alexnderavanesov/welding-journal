@@ -24,6 +24,7 @@ import {
   getDialogMenuPoint,
 } from '@/lib/dialog-context-menu-items'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { getLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { buildLnkRequestDraftRows } from '@/lib/lnk-request-mutation-updates'
 import {
@@ -70,10 +71,13 @@ export type LnkRequestDialogProps = {
   lnkRowsCount: number
   filteredRows: WeldRow[]
   filteredAvailableRows: WeldRow[]
+  filteredReadyRows: WeldRow[]
   availableRows: WeldRow[]
+  readyRows: WeldRow[]
   selectedIds: ReadonlySet<number>
   isPending: boolean
   saveCheckSettings: SaveCheckSettings
+  controlProcessSettings: ControlProcessSettings
   onClose: () => void
   onOpenRequestRegistry: () => void
   onRequestNamingChange: (value: RequestNamingState) => void
@@ -112,10 +116,13 @@ export function LnkRequestDialog({
   lnkRowsCount,
   filteredRows,
   filteredAvailableRows,
+  filteredReadyRows,
   availableRows,
+  readyRows,
   selectedIds,
   isPending,
   saveCheckSettings,
+  controlProcessSettings,
   onClose,
   onOpenRequestRegistry,
   onRequestNamingChange,
@@ -146,8 +153,8 @@ export function LnkRequestDialog({
   const [selectedRowsSearch, setSelectedRowsSearch] = useState('')
   const selectedMethodKeys = useMemo(() => [...selectedMethods], [selectedMethods])
   const createTargetCount = useMemo(
-    () => countLnkRequestTargets(selectedRows, selectedMethodKeys),
-    [selectedMethodKeys, selectedRows],
+    () => countLnkRequestTargets(selectedRows, selectedMethodKeys, controlProcessSettings),
+    [controlProcessSettings, selectedMethodKeys, selectedRows],
   )
   const selectedExistingRequest = useMemo(
     () => requestExtensionOptions.find((request) => request.key === existingRequestKey),
@@ -182,14 +189,15 @@ export function LnkRequestDialog({
       methodKeys: selectedMethodKeys,
       requestName: selectedExistingRequest?.name ?? '',
       requestDate: selectedExistingRequest?.date ?? '',
+      controlProcessSettings,
     }),
-    [selectedExistingRequest?.date, selectedExistingRequest?.name, selectedMethodKeys, selectedRows],
+    [controlProcessSettings, selectedExistingRequest?.date, selectedExistingRequest?.name, selectedMethodKeys, selectedRows],
   )
   const selectedTargetCount = submitMode === 'create' ? createTargetCount : extensionAnalysis.targets.length
   const hasSearch = requestSearch.trim().length > 0
   const orderedAvailableRows = useMemo(
-    () => pinInitiallySelectedRows(filteredAvailableRows, selectedIds, initiallySelectedIds),
-    [filteredAvailableRows, initiallySelectedIds, selectedIds],
+    () => pinInitiallySelectedRows(hasSearch ? filteredRows : filteredAvailableRows, selectedIds, initiallySelectedIds),
+    [filteredAvailableRows, filteredRows, hasSearch, initiallySelectedIds, selectedIds],
   )
   const filteredSelectedRows = useMemo(
     () => filterLnkRequestRows(selectedRows, selectedRowsSearch),
@@ -210,7 +218,7 @@ export function LnkRequestDialog({
     resetKeys: paginationResetKeys,
   })
   const rowsViewportResetKey = `${rowsPagination.page}:${rowsPagination.pageSize}:${displayedSearch}:${rowsViewMode}:${submitMode}:${existingRequestKey}`
-  const allFilteredRowsSelected = isEveryFilteredLnkRequestRowSelected(selectedIds, filteredAvailableRows)
+  const allFilteredRowsSelected = isEveryFilteredLnkRequestRowSelected(selectedIds, filteredReadyRows)
   const requestName = submitMode === 'create' ? getRequestNameFromNaming(requestNaming, nextRequestName) : ''
   const creationPlan = useMemo(() => {
     const eligibleRowIds = new Set(buildLnkRequestDraftRows({
@@ -218,6 +226,7 @@ export function LnkRequestDialog({
       methodKeys: selectedMethodKeys,
       requestName: '__system-document-group-preview__',
       requestDate,
+      controlProcessSettings,
     }).map((row) => row.id))
     return buildSystemDocumentCreationPlan({
       type: 'lnkRequest',
@@ -227,7 +236,7 @@ export function LnkRequestDialog({
       settings: requestConclusionSettings,
       nextNumber: nextRequestNumber,
     })
-  }, [nextRequestNumber, requestConclusionSettings, requestDate, requestNaming, selectedMethodKeys, selectedRows])
+  }, [controlProcessSettings, nextRequestNumber, requestConclusionSettings, requestDate, requestNaming, selectedMethodKeys, selectedRows])
   const effectiveRequestName = creationPlan.groups[0]?.name ?? requestName
   const requestDateReason = submitMode === 'create' ? getDateInputValidationReason(requestDate, 'Дата заявки ЛНК') : null
   const chronologyIssues = useMemo(() => {
@@ -237,9 +246,13 @@ export function LnkRequestDialog({
       methodKeys: [...selectedMethodKeys],
       requestName: effectiveRequestName,
       requestDate,
+      controlProcessSettings,
     })
-    return getLnkChronologyIssues(proposedRows, saveCheckSettings)
-  }, [effectiveRequestName, requestDate, requestDateReason, saveCheckSettings, selectedMethodKeys, selectedRows])
+    return getLnkChronologyIssues(proposedRows, saveCheckSettings).filter(
+      (issue) => issue.kind !== 'post-before-psto-cycle' ||
+        !controlProcessSettings.allowPrimaryLnkBeforePreviousStagesComplete,
+    )
+  }, [controlProcessSettings, effectiveRequestName, requestDate, requestDateReason, saveCheckSettings, selectedMethodKeys, selectedRows])
   const chronologyReason = chronologyIssues[0]
     ? formatSaveCheckBlockReason('lnkResultRequestDateOrder', chronologyIssues[0].message)
     : ''
@@ -307,7 +320,7 @@ export function LnkRequestDialog({
       row,
       selectedRows,
       selectedIds,
-      selectableRows: availableRows,
+      selectableRows: readyRows,
       isRowSelectable: (candidate) => availableRows.some((availableRow) => availableRow.id === candidate.id),
       sourceLabel: submitMode === 'create' ? 'заявки ЛНК' : 'добавления в заявку ЛНК',
       onSetSelectedRows,
@@ -468,7 +481,7 @@ export function LnkRequestDialog({
                 variant="outline"
                 size="sm"
                 onClick={onToggleAllRows}
-                disabled={!hasSearch || filteredAvailableRows.length === 0}
+                disabled={!hasSearch || filteredReadyRows.length === 0}
                 title={!hasSearch ? 'Сначала сузьте список поиском' : undefined}
               >
                 {allFilteredRowsSelected ? 'Снять все' : 'Выбрать доступные'}
@@ -504,6 +517,7 @@ export function LnkRequestDialog({
             renderItem={(row) => (
               <LnkRequestRow
                 row={row}
+                controlProcessSettings={controlProcessSettings}
                 selected={selectedIds.has(row.id)}
                 selectedMethods={selectedMethods}
                 onToggleRow={stableOnToggleRow}

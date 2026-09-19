@@ -918,6 +918,10 @@ export async function countAvailableLnkRequestRowsByIds(ids: number[]) {
 }
 
 export function buildAvailableLnkRequestWhere() {
+  return buildLnkRequestCandidateWhere(true)
+}
+
+export function buildLnkRequestCandidateWhere(requirePrimaryStageReady = false) {
   const buildAvailableMethodWhere = (method: (typeof LNK_METHODS)[number]) => {
     const enabledColumn = getWeldColumn(method.enabledKey)
     const requestColumn = getWeldColumn(method.requestKey)
@@ -935,10 +939,12 @@ export function buildAvailableLnkRequestWhere() {
   const hasAvailableImmediateMethod = or(
     ...immediateMethods.map(buildAvailableMethodWhere),
   ) ?? sql`false`
-  const hasAvailableMethod = or(
-    hasAvailableImmediateMethod,
-    and(hasAvailableStagedMethod, buildHeatTreatmentStagedLnkReadyWhere()),
-  ) ?? sql`false`
+  const hasAvailableMethod = requirePrimaryStageReady
+    ? or(
+        hasAvailableImmediateMethod,
+        and(hasAvailableStagedMethod, buildHeatTreatmentStagedLnkReadyWhere()),
+      ) ?? sql`false`
+    : or(hasAvailableImmediateMethod, hasAvailableStagedMethod) ?? sql`false`
   const hasNoRejectedResult = and(
     ...LNK_METHODS.map((method) => {
       const resultColumn = getWeldColumn(method.resultKey)

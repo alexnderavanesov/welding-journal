@@ -14,8 +14,9 @@ import {
   isYesText,
 } from '@/lib/report-value-utils'
 import type { WeldInput } from '@/lib/weld-fields'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { requiresPostHeatTreatmentCompletion } from '@/lib/tvmt-cycle'
-import { isPrimaryLnkStageReady } from '@/lib/lnk-control-stage'
+import { canUsePrimaryLnkStage } from '@/lib/lnk-control-stage'
 
 export function hasAnyLnkControl(row: WeldInput) {
   return LNK_METHODS.some((method) => isEnabledControlValue(row[method.enabledKey]))
@@ -103,11 +104,14 @@ export function hasCompletedLnkRequestPosition(row: WeldInput, method: (typeof L
   )
 }
 
-export function canCreateLnkRequest(row: WeldInput) {
+export function canCreateLnkRequest(
+  row: WeldInput,
+  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>,
+) {
   if (hasRejectedLnkResult(row)) return false
   return LNK_METHODS.some((method) =>
     isEnabledControlValue(row[method.enabledKey]) &&
     !hasText(row[method.requestKey]) &&
-    isPrimaryLnkStageReady(row, method.code),
+    canUsePrimaryLnkStage(row, method.code, settings),
   )
 }

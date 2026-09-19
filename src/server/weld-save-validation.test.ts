@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { WeldJoint } from '@/db/schema'
 import { DEFAULT_DATA_LIST_SETTINGS } from '@/lib/data-list-settings'
+import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '@/lib/control-process-settings'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { DEFAULT_OTHER_SETTINGS } from '@/lib/other-settings'
 import {
@@ -23,6 +24,7 @@ import {
 } from '@/server/weld-save-validation'
 
 const context: ServerWeldValidationContext = {
+  controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
   saveCheckSettings: DEFAULT_SAVE_CHECK_SETTINGS,
   dataListSettings: DEFAULT_DATA_LIST_SETTINGS,
   otherSettings: DEFAULT_OTHER_SETTINGS,
@@ -65,6 +67,61 @@ describe('validateServerWeldRecords', () => {
       tvmtConclusionDate: 'not-a-date',
       tvmtConclusion: 'Заключение ТВМТ',
     } as unknown as WeldInput, beforeTvmt)).toContain('Дата ТВМТ')
+  })
+
+  it('requires an LNK request for a new result or conclusion at the server boundary', () => {
+    const previous = {
+      id: 73,
+      joint: 'F73',
+      hasVik: 'да',
+    } as WeldJoint
+
+    expect(getSystemDocumentIntegrityReason({
+      ...previous,
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-20',
+      vikConclusion: 'Заключение ВИК',
+    } as unknown as WeldInput, previous)).toContain('нельзя сохранять без заявки ЛНК')
+
+    const withRequest = {
+      ...previous,
+      vikRequest: 'Заявка ВИК',
+      vikRequestDate: '2026-08-19',
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-20',
+      vikConclusion: 'Заключение ВИК',
+    } as WeldJoint
+    expect(getSystemDocumentIntegrityReason({
+      ...withRequest,
+      vikRequest: null,
+      vikRequestDate: null,
+    } as unknown as WeldInput, withRequest)).toContain('нельзя сохранять без заявки ЛНК')
+
+    expect(getSystemDocumentIntegrityReason({
+      ...previous,
+      vikConclusion: 'Заключение ВИК',
+    } as unknown as WeldInput, previous)).toContain('нельзя сохранять без заявки ЛНК')
+
+    expect(getSystemDocumentIntegrityReason({
+      ...previous,
+      vikConclusionDate: '2026-08-20',
+    } as unknown as WeldInput, previous)).toContain('нельзя сохранять без заявки ЛНК')
+  })
+
+  it('does not block an unrelated edit of legacy LNK data without a request', () => {
+    const previous = {
+      id: 74,
+      joint: 'F74',
+      hasVik: 'да',
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-20',
+      vikConclusion: 'Старое заключение ВИК',
+    } as WeldJoint
+
+    expect(getSystemDocumentIntegrityReason({
+      ...previous,
+      note: 'Исправлено примечание',
+    } as unknown as WeldInput, previous)).toBe('')
   })
 
   it('does not block unrelated edits or one-field repair of legacy incomplete TVMT data', () => {
@@ -123,7 +180,15 @@ describe('validateServerWeldRecords', () => {
     })).not.toThrow()
 
     expect(() => validateServerWeldRecords({
-      records: [{ ...previous, hasUzk: null, uzkResult: 'годен' } as unknown as WeldInput],
+      records: [{
+        ...previous,
+        hasUzk: null,
+        uzkRequest: 'Заявка УЗК',
+        uzkRequestDate: '2026-08-19',
+        uzkResult: 'годен',
+        uzkConclusionDate: '2026-08-20',
+        uzkConclusion: 'Заключение УЗК',
+      } as unknown as WeldInput],
       previousRows: new Map([[previous.id, previous]]),
       context,
     })).toThrow('ЗВ-27')
@@ -983,6 +1048,7 @@ describe('validateServerWeldRecords', () => {
       vikRequest: 'ВИК после ТО',
       vikRequestDate: '2026-08-20',
     } as unknown as WeldInput, previous, {
+      controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
       pstoLineAssignments: new Map([[lineKey, {
         rowCount: 2,
         assignedCount: 2,
@@ -1008,6 +1074,7 @@ describe('validateServerWeldRecords', () => {
       tvmtRequest: 'ТВМТ-001',
       tvmtRequestDate: '2026-08-20',
     } as unknown as WeldInput, previous, {
+      controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
       pstoLineAssignments: new Map([[lineKey, {
         rowCount: 1,
         assignedCount: 1,
@@ -1026,12 +1093,15 @@ describe('validateServerWeldRecords', () => {
       weldingMethod: 'РД',
       stamp1K: 'АВС1',
       hasRk: 'да',
+      rkRequest: 'Заявка РК',
+      rkRequestDate: '2026-07-02',
       rkResult: null,
     } as WeldJoint
     const record = {
       ...previous,
       rkResult: 'годен',
       rkConclusionDate: '2026-07-03',
+      rkConclusion: 'Заключение РК',
     } as unknown as WeldInput
 
     expect(() =>
@@ -1256,7 +1326,11 @@ describe('validateServerWeldRecords', () => {
       hasVik: 'да',
       vikResult: 'годен',
       hasRk: 'да',
+      rkRequest: 'Заявка РК',
+      rkRequestDate: '2026-08-19',
       rkResult: 'годен',
+      rkConclusionDate: '2026-08-20',
+      rkConclusion: 'Заключение РК',
     } as WeldJoint
     const record = {
       ...previous,
@@ -1345,6 +1419,8 @@ describe('validateServerWeldRecords', () => {
       id: 21,
       joint: 'F21',
       hasVik: 'да',
+      vikRequest: 'Заявка ВИК',
+      vikRequestDate: '2026-08-20',
       vikResult: null,
     } as WeldJoint
 
@@ -1382,6 +1458,8 @@ describe('validateServerWeldRecords', () => {
       id: 22,
       joint: 'F22',
       hasVik: 'да',
+      vikRequest: 'Заявка ВИК',
+      vikRequestDate: '2026-08-20',
       vikResult: null,
     } as WeldJoint
     const record = {

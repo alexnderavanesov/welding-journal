@@ -4,9 +4,8 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { formatDisplayDate } from '@/lib/date-format'
 import { formatDaysLeft, formatReminderCount, formatTaskCount } from '@/lib/dispatcher-format'
 import {
-  getDispatcherSettingTaskTypeLabel,
   getDispatcherTaskCode,
-  getDispatcherTaskSettingId,
+  getDispatcherTaskTypeLabel,
 } from '@/lib/dispatcher-settings'
 import { compareDispatcherTaskCodes } from '@/lib/dispatcher-task-row-codes'
 import { getRepeatedJointTaskDetails, getRepeatedJointTaskDetailsHeading } from '@/lib/dispatcher-text'
@@ -166,7 +165,7 @@ function getDispatcherTaskGroupSummaries(tasks: DispatcherTask[]) {
     if (summaries.has(code)) continue
     summaries.set(code, {
       code,
-      label: getDispatcherSettingTaskTypeLabel(getDispatcherTaskSettingId(task)),
+      label: getDispatcherTaskTypeLabel(task),
     })
   }
   return [...summaries.values()].sort((left, right) => compareDispatcherTaskCodes(left.code, right.code))

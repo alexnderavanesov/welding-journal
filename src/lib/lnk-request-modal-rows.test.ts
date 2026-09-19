@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { filterLnkRequestRows } from '@/lib/lnk-request-modal-rows'
+import { countLnkRequestTargets, filterLnkRequestRows } from '@/lib/lnk-request-modal-rows'
 
 const rows = [
   { id: 1, projectTitle: 'Риформинг', subtitleCode: '7328-ТКМ5', line: '330-ATM-10', spool: 'S01', joint: 'F12' },
@@ -32,5 +32,23 @@ describe('filterLnkRequestRows', () => {
     } as WeldRow
 
     expect(filterLnkRequestRows([...nonMatchingRows, matchingRow], 'нужный').map((row) => row.id)).toEqual([3])
+  })
+
+  it('shows a blocked staged row in search but enables only an explicit permissive selection', () => {
+    const staged = {
+      id: 3,
+      projectTitle: 'Проект',
+      line: 'L3',
+      joint: 'F3',
+      pstoRequired: 'да',
+      hasVik: 'да',
+    } as WeldRow
+
+    expect(filterLnkRequestRows([staged], 'f3')).toEqual([staged])
+    expect(countLnkRequestTargets([staged], ['vikRequest'])).toBe(0)
+    expect(countLnkRequestTargets([staged], ['vikRequest'], {
+      preHeatTreatmentLnkEnabled: true,
+      allowPrimaryLnkBeforePreviousStagesComplete: true,
+    })).toBe(1)
   })
 })

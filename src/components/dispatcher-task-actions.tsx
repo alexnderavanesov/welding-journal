@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -162,7 +163,7 @@ export function RepeatedJointTaskActions({
         <DispatcherActionMenu
           items={[
             {
-              label: 'Изменить клеймо',
+              label: 'Исправить клеймо',
               onClick: () => onEditPercentageLineTaskStamp(task),
             },
             {
@@ -255,11 +256,25 @@ function ModeledDispatcherActions({
   onShowTask: RepeatedJointTaskActionsProps['onShowTask']
 }) {
   const workflowActions = actions.filter((action) => action.id !== 'show-task')
+  const hasMultipleRootCauseActions = workflowActions.length > 1 &&
+    workflowActions.every((action) => action.id === 'open-root-cause')
   const [primaryAction, ...secondaryActions] = workflowActions
   if (!primaryAction) return null
   const run = (action: DispatcherTaskActionSpec) => {
     if (action.id === 'show-task') onShowTask(task)
     else onRunTaskAction(task, action)
+  }
+
+  if (hasMultipleRootCauseActions) {
+    return (
+      <DispatcherActionMenu
+        triggerLabel="Варианты исправления"
+        items={workflowActions.map((action) => ({
+          label: action.label,
+          onClick: () => run(action),
+        }))}
+      />
+    )
   }
 
   return (
@@ -292,25 +307,115 @@ type DispatcherActionMenuItem = {
   onClick: () => void
 }
 
-function DispatcherActionMenu({ items }: { items: DispatcherActionMenuItem[] }) {
+function DispatcherActionMenu({
+  items,
+  triggerLabel = 'Действия',
+}: {
+  items: DispatcherActionMenuItem[]
+  triggerLabel?: string
+}) {
   const [open, setOpen] = useState(false)
+  const [menuPosition, setMenuPosition] = useState<{
+    left: number
+    top: number
+    minWidth: number
+    maxHeight: number
+  } | null>(null)
+  const anchorRef = useRef<HTMLDivElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  useLayoutEffect(() => {
+    if (!open || typeof window === 'undefined') {
+      setMenuPosition(null)
+      return undefined
+    }
+
+    const updatePosition = () => {
+      const anchor = anchorRef.current
+      const menu = menuRef.current
+      if (!anchor || !menu) return
+
+      const viewportPadding = 8
+      const gap = 4
+      const anchorRect = anchor.getBoundingClientRect()
+      const maxHeight = Math.max(96, window.innerHeight - viewportPadding * 2)
+      const menuWidth = Math.min(
+        Math.max(menu.offsetWidth, anchorRect.width),
+        window.innerWidth - viewportPadding * 2,
+      )
+      const menuHeight = Math.min(menu.offsetHeight, maxHeight)
+      const hasRoomBelow = anchorRect.bottom + gap + menuHeight <= window.innerHeight - viewportPadding
+      const top = hasRoomBelow
+        ? anchorRect.bottom + gap
+        : Math.max(viewportPadding, anchorRect.top - gap - menuHeight)
+      const left = Math.max(
+        viewportPadding,
+        Math.min(anchorRect.right - menuWidth, window.innerWidth - viewportPadding - menuWidth),
+      )
+
+      setMenuPosition({ left, top, minWidth: anchorRect.width, maxHeight })
+    }
+
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    document.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      document.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [items.length, open])
+
+  useEffect(() => {
+    if (!open) return undefined
+
+    const handleMouseDown = (event: MouseEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (anchorRef.current?.contains(target) || menuRef.current?.contains(target)) return
+      setOpen(false)
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      setOpen(false)
+    }
+
+    document.addEventListener('mousedown', handleMouseDown)
+    window.addEventListener('keydown', handleKeyDown, { capture: true })
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown)
+      window.removeEventListener('keydown', handleKeyDown, { capture: true })
+    }
+  }, [open])
+
   return (
-    <div className="relative">
+    <div ref={anchorRef} className="relative">
       <Button
         type="button"
         size="sm"
         variant="outline"
         onClick={() => setOpen((current) => !current)}
         className={dispatcherActionButtonClass}
+        aria-haspopup="menu"
+        aria-expanded={open}
       >
-        Действия
+        {triggerLabel}
       </Button>
-      {open ? (
-        <div className="absolute right-0 top-full z-30 mt-1 min-w-44 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg">
+      {open && typeof document !== 'undefined' ? createPortal(
+        <div
+          ref={menuRef}
+          role="menu"
+          data-dispatcher-action-menu="true"
+          className="fixed z-[80] min-w-44 max-w-[calc(100vw-1rem)] overflow-x-hidden overflow-y-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg"
+          style={menuPosition ?? { left: 8, top: 8, visibility: 'hidden' }}
+        >
           {items.map((item) => (
             <button
               key={item.label}
               type="button"
+              role="menuitem"
               className="block w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
               onClick={() => {
                 setOpen(false)
@@ -320,7 +425,8 @@ function DispatcherActionMenu({ items }: { items: DispatcherActionMenuItem[] }) 
               {item.label}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   )

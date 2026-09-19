@@ -344,8 +344,10 @@ export function WeldTable({
     return mergedActionRowsById.get(row.id) ?? mergeWeldTableActionRow(rowsById.get(row.id), row)
   }, [mergedActionRowsById, rowsById])
   const selectedRows = useMemo(
-    () => Array.from(selectedRowIds).map((rowId) => rowsById.get(rowId)).filter((row): row is WeldRow => Boolean(row)),
-    [rowsById, selectedRowIds],
+    () => Array.from(selectedRowIds)
+      .map((rowId) => mergedActionRowsById.get(rowId) ?? rowsById.get(rowId))
+      .filter((row): row is WeldRow => Boolean(row)),
+    [mergedActionRowsById, rowsById, selectedRowIds],
   )
   const {
     bodyRef,
@@ -657,24 +659,9 @@ function getWeldContextMenuIdentity(row: WeldRow, contextRows: WeldRow[]) {
 
 function mergeWeldTableActionRow(actionRow: WeldRow | undefined, displayRow: WeldRow) {
   if (!actionRow) return displayRow
-  if (!displayRow.jsrDocumentId && !displayRow.checklistDocumentId && !displayRow.zniDocumentId) return actionRow
   return {
     ...actionRow,
-    ...(displayRow.jsrDocumentId
-      ? { jsrDocument: displayRow.jsrDocument, jsrDocumentId: displayRow.jsrDocumentId }
-      : {}),
-    ...(displayRow.checklistDocumentId
-      ? {
-          checklistDocument: displayRow.checklistDocument,
-          checklistDocumentId: displayRow.checklistDocumentId,
-        }
-      : {}),
-    ...(displayRow.zniDocumentId
-      ? {
-          zniDocument: displayRow.zniDocument,
-          zniDocumentId: displayRow.zniDocumentId,
-        }
-      : {}),
+    ...displayRow,
   }
 }
 

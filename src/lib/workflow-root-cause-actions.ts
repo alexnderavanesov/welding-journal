@@ -5,6 +5,11 @@ import { buildPstoCycleTimeline, type PstoCycleSnapshot } from '@/lib/psto-cycle
 import { LNK_METHODS } from '@/lib/report-config'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { SaveCheckSettings } from '@/lib/save-check-settings'
+import {
+  getPreHeatTreatmentControl,
+  type PrimaryLnkStageDebt,
+} from '@/lib/lnk-control-stage'
+import { getCurrentPstoCycle, getNextPstoCycleSequence } from '@/lib/tvmt-cycle'
 
 export type WorkflowRootCauseTarget =
   | {
@@ -22,6 +27,7 @@ export type WorkflowRootCauseTarget =
       relationId?: number
       documentName?: string
       documentDate?: string
+      intent?: 'complete-stage'
     }
   | {
       kind: 'psto-cycle'
@@ -69,6 +75,62 @@ export function getChronologyRootCauseActions({
     ...getLnkChronologyRootCauseActions(lnkIssues),
     ...getPstoChronologyRootCauseActions(pstoIssues),
   ])
+}
+
+export function getPrimaryLnkStageDebtRootCauseAction(
+  row: WeldRow,
+  debt: PrimaryLnkStageDebt,
+): WorkflowRootCauseAction {
+  const nextPreControl = debt.missingPreHeatTreatmentControls.find(
+    (control) => control.nextAction === 'request',
+  ) ?? debt.missingPreHeatTreatmentControls[0]
+  if (nextPreControl) {
+    const control = getPreHeatTreatmentControl(row, nextPreControl.methodCode)
+    const documentPart = nextPreControl.nextAction === 'request' ? 'request' as const : 'result' as const
+    return {
+      key: `complete-stage:${row.id}:beforeHeatTreatment:${nextPreControl.methodCode}:${documentPart}`,
+      label: nextPreControl.nextAction === 'request'
+        ? 'Создать заявку НК до ТО'
+        : 'Внести результат НК до ТО',
+      tone: 'primary',
+      target: {
+        kind: 'lnk-control',
+        rowId: row.id,
+        stage: 'beforeHeatTreatment',
+        methodCode: nextPreControl.methodCode,
+        documentPart,
+        focus: nextPreControl.nextAction === 'request' ? 'name' : 'result',
+        ...(control?.id ? { relationId: control.id } : {}),
+        intent: 'complete-stage',
+      },
+    }
+  }
+
+  const currentCycle = getCurrentPstoCycle(row)
+  const opensTvmt = debt.pstoState === 'waiting-tvmt-request' || debt.pstoState === 'waiting-tvmt'
+  const sequence = debt.pstoState === 'repeat-psto-required'
+    ? getNextPstoCycleSequence(row)
+    : currentCycle?.sequence ?? 1
+  const stage = debt.pstoState === 'waiting-psto-request' || debt.pstoState === 'repeat-psto-required'
+    ? 'pstoRequest' as const
+    : debt.pstoState === 'waiting-psto'
+      ? 'pstoResult' as const
+      : debt.pstoState === 'waiting-tvmt-request'
+        ? 'tvmtRequest' as const
+        : 'tvmtResult' as const
+  return {
+    key: `complete-stage:${row.id}:psto:${sequence}:${stage}`,
+    label: opensTvmt ? 'Открыть ТВМТ' : 'Открыть ПСТО',
+    tone: 'primary',
+    target: {
+      kind: 'psto-cycle',
+      rowId: row.id,
+      sequence,
+      ...(currentCycle?.id && currentCycle.sequence === sequence ? { cycleId: currentCycle.id } : {}),
+      stage,
+      focus: stage === 'pstoRequest' || stage === 'tvmtRequest' ? 'name' : 'result',
+    },
+  }
 }
 
 export function getNewChronologyRootCauseState({

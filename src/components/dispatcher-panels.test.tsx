@@ -10,6 +10,7 @@ import type {
   RepeatedJointTaskGroup,
   WeldRow,
 } from '@/lib/dispatcher-types'
+import { shouldDeferModalEscape } from '@/lib/use-report-modal-escape-key'
 
 describe('DispatcherTaskPanel', () => {
   beforeEach(() => {
@@ -119,6 +120,45 @@ describe('DispatcherTaskPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
     expect(screen.getByText('330-ATM-16-000')).toBeInTheDocument()
+  })
+
+  it('never includes a system warning in the temporary hide action', () => {
+    const { task } = createTaskGroup()
+    const systemWarning = createSystemWarningTask(task.row)
+    const onDismissAll = vi.fn()
+    const group: RepeatedJointTaskGroup = {
+      key: 'joint:F18',
+      baseJoint: 'F18',
+      tasks: [systemWarning, task],
+    }
+    const view = render(
+      <DispatcherTaskPanel
+        tasks={[systemWarning, task]}
+        groups={[group]}
+        stickyLeft={0}
+        handlers={createHandlers(vi.fn())}
+        onDismissAll={onDismissAll}
+        columnFilters={{}}
+        onColumnFiltersChange={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Скрыть карточки' }))
+    expect(onDismissAll).toHaveBeenCalledWith([task])
+
+    view.rerender(
+      <DispatcherTaskPanel
+        tasks={[systemWarning]}
+        groups={[{ ...group, tasks: [systemWarning] }]}
+        stickyLeft={0}
+        handlers={createHandlers(vi.fn())}
+        onDismissAll={onDismissAll}
+        columnFilters={{}}
+        onColumnFiltersChange={vi.fn()}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: 'Скрыть карточки' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Свернуть' })).toBeInTheDocument()
   })
 
   it('shows two task types and folds the remaining types into a counter', () => {
@@ -380,6 +420,107 @@ describe('DispatcherTaskPanel', () => {
     expect(onOpenTaskPicture).toHaveBeenCalledWith(task)
   })
 
+  it('shows multiple chronology corrections as equal alternatives', () => {
+    const row = {
+      id: 45,
+      projectTitle: 'Проект 1',
+      subtitleCode: 'Шифр 1',
+      line: '330-ROOT-01-000',
+      joint: 'F45',
+    } as WeldRow
+    const pstoAction = {
+      key: 'psto:45:1:pstoResult:date',
+      label: 'Исправить дату ПСТО',
+      tone: 'primary' as const,
+      target: {
+        kind: 'psto-cycle' as const,
+        rowId: 45,
+        sequence: 1,
+        stage: 'pstoResult' as const,
+        focus: 'date' as const,
+      },
+    }
+    const tvmtAction = {
+      key: 'psto:45:1:tvmtResult:date',
+      label: 'Исправить дату заключения ТВМТ',
+      tone: 'primary' as const,
+      target: {
+        kind: 'psto-cycle' as const,
+        rowId: 45,
+        sequence: 1,
+        stage: 'tvmtResult' as const,
+        focus: 'date' as const,
+      },
+    }
+    const task: RepeatedJointCheckTask = {
+      kind: 'check',
+      key: 'check:psto-date:F45',
+      row,
+      sourceRow: row,
+      sourceJoint: 'F45',
+      targetJoint: 'F45',
+      baseJoint: 'F45',
+      suffix: 'R',
+      reason: 'проверить даты ПСТО',
+      rootCauseActions: [pstoAction, tvmtAction],
+    }
+    const onRunTaskAction = vi.fn()
+
+    render(
+      <DispatcherTaskCard
+        task={task}
+        {...createHandlers(vi.fn())}
+        onRunTaskAction={onRunTaskAction}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'Варианты исправления' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Исправить дату ПСТО' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Исправить дату заключения ТВМТ' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Действия' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Варианты исправления' }))
+
+    expect(screen.getByRole('button', { name: 'Варианты исправления' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('menu').parentElement).toBe(document.body)
+    expect(screen.getByRole('menuitem', { name: 'Исправить дату ПСТО' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Исправить дату заключения ТВМТ' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Исправить дату заключения ТВМТ' }))
+    expect(onRunTaskAction).toHaveBeenCalledWith(task, expect.objectContaining({
+      id: 'open-root-cause',
+      rootCauseAction: tvmtAction,
+    }))
+  })
+
+  it('closes only the dispatcher action menu on the first Escape', () => {
+    const task = createPercentageTask('new-welder', 'Новый сварщик на процентной линии', 2)
+    const onOuterEscape = vi.fn()
+    const handleOuterEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !shouldDeferModalEscape()) onOuterEscape()
+    }
+
+    render(
+      <DispatcherTaskCard
+        task={task}
+        {...createHandlers(vi.fn())}
+      />,
+    )
+    window.addEventListener('keydown', handleOuterEscape, { capture: true })
+
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Действия' }))
+      expect(screen.getByRole('menu')).toBeInTheDocument()
+
+      fireEvent.keyDown(window, { key: 'Escape' })
+
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+      expect(onOuterEscape).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener('keydown', handleOuterEscape, { capture: true })
+    }
+  })
+
   it('opens the percentage-control assignment workflow from a missing-control task', () => {
     const task = createPercentageTask('missing', 'Назначить контроль', 2)
     const onRunTaskAction = vi.fn()
@@ -398,6 +539,24 @@ describe('DispatcherTaskPanel', () => {
       id: 'assign-percentage-controls',
       label: 'Назначить контроль',
     }))
+  })
+
+  it('opens the same stamp correction from a new-welder task in the dispatcher', () => {
+    const task = createPercentageTask('new-welder', 'Новый сварщик на процентной линии', 2)
+    const onEditPercentageLineTaskStamp = vi.fn()
+
+    render(
+      <DispatcherTaskCard
+        task={task}
+        {...createHandlers(vi.fn())}
+        onEditPercentageLineTaskStamp={onEditPercentageLineTaskStamp}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Действия' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Исправить клеймо' }))
+
+    expect(onEditPercentageLineTaskStamp).toHaveBeenCalledWith(task)
   })
 
   it('shows structured percentage-line indicators in expanded details', () => {
@@ -496,6 +655,21 @@ function createPercentageTask(
     coveredControls: 4,
     assignedControls: 9,
     count,
+  }
+}
+
+function createSystemWarningTask(row: WeldRow): RepeatedJointCheckTask {
+  return {
+    kind: 'check',
+    key: `sp-01:${row.id}`,
+    row,
+    sourceRow: row,
+    sourceJoint: String(row.joint),
+    targetJoint: String(row.joint),
+    baseJoint: String(row.joint),
+    suffix: 'R',
+    reason: 'Нарушена последовательность контроля.',
+    systemWarningCode: 'СП-01',
   }
 }
 

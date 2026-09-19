@@ -14,6 +14,7 @@ import type { RowWithId, UseLnkReportMutationsOptions } from '@/lib/lnk-report-m
 import type { SystemDocumentCreationGroup } from '@/lib/system-document-creation-plan'
 
 export function useLnkResultEntryMutations({
+  controlProcessSettings,
   setMessage,
   setLnkNotice,
   highlightChangedRows,
@@ -62,6 +63,7 @@ export function useLnkResultEntryMutations({
             controlDate,
             resultById,
             conclusionName: group.name,
+            controlProcessSettings,
           }),
         ),
         ...buildLnkResultRows({
@@ -70,6 +72,7 @@ export function useLnkResultEntryMutations({
           controlDate,
           resultById,
           conclusionName: '',
+          controlProcessSettings,
         }),
       ]
       const savedRows = await updateWeldRowsOrThrow(

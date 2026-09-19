@@ -1,12 +1,25 @@
 import { act, renderHook } from '@testing-library/react'
 import { useState } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
+import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '@/lib/control-process-settings'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { LNK_EMPTY_RESULT_VALUE } from '@/lib/report-config'
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-settings'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 import { useLnkResultSaveActions } from '@/lib/use-lnk-result-save-actions'
+
+const { confirmAction } = vi.hoisted(() => ({ confirmAction: vi.fn() }))
+
+type LnkResultMutate = Parameters<
+  typeof useLnkResultSaveActions
+>[0]['resultMutation']['mutate']
+
+vi.mock('@/lib/confirm-action-context', () => ({
+  useConfirmAction: () => confirmAction,
+}))
 
 vi.mock('@/lib/save-check-settings', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/lib/save-check-settings')>()
@@ -35,9 +48,17 @@ function createDraft(): LnkResultDraftState {
   }
 }
 
-function useHarness(initialDraft = createDraft(), lnkRows = rows) {
+function useHarness(
+  initialDraft = createDraft(),
+  lnkRows = rows,
+  options: {
+    controlProcessSettings?: ControlProcessSettings
+    mutate?: LnkResultMutate
+  } = {},
+) {
   const [draft, setDraft] = useState(initialDraft)
   const actions = useLnkResultSaveActions({
+    controlProcessSettings: options.controlProcessSettings ?? DEFAULT_CONTROL_PROCESS_SETTINGS,
     lnkRows,
     draft,
     selectedRows: lnkRows,
@@ -45,7 +66,7 @@ function useHarness(initialDraft = createDraft(), lnkRows = rows) {
     nextConclusionName: 'ЗНК-ВИК-001',
     nextConclusionNumber: 1,
     requestConclusionSettings: REQUEST_CONCLUSION_DEFAULT_SETTINGS,
-    resultMutation: { mutate: vi.fn() },
+    resultMutation: { mutate: options.mutate ?? vi.fn<LnkResultMutate>() },
     setDraft,
     setMessage: vi.fn(),
   })
@@ -53,6 +74,11 @@ function useHarness(initialDraft = createDraft(), lnkRows = rows) {
 }
 
 describe('useLnkResultSaveActions', () => {
+  beforeEach(() => {
+    confirmAction.mockReset()
+    confirmAction.mockResolvedValue(true)
+  })
+
   it('changes only the context rows while preserving the shared result for the others', () => {
     const { result } = renderHook(() => useHarness())
 
@@ -70,5 +96,36 @@ describe('useLnkResultSaveActions', () => {
     act(() => result.current.setLnkResultForRows([1, 2], 'ремонт'))
 
     expect(result.current.draft).toEqual(initialDraft)
+  })
+
+  it('clears an early primary result without asking to confirm chronology debt', async () => {
+    const earlyRow = {
+      id: 1,
+      d1: 108,
+      d2: 108,
+      pstoRequired: 'да',
+      hasVik: 'да',
+    } as WeldRow
+    const draft = {
+      ...createDraft(),
+      rowIds: new Set([earlyRow.id]),
+      result: LNK_EMPTY_RESULT_VALUE,
+    }
+    const mutate = vi.fn<LnkResultMutate>()
+    const permissiveSettings = {
+      ...DEFAULT_CONTROL_PROCESS_SETTINGS,
+      allowPrimaryLnkBeforePreviousStagesComplete: true,
+    }
+    const { result } = renderHook(() =>
+      useHarness(draft, [earlyRow], {
+        controlProcessSettings: permissiveSettings,
+        mutate,
+      }),
+    )
+
+    await act(async () => result.current.handleAddLnkResult())
+
+    expect(confirmAction).not.toHaveBeenCalled()
+    expect(mutate).toHaveBeenCalledOnce()
   })
 })

@@ -48,6 +48,36 @@ describe('lnk request mutation updates', () => {
     expect(issue?.message).toBe('Стык F4: дата заявки ВИК 01.07.2026 раньше даты сварки 04.07.2026.')
   })
 
+  it('allows only the staged-sequence debt when permissive primary LNK is enabled', () => {
+    const records = [{
+      id: 1,
+      joint: 'F4',
+      weldDate: '2026-08-01',
+      pstoRequired: 'да',
+      hasVik: 'да',
+    }] as RowWithId[]
+
+    expect(buildLnkRequestRows({
+      records,
+      methodKeys: ['vikRequest'],
+      requestName: 'Заявка-01',
+      requestDate: '2026-08-02',
+    })).toEqual([])
+    expect(buildLnkRequestRows({
+      records,
+      methodKeys: ['vikRequest'],
+      requestName: 'Заявка-01',
+      requestDate: '2026-08-02',
+      controlProcessSettings: {
+        preHeatTreatmentLnkEnabled: true,
+        allowPrimaryLnkBeforePreviousStagesComplete: true,
+      },
+    })[0]).toMatchObject({
+      vikRequest: 'Заявка-01',
+      vikResult: 'ожидает НК',
+    })
+  })
+
   it('renames an LNK request without changing its request date', () => {
     const records = [
       {

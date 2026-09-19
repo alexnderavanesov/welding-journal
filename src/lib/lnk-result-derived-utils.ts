@@ -25,6 +25,10 @@ import {
 } from '@/lib/request-document-identity'
 import type { SystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 import { getLnkChronologyRootCauseActions } from '@/lib/workflow-root-cause-actions'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
+import type { LnkChronologyIssueKind } from '@/lib/lnk-chronology-checks'
+
+const PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS = new Set<LnkChronologyIssueKind>(['post-before-psto-cycle'])
 
 export function getLnkResultMethodRequestOptions(
   lnkRows: WeldRow[],
@@ -122,11 +126,21 @@ export function canBulkToggleLnkResultRows({
   )
 }
 
-export function getSelectedLnkResultRows(lnkRows: WeldRow[], draft: LnkResultDraftState) {
+export function getSelectedLnkResultRows(
+  lnkRows: WeldRow[],
+  draft: LnkResultDraftState,
+  controlProcessSettings?: ControlProcessSettings,
+) {
   return lnkRows.filter(
     (row) =>
       draft.rowIds.has(row.id) &&
-      canSelectLnkResultRow(row, draft.requestName, draft.methodKey, draft.requestDate),
+      canSelectLnkResultRow(
+        row,
+        draft.requestName,
+        draft.methodKey,
+        draft.requestDate,
+        controlProcessSettings,
+      ),
   )
 }
 
@@ -137,6 +151,7 @@ export function getLnkResultSaveBlockReason({
   saveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
   selectedRows,
   systemDocumentCreationPlan,
+  controlProcessSettings,
 }: {
   draft: LnkResultDraftState
   isSaving: boolean
@@ -144,6 +159,7 @@ export function getLnkResultSaveBlockReason({
   saveCheckSettings?: SaveCheckSettings
   selectedRows: WeldRow[]
   systemDocumentCreationPlan?: SystemDocumentCreationPlan | null
+  controlProcessSettings?: ControlProcessSettings
 }) {
   if (isSaving) return 'Результат сохраняется, дождитесь завершения.'
   if (!draft.methodKey) return 'Выберите метод контроля.'
@@ -184,6 +200,9 @@ export function getLnkResultSaveBlockReason({
     ? findFirstLnkChronologySaveBlockReason(
         buildProposedLnkResultRowsForChecks(selectedRows, draft, nextConclusionName, systemDocumentCreationPlan),
         saveCheckSettings,
+        isPrimaryLnkStageDebtAllowed(controlProcessSettings)
+          ? { ignoredKinds: PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS }
+          : undefined,
       )
     : ''
   if (chronologyIssue) return chronologyIssue
@@ -198,6 +217,7 @@ export function getLnkResultRootCauseActions({
   saveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
   selectedRows,
   systemDocumentCreationPlan,
+  controlProcessSettings,
 }: {
   draft: LnkResultDraftState
   nextConclusionName: string
@@ -205,16 +225,26 @@ export function getLnkResultRootCauseActions({
   saveCheckSettings?: SaveCheckSettings
   selectedRows: WeldRow[]
   systemDocumentCreationPlan?: SystemDocumentCreationPlan | null
+  controlProcessSettings?: ControlProcessSettings
 }) {
   if (!saveBlockReason || !draft.methodKey || selectedRows.length === 0) return []
   const issues = getLnkChronologyIssues(
     buildProposedLnkResultRowsForChecks(selectedRows, draft, nextConclusionName, systemDocumentCreationPlan),
     saveCheckSettings,
+  ).filter((issue) =>
+    !isPrimaryLnkStageDebtAllowed(controlProcessSettings) || issue.kind !== 'post-before-psto-cycle',
   )
   if (issues.length === 0) return []
   const firstIssue = issues[0]!
   if (!saveBlockReason.includes(firstIssue.message) && !saveBlockReason.includes('ВИК')) return []
   return getLnkChronologyRootCauseActions(issues)
+}
+
+function isPrimaryLnkStageDebtAllowed(settings?: ControlProcessSettings) {
+  return Boolean(
+    settings?.preHeatTreatmentLnkEnabled &&
+    settings.allowPrimaryLnkBeforePreviousStagesComplete,
+  )
 }
 
 function findFirstLnkResultVikBeforeOtherDraftIssue(
