@@ -97,7 +97,11 @@ getOrComputeDerivedCalculation,
 import {
 ensureDispatcherTaskIndexFresh,
 } from '@/server/dispatcher-task-index'
-import { attachGeneratedDocumentFields } from '@/server/generated-document-row-fields'
+import {
+applyGeneratedDocumentFields,
+attachGeneratedDocumentFields,
+loadGeneratedDocumentAssignments,
+} from '@/server/generated-document-row-fields'
 import {
 attachHeatTreatmentControlRelations,
 attachPreHeatTreatmentControlRelations,
@@ -1140,17 +1144,21 @@ export async function attachReportPageMetadata<Row extends DuplicateControlCarri
     : null
   const [
     rowsWithDuplicateControls,
-    rowsWithGeneratedDocuments,
+    generatedDocumentAssignments,
     rowsWithDispatcherTasks,
     rowsWithHeatTreatmentControls,
     rowsWithEarlyCoilDecisions,
   ] = await Promise.all([
     attachDuplicateControlsToPage(rows),
-    attachGeneratedDocumentFields(rows),
+    loadGeneratedDocumentAssignments(rows),
     attachDispatcherTaskCodesToPage(rows),
     attachHeatTreatmentControlRelations(rows),
     includeJointWorkflowMetadata ? attachEarlyCoilDecisionMetadataToPage(rows) : Promise.resolve(rows),
   ])
+  const rowsWithGeneratedDocuments = applyGeneratedDocumentFields(
+    rowsWithHeatTreatmentControls,
+    generatedDocumentAssignments,
+  )
   const rowsWithChainContinuations = mergeJointChainContinuationMetadataIntoRows(
     rows,
     dispatcherState

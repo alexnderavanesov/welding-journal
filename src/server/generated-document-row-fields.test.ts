@@ -1,11 +1,28 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const mocks = vi.hoisted(() => ({
+  requireDb: vi.fn(),
+}))
+
+vi.mock('@/db', () => ({
+  requireDb: mocks.requireDb,
+}))
+
+vi.mock('@/server/layered-control-documents', () => ({
+  ensureLayeredControlDocumentsInitialized: vi.fn().mockResolvedValue(undefined),
+}))
 
 import {
   applyGeneratedDocumentFields,
   attachSystemDocumentIds,
+  loadGeneratedDocumentAssignments,
 } from '@/server/generated-document-row-fields'
 
 describe('generated document row fields', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('attaches each document type independently to the same weld', () => {
     expect(
       applyGeneratedDocumentFields(
@@ -162,6 +179,30 @@ describe('generated document row fields', () => {
       tvmtRequest: 303,
       tvmtConclusion: 304,
     })
+  })
+
+  it.each([
+    [2, 1],
+    [100, 1],
+    [1_200, 2],
+  ])('loads all generated-document assignments for %i rows with %i bounded queries', async (rowCount, queryCount) => {
+    const where = vi.fn().mockResolvedValue([])
+    const innerJoin = vi.fn(() => ({ where }))
+    const from = vi.fn(() => ({ innerJoin }))
+    const select = vi.fn(() => ({ from }))
+
+    await loadGeneratedDocumentAssignments(
+      Array.from({ length: rowCount }, (_, index) => ({ id: index + 1 })),
+      { select } as never,
+    )
+
+    expect(select).toHaveBeenCalledTimes(queryCount)
+    expect(where).toHaveBeenCalledTimes(queryCount)
+  })
+
+  it('skips database access when there are no rows', async () => {
+    await expect(loadGeneratedDocumentAssignments([])).resolves.toEqual([])
+    expect(mocks.requireDb).not.toHaveBeenCalled()
   })
 
   it.each([

@@ -514,6 +514,17 @@ test('этап НК одинаково меняется из ПСТО, доку�
     completed: true,
   })
 
+  await openReport(page, 'ЛНК', '/lnk')
+  const preHeatTreatmentRow = page
+    .getByRole('button', { name: `Выбрать стык ${STAGE_SYNC_JOINT}`, exact: true })
+    .locator('xpath=ancestor::tr')
+  await preHeatTreatmentRow.getByRole('button', { name: STAGE_SYNC_JOINT, exact: true })
+    .click({ button: 'right' })
+  await page.getByRole('button', { name: 'Дополнительно', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Изменить этап контроля', exact: true }))
+    .toBeEnabled()
+  await page.keyboard.press('Escape')
+
   await openReport(page, 'Сварочный журнал', '/journal')
   const sourceRow = page
     .getByRole('button', { name: `Выбрать стык ${STAGE_SYNC_JOINT}`, exact: true })

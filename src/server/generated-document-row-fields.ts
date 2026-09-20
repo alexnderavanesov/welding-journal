@@ -276,15 +276,22 @@ function parseSystemDocumentSourceMetadata(value: string | null | undefined) {
 export async function attachGeneratedDocumentFields<Row extends GeneratedDocumentCarrier>(
   rows: Row[],
 ): Promise<Array<Row & GeneratedDocumentRowFields>> {
-  if (rows.length === 0) return rows
+  return applyGeneratedDocumentFields(rows, await loadGeneratedDocumentAssignments(rows))
+}
+
+export async function loadGeneratedDocumentAssignments<Row extends GeneratedDocumentCarrier>(
+  rows: Row[],
+  db?: Pick<ReturnType<typeof requireDb>, 'select'>,
+): Promise<GeneratedDocumentRowAssignment[]> {
+  if (rows.length === 0) return []
   await ensureLayeredControlDocumentsInitialized()
   const ids = [...new Set(rows.map((row) => Number(row.id)).filter(Number.isFinite))]
-  if (ids.length === 0) return rows
+  if (ids.length === 0) return []
 
-  const db = requireDb()
+  const database = db ?? requireDb()
   const assignments: GeneratedDocumentRowAssignment[] = []
   for (const idBatch of splitNumberBatches(ids, 1000)) {
-    assignments.push(...await db
+    assignments.push(...await database
       .select({
         weldJointId: generatedDocumentWeldJoints.weldJointId,
         documentId: generatedDocuments.id,
@@ -298,7 +305,7 @@ export async function attachGeneratedDocumentFields<Row extends GeneratedDocumen
       .where(inArray(generatedDocumentWeldJoints.weldJointId, idBatch)))
   }
 
-  return applyGeneratedDocumentFields(rows, assignments)
+  return assignments
 }
 
 export async function attachSystemDocumentIds<Row extends GeneratedDocumentCarrier>(
