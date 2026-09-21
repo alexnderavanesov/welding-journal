@@ -1,3 +1,5 @@
+import { isControlEnabledValue } from '@/lib/control-availability-values'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import {
   getDispatcherTaskActionSpecs,
@@ -16,11 +18,19 @@ import {
   getAvailablePreHeatTreatmentResultMethods,
 } from '@/lib/lnk-workflow-routing'
 import {
+  getPrimaryLnkStageDebt,
   getRejectedPreHeatTreatmentControls,
   getPrimaryLnkStageBlockReason,
-  isPrimaryLnkStageReady,
+  hasPrimaryLnkControlTrace,
+  PRE_HEAT_TREATMENT_LNK_METHODS,
 } from '@/lib/lnk-control-stage'
-import { getAvailableLnkRequestMethods, getJointStatusLabel } from '@/lib/lnk-status'
+import { LNK_METHODS } from '@/lib/lnk-report-config'
+import {
+  getAvailableLnkRequestMethods,
+  getJointStatusLabel,
+  hasRejectedLnkResult,
+  isFinalLnkResultValue,
+} from '@/lib/lnk-status'
 import {
   canAddPstoWorkflowResult,
   canCreatePstoWorkflowRequest,
@@ -64,9 +74,15 @@ export type JointNextAction = {
   tone: 'default' | 'warning' | 'success'
 }
 
+type JointNextActionSettings = Pick<
+  ControlProcessSettings,
+  'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'
+>
+
 export function buildJointNextActions(
   row: WeldRow,
   dispatcherTasks: readonly RepeatedJointTask[] = [],
+  controlProcessSettings?: JointNextActionSettings,
 ): JointNextAction[] {
   const rowTasks = dispatcherTasks
     .filter((task) => isDispatcherTaskDirectlyRelatedToJoint(task, row))
@@ -92,7 +108,7 @@ export function buildJointNextActions(
     ]
   }
 
-  const directAction = buildDirectWorkflowAction(row)
+  const directAction = buildDirectWorkflowAction(row, controlProcessSettings)
   if (directAction) return [directAction, ...taskActions]
 
   const status = getJointStatusLabel(row)
@@ -149,7 +165,7 @@ export function buildJointNextActions(
     title: 'Нужно проверить данные стыка',
     description: text(row.activeDispatcherTasks) || text(row.dispatcherTasks)
       ? `Активные проверки: ${text(row.activeDispatcherTasks) || text(row.dispatcherTasks)}.`
-      : 'Следующее профильное действие не определено. Проверьте назначения, документы и активные ДЗ/ЗВ ниже.',
+      : 'Следующее профильное действие не определено. Проверьте назначения, документы и активные СП/ДЗ ниже.',
     tone: 'warning',
   }]
 }
@@ -184,13 +200,31 @@ function buildChainContinuationAction(row: WeldRow): JointNextAction {
   }
 }
 
-function buildDirectWorkflowAction(row: WeldRow): JointNextAction | null {
+function buildDirectWorkflowAction(
+  row: WeldRow,
+  controlProcessSettings?: JointNextActionSettings,
+): JointNextAction | null {
   if (getRejectedPreHeatTreatmentControls(row).length > 0) return null
 
   const pstoState = getPstoTvmtWorkflowState(row)
   const currentCycle = getCurrentPstoCycle(row)
   const activePhysicalCycleAction = buildActivePhysicalCycleAction(row, pstoState, currentCycle?.sequence ?? 1)
   if (activePhysicalCycleAction) return activePhysicalCycleAction
+
+  if (hasPermittedPrimaryStageDebt(row, controlProcessSettings)) {
+    const primaryAction = buildPrimaryWorkflowAction(row, controlProcessSettings)
+    if (primaryAction) return withPrimaryStageDebtWarning(primaryAction)
+
+    if (hasCompletedAssignedPrimaryControls(row)) {
+      return {
+        key: `primary-lnk-recorded-with-debt:${row.id}`,
+        kind: 'complete',
+        title: 'Результаты основного НК внесены',
+        description: 'СП-01 остаётся, пока пропущенные этапы контроля не будут подтверждены фактическими данными.',
+        tone: 'warning',
+      }
+    }
+  }
 
   const preRequestMethods = getAvailablePreHeatTreatmentRequestMethods(row)
   if (preRequestMethods.length > 0) {
@@ -226,35 +260,13 @@ function buildDirectWorkflowAction(row: WeldRow): JointNextAction | null {
       title: sequence > 1 ? `Создать заявку повторной ПСТО · цикл ${sequence}` : 'Создать заявку ПСТО',
       description: sequence > 1
         ? 'Предыдущая ТВМТ не годна. Новый цикл относится только к этому стыку.'
-        : 'НК до ТО завершён, можно начать физический цикл термообработки.',
+        : getInitialPstoDescription(row),
       buttonLabel: 'Создать заявку',
     })
   }
 
-  const primaryRequestMethods = getAvailableLnkRequestMethods(row)
-  if (primaryRequestMethods.length > 0) {
-    return buildControlAction({
-      row,
-      kind: 'primaryLnkRequest',
-      title: 'Создать заявку основного НК',
-      description: `Ожидают заявки: ${primaryRequestMethods.map((method) => method.code).join(', ')}.`,
-      buttonLabel: 'Создать заявку',
-      methodCode: primaryRequestMethods[0]?.code,
-    })
-  }
-
-  const primaryResultMethods = getPendingLnkResultMethods(row)
-    .filter((method) => isPrimaryLnkStageReady(row, method.code))
-  if (primaryResultMethods.length > 0) {
-    return buildControlAction({
-      row,
-      kind: 'primaryLnkResult',
-      title: 'Внести результат основного НК',
-      description: `Ожидают результата: ${primaryResultMethods.map((method) => method.code).join(', ')}.`,
-      buttonLabel: 'Внести результат',
-      methodCode: primaryResultMethods[0]?.code,
-    })
-  }
+  const primaryAction = buildPrimaryWorkflowAction(row)
+  if (primaryAction) return primaryAction
 
   if (pstoState !== 'not-required' && pstoState !== 'complete') {
     const reason = pstoState === 'waiting-psto-request'
@@ -282,6 +294,80 @@ function buildDirectWorkflowAction(row: WeldRow): JointNextAction | null {
   }
 
   return null
+}
+
+function buildPrimaryWorkflowAction(
+  row: WeldRow,
+  controlProcessSettings?: JointNextActionSettings,
+): JointNextAction | null {
+  const primaryRequestMethods = getAvailableLnkRequestMethods(row, controlProcessSettings)
+  if (primaryRequestMethods.length > 0) {
+    return buildControlAction({
+      row,
+      kind: 'primaryLnkRequest',
+      title: 'Создать заявку основного НК',
+      description: `Ожидают заявки: ${primaryRequestMethods.map((method) => method.code).join(', ')}.`,
+      buttonLabel: 'Создать заявку',
+      methodCode: primaryRequestMethods[0]?.code,
+    })
+  }
+
+  const primaryResultMethods = getPendingLnkResultMethods(row, controlProcessSettings)
+  if (primaryResultMethods.length > 0) {
+    return buildControlAction({
+      row,
+      kind: 'primaryLnkResult',
+      title: 'Внести результат основного НК',
+      description: `Ожидают результата: ${primaryResultMethods.map((method) => method.code).join(', ')}.`,
+      buttonLabel: 'Внести результат',
+      methodCode: primaryResultMethods[0]?.code,
+    })
+  }
+  return null
+}
+
+function hasPermittedPrimaryStageDebt(
+  row: WeldRow,
+  controlProcessSettings?: JointNextActionSettings,
+) {
+  if (
+    !controlProcessSettings?.preHeatTreatmentLnkEnabled ||
+    !controlProcessSettings.allowPrimaryLnkBeforePreviousStagesComplete
+  ) return false
+
+  return LNK_METHODS.some((method) =>
+    isControlEnabledValue(row[method.enabledKey]) &&
+    hasPrimaryLnkControlTrace(row, method.code) &&
+    Boolean(getPrimaryLnkStageDebt(row, method.code)),
+  )
+}
+
+function hasCompletedAssignedPrimaryControls(row: WeldRow) {
+  if (hasRejectedLnkResult(row)) return false
+  const assignedMethods = LNK_METHODS.filter((method) => isControlEnabledValue(row[method.enabledKey]))
+  return assignedMethods.length > 0 && assignedMethods.every((method) =>
+    isFinalLnkResultValue(row[method.resultKey]),
+  )
+}
+
+function withPrimaryStageDebtWarning(action: JointNextAction): JointNextAction {
+  return {
+    ...action,
+    description: `${action.description} СП-01: предыдущие этапы пропущены.`,
+  }
+}
+
+function getInitialPstoDescription(row: WeldRow) {
+  if (row.preHeatTreatmentLnkExempt === true) {
+    return 'НК до ТО для этого стыка не требуется. Можно начать цикл термообработки.'
+  }
+
+  const hasAssignedPreHeatTreatmentMethods = PRE_HEAT_TREATMENT_LNK_METHODS.some((method) =>
+    isControlEnabledValue(row[method.enabledKey]),
+  )
+  return hasAssignedPreHeatTreatmentMethods
+    ? 'НК до ТО завершён. Можно начать цикл термообработки.'
+    : 'НК до ТО не требуется по текущим назначениям. Можно начать цикл термообработки.'
 }
 
 function buildActivePhysicalCycleAction(

@@ -179,7 +179,7 @@ export function WelderStampsRegistry({
 
       <WelderStampsFiltersPanel search={search} filters={filters} onSearchChange={onSearchChange} onFiltersChange={onFiltersChange} />
 
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-7" aria-label="Сводка по состоянию клейм">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7" aria-label="Сводка по состоянию клейм">
         {WELDER_STAMP_STATUS_OPTIONS.map((option) => {
           const active = statusFilter === option.id
           return (
@@ -189,13 +189,13 @@ export function WelderStampsRegistry({
               onClick={() => setStatusFilter(option.id)}
               title={option.description}
               aria-pressed={active}
-              className={`flex min-h-14 items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition-colors ${
+              className={`flex min-h-14 min-w-0 items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition-colors ${
                 active
                   ? option.activeClassName
                   : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white'
               }`}
             >
-              <span className="text-xs font-semibold leading-4">{option.label}</span>
+              <span className="min-w-0 break-words text-xs font-semibold leading-4">{option.label}</span>
               <span className="text-lg font-semibold tabular-nums">{registrySummary[option.id]}</span>
             </button>
           )

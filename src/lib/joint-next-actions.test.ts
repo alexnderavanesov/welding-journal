@@ -9,6 +9,16 @@ import type {
 } from '@/lib/dispatcher-types'
 import { buildJointNextActions } from '@/lib/joint-next-actions'
 
+const STRICT_CONTROL_PROCESS_SETTINGS = {
+  preHeatTreatmentLnkEnabled: true,
+  allowPrimaryLnkBeforePreviousStagesComplete: false,
+}
+
+const PERMISSIVE_CONTROL_PROCESS_SETTINGS = {
+  preHeatTreatmentLnkEnabled: true,
+  allowPrimaryLnkBeforePreviousStagesComplete: true,
+}
+
 describe('joint next actions', () => {
   it('shows the exact repeated joint expected after a rejected result', () => {
     const source = row({ joint: 'F3', finalStatus: 'не годен', rkResult: 'ремонт' })
@@ -165,6 +175,14 @@ describe('joint next actions', () => {
     })
   })
 
+  it('uses the current SP/DZ terminology when no exact next action is available', () => {
+    expect(buildJointNextActions(row())[0]).toMatchObject({
+      kind: 'blocked',
+      title: 'Нужно проверить данные стыка',
+      description: expect.stringContaining('активные СП/ДЗ ниже'),
+    })
+  })
+
   it('opens the weld card before any control for a created repeated joint', () => {
     expect(buildJointNextActions(row({ joint: 'F3R1', weldDate: null }))[0]).toMatchObject({
       kind: 'editWeld',
@@ -237,6 +255,7 @@ describe('joint next actions', () => {
     expect(buildJointNextActions(current)[0]).toMatchObject({
       kind: 'pstoRequest',
       title: 'Создать заявку ПСТО',
+      description: 'НК до ТО завершён. Можно начать цикл термообработки.',
     })
   })
 
@@ -270,7 +289,10 @@ describe('joint next actions', () => {
       preHeatTreatmentLnkExempt: true,
       hasVik: 'да',
     })
-    expect(buildJointNextActions(beforePsto)[0]).toMatchObject({ kind: 'pstoRequest' })
+    expect(buildJointNextActions(beforePsto)[0]).toMatchObject({
+      kind: 'pstoRequest',
+      description: 'НК до ТО для этого стыка не требуется. Можно начать цикл термообработки.',
+    })
 
     const afterTvmt = row({
       ...beforePsto,
@@ -282,6 +304,13 @@ describe('joint next actions', () => {
       tvmtConclusionDate: '2026-08-04',
     })
     expect(buildJointNextActions(afterTvmt)[0]).toMatchObject({ kind: 'primaryLnkRequest' })
+  })
+
+  it('does not call pre-TO control completed when no pre-TO methods are assigned', () => {
+    expect(buildJointNextActions(row({ pstoRequired: 'да' }))[0]).toMatchObject({
+      kind: 'pstoRequest',
+      description: 'НК до ТО не требуется по текущим назначениям. Можно начать цикл термообработки.',
+    })
   })
 
   it('guides every physical cycle stage and opens a repeat after failed TVMT', () => {
@@ -434,6 +463,87 @@ describe('joint next actions', () => {
     expect(buildJointNextActions(completedHistory)[0]).toMatchObject({
       kind: 'complete',
       title: 'Работа по стыку завершена',
+    })
+  })
+
+  it('keeps the missing previous stage as the next step in strict mode', () => {
+    const primaryStartedEarly = row({
+      pstoRequired: 'да',
+      hasVik: 'да',
+      vikRequest: 'Основная заявка ВИК',
+      vikRequestDate: '2026-08-07',
+      vikResult: 'ожидает НК',
+    })
+
+    expect(buildJointNextActions(primaryStartedEarly, [], STRICT_CONTROL_PROCESS_SETTINGS)[0]).toMatchObject({
+      kind: 'preLnkRequest',
+      title: 'Создать заявку НК до ТО',
+    })
+  })
+
+  it('shows the real primary result next while SP-01 remains in permissive mode', () => {
+    const primaryStartedEarly = row({
+      pstoRequired: 'да',
+      hasVik: 'да',
+      vikRequest: 'Основная заявка ВИК',
+      vikRequestDate: '2026-08-07',
+      vikResult: 'ожидает НК',
+    })
+
+    expect(buildJointNextActions(primaryStartedEarly, [], PERMISSIVE_CONTROL_PROCESS_SETTINGS)[0]).toMatchObject({
+      kind: 'primaryLnkResult',
+      title: 'Внести результат основного НК',
+      methodCode: 'ВИК',
+      description: expect.stringContaining('СП-01: предыдущие этапы пропущены'),
+    })
+  })
+
+  it('continues with the next primary request after an intentional stage skip', () => {
+    const primaryStartedEarly = row({
+      pstoRequired: 'да',
+      hasVik: 'да',
+      hasRk: 'да',
+      vikRequest: 'Основная заявка ВИК',
+      vikRequestDate: '2026-08-07',
+      vikResult: 'ожидает НК',
+    })
+
+    expect(buildJointNextActions(primaryStartedEarly, [], PERMISSIVE_CONTROL_PROCESS_SETTINGS)[0]).toMatchObject({
+      kind: 'primaryLnkRequest',
+      title: 'Создать заявку основного НК',
+      methodCode: 'РК',
+      description: expect.stringContaining('СП-01: предыдущие этапы пропущены'),
+    })
+  })
+
+  it('shows that primary results are recorded without hiding the remaining SP-01 debt', () => {
+    const primaryCompletedEarly = row({
+      pstoRequired: 'да',
+      hasVik: 'да',
+      vikRequest: 'Основная заявка ВИК',
+      vikRequestDate: '2026-08-07',
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-08',
+      vikConclusion: 'Основное заключение ВИК',
+    })
+
+    expect(buildJointNextActions(primaryCompletedEarly, [], PERMISSIVE_CONTROL_PROCESS_SETTINGS)[0]).toMatchObject({
+      kind: 'complete',
+      title: 'Результаты основного НК внесены',
+      description: expect.stringContaining('СП-01 остаётся'),
+      tone: 'warning',
+    })
+  })
+
+  it('does not skip ahead until the user has actually started primary control', () => {
+    const noPrimaryTrace = row({
+      pstoRequired: 'да',
+      hasVik: 'да',
+    })
+
+    expect(buildJointNextActions(noPrimaryTrace, [], PERMISSIVE_CONTROL_PROCESS_SETTINGS)[0]).toMatchObject({
+      kind: 'preLnkRequest',
+      title: 'Создать заявку НК до ТО',
     })
   })
 

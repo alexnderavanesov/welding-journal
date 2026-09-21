@@ -26,10 +26,11 @@ export function RepeatedJointTaskContent({ task, nested = false }: { task: Dispa
   if (task.kind === 'welder-stamp-expiry') {
     return <WelderStampTaskContent task={task} label={nested ? formatWelderStampTaskLabel(task) : title.joint} />
   }
+  const jointLabel = nested ? null : <span className="text-slate-800">{title.joint}</span>
   if (task.kind === 'create') {
     return (
       <>
-        <span className="text-slate-800">{title.joint}</span>
+        {jointLabel}
         <span className="text-slate-700">{title.type}</span>
         <span className="text-slate-400">·</span>
         <span className="text-amber-700">→</span>
@@ -44,7 +45,7 @@ export function RepeatedJointTaskContent({ task, nested = false }: { task: Dispa
   if (task.kind === 'coil') {
     return (
       <>
-        <span className="text-slate-800">{title.joint}</span>
+        {jointLabel}
         <span className="text-slate-700">{title.type}</span>
         <span className="text-slate-400">·</span>
         <span className={`inline-flex min-h-6 items-center rounded border px-1.5 text-xs font-semibold leading-none ${getLnkResultBadgeClass(task.result)}`}>
@@ -58,7 +59,7 @@ export function RepeatedJointTaskContent({ task, nested = false }: { task: Dispa
   if (task.kind === 'delete') {
     return (
       <>
-        <span className="text-slate-800">{title.joint}</span>
+        {jointLabel}
         <span className="text-slate-700">{title.type}</span>
       </>
     )
@@ -66,7 +67,7 @@ export function RepeatedJointTaskContent({ task, nested = false }: { task: Dispa
   if (task.kind === 'rename') {
     return (
       <>
-        <span className="text-slate-800">{title.joint}</span>
+        {jointLabel}
         <span className="text-slate-700">{title.type}</span>
         <span className="text-slate-400">·</span>
         <span className="text-slate-500">ожидается {task.targetJoint}</span>
@@ -76,7 +77,7 @@ export function RepeatedJointTaskContent({ task, nested = false }: { task: Dispa
   if (task.kind === 'check') {
     return (
       <>
-        <span className="text-slate-800">{title.joint}</span>
+        {jointLabel}
         <span className="text-slate-700">{title.type}</span>
       </>
     )
@@ -84,7 +85,7 @@ export function RepeatedJointTaskContent({ task, nested = false }: { task: Dispa
   if (task.kind === 'line-consistency') {
     return (
       <>
-        <span className="text-slate-800">{title.joint}</span>
+        {jointLabel}
         <span className="text-slate-700">{title.type}</span>
       </>
     )
@@ -92,7 +93,7 @@ export function RepeatedJointTaskContent({ task, nested = false }: { task: Dispa
   if (task.kind === 'percentage-line-control') {
     return (
       <>
-        <span className="text-slate-800">{title.joint}</span>
+        {jointLabel}
         <span className="text-slate-700">{title.type}</span>
         <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
           {task.count}
@@ -102,7 +103,7 @@ export function RepeatedJointTaskContent({ task, nested = false }: { task: Dispa
   }
   return (
     <>
-      <span className="text-slate-800">{title.joint}</span>
+      {jointLabel}
       <span className="text-slate-700">{title.type}</span>
       <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">{task.count}</span>
     </>

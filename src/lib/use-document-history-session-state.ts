@@ -169,6 +169,7 @@ function readDocumentHistorySessionState<T extends string | number>(
       window.sessionStorage.getItem(storageKey) ?? '{}',
     ) as StoredDocumentHistorySessionState
     const pageSize = normalizeDocumentHistoryPageSize(parsed.pageSize, defaultPageSize)
+    const usedRemovedUnlimitedPageSize = parsed.pageSize === ALL_PAGE_SIZE
     return {
       key: storageKey,
       selectedDocumentIds: new Set(
@@ -180,11 +181,13 @@ function readDocumentHistorySessionState<T extends string | number>(
           : [],
       ),
       pageSize,
-      visibleLimit: normalizeDocumentHistoryVisibleLimit(
-        parsed.visibleLimit,
-        pageSize,
-        defaultPageSize,
-      ),
+      visibleLimit: usedRemovedUnlimitedPageSize
+        ? defaultPageSize
+        : normalizeDocumentHistoryVisibleLimit(
+            parsed.visibleLimit,
+            pageSize,
+            defaultPageSize,
+          ),
     }
   } catch {
     return fallback
@@ -215,5 +218,5 @@ function normalizeDocumentHistoryVisibleLimit(value: unknown, pageSize: number, 
   const normalized = typeof value === 'number' && Number.isSafeInteger(value) && value > 0
     ? value
     : fallback
-  return pageSize === ALL_PAGE_SIZE ? normalized : Math.max(normalized, pageSize)
+  return Math.max(normalized, pageSize)
 }

@@ -18,5 +18,19 @@ describe('ReportPageHeader', () => {
       width: 'calc(100vw - 104px)',
       maxWidth: 'calc(100vw - 104px)',
     })
+    expect(header).toHaveClass('border-b', 'bg-white/95')
+  })
+
+  it('keeps the report summary inside the same header surface', () => {
+    const { container } = render(
+      <ReportPageHeader title="ЛНК" stickyLeft={80} summary={<div>Стыков: 12</div>}>
+        <button type="button">Заявка</button>
+      </ReportPageHeader>,
+    )
+
+    expect(screen.getByText('Стыков: 12')).toBeInTheDocument()
+    expect(container.querySelector('[data-report-header-summary]')).toBe(
+      screen.getByText('Стыков: 12').parentElement,
+    )
   })
 })

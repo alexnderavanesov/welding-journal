@@ -1,13 +1,18 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DocumentsPage } from '@/components/documents-page'
 import { parseWeldColumnChoiceFilter } from '@/lib/weld-table-filtering'
 
-const { loadGeneratedDocumentHistory, loadSystemDocumentHistory } = vi.hoisted(() => ({
+const { getDocumentGenerationData, loadGeneratedDocumentHistory, loadSystemDocumentHistory } = vi.hoisted(() => ({
+  getDocumentGenerationData: vi.fn(),
   loadGeneratedDocumentHistory: vi.fn(),
   loadSystemDocumentHistory: vi.fn(),
+}))
+
+vi.mock('@/server/weld-read-api', () => ({
+  getDocumentGenerationData,
 }))
 
 vi.mock('@/lib/security-context', () => ({
@@ -46,8 +51,41 @@ vi.mock('@/lib/generated-document-storage', () => ({
 
 describe('DocumentsPage report navigation', () => {
   beforeEach(() => {
+    getDocumentGenerationData.mockReset()
+    getDocumentGenerationData.mockResolvedValue({
+      rows: [],
+      scopeOptions: { projects: [], subtitles: [], lines: [] },
+    })
     loadGeneratedDocumentHistory.mockReset()
+    loadGeneratedDocumentHistory.mockResolvedValue({
+      documents: [],
+      total: 0,
+      filterOptions: {},
+    })
     loadSystemDocumentHistory.mockReset()
+  })
+
+  it('loads generation rows only after the user opens the generation tab', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <DocumentsPage welderStamps={[]} />
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByText('Пока нет сохраненных документов.')).toBeInTheDocument()
+    expect(screen.getByText('Общие')).toBeInTheDocument()
+    expect(screen.getByText('ЛНК')).toBeInTheDocument()
+    expect(screen.getByText('ПСТО и ТВМТ')).toBeInTheDocument()
+    expect(screen.getByText('Послойный контроль')).toBeInTheDocument()
+    expect(getDocumentGenerationData).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Формирование' }))
+
+    await waitFor(() => expect(getDocumentGenerationData).toHaveBeenCalledTimes(1))
   })
 
   it('loads the selected document through the title filter on the first request', async () => {

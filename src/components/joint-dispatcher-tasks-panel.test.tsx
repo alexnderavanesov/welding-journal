@@ -1,15 +1,19 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { JointDispatcherTasksPanel } from '@/components/joint-dispatcher-tasks-panel'
+import {
+  JointDispatcherTasksPanel,
+  JointDispatcherTasksSummary,
+} from '@/components/joint-dispatcher-tasks-panel'
 import { LNK_RESULT_COMPLETENESS_REASON } from '@/lib/dispatcher-check-reasons'
 import type { LineConsistencyTask, RepeatedJointCheckTask, WeldRow } from '@/lib/dispatcher-types'
 
 describe('JointDispatcherTasksPanel', () => {
-  it('stays hidden for a joint without active dispatcher tasks', () => {
+  it('shows a calm empty state for a joint without active dispatcher tasks', () => {
     render(<JointDispatcherTasksPanel row={row()} tasks={[]} onRunAction={vi.fn()} />)
 
-    expect(screen.queryByRole('region', { name: 'Задачи по стыку' })).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Требует действия' })).toBeInTheDocument()
+    expect(screen.getByText('По этому стыку нет активных СП или ДЗ.')).toBeInTheDocument()
   })
 
   it('shows the concrete action and routes it with the selected task', () => {
@@ -73,7 +77,7 @@ describe('JointDispatcherTasksPanel', () => {
     }))
   })
 
-  it('moves a line-wide task out of the joint list and opens the line picture', () => {
+  it('keeps a line-wide task out of the joint list', () => {
     const current = row({ id: 8, projectTitle: 'project', subtitleCode: 's1', line: 'lin123' })
     const task: LineConsistencyTask = {
       kind: 'line-consistency',
@@ -88,39 +92,18 @@ describe('JointDispatcherTasksPanel', () => {
       values: ['да', 'нет'],
       details: 'Значения различаются.',
     }
-    const onOpenLinePicture = vi.fn()
     render(
       <JointDispatcherTasksPanel
         row={current}
         tasks={[task]}
         fallbackCodes="ДЗ-30"
         onRunAction={vi.fn()}
-        onOpenLinePicture={onOpenLinePicture}
       />,
     )
 
-    expect(screen.getByText('Нет активных задач по стыку.')).toBeInTheDocument()
+    expect(screen.getByText('По этому стыку нет активных СП или ДЗ.')).toBeInTheDocument()
     expect(screen.queryByText('ДЗ-30')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Открыть программу ПСТО' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Картина линии · 1' }))
-    expect(onOpenLinePicture).toHaveBeenCalledOnce()
-  })
-
-  it('does not repeat a task that is already shown as the primary next action', () => {
-    const current = row()
-    const task = checkTask(current)
-
-    render(
-      <JointDispatcherTasksPanel
-        row={current}
-        tasks={[task]}
-        fallbackCodes="ДЗ-32"
-        excludedTaskKeys={[task.key]}
-        onRunAction={vi.fn()}
-      />,
-    )
-
-    expect(screen.queryByRole('region', { name: 'Задачи по стыку' })).not.toBeInTheDocument()
   })
 
   it('keeps fallback codes that are not represented by the current task snapshot', () => {
@@ -157,7 +140,7 @@ describe('JointDispatcherTasksPanel', () => {
     expect(screen.getByText('ДЗ · 1')).toBeInTheDocument()
   })
 
-  it('shows only the first three joint tasks until requested', () => {
+  it('shows every joint task in the dedicated action view', () => {
     const current = row()
     const tasks = Array.from({ length: 4 }, (_, index) => ({
       ...checkTask(current),
@@ -166,9 +149,24 @@ describe('JointDispatcherTasksPanel', () => {
 
     render(<JointDispatcherTasksPanel row={current} tasks={tasks} onRunAction={vi.fn()} />)
 
-    expect(screen.getAllByText('ДЗ-32')).toHaveLength(3)
-    fireEvent.click(screen.getByRole('button', { name: 'Показать ещё 1' }))
     expect(screen.getAllByText('ДЗ-32')).toHaveLength(4)
+  })
+
+  it('opens the dedicated action view from the compact summary', () => {
+    const current = row()
+    const onOpen = vi.fn()
+
+    render(
+      <JointDispatcherTasksSummary
+        row={current}
+        tasks={[checkTask(current)]}
+        onOpen={onOpen}
+      />,
+    )
+
+    expect(screen.getByText('ДЗ: 1')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть задачи по стыку: 1' }))
+    expect(onOpen).toHaveBeenCalledOnce()
   })
 })
 

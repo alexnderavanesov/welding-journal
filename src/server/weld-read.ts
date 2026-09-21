@@ -19,7 +19,11 @@ import {
 CONTROL_BASIS_SUMMARY_FIELD_KEY,
 withControlBasisSummary
 } from '@/lib/control-assignment-basis'
-import { LEGACY_CONTROL_REPLACEMENT_VALUE } from '@/lib/control-availability-values'
+import {
+CONTROL_ASSIGNMENT_FIELD_KEYS,
+CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES,
+normalizeControlAvailabilityFilterValue
+} from '@/lib/control-availability-values'
 import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
 import {
 buildMergedDispatcherTaskCodes,
@@ -90,7 +94,10 @@ getWeldFormSuggestions,
 type WeldFormSuggestion,
 } from '@/lib/weld-form-suggestions'
 import { filterWeldRowsByColumns,getWeldColumnFilterRowText } from '@/lib/weld-table-filtering'
-import { buildNullableControlEnabledWhere } from '@/server/control-availability-sql'
+import {
+buildNormalizedControlAvailabilityWhere,
+buildNullableControlEnabledWhere
+} from '@/server/control-availability-sql'
 import {
 getOrComputeDerivedCalculation,
 } from '@/server/derived-calculation-cache'
@@ -136,6 +143,7 @@ addBaseFilterClauses,
 applyCurrentSystemWdi,
 buildColumnChoiceWhere,
 buildColumnTextEqualsWhere,
+buildControlAvailabilityColumnWhere,
 buildDispatcherTaskWhere,
 buildGeneratedDocumentColumnWhere,
 buildJointChainWhere,
@@ -170,7 +178,7 @@ export type WeldDataUsageRow = {
   testTypes?: unknown
 }
 
-export const ENABLED_CONTROL_REPORT_VALUES = ['да', 'Да', 'дополнительный', LEGACY_CONTROL_REPLACEMENT_VALUE] as const
+export const ENABLED_CONTROL_REPORT_VALUES = CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES
 
 export const CONTROL_REPORT_VALUES = [...ENABLED_CONTROL_REPORT_VALUES, 'отменен'] as const
 
@@ -1549,7 +1557,8 @@ export async function listColumnFilterOptions(data: ReturnType<typeof normalizeW
     .where(where)
     .groupBy(valueExpression)
 
-  return sortColumnFilterOptions(
+  return normalizeWeldColumnFilterOptions(
+    data.fieldKey,
     rows.map((row) => ({
       value: row.value,
       count: row.count,
@@ -1773,7 +1782,8 @@ export async function listSourceColumnFilterOptions(
     .where(where)
     .groupBy(valueExpression)
 
-  return sortColumnFilterOptions(
+  return normalizeWeldColumnFilterOptions(
+    fieldKey,
     rows.map((row) => ({
       value: row.value,
       count: row.count,
@@ -1952,11 +1962,11 @@ export function buildPstoExecutionHistoryWhere() {
 }
 
 export function buildControlReportValueWhere(column: SQLWrapper) {
-  return inArray(column, CONTROL_REPORT_VALUES)
+  return buildNormalizedControlAvailabilityWhere(column, CONTROL_REPORT_VALUES)
 }
 
 export function buildEnabledControlValueWhere(column: SQLWrapper) {
-  return inArray(column, ENABLED_CONTROL_REPORT_VALUES)
+  return buildNormalizedControlAvailabilityWhere(column, ENABLED_CONTROL_REPORT_VALUES)
 }
 
 export function addReportSourceColumnFilterClauses(clauses: SQL[], columnFilters: Record<string, string>) {
@@ -1994,12 +2004,21 @@ export function addReportSourceColumnFilterClauses(clauses: SQL[], columnFilters
 
     const choiceFilter = parseWeldColumnChoiceFilter(query)
     if (choiceFilter?.kind === 'values') {
-      clauses.push(buildColumnChoiceWhere(column, choiceFilter.values))
+      clauses.push(
+        CONTROL_ASSIGNMENT_FIELD_KEYS.has(key)
+          ? buildControlAvailabilityColumnWhere(column, choiceFilter.values)
+          : buildColumnChoiceWhere(column, choiceFilter.values),
+      )
       continue
     }
 
     if (query.startsWith('=')) {
-      clauses.push(buildColumnTextEqualsWhere(column, query.slice(1).trim().replace(/^["']|["']$/g, '')))
+      const exactValue = query.slice(1).trim().replace(/^["']|["']$/g, '')
+      clauses.push(
+        CONTROL_ASSIGNMENT_FIELD_KEYS.has(key)
+          ? buildControlAvailabilityColumnWhere(column, [exactValue])
+          : buildColumnTextEqualsWhere(column, exactValue),
+      )
       continue
     }
 
@@ -2061,6 +2080,26 @@ export function buildWeldColumnFilterOptionsFromRows(rows: WeldRow[], fieldKey: 
 
   return sortColumnFilterOptions(
     Array.from(counts.entries()).map(([value, count]) => ({
+      value,
+      count,
+      label: value || '(пусто)',
+    })),
+  )
+}
+
+export function normalizeWeldColumnFilterOptions(
+  fieldKey: WeldFieldKey,
+  options: readonly WeldColumnFilterOption[],
+) {
+  if (!CONTROL_ASSIGNMENT_FIELD_KEYS.has(fieldKey)) return sortColumnFilterOptions([...options])
+
+  const counts = new Map<string, number>()
+  for (const option of options) {
+    const value = normalizeControlAvailabilityFilterValue(option.value)
+    counts.set(value, (counts.get(value) ?? 0) + (Number(option.count) || 0))
+  }
+  return sortColumnFilterOptions(
+    [...counts.entries()].map(([value, count]) => ({
       value,
       count,
       label: value || '(пусто)',

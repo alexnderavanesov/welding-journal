@@ -4,6 +4,9 @@ import { ReportShowMenu } from '@/components/report-show-menu'
 import { Button } from '@/components/ui/button'
 import { WorkflowActionMenuItem } from '@/components/workflow-action-menu-item'
 
+const REPORT_WORKFLOW_BUTTON_CLASS =
+  'border-sky-200 bg-sky-50 text-sky-900 hover:bg-sky-100 hover:text-sky-950'
+
 type WeldingJournalHeaderActionsProps = {
   onCreateWeldJoint: () => void
   onOpenImportDialog: () => void
@@ -200,7 +203,7 @@ export function HeatTreatmentHeaderActions({
     <div ref={workflowMenuRootRef} className="contents">
       <Button
         variant="outline"
-        className="border-teal-200 bg-teal-50 text-teal-900 hover:bg-teal-100 hover:text-teal-950"
+        className={REPORT_WORKFLOW_BUTTON_CLASS}
         onClick={() => {
           setIsRequestMenuOpen(false)
           setIsResultMenuOpen(false)
@@ -215,7 +218,7 @@ export function HeatTreatmentHeaderActions({
       <div className="relative">
         <Button
           variant="outline"
-          className="border-sky-200 bg-sky-50 text-sky-900 hover:bg-sky-100 hover:text-sky-950"
+          className={REPORT_WORKFLOW_BUTTON_CLASS}
           onClick={toggleRequestMenu}
           disabled={requestPending}
         >
@@ -252,7 +255,7 @@ export function HeatTreatmentHeaderActions({
       <div className="relative">
         <Button
           variant="outline"
-          className="border-emerald-200 bg-emerald-50 text-emerald-900 hover:bg-emerald-100 hover:text-emerald-950"
+          className={REPORT_WORKFLOW_BUTTON_CLASS}
           onClick={toggleResultMenu}
         >
           <ClipboardCheck className="mr-2 h-4 w-4" />
@@ -292,7 +295,7 @@ export function HeatTreatmentHeaderActions({
           onClick={toggleTvmtMenu}
           disabled={tvmtPending}
           variant="outline"
-          className="border-violet-200 bg-violet-50 text-violet-900 hover:bg-violet-100 hover:text-violet-950"
+          className={REPORT_WORKFLOW_BUTTON_CLASS}
         >
           <Gauge className="mr-2 h-4 w-4" />
           ТВМТ
@@ -323,7 +326,7 @@ export function HeatTreatmentHeaderActions({
         isOpen={isShowMenuOpen}
         onToggle={toggleShowMenu}
         widthClassName="w-56"
-        buttonClassName="border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100 hover:text-slate-950"
+        buttonClassName={REPORT_WORKFLOW_BUTTON_CLASS}
         items={[
           { label: 'Текущая версия', onClick: onOpenCurrentReport },
           { label: 'Ожидает заявку ПСТО', onClick: onOpenWaitingRequestReport },
@@ -429,7 +432,7 @@ export function LnkHeaderActions({
       <div className="relative">
         <Button
           variant="outline"
-          className="border-sky-200 bg-sky-50 text-sky-900 hover:bg-sky-100 hover:text-sky-950"
+          className={REPORT_WORKFLOW_BUTTON_CLASS}
           onClick={toggleRequestMenu}
           disabled={requestPending}
         >
@@ -462,7 +465,7 @@ export function LnkHeaderActions({
       <div className="relative">
         <Button
           variant="outline"
-          className="border-emerald-200 bg-emerald-50 text-emerald-900 hover:bg-emerald-100 hover:text-emerald-950"
+          className={REPORT_WORKFLOW_BUTTON_CLASS}
           onClick={toggleResultMenu}
         >
           <ClipboardCheck className="mr-2 h-4 w-4" />
@@ -499,7 +502,7 @@ export function LnkHeaderActions({
       </div>
       <Button
         variant="outline"
-        className="border-violet-200 bg-violet-50 text-violet-900 hover:bg-violet-100 hover:text-violet-950"
+        className={REPORT_WORKFLOW_BUTTON_CLASS}
         onClick={onOpenOfficiality}
         disabled={officialityPending}
       >
@@ -508,7 +511,7 @@ export function LnkHeaderActions({
       </Button>
       <Button
         variant="outline"
-        className="border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:text-amber-950"
+        className={REPORT_WORKFLOW_BUTTON_CLASS}
         onClick={onOpenDuplicateControl}
         disabled={duplicateControlPending}
       >
@@ -518,6 +521,7 @@ export function LnkHeaderActions({
       <ReportShowMenu
         isOpen={isShowMenuOpen}
         onToggle={toggleShowMenu}
+        buttonClassName={REPORT_WORKFLOW_BUTTON_CLASS}
         items={[
           { label: 'Текущая версия', onClick: onOpenCurrentReport },
           { label: 'Ожидание заявки', onClick: onOpenToRequestReport },

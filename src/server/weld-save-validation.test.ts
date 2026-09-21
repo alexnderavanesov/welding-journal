@@ -686,6 +686,25 @@ describe('validateServerWeldRecords', () => {
     expect(record.pstoControlBasis).toBeNull()
   })
 
+  it('does not let a raw import payload bypass line-managed PSTO assignment', () => {
+    const record = {
+      projectTitle: 'Проект',
+      subtitleCode: '400',
+      line: 'L-IMPORT',
+      joint: 'F-IMPORT',
+      pstoRequired: 'Да',
+    } as WeldInput
+
+    prepareServerWeldRecords({
+      records: [record],
+      previousRows: new Map(),
+      context,
+      importMode: true,
+    })
+
+    expect(record.pstoRequired).toBeNull()
+  })
+
   it('preserves an old partial line during an unrelated edit but blocks adding another row to it', () => {
     const previous = {
       id: 30,

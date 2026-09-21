@@ -25,7 +25,10 @@ import {
   collectRequestDocumentIdentities,
   createRequestDocumentIdentity,
 } from '@/lib/request-document-identity'
-import { buildNullableControlEnabledWhere } from '@/server/control-availability-sql'
+import {
+  buildNormalizedControlAvailabilityWhere,
+  buildNullableControlEnabledWhere,
+} from '@/server/control-availability-sql'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 import { assertSecurityScope } from '@/server/security-functions'
 import type {
@@ -462,7 +465,7 @@ function hasTextWhere(column: SQLWrapper) {
 }
 
 function buildEnabledTextWhere(column: SQLWrapper) {
-  return inArray(column, ENABLED_CONTROL_REPORT_VALUES)
+  return buildNormalizedControlAvailabilityWhere(column, ENABLED_CONTROL_REPORT_VALUES)
 }
 
 function filteredCount(where: SQL) {

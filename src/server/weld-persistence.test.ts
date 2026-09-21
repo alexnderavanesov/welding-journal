@@ -15,6 +15,15 @@ describe('weld persistence', () => {
     expect(empty).not.toHaveProperty('legacyStatus')
   })
 
+  it('writes assignment values in their canonical storage form', () => {
+    expect(toDbInsert({ pstoRequired: ' Да ', hasVik: 'ДА', hasRk: 'Нет' })).toMatchObject({
+      pstoRequired: 'да',
+      hasVik: 'да',
+      hasRk: null,
+    })
+    expect(toDbInsert({ pstoRequired: '0' }).pstoRequired).toBe('нет')
+  })
+
   it('persists a server-inherited pre-TO exemption in batch updates', () => {
     const previous = {
       id: 1,

@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import type { WeldFilters } from '@/server/weld-contracts'
 import type { ActiveReport } from '@/lib/home-state'
 import type { DispatcherTask, WeldRow } from '@/lib/dispatcher-types'
+import type { OpenJointPictureOptions } from '@/lib/joint-picture-navigation'
 import {
   DISPATCHER_TASKS_FIELD_KEY,
   DISPATCHER_TASKS_WITH_FILTER,
@@ -21,6 +22,7 @@ type UseJointChainActionsOptions = {
   activeReport: ActiveReport
   setActiveReport: Dispatch<SetStateAction<ActiveReport>>
   setChainRecord: Dispatch<SetStateAction<WeldRow | null>>
+  openChainPicture: (row: WeldRow, options?: OpenJointPictureOptions) => void
   setColumnFilters: Dispatch<SetStateAction<WeldFilters>>
   setHeatTreatmentFilters: Dispatch<SetStateAction<WeldFilters>>
   setLnkFilters: Dispatch<SetStateAction<WeldFilters>>
@@ -32,6 +34,7 @@ export function useJointChainActions({
   activeReport,
   setActiveReport,
   setChainRecord,
+  openChainPicture,
   setColumnFilters,
   setHeatTreatmentFilters,
   setLnkFilters,
@@ -60,7 +63,12 @@ export function useJointChainActions({
 
   function openRepeatedJointTaskPicture(task: DispatcherTask) {
     if (task.kind === 'welder-stamp-expiry') return
-    setChainRecord(task.row)
+    if (task.kind === 'line-consistency' || task.kind === 'percentage-line-control') {
+      openChainPicture(task.row, { initialTab: 'line', focusedTaskKey: task.key })
+      setMessage(`Открыта картина линии ${String(task.row.line ?? '-').trim() || '-'}`)
+      return
+    }
+    openChainPicture(task.row, { initialTab: 'actions', focusedTaskKey: task.key })
     setMessage(`Открыта картина стыка ${String(task.row.joint ?? '-').trim() || '-'}`)
   }
 

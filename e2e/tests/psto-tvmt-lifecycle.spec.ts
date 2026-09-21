@@ -32,6 +32,28 @@ test.afterEach(async () => {
   await restoreControlProcessSettings(snapshot)
 })
 
+test('переключение этапа ЛНК сохраняет оболочку окна', async ({ page }) => {
+  await page.goto('/lnk')
+  await expect(page.getByText(JOINT, { exact: true }).first()).toBeVisible()
+
+  await runNextAction(page, 'Создать заявку НК до ТО')
+  await expect(page.getByRole('heading', { name: 'Заявка ЛНК до ТО' })).toBeVisible()
+  const stageWorkflowDialog = page.getByRole('dialog')
+  await stageWorkflowDialog.evaluate((dialog) => dialog.setAttribute('data-e2e-stage-shell', 'stable'))
+  const stageSwitchButtons = stageWorkflowDialog
+    .getByRole('group', { name: 'Этап контроля ЛНК' })
+    .getByRole('button')
+  await expect(stageSwitchButtons).toHaveText(['До ТО', 'Основной'])
+
+  await stageWorkflowDialog.getByRole('button', { name: 'Основной', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Заявка ЛНК', exact: true })).toBeVisible()
+  await expect(page.locator('[data-e2e-stage-shell="stable"]')).toHaveCount(1)
+
+  await stageWorkflowDialog.getByRole('button', { name: 'До ТО', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Заявка ЛНК до ТО' })).toBeVisible()
+  await expect(page.locator('[data-e2e-stage-shell="stable"]')).toHaveCount(1)
+})
+
 test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор -> основной НК -> ремонт -> исправление', async ({ page }) => {
   test.setTimeout(180_000)
 
@@ -721,7 +743,7 @@ async function openReport(page: Page, label: string, path: string) {
 }
 
 async function openPstoLineProgram(page: Page, line: string) {
-  await openReport(page, 'Термообработка', '/psto')
+  await openReport(page, 'ПСТО и ТВМТ', '/psto')
   await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()
   const program = page.getByRole('dialog').filter({
     has: page.getByRole('heading', { name: 'Программа ПСТО' }),
@@ -978,17 +1000,17 @@ async function expectRepeatedJointCreateTask(page: Page, sourceJoint: string, ta
   await expect(codeGroup).toBeVisible({ timeout: 15_000 })
   await openDetails(codeGroup)
 
-  const nestedObjectGroup = codeGroup.locator('details').filter({ hasText: targetJoint }).first()
   const taskButton = codeGroup.getByRole('button', {
     name: new RegExp(
-      `^${escapeRegExp(sourceJoint)} Создать повторный стык.*${escapeRegExp(targetJoint)}`,
+      `^Создать повторный стык.*${escapeRegExp(targetJoint)}`,
     ),
   }).first()
-  await expect.poll(async () => (
-    await taskButton.count() + await nestedObjectGroup.count()
-  ), { timeout: 5_000 }).toBeGreaterThan(0)
-  if (await taskButton.count() === 0) await openDetails(nestedObjectGroup)
-  await expect(taskButton).toBeVisible()
+  if (await codeGroup.getAttribute('data-dispatcher-hierarchy-level') !== '1') {
+    const nestedObjectGroup = codeGroup.locator('details').filter({ hasText: sourceJoint }).first()
+    await expect(nestedObjectGroup).toBeVisible({ timeout: 15_000 })
+    await openDetails(nestedObjectGroup)
+  }
+  await expect(taskButton).toBeVisible({ timeout: 15_000 })
 }
 
 async function expectRepeatedJointCreateTaskToDisappear(page: Page, targetJoint: string) {

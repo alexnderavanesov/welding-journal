@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { BellRing, ChevronDown, ChevronUp, EyeOff } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { BellRing, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DispatcherTaskCodeGroup,
@@ -8,8 +8,6 @@ import {
 } from '@/components/dispatcher-task-card'
 import { buildDispatcherTaskCodeGroups } from '@/lib/dispatcher-code-groups'
 import {
-  isSystemDispatcherWarningTask,
-  type DispatcherTask,
   type RepeatedJointTask,
   type RepeatedJointTaskGroup,
 } from '@/lib/dispatcher-types'
@@ -20,7 +18,7 @@ import {
   getDispatcherTaskFilterMode,
 } from '@/lib/dispatcher-task-row-codes'
 import { formatTaskCount } from '@/lib/dispatcher-format'
-import { REPORT_RIGHT_EDGE_GUTTER_PX } from '@/lib/report-layout'
+import { getReportViewportWidth } from '@/lib/report-layout'
 import { useIncrementalDispatcherGroups } from '@/lib/use-incremental-dispatcher-groups'
 
 type DispatcherTaskPanelProps = {
@@ -28,9 +26,9 @@ type DispatcherTaskPanelProps = {
   groups: RepeatedJointTaskGroup[]
   stickyLeft: number
   handlers: DispatcherTaskCardHandlers
-  onDismissAll: (tasks: DispatcherTask[]) => void
   columnFilters: Record<string, string>
   onColumnFiltersChange: (filters: Record<string, string>) => void
+  defaultExpanded?: boolean
 }
 
 export function DispatcherTaskPanel({
@@ -38,20 +36,23 @@ export function DispatcherTaskPanel({
   groups,
   stickyLeft,
   handlers,
-  onDismissAll,
   columnFilters,
   onColumnFiltersChange,
+  defaultExpanded = true,
 }: DispatcherTaskPanelProps) {
-  const [isExpanded, setIsExpanded] = useState(true)
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded)
   const [groupingMode, setGroupingMode] = useState<DispatcherGroupingMode>(readDispatcherGroupingMode)
   const { visibleGroups, visibleCount, hasMore, loadMore, loadMoreRef } = useIncrementalDispatcherGroups(groups)
   const codeGroups = useMemo(() => buildDispatcherTaskCodeGroups(groups), [groups])
   const dispatcherFilterMode = getDispatcherTaskFilterMode(columnFilters[DISPATCHER_TASKS_FIELD_KEY])
-  const dismissibleTasks = tasks.filter((task) => !isSystemDispatcherWarningTask(task))
+
+  useEffect(() => {
+    setIsExpanded(defaultExpanded)
+  }, [defaultExpanded])
 
   if (tasks.length === 0 && dispatcherFilterMode === 'all') return null
 
-  const viewportWidth = `calc(100vw - ${stickyLeft + REPORT_RIGHT_EDGE_GUTTER_PX}px)`
+  const viewportWidth = getReportViewportWidth(stickyLeft)
 
   return (
     <div
@@ -85,34 +86,19 @@ export function DispatcherTaskPanel({
             />
             <DispatcherGroupingControl mode={groupingMode} onChange={setGroupingMode} />
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {tasks.length > 0 ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setIsExpanded((current) => !current)}
-                aria-expanded={isExpanded}
-                className="h-8 border-slate-200 bg-white px-3 text-xs text-slate-700 hover:bg-slate-50"
-              >
-                {isExpanded ? <ChevronUp className="mr-1.5 h-3.5 w-3.5" /> : <ChevronDown className="mr-1.5 h-3.5 w-3.5" />}
-                {isExpanded ? 'Свернуть' : 'Развернуть'}
-              </Button>
-            ) : null}
-            {dismissibleTasks.length > 0 ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => onDismissAll(dismissibleTasks)}
-                title="Убрать карточки ДЗ до следующего обновления интерфейса. Системные предупреждения останутся видимыми."
-                aria-label="Скрыть карточки"
-                className="h-8 w-8 p-0 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-              >
-                <EyeOff className="h-3.5 w-3.5" />
-              </Button>
-            ) : null}
-          </div>
+          {tasks.length > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsExpanded((current) => !current)}
+              aria-expanded={isExpanded}
+              className="h-8 shrink-0 border-slate-200 bg-white px-3 text-xs text-slate-700 hover:bg-slate-50"
+            >
+              {isExpanded ? <ChevronUp className="mr-1.5 h-3.5 w-3.5" /> : <ChevronDown className="mr-1.5 h-3.5 w-3.5" />}
+              {isExpanded ? 'Свернуть' : 'Развернуть'}
+            </Button>
+          ) : null}
         </div>
         {isExpanded && groups.length > 0 ? (
           <div className="overflow-hidden rounded-md border border-sky-100 bg-[#f8fcfe]">

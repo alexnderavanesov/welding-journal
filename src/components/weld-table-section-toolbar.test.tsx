@@ -6,14 +6,13 @@ import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 import type { WeldField } from '@/lib/weld-fields'
 
 describe('WeldTableSectionToolbar', () => {
-  it('keeps its right border aligned with the table when sections are collapsed', () => {
-    render(
+  it('keeps its right border aligned with the visible report viewport', () => {
+    const { container } = render(
       <WeldTableSectionToolbar
         sections={[]}
         extraColumns={[]}
         collapsedSections={new Set()}
         alwaysVisibleFieldKeys={new Set()}
-        tableMinWidth={1000}
         stickyLeft={80}
         onToggleSection={() => undefined}
         viewControls={<button type="button">Виды</button>}
@@ -23,9 +22,13 @@ describe('WeldTableSectionToolbar', () => {
     const toolbar = screen.getByText('Разделы').parentElement
     expect(toolbar).toHaveStyle({
       left: '80px',
-      width: '1000px',
-      minWidth: '1000px',
+      width: 'calc(100vw - 104px)',
+      maxWidth: 'calc(100vw - 104px)',
     })
+    expect(container.querySelector('[data-report-section-strip]')).toHaveClass('overflow-x-auto')
+    expect(screen.getByRole('button', { name: 'Показать предыдущие разделы' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Показать следующие разделы' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Виды' }).parentElement).toHaveAttribute('data-report-view-controls-slot')
   })
 
   it('places an extra section directly after its anchor section', () => {
@@ -38,7 +41,7 @@ describe('WeldTableSectionToolbar', () => {
       collapsible: true,
       renderCell: () => null,
     } satisfies WeldTableExtraColumn
-    render(
+    const { container } = render(
       <WeldTableSectionToolbar
         sections={[
           { section: 'Стык', fields: [{ key: 'joint', label: 'Стык' } as WeldField] },
@@ -47,13 +50,13 @@ describe('WeldTableSectionToolbar', () => {
         extraColumns={[nextActionColumn]}
         collapsedSections={new Set()}
         alwaysVisibleFieldKeys={new Set()}
-        tableMinWidth={1000}
         stickyLeft={0}
         onToggleSection={() => undefined}
       />,
     )
 
-    expect(screen.getAllByRole('button').map((button) => button.textContent?.replace(/\s+/g, ''))).toEqual([
+    const sectionButtons = container.querySelectorAll<HTMLButtonElement>('[data-report-section-strip] button')
+    expect(Array.from(sectionButtons).map((button) => button.textContent?.replace(/\s+/g, ''))).toEqual([
       'Стык1/1',
       'Следующийшаг1/1',
       'Материалы1/1',

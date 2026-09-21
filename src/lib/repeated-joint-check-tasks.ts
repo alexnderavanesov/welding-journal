@@ -108,7 +108,7 @@ export function buildPrimaryLnkStageDebtSystemWarnings(
       reason: PRIMARY_LNK_STAGE_DEBT_SYSTEM_WARNING_REASON,
       details: `Стык ${joint}: основной НК уже оформляется по методам ${methodCodes.join(', ')}, ` +
         `но предыдущие этапы еще не завершены: ${missingStages.join(', ')}. ` +
-        'Завершайте этапы по порядку; предупреждение исчезнет автоматически после восстановления последовательности.',
+        'Подтвердите этапы после получения фактических данных. После этого предупреждение исчезнет автоматически.',
       rootCauseActions: [getPrimaryLnkStageDebtRootCauseAction(row, debt)],
       systemWarningCode: 'СП-01' as const,
     }]

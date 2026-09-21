@@ -143,7 +143,7 @@ export function useReportEditActions({
     }
 
     if (focusField && REQUEST_AND_RESULT_FIELD_KEYS.has(focusField)) {
-      setMessage('Поля заявок и результатов редактируются только в отчетах Термообработка и ЛНК')
+      setMessage('Поля заявок и результатов редактируются только в отчетах ПСТО и ТВМТ и ЛНК')
       return
     }
 

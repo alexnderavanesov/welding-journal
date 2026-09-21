@@ -48,6 +48,18 @@ function renderActions(onWorkflowMenuOpenChange = vi.fn()) {
 }
 
 describe('LnkHeaderActions', () => {
+  it('uses one visual treatment for every primary workflow button', () => {
+    renderActions()
+
+    for (const name of ['Заявка', 'Результат', 'Официальность', 'Дубль контроль', 'Показать']) {
+      expect(screen.getByRole('button', { name })).toHaveClass(
+        'border-sky-200',
+        'bg-sky-50',
+        'text-sky-900',
+      )
+    }
+  })
+
   it('keeps only one workflow menu open at a time', () => {
     renderActions()
 
@@ -204,6 +216,18 @@ function renderPstoActions(onWorkflowMenuOpenChange = vi.fn()) {
 }
 
 describe('HeatTreatmentHeaderActions', () => {
+  it('uses one visual treatment for every primary workflow button', () => {
+    renderPstoActions()
+
+    for (const name of ['Программа ПСТО', 'Заявка', 'Результат', 'ТВМТ', 'Показать']) {
+      expect(screen.getByRole('button', { name })).toHaveClass(
+        'border-sky-200',
+        'bg-sky-50',
+        'text-sky-900',
+      )
+    }
+  })
+
   it('opens the line-level PSTO program as a separate command', () => {
     const actions = renderPstoActions()
 

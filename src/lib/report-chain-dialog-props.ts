@@ -4,10 +4,13 @@ type ChainDialogProps = NonNullable<ReportChainDialogProps['dialogProps']>
 
 type CreateReportChainDialogPropsOptions = {
   chainRecord: ChainDialogProps['record'] | null
+  initialTab: ChainDialogProps['initialTab']
+  focusedTaskKey: ChainDialogProps['focusedTaskKey']
   chainRows: ChainDialogProps['rows']
   transitions: ChainDialogProps['transitions']
   earlyCoilCandidates: ChainDialogProps['earlyCoilCandidates']
   dispatcherTasks: ChainDialogProps['dispatcherTasks']
+  controlProcessSettings: ChainDialogProps['controlProcessSettings']
   errorMessage: ChainDialogProps['errorMessage']
   isLoading: ChainDialogProps['isLoading']
   onClose: ChainDialogProps['onClose']
@@ -34,10 +37,13 @@ type CreateReportChainDialogPropsOptions = {
 
 export function createReportChainDialogProps({
   chainRecord,
+  initialTab,
+  focusedTaskKey,
   chainRows,
   transitions,
   earlyCoilCandidates,
   dispatcherTasks,
+  controlProcessSettings,
   errorMessage,
   isLoading,
   onClose,
@@ -65,10 +71,13 @@ export function createReportChainDialogProps({
     dialogProps: chainRecord
       ? {
           record: chainRecord,
+          initialTab,
+          focusedTaskKey,
           rows: chainRows,
           transitions,
           earlyCoilCandidates,
           dispatcherTasks,
+          controlProcessSettings,
           errorMessage,
           isLoading,
           onClose,

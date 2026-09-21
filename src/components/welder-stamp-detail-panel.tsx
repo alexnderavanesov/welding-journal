@@ -338,9 +338,12 @@ function StatusBadge({ state, archivedAt }: { state: 'active' | 'archived'; arch
   }
 
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+    <span
+      className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[11px] font-semibold text-sky-700"
+      title="Карточка клейма используется в реестре. Состояние отдельных допусков указано ниже."
+    >
       <CheckCircle2 className="h-3 w-3" />
-      активен
+      запись активна
     </span>
   )
 }

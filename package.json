@@ -12,6 +12,8 @@
     "build": "vite build && node scripts/verify-server-function-manifest.mjs",
     "start": "node .output/server/index.mjs",
     "maintenance:dispatcher": "node -e \"fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/maintenance/dispatcher-refresh',{method:'POST',headers:{authorization:'Bearer '+process.env.MAINTENANCE_TOKEN}}).then(async r=>{console.log(await r.text());if(!r.ok)process.exit(1)})\"",
+    "maintenance:normalize-control-assignments": "node --import tsx scripts/normalize-control-assignment-values.ts",
+    "maintenance:normalize-control-assignments:remote": "node --import tsx scripts/normalize-control-assignment-values.ts --remote",
     "benchmark:lnk-load": "tsx scripts/benchmark-lnk-load.ts",
     "benchmark:psto-registry": "tsx scripts/benchmark-psto-line-registry.ts",
     "db:up": "docker compose up -d postgres",

@@ -501,7 +501,6 @@ export function WeldTable({
           extraColumns={extraColumns}
           collapsedSections={collapsedSections}
           alwaysVisibleFieldKeys={alwaysVisibleFieldKeys}
-          tableMinWidth={fullTableMinWidth}
           stickyLeft={stickyLeft}
           onToggleSection={toggleSection}
           viewControls={(

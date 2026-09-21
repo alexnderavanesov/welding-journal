@@ -53,7 +53,7 @@ describe('dispatcher task action model', () => {
       'show-task',
     ])
     expect(getDispatcherTaskScopeLabel(task)).toBe('Вся линия')
-    expect(canOpenDispatcherTaskPicture(task)).toBe(false)
+    expect(canOpenDispatcherTaskPicture(task)).toBe(true)
   })
 
   it('uses the task root-cause registry without losing its exact target', () => {

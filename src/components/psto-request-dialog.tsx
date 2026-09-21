@@ -299,7 +299,7 @@ export function PstoRequestDialog({
                 ? 'Выбранных стыков пока нет.'
                 : 'Среди выбранных стыков ничего не найдено.'
               : heatTreatmentRowsCount === 0
-                ? 'Нет стыков для отчета Термообработка.'
+                ? 'Нет стыков для отчета ПСТО и ТВМТ.'
                 : 'По фильтру ничего не найдено.'
           }
           onSearchChange={rowsViewMode === 'selected' ? setSelectedRowsSearch : onRequestSearchChange}

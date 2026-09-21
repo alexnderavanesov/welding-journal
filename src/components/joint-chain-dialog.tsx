@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, GitFork, LoaderCircle, RotateCcw, X } from 'lucide-react'
+import { GitFork, History, ListTodo, LoaderCircle, RotateCcw, ShieldAlert, X } from 'lucide-react'
 
 import { DialogCloseFooter } from '@/components/dialog-close-footer'
 import { DialogInlineEmptyState } from '@/components/dialog-inline-empty-state'
 import { JointChainCard } from '@/components/joint-chain-card'
 import { JointHistoryOverview } from '@/components/joint-history-overview'
-import type { JointDispatcherTaskActionHandler } from '@/components/joint-dispatcher-tasks-panel'
+import {
+  JointDispatcherTasksPanel,
+  type JointDispatcherTaskActionHandler,
+} from '@/components/joint-dispatcher-tasks-panel'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { LinePictureOverview } from '@/components/line-picture-overview'
 import { Button } from '@/components/ui/button'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import type {
   RepeatedJointCreateTask,
   RepeatedJointRenameTask,
@@ -23,15 +27,21 @@ import {
   type JointCoilTransition,
 } from '@/lib/joint-chain-transitions'
 import type { JointNextAction } from '@/lib/joint-next-actions'
+import type { JointPictureTab } from '@/lib/joint-picture-navigation'
+import { buildJointPictureTaskCollection } from '@/lib/joint-picture-tasks'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { getDispatcherTasksForLinePicture } from '@/lib/dispatcher-task-row-codes'
 import type { WeldJointChainEarlyCoilCandidate } from '@/server/weld-contracts'
 
 type JointChainDialogProps = {
   record: WeldRow
+  initialTab: JointPictureTab
+  focusedTaskKey?: string | null
   rows: WeldRow[]
   transitions: JointCoilTransition[]
   earlyCoilCandidates: WeldJointChainEarlyCoilCandidate[]
   dispatcherTasks: RepeatedJointTask[]
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
   errorMessage: string | null
   isLoading: boolean
   onClose: () => void
@@ -58,10 +68,13 @@ type JointChainDialogProps = {
 
 export function JointChainDialog({
   record,
+  initialTab,
+  focusedTaskKey,
   rows,
   transitions,
   earlyCoilCandidates,
   dispatcherTasks,
+  controlProcessSettings,
   errorMessage,
   isLoading,
   onClose,
@@ -86,7 +99,7 @@ export function JointChainDialog({
   onRetry,
 }: JointChainDialogProps) {
   const [selectedRowId, setSelectedRowId] = useState(record.id)
-  const [pictureMode, setPictureMode] = useState<'joint' | 'line'>('joint')
+  const [pictureMode, setPictureMode] = useState<JointPictureTab>(initialTab)
   const selectedRow = rows.find((row) => row.id === selectedRowId)
     ?? rows.find((row) => row.id === record.id)
     ?? rows[0]
@@ -111,11 +124,25 @@ export function JointChainDialog({
   const hasOfficialityAction = hasSelectedRowContinuationAction && (
     isUnofficialJoint(selectedRow) || hasRejectedLnkResult(selectedRow)
   )
+  const hasChainContinuationAction = (
+    (canCreateRepeatedJoint && repeatedJointCreateTasks.length > 0) ||
+    (canRenameRepeatedJoint && repeatedJointRenameTasks.length > 0) ||
+    (canCreateEarlyCoil && Boolean(earlyCoilCandidate)) ||
+    hasOfficialityAction
+  )
+  const dispatcherTaskCodes = String(selectedRow.activeDispatcherTasks ?? '').trim() ||
+    String(selectedRow.dispatcherTasks ?? '').trim()
+  const jointTaskCollection = buildJointPictureTaskCollection({
+    row: selectedRow,
+    tasks: dispatcherTasks,
+    fallbackCodes: dispatcherTaskCodes,
+  })
+  const lineTaskCount = getDispatcherTasksForLinePicture(dispatcherTasks, selectedRow).length
 
   useEffect(() => {
     setSelectedRowId(record.id)
-    setPictureMode('joint')
-  }, [record.id])
+    setPictureMode(initialTab)
+  }, [record.id, initialTab, focusedTaskKey])
 
   return (
     <LargeDialogShell
@@ -126,62 +153,39 @@ export function JointChainDialog({
       panelShadowClassName="shadow-[-18px_0_45px_-20px_rgba(15,23,42,0.35)]"
       panelClassName="ml-auto !h-full !max-h-none border-y-0 border-r-0"
     >
-      <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
-        {pictureMode === 'line' ? (
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1.5 px-2 text-xs text-slate-600 hover:bg-slate-100"
-                onClick={() => setPictureMode('joint')}
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                К стыку {String(selectedRow.joint ?? '-')}
-              </Button>
-              <h2 className="text-lg font-semibold text-slate-900">Картина линии {String(selectedRow.line ?? '-')}</h2>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => onOpenLineInDispatcher(selectedRow)}
-                className="h-7 border-sky-200 bg-sky-50 px-2.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
-              >
-                Открыть в диспетчере
-              </Button>
-            </div>
-            <p className="mt-1 text-sm text-slate-500">{getLinePictureSubtitle(selectedRow)}</p>
-          </div>
-        ) : (
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-semibold text-slate-900">Картина стыка {String(selectedRow.joint ?? '-')}</h2>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => onOpenBase(selectedRow)}
-                className="h-7 border-sky-200 bg-sky-50 px-2.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
-              >
-                Показать в отчете
-              </Button>
-            </div>
-            <p className="mt-1 text-sm text-slate-500">{getJointChainSubtitle(selectedRow)}</p>
-          </div>
-        )}
+      <div className="flex items-start justify-between gap-4 px-5 py-4">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold text-slate-900">
+            Картина стыка {String(selectedRow.joint ?? '-').trim() || '-'}
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">{getJointChainSubtitle(selectedRow)}</p>
+        </div>
         <Button variant="ghost" size="icon" onClick={onClose} aria-label="Закрыть картину">
           <X className="h-4 w-4" />
         </Button>
       </div>
 
+      <JointPictureTabs
+        activeTab={pictureMode}
+        actionCount={jointTaskCollection.totalCount}
+        lineTaskCount={lineTaskCount}
+        onChange={setPictureMode}
+      />
+
       <div className="min-h-0 flex-1 overflow-hidden">
         {pictureMode === 'line' ? (
-          <main className="h-full min-h-0 overflow-y-auto px-5 py-4">
+          <main
+            id="joint-picture-panel-line"
+            role="tabpanel"
+            aria-labelledby="joint-picture-tab-line"
+            className="h-full min-h-0 overflow-y-auto px-5 py-4"
+          >
             <LinePictureOverview
               row={selectedRow}
               tasks={dispatcherTasks}
               onRunAction={onRunDispatcherTaskAction}
+              onOpenInDispatcher={() => onOpenLineInDispatcher(selectedRow)}
+              highlightedTaskKey={selectedRow.id === record.id ? focusedTaskKey : null}
             />
           </main>
         ) : isLoading ? (
@@ -225,10 +229,7 @@ export function JointChainDialog({
                     />
                   ))}
                 </div>
-                {(canCreateRepeatedJoint && repeatedJointCreateTasks.length > 0) ||
-                (canRenameRepeatedJoint && repeatedJointRenameTasks.length > 0) ||
-                (canCreateEarlyCoil && earlyCoilCandidate) ||
-                hasOfficialityAction ? (
+                {pictureMode === 'joint' && hasChainContinuationAction ? (
                   <ChainContinuationActionsPanel
                     selectedRow={selectedRow}
                     repeatedJointTasks={canCreateRepeatedJoint ? repeatedJointCreateTasks : []}
@@ -260,17 +261,33 @@ export function JointChainDialog({
                 />
               </div>
             </aside>
-            <main className="min-h-0 overflow-y-auto px-5 py-4">
-              <JointHistoryOverview
-                row={selectedRow}
-                dispatcherTasks={dispatcherTasks}
-                onOpenDocument={onOpenDocument}
-                onOpenReport={onOpenReport}
-                onEditRow={onEditRow}
-                onRunNextAction={onRunNextAction}
-                onRunDispatcherTaskAction={onRunDispatcherTaskAction}
-                onOpenLinePicture={() => setPictureMode('line')}
-              />
+            <main
+              id={`joint-picture-panel-${pictureMode}`}
+              role="tabpanel"
+              aria-labelledby={`joint-picture-tab-${pictureMode}`}
+              className="min-h-0 overflow-y-auto px-5 py-4"
+            >
+              {pictureMode === 'actions' ? (
+                <JointDispatcherTasksPanel
+                  row={selectedRow}
+                  tasks={dispatcherTasks}
+                  fallbackCodes={dispatcherTaskCodes}
+                  onRunAction={onRunDispatcherTaskAction}
+                  highlightedTaskKey={selectedRow.id === record.id ? focusedTaskKey : null}
+                />
+              ) : (
+                <JointHistoryOverview
+                  row={selectedRow}
+                  dispatcherTasks={dispatcherTasks}
+                  controlProcessSettings={controlProcessSettings}
+                  onOpenDocument={onOpenDocument}
+                  onOpenReport={onOpenReport}
+                  onShowInReport={onOpenBase}
+                  onEditRow={onEditRow}
+                  onRunNextAction={onRunNextAction}
+                  onOpenTasks={() => setPictureMode('actions')}
+                />
+              )}
             </main>
           </div>
         )}
@@ -281,10 +298,70 @@ export function JointChainDialog({
   )
 }
 
-function getLinePictureSubtitle(row: WeldRow) {
-  const project = String(row.projectTitle ?? '').trim() || '-'
-  const subtitle = String(row.subtitleCode ?? '').trim() || '-'
-  return `${project} · ${subtitle}`
+function JointPictureTabs({
+  activeTab,
+  actionCount,
+  lineTaskCount,
+  onChange,
+}: {
+  activeTab: JointPictureTab
+  actionCount: number
+  lineTaskCount: number
+  onChange: (tab: JointPictureTab) => void
+}) {
+  const tabs = [
+    { id: 'joint' as const, label: 'Стык', icon: History, count: null },
+    { id: 'actions' as const, label: 'Требует действия', icon: ShieldAlert, count: actionCount },
+    { id: 'line' as const, label: 'Картина линии', icon: ListTodo, count: lineTaskCount },
+  ]
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    const direction = event.key === 'ArrowRight' ? 1 : -1
+    const nextIndex = (index + direction + tabs.length) % tabs.length
+    const nextTab = tabs[nextIndex]!
+    onChange(nextTab.id)
+    document.getElementById(`joint-picture-tab-${nextTab.id}`)?.focus()
+  }
+
+  return (
+    <div className="overflow-x-auto border-y border-slate-200 bg-slate-50/70 px-5">
+      <div className="flex min-w-max" role="tablist" aria-label="Разделы картины стыка">
+        {tabs.map((tab, index) => {
+          const Icon = tab.icon
+          const selected = tab.id === activeTab
+          return (
+            <button
+              key={tab.id}
+              id={`joint-picture-tab-${tab.id}`}
+              type="button"
+              role="tab"
+              aria-label={tab.count === null ? tab.label : `${tab.label} · ${tab.count}`}
+              aria-selected={selected}
+              aria-controls={`joint-picture-panel-${tab.id}`}
+              tabIndex={selected ? 0 : -1}
+              className={selected
+                ? 'flex h-11 items-center gap-2 border-b-2 border-sky-600 px-3 text-sm font-semibold text-sky-900'
+                : 'flex h-11 items-center gap-2 border-b-2 border-transparent px-3 text-sm font-medium text-slate-600 hover:border-slate-300 hover:bg-white/70 hover:text-slate-900'}
+              onClick={() => onChange(tab.id)}
+              onKeyDown={(event) => handleKeyDown(event, index)}
+            >
+              <Icon className="h-4 w-4" />
+              <span>{tab.label}</span>
+              {tab.count !== null ? (
+                <span aria-hidden="true" className={selected
+                  ? 'rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[11px] font-semibold text-sky-800'
+                  : 'rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-600'}>
+                  {tab.count}
+                </span>
+              ) : null}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 function CoilContinuationPanel({

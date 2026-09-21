@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { getDispatcherTaskCode } from '@/lib/dispatcher-settings'
+import { getDispatcherTaskCode, getDispatcherTaskTypeLabel } from '@/lib/dispatcher-settings'
+import { getRepeatedJointTaskTitle } from '@/lib/dispatcher-text'
 import {
   buildControlHistoryCheckTasks,
   buildForbiddenRepairByDiameterCheckTasks,
@@ -52,7 +53,11 @@ describe('dispatcher data quality tasks', () => {
     const pendingWarnings = buildPrimaryLnkStageDebtSystemWarnings([legacyPrimary])
     expect(pendingWarnings).toHaveLength(1)
     expect(getDispatcherTaskCode(pendingWarnings[0])).toBe('СП-01')
+    expect(getDispatcherTaskTypeLabel(pendingWarnings[0])).toBe('Предыдущие этапы пропущены')
+    expect(getRepeatedJointTaskTitle(pendingWarnings[0]).type).toBe('Предыдущие этапы пропущены')
     expect(pendingWarnings[0].details).toContain('основной НК уже оформляется по методам ВИК')
+    expect(pendingWarnings[0].details).toContain('Подтвердите этапы после получения фактических данных')
+    expect(pendingWarnings[0].details).not.toContain('фиктивные документы')
     expect(pendingWarnings[0].rootCauseActions?.[0].label).toBe('Создать заявку НК до ТО')
 
     const completedTasks = buildLnkChronologyCheckTasks([row({

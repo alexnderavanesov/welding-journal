@@ -4,6 +4,32 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { ReportLnkDialogs, type ReportLnkDialogsProps } from '@/components/report-lnk-dialogs'
 
+vi.mock('@/components/lnk-request-dialog', () => ({
+  LnkRequestDialog: ({ embedded }: { embedded?: boolean }) => (
+    <div data-embedded={String(Boolean(embedded))}>Основная заявка</div>
+  ),
+}))
+
+vi.mock('@/components/lnk-result-dialog', () => ({
+  LnkResultDialog: ({ embedded }: { embedded?: boolean }) => (
+    <div data-embedded={String(Boolean(embedded))}>Основной результат</div>
+  ),
+}))
+
+vi.mock('@/components/pre-heat-treatment-lnk-workflow-dialog', () => ({
+  PreHeatTreatmentLnkWorkflowDialog: ({
+    embedded,
+    mode,
+  }: {
+    embedded?: boolean
+    mode: 'request' | 'result'
+  }) => (
+    <div data-embedded={String(Boolean(embedded))}>
+      {mode === 'request' ? 'Заявка до ТО' : 'Результат до ТО'}
+    </div>
+  ),
+}))
+
 vi.mock('@/components/lnk-request-manager-dialog', () => ({
   LnkRequestManagerDialog: ({ embedded }: { embedded?: boolean }) => {
     const [draft, setDraft] = useState('')
@@ -50,6 +76,30 @@ function createProps(overrides: Partial<ReportLnkDialogsProps> = {}): ReportLnkD
 }
 
 describe('ReportLnkDialogs', () => {
+  it.each([
+    ['request', 'Основная заявка', 'Заявка до ТО'],
+    ['result', 'Основной результат', 'Результат до ТО'],
+  ] as const)('keeps the %s workflow shell mounted while switching control stages', async (mode, primaryLabel, preHeatTreatmentLabel) => {
+    const primaryProps = mode === 'request'
+      ? { requestDialogProps: {} as never }
+      : { resultDialogProps: {} as never }
+    const { rerender } = render(
+      <ReportLnkDialogs {...createProps(primaryProps)} />,
+    )
+
+    expect(await screen.findByText(primaryLabel)).toHaveAttribute('data-embedded', 'true')
+    const workflowShell = screen.getByRole('dialog')
+
+    rerender(
+      <ReportLnkDialogs {...createProps({
+        preHeatTreatmentWorkflowDialogProps: { mode } as never,
+      })} />,
+    )
+
+    expect(await screen.findByText(preHeatTreatmentLabel)).toHaveAttribute('data-embedded', 'true')
+    expect(screen.getByRole('dialog')).toBe(workflowShell)
+  })
+
   it('keeps the source manager mounted while an exact correction manager is stacked above it', async () => {
     const { rerender } = render(
       <ReportLnkDialogs {...createProps({ requestManagerDialogProps: {} as never })} />,

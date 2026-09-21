@@ -10,7 +10,10 @@ generatedDocuments,
 generatedDocumentWeldJoints,
 weldJoints
 } from '@/db/schema'
-import { LEGACY_CONTROL_REPLACEMENT_VALUE } from '@/lib/control-availability-values'
+import {
+CONTROL_ASSIGNMENT_FIELD_KEYS,
+getControlAvailabilityFilterAliases
+} from '@/lib/control-availability-values'
 import {
 DISPATCHER_TASK_FILTER_KEY,
 parseDispatcherTaskServerFilter
@@ -131,6 +134,8 @@ export function addBaseFilterClauses(clauses: SQL[], filters: WeldFilters) {
   if (filters.search?.trim()) {
     const search = `%${filters.search.trim()}%`
     const searchClause = or(
+      ilike(weldJoints.projectTitle, search),
+      ilike(weldJoints.subtitleCode, search),
       ilike(weldJoints.joint, search),
       ilike(weldJoints.line, search),
       ilike(weldJoints.isometry, search),
@@ -162,14 +167,18 @@ export function addBaseFilterClauses(clauses: SQL[], filters: WeldFilters) {
   for (const key of filterKeys) {
     const value = filters[key]
     const column = getWeldColumn(key)
-    if (value && column) clauses.push(sql`${column} = ${value}`)
+    if (!value || !column) continue
+    clauses.push(
+      key === 'pstoRequired'
+        ? buildControlAvailabilityColumnWhere(column, [value])
+        : sql`${column} = ${value}`,
+    )
   }
 
   const controlColumnKey = getControlMethodFilterColumnKey(filters.controlMethod)
   if (controlColumnKey) {
     const column = weldJoints[controlColumnKey]
-    const controlClause = or(eq(column, 'да'), eq(column, 'дополнительный'), eq(column, LEGACY_CONTROL_REPLACEMENT_VALUE))
-    if (controlClause) clauses.push(controlClause)
+    clauses.push(buildControlAvailabilityColumnWhere(column, ['да', 'дополнительный']))
   }
 }
 
@@ -217,12 +226,21 @@ export function addColumnFilterClauses(clauses: SQL[], columnFilters: Record<str
 
     const choiceFilter = parseWeldColumnChoiceFilter(query)
     if (choiceFilter?.kind === 'values') {
-      clauses.push(buildColumnChoiceWhere(column, choiceFilter.values))
+      clauses.push(
+        CONTROL_ASSIGNMENT_FIELD_KEYS.has(key)
+          ? buildControlAvailabilityColumnWhere(column, choiceFilter.values)
+          : buildColumnChoiceWhere(column, choiceFilter.values),
+      )
       continue
     }
 
     if (query.startsWith('=')) {
-      clauses.push(buildColumnTextEqualsWhere(column, query.slice(1).trim().replace(/^["']|["']$/g, '')))
+      const exactValue = query.slice(1).trim().replace(/^["']|["']$/g, '')
+      clauses.push(
+        CONTROL_ASSIGNMENT_FIELD_KEYS.has(key)
+          ? buildControlAvailabilityColumnWhere(column, [exactValue])
+          : buildColumnTextEqualsWhere(column, exactValue),
+      )
       continue
     }
 
@@ -355,6 +373,11 @@ export function buildColumnChoiceWhere(column: SQLWrapper, values: readonly stri
   const normalizedValues = [...new Set(values.map((value) => String(value ?? '').trim()))]
   if (normalizedValues.length === 0) return sql`false`
   return or(...normalizedValues.map((value) => buildColumnTextEqualsWhere(column, value))) ?? sql`false`
+}
+
+export function buildControlAvailabilityColumnWhere(column: SQLWrapper, values: readonly string[]) {
+  const aliases = [...new Set(values.flatMap((value) => getControlAvailabilityFilterAliases(value)))]
+  return buildColumnChoiceWhere(column, aliases)
 }
 
 export function buildColumnTextEqualsWhere(column: SQLWrapper, value: string) {

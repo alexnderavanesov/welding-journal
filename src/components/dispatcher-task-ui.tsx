@@ -28,10 +28,14 @@ export function DispatcherTaskDetails({ task }: DispatcherTaskDetailsProps) {
   const metrics = getDispatcherTaskMetrics(task)
 
   return (
-    <div className="border-t border-slate-100 bg-slate-50/70 px-3 py-2 text-xs leading-5 text-slate-600">
-      <div className="w-full">
+    <div
+      data-dispatcher-task-details
+      data-dispatcher-hierarchy-level="3"
+      className="border-t border-sky-100 bg-white/75 px-4 py-3 text-xs leading-5 text-slate-600"
+    >
+      <div className="w-full border-l-2 border-sky-200 pl-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <div className="font-semibold text-slate-800">{getRepeatedJointTaskDetailsHeading(task)}</div>
+          <div className="text-[11px] font-semibold uppercase text-sky-700">Что обнаружено</div>
           {metrics.length > 0 ? (
             <div className="flex flex-wrap items-center gap-1.5" aria-label="Показатели задачи">
               {metrics.map((metric) => (
@@ -50,7 +54,8 @@ export function DispatcherTaskDetails({ task }: DispatcherTaskDetailsProps) {
             </div>
           ) : null}
         </div>
-        <div className="mt-1.5 max-w-none text-[13px] leading-5 text-slate-600">
+        <div className="mt-1 font-semibold text-slate-800">{getRepeatedJointTaskDetailsHeading(task)}</div>
+        <div className="mt-1 max-w-none text-[13px] leading-5 text-slate-600">
           {getRepeatedJointTaskDetails(task)}
         </div>
       </div>
@@ -101,10 +106,15 @@ export function DispatcherTaskGroupFrame({
 
   return (
     <details
-      className="group w-full border-b border-slate-200 bg-white last:border-b-0"
+      data-dispatcher-hierarchy-level="1"
+      data-expanded={isOpen ? 'true' : 'false'}
+      className="group/object w-full border-b border-slate-200 bg-white last:border-b-0"
       onToggle={(event) => setIsOpen(event.currentTarget.open)}
     >
-      <summary className="min-h-10 cursor-pointer list-none px-3 py-2 text-sm marker:hidden hover:bg-slate-50">
+      <summary
+        data-dispatcher-object-summary
+        className="min-h-10 cursor-pointer list-none px-3 py-2 text-sm marker:hidden transition-colors hover:bg-slate-50 group-open/object:bg-[#eaf6fb] group-open/object:shadow-[inset_3px_0_0_0_rgb(14_165_233_/_0.72)]"
+      >
         <span className="flex w-full items-center gap-2">
           <span className="font-semibold text-slate-900">{group.baseJoint}</span>
           <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
@@ -150,8 +160,13 @@ export function DispatcherTaskGroupFrame({
         </span>
       </summary>
       {isOpen ? (
-        <div className="divide-y divide-slate-100 border-t border-slate-100">
-          {typeof children === 'function' ? children() : children}
+        <div
+          data-dispatcher-hierarchy-children
+          className="border-t border-sky-100 bg-sky-50/30 pl-3"
+        >
+          <div className="divide-y divide-sky-100 border-l border-sky-200 bg-white/70">
+            {typeof children === 'function' ? children() : children}
+          </div>
         </div>
       ) : null}
     </details>

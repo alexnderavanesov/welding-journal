@@ -113,7 +113,7 @@ describe('useWeldPageQuery refresh policy', () => {
     })).toBeDefined()
   })
 
-  it('restores the per-report all-rows page size from this browser', async () => {
+  it('drops the removed all-rows page size from an older browser setting', async () => {
     window.localStorage.setItem('welding-report-page-size:v1', JSON.stringify({ lnk: -1 }))
     const queryClient = createQueryClient()
 
@@ -124,9 +124,32 @@ describe('useWeldPageQuery refresh policy', () => {
 
     await waitFor(() => expect(serverMocks.listLnkReportPage).toHaveBeenCalledTimes(1))
     expect(serverMocks.listLnkReportPage).toHaveBeenCalledWith({
-      data: { page: 1, pageSize: 'all', columnFilters: {} },
+      data: { page: 1, pageSize: 100, columnFilters: {} },
     })
-    expect(result.current.pageSize).toBe(-1)
+    expect(result.current.pageSize).toBe(100)
+  })
+
+  it('sends quick search as a server-wide filter without treating it as a table column', async () => {
+    const queryClient = createQueryClient()
+
+    renderHook(
+      () => useWeldPageQuery({
+        enabled: true,
+        report: 'lnk',
+        columnFilters: { search: '  S13  ', line: '=2' },
+      }),
+      { wrapper: createWrapper(queryClient) },
+    )
+
+    await waitFor(() => expect(serverMocks.listLnkReportPage).toHaveBeenCalledTimes(1))
+    expect(serverMocks.listLnkReportPage).toHaveBeenCalledWith({
+      data: {
+        page: 1,
+        pageSize: 100,
+        search: 'S13',
+        columnFilters: { line: '=2' },
+      },
+    })
   })
 
   it('refreshes an active three-page report once after a data invalidation', async () => {

@@ -1,11 +1,11 @@
 import { ArrowRight, CheckCircle2, ExternalLink, FileText, ListTodo, Pencil, TriangleAlert } from 'lucide-react'
 
 import {
-  JointDispatcherTasksPanel,
-  type JointDispatcherTaskActionHandler,
+  JointDispatcherTasksSummary,
 } from '@/components/joint-dispatcher-tasks-panel'
 import { Button } from '@/components/ui/button'
 import { isControlCancelledValue } from '@/lib/control-availability-values'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { formatDisplayDate } from '@/lib/date-format'
 import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import { buildJointNextActions, type JointNextAction } from '@/lib/joint-next-actions'
@@ -25,28 +25,30 @@ type ReportTarget = 'weldingJournal' | 'lnk' | 'heatTreatment'
 type JointHistoryOverviewProps = {
   row: WeldRow
   dispatcherTasks?: readonly RepeatedJointTask[]
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
   onOpenDocument: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenReport: (row: WeldRow, report: ReportTarget) => void
+  onShowInReport: (row: WeldRow) => void
   onEditRow: (row: WeldRow) => void
   onRunNextAction: (row: WeldRow, action: JointNextAction) => void
-  onRunDispatcherTaskAction?: JointDispatcherTaskActionHandler
-  onOpenLinePicture?: () => void
+  onOpenTasks: () => void
 }
 
 export function JointHistoryOverview({
   row,
   dispatcherTasks = [],
+  controlProcessSettings,
   onOpenDocument,
   onOpenReport,
+  onShowInReport,
   onEditRow,
   onRunNextAction,
-  onRunDispatcherTaskAction,
-  onOpenLinePicture,
+  onOpenTasks,
 }: JointHistoryOverviewProps) {
   const preControls = getPreHeatTreatmentControls(row)
   const cycles = buildPstoCycleTimeline(row, row.pstoRepeatCycles ?? [])
   const pstoCancelled = isControlCancelledValue(row.pstoRequired)
-  const nextActions = buildJointNextActions(row, dispatcherTasks).slice(0, 1)
+  const nextActions = buildJointNextActions(row, dispatcherTasks, controlProcessSettings).slice(0, 1)
   const mainControls = LNK_METHODS.filter((method) => [
     row[method.enabledKey],
     row[method.requestKey],
@@ -67,10 +69,11 @@ export function JointHistoryOverview({
             Проект: {text(row.projectTitle) || '-'} · Шифр: {text(row.subtitleCode) || '-'}
           </div>
         </div>
-        <div className="flex flex-nowrap gap-1.5">
+        <div className="flex flex-wrap justify-end gap-1.5">
           <ReportButton label="Журнал" onClick={() => onOpenReport(row, 'weldingJournal')} />
           <ReportButton label="ЛНК" onClick={() => onOpenReport(row, 'lnk')} />
           <ReportButton label="ПСТО" onClick={() => onOpenReport(row, 'heatTreatment')} />
+          <ReportButton label="Показать в отчете" onClick={() => onShowInReport(row)} />
           <Button
             type="button"
             variant="outline"
@@ -165,13 +168,11 @@ export function JointHistoryOverview({
           ))}
         </HistorySection>
 
-        <JointDispatcherTasksPanel
+        <JointDispatcherTasksSummary
           row={row}
           tasks={dispatcherTasks}
           fallbackCodes={dispatcherTaskCodes}
-          excludedTaskKeys={nextActions.flatMap((action) => action.taskKey ? [action.taskKey] : [])}
-          onRunAction={onRunDispatcherTaskAction}
-          onOpenLinePicture={onOpenLinePicture}
+          onOpen={onOpenTasks}
         />
       </div>
     </div>

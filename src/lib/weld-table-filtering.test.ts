@@ -9,6 +9,7 @@ import { buildPercentageLineStampFilters, buildRowIdListFilters } from '@/lib/re
 import {
   buildWeldColumnValueFilter,
   filterWeldRowsByColumns,
+  getWeldColumnFilterRowText,
   groupWeldDateTimeFilterOptions,
   sortWeldDateTimeFilterOptions,
 } from '@/lib/weld-table-filtering'
@@ -25,6 +26,17 @@ function row(partial: Partial<WeldRow>): WeldRow {
 }
 
 describe('filterWeldRowsByColumns', () => {
+  it('applies the quick search across identity and material fields together with column filters', () => {
+    const rows = [
+      row({ joint: 'S13', line: 'LIN-1', materialFullName1: 'Труба 09Г2С' }),
+      row({ joint: 'F20', line: 'LIN-2', materialFullName1: 'Труба 12Х18Н10Т' }),
+      row({ joint: 'F21', line: 'LIN-1', materialFullName1: 'Труба 12Х18Н10Т' }),
+    ]
+
+    expect(filterWeldRowsByColumns(rows, { search: '09г2с' }).map((candidate) => candidate.joint)).toEqual(['S13'])
+    expect(filterWeldRowsByColumns(rows, { search: 'lin-1', joint: 'F' }).map((candidate) => candidate.joint)).toEqual(['F21'])
+  })
+
   it('filters percentage line rows by stamp in any official stamp field', () => {
     const rows = [
       row({ joint: 'S1', stamp1K: 'ABC1' }),
@@ -60,6 +72,42 @@ describe('filterWeldRowsByColumns', () => {
     })
 
     expect(filteredRows.map((candidate) => candidate.joint)).toEqual(['S1', 'S3'])
+  })
+
+  it('treats legacy assignment spellings as canonical lowercase values', () => {
+    const rows = [
+      row({ joint: 'S1', pstoRequired: 'Да' }),
+      row({ joint: 'S2', pstoRequired: 'да' }),
+      row({ joint: 'S3', pstoRequired: '1' }),
+      row({ joint: 'S4', pstoRequired: 'Нет' }),
+      row({ joint: 'S5', pstoRequired: '0' }),
+    ]
+
+    expect(rows.map((candidate) => getWeldColumnFilterRowText(candidate, 'pstoRequired'))).toEqual([
+      'да',
+      'да',
+      'да',
+      'нет',
+      'нет',
+    ])
+    expect(filterWeldRowsByColumns(rows, {
+      pstoRequired: buildWeldColumnValueFilter(['да']),
+    }).map((candidate) => candidate.joint)).toEqual(['S1', 'S2', 'S3'])
+    expect(filterWeldRowsByColumns(rows, {
+      pstoRequired: buildWeldColumnValueFilter(['нет']),
+    }).map((candidate) => candidate.joint)).toEqual(['S4', 'S5'])
+    expect(filterWeldRowsByColumns(rows, {
+      pstoRequired: buildWeldColumnValueFilter(['Да']),
+    }).map((candidate) => candidate.joint)).toEqual(['S1', 'S2', 'S3'])
+    expect(filterWeldRowsByColumns(rows, {
+      pstoRequired: buildWeldColumnValueFilter(['0']),
+    }).map((candidate) => candidate.joint)).toEqual(['S4', 'S5'])
+    expect(filterWeldRowsByColumns(rows, {
+      pstoRequired: '=Да',
+    }).map((candidate) => candidate.joint)).toEqual(['S1', 'S2', 'S3'])
+    expect(filterWeldRowsByColumns(rows, {
+      pstoRequired: '=0',
+    }).map((candidate) => candidate.joint)).toEqual(['S4', 'S5'])
   })
 
   it('combines project, subtitle, line and welder stamp filters as one scope', () => {

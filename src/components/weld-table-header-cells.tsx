@@ -36,7 +36,7 @@ export function WeldTableSelectAllHeader({
     <th
       rowSpan={2}
       className={`relative border-b-2 border-r border-t-2 border-b-[#d3e3ee] border-r-[#e7f0f6] border-t-[#d3e3ee] bg-[#f6fbfe] px-2 py-2.5 text-center shadow-[inset_0_1px_0_0_rgba(255,255,255,0.86)] ${
-        sticky ? getStickyCoverClassName('z-40') : ''
+        sticky ? `border-l-2 border-l-[#d3e3ee] ${getStickyCoverClassName('z-40')}` : ''
       }`}
       style={sticky ? getStickyCoverStyle(stickyLeft) : undefined}
     >
@@ -82,7 +82,7 @@ export function WeldTableSelectAllHeader({
 }
 
 function getStickyCoverClassName(zIndexClassName: string) {
-  return `sticky ${zIndexClassName} before:pointer-events-none before:absolute before:inset-y-0 before:right-full before:w-[var(--weld-sticky-cover-left)] before:bg-inherit before:content-['']`
+  return `sticky ${zIndexClassName} before:pointer-events-none before:absolute before:bottom-[-2px] before:right-full before:top-[-2px] before:box-border before:w-[var(--weld-sticky-cover-left)] before:border-y-2 before:border-[#d3e3ee] before:bg-inherit before:content-['']`
 }
 
 function getStickyCoverStyle(left: number): StickyCoverStyle {

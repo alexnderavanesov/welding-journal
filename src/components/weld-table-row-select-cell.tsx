@@ -30,7 +30,7 @@ export const WeldTableRowSelectCell = memo(function WeldTableRowSelectCell({
     <td
       className={`border-b border-r border-b-slate-100 border-r-slate-200 px-2 py-2.5 text-center align-top ${
         disabled ? 'bg-slate-200/80 shadow-[inset_0_0_0_9999px_rgba(148,163,184,0.14)]' : sticky ? stickyBackgroundClassName : 'bg-inherit'
-      } ${sticky ? getStickyCoverClassName('z-[1]') : ''}`}
+      } ${sticky ? `border-l border-l-slate-200 ${getStickyCoverClassName('z-[1]')}` : ''}`}
       style={sticky ? getStickyCoverStyle(stickyLeft) : undefined}
     >
       {selectable ? (
@@ -58,7 +58,7 @@ export const WeldTableRowSelectCell = memo(function WeldTableRowSelectCell({
 })
 
 function getStickyCoverClassName(zIndexClassName: string) {
-  return `sticky ${zIndexClassName} before:pointer-events-none before:absolute before:inset-y-0 before:right-full before:w-[var(--weld-sticky-cover-left)] before:bg-inherit before:content-['']`
+  return `sticky ${zIndexClassName} before:pointer-events-none before:absolute before:bottom-[-1px] before:right-full before:top-0 before:box-border before:w-[var(--weld-sticky-cover-left)] before:border-b before:border-b-slate-100 before:bg-inherit before:content-['']`
 }
 
 function getStickyCoverStyle(left: number): StickyCoverStyle {

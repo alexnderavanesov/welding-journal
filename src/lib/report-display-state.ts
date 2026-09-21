@@ -2,7 +2,7 @@ import type { ActiveReport } from '@/lib/home-state'
 
 const ACTIVE_REPORT_TITLES: Record<ActiveReport, string> = {
   weldingJournal: 'Сварочный журнал',
-  heatTreatment: 'Термообработка',
+  heatTreatment: 'ПСТО и ТВМТ',
   lnk: 'ЛНК',
   welderStamps: 'Клейма',
   percentageLines: 'Процентные линии',

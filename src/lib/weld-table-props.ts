@@ -1,4 +1,5 @@
 import type { WeldTableProps } from '@/components/weld-table'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import { getDuplicateControlTableColumns } from '@/lib/duplicate-control-table-columns'
 import { getJointNextActionTableColumns } from '@/lib/joint-next-action-table-column'
@@ -77,6 +78,7 @@ type CreateWeldTablePropsOptions = {
   selectedRowIds?: WeldTableProps['selectedRowIds']
   onSelectedRowIdsChange?: WeldTableProps['onSelectedRowIdsChange']
   dispatcherTasks?: readonly RepeatedJointTask[]
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
   onRunNextAction?: (row: WeldRow, action: JointNextAction) => void
   lnkSectionLayout?: WeldTableSection[]
 }
@@ -118,6 +120,7 @@ export function createWeldTableProps({
   selectedRowIds,
   onSelectedRowIdsChange,
   dispatcherTasks = [],
+  controlProcessSettings,
   onRunNextAction,
   lnkSectionLayout = LNK_VISIBLE_FIELD_SECTIONS,
 }: CreateWeldTablePropsOptions): WeldTableProps {
@@ -190,6 +193,7 @@ export function createWeldTableProps({
       ...getJointNextActionTableColumns({
         activeReport,
         dispatcherTasks,
+        controlProcessSettings,
         onRunNextAction,
         onOpenOverview: onOpenJointOverview,
       }),

@@ -16,6 +16,7 @@ describe('JointHistoryOverview', () => {
       weldDate: '2026-08-01',
     } as WeldRow
     const onOpenReport = vi.fn()
+    const onShowInReport = vi.fn()
     const onEditRow = vi.fn()
 
     render(
@@ -23,15 +24,19 @@ describe('JointHistoryOverview', () => {
         row={row}
         onOpenDocument={vi.fn()}
         onOpenReport={onOpenReport}
+        onShowInReport={onShowInReport}
         onEditRow={onEditRow}
         onRunNextAction={vi.fn()}
+        onOpenTasks={vi.fn()}
       />,
     )
 
     expect(screen.queryByRole('button', { name: 'Термообработка' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'ПСТО' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Показать в отчете' }))
     fireEvent.click(screen.getByRole('button', { name: 'Редактировать' }))
     expect(onOpenReport).toHaveBeenCalledWith(row, 'heatTreatment')
+    expect(onShowInReport).toHaveBeenCalledWith(row)
     expect(onEditRow).toHaveBeenCalledWith(row)
   })
 
@@ -64,8 +69,10 @@ describe('JointHistoryOverview', () => {
         dispatcherTasks={[task]}
         onOpenDocument={vi.fn()}
         onOpenReport={vi.fn()}
+        onShowInReport={vi.fn()}
         onEditRow={vi.fn()}
         onRunNextAction={onRunNextAction}
+        onOpenTasks={vi.fn()}
       />,
     )
 
@@ -98,8 +105,10 @@ describe('JointHistoryOverview', () => {
         } as WeldRow}
         onOpenDocument={vi.fn()}
         onOpenReport={vi.fn()}
+        onShowInReport={vi.fn()}
         onEditRow={vi.fn()}
         onRunNextAction={vi.fn()}
+        onOpenTasks={vi.fn()}
       />,
     )
 
@@ -134,8 +143,10 @@ describe('JointHistoryOverview', () => {
         row={row}
         onOpenDocument={onOpenDocument}
         onOpenReport={vi.fn()}
+        onShowInReport={vi.fn()}
         onEditRow={vi.fn()}
         onRunNextAction={vi.fn()}
+        onOpenTasks={vi.fn()}
       />,
     )
 
@@ -158,7 +169,7 @@ describe('JointHistoryOverview', () => {
     )
   })
 
-  it('keeps one primary next step and lists a different dispatcher task only once below', () => {
+  it('keeps one primary next step and links to the dedicated task tab', () => {
     const row = {
       id: 9,
       projectTitle: 'Проект',
@@ -182,22 +193,26 @@ describe('JointHistoryOverview', () => {
       details: 'Не заполнена дата заключения.',
     }
 
+    const onOpenTasks = vi.fn()
     render(
       <JointHistoryOverview
         row={row}
         dispatcherTasks={[task]}
         onOpenDocument={vi.fn()}
         onOpenReport={vi.fn()}
+        onShowInReport={vi.fn()}
         onEditRow={vi.fn()}
         onRunNextAction={vi.fn()}
-        onRunDispatcherTaskAction={vi.fn()}
+        onOpenTasks={onOpenTasks}
       />,
     )
 
     expect(screen.getByText('Внести результат основного НК')).toBeInTheDocument()
     expect(screen.getByText('Требует действия')).toBeInTheDocument()
-    expect(screen.getAllByText('Дозаполнить результат ЛНК')).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'Исправить в ЛНК' })).toBeInTheDocument()
+    expect(screen.getByText('ДЗ: 1')).toBeInTheDocument()
+    expect(screen.queryByText('Дозаполнить результат ЛНК')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть задачи по стыку: 1' }))
+    expect(onOpenTasks).toHaveBeenCalledOnce()
   })
 
   it('passes the exact DZ root-cause action through the joint picture', () => {
@@ -244,9 +259,10 @@ describe('JointHistoryOverview', () => {
         dispatcherTasks={[task]}
         onOpenDocument={vi.fn()}
         onOpenReport={vi.fn()}
+        onShowInReport={vi.fn()}
         onEditRow={vi.fn()}
         onRunNextAction={onRunNextAction}
-        onRunDispatcherTaskAction={vi.fn()}
+        onOpenTasks={vi.fn()}
       />,
     )
 
@@ -274,8 +290,10 @@ describe('JointHistoryOverview', () => {
         dispatcherTasks={[]}
         onOpenDocument={vi.fn()}
         onOpenReport={vi.fn()}
+        onShowInReport={vi.fn()}
         onEditRow={vi.fn()}
         onRunNextAction={vi.fn()}
+        onOpenTasks={vi.fn()}
       />,
     )
 
@@ -302,8 +320,10 @@ describe('JointHistoryOverview', () => {
         } as WeldRow}
         onOpenDocument={vi.fn()}
         onOpenReport={vi.fn()}
+        onShowInReport={vi.fn()}
         onEditRow={vi.fn()}
         onRunNextAction={vi.fn()}
+        onOpenTasks={vi.fn()}
       />,
     )
 
@@ -348,8 +368,10 @@ describe('JointHistoryOverview', () => {
         } as WeldRow}
         onOpenDocument={vi.fn()}
         onOpenReport={vi.fn()}
+        onShowInReport={vi.fn()}
         onEditRow={vi.fn()}
         onRunNextAction={vi.fn()}
+        onOpenTasks={vi.fn()}
       />,
     )
 

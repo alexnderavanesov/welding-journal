@@ -40,4 +40,21 @@ describe('LNK result navigation', () => {
     expect(getLnkResultNavigationEntries(row).map((entry) => entry.methodCode)).toEqual(['ВИК'])
     expect(getPendingLnkResultMethods(row).map((method) => method.code)).toEqual(['РК'])
   })
+
+  it('uses permissive stage settings only when they are explicitly provided', () => {
+    const staged = {
+      ...row,
+      pstoRequired: 'да',
+      hasRk: 'да',
+      rkRequest: 'Заявка-РК-01',
+      rkRequestDate: '2026-08-10',
+      rkResult: 'ожидает НК',
+    }
+
+    expect(getPendingLnkResultMethods(staged).map((method) => method.code)).not.toContain('РК')
+    expect(getPendingLnkResultMethods(staged, {
+      preHeatTreatmentLnkEnabled: true,
+      allowPrimaryLnkBeforePreviousStagesComplete: true,
+    }).map((method) => method.code)).toContain('РК')
+  })
 })

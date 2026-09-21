@@ -7,7 +7,13 @@ import {
   normalizeResultStatus,
 } from './weld-fields'
 import { normalizeDateLikeForStorage, parseDateLikeToIso } from './date-format'
-import { normalizeControlAvailabilityText } from '@/lib/control-availability-values'
+import {
+  isControlAdditionalValue,
+  isControlCancelledValue,
+  isControlDisabledValue,
+  isControlEnabledValue,
+  isRecognizedControlAvailabilityValue,
+} from '@/lib/control-availability-values'
 
 export function emptyToNull(value: unknown) {
   if (value === null || value === undefined) return null
@@ -24,12 +30,11 @@ export function excelSerialDateToIso(value: number) {
 export function parseBoolean(value: unknown) {
   const normalized = emptyToNull(value)
   if (normalized === null) return null
-  const text = normalizeControlAvailabilityText(normalized)
-  if (['да', 'yes', 'true', '1', '+'].includes(text)) return true
-  if (text === 'отменен') return 'отменен'
-  if (text === 'дополнительный') return 'дополнительный'
-  if (['нет', 'no', 'false', '0', '-'].includes(text)) return false
-  return Boolean(text)
+  if (isControlCancelledValue(normalized)) return 'отменен'
+  if (isControlAdditionalValue(normalized)) return 'дополнительный'
+  if (isControlEnabledValue(normalized)) return true
+  if (isControlDisabledValue(normalized)) return false
+  return Boolean(normalized)
 }
 
 export function parseNumber(value: unknown) {
@@ -67,13 +72,7 @@ export function parseImportCell(field: WeldField, value: unknown) {
 
   if (field.kind === 'boolean') {
     const parsed = parseBoolean(value)
-    const text = normalizeControlAvailabilityText(normalized)
-    const allowed = new Set([
-      'да', 'yes', 'true', '1', '+',
-      'нет', 'no', 'false', '0', '-',
-      'отменен', 'дополнительный', 'замена рк/узк',
-    ])
-    if (!allowed.has(text)) throw invalidImportValue(field, value)
+    if (!isRecognizedControlAvailabilityValue(normalized)) throw invalidImportValue(field, value)
     return parsed
   }
 

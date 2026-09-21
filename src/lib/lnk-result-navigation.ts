@@ -1,3 +1,4 @@
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getManagedLnkResultChangeKey } from '@/lib/lnk-result-draft'
 import { LNK_METHODS } from '@/lib/report-config'
@@ -51,13 +52,16 @@ export function getLnkResultNavigationEntries(row: WeldRow) {
   )
 }
 
-export function getPendingLnkResultMethods(row: WeldRow) {
+export function getPendingLnkResultMethods(
+  row: WeldRow,
+  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>,
+) {
   return LNK_METHODS.filter((method) => {
     const requestName = String(row[method.requestKey] ?? '').trim()
     const requestDate = String(row[method.requestDateKey] ?? '').trim()
     return Boolean(
       requestName &&
-      canSelectLnkResultRow(row, requestName, method.requestKey, requestDate),
+      canSelectLnkResultRow(row, requestName, method.requestKey, requestDate, settings),
     )
   })
 }

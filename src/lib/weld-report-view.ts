@@ -9,7 +9,7 @@ import { isHiddenReportFilterKey } from '@/lib/report-hidden-filters'
 import type { WeldTableSection } from '@/lib/weld-table-sections'
 import type { WeldSort } from '@/server/weld-contracts'
 
-export type WeldReportColumnPreset = 'compact' | 'chronology' | 'documents' | 'pstoTvmt' | 'custom'
+export type WeldReportColumnPreset = 'compact' | 'chronology' | 'custom'
 
 export type WeldReportViewSnapshot = {
   hiddenFieldKeys: WeldFieldKey[]
@@ -35,8 +35,6 @@ export type WeldReportViewStorage = {
 export const WELD_REPORT_COLUMN_PRESETS: Array<{ id: WeldReportColumnPreset; label: string; description: string }> = [
   { id: 'compact', label: 'Компактно', description: 'Только идентификация стыка и итоговый статус.' },
   { id: 'chronology', label: 'Хронология', description: 'Даты, заявки, результаты и заключения по порядку.' },
-  { id: 'documents', label: 'Документы', description: 'Заявки, заключения, диаграммы и системные документы.' },
-  { id: 'pstoTvmt', label: 'ПСТО/ТВМТ', description: 'Назначение, циклы ПСТО, ТВМТ и даты этапов.' },
   { id: 'custom', label: 'Мой набор', description: 'Последний набор столбцов, выбранный вручную.' },
 ]
 
@@ -113,12 +111,6 @@ export function createSavedWeldReportView(
 function isFieldVisibleInPreset(fieldKey: string, preset: Exclude<WeldReportColumnPreset, 'custom'>) {
   const normalized = fieldKey.toLowerCase()
   if (preset === 'compact') return false
-  if (preset === 'pstoTvmt') {
-    return normalized.startsWith('psto') || normalized.startsWith('tvmt') || normalized.startsWith('heattreatment')
-  }
-  if (preset === 'documents') {
-    return /request|conclusion|diagram|document|jsr|checklist|zni/.test(normalized)
-  }
   return /date|request|result|conclusion|psto|tvmt|heattreatment|status|officiality/.test(normalized)
 }
 

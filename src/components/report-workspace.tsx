@@ -42,12 +42,12 @@ export function ReportWorkspace({
       />
 
       <div
-        className={`min-w-0 ${workspaceBackgroundClass} pt-5 pr-4 transition-[padding-left] duration-200 lg:pr-6 ${
+        className={`min-w-0 ${workspaceBackgroundClass} pt-5 pr-6 transition-[padding-left] duration-200 ${
           navCollapsed ? 'pl-20' : 'pl-52 lg:pl-72'
         }`}
       >
         <div
-          className={`space-y-4 ${workspaceBackgroundClass} pb-5 ${
+          className={`space-y-3 ${workspaceBackgroundClass} pb-5 ${
             isFluidReport ? 'min-w-0 w-full' : 'min-w-full w-max'
           }`}
           style={isFluidReport ? undefined : { minWidth: registerMinWidth }}

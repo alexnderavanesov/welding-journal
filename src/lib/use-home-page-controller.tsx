@@ -363,10 +363,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   })
   const {
     chainRecord,
+    chainPictureIntent,
     documentsPageType,
     message,
     lnkNotice,
     setChainRecord,
+    openChainPicture,
     setDocumentsPageType,
     setMessage,
     setLnkNotice,
@@ -644,7 +646,15 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     saveWelderStampSuspensionRecord,
     editWelderStampSuspensionRecord,
     deleteWelderStampSuspensionRecord,
-  } = useWelderStampRegistryState({ setMessage })
+  } = useWelderStampRegistryState({
+    enabled:
+      activeReport === 'weldingJournal' ||
+      activeReport === 'heatTreatment' ||
+      activeReport === 'lnk' ||
+      activeReport === 'welderStamps' ||
+      activeReport === 'documents',
+    setMessage,
+  })
   const {
     documentGenerationRequest,
     generateDocumentForRows,
@@ -1436,34 +1446,40 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     requestSubmitMode: LnkRequestComposerMode = 'create',
   ) => {
     const selectedRows = lnkRows.filter((row) => selectedRowIds.includes(row.id))
-    if (stage === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE) {
-      if (!controlProcessSettings.preHeatTreatmentLnkEnabled) {
-        setMessage('НК до ТО выключен в настройках проекта.')
-        return
-      }
-      if (selectedRowIds.length > 0) setSelectedLnkIds(new Set(selectedRowIds))
-      openPreHeatTreatmentLnkWorkflow(mode, undefined, requestSubmitMode)
+    if (
+      stage === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE &&
+      !controlProcessSettings.preHeatTreatmentLnkEnabled
+    ) {
+      setMessage('НК до ТО выключен в настройках проекта.')
       return
     }
 
-    setPreHeatTreatmentLnkWorkflowMode(null)
-    setPreHeatTreatmentLnkInitialMethodCode(undefined)
-    if (mode === 'request') {
-      if (requestSubmitMode === 'extend') {
-        openExtendLnkRequestModalForRows(selectedRows)
-      } else {
-        openCreateLnkRequestModalForRows(selectedRows)
+    startTransition(() => {
+      if (stage === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE) {
+        if (selectedRowIds.length > 0) setSelectedLnkIds(new Set(selectedRowIds))
+        openPreHeatTreatmentLnkWorkflow(mode, undefined, requestSubmitMode)
+        return
       }
-      return
-    }
-    if (
-      selectedRows.length === 1 &&
-      getLnkRowRequestNames(selectedRows[0]!).length > 0
-    ) {
-      openAddLnkResultModalForRow(selectedRows[0]!)
-      return
-    }
-    openAddLnkResultModal()
+
+      setPreHeatTreatmentLnkWorkflowMode(null)
+      setPreHeatTreatmentLnkInitialMethodCode(undefined)
+      if (mode === 'request') {
+        if (requestSubmitMode === 'extend') {
+          openExtendLnkRequestModalForRows(selectedRows)
+        } else {
+          openCreateLnkRequestModalForRows(selectedRows)
+        }
+        return
+      }
+      if (
+        selectedRows.length === 1 &&
+        getLnkRowRequestNames(selectedRows[0]!).length > 0
+      ) {
+        openAddLnkResultModalForRow(selectedRows[0]!)
+        return
+      }
+      openAddLnkResultModal()
+    })
   }
   const openCreateLnkWorkflowRequestForRow = (row: WeldRow) => {
     if (getPreferredLnkRequestStage(row) === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE) {
@@ -1868,6 +1884,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     activeReport,
     setActiveReport,
     setChainRecord,
+    openChainPicture,
     setColumnFilters,
     setHeatTreatmentFilters,
     setLnkFilters,
@@ -2679,7 +2696,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       {
         id: 'open-chain',
         label: 'Картина стыка',
-        description: 'Полная хронология, активные ДЗ/ЗВ и следующий доступный шаг.',
+        description: 'Полная хронология, активные СП/ДЗ и следующий доступный шаг.',
         icon: GitBranch,
         disabled: isGroupAction,
         title: isGroupAction ? 'Картину можно открыть только для одного стыка' : undefined,
@@ -3179,6 +3196,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     selectedRowIds: activeSelectedRowIds,
     onSelectedRowIdsChange: setActiveSelectedRowIds,
     dispatcherTasks: adviceRepeatedJointTasks,
+    controlProcessSettings,
     onRunNextAction: runJointNextAction,
     lnkSectionLayout,
   })
@@ -3944,25 +3962,40 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     (finalStatusContextQuery.isEnabled ? finalStatusContextQuery.error : null)
   const reportLoadError = reportContextLoadError ?? (isServerPagedTab ? weldPageQuery.error : weldsQuery.error)
   const reportLoadErrorMessage = reportLoadError instanceof Error ? reportLoadError.message : null
-  const reportSummaryBarProps = createReportSummaryBarProps({
-    activeReport,
-    left: stickyLeft,
-    isLoading: isServerPagedTab ? weldPageQuery.isLoading : weldsQuery.isLoading,
-    weldingRows: activeReport === 'weldingJournal' ? filteredVisibleRows : rows,
-    weldingRowCount: activeReport === 'weldingJournal' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
-    acceptedWdiTotal:
-      activeReport === 'weldingJournal' && isServerPagedTab ? weldPageQuery.acceptedWdiTotal : filteredAcceptedWdiTotal,
-    heatTreatmentRows: activeReport === 'heatTreatment' ? filteredVisibleRows : heatTreatmentRows,
-    heatTreatmentRowCount: activeReport === 'heatTreatment' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
-    selectedHeatTreatmentRowCount: selectedPstoHeaderRows.length,
-    lnkRows: activeReport === 'lnk' ? filteredVisibleRows : lnkRows,
-    lnkRowCount: activeReport === 'lnk' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
-    availableLnkRequestRows: activeReport === 'lnk' ? filteredAvailableLnkRequestRowsForSummary : availableLnkRequestRows,
-    availableLnkRequestRowCount:
-      activeReport === 'lnk' && isServerPagedTab ? weldPageQuery.availableRequestCount : undefined,
-    welderStamps,
-    filteredWelderStamps,
-  })
+  const reportSummaryBarProps = {
+    ...createReportSummaryBarProps({
+      activeReport,
+      left: stickyLeft,
+      isLoading: isServerPagedTab ? weldPageQuery.isLoading : weldsQuery.isLoading,
+      weldingRows: activeReport === 'weldingJournal' ? filteredVisibleRows : rows,
+      weldingRowCount: activeReport === 'weldingJournal' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
+      acceptedWdiTotal:
+        activeReport === 'weldingJournal' && isServerPagedTab ? weldPageQuery.acceptedWdiTotal : filteredAcceptedWdiTotal,
+      heatTreatmentRows: activeReport === 'heatTreatment' ? filteredVisibleRows : heatTreatmentRows,
+      heatTreatmentRowCount: activeReport === 'heatTreatment' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
+      selectedHeatTreatmentRowCount: selectedPstoHeaderRows.length,
+      lnkRows: activeReport === 'lnk' ? filteredVisibleRows : lnkRows,
+      lnkRowCount: activeReport === 'lnk' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
+      availableLnkRequestRows: activeReport === 'lnk' ? filteredAvailableLnkRequestRowsForSummary : availableLnkRequestRows,
+      availableLnkRequestRowCount:
+        activeReport === 'lnk' && isServerPagedTab ? weldPageQuery.availableRequestCount : undefined,
+      welderStamps,
+      filteredWelderStamps,
+    }),
+    ...(isServerPagedTab
+      ? {
+          quickSearchValue: activeColumnFilters.search ?? '',
+          onQuickSearchChange: (search: string) => {
+            activeFiltersSetter((current) => {
+              const next = { ...current }
+              if (search) next.search = search
+              else delete next.search
+              return next
+            })
+          },
+        }
+      : {}),
+  }
   const reportNotificationToastProps = {
     message: reportLoadErrorMessage ?? lnkNotice ?? message ?? undefined,
     tone: reportLoadErrorMessage
@@ -4047,7 +4080,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       return
     }
     if (action.kind === 'primaryLnkResult') {
-      const method = getPendingLnkResultMethods(row)
+      const method = getPendingLnkResultMethods(row, controlProcessSettings)
         .find((candidate) => candidate.code === action.methodCode)
       if (method) openAddLnkResultModalForMethod(row, method.requestKey)
       else openAddLnkResultModalForRow(row)
@@ -4081,10 +4114,13 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   }, [activeReport])
   const reportChainDialogProps = createReportChainDialogProps({
     chainRecord,
+    initialTab: chainPictureIntent.initialTab,
+    focusedTaskKey: chainPictureIntent.focusedTaskKey,
     chainRows,
     transitions: chainTransitions,
     earlyCoilCandidates: chainEarlyCoilCandidates,
     dispatcherTasks: adviceRepeatedJointTasks,
+    controlProcessSettings,
     errorMessage: chainRowsError,
     isLoading: isChainRowsLoading,
     onClose: () => setChainRecord(null),

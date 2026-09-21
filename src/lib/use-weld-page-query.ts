@@ -1,7 +1,7 @@
 import { type InfiniteData, useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ALL_PAGE_SIZE } from '@/lib/use-pagination'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
+import { splitReportQuickSearch } from '@/lib/report-quick-search'
 import {
   shouldRefetchQueryOnWindowFocus,
   shouldRefreshWeldPageOnActivation,
@@ -43,7 +43,6 @@ function normalizeColumnFiltersForQuery(columnFilters: Record<string, string>) {
 }
 
 function toServerPageSize(pageSize: number): WeldPageSize {
-  if (pageSize === ALL_PAGE_SIZE) return WELD_PAGE_ALL_SIZE
   return WELD_PAGE_SIZE_OPTIONS.includes(pageSize as (typeof WELD_PAGE_SIZE_OPTIONS)[number])
     ? (pageSize as (typeof WELD_PAGE_SIZE_OPTIONS)[number])
     : 100
@@ -69,6 +68,10 @@ export function useWeldPageQuery({
   const refreshErrorAtRef = useRef(0)
   const normalizedColumnFilters = useMemo(() => normalizeColumnFiltersForQuery(columnFilters), [columnFilters])
   const queryColumnFilters = useDebouncedValue(normalizedColumnFilters, 180)
+  const queryFilters = useMemo(
+    () => splitReportQuickSearch(queryColumnFilters),
+    [queryColumnFilters],
+  )
   const serverPageSize = toServerPageSize(pageSize)
   const queryKey = useMemo(
     () => sort
@@ -91,7 +94,8 @@ export function useWeldPageQuery({
       const data = {
         page: Number(pageParam) || 1,
         pageSize: serverPageSize,
-        columnFilters: queryColumnFilters,
+        columnFilters: queryFilters.columnFilters,
+        ...(queryFilters.search ? { search: queryFilters.search } : {}),
         ...(sort ? { sort } : {}),
       }
       if (report === 'lnk') return listLnkReportPage({ data })
@@ -211,7 +215,7 @@ function readPageSizeByReport(): PageSizeByReport {
       Object.entries(parsed).flatMap(([report, value]) => {
         if (report !== 'weldingJournal' && report !== 'lnk' && report !== 'heatTreatment') return []
         const pageSize = Number(value)
-        return pageSize === ALL_PAGE_SIZE || WELD_PAGE_SIZE_OPTIONS.includes(pageSize as (typeof WELD_PAGE_SIZE_OPTIONS)[number])
+        return WELD_PAGE_SIZE_OPTIONS.includes(pageSize as (typeof WELD_PAGE_SIZE_OPTIONS)[number])
           ? [[report, pageSize]]
           : []
       }),

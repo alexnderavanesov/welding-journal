@@ -125,7 +125,7 @@ export function ReportMainContent({
   if (activeReport === 'settings') {
     return (
       <Suspense fallback={<ReportSectionFallback label="Загружаем настройки" />}>
-        <SettingsPage />
+        <SettingsPage onOpenReportRowIds={onOpenReportRowIds} />
       </Suspense>
     )
   }

@@ -63,6 +63,19 @@ describe('useDocumentHistorySessionState', () => {
     expect(result.current.pageSize).toBe(100)
     expect(result.current.visibleLimit).toBe(100)
   })
+
+  it('replaces the removed unlimited page size with the bounded default', () => {
+    window.sessionStorage.setItem(
+      'welding-journal:documents:session:v1:generated:checklist',
+      JSON.stringify({ pageSize: -1, visibleLimit: 50_000 }),
+    )
+
+    const { result } = renderHook(() =>
+      useDocumentHistorySessionState('generated:checklist', parseStoredDocumentNumberId),
+    )
+    expect(result.current.pageSize).toBe(100)
+    expect(result.current.visibleLimit).toBe(100)
+  })
 })
 
 describe('useDocumentHistorySessionValue', () => {

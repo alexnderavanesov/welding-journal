@@ -29,7 +29,7 @@ const sidebarItems: Array<{
   icon: typeof NotebookTabs
 }> = [
   { report: 'weldingJournal', label: 'Сварочный журнал', icon: NotebookTabs },
-  { report: 'heatTreatment', label: 'Термообработка', icon: Flame },
+  { report: 'heatTreatment', label: 'ПСТО и ТВМТ', icon: Flame },
   { report: 'lnk', label: 'ЛНК', icon: ClipboardCheck },
   { report: 'welderStamps', label: 'Клейма', icon: Stamp },
   { report: 'percentageLines', label: 'Процентные линии', icon: Percent },

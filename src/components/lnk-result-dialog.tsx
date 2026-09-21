@@ -45,6 +45,7 @@ import {
 type LnkResultMethod = (typeof LNK_METHODS)[number]
 export type LnkResultDialogProps = {
   elevated?: boolean
+  embedded?: boolean
   draft: LnkResultDraftState
   selectedMethods: LnkResultMethod[]
   selectedRows: WeldRow[]
@@ -83,6 +84,7 @@ export type LnkResultDialogProps = {
 
 export function LnkResultDialog({
   elevated = false,
+  embedded = false,
   draft,
   selectedMethods,
   selectedRows,
@@ -249,8 +251,8 @@ export function LnkResultDialog({
     onRunRootCauseAction?.(action)
   }
 
-  return (
-    <WorkflowDialogShell elevated={elevated}>
+  const content = (
+    <>
       <ResultDialogHeader
         title="Внесение результатов ЛНК"
         requestName={draft.requestName}
@@ -380,6 +382,7 @@ export function LnkResultDialog({
         onSave={onSave}
       />
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </WorkflowDialogShell>
+    </>
   )
+  return embedded ? content : <WorkflowDialogShell elevated={elevated}>{content}</WorkflowDialogShell>
 }

@@ -228,13 +228,15 @@ function ReportBackground({
   const reportTaskPanels = !isStandaloneReport ? <ReportTaskPanels {...reportTaskPanelsProps} /> : null
   return (
     <>
-      <ReportPageHeader title={activeTitle} stickyLeft={stickyLeft}>
+      <ReportPageHeader
+        title={activeTitle}
+        stickyLeft={stickyLeft}
+        summary={!isStandaloneReport ? <ReportSummaryBar {...reportSummaryBarProps} embedded /> : undefined}
+      >
         {activeReport !== 'documents' && activeReport !== 'settings' && activeReport !== 'userGuide' ? (
           <ReportHeaderActions {...reportHeaderActionsProps} />
         ) : null}
       </ReportPageHeader>
-
-      {!isStandaloneReport ? <ReportSummaryBar {...reportSummaryBarProps} /> : null}
 
       {!isWeldTableReport ? reportTaskPanels : null}
 

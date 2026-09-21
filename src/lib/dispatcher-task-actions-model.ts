@@ -196,7 +196,7 @@ export function getDispatcherTaskScopeLabel(task: RepeatedJointTask) {
 }
 
 export function canOpenDispatcherTaskPicture(task: RepeatedJointTask) {
-  return task.kind !== 'line-consistency' && task.kind !== 'percentage-line-control'
+  return Boolean(task.row)
 }
 
 function action(

@@ -97,7 +97,7 @@ export function useReportOutputActions({
       const result = await openCurrentReportWindow(
         visibleRows,
         getReportExportOptions(activeReport, activeTitle, controlProcessSettings).fields,
-        'Термообработка: текущая версия',
+        'ПСТО и ТВМТ: текущая версия',
         getReportExportFilename(activeReport),
       )
       if (!result.ok) setMessage(result.message)

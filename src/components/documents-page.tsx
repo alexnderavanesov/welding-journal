@@ -150,7 +150,6 @@ import {
   useDocumentHistorySessionState,
   useDocumentHistorySessionValue,
 } from '@/lib/use-document-history-session-state'
-import { ALL_PAGE_SIZE } from '@/lib/use-pagination'
 import { isPreHeatTreatmentLnkMethodCode } from '@/lib/lnk-control-stage'
 import { useControlProcessSettings } from '@/lib/control-process-settings'
 import {
@@ -229,6 +228,14 @@ const SYSTEM_DOCUMENT_TYPE_OPTIONS: Array<{
   { id: 'tvmtRequest', documentType: 'lnkRequest', label: 'Заявка ТВМТ', methodScope: 'tvmt' },
   { id: 'tvmtConclusion', documentType: 'lnkConclusion', label: 'Заключение ТВМТ', methodScope: 'tvmt' },
 ]
+
+function DocumentTypeGroupLabel({ children }: { children: ReactNode }) {
+  return (
+    <span className="ml-1 inline-flex h-9 shrink-0 items-center border-l border-[#cbdde6] pl-4 text-[11px] font-semibold uppercase text-[#60778a] first:ml-0 first:border-l-0 first:pl-0">
+      {children}
+    </span>
+  )
+}
 
 export type DocumentsPageType = ManualGeneratedDocumentType | SystemDocumentViewId | LayeredControlDocumentViewId
 type DocumentHistoryFilterKey = DocumentHistoryColumnKey
@@ -469,26 +476,6 @@ export function DocumentsPage({
   const activeGeneratedDocumentType: ManualGeneratedDocumentType = isManualGeneratedDocumentType(activeDocumentType)
     ? activeDocumentType
     : 'weldingJournal'
-  const activeGeneratedHistoryTypes: GeneratedDocumentType[] = activeLayeredDocumentView
-    ? [...activeLayeredDocumentView.types]
-    : [activeGeneratedDocumentType]
-  const generatedDocumentsTotalQuery = useQuery({
-    queryKey: [
-      ...GENERATED_DOCUMENT_HISTORY_QUERY_KEY,
-      activeGeneratedHistoryTypes,
-      'paged',
-      DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE,
-      {},
-    ],
-    queryFn: () => loadGeneratedDocumentHistory({
-      types: activeGeneratedHistoryTypes,
-      limit: DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE,
-      columnFilters: {},
-    }),
-    enabled: !isSystemDocument,
-    staleTime: 30_000,
-  })
-  const generatedDocumentsTotal = generatedDocumentsTotalQuery.data?.total ?? 0
   const activeDocumentProfile =
     DOCUMENT_TYPE_OPTIONS.find((option) => option.type === activeGeneratedDocumentType) ?? DOCUMENT_TYPE_OPTIONS[0]
   const activeDocumentOptions = useMemo(
@@ -516,7 +503,7 @@ export function DocumentsPage({
   const generationDataQuery = useQuery({
     queryKey: [...WELD_JOINTS_QUERY_KEY, 'document-generation', generationDataRequest],
     queryFn: () => getDocumentGenerationData({ data: generationDataRequest }),
-    enabled: isManualGeneratedDocumentView,
+    enabled: isManualGeneratedDocumentView && activeWorkspaceTab === 'generation',
     staleTime: 15_000,
     placeholderData: keepPreviousData,
   })
@@ -783,9 +770,10 @@ export function DocumentsPage({
 
   return (
     <div className="w-full min-w-0 space-y-5 overflow-x-hidden">
-      <div className="min-w-0 rounded-md border border-[#cfdee6] bg-[#f4f8fa] p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+      <div className="min-w-0 rounded-md border border-[#cfdee6] bg-[#f4f8fa] p-3">
+        <div className="flex flex-wrap items-start gap-3">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-2">
+            <DocumentTypeGroupLabel>Общие</DocumentTypeGroupLabel>
             {DOCUMENT_TYPE_OPTIONS.map((option) => {
             const isActive = activeDocumentType === option.type
             return (
@@ -809,7 +797,8 @@ export function DocumentsPage({
               </button>
             )
             })}
-            {SYSTEM_DOCUMENT_TYPE_OPTIONS.map((option) => (
+            <DocumentTypeGroupLabel>ЛНК</DocumentTypeGroupLabel>
+            {SYSTEM_DOCUMENT_TYPE_OPTIONS.filter((option) => option.methodScope === 'lnk').map((option) => (
               <button
                 key={option.id}
                 type="button"
@@ -829,6 +818,28 @@ export function DocumentsPage({
                 {option.label}
               </button>
             ))}
+            <DocumentTypeGroupLabel>ПСТО и ТВМТ</DocumentTypeGroupLabel>
+            {SYSTEM_DOCUMENT_TYPE_OPTIONS.filter((option) => option.methodScope !== 'lnk').map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => {
+                  setActiveNavigationRequest(null)
+                  setActiveDocumentType(option.id)
+                  setActiveWorkspaceTab('history')
+                  setTemplateDocumentPreview(null)
+                  setTemplatePreviewError(null)
+                }}
+                className={`rounded-md border px-4 py-2 text-sm font-semibold shadow-sm transition ${
+                  activeDocumentType === option.id
+                    ? 'border-[#17627d] bg-[#17627d] text-white'
+                    : 'border-[#cbdde6] bg-white text-[#31566a] hover:border-[#79aebe] hover:bg-[#edf7fa]'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+            <DocumentTypeGroupLabel>Послойный контроль</DocumentTypeGroupLabel>
             {LAYERED_CONTROL_DOCUMENT_VIEWS.map((view) => (
               <button
                 key={view.id}
@@ -879,11 +890,6 @@ export function DocumentsPage({
           >
             <FileText className="h-4 w-4" />
             История
-            <span className={`rounded px-1.5 py-0.5 text-[11px] ${
-              activeWorkspaceTab === 'history' ? 'bg-white/20 text-white' : 'bg-white text-slate-500'
-            }`}>
-              {generatedDocumentsTotal}
-            </span>
           </button>
           <button
             type="button"
@@ -1248,7 +1254,6 @@ export function DocumentsPage({
             key={activeLayeredDocumentView.id}
             documentType={activeLayeredDocumentView.types[0]}
             documentTypes={activeLayeredDocumentView.types}
-            initialTotal={generatedDocumentsTotal}
             documentLabel={activeLayeredDocumentView.label}
             documentFieldLabel={activeLayeredDocumentView.label}
             visibleColumns={visibleHistoryColumns}
@@ -1289,7 +1294,6 @@ export function DocumentsPage({
         ) : (
           <GeneratedDocumentsPanel
             documentType={activeGeneratedDocumentType}
-            initialTotal={generatedDocumentsTotal}
             documentLabel={activeDocumentProfile.label}
             documentFieldLabel={activeDocumentProfile.label}
             visibleColumns={visibleHistoryColumns}
@@ -1299,6 +1303,7 @@ export function DocumentsPage({
                 ? activeNavigationRequest
                 : null
             }
+            onCreate={() => setActiveWorkspaceTab('generation')}
             onRepeat={(documentRecord) => {
               setPeriodFrom(documentRecord.periodFrom || initialRange.from)
               setPeriodTo(documentRecord.periodTo || initialRange.to)
@@ -1339,11 +1344,11 @@ export function DocumentsPage({
 function GeneratedDocumentsPanel({
   documentType,
   documentTypes,
-  initialTotal,
   documentLabel,
   documentFieldLabel,
   visibleColumns,
   navigationRequest,
+  onCreate,
   onRepeat,
   allowDelete = true,
   singleDate = false,
@@ -1353,11 +1358,11 @@ function GeneratedDocumentsPanel({
 }: {
   documentType: GeneratedDocumentType
   documentTypes?: readonly GeneratedDocumentType[]
-  initialTotal: number
   documentLabel: string
   documentFieldLabel: string
   visibleColumns: readonly DocumentHistoryColumnDefinition[]
   navigationRequest: GeneratedDocumentNavigationRequest | null
+  onCreate?: () => void
   onRepeat?: (documentRecord: StoredGeneratedDocument) => void
   allowDelete?: boolean
   singleDate?: boolean
@@ -1405,7 +1410,7 @@ function GeneratedDocumentsPanel({
     if (!navigationRequest) return
     setNavigationDocumentId(navigationRequest.documentId)
     setColumnFilters(getDocumentNavigationColumnFilters(navigationRequest))
-    setVisibleLimit(pageSize === ALL_PAGE_SIZE ? Math.max(initialTotal, 1) : pageSize)
+    setVisibleLimit(pageSize)
   }, [navigationRequest])
 
   const historyQuery = useQuery({
@@ -1433,7 +1438,7 @@ function GeneratedDocumentsPanel({
       : documents.filter((documentRecord) => documentRecord.id === navigationDocumentId),
     [documents, navigationDocumentId],
   )
-  const totalDocuments = historyQuery.data?.total ?? initialTotal
+  const totalDocuments = historyQuery.data?.total ?? 0
   const filterOptions = historyQuery.data?.filterOptions ?? {}
   const hasMoreDocuments = documents.length < totalDocuments
   const pageDocumentIds = useMemo(
@@ -1472,17 +1477,16 @@ function GeneratedDocumentsPanel({
     if (value) nextFilters[key] = value
     else delete nextFilters[key]
     setColumnFilters(nextFilters)
-    setVisibleLimit(pageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : pageSize)
+    setVisibleLimit(pageSize)
   }
 
   const changePageSize = (nextPageSize: number) => {
     setPageSize(nextPageSize)
-    setVisibleLimit(nextPageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : nextPageSize)
+    setVisibleLimit(nextPageSize)
   }
 
   const loadMoreDocuments = () => {
-    const increment = pageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : pageSize
-    setVisibleLimit((current) => Math.min(totalDocuments || current + increment, current + increment))
+    setVisibleLimit((current) => Math.min(totalDocuments || current + pageSize, current + pageSize))
   }
 
   const toggleDocumentSelection = (documentId: number) => {
@@ -1572,7 +1576,7 @@ function GeneratedDocumentsPanel({
             onClick={() => {
               setNavigationDocumentId(null)
               setColumnFilters({})
-              setVisibleLimit(pageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : pageSize)
+              setVisibleLimit(pageSize)
             }}
             className="inline-flex h-9 items-center gap-2 rounded-md border border-[#cbdde6] bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50"
           >
@@ -1593,7 +1597,15 @@ function GeneratedDocumentsPanel({
       {historyQuery.isLoading ? (
         <div className="px-4 py-10 text-center text-sm text-slate-500">Загружаем актуальную историю...</div>
       ) : totalDocuments === 0 && !historyError && !hasActiveFilters ? (
-        <div className="px-4 py-10 text-center text-sm text-slate-500">Пока нет сохраненных документов.</div>
+        <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center text-sm text-slate-500">
+          <span>Пока нет сохраненных документов.</span>
+          {onCreate ? (
+            <Button type="button" variant="outline" size="sm" onClick={onCreate}>
+              <FileSpreadsheet className="mr-2 h-4 w-4" />
+              Перейти к формированию
+            </Button>
+          ) : null}
+        </div>
       ) : totalDocuments === 0 ? (
         <div className="px-4 py-10 text-center text-sm text-slate-500">По выбранным условиям документы не найдены.</div>
       ) : (
@@ -1623,7 +1635,7 @@ function GeneratedDocumentsPanel({
                 onChange={(value) => changeColumnFilter(filter.key, value)}
               />
             ))}
-            <div className="flex justify-end">
+            <div className="sticky right-0 z-10 flex justify-end border-l border-[#cfdee6] bg-[#eaf2f6] pl-3 shadow-[-12px_0_16px_-16px_rgba(15,23,42,0.55)]">
               {selectedDocuments.length > 0 ? (
                 <Button
                   type="button"
@@ -1669,7 +1681,7 @@ function GeneratedDocumentsPanel({
                       ...(documentRecord.rowCount === 1 ? [{
                         id: 'open-joint-history',
                         label: 'Картина стыка',
-                        description: 'Хронология, документы, ДЗ/ЗВ и следующий шаг.',
+                        description: 'Хронология, документы, СП/ДЗ и следующий шаг.',
                         icon: GitBranch,
                         onSelect: () => openDocumentJointHistory(documentRecord),
                       }] : []),
@@ -1731,7 +1743,7 @@ function GeneratedDocumentsPanel({
                 {visibleColumnKeySet.has('updatedAt') ? (
                   <span className="text-xs leading-4 text-slate-500">{formatGeneratedDocumentDate(documentRecord.updatedAt)}</span>
                 ) : null}
-                <div className="flex items-center justify-end gap-1">
+                <div className="sticky right-0 z-10 flex items-center justify-end gap-1 border-l border-[#dce7ed] bg-white/95 pl-3 shadow-[-12px_0_16px_-16px_rgba(15,23,42,0.55)] backdrop-blur-sm">
                   <DocumentHistoryActionButton
                     title="Показать стыки документа в сварочном журнале"
                     tone="emerald"
@@ -1781,7 +1793,7 @@ function GeneratedDocumentsPanel({
           onPageSizeChange={changePageSize}
         />
         <div className="mt-2 text-xs text-slate-500">
-          Найдено: {totalDocuments} из {hasActiveFilters ? initialTotal : totalDocuments}
+          Найдено: {totalDocuments}
           {selectedDocuments.length > 0 ? ` · выбрано: ${selectedDocuments.length}` : ''}
         </div>
       </div>
@@ -1971,17 +1983,16 @@ function SystemDocumentsPanel({
     if (documentType === 'lnkConclusion' && key === 'method') {
       setLnkConclusionTemplateFilter('all')
     }
-    setVisibleLimit(pageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : pageSize)
+    setVisibleLimit(pageSize)
   }
 
   const changePageSize = (nextPageSize: number) => {
     setPageSize(nextPageSize)
-    setVisibleLimit(nextPageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : nextPageSize)
+    setVisibleLimit(nextPageSize)
   }
 
   const loadMoreDocuments = () => {
-    const increment = pageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : pageSize
-    setVisibleLimit((current) => Math.min(totalDocuments || current + increment, current + increment))
+    setVisibleLimit((current) => Math.min(totalDocuments || current + pageSize, current + pageSize))
   }
 
   const runAction = async (action: () => Promise<unknown> | void) => {
@@ -2097,7 +2108,7 @@ function SystemDocumentsPanel({
             onClick={() => {
               setNavigationTarget(null)
               setColumnFilters({})
-              setVisibleLimit(pageSize === ALL_PAGE_SIZE ? Math.max(totalDocuments, 1) : pageSize)
+              setVisibleLimit(pageSize)
             }}
             className="inline-flex h-9 items-center gap-2 rounded-md border border-[#cbdde6] bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50"
           >
@@ -2219,7 +2230,7 @@ function SystemDocumentsPanel({
                 onChange={(value) => changeColumnFilter(filter.key, value)}
               />
             ))}
-            <div className="flex justify-end">
+            <div className="sticky right-0 z-10 flex justify-end border-l border-[#cfdee6] bg-[#eaf2f6] pl-3 shadow-[-12px_0_16px_-16px_rgba(15,23,42,0.55)]">
               {selectedDocuments.length > 0 ? (
                 <Button
                   type="button"
@@ -2284,7 +2295,7 @@ function SystemDocumentsPanel({
                         ...(documentRecord.rowCount === 1 ? [{
                           id: 'open-joint-history',
                           label: 'Картина стыка',
-                          description: 'Хронология, документы, ДЗ/ЗВ и следующий шаг.',
+                          description: 'Хронология, документы, СП/ДЗ и следующий шаг.',
                           icon: GitBranch,
                           onSelect: () => runAction(() => onOpenJointHistory(documentRecord)),
                         }] : []),
@@ -2353,7 +2364,7 @@ function SystemDocumentsPanel({
                   {visibleColumnKeySet.has('date') ? (
                     <span className="text-xs text-slate-600">{formatDate(documentRecord.date) || '-'}</span>
                   ) : null}
-                  <div className="flex items-center justify-end gap-1">
+                  <div className="sticky right-0 z-10 flex items-center justify-end gap-1 border-l border-[#dce7ed] bg-white/95 pl-3 shadow-[-12px_0_16px_-16px_rgba(15,23,42,0.55)] backdrop-blur-sm">
                     <DocumentHistoryActionButton
                       title={`Показать стыки документа в отчете ${getSystemDocumentTargetReport(documentRecord) === 'lnk' ? 'ЛНК' : 'ПСТО'}`}
                       tone="emerald"

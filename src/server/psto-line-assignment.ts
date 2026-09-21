@@ -10,7 +10,10 @@ import {
   weldJoints,
   type NewWeldJoint,
 } from '@/db/schema'
-import { isControlEnabledValue } from '@/lib/control-availability-values'
+import {
+  isControlEnabledValue,
+  normalizeControlAvailabilityStorageText,
+} from '@/lib/control-availability-values'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import { normalizeJointChainPart, parseJointChainName } from '@/lib/joint-chain'
@@ -762,7 +765,7 @@ export async function persistPstoLineAssignmentRows(
   const payloads = rows.map((row) => {
     const values: Record<string, unknown> = {
       id: row.id,
-      pstoRequired: textOrNull(row.pstoRequired),
+      pstoRequired: normalizeControlAvailabilityStorageText(row.pstoRequired),
       pstoControlBasis: textOrNull(row.pstoControlBasis),
       pstoCancellationDate: textOrNull(row.pstoCancellationDate),
       ...getPrimaryPstoCyclePersistenceValues(row),

@@ -48,8 +48,8 @@ export function WelderStampsFiltersPanel({
       </button>
 
       {isOpen ? (
-        <div className="grid items-end gap-3 bg-white p-4 xl:grid-cols-[minmax(300px,1.5fr)_repeat(6,minmax(110px,0.55fr))_auto]">
-          <label className="space-y-1.5 text-sm font-medium text-slate-700">
+        <div className="grid items-end gap-3 bg-white p-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-[minmax(300px,1.5fr)_repeat(6,minmax(110px,0.55fr))_auto]">
+          <label className="space-y-1.5 text-sm font-medium text-slate-700 sm:col-span-2 xl:col-span-4 2xl:col-span-1">
             <span>Поиск</span>
             <Input
               value={search}
@@ -130,7 +130,7 @@ export function WelderStampsFiltersPanel({
               onFiltersChange(createEmptyWelderStampFilters())
             }}
             disabled={!hasAnyFilters}
-            className="h-10 whitespace-nowrap"
+            className="h-10 whitespace-nowrap sm:col-span-2 xl:col-span-1"
           >
             <X className="mr-2 h-4 w-4" />
             Сбросить

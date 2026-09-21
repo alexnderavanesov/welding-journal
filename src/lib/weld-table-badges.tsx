@@ -1,5 +1,9 @@
 import { Badge } from '@/components/ui/badge'
-import { isControlAdditionalValue, isControlEnabledValue } from '@/lib/control-availability-values'
+import {
+  isControlAdditionalValue,
+  isControlDisabledValue,
+  isControlEnabledValue,
+} from '@/lib/control-availability-values'
 
 export function getCellKey(rowId: number, fieldKey: string) {
   return `${rowId}:${fieldKey}`
@@ -10,7 +14,7 @@ export function isYesText(value: unknown) {
 }
 
 export function isNoText(value: unknown) {
-  return String(value ?? '').trim().toLowerCase() === 'нет'
+  return isControlDisabledValue(value)
 }
 
 export function isCancelledText(value: unknown) {

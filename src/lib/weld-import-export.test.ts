@@ -210,6 +210,16 @@ describe('weld import/export', () => {
     expect(parseBoolean('-')).toBeNull()
   })
 
+  it('normalizes supported assignment spellings during import', () => {
+    const field = FIELD_BY_KEY.get('hasVik')!
+
+    expect(parseImportCell(field, 'Да')).toBe(true)
+    expect(parseImportCell(field, 'ДА')).toBe(true)
+    expect(parseImportCell(field, '1')).toBe(true)
+    expect(parseImportCell(field, 'Нет')).toBe(false)
+    expect(parseImportCell(field, '0')).toBe(false)
+  })
+
   it('rejects unknown booleans, numbers and dates during import', () => {
     expect(() => parseImportCell(FIELD_BY_KEY.get('hasVik')!, 'возможно')).toThrow('не распознано')
     expect(() => parseImportCell(FIELD_BY_KEY.get('d1')!, 'пятьдесят')).toThrow('не распознано')

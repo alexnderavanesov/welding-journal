@@ -2,7 +2,11 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DispatcherTaskPanel } from '@/components/dispatcher-panels'
-import { DispatcherTaskCard, type DispatcherTaskCardHandlers } from '@/components/dispatcher-task-card'
+import {
+  DispatcherTaskCard,
+  DispatcherTaskGroup,
+  type DispatcherTaskCardHandlers,
+} from '@/components/dispatcher-task-card'
 import type {
   LineConsistencyTask,
   PercentageLineControlTask,
@@ -94,7 +98,6 @@ describe('DispatcherTaskPanel', () => {
         groups={[group]}
         stickyLeft={0}
         handlers={handlers}
-        onDismissAll={vi.fn()}
         columnFilters={{}}
         onColumnFiltersChange={vi.fn()}
       />,
@@ -106,7 +109,7 @@ describe('DispatcherTaskPanel', () => {
     expect(screen.getByLabelText('Диспетчер задач')).toHaveClass('bg-[#eef7fb]/95', 'border-sky-200/80')
     expect(screen.getByLabelText('Диспетчер задач')).toHaveStyle({
       width: '100%',
-      maxWidth: 'calc(100vw - 12px)',
+      maxWidth: 'calc(100vw - 24px)',
     })
     const groupSummary = screen.getByLabelText('Краткое описание задач 330-ATM-16-000')
     expect(within(groupSummary).getByText('ДЗ-27')).toBeInTheDocument()
@@ -122,41 +125,40 @@ describe('DispatcherTaskPanel', () => {
     expect(screen.getByText('330-ATM-16-000')).toBeInTheDocument()
   })
 
-  it('never includes a system warning in the temporary hide action', () => {
-    const { task } = createTaskGroup()
-    const systemWarning = createSystemWarningTask(task.row)
-    const onDismissAll = vi.fn()
-    const group: RepeatedJointTaskGroup = {
-      key: 'joint:F18',
-      baseJoint: 'F18',
-      tasks: [systemWarning, task],
+  it('applies the compact default when the active report changes', () => {
+    const { task, group } = createTaskGroup()
+    const props = {
+      tasks: [task],
+      groups: [group],
+      stickyLeft: 0,
+      handlers: createHandlers(vi.fn()),
+      columnFilters: {},
+      onColumnFiltersChange: vi.fn(),
     }
-    const view = render(
+    const { rerender } = render(
+      <DispatcherTaskPanel {...props} defaultExpanded />,
+    )
+
+    expect(screen.getByRole('button', { name: 'Свернуть' })).toBeInTheDocument()
+    rerender(<DispatcherTaskPanel {...props} defaultExpanded={false} />)
+
+    expect(screen.getByRole('button', { name: 'Развернуть' })).toBeInTheDocument()
+    expect(screen.queryByText('330-ATM-16-000')).not.toBeInTheDocument()
+  })
+
+  it('uses expand and collapse as the only panel visibility controls', () => {
+    const { task, group } = createTaskGroup()
+    render(
       <DispatcherTaskPanel
-        tasks={[systemWarning, task]}
+        tasks={[task]}
         groups={[group]}
         stickyLeft={0}
         handlers={createHandlers(vi.fn())}
-        onDismissAll={onDismissAll}
         columnFilters={{}}
         onColumnFiltersChange={vi.fn()}
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Скрыть карточки' }))
-    expect(onDismissAll).toHaveBeenCalledWith([task])
-
-    view.rerender(
-      <DispatcherTaskPanel
-        tasks={[systemWarning]}
-        groups={[{ ...group, tasks: [systemWarning] }]}
-        stickyLeft={0}
-        handlers={createHandlers(vi.fn())}
-        onDismissAll={onDismissAll}
-        columnFilters={{}}
-        onColumnFiltersChange={vi.fn()}
-      />,
-    )
     expect(screen.queryByRole('button', { name: 'Скрыть карточки' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Свернуть' })).toBeInTheDocument()
   })
@@ -173,7 +175,6 @@ describe('DispatcherTaskPanel', () => {
         groups={[{ ...group, tasks }]}
         stickyLeft={0}
         handlers={createHandlers(vi.fn())}
-        onDismissAll={vi.fn()}
         columnFilters={{}}
         onColumnFiltersChange={vi.fn()}
       />,
@@ -203,7 +204,6 @@ describe('DispatcherTaskPanel', () => {
         groups={[group]}
         stickyLeft={0}
         handlers={createHandlers(vi.fn())}
-        onDismissAll={vi.fn()}
         columnFilters={{}}
         onColumnFiltersChange={vi.fn()}
       />,
@@ -243,7 +243,6 @@ describe('DispatcherTaskPanel', () => {
         groups={groups}
         stickyLeft={0}
         handlers={createHandlers(vi.fn())}
-        onDismissAll={vi.fn()}
         columnFilters={{}}
         onColumnFiltersChange={vi.fn()}
       />,
@@ -290,7 +289,6 @@ describe('DispatcherTaskPanel', () => {
         groups={groups}
         stickyLeft={0}
         handlers={createHandlers(vi.fn())}
-        onDismissAll={vi.fn()}
         columnFilters={{}}
         onColumnFiltersChange={vi.fn()}
       />,
@@ -321,7 +319,6 @@ describe('DispatcherTaskPanel', () => {
         groups={[group]}
         stickyLeft={0}
         handlers={createHandlers(vi.fn())}
-        onDismissAll={vi.fn()}
         columnFilters={{}}
         onColumnFiltersChange={vi.fn()}
       />,
@@ -337,7 +334,6 @@ describe('DispatcherTaskPanel', () => {
         groups={[group]}
         stickyLeft={0}
         handlers={createHandlers(vi.fn())}
-        onDismissAll={vi.fn()}
         columnFilters={{}}
         onColumnFiltersChange={vi.fn()}
       />,
@@ -361,7 +357,63 @@ describe('DispatcherTaskPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Показать' }))
     expect(onShowTask).toHaveBeenCalledWith(task)
-    expect(screen.queryByRole('button', { name: 'Картина' })).not.toBeInTheDocument()
+    const pictureButton = screen.getByRole('button', { name: 'Картина' })
+    expect(pictureButton).toHaveAttribute(
+      'title',
+      'Открыть картину линии 330-ATM-16-000',
+    )
+    fireEvent.click(pictureButton)
+    expect(handlers.onOpenTaskPicture).toHaveBeenCalledWith(task)
+  })
+
+  it('shows an expanded nested task as a distinct visual level without repeating its object name', () => {
+    const { task } = createTaskGroup()
+    const handlers = {
+      ...createHandlers(vi.fn()),
+      isTaskExpanded: () => true,
+    }
+    const { container } = render(<DispatcherTaskCard task={task} nested {...handlers} />)
+
+    const card = container.querySelector('[data-dispatcher-task-card]')
+    const taskToggle = screen.getByTitle('Свернуть описание задачи')
+    const details = container.querySelector('[data-dispatcher-task-details]')
+
+    expect(card).toHaveAttribute('data-expanded', 'true')
+    expect(card).toHaveAttribute('data-dispatcher-hierarchy-level', '2')
+    expect(card).toHaveClass('bg-sky-50/70')
+    expect(within(taskToggle).queryByText('330-ATM-16-000')).not.toBeInTheDocument()
+    expect(screen.getByText('Что обнаружено')).toBeInTheDocument()
+    expect(details).toHaveAttribute('data-dispatcher-hierarchy-level', '3')
+    expect(details).toHaveClass('border-t', 'border-sky-100', 'bg-white/75')
+  })
+
+  it('shows the opened object, task, and details as three visual hierarchy levels', () => {
+    const { group } = createTaskGroup()
+    const handlers = {
+      ...createHandlers(vi.fn()),
+      isTaskExpanded: () => true,
+    }
+    const { container } = render(<DispatcherTaskGroup group={group} {...handlers} />)
+
+    const objectLevel = container.querySelector('details[data-dispatcher-hierarchy-level="1"]')
+    expect(objectLevel).toHaveAttribute('data-expanded', 'false')
+
+    if (objectLevel instanceof HTMLDetailsElement) {
+      objectLevel.open = true
+      fireEvent(objectLevel, new Event('toggle'))
+    }
+
+    expect(objectLevel).toHaveAttribute('data-expanded', 'true')
+    expect(container.querySelector('[data-dispatcher-object-summary]')).toHaveClass(
+      'group-open/object:bg-[#eaf6fb]',
+    )
+    expect(container.querySelector('[data-dispatcher-hierarchy-children]')).toHaveClass(
+      'pl-3',
+      'border-t',
+      'border-sky-100',
+    )
+    expect(container.querySelector('[data-dispatcher-hierarchy-level="2"]')).toBeInTheDocument()
+    expect(container.querySelector('[data-dispatcher-hierarchy-level="3"]')).toBeInTheDocument()
   })
 
   it('shows report rows and the joint picture as separate direct actions for a joint task', () => {
@@ -474,14 +526,14 @@ describe('DispatcherTaskPanel', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'Варианты исправления' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Исправить' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Исправить дату ПСТО' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Исправить дату заключения ТВМТ' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Действия' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Варианты исправления' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Исправить' }))
 
-    expect(screen.getByRole('button', { name: 'Варианты исправления' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Исправить' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('menu').parentElement).toBe(document.body)
     expect(screen.getByRole('menuitem', { name: 'Исправить дату ПСТО' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Исправить дату заключения ТВМТ' })).toBeInTheDocument()
@@ -655,21 +707,6 @@ function createPercentageTask(
     coveredControls: 4,
     assignedControls: 9,
     count,
-  }
-}
-
-function createSystemWarningTask(row: WeldRow): RepeatedJointCheckTask {
-  return {
-    kind: 'check',
-    key: `sp-01:${row.id}`,
-    row,
-    sourceRow: row,
-    sourceJoint: String(row.joint),
-    targetJoint: String(row.joint),
-    baseJoint: String(row.joint),
-    suffix: 'R',
-    reason: 'Нарушена последовательность контроля.',
-    systemWarningCode: 'СП-01',
   }
 }
 

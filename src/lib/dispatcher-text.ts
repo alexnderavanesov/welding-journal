@@ -50,7 +50,7 @@ export function getRepeatedJointTaskTitle(task: DispatcherTask) {
   if (task.kind === 'line-consistency') return { joint: task.line, type: task.title }
   if (task.kind === 'percentage-line-control') return { joint: task.line, type: task.title }
   if (task.systemWarningCode === 'СП-01') {
-    return { joint: task.sourceJoint, type: 'Завершить предыдущие этапы контроля' }
+    return { joint: task.sourceJoint, type: 'Предыдущие этапы пропущены' }
   }
 
   const reason = task.reason ?? ''

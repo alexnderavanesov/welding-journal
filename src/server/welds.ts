@@ -62,6 +62,7 @@ export {
   mergeEarlyCoilDecisionMetadataIntoRows,
   mergeJointChainContinuationMetadataIntoRows,
   normalizeDocumentGenerationDataRequest,
+  normalizeWeldColumnFilterOptions,
   normalizeWeldPageRequest,
   normalizeWeldPageSize,
   normalizeWeldSnapshotPageRequest,

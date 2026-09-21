@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { WeldRow } from '@/lib/dispatcher-types'
+import type { DispatcherTask, WeldRow } from '@/lib/dispatcher-types'
 import {
   DISPATCHER_TASKS_FIELD_KEY,
   DISPATCHER_TASKS_WITH_FILTER,
@@ -14,6 +14,7 @@ function createOptions(activeReport: 'weldingJournal' | 'lnk' | 'heatTreatment' 
     activeReport,
     setActiveReport: vi.fn(),
     setChainRecord: vi.fn(),
+    openChainPicture: vi.fn(),
     setColumnFilters: vi.fn(),
     setHeatTreatmentFilters: vi.fn(),
     setLnkFilters: vi.fn(),
@@ -70,10 +71,64 @@ describe('useJointChainActions', () => {
 
     act(() => result.current.openRepeatedJointTaskPicture(task))
 
-    expect(options.setChainRecord).toHaveBeenCalledWith(row)
+    expect(options.openChainPicture).toHaveBeenCalledWith(row, {
+      initialTab: 'actions',
+      focusedTaskKey: task.key,
+    })
+    expect(options.setChainRecord).not.toHaveBeenCalled()
     expect(options.setColumnFilters).not.toHaveBeenCalled()
     expect(options.setLnkFilters).not.toHaveBeenCalled()
     expect(options.setMessage).toHaveBeenCalledWith('Открыта картина стыка F6')
+  })
+
+  it('opens line-wide dispatcher tasks directly in the line picture', () => {
+    const row = { id: 22, line: 'L-7', joint: 'F7' } as WeldRow
+    const task = {
+      kind: 'line-consistency',
+      key: 'line-consistency:L-7:psto',
+      row,
+      projectTitle: 'Проект',
+      subtitleCode: 'Шифр',
+      line: 'L-7',
+      fieldKey: 'pstoPresence',
+      fieldLabel: 'ПСТО',
+      title: 'Проверить ПСТО линии',
+      values: ['да', 'нет'],
+      details: 'Значения различаются.',
+    } as DispatcherTask
+    const options = createOptions('weldingJournal')
+    const { result } = renderHook(() => useJointChainActions(options))
+
+    act(() => result.current.openRepeatedJointTaskPicture(task))
+
+    expect(options.openChainPicture).toHaveBeenCalledWith(row, {
+      initialTab: 'line',
+      focusedTaskKey: task.key,
+    })
+    expect(options.setMessage).toHaveBeenCalledWith('Открыта картина линии L-7')
+  })
+
+  it('opens repair-chain tasks in the dedicated action tab', () => {
+    const row = { id: 23, line: 'L-8', joint: 'F8' } as WeldRow
+    const task = {
+      kind: 'create',
+      key: 'create:F8:F8R1',
+      row,
+      sourceJoint: 'F8',
+      targetJoint: 'F8R1',
+      result: 'ремонт',
+      suffix: 'R',
+      methodCode: 'РК',
+    } as DispatcherTask
+    const options = createOptions('weldingJournal')
+    const { result } = renderHook(() => useJointChainActions(options))
+
+    act(() => result.current.openRepeatedJointTaskPicture(task))
+
+    expect(options.openChainPicture).toHaveBeenCalledWith(row, {
+      initialTab: 'actions',
+      focusedTaskKey: task.key,
+    })
   })
 
   it('shows the base chain in the PSTO report when the chain was opened from PSTO', () => {

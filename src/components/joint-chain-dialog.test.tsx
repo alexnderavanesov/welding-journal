@@ -3,8 +3,10 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { JointChainDialog } from '@/components/joint-chain-dialog'
+import { LNK_RESULT_COMPLETENESS_REASON } from '@/lib/dispatcher-check-reasons'
 import type {
   PercentageLineControlTask,
+  RepeatedJointCheckTask,
   RepeatedJointCreateTask,
   RepeatedJointRenameTask,
   RepeatedJointTask,
@@ -135,6 +137,26 @@ describe('JointChainDialog', () => {
     fireEvent.click(within(actions).getByRole('button', { name: 'Создать F51R1' }))
     expect(onCreateRepeatedJoint).toHaveBeenCalledWith(task)
     expect(screen.queryByRole('button', { name: 'Создать S9W1' })).not.toBeInTheDocument()
+  })
+
+  it('shows a repair-chain task once in the dedicated action tab', () => {
+    const rows = [row({ id: 1, joint: 'F52', rkResult: 'ремонт' })]
+    const task: RepeatedJointCreateTask = {
+      kind: 'create',
+      key: 'create:F52R1',
+      row: rows[0]!,
+      sourceJoint: 'F52',
+      targetJoint: 'F52R1',
+      result: 'ремонт',
+      suffix: 'R',
+      methodCode: 'РК',
+    }
+
+    renderDialog({ rows, dispatcherTasks: [task] })
+    fireEvent.click(screen.getByRole('tab', { name: 'Требует действия · 1' }))
+
+    expect(screen.queryByRole('region', { name: 'Продолжение цепочки стыка' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Создать F52R1' })).toHaveLength(1)
   })
 
   it('opens officiality for the rejected source between repeated-joint and early-coil actions', () => {
@@ -329,11 +351,14 @@ describe('JointChainDialog', () => {
       onOpenLineInDispatcher,
     })
 
-    expect(screen.getByText('Нет активных задач по стыку.')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Картина линии · 4' }))
+    fireEvent.click(screen.getByRole('tab', { name: /Требует действия.*0/ }))
+    expect(screen.getByText('По этому стыку нет активных СП или ДЗ.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Картина линии · 4' }))
 
-    expect(screen.getByRole('heading', { name: 'Картина линии 330-MS-02-000' })).toBeInTheDocument()
-    expect(screen.getByText('Задач: 4 · типов проблем: 1')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Картина стыка F47' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Линия 330-MS-02-000' })).toBeInTheDocument()
+    expect(screen.getByLabelText('4 активные задачи')).toBeInTheDocument()
+    expect(screen.getByLabelText('1 тип проблемы')).toBeInTheDocument()
     expect(screen.queryByText('Клеймо OTHER')).not.toBeInTheDocument()
     const group = screen.getByRole('region', { name: 'ДЗ-01 Новый сварщик на процентной линии' })
     expect(within(group).getAllByRole('button', { name: 'Исправить клеймо' })).toHaveLength(3)
@@ -347,11 +372,68 @@ describe('JointChainDialog', () => {
       expect.objectContaining({ id: 'edit-stamp', label: 'Исправить клеймо' }),
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'К стыку F47' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Стык' }))
     expect(screen.getByRole('heading', { name: 'Картина стыка F47' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Картина линии · 4' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Картина линии · 4' }))
     fireEvent.click(screen.getByRole('button', { name: 'Открыть в диспетчере' }))
     expect(onOpenLineInDispatcher).toHaveBeenCalledWith(rows[0])
+  })
+
+  it('opens a dispatcher task on the action tab and highlights the requested item', () => {
+    const rows = [row({ id: 1, joint: 'F48' })]
+    const task: RepeatedJointCheckTask = {
+      kind: 'check',
+      key: 'check:F48:lnk-completeness',
+      row: rows[0]!,
+      sourceRow: rows[0]!,
+      sourceJoint: 'F48',
+      targetJoint: 'F48',
+      baseJoint: 'F48',
+      suffix: 'R',
+      reason: LNK_RESULT_COMPLETENESS_REASON,
+      details: 'Не заполнена дата заключения.',
+    }
+
+    renderDialog({
+      rows,
+      dispatcherTasks: [task],
+      initialTab: 'actions',
+      focusedTaskKey: task.key,
+    })
+
+    expect(screen.getByRole('tab', { name: /Требует действия.*1/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('ДЗ-32').closest('[data-highlighted="true"]')).toBeInTheDocument()
+  })
+
+  it('opens a line task in the line picture and reveals the highlighted row', () => {
+    const rows = [row({ id: 1, joint: 'F49', line: '330-MS-02-000' })]
+    const lineTasks = ['9PC6', '9RX9', '9SZN', '9TMP'].map((stamp, index) => percentageTask(
+      row({ id: index + 10, joint: `F${60 + index}`, line: '330-MS-02-000' }),
+      stamp,
+    ))
+
+    renderDialog({
+      rows,
+      dispatcherTasks: lineTasks,
+      initialTab: 'line',
+      focusedTaskKey: lineTasks[3]!.key,
+    })
+
+    expect(screen.getByRole('tab', { name: 'Картина линии · 4' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getAllByRole('button', { name: 'Исправить клеймо' })).toHaveLength(4)
+    expect(screen.getByText('Клеймо 9TMP').closest('[data-highlighted="true"]')).toBeInTheDocument()
+  })
+
+  it('switches tabs with the keyboard arrows', () => {
+    renderDialog({ rows: [row({ id: 1, joint: 'F50' })] })
+
+    const jointTab = screen.getByRole('tab', { name: 'Стык' })
+    fireEvent.keyDown(jointTab, { key: 'ArrowRight' })
+    const actionsTab = screen.getByRole('tab', { name: 'Требует действия · 0' })
+    expect(actionsTab).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.keyDown(actionsTab, { key: 'ArrowRight' })
+    expect(screen.getByRole('tab', { name: 'Картина линии · 0' })).toHaveAttribute('aria-selected', 'true')
   })
 })
 
@@ -370,6 +452,8 @@ function renderDialog({
   onEditRow = vi.fn(),
   onRunDispatcherTaskAction = vi.fn(),
   onOpenLineInDispatcher = vi.fn(),
+  initialTab = 'joint',
+  focusedTaskKey = null,
 }: {
   record?: WeldRow
   rows: WeldRow[]
@@ -397,10 +481,14 @@ function renderDialog({
   onEditRow?: (row: WeldRow) => void
   onRunDispatcherTaskAction?: ComponentProps<typeof JointChainDialog>['onRunDispatcherTaskAction']
   onOpenLineInDispatcher?: (row: WeldRow) => void
+  initialTab?: ComponentProps<typeof JointChainDialog>['initialTab']
+  focusedTaskKey?: string | null
 }) {
   return render(
     <JointChainDialog
       record={record ?? rows[0]!}
+      initialTab={initialTab}
+      focusedTaskKey={focusedTaskKey}
       rows={rows}
       transitions={transitions}
       earlyCoilCandidates={earlyCoilCandidates}

@@ -9,3 +9,9 @@ export const getControlProcessSettingsOverview = createServerFn({ method: 'GET' 
     const server = await import('@/server/control-process-settings')
     return server.getControlProcessSettingsOverview()
   })
+
+export const getPreHeatTreatmentDisableBlockerRowIds = createServerFn({ method: 'GET' })
+  .handler(async (): Promise<number[]> => {
+    const server = await import('@/server/control-process-settings')
+    return server.getPreHeatTreatmentDisableBlockerRowIds()
+  })

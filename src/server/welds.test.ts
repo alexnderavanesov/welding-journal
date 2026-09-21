@@ -25,6 +25,7 @@ import {
   normalizeWeldPageSize,
   normalizeWeldSnapshotPageRequest,
   normalizeDocumentGenerationDataRequest,
+  normalizeWeldColumnFilterOptions,
   prepareWeldInputForPersistence,
   restrictWeldMutationRecord,
   sameNormalizedTextSet,
@@ -444,7 +445,7 @@ describe('weld server pagination helpers', () => {
     })
   })
 
-  it('removes only empty transport fields while preserving meaningful false and zero values', () => {
+  it('removes empty transport fields and canonicalizes assignment values', () => {
     expect(
       compactWeldRowsForTransport([
         {
@@ -453,6 +454,7 @@ describe('weld server pagination helpers', () => {
           line: '',
           d1: 0,
           hasVik: false,
+          pstoRequired: 'Да',
           materialGroup: null,
           duplicateControls: [],
         } as unknown as WeldRow,
@@ -462,7 +464,8 @@ describe('weld server pagination helpers', () => {
         id: 7,
         joint: 'F7',
         d1: 0,
-        hasVik: false,
+        hasVik: 'нет',
+        pstoRequired: 'да',
       },
     ])
   })
@@ -686,6 +689,21 @@ describe('weld server pagination helpers', () => {
       { value: '', label: '(пусто)', count: 1 },
       { value: 'LIN-1', label: 'LIN-1', count: 2 },
       { value: 'LIN-2', label: 'LIN-2', count: 1 },
+    ])
+  })
+
+  it('combines legacy assignment spellings into lowercase filter options', () => {
+    expect(normalizeWeldColumnFilterOptions('pstoRequired', [
+      { value: '', label: '(пусто)', count: 1_982 },
+      { value: '0', label: '0', count: 11 },
+      { value: 'Да', label: 'Да', count: 425 },
+      { value: 'да', label: 'да', count: 397 },
+      { value: 'Нет', label: 'Нет', count: 2_611 },
+      { value: 'нет', label: 'нет', count: 758 },
+    ])).toEqual([
+      { value: '', label: '(пусто)', count: 1_982 },
+      { value: 'да', label: 'да', count: 822 },
+      { value: 'нет', label: 'нет', count: 3_380 },
     ])
   })
 

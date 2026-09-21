@@ -45,17 +45,15 @@ export function ReportTaskPanels({
     )
   }
 
-  if (activeReport === 'heatTreatment') return null
-
   return (
     <DispatcherTaskPanel
       tasks={repeatedJointTasks}
       groups={repeatedJointTaskGroups}
       stickyLeft={stickyLeft}
       handlers={handlers}
-      onDismissAll={onDismissTasks}
       columnFilters={columnFilters}
       onColumnFiltersChange={onColumnFiltersChange}
+      defaultExpanded={activeReport !== 'heatTreatment'}
     />
   )
 }

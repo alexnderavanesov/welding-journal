@@ -20,6 +20,14 @@ import {
 } from '@/lib/weld-column-choice-filter'
 import { formatDateTimeWithSeconds } from '@/lib/weld-table-formatting'
 import { formatFinalStatusDisplay } from '@/lib/weld-status'
+import {
+  CONTROL_ASSIGNMENT_FIELD_KEYS,
+  normalizeControlAvailabilityFilterValue,
+} from '@/lib/control-availability-values'
+import {
+  matchesReportQuickSearch,
+  REPORT_QUICK_SEARCH_FILTER_KEY,
+} from '@/lib/report-quick-search'
 
 export { buildWeldColumnValueFilter, parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
 
@@ -85,6 +93,10 @@ function buildWeldColumnFilterMatchers(columnFilters: Record<string, string>): W
     const query = value.trim().toLowerCase()
     if (!query) return []
 
+    if (key === REPORT_QUICK_SEARCH_FILTER_KEY) {
+      return [(row: WeldRow) => matchesReportQuickSearch(row, value)]
+    }
+
     if (key === PERCENTAGE_LINE_STAMP_FILTER_KEY) {
       const filter = parsePercentageLineStampFilter(value)
       return [(row: WeldRow) => matchesPercentageLineStampFilter(row, filter)]
@@ -117,13 +129,18 @@ function buildWeldColumnFilterMatchers(columnFilters: Record<string, string>): W
 
     const choiceFilter = parseWeldColumnChoiceFilter(value)
     if (choiceFilter) {
-      const normalizedValues = new Set(choiceFilter.values.map(normalizeWeldColumnChoiceValue))
+      const normalizedValues = new Set(normalizeWeldColumnFilterChoiceValues(key, choiceFilter.values))
       return [(row: WeldRow) => normalizedValues.has(normalizeWeldColumnChoiceValue(getWeldColumnFilterRowText(row, key)))]
     }
 
     if (query.startsWith('=')) {
       const expectedValue = query.slice(1).trim().replace(/^["']|["']$/g, '')
-      return [(row: WeldRow) => getWeldColumnFilterRowText(row, key).trim().toLowerCase() === expectedValue]
+      const normalizedExpectedValue = CONTROL_ASSIGNMENT_FIELD_KEYS.has(key)
+        ? normalizeControlAvailabilityFilterValue(expectedValue)
+        : expectedValue
+      return [(row: WeldRow) => (
+        getWeldColumnFilterRowText(row, key).trim().toLowerCase() === normalizedExpectedValue
+      )]
     }
 
     return [(row: WeldRow) => getWeldColumnFilterRowText(row, key).trim().toLowerCase().includes(query)]
@@ -134,10 +151,20 @@ export function getWeldColumnFilterCellText(value: unknown) {
   return value === true ? 'да' : value === false || value == null ? '' : String(value)
 }
 
+export function normalizeWeldColumnFilterChoiceValues(fieldKey: string, values: readonly unknown[]) {
+  return [...new Set(values.map((value) => (
+    CONTROL_ASSIGNMENT_FIELD_KEYS.has(fieldKey)
+      ? normalizeControlAvailabilityFilterValue(value)
+      : normalizeWeldColumnChoiceValue(value)
+  )))]
+}
+
 export function getWeldColumnFilterRowText(row: WeldRow, fieldKey: string) {
   const value = row[fieldKey as keyof WeldRow]
   return fieldKey === 'finalStatus'
     ? formatFinalStatusDisplay(row, value)
+    : CONTROL_ASSIGNMENT_FIELD_KEYS.has(fieldKey)
+      ? normalizeControlAvailabilityFilterValue(value)
     : getWeldColumnFilterCellText(value)
 }
 

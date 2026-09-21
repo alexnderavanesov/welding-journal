@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 export const ALL_PAGE_SIZE = -1
-export const DEFAULT_PAGE_SIZE_OPTIONS = [100, 300, 500, 1000, ALL_PAGE_SIZE] as const
+export const DEFAULT_PAGE_SIZE_OPTIONS = [100, 300, 500, 1000] as const
 
 type UsePaginationOptions<T> = {
   items: readonly T[]

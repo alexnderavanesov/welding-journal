@@ -64,6 +64,15 @@ describe('assertExistingRowsImportPayload', () => {
     })).toThrow(/не поддерживается/)
   })
 
+  it.each(['massFill', 'replaceData'] as const)('rejects a raw PSTO assignment in %s mode', (mode) => {
+    expect(() => assertExistingRowsImportPayload({
+      records: [{ id: 7, pstoRequired: 'Да' }],
+      previousRows,
+      mode,
+      otherSettings: DEFAULT_OTHER_SETTINGS,
+    })).toThrow(/Назначение ПСТО.*недоступно/)
+  })
+
   it('rejects a stale ID so a batch cannot be applied partially', () => {
     expect(() => assertExistingRowsImportPayload({
       records: [{ id: 999, material1: '09Г2С' }],

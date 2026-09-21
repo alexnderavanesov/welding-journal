@@ -43,18 +43,42 @@ export function ReportLnkDialogs({
   preHeatTreatmentResultManagerDialogProps,
   stageTransferDialogProps,
 }: ReportLnkDialogsProps) {
+  const preHeatTreatmentRequestDialogProps = preHeatTreatmentWorkflowDialogProps?.mode === 'request'
+    ? preHeatTreatmentWorkflowDialogProps
+    : null
+  const preHeatTreatmentResultDialogProps = preHeatTreatmentWorkflowDialogProps?.mode === 'result'
+    ? preHeatTreatmentWorkflowDialogProps
+    : null
+
   return (
     <>
       <Suspense fallback={null}>
-        {requestDialogProps ? <LnkRequestDialog {...requestDialogProps} /> : null}
         {officialityDialogProps ? <LnkOfficialityDialog {...officialityDialogProps} /> : null}
         {duplicateControlDialogProps ? <DuplicateControlDialog {...duplicateControlDialogProps} /> : null}
-        {resultDialogProps ? <LnkResultDialog {...resultDialogProps} /> : null}
-        {preHeatTreatmentWorkflowDialogProps ? (
-          <PreHeatTreatmentLnkWorkflowDialog {...preHeatTreatmentWorkflowDialogProps} />
-        ) : null}
         {stageTransferDialogProps ? <LnkStageTransferDialog {...stageTransferDialogProps} /> : null}
       </Suspense>
+      {requestDialogProps || preHeatTreatmentRequestDialogProps ? (
+        <WorkflowDialogShell elevated={requestDialogProps?.elevated}>
+          <Suspense fallback={null}>
+            {requestDialogProps ? (
+              <LnkRequestDialog {...requestDialogProps} embedded />
+            ) : preHeatTreatmentRequestDialogProps ? (
+              <PreHeatTreatmentLnkWorkflowDialog {...preHeatTreatmentRequestDialogProps} embedded />
+            ) : null}
+          </Suspense>
+        </WorkflowDialogShell>
+      ) : null}
+      {resultDialogProps || preHeatTreatmentResultDialogProps ? (
+        <WorkflowDialogShell elevated={resultDialogProps?.elevated}>
+          <Suspense fallback={null}>
+            {resultDialogProps ? (
+              <LnkResultDialog {...resultDialogProps} embedded />
+            ) : preHeatTreatmentResultDialogProps ? (
+              <PreHeatTreatmentLnkWorkflowDialog {...preHeatTreatmentResultDialogProps} embedded />
+            ) : null}
+          </Suspense>
+        </WorkflowDialogShell>
+      ) : null}
       {requestManagerDialogProps ? (
         <WorkflowDialogShell variant="manager" elevated={requestManagerDialogProps.elevated}>
           <Suspense fallback={null}>

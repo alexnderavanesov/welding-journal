@@ -30,29 +30,26 @@ function renderControls() {
 }
 
 describe('WeldReportViewControls', () => {
-  it('stays constrained to the visible right edge throughout horizontal scrolling', () => {
+  it('renders as a compact group for the fixed toolbar slot', () => {
     renderControls()
 
     const controls = screen.getByRole('button', { name: /Наборы/ }).parentElement
 
     expect(controls).toHaveAttribute('data-report-view-controls')
     expect(controls).toHaveClass(
+      'relative',
+      'flex',
+      'shrink-0',
+      'justify-end',
+      'z-10',
+      'bg-white',
+    )
+    expect(controls).not.toHaveClass(
+      'sticky',
       'right-3',
       'w-[27rem]',
-      'max-w-[calc(100vw-1.75rem)]',
-      'justify-end',
       'mr-[-0.75rem]',
-      'pr-2',
-      'z-10',
       'border-l',
-      'border-slate-300',
-      'bg-slate-50',
-      'after:z-10',
-      'after:w-8',
-      'after:bg-slate-50',
-    )
-    expect(controls).toHaveClass('left-[max(0.5rem,calc(100vw-27rem-0.75rem))]')
-    expect(controls).not.toHaveClass(
       'right-0',
       'right-6',
       'pr-8',

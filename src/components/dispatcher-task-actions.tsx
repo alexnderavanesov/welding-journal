@@ -74,10 +74,11 @@ export function RepeatedJointTaskActions({
   isRenamePending,
 }: RepeatedJointTaskActionsProps) {
   const isExpanded = isTaskExpanded(task)
+  const actionTrayClassName = isExpanded ? 'bg-sky-50/70' : 'bg-transparent'
 
   if (task.kind === 'welder-stamp-expiry') {
     return (
-      <div className="flex shrink-0 items-center bg-white px-2 py-1.5">
+      <div className={`flex shrink-0 items-center px-2 py-1.5 transition-colors ${actionTrayClassName}`}>
         <Button
           type="button"
           variant="ghost"
@@ -94,7 +95,7 @@ export function RepeatedJointTaskActions({
   }
 
   return (
-    <div className="flex shrink-0 items-center gap-1.5 bg-white px-2 py-1.5">
+    <div className={`flex shrink-0 items-center gap-1.5 px-2 py-1.5 transition-colors ${actionTrayClassName}`}>
       {(task.kind === 'create' || task.kind === 'coil') && canRunDispatcherMutation ? (
         <>
           <Button type="button" size="sm" onClick={() => onCreateTask(task)} disabled={isCreatePending} className={dispatcherPrimaryActionButtonClass}>
@@ -224,7 +225,9 @@ export function RepeatedJointTaskActions({
           variant="outline"
           onClick={() => onOpenTaskPicture(task)}
           className={dispatcherActionButtonClass}
-          title={`Открыть картину стыка ${String(task.row.joint ?? '-').trim() || '-'}`}
+          title={task.kind === 'line-consistency' || task.kind === 'percentage-line-control'
+            ? `Открыть картину линии ${String(task.row.line ?? '-').trim() || '-'}`
+            : `Открыть картину стыка ${String(task.row.joint ?? '-').trim() || '-'}`}
         >
           Картина
         </Button>
@@ -268,7 +271,7 @@ function ModeledDispatcherActions({
   if (hasMultipleRootCauseActions) {
     return (
       <DispatcherActionMenu
-        triggerLabel="Варианты исправления"
+        triggerLabel="Исправить"
         items={workflowActions.map((action) => ({
           label: action.label,
           onClick: () => run(action),

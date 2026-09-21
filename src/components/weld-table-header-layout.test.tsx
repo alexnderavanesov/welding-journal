@@ -178,10 +178,50 @@ describe('WeldTable header layout', () => {
 
     expect(taskPanelsFrame?.style.width).toBe(tableFrame?.style.width)
     expect(Number.parseFloat(layout?.style.width ?? '0')).toBe(
-      Number.parseFloat(tableFrame?.style.width ?? '0') + 12,
+      Number.parseFloat(tableFrame?.style.width ?? '0') + 24,
     )
     expect(tableBorderFrame).toHaveClass('after:right-0', 'after:bg-[#dbe7f0]')
     expect(tableBorderFrame).not.toHaveClass('overflow-hidden')
     expect(container.querySelector('[data-report-visible-right-edge]')).toBeNull()
+    expect(container.querySelector('[data-report-horizontal-scrollbar]')).toBeNull()
+  })
+
+  it('continues header and row separators through the sticky left cover', () => {
+    const hiddenFieldKeys = new Set(
+      VISIBLE_FIELDS
+        .map((field) => field.key as WeldFieldKey)
+        .filter((fieldKey) => fieldKey !== 'line'),
+    )
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <WeldTable
+          rows={[{ id: 1, line: '330-P1', joint: 'S1' } as WeldRow]}
+          columnFilters={{}}
+          onColumnFiltersChange={vi.fn()}
+          readOnly
+          selectable
+          stickyIdentityColumns
+          stickyLeft={80}
+          hiddenFieldKeys={hiddenFieldKeys}
+        />
+      </QueryClientProvider>,
+    )
+
+    const stickyHeader = container.querySelector('th.sticky')
+    const stickyRowCell = container.querySelector('tbody td.sticky')
+
+    expect(stickyHeader).toHaveClass(
+      'border-l-2',
+      'before:border-y-2',
+      'before:top-[-2px]',
+      'before:bottom-[-2px]',
+    )
+    expect(stickyRowCell).toHaveClass(
+      'border-l',
+      'before:border-b',
+      'before:top-0',
+      'before:bottom-[-1px]',
+    )
   })
 })

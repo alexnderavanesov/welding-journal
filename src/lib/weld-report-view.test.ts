@@ -17,7 +17,7 @@ const sections = [{
 describe('weld report views', () => {
   beforeEach(() => window.localStorage.clear())
 
-  it('builds predictable compact and PSTO/TVMT column sets', () => {
+  it('builds predictable compact and chronology column sets', () => {
     const alwaysVisible = new Set(['line', 'joint'])
     const compact = getPresetHiddenFieldKeys({
       preset: 'compact',
@@ -25,15 +25,31 @@ describe('weld report views', () => {
       alwaysVisibleFieldKeys: alwaysVisible,
       customHiddenFieldKeys: new Set(),
     })
-    const psto = getPresetHiddenFieldKeys({
-      preset: 'pstoTvmt',
+    const chronology = getPresetHiddenFieldKeys({
+      preset: 'chronology',
       sections,
       alwaysVisibleFieldKeys: alwaysVisible,
       customHiddenFieldKeys: new Set(),
     })
 
     expect(compact).toEqual(new Set(['weldDate', 'pstoRequest', 'tvmtConclusion', 'material1']))
-    expect(psto).toEqual(new Set(['weldDate', 'material1']))
+    expect(chronology).toEqual(new Set(['material1']))
+  })
+
+  it('falls back to the custom set when an old removed preset is stored', () => {
+    window.localStorage.setItem('welding-report-view:v1:lnk', JSON.stringify({
+      activePreset: 'pstoTvmt',
+      hiddenFieldKeys: ['material1'],
+      customHiddenFieldKeys: ['material1'],
+      collapsedSections: [],
+      savedViews: [],
+    }))
+
+    expect(readWeldReportViewStorage('lnk', new Set())).toMatchObject({
+      activePreset: 'custom',
+      hiddenFieldKeys: ['material1'],
+      customHiddenFieldKeys: ['material1'],
+    })
   })
 
   it('stores named views with filters, sorting and collapsed sections in this browser', () => {

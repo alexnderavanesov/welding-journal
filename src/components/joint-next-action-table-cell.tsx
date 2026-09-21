@@ -1,21 +1,24 @@
 import { ArrowRight, CheckCircle2, Info, TriangleAlert } from 'lucide-react'
 import type { MouseEvent } from 'react'
 
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import { buildJointNextActions, type JointNextAction } from '@/lib/joint-next-actions'
 
 export function JointNextActionTableCell({
   row,
   dispatcherTasks,
+  controlProcessSettings,
   onRun,
   onOpenOverview,
 }: {
   row: WeldRow
   dispatcherTasks: readonly RepeatedJointTask[]
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
   onRun: (row: WeldRow, action: JointNextAction) => void
   onOpenOverview: (row: WeldRow) => void
 }) {
-  const action = buildJointNextActions(row, dispatcherTasks)[0]
+  const action = buildJointNextActions(row, dispatcherTasks, controlProcessSettings)[0]
   if (!action) return null
   const Icon = action.tone === 'success'
     ? CheckCircle2

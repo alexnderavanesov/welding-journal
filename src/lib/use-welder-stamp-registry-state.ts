@@ -32,12 +32,13 @@ import {
 } from '@/lib/weld-query-utils'
 
 type WelderStampRegistryStateInput = {
+  enabled?: boolean
   setMessage: (message: string | null) => void
 }
 
 const WELDER_STAMP_REGISTRY_QUERY_KEY = ['welder-stamp-registry'] as const
 
-export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryStateInput) {
+export function useWelderStampRegistryState({ enabled = true, setMessage }: WelderStampRegistryStateInput) {
   const queryClient = useQueryClient()
   const confirmAction = useConfirmAction()
   const saveCheckSettings = useSaveCheckSettings()
@@ -76,6 +77,7 @@ export function useWelderStampRegistryState({ setMessage }: WelderStampRegistryS
   const welderStampRegistryQuery = useQuery({
     queryKey: WELDER_STAMP_REGISTRY_QUERY_KEY,
     queryFn: async () => loadWelderStampRegistrySnapshot(),
+    enabled,
     staleTime: 30_000,
   })
 

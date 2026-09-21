@@ -116,7 +116,7 @@ export function WeldReportViewControls({
     <div
       ref={rootRef}
       data-report-view-controls
-      className="relative sticky left-[max(0.5rem,calc(100vw-27rem-0.75rem))] right-3 z-10 ml-auto mr-[-0.75rem] flex w-[27rem] max-w-[calc(100vw-1.75rem)] shrink-0 items-center justify-end gap-1.5 border-l border-slate-300 bg-slate-50 pl-2 pr-2 after:pointer-events-none after:absolute after:-bottom-1.5 after:left-full after:-top-1.5 after:z-10 after:w-8 after:bg-slate-50 after:content-['']"
+      className="relative z-10 flex shrink-0 items-center justify-end gap-1.5 bg-white"
     >
       <ViewButton
         active={panel === 'presets'}

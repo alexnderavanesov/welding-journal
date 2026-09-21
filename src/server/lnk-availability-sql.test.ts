@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import { weldJoints } from '@/db/schema'
 import { buildNullableControlEnabledWhere } from '@/server/control-availability-sql'
+import { buildControlAvailabilityColumnWhere } from '@/server/weld-server-shared'
 import {
   buildAvailableLnkRequestWhere,
   buildPrimaryLnkStageReadyWhere,
@@ -18,8 +19,19 @@ describe('LNK availability SQL', () => {
       )}
     `)
 
-    expect(compiled.sql).toContain('coalesce("weld_joints"."psto_required" in')
+    expect(compiled.sql).toContain('lower(btrim(coalesce("weld_joints"."psto_required"::text')
     expect(compiled.sql).toContain(', false)')
+  })
+
+  it('matches canonical filter choices against legacy yes/no spellings', () => {
+    const compiled = new PgDialect().sqlToQuery(sql`
+      select 1 where ${buildControlAvailabilityColumnWhere(
+        weldJoints.pstoRequired,
+        ['да', 'нет'],
+      )}
+    `)
+
+    expect(compiled.params).toEqual(expect.arrayContaining(['да', '1', 'нет', '0']))
   })
 
   it('keeps SQL readiness aligned with cancelled PSTO history and pre-TO exemptions', () => {

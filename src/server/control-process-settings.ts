@@ -233,6 +233,17 @@ export async function getControlProcessSettingsOverview() {
   } satisfies ControlProcessSettingsOverview
 }
 
+export async function getPreHeatTreatmentDisableBlockerRowIds() {
+  await assertSecurityScope('entry')
+  const db = requireDb()
+  const blockerRows = await db
+    .selectDistinct({ id: preHeatTreatmentControls.weldJointId })
+    .from(preHeatTreatmentControls)
+    .where(sql`lower(btrim(coalesce(${preHeatTreatmentControls.result}, ''))) <> 'годен'`)
+    .orderBy(preHeatTreatmentControls.weldJointId)
+  return blockerRows.map((row) => Number(row.id)).filter(Number.isFinite)
+}
+
 async function restorePreHeatTreatmentRequirementsForUnstartedLines(
   tx: GeneratedDocumentsTransaction,
 ) {

@@ -818,7 +818,7 @@ export function getDispatcherTaskCode(task: DispatcherTask) {
 }
 
 export function getDispatcherTaskTypeLabel(task: DispatcherTask) {
-  if (isSystemDispatcherWarningTask(task)) return 'Завершить предыдущие этапы контроля'
+  if (isSystemDispatcherWarningTask(task)) return 'Предыдущие этапы пропущены'
   return getDispatcherSettingTaskTypeLabel(getDispatcherTaskSettingId(task))
 }
 

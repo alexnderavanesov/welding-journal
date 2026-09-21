@@ -19,6 +19,7 @@ withPendingPstoResultStatus,
 } from '@/lib/psto-field-updates'
 import { hasHeatTreatmentReportState,hasLnkReportEntry,withPendingLnkResults } from '@/lib/report-control-state'
 import { hasWeldDate,normalizeControlAvailabilityValue } from '@/lib/report-value-utils'
+import { normalizeControlAvailabilityStorageText } from '@/lib/control-availability-values'
 import {
 isVirtualWeldField,
 WELD_FIELDS,
@@ -95,7 +96,7 @@ export function toDbInsert(input: WeldInput, isCreate = false): NewWeldJoint {
     }
     data[field.key] = normalized[field.key] ?? null
   }
-  data.pstoRequired = normalized.pstoRequired ?? null
+  data.pstoRequired = normalizeControlAvailabilityStorageText(normalized.pstoRequired)
   data.pstoControlBasis = normalized.pstoControlBasis ?? null
   data.pstoCancellationDate = normalized.pstoCancellationDate ?? null
   if (isCreate) {

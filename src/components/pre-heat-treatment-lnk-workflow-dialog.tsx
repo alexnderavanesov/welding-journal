@@ -89,6 +89,7 @@ import {
 } from '@/server/pre-heat-treatment-lnk-workflow'
 
 export type PreHeatTreatmentLnkWorkflowDialogProps = {
+  embedded?: boolean
   mode: PreHeatTreatmentLnkWorkflowRowMode
   rows: WeldRow[]
   initialSelectedIds: ReadonlySet<number>
@@ -142,6 +143,7 @@ const PRE_HEAT_TREATMENT_REQUEST_METHOD_OPTIONS = PRE_HEAT_TREATMENT_LNK_METHODS
 }))
 
 export function PreHeatTreatmentLnkWorkflowDialog({
+  embedded = false,
   mode,
   rows,
   initialSelectedIds,
@@ -651,8 +653,8 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     if (result) setRowsResult([...selectedIds], result)
   }
 
-  return (
-    <WorkflowDialogShell>
+  const content = (
+    <>
       {mode === 'request' ? (
         <RequestDialogHeader
           title="Заявка ЛНК до ТО"
@@ -917,8 +919,9 @@ export function PreHeatTreatmentLnkWorkflowDialog({
         )}
       />
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </WorkflowDialogShell>
+    </>
   )
+  return embedded ? content : <WorkflowDialogShell>{content}</WorkflowDialogShell>
 }
 
 function getInitialRequestMethods(

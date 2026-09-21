@@ -2,6 +2,10 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import { migrateLegacyWeldFieldRecordKeys } from '@/lib/weld-fields'
 import type { WeldImportScopeRequest } from '@/server/weld-contracts'
+import {
+  CONTROL_ASSIGNMENT_FIELD_KEYS,
+  normalizeControlAvailabilityFilterValue,
+} from '@/lib/control-availability-values'
 
 const CONTROL_COLUMN_KEYS = {
   ВИК: 'hasVik',
@@ -19,9 +23,14 @@ export type DuplicateControlCarrier = {
 export function compactWeldRowsForTransport<Row extends DuplicateControlCarrier>(rows: Row[]): WeldRow[] {
   return rows.map((row) => {
     const compact = Object.fromEntries(
-      Object.entries(row as Record<string, unknown>).filter(
-        ([, value]) => value !== null && value !== undefined && value !== '',
-      ),
+      Object.entries(row as Record<string, unknown>)
+        .map(([key, value]) => [
+          key,
+          CONTROL_ASSIGNMENT_FIELD_KEYS.has(key)
+            ? normalizeControlAvailabilityFilterValue(value)
+            : value,
+        ] as const)
+        .filter(([, value]) => value !== null && value !== undefined && value !== ''),
     ) as WeldRow
     if (Array.isArray(compact.duplicateControls) && compact.duplicateControls.length === 0) {
       delete compact.duplicateControls

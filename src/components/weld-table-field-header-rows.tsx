@@ -14,10 +14,12 @@ import { getStickyWeldTableFieldStyle, isStickyWeldTableField } from '@/lib/weld
 import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
 import { isModalDialogOpen } from '@/lib/modal-layer'
 import { buildWeldColumnFilterOptionsRequestFilters } from '@/lib/dispatcher-task-row-codes'
+import { splitReportQuickSearch } from '@/lib/report-quick-search'
 import {
   buildWeldColumnValueFilter,
   filterWeldRowsByColumns,
   getWeldColumnFilterRowText,
+  normalizeWeldColumnFilterChoiceValues,
   groupWeldDateTimeFilterOptions,
   parseWeldColumnChoiceFilter,
 } from '@/lib/weld-table-filtering'
@@ -161,7 +163,13 @@ function WeldColumnFilterControl({
   const optionListScrollTopRef = useRef(0)
   const pendingOptionListScrollTopRef = useRef<number | null>(null)
   const filterValue = columnFilters[fieldKey] ?? ''
-  const choiceFilter = parseWeldColumnChoiceFilter(filterValue)
+  const parsedChoiceFilter = parseWeldColumnChoiceFilter(filterValue)
+  const choiceFilter = parsedChoiceFilter?.kind === 'values'
+    ? {
+        ...parsedChoiceFilter,
+        values: normalizeWeldColumnFilterChoiceValues(fieldKey, parsedChoiceFilter.values),
+      }
+    : parsedChoiceFilter
   const hasActiveFilter = Boolean(filterValue.trim())
   const isDateField = FIELD_BY_KEY.get(fieldKey)?.kind === 'date'
   const isDateTimeField = DATE_TIME_WELD_FIELD_KEYS.has(fieldKey)
@@ -170,6 +178,10 @@ function WeldColumnFilterControl({
   const filterOptionRequestFilters = useMemo(
     () => buildWeldColumnFilterOptionsRequestFilters(columnFilters, fieldKey),
     [columnFilters, fieldKey],
+  )
+  const filterOptionRequest = useMemo(
+    () => splitReportQuickSearch(filterOptionRequestFilters),
+    [filterOptionRequestFilters],
   )
   const localOptions = useMemo(
     () => {
@@ -182,14 +194,15 @@ function WeldColumnFilterControl({
     [columnFilters, fieldKey, isOpen, manualFilterOptions, manualFilterOptionsReport, optionSearch, rows],
   )
   const filterOptionsQuery = useQuery({
-    queryKey: ['weld-column-filter-options', manualFilterOptionsReport, fieldKey, filterOptionRequestFilters],
+    queryKey: ['weld-column-filter-options', manualFilterOptionsReport, fieldKey, filterOptionRequest],
     enabled: Boolean(isOpen && manualFilterOptionsReport && !manualFilterOptions),
     queryFn: async () =>
       listWeldColumnFilterOptions({
         data: {
           report: manualFilterOptionsReport,
           fieldKey,
-          columnFilters: filterOptionRequestFilters,
+          search: filterOptionRequest.search,
+          columnFilters: filterOptionRequest.columnFilters,
         },
       }),
     staleTime: 15_000,

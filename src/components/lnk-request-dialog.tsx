@@ -56,6 +56,7 @@ import {
 
 export type LnkRequestDialogProps = {
   elevated?: boolean
+  embedded?: boolean
   nextRequestName: string
   nextRequestNumber?: number
   selectedRowsCount: number
@@ -101,6 +102,7 @@ export type LnkRequestDialogProps = {
 
 export function LnkRequestDialog({
   elevated = false,
+  embedded = false,
   nextRequestName,
   nextRequestNumber,
   selectedRowsCount,
@@ -340,8 +342,8 @@ export function LnkRequestDialog({
       onOpenJournalRows,
     }))
   })
-  return (
-    <WorkflowDialogShell elevated={elevated}>
+  const content = (
+    <>
       <RequestDialogHeader
         title="Заявка ЛНК"
         subtitle={`${submitMode === 'create' ? headerDocumentLabel : selectedExistingRequest?.label ?? 'Выберите заявку'} · Стыков: ${selectedRowsCount} · Добавится позиций: ${selectedTargetCount}`}
@@ -567,8 +569,9 @@ export function LnkRequestDialog({
         }}
       />
       <DialogContextMenuLayer ref={contextMenuRef} />
-    </WorkflowDialogShell>
+    </>
   )
+  return embedded ? content : <WorkflowDialogShell elevated={elevated}>{content}</WorkflowDialogShell>
 }
 
 function getLnkRequestExtendDisabledReason({
