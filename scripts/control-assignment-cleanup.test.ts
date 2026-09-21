@@ -37,7 +37,7 @@ describe('control assignment cleanup', () => {
     expect(pstoEntries).toEqual(expect.arrayContaining([
       { value: null, canonicalValue: null, count: 10, action: 'keep' },
       { value: '-', canonicalValue: null, count: 1, action: 'normalize' },
-      { value: '0', canonicalValue: 'нет', count: 2, action: 'normalize' },
+      { value: '0', canonicalValue: null, count: 2, action: 'normalize' },
       { value: 'да', canonicalValue: 'да', count: 5, action: 'keep' },
       { value: ' Да ', canonicalValue: 'да', count: 3, action: 'normalize' },
       { value: 'неизвестно', canonicalValue: null, count: 4, action: 'unknown' },
@@ -180,6 +180,7 @@ describe('control assignment cleanup', () => {
     expect(updateSql).toContain('$1::text[]')
     expect(updateSql).toContain('$2::text[]')
     expect(updateSql).toContain('$3::text[]')
+    expect(updateSql).toContain("when lower(btrim(\"has_vik\")) = any($2::text[]) then null")
     expect(explainSql).toBe(`explain (format text, costs off) ${updateSql}`)
     expect(explainSql.toLowerCase()).not.toContain('analyze')
     expect(getControlAssignmentUpdateParams()).toEqual([

@@ -74,7 +74,7 @@ describe('filterWeldRowsByColumns', () => {
     expect(filteredRows.map((candidate) => candidate.joint)).toEqual(['S1', 'S3'])
   })
 
-  it('treats legacy assignment spellings as canonical lowercase values', () => {
+  it('treats legacy negative assignment spellings as an empty assignment', () => {
     const rows = [
       row({ joint: 'S1', pstoRequired: 'Да' }),
       row({ joint: 'S2', pstoRequired: 'да' }),
@@ -87,14 +87,14 @@ describe('filterWeldRowsByColumns', () => {
       'да',
       'да',
       'да',
-      'нет',
-      'нет',
+      '',
+      '',
     ])
     expect(filterWeldRowsByColumns(rows, {
       pstoRequired: buildWeldColumnValueFilter(['да']),
     }).map((candidate) => candidate.joint)).toEqual(['S1', 'S2', 'S3'])
     expect(filterWeldRowsByColumns(rows, {
-      pstoRequired: buildWeldColumnValueFilter(['нет']),
+      pstoRequired: buildWeldColumnValueFilter(['']),
     }).map((candidate) => candidate.joint)).toEqual(['S4', 'S5'])
     expect(filterWeldRowsByColumns(rows, {
       pstoRequired: buildWeldColumnValueFilter(['Да']),

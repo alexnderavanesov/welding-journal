@@ -16,11 +16,11 @@ describe('control availability values', () => {
     ['yes', 'да'],
     ['1', 'да'],
     [true, 'да'],
-    ['Нет', 'нет'],
-    ['НЕТ', 'нет'],
-    ['no', 'нет'],
-    ['0', 'нет'],
-    [false, 'нет'],
+    ['Нет', ''],
+    ['НЕТ', ''],
+    ['no', ''],
+    ['0', ''],
+    [false, ''],
     ['-', ''],
     [null, ''],
   ])('normalizes %j for filters', (value, expected) => {
@@ -43,8 +43,9 @@ describe('control availability values', () => {
 
   it('expands canonical filter values to all supported stored aliases', () => {
     expect(getControlAvailabilityFilterAliases('да')).toContain('1')
-    expect(getControlAvailabilityFilterAliases('нет')).toContain('0')
+    expect(getControlAvailabilityFilterAliases('')).toEqual(expect.arrayContaining(['', 'нет', '0']))
+    expect(getControlAvailabilityFilterAliases('нет')).toEqual(expect.arrayContaining(['', 'нет', '0']))
     expect(normalizeControlAvailabilityStorageText(' Да ')).toBe('да')
-    expect(normalizeControlAvailabilityStorageText(' НЕТ ')).toBe('нет')
+    expect(normalizeControlAvailabilityStorageText(' НЕТ ')).toBeNull()
   })
 })

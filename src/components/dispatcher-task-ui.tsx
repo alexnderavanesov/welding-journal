@@ -164,7 +164,7 @@ export function DispatcherTaskGroupFrame({
           data-dispatcher-hierarchy-children
           className="border-t border-sky-100 bg-sky-50/30 pl-3"
         >
-          <div className="divide-y divide-sky-100 border-l border-sky-200 bg-white/70">
+          <div className="divide-y divide-sky-100 bg-white/70">
             {typeof children === 'function' ? children() : children}
           </div>
         </div>

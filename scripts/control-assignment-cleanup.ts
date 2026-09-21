@@ -389,7 +389,7 @@ function buildNormalizedColumnSql(column: string) {
     `when ${identifier} is null then null`,
     `when btrim(${identifier}) in ('', '-') then null`,
     `when ${normalized} = any($1::text[]) then 'да'`,
-    `when ${normalized} = any($2::text[]) then 'нет'`,
+    `when ${normalized} = any($2::text[]) then null`,
     `when ${normalized} = any($3::text[]) then 'дополнительный'`,
     `when ${normalized} = 'отменен' then 'отменен'`,
     `else ${identifier}`,

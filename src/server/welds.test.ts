@@ -445,7 +445,7 @@ describe('weld server pagination helpers', () => {
     })
   })
 
-  it('removes empty transport fields and canonicalizes assignment values', () => {
+  it('removes empty and negative assignments while canonicalizing enabled values', () => {
     expect(
       compactWeldRowsForTransport([
         {
@@ -464,7 +464,6 @@ describe('weld server pagination helpers', () => {
         id: 7,
         joint: 'F7',
         d1: 0,
-        hasVik: 'нет',
         pstoRequired: 'да',
       },
     ])
@@ -692,7 +691,7 @@ describe('weld server pagination helpers', () => {
     ])
   })
 
-  it('combines legacy assignment spellings into lowercase filter options', () => {
+  it('combines legacy negative assignment spellings into the empty filter option', () => {
     expect(normalizeWeldColumnFilterOptions('pstoRequired', [
       { value: '', label: '(пусто)', count: 1_982 },
       { value: '0', label: '0', count: 11 },
@@ -701,9 +700,8 @@ describe('weld server pagination helpers', () => {
       { value: 'Нет', label: 'Нет', count: 2_611 },
       { value: 'нет', label: 'нет', count: 758 },
     ])).toEqual([
-      { value: '', label: '(пусто)', count: 1_982 },
+      { value: '', label: '(пусто)', count: 5_362 },
       { value: 'да', label: 'да', count: 822 },
-      { value: 'нет', label: 'нет', count: 3_380 },
     ])
   })
 

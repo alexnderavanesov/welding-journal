@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowRight, ChevronRight, Info, MoreHorizontal, ShieldAlert } from 'lucide-react'
+import { ArrowRight, ChevronDown, ChevronRight, MoreHorizontal, ShieldAlert } from 'lucide-react'
 
+import { DispatcherActionMenu } from '@/components/dispatcher-task-actions'
 import { Button } from '@/components/ui/button'
 import {
   getDispatcherTaskActionSpecs,
@@ -157,7 +158,6 @@ export function JointDispatcherTaskItem({
   isHighlighted?: boolean
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
   const [pendingAction, setPendingAction] = useState<string | null>(null)
   const itemRef = useRef<HTMLDivElement>(null)
   const actions = getDispatcherTaskActionSpecs(task, { canCreateEarlyCoil: true })
@@ -179,7 +179,6 @@ export function JointDispatcherTaskItem({
 
   const runAction = async (action: DispatcherTaskActionSpec) => {
     if (!onRunAction || pendingAction) return
-    setMenuOpen(false)
     setPendingAction(action.key ?? action.id)
     try {
       await onRunAction(row, task, action)
@@ -192,16 +191,35 @@ export function JointDispatcherTaskItem({
     <div
       ref={itemRef}
       className={cn(
-        'px-2 py-3 transition-colors',
+        'px-2 py-3 transition-colors hover:bg-sky-50/70',
         isCurrentRow && 'border-l-2 border-sky-400 bg-sky-50/40 pl-2.5',
         isHighlighted && 'bg-sky-50 ring-1 ring-inset ring-sky-200',
       )}
       data-highlighted={isHighlighted ? 'true' : undefined}
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 items-start gap-2.5">
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-          <div className="min-w-0">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch sm:justify-between">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 cursor-pointer items-start gap-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300"
+          aria-expanded={detailsOpen}
+          aria-label={detailsOpen ? `Скрыть описание ${code}` : `Показать описание ${code}`}
+          title={detailsOpen ? 'Свернуть описание задачи' : 'Открыть описание задачи'}
+          onClick={() => setDetailsOpen((current) => !current)}
+        >
+          <span
+            className={cn(
+              'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center',
+              detailsOpen ? 'text-sky-700' : 'text-slate-400',
+            )}
+            data-joint-task-toggle-indicator
+            data-expanded={detailsOpen ? 'true' : 'false'}
+            aria-hidden="true"
+          >
+            {detailsOpen
+              ? <ChevronDown className="h-4 w-4" />
+              : <ChevronRight className="h-4 w-4" />}
+          </span>
+          <div className="min-w-0 flex-1">
             {presentation === 'line' ? (
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-sm font-semibold text-slate-900">{lineLabel}</span>
@@ -237,7 +255,7 @@ export function JointDispatcherTaskItem({
               <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-600">{getRepeatedJointTaskDetails(task)}</p>
             ) : null}
           </div>
-        </div>
+        </button>
 
         <div className="flex shrink-0 items-center gap-1.5">
           {primaryAction && onRunAction ? (
@@ -260,50 +278,21 @@ export function JointDispatcherTaskItem({
           ) : null}
 
           {secondaryActions.length > 0 && onRunAction ? (
-            <div className="relative">
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 bg-white"
-                disabled={Boolean(pendingAction)}
-                aria-label={`Другие действия ${code}`}
-                title="Другие действия"
-                onClick={() => setMenuOpen((current) => !current)}
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-              {menuOpen ? (
-                <div className="absolute right-0 top-full z-30 mt-1 min-w-56 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg">
-                  {secondaryActions.map((action) => (
-                    <button
-                      key={action.key ?? action.id}
-                      type="button"
-                      className={cn(
-                        'block w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50',
-                        action.tone === 'danger' && 'text-rose-700 hover:bg-rose-50',
-                      )}
-                      onClick={() => void runAction(action)}
-                    >
-                      {action.label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+            <DispatcherActionMenu
+              items={secondaryActions.map((action) => ({
+                key: action.key ?? action.id,
+                label: action.label,
+                tone: action.tone,
+                onClick: () => void runAction(action),
+              }))}
+              triggerContent={<MoreHorizontal className="h-4 w-4" />}
+              triggerAriaLabel={`Другие действия ${code}`}
+              triggerTitle="Другие действия"
+              triggerClassName="h-8 w-8 bg-white"
+              triggerSize="icon"
+              disabled={Boolean(pendingAction)}
+            />
           ) : null}
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 bg-white text-slate-500 hover:bg-slate-50"
-            aria-label={detailsOpen ? `Скрыть описание ${code}` : `Показать описание ${code}`}
-            title={detailsOpen ? 'Скрыть описание' : 'Показать описание'}
-            onClick={() => setDetailsOpen((current) => !current)}
-          >
-            <Info className="h-4 w-4" />
-          </Button>
         </div>
       </div>
     </div>

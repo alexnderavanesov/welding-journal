@@ -366,25 +366,56 @@ describe('DispatcherTaskPanel', () => {
     expect(handlers.onOpenTaskPicture).toHaveBeenCalledWith(task)
   })
 
-  it('shows an expanded nested task as a distinct visual level without repeating its object name', () => {
+  it('keeps a nested task visually distinct whether its details are open or closed', () => {
     const { task } = createTaskGroup()
     const handlers = {
       ...createHandlers(vi.fn()),
       isTaskExpanded: () => true,
     }
-    const { container } = render(<DispatcherTaskCard task={task} nested {...handlers} />)
+    const { container, rerender } = render(<DispatcherTaskCard task={task} nested {...handlers} />)
 
     const card = container.querySelector('[data-dispatcher-task-card]')
     const taskToggle = screen.getByTitle('Свернуть описание задачи')
+    const taskSummary = container.querySelector('[data-dispatcher-task-summary]')
+    const taskToggleIndicator = container.querySelector('[data-dispatcher-task-toggle-indicator]')
     const details = container.querySelector('[data-dispatcher-task-details]')
 
     expect(card).toHaveAttribute('data-expanded', 'true')
     expect(card).toHaveAttribute('data-dispatcher-hierarchy-level', '2')
     expect(card).toHaveClass('bg-sky-50/70')
+    expect(taskSummary).toHaveClass(
+      'shadow-[inset_2px_0_0_0_rgb(56_189_248_/_0.72)]',
+      'hover:bg-sky-100/60',
+    )
+    expect(container.querySelector('[data-dispatcher-task-actions]')).not.toHaveClass(
+      'bg-sky-50/70',
+      'bg-transparent',
+    )
+    expect(taskToggleIndicator).toHaveAttribute('data-expanded', 'true')
     expect(within(taskToggle).queryByText('330-ATM-16-000')).not.toBeInTheDocument()
     expect(screen.getByText('Что обнаружено')).toBeInTheDocument()
     expect(details).toHaveAttribute('data-dispatcher-hierarchy-level', '3')
     expect(details).toHaveClass('border-t', 'border-sky-100', 'bg-white/75')
+
+    rerender(
+      <DispatcherTaskCard
+        task={task}
+        nested
+        {...handlers}
+        isTaskExpanded={() => false}
+      />,
+    )
+
+    expect(container.querySelector('[data-dispatcher-task-summary]')).toHaveClass(
+      'shadow-[inset_2px_0_0_0_rgb(56_189_248_/_0.72)]',
+      'hover:bg-sky-50/70',
+    )
+    expect(container.querySelector('[data-dispatcher-task-toggle-indicator]')).toHaveAttribute(
+      'data-expanded',
+      'false',
+    )
+    expect(container.querySelector('[data-dispatcher-task-details]')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Показать описание' })).not.toBeInTheDocument()
   })
 
   it('shows the opened object, task, and details as three visual hierarchy levels', () => {
@@ -412,8 +443,13 @@ describe('DispatcherTaskPanel', () => {
       'border-t',
       'border-sky-100',
     )
-    expect(container.querySelector('[data-dispatcher-hierarchy-level="2"]')).toBeInTheDocument()
-    expect(container.querySelector('[data-dispatcher-hierarchy-level="3"]')).toBeInTheDocument()
+    const taskLevel = container.querySelector('[data-dispatcher-hierarchy-level="2"]')
+    const taskSummary = container.querySelector('[data-dispatcher-task-summary]')
+    const taskDetails = container.querySelector('[data-dispatcher-hierarchy-level="3"]')
+    expect(taskLevel).toBeInTheDocument()
+    expect(taskSummary).toHaveClass('shadow-[inset_2px_0_0_0_rgb(56_189_248_/_0.72)]')
+    expect(taskDetails).toBeInTheDocument()
+    expect(taskDetails).not.toHaveClass('shadow-[inset_2px_0_0_0_rgb(56_189_248_/_0.72)]')
   })
 
   it('shows report rows and the joint picture as separate direct actions for a joint task', () => {

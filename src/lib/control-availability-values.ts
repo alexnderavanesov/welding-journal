@@ -80,15 +80,14 @@ export function normalizeControlAvailabilityFilterValue(value: unknown) {
   if (isControlAdditionalValue(text)) return 'дополнительный'
   if (isControlCancelledValue(text)) return 'отменен'
   if (isControlEnabledValue(value)) return 'да'
-  if (isControlDisabledValue(value)) return 'нет'
+  if (isControlDisabledValue(value)) return ''
   return text
 }
 
 export function getControlAvailabilityFilterAliases(value: unknown): readonly string[] {
   const normalized = normalizeControlAvailabilityFilterValue(value)
-  if (!normalized) return ['', '-']
+  if (!normalized) return ['', '-', ...CONTROL_NO_NORMALIZED_VALUES]
   if (normalized === 'да') return CONTROL_YES_NORMALIZED_VALUES
-  if (normalized === 'нет') return CONTROL_NO_NORMALIZED_VALUES
   if (normalized === 'дополнительный') return CONTROL_ADDITIONAL_NORMALIZED_VALUES
   return [normalized]
 }

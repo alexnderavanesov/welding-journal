@@ -1,6 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type ComponentProps, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   dispatcherActionButtonClass,
@@ -25,8 +24,6 @@ import {
 
 export type RepeatedJointTaskActionsProps = {
   task: DispatcherTask
-  isTaskExpanded: (task: DispatcherTask) => boolean
-  onToggleDetails: (task: DispatcherTask) => void
   onShowTask: (task: DispatcherTask) => void
   onOpenTaskPicture: (task: Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>) => void
   onOpenTaskOfficiality: (task: DispatcherTask) => void
@@ -52,8 +49,6 @@ export type RepeatedJointTaskActionsProps = {
 
 export function RepeatedJointTaskActions({
   task,
-  isTaskExpanded,
-  onToggleDetails,
   onShowTask,
   onOpenTaskPicture,
   onOpenTaskOfficiality,
@@ -73,29 +68,10 @@ export function RepeatedJointTaskActions({
   isDeletePending,
   isRenamePending,
 }: RepeatedJointTaskActionsProps) {
-  const isExpanded = isTaskExpanded(task)
-  const actionTrayClassName = isExpanded ? 'bg-sky-50/70' : 'bg-transparent'
-
-  if (task.kind === 'welder-stamp-expiry') {
-    return (
-      <div className={`flex shrink-0 items-center px-2 py-1.5 transition-colors ${actionTrayClassName}`}>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => onToggleDetails(task)}
-          className={dispatcherStandaloneActionButtonClass}
-          aria-label={isExpanded ? 'Свернуть описание' : 'Показать описание'}
-          title={isExpanded ? 'Свернуть описание' : 'Показать описание'}
-        >
-          <Info className="h-4 w-4" />
-        </Button>
-      </div>
-    )
-  }
+  if (task.kind === 'welder-stamp-expiry') return null
 
   return (
-    <div className={`flex shrink-0 items-center gap-1.5 px-2 py-1.5 transition-colors ${actionTrayClassName}`}>
+    <div data-dispatcher-task-actions className="flex shrink-0 items-center gap-1.5 px-2 py-1.5">
       {(task.kind === 'create' || task.kind === 'coil') && canRunDispatcherMutation ? (
         <>
           <Button type="button" size="sm" onClick={() => onCreateTask(task)} disabled={isCreatePending} className={dispatcherPrimaryActionButtonClass}>
@@ -232,17 +208,6 @@ export function RepeatedJointTaskActions({
           Картина
         </Button>
       ) : null}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        onClick={() => onToggleDetails(task)}
-        className={dispatcherActionButtonClass}
-        aria-label={isExpanded ? 'Свернуть описание' : 'Показать описание'}
-        title={isExpanded ? 'Свернуть описание' : 'Показать описание'}
-      >
-        <Info className="h-4 w-4" />
-      </Button>
     </div>
   )
 }
@@ -305,17 +270,31 @@ function ModeledDispatcherActions({
   )
 }
 
-type DispatcherActionMenuItem = {
+export type DispatcherActionMenuItem = {
+  key?: string
   label: string
   onClick: () => void
+  tone?: DispatcherTaskActionSpec['tone']
 }
 
-function DispatcherActionMenu({
+export function DispatcherActionMenu({
   items,
   triggerLabel = 'Действия',
+  triggerContent,
+  triggerAriaLabel,
+  triggerTitle,
+  triggerClassName,
+  triggerSize = 'sm',
+  disabled = false,
 }: {
   items: DispatcherActionMenuItem[]
   triggerLabel?: string
+  triggerContent?: ReactNode
+  triggerAriaLabel?: string
+  triggerTitle?: string
+  triggerClassName?: string
+  triggerSize?: ComponentProps<typeof Button>['size']
+  disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [menuPosition, setMenuPosition] = useState<{
@@ -397,14 +376,17 @@ function DispatcherActionMenu({
     <div ref={anchorRef} className="relative">
       <Button
         type="button"
-        size="sm"
+        size={triggerSize}
         variant="outline"
         onClick={() => setOpen((current) => !current)}
-        className={dispatcherActionButtonClass}
+        className={triggerClassName ?? dispatcherActionButtonClass}
+        disabled={disabled}
+        aria-label={triggerAriaLabel}
+        title={triggerTitle}
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        {triggerLabel}
+        {triggerContent ?? triggerLabel}
       </Button>
       {open && typeof document !== 'undefined' ? createPortal(
         <div
@@ -416,10 +398,12 @@ function DispatcherActionMenu({
         >
           {items.map((item) => (
             <button
-              key={item.label}
+              key={item.key ?? item.label}
               type="button"
               role="menuitem"
-              className="block w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className={`block w-full px-3 py-2 text-left text-xs font-medium hover:bg-slate-50 ${
+                item.tone === 'danger' ? 'text-rose-700 hover:bg-rose-50' : 'text-slate-700'
+              }`}
               onClick={() => {
                 setOpen(false)
                 item.onClick()

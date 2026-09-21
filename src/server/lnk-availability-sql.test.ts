@@ -23,15 +23,15 @@ describe('LNK availability SQL', () => {
     expect(compiled.sql).toContain(', false)')
   })
 
-  it('matches canonical filter choices against legacy yes/no spellings', () => {
+  it('matches assigned and empty filter choices against legacy spellings', () => {
     const compiled = new PgDialect().sqlToQuery(sql`
       select 1 where ${buildControlAvailabilityColumnWhere(
         weldJoints.pstoRequired,
-        ['да', 'нет'],
+        ['да', ''],
       )}
     `)
 
-    expect(compiled.params).toEqual(expect.arrayContaining(['да', '1', 'нет', '0']))
+    expect(compiled.params).toEqual(expect.arrayContaining(['да', '1', '', '-', 'нет', '0']))
   })
 
   it('keeps SQL readiness aligned with cancelled PSTO history and pre-TO exemptions', () => {

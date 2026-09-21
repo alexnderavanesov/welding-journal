@@ -30,6 +30,46 @@ describe('JointDispatcherTasksPanel', () => {
       id: 'open-lnk',
       label: 'Исправить в ЛНК',
     }))
+    expect(screen.queryByText('Не заполнена дата заключения.')).not.toBeInTheDocument()
+  })
+
+  it('opens task details by clicking the task row instead of a separate info button', () => {
+    const current = row()
+    const task = checkTask(current)
+    render(<JointDispatcherTasksPanel row={current} tasks={[task]} onRunAction={vi.fn()} />)
+
+    const rowButton = screen.getByRole('button', { name: 'Показать описание ДЗ-32' })
+    const toggleIndicator = rowButton.querySelector('[data-joint-task-toggle-indicator]')
+    expect(rowButton).toHaveAttribute('aria-expanded', 'false')
+    expect(toggleIndicator).toHaveAttribute('data-expanded', 'false')
+    expect(rowButton.firstElementChild).toBe(toggleIndicator)
+    fireEvent.click(rowButton)
+
+    expect(screen.getByText('Не заполнена дата заключения.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Скрыть описание ДЗ-32' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    expect(toggleIndicator).toHaveAttribute('data-expanded', 'true')
+  })
+
+  it('renders secondary actions above clipped line-picture containers', () => {
+    const current = row()
+    const task = checkTask(current)
+    const { container } = render(
+      <JointDispatcherTasksPanel row={current} tasks={[task]} onRunAction={vi.fn()} />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Другие действия ДЗ-32' }))
+
+    const menu = screen.getByRole('menu')
+    expect(menu).toHaveClass('fixed')
+    expect(menu).toHaveTextContent('Показать в отчете')
+    expect(document.body).toContainElement(menu)
+    expect(container).not.toContainElement(menu)
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
   it('shows system warnings first with a separate counter and exact recovery action', () => {

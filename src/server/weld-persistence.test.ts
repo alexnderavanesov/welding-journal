@@ -21,7 +21,7 @@ describe('weld persistence', () => {
       hasVik: 'да',
       hasRk: null,
     })
-    expect(toDbInsert({ pstoRequired: '0' }).pstoRequired).toBe('нет')
+    expect(toDbInsert({ pstoRequired: '0' }).pstoRequired).toBeNull()
   })
 
   it('persists a server-inherited pre-TO exemption in batch updates', () => {

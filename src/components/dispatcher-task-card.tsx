@@ -1,4 +1,4 @@
-import { ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 
 import { RepeatedJointTaskActions } from '@/components/dispatcher-task-actions'
@@ -55,7 +55,8 @@ type DispatcherTaskGroupProps = DispatcherTaskCardHandlers & {
 }
 
 export function DispatcherTaskCard({ task, nested = false, ...handlers }: DispatcherTaskCardProps) {
-  const isExpanded = handlers.isTaskExpanded(task)
+  const { onToggleDetails, isTaskExpanded, ...actionHandlers } = handlers
+  const isExpanded = isTaskExpanded(task)
   return (
     <div
       key={task.key}
@@ -64,27 +65,46 @@ export function DispatcherTaskCard({ task, nested = false, ...handlers }: Dispat
       data-expanded={isExpanded ? 'true' : 'false'}
       className={`${nested ? 'w-full' : 'w-full rounded-md border border-sky-100'} transition-colors ${
         isExpanded
-          ? 'bg-sky-50/70 shadow-[inset_3px_0_0_0_rgb(56_189_248_/_0.72)]'
+          ? 'bg-sky-50/70'
           : nested
           ? 'bg-transparent'
           : 'bg-[#f8fcfe]'
       }`}
     >
-      <div className="grid min-h-11 w-full grid-cols-[minmax(0,1fr)_auto] items-stretch">
+      <div
+        data-dispatcher-task-summary
+        className={`grid min-h-11 w-full grid-cols-[minmax(0,1fr)_auto] items-stretch transition-colors ${
+          nested ? 'shadow-[inset_2px_0_0_0_rgb(56_189_248_/_0.72)]' : ''
+        } ${
+          isExpanded ? 'hover:bg-sky-100/60' : 'hover:bg-sky-50/70'
+        }`}
+      >
         <button
           type="button"
-          onClick={() => handlers.onToggleDetails(task)}
-          className={`flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 py-2 pr-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 ${
+          onClick={() => onToggleDetails(task)}
+          className={`flex min-w-0 items-center gap-2 px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 ${
             isExpanded
-              ? 'pl-4 font-semibold text-slate-900 hover:bg-sky-100/60'
-              : 'px-3 hover:bg-sky-50/70'
+              ? 'font-semibold text-slate-900'
+              : ''
           }`}
           aria-expanded={isExpanded}
           title={isExpanded ? 'Свернуть описание задачи' : 'Открыть описание задачи'}
         >
-          <RepeatedJointTaskContent task={task} nested={nested} />
+          <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1">
+            <RepeatedJointTaskContent task={task} nested={nested} />
+          </span>
+          <span
+            data-dispatcher-task-toggle-indicator
+            data-expanded={isExpanded ? 'true' : 'false'}
+            className="flex h-6 w-6 shrink-0 items-center justify-center text-slate-400"
+            aria-hidden="true"
+          >
+            {isExpanded
+              ? <ChevronDown className="h-4 w-4" />
+              : <ChevronRight className="h-4 w-4" />}
+          </span>
         </button>
-        <RepeatedJointTaskActions task={task} {...handlers} />
+        <RepeatedJointTaskActions task={task} {...actionHandlers} />
       </div>
       {isExpanded ? (
         <DispatcherTaskDetails task={task} />
