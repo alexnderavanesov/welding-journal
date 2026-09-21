@@ -53,6 +53,28 @@ describe('JointDispatcherTasksPanel', () => {
     expect(toggleIndicator).toHaveAttribute('data-expanded', 'true')
   })
 
+  it('highlights a focused task without adding a full frame around the row', () => {
+    const current = row()
+    const task = checkTask(current)
+    render(
+      <JointDispatcherTasksPanel
+        row={current}
+        tasks={[task]}
+        highlightedTaskKey={task.key}
+        onRunAction={vi.fn()}
+      />,
+    )
+
+    const highlightedRow = screen.getByText('ДЗ-32').closest('[data-highlighted="true"]')
+    expect(highlightedRow).toHaveClass(
+      'bg-sky-50',
+      'shadow-[inset_2px_0_0_0_rgb(56_189_248_/_0.72)]',
+    )
+    expect(highlightedRow).not.toHaveClass('ring-1')
+    expect(highlightedRow).not.toHaveClass('ring-inset')
+    expect(highlightedRow).not.toHaveClass('ring-sky-200')
+  })
+
   it('renders secondary actions above clipped line-picture containers', () => {
     const current = row()
     const task = checkTask(current)
