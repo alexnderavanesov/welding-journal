@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -90,17 +91,21 @@ describe('DispatcherTaskPanel', () => {
   it('keeps quick filters available while the task list is collapsed', () => {
     const { task, group } = createTaskGroup()
     const onShowTask = vi.fn()
+    const onCollapseTaskDetails = vi.fn()
     const handlers = createHandlers(onShowTask)
 
     render(
-      <DispatcherTaskPanel
-        tasks={[task]}
-        groups={[group]}
-        stickyLeft={0}
-        handlers={handlers}
-        columnFilters={{}}
-        onColumnFiltersChange={vi.fn()}
-      />,
+      <StrictMode>
+        <DispatcherTaskPanel
+          tasks={[task]}
+          groups={[group]}
+          stickyLeft={0}
+          handlers={handlers}
+          columnFilters={{}}
+          onColumnFiltersChange={vi.fn()}
+          onCollapseTaskDetails={onCollapseTaskDetails}
+        />
+      </StrictMode>,
     )
 
     expect(screen.getAllByText('1 задача')).toHaveLength(2)
@@ -117,6 +122,7 @@ describe('DispatcherTaskPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Свернуть' }))
 
+    expect(onCollapseTaskDetails).toHaveBeenCalledOnce()
     expect(screen.getByRole('button', { name: 'Развернуть' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'С задачами' })).toBeInTheDocument()
     expect(screen.queryByText('330-ATM-16-000')).not.toBeInTheDocument()
@@ -144,6 +150,52 @@ describe('DispatcherTaskPanel', () => {
 
     expect(screen.getByRole('button', { name: 'Развернуть' })).toBeInTheDocument()
     expect(screen.queryByText('330-ATM-16-000')).not.toBeInTheDocument()
+  })
+
+  it('returns object grouping to its first batch after the whole dispatcher is collapsed', () => {
+    const { task } = createTaskGroup()
+    const groups = Array.from({ length: 161 }, (_, index) => {
+      const groupTask = {
+        ...task,
+        key: `${task.key}:${index + 1}`,
+        line: `Линия ${index + 1}`,
+        row: {
+          ...task.row,
+          id: index + 1,
+          line: `Линия ${index + 1}`,
+        },
+      }
+      return {
+        key: `object-${index + 1}`,
+        baseJoint: `Объект ${index + 1}`,
+        tasks: [groupTask],
+      } satisfies RepeatedJointTaskGroup
+    })
+
+    render(
+      <DispatcherTaskPanel
+        tasks={groups.flatMap((group) => group.tasks)}
+        groups={groups}
+        stickyLeft={0}
+        handlers={createHandlers(vi.fn())}
+        columnFilters={{}}
+        onColumnFiltersChange={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'По объектам' }))
+    expect(screen.getByText('Объект 80')).toBeInTheDocument()
+    expect(screen.queryByText('Объект 81')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Показать ещё' }))
+    expect(screen.getByText('Объект 160')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Свернуть' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
+
+    expect(screen.getByText('Объект 80')).toBeInTheDocument()
+    expect(screen.queryByText('Объект 81')).not.toBeInTheDocument()
+    expect(screen.getByText('Показано групп: 80 из 161')).toBeInTheDocument()
   })
 
   it('uses expand and collapse as the only panel visibility controls', () => {
@@ -309,6 +361,52 @@ describe('DispatcherTaskPanel', () => {
 
     expect(screen.getByText('Объект 81')).toBeInTheDocument()
     expect(screen.queryByText('Показано объектов: 80 из 81')).not.toBeInTheDocument()
+    expect(screen.getByText('Показано объектов: 81 из 81')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Свернуть список' }))
+
+    expect(screen.queryByText('Объект 81')).not.toBeInTheDocument()
+    expect(screen.getByText('Показано объектов: 80 из 81')).toBeInTheDocument()
+  })
+
+  it('keeps a single object with 1200 tasks in manual bounded batches', () => {
+    const { task, group } = createTaskGroup()
+    const tasks = Array.from({ length: 1_200 }, (_, index) => ({
+      ...task,
+      key: `${task.key}:${index + 1}`,
+    }))
+    const largeGroup = { ...group, tasks }
+    const { container } = render(
+      <DispatcherTaskGroup group={largeGroup} {...createHandlers(vi.fn())} />,
+    )
+
+    const objectLevel = container.querySelector('details[data-dispatcher-hierarchy-level="1"]')
+    expect(objectLevel).not.toBeNull()
+    if (!(objectLevel instanceof HTMLDetailsElement)) return
+
+    objectLevel.open = true
+    fireEvent(objectLevel, new Event('toggle'))
+
+    expect(container.querySelectorAll('[data-dispatcher-task-card]')).toHaveLength(40)
+    expect(screen.getByText('Показано задач: 40 из 1200')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Показать ещё' }))
+    expect(container.querySelectorAll('[data-dispatcher-task-card]')).toHaveLength(80)
+    expect(screen.getByText('Показано задач: 80 из 1200')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Свернуть список' }))
+    expect(container.querySelectorAll('[data-dispatcher-task-card]')).toHaveLength(40)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Показать ещё' }))
+    expect(container.querySelectorAll('[data-dispatcher-task-card]')).toHaveLength(80)
+
+    objectLevel.open = false
+    fireEvent(objectLevel, new Event('toggle'))
+    objectLevel.open = true
+    fireEvent(objectLevel, new Event('toggle'))
+
+    expect(container.querySelectorAll('[data-dispatcher-task-card]')).toHaveLength(40)
+    expect(screen.getByText('Показано задач: 40 из 1200')).toBeInTheDocument()
   })
 
   it('switches back to object grouping and remembers the choice', () => {

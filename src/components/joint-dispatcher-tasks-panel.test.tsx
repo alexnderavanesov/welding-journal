@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  JointDispatcherTaskItem,
   JointDispatcherTasksPanel,
   JointDispatcherTasksSummary,
 } from '@/components/joint-dispatcher-tasks-panel'
@@ -53,7 +54,7 @@ describe('JointDispatcherTasksPanel', () => {
     expect(toggleIndicator).toHaveAttribute('data-expanded', 'true')
   })
 
-  it('highlights a focused task without adding a full frame around the row', () => {
+  it('highlights a focused task using only its background', () => {
     const current = row()
     const task = checkTask(current)
     render(
@@ -66,13 +67,34 @@ describe('JointDispatcherTasksPanel', () => {
     )
 
     const highlightedRow = screen.getByText('ДЗ-32').closest('[data-highlighted="true"]')
-    expect(highlightedRow).toHaveClass(
-      'bg-sky-50',
+    expect(highlightedRow).toHaveClass('bg-sky-50')
+    expect(highlightedRow).not.toHaveClass(
       'shadow-[inset_2px_0_0_0_rgb(56_189_248_/_0.72)]',
     )
     expect(highlightedRow).not.toHaveClass('ring-1')
     expect(highlightedRow).not.toHaveClass('ring-inset')
     expect(highlightedRow).not.toHaveClass('ring-sky-200')
+  })
+
+  it('keeps one two-pixel marker when the current joint task is also highlighted', () => {
+    const current = row()
+    const task = checkTask(current)
+    const { container } = render(
+      <JointDispatcherTaskItem
+        row={current}
+        task={task}
+        presentation="line"
+        isCurrentRow
+        isHighlighted
+        onRunAction={vi.fn()}
+      />,
+    )
+
+    const highlightedRow = container.querySelector('[data-highlighted="true"]')
+    expect(highlightedRow).toHaveClass('border-l-2', 'border-sky-400', 'bg-sky-50')
+    expect(highlightedRow).not.toHaveClass(
+      'shadow-[inset_2px_0_0_0_rgb(56_189_248_/_0.72)]',
+    )
   })
 
   it('renders secondary actions above clipped line-picture containers', () => {

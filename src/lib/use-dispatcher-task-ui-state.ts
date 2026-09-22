@@ -42,12 +42,17 @@ export function useDispatcherTaskUiState() {
     })
   }
 
+  function resetExpandedRepeatedJointTasks() {
+    setExpandedRepeatedJointTaskKeys(new Set())
+  }
+
   return {
     dismissedRepeatedJointTaskKeys,
     dismissRepeatedJointTask,
     dismissRepeatedJointTasks,
     isRepeatedJointTaskExpanded,
     resetDismissedRepeatedJointTasks,
+    resetExpandedRepeatedJointTasks,
     restoreDismissedRepeatedJointTask,
     setExpandedRepeatedJointTaskKeys,
     toggleRepeatedJointTaskDetails,

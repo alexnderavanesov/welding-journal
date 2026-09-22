@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
+import { Button } from '@/components/ui/button'
 import { formatDisplayDate } from '@/lib/date-format'
 import { formatDaysLeft, formatReminderCount, formatTaskCount } from '@/lib/dispatcher-format'
 import {
@@ -19,6 +20,70 @@ export const dispatcherPrimaryActionButtonClass =
   'h-8 rounded-md border border-sky-200 bg-sky-50 px-2.5 text-xs font-semibold text-sky-800 shadow-none hover:bg-sky-100 hover:text-sky-950'
 export const dispatcherDangerActionButtonClass =
   'h-8 rounded-md border border-rose-200 bg-rose-50 px-2.5 text-xs font-semibold text-rose-700 shadow-none hover:bg-rose-100 hover:text-rose-800'
+
+export function DispatcherIncrementalListControls({
+  visibleCount,
+  totalCount,
+  itemLabel,
+  hasMore,
+  canCollapse,
+  onLoadMore,
+  onCollapse,
+  tone = 'sky',
+}: {
+  visibleCount: number
+  totalCount: number
+  itemLabel: string
+  hasMore: boolean
+  canCollapse: boolean
+  onLoadMore: () => void
+  onCollapse: () => void
+  tone?: 'sky' | 'amber'
+}) {
+  if (!hasMore && !canCollapse) return null
+
+  const amber = tone === 'amber'
+  const borderClass = amber ? 'border-amber-200/70' : 'border-slate-200'
+  const textClass = amber ? 'text-amber-800' : 'text-slate-500'
+  const buttonClass = amber
+    ? 'border-amber-300 bg-white text-amber-900 hover:bg-amber-100'
+    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+
+  return (
+    <div
+      data-dispatcher-list-controls
+      className={`flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2 ${borderClass}`}
+    >
+      <span className={`text-xs ${textClass}`}>
+        Показано {itemLabel}: {visibleCount} из {totalCount}
+      </span>
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
+        {canCollapse ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onCollapse}
+            className={`h-7 px-3 text-xs ${buttonClass}`}
+          >
+            Свернуть список
+          </Button>
+        ) : null}
+        {hasMore ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onLoadMore}
+            className={`h-7 px-3 text-xs ${buttonClass}`}
+          >
+            Показать ещё
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
 
 type DispatcherTaskDetailsProps = {
   task: DispatcherTask
@@ -90,6 +155,7 @@ type DispatcherTaskGroupFrameProps = {
   reminder?: boolean
   hideTaskSummaries?: boolean
   children: ReactNode | (() => ReactNode)
+  onOpenChange?: (open: boolean) => void
 }
 
 export function DispatcherTaskGroupFrame({
@@ -97,6 +163,7 @@ export function DispatcherTaskGroupFrame({
   reminder = false,
   hideTaskSummaries = false,
   children,
+  onOpenChange,
 }: DispatcherTaskGroupFrameProps) {
   const [isOpen, setIsOpen] = useState(false)
   const summaries = getDispatcherTaskGroupSummaries(group.tasks)
@@ -109,7 +176,11 @@ export function DispatcherTaskGroupFrame({
       data-dispatcher-hierarchy-level="1"
       data-expanded={isOpen ? 'true' : 'false'}
       className="group/object w-full border-b border-slate-200 bg-white last:border-b-0"
-      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+      onToggle={(event) => {
+        const open = event.currentTarget.open
+        setIsOpen(open)
+        onOpenChange?.(open)
+      }}
     >
       <summary
         data-dispatcher-object-summary

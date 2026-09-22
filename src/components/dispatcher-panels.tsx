@@ -6,6 +6,7 @@ import {
   DispatcherTaskGroup,
   type DispatcherTaskCardHandlers,
 } from '@/components/dispatcher-task-card'
+import { DispatcherIncrementalListControls } from '@/components/dispatcher-task-ui'
 import { buildDispatcherTaskCodeGroups } from '@/lib/dispatcher-code-groups'
 import {
   type RepeatedJointTask,
@@ -28,6 +29,7 @@ type DispatcherTaskPanelProps = {
   handlers: DispatcherTaskCardHandlers
   columnFilters: Record<string, string>
   onColumnFiltersChange: (filters: Record<string, string>) => void
+  onCollapseTaskDetails?: () => void
   defaultExpanded?: boolean
 }
 
@@ -38,11 +40,19 @@ export function DispatcherTaskPanel({
   handlers,
   columnFilters,
   onColumnFiltersChange,
+  onCollapseTaskDetails,
   defaultExpanded = true,
 }: DispatcherTaskPanelProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded)
   const [groupingMode, setGroupingMode] = useState<DispatcherGroupingMode>(readDispatcherGroupingMode)
-  const { visibleGroups, visibleCount, hasMore, loadMore, loadMoreRef } = useIncrementalDispatcherGroups(groups)
+  const {
+    visibleGroups,
+    visibleCount,
+    hasMore,
+    canCollapse,
+    loadMore,
+    collapseList,
+  } = useIncrementalDispatcherGroups(groups)
   const codeGroups = useMemo(() => buildDispatcherTaskCodeGroups(groups), [groups])
   const dispatcherFilterMode = getDispatcherTaskFilterMode(columnFilters[DISPATCHER_TASKS_FIELD_KEY])
 
@@ -91,7 +101,13 @@ export function DispatcherTaskPanel({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setIsExpanded((current) => !current)}
+              onClick={() => {
+                if (isExpanded) {
+                  collapseList()
+                  onCollapseTaskDetails?.()
+                }
+                setIsExpanded(!isExpanded)
+              }}
               aria-expanded={isExpanded}
               className="h-8 shrink-0 border-slate-200 bg-white px-3 text-xs text-slate-700 hover:bg-slate-50"
             >
@@ -111,21 +127,16 @@ export function DispatcherTaskPanel({
                 ))}
           </div>
         ) : null}
-        {isExpanded && groupingMode === 'objects' && hasMore ? (
-          <div ref={loadMoreRef} className="flex items-center justify-between gap-3 border-t border-slate-200 pt-2">
-            <span className="text-xs text-slate-500">
-              Показано групп: {visibleCount} из {groups.length}
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={loadMore}
-              className="h-7 border-slate-200 bg-white px-3 text-xs text-slate-700 hover:bg-slate-50"
-            >
-              Показать ещё
-            </Button>
-          </div>
+        {isExpanded && groupingMode === 'objects' ? (
+          <DispatcherIncrementalListControls
+            visibleCount={visibleCount}
+            totalCount={groups.length}
+            itemLabel="групп"
+            hasMore={hasMore}
+            canCollapse={canCollapse}
+            onLoadMore={loadMore}
+            onCollapse={collapseList}
+          />
         ) : null}
       </div>
     </div>

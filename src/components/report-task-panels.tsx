@@ -14,6 +14,7 @@ export type ReportTaskPanelsProps = {
   handlers: DispatcherTaskCardHandlers
   isTaskExpanded: (task: DispatcherTask) => boolean
   onToggleDetails: (task: DispatcherTask) => void
+  onCollapseTaskDetails: () => void
   onDismissTasks: (tasks: DispatcherTask[]) => void
   columnFilters: Record<string, string>
   onColumnFiltersChange: (filters: Record<string, string>) => void
@@ -29,6 +30,7 @@ export function ReportTaskPanels({
   handlers,
   isTaskExpanded,
   onToggleDetails,
+  onCollapseTaskDetails,
   onDismissTasks,
   columnFilters,
   onColumnFiltersChange,
@@ -47,12 +49,14 @@ export function ReportTaskPanels({
 
   return (
     <DispatcherTaskPanel
+      key={activeReport}
       tasks={repeatedJointTasks}
       groups={repeatedJointTaskGroups}
       stickyLeft={stickyLeft}
       handlers={handlers}
       columnFilters={columnFilters}
       onColumnFiltersChange={onColumnFiltersChange}
+      onCollapseTaskDetails={onCollapseTaskDetails}
       defaultExpanded={activeReport !== 'heatTreatment'}
     />
   )

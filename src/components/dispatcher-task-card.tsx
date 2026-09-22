@@ -4,12 +4,16 @@ import { useState } from 'react'
 import { RepeatedJointTaskActions } from '@/components/dispatcher-task-actions'
 import { RepeatedJointTaskContent } from '@/components/dispatcher-task-content'
 import {
+  DispatcherIncrementalListControls,
   DispatcherTaskDetails,
   DispatcherTaskGroupFrame,
 } from '@/components/dispatcher-task-ui'
 import type { DispatcherTaskCodeGroup as DispatcherTaskCodeGroupValue } from '@/lib/dispatcher-code-groups'
 import { formatTaskCount } from '@/lib/dispatcher-format'
-import { useIncrementalDispatcherGroups } from '@/lib/use-incremental-dispatcher-groups'
+import {
+  DISPATCHER_TASK_BATCH_SIZE,
+  useIncrementalDispatcherGroups,
+} from '@/lib/use-incremental-dispatcher-groups'
 import type {
   DispatcherTask,
   PercentageLineControlTask,
@@ -115,13 +119,40 @@ export function DispatcherTaskCard({ task, nested = false, ...handlers }: Dispat
 
 export function DispatcherTaskGroup({ group, hideTaskSummaries = false, ...handlers }: DispatcherTaskGroupProps) {
   const isReminderGroup = group.tasks.every((task) => task.kind === 'welder-stamp-expiry')
+  const {
+    visibleGroups: visibleTasks,
+    visibleCount,
+    hasMore,
+    canCollapse,
+    loadMore,
+    collapseList,
+  } = useIncrementalDispatcherGroups(group.tasks, DISPATCHER_TASK_BATCH_SIZE)
+
   return (
-    <DispatcherTaskGroupFrame group={group} reminder={isReminderGroup} hideTaskSummaries={hideTaskSummaries}>
-      {() =>
-        group.tasks.map((task) => (
-          <DispatcherTaskCard key={task.key} task={task} nested {...handlers} />
-        ))
-      }
+    <DispatcherTaskGroupFrame
+      group={group}
+      reminder={isReminderGroup}
+      hideTaskSummaries={hideTaskSummaries}
+      onOpenChange={(open) => {
+        if (!open) collapseList()
+      }}
+    >
+      {() => (
+        <>
+          {visibleTasks.map((task) => (
+            <DispatcherTaskCard key={task.key} task={task} nested {...handlers} />
+          ))}
+          <DispatcherIncrementalListControls
+            visibleCount={visibleCount}
+            totalCount={group.tasks.length}
+            itemLabel="задач"
+            hasMore={hasMore}
+            canCollapse={canCollapse}
+            onLoadMore={loadMore}
+            onCollapse={collapseList}
+          />
+        </>
+      )}
     </DispatcherTaskGroupFrame>
   )
 }
@@ -132,8 +163,14 @@ type DispatcherTaskCodeGroupProps = DispatcherTaskCardHandlers & {
 
 export function DispatcherTaskCodeGroup({ group, ...handlers }: DispatcherTaskCodeGroupProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const { visibleGroups, visibleCount, hasMore, loadMore, loadMoreRef } =
-    useIncrementalDispatcherGroups(group.objectGroups)
+  const {
+    visibleGroups,
+    visibleCount,
+    hasMore,
+    canCollapse,
+    loadMore,
+    collapseList,
+  } = useIncrementalDispatcherGroups(group.objectGroups)
 
   if (group.tasks.length === 1) {
     return <DispatcherTaskGroup group={group.objectGroups[0]} {...handlers} />
@@ -142,7 +179,11 @@ export function DispatcherTaskCodeGroup({ group, ...handlers }: DispatcherTaskCo
   return (
     <details
       className="group/code w-full border-b border-sky-100 bg-[#f8fcfe] last:border-b-0"
-      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+      onToggle={(event) => {
+        const open = event.currentTarget.open
+        setIsOpen(open)
+        if (!open) collapseList()
+      }}
     >
       <summary className="min-h-11 cursor-pointer list-none px-3 py-2 text-sm marker:hidden hover:bg-white/75">
         <span className="flex w-full items-center gap-2">
@@ -177,20 +218,15 @@ export function DispatcherTaskCodeGroup({ group, ...handlers }: DispatcherTaskCo
                 {...handlers}
               />
             ))}
-            {hasMore ? (
-              <div ref={loadMoreRef} className="flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/70 px-3 py-2">
-                <span className="text-xs text-slate-500">
-                  Показано объектов: {visibleCount} из {group.objectGroups.length}
-                </span>
-                <button
-                  type="button"
-                  onClick={loadMore}
-                  className="h-7 rounded border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                >
-                  Показать ещё
-                </button>
-              </div>
-            ) : null}
+            <DispatcherIncrementalListControls
+              visibleCount={visibleCount}
+              totalCount={group.objectGroups.length}
+              itemLabel="объектов"
+              hasMore={hasMore}
+              canCollapse={canCollapse}
+              onLoadMore={loadMore}
+              onCollapse={collapseList}
+            />
           </div>
         </div>
       ) : null}

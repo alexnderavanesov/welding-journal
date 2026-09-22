@@ -1,43 +1,44 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-export const DISPATCHER_GROUP_BATCH_SIZE = 80
+import { useCallback, useEffect, useState } from 'react'
 
-export function getNextDispatcherGroupCount(current: number, total: number) {
-  return Math.min(total, current + DISPATCHER_GROUP_BATCH_SIZE)
+export const DISPATCHER_GROUP_BATCH_SIZE = 80
+export const DISPATCHER_TASK_BATCH_SIZE = 40
+
+export function getNextDispatcherGroupCount(
+  current: number,
+  total: number,
+  batchSize = DISPATCHER_GROUP_BATCH_SIZE,
+) {
+  return Math.min(total, current + Math.max(1, batchSize))
 }
 
-export function useIncrementalDispatcherGroups<T>(groups: T[]) {
-  const [visibleCount, setVisibleCount] = useState(() => Math.min(groups.length, DISPATCHER_GROUP_BATCH_SIZE))
-  const loadMoreRef = useRef<HTMLDivElement | null>(null)
+export function useIncrementalDispatcherGroups<T>(
+  groups: T[],
+  batchSize = DISPATCHER_GROUP_BATCH_SIZE,
+) {
+  const initialVisibleCount = Math.min(groups.length, Math.max(1, batchSize))
+  const [visibleCount, setVisibleCount] = useState(initialVisibleCount)
 
   useEffect(() => {
-    setVisibleCount(Math.min(groups.length, DISPATCHER_GROUP_BATCH_SIZE))
-  }, [groups])
+    setVisibleCount(initialVisibleCount)
+  }, [groups, initialVisibleCount])
 
   const loadMore = useCallback(() => {
-    setVisibleCount((current) => getNextDispatcherGroupCount(current, groups.length))
-  }, [groups.length])
+    setVisibleCount((current) => getNextDispatcherGroupCount(current, groups.length, batchSize))
+  }, [batchSize, groups.length])
+
+  const collapseList = useCallback(() => {
+    setVisibleCount(initialVisibleCount)
+  }, [initialVisibleCount])
 
   const hasMore = visibleCount < groups.length
-
-  useEffect(() => {
-    const target = loadMoreRef.current
-    if (!target || !hasMore || typeof IntersectionObserver === 'undefined') return undefined
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) loadMore()
-      },
-      { rootMargin: '240px' },
-    )
-    observer.observe(target)
-    return () => observer.disconnect()
-  }, [hasMore, loadMore])
+  const canCollapse = visibleCount > initialVisibleCount
 
   return {
     visibleGroups: groups.slice(0, visibleCount),
     visibleCount,
     hasMore,
+    canCollapse,
     loadMore,
-    loadMoreRef,
+    collapseList,
   }
 }

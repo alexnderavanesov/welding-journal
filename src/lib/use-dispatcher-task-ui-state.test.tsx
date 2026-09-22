@@ -16,4 +16,19 @@ describe('dispatcher task UI state', () => {
     act(() => result.current.restoreDismissedRepeatedJointTask(first))
     expect(result.current.dismissedRepeatedJointTaskKeys).toEqual(new Set(['task-2']))
   })
+
+  it('collapses every opened task description in one action', () => {
+    const first = { key: 'task-1' } as DispatcherTask
+    const second = { key: 'task-2' } as DispatcherTask
+    const { result } = renderHook(() => useDispatcherTaskUiState())
+
+    act(() => result.current.toggleRepeatedJointTaskDetails(first))
+    act(() => result.current.toggleRepeatedJointTaskDetails(second))
+    expect(result.current.isRepeatedJointTaskExpanded(first)).toBe(true)
+    expect(result.current.isRepeatedJointTaskExpanded(second)).toBe(true)
+
+    act(() => result.current.resetExpandedRepeatedJointTasks())
+    expect(result.current.isRepeatedJointTaskExpanded(first)).toBe(false)
+    expect(result.current.isRepeatedJointTaskExpanded(second)).toBe(false)
+  })
 })

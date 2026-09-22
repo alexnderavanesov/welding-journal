@@ -1,5 +1,8 @@
+import { useMemo } from 'react'
+
 import { WelderStampTaskContent } from '@/components/dispatcher-task-content'
 import {
+  DispatcherIncrementalListControls,
   DispatcherTaskDetails,
   DispatcherTaskGroupFrame,
   dispatcherStandaloneActionButtonClass,
@@ -7,6 +10,10 @@ import {
 import { Button } from '@/components/ui/button'
 import type { DispatcherTask, RepeatedJointTaskGroup, WelderStampExpiryTask } from '@/lib/dispatcher-types'
 import { formatWelderStampTaskLabel } from '@/lib/welder-stamp-format'
+import {
+  DISPATCHER_TASK_BATCH_SIZE,
+  useIncrementalDispatcherGroups,
+} from '@/lib/use-incremental-dispatcher-groups'
 
 type WelderStampNotificationCardProps = {
   task: WelderStampExpiryTask
@@ -45,15 +52,44 @@ export function WelderStampNotificationCard({ task, isTaskExpanded, onToggleDeta
 }
 
 export function WelderStampNotificationGroup({ group, isTaskExpanded, onToggleDetails }: WelderStampNotificationGroupProps) {
+  const tasks = useMemo(
+    () => group.tasks.filter((task): task is WelderStampExpiryTask => task.kind === 'welder-stamp-expiry'),
+    [group.tasks],
+  )
+  const {
+    visibleGroups: visibleTasks,
+    visibleCount,
+    hasMore,
+    canCollapse,
+    loadMore,
+    collapseList,
+  } = useIncrementalDispatcherGroups(tasks, DISPATCHER_TASK_BATCH_SIZE)
+
   return (
-    <DispatcherTaskGroupFrame group={group} reminder>
-      {() =>
-        group.tasks
-          .filter((task): task is WelderStampExpiryTask => task.kind === 'welder-stamp-expiry')
-          .map((task) => (
+    <DispatcherTaskGroupFrame
+      group={group}
+      reminder
+      onOpenChange={(open) => {
+        if (!open) collapseList()
+      }}
+    >
+      {() => (
+        <>
+          {visibleTasks.map((task) => (
             <WelderStampNotificationCard key={task.key} task={task} isTaskExpanded={isTaskExpanded} onToggleDetails={onToggleDetails} />
-          ))
-      }
+          ))}
+          <DispatcherIncrementalListControls
+            visibleCount={visibleCount}
+            totalCount={tasks.length}
+            itemLabel="задач"
+            hasMore={hasMore}
+            canCollapse={canCollapse}
+            onLoadMore={loadMore}
+            onCollapse={collapseList}
+            tone="amber"
+          />
+        </>
+      )}
     </DispatcherTaskGroupFrame>
   )
 }

@@ -193,7 +193,7 @@ export function JointDispatcherTaskItem({
       className={cn(
         'px-2 py-3 transition-colors hover:bg-sky-50/70',
         isCurrentRow && 'border-l-2 border-sky-400 bg-sky-50/40 pl-2.5',
-        isHighlighted && 'bg-sky-50 shadow-[inset_2px_0_0_0_rgb(56_189_248_/_0.72)]',
+        isHighlighted && 'bg-sky-50',
       )}
       data-highlighted={isHighlighted ? 'true' : undefined}
     >
