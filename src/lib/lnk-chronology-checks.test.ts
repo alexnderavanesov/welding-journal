@@ -327,7 +327,7 @@ describe('getLnkChronologyIssues', () => {
     expect(issues.filter((issue) => issue.kind === 'pre-after-psto')).toHaveLength(2)
   })
 
-  it('keeps post-heat-treatment documents after good TVMT', () => {
+  it('keeps actual post-heat-treatment results after good TVMT', () => {
     const issues = getLnkChronologyIssues([{
       joint: 'F6',
       weldDate: '2026-08-01',
@@ -341,6 +341,8 @@ describe('getLnkChronologyIssues', () => {
       hasVik: 'да',
       vikRequest: 'Заявка ВИК после ТО',
       vikRequestDate: '2026-08-10',
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-10',
     } as WeldInput])
 
     expect(issues).toContainEqual(expect.objectContaining({

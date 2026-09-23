@@ -13,10 +13,6 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { buildSystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 import { buildLnkRequestDraftRows } from '@/lib/lnk-request-mutation-updates'
-import { LNK_METHODS } from '@/lib/report-config'
-import { useConfirmAction } from '@/lib/confirm-action-context'
-import { getPrimaryLnkStageAccess } from '@/lib/lnk-control-stage'
-import { hasText, isEnabledControlValue } from '@/lib/report-value-utils'
 
 export function useLnkRequestActions({
   controlProcessSettings,
@@ -41,8 +37,6 @@ export function useLnkRequestActions({
   setComposerMode,
   setTargetRequestKey,
 }: UseLnkRequestActionsOptions) {
-  const confirmAction = useConfirmAction()
-
   async function handleCreateLnkRequest(methodKeys: WeldFieldKey[]) {
     setMessage(null)
     if (selectedRows.length === 0) {
@@ -83,8 +77,6 @@ export function useLnkRequestActions({
       setMessage(requestDateReason)
       return
     }
-
-    if (!await confirmPrimaryLnkStageDebt(selectedRows, methodKeys)) return
 
     mutation.mutate({
       records: selectedRows,
@@ -129,9 +121,6 @@ export function useLnkRequestActions({
       setMessage('По выбранным стыкам и видам контроля нет позиций, которые можно добавить в эту заявку')
       return
     }
-
-    const targetKeys = new Set(analysis.targets.map((target) => `${target.rowId}:${target.methodKey}`))
-    if (!await confirmPrimaryLnkStageDebt(selectedRows, methodKeys, targetKeys)) return
 
     extensionMutation.mutate({
       requestName: existingRequest.name,
@@ -228,36 +217,6 @@ export function useLnkRequestActions({
 
   function toggleAllLnkRequestRows() {
     setSelectedIds((current) => toggleNumberSetValues(current, filteredRows.map((row) => row.id)))
-  }
-
-  async function confirmPrimaryLnkStageDebt(
-    rows: WeldRow[],
-    methodKeys: WeldFieldKey[],
-    targetKeys?: ReadonlySet<string>,
-  ) {
-    const warnings = rows.flatMap((row) => methodKeys.flatMap((methodKey) => {
-      if (targetKeys && !targetKeys.has(`${row.id}:${methodKey}`)) return []
-      const method = LNK_METHODS.find((candidate) => candidate.requestKey === methodKey)
-      if (
-        !method ||
-        !isEnabledControlValue(row[method.enabledKey]) ||
-        hasText(row[method.requestKey])
-      ) return []
-      const access = getPrimaryLnkStageAccess(row, method.code, controlProcessSettings)
-      return access.status === 'allowed-with-warning' ? [{ row, method, reason: access.reason }] : []
-    }))
-    if (warnings.length === 0) return true
-
-    const jointCount = new Set(warnings.map(({ row }) => row.id)).size
-    const methods = [...new Set(warnings.map(({ method }) => method.code))].join(', ')
-    return confirmAction({
-      title: 'Продолжить основной НК раньше?',
-      itemName: `Стыков: ${jointCount} · Позиций НК: ${warnings.length} · Методы: ${methods}`,
-      description: 'Предыдущие этапы контроля еще не завершены. Выбранные позиции будут оформлены в основном этапе ЛНК.',
-      warning: 'В диспетчере появится системное предупреждение СП-01 до завершения НК до ТО, ПСТО и ТВМТ.',
-      confirmLabel: 'Продолжить',
-      tone: 'warning',
-    })
   }
 
   return {

@@ -148,7 +148,7 @@ test('does not create layered documents while off and backfills all four after e
   await expect(enabledSwitch).toBeChecked()
 })
 
-test('blocks disabling pre-TO NDT and preserves exemptions only for a started PSTO line', async ({ page }) => {
+test('blocks disabling unfinished pre-TO and protects only the joint that starts PSTO while off', async ({ page }) => {
   await seedPreHeatTreatmentLines()
   await openControlProcesses(page)
 
@@ -171,10 +171,10 @@ test('blocks disabling pre-TO NDT and preserves exemptions only for a started PS
   await expect(preSwitch).not.toBeChecked()
   await expect(page.getByRole('switch', { name: /^Разрешать основной НК/ })).toBeDisabled()
   await expect.poll(() => loadPreHeatTreatmentExemptions()).toEqual([
-    ['F-PRE-A1', true],
-    ['F-PRE-A2', true],
-    ['F-PRE-B1', true],
-    ['F-PRE-B2', true],
+    ['F-PRE-A1', false],
+    ['F-PRE-A2', false],
+    ['F-PRE-B1', false],
+    ['F-PRE-B2', false],
   ])
 
   await page.goto('/lnk')
@@ -182,7 +182,12 @@ test('blocks disabling pre-TO NDT and preserves exemptions only for a started PS
   await expect(page.getByRole('button', { name: 'НК до ТО', exact: true })).toHaveCount(0)
   await expect(page.getByText('Создать заявку ПСТО', { exact: false }).first()).toBeVisible()
 
-  await markFirstPstoLineStarted()
+  const unstarted = page.getByRole('button', { name: 'Выбрать стык F-PRE-A2', exact: true }).locator('xpath=ancestor::tr')
+  await unstarted.getByRole('button', { name: 'Выполнить: Создать заявку ПСТО', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Заявка ПСТО', exact: true })).toBeVisible()
+  await page.getByLabel('Дата заявки', { exact: true }).fill('2026-09-02')
+  await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Заявка ПСТО', exact: true })).toBeHidden()
   await openControlProcesses(page)
   preSwitch = page.getByRole('switch', { name: /^НК до ТО/ })
   await preSwitch.locator('xpath=..').click()
@@ -190,7 +195,7 @@ test('blocks disabling pre-TO NDT and preserves exemptions only for a started PS
   await expect(preSwitch).toBeChecked()
   await expect(page.getByRole('switch', { name: /^Разрешать основной НК/ })).toBeEnabled()
   await expect.poll(() => loadPreHeatTreatmentExemptions()).toEqual([
-    ['F-PRE-A1', true],
+    ['F-PRE-A1', false],
     ['F-PRE-A2', true],
     ['F-PRE-B1', false],
     ['F-PRE-B2', false],
@@ -313,16 +318,6 @@ async function completePreHeatTreatmentBlocker() {
       where weld.id = control.weld_joint_id
         and weld.project_title = $1
         and weld.joint = $2
-    `, [TEST_PROJECT, PRE_JOINTS[0]])
-  })
-}
-
-async function markFirstPstoLineStarted() {
-  await withE2eDatabase(async (client) => {
-    await client.query(`
-      update weld_joints
-      set psto_request = 'E2E заявка ПСТО', psto_request_date = '2026-09-02', updated_at = now()
-      where project_title = $1 and joint = $2
     `, [TEST_PROJECT, PRE_JOINTS[0]])
   })
 }

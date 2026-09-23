@@ -25,6 +25,8 @@ CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES,
 normalizeControlAvailabilityFilterValue
 } from '@/lib/control-availability-values'
 import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
+import { buildNoRejectedPreHeatTreatmentWhere, buildPreHeatTreatmentRequirementsSkippedWhere, buildPstoExecutionHistoryWhere } from '@/server/pre-heat-treatment-policy'
+export { buildPstoExecutionHistoryWhere } from '@/server/pre-heat-treatment-policy'
 import {
 buildMergedDispatcherTaskCodes,
 DISPATCHER_TASK_FILTER_KEY,
@@ -212,6 +214,8 @@ export const HEAT_TREATMENT_CONTEXT_REQUIRED_FIELD_KEYS = new Set<WeldFieldKey>(
 
 export const REPORT_DERIVED_FILTER_SELECT = {
   id: weldJoints.id,
+  preHeatTreatmentLnkExempt: weldJoints.preHeatTreatmentLnkExempt,
+  heatTreatmentDiagram: weldJoints.heatTreatmentDiagram,
   weldDate: weldJoints.weldDate,
   projectTitle: weldJoints.projectTitle,
   subtitleCode: weldJoints.subtitleCode,
@@ -948,10 +952,10 @@ export async function countAvailableLnkRequestRowsByIds(ids: number[]) {
 }
 
 export function buildAvailableLnkRequestWhere() {
-  return buildLnkRequestCandidateWhere(true)
+  return buildLnkRequestCandidateWhere()
 }
 
-export function buildLnkRequestCandidateWhere(requirePrimaryStageReady = false) {
+export function buildLnkRequestCandidateWhere() {
   const buildAvailableMethodWhere = (method: (typeof LNK_METHODS)[number]) => {
     const enabledColumn = getWeldColumn(method.enabledKey)
     const requestColumn = getWeldColumn(method.requestKey)
@@ -961,20 +965,7 @@ export function buildLnkRequestCandidateWhere(requirePrimaryStageReady = false) 
       sql`btrim(coalesce(${requestColumn}::text, '')) = ''`,
     ) ?? sql`false`
   }
-  const stagedMethods = LNK_METHODS.filter((method) => isPreHeatTreatmentLnkMethodCode(method.code))
-  const immediateMethods = LNK_METHODS.filter((method) => !isPreHeatTreatmentLnkMethodCode(method.code))
-  const hasAvailableStagedMethod = or(
-    ...stagedMethods.map(buildAvailableMethodWhere),
-  ) ?? sql`false`
-  const hasAvailableImmediateMethod = or(
-    ...immediateMethods.map(buildAvailableMethodWhere),
-  ) ?? sql`false`
-  const hasAvailableMethod = requirePrimaryStageReady
-    ? or(
-        hasAvailableImmediateMethod,
-        and(hasAvailableStagedMethod, buildHeatTreatmentStagedLnkReadyWhere()),
-      ) ?? sql`false`
-    : or(hasAvailableImmediateMethod, hasAvailableStagedMethod) ?? sql`false`
+  const hasAvailableMethod = or(...LNK_METHODS.map(buildAvailableMethodWhere)) ?? sql`false`
   const hasNoRejectedResult = and(
     ...LNK_METHODS.map((method) => {
       const resultColumn = getWeldColumn(method.resultKey)
@@ -994,15 +985,7 @@ export function buildLnkRequestCandidateWhere(requirePrimaryStageReady = false) 
         ),
       ),
   )
-  const hasNoRejectedPreHeatTreatmentControl = notExists(
-    SQL_QUERY_BUILDER
-      .select({ value: sql`1` })
-      .from(preHeatTreatmentControls)
-      .where(and(
-        eq(preHeatTreatmentControls.weldJointId, weldJoints.id),
-        sql`lower(btrim(coalesce(${preHeatTreatmentControls.result}, ''))) in ('ремонт', 'вырез')`,
-      )),
-  )
+  const hasNoRejectedPreHeatTreatmentControl = buildNoRejectedPreHeatTreatmentWhere()
   return and(
     hasAvailableMethod,
     hasNoRejectedResult,
@@ -1029,7 +1012,7 @@ function buildHeatTreatmentStagedLnkReadyWhere() {
   ) ?? sql`false`
   const preHeatTreatmentRequired = and(
     heatTreatmentStagedLnkRequired,
-    eq(weldJoints.preHeatTreatmentLnkExempt, false),
+    sql`not (${buildPreHeatTreatmentRequirementsSkippedWhere()})`,
   ) ?? sql`false`
   const allPreHeatTreatmentControlsGood = and(
     ...PRE_HEAT_TREATMENT_LNK_METHODS.map((method) => {
@@ -1091,11 +1074,14 @@ function buildHeatTreatmentStagedLnkReadyWhere() {
     and(hasRepeatCycle, latestRepeatCycleComplete),
   ) ?? sql`false`
 
-  return or(
-    and(sql`not (${pstoRequired})`, sql`not (${hasExecutionHistory})`),
-    and(
-      currentCycleComplete,
-      or(sql`not (${preHeatTreatmentRequired})`, allPreHeatTreatmentControlsGood),
+  return and(
+    buildNoRejectedPreHeatTreatmentWhere(),
+    or(
+      and(sql`not (${pstoRequired})`, sql`not (${hasExecutionHistory})`),
+      and(
+        currentCycleComplete,
+        or(sql`not (${preHeatTreatmentRequired})`, allPreHeatTreatmentControlsGood),
+      ),
     ),
   ) ?? sql`false`
 }
@@ -1193,6 +1179,8 @@ export async function attachReportPageMetadata<Row extends DuplicateControlCarri
     ...rowsWithHeatTreatmentControls[index],
     ...rowsWithEarlyCoilDecisions[index],
     ...rowsWithChainContinuations[index],
+    preHeatTreatmentLnkEnabled: rowsWithHeatTreatmentControls[index]?.preHeatTreatmentLnkEnabled,
+    preHeatTreatmentLnkExempt: rowsWithHeatTreatmentControls[index]?.preHeatTreatmentLnkExempt,
   }))
 }
 
@@ -1307,6 +1295,18 @@ export async function loadCurrentFinalStatusRowsContext() {
       line: weldJoints.line,
       joint: weldJoints.joint,
       officiality: WELD_EFFECTIVE_OFFICIALITY,
+      hasVik: weldJoints.hasVik,
+      hasRk: weldJoints.hasRk,
+      hasUzk: weldJoints.hasUzk,
+      hasPvk: weldJoints.hasPvk,
+      pstoRequired: weldJoints.pstoRequired,
+      pstoResult: weldJoints.pstoResult,
+      pstoDate: weldJoints.pstoDate,
+      heatTreatmentDiagram: weldJoints.heatTreatmentDiagram,
+      tvmtRequest: weldJoints.tvmtRequest,
+      tvmtRequestDate: weldJoints.tvmtRequestDate,
+      tvmtConclusion: weldJoints.tvmtConclusion,
+      tvmtConclusionDate: weldJoints.tvmtConclusionDate,
       vikResult: weldJoints.vikResult,
       rkResult: weldJoints.rkResult,
       uzkResult: weldJoints.uzkResult,
@@ -1935,26 +1935,6 @@ export function buildReportKindWhere(report: Exclude<WeldReportKind, 'weldingJou
         sql`false`,
     ) ?? sql`false`
   )
-}
-
-export function buildPstoExecutionHistoryWhere() {
-  const hasValue = (column: SQLWrapper) => sql`nullif(btrim(coalesce(${column}::text, '')), '') is not null`
-  return or(
-    sql`lower(btrim(coalesce(${weldJoints.pstoResult}, ''))) in ('проведено', 'проведено (отменен)', 'да')`,
-    hasValue(weldJoints.pstoDate),
-    hasValue(weldJoints.heatTreatmentDiagram),
-    hasValue(weldJoints.tvmtRequest),
-    hasValue(weldJoints.tvmtRequestDate),
-    hasValue(weldJoints.tvmtResult),
-    hasValue(weldJoints.tvmtConclusionDate),
-    hasValue(weldJoints.tvmtConclusion),
-    exists(
-      SQL_QUERY_BUILDER
-        .select({ value: sql`1` })
-        .from(pstoRepeatCycles)
-        .where(eq(pstoRepeatCycles.weldJointId, weldJoints.id)),
-    ),
-  ) ?? sql`false`
 }
 
 export function buildControlReportValueWhere(column: SQLWrapper) {

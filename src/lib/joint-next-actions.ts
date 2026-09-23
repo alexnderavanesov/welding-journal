@@ -19,9 +19,10 @@ import {
 } from '@/lib/lnk-workflow-routing'
 import {
   getPrimaryLnkStageDebt,
+  requiresPreHeatTreatmentLnk,
   getRejectedPreHeatTreatmentControls,
   getPrimaryLnkStageBlockReason,
-  hasPrimaryLnkControlTrace,
+  hasPrimaryLnkResultTrace,
   PRE_HEAT_TREATMENT_LNK_METHODS,
 } from '@/lib/lnk-control-stage'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
@@ -84,6 +85,9 @@ export function buildJointNextActions(
   dispatcherTasks: readonly RepeatedJointTask[] = [],
   controlProcessSettings?: JointNextActionSettings,
 ): JointNextAction[] {
+  if (controlProcessSettings && row.preHeatTreatmentLnkEnabled !== controlProcessSettings.preHeatTreatmentLnkEnabled) {
+    row = { ...row, preHeatTreatmentLnkEnabled: controlProcessSettings.preHeatTreatmentLnkEnabled }
+  }
   const rowTasks = dispatcherTasks
     .filter((task) => isDispatcherTaskDirectlyRelatedToJoint(task, row))
     .sort(compareTasks)
@@ -226,7 +230,7 @@ function buildDirectWorkflowAction(
     }
   }
 
-  const preRequestMethods = getAvailablePreHeatTreatmentRequestMethods(row)
+  const preRequestMethods = requiresPreHeatTreatmentLnk(row) ? getAvailablePreHeatTreatmentRequestMethods(row) : []
   if (preRequestMethods.length > 0) {
     return buildControlAction({
       row,
@@ -337,7 +341,7 @@ function hasPermittedPrimaryStageDebt(
 
   return LNK_METHODS.some((method) =>
     isControlEnabledValue(row[method.enabledKey]) &&
-    hasPrimaryLnkControlTrace(row, method.code) &&
+    hasPrimaryLnkResultTrace(row, method.code) &&
     Boolean(getPrimaryLnkStageDebt(row, method.code)),
   )
 }
@@ -358,7 +362,7 @@ function withPrimaryStageDebtWarning(action: JointNextAction): JointNextAction {
 }
 
 function getInitialPstoDescription(row: WeldRow) {
-  if (row.preHeatTreatmentLnkExempt === true) {
+  if (!requiresPreHeatTreatmentLnk(row)) {
     return 'НК до ТО для этого стыка не требуется. Можно начать цикл термообработки.'
   }
 

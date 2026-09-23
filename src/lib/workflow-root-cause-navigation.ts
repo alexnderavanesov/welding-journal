@@ -2,6 +2,33 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { isFinalLnkResultValue } from '@/lib/lnk-status'
 import { LNK_METHODS } from '@/lib/report-config'
 import type { WorkflowRootCauseTarget } from '@/lib/workflow-root-cause-actions'
+import type { JointNextAction } from '@/lib/joint-next-actions'
+import { getCurrentPstoCycle, getPstoTvmtWorkflowState, getPstoWorkflowCycleSequence } from '@/lib/tvmt-cycle'
+
+// Completion must use the creation workflow, not the existing-stage editor.
+// Compare with freshly loaded state so a stale card cannot target another cycle.
+export function getPstoStageCompletionNextAction(
+  target: Extract<WorkflowRootCauseTarget, { kind: 'psto-cycle' }>,
+  row: WeldRow,
+): JointNextAction | null {
+  if (target.intent !== 'complete-stage') return null
+  const state = getPstoTvmtWorkflowState(row)
+  const stage = state === 'waiting-psto-request' || state === 'repeat-psto-required'
+    ? 'pstoRequest'
+    : state === 'waiting-psto' ? 'pstoResult'
+      : state === 'waiting-tvmt-request' ? 'tvmtRequest'
+        : state === 'waiting-tvmt' ? 'tvmtResult' : null
+  if (!stage || stage !== target.stage || row.id !== target.rowId ||
+    getPstoWorkflowCycleSequence(row, stage) !== target.sequence ||
+    (target.cycleId !== undefined && target.cycleId !== getCurrentPstoCycle(row)?.id)) return null
+  return {
+    key: `complete-stage:${row.id}:${target.sequence}:${stage}`,
+    kind: stage,
+    title: stage.startsWith('tvmt') ? 'Завершить ТВМТ' : 'Завершить ПСТО',
+    description: `Недостающий этап цикла ${target.sequence}`,
+    tone: 'warning',
+  }
+}
 
 export type WorkflowRootCauseDestination =
   | 'weld-form'

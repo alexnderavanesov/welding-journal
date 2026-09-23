@@ -4,7 +4,7 @@ import { RequestRowJointHeading } from '@/components/request-row-joint-heading'
 import { getAvailableLnkRequestMethods, getLnkRequestCandidateMethods } from '@/lib/lnk-status'
 import { getLnkRowRequestMethods } from '@/lib/report-modal-rows'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
-import { getPrimaryLnkStageAccess } from '@/lib/lnk-control-stage'
+import { getPrimaryLnkRequestAccess } from '@/lib/lnk-control-stage'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
@@ -31,11 +31,11 @@ function LnkRequestRowComponent({
   const disabled = availableMethods.length === 0
   const methodAccess = new Map(candidateMethods.map((method) => [
     method.requestKey,
-    getPrimaryLnkStageAccess(row, method.code, controlProcessSettings),
+    getPrimaryLnkRequestAccess(row, method.code, controlProcessSettings),
   ]))
   const warningReason = candidateMethods
     .map((method) => methodAccess.get(method.requestKey))
-    .find((access) => access?.status === 'allowed-with-warning' || access?.status === 'blocked')?.reason
+    .find((access) => access?.status === 'blocked')?.reason
 
   return (
     <div
@@ -80,11 +80,7 @@ function LnkRequestRowComponent({
                 className={`rounded border px-2 py-1 text-xs font-medium ${
                   !methodAvailable
                     ? 'border-amber-200 bg-amber-50 text-amber-700'
-                    : access?.status === 'allowed-with-warning'
-                      ? isSelectedMethod
-                        ? 'border-amber-400 bg-amber-100 text-amber-950'
-                        : 'border-amber-200 bg-amber-50 text-amber-800'
-                      : isSelectedMethod
+                    : isSelectedMethod
                     ? 'border-sky-300 bg-sky-100 text-sky-900'
                     : 'border-slate-200 bg-slate-50 text-slate-600'
                 }`}

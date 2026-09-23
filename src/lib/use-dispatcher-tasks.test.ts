@@ -53,6 +53,7 @@ describe('buildVisibleDispatcherTasks', () => {
       pstoRequired: 'да',
       hasVik: 'да',
       vikRequest: 'Основная заявка ВИК',
+      vikResult: 'годен',
     })]
     const initial = buildTasks(disabledSettings(), { rows })
     const warning = initial.repeatedJointTasks.find(isSystemDispatcherWarningTask)

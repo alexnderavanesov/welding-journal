@@ -283,10 +283,10 @@ describe('joint next actions', () => {
     ])
   })
 
-  it('skips pre-TO control but preserves the PSTO to TVMT to primary LNK order for an exempt line', () => {
+  it('skips a disabled pre-TO stage but preserves the PSTO to TVMT to primary LNK order', () => {
     const beforePsto = row({
       pstoRequired: 'да',
-      preHeatTreatmentLnkExempt: true,
+      preHeatTreatmentLnkEnabled: false,
       hasVik: 'да',
     })
     expect(buildJointNextActions(beforePsto)[0]).toMatchObject({
@@ -481,7 +481,7 @@ describe('joint next actions', () => {
     })
   })
 
-  it('shows the real primary result next while SP-01 remains in permissive mode', () => {
+  it('does not skip physical stages or warn about an early request alone', () => {
     const primaryStartedEarly = row({
       pstoRequired: 'да',
       hasVik: 'да',
@@ -491,10 +491,9 @@ describe('joint next actions', () => {
     })
 
     expect(buildJointNextActions(primaryStartedEarly, [], PERMISSIVE_CONTROL_PROCESS_SETTINGS)[0]).toMatchObject({
-      kind: 'primaryLnkResult',
-      title: 'Внести результат основного НК',
+      kind: 'preLnkRequest',
+      title: 'Создать заявку НК до ТО',
       methodCode: 'ВИК',
-      description: expect.stringContaining('СП-01: предыдущие этапы пропущены'),
     })
   })
 
@@ -505,7 +504,8 @@ describe('joint next actions', () => {
       hasRk: 'да',
       vikRequest: 'Основная заявка ВИК',
       vikRequestDate: '2026-08-07',
-      vikResult: 'ожидает НК',
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-08',
     })
 
     expect(buildJointNextActions(primaryStartedEarly, [], PERMISSIVE_CONTROL_PROCESS_SETTINGS)[0]).toMatchObject({

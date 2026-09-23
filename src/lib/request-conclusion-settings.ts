@@ -232,6 +232,7 @@ export function extractSystemNameNumber(
   pattern: string,
   context: NamingPatternContext,
   name: string,
+  options: { allowDifferentDate?: boolean } = {},
 ) {
   const normalizedPattern = pattern.trim() || '{{Дата}}-{{№}}'
   if (!hasPatternToken(normalizedPattern, ['№', 'Номер'])) return ''
@@ -242,8 +243,18 @@ export function extractSystemNameNumber(
     subtitleCode: '__SYSTEM_DOCUMENT_SUBTITLE__',
     line: '__SYSTEM_DOCUMENT_LINE__',
   }
+  // A document's date may be corrected independently of its original name.
+  // Match only date tokens; literal text, method and known row context stay exact.
+  const dateMarker = '__SYSTEM_DOCUMENT_NAME_DATE__'
+  const shortDateMarker = '__SYSTEM_DOCUMENT_NAME_SHORT_DATE__'
+  const recognitionPattern = options.allowDifferentDate
+    ? normalizedPattern.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (token, value: string) => {
+        const field = getPatternFieldByToken(value)
+        return field === 'date' ? dateMarker : field === 'shortDate' ? shortDateMarker : token
+      })
+    : normalizedPattern
   const renderedPattern = renderNamingPatternWithNumberText(
-    normalizedPattern,
+    recognitionPattern,
     {
       ...context,
       projectTitle: context.projectTitle ?? valueMarkers.projectTitle,
@@ -258,6 +269,12 @@ export function extractSystemNameNumber(
     .join('(\\d+)')
   for (const valueMarker of Object.values(valueMarkers)) {
     numberPattern = numberPattern.split(escapeRegExp(valueMarker)).join('.*?')
+  }
+  if (options.allowDifferentDate) {
+    const dayMonth = '(?:0[1-9]|[12]\\d|3[01])\\.(?:0[1-9]|1[0-2])\\.'
+    numberPattern = numberPattern
+      .split(escapeRegExp(dateMarker)).join(`${dayMonth}\\d{4}`)
+      .split(escapeRegExp(shortDateMarker)).join(`${dayMonth}\\d{2}`)
   }
   const match = name.trim().match(new RegExp(`^${numberPattern}$`, 'u'))
   return match?.[1] ?? ''

@@ -2,7 +2,7 @@ import {
   getLnkMethodByResultKey,
   getLnkMethodByRequestKey,
 } from '@/lib/lnk-status'
-import { assertNoLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
+import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import {
   applyLnkFieldUpdate,
   clearDisabledLnkRequests,
@@ -38,7 +38,7 @@ export function buildLnkFieldRow({
   }
   if (requestMethod && !hasText(value)) {
     const proposedRecord = buildLnkRequestPositionRemovalRow(record, fieldKey)
-    assertNoLnkChronologyIssues([proposedRecord], loadSaveCheckSettings())
+    assertNoNewLnkChronologyIssues([proposedRecord], [record], loadSaveCheckSettings())
     return proposedRecord
   }
   if (isLnkRequestField(fieldKey) && value && !lnkRequestOptions.includes(value)) {
@@ -46,6 +46,6 @@ export function buildLnkFieldRow({
   }
 
   const proposedRecord = clearDisabledLnkRequests(withTouchedLnkTimestamp(applyLnkFieldUpdate(record, fieldKey, value)))
-  assertNoLnkChronologyIssues([proposedRecord], loadSaveCheckSettings())
+  assertNoNewLnkChronologyIssues([proposedRecord], [record], loadSaveCheckSettings())
   return withLnkFinalStatus(proposedRecord)
 }

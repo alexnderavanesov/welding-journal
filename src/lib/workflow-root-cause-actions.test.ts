@@ -19,7 +19,7 @@ describe('workflow root-cause actions', () => {
     const actions = getLnkChronologyRootCauseActions(issues)
 
     expect(actions.map((action) => action.label)).toEqual([
-      'Исправить дату заявки ВИК',
+      'Исправить дату заключения ВИК',
       'Исправить дату ПСТО',
       'Исправить дату заключения ТВМТ',
     ])
@@ -29,9 +29,9 @@ describe('workflow root-cause actions', () => {
         rowId: 5,
         stage: 'primary',
         methodCode: 'ВИК',
-        documentPart: 'request',
+        documentPart: 'conclusion',
         focus: 'date',
-        documentName: 'Заявка ВИК',
+        documentName: 'Заключение ВИК',
         documentDate: '2026-08-09',
       },
     })
@@ -116,7 +116,7 @@ describe('workflow root-cause actions', () => {
   })
 
   it('deduplicates a shared correction and removes the ZV after a valid draft fix', () => {
-    const previous = f5Row({ vikRequest: '', vikRequestDate: '' })
+    const previous = f5Row({ vikResult: 'ожидает НК', vikConclusion: '', vikConclusionDate: '' })
     const blocked = getNewChronologyRootCauseState({
       previousRows: [previous],
       proposedRows: [f5Row()],
@@ -124,12 +124,12 @@ describe('workflow root-cause actions', () => {
     })
     const fixed = getNewChronologyRootCauseState({
       previousRows: [previous],
-      proposedRows: [f5Row({ vikRequestDate: '2026-08-30' })],
+      proposedRows: [f5Row({ vikConclusionDate: '2026-08-30' })],
       settings: DEFAULT_SAVE_CHECK_SETTINGS,
     })
 
     expect(blocked.message).toContain('раньше даты ПСТО')
-    expect(blocked.actions.filter((action) => action.label === 'Исправить дату заявки ВИК')).toHaveLength(1)
+    expect(blocked.actions.filter((action) => action.label === 'Исправить дату заключения ВИК')).toHaveLength(1)
     expect(fixed).toEqual({ message: null, actions: [] })
   })
 })
@@ -156,6 +156,9 @@ function f5Row(overrides: Partial<WeldRow> = {}): WeldRow {
     hasVik: 'да',
     vikRequest: 'Заявка ВИК',
     vikRequestDate: '2026-08-09',
+    vikResult: 'годен',
+    vikConclusion: 'Заключение ВИК',
+    vikConclusionDate: '2026-08-09',
     ...overrides,
   } as WeldRow
 }

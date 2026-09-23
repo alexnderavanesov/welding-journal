@@ -6,7 +6,7 @@ import { hasText, isEnabledControlValue } from '@/lib/report-value-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
-import { canUsePrimaryLnkStage } from '@/lib/lnk-control-stage'
+import { canCreatePrimaryLnkRequest } from '@/lib/lnk-control-stage'
 
 export function getLnkRequestMethodsForRows(rows: WeldInput[], requestName: string) {
   const name = requestName.trim()
@@ -66,7 +66,7 @@ export function countLnkRequestTargets(
         return method &&
           isEnabledControlValue(row[method.enabledKey]) &&
           !hasText(row[method.requestKey]) &&
-          canUsePrimaryLnkStage(row, method.code, settings)
+          canCreatePrimaryLnkRequest(row, method.code, settings)
       }).length
     )
   }, 0)

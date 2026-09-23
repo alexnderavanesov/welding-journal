@@ -40,6 +40,7 @@ import {
   type PstoWorkflowSummary,
 } from '@/server/weld-contracts'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
+import { buildNoRejectedPreHeatTreatmentWhere, buildPreHeatTreatmentRequirementsSkippedWhere, buildPstoExecutionHistoryWhere } from '@/server/pre-heat-treatment-policy'
 import { assertSecurityScope } from '@/server/security-functions'
 import {
   buildReportKindWhere,
@@ -338,7 +339,7 @@ function buildPstoScopeWhere(scope: PstoWorkflowRowsRequest['scope']): SQL {
     weldJoints.pstoRequired,
     ENABLED_CONTROL_REPORT_VALUES,
   )
-  const noRejectedPreControls = buildNoRejectedPreHeatTreatmentControlsWhere()
+  const noRejectedPreControls = buildNoRejectedPreHeatTreatmentWhere()
 
   if (scope === 'requestCandidates') {
     const primaryRequestAvailable = and(
@@ -437,30 +438,6 @@ function buildPstoWorkflowActiveWhere(activePsto: SQL) {
   return or(activePsto, buildPstoExecutionHistoryWhere()) ?? sql`false`
 }
 
-function buildPstoExecutionHistoryWhere() {
-  const primaryHistory = or(
-    completedPstoResult(weldJoints.pstoResult),
-    hasTextWhere(weldJoints.pstoDate),
-    hasTextWhere(weldJoints.heatTreatmentDiagram),
-    hasTextWhere(weldJoints.tvmtRequest),
-    hasTextWhere(weldJoints.tvmtRequestDate),
-    finalTvmtResult(weldJoints.tvmtResult),
-    hasTextWhere(weldJoints.tvmtConclusionDate),
-    hasTextWhere(weldJoints.tvmtConclusion),
-  ) ?? sql`false`
-  const repeatHistory = repeatExists(or(
-    completedPstoResult(pstoRepeatCycles.pstoResult),
-    hasTextWhere(pstoRepeatCycles.pstoDate),
-    hasTextWhere(pstoRepeatCycles.heatTreatmentDiagram),
-    hasTextWhere(pstoRepeatCycles.tvmtRequest),
-    hasTextWhere(pstoRepeatCycles.tvmtRequestDate),
-    finalTvmtResult(pstoRepeatCycles.tvmtResult),
-    hasTextWhere(pstoRepeatCycles.tvmtConclusionDate),
-    hasTextWhere(pstoRepeatCycles.tvmtConclusion),
-  ) ?? sql`false`)
-  return or(primaryHistory, repeatHistory) ?? sql`false`
-}
-
 function buildCurrentPstoCycleWhere(primaryCondition: SQL, repeatCondition: SQL) {
   return or(
     and(not(repeatExists(sql`true`)), primaryCondition),
@@ -485,29 +462,6 @@ function buildCurrentPstoCycleWhere(primaryCondition: SQL, repeatCondition: SQL)
   ) ?? sql`false`
 }
 
-function buildNoRejectedPreHeatTreatmentControlsWhere() {
-  const rejectedEnabledMethod = or(...PRE_HEAT_TREATMENT_LNK_METHODS.map((method) => and(
-    eq(preHeatTreatmentControls.method, method.code),
-    buildNullableControlEnabledWhere(
-      weldJoints[method.enabledKey],
-      ENABLED_CONTROL_REPORT_VALUES,
-    ),
-  ) ?? sql`false`)) ?? sql`false`
-  return or(
-    eq(weldJoints.preHeatTreatmentLnkExempt, true),
-    notExists(
-      SQL_QUERY_BUILDER
-        .select({ value: sql`1` })
-        .from(preHeatTreatmentControls)
-        .where(and(
-          eq(preHeatTreatmentControls.weldJointId, weldJoints.id),
-          rejectedEnabledMethod,
-          sql`lower(btrim(coalesce(${preHeatTreatmentControls.result}::text, ''))) in ('ремонт', 'вырез')`,
-        )),
-    ),
-  ) ?? sql`false`
-}
-
 function buildPrimaryPstoPrerequisitesReadyWhere() {
   const requiredMethodsReady = and(...PRE_HEAT_TREATMENT_LNK_METHODS.map((method) => or(
     not(buildNullableControlEnabledWhere(
@@ -527,7 +481,7 @@ function buildPrimaryPstoPrerequisitesReadyWhere() {
     ),
   ) ?? sql`false`)) ?? sql`true`
   return or(
-    eq(weldJoints.preHeatTreatmentLnkExempt, true),
+    buildPreHeatTreatmentRequirementsSkippedWhere(),
     requiredMethodsReady,
   ) ?? sql`false`
 }

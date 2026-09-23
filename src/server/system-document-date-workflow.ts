@@ -37,10 +37,7 @@ import {
   parseSystemDocumentMetadata,
   systemDocumentStorageType,
 } from '@/server/system-document-index'
-import {
-  readRequestConclusionSettings,
-  type SystemDocumentSequenceTransaction,
-} from '@/server/system-document-sequences'
+import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
 import { updateWeldJointsInBatches } from '@/server/weld-persistence'
 import { WELD_TABLE_RETURNING } from '@/server/weld-server-shared'
 import {
@@ -58,7 +55,6 @@ export type SystemDocumentDateChangeResult = Pick<
   | 'nextTitle'
   | 'previousDate'
   | 'nextDate'
-  | 'isSystemName'
   | 'rowCount'
   | 'positionCount'
 > & {
@@ -76,7 +72,6 @@ export async function changeSystemDocumentDate({
   return db.transaction(async (tx) => {
     await loadControlProcessSettingsFromTransaction(tx)
     const workflowSettings = await loadWeldWorkflowSettingsFromTransaction(tx)
-    const requestConclusionSettings = await readRequestConclusionSettings(tx)
     const document = await lockSystemDocument(tx, data.reference)
     const metadata = parseSystemDocumentMetadata(document.sourceMetadata)
     const assignments = await tx
@@ -104,7 +99,6 @@ export async function changeSystemDocumentDate({
       nextDate: data.nextDate,
       rows: currentRows,
       sourcePositions: metadata?.sourcePositions ?? [],
-      settings: requestConclusionSettings,
     })
     assertSystemDocumentDatePlanCoversAssignments(rowIds, plan.touchedRowIds)
     assertNoNewLnkChronologyIssues(
@@ -146,7 +140,6 @@ export async function changeSystemDocumentDate({
       nextTitle: plan.nextTitle,
       previousDate: plan.previousDate,
       nextDate: plan.nextDate,
-      isSystemName: plan.isSystemName,
       rowCount: plan.rowCount,
       positionCount: plan.positionCount,
       rows: savedRows,

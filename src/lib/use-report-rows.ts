@@ -33,6 +33,7 @@ export function prepareReportRows(
   finalStatusSourceRows?: WeldRow[],
   finalStatusSourceContext?: FinalStatusRowsContext,
   otherSettings?: ReportWdiSettings,
+  preserveStoredRepairStatus = false,
 ) {
   const duplicateControlsByWeldId = new Map<number, DuplicateControlRecord[]>()
   for (const control of duplicateControls) {
@@ -53,10 +54,14 @@ export function prepareReportRows(
   })
   const finalStatusRows = finalStatusSourceRows ?? rows
   const finalStatusContext = finalStatusSourceContext ?? buildFinalStatusRowsContext(finalStatusRows)
-  const preparedRows = rows.map((row) => ({
-    ...row,
-    finalStatus: calculateFinalStatusInRows(row, finalStatusRows, finalStatusContext),
-  }))
+  const preparedRows = rows.map((row) => {
+    const calculatedStatus = calculateFinalStatusInRows(row, finalStatusRows, finalStatusContext)
+    // A paged report may not contain the rejected source. Keep its server-
+    // calculated repair status until an authoritative complete context is loaded.
+    const keepRepair = preserveStoredRepairStatus && !finalStatusSourceContext &&
+      calculatedStatus === 'ожидает сварку' && row.finalStatus === 'ожидает ремонт'
+    return { ...row, finalStatus: keepRepair ? 'ожидает ремонт' : calculatedStatus }
+  })
   return otherSettings && isSystemWdiMode(otherSettings)
     ? preparedRows.map((row) => withSystemWdi(row, otherSettings))
     : preparedRows
@@ -105,6 +110,7 @@ export function useReportRows(
   finalStatusSourceRows?: WeldRow[],
   finalStatusSourceContext?: FinalStatusRowsContext,
   otherSettings?: ReportWdiSettings,
+  preserveStoredRepairStatus = false,
 ) {
   const previousRowsRef = useRef<WeldRow[]>([])
   return useMemo(
@@ -115,12 +121,13 @@ export function useReportRows(
         finalStatusSourceRows,
         finalStatusSourceContext,
         otherSettings,
+        preserveStoredRepairStatus,
       )
       const sharedRows = reuseEquivalentWeldRows(previousRowsRef.current, nextRows)
       previousRowsRef.current = sharedRows
       return sharedRows
     },
-    [duplicateControls, finalStatusSourceContext, finalStatusSourceRows, otherSettings, sourceRows],
+    [duplicateControls, finalStatusSourceContext, finalStatusSourceRows, otherSettings, preserveStoredRepairStatus, sourceRows],
   )
 }
 

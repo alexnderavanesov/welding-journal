@@ -45,6 +45,7 @@ describe('LNK control stages', () => {
   it('does not restore pre-control requirements for a grandfathered PSTO row', () => {
     const row = {
       pstoRequired: 'да',
+      pstoRequest: 'Историческая заявка ПСТО',
       hasVik: 'да',
       preHeatTreatmentLnkExempt: true,
     }

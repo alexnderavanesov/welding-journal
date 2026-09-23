@@ -1,7 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-settings'
-import { getSystemDocumentNumber } from '@/lib/system-document-types'
 import { withE2eDatabase } from '../database'
 
 const SOURCE_JOINT = 'F5'
@@ -16,37 +14,25 @@ test('точное исправление ZV возвращает чернови
   await expect(page.getByRole('heading', { name: 'Заявка ЛНК' })).toBeVisible()
 
   const requestDate = page.getByLabel('Дата заявки', { exact: true })
-  await requestDate.fill('2026-08-09')
+  await requestDate.fill('2026-07-31')
   await expect(page.getByRole('button', { name: 'Исправить дату заявки ВИК' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Исправить дату ПСТО' })).toBeVisible()
-
-  await page.getByRole('button', { name: 'Исправить дату ПСТО' }).click()
-  await expect(page.getByRole('heading', { name: 'История ПСТО и ТВМТ' })).toBeVisible()
-  await expect(page.getByLabel('Дата: результат ПСТО', { exact: true })).toHaveValue('2026-08-29')
-
-  await page.getByRole('button', { name: 'Вернуться к исходному окну' }).click()
-  await expect(page.getByRole('heading', { name: 'История ПСТО и ТВМТ' })).toBeHidden()
-  await expect(requestDate).toHaveValue('2026-08-09')
+  await expect(page.getByRole('button', { name: 'Исправить дату ПСТО' })).toBeHidden()
+  await page.getByRole('button', { name: 'Исправить дату заявки ВИК' }).click()
+  await expect(requestDate).toBeFocused()
   await expect(page.getByRole('checkbox', { name: `Выбрать стык E2E-ROOT-L1 ${SOURCE_JOINT}`, exact: true })).toBeChecked()
 
   await page.getByRole('button', { name: 'Очистить', exact: true }).click()
   await page.getByRole('checkbox', { name: `Выбрать стык E2E-ROOT-L1 ${SECOND_JOINT}`, exact: true }).click()
-  await requestDate.fill('2026-08-30')
+  await requestDate.fill('2026-08-09')
   await expect(page.getByRole('button', { name: 'Исправить дату ПСТО' })).toBeHidden()
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Заявка ЛНК' })).toBeHidden()
 
   const initialRows = await loadVikRequests()
   expect(initialRows).toHaveLength(2)
-  expect(initialRows.every((row) => row.vik_request_date === '2026-08-30')).toBe(true)
+  expect(initialRows.every((row) => row.vik_request_date === '2026-08-09')).toBe(true)
   expect(new Set(initialRows.map((row) => row.vik_request)).size).toBe(1)
   const previousTitle = initialRows[0]!.vik_request
-  const previousNumber = getSystemDocumentNumber({
-    type: 'lnkRequest',
-    title: previousTitle,
-    date: '2026-08-30',
-  }, REQUEST_CONCLUSION_DEFAULT_SETTINGS)
-  expect(previousNumber).not.toBe('')
 
   await openHeaderMenuItem(page, 'Заявка', 'Все заявки ЛНК')
   await expect(page.getByRole('heading', { name: 'Редактирование заявок ЛНК' })).toBeVisible()
@@ -57,7 +43,7 @@ test('точное исправление ZV возвращает чернови
   await page.getByRole('button', { name: 'Изменить дату заявки', exact: true }).click()
 
   const documentDate = page.getByLabel('Дата заявки ЛНК', { exact: true })
-  await expect(documentDate).toHaveValue('2026-08-30')
+  await expect(documentDate).toHaveValue('2026-08-09')
   await documentDate.fill('2026-08-31')
   await expect(page.getByText(/Будет изменено позиций: 2; стыков: 2/)).toBeVisible()
   await page.getByRole('button', { name: 'Изменить дату', exact: true }).click()
@@ -74,12 +60,18 @@ test('точное исправление ZV возвращает чернови
   ])
   const savedRows = await loadVikRequests()
   expect(new Set(savedRows.map((row) => row.vik_request)).size).toBe(1)
-  expect(savedRows[0]!.vik_request).not.toBe(previousTitle)
-  expect(getSystemDocumentNumber({
-    type: 'lnkRequest',
-    title: savedRows[0]!.vik_request,
-    date: '2026-08-31',
-  }, REQUEST_CONCLUSION_DEFAULT_SETTINGS)).toBe(previousNumber)
+  expect(savedRows[0]!.vik_request).toBe(previousTitle)
+  await expect(page.getByPlaceholder('Новое наименование заявки', { exact: true })).toBeDisabled()
+
+  // A concurrent change of one position must prevent changes to every position.
+  await documentDate.fill('2026-09-01')
+  await withE2eDatabase(async (client) => {
+    await client.query("update weld_joints set updated_at = updated_at + interval '1 second' where project_title = 'E2E точное исправление' and joint = $1", [SECOND_JOINT])
+  })
+  await page.getByRole('button', { name: 'Изменить дату', exact: true }).click()
+  await confirmation.getByRole('button', { name: 'Изменить дату', exact: true }).click()
+  await expect(page.getByText(/уже изменен другим пользователем/).first()).toBeVisible()
+  expect(await loadVikRequests()).toEqual(savedRows)
 })
 
 async function runNextAction(page: Page, joint: string, title: string) {

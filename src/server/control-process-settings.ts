@@ -1,51 +1,22 @@
-import { and, count, eq, sql } from 'drizzle-orm'
+import { count, eq, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import {
   appSettings,
   preHeatTreatmentControls,
-  pstoRepeatCycles,
-  weldJoints,
 } from '@/db/schema'
 import {
   DEFAULT_CONTROL_PROCESS_SETTINGS,
   normalizeControlProcessSettings,
-  type ControlProcessSettings,
 } from '@/lib/control-process-settings'
-import {
-  getPstoLineIdentityKey,
-  normalizePstoLineIdentity,
-  normalizePstoLineIdentityPart,
-} from '@/lib/psto-line-assignment'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
-import type { WeldInput } from '@/lib/weld-fields'
 import {
   lockAllControlProcessSettings,
   lockControlProcessSettings,
 } from '@/server/control-process-settings-lock'
 import { rebuildAllLayeredControlDocumentsInTransaction } from '@/server/layered-control-documents'
 import type { GeneratedDocumentsTransaction } from '@/server/generated-document-number-sequence'
-import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { assertSecurityScope } from '@/server/security-functions'
-
-type ControlProcessRow = Pick<
-  typeof weldJoints.$inferSelect,
-  | 'id'
-  | 'projectTitle'
-  | 'subtitleCode'
-  | 'line'
-  | 'pstoRequest'
-  | 'pstoRequestDate'
-  | 'pstoDate'
-  | 'heatTreatmentDiagram'
-  | 'pstoResult'
-  | 'pstoNote'
-  | 'tvmtRequest'
-  | 'tvmtRequestDate'
-  | 'tvmtResult'
-  | 'tvmtConclusionDate'
-  | 'tvmtConclusion'
->
 
 export type ControlProcessSettingsOverview = {
   preHeatTreatmentBlockerCount: number
@@ -66,66 +37,6 @@ export async function loadControlProcessSettingsFromTransaction(
   } catch {
     return DEFAULT_CONTROL_PROCESS_SETTINGS
   }
-}
-
-export async function getPreHeatTreatmentLnkExemptionsForNewRows(
-  tx: Pick<GeneratedDocumentsTransaction, 'execute' | 'select'>,
-  rows: readonly Pick<WeldInput, 'projectTitle' | 'subtitleCode' | 'line'>[],
-  lockedSettings?: ControlProcessSettings,
-) {
-  if (rows.length === 0) return []
-  const settings = lockedSettings ?? await loadControlProcessSettingsFromTransaction(tx)
-  if (!settings.preHeatTreatmentLnkEnabled) return rows.map(() => true)
-
-  const identitiesByKey = new Map(
-    rows.flatMap((row) => {
-      const identity = normalizePstoLineIdentity(row)
-      return identity.line ? [[getPstoLineIdentityKey(identity), identity] as const] : []
-    }),
-  )
-  const identities = [...identitiesByKey.values()]
-  const exemptLineKeys = new Set<string>()
-  if (identities.length > 0) {
-    const exemptLines = await tx
-      .select({
-        projectTitle: weldJoints.projectTitle,
-        subtitleCode: weldJoints.subtitleCode,
-        line: weldJoints.line,
-      })
-      .from(weldJoints)
-      .where(and(
-        eq(weldJoints.preHeatTreatmentLnkExempt, true),
-        sql`exists (
-          select 1
-          from unnest(
-            ${sql.param(identities.map((identity) => normalizePstoLineIdentityPart(identity.projectTitle)))}::text[],
-            ${sql.param(identities.map((identity) => normalizePstoLineIdentityPart(identity.subtitleCode)))}::text[],
-            ${sql.param(identities.map((identity) => normalizePstoLineIdentityPart(identity.line)))}::text[]
-          ) as target(project_title, subtitle_code, line)
-          where lower(btrim(coalesce(${weldJoints.projectTitle}, ''))) = target.project_title
-            and lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))) = target.subtitle_code
-            and lower(btrim(coalesce(${weldJoints.line}, ''))) = target.line
-        )`,
-      ))
-      .groupBy(weldJoints.projectTitle, weldJoints.subtitleCode, weldJoints.line)
-    for (const exemptLine of exemptLines) {
-      exemptLineKeys.add(getPstoLineIdentityKey(exemptLine))
-    }
-  }
-
-  return rows.map((row) => {
-    const identity = normalizePstoLineIdentity(row)
-    return Boolean(identity.line) && exemptLineKeys.has(getPstoLineIdentityKey(identity))
-  })
-}
-
-export async function getPreHeatTreatmentLnkExemptionForNewRow(
-  tx: Pick<GeneratedDocumentsTransaction, 'execute' | 'select'>,
-  row: Pick<WeldInput, 'projectTitle' | 'subtitleCode' | 'line'>,
-  lockedSettings?: ControlProcessSettings,
-) {
-  const [exempt = false] = await getPreHeatTreatmentLnkExemptionsForNewRows(tx, [row], lockedSettings)
-  return exempt
 }
 
 export async function prepareControlProcessSettingsChangeInTransaction({
@@ -168,11 +79,6 @@ export async function prepareControlProcessSettingsChangeInTransaction({
         'Сначала завершите или исправьте их в отчете ЛНК.',
       )
     }
-    await tx
-      .update(weldJoints)
-      .set({ preHeatTreatmentLnkExempt: true, updatedAt: new Date() })
-  } else if (!current.preHeatTreatmentLnkEnabled && next.preHeatTreatmentLnkEnabled) {
-    await restorePreHeatTreatmentRequirementsForUnstartedLines(tx)
   }
 
   if (!current.layeredControlEnabled && next.layeredControlEnabled) {
@@ -180,36 +86,6 @@ export async function prepareControlProcessSettingsChangeInTransaction({
   }
 
   return next
-}
-
-export function isControlProcessPstoStarted(row: Partial<ControlProcessRow>) {
-  return [
-    row.pstoRequest,
-    row.pstoRequestDate,
-    row.pstoDate,
-    row.heatTreatmentDiagram,
-    row.pstoResult,
-    row.pstoNote,
-    row.tvmtRequest,
-    row.tvmtRequestDate,
-    row.tvmtResult,
-    row.tvmtConclusionDate,
-    row.tvmtConclusion,
-  ].some(hasText)
-}
-
-export function getPreHeatTreatmentExemptionIdsToRetain(
-  rows: readonly ControlProcessRow[],
-  repeatCycleWeldIds: ReadonlySet<number> = new Set(),
-) {
-  const startedLineKeys = new Set(
-    rows
-      .filter((row) => isControlProcessPstoStarted(row) || repeatCycleWeldIds.has(row.id))
-      .map((row) => getPstoLineIdentityKey(row as WeldInput)),
-  )
-  return rows
-    .filter((row) => startedLineKeys.has(getPstoLineIdentityKey(row as WeldInput)))
-    .map((row) => row.id)
 }
 
 export async function countPreHeatTreatmentDisableBlockers(
@@ -239,52 +115,4 @@ export async function getPreHeatTreatmentDisableBlockerRowIds() {
     .where(sql`lower(btrim(coalesce(${preHeatTreatmentControls.result}, ''))) <> 'годен'`)
     .orderBy(preHeatTreatmentControls.weldJointId)
   return blockerRows.map((row) => Number(row.id)).filter(Number.isFinite)
-}
-
-async function restorePreHeatTreatmentRequirementsForUnstartedLines(
-  tx: GeneratedDocumentsTransaction,
-) {
-  const rows = await tx
-    .select({
-      id: weldJoints.id,
-      projectTitle: weldJoints.projectTitle,
-      subtitleCode: weldJoints.subtitleCode,
-      line: weldJoints.line,
-      pstoRequest: weldJoints.pstoRequest,
-      pstoRequestDate: weldJoints.pstoRequestDate,
-      pstoDate: weldJoints.pstoDate,
-      heatTreatmentDiagram: weldJoints.heatTreatmentDiagram,
-      pstoResult: weldJoints.pstoResult,
-      pstoNote: weldJoints.pstoNote,
-      tvmtRequest: weldJoints.tvmtRequest,
-      tvmtRequestDate: weldJoints.tvmtRequestDate,
-      tvmtResult: weldJoints.tvmtResult,
-      tvmtConclusionDate: weldJoints.tvmtConclusionDate,
-      tvmtConclusion: weldJoints.tvmtConclusion,
-    })
-    .from(weldJoints)
-    .where(eq(weldJoints.preHeatTreatmentLnkExempt, true))
-  if (rows.length === 0) return
-
-  const rowIds = rows.map((row) => row.id)
-  const repeatRows = await tx
-    .select({ weldJointId: pstoRepeatCycles.weldJointId })
-    .from(pstoRepeatCycles)
-    .where(buildNumberArrayMatch(pstoRepeatCycles.weldJointId, rowIds))
-  const retainIds = new Set(getPreHeatTreatmentExemptionIdsToRetain(
-    rows,
-    new Set(repeatRows.map((row) => row.weldJointId)),
-  ))
-  const releaseIds = rowIds.filter((id) => !retainIds.has(id))
-
-  if (releaseIds.length > 0) {
-    await tx
-      .update(weldJoints)
-      .set({ preHeatTreatmentLnkExempt: false, updatedAt: new Date() })
-      .where(buildNumberArrayMatch(weldJoints.id, releaseIds))
-  }
-}
-
-function hasText(value: unknown) {
-  return String(value ?? '').trim().length > 0
 }

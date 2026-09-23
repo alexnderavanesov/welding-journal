@@ -6,7 +6,7 @@ import {
   getRejectedPreHeatTreatmentControls,
   isPreHeatTreatmentLnkMethodCode,
   PRE_HEAT_TREATMENT_LNK_METHODS,
-  requiresPreHeatTreatmentLnk,
+  isPreHeatTreatmentLnkAvailable,
   type PreHeatTreatmentControlRecord,
   type PreHeatTreatmentLnkMethodCode,
 } from '@/lib/lnk-control-stage'
@@ -17,6 +17,7 @@ import {
 import { isControlEnabledValue } from '@/lib/control-availability-values'
 import type { RkExposureTableSettings } from '@/lib/other-settings'
 import { hasPrimaryPstoHistory } from '@/lib/psto-line-assignment'
+import { isPreHeatTreatmentStageEnabled } from '@/lib/pre-heat-treatment-policy'
 import { applyRkExposureResultTransition } from '@/lib/rk-exposure'
 import { transitionLnkDefectDescription } from '@/lib/lnk-defect-description'
 import { loadSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
@@ -36,7 +37,8 @@ export function getPreHeatTreatmentRequestBlockReason(
   if (!isPreHeatTreatmentLnkMethodCode(methodCode)) {
     return `${methodCode || 'Выбранный метод'} не выполняется как НК до ТО.`
   }
-  if (!requiresPreHeatTreatmentLnk(row)) {
+  if (!isPreHeatTreatmentStageEnabled(row)) return 'НК до ТО выключен в настройках.'
+  if (!isPreHeatTreatmentLnkAvailable(row)) {
     return 'НК до ТО доступен только на линии с ПСТО.'
   }
   const method = PRE_HEAT_TREATMENT_LNK_METHODS.find((candidate) => candidate.code === methodCode)!
@@ -65,7 +67,8 @@ export function getPreHeatTreatmentResultBlockReason(
 ) {
   const methodCode = normalizeMethodCode(rawMethodCode)
   if (!isPreHeatTreatmentLnkMethodCode(methodCode)) return 'Выберите вид НК до ТО.'
-  if (!requiresPreHeatTreatmentLnk(row)) {
+  if (!isPreHeatTreatmentStageEnabled(row)) return 'НК до ТО выключен в настройках.'
+  if (!isPreHeatTreatmentLnkAvailable(row)) {
     return 'НК до ТО доступен только на линии с ПСТО.'
   }
   const current = getPreHeatTreatmentControl(row, methodCode)

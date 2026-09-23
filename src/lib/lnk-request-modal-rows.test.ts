@@ -34,7 +34,7 @@ describe('filterLnkRequestRows', () => {
     expect(filterLnkRequestRows([...nonMatchingRows, matchingRow], 'нужный').map((row) => row.id)).toEqual([3])
   })
 
-  it('shows a blocked staged row in search but enables only an explicit permissive selection', () => {
+  it('allows selecting an early request independently of the permissive result mode', () => {
     const staged = {
       id: 3,
       projectTitle: 'Проект',
@@ -45,7 +45,7 @@ describe('filterLnkRequestRows', () => {
     } as WeldRow
 
     expect(filterLnkRequestRows([staged], 'f3')).toEqual([staged])
-    expect(countLnkRequestTargets([staged], ['vikRequest'])).toBe(0)
+    expect(countLnkRequestTargets([staged], ['vikRequest'])).toBe(1)
     expect(countLnkRequestTargets([staged], ['vikRequest'], {
       preHeatTreatmentLnkEnabled: true,
       allowPrimaryLnkBeforePreviousStagesComplete: true,

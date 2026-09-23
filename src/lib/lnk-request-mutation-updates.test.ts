@@ -48,7 +48,7 @@ describe('lnk request mutation updates', () => {
     expect(issue?.message).toBe('Стык F4: дата заявки ВИК 01.07.2026 раньше даты сварки 04.07.2026.')
   })
 
-  it('allows only the staged-sequence debt when permissive primary LNK is enabled', () => {
+  it('allows a scheduled request in both strict and permissive result modes', () => {
     const records = [{
       id: 1,
       joint: 'F4',
@@ -62,7 +62,7 @@ describe('lnk request mutation updates', () => {
       methodKeys: ['vikRequest'],
       requestName: 'Заявка-01',
       requestDate: '2026-08-02',
-    })).toEqual([])
+    })).toHaveLength(1)
     expect(buildLnkRequestRows({
       records,
       methodKeys: ['vikRequest'],

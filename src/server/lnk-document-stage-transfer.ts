@@ -13,9 +13,11 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
 import {
   getPrimaryLnkStageAccess,
+  getPrimaryLnkRequestAccess,
+  hasPrimaryLnkResultTrace,
   getPreHeatTreatmentControl,
   isPreHeatTreatmentLnkMethodCode,
-  requiresPreHeatTreatmentLnk,
+  isPreHeatTreatmentLnkAvailable,
   type PreHeatTreatmentControlRecord,
   type PreHeatTreatmentLnkMethodCode,
 } from '@/lib/lnk-control-stage'
@@ -407,7 +409,7 @@ function buildPositionPreview({
   const method = ALL_LNK_FIELD_METHODS.find((candidate) => candidate.code === position.methodCode)!
   let disabledReason: string | null = null
   if (sourceStage === 'primary') {
-    if (!requiresPreHeatTreatmentLnk(row)) {
+    if (!isPreHeatTreatmentLnkAvailable(row)) {
       disabledReason = 'для этого стыка этап «До ТО» не применяется.'
     } else if (getPreHeatTreatmentControl(row, position.methodCode)) {
       disabledReason = `целевой комплект ${position.methodCode} до ТО уже заполнен.`
@@ -419,17 +421,17 @@ function buildPositionPreview({
   } else if (hasPrimaryLnkStageTrace(row, position.methodCode)) {
     disabledReason = `целевой основной комплект ${position.methodCode} уже заполнен.`
   } else {
-    const currentAccess = getPrimaryLnkStageAccess(row, position.methodCode, processSettings)
+    const simulated = simulateStageTransfer({
+      rows: [row], positions: [position], controls: [control], sourceStage,
+    })[0]!
+    const getAccess = hasPrimaryLnkResultTrace(simulated, position.methodCode)
+      ? getPrimaryLnkStageAccess
+      : getPrimaryLnkRequestAccess
+    const currentAccess = getAccess(row, position.methodCode, processSettings)
     if (currentAccess.status === 'blocked') {
       disabledReason = currentAccess.reason
     } else {
-      const simulated = simulateStageTransfer({
-        rows: [row],
-        positions: [position],
-        controls: [control],
-        sourceStage,
-      })[0]!
-      const nextAccess = getPrimaryLnkStageAccess(simulated, position.methodCode, processSettings)
+      const nextAccess = getAccess(simulated, position.methodCode, processSettings)
       if (nextAccess.status === 'blocked') disabledReason = nextAccess.reason
     }
   }

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { PgDialect } from 'drizzle-orm/pg-core'
 
 import { preHeatTreatmentControls } from '@/db/schema'
+import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '@/lib/control-process-settings'
 import {
   attachHeatTreatmentControlRelations,
   attachHeatTreatmentControlRelationsInPlace,
@@ -21,22 +22,22 @@ describe('server heat-treatment relation loading', () => {
     expect(query).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the full relation loader at two constant query families', async () => {
+  it('loads two relation families and the current setting once for the whole batch', async () => {
     const query = vi.fn(async () => [])
     const db = createRelationDb(query)
     const rows = Array.from({ length: 1_001 }, (_, index) => ({ id: index + 1 }))
 
     await attachHeatTreatmentControlRelations(rows, db as never)
 
-    expect(query).toHaveBeenCalledTimes(2)
+    expect(query).toHaveBeenCalledTimes(3)
   })
 
-  it('keeps the in-place dispatcher loader at two queries and omits empty relation arrays', async () => {
+  it('keeps a 200,000-joint in-place dispatcher batch at two queries without reloading known settings', async () => {
     const query = vi.fn(async () => [])
     const db = createRelationDb(query)
-    const rows = Array.from({ length: 2_001 }, (_, index) => ({ id: index + 1 }))
+    const rows = Array.from({ length: 200_000 }, (_, index) => ({ id: index + 1 }))
 
-    const result = await attachHeatTreatmentControlRelationsInPlace(rows, db as never)
+    const result = await attachHeatTreatmentControlRelationsInPlace(rows, db as never, DEFAULT_CONTROL_PROCESS_SETTINGS)
 
     expect(query).toHaveBeenCalledTimes(2)
     expect(result).toBe(rows)

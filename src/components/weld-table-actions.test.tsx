@@ -64,7 +64,7 @@ describe('WeldTableRowActions for PSTO', () => {
 })
 
 describe('WeldTableRowActions for LNK', () => {
-  it('explains that primary LNK is waiting for the completed PSTO/TVMT cycle', () => {
+  it('offers an early primary request while PSTO/TVMT is incomplete', () => {
     renderActions({
       id: 3,
       pstoRequired: 'да',
@@ -78,10 +78,7 @@ describe('WeldTableRowActions for LNK', () => {
       }],
     } as WeldRow, 'lnk')
 
-    expect(screen.getByRole('button', { name: 'Создать заявку ЛНК на этот стык' })).toHaveAttribute(
-      'title',
-      expect.stringContaining('Контроль ВИК после ТО недоступен'),
-    )
+    expect(screen.getByRole('button', { name: 'Создать заявку ЛНК на этот стык' })).toBeEnabled()
   })
 
   it('distinguishes missing requests from already completed results', () => {

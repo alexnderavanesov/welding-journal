@@ -142,6 +142,7 @@ import type {
 } from '@/lib/workflow-root-cause-actions'
 import {
   getCurrentWorkflowRequestIdentity,
+  getPstoStageCompletionNextAction,
   getWorkflowRootCauseDestination,
   type WorkflowRootCauseDestination,
 } from '@/lib/workflow-root-cause-navigation'
@@ -1985,8 +1986,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     weldPageQuery.rows,
     [],
     undefined,
-    remoteFinalStatusContext,
+    finalStatusContextQuery.isEnabled && isRemoteFinalStatusContextReady ? remoteFinalStatusContext : undefined,
     otherSettings,
+    true,
   )
   const pagedReportRows = basePagedReportRows
   const tableDispatcherTaskRowIds = useMemo(
@@ -4164,6 +4166,16 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       return
     }
     const row = currentRow as WeldRow
+    if (target.kind === 'psto-cycle' && target.intent === 'complete-stage') {
+      const nextAction = getPstoStageCompletionNextAction(target, row)
+      if (!nextAction) {
+        setMessage('Этап ПСТО/ТВМТ уже изменился. Обновите расчет диспетчера и повторите действие.')
+        return
+      }
+      setIsDispatcherWorkspaceOpen(false)
+      runJointNextAction(row, nextAction)
+      return
+    }
     const destination = getWorkflowRootCauseDestination(target, row)
     if (destination === 'pre-lnk-workflow' && !controlProcessSettings.preHeatTreatmentLnkEnabled) {
       setMessage('НК до ТО выключен в настройках проекта. Включите процесс, чтобы завершить предыдущие этапы контроля.')

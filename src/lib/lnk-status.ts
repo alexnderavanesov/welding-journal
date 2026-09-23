@@ -27,7 +27,7 @@ import { CONTROL_BASIS_SUMMARY_FIELD_KEY, formatControlBasisSummary } from '@/li
 import {
   getRejectedPreHeatTreatmentControls,
   getPrimaryPstoStartStatusLabel,
-  canUsePrimaryLnkStage,
+  canCreatePrimaryLnkRequest,
 } from '@/lib/lnk-control-stage'
 import { getPreHeatTreatmentReportValue } from '@/lib/pre-heat-treatment-report-fields'
 import {
@@ -95,7 +95,7 @@ export function getAvailableLnkRequestMethods(
   settings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>,
 ) {
   return getLnkRequestCandidateMethods(row).filter((method) =>
-    canUsePrimaryLnkStage(row, method.code, settings),
+    canCreatePrimaryLnkRequest(row, method.code, settings),
   )
 }
 

@@ -8,6 +8,8 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 
 export type HeatTreatmentControlRelationsCarrier = {
   id: number
+  preHeatTreatmentLnkExempt?: boolean
+  preHeatTreatmentLnkEnabled?: boolean
   preHeatTreatmentControls?: PreHeatTreatmentControlRecord[]
   pstoRepeatCycles?: PstoRepeatCycleRecord[]
 }

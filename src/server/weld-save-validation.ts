@@ -31,6 +31,7 @@ import { getWeldFormSaveBlockReason } from '@/lib/weld-form-save-reasons'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { calculateFinalStatus } from '@/lib/weld-status'
+import { getPreHeatTreatmentExemptionForSave, hasHistoricalPreHeatTreatmentExemption } from '@/lib/pre-heat-treatment-policy'
 import {
   DEFAULT_SAVE_CHECK_SETTINGS,
   formatSaveCheckBlockReason,
@@ -70,6 +71,8 @@ import {
 import {
   getPreHeatTreatmentControl,
   getPrimaryLnkStageAccess,
+  getPrimaryLnkRequestAccess,
+  hasPrimaryLnkResultTrace,
   getPrimaryPstoStartBlockReason,
   isPreHeatTreatmentLnkMethodCode,
   PRE_HEAT_TREATMENT_LNK_METHODS,
@@ -257,6 +260,12 @@ export function prepareServerWeldRecords({
     allowPstoLineLifecycleMove,
   })
   records.forEach((record) => {
+    const policyRow = record as WeldRow
+    policyRow.preHeatTreatmentLnkEnabled = context.controlProcessSettings.preHeatTreatmentLnkEnabled
+    const previous = previousRows.get(Number(record.id))
+    policyRow.preHeatTreatmentLnkExempt = getPreHeatTreatmentExemptionForSave(policyRow, {
+      ...previous, preHeatTreatmentLnkEnabled: policyRow.preHeatTreatmentLnkEnabled,
+    })
     record.finalStatus = calculateFinalStatus(record)
   })
   if (!isSystemWdiMode(context.otherSettings)) return records
@@ -332,7 +341,8 @@ function applyPstoLineAssignments({
       identityChanged &&
       targetAssigned &&
       previous &&
-      (record as WeldRow).preHeatTreatmentLnkExempt !== true &&
+      context.controlProcessSettings.preHeatTreatmentLnkEnabled &&
+      !hasHistoricalPreHeatTreatmentExemption(previous) &&
       requiresPrimaryStageResolutionForAssignedPstoLine(previous as unknown as WeldRow)
     ) {
       throw buildPstoLineAssignmentError({
@@ -673,6 +683,13 @@ export function getSystemWorkflowStageTransitionReason(
   previous: WeldJoint | undefined,
   context: Pick<ServerWeldValidationContext, 'controlProcessSettings' | 'pstoLineAssignments'>,
 ) {
+  record = {
+    ...record,
+    preHeatTreatmentLnkEnabled: context.controlProcessSettings.preHeatTreatmentLnkEnabled,
+    preHeatTreatmentLnkExempt: getPreHeatTreatmentExemptionForSave(record, {
+      ...previous, preHeatTreatmentLnkEnabled: context.controlProcessSettings.preHeatTreatmentLnkEnabled,
+    }),
+  } as WeldInput
   const preControlAssignmentReason = getPreHeatTreatmentAssignmentRemovalReason(record, previous)
   if (preControlAssignmentReason) return preControlAssignmentReason
 
@@ -710,6 +727,9 @@ export function getSystemWorkflowStageTransitionReason(
       if (!isPreHeatTreatmentLnkMethodCode(method.code)) continue
       const startsRequest = !hasText(previous?.[method.requestKey]) && hasText(record[method.requestKey])
       const startsResult = (
+        (!previous || !hasPrimaryLnkResultTrace(previous, method.code)) &&
+        hasPrimaryLnkResultTrace(record, method.code)
+      ) || (
         !isFinalLnkResultValue(previous?.[method.resultKey]) &&
         isFinalLnkResultValue(record[method.resultKey])
       )
@@ -718,7 +738,9 @@ export function getSystemWorkflowStageTransitionReason(
         const lineReason = getFullyAssignedPstoLineReason(record, context.pstoLineAssignments)
         if (lineReason) return lineReason
       }
-      const stageAccess = getPrimaryLnkStageAccess(record, method.code, context.controlProcessSettings)
+      const stageAccess = (startsResult ? getPrimaryLnkStageAccess : getPrimaryLnkRequestAccess)(
+        record, method.code, context.controlProcessSettings,
+      )
       if (stageAccess.status === 'blocked') return stageAccess.reason
     }
   }

@@ -221,11 +221,33 @@ describe('PSTO cycle corrections', () => {
     })).toThrow('позже даты ПСТО')
   })
 
-  it('does not move the latest good TVMT after an existing post-heat-treatment request', () => {
+  it('an early primary request alone does not prevent correcting or removing the latest TVMT result', () => {
+    const row = makeRow({
+      hasVik: 'да', vikRequest: 'Заранее поданная заявка',
+      vikRequestDate: '2026-08-02', vikResult: 'ожидает НК',
+    })
+    expect(getPstoCycleStageDeleteBlockReason(row, 1, 'tvmtResult')).toBe('')
+    const corrected = applyPstoCycleCorrection(row, {
+      sequence: 1, stage: 'tvmtResult', action: 'update',
+      date: '2026-08-06', name: 'ЗТВМТ исправлено', result: 'не годен',
+    }).row
+    expect(corrected).toMatchObject({
+      tvmtResult: 'не годен', vikRequest: row.vikRequest, vikRequestDate: row.vikRequestDate,
+    })
+    const removed = applyPstoCycleCorrection(row, {
+      sequence: 1, stage: 'tvmtResult', action: 'delete',
+    }).row
+    expect(removed).toMatchObject({ vikRequest: row.vikRequest, vikRequestDate: row.vikRequestDate })
+    expect(removed.tvmtConclusion).toBeNull()
+  })
+
+  it('does not move the latest good TVMT after an existing post-heat-treatment result', () => {
     const row = makeRow({
       hasVik: 'да',
       vikRequest: 'Заявка ВИК после ТО',
       vikRequestDate: '2026-08-07',
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-07',
     })
 
     expect(() => applyPstoCycleCorrection(row, {
@@ -243,6 +265,8 @@ describe('PSTO cycle corrections', () => {
       hasVik: 'да',
       vikRequest: 'Заявка ВИК после ТО',
       vikRequestDate: '2026-08-07',
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-07',
     })
 
     expect(() => applyPstoCycleCorrection(row, {
@@ -280,6 +304,8 @@ describe('PSTO cycle corrections', () => {
       hasRk: 'да',
       rkRequest: 'Заявка РК после ТО',
       rkRequestDate: '2026-08-10',
+      rkResult: 'годен',
+      rkConclusionDate: '2026-08-10',
       pstoRepeatCycles: [{
         id: 41,
         weldJointId: 1,
@@ -367,6 +393,8 @@ describe('PSTO cycle corrections', () => {
       hasVik: 'да',
       vikRequest: 'Заявка ВИК после ТО',
       vikRequestDate: '2026-08-10',
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-10',
       pstoRepeatCycles: [{
         id: 41,
         weldJointId: 1,

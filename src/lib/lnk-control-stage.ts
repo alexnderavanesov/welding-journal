@@ -1,5 +1,6 @@
 import { isControlEnabledValue } from '@/lib/control-availability-values'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
+import { hasHistoricalPreHeatTreatmentExemption, isPreHeatTreatmentStageEnabled, type PreHeatTreatmentPolicyRow } from '@/lib/pre-heat-treatment-policy'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import {
@@ -110,9 +111,12 @@ export function getRequiredLnkControlStages(
   return [PRIMARY_LNK_CONTROL_STAGE]
 }
 
-export function requiresPreHeatTreatmentLnk(row: WeldInput & { preHeatTreatmentLnkExempt?: boolean }) {
-  if (row.preHeatTreatmentLnkExempt === true) return false
-  return requiresHeatTreatmentStagedLnk(row)
+export function requiresPreHeatTreatmentLnk(row: PreHeatTreatmentPolicyRow) {
+  return isPreHeatTreatmentLnkAvailable(row) && !hasHistoricalPreHeatTreatmentExemption(row)
+}
+
+export function isPreHeatTreatmentLnkAvailable(row: WeldInput) {
+  return isPreHeatTreatmentStageEnabled(row) && requiresHeatTreatmentStagedLnk(row)
 }
 
 export function requiresHeatTreatmentStagedLnk(row: WeldInput) {
@@ -137,7 +141,7 @@ export function getPreHeatTreatmentControl(
 export function getRejectedPreHeatTreatmentControls(
   row: WeldInput,
 ): RejectedPreHeatTreatmentControl[] {
-  if (!requiresPreHeatTreatmentLnk(row)) return []
+  if (!isPreHeatTreatmentLnkAvailable(row)) return []
 
   return getPreHeatTreatmentControls(row).flatMap((control) => {
     const methodCode = normalizeMethodCode(control.method)
@@ -162,12 +166,12 @@ export function isPreHeatTreatmentMethodNoNeed(
 }
 
 export function getPreHeatTreatmentPendingFinalStatus(row: WeldInput) {
+  if (getRejectedPreHeatTreatmentControls(row).length > 0) return 'не годен' as const
   if (!requiresPreHeatTreatmentLnk(row)) return null
   const requiredMethods = PRE_HEAT_TREATMENT_LNK_METHODS.filter((method) =>
     isControlEnabledValue(row[method.enabledKey]),
   )
   if (requiredMethods.length === 0) return null
-  if (getRejectedPreHeatTreatmentControls(row).length > 0) return 'не годен' as const
 
   let hasMissingRequest = false
   let hasPendingResult = false
@@ -213,7 +217,9 @@ export function isPrimaryPstoReady(row: WeldInput) {
 
 function getPrimaryPstoStartPrerequisites(row: WeldInput) {
   const empty = { rejected: [] as string[], missingRequests: [] as string[], pendingResults: [] as string[] }
-  if (!isControlEnabledValue(row.pstoRequired) || !requiresPreHeatTreatmentLnk(row)) return empty
+  if (!isPreHeatTreatmentStageEnabled(row)) return empty
+  empty.rejected = getRejectedPreHeatTreatmentControls(row).map(({ methodCode }) => methodCode)
+  if (empty.rejected.length > 0 || !isControlEnabledValue(row.pstoRequired) || !requiresPreHeatTreatmentLnk(row)) return empty
   const requiredMethods = PRE_HEAT_TREATMENT_LNK_METHODS.filter((method) =>
     isControlEnabledValue(row[method.enabledKey]),
   )
@@ -237,15 +243,22 @@ export function getPrimaryLnkStageBlockReason(
   row: WeldInput,
   methodCode: string,
 ) {
-  const access = getPrimaryLnkStageAccess(row, methodCode, STRICT_PRIMARY_LNK_STAGE_SETTINGS)
+  const access = getPrimaryLnkStageAccess(row, methodCode)
   return access.status === 'blocked' ? access.reason : ''
 }
 
 export function getPrimaryLnkStageAccess(
   row: WeldInput,
   methodCode: string,
-  settings: PrimaryLnkStageAccessSettings = STRICT_PRIMARY_LNK_STAGE_SETTINGS,
+  settings?: PrimaryLnkStageAccessSettings,
 ): PrimaryLnkStageAccess {
+  const effectiveSettings = settings ?? {
+    ...STRICT_PRIMARY_LNK_STAGE_SETTINGS,
+    preHeatTreatmentLnkEnabled: isPreHeatTreatmentStageEnabled(row),
+  }
+  if (effectiveSettings.preHeatTreatmentLnkEnabled !== isPreHeatTreatmentStageEnabled(row)) {
+    row = { ...row, preHeatTreatmentLnkEnabled: effectiveSettings.preHeatTreatmentLnkEnabled } as WeldInput
+  }
   const normalizedMethod = normalizeMethodCode(methodCode)
   if (
     !isPreHeatTreatmentLnkMethodCode(normalizedMethod) ||
@@ -254,22 +267,14 @@ export function getPrimaryLnkStageAccess(
     return { status: 'ready', reason: '', debt: null }
   }
 
-  if (requiresPreHeatTreatmentLnk(row)) {
-    const rejectedMethods = getRejectedPreHeatTreatmentControls(row).map(({ methodCode }) => methodCode)
-    if (rejectedMethods.length > 0) {
-      return {
-        status: 'blocked',
-        reason: `Основной этап НК для этого стыка не требуется: НК до ТО имеет негодный результат: ${rejectedMethods.join(', ')}.`,
-        debt: null,
-      }
-    }
-  }
+  const requestAccess = getPrimaryLnkRequestAccess(row, normalizedMethod)
+  if (requestAccess.status === 'blocked') return requestAccess
 
   const debt = getPrimaryLnkStageDebt(row, normalizedMethod)
   if (!debt) return { status: 'ready', reason: '', debt: null }
 
-  const permissive = settings.preHeatTreatmentLnkEnabled &&
-    settings.allowPrimaryLnkBeforePreviousStagesComplete
+  const permissive = effectiveSettings.preHeatTreatmentLnkEnabled &&
+    effectiveSettings.allowPrimaryLnkBeforePreviousStagesComplete
   return {
     status: permissive ? 'allowed-with-warning' : 'blocked',
     reason: debt.reason,
@@ -313,26 +318,42 @@ export function getPrimaryLnkStageDebt(
 export function isPrimaryLnkStageReady(
   row: WeldInput,
   methodCode: string,
-  settings: PrimaryLnkStageAccessSettings = STRICT_PRIMARY_LNK_STAGE_SETTINGS,
+  settings?: PrimaryLnkStageAccessSettings,
 ) {
   return getPrimaryLnkStageAccess(row, methodCode, settings).status === 'ready'
 }
 
-export function canUsePrimaryLnkStage(
+// A request schedules control; only an actual result requires completed stages.
+// Rejected pre-TO control still excludes this joint from further primary NDT.
+export function getPrimaryLnkRequestAccess(
   row: WeldInput,
   methodCode: string,
-  settings: PrimaryLnkStageAccessSettings = STRICT_PRIMARY_LNK_STAGE_SETTINGS,
-) {
-  return getPrimaryLnkStageAccess(row, methodCode, settings).status !== 'blocked'
+  settings?: PrimaryLnkStageAccessSettings,
+): { status: 'ready' | 'blocked'; reason: string; debt: null } {
+  if (settings && settings.preHeatTreatmentLnkEnabled !== isPreHeatTreatmentStageEnabled(row)) {
+    row = { ...row, preHeatTreatmentLnkEnabled: settings.preHeatTreatmentLnkEnabled } as WeldInput
+  }
+  const rejected = isPreHeatTreatmentLnkMethodCode(methodCode)
+    ? getRejectedPreHeatTreatmentControls(row).map(({ methodCode: code }) => code)
+    : []
+  return rejected.length > 0
+    ? { status: 'blocked', reason: `Основной этап НК для этого стыка не требуется: НК до ТО имеет негодный результат: ${rejected.join(', ')}.`, debt: null }
+    : { status: 'ready', reason: '', debt: null }
 }
 
-export function hasPrimaryLnkControlTrace(row: WeldInput, methodCode: string) {
+export function canCreatePrimaryLnkRequest(
+  row: WeldInput,
+  methodCode: string,
+  settings?: PrimaryLnkStageAccessSettings,
+) {
+  return getPrimaryLnkRequestAccess(row, methodCode, settings).status !== 'blocked'
+}
+
+export function hasPrimaryLnkResultTrace(row: WeldInput, methodCode: string) {
   const normalizedMethod = normalizeMethodCode(methodCode)
   const method = LNK_METHODS.find((candidate) => candidate.code === normalizedMethod)
   if (!method) return false
   const values = [
-    row[method.requestKey],
-    row[method.requestDateKey],
     row[method.conclusionDateKey],
     row[method.conclusionKey],
     row[method.defectDescriptionKey],

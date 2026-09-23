@@ -12,6 +12,7 @@ import {
 import {
   getPreHeatTreatmentControl,
   getPreHeatTreatmentControls,
+  hasPrimaryLnkResultTrace,
   isPreHeatTreatmentLnkMethodCode,
   PRE_HEAT_TREATMENT_LNK_METHODS,
 } from '@/lib/lnk-control-stage'
@@ -22,6 +23,7 @@ import {
   requiresPostHeatTreatmentCompletion,
 } from '@/lib/tvmt-cycle'
 import { getDuplicateControls } from '@/lib/duplicate-control-utils'
+import { isPreHeatTreatmentStageEnabled } from '@/lib/pre-heat-treatment-policy'
 
 type LnkChronologyRow = WeldInput & { id?: number }
 
@@ -77,10 +79,12 @@ export function getLnkChronologyIssues(
   const issues: LnkChronologyIssue[] = []
   for (const row of rows) {
     issues.push(...getRowRequestDateOrderIssues(row, settings, options))
-    issues.push(...getRowPreHeatTreatmentDateOrderIssues(row, settings, options))
+    if (isPreHeatTreatmentStageEnabled(row)) {
+      issues.push(...getRowPreHeatTreatmentDateOrderIssues(row, settings, options))
+      issues.push(...getRowPreHeatTreatmentVikOrderIssues(row, settings))
+    }
     issues.push(...getRowPostHeatTreatmentDateOrderIssues(row, settings))
     issues.push(...getRowVikOrderIssues(row, settings))
-    issues.push(...getRowPreHeatTreatmentVikOrderIssues(row, settings))
     if (options.includeInvalidDateIssues) issues.push(...getRowDuplicateDateIssues(row))
   }
   return issues
@@ -245,55 +249,33 @@ function getRowPostHeatTreatmentDateOrderIssues(
 
   for (const method of LNK_METHODS) {
     if (!isPreHeatTreatmentLnkMethodCode(method.code)) continue
-    const requestDate = parseDateLikeToIso(row[method.requestDateKey])
     const conclusionDate = parseDateLikeToIso(row[method.conclusionDateKey])
-    const hasTrace = Boolean(
-      String(row[method.requestKey] ?? '').trim() ||
-      requestDate ||
-      isFinalLnkResultValue(row[method.resultKey]) ||
-      conclusionDate,
-    )
-    if (!hasTrace) continue
+    if (!hasPrimaryLnkResultTrace(row, method.code)) continue
     if (!cycleComplete) {
       issues.push({
         kind: 'post-before-psto-cycle',
         methodCode: method.code,
         controlStage: 'primary',
-        documentPart: 'request',
+        documentPart: 'result',
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
         message: `Стык ${joint}: ${method.code} после ТО оформлен до завершения цикла ПСТО и ТВМТ.`,
       })
       continue
     }
-    for (const [kind, label, documentPart, date] of [
-      ['post-before-psto', 'заявки', 'request', requestDate],
-      ['post-before-psto', 'заключения', 'conclusion', conclusionDate],
+    for (const [kind, boundary, boundaryDate] of [
+      ['post-before-psto', 'даты ПСТО', pstoDate],
+      ['post-before-tvmt', 'ТВМТ, завершившей цикл,', tvmtDate],
     ] as const) {
-      if (!date || !pstoDate || date >= pstoDate) continue
+      if (!conclusionDate || !boundaryDate || conclusionDate >= boundaryDate) continue
       issues.push({
         kind,
         methodCode: method.code,
         controlStage: 'primary',
-        documentPart,
+        documentPart: 'conclusion',
         reason: LNK_REQUEST_DATE_ORDER_REASON,
         row,
-        message: `Стык ${joint}: дата ${label} ${method.code} после ТО ${formatDisplayDate(date)} раньше даты ПСТО ${formatDisplayDate(pstoDate)}.`,
-      })
-    }
-    for (const [label, documentPart, date] of [
-      ['заявки', 'request', requestDate],
-      ['заключения', 'conclusion', conclusionDate],
-    ] as const) {
-      if (!date || !tvmtDate || date >= tvmtDate) continue
-      issues.push({
-        kind: 'post-before-tvmt',
-        methodCode: method.code,
-        controlStage: 'primary',
-        documentPart,
-        reason: LNK_REQUEST_DATE_ORDER_REASON,
-        row,
-        message: `Стык ${joint}: дата ${label} ${method.code} после ТО ${formatDisplayDate(date)} раньше ТВМТ, завершившей цикл, ${formatDisplayDate(tvmtDate)}.`,
+        message: `Стык ${joint}: дата заключения ${method.code} после ТО ${formatDisplayDate(conclusionDate)} раньше ${boundary} ${formatDisplayDate(boundaryDate)}.`,
       })
     }
   }
@@ -421,8 +403,14 @@ function formatLnkChronologyIssueSaveBlockReason(issue: LnkChronologyIssue) {
   return formatSaveCheckBlockReason(getLnkChronologyIssueSaveCheckSettingId(issue), issue.message)
 }
 
-function getLnkChronologyIssueIdentity(issue: LnkChronologyIssue) {
-  return `${issue.kind}\u0000${issue.methodCode}\u0000${issue.message}`
+export function getLnkChronologyIssueIdentity(issue: LnkChronologyIssue) {
+  // A historical violation is tolerated only on its own record and position.
+  // Displayed joint numbers (and consequently error messages) repeat across lines.
+  return JSON.stringify([
+    issue.row.id ?? [issue.row.projectTitle, issue.row.subtitleCode, issue.row.line, issue.row.joint],
+    issue.controlStage, issue.relationId, issue.documentPart,
+    issue.kind, issue.methodCode, issue.message,
+  ])
 }
 
 export function getDispatcherLnkChronologyIssues(rows: LnkChronologyRow[]) {

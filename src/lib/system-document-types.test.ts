@@ -27,6 +27,13 @@ function row(id: number, values: Partial<WeldRow>): WeldRow {
 }
 
 describe('system document grouping', () => {
+  it('keeps the system number and system-name protection after a separate date correction', () => {
+    expect(getSystemDocumentNumber({ type: 'lnkRequest', title: 'Заявка-15.03.2026-007', date: '2026-03-16' })).toBe('007')
+    expect(getSystemDocumentNumber({ type: 'pstoRequest', title: 'ПСТО-15.03.26-007', date: '2026-03-16' })).toBe('007')
+    expect(isSystemDocumentNameForRows([row(1, { vikRequest: 'Заявка-15.03.2026-007', vikRequestDate: '2026-03-16' })], 'lnkRequest', 'Заявка-15.03.2026-007')).toBe(true)
+    const settings = { ...REQUEST_CONCLUSION_DEFAULT_SETTINGS, lnkRequest: { ...REQUEST_CONCLUSION_DEFAULT_SETTINGS.lnkRequest, systemPattern: '{{Проект}}-{{№}}' } }
+    expect(isSystemDocumentNameForRows([row(1, { projectTitle: 'Риформинг', vikRequest: '1503-2', vikRequestDate: '2026-03-16' })], 'lnkRequest', '1503-2', settings)).toBe(false)
+  })
   it.each([
     ['lnkRequest', 'lnk'],
     ['lnkConclusion', 'lnk'],

@@ -30,6 +30,7 @@ import {
 } from '@/server/control-availability-sql'
 import { attachSystemDocumentIds } from '@/server/generated-document-row-fields'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
+import { buildNoRejectedPreHeatTreatmentWhere, buildPreHeatTreatmentAvailableWhere } from '@/server/pre-heat-treatment-policy'
 import { assertSecurityScope } from '@/server/security-functions'
 import type {
   LnkWorkflowRequestSummary,
@@ -45,7 +46,6 @@ import {
   buildAvailableLnkRequestWhere,
   buildLnkRequestCandidateWhere,
   buildPrimaryLnkStageReadyWhere,
-  buildPstoExecutionHistoryWhere,
   buildReportKindWhere,
   buildServerReportRows,
   getReportOrderBy,
@@ -497,7 +497,6 @@ function buildLnkCandidateMethodWhere(
     return or(...selectedMethods.map((method) => and(
       buildEnabledTextWhere(weldJoints[method.enabledKey]),
       emptyTextWhere(weldJoints[method.requestKey]),
-      stageAvailable(method),
     ) ?? sql`false`)) ?? sql`false`
   }
 
@@ -621,9 +620,9 @@ function buildPreHeatTreatmentRequestCandidateWhere() {
     ),
   ) ?? sql`false`)) ?? sql`false`
   return and(
-    buildPreHeatTreatmentRequiredWhere(),
+    buildPreHeatTreatmentAvailableWhere(),
     hasAvailableMethod,
-    buildNoRejectedPreHeatTreatmentResultWhere(),
+    buildNoRejectedPreHeatTreatmentWhere(),
   ) ?? sql`false`
 }
 
@@ -639,19 +638,9 @@ function buildPreHeatTreatmentResultCandidateWhere() {
       )),
   )
   return and(
-    buildPreHeatTreatmentRequiredWhere(),
+    buildPreHeatTreatmentAvailableWhere(),
     hasPendingControl,
-    buildNoRejectedPreHeatTreatmentResultWhere(),
-  ) ?? sql`false`
-}
-
-function buildPreHeatTreatmentRequiredWhere() {
-  return and(
-    or(
-      buildNullableControlEnabledWhere(weldJoints.pstoRequired, ENABLED_CONTROL_REPORT_VALUES),
-      buildPstoExecutionHistoryWhere(),
-    ),
-    sql`${weldJoints.preHeatTreatmentLnkExempt} = false`,
+    buildNoRejectedPreHeatTreatmentWhere(),
   ) ?? sql`false`
 }
 
@@ -667,20 +656,8 @@ function buildNoRejectedLnkResultWhere() {
           sql`lower(btrim(coalesce(${duplicateControls.result}::text, ''))) in ('ремонт', 'вырез')`,
         )),
     ),
-    buildNoRejectedPreHeatTreatmentResultWhere(),
+    buildNoRejectedPreHeatTreatmentWhere(),
   ) ?? sql`false`
-}
-
-function buildNoRejectedPreHeatTreatmentResultWhere() {
-  return notExists(
-    SQL_QUERY_BUILDER
-      .select({ value: sql`1` })
-      .from(preHeatTreatmentControls)
-      .where(and(
-        sql`${preHeatTreatmentControls.weldJointId} = ${weldJoints.id}`,
-        sql`lower(btrim(coalesce(${preHeatTreatmentControls.result}::text, ''))) in ('ремонт', 'вырез')`,
-      )),
-  )
 }
 
 function finalResultWhere(column: SQLWrapper) {

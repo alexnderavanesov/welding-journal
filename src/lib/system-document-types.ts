@@ -382,7 +382,7 @@ function getSystemDocumentRawNumberCandidates(
     ]),
   )
   const candidates = patterns
-    .map((pattern) => extractSystemNameNumber(pattern, context, reference.title))
+    .map((pattern) => extractSystemNameNumber(pattern, context, reference.title, { allowDifferentDate: true }))
     .filter((number) => /^\d+$/.test(number))
   return candidates
 }

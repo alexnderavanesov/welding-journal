@@ -62,14 +62,13 @@ describe('SystemDocumentDateEditor', () => {
     mocks.changeDate.mockResolvedValue({
       nextReference: {
         type: 'lnkRequest',
-        title: 'Заявка-10.08.2026-007',
+        title: 'Заявка-09.08.2026-007',
         date: '2026-08-10',
       },
       previousTitle: 'Заявка-09.08.2026-007',
-      nextTitle: 'Заявка-10.08.2026-007',
+      nextTitle: 'Заявка-09.08.2026-007',
       previousDate: '2026-08-09',
       nextDate: '2026-08-10',
-      isSystemName: true,
       rowCount: 2,
       positionCount: 3,
       rows,
@@ -83,13 +82,13 @@ describe('SystemDocumentDateEditor', () => {
     fireEvent.change(input, { target: { value: '2026-08-10' } })
 
     expect(await screen.findByText(/Будет изменено позиций: 3; стыков: 2/)).toHaveTextContent(
-      'Системное имя сохранит номер и станет «Заявка-10.08.2026-007»',
+      'Полное наименование документа не изменится.',
     )
     fireEvent.click(screen.getByRole('button', { name: 'Изменить дату' }))
 
     await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({
       description: 'Новая дата будет записана сразу во все позиции документа: 3 поз. в 2 ст.',
-      warning: 'Системное имя будет пересчитано с сохранением номера: «Заявка-10.08.2026-007».',
+      warning: 'Полное наименование документа останется без изменений, в том числе номер и дата в тексте имени.',
     })))
     await waitFor(() => expect(mocks.changeDate).toHaveBeenCalledWith({
       data: {
@@ -132,15 +131,18 @@ describe('SystemDocumentDateEditor', () => {
       hasVik: 'да',
       vikRequest: 'Заявка-30.08.2026-007',
       vikRequestDate: '2026-08-30',
+      vikResult: 'годен',
+      vikConclusion: 'Заключение ВИК',
+      vikConclusionDate: '2026-08-31',
     })
     mocks.loadRows.mockResolvedValue({ rows: [current], sourcePositions: [] })
     const onRunRootCauseAction = vi.fn()
 
     renderEditor({
       reference: {
-        type: 'lnkRequest',
-        title: 'Заявка-30.08.2026-007',
-        date: '2026-08-30',
+        type: 'lnkConclusion',
+        title: 'Заключение ВИК',
+        date: '2026-08-31',
         methodCode: 'ВИК',
       },
       onRunRootCauseAction,
@@ -150,11 +152,11 @@ describe('SystemDocumentDateEditor', () => {
 
     expect(await screen.findByText(/Сохранение заблокировано/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Изменить дату' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Исправить дату заявки ВИК' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Исправить дату заключения ВИК' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Исправить дату ПСТО' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Исправить дату заключения ТВМТ' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Исправить дату заявки ВИК' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Исправить дату заключения ВИК' }))
     expect(input).toHaveFocus()
     expect(onRunRootCauseAction).not.toHaveBeenCalled()
 
@@ -219,7 +221,6 @@ describe('SystemDocumentDateEditor', () => {
       nextTitle: nextReference.title,
       previousDate: previousReference.date,
       nextDate: nextReference.date,
-      isSystemName: false,
       rowCount: 1,
       positionCount: 1,
       rows: savedRealRows,

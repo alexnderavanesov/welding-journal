@@ -277,6 +277,8 @@ describe('LNK stage transfer', () => {
       method: 'ВИК',
       requestName: 'Заявка ВИК до ТО',
       requestDate: '2026-08-02',
+      result: 'годен',
+      conclusionDate: '2026-08-02',
     }
     const [pendingNext] = buildPreHeatTreatmentToPrimaryTransfer({
       rows: [pendingCycleRow],

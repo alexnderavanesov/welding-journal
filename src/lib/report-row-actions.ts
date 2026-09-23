@@ -4,6 +4,7 @@ import { isControlEnabledValue } from '@/lib/control-availability-values'
 import {
   getPreHeatTreatmentControls,
   getPrimaryLnkStageBlockReason,
+  getPrimaryLnkRequestAccess,
 } from '@/lib/lnk-control-stage'
 import { getPendingLnkResultMethods } from '@/lib/lnk-result-navigation'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
@@ -87,9 +88,9 @@ export function getLnkWorkflowRequestBlockReason(row: ReportRow) {
   }
 
   const blockedMethod = enabledMethods.find((method) => (
-    !text(row[method.requestKey]) && Boolean(getPrimaryLnkStageBlockReason(row, method.code))
+    !text(row[method.requestKey]) && getPrimaryLnkRequestAccess(row, method.code).status === 'blocked'
   ))
-  if (blockedMethod) return getPrimaryLnkStageBlockReason(row, blockedMethod.code)
+  if (blockedMethod) return getPrimaryLnkRequestAccess(row, blockedMethod.code).reason
 
   return 'Все доступные позиции ЛНК по этому стыку уже включены в заявки.'
 }

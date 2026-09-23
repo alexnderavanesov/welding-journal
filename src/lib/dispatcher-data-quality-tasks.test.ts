@@ -55,7 +55,7 @@ describe('dispatcher data quality tasks', () => {
     expect(getDispatcherTaskCode(pendingWarnings[0])).toBe('СП-01')
     expect(getDispatcherTaskTypeLabel(pendingWarnings[0])).toBe('Предыдущие этапы пропущены')
     expect(getRepeatedJointTaskTitle(pendingWarnings[0]).type).toBe('Предыдущие этапы пропущены')
-    expect(pendingWarnings[0].details).toContain('основной НК уже оформляется по методам ВИК')
+    expect(pendingWarnings[0].details).toContain('уже внесены данные результата основного НК по методам ВИК')
     expect(pendingWarnings[0].details).toContain('Подтвердите этапы после получения фактических данных')
     expect(pendingWarnings[0].details).not.toContain('фиктивные документы')
     expect(pendingWarnings[0].rootCauseActions?.[0].label).toBe('Создать заявку НК до ТО')
@@ -114,6 +114,7 @@ describe('dispatcher data quality tasks', () => {
       hasVik: 'да',
       vikRequest: 'Основная заявка ВИК',
       vikRequestDate: '2026-07-31',
+      vikResult: 'годен',
     })
 
     expect(buildLnkChronologyCheckTasks([incomplete]).map(getDispatcherTaskCode)).toEqual(['ДЗ-20'])
@@ -127,6 +128,8 @@ describe('dispatcher data quality tasks', () => {
       hasRk: 'да',
       vikRequest: 'Основная заявка ВИК',
       rkRequest: 'Основная заявка РК',
+      vikResult: 'годен',
+      rkResult: 'годен',
     })
 
     const [requestWarning] = buildPrimaryLnkStageDebtSystemWarnings([base])
@@ -196,7 +199,7 @@ describe('dispatcher data quality tasks', () => {
     })])[0].rootCauseActions?.[0].label).toBe('Открыть ТВМТ')
   })
 
-  it('does not create SP-01 without a primary trace or when the parent process is disabled', () => {
+  it('does not create SP-01 for a request alone, including with pre-TO disabled', () => {
     const rowWithoutPrimaryTrace = row({ pstoRequired: 'да', hasVik: 'да' })
     expect(buildPrimaryLnkStageDebtSystemWarnings([rowWithoutPrimaryTrace])).toEqual([])
 
@@ -238,11 +241,14 @@ describe('dispatcher data quality tasks', () => {
       hasVik: 'да',
       vikRequest: 'Заявка ВИК',
       vikRequestDate: '2026-08-09',
+      vikResult: 'годен',
+      vikConclusion: 'Заключение ВИК',
+      vikConclusionDate: '2026-08-09',
     })])
 
     expect(getDispatcherTaskCode(task)).toBe('ДЗ-20')
     expect(task.rootCauseActions?.map((action) => action.label)).toEqual([
-      'Исправить дату заявки ВИК',
+      'Исправить дату заключения ВИК',
       'Исправить дату ПСТО',
       'Исправить дату заключения ТВМТ',
     ])
@@ -251,7 +257,7 @@ describe('dispatcher data quality tasks', () => {
       rowId: 5,
       stage: 'primary',
       methodCode: 'ВИК',
-      documentPart: 'request',
+      documentPart: 'conclusion',
       focus: 'date',
     })
   })

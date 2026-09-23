@@ -11,6 +11,7 @@ import {
 import type { PstoRepeatCycleWrite } from '@/lib/psto-repeat-cycle-updates'
 import { splitWeldImportInsertBatches } from '@/lib/weld-import-limits'
 import { calculateFinalStatus } from '@/lib/weld-status'
+import { getPreHeatTreatmentExemptionForSave } from '@/lib/pre-heat-treatment-policy'
 import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { WELD_TABLE_RETURNING } from '@/server/weld-server-shared'
@@ -31,6 +32,7 @@ export function getPstoCycleState(row: WeldRow): PstoCycleSnapshot[] {
 
 export function getPrimaryPstoCyclePersistenceValues(row: WeldRow) {
   return {
+    preHeatTreatmentLnkExempt: getPreHeatTreatmentExemptionForSave(row),
     pstoRequest: textOrNull(row.pstoRequest),
     pstoRequestDate: textOrNull(row.pstoRequestDate),
     pstoDate: textOrNull(row.pstoDate),
@@ -116,6 +118,7 @@ export async function persistPstoCycleCorrection({
   const [updated] = await tx
     .update(weldJoints)
     .set({
+      preHeatTreatmentLnkExempt: getPreHeatTreatmentExemptionForSave(correction.row, currentRow),
       finalStatus: textOrNull(correction.row.finalStatus),
       pstoCreatedAt: sql`coalesce(${weldJoints.pstoCreatedAt}, ${now})`,
       pstoUpdatedAt: now,
@@ -267,6 +270,7 @@ export async function savePstoCycleRowsInBatches(
       .onConflictDoUpdate({
         target: weldJoints.id,
         set: {
+          preHeatTreatmentLnkExempt: sql`excluded."pre_heat_treatment_lnk_exempt"`,
           pstoRequest: sql`excluded."psto_request"`,
           pstoRequestDate: sql`excluded."psto_request_date"`,
           pstoDate: sql`excluded."psto_date"`,

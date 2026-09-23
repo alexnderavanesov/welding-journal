@@ -26,9 +26,10 @@ test('окно дубль-контроля ищет по всему журнал
   const registryToggle = page.getByRole('button', { name: /Внесенные дубли/ })
   await expect(registryToggle).toContainText('открыть реестр')
   await registryToggle.click()
-  await expect(page.getByText('ВИК', { exact: true })).toBeVisible()
-  await expect(page.getByText('годен', { exact: true })).toBeVisible()
-  await expect(page.getByText(/Заключение E2E дубль/)).toBeVisible()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByText('ВИК', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('годен', { exact: true })).toBeVisible()
+  await expect(dialog.getByText(/Заключение E2E дубль/)).toBeVisible()
 })
 
 test('широкий поиск не выбирает больше 5 000 стыков и предлагает уточнение', async ({ page }) => {

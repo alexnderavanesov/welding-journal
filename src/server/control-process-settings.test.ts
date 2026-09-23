@@ -1,128 +1,50 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import {
-  getPreHeatTreatmentLnkExemptionsForNewRows,
-  getPreHeatTreatmentExemptionIdsToRetain,
-  isControlProcessPstoStarted,
-} from '@/server/control-process-settings'
-
-function row(id: number, line: string, values: Record<string, unknown> = {}) {
-  return {
-    id,
-    projectTitle: 'Проект',
-    subtitleCode: 'Шифр',
-    line,
-    pstoRequest: null,
-    pstoRequestDate: null,
-    pstoDate: null,
-    heatTreatmentDiagram: null,
-    pstoResult: null,
-    pstoNote: null,
-    tvmtRequest: null,
-    tvmtRequestDate: null,
-    tvmtResult: null,
-    tvmtConclusionDate: null,
-    tvmtConclusion: null,
-    ...values,
-  }
-}
+import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '@/lib/control-process-settings'
+import { loadControlProcessSettingsFromTransaction, prepareControlProcessSettingsChangeInTransaction } from '@/server/control-process-settings'
 
 describe('control process settings transitions', () => {
-  it('treats a PSTO request as the start of the process', () => {
-    expect(isControlProcessPstoStarted(row(1, 'Линия 1'))).toBe(false)
-    expect(isControlProcessPstoStarted(row(1, 'Линия 1', { pstoRequest: 'Заявка ПСТО' }))).toBe(true)
-    expect(isControlProcessPstoStarted(row(1, 'Линия 1', { tvmtResult: 'годен' }))).toBe(true)
+  it('locks before reading the current setting for mutations', async () => {
+    const tx = transaction()
+    await loadControlProcessSettingsFromTransaction(tx as never)
+    expect(tx.calls).toEqual(['lock', 'lock', 'read'])
   })
 
-  it('retains exemptions for the whole already-started PSTO line', () => {
-    const rows = [
-      row(1, 'Линия 1'),
-      row(2, 'Линия 1', { pstoRequestDate: '2026-09-02' }),
-      row(3, 'Линия 2'),
-    ]
-
-    expect(getPreHeatTreatmentExemptionIdsToRetain(rows)).toEqual([1, 2])
+  it.each([true, false])('changes availability to %s without scanning or updating weld rows', async (enabled) => {
+    const tx = transaction()
+    const settings = await prepareControlProcessSettingsChangeInTransaction({
+      tx: tx as never,
+      currentValue: { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentLnkEnabled: !enabled },
+      nextValue: { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentLnkEnabled: enabled, allowPrimaryLnkBeforePreviousStagesComplete: true },
+    })
+    expect(settings.preHeatTreatmentLnkEnabled).toBe(enabled)
+    expect(settings.allowPrimaryLnkBeforePreviousStagesComplete).toBe(enabled)
+    expect(tx.calls).toEqual(enabled ? ['lock'] : ['lock', 'read'])
+    expect(tx.update).not.toHaveBeenCalled()
   })
 
-  it('also treats a repeat cycle as started PSTO history', () => {
-    const rows = [row(1, 'Линия 1'), row(2, 'Линия 1'), row(3, 'Линия 2')]
-
-    expect(getPreHeatTreatmentExemptionIdsToRetain(rows, new Set([1]))).toEqual([1, 2])
-  })
-
-  it('marks every newly created weld exempt while pre-TO control is disabled', async () => {
-    expect(await getPreHeatTreatmentLnkExemptionsForNewRows(settingTransaction({
-      layeredControlEnabled: true,
-      preHeatTreatmentLnkEnabled: false,
-    }), [row(1, 'Линия 1'), row(2, 'Линия 2')])).toEqual([true, true])
-  })
-
-  it('inherits a retained exemption only inside the same non-empty PSTO line', async () => {
-    const tx = settingTransaction({
-      layeredControlEnabled: true,
-      preHeatTreatmentLnkEnabled: true,
-    }, [], [row(10, 'Линия 1')])
-
-    expect(await getPreHeatTreatmentLnkExemptionsForNewRows(tx, [
-      row(1, 'Линия 1'),
-      row(2, 'Линия 2'),
-      row(3, ''),
-    ])).toEqual([true, false, false])
-  })
-
-  it('does not inherit an exemption when no retained PSTO line exists', async () => {
-    expect(await getPreHeatTreatmentLnkExemptionsForNewRows(
-      settingTransaction(undefined, [], []),
-      [row(1, 'Линия 1')],
-    )).toEqual([false])
-  })
-
-  it('checks one repeated target line with one exemption query', async () => {
-    const calls: string[] = []
-    const tx = settingTransaction({
-      layeredControlEnabled: true,
-      preHeatTreatmentLnkEnabled: true,
-    }, calls, [row(10, 'Линия 1')])
-
-    expect(await getPreHeatTreatmentLnkExemptionsForNewRows(
-      tx,
-      Array.from({ length: 100 }, (_, index) => row(index + 1, 'Линия 1')),
-    )).toEqual(Array.from({ length: 100 }, () => true))
-    expect(calls).toEqual(['lock', 'lock', 'read', 'read'])
-  })
-
-  it('locks the process setting before deciding the state of a new weld', async () => {
-    const calls: string[] = []
-
-    await getPreHeatTreatmentLnkExemptionsForNewRows(settingTransaction({
-      preHeatTreatmentLnkEnabled: false,
-    }, calls), [row(1, 'Линия 1')])
-
-    expect(calls).toEqual(['lock', 'lock', 'read'])
+  it('still blocks disabling with unfinished or rejected pre-TO documents', async () => {
+    const tx = transaction(3)
+    await expect(prepareControlProcessSettingsChangeInTransaction({
+      tx: tx as never,
+      currentValue: DEFAULT_CONTROL_PROCESS_SETTINGS,
+      nextValue: { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentLnkEnabled: false },
+    })).rejects.toThrow('незавершенных заявок или негодных результатов — 3')
+    expect(tx.update).not.toHaveBeenCalled()
   })
 })
 
-function settingTransaction(
-  value?: unknown,
-  calls: string[] = [],
-  exemptLines: Array<ReturnType<typeof row>> = [],
-) {
-  const settingResult = value === undefined ? [] : [{ value: JSON.stringify(value) }]
-  let readIndex = 0
+function transaction(blockers = 0) {
+  const calls: string[] = []
   return {
-    execute: async () => {
-      calls.push('lock')
-    },
+    calls,
+    execute: async () => { calls.push('lock') },
+    update: vi.fn(() => { throw new Error('unexpected weld UPDATE') }),
     select: () => {
       calls.push('read')
-      const currentRead = readIndex++
-      return {
-        from: () => ({
-          where: () => currentRead === 0
-            ? { limit: async () => settingResult }
-            : { groupBy: async () => exemptLines },
-        }),
-      }
+      return { from: () => ({ where: () => Object.assign(Promise.resolve([{ total: blockers }]), {
+        limit: async () => [{ value: JSON.stringify(DEFAULT_CONTROL_PROCESS_SETTINGS) }],
+      }) }) }
     },
-  } as unknown as Parameters<typeof getPreHeatTreatmentLnkExemptionsForNewRows>[0]
+  }
 }

@@ -39,7 +39,7 @@ import {
   getPreHeatTreatmentControls,
   getPrimaryLnkStageDebt,
   getRejectedPreHeatTreatmentControls,
-  hasPrimaryLnkControlTrace,
+  hasPrimaryLnkResultTrace,
   type PrimaryLnkStageDebt,
 } from '@/lib/lnk-control-stage'
 import { buildPstoCycleTimeline, type PstoRepeatCycleRecord } from '@/lib/psto-cycle'
@@ -53,22 +53,24 @@ import {
   type WorkflowRootCauseAction,
 } from '@/lib/workflow-root-cause-actions'
 import { getPstoTvmtWorkflowLabel } from '@/lib/tvmt-cycle'
-import {
-  DEFAULT_CONTROL_PROCESS_SETTINGS,
-  type ControlProcessSettings,
-} from '@/lib/control-process-settings'
+import { isPreHeatTreatmentStageEnabled } from '@/lib/pre-heat-treatment-policy'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 
 export const PRIMARY_LNK_STAGE_DEBT_SYSTEM_WARNING_REASON = 'завершить предыдущие этапы контроля'
 
 export function buildPrimaryLnkStageDebtSystemWarnings(
   rows: WeldRow[],
-  controlProcessSettings: ControlProcessSettings = DEFAULT_CONTROL_PROCESS_SETTINGS,
+  controlProcessSettings?: ControlProcessSettings,
 ): RepeatedJointCheckTask[] {
-  if (!controlProcessSettings.preHeatTreatmentLnkEnabled) return []
   return rows.flatMap((row) => {
+    // Disabling pre-TO removes only that stage, not required PSTO/TVMT debt.
+    // Explicit settings also override stale runtime metadata on a supplied row.
+    if (controlProcessSettings && row.preHeatTreatmentLnkEnabled !== controlProcessSettings.preHeatTreatmentLnkEnabled) {
+      row = { ...row, preHeatTreatmentLnkEnabled: controlProcessSettings.preHeatTreatmentLnkEnabled }
+    }
     const methodDebts = LNK_METHODS.flatMap((method) => {
       if (!isEnabledControlValue(row[method.enabledKey])) return []
-      if (!hasPrimaryLnkControlTrace(row, method.code)) return []
+      if (!hasPrimaryLnkResultTrace(row, method.code)) return []
       const debt = getPrimaryLnkStageDebt(row, method.code)
       return debt ? [{ method, debt }] : []
     })
@@ -106,8 +108,8 @@ export function buildPrimaryLnkStageDebtSystemWarnings(
       baseJoint: sourceJoint,
       suffix: 'R' as const,
       reason: PRIMARY_LNK_STAGE_DEBT_SYSTEM_WARNING_REASON,
-      details: `Стык ${joint}: основной НК уже оформляется по методам ${methodCodes.join(', ')}, ` +
-        `но предыдущие этапы еще не завершены: ${missingStages.join(', ')}. ` +
+      details: `Стык ${joint}: уже внесены данные результата основного НК по методам ${methodCodes.join(', ')}, ` +
+        `но в системе не подтверждено завершение предыдущих этапов: ${missingStages.join(', ')}. ` +
         'Подтвердите этапы после получения фактических данных. После этого предупреждение исчезнет автоматически.',
       rootCauseActions: [getPrimaryLnkStageDebtRootCauseAction(row, debt)],
       systemWarningCode: 'СП-01' as const,
@@ -316,7 +318,7 @@ export function buildLnkResultCompletenessCheckTasks(
       if (!hasText(row[method.conclusionKey])) missing.push('заключение')
       return missing.length > 0 ? [{ code: method.code, missing }] : []
     })
-    methodIssues.push(...getPreHeatTreatmentControls(row).flatMap((control) => {
+    methodIssues.push(...(isPreHeatTreatmentStageEnabled(row) ? getPreHeatTreatmentControls(row) : []).flatMap((control) => {
       const result = String(control.result ?? '').trim().toLowerCase()
       if (result !== 'годен' && result !== 'ремонт' && result !== 'вырез') return []
       const missing: string[] = []

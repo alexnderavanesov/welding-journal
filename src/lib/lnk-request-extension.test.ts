@@ -92,7 +92,7 @@ describe('lnk request extension', () => {
     expect(analysis.issues[1]?.reason).toContain('другой заявке')
   })
 
-  it('does not add a post-TO position before the PSTO and TVMT cycle is complete', () => {
+  it('can add a scheduled primary position before the PSTO and TVMT cycle is complete', () => {
     const analysis = analyzeLnkRequestExtensionTargets({
       rows: [weld({
         pstoRequired: 'да',
@@ -109,8 +109,8 @@ describe('lnk request extension', () => {
       requestDate: '2026-08-14',
     })
 
-    expect(analysis.targets).toEqual([])
-    expect(analysis.issues[0]?.reason).toContain('после ТО недоступен')
+    expect(analysis.targets).toEqual([{ rowId: 1, methodKey: 'vikRequest' }])
+    expect(analysis.issues).toEqual([])
   })
 
   it('applies the existing identity and pending result without changing other fields', () => {

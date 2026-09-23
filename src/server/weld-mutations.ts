@@ -78,12 +78,11 @@ assertUniqueWeldMutationTargets,
 splitWeldImportInsertBatches
 } from '@/lib/weld-import-limits'
 import { calculateFinalStatus } from '@/lib/weld-status'
+import { getPreHeatTreatmentExemptionForSave, hasHistoricalPreHeatTreatmentExemption } from '@/lib/pre-heat-treatment-policy'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
 import { isLnkRepairForbiddenWithSettings } from '@/lib/lnk-result-rules'
 import { hasPstoCycleExecutionHistory } from '@/lib/psto-cycle'
 import {
-getPreHeatTreatmentLnkExemptionForNewRow,
-getPreHeatTreatmentLnkExemptionsForNewRows,
 loadControlProcessSettingsFromTransaction,
 } from '@/server/control-process-settings'
 import {
@@ -235,7 +234,7 @@ export async function createWeldJoint({ data }: { data: WeldPayload }) {
   const db = requireDb()
   return db.transaction(async (tx) => {
     const record = restrictWeldMutationRecord(data, 'welding')
-    const processSettings = await loadControlProcessSettingsFromTransaction(tx)
+    await loadControlProcessSettingsFromTransaction(tx)
     await lockWeldLineMemberships(tx, [record])
     const validationContext = await loadServerWeldValidationContext(tx, [record])
     prepareServerWeldRecords({ records: [record], previousRows: new Map(), context: validationContext })
@@ -244,14 +243,9 @@ export async function createWeldJoint({ data }: { data: WeldPayload }) {
       previousRows: new Map(),
       context: validationContext,
     })
-    const preHeatTreatmentLnkExempt = await getPreHeatTreatmentLnkExemptionForNewRow(
-      tx,
-      record,
-      processSettings,
-    )
     const [created] = await tx
       .insert(weldJoints)
-      .values({ ...toDbInsert(record, true), preHeatTreatmentLnkExempt })
+      .values(toDbInsert(record, true))
       .returning(WELD_TABLE_RETURNING)
     await syncSystemDocumentsForWeldChangesInTransaction(tx, [created], new Map())
     await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes([record], new Map()) })
@@ -453,7 +447,7 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       .update(weldJoints)
       .set({
         ...insertData,
-        preHeatTreatmentLnkExempt: record.preHeatTreatmentLnkExempt === true,
+        preHeatTreatmentLnkExempt: getPreHeatTreatmentExemptionForSave(record, previousRows.get(id)),
         ...timestampUpdates,
         updatedAt: new Date(),
       })
@@ -613,17 +607,6 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
     const validationPreviousRows = new Map<number, WeldJoint>()
     const pendingPreHeatTreatmentControls: LnkStageTransferControlWrite[] = []
     const cleanupPlans: PstoLineMoveCleanupPlan[] = []
-    const exemptionCandidates = records.filter((record) => {
-      const previous = previousRows.get(Number(record.id))
-      if (!previous || previous.preHeatTreatmentLnkExempt === true) return false
-      return getPstoLineIdentityKey(previous) !== getPstoLineIdentityKey(record)
-    })
-    const exemptions = exemptionCandidates.length > 0
-      ? await getPreHeatTreatmentLnkExemptionsForNewRows(tx, exemptionCandidates, processSettings)
-      : []
-    const exemptionsByRowId = new Map(
-      exemptionCandidates.map((record, index) => [Number(record.id), exemptions[index] ?? false]),
-    )
     let requiresLifecycleCleanup = false
     for (let index = 0; index < records.length; index += 1) {
       const record = records[index]!
@@ -635,7 +618,6 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
         validationContext,
         processSettings,
         disposition: decisions.get(Number(record.id)),
-        resolvedPreHeatTreatmentLnkExempt: exemptionsByRowId.get(Number(record.id)),
       })
       records[index] = prepared.record
       validationPreviousRows.set(Number(record.id), prepared.validationPrevious)
@@ -749,7 +731,6 @@ async function preparePstoLineMoveRecordInTransaction({
   validationContext,
   processSettings,
   disposition,
-  resolvedPreHeatTreatmentLnkExempt,
 }: {
   tx: SystemDocumentSequenceTransaction
   record: WeldRow
@@ -757,7 +738,6 @@ async function preparePstoLineMoveRecordInTransaction({
   validationContext: Awaited<ReturnType<typeof loadServerWeldValidationContext>>
   processSettings: Awaited<ReturnType<typeof loadControlProcessSettingsFromTransaction>>
   disposition?: PstoWeldLineMoveDisposition
-  resolvedPreHeatTreatmentLnkExempt?: boolean
 }) {
   const id = previousStored.id
   const previous = previousStored as unknown as WeldRow
@@ -784,10 +764,7 @@ async function preparePstoLineMoveRecordInTransaction({
     targetLineState.cancelledCount === targetLineState.rowCount,
   )
   const identityChanged = getPstoLineIdentityKey(previous) !== getPstoLineIdentityKey(targetIdentity)
-  if (identityChanged && previous.preHeatTreatmentLnkExempt !== true) {
-    record.preHeatTreatmentLnkExempt = resolvedPreHeatTreatmentLnkExempt ??
-      await getPreHeatTreatmentLnkExemptionForNewRow(tx, record, processSettings)
-  }
+  record.preHeatTreatmentLnkExempt = hasHistoricalPreHeatTreatmentExemption(previous)
   if (
     (disposition === 'movePrimaryToBeforeHeatTreatment' || disposition === 'deletePrimary') &&
     !targetLineAssigned
@@ -798,7 +775,7 @@ async function preparePstoLineMoveRecordInTransaction({
     processSettings.preHeatTreatmentLnkEnabled &&
     identityChanged &&
     targetLineAssigned &&
-    record.preHeatTreatmentLnkExempt !== true &&
+    !hasHistoricalPreHeatTreatmentExemption(previous) &&
     requiresPrimaryStageResolutionForAssignedPstoLine(previous)
   )
   const requiresLifecycleCleanup = identityChanged && !targetLineAssigned && hasPstoLifecycleHistory(previousStored)
@@ -1230,7 +1207,7 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
     return db.transaction(async (tx) => {
       const mutationScope = data.mutationScope ?? 'welding'
       await lockSubmittedRequestDocuments(tx, data.records, mutationScope)
-      const processSettings = await loadControlProcessSettingsFromTransaction(tx)
+      await loadControlProcessSettingsFromTransaction(tx)
       let records = data.records
       const systemDocumentSequences = [
         ...(data.systemDocumentSequence ? [data.systemDocumentSequence] : []),
@@ -1299,21 +1276,6 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
         records.map((record) => restrictWeldMutationRecord(record, mutationScope)),
         previousRows,
       )
-      const inheritedPreHeatTreatmentExemptions = await getPreHeatTreatmentLnkExemptionsForNewRows(
-        tx,
-        records,
-        processSettings,
-      )
-      records.forEach((record, index) => {
-        const previous = record.id ? previousRows.get(Number(record.id)) : undefined
-        if (
-          previous?.preHeatTreatmentLnkExempt === true ||
-          inheritedPreHeatTreatmentExemptions[index] === true
-        ) {
-          const weldRecord = record as WeldRow
-          weldRecord.preHeatTreatmentLnkExempt = true
-        }
-      })
       if (data.requireFullyAssignedPstoLines) {
         await assertPstoWorkflowLinesFullyAssigned(tx, records)
       }
@@ -1520,15 +1482,18 @@ export async function manageLnkRequestDocument({
       if (duplicate) throw new Error('Заявка с таким наименованием и датой уже существует')
     }
 
+    const hydratedRows = await attachDuplicateControlRelations(
+      await attachHeatTreatmentControlRelations(rows, tx), tx,
+    )
     const records = buildLnkRequestManagerRows({
-      records: rows as WeldRow[],
+      records: hydratedRows,
       requestName: data.requestName,
       requestDate: data.requestDate,
       nextRequestName: data.nextRequestName,
       action: data.action,
     })
-    const previousRows = new Map(rows.map((row) => [row.id, row]))
-    const validationContext = await loadServerWeldValidationContext(tx, rows)
+    const previousRows = new Map(hydratedRows.map((row) => [row.id, row]))
+    const validationContext = await loadServerWeldValidationContext(tx, hydratedRows)
     prepareServerWeldRecords({ records, previousRows, context: validationContext })
     validateServerWeldRecords({ records, previousRows, context: validationContext })
     const updated = await updateWeldJointsInBatches(tx, records, previousRows)
@@ -1781,22 +1746,14 @@ export async function insertWeldJointsInBatches(
   processSettings: Awaited<ReturnType<typeof loadControlProcessSettingsFromTransaction>>,
 ) {
   const inserted: WeldJoint[] = []
-  const preHeatTreatmentLnkExemptions = await getPreHeatTreatmentLnkExemptionsForNewRows(
-    tx,
-    records,
-    processSettings,
-  )
-  let offset = 0
   for (const batch of splitWeldImportInsertBatches(records)) {
     const rows = await tx
       .insert(weldJoints)
-      .values(batch.map((record, index) => ({
-        ...toDbInsert(record, true),
-        preHeatTreatmentLnkExempt: preHeatTreatmentLnkExemptions[offset + index] ?? false,
-      })))
+      .values(batch.map((record) => toDbInsert({
+        ...record, preHeatTreatmentLnkEnabled: processSettings.preHeatTreatmentLnkEnabled,
+      } as WeldRow, true)))
       .returning(WELD_TABLE_RETURNING)
     inserted.push(...rows)
-    offset += batch.length
   }
   return inserted
 }

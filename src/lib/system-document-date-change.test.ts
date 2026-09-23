@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
-import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-settings'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 import {
   buildSystemDocumentDateChangePlan,
@@ -10,7 +9,7 @@ import {
 } from '@/lib/system-document-date-change'
 
 describe('system document date change', () => {
-  it('changes every matching position of a multi-row document and preserves its system number', () => {
+  it('changes every matching position of a multi-row document and preserves its full name including the original date', () => {
     const sourceRows = [
       row(1, {
         vikRequest: 'Заявка-09.08.2026-007',
@@ -35,28 +34,26 @@ describe('system document date change', () => {
       },
       nextDate: '2026-08-10',
       rows: sourceRows,
-      settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS,
     })
 
     expect(plan).toMatchObject({
       previousTitle: 'Заявка-09.08.2026-007',
-      nextTitle: 'Заявка-10.08.2026-007',
+      nextTitle: 'Заявка-09.08.2026-007',
       previousDate: '2026-08-09',
       nextDate: '2026-08-10',
-      isSystemName: true,
       rowCount: 2,
       positionCount: 3,
       directRowIds: [1, 2],
       touchedRowIds: [1, 2],
     })
     expect(plan.rows[0]).toMatchObject({
-      vikRequest: 'Заявка-10.08.2026-007',
+      vikRequest: 'Заявка-09.08.2026-007',
       vikRequestDate: '2026-08-10',
-      rkRequest: 'Заявка-10.08.2026-007',
+      rkRequest: 'Заявка-09.08.2026-007',
       rkRequestDate: '2026-08-10',
     })
     expect(plan.rows[1]).toMatchObject({
-      uzkRequest: 'Заявка-10.08.2026-007',
+      uzkRequest: 'Заявка-09.08.2026-007',
       uzkRequestDate: '2026-08-10',
     })
     expect(plan.rows[2]).toMatchObject({
@@ -82,12 +79,10 @@ describe('system document date change', () => {
         vikConclusion: 'Заключение заказчика ABC',
         vikConclusionDate: '2026-08-09',
       })],
-      settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS,
     })
 
     expect(preview).toMatchObject({
       nextTitle: 'Заключение заказчика ABC',
-      isSystemName: false,
       rowCount: 1,
       positionCount: 1,
     })
@@ -109,7 +104,6 @@ describe('system document date change', () => {
         vikRequest: 'Заявка без даты',
         vikRequestDate: null,
       })],
-      settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS,
     })
 
     expect(plan).toMatchObject({
@@ -150,7 +144,6 @@ describe('system document date change', () => {
         { kind: 'pstoCycle', weldJointId: 1, relationId: 1, sequence: 1 },
         { kind: 'pstoCycle', weldJointId: 1, relationId: 102, sequence: 2 },
       ],
-      settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS,
     })
 
     expect(preview).toMatchObject({ rowCount: 1, positionCount: 2 })
@@ -193,7 +186,6 @@ describe('system document date change', () => {
         relationId: 101,
         methodCode: 'ВИК',
       }],
-      settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS,
     })
 
     expect(plan.directRowIds).toEqual([])
@@ -236,7 +228,6 @@ describe('system document date change', () => {
         relationId: 202,
         sequence: 2,
       }],
-      settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS,
     })
 
     expect(plan.directRowIds).toEqual([])
@@ -267,12 +258,12 @@ describe('system document date change', () => {
         relationId: 999,
         methodCode: 'ВИК',
       }],
-      settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS,
     })).toThrow('Ничего не сохранено')
   })
 
   it('lets the server revalidation reject a newly introduced contradiction before persistence', () => {
     const currentRows = [row(5, {
+      weldDate: '2026-08-10',
       pstoRequired: 'да',
       pstoRequest: 'Заявка ПСТО',
       pstoRequestDate: '2026-08-20',
@@ -297,14 +288,13 @@ describe('system document date change', () => {
       },
       nextDate: '2026-08-09',
       rows: currentRows,
-      settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS,
     })
 
     expect(() => assertNoNewLnkChronologyIssues(
       plan.rows,
       currentRows,
       DEFAULT_SAVE_CHECK_SETTINGS,
-    )).toThrow('раньше даты ПСТО')
+    )).toThrow('раньше даты сварки')
     expect(currentRows[0].vikRequestDate).toBe('2026-08-30')
   })
 })

@@ -3,10 +3,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { ALL_LNK_FIELD_METHODS } from '@/lib/lnk-report-config'
 import type { PreHeatTreatmentControlRecord } from '@/lib/lnk-control-stage'
 import type { PstoRepeatCycleRecord } from '@/lib/psto-cycle'
-import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import {
-  buildCurrentSystemDocumentName,
-  getSystemDocumentNumber,
   type SystemDocumentReference,
   type SystemDocumentSourcePosition,
 } from '@/lib/system-document-types'
@@ -18,7 +15,6 @@ export type SystemDocumentDateChangePlan = {
   nextTitle: string
   previousDate: string
   nextDate: string
-  isSystemName: boolean
   rowCount: number
   positionCount: number
   rows: WeldRow[]
@@ -33,13 +29,11 @@ export function buildSystemDocumentDateChangePreview({
   nextDate,
   rows,
   sourcePositions = [],
-  settings,
 }: {
   reference: SystemDocumentReference
   nextDate: string
   rows: readonly WeldRow[]
   sourcePositions?: readonly SystemDocumentSourcePosition[]
-  settings: RequestConclusionSettings
 }) {
   const normalizedDate = normalizeDateLikeForStorage(nextDate)
   if (!normalizedDate || normalizedDate === reference.date) return null
@@ -49,14 +43,12 @@ export function buildSystemDocumentDateChangePreview({
       nextDate: normalizedDate,
       rows,
       sourcePositions,
-      settings,
     })
     return {
       rows: plan.rows,
       nextReference: plan.nextReference,
       nextTitle: plan.nextTitle,
       nextDate: plan.nextDate,
-      isSystemName: plan.isSystemName,
       rowCount: plan.rowCount,
       positionCount: plan.positionCount,
     }
@@ -70,13 +62,11 @@ export function buildSystemDocumentDateChangePlan({
   nextDate,
   rows,
   sourcePositions = [],
-  settings,
 }: {
   reference: SystemDocumentReference
   nextDate: string
   rows: readonly WeldRow[]
   sourcePositions?: readonly SystemDocumentSourcePosition[]
-  settings: RequestConclusionSettings
 }): SystemDocumentDateChangePlan {
   const normalizedDate = normalizeDateLikeForStorage(nextDate)
   const dateReason = getDateInputValidationReason(nextDate, 'Дата документа')
@@ -85,13 +75,10 @@ export function buildSystemDocumentDateChangePlan({
   if (normalizedDate === reference.date) throw new Error('Новая дата совпадает с текущей')
   if (rows.length === 0) throw new Error('В документе больше нет позиций')
 
-  const systemNumber = getSystemDocumentNumber(reference, settings)
-  const isSystemName = /^\d+$/.test(systemNumber)
-  const nextReferenceBase = { ...reference, date: normalizedDate }
-  const nextTitle = isSystemName
-    ? buildCurrentSystemDocumentName(nextReferenceBase, [...rows], settings, Number(systemNumber))
-    : reference.title
-  const nextReference = { ...nextReferenceBase, title: nextTitle }
+  // Dates and names are independent facts, even when the name contains a date
+  // or resembles a numbering template. Renaming is a separate explicit action.
+  const nextTitle = reference.title
+  const nextReference = { ...reference, date: normalizedDate }
   const proposedRows = rows.map(cloneRow)
   const rowsById = new Map(proposedRows.map((row) => [row.id, row]))
   const directRowIds = new Set<number>()
@@ -148,7 +135,6 @@ export function buildSystemDocumentDateChangePlan({
     nextTitle,
     previousDate: reference.date,
     nextDate: normalizedDate,
-    isSystemName,
     rowCount: touchedRowIds.size,
     positionCount,
     rows: proposedRows,

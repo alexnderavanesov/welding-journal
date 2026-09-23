@@ -908,7 +908,7 @@ describe('validateServerWeldRecords', () => {
     })).toThrow('сохранить основной комплект')
   })
 
-  it('does not demand a pre-TO stage decision when a moved weld inherits an exemption', () => {
+  it('does not let a line-inherited exemption bypass the stage decision during import', () => {
     const previous = {
       id: 354,
       projectTitle: 'Проект',
@@ -940,11 +940,10 @@ describe('validateServerWeldRecords', () => {
         }]]),
       },
       importMode: true,
-    })).not.toThrow()
-    expect(record.pstoRequired).toBe('да')
+    })).toThrow('выберите')
   })
 
-  it('allows an explicit keep-primary move to create only the temporary DZ-20 backfill task', () => {
+  it('allows an explicitly confirmed keep-primary move while preserving its existing stage debt', () => {
     const previous = {
       id: 353,
       projectTitle: 'Проект',
@@ -1066,6 +1065,8 @@ describe('validateServerWeldRecords', () => {
       ...previous,
       vikRequest: 'ВИК после ТО',
       vikRequestDate: '2026-08-20',
+      vikResult: 'годен',
+      vikConclusionDate: '2026-08-20',
     } as unknown as WeldInput, previous, {
       controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
       pstoLineAssignments: new Map([[lineKey, {

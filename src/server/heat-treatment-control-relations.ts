@@ -1,7 +1,10 @@
-import { asc } from 'drizzle-orm'
+import { asc, eq } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
-import { preHeatTreatmentControls, pstoRepeatCycles } from '@/db/schema'
+import { appSettings, preHeatTreatmentControls, pstoRepeatCycles } from '@/db/schema'
+import { normalizeControlProcessSettings, type ControlProcessSettings } from '@/lib/control-process-settings'
+import { hasHistoricalPreHeatTreatmentExemption } from '@/lib/pre-heat-treatment-policy'
+import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import {
   mergePreHeatTreatmentControlsIntoRows,
   mergePstoRepeatCyclesIntoRows,
@@ -13,7 +16,7 @@ type RelationDb = Pick<ReturnType<typeof requireDb>, 'select'>
 
 export async function attachHeatTreatmentControlRelations<
   Row extends HeatTreatmentControlRelationsCarrier,
->(rows: readonly Row[], db: RelationDb = requireDb()) {
+>(rows: readonly Row[], db: RelationDb = requireDb()): Promise<Array<Row & HeatTreatmentControlRelationsCarrier>> {
   const rowsWithPreControls = await attachPreHeatTreatmentControlRelations(rows, db)
   if (rows.length === 0) return rowsWithPreControls
   const rowIds = getRelationRowIds(rows)
@@ -29,7 +32,8 @@ export async function attachHeatTreatmentControlRelations<
       asc(pstoRepeatCycles.id),
     )
 
-  return mergePstoRepeatCyclesIntoRows(rowsWithPreControls, repeatCycles)
+  const hydrated = mergePstoRepeatCyclesIntoRows(rowsWithPreControls, repeatCycles)
+  return attachCurrentPolicy(hydrated, db)
 }
 
 /**
@@ -39,7 +43,7 @@ export async function attachHeatTreatmentControlRelations<
  */
 export async function attachHeatTreatmentControlRelationsInPlace<
   Row extends HeatTreatmentControlRelationsCarrier,
->(rows: Row[], db: RelationDb = requireDb()) {
+>(rows: Row[], db: RelationDb = requireDb(), settings?: ControlProcessSettings) {
   if (rows.length === 0) return rows
   const rowIds = getRelationRowIds(rows)
   if (rowIds.length === 0) return rows
@@ -72,6 +76,23 @@ export async function attachHeatTreatmentControlRelationsInPlace<
   for (const row of rows) {
     const cycles = repeatCyclesByWeldId.get(row.id)
     if (cycles?.length) row.pstoRepeatCycles = cycles
+  }
+  return attachCurrentPolicy(rows, db, settings)
+}
+
+async function attachCurrentPolicy<Row extends HeatTreatmentControlRelationsCarrier>(
+  rows: Row[], db: RelationDb, settings?: ControlProcessSettings,
+) {
+  if (!settings) {
+    const [stored] = await db.select({ value: appSettings.value }).from(appSettings)
+      .where(eq(appSettings.key, PROJECT_SETTING_KEYS.controlProcesses)).orderBy(appSettings.key)
+    let value: unknown
+    try { value = stored ? JSON.parse(stored.value) : undefined } catch { value = undefined }
+    settings = normalizeControlProcessSettings(value)
+  }
+  for (const row of rows) {
+    row.preHeatTreatmentLnkEnabled = settings.preHeatTreatmentLnkEnabled
+    row.preHeatTreatmentLnkExempt = hasHistoricalPreHeatTreatmentExemption(row)
   }
   return rows
 }

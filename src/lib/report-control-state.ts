@@ -16,7 +16,7 @@ import {
 import type { WeldInput } from '@/lib/weld-fields'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { requiresPostHeatTreatmentCompletion } from '@/lib/tvmt-cycle'
-import { canUsePrimaryLnkStage } from '@/lib/lnk-control-stage'
+import { canCreatePrimaryLnkRequest } from '@/lib/lnk-control-stage'
 
 export function hasAnyLnkControl(row: WeldInput) {
   return LNK_METHODS.some((method) => isEnabledControlValue(row[method.enabledKey]))
@@ -112,6 +112,6 @@ export function canCreateLnkRequest(
   return LNK_METHODS.some((method) =>
     isEnabledControlValue(row[method.enabledKey]) &&
     !hasText(row[method.requestKey]) &&
-    canUsePrimaryLnkStage(row, method.code, settings),
+    canCreatePrimaryLnkRequest(row, method.code, settings),
   )
 }

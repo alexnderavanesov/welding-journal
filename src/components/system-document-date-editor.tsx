@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useConfirmAction } from '@/lib/confirm-action-context'
 import { getDateInputValidationReason } from '@/lib/date-format'
-import { useRequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { loadSystemDocumentDateContext } from '@/lib/system-document-storage'
 import {
   buildSystemDocumentDateChangePreview,
@@ -49,7 +48,6 @@ export function SystemDocumentDateEditor({
   const confirmAction = useConfirmAction()
   const { requireEditPassword } = useSecurityGuard()
   const saveCheckSettings = useSaveCheckSettings()
-  const requestConclusionSettings = useRequestConclusionSettings()
   const cycleSequencesKey = reference.cycleSequences?.join(',') ?? ''
   const effectiveReference = useMemo<SystemDocumentReference>(
     () => reference.sourceKind ? { ...reference, documentId: undefined } : reference,
@@ -88,9 +86,8 @@ export function SystemDocumentDateEditor({
         nextDate,
         rows: rowsQuery.data.rows,
         sourcePositions: rowsQuery.data.sourcePositions,
-        settings: requestConclusionSettings,
       })
-    : null, [effectiveReference, nextDate, requestConclusionSettings, rowsQuery.data])
+    : null, [effectiveReference, nextDate, rowsQuery.data])
   const chronology = useMemo(() => preview && rowsQuery.data
     ? getNewChronologyRootCauseState({
         previousRows: rowsQuery.data.rows,
@@ -143,11 +140,8 @@ export function SystemDocumentDateEditor({
       }
       queryClient.setQueryData(['system-document-date-context', referenceKey], nextContext)
       queryClient.setQueryData(nextContextKey, nextContext)
-      const nameChange = result.previousTitle === result.nextTitle
-        ? ''
-        : ` Новое системное имя: ${result.nextTitle}.`
       onMessage?.(
-        `Дата документа изменена у ${result.positionCount} позиций (${result.rowCount} стыков).${nameChange}`,
+        `Дата документа изменена у ${result.positionCount} позиций (${result.rowCount} стыков). Наименование сохранено.`,
       )
       onSaved?.(result)
     },
@@ -165,9 +159,7 @@ export function SystemDocumentDateEditor({
       title: 'Изменить дату документа',
       itemName: effectiveReference.title,
       description: `Новая дата будет записана сразу во все позиции документа: ${preview.positionCount} поз. в ${preview.rowCount} ст.`,
-      warning: preview.isSystemName
-        ? `Системное имя будет пересчитано с сохранением номера: «${preview.nextTitle}».`
-        : 'Пользовательское наименование документа останется без изменений.',
+      warning: 'Полное наименование документа останется без изменений, в том числе номер и дата в тексте имени.',
       confirmLabel: 'Изменить дату',
       tone: 'warning',
     })
@@ -206,9 +198,7 @@ export function SystemDocumentDateEditor({
       {preview ? (
         <p className="text-xs leading-5 text-slate-500">
           Будет изменено позиций: {preview.positionCount}; стыков: {preview.rowCount}.{' '}
-          {preview.isSystemName
-            ? `Системное имя сохранит номер и станет «${preview.nextTitle}».`
-            : 'Пользовательское имя не изменится.'}
+          Полное наименование документа не изменится.
         </p>
       ) : rowsQuery.isError ? (
         <p className="text-xs font-medium text-rose-700">Не удалось загрузить полный состав документа.</p>

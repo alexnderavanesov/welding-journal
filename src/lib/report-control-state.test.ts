@@ -141,11 +141,11 @@ describe('cancelled report controls', () => {
     expect(getPstoWorkflowResultBlockReason(completed)).toBe('Результат ПСТО для цикла 1 уже внесен.')
   })
 
-  it('does not offer a primary LNK request before the PSTO chain is complete', () => {
+  it('offers a primary LNK request before the PSTO chain is complete', () => {
     expect(canCreateLnkRequest({
       pstoRequired: 'да',
       hasVik: 'да',
-    })).toBe(false)
+    })).toBe(true)
   })
 
   it('exposes the current repeat-cycle state as a filterable report value', () => {

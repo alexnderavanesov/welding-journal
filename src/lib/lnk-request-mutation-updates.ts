@@ -1,6 +1,6 @@
 import { LNK_METHODS } from '@/lib/report-config'
 import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
-import { assertNoLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
+import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import {
   applyLnkFieldUpdate,
@@ -17,12 +17,7 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RowWithId } from '@/lib/lnk-report-mutation-types'
 import { isSameRequestDocument } from '@/lib/request-document-identity'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
-import { canUsePrimaryLnkStage } from '@/lib/lnk-control-stage'
-import type { LnkChronologyIssueKind } from '@/lib/lnk-chronology-checks'
-
-const PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS = new Set<LnkChronologyIssueKind>([
-  'post-before-psto-cycle',
-])
+import { canCreatePrimaryLnkRequest } from '@/lib/lnk-control-stage'
 
 export type LnkRequestManagerAction = 'rename' | 'delete'
 
@@ -50,13 +45,7 @@ export function buildLnkRequestRows({
     requestDate,
     controlProcessSettings,
   })
-  assertNoLnkChronologyIssues(
-    proposedRecords,
-    saveCheckSettings,
-    isPrimaryLnkStageDebtAllowed(controlProcessSettings)
-      ? { ignoredKinds: PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS }
-      : undefined,
-  )
+  assertNoNewLnkChronologyIssues(proposedRecords, records, saveCheckSettings)
   return proposedRecords
 }
 
@@ -81,7 +70,7 @@ export function buildLnkRequestDraftRows({
       const method = getLnkMethodByRequestKey(requestKey)
       if (!method) continue
       if (!isEnabledControlValue(record[method.enabledKey])) continue
-      if (!canUsePrimaryLnkStage(record, method.code, controlProcessSettings)) continue
+      if (!canCreatePrimaryLnkRequest(record, method.code, controlProcessSettings)) continue
       const existingRequestName = String(record[method.requestKey] ?? '').trim()
       if (existingRequestName) continue
       nextRecord[method.requestKey] = requestName
@@ -94,15 +83,6 @@ export function buildLnkRequestDraftRows({
     }
     return changed ? [withTouchedLnkTimestamp(nextRecord)] : []
   })
-}
-
-function isPrimaryLnkStageDebtAllowed(
-  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>,
-) {
-  return Boolean(
-    settings?.preHeatTreatmentLnkEnabled &&
-    settings.allowPrimaryLnkBeforePreviousStagesComplete,
-  )
 }
 
 export function buildLnkRequestCorrectionRow({
@@ -136,12 +116,12 @@ export function buildLnkRequestCorrectionRow({
       if (method.code !== 'РК') proposedRecord[method.defectDescriptionKey] = null
     }
     const nextRecord = withTouchedLnkFinalStatus(proposedRecord)
-    assertNoLnkChronologyIssues([nextRecord], saveCheckSettings)
+    assertNoNewLnkChronologyIssues([nextRecord], [record], saveCheckSettings)
     return nextRecord
   }
 
   const nextRecord = buildLnkRequestPositionRemovalRow(record, methodKey)
-  assertNoLnkChronologyIssues([nextRecord], saveCheckSettings)
+  assertNoNewLnkChronologyIssues([nextRecord], [record], saveCheckSettings)
   return nextRecord
 }
 
@@ -216,7 +196,7 @@ export function buildLnkRequestManagerRows({
     return changed ? [withTouchedLnkFinalStatus(nextRecord)] : []
   })
   if (action === 'rename') {
-    assertNoLnkChronologyIssues(proposedRecords, loadSaveCheckSettings())
+    assertNoNewLnkChronologyIssues(proposedRecords, records, loadSaveCheckSettings())
   }
   return proposedRecords
 }

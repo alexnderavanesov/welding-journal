@@ -24,7 +24,7 @@ describe('weld persistence', () => {
     expect(toDbInsert({ pstoRequired: '0' }).pstoRequired).toBeNull()
   })
 
-  it('persists a server-inherited pre-TO exemption in batch updates', () => {
+  it('does not persist a line-inherited pre-TO exemption in batch updates', () => {
     const previous = {
       id: 1,
       joint: 'F1',
@@ -40,13 +40,14 @@ describe('weld persistence', () => {
       record,
       new Map([[previous.id, previous]]),
       new Date('2026-09-02T00:00:00.000Z'),
-    ).preHeatTreatmentLnkExempt).toBe(true)
+    ).preHeatTreatmentLnkExempt).toBe(false)
   })
 
   it('does not revoke an existing exemption through an ordinary batch save', () => {
     const previous = {
       id: 2,
       joint: 'F2',
+      pstoRequest: 'Историческая заявка ПСТО',
       preHeatTreatmentLnkExempt: true,
     } as WeldJoint
     const record = {

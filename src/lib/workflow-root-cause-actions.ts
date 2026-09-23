@@ -1,6 +1,6 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { getLnkChronologyIssues, type LnkChronologyIssue } from '@/lib/lnk-chronology-checks'
-import { getPstoChronologyIssues, type PstoChronologyIssue } from '@/lib/psto-chronology-checks'
+import { getLnkChronologyIssueIdentity, getLnkChronologyIssues, type LnkChronologyIssue } from '@/lib/lnk-chronology-checks'
+import { getPstoChronologyIssueIdentity, getPstoChronologyIssues, type PstoChronologyIssue } from '@/lib/psto-chronology-checks'
 import { buildPstoCycleTimeline, type PstoCycleSnapshot } from '@/lib/psto-cycle'
 import { LNK_METHODS } from '@/lib/report-config'
 import type { WeldFieldKey } from '@/lib/weld-fields'
@@ -38,6 +38,7 @@ export type WorkflowRootCauseTarget =
       focus: 'date' | 'name' | 'result'
       documentName?: string
       documentDate?: string
+      intent?: 'complete-stage'
     }
   | {
       kind: 'duplicate-control'
@@ -129,6 +130,7 @@ export function getPrimaryLnkStageDebtRootCauseAction(
       ...(currentCycle?.id && currentCycle.sequence === sequence ? { cycleId: currentCycle.id } : {}),
       stage,
       focus: stage === 'pstoRequest' || stage === 'tvmtRequest' ? 'name' : 'result',
+      intent: 'complete-stage',
     },
   }
 }
@@ -142,12 +144,12 @@ export function getNewChronologyRootCauseState({
   proposedRows: readonly WeldRow[]
   settings: SaveCheckSettings
 }) {
-  const previousLnkKeys = new Set(getLnkChronologyIssues([...previousRows], settings).map(getLnkIssueKey))
-  const previousPstoKeys = new Set(getPstoChronologyIssues([...previousRows], settings).map(getPstoIssueKey))
+  const previousLnkKeys = new Set(getLnkChronologyIssues([...previousRows], settings).map(getLnkChronologyIssueIdentity))
+  const previousPstoKeys = new Set(getPstoChronologyIssues([...previousRows], settings).map(getPstoChronologyIssueIdentity))
   const lnkIssues = getLnkChronologyIssues([...proposedRows], settings)
-    .filter((issue) => !previousLnkKeys.has(getLnkIssueKey(issue)))
+    .filter((issue) => !previousLnkKeys.has(getLnkChronologyIssueIdentity(issue)))
   const pstoIssues = getPstoChronologyIssues([...proposedRows], settings)
-    .filter((issue) => !previousPstoKeys.has(getPstoIssueKey(issue)))
+    .filter((issue) => !previousPstoKeys.has(getPstoChronologyIssueIdentity(issue)))
   const firstIssue = lnkIssues[0] ?? pstoIssues[0]
   return {
     message: firstIssue?.message ?? null,
@@ -439,19 +441,4 @@ function text(value: unknown) {
 
 function dateText(value: unknown) {
   return text(value).slice(0, 10)
-}
-
-function getLnkIssueKey(issue: LnkChronologyIssue) {
-  return [
-    issue.kind,
-    issue.row.id ?? 0,
-    issue.methodCode,
-    issue.controlStage,
-    issue.documentPart,
-    issue.message,
-  ].join('\u0000')
-}
-
-function getPstoIssueKey(issue: PstoChronologyIssue) {
-  return [issue.kind, issue.row.id ?? 0, issue.sequence, issue.documentStage, issue.message].join('\u0000')
 }

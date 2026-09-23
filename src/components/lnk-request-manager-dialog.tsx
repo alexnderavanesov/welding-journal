@@ -627,7 +627,7 @@ export function LnkRequestManagerDialog({
                     onRename={onRenameRequest}
                   >
                     <p className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-600">
-                      Изменение даты применяется ко всем позициям заявки. Системное имя пересчитывается с тем же номером; пользовательское имя сохраняется.
+                      Изменение даты применяется ко всем позициям заявки. Полное наименование, включая номер и дату в тексте имени, сохраняется. Переименование выполняется отдельно.
                     </p>
                   </RequestRenamePanel>
                   <RequestDeletePanel

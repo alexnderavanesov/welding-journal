@@ -21,6 +21,7 @@ export type WeldRow = WeldInput & {
   chainContinuation?: JointChainContinuation
   earlyCoilDecisionAccepted?: boolean
   preHeatTreatmentLnkExempt?: boolean
+  preHeatTreatmentLnkEnabled?: boolean
   rowVersion?: string
   activeDispatcherTasks?: string
   duplicateControls?: DuplicateControlRecord[]

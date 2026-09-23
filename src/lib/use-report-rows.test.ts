@@ -7,6 +7,31 @@ import {
   reuseEquivalentWeldRows,
 } from '@/lib/use-report-rows'
 
+describe('paged repair statuses', () => {
+  const continuation = { id: 2, joint: 'F1', line: 'L', finalStatus: 'ожидает ремонт' } as WeldRow
+
+  it('does not erase the server repair status when its source is on another page', () => {
+    expect(prepareReportRows([continuation], [], undefined, undefined, undefined, true)[0].finalStatus).toBe('ожидает ремонт')
+  })
+
+  it('uses an authoritative full context to remove an obsolete repair status', () => {
+    const context = { rejectedUnofficialSameNameRepairKeys: new Set<string>() }
+    expect(prepareReportRows([continuation], [], undefined, context, undefined, true)[0].finalStatus).toBe('ожидает сварку')
+  })
+
+  it('does not keep waiting for repair after welding was actually recorded', () => {
+    const row = { ...continuation, weldDate: '2026-09-16', hasVik: 'да', vikResult: 'годен' }
+    expect(prepareReportRows([row], [], undefined, undefined, undefined, true)[0].finalStatus).toBe('годен')
+  })
+
+  it('uses the visible rejected pre-TO source without a separate context request', () => {
+    const source = { id: 1, joint: 'F1', line: 'L', officiality: 'неофициальный', pstoRequired: 'да', hasVik: 'да',
+      preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'ВИК', result: 'ремонт' }],
+    }
+    expect(prepareReportRows([source, { ...continuation, finalStatus: 'ожидает сварку' }], [], undefined, undefined, undefined, true)[1].finalStatus).toBe('ожидает ремонт')
+  })
+})
+
 describe('reuseEquivalentWeldRows', () => {
   it('preserves references for unchanged rows and replaces only a changed row', () => {
     const previous = [

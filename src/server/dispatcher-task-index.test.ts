@@ -16,8 +16,24 @@ import {
   replaceScopedDispatcherTaskIndexRows,
 } from '@/server/dispatcher-task-index'
 import { DISPATCHER_TASK_INDEX_STAGE_BATCH_SIZE } from '@/server/dispatcher-task-index-staging'
+import { buildPrimaryLnkStageDebtSystemWarnings } from '@/lib/repeated-joint-check-tasks'
+import { buildDispatcherTaskCodeIndexRows } from '@/lib/dispatcher-task-row-codes'
+import { mergeDispatcherTaskCodesIntoRows } from '@/server/weld-read'
+import type { WeldRow } from '@/lib/dispatcher-types'
+import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '@/lib/control-process-settings'
 
 describe('prepareDispatcherReportRows', () => {
+  it.each([true, false])('carries only actual primary result debt through the persisted index to dispatcherTasks (pre-TO=%s)', (preHeatTreatmentLnkEnabled) => {
+    const requestOnly = { id: 1, joint: 'F1', pstoRequired: 'да', hasVik: 'да', vikRequest: '1503-2', vikRequestDate: '2026-03-15', vikResult: 'ожидает НК' } as WeldRow
+    const result = { ...requestOnly, id: 2, joint: 'F2', vikResult: 'годен', vikConclusionDate: '2026-03-25' } as WeldRow
+    const rows = [requestOnly, result]
+    const tasks = buildPrimaryLnkStageDebtSystemWarnings(rows, { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentLnkEnabled })
+    const index = buildDispatcherTaskCodeIndexRows(tasks, rows)
+    expect(index).toEqual([{ rowId: 2, taskKey: 'code:СП-01', code: 'СП-01' }])
+    expect(mergeDispatcherTaskCodesIntoRows(rows, index, []).map(({ id, dispatcherTasks }) => ({ id, dispatcherTasks }))).toEqual([
+      { id: 1, dispatcherTasks: '' }, { id: 2, dispatcherTasks: 'СП-01' },
+    ])
+  })
   it('gives a new day or calculation version a new task-page revision even without weld mutations', () => {
     expect(getDispatcherTaskPublicationRevision({ sourceRevision: 7, computedRevision: 7 })).toBe(8)
     expect(getDispatcherTaskPublicationRevision({ sourceRevision: 9, computedRevision: 7 })).toBe(9)
@@ -120,7 +136,7 @@ describe('prepareDispatcherReportRows', () => {
 
     const preparedRows = await prepareDispatcherReportRows(tx, rows, duplicates)
 
-    expect(select).toHaveBeenCalledTimes(2)
+    expect(select).toHaveBeenCalledTimes(3)
     expect(preparedRows[0]?.preHeatTreatmentControls).toEqual([preControl])
     expect(preparedRows[0]?.pstoRepeatCycles).toEqual([repeatCycle])
     expect(preparedRows[0]?.duplicateControls).toHaveLength(1)

@@ -257,8 +257,8 @@ export function PstoRequestManagerDialog({
           onRename={onRenameRequest}
         >
           <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-            Дата меняется сразу у всех позиций заявки. Системное имя сохраняет номер и пересчитывается;
-            пользовательское имя остается прежним.
+            Дата меняется сразу у всех позиций заявки. Полное наименование сохраняется,
+            включая номер и дату в тексте имени. Переименование выполняется отдельно.
           </p>
         </RequestRenamePanel>
 

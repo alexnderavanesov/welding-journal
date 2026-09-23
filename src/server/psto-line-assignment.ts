@@ -703,6 +703,7 @@ function attachSavedPreHeatTreatmentControls(
 }
 
 const PSTO_LINE_ASSIGNMENT_UPDATE_FIELD_KEYS = [
+  'preHeatTreatmentLnkExempt',
   'pstoRequired',
   'pstoControlBasis',
   'pstoCancellationDate',

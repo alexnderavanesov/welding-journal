@@ -19,7 +19,7 @@ import {
 } from '@/lib/report-value-utils'
 import { hasCompletedLnkRequestPosition } from '@/lib/report-control-state'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
-import { getPrimaryLnkStageAccess } from '@/lib/lnk-control-stage'
+import { getPrimaryLnkRequestAccess } from '@/lib/lnk-control-stage'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 
 export type LnkRequestExtensionTarget = {
@@ -284,7 +284,7 @@ function getLnkRequestExtensionTargetReason(
   if (!isEnabledControlValue(row[method.enabledKey])) {
     return 'вид НК должен быть назначен как «да» или «дополнительный».'
   }
-  const stageAccess = getPrimaryLnkStageAccess(row, method.code, controlProcessSettings)
+  const stageAccess = getPrimaryLnkRequestAccess(row, method.code, controlProcessSettings)
   if (stageAccess.status === 'blocked') return stageAccess.reason
   if (hasRejectedLnkResult(row)) {
     return 'стык уже имеет негодный результат, поэтому новые позиции НК для него не создаются.'

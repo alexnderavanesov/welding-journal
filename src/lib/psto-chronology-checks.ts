@@ -378,8 +378,12 @@ function getIssueDocumentStage(kind: PstoChronologyIssueKind): PstoChronologyIss
   return 'pstoRequest'
 }
 
-function getPstoChronologyIssueIdentity(issue: PstoChronologyIssue) {
-  return `${issue.kind}\u0000${issue.message}`
+export function getPstoChronologyIssueIdentity(issue: PstoChronologyIssue) {
+  return JSON.stringify([
+    issue.row.id ?? [issue.row.projectTitle, issue.row.subtitleCode, issue.row.line, issue.row.joint],
+    issue.cycleSource, issue.cycleId, issue.sequence, issue.documentStage,
+    issue.kind, issue.message,
+  ])
 }
 
 function formatPstoChronologyIssueSaveBlockReason(issue: PstoChronologyIssue) {

@@ -31,7 +31,7 @@ import {
   sameNormalizedTextSet,
   shouldEnsureDispatcherTaskIndexForColumnFilter,
 } from './welds'
-import { getReportOrderBy } from './weld-read'
+import { getReportOrderBy, REPORT_DERIVED_FILTER_SELECT } from './weld-read'
 import type { WeldJoint } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
@@ -741,6 +741,8 @@ describe('weld server pagination helpers', () => {
     }
     expect(selectedFieldKeys.has('pstoRequestDate')).toBe(true)
     expect(selectedFieldKeys.has('pstoDate')).toBe(true)
+    expect(REPORT_DERIVED_FILTER_SELECT).toHaveProperty('preHeatTreatmentLnkExempt')
+    expect(selectedFieldKeys.has('heatTreatmentDiagram')).toBe(true)
     expect(selectedFieldKeys.has('finalStatus')).toBe(true)
     expect(selectedFieldKeys.has('rkControlBasis')).toBe(true)
     expect(selectedFieldKeys.has('pstoControlBasis')).toBe(true)

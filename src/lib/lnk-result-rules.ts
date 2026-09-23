@@ -2,6 +2,7 @@ import { getRepeatedJointRepairCount, parseRepeatedJointName } from '@/lib/joint
 import { formatJointDiameterLabel, getMinimumJointDiameter, isUnofficialJoint } from '@/lib/joint-display'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { getPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
+import { isPreHeatTreatmentStageEnabled } from '@/lib/pre-heat-treatment-policy'
 import { getDuplicateControls } from '@/lib/duplicate-control-utils'
 import { REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON } from '@/lib/report-config'
 import {
@@ -77,7 +78,7 @@ export function findFirstLnkRepairRuleIssue(
       ...LNK_METHODS
         .filter((method) => normalizeLnkResult(row[method.resultKey]) === 'ремонт')
         .map((method) => method.code),
-      ...getPreHeatTreatmentControls(row)
+      ...(isPreHeatTreatmentStageEnabled(row) ? getPreHeatTreatmentControls(row) : [])
         .filter((control) => normalizeLnkResult(control.result) === 'ремонт')
         .map((control) => `${String(control.method ?? '').trim().toLocaleUpperCase('ru-RU')} до ТО`),
       ...getDuplicateControls(row)

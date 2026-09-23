@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import type { SQL } from 'drizzle-orm'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import pg from 'pg'
 
@@ -163,7 +164,7 @@ test('замена индекса ждёт удаление стыка до за
     await deletingClient.query('delete from weld_joints where id = 1')
     await refreshingClient.query('begin')
     const lockAttempt = lockWeldJointWritesForDispatcherReplacement({
-      execute: (statement) => {
+      execute: (statement: SQL) => {
         const query = new PgDialect().sqlToQuery(statement)
         return refreshingClient.query(query.sql, query.params)
       },

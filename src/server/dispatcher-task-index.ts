@@ -445,7 +445,7 @@ export async function calculateFullDispatcherTasks(
   options.onProgress?.('supporting-rows-loaded')
   const sourceRows = rows.map((row) => ({ id: row.id, finalStatus: row.finalStatus }))
   const preparedRows = prepareReportRowsInPlace(
-    await attachHeatTreatmentControlRelationsInPlace(rows, tx),
+    await attachHeatTreatmentControlRelationsInPlace(rows, tx, getControlProcessSettings(settingsRows)),
     duplicateRows.map(toDuplicateControlRecord),
   )
   options.onProgress?.('report-rows-prepared')
