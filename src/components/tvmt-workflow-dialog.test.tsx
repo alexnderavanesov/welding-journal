@@ -126,6 +126,24 @@ describe('TvmtWorkflowDialog', () => {
     expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeDisabled()
   })
 
+  it('applies a bulk result selected before candidate rows finish loading', async () => {
+    const waitingResult = makeRow({
+      tvmtRequest: 'Заявка-ТВМТ-001',
+      tvmtRequestDate: '2026-08-29',
+      tvmtResult: 'ожидает НК',
+    })
+    const view = renderDialog('result', [], new Set([waitingResult.id]))
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Результат для выбранных' }), {
+      target: { value: 'не годен' },
+    })
+    view.rerenderWithRows([waitingResult])
+
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeChecked())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'не годен' })).toHaveAttribute('aria-pressed', 'true'))
+    expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeEnabled()
+  })
+
   it('opens result entry for the exact TVMT request and keeps the row result explicit', () => {
     renderDialog('result', makeRow({
       tvmtRequest: 'Заявка-ТВМТ-001',

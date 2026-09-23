@@ -18,6 +18,7 @@ import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
 import type { LnkOfficialityCounters } from '@/lib/lnk-officiality-derived-utils'
 import { usePagination } from '@/lib/use-pagination'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
+import { WORKFLOW_CANDIDATE_PAGE_SIZE } from '@/server/weld-contracts'
 
 export type LnkOfficialityDialogProps = {
   draft: LnkOfficialityDraftState
@@ -98,6 +99,12 @@ export function LnkOfficialityDialog({
               onChange={(search) => onDraftChange((current) => ({ ...current, search }))}
             />
           </div>
+
+          {filteredRows.length >= WORKFLOW_CANDIDATE_PAGE_SIZE ? (
+            <p className="mb-3 text-xs text-muted-foreground">
+              Показаны первые {WORKFLOW_CANDIDATE_PAGE_SIZE} подходящих стыков. Уточните поиск, чтобы найти остальные.
+            </p>
+          ) : null}
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-slate-200">
             {filteredRows.length === 0 ? (

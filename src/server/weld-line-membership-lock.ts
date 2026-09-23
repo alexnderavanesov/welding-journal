@@ -1,4 +1,4 @@
-import { asc, inArray, sql, type SQL } from 'drizzle-orm'
+import { asc, sql, type SQL } from 'drizzle-orm'
 
 import { weldJoints } from '@/db/schema'
 import {
@@ -6,7 +6,7 @@ import {
   normalizePstoLineIdentity,
 } from '@/lib/psto-line-assignment'
 import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
-import { splitNumberBatches } from '@/server/weld-request-utils'
+import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 
 type WeldLineIdentityInput = {
   projectTitle?: unknown
@@ -49,22 +49,16 @@ export async function lockWeldLineMemberships(
   const keys = getWeldLineMembershipLockKeys(identities)
   if (keys.length === 0) return
 
-  for (let offset = 0; offset < keys.length; offset += 1000) {
-    const values = sql.join(keys.slice(offset, offset + 1000).map((key) => sql`(${key})`), sql`, `)
-    await executor.execute(sql`
-      with "weld_line_lock_keys"("lock_key") as materialized (
-        values ${values}
-      ),
-      "ordered_weld_line_lock_keys" as materialized (
-        select "lock_key"
-        from "weld_line_lock_keys"
-        order by "lock_key"
-      )
-      select pg_advisory_xact_lock(hashtext("lock_key"))
-      from "ordered_weld_line_lock_keys"
+  await executor.execute(sql`
+    with "ordered_weld_line_lock_keys" as materialized (
+      select "lock_key"
+      from unnest(${sql.param(keys)}::text[]) as source("lock_key")
       order by "lock_key"
-    `)
-  }
+    )
+    select pg_advisory_xact_lock(hashtext("lock_key"))
+    from "ordered_weld_line_lock_keys"
+    order by "lock_key"
+  `)
 }
 
 export async function lockWeldLineMembershipsForWeldIds(
@@ -75,9 +69,9 @@ export async function lockWeldLineMembershipsForWeldIds(
     .map(Number)
     .filter((id) => Number.isInteger(id) && id > 0))]
     .sort((left, right) => left - right)
-  const rows: WeldLineMembershipSnapshot[] = []
-  for (const idBatch of splitNumberBatches(ids, 1000)) {
-    rows.push(...await tx
+  const rows: WeldLineMembershipSnapshot[] = ids.length === 0
+    ? []
+    : await tx
       .select({
         id: weldJoints.id,
         projectTitle: weldJoints.projectTitle,
@@ -85,9 +79,8 @@ export async function lockWeldLineMembershipsForWeldIds(
         line: weldJoints.line,
       })
       .from(weldJoints)
-      .where(inArray(weldJoints.id, idBatch))
-      .orderBy(asc(weldJoints.id)))
-  }
+      .where(buildNumberArrayMatch(weldJoints.id, ids))
+      .orderBy(asc(weldJoints.id))
   await lockWeldLineMemberships(tx, rows)
   return rows
 }

@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm'
+import { and, asc, eq, ne, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import {
@@ -47,7 +47,7 @@ import {
   assertExpectedInteractiveWeldVersions,
   lockInteractiveWeldRows,
 } from '@/server/weld-row-version'
-import { splitNumberBatches } from '@/server/weld-request-utils'
+import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { loadWeldWorkflowSettingsFromTransaction } from '@/server/weld-workflow-settings'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
@@ -237,22 +237,28 @@ async function lockSourceRelations(
   const preIds = [...new Set(positions
     .filter((position) => position.kind === 'beforeHeatTreatment')
     .map((position) => position.relationId))]
-  for (const batch of splitNumberBatches(preIds.sort((left, right) => left - right), 1000)) {
+  if (preIds.length > 0) {
     await tx
       .select({ id: preHeatTreatmentControls.id })
       .from(preHeatTreatmentControls)
-      .where(inArray(preHeatTreatmentControls.id, batch))
+      .where(buildNumberArrayMatch(
+        preHeatTreatmentControls.id,
+        preIds.sort((left, right) => left - right),
+      ))
       .orderBy(asc(preHeatTreatmentControls.id))
       .for('update')
   }
   const repeatIds = [...new Set(positions
     .filter((position) => (position.sequence ?? 1) > 1)
     .map((position) => position.relationId))]
-  for (const batch of splitNumberBatches(repeatIds.sort((left, right) => left - right), 1000)) {
+  if (repeatIds.length > 0) {
     await tx
       .select({ id: pstoRepeatCycles.id })
       .from(pstoRepeatCycles)
-      .where(inArray(pstoRepeatCycles.id, batch))
+      .where(buildNumberArrayMatch(
+        pstoRepeatCycles.id,
+        repeatIds.sort((left, right) => left - right),
+      ))
       .orderBy(asc(pstoRepeatCycles.id))
       .for('update')
   }
@@ -334,12 +340,15 @@ async function persistDateChangePlan(
   const directRows = plan.rows.filter((row) => directIds.has(row.id))
   await updateWeldJointsInBatches(tx, directRows, previousRows)
 
-  for (const batch of splitRelationBatches(plan.preHeatTreatmentControls)) {
-    const ids = batch.map((control) => control.id)
+  if (plan.preHeatTreatmentControls.length > 0) {
+    const ids = plan.preHeatTreatmentControls.map((control) => control.id)
     const values = plan.nextReference.type === 'lnkRequest'
       ? { requestName: plan.nextTitle, requestDate: plan.nextDate, updatedAt: new Date() }
       : { conclusionName: plan.nextTitle, conclusionDate: plan.nextDate, updatedAt: new Date() }
-    await tx.update(preHeatTreatmentControls).set(values).where(inArray(preHeatTreatmentControls.id, ids))
+    await tx
+      .update(preHeatTreatmentControls)
+      .set(values)
+      .where(buildNumberArrayMatch(preHeatTreatmentControls.id, ids))
   }
 
   await updatePstoRepeatCycleRecords(tx, plan.pstoRepeatCycles)
@@ -349,14 +358,14 @@ async function persistDateChangePlan(
     plan.nextReference.sourceKind === 'pstoRepeat' ||
     plan.nextReference.type === 'pstoRequest' ||
     plan.nextReference.type === 'pstoConclusion'
-  for (const batch of splitNumberBatches(childOnlyIds, 1000)) {
+  if (childOnlyIds.length > 0) {
     const now = new Date()
     await tx
       .update(weldJoints)
       .set(isPstoProfile
         ? { pstoUpdatedAt: now, updatedAt: now }
         : { lnkUpdatedAt: now, updatedAt: now })
-      .where(inArray(weldJoints.id, batch))
+      .where(buildNumberArrayMatch(weldJoints.id, childOnlyIds))
   }
 }
 
@@ -364,14 +373,11 @@ async function loadSavedRows(
   tx: SystemDocumentSequenceTransaction,
   rowIds: number[],
 ) {
-  const rows: Array<typeof weldJoints.$inferSelect> = []
-  for (const batch of splitNumberBatches(rowIds, 1000)) {
-    rows.push(...await tx
-      .select(WELD_TABLE_RETURNING)
-      .from(weldJoints)
-      .where(inArray(weldJoints.id, batch))
-      .orderBy(asc(weldJoints.id)))
-  }
+  const rows = await tx
+    .select(WELD_TABLE_RETURNING)
+    .from(weldJoints)
+    .where(buildNumberArrayMatch(weldJoints.id, rowIds))
+    .orderBy(asc(weldJoints.id))
   return attachDuplicateControlRelations(
     await attachHeatTreatmentControlRelations(rows as WeldRow[], tx),
     tx,
@@ -380,13 +386,6 @@ async function loadSavedRows(
 
 function toStoredReference(reference: SystemDocumentReference, documentId: number) {
   return { ...reference, documentId }
-}
-
-function splitRelationBatches<T>(relations: T[]) {
-  return Array.from(
-    { length: Math.ceil(relations.length / 1000) },
-    (_, index) => relations.slice(index * 1000, (index + 1) * 1000),
-  )
 }
 
 function sanitizeFileName(value: string) {

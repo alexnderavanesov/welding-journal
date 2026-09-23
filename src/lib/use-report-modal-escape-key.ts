@@ -3,6 +3,7 @@ import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
 
 type ReportModalEscapeKeyOptions = {
   isReportModalOpen: boolean
+  isDispatcherWorkspaceOpen?: boolean
   isPstoRequestManagerOpen: boolean
   isPstoResultManagerOpen: boolean
   isLnkRequestManagerOpen: boolean
@@ -46,10 +47,12 @@ type ReportModalEscapeKeyOptions = {
   onCloseLnkResultModal: () => void
   onCloseLnkRequestModal: () => void
   onCloseReportImportModal: () => void
+  onCloseDispatcherWorkspace?: () => void
 }
 
 export function useReportModalEscapeKey({
   isReportModalOpen,
+  isDispatcherWorkspaceOpen = false,
   isPstoRequestManagerOpen,
   isPstoResultManagerOpen,
   isLnkRequestManagerOpen,
@@ -93,6 +96,7 @@ export function useReportModalEscapeKey({
   onCloseLnkResultModal,
   onCloseLnkRequestModal,
   onCloseReportImportModal,
+  onCloseDispatcherWorkspace,
 }: ReportModalEscapeKeyOptions) {
   useEffect(() => {
     if (!isReportModalOpen) return
@@ -100,6 +104,19 @@ export function useReportModalEscapeKey({
     function handleReportModalKeyDown(event: KeyboardEvent) {
       if (event.key !== 'Escape') return
       if (shouldDeferModalEscape()) return
+      const handledActionDialogOpen =
+        isReportImportModalOpen || isLnkStageTransferOpen || isPstoLineProgramOpen ||
+        isPreHeatTreatmentWorkflowOpen || isTvmtWorkflowOpen || isPstoRepeatWorkflowOpen ||
+        isPstoRequestManagerOpen || isPstoResultManagerOpen || isLnkRequestManagerOpen ||
+        isLnkResultManagerOpen || isPreHeatTreatmentResultManagerOpen || isRkExposureModalOpen ||
+        isPstoResultModalOpen || isPstoRequestModalOpen || isLnkOfficialityModalOpen ||
+        isDuplicateControlModalOpen || isLnkResultModalOpen || isLnkRequestModalOpen
+      if (isDispatcherWorkspaceOpen && !handledActionDialogOpen &&
+        document.querySelectorAll('[data-modal-dialog="true"]').length > 1) {
+        // The chain picture, weld editor, or another independent dialog owns
+        // this Escape. Leave the dispatcher workspace underneath it open.
+        return
+      }
       event.preventDefault()
       event.stopImmediatePropagation()
 
@@ -173,13 +190,16 @@ export function useReportModalEscapeKey({
       }
       if (isLnkRequestModalOpen) {
         onCloseLnkRequestModal()
+        return
       }
+      if (isDispatcherWorkspaceOpen) onCloseDispatcherWorkspace?.()
     }
 
     window.addEventListener('keydown', handleReportModalKeyDown, { capture: true })
     return () => window.removeEventListener('keydown', handleReportModalKeyDown, { capture: true })
   }, [
     isReportModalOpen,
+    isDispatcherWorkspaceOpen,
     isPstoRequestManagerOpen,
     isPstoResultManagerOpen,
     isLnkRequestManagerOpen,
@@ -223,6 +243,7 @@ export function useReportModalEscapeKey({
     onCloseLnkResultModal,
     onCloseLnkRequestModal,
     onCloseReportImportModal,
+    onCloseDispatcherWorkspace,
   ])
 }
 

@@ -17,6 +17,10 @@ describe('dispatcher task index payload', () => {
       version: 0,
       chainContinuations: [],
       tasks: legacyTasks,
+      totalTaskCount: 1,
+      totalPageCount: 1,
+      tasksTruncated: false,
+      taskFilterOptions: null,
     })
   })
 
@@ -39,6 +43,38 @@ describe('dispatcher task index payload', () => {
       version: DISPATCHER_TASK_CALCULATION_VERSION,
       chainContinuations,
       tasks,
+      totalTaskCount: 1,
+      totalPageCount: 1,
+      tasksTruncated: false,
+      taskFilterOptions: null,
+    })
+  })
+
+  it('stores exact row counts for task filter options', () => {
+    const serialized = serializeDispatcherTaskIndexPayload([], [], {
+      taskFilterOptions: [
+        { value: 'ДЗ-18', count: 42 },
+        { value: 'СП-01', count: 7 },
+      ],
+    })
+
+    expect(parseDispatcherTaskIndexPayload(serialized).taskFilterOptions).toEqual([
+      { value: 'ДЗ-18', count: 42 },
+      { value: 'СП-01', count: 7 },
+    ])
+  })
+
+  it('preserves the exact task count when the transport snapshot is bounded', () => {
+    const tasks = [{ kind: 'check', key: 'current' }] as RepeatedJointTask[]
+    const serialized = serializeDispatcherTaskIndexPayload(tasks, [], {
+      totalTaskCount: 25_000,
+      tasksTruncated: true,
+    })
+
+    expect(parseDispatcherTaskIndexPayload(serialized)).toMatchObject({
+      tasks,
+      totalTaskCount: 25_000,
+      tasksTruncated: true,
     })
   })
 

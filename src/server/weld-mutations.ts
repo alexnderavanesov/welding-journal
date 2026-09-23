@@ -146,7 +146,7 @@ haveSameWeldLineMemberships,
 lockWeldLineMemberships,
 } from '@/server/weld-line-membership-lock'
 import { restrictWeldMutationRecord } from '@/server/weld-mutation-policy'
-import { splitNumberBatches } from '@/server/weld-request-utils'
+import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import {
 assertEarlyCoilDecisionRowsCanBeDeleted,
 assertEarlyCoilDecisionSourcesRemainValid,
@@ -218,23 +218,16 @@ export async function lockRequestDocumentAdvisoryKeys(
 ) {
   const keys = [...new Set(rawKeys.map((key) => String(key).trim()).filter(Boolean))].sort()
   if (keys.length === 0) return
-  for (let offset = 0; offset < keys.length; offset += 1_000) {
-    const keyBatch = keys.slice(offset, offset + 1_000)
-    const values = sql.join(keyBatch.map((key, index) => sql`(${index}, ${key})`), sql`, `)
-    await tx.execute(sql`
-      with "request_document_lock_keys"("lock_order", "lock_key") as materialized (
-        values ${values}
-      ),
-      "ordered_request_document_lock_keys" as materialized (
-        select "lock_order", "lock_key"
-        from "request_document_lock_keys"
-        order by "lock_order"
-      )
-      select pg_advisory_xact_lock(hashtext("lock_key"))
-      from "ordered_request_document_lock_keys"
+  await tx.execute(sql`
+    with "ordered_request_document_lock_keys" as materialized (
+      select "lock_order", "lock_key"
+      from unnest(${sql.param(keys)}::text[]) with ordinality as source("lock_key", "lock_order")
       order by "lock_order"
-    `)
-  }
+    )
+    select pg_advisory_xact_lock(hashtext("lock_key"))
+    from "ordered_request_document_lock_keys"
+    order by "lock_order"
+  `)
 }
 
 export async function createWeldJoint({ data }: { data: WeldPayload }) {
@@ -950,11 +943,12 @@ async function applyPstoLineMoveCleanupInTransaction(
     })
   }
   if (preHeatTreatmentWeldJointIds.length > 0) {
-    for (const idBatch of splitNumberBatches(preHeatTreatmentWeldJointIds, 1000)) {
-      await tx
-        .delete(preHeatTreatmentControls)
-        .where(inArray(preHeatTreatmentControls.weldJointId, idBatch))
-    }
+    await tx
+      .delete(preHeatTreatmentControls)
+      .where(buildNumberArrayMatch(
+        preHeatTreatmentControls.weldJointId,
+        preHeatTreatmentWeldJointIds,
+      ))
   }
 
   const unstartedRepeatCycles = [...new Map(
@@ -1733,9 +1727,7 @@ export async function deleteLockedWeldRowsInTransaction(
     tx,
     weldJointIds: ids,
   })
-  for (const idBatch of splitNumberBatches(ids, 1000)) {
-    await tx.delete(weldJoints).where(inArray(weldJoints.id, idBatch))
-  }
+  await tx.delete(weldJoints).where(buildNumberArrayMatch(weldJoints.id, ids))
   await syncSystemDocumentsForWeldChangesInTransaction(tx, [], previousRowsById)
   await deleteEmptyGeneratedDocuments(tx)
   await markDispatcherTaskIndexDirty(tx, {
@@ -1756,9 +1748,9 @@ async function loadWeldLineIdentityRows(
     projectTitle: string | null
     subtitleCode: string | null
     line: string | null
-  }> = []
-  for (const idBatch of splitNumberBatches(ids, 1000)) {
-    rows.push(...await tx
+  }> = ids.length === 0
+    ? []
+    : await tx
       .select({
         id: weldJoints.id,
         projectTitle: weldJoints.projectTitle,
@@ -1766,8 +1758,7 @@ async function loadWeldLineIdentityRows(
         line: weldJoints.line,
       })
       .from(weldJoints)
-      .where(inArray(weldJoints.id, idBatch)))
-  }
+      .where(buildNumberArrayMatch(weldJoints.id, ids))
   return rows
 }
 

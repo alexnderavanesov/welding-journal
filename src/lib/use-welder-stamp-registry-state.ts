@@ -79,6 +79,9 @@ export function useWelderStampRegistryState({ enabled = true, setMessage }: Weld
     queryFn: async () => loadWelderStampRegistrySnapshot(),
     enabled,
     staleTime: 30_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 
   const welderStampsMutation = useMutation({

@@ -349,8 +349,12 @@ describe('weld server pagination helpers', () => {
     expect(compiled.sql).not.toContain('coalesce')
   })
 
-  it('checks the dispatcher index only for dispatcher-backed column options', () => {
+  it('checks the dispatcher index for dispatcher-backed and persisted final-status options', () => {
     expect(shouldEnsureDispatcherTaskIndexForColumnFilter('dispatcherTasks', {})).toBe(true)
+    expect(shouldEnsureDispatcherTaskIndexForColumnFilter('finalStatus', {})).toBe(true)
+    expect(shouldEnsureDispatcherTaskIndexForColumnFilter('line', {
+      finalStatus: buildWeldColumnValueFilter(['годен']),
+    })).toBe(true)
     expect(shouldEnsureDispatcherTaskIndexForColumnFilter('line', {
       [DISPATCHER_TASK_FILTER_KEY]: JSON.stringify({ mode: 'codes', codes: ['DZ-1'] }),
     })).toBe(true)
@@ -514,10 +518,10 @@ describe('weld server pagination helpers', () => {
     })
   })
 
-  it('uses source pagination only for filters that can be applied before building LNK/PSTO rows', () => {
+  it('uses source pagination for stored fields, including the refreshed final-status index', () => {
     expect(canPaginateReportSource({ line: 'LIN-1', joint: 'F1' })).toBe(true)
     expect(canPaginateReportSource(buildRowIdListFilters([1, 2]))).toBe(true)
-    expect(canPaginateReportSource({ finalStatus: 'годен' })).toBe(false)
+    expect(canPaginateReportSource({ finalStatus: 'годен' })).toBe(true)
     expect(canPaginateReportSource({ unknownDerivedField: 'value' })).toBe(false)
   })
 
@@ -717,9 +721,11 @@ describe('weld server pagination helpers', () => {
 
     expect(getWeldColumnFilterOptionSourceFilters(filters, true)).toEqual({
       connectionType: filters.connectionType,
+      finalStatus: filters.finalStatus,
     })
     expect(getWeldColumnFilterOptionSourceFilters(filters, false)).toEqual({
       connectionType: filters.connectionType,
+      finalStatus: filters.finalStatus,
       wdi: filters.wdi,
     })
     const ordinaryFilters = { connectionType: filters.connectionType }

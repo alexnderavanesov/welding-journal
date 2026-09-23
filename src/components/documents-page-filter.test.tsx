@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
-import { useState } from 'react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useState, type ReactNode } from 'react'
 import {
   DocumentHistoryColumnFilter,
   getDocumentActionErrorMessage,
@@ -8,6 +9,22 @@ import {
   getDocumentNavigationViewId,
 } from '@/components/documents-page'
 import { parseWeldColumnChoiceFilter } from '@/lib/weld-table-filtering'
+
+function renderWithQueryClient(ui: ReactNode) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        gcTime: 0,
+      },
+    },
+  })
+  return render(
+    <QueryClientProvider client={queryClient}>
+      {ui}
+    </QueryClientProvider>,
+  )
+}
 
 describe('DocumentHistoryColumnFilter', () => {
   afterEach(() => {
@@ -29,7 +46,7 @@ describe('DocumentHistoryColumnFilter', () => {
       toJSON: () => ({}),
     })
 
-    render(
+    renderWithQueryClient(
       <div className="overflow-hidden">
         <DocumentHistoryColumnFilter
           label="Этап"
@@ -50,7 +67,7 @@ describe('DocumentHistoryColumnFilter', () => {
   })
 
   it('closes the portal menu when the user clicks outside it', () => {
-    render(
+    renderWithQueryClient(
       <DocumentHistoryColumnFilter
         label="Этап"
         value=""
@@ -87,7 +104,7 @@ describe('DocumentHistoryColumnFilter', () => {
       )
     }
 
-    render(<FilterHarness />)
+    renderWithQueryClient(<FilterHarness />)
 
     const trigger = screen.getByTitle('Фильтр: Документ')
     fireEvent.click(trigger)
@@ -119,7 +136,7 @@ describe('DocumentHistoryColumnFilter', () => {
   })
 
   it('leaves the background filter open when Escape belongs to a modal above it', () => {
-    render(
+    renderWithQueryClient(
       <DocumentHistoryColumnFilter
         label="Этап"
         value=""
@@ -139,6 +156,45 @@ describe('DocumentHistoryColumnFilter', () => {
     modal.remove()
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: 'Фильтр: Этап' })).not.toBeInTheDocument()
+  })
+
+  it('loads remote options only while open and does not refetch after selecting a value', async () => {
+    const loadOptions = vi.fn().mockResolvedValue({
+      options: [
+        { value: 'Линия 1', label: 'Линия 1', count: 250 },
+        { value: 'Линия 2', label: 'Линия 2', count: 125 },
+      ],
+      hasMore: true,
+    })
+
+    function RemoteFilterHarness() {
+      const [value, setValue] = useState('')
+      return (
+        <DocumentHistoryColumnFilter
+          label="Линия"
+          value={value}
+          options={[]}
+          optionsQueryKey={['document-history-test', 'line']}
+          loadOptions={loadOptions}
+          onChange={setValue}
+        />
+      )
+    }
+
+    renderWithQueryClient(<RemoteFilterHarness />)
+
+    expect(loadOptions).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTitle('Фильтр: Линия'))
+
+    const firstOption = await screen.findByRole('button', { name: /Линия 1/ })
+    expect(loadOptions).toHaveBeenCalledTimes(1)
+    expect(loadOptions).toHaveBeenCalledWith('')
+    expect(screen.getByRole('button', { name: 'Выбрать показанные' })).toBeInTheDocument()
+
+    fireEvent.click(firstOption)
+
+    await waitFor(() => expect(firstOption).toHaveAttribute('aria-pressed', 'true'))
+    expect(loadOptions).toHaveBeenCalledTimes(1)
   })
 })
 

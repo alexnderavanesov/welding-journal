@@ -6,6 +6,8 @@ import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
+import { WorkflowSelectionWarning } from '@/components/workflow-selection-warning'
+import { useWorkflowSelectionState } from '@/lib/use-workflow-selection-state'
 import { RequestDocumentCombobox } from '@/components/request-document-combobox'
 import { RequestDialogFooter } from '@/components/request-dialog-footer'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
@@ -72,11 +74,15 @@ import {
 } from '@/lib/workflow-root-cause-preview'
 import type { WorkflowRootCauseAction } from '@/lib/workflow-root-cause-actions'
 import { savePstoRepeatWorkflow } from '@/server/psto-repeat-workflow'
+import { WORKFLOW_CANDIDATE_PAGE_SIZE } from '@/server/weld-contracts'
 
 export type TvmtWorkflowDialogProps = {
   mode: TvmtWorkflowRowMode
   rows: WeldRow[]
   initialSelectedIds: ReadonlySet<number>
+  onCandidateSearchChange?: (search: string) => void
+  onCandidateSelectionChange?: (rowIds: number[]) => void
+  onCandidateRequestChange?: (request: RequestDocumentIdentity | null) => void
   onClose: () => void
   onRunProtectedEdit: (actionLabel: string, action: () => void) => void
   onSaved: (rows: WeldRow[], fieldKeys: WeldFieldKey[], message: string) => void
@@ -104,6 +110,9 @@ export function TvmtWorkflowDialog({
   mode,
   rows,
   initialSelectedIds,
+  onCandidateSearchChange,
+  onCandidateSelectionChange,
+  onCandidateRequestChange,
   onClose,
   onRunProtectedEdit,
   onSaved,
@@ -132,13 +141,16 @@ export function TvmtWorkflowDialog({
   )
   const [defaultResult, setDefaultResult] = useState('')
   const [rowResults, setRowResults] = useState<Record<number, string>>({})
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(() =>
+  const [selectedIds, setSelectedIds, selectionWarning] = useWorkflowSelectionState(() =>
     getInitialSelectedIds(mode, rows, initialSelectedIds, requestKey, requestOptions),
   )
   const initialSelectionSignature = useMemo(
     () => [...initialSelectedIds].sort((left, right) => left - right).join(','),
     [initialSelectedIds],
   )
+  useEffect(() => {
+    onCandidateSelectionChange?.([...selectedIds])
+  }, [onCandidateSelectionChange, selectedIds])
   const loadedInitialRowsSignature = useMemo(
     () => rows
       .flatMap((row) => initialSelectedIds.has(row.id) ? [row.id] : [])
@@ -162,8 +174,14 @@ export function TvmtWorkflowDialog({
     queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
     queryFn: loadSystemDocumentSequences,
     staleTime: 30_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
   const selectedRequest = requestOptions.find((option) => option.key === requestKey) ?? null
+  useEffect(() => {
+    onCandidateRequestChange?.(mode === 'result' ? selectedRequest : null)
+  }, [mode, onCandidateRequestChange, selectedRequest])
   const requestRows = useMemo(() => {
     if (mode !== 'result') return rows
     if (!selectedRequest) return []
@@ -417,9 +435,20 @@ export function TvmtWorkflowDialog({
     if (!result) return
     setRowsResult([...selectedIds], result)
   }
+  useEffect(() => {
+    if (mode !== 'result' || !defaultResult || selectedIds.size === 0) return
+    setRowResults((current) => {
+      const missingIds = [...selectedIds].filter((id) => !Object.hasOwn(current, id))
+      if (missingIds.length === 0) return current
+      const next = { ...current }
+      missingIds.forEach((id) => { next[id] = defaultResult })
+      return next
+    })
+  }, [defaultResult, mode, selectedIds])
 
   return (
     <WorkflowDialogShell>
+      <WorkflowSelectionWarning message={selectionWarning} />
       {mode === 'request' ? (
         <RequestDialogHeader
           title="Заявка ТВМТ"
@@ -508,7 +537,9 @@ export function TvmtWorkflowDialog({
         <div className="flex min-h-0 flex-1 overflow-hidden px-5 py-3">
           <RequestRowsPanel
             title="Стыки"
-            description=""
+            description={rowsViewMode === 'all' && rows.length >= WORKFLOW_CANDIDATE_PAGE_SIZE
+              ? `Показаны первые ${WORKFLOW_CANDIDATE_PAGE_SIZE} подходящих стыков. Уточните поиск, чтобы найти остальные.`
+              : ''}
             viewToggle={(
               <SelectedRowsViewToggle mode={rowsViewMode} selectedCount={selectedIds.size} onChange={setRowsViewMode} />
             )}
@@ -532,7 +563,12 @@ export function TvmtWorkflowDialog({
               : rowsViewMode === 'selected'
                 ? 'Среди выбранных стыков ничего не найдено.'
                 : 'Стыков для этого действия не найдено.'}
-            onSearchChange={rowsViewMode === 'selected' ? setSelectedSearch : setSearch}
+            onSearchChange={rowsViewMode === 'selected'
+              ? setSelectedSearch
+              : (value) => {
+                  setSearch(value)
+                  onCandidateSearchChange?.(value)
+                }}
           >
             <DialogVirtualizedRows
               key={`${pagination.page}:${pagination.pageSize}:${displayedSearch}:${rowsViewMode}:${requestKey}`}

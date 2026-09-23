@@ -53,6 +53,7 @@ import {
   getLnkChronologyRootCauseActions,
   type WorkflowRootCauseAction,
 } from '@/lib/workflow-root-cause-actions'
+import { WORKFLOW_CANDIDATE_PAGE_SIZE } from '@/server/weld-contracts'
 
 export type LnkRequestDialogProps = {
   elevated?: boolean
@@ -64,6 +65,7 @@ export type LnkRequestDialogProps = {
   requestNaming: RequestNamingState
   requestDate: string
   requestExtensionOptions: LnkRequestExtensionOption[]
+  requestOptionsHasMore?: boolean
   initialMode: LnkRequestComposerMode
   initialRequestKey: string
   initialSelectedMethods: ReadonlySet<WeldFieldKey>
@@ -84,6 +86,8 @@ export type LnkRequestDialogProps = {
   onRequestNamingChange: (value: RequestNamingState) => void
   onRequestDateChange: (value: string) => void
   onRequestSearchChange: (value: string) => void
+  onCandidateMethodsChange?: (methodKeys: WeldFieldKey[]) => void
+  onExistingRequestSearchChange?: (value: string) => void
   onClearSelection: () => void
   onSetSelectedRows: (rowIds: number[]) => void
   onToggleAllRows: () => void
@@ -110,6 +114,7 @@ export function LnkRequestDialog({
   requestNaming,
   requestDate,
   requestExtensionOptions,
+  requestOptionsHasMore = false,
   initialMode,
   initialRequestKey,
   initialSelectedMethods,
@@ -130,6 +135,8 @@ export function LnkRequestDialog({
   onRequestNamingChange,
   onRequestDateChange,
   onRequestSearchChange,
+  onCandidateMethodsChange,
+  onExistingRequestSearchChange,
   onClearSelection,
   onSetSelectedRows,
   onToggleAllRows,
@@ -304,12 +311,11 @@ export function LnkRequestDialog({
     ? `Будет создано заявок: ${creationPlan.groups.length}`
     : effectiveRequestName || 'Новая заявка'
   const toggleMethod = (methodKey: WeldFieldKey) => {
-    setSelectedMethods((current) => {
-      const next = new Set(current)
-      if (next.has(methodKey)) next.delete(methodKey)
-      else next.add(methodKey)
-      return next
-    })
+    const next = new Set(selectedMethods)
+    if (next.has(methodKey)) next.delete(methodKey)
+    else next.add(methodKey)
+    setSelectedMethods(next)
+    onCandidateMethodsChange?.([...next])
   }
   const changeSubmitMode = (mode: LnkRequestComposerMode) => {
     setSubmitMode(mode)
@@ -394,7 +400,10 @@ export function LnkRequestDialog({
               value={existingRequestSearch}
               resultCount={filteredRequestExtensionOptions.length}
               totalCount={requestExtensionOptions.length}
-              onCommit={setExistingRequestSearch}
+              onCommit={(value) => {
+                setExistingRequestSearch(value)
+                onExistingRequestSearchChange?.(value)
+              }}
             />
             <label className="block space-y-1.5 text-sm">
               <span className="text-[13px] font-medium leading-none text-slate-700">Существующая заявка</span>
@@ -406,6 +415,11 @@ export function LnkRequestDialog({
               />
             </label>
           </div>
+          {requestOptionsHasMore ? (
+            <p className="mt-2 text-xs text-slate-500">
+              Показаны первые 200 заявок. Уточните поиск, чтобы найти заявку вне списка.
+            </p>
+          ) : null}
 
           {selectedExistingRequest ? (
             <div
@@ -465,7 +479,9 @@ export function LnkRequestDialog({
       <div className="flex min-h-0 flex-1 overflow-hidden px-5 py-3">
         <RequestRowsPanel
           title="Стыки"
-          description=""
+          description={rowsViewMode === 'all' && lnkRowsCount >= WORKFLOW_CANDIDATE_PAGE_SIZE
+            ? `Загружены первые ${WORKFLOW_CANDIDATE_PAGE_SIZE} подходящих стыков. Уточните поиск, если нужного стыка нет в списке.`
+            : ''}
           viewToggle={(
             <SelectedRowsViewToggle
               mode={rowsViewMode}

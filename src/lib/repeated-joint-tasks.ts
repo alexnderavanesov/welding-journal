@@ -35,13 +35,12 @@ import { REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON } from '@/lib/report-config'
 import {
   getExpectedRepeatedJointName,
   getExpectedRepeatedJointSuffix,
-  getOfficialRejectedJointChainRows,
   getPrimaryRejectedLnkResult,
   getRepeatedJointSourceCandidates,
-  hasRepeatedJointTarget,
   isUnusedRepeatedJointDraft,
 } from '@/lib/repeated-joint-task-helpers'
 import { compareJointChainRows, getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
+import { buildRepeatedJointLookup, type RepeatedJointLookup } from '@/lib/repeated-joint-lookup'
 import type { RepeatedJointRenameTask, RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 import type { DataListSettings } from '@/lib/data-list-settings'
@@ -97,13 +96,23 @@ export function buildRepeatedJointTasks(
   } = options
   const systemIndexSettings = options.systemIndexSettings ?? DEFAULT_SYSTEM_INDEX_SETTINGS
   const earlyCoilDecisionSourceRowIds = options.earlyCoilDecisionSourceRowIds ?? new Set<number>()
+  const matchingJointRowsIndex = buildMatchingJointRowsIndex(rows)
+  const repeatedJointLookup = buildRepeatedJointLookup(
+    rows,
+    getPrimaryRejectedLnkResult,
+    systemIndexSettings,
+  )
   const getConfiguredOfficialRejectedJointChainRows = (
-    sourceRows: WeldRow[],
+    _sourceRows: WeldRow[],
     sourceRow: WeldInput,
     sourceJoint: string,
-  ) => getOfficialRejectedJointChainRows(sourceRows, sourceRow, sourceJoint, systemIndexSettings)
+  ) => repeatedJointLookup.getOfficialRejectedJointChainRows(sourceRow, sourceJoint)
   const tasks: RepeatedJointTask[] = []
-  const orphanGoodRenameTasks = buildOrphanGoodRepeatedJointRenameTasks(rows, systemIndexSettings)
+  const orphanGoodRenameTasks = buildOrphanGoodRepeatedJointRenameTasks(
+    rows,
+    repeatedJointLookup,
+    systemIndexSettings,
+  )
   const orphanGoodRenameRowIds = new Set(orphanGoodRenameTasks.map((task) => task.row.id))
   const chainCheckTasks = [
     ...buildPrimaryLnkStageDebtSystemWarnings(rows, options.controlProcessSettings),
@@ -138,7 +147,6 @@ export function buildRepeatedJointTasks(
   const percentageLineControlTasks = includePercentageLineControlTasks
     ? buildPercentageLineControlTasks(rows, welderStampSuspensions, systemIndexSettings)
     : []
-  const matchingJointRowsIndex = buildMatchingJointRowsIndex(rows)
   const blockedChainKeys = new Set(
     [
       ...chainCheckTasks.filter(isBlockingRepeatedJointCheckTask),
@@ -163,6 +171,7 @@ export function buildRepeatedJointTasks(
     blockedChainKeys: renameBlockedChainKeys,
     matchingJointRowsIndex,
     obsoleteInfos: [...obsoleteByRowId.values()],
+    repeatedJointLookup,
     rows,
     systemIndexSettings,
   })
@@ -188,7 +197,7 @@ export function buildRepeatedJointTasks(
 
     const suffix = getExpectedRepeatedJointSuffix(row, rejection.result, systemIndexSettings)
     const parsed = parseRepeatedJointName(sourceJoint, systemIndexSettings)
-    const officialRejectedChainRows = getOfficialRejectedJointChainRows(rows, row, sourceJoint, systemIndexSettings)
+    const officialRejectedChainRows = repeatedJointLookup.getOfficialRejectedJointChainRows(row, sourceJoint)
     const lastOfficialRejectedRow = officialRejectedChainRows.at(-1)
     const coilTransitionMode = getCoilTransitionModeForSource({
       earlyCoilDecisionSourceRowIds,
@@ -198,7 +207,7 @@ export function buildRepeatedJointTasks(
     })
     if (coilTransitionMode) {
       const targetJoints = getCoilJointNames(parsed.base, systemIndexSettings)
-        .filter((targetJoint) => !hasRepeatedJointTarget(rows, row, targetJoint))
+        .filter((targetJoint) => !repeatedJointLookup.findRepeatedJointTarget(row, targetJoint))
       if (targetJoints.length === 0) continue
 
       tasks.push({
@@ -215,7 +224,7 @@ export function buildRepeatedJointTasks(
     }
 
     const targetJoint = getExpectedRepeatedJointName(row, sourceJoint, rejection.result, systemIndexSettings)
-    if (hasRepeatedJointTarget(rows, row, targetJoint)) continue
+    if (repeatedJointLookup.findRepeatedJointTarget(row, targetJoint)) continue
     const createTargetKey = getCreateTaskTargetKey(row, targetJoint)
     if (createTargetKey && renameReplacementTargetKeys.has(createTargetKey)) continue
     if (createTargetKey && createTaskTargetKeys.has(createTargetKey)) continue
@@ -242,7 +251,7 @@ export function buildRepeatedJointTasks(
     if (
       repeated.expectedTargetJoint &&
       normalizeJointChainPart(repeated.expectedTargetJoint) !== normalizeJointChainPart(repeated.targetJoint) &&
-      !hasRepeatedJointTarget(rows, repeated.sourceRow, repeated.expectedTargetJoint)
+      !repeatedJointLookup.findRepeatedJointTarget(repeated.sourceRow, repeated.expectedTargetJoint)
     ) {
       const identity = getJointChainIdentity(row, systemIndexSettings)
       const baseJoint = parseRepeatedJointName(repeated.targetJoint, systemIndexSettings).base
@@ -320,6 +329,7 @@ export function buildRepeatedJointTasks(
 
 function buildOrphanGoodRepeatedJointRenameTasks(
   rows: WeldRow[],
+  repeatedJointLookup: RepeatedJointLookup,
   systemIndexSettings: SystemIndexSettings,
 ): RepeatedJointRenameTask[] {
   const tasks: RepeatedJointRenameTask[] = []
@@ -331,9 +341,13 @@ function buildOrphanGoodRepeatedJointRenameTasks(
     if (parsed.segments.length === 0) continue
 
     const sourceCandidates = getRepeatedJointSourceCandidates(parsed, systemIndexSettings)
-    const targetJoint = sourceCandidates.find((candidate) => !hasRepeatedJointTarget(rows, row, candidate.sourceJoint))?.sourceJoint ?? ''
+    const targetJoint = sourceCandidates.find(
+      (candidate) => !repeatedJointLookup.findRepeatedJointTarget(row, candidate.sourceJoint),
+    )?.sourceJoint ?? ''
     if (!targetJoint) continue
-    const hasAnySource = sourceCandidates.some((candidate) => hasRepeatedJointTarget(rows, row, candidate.sourceJoint))
+    const hasAnySource = sourceCandidates.some(
+      (candidate) => repeatedJointLookup.findRepeatedJointTarget(row, candidate.sourceJoint),
+    )
     if (hasAnySource) continue
 
     tasks.push({
@@ -452,12 +466,14 @@ function buildObsoleteRepeatedJointRenameTasks({
   blockedChainKeys,
   matchingJointRowsIndex,
   obsoleteInfos,
+  repeatedJointLookup,
   rows,
   systemIndexSettings,
 }: {
   blockedChainKeys: Set<string>
   matchingJointRowsIndex: MatchingJointRowsIndex
   obsoleteInfos: ObsoleteRepeatedJointInfo[]
+  repeatedJointLookup: RepeatedJointLookup
   rows: WeldRow[]
   systemIndexSettings: SystemIndexSettings
 }): RepeatedJointRenameTask[] {
@@ -495,7 +511,7 @@ function buildObsoleteRepeatedJointRenameTasks({
     if (claimedRowIds.has(info.row.id)) continue
     if (!info.expectedTargetJoint) continue
     if (normalizeJointChainPart(info.targetJoint) === normalizeJointChainPart(info.expectedTargetJoint)) continue
-    if (hasRepeatedJointTarget(rows, info.sourceRow, info.expectedTargetJoint)) continue
+    if (repeatedJointLookup.findRepeatedJointTarget(info.sourceRow, info.expectedTargetJoint)) continue
     if (
       isRowInBlockedRepeatedJointChain(info.row, blockedChainKeys, systemIndexSettings) ||
       isRowInBlockedRepeatedJointChain(info.sourceRow, blockedChainKeys, systemIndexSettings)

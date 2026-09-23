@@ -29,6 +29,9 @@ export function useWeldsQuery({ enabled = true }: { enabled?: boolean } = {}) {
       }),
     enabled,
     staleTime: 15_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 }
 
@@ -45,6 +48,9 @@ export function useWeldReportContextQuery({
     enabled,
     staleTime: 60_000,
     gcTime: 15 * 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 }
 
@@ -55,5 +61,8 @@ export function useWeldFinalStatusContextQuery({ enabled }: { enabled: boolean }
     enabled,
     staleTime: 60_000,
     gcTime: 15 * 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 }

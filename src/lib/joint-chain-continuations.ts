@@ -3,10 +3,10 @@ import { normalizeJointChainPart } from '@/lib/joint-chain'
 import { buildJointCoilTransitions } from '@/lib/joint-chain-transitions'
 import { isUnofficialJoint } from '@/lib/joint-display'
 import {
-  findRepeatedJointTarget,
   getExpectedRepeatedJointName,
   getPrimaryRejectedLnkResult,
 } from '@/lib/repeated-joint-task-helpers'
+import { buildRepeatedJointLookup } from '@/lib/repeated-joint-lookup'
 import {
   loadSystemIndexSettings,
   type SystemIndexSettings,
@@ -23,9 +23,16 @@ export function buildJointChainContinuations(
 ): JointChainContinuation[] {
   const systemIndexSettings = options.systemIndexSettings ?? loadSystemIndexSettings()
   const earlyCoilDecisionSourceRowIds = options.earlyCoilDecisionSourceRowIds ?? new Set<number>()
+  const repeatedJointLookup = buildRepeatedJointLookup(
+    rows,
+    getPrimaryRejectedLnkResult,
+    systemIndexSettings,
+  )
   const coilTransitionsBySourceRowId = new Map(
     buildJointCoilTransitions(rows, {
       earlyCoilDecisionSourceRowIds,
+      getOfficialRejectedJointChainRows: (_rows, sourceRow, sourceJoint) =>
+        repeatedJointLookup.getOfficialRejectedJointChainRows(sourceRow, sourceJoint),
       systemIndexSettings,
     })
       .filter(
@@ -62,7 +69,7 @@ export function buildJointChainContinuations(
       rejection.result,
       systemIndexSettings,
     )
-    const targetRow = findRepeatedJointTarget(rows, row, targetJoint)
+    const targetRow = repeatedJointLookup.findRepeatedJointTarget(row, targetJoint)
     if (!targetRow) continue
 
     continuations.push(createContinuation(row, {

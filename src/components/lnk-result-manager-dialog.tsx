@@ -82,6 +82,10 @@ export type LnkResultManagerDialogProps = {
   onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
   onDocumentDateSaved?: () => void
   onMessage?: (message: string) => void
+  hasMoreRows?: boolean
+  onLoadMoreRows?: () => void
+  onRegistrySearchChange?: (value: string) => void
+  onRegistryResultFilterChange?: (value: ResultFilter) => void
 }
 
 export function LnkResultManagerDialog({
@@ -123,6 +127,10 @@ export function LnkResultManagerDialog({
   onRunRootCauseAction,
   onDocumentDateSaved,
   onMessage,
+  hasMoreRows = false,
+  onLoadMoreRows,
+  onRegistrySearchChange,
+  onRegistryResultFilterChange,
 }: LnkResultManagerDialogProps) {
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const [search, setSearch] = useState('')
@@ -333,7 +341,10 @@ export function LnkResultManagerDialog({
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <BufferedFilterInput
                 value={search}
-                onValueChange={setSearch}
+                onValueChange={(value) => {
+                  setSearch(value)
+                  onRegistrySearchChange?.(value)
+                }}
                 placeholder="Стык, линия, заявка или заключение"
                 className="h-10 bg-white pl-9"
               />
@@ -361,6 +372,7 @@ export function LnkResultManagerDialog({
                   onClick={() => {
                     setSelectedEntryKey('')
                     setResultFilter(value)
+                    onRegistryResultFilterChange?.(value)
                   }}
                   className={`min-h-8 rounded px-1.5 font-medium transition ${
                     resultFilter === value ? 'bg-sky-50 text-sky-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'
@@ -428,7 +440,11 @@ export function LnkResultManagerDialog({
                     </button>
                   )
                 }}
-                footer={null}
+                footer={hasMoreRows && onLoadMoreRows ? (
+                  <Button variant="outline" className="w-full" onClick={onLoadMoreRows}>
+                    Загрузить ещё результаты
+                  </Button>
+                ) : null}
               />
             )}
           </div>

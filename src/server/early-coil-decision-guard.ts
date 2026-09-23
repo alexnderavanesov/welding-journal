@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 
 import type { requireDb } from '@/db'
 import {
@@ -30,7 +30,7 @@ import type { WeldInput } from '@/lib/weld-fields'
 import { attachDuplicateControlRelations } from '@/server/duplicate-control-relations'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
-import { splitNumberBatches } from '@/server/weld-request-utils'
+import { buildNumberArrayMatch, buildTextArrayMatch } from '@/server/weld-request-utils'
 
 type GuardTransaction = SystemDocumentSequenceTransaction
 type GuardReadClient = Pick<ReturnType<typeof requireDb>, 'select'>
@@ -138,18 +138,17 @@ export async function refreshEarlyCoilDecisionContextsInTransaction(
       context: buildDecisionContext(source, sourceJoint, targetJoints),
     }]
   })
-  for (let offset = 0; offset < updates.length; offset += 1_000) {
-    const chunk = updates.slice(offset, offset + 1_000)
-    const values = sql.join(
-      chunk.map((update) => sql`(${update.key}::text, ${update.title}::text, ${update.context}::text)`),
-      sql`, `,
-    )
+  if (updates.length > 0) {
     await tx.execute(sql`
       update ${dispatcherAcceptedWarnings} as "target"
       set
         "title" = "changes"."title",
         "context" = "changes"."context"
-      from (values ${values}) as "changes"("key", "title", "context")
+      from unnest(
+        ${sql.param(updates.map((update) => update.key))}::text[],
+        ${sql.param(updates.map((update) => update.title))}::text[],
+        ${sql.param(updates.map((update) => update.context))}::text[]
+      ) as "changes"("key", "title", "context")
       where "target"."key" = "changes"."key"
     `)
   }
@@ -169,15 +168,15 @@ export async function assertStoredEarlyCoilDecisionSourcesRemainValid(
   const ids = uniqueIds(sourceRowIds)
   const protectedSourceIds = await loadProtectedSourceIds(tx, ids)
   if (protectedSourceIds.size === 0) return
-  const rows: WeldJoint[] = []
-  for (const idBatch of splitNumberBatches([...protectedSourceIds].sort((left, right) => left - right), 1000)) {
-    rows.push(...await tx
-      .select()
-      .from(weldJoints)
-      .where(inArray(weldJoints.id, idBatch))
-      .orderBy(weldJoints.id)
-      .for('update'))
-  }
+  const rows: WeldJoint[] = await tx
+    .select()
+    .from(weldJoints)
+    .where(buildNumberArrayMatch(
+      weldJoints.id,
+      [...protectedSourceIds].sort((left, right) => left - right),
+    ))
+    .orderBy(weldJoints.id)
+    .for('update')
   const hydratedRows = await attachDuplicateControlRelations(
     await attachHeatTreatmentControlRelations(rows as WeldRow[], tx),
     tx,
@@ -267,13 +266,10 @@ async function loadActiveEarlyCoilDecisions(tx: GuardTransaction): Promise<Activ
     return parsed ? [parsed.sourceRowId] : []
   }))]
   if (sourceIds.length === 0) return []
-  const sources: WeldJoint[] = []
-  for (const idBatch of splitNumberBatches(sourceIds, 1000)) {
-    sources.push(...await tx
-      .select()
-      .from(weldJoints)
-      .where(inArray(weldJoints.id, idBatch)))
-  }
+  const sources: WeldJoint[] = await tx
+    .select()
+    .from(weldJoints)
+    .where(buildNumberArrayMatch(weldJoints.id, sourceIds))
   const [setting] = await tx
     .select({ value: appSettings.value })
     .from(appSettings)
@@ -334,12 +330,9 @@ async function loadAcceptedWarningsByKeys(
   tx: GuardReadClient,
   keys: readonly string[],
 ) {
-  const warnings: Array<{ key: string }> = []
-  for (let offset = 0; offset < keys.length; offset += 1000) {
-    warnings.push(...await tx
-      .select({ key: dispatcherAcceptedWarnings.key })
-      .from(dispatcherAcceptedWarnings)
-      .where(inArray(dispatcherAcceptedWarnings.key, keys.slice(offset, offset + 1000))))
-  }
-  return warnings
+  if (keys.length === 0) return []
+  return tx
+    .select({ key: dispatcherAcceptedWarnings.key })
+    .from(dispatcherAcceptedWarnings)
+    .where(buildTextArrayMatch(dispatcherAcceptedWarnings.key, keys))
 }

@@ -204,8 +204,11 @@ function WeldColumnFilterControl({
           search: filterOptionRequest.search,
           columnFilters: filterOptionRequest.columnFilters,
         },
-      }),
+    }),
     staleTime: 15_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
   const serverOptions = useMemo(
     () =>

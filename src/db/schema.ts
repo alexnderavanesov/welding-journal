@@ -355,6 +355,15 @@ export const dispatcherRowTasks = pgTable(
 
 export type DispatcherRowTask = typeof dispatcherRowTasks.$inferSelect
 
+export const dispatcherTaskPages = pgTable('dispatcher_task_pages', {
+  scopeKey: text('scope_key').notNull(),
+  pageNumber: integer('page_number').notNull(),
+  taskCount: integer('task_count').notNull(),
+  tasks: text('tasks').notNull(),
+}, (table) => [primaryKey({ columns: [table.scopeKey, table.pageNumber] })])
+
+export type DispatcherTaskPage = typeof dispatcherTaskPages.$inferSelect
+
 export const dispatcherBackgroundTaskIndexState = pgTable('dispatcher_background_task_index_state', {
   id: integer('id').primaryKey(),
   status: text('status').default('idle').notNull(),

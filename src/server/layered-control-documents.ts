@@ -32,7 +32,7 @@ import {
   type GeneratedDocumentsTransaction,
 } from '@/server/generated-document-number-sequence'
 import { lockControlProcessSettings } from '@/server/control-process-settings-lock'
-import { splitNumberBatches } from '@/server/weld-request-utils'
+import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 
 const LAYERED_CONTROL_INDEX_SETTING_KEY = 'layered-control-document-index-version'
 const LAYERED_CONTROL_INDEX_VERSION = '1'
@@ -133,13 +133,10 @@ export async function syncLayeredControlDocumentsForWeldChangesInTransaction(
     .sort((left, right) => left - right)
   if (requestedIds.length === 0) return
   await lockLayeredControlDocumentsForWeldChange(tx)
-  const persistedRows: LayeredRow[] = []
-  for (const idBatch of splitNumberBatches(requestedIds, 1000)) {
-    persistedRows.push(...await tx
-      .select()
-      .from(weldJoints)
-      .where(inArray(weldJoints.id, idBatch)))
-  }
+  const persistedRows = await tx
+    .select()
+    .from(weldJoints)
+    .where(buildNumberArrayMatch(weldJoints.id, requestedIds))
   await syncLayeredControlRowsInTransaction(
     tx,
     persistedRows,
@@ -327,30 +324,27 @@ async function loadExistingLayeredAssignments(
     wdiTotal: number | null
     documentNumber: number | null
     createdAt: Date
-  }> = []
-  for (const rowIdBatch of splitNumberBatches(rowIds, 1000)) {
-    records.push(...await tx
-      .select({
-        weldJointId: generatedDocumentWeldJoints.weldJointId,
-        documentId: generatedDocuments.id,
-        type: generatedDocuments.type,
-        title: generatedDocuments.title,
-        fileName: generatedDocuments.fileName,
-        mimeType: generatedDocuments.mimeType,
-        periodFrom: generatedDocuments.periodFrom,
-        periodTo: generatedDocuments.periodTo,
-        rowCount: generatedDocuments.rowCount,
-        wdiTotal: generatedDocuments.wdiTotal,
-        documentNumber: generatedDocuments.documentNumber,
-        createdAt: generatedDocuments.createdAt,
-      })
-      .from(generatedDocumentWeldJoints)
-      .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))
-      .where(and(
-        inArray(generatedDocumentWeldJoints.weldJointId, rowIdBatch),
-        inArray(generatedDocuments.type, [...LAYERED_CONTROL_DOCUMENT_TYPES]),
-      )))
-  }
+  }> = await tx
+    .select({
+      weldJointId: generatedDocumentWeldJoints.weldJointId,
+      documentId: generatedDocuments.id,
+      type: generatedDocuments.type,
+      title: generatedDocuments.title,
+      fileName: generatedDocuments.fileName,
+      mimeType: generatedDocuments.mimeType,
+      periodFrom: generatedDocuments.periodFrom,
+      periodTo: generatedDocuments.periodTo,
+      rowCount: generatedDocuments.rowCount,
+      wdiTotal: generatedDocuments.wdiTotal,
+      documentNumber: generatedDocuments.documentNumber,
+      createdAt: generatedDocuments.createdAt,
+    })
+    .from(generatedDocumentWeldJoints)
+    .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))
+    .where(and(
+      buildNumberArrayMatch(generatedDocumentWeldJoints.weldJointId, rowIds),
+      inArray(generatedDocuments.type, [...LAYERED_CONTROL_DOCUMENT_TYPES]),
+    ))
   records.sort((left, right) => left.documentId - right.documentId)
   return records.flatMap((record) =>
     isLayeredControlDocumentType(record.type)
@@ -411,20 +405,7 @@ export async function persistLayeredControlDocumentWrites(
   const changedExistingWrites = [...new Map(writes
     .filter((write) => write.targetDocumentId != null && write.shouldUpdate)
     .map((write) => [write.targetDocumentId!, write])).values()]
-  for (let offset = 0; offset < changedExistingWrites.length; offset += 250) {
-    const batch = changedExistingWrites.slice(offset, offset + 250)
-    const values = sql.join(batch.map((write) => sql`(
-      ${write.targetDocumentId!}::integer,
-      ${write.title}::text,
-      ${write.fileName}::text,
-      ${write.mimeType}::text,
-      ${write.periodFrom}::date,
-      ${write.periodTo}::date,
-      ${write.rowCount}::integer,
-      ${write.wdiTotal}::numeric,
-      ${write.documentNumber}::integer,
-      ${now}::timestamptz
-    )`), sql`, `)
+  if (changedExistingWrites.length > 0) {
     await tx.execute(sql`
       update "generated_documents" as document
       set
@@ -436,8 +417,18 @@ export async function persistLayeredControlDocumentWrites(
         "row_count" = refreshed.row_count,
         "wdi_total" = refreshed.wdi_total,
         "document_number" = refreshed.document_number,
-        "updated_at" = refreshed.updated_at
-      from (values ${values}) as refreshed(
+        "updated_at" = ${now}
+      from unnest(
+        ${sql.param(changedExistingWrites.map((write) => write.targetDocumentId!))}::integer[],
+        ${sql.param(changedExistingWrites.map((write) => write.title))}::text[],
+        ${sql.param(changedExistingWrites.map((write) => write.fileName))}::text[],
+        ${sql.param(changedExistingWrites.map((write) => write.mimeType))}::text[],
+        ${sql.param(changedExistingWrites.map((write) => write.periodFrom))}::date[],
+        ${sql.param(changedExistingWrites.map((write) => write.periodTo))}::date[],
+        ${sql.param(changedExistingWrites.map((write) => write.rowCount))}::integer[],
+        ${sql.param(changedExistingWrites.map((write) => write.wdiTotal))}::numeric[],
+        ${sql.param(changedExistingWrites.map((write) => write.documentNumber))}::integer[]
+      ) as refreshed(
         id,
         title,
         file_name,
@@ -446,8 +437,7 @@ export async function persistLayeredControlDocumentWrites(
         period_to,
         row_count,
         wdi_total,
-        document_number,
-        updated_at
+        document_number
       )
       where document."id" = refreshed.id
     `)
@@ -455,27 +445,62 @@ export async function persistLayeredControlDocumentWrites(
 
   const newWrites = writes.filter((write) => write.targetDocumentId == null)
   const insertedDocumentIds = new Map<string, number>()
-  for (let offset = 0; offset < newWrites.length; offset += 250) {
-    const batch = newWrites.slice(offset, offset + 250)
-    const inserted = await tx
-      .insert(generatedDocuments)
-      .values(batch.map((write) => ({
-        type: write.type,
-        title: write.title,
-        fileName: write.fileName,
-        mimeType: write.mimeType,
-        periodFrom: write.periodFrom,
-        periodTo: write.periodTo,
-        rowCount: write.rowCount,
-        wdiTotal: write.wdiTotal,
-        documentNumber: write.documentNumber,
-        sourceMetadata: JSON.stringify({ kind: 'layeredControl', version: 1 }),
-      })))
-      .returning({
-        id: generatedDocuments.id,
-        type: generatedDocuments.type,
-        documentNumber: generatedDocuments.documentNumber,
-      })
+  if (newWrites.length > 0) {
+    const insertedResult = await tx.execute(sql`
+      insert into "generated_documents" (
+        "type",
+        "title",
+        "file_name",
+        "mime_type",
+        "period_from",
+        "period_to",
+        "row_count",
+        "wdi_total",
+        "document_number",
+        "source_metadata"
+      )
+      select
+        source.type,
+        source.title,
+        source.file_name,
+        source.mime_type,
+        source.period_from,
+        source.period_to,
+        source.row_count,
+        source.wdi_total,
+        source.document_number,
+        ${JSON.stringify({ kind: 'layeredControl', version: 1 })}::text
+      from unnest(
+        ${sql.param(newWrites.map((write) => write.type))}::text[],
+        ${sql.param(newWrites.map((write) => write.title))}::text[],
+        ${sql.param(newWrites.map((write) => write.fileName))}::text[],
+        ${sql.param(newWrites.map((write) => write.mimeType))}::text[],
+        ${sql.param(newWrites.map((write) => write.periodFrom))}::date[],
+        ${sql.param(newWrites.map((write) => write.periodTo))}::date[],
+        ${sql.param(newWrites.map((write) => write.rowCount))}::integer[],
+        ${sql.param(newWrites.map((write) => write.wdiTotal))}::numeric[],
+        ${sql.param(newWrites.map((write) => write.documentNumber))}::integer[]
+      ) as source(
+        type,
+        title,
+        file_name,
+        mime_type,
+        period_from,
+        period_to,
+        row_count,
+        wdi_total,
+        document_number
+      )
+      returning
+        "id",
+        "type",
+        "document_number" as "documentNumber"
+    `)
+    const inserted = insertedResult.rows as Array<{
+      id: number
+      type: string
+      documentNumber: number | null
+    }>
     inserted.forEach((document) => {
       if (isLayeredControlDocumentType(document.type) && document.documentNumber != null) {
         insertedDocumentIds.set(layeredDocumentNumberKey(document.type, document.documentNumber), document.id)
@@ -488,36 +513,41 @@ export async function persistLayeredControlDocumentWrites(
     if (!documentId) throw new Error('Не удалось сопоставить созданный послойный документ.')
     return { documentId, weldJointId: write.rowId }
   })
-  for (let offset = 0; offset < newAssignments.length; offset += 1000) {
-    await tx
-      .insert(generatedDocumentWeldJoints)
-      .values(newAssignments.slice(offset, offset + 1000))
-      .onConflictDoNothing()
+  if (newAssignments.length > 0) {
+    await tx.execute(sql`
+      insert into "generated_document_weld_joints" ("document_id", "weld_joint_id")
+      select source.document_id, source.weld_joint_id
+      from unnest(
+        ${sql.param(newAssignments.map((assignment) => assignment.documentId))}::integer[],
+        ${sql.param(newAssignments.map((assignment) => assignment.weldJointId))}::integer[]
+      ) as source(document_id, weld_joint_id)
+      on conflict do nothing
+    `)
   }
 
   const duplicates = [...new Map(duplicateAssignments.map((assignment) => [
     `${assignment.documentId}:${assignment.weldJointId}`,
     assignment,
   ])).values()]
-  for (let offset = 0; offset < duplicates.length; offset += 500) {
-    const batch = duplicates.slice(offset, offset + 500)
-    const values = sql.join(batch.map((assignment) => sql`(
-      ${assignment.documentId}::integer,
-      ${assignment.weldJointId}::integer
-    )`), sql`, `)
+  if (duplicates.length > 0) {
+    const documentIds = duplicates.map((assignment) => assignment.documentId)
+    const weldJointIds = duplicates.map((assignment) => assignment.weldJointId)
     await tx.execute(sql`
       delete from "generated_document_weld_joints" as assignment
-      using (values ${values}) as duplicate(document_id, weld_joint_id)
+      using unnest(
+        ${sql.param(documentIds)}::integer[],
+        ${sql.param(weldJointIds)}::integer[]
+      ) as duplicate(document_id, weld_joint_id)
       where assignment."document_id" = duplicate.document_id
         and assignment."weld_joint_id" = duplicate.weld_joint_id
     `)
   }
   const duplicateDocumentIds = [...new Set(duplicates.map((assignment) => assignment.documentId))]
-  for (const documentIdBatch of splitNumberBatches(duplicateDocumentIds, 1000)) {
+  if (duplicateDocumentIds.length > 0) {
     await tx
       .delete(generatedDocuments)
       .where(and(
-        inArray(generatedDocuments.id, documentIdBatch),
+        buildNumberArrayMatch(generatedDocuments.id, duplicateDocumentIds),
         notExists(
           tx
             .select({ value: sql`1` })

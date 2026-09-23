@@ -6,6 +6,8 @@ import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
+import { WorkflowSelectionWarning } from '@/components/workflow-selection-warning'
+import { useWorkflowSelectionState } from '@/lib/use-workflow-selection-state'
 import {
   PstoRepeatWorkflowRow,
   type PstoRepeatWorkflowRowMode,
@@ -74,11 +76,15 @@ import {
 } from '@/lib/workflow-root-cause-preview'
 import type { WorkflowRootCauseAction } from '@/lib/workflow-root-cause-actions'
 import { savePstoRepeatWorkflow } from '@/server/psto-repeat-workflow'
+import { WORKFLOW_CANDIDATE_PAGE_SIZE } from '@/server/weld-contracts'
 
 export type PstoRepeatWorkflowDialogProps = {
   mode: PstoRepeatWorkflowRowMode
   rows: WeldRow[]
   initialSelectedIds: ReadonlySet<number>
+  onCandidateSearchChange?: (search: string) => void
+  onCandidateSelectionChange?: (rowIds: number[]) => void
+  onCandidateRequestChange?: (request: RequestDocumentIdentity | null) => void
   onClose: () => void
   onRunProtectedEdit: (actionLabel: string, action: () => void) => void
   onSaved: (rows: WeldRow[], fieldKeys: WeldFieldKey[], message: string) => void
@@ -92,6 +98,9 @@ export function PstoRepeatWorkflowDialog({
   mode,
   rows,
   initialSelectedIds,
+  onCandidateSearchChange,
+  onCandidateSelectionChange,
+  onCandidateRequestChange,
   onClose,
   onRunProtectedEdit,
   onSaved,
@@ -119,13 +128,19 @@ export function PstoRepeatWorkflowDialog({
     mode === 'result' ? getInitialRequestKey(rows, initialSelectedIds, requestOptions) : '',
   )
   const selectedRequest = requestOptions.find((option) => option.key === requestKey) ?? null
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(() =>
+  useEffect(() => {
+    onCandidateRequestChange?.(mode === 'result' ? selectedRequest : null)
+  }, [mode, onCandidateRequestChange, selectedRequest])
+  const [selectedIds, setSelectedIds, selectionWarning] = useWorkflowSelectionState(() =>
     getInitialSelectedIds(mode, rows, initialSelectedIds, selectedRequest),
   )
   const initialSelectionSignature = useMemo(
     () => [...initialSelectedIds].sort((left, right) => left - right).join(','),
     [initialSelectedIds],
   )
+  useEffect(() => {
+    onCandidateSelectionChange?.([...selectedIds])
+  }, [onCandidateSelectionChange, selectedIds])
   const loadedInitialRowsSignature = useMemo(
     () => rows
       .flatMap((row) => initialSelectedIds.has(row.id) ? [row.id] : [])
@@ -150,6 +165,9 @@ export function PstoRepeatWorkflowDialog({
     queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
     queryFn: loadSystemDocumentSequences,
     staleTime: 30_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
   const requestRows = useMemo(() => {
     if (mode !== 'result') return rows
@@ -357,6 +375,7 @@ export function PstoRepeatWorkflowDialog({
 
   return (
     <WorkflowDialogShell>
+      <WorkflowSelectionWarning message={selectionWarning} />
       {mode === 'request' ? (
         <RequestDialogHeader
           title="Заявка ПСТО"
@@ -427,7 +446,9 @@ export function PstoRepeatWorkflowDialog({
         <div className="flex min-h-0 flex-1 overflow-hidden px-5 py-3">
           <RequestRowsPanel
             title="Стыки"
-            description=""
+            description={rowsViewMode === 'all' && rows.length >= WORKFLOW_CANDIDATE_PAGE_SIZE
+              ? `Показаны первые ${WORKFLOW_CANDIDATE_PAGE_SIZE} подходящих стыков. Уточните поиск, чтобы найти остальные.`
+              : ''}
             viewToggle={<SelectedRowsViewToggle mode={rowsViewMode} selectedCount={selectedIds.size} onChange={setRowsViewMode} />}
             action={rowsViewMode === 'selected' ? (
               <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>Снять весь выбор</Button>
@@ -447,7 +468,12 @@ export function PstoRepeatWorkflowDialog({
             emptyMessage={mode === 'result' && !selectedRequest
               ? 'Выберите заявку ПСТО.'
               : 'Стыков для этого действия не найдено.'}
-            onSearchChange={rowsViewMode === 'selected' ? setSelectedSearch : setSearch}
+            onSearchChange={rowsViewMode === 'selected'
+              ? setSelectedSearch
+              : (value) => {
+                  setSearch(value)
+                  onCandidateSearchChange?.(value)
+                }}
           >
             <DialogVirtualizedRows
               key={`${pagination.page}:${pagination.pageSize}:${displayedSearch}:${rowsViewMode}:${requestKey}`}

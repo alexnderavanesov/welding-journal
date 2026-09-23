@@ -11,7 +11,6 @@ import {
   normalizeDispatcherSettings,
   type DispatcherSettings,
 } from '@/lib/dispatcher-settings'
-import { buildDispatcherTaskIndexRows } from '@/lib/dispatcher-task-row-codes'
 import {
   buildDisabledDispatcherSettings,
   getEnabledDispatcherTaskCodes,
@@ -21,17 +20,21 @@ import {
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import {
   calculateFullDispatcherTasks,
-  compactDispatcherTasksForTransport,
   ensureDispatcherTaskIndexFresh,
+  lockWeldJointWritesForDispatcherReplacement,
 } from '@/server/dispatcher-task-index'
 import {
+  DISPATCHER_BACKGROUND_INDEX_LOCK_ID,
   DISPATCHER_BACKGROUND_INDEX_STATE_ID,
   DISPATCHER_INDEX_LOCK_ID,
   DISPATCHER_INDEX_STATE_ID,
 } from '@/server/dispatcher-task-index-constants'
+import {
+  createDispatcherTaskIndexStage,
+  createDispatcherTaskIndexStageWriter,
+  getDispatcherTaskIndexStageTable,
+} from '@/server/dispatcher-task-index-staging'
 
-const BACKGROUND_INDEX_LOCK_ID = 734_020_262
-const INSERT_CHUNK_SIZE = 1_000
 type DispatcherBackgroundExecutor = Pick<ReturnType<typeof requireDb>, 'insert' | 'delete'>
 
 export type DispatcherBackgroundTaskIndexStatus = {
@@ -115,10 +118,12 @@ export async function refreshDispatcherBackgroundTaskIndex(
   }
 
   try {
-    await ensureDispatcherTaskIndexFresh()
+    const activeState = await ensureDispatcherTaskIndexFresh()
+    if (activeState.computedRevision !== activeState.sourceRevision) {
+      return { ...(await getDispatcherBackgroundTaskIndexStatus()), refreshed: false }
+    }
     const refreshed = await db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(${BACKGROUND_INDEX_LOCK_ID})`)
-      await tx.execute(sql`select pg_advisory_xact_lock(${DISPATCHER_INDEX_LOCK_ID})`)
+      await tx.execute(sql`select pg_advisory_xact_lock(${DISPATCHER_BACKGROUND_INDEX_LOCK_ID})`)
       await tx
         .insert(dispatcherBackgroundTaskIndexState)
         .values({ id: DISPATCHER_BACKGROUND_INDEX_STATE_ID })
@@ -134,10 +139,14 @@ export async function refreshDispatcherBackgroundTaskIndex(
         .where(eq(dispatcherBackgroundTaskIndexState.id, DISPATCHER_BACKGROUND_INDEX_STATE_ID))
         .limit(1)
       const [sourceState] = await tx
-        .select({ sourceRevision: dispatcherTaskIndexState.sourceRevision })
+        .select({
+          sourceRevision: dispatcherTaskIndexState.sourceRevision,
+          computedRevision: dispatcherTaskIndexState.computedRevision,
+        })
         .from(dispatcherTaskIndexState)
         .where(eq(dispatcherTaskIndexState.id, DISPATCHER_INDEX_STATE_ID))
         .limit(1)
+      if (!sourceState || sourceState.computedRevision !== sourceState.sourceRevision) return false
       if (!shouldRefreshDispatcherBackgroundIndex(state?.computedAt, {
         computedSourceRevision: state?.computedSourceRevision,
         force: options.force,
@@ -162,35 +171,59 @@ export async function refreshDispatcherBackgroundTaskIndex(
         .set({ status: 'running', startedAt, lastError: null, updatedAt: startedAt })
         .where(eq(dispatcherBackgroundTaskIndexState.id, DISPATCHER_BACKGROUND_INDEX_STATE_ID))
 
-      const taskIndexRows = hasDisabledRowChecks
-        ? await calculateFullDispatcherTasks(tx, {
-            dispatcherSettings: buildDisabledDispatcherSettings,
-            includeWelderStampExpiryTasks: false,
-          }).then(({ preparedRows, tasks }) => buildDispatcherTaskIndexRows(
-            compactDispatcherTasksForTransport(tasks.repeatedJointTasks),
-            preparedRows,
-          ))
-        : []
-      const computedAt = new Date()
+      await createDispatcherTaskIndexStage(tx, 'background')
+      const taskIndexWriter = createDispatcherTaskIndexStageWriter(tx, 'background')
+      if (hasDisabledRowChecks) {
+        await calculateFullDispatcherTasks(tx, {
+          dispatcherSettings: buildDisabledDispatcherSettings,
+          includeWelderStampExpiryTasks: false,
+          taskSnapshotLimit: 0,
+          onTaskIndexRows: taskIndexWriter.append,
+        })
+        await taskIndexWriter.flush()
+      }
+
+      // Do not block ordinary saves while the disabled-rule calculation runs.
+      // The shared dispatcher lock is needed only to validate the source
+      // revision and atomically replace the persisted background index.
+      await lockWeldJointWritesForDispatcherReplacement(tx)
+      await tx.execute(sql`select pg_advisory_xact_lock(${DISPATCHER_INDEX_LOCK_ID})`)
+      const [lockedSourceState] = await tx
+        .select({
+          sourceRevision: dispatcherTaskIndexState.sourceRevision,
+          computedRevision: dispatcherTaskIndexState.computedRevision,
+        })
+        .from(dispatcherTaskIndexState)
+        .where(eq(dispatcherTaskIndexState.id, DISPATCHER_INDEX_STATE_ID))
+        .limit(1)
+      if (
+        !lockedSourceState ||
+        lockedSourceState.sourceRevision !== sourceState.sourceRevision ||
+        lockedSourceState.computedRevision !== lockedSourceState.sourceRevision
+      ) {
+        const stoppedAt = new Date()
+        await tx
+          .update(dispatcherBackgroundTaskIndexState)
+          .set({ status: 'idle', startedAt: null, updatedAt: stoppedAt })
+          .where(eq(dispatcherBackgroundTaskIndexState.id, DISPATCHER_BACKGROUND_INDEX_STATE_ID))
+        return false
+      }
 
       await tx.delete(dispatcherBackgroundRowTasks)
-      for (let index = 0; index < taskIndexRows.length; index += INSERT_CHUNK_SIZE) {
-        const chunk = taskIndexRows.slice(index, index + INSERT_CHUNK_SIZE)
-        if (chunk.length === 0) continue
-        await tx.insert(dispatcherBackgroundRowTasks).values(
-          chunk.map((row) => ({
-            weldJointId: row.rowId,
-            taskKey: row.taskKey,
-            code: row.code,
-          })),
-        )
-      }
+      const taskIndexStage = getDispatcherTaskIndexStageTable('background')
+      await tx.execute(sql`
+        insert into ${dispatcherBackgroundRowTasks} ("weld_joint_id", "task_key", "code")
+        select "weld_joint_id", "task_key", "code"
+        from ${taskIndexStage}
+        on conflict do nothing
+      `)
+      const computedAt = new Date()
 
       await tx
         .update(dispatcherBackgroundTaskIndexState)
         .set({
           status: 'idle',
-          computedSourceRevision: sourceState?.sourceRevision ?? 0,
+          computedSourceRevision: lockedSourceState.sourceRevision,
           computedAt,
           startedAt: null,
           lastError: null,
@@ -263,7 +296,7 @@ export async function pruneEnabledDispatcherBackgroundTasks(
 
 async function clearDispatcherBackgroundTaskIndex() {
   await requireDb().transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(${BACKGROUND_INDEX_LOCK_ID})`)
+    await tx.execute(sql`select pg_advisory_xact_lock(${DISPATCHER_BACKGROUND_INDEX_LOCK_ID})`)
     await applyDispatcherBackgroundSetting(false, tx)
   })
 }

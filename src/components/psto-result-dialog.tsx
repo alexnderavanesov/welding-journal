@@ -31,6 +31,7 @@ import {
   type RequestDocumentIdentity,
 } from '@/lib/request-document-identity'
 import type { WorkflowRootCauseAction } from '@/lib/workflow-root-cause-actions'
+import { WORKFLOW_CANDIDATE_PAGE_SIZE } from '@/server/weld-contracts'
 
 export type PstoResultDialogProps = {
   draft: PstoResultDraftState
@@ -244,6 +245,12 @@ export function PstoResultDialog({
               onClearFilters={onClearFilters}
             />
           )}
+
+          {rowsViewMode === 'all' && requestRows.length >= WORKFLOW_CANDIDATE_PAGE_SIZE ? (
+            <p className="text-xs text-muted-foreground">
+              Показаны первые {WORKFLOW_CANDIDATE_PAGE_SIZE} подходящих стыков. Уточните поиск, чтобы найти остальные.
+            </p>
+          ) : null}
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-slate-200 bg-white">
             <div className="grid shrink-0 grid-cols-[28px_minmax(360px,1.05fr)_minmax(320px,0.95fr)_32px] gap-3 border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-500">

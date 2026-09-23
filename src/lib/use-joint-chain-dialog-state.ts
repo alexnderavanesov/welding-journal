@@ -17,6 +17,9 @@ export function useJointChainDialogState({
     queryKey: ['weld-joint-chain', chainRecord?.id ?? null],
     queryFn: async () => listWeldJointChain({ data: { id: chainRecord!.id } }),
     enabled: Boolean(chainRecord),
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 
   useWindowEscapeKey(Boolean(chainRecord), (event) => {

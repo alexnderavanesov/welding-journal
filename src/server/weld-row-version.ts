@@ -1,11 +1,11 @@
-import { asc, inArray } from 'drizzle-orm'
+import { asc } from 'drizzle-orm'
 
 import { weldJoints, type WeldJoint } from '@/db/schema'
 import {
   assertCurrentInteractiveWeldRowVersions,
   type WeldRowVersionTarget,
 } from '@/lib/weld-row-version'
-import { splitNumberBatches } from '@/server/weld-request-utils'
+import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { WELD_TABLE_RETURNING } from '@/server/weld-server-shared'
 import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
 
@@ -45,16 +45,13 @@ export async function lockInteractiveWeldRows(
     .map(Number)
     .filter((id) => Number.isInteger(id) && id > 0))]
     .sort((left, right) => left - right)
-  const rows: VersionedWeldJoint[] = []
-  for (const idBatch of splitNumberBatches(ids, 1000)) {
-    rows.push(...await tx
-      .select(WELD_TABLE_RETURNING)
-      .from(weldJoints)
-      .where(inArray(weldJoints.id, idBatch))
-      .orderBy(asc(weldJoints.id))
-      .for('update'))
-  }
-  return rows
+  if (ids.length === 0) return []
+  return tx
+    .select(WELD_TABLE_RETURNING)
+    .from(weldJoints)
+    .where(buildNumberArrayMatch(weldJoints.id, ids))
+    .orderBy(asc(weldJoints.id))
+    .for('update') as Promise<VersionedWeldJoint[]>
 }
 
 export async function lockAndAssertInteractiveWeldVersions(

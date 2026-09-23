@@ -1,4 +1,4 @@
-import { and, or, sql } from 'drizzle-orm'
+import { sql } from 'drizzle-orm'
 
 import { weldJoints } from '@/db/schema'
 import { isControlEnabledValue } from '@/lib/control-availability-values'
@@ -37,19 +37,25 @@ export async function assertPstoWorkflowLinesFullyAssigned(
   }
   if (identities.length === 0) return
 
-  const lineRows: PstoWorkflowLineRow[] = []
-  for (let offset = 0; offset < identities.length; offset += 500) {
-    const identityBatch = identities.slice(offset, offset + 500)
-    lineRows.push(...await tx
-      .select({
-        projectTitle: weldJoints.projectTitle,
-        subtitleCode: weldJoints.subtitleCode,
-        line: weldJoints.line,
-        pstoRequired: weldJoints.pstoRequired,
-      })
-      .from(weldJoints)
-      .where(or(...identityBatch.map(buildLineWhere))))
-  }
+  const lineRows: PstoWorkflowLineRow[] = await tx
+    .select({
+      projectTitle: weldJoints.projectTitle,
+      subtitleCode: weldJoints.subtitleCode,
+      line: weldJoints.line,
+      pstoRequired: weldJoints.pstoRequired,
+    })
+    .from(weldJoints)
+    .where(sql`exists (
+      select 1
+      from unnest(
+        ${sql.param(identities.map((identity) => normalizePstoLineIdentityPart(identity.projectTitle)))}::text[],
+        ${sql.param(identities.map((identity) => normalizePstoLineIdentityPart(identity.subtitleCode)))}::text[],
+        ${sql.param(identities.map((identity) => normalizePstoLineIdentityPart(identity.line)))}::text[]
+      ) as target(project_title, subtitle_code, line)
+      where lower(btrim(coalesce(${weldJoints.projectTitle}, ''))) = target.project_title
+        and lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))) = target.subtitle_code
+        and lower(btrim(coalesce(${weldJoints.line}, ''))) = target.line
+    )`)
 
   const error = getPstoWorkflowLineAssignmentError(selectedRows, lineRows, options)
   if (error) throw new Error(error)
@@ -97,14 +103,6 @@ function uniqueLineIdentities(rows: readonly PstoWorkflowLineRow[]) {
     byKey.set(getPstoLineIdentityKey(identity), identity)
   }
   return [...byKey.values()]
-}
-
-function buildLineWhere(identity: PstoLineIdentity) {
-  return and(
-    sql`lower(btrim(coalesce(${weldJoints.projectTitle}, ''))) = ${normalizePstoLineIdentityPart(identity.projectTitle)}`,
-    sql`lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))) = ${normalizePstoLineIdentityPart(identity.subtitleCode)}`,
-    sql`lower(btrim(coalesce(${weldJoints.line}, ''))) = ${normalizePstoLineIdentityPart(identity.line)}`,
-  )
 }
 
 function formatLineIdentity(identity: PstoLineIdentity) {

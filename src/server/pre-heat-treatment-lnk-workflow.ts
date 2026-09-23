@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm'
+import { and, asc, eq, sql, type SQL } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import {
@@ -56,7 +56,7 @@ import {
   assertExpectedInteractiveWeldVersions,
   lockInteractiveWeldRows,
 } from '@/server/weld-row-version'
-import { splitNumberBatches } from '@/server/weld-request-utils'
+import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import {
   removeSourcedSystemDocumentPositionsInTransaction,
   upsertSourcedSystemDocumentsInTransaction,
@@ -144,14 +144,15 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
       }
       assertExpectedInteractiveWeldVersions(rowIds, data.expectedVersions, storedRows)
       await assertPstoWorkflowLinesFullyAssigned(tx, storedRows, { allowPerformedHistoryRows: true })
-      for (const rowIdBatch of splitNumberBatches([...rowIds].sort((left, right) => left - right), 1000)) {
-        await tx
-          .select({ id: preHeatTreatmentControls.id })
-          .from(preHeatTreatmentControls)
-          .where(inArray(preHeatTreatmentControls.weldJointId, rowIdBatch))
-          .orderBy(asc(preHeatTreatmentControls.id))
-          .for('update')
-      }
+      await tx
+        .select({ id: preHeatTreatmentControls.id })
+        .from(preHeatTreatmentControls)
+        .where(buildNumberArrayMatch(
+          preHeatTreatmentControls.weldJointId,
+          [...rowIds].sort((left, right) => left - right),
+        ))
+        .orderBy(asc(preHeatTreatmentControls.id))
+        .for('update')
 
       const rows = await attachDuplicateControlRelations(
         await attachHeatTreatmentControlRelations(storedRows as WeldRow[], tx),

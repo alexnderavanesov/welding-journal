@@ -31,11 +31,14 @@ import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import {
+  checkSystemDocumentNameConflict,
   getSystemDocumentDateContext,
   getSystemDocumentRows,
   listSystemDocumentHistory,
+  listSystemDocumentHistoryFilterOptions,
   listSystemDocuments,
   type RemoteSystemDocumentHistoryRequest,
+  type RemoteSystemDocumentHistoryFilterOptionsRequest,
 } from '@/server/system-documents'
 
 const SYSTEM_DOCUMENT_MIME_TYPE =
@@ -47,6 +50,12 @@ export function loadSystemDocuments(type: SystemDocumentType) {
 
 export function loadSystemDocumentHistory(request: RemoteSystemDocumentHistoryRequest) {
   return listSystemDocumentHistory({ data: request })
+}
+
+export function loadSystemDocumentHistoryFilterOptions(
+  request: RemoteSystemDocumentHistoryFilterOptionsRequest,
+) {
+  return listSystemDocumentHistoryFilterOptions({ data: request })
 }
 
 export function loadSystemDocumentRows(reference: SystemDocumentReference) {
@@ -88,14 +97,15 @@ export async function renameSystemDocumentToCurrentName(
   }
 
   if (usesExistingNumber) {
-    const documents = await loadSystemDocuments(reference.type)
-    const conflict = documents.some(
-      (documentRecord) =>
-        documentRecord.id !== ('id' in reference ? reference.id : '') &&
-        documentRecord.title === provisionalName &&
-        documentRecord.date === reference.date &&
-        documentRecord.methodCode === reference.methodCode,
-    )
+    const conflict = await checkSystemDocumentNameConflict({
+      data: {
+        type: reference.type,
+        title: provisionalName,
+        date: reference.date,
+        ...(reference.methodCode ? { methodCode: reference.methodCode } : {}),
+        ...(reference.documentId ? { excludeDocumentId: reference.documentId } : {}),
+      },
+    })
     if (conflict) {
       throw new Error(`Документ с именем «${provisionalName}» уже существует.`)
     }

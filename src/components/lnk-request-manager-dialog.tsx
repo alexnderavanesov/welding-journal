@@ -63,6 +63,7 @@ export type LnkRequestManagerDialogProps = {
   requestName: string
   requestDate: string
   requestOptions: LnkRequestExtensionOption[]
+  requestOptionsHasMore?: boolean
   allRows: WeldRow[]
   requestRows: WeldRow[]
   requestMethods: LnkRequestMethod[]
@@ -73,6 +74,7 @@ export type LnkRequestManagerDialogProps = {
   onClose: () => void
   onStageChange?: () => void
   onChangeRequest: (request: RequestDocumentIdentity) => void
+  onRequestSearchChange?: (value: string) => void
   onCreateRequest: () => void
   onAddPositions: (request: LnkRequestExtensionOption) => void
   onOpenRows: () => void
@@ -97,6 +99,7 @@ export function LnkRequestManagerDialog({
   requestName,
   requestDate,
   requestOptions,
+  requestOptionsHasMore = false,
   allRows,
   requestRows,
   requestMethods,
@@ -107,6 +110,7 @@ export function LnkRequestManagerDialog({
   onClose,
   onStageChange,
   onChangeRequest,
+  onRequestSearchChange,
   onCreateRequest,
   onAddPositions,
   onOpenRows,
@@ -129,6 +133,10 @@ export function LnkRequestManagerDialog({
   const [methodFilter, setMethodFilter] = useState('')
   const [filter, setFilter] = useState<RegistryFilter>('all')
   const [showRequestSettings, setShowRequestSettings] = useState(false)
+  const [pendingRequestContextMenu, setPendingRequestContextMenu] = useState<{
+    point: { x: number; y: number }
+    request: LnkRequestExtensionOption
+  } | null>(null)
   const requestConclusionSettings = useRequestConclusionSettings()
   const stableOnClearPosition = useStableEventCallback(onClearPosition)
   const selectedIdentity = useMemo(
@@ -198,8 +206,10 @@ export function LnkRequestManagerDialog({
       : undefined
     return { rows, row, method }
   }, [allRows])
-  const openRequestContextMenu = (event: MouseEvent<HTMLElement>, request: LnkRequestExtensionOption) => {
-    const point = getDialogMenuPoint(event)
+  const openLoadedRequestContextMenu = useStableEventCallback((
+    point: { x: number; y: number },
+    request: LnkRequestExtensionOption,
+  ) => {
     const context = getRequestContext(request)
     const systemRequest = isSystemDocumentNameForRows(
       context.rows,
@@ -227,7 +237,6 @@ export function LnkRequestManagerDialog({
       ? getSystemDocumentReferenceForField(context.row, context.method.requestKey)
       : null
 
-    onChangeRequest(request)
     contextMenuRef.current?.open(buildManagerContextMenu({
       ...point,
       heading: request.name,
@@ -298,7 +307,41 @@ export function LnkRequestManagerDialog({
       onOpenJournalRows,
       onOpenPstoHistory,
     }))
+  })
+  const openRequestContextMenu = (event: MouseEvent<HTMLElement>, request: LnkRequestExtensionOption) => {
+    const point = getDialogMenuPoint(event)
+    const context = getRequestContext(request)
+    if (
+      selectedIdentity?.key !== request.key ||
+      !context.row ||
+      !context.method
+    ) {
+      contextMenuRef.current?.close()
+      setShowRequestSettings(false)
+      setPendingRequestContextMenu({ point, request })
+      onChangeRequest(request)
+      return
+    }
+    setPendingRequestContextMenu(null)
+    openLoadedRequestContextMenu(point, request)
   }
+
+  useEffect(() => {
+    if (!pendingRequestContextMenu) return
+    if (selectedIdentity?.key !== pendingRequestContextMenu.request.key) return
+    const context = getRequestContext(pendingRequestContextMenu.request)
+    if (!context.row || !context.method) return
+    setPendingRequestContextMenu(null)
+    openLoadedRequestContextMenu(
+      pendingRequestContextMenu.point,
+      pendingRequestContextMenu.request,
+    )
+  }, [
+    getRequestContext,
+    openLoadedRequestContextMenu,
+    pendingRequestContextMenu,
+    selectedIdentity?.key,
+  ])
 
   const selectedRequestContext = useMemo(
     () => selectedIdentity ? getRequestContext(selectedIdentity) : undefined,
@@ -347,7 +390,10 @@ export function LnkRequestManagerDialog({
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <BufferedFilterInput
                 value={search}
-                onValueChange={setSearch}
+                onValueChange={(value) => {
+                  setSearch(value)
+                  onRequestSearchChange?.(value)
+                }}
                 placeholder="Название, дата, стык или линия"
                 className="h-10 bg-white pl-9"
               />
@@ -383,8 +429,13 @@ export function LnkRequestManagerDialog({
             </div>
             <div className="flex items-center justify-between text-xs text-slate-500">
               <span>Найдено: {filteredOptions.length}</span>
-              <span>Всего: {requestOptions.length}</span>
+              <span>{requestOptionsHasMore ? `Показаны: ${requestOptions.length}` : `Всего: ${requestOptions.length}`}</span>
             </div>
+            {requestOptionsHasMore ? (
+              <p className="text-xs text-slate-500">
+                Показаны первые 200 заявок. Уточните поиск, чтобы найти остальные.
+              </p>
+            ) : null}
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col p-2 lg:max-h-none">
@@ -403,6 +454,7 @@ export function LnkRequestManagerDialog({
                     <button
                       type="button"
                       onClick={() => {
+                        setPendingRequestContextMenu(null)
                         setShowRequestSettings(false)
                         onChangeRequest(request)
                       }}

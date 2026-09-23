@@ -14,6 +14,7 @@ import {
   buildFinalStatusRowsContext,
   calculateFinalStatusInRows,
   normalizeFinalStatus,
+  type FinalStatusRowsContext,
 } from '@/lib/weld-status'
 import {
   getGeneratedDocumentProfile,
@@ -56,6 +57,7 @@ export function prepareWeldingJournalDocumentRows({
   periodTo,
   options,
   filters = {},
+  finalStatusContext,
 }: {
   sourceRows: WeldRow[]
   contextRows: WeldRow[]
@@ -63,8 +65,9 @@ export function prepareWeldingJournalDocumentRows({
   periodTo: string
   options: WeldingJournalTemplateOptions
   filters?: WeldingJournalGenerationFilters
+  finalStatusContext?: FinalStatusRowsContext
 }) {
-  const finalStatusContext = buildFinalStatusRowsContext(contextRows)
+  const effectiveFinalStatusContext = finalStatusContext ?? buildFinalStatusRowsContext(contextRows)
   return sourceRows
     .filter((row) => {
       const weldDate = parseDateLikeToIso(row.weldDate)
@@ -77,7 +80,7 @@ export function prepareWeldingJournalDocumentRows({
       if (options.officialOnly && isUnofficialJoint(row)) return false
       if (
         options.goodOnly &&
-        normalizeFinalStatus(calculateFinalStatusInRows(row, contextRows, finalStatusContext)) !== 'годен'
+        normalizeFinalStatus(calculateFinalStatusInRows(row, contextRows, effectiveFinalStatusContext)) !== 'годен'
       ) {
         return false
       }

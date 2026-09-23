@@ -41,6 +41,7 @@ import {
   createRequestDocumentIdentity,
   type RequestDocumentIdentity,
 } from '@/lib/request-document-identity'
+import { WORKFLOW_CANDIDATE_PAGE_SIZE } from '@/server/weld-contracts'
 
 type LnkResultMethod = (typeof LNK_METHODS)[number]
 export type LnkResultDialogProps = {
@@ -304,7 +305,9 @@ export function LnkResultDialog({
         <div className="flex min-h-0 flex-1 overflow-hidden px-5 py-3">
           <RequestRowsPanel
             title="Стыки"
-            description=""
+            description={rowsViewMode === 'all' && visibleRows.length >= WORKFLOW_CANDIDATE_PAGE_SIZE
+              ? `Показаны первые ${WORKFLOW_CANDIDATE_PAGE_SIZE} подходящих стыков. Уточните поиск, чтобы найти остальные.`
+              : ''}
             viewToggle={selectedRowsViewToggle}
             action={rowsAction}
             searchValue={displayedSearch}

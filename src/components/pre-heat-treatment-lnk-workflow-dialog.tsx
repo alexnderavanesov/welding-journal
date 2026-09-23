@@ -6,6 +6,8 @@ import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
+import { WorkflowSelectionWarning } from '@/components/workflow-selection-warning'
+import { useWorkflowSelectionState } from '@/lib/use-workflow-selection-state'
 import { LnkExistingRequestSearch } from '@/components/lnk-existing-request-search'
 import {
   LNK_RESULT_ROW_GRID_CLASS,
@@ -87,6 +89,7 @@ import {
   savePreHeatTreatmentLnkWorkflow,
   type PreHeatTreatmentLnkPosition,
 } from '@/server/pre-heat-treatment-lnk-workflow'
+import { WORKFLOW_CANDIDATE_PAGE_SIZE } from '@/server/weld-contracts'
 
 export type PreHeatTreatmentLnkWorkflowDialogProps = {
   embedded?: boolean
@@ -95,6 +98,12 @@ export type PreHeatTreatmentLnkWorkflowDialogProps = {
   initialSelectedIds: ReadonlySet<number>
   initialMethodCode?: PreHeatTreatmentLnkMethodCode
   initialRequestSubmitMode?: LnkRequestComposerMode
+  onCandidateSearchChange?: (search: string) => void
+  onCandidateSelectionChange?: (rowIds: number[]) => void
+  onCandidateFilterChange?: (filter: {
+    methodCodes: PreHeatTreatmentLnkMethodCode[]
+    request: RequestDocumentIdentity | null
+  }) => void
   onClose: () => void
   onRunProtectedEdit: (actionLabel: string, action: () => void) => void
   onSaved: (rows: WeldRow[], fieldKeys: WeldFieldKey[], message: string) => void
@@ -149,6 +158,9 @@ export function PreHeatTreatmentLnkWorkflowDialog({
   initialSelectedIds,
   initialMethodCode,
   initialRequestSubmitMode = 'create',
+  onCandidateSearchChange,
+  onCandidateSelectionChange,
+  onCandidateFilterChange,
   onClose,
   onRunProtectedEdit,
   onSaved,
@@ -185,7 +197,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
   const [existingRequestSearch, setExistingRequestSearch] = useState('')
   const [defaultResult, setDefaultResult] = useState('')
   const [rowResults, setRowResults] = useState<Record<number, string>>({})
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => (
+  const [selectedIds, setSelectedIds, selectionWarning] = useWorkflowSelectionState(() => (
     mode === 'request'
       ? new Set(rows.flatMap((row) => (
           initialSelectedIds.has(row.id) && hasAvailableRequestPosition(row, selectedMethods)
@@ -198,6 +210,9 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     () => [...initialSelectedIds].sort((left, right) => left - right).join(','),
     [initialSelectedIds],
   )
+  useEffect(() => {
+    onCandidateSelectionChange?.([...selectedIds])
+  }, [onCandidateSelectionChange, selectedIds])
   const loadedInitialRowsSignature = useMemo(
     () => rows
       .flatMap((row) => initialSelectedIds.has(row.id) ? [row.id] : [])
@@ -229,6 +244,9 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
     queryFn: loadSystemDocumentSequences,
     staleTime: 30_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 
   const requestOptions = useMemo(
@@ -256,6 +274,14 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     ? `Нет заявок ${resultMethod} до ТО, ожидающих результата. Сначала создайте заявку до ТО.`
     : 'Выберите заявку НК до ТО.'
   const selectedRequest = requestOptions.find((option) => option.key === requestKey) ?? null
+  useEffect(() => {
+    onCandidateFilterChange?.({
+      methodCodes: mode === 'request'
+        ? [...selectedMethods]
+        : resultMethod ? [resultMethod] : [],
+      request: mode === 'result' ? selectedRequest : null,
+    })
+  }, [mode, onCandidateFilterChange, resultMethod, selectedMethods, selectedRequest])
   useEffect(() => {
     if (mode !== 'result' || !resultMethod) return
     if (requestOptions.some((option) => option.key === requestKey)) return
@@ -655,6 +681,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
 
   const content = (
     <>
+      <WorkflowSelectionWarning message={selectionWarning} />
       {mode === 'request' ? (
         <RequestDialogHeader
           title="Заявка ЛНК до ТО"
@@ -811,7 +838,9 @@ export function PreHeatTreatmentLnkWorkflowDialog({
         <div className="flex min-h-0 flex-1 overflow-hidden px-5 py-3">
           <RequestRowsPanel
             title="Стыки"
-            description=""
+            description={rowsViewMode === 'all' && rows.length >= WORKFLOW_CANDIDATE_PAGE_SIZE
+              ? `Показаны первые ${WORKFLOW_CANDIDATE_PAGE_SIZE} подходящих стыков. Уточните поиск, чтобы найти остальные.`
+              : ''}
             viewToggle={<SelectedRowsViewToggle mode={rowsViewMode} selectedCount={selectedRows.length} onChange={setRowsViewMode} />}
             action={rowsViewMode === 'selected' ? (
               <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>Снять весь выбор</Button>
@@ -839,7 +868,12 @@ export function PreHeatTreatmentLnkWorkflowDialog({
                 : rowsViewMode === 'selected'
                   ? 'Среди выбранных стыков ничего не найдено.'
                   : 'Стыков для этого действия не найдено.'}
-            onSearchChange={rowsViewMode === 'selected' ? setSelectedSearch : setSearch}
+            onSearchChange={rowsViewMode === 'selected'
+              ? setSelectedSearch
+              : (value) => {
+                  setSearch(value)
+                  onCandidateSearchChange?.(value)
+                }}
           >
             {mode === 'result' ? (
               <div className={`grid shrink-0 ${LNK_RESULT_ROW_GRID_CLASS} gap-3 border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-500`}>

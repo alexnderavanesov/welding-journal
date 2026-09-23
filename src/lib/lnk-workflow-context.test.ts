@@ -2,45 +2,64 @@ import { describe, expect, it } from 'vitest'
 
 import {
   getLnkWorkflowRowsRequest,
-  shouldLoadFullLnkReportContext,
+  shouldLoadLnkWorkflowRequestSummary,
   shouldLoadLnkWorkflowSummary,
 } from '@/lib/lnk-workflow-context'
 
 describe('LNK workflow context routing', () => {
-  it('reserves the full LNK context for report output and field editing', () => {
-    expect(shouldLoadFullLnkReportContext({
-      shouldLoadFullWeldRows: false,
-      isLnkShowMenuOpen: false,
-      isLnkFieldEditing: false,
-    })).toBe(false)
-    expect(shouldLoadFullLnkReportContext({
-      shouldLoadFullWeldRows: false,
-      isLnkShowMenuOpen: true,
-      isLnkFieldEditing: false,
-    })).toBe(true)
-    expect(shouldLoadFullLnkReportContext({
-      shouldLoadFullWeldRows: false,
-      isLnkShowMenuOpen: false,
-      isLnkFieldEditing: true,
-    })).toBe(true)
-    expect(shouldLoadFullLnkReportContext({
-      shouldLoadFullWeldRows: true,
-      isLnkShowMenuOpen: true,
-      isLnkFieldEditing: true,
-    })).toBe(false)
-  })
-
   it.each([
     ['isLnkRequestModalOpen', 'requestCandidates'],
-    ['isLnkRequestManagerOpen', 'requestRegistry'],
     ['isLnkResultModalOpen', 'resultCandidates'],
-    ['isLnkResultManagerOpen', 'resultRegistry'],
     ['isLnkOfficialityModalOpen', 'officialityCandidates'],
   ] as const)('maps %s to %s without a whole-report request', (stateKey, scope) => {
     const state = createState()
     state[stateKey] = true
 
     expect(getLnkWorkflowRowsRequest(state)).toEqual({ scope, rowIds: null })
+  })
+
+  it('bounds and filters the all-results registry without affecting selected-row registries', () => {
+    const all = createState()
+    all.isLnkResultManagerOpen = true
+    all.resultRegistrySearch = 'LINE-7'
+    all.resultRegistryFilter = 'ремонт'
+    expect(getLnkWorkflowRowsRequest(all)).toEqual({
+      scope: 'resultRegistry',
+      rowIds: null,
+      search: 'LINE-7',
+      resultFilter: 'ремонт',
+      limit: 500,
+    })
+
+    const selected = createState()
+    selected.isLnkResultManagerOpen = true
+    selected.managedLnkResultOrderIds = [9, 4]
+    selected.resultRegistrySearch = 'ignored'
+    expect(getLnkWorkflowRowsRequest(selected)).toEqual({
+      scope: 'resultRegistry',
+      rowIds: [9, 4],
+    })
+  })
+
+  it('loads only the selected request document in the request manager', () => {
+    const state = createState()
+    state.isLnkRequestManagerOpen = true
+    state.managedLnkRequestName = 'Заявка 17'
+    state.managedLnkRequestDate = '2026-09-22'
+
+    expect(getLnkWorkflowRowsRequest(state)).toEqual({
+      scope: 'requestRegistry',
+      rowIds: null,
+      requestName: 'Заявка 17',
+      requestDate: '2026-09-22',
+    })
+  })
+
+  it('does not load every request row before a request is selected', () => {
+    const state = createState()
+    state.isLnkRequestManagerOpen = true
+
+    expect(getLnkWorkflowRowsRequest(state)).toBeNull()
   })
 
   it('keeps candidate query identities independent from checkbox selection', () => {
@@ -52,6 +71,22 @@ describe('LNK workflow context routing', () => {
 
     expect(first).toEqual({ scope: 'requestCandidates', rowIds: null })
     expect(second).toEqual(first)
+  })
+
+  it('pushes the selected method and request identity into result candidate SQL', () => {
+    const state = createState()
+    state.isLnkResultModalOpen = true
+    state.resultCandidateMethodKey = 'rkRequest'
+    state.resultCandidateRequestName = 'РК-17'
+    state.resultCandidateRequestDate = '2026-09-22'
+
+    expect(getLnkWorkflowRowsRequest(state)).toEqual({
+      scope: 'resultCandidates',
+      rowIds: null,
+      methodKeys: ['rkRequest'],
+      requestName: 'РК-17',
+      requestDate: '2026-09-22',
+    })
   })
 
   it('scopes result registries to explicitly selected rows', () => {
@@ -68,9 +103,11 @@ describe('LNK workflow context routing', () => {
   it('routes before-heat-treatment workflows and registries separately', () => {
     const workflow = createState()
     workflow.preHeatTreatmentLnkWorkflowMode = 'result'
+    workflow.otherCandidateSearch = 'LINE-17'
     expect(getLnkWorkflowRowsRequest(workflow)).toEqual({
       scope: 'preHeatTreatmentResultCandidates',
       rowIds: null,
+      search: 'LINE-17',
     })
 
     const registry = createState()
@@ -80,6 +117,16 @@ describe('LNK workflow context routing', () => {
     expect(getLnkWorkflowRowsRequest(registry)).toEqual({
       scope: 'preHeatTreatmentRequestRegistry',
       rowIds: [12],
+    })
+  })
+
+  it('loads only the edited row for a direct field edit', () => {
+    const state = createState()
+    state.fieldEditingRowId = 42
+
+    expect(getLnkWorkflowRowsRequest(state)).toEqual({
+      scope: 'fieldRows',
+      rowIds: [42],
     })
   })
 
@@ -96,14 +143,10 @@ describe('LNK workflow context routing', () => {
       isLnkReportActive: true,
       shouldLoadFullWeldRows: false,
       isLnkWorkflowMenuOpen: false,
-      isLnkRequestModalOpen: false,
-      isLnkRequestManagerOpen: false,
     }
 
     expect(shouldLoadLnkWorkflowSummary(base)).toBe(false)
     expect(shouldLoadLnkWorkflowSummary({ ...base, isLnkWorkflowMenuOpen: true })).toBe(true)
-    expect(shouldLoadLnkWorkflowSummary({ ...base, isLnkRequestModalOpen: true })).toBe(true)
-    expect(shouldLoadLnkWorkflowSummary({ ...base, isLnkRequestManagerOpen: true })).toBe(true)
     expect(shouldLoadLnkWorkflowSummary({
       ...base,
       isLnkWorkflowMenuOpen: true,
@@ -113,6 +156,26 @@ describe('LNK workflow context routing', () => {
       ...base,
       isLnkWorkflowMenuOpen: true,
       isLnkReportActive: false,
+    })).toBe(false)
+  })
+
+  it('loads request document options separately from the menu counters', () => {
+    const base = {
+      isLnkReportActive: true,
+      shouldLoadFullWeldRows: false,
+      isLnkRequestModalOpen: false,
+      isLnkRequestManagerOpen: false,
+      isLnkFieldEditing: false,
+    }
+
+    expect(shouldLoadLnkWorkflowRequestSummary(base)).toBe(false)
+    expect(shouldLoadLnkWorkflowRequestSummary({ ...base, isLnkRequestModalOpen: true })).toBe(true)
+    expect(shouldLoadLnkWorkflowRequestSummary({ ...base, isLnkRequestManagerOpen: true })).toBe(true)
+    expect(shouldLoadLnkWorkflowRequestSummary({ ...base, isLnkFieldEditing: true })).toBe(true)
+    expect(shouldLoadLnkWorkflowRequestSummary({
+      ...base,
+      isLnkRequestModalOpen: true,
+      shouldLoadFullWeldRows: true,
     })).toBe(false)
   })
 })
@@ -130,5 +193,27 @@ function createState(): Parameters<typeof getLnkWorkflowRowsRequest>[0] {
     preHeatTreatmentResultManagerMode: 'result',
     managedLnkResultOrderIds: null,
     preHeatTreatmentResultManagerRowIds: null,
+    fieldEditingRowId: null,
+    managedLnkRequestName: '',
+    managedLnkRequestDate: '',
+    requestCandidateRowIds: [],
+    requestCandidateSearch: '',
+    requestCandidateMethodKeys: [],
+    resultCandidateRowIds: [],
+    resultCandidateSearch: '',
+    resultCandidateMethodKey: '',
+    resultCandidateRequestName: '',
+    resultCandidateRequestDate: '',
+    allowPrimaryBeforePreviousStagesComplete: false,
+    officialityCandidateRowIds: [],
+    officialityCandidateSearch: '',
+    otherCandidateRowIds: [],
+    otherCandidateSearch: '',
+    otherCandidateMethodKeys: [],
+    otherCandidateRequestName: '',
+    otherCandidateRequestDate: '',
+    resultRegistrySearch: '',
+    resultRegistryFilter: 'all',
+    resultRegistryLimit: 500,
   }
 }

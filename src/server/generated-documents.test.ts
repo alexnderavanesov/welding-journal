@@ -95,21 +95,20 @@ describe('generated document batch database load', () => {
   })
 
   it.each([2, 100])('inserts %i new documents with one database operation', async (documentCount) => {
-    const returning = vi.fn()
-    const values = vi.fn((insertedRecords: Array<{ documentNumber: number | null }>) => {
-      returning.mockResolvedValueOnce(insertedRecords
-        .map((record) => ({ id: 10_000 + Number(record.documentNumber), documentNumber: record.documentNumber }))
-        .reverse())
-      return { returning }
-    })
-    const insert = vi.fn(() => ({ values }))
-    const tx = { insert } as unknown as GeneratedDocumentsTransaction
     const records = Array.from({ length: documentCount }, (_, index) => batchRecord(index, null))
+    const execute = vi.fn().mockResolvedValue({
+      rows: records
+        .map((record) => ({
+          id: 10_000 + Number(record.documentNumber),
+          documentNumber: record.documentNumber,
+        }))
+        .reverse(),
+    })
+    const tx = { execute } as unknown as GeneratedDocumentsTransaction
 
     const resolvedIds = await persistGeneratedDocumentBatchRecordsInTransaction(tx, records)
 
-    expect(insert).toHaveBeenCalledTimes(1)
-    expect(values).toHaveBeenCalledTimes(1)
+    expect(execute).toHaveBeenCalledTimes(1)
     expect(resolvedIds.size).toBe(documentCount)
     expect(resolvedIds.get(documentCount - 1)).toBe(10_000 + documentCount)
   })
@@ -237,11 +236,10 @@ describe('generated document reassignment database load', () => {
       now: new Date('2026-09-04T10:01:00.000Z'),
     })
 
-    const batchCount = Math.ceil(documentCount / 1_000)
-    expect(select).toHaveBeenCalledTimes(batchCount * 2)
+    expect(select).toHaveBeenCalledTimes(2)
     expect(deleteDocuments).toHaveBeenCalledTimes(1)
     expect(deleteWhere).toHaveBeenCalledTimes(1)
-    expect(execute).toHaveBeenCalledTimes(Math.ceil(populatedDocumentIds.length / 1_000))
+    expect(execute).toHaveBeenCalledTimes(1)
   })
 })
 

@@ -3,8 +3,13 @@ import { defineConfig, devices } from '@playwright/test'
 import { E2E_DATABASE_URL } from './e2e/database'
 
 process.env.E2E_DATABASE_URL = E2E_DATABASE_URL
+// Tests also import server helpers directly. Keep those imports on the same
+// disposable database instead of allowing .env.local to initialize a user pool.
+process.env.DATABASE_URL = E2E_DATABASE_URL
+process.env.WELDING_ENV_LOADED = '1'
 const E2E_PORT = Number(process.env.E2E_PORT || 3100)
 const E2E_BASE_URL = `http://127.0.0.1:${E2E_PORT}`
+const useProductionBuild = process.env.E2E_USE_PRODUCTION_BUILD === '1'
 
 export default defineConfig({
   testDir: './e2e/tests',
@@ -26,7 +31,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `pnpm exec vite dev --host 127.0.0.1 --port ${E2E_PORT}`,
+    command: useProductionBuild ? 'pnpm start' : `pnpm exec vite dev --host 127.0.0.1 --port ${E2E_PORT}`,
     url: `${E2E_BASE_URL}/lnk`,
     reuseExistingServer: false,
     timeout: 120_000,
@@ -34,6 +39,8 @@ export default defineConfig({
       ...process.env,
       DATABASE_URL: E2E_DATABASE_URL,
       WELDING_ENV_LOADED: '1',
+      PORT: String(E2E_PORT),
+      HOST: '127.0.0.1',
     },
   },
 })

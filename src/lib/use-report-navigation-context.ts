@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 
+import { getActiveReportFromPath } from '@/lib/app-report-routes'
 import type { ActiveReport } from '@/lib/home-state'
 import { getPageScrollPosition, restorePageScrollPosition, type PageScrollPosition } from '@/lib/page-scroll-position'
 import { migrateLegacyWeldFieldRecordKeys } from '@/lib/weld-fields'
@@ -8,6 +9,9 @@ import type { WeldFilters } from '@/server/weld-contracts'
 const REPORT_NAVIGATION_HISTORY_KEY = '__weldingReportContext'
 const REPORT_NAVIGATION_HISTORY_VERSION = 1
 const SCROLL_POSITION_PERSIST_DELAY_MS = 250
+const SNAPSHOT_STORAGE_PREFIX = 'welding-report-navigation:v1:'
+const SNAPSHOT_STORAGE_INDEX = `${SNAPSHOT_STORAGE_PREFIX}entries`
+const MAX_SAVED_ENTRIES = 50
 
 type ReportNavigationSnapshot = {
   version: typeof REPORT_NAVIGATION_HISTORY_VERSION
@@ -73,18 +77,24 @@ export function useReportNavigationContext({
   const skipNextPersistRef = useRef(false)
   const isRestoringRef = useRef(false)
 
-  currentReportStateRef.current = {
-    activeReport,
-    columnFilters,
-    heatTreatmentFilters,
-    lnkFilters,
-    selectedWeldingJournalIds,
-    selectedHeatTreatmentIds,
-    selectedLnkIds,
-  }
+  useLayoutEffect(() => {
+    currentReportStateRef.current = {
+      activeReport,
+      columnFilters,
+      heatTreatmentFilters,
+      lnkFilters,
+      selectedWeldingJournalIds,
+      selectedHeatTreatmentIds,
+      selectedLnkIds,
+    }
+  })
 
   const persistCurrentReportContext = useCallback(() => {
-    replaceReportNavigationSnapshot(buildReportNavigationSnapshot(currentReportStateRef.current))
+    const state = currentReportStateRef.current
+    // The router can render the target before its queued browser-history push.
+    // Never overwrite the source entry with that intermediate target state.
+    if (getActiveReportFromPath(window.location.pathname) !== state.activeReport) return
+    saveReportNavigationSnapshot(buildReportNavigationSnapshot(state))
   }, [])
 
   useEffect(() => {
@@ -110,7 +120,7 @@ export function useReportNavigationContext({
   }, [activeReport, persistCurrentReportContext, scrollRestoreVersion])
 
   useEffect(() => {
-    const snapshot = getReportNavigationSnapshot(window.history.state)
+    const snapshot = readReportNavigationSnapshot()
     if (!snapshot || snapshot.report !== activeReport) {
       isRestoringRef.current = false
       persistCurrentReportContext()
@@ -212,16 +222,43 @@ function buildReportNavigationSnapshot(state: CurrentReportState): ReportNavigat
   }
 }
 
-function replaceReportNavigationSnapshot(snapshot: ReportNavigationSnapshot) {
-  const currentState = isRecord(window.history.state) ? window.history.state : {}
+function getSnapshotStorageKey() {
+  const state: unknown = window.history.state
+  if (!isRecord(state)) return null
+  const entryKey = state.__TSR_key ?? state.key
+  return typeof entryKey === 'string' ? `${SNAPSHOT_STORAGE_PREFIX}${entryKey}` : null
+}
+
+function saveReportNavigationSnapshot(snapshot: ReportNavigationSnapshot) {
+  const key = getSnapshotStorageKey()
+  if (!key) return
   try {
-    window.history.replaceState({
-      ...currentState,
-      [REPORT_NAVIGATION_HISTORY_KEY]: snapshot,
-    }, '')
+    // Do not call history.replaceState here: TanStack subscribes to it and
+    // starts another route load, even if only selection/scroll changed.
+    const storage = window.sessionStorage
+    const rawIndex: unknown = JSON.parse(storage.getItem(SNAPSHOT_STORAGE_INDEX) ?? '[]')
+    const entries = Array.isArray(rawIndex)
+      ? rawIndex.filter((entry): entry is string => typeof entry === 'string' && entry.startsWith(SNAPSHOT_STORAGE_PREFIX))
+      : []
+    const nextEntries = [...new Set(entries.filter((entry) => entry !== key)), key]
+    while (nextEntries.length > MAX_SAVED_ENTRIES) storage.removeItem(nextEntries.shift()!)
+    storage.setItem(key, JSON.stringify(snapshot))
+    storage.setItem(SNAPSHOT_STORAGE_INDEX, JSON.stringify(nextEntries))
   } catch {
-    // Report navigation still works if a browser blocks custom history state.
+    // Navigation remains available if session storage is blocked or full.
   }
+}
+
+function readReportNavigationSnapshot() {
+  const key = getSnapshotStorageKey()
+  try {
+    const value = key ? window.sessionStorage.getItem(key) : null
+    if (value) return getReportNavigationSnapshot({ [REPORT_NAVIGATION_HISTORY_KEY]: JSON.parse(value) })
+  } catch {
+    // A corrupt/blocked browser cache must not prevent opening a report.
+  }
+  // Read old entries once; all new writes are isolated from router history.
+  return getReportNavigationSnapshot(window.history.state)
 }
 
 function getReportNavigationSnapshot(historyState: unknown): ReportNavigationSnapshot | null {

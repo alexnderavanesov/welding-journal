@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -24,23 +24,23 @@ import {
   type PstoLineAssignmentSummary,
   type PstoLineActivationDecision,
   type PstoLineActivationDisposition,
+  type PstoLineAssignmentFilter,
   type PstoLineIdentity,
   type PstoLineRemovalDecision,
   type PstoLineRemovalDisposition,
   type PstoLineRemovalPreview,
 } from '@/lib/psto-line-assignment'
-import { normalizeSearchText } from '@/lib/report-row-utils'
+import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { usePagePagination } from '@/lib/use-page-pagination'
 import { invalidateWeldJoints } from '@/lib/weld-query-utils'
 import {
   getPstoLineRemovalPreview,
-  listPstoLineAssignments,
+  listPstoLineAssignmentPage,
   savePstoLineAssignment,
 } from '@/server/psto-line-assignment'
 
 export const PSTO_LINE_ASSIGNMENTS_QUERY_KEY = ['psto-line-assignments'] as const
 
-type PstoLineFilter = 'all' | 'assigned' | 'cancelled' | 'unassigned' | 'partial'
 type PstoLineProgramView =
   | { type: 'list' }
   | { type: 'assign'; line: PstoLineAssignmentSummary }
@@ -65,7 +65,10 @@ export function PstoLineProgramDialog({
 }: PstoLineProgramDialogProps) {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<PstoLineFilter>('all')
+  const [filter, setFilter] = useState<PstoLineAssignmentFilter>('all')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
+  const debouncedSearch = useDebouncedValue(search, 250)
   const [view, setView] = useState<PstoLineProgramView>({ type: 'list' })
   const [cancellationDate, setCancellationDate] = useState(() => formatDateInputValue(new Date()))
   const [cancellationBasis, setCancellationBasis] = useState('')
@@ -73,11 +76,18 @@ export function PstoLineProgramDialog({
   const [activationDispositions, setActivationDispositions] =
     useState<Record<number, PstoLineActivationDisposition>>({})
   const linesQuery = useQuery({
-    queryKey: PSTO_LINE_ASSIGNMENTS_QUERY_KEY,
-    queryFn: () => listPstoLineAssignments(),
+    queryKey: [...PSTO_LINE_ASSIGNMENTS_QUERY_KEY, { search: debouncedSearch, filter, page, pageSize }],
+    queryFn: () => listPstoLineAssignmentPage({
+      data: { search: debouncedSearch, filter, page, pageSize },
+    }),
     enabled: open,
     staleTime: 10_000,
+    placeholderData: keepPreviousData,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
+  const lineResultsTransitioning = search !== debouncedSearch || linesQuery.isPlaceholderData
   const previewMutation = useMutation({
     mutationFn: (identity: PstoLineIdentity) => getPstoLineRemovalPreview({ data: identity }),
   })
@@ -112,6 +122,8 @@ export function PstoLineProgramDialog({
     if (!open) return
     setSearch('')
     setFilter('all')
+    setPage(1)
+    setPageSize(25)
     setView({ type: 'list' })
     setCancellationDate(formatDateInputValue(new Date()))
     setCancellationBasis('')
@@ -120,6 +132,11 @@ export function PstoLineProgramDialog({
     previewMutation.reset()
     saveMutation.reset()
   }, [open])
+
+  useEffect(() => {
+    const serverPage = linesQuery.data?.page
+    if (!linesQuery.isPlaceholderData && serverPage && serverPage !== page) setPage(serverPage)
+  }, [linesQuery.data?.page, linesQuery.isPlaceholderData, page])
 
   if (!open) return null
 
@@ -234,13 +251,31 @@ export function PstoLineProgramDialog({
 
       {view.type === 'list' ? (
         <LineListView
-          lines={linesQuery.data ?? []}
-          loading={linesQuery.isPending}
+          lines={linesQuery.data?.rows ?? []}
+          counts={linesQuery.data?.counts ?? EMPTY_PSTO_LINE_COUNTS}
+          totalCount={linesQuery.data?.totalCount ?? 0}
+          page={linesQuery.data?.page ?? page}
+          pageCount={linesQuery.data?.pageCount ?? 1}
+          pageSize={linesQuery.data?.pageSize ?? pageSize}
+          loading={linesQuery.isPending || lineResultsTransitioning}
+          fetching={linesQuery.isFetching}
           error={(linesQuery.error as Error | null)?.message ?? ''}
           search={search}
           filter={filter}
-          onSearchChange={setSearch}
-          onFilterChange={setFilter}
+          onSearchChange={(value) => {
+            setSearch(value)
+            setPage(1)
+          }}
+          onFilterChange={(value) => {
+            setFilter(value)
+            setPage(1)
+          }}
+          onPreviousPage={() => setPage((current) => Math.max(1, current - 1))}
+          onNextPage={() => setPage((current) => Math.min(linesQuery.data?.pageCount ?? current, current + 1))}
+          onPageSizeChange={(value) => {
+            setPageSize(value)
+            setPage(1)
+          }}
           onRefresh={() => void linesQuery.refetch()}
           onAssign={openAssign}
           onReactivate={openReactivate}
@@ -298,61 +333,47 @@ export function PstoLineProgramDialog({
 
 function LineListView({
   lines,
+  counts,
+  totalCount,
+  page,
+  pageCount,
+  pageSize,
   loading,
+  fetching,
   error,
   search,
   filter,
   onSearchChange,
   onFilterChange,
+  onPreviousPage,
+  onNextPage,
+  onPageSizeChange,
   onRefresh,
   onAssign,
   onReactivate,
   onRemove,
 }: {
   lines: PstoLineAssignmentSummary[]
+  counts: Record<PstoLineAssignmentFilter, number>
+  totalCount: number
+  page: number
+  pageCount: number
+  pageSize: number
   loading: boolean
+  fetching: boolean
   error: string
   search: string
-  filter: PstoLineFilter
+  filter: PstoLineAssignmentFilter
   onSearchChange: (value: string) => void
-  onFilterChange: (value: PstoLineFilter) => void
+  onFilterChange: (value: PstoLineAssignmentFilter) => void
+  onPreviousPage: () => void
+  onNextPage: () => void
+  onPageSizeChange: (value: number) => void
   onRefresh: () => void
   onAssign: (line: PstoLineAssignmentSummary) => void
   onReactivate: (line: PstoLineAssignmentSummary) => void
   onRemove: (line: PstoLineAssignmentSummary) => void
 }) {
-  const counts = useMemo(() => ({
-    all: lines.length,
-    assigned: lines.filter((line) => line.assignedCount === line.rowCount).length,
-    cancelled: lines.filter((line) => line.cancelledCount === line.rowCount).length,
-    unassigned: lines.filter((line) => line.assignedCount === 0 && line.cancelledCount === 0).length,
-    partial: lines.filter((line) => (
-      line.assignedCount !== line.rowCount &&
-      line.cancelledCount !== line.rowCount &&
-      (line.assignedCount > 0 || line.cancelledCount > 0)
-    )).length,
-  }), [lines])
-  const filteredLines = useMemo(() => {
-    const needle = normalizeSearchText(search)
-    return lines.filter((line) => {
-      const matchesFilter = filter === 'all' || (
-        filter === 'assigned'
-          ? line.assignedCount === line.rowCount
-          : filter === 'cancelled'
-            ? line.cancelledCount === line.rowCount
-            : filter === 'unassigned'
-              ? line.assignedCount === 0 && line.cancelledCount === 0
-              : line.assignedCount !== line.rowCount &&
-                line.cancelledCount !== line.rowCount &&
-                (line.assignedCount > 0 || line.cancelledCount > 0)
-      )
-      if (!matchesFilter) return false
-      if (!needle) return true
-      return normalizeSearchText(`${line.projectTitle} ${line.subtitleCode} ${line.line}`).includes(needle)
-    })
-  }, [filter, lines, search])
-  const pagination = usePagePagination({ items: filteredLines, defaultPageSize: 25, resetKeys: [filter, search] })
-
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-slate-50">
       <div className="border-b border-slate-200 bg-white px-5 py-4">
@@ -368,7 +389,7 @@ function LineListView({
             />
           </label>
           <Button variant="outline" size="icon" onClick={onRefresh} aria-label="Обновить список линий">
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className={`h-4 w-4 ${fetching ? 'animate-spin' : ''}`} />
           </Button>
         </div>
         <div className="mt-3 flex flex-wrap gap-1 rounded-md border border-slate-200 bg-slate-50 p-1">
@@ -406,7 +427,7 @@ function LineListView({
             <p className="font-semibold">Не удалось загрузить программу ПСТО</p>
             <p className="mt-1">{error}</p>
           </div>
-        ) : pagination.pageItems.length === 0 ? (
+        ) : lines.length === 0 ? (
           <div className="flex min-h-[280px] items-center justify-center text-sm text-slate-500">
             Линии по выбранным условиям не найдены.
           </div>
@@ -419,7 +440,7 @@ function LineListView({
               <span>Назначение</span>
             </div>
             <div className="divide-y divide-slate-100">
-              {pagination.pageItems.map((line) => (
+              {lines.map((line) => (
                 <LineListRow
                   key={line.key}
                   line={line}
@@ -434,19 +455,27 @@ function LineListView({
       </div>
 
       <DialogRowPagination
-        totalCount={pagination.totalCount}
-        firstItemNumber={pagination.firstItemNumber}
-        lastItemNumber={pagination.lastItemNumber}
-        page={pagination.page}
-        pageCount={pagination.pageCount}
-        pageSize={pagination.pageSize}
-        onPreviousPage={pagination.goToPreviousPage}
-        onNextPage={pagination.goToNextPage}
-        onPageSizeChange={pagination.setPageSize}
+        totalCount={totalCount}
+        firstItemNumber={totalCount === 0 ? 0 : (page - 1) * pageSize + 1}
+        lastItemNumber={Math.min(page * pageSize, totalCount)}
+        page={page}
+        pageCount={pageCount}
+        pageSize={pageSize}
+        onPreviousPage={onPreviousPage}
+        onNextPage={onNextPage}
+        onPageSizeChange={onPageSizeChange}
         itemLabel="линий"
       />
     </div>
   )
+}
+
+const EMPTY_PSTO_LINE_COUNTS: Record<PstoLineAssignmentFilter, number> = {
+  all: 0,
+  assigned: 0,
+  cancelled: 0,
+  unassigned: 0,
+  partial: 0,
 }
 
 function LineListRow({

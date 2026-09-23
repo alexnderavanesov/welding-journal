@@ -10,5 +10,8 @@ export function useWeldRowsByIdsQuery(ids: number[]) {
     queryFn: () => listWeldJointRowsByIds({ data: { ids: normalizedIds } }),
     enabled: normalizedIds.length > 0,
     staleTime: 15_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 }

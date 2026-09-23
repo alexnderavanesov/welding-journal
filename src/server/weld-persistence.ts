@@ -34,8 +34,8 @@ import { calculateFinalStatus } from '@/lib/weld-status'
 import {
 type SystemDocumentSequenceTransaction
 } from '@/server/system-document-sequences'
-import { splitNumberBatches } from '@/server/weld-request-utils'
-import { inArray,sql,type SQL } from 'drizzle-orm'
+import { buildNumberArrayMatch } from '@/server/weld-request-utils'
+import { sql,type SQL } from 'drizzle-orm'
 
 import {
 WELD_TABLE_COLUMNS,
@@ -170,15 +170,15 @@ export async function updateWeldJointsInBatches(
   const now = new Date()
   const payloads = records.map((record) => buildWeldBatchUpdatePayload(record, previousRows, now))
   const ids = records.map((record) => Number(record.id))
-  const lockedRows: Array<{ id: number }> = []
-  for (const idBatch of splitNumberBatches([...ids].sort((left, right) => left - right), 1000)) {
-    lockedRows.push(...await tx
-      .select({ id: weldJoints.id })
-      .from(weldJoints)
-      .where(inArray(weldJoints.id, idBatch))
-      .orderBy(weldJoints.id)
-      .for('update'))
-  }
+  const lockedRows = await tx
+    .select({ id: weldJoints.id })
+    .from(weldJoints)
+    .where(buildNumberArrayMatch(
+      weldJoints.id,
+      [...ids].sort((left, right) => left - right),
+    ))
+    .orderBy(weldJoints.id)
+    .for('update')
   if (lockedRows.length !== ids.length) {
     throw new Error('Одна или несколько обновляемых записей больше не существуют.')
   }

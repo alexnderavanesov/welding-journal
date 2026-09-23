@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 
 export const DISPATCHER_GROUP_BATCH_SIZE = 80
+export const DISPATCHER_CODE_BATCH_SIZE = 15
+export const DISPATCHER_OBJECT_BATCH_SIZE = 10
+export const DISPATCHER_JOINT_TASK_BATCH_SIZE = 10
 export const DISPATCHER_TASK_BATCH_SIZE = 40
 
 export function getNextDispatcherGroupCount(

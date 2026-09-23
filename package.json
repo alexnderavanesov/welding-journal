@@ -16,6 +16,7 @@
     "maintenance:normalize-control-assignments:remote": "node --import tsx scripts/normalize-control-assignment-values.ts --remote",
     "benchmark:lnk-load": "tsx scripts/benchmark-lnk-load.ts",
     "benchmark:psto-registry": "tsx scripts/benchmark-psto-line-registry.ts",
+    "benchmark:duplicate-control": "tsx scripts/benchmark-duplicate-control-window.ts",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:generate": "drizzle-kit generate",

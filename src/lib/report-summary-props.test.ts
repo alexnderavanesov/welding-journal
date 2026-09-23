@@ -28,4 +28,14 @@ describe('createReportSummaryBarProps', () => {
     expect(props.lnkRowCount).toBe(67)
     expect(props.availableLnkRequestRowCount).toBe(56)
   })
+
+  it('marks a previously saved WDI sum while final statuses are recalculated', () => {
+    const props = createReportSummaryBarProps({
+      activeReport: 'weldingJournal', left: 0, isLoading: false,
+      weldingRows: [], acceptedWdiTotal: 42, isAcceptedWdiRecalculating: true,
+      heatTreatmentRows: [], selectedHeatTreatmentRowCount: 0,
+      lnkRows: [], availableLnkRequestRows: [], welderStamps: [], filteredWelderStamps: [],
+    })
+    expect(props.acceptedWdiTotalText).toContain('пересчёт')
+  })
 })

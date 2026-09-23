@@ -7,6 +7,18 @@ type CreateReportTaskPanelsPropsOptions = {
   activeReport: ActiveReport
   repeatedJointTasks: RepeatedJointTask[]
   repeatedJointTaskGroups: RepeatedJointTaskGroup[]
+  repeatedJointTaskCount?: number
+  computedRevision?: number
+  taskFilterOptions?: Array<{ value: string; count: number; label: string }>
+  hasMoreTasks?: boolean
+  onLoadMoreTasks?: () => void
+  isTaskBatchLoading?: boolean
+  taskBatchError?: string
+  onRetryTaskBatch?: () => void
+  onRefreshTasks?: () => Promise<number | undefined>
+  dispatcherTasksRefreshing?: boolean
+  dispatcherWorkspaceOpen: boolean
+  onDispatcherWorkspaceOpenChange: (open: boolean) => void
   welderStampExpiryTasks: WelderStampExpiryTask[]
   welderStampNotificationGroups: RepeatedJointTaskGroup[]
   stickyLeft: number
@@ -15,14 +27,24 @@ type CreateReportTaskPanelsPropsOptions = {
   onToggleDetails: (task: DispatcherTask) => void
   onCollapseTaskDetails: () => void
   onDismissTasks: (tasks: DispatcherTask[]) => void
-  columnFilters: Record<string, string>
-  onColumnFiltersChange: (filters: Record<string, string>) => void
 }
 
 export function createReportTaskPanelsProps({
   activeReport,
   repeatedJointTasks,
   repeatedJointTaskGroups,
+  repeatedJointTaskCount,
+  computedRevision,
+  taskFilterOptions,
+  hasMoreTasks,
+  onLoadMoreTasks,
+  isTaskBatchLoading,
+  taskBatchError,
+  onRetryTaskBatch,
+  onRefreshTasks,
+  dispatcherTasksRefreshing,
+  dispatcherWorkspaceOpen,
+  onDispatcherWorkspaceOpenChange,
   welderStampExpiryTasks,
   welderStampNotificationGroups,
   stickyLeft,
@@ -31,13 +53,23 @@ export function createReportTaskPanelsProps({
   onToggleDetails,
   onCollapseTaskDetails,
   onDismissTasks,
-  columnFilters,
-  onColumnFiltersChange,
 }: CreateReportTaskPanelsPropsOptions): ReportTaskPanelsProps {
   return {
     activeReport,
     repeatedJointTasks,
     repeatedJointTaskGroups,
+    repeatedJointTaskCount,
+    computedRevision,
+    taskFilterOptions,
+    hasMoreTasks,
+    onLoadMoreTasks,
+    isTaskBatchLoading,
+    taskBatchError,
+    onRetryTaskBatch,
+    onRefreshTasks,
+    dispatcherTasksRefreshing,
+    dispatcherWorkspaceOpen,
+    onDispatcherWorkspaceOpenChange,
     welderStampExpiryTasks,
     welderStampNotificationGroups,
     stickyLeft,
@@ -46,7 +78,5 @@ export function createReportTaskPanelsProps({
     onToggleDetails,
     onCollapseTaskDetails,
     onDismissTasks,
-    columnFilters,
-    onColumnFiltersChange,
   }
 }

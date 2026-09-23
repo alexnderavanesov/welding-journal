@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, sql } from 'drizzle-orm'
+import { and, count, eq, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import {
@@ -25,7 +25,7 @@ import {
 } from '@/server/control-process-settings-lock'
 import { rebuildAllLayeredControlDocumentsInTransaction } from '@/server/layered-control-documents'
 import type { GeneratedDocumentsTransaction } from '@/server/generated-document-number-sequence'
-import { splitNumberBatches } from '@/server/weld-request-utils'
+import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { assertSecurityScope } from '@/server/security-functions'
 
 type ControlProcessRow = Pick<
@@ -85,16 +85,7 @@ export async function getPreHeatTreatmentLnkExemptionsForNewRows(
   )
   const identities = [...identitiesByKey.values()]
   const exemptLineKeys = new Set<string>()
-  for (let offset = 0; offset < identities.length; offset += 500) {
-    const chunk = identities.slice(offset, offset + 500)
-    const identityTuples = sql.join(
-      chunk.map((identity) => sql`(
-        ${normalizePstoLineIdentityPart(identity.projectTitle)},
-        ${normalizePstoLineIdentityPart(identity.subtitleCode)},
-        ${normalizePstoLineIdentityPart(identity.line)}
-      )`),
-      sql`, `,
-    )
+  if (identities.length > 0) {
     const exemptLines = await tx
       .select({
         projectTitle: weldJoints.projectTitle,
@@ -104,11 +95,17 @@ export async function getPreHeatTreatmentLnkExemptionsForNewRows(
       .from(weldJoints)
       .where(and(
         eq(weldJoints.preHeatTreatmentLnkExempt, true),
-        sql`(
-          lower(btrim(coalesce(${weldJoints.projectTitle}, ''))),
-          lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))),
-          lower(btrim(coalesce(${weldJoints.line}, '')))
-        ) in (${identityTuples})`,
+        sql`exists (
+          select 1
+          from unnest(
+            ${sql.param(identities.map((identity) => normalizePstoLineIdentityPart(identity.projectTitle)))}::text[],
+            ${sql.param(identities.map((identity) => normalizePstoLineIdentityPart(identity.subtitleCode)))}::text[],
+            ${sql.param(identities.map((identity) => normalizePstoLineIdentityPart(identity.line)))}::text[]
+          ) as target(project_title, subtitle_code, line)
+          where lower(btrim(coalesce(${weldJoints.projectTitle}, ''))) = target.project_title
+            and lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))) = target.subtitle_code
+            and lower(btrim(coalesce(${weldJoints.line}, ''))) = target.line
+        )`,
       ))
       .groupBy(weldJoints.projectTitle, weldJoints.subtitleCode, weldJoints.line)
     for (const exemptLine of exemptLines) {
@@ -270,24 +267,21 @@ async function restorePreHeatTreatmentRequirementsForUnstartedLines(
   if (rows.length === 0) return
 
   const rowIds = rows.map((row) => row.id)
-  const repeatRows: Array<{ weldJointId: number }> = []
-  for (const rowIdBatch of splitNumberBatches(rowIds, 1000)) {
-    repeatRows.push(...await tx
-      .select({ weldJointId: pstoRepeatCycles.weldJointId })
-      .from(pstoRepeatCycles)
-      .where(inArray(pstoRepeatCycles.weldJointId, rowIdBatch)))
-  }
+  const repeatRows = await tx
+    .select({ weldJointId: pstoRepeatCycles.weldJointId })
+    .from(pstoRepeatCycles)
+    .where(buildNumberArrayMatch(pstoRepeatCycles.weldJointId, rowIds))
   const retainIds = new Set(getPreHeatTreatmentExemptionIdsToRetain(
     rows,
     new Set(repeatRows.map((row) => row.weldJointId)),
   ))
   const releaseIds = rowIds.filter((id) => !retainIds.has(id))
 
-  for (const batch of splitNumberBatches(releaseIds, 1000)) {
+  if (releaseIds.length > 0) {
     await tx
       .update(weldJoints)
       .set({ preHeatTreatmentLnkExempt: false, updatedAt: new Date() })
-      .where(inArray(weldJoints.id, batch))
+      .where(buildNumberArrayMatch(weldJoints.id, releaseIds))
   }
 }
 

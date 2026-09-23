@@ -37,6 +37,7 @@ import {
   getPstoChronologyRootCauseActions,
   type WorkflowRootCauseAction,
 } from '@/lib/workflow-root-cause-actions'
+import { WORKFLOW_CANDIDATE_PAGE_SIZE } from '@/server/weld-contracts'
 
 export type PstoRequestDialogProps = {
   nextRequestName: string
@@ -261,7 +262,9 @@ export function PstoRequestDialog({
       <div className="flex min-h-0 flex-1 overflow-hidden px-5 py-3">
         <RequestRowsPanel
           title="Стыки"
-          description=""
+          description={rowsViewMode === 'all' && heatTreatmentRowsCount >= WORKFLOW_CANDIDATE_PAGE_SIZE
+            ? `Загружены первые ${WORKFLOW_CANDIDATE_PAGE_SIZE} подходящих стыков. Уточните поиск, если нужного стыка нет в списке.`
+            : ''}
           viewToggle={(
             <SelectedRowsViewToggle
               mode={rowsViewMode}

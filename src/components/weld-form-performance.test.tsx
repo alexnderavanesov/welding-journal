@@ -184,6 +184,9 @@ describe('weld form input performance', () => {
     expect(onSave).not.toHaveBeenCalled()
   })
 
+  // This verifies the debounced callback, not a wall-clock rendering SLA.
+  // Rendering the full form can exceed Vitest's 5-second default when its
+  // worker runs alongside hundreds of other test files.
   it('reports a changed line identity before the form is saved', async () => {
     const onLineIdentityChange = vi.fn()
     HTMLElement.prototype.scrollTo = vi.fn()
@@ -215,7 +218,7 @@ describe('weld form input performance', () => {
       subtitleCode: '400',
       line: 'L-2',
     }))
-  })
+  }, 15_000)
 })
 
 function renderWithQueryClient(children: ReactNode) {

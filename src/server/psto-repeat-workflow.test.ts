@@ -79,19 +79,18 @@ describe('PSTO cycle workflow payload', () => {
     expect(saved.map((cycle) => cycle.weldJointId)).toEqual(writes.map((write) => write.weldJointId))
   })
 
-  it('locks a production-sized repeat-cycle update in globally ordered chunks', async () => {
-    const lockedBatches = [
-      Array.from({ length: 1_000 }, (_, index) => ({ id: index + 1 })),
-      Array.from({ length: 1_000 }, (_, index) => ({ id: index + 1_001 })),
-      [{ id: 2_001 }],
-    ]
+  it('locks a production-sized repeat-cycle update in one globally ordered query', async () => {
+    const lockedRows = Array.from({ length: 2_001 }, (_, index) => ({ id: index + 1 }))
     let lockQueryCount = 0
     const tx = {
       select: () => ({
         from: () => ({
           where: () => ({
             orderBy: () => ({
-              for: async () => lockedBatches[lockQueryCount++] ?? [],
+              for: async () => {
+                lockQueryCount += 1
+                return lockedRows
+              },
             }),
           }),
         }),
@@ -110,12 +109,12 @@ describe('PSTO cycle workflow payload', () => {
 
     const saved = await saveRepeatCycleWrites(tx as never, 'pstoResult', writes)
 
-    expect(lockQueryCount).toBe(3)
+    expect(lockQueryCount).toBe(1)
     expect(saved).toHaveLength(2_001)
     expect(saved.at(-1)?.id).toBe(2_001)
   })
 
-  it('deletes production-sized repeat-cycle selections in bounded chunks', async () => {
+  it('deletes production-sized repeat-cycle selections with one array-bound query', async () => {
     const batchSizes: number[] = []
     const tx = {
       delete: () => ({
@@ -130,7 +129,7 @@ describe('PSTO cycle workflow payload', () => {
       Array.from({ length: 2_001 }, (_, index) => index + 1),
     )
 
-    expect(batchSizes).toHaveLength(3)
+    expect(batchSizes).toHaveLength(1)
   })
 
   it('starts cycle 2 after a failed TVMT result in the primary cycle', () => {

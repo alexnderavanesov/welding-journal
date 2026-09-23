@@ -115,12 +115,64 @@ describe('LNK modal workflow queries', () => {
     expect(query.sql).toContain('"pre_heat_treatment_controls"')
   })
 
+  it('narrows candidate rows by the selected method and request before applying the limit', () => {
+    const requestQuery = compileWhere({
+      scope: 'requestCandidates',
+      methodKeys: ['rkRequest'],
+    })
+    expect(requestQuery.sql).toContain('"weld_joints"."has_rk"')
+    expect(requestQuery.sql).toContain('"weld_joints"."rk_request"')
+
+    const resultQuery = compileWhere({
+      scope: 'resultCandidates',
+      methodKeys: ['rkRequest'],
+      requestName: 'РК-17',
+      requestDate: '2026-09-22',
+    })
+    expect(resultQuery.sql).toContain('"weld_joints"."rk_result"')
+    expect(resultQuery.params).toEqual(expect.arrayContaining(['РК-17', '2026-09-22']))
+  })
+
+  it('narrows before-heat-treatment candidates by relation method and request', () => {
+    const query = compileWhere({
+      scope: 'preHeatTreatmentResultCandidates',
+      methodKeys: ['uzkRequest'],
+      requestName: 'УЗК-ДО-17',
+      requestDate: '2026-09-22',
+    })
+
+    expect(query.sql).toContain('"pre_heat_treatment_controls"')
+    expect(query.params).toEqual(expect.arrayContaining(['УЗК', 'УЗК-ДО-17', '2026-09-22']))
+  })
+
+  it.each(['requestCandidates', 'resultCandidates'] as const)(
+    'keeps blocked %s rows searchable in strict mode so the UI can explain the missing stage',
+    (scope) => {
+      const strict = compileWhere({ scope, methodKeys: ['vikRequest'], allowPrimaryBeforePreviousStagesComplete: false })
+      const permissive = compileWhere({ scope, methodKeys: ['vikRequest'], allowPrimaryBeforePreviousStagesComplete: true })
+      expect(strict).toEqual(permissive)
+    },
+  )
+
+  it('limits the request manager to one selected request identity', () => {
+    const query = compileWhere({
+      scope: 'requestRegistry',
+      requestName: 'Заявка 17',
+      requestDate: '2026-09-22',
+    })
+
+    expect(query.sql).toContain('"weld_joints"."vik_request"')
+    expect(query.sql).toContain('"weld_joints"."vik_request_date"')
+    expect(query.params).toEqual(expect.arrayContaining(['Заявка 17', '2026-09-22']))
+  })
+
   it('limits result registries to final results and selected ids', () => {
     const query = compileWhere({ scope: 'resultRegistry', rowIds: [11, 7] })
 
-    expect(query.sql).toContain('"weld_joints"."id" in')
+    expect(query.sql).toContain('"weld_joints"."id" = any(')
     expect(query.sql).toContain('lower(btrim(coalesce("weld_joints"."vik_result"')
-    expect(query.params).toEqual(expect.arrayContaining([7, 11, 'годен', 'ремонт', 'вырез']))
+    expect(query.params).toContainEqual([7, 11])
+    expect(query.params).toEqual(expect.arrayContaining(['годен', 'ремонт', 'вырез']))
   })
 
   it('uses relation existence checks for before-heat-treatment registries', () => {
@@ -130,6 +182,14 @@ describe('LNK modal workflow queries', () => {
     expect(requestQuery.sql).toContain('exists (select')
     expect(requestQuery.sql).toContain('"pre_heat_treatment_controls"."request_name"')
     expect(resultQuery.sql).toContain('"pre_heat_treatment_controls"."result"')
+  })
+
+  it('loads an explicitly edited field row without applying a registry predicate', () => {
+    const query = compileWhere({ scope: 'fieldRows', rowIds: [13] })
+
+    expect(query.sql).toContain('"weld_joints"."id" = any(')
+    expect(query.params).toContainEqual([13])
+    expect(query.sql).not.toContain('"pre_heat_treatment_controls"."result"')
   })
 })
 

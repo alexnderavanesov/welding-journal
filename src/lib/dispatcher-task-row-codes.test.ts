@@ -13,6 +13,7 @@ import {
   DISPATCHER_TASKS_WITH_FILTER,
   DISPATCHER_TASKS_WITHOUT_FILTER,
   DISPATCHER_TASK_FILTER_KEY,
+  buildDispatcherTaskCodeIndexRows,
   buildDispatcherTaskIndexRows,
   buildMergedDispatcherTaskCodes,
   buildDispatcherTaskServerFilters,
@@ -205,6 +206,17 @@ describe('dispatcher task row codes', () => {
       { rowId: 1, taskKey: 'stamp-1', code: 'ДЗ-18' },
       { rowId: 1, taskKey: 'line-percent', code: 'ДЗ-24' },
       { rowId: 2, taskKey: 'line-percent', code: 'ДЗ-24' },
+    ])
+  })
+
+  it('deduplicates the scalable persisted index by row and code', () => {
+    const rows = [row(1), row(2)]
+    const first = lineTask(rows[0])
+    const second = { ...first, key: 'line-percent-duplicate' }
+
+    expect(buildDispatcherTaskCodeIndexRows([first, second], rows)).toEqual([
+      { rowId: 1, taskKey: 'code:ДЗ-24', code: 'ДЗ-24' },
+      { rowId: 2, taskKey: 'code:ДЗ-24', code: 'ДЗ-24' },
     ])
   })
 

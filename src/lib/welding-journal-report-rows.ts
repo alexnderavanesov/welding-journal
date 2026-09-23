@@ -5,6 +5,7 @@ import {
   parseRepeatedJointName,
 } from '@/lib/joint-chain'
 import { isUnofficialJoint } from '@/lib/joint-display'
+import { encodeIdentityKey } from '@/lib/identity-key'
 import { hasWeldDate } from '@/lib/report-value-utils'
 import {
   getExpectedRepeatedJointName,
@@ -28,9 +29,14 @@ export function buildWeldingJournalRowsByStatus(rows: WeldInput[], status: Weldi
 }
 
 export function buildWeldingJournalWaitingRepairRows(rows: WeldInput[]) {
-  const journalRows = buildWeldingJournalRows(rows)
+  const journalRows = buildWeldingJournalRows(rows).map((row, index) => (
+    normalizeFinalStatus(rows[index]?.finalStatus) === 'ожидает ремонт'
+      ? { ...row, finalStatus: 'ожидает ремонт' }
+      : row
+  ))
+  const previousRejectedSourceLookup = buildPreviousRejectedSourceLookup(journalRows)
   return journalRows.flatMap((row) => {
-    const sourceRow = findPreviousRejectedSourceRow(journalRows, row)
+    const sourceRow = findPreviousRejectedSourceRow(previousRejectedSourceLookup, row)
     const isWaitingRepair = normalizeFinalStatus(row.finalStatus) === 'ожидает ремонт'
     if (!isWaitingRepair && !sourceRow) return []
     return [
@@ -96,33 +102,44 @@ function isCancelledAcceptedResult(value: unknown) {
   return text === 'годен (отменен)' || text === 'проведено (отменен)'
 }
 
-function findPreviousRejectedSourceRow(rows: WeldInput[], targetRow: WeldInput) {
+type PreviousRejectedSources = { latest: WeldInput; previous?: WeldInput }
+
+function buildPreviousRejectedSourceLookup(rows: WeldInput[]) {
+  const lookup = new Map<string, PreviousRejectedSources>()
+  for (const row of rows) {
+    const sourceJoint = String(row.joint ?? '').trim()
+    if (!sourceJoint) continue
+    const rejectedResult = getPrimaryRejectedLnkResult(row)
+    if (!rejectedResult) continue
+    const expectedTargetJoint = getExpectedRepeatedJointName(row, sourceJoint, rejectedResult.result)
+    const key = getPreviousRejectedSourceKey(row, expectedTargetJoint)
+    const sources = lookup.get(key)
+    if (!sources) {
+      lookup.set(key, { latest: row })
+    } else if (compareReportRowsByJoint(row, sources.latest) >= 0) {
+      lookup.set(key, { latest: row, previous: sources.latest })
+    } else if (!sources.previous || compareReportRowsByJoint(row, sources.previous) >= 0) {
+      sources.previous = row
+    }
+  }
+  return lookup
+}
+
+function findPreviousRejectedSourceRow(lookup: Map<string, PreviousRejectedSources>, targetRow: WeldInput) {
   if (hasWeldDate(targetRow)) return null
   const targetJoint = String(targetRow.joint ?? '').trim()
   if (!targetJoint) return null
-  const normalizedTargetJoint = normalizeJointChainPart(targetJoint)
-  return (
-    rows
-      .filter((sourceRow) => sourceRow !== targetRow)
-      .filter((sourceRow) => isSameLineIdentity(sourceRow, targetRow))
-      .filter((sourceRow) => {
-        const sourceJoint = String(sourceRow.joint ?? '').trim()
-        const rejectedResult = getPrimaryRejectedLnkResult(sourceRow)
-        if (!sourceJoint || !rejectedResult) return false
-        const expectedTargetJoint = getExpectedRepeatedJointName(sourceRow, sourceJoint, rejectedResult.result)
-        return normalizeJointChainPart(expectedTargetJoint) === normalizedTargetJoint
-      })
-      .sort(compareReportRowsByJoint)
-      .at(-1) ?? null
-  )
+  const sources = lookup.get(getPreviousRejectedSourceKey(targetRow, targetJoint))
+  return sources?.latest === targetRow ? sources.previous ?? null : sources?.latest ?? null
 }
 
-function isSameLineIdentity(left: WeldInput, right: WeldInput) {
-  return (
-    normalizeJointChainPart(left.projectTitle) === normalizeJointChainPart(right.projectTitle) &&
-    normalizeJointChainPart(left.subtitleCode) === normalizeJointChainPart(right.subtitleCode) &&
-    normalizeJointChainPart(left.line) === normalizeJointChainPart(right.line)
-  )
+function getPreviousRejectedSourceKey(row: WeldInput, joint: string) {
+  return encodeIdentityKey([
+    normalizeJointChainPart(row.projectTitle),
+    normalizeJointChainPart(row.subtitleCode),
+    normalizeJointChainPart(row.line),
+    normalizeJointChainPart(joint),
+  ])
 }
 
 function compareReportRowsByJoint(left: WeldInput, right: WeldInput) {
@@ -140,7 +157,7 @@ function getPreviousSystemJointName(joint: string) {
   const parsed = parseRepeatedJointName(trimmedJoint)
   const segments = parsed.segments.map((segment) => ({ ...segment }))
   const lastSegment = segments.at(-1)
-  if (!lastSegment) return ''
+  if (!lastSegment) return `${trimmedJoint} неофициальный`
   if (lastSegment.index > 1) {
     segments[segments.length - 1] = { ...lastSegment, index: lastSegment.index - 1 }
   } else {

@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { asc, eq, inArray, sql } from 'drizzle-orm'
+import { asc, eq, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import {
@@ -70,7 +70,7 @@ import {
   assertExpectedInteractiveWeldVersions,
   lockInteractiveWeldRows,
 } from '@/server/weld-row-version'
-import { splitNumberBatches } from '@/server/weld-request-utils'
+import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { attachSystemDocumentIds } from '@/server/generated-document-row-fields'
 import { buildPrimaryLnkStageDebtSystemWarnings } from '@/lib/repeated-joint-check-tasks'
 
@@ -169,11 +169,12 @@ export const transferLnkDocumentStage = createServerFn({ method: 'POST' })
           sourceKind: 'beforeHeatTreatment',
           relationIds: context.controls.map((control) => control.id),
         })
-        for (const idBatch of splitNumberBatches(context.controls.map((control) => control.id), 1000)) {
-          await tx
-            .delete(preHeatTreatmentControls)
-            .where(inArray(preHeatTreatmentControls.id, idBatch))
-        }
+        await tx
+          .delete(preHeatTreatmentControls)
+          .where(buildNumberArrayMatch(
+            preHeatTreatmentControls.id,
+            context.controls.map((control) => control.id),
+          ))
         const updatedRows = await persistPrimaryStageRows(tx, nextRows)
         nextRows = mergeAttachedRelations(updatedRows, nextRows)
         await syncSystemDocumentsForWeldChangesInTransaction(tx, nextRows, previousRows)
@@ -236,14 +237,15 @@ async function loadTransferContext(
     })
     const relationIds = [...new Set(sourcePositions.map((position) => position.relationId))]
     if (relationIds.length > 0) {
-      for (const idBatch of splitNumberBatches([...relationIds].sort((left, right) => left - right), 1000)) {
-        const controlsQuery = tx
-          .select()
-          .from(preHeatTreatmentControls)
-          .where(inArray(preHeatTreatmentControls.id, idBatch))
-          .orderBy(asc(preHeatTreatmentControls.id))
-        controls.push(...(lock ? await controlsQuery.for('update') : await controlsQuery))
-      }
+      const controlsQuery = tx
+        .select()
+        .from(preHeatTreatmentControls)
+        .where(buildNumberArrayMatch(
+          preHeatTreatmentControls.id,
+          [...relationIds].sort((left, right) => left - right),
+        ))
+        .orderBy(asc(preHeatTreatmentControls.id))
+      controls = lock ? await controlsQuery.for('update') : await controlsQuery
     }
     if (controls.length !== relationIds.length) {
       throw new Error('Часть позиций НК до ТО уже изменена. Обновите раздел «Документы».')
@@ -501,15 +503,14 @@ async function loadWeldRowsByIds(
   tx: SystemDocumentSequenceTransaction,
   rowIds: readonly number[],
 ) {
-  const rows: Array<typeof weldJoints.$inferSelect & { rowVersion: string }> = []
-  for (const idBatch of splitNumberBatches([...rowIds].sort((left, right) => left - right), 1000)) {
-    rows.push(...await tx
-      .select(WELD_TABLE_RETURNING)
-      .from(weldJoints)
-      .where(inArray(weldJoints.id, idBatch))
-      .orderBy(asc(weldJoints.id)))
-  }
-  return rows
+  return tx
+    .select(WELD_TABLE_RETURNING)
+    .from(weldJoints)
+    .where(buildNumberArrayMatch(
+      weldJoints.id,
+      [...rowIds].sort((left, right) => left - right),
+    ))
+    .orderBy(asc(weldJoints.id))
 }
 
 function getValidatedSourceStage(

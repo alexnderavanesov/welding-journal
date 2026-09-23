@@ -2,6 +2,7 @@ import type {
   LnkWorkflowRowsRequest,
   LnkWorkflowRowScope,
 } from '@/server/weld-contracts'
+import type { WeldFieldKey } from '@/lib/weld-fields'
 
 type LnkWorkflowModalState = {
   shouldLoadFullWeldRows: boolean
@@ -15,35 +16,57 @@ type LnkWorkflowModalState = {
   preHeatTreatmentResultManagerMode: 'request' | 'result'
   managedLnkResultOrderIds: readonly number[] | null
   preHeatTreatmentResultManagerRowIds: readonly number[] | null
-}
-
-export function shouldLoadFullLnkReportContext({
-  shouldLoadFullWeldRows,
-  isLnkShowMenuOpen,
-  isLnkFieldEditing,
-}: {
-  shouldLoadFullWeldRows: boolean
-  isLnkShowMenuOpen: boolean
-  isLnkFieldEditing: boolean
-}) {
-  return !shouldLoadFullWeldRows && (isLnkShowMenuOpen || isLnkFieldEditing)
+  fieldEditingRowId: number | null
+  managedLnkRequestName: string
+  managedLnkRequestDate: string
+  requestCandidateRowIds: readonly number[]
+  requestCandidateSearch: string
+  requestCandidateMethodKeys: readonly WeldFieldKey[]
+  resultCandidateRowIds: readonly number[]
+  resultCandidateSearch: string
+  resultCandidateMethodKey: WeldFieldKey | ''
+  resultCandidateRequestName: string
+  resultCandidateRequestDate: string
+  allowPrimaryBeforePreviousStagesComplete: boolean
+  officialityCandidateRowIds: readonly number[]
+  officialityCandidateSearch: string
+  otherCandidateRowIds: readonly number[]
+  otherCandidateSearch: string
+  otherCandidateMethodKeys: readonly WeldFieldKey[]
+  otherCandidateRequestName: string
+  otherCandidateRequestDate: string
+  resultRegistrySearch: string
+  resultRegistryFilter: 'all' | 'годен' | 'ремонт' | 'вырез'
+  resultRegistryLimit: number
 }
 
 export function shouldLoadLnkWorkflowSummary({
   isLnkReportActive,
   shouldLoadFullWeldRows,
   isLnkWorkflowMenuOpen,
-  isLnkRequestModalOpen,
-  isLnkRequestManagerOpen,
 }: {
   isLnkReportActive: boolean
   shouldLoadFullWeldRows: boolean
   isLnkWorkflowMenuOpen: boolean
+}) {
+  return isLnkReportActive && !shouldLoadFullWeldRows && isLnkWorkflowMenuOpen
+}
+
+export function shouldLoadLnkWorkflowRequestSummary({
+  isLnkReportActive,
+  shouldLoadFullWeldRows,
+  isLnkRequestModalOpen,
+  isLnkRequestManagerOpen,
+  isLnkFieldEditing,
+}: {
+  isLnkReportActive: boolean
+  shouldLoadFullWeldRows: boolean
   isLnkRequestModalOpen: boolean
   isLnkRequestManagerOpen: boolean
+  isLnkFieldEditing: boolean
 }) {
   return isLnkReportActive && !shouldLoadFullWeldRows && (
-    isLnkWorkflowMenuOpen || isLnkRequestModalOpen || isLnkRequestManagerOpen
+    isLnkRequestModalOpen || isLnkRequestManagerOpen || isLnkFieldEditing
   )
 }
 
@@ -52,23 +75,73 @@ export function getLnkWorkflowRowsRequest(
 ): LnkWorkflowRowsRequest | null {
   if (state.shouldLoadFullWeldRows) return null
   if (state.isLnkRequestModalOpen) {
-    return candidateRequest('requestCandidates')
+    return candidateRequest(
+      'requestCandidates',
+      state.requestCandidateRowIds,
+      state.requestCandidateSearch,
+      {
+        methodKeys: state.requestCandidateMethodKeys,
+        allowPrimaryBeforePreviousStagesComplete: state.allowPrimaryBeforePreviousStagesComplete,
+      },
+    )
   }
-  if (state.isLnkRequestManagerOpen) return { scope: 'requestRegistry', rowIds: null }
+  if (state.isLnkRequestManagerOpen) {
+    const requestName = state.managedLnkRequestName.trim()
+    return requestName
+      ? {
+          scope: 'requestRegistry',
+          rowIds: null,
+          requestName,
+          requestDate: state.managedLnkRequestDate.trim(),
+        }
+      : null
+  }
   if (state.isLnkResultModalOpen) {
-    return candidateRequest('resultCandidates')
+    return candidateRequest(
+      'resultCandidates',
+      state.resultCandidateRowIds,
+      state.resultCandidateSearch,
+      {
+        methodKeys: state.resultCandidateMethodKey ? [state.resultCandidateMethodKey] : [],
+        requestName: state.resultCandidateRequestName,
+        requestDate: state.resultCandidateRequestDate,
+        allowPrimaryBeforePreviousStagesComplete: state.allowPrimaryBeforePreviousStagesComplete,
+      },
+    )
   }
   if (state.isLnkResultManagerOpen) {
-    return { scope: 'resultRegistry', rowIds: toIds(state.managedLnkResultOrderIds) }
+    const rowIds = toIds(state.managedLnkResultOrderIds)
+    return {
+      scope: 'resultRegistry',
+      rowIds,
+      ...(rowIds === null && state.resultRegistrySearch.trim()
+        ? { search: state.resultRegistrySearch.trim() }
+        : {}),
+      ...(rowIds === null && state.resultRegistryFilter !== 'all'
+        ? { resultFilter: state.resultRegistryFilter }
+        : {}),
+      ...(rowIds === null ? { limit: state.resultRegistryLimit } : {}),
+    }
   }
   if (state.isLnkOfficialityModalOpen) {
-    return candidateRequest('officialityCandidates')
+    return candidateRequest(
+      'officialityCandidates',
+      state.officialityCandidateRowIds,
+      state.officialityCandidateSearch,
+    )
   }
   if (state.preHeatTreatmentLnkWorkflowMode) {
     return candidateRequest(
       state.preHeatTreatmentLnkWorkflowMode === 'request'
         ? 'preHeatTreatmentRequestCandidates'
         : 'preHeatTreatmentResultCandidates',
+      state.otherCandidateRowIds,
+      state.otherCandidateSearch,
+      {
+        methodKeys: state.otherCandidateMethodKeys,
+        requestName: state.otherCandidateRequestName,
+        requestDate: state.otherCandidateRequestDate,
+      },
     )
   }
   if (state.isPreHeatTreatmentResultManagerOpen) {
@@ -79,13 +152,36 @@ export function getLnkWorkflowRowsRequest(
       rowIds: toIds(state.preHeatTreatmentResultManagerRowIds),
     }
   }
+  if (state.fieldEditingRowId) {
+    return { scope: 'fieldRows', rowIds: [state.fieldEditingRowId] }
+  }
   return null
 }
 
 function candidateRequest(
   scope: LnkWorkflowRowScope,
+  includeRowIds: readonly number[] = [],
+  search = '',
+  filters: {
+    methodKeys?: readonly WeldFieldKey[]
+    requestName?: string
+    requestDate?: string
+    allowPrimaryBeforePreviousStagesComplete?: boolean
+  } = {},
 ): LnkWorkflowRowsRequest {
-  return { scope, rowIds: null }
+  return {
+    scope,
+    rowIds: null,
+    ...(includeRowIds.length > 0 ? { includeRowIds: [...includeRowIds] } : {}),
+    ...(search.trim() ? { search: search.trim() } : {}),
+    ...(filters.methodKeys?.length ? { methodKeys: [...filters.methodKeys] } : {}),
+    ...(filters.requestName?.trim()
+      ? { requestName: filters.requestName.trim(), requestDate: filters.requestDate?.trim() ?? '' }
+      : {}),
+    ...(filters.allowPrimaryBeforePreviousStagesComplete
+      ? { allowPrimaryBeforePreviousStagesComplete: true }
+      : {}),
+  }
 }
 
 function toIds(rowIds: readonly number[] | null) {

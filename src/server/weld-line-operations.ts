@@ -46,6 +46,6 @@ export const getWeldLineAutofill = createServerFn({ method: 'POST' })
   })
 
 export {
-getPstoLineRemovalPreview,getPstoWeldLineMovePreview,listPstoLineAssignments,
+getPstoLineRemovalPreview,getPstoWeldLineMovePreview,
 savePstoLineAssignment
 } from '@/server/psto-line-assignment'

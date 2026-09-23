@@ -10,6 +10,7 @@ type OpenTabularReportWindowOptions = {
   sheetName: string
   title: string
   filename: string
+  targetWindow?: Window
 }
 
 type OpenNonEmptyTabularReportWindowOptions = OpenTabularReportWindowOptions & {
@@ -17,11 +18,16 @@ type OpenNonEmptyTabularReportWindowOptions = OpenTabularReportWindowOptions & {
   blockedMessage?: string
 }
 
-export async function openTabularReportWindow({ rows, fields, sheetName, title, filename }: OpenTabularReportWindowOptions) {
+export function reserveTabularReportWindow(title: string) {
   const reportWindow = window.open('', '_blank')
   if (!reportWindow) return false
-
   writeReportLoadingState(reportWindow, title)
+  return reportWindow
+}
+
+export async function openTabularReportWindow({ rows, fields, sheetName, title, filename, targetWindow }: OpenTabularReportWindowOptions) {
+  const reportWindow = targetWindow ?? reserveTabularReportWindow(title)
+  if (!reportWindow || reportWindow.closed) return false
 
   try {
     const { buildExportXlsxBytes } = await import('@/lib/weld-export-xlsx-xml')
@@ -46,10 +52,14 @@ export async function openNonEmptyTabularReportWindow({
   filename,
   emptyMessage,
   blockedMessage = 'Браузер заблокировал открытие новой вкладки',
+  targetWindow,
 }: OpenNonEmptyTabularReportWindowOptions) {
-  if (rows.length === 0) return { ok: false as const, message: emptyMessage }
+  if (rows.length === 0) {
+    targetWindow?.close()
+    return { ok: false as const, message: emptyMessage }
+  }
 
-  const opened = await openTabularReportWindow({ rows, fields, sheetName, title, filename })
+  const opened = await openTabularReportWindow({ rows, fields, sheetName, title, filename, targetWindow })
   return opened ? { ok: true as const } : { ok: false as const, message: blockedMessage }
 }
 

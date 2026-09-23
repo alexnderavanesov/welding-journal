@@ -11,6 +11,7 @@ type CreateReportSummaryBarPropsOptions = {
   weldingRows: WeldRow[]
   weldingRowCount?: number
   acceptedWdiTotal: number
+  isAcceptedWdiRecalculating?: boolean
   heatTreatmentRows: WeldRow[]
   heatTreatmentRowCount?: number
   selectedHeatTreatmentRowCount: number
@@ -29,6 +30,7 @@ export function createReportSummaryBarProps({
   weldingRows,
   weldingRowCount,
   acceptedWdiTotal,
+  isAcceptedWdiRecalculating = false,
   heatTreatmentRows,
   heatTreatmentRowCount,
   selectedHeatTreatmentRowCount,
@@ -44,7 +46,7 @@ export function createReportSummaryBarProps({
     left,
     isLoading,
     weldingRowCount: weldingRowCount ?? weldingRows.length,
-    acceptedWdiTotalText: formatWdiTotal(acceptedWdiTotal),
+    acceptedWdiTotalText: `${formatWdiTotal(acceptedWdiTotal)}${isAcceptedWdiRecalculating ? ' (пересчёт)' : ''}`,
     heatTreatmentRowCount: heatTreatmentRowCount ?? heatTreatmentRows.length,
     selectedHeatTreatmentRowCount,
     lnkRowCount: lnkRowCount ?? lnkRows.length,

@@ -24,6 +24,9 @@ import {
 
 export type RepeatedJointTaskActionsProps = {
   task: DispatcherTask
+  className?: string
+  workspace?: boolean
+  hideViewActions?: boolean
   onShowTask: (task: DispatcherTask) => void
   onOpenTaskPicture: (task: Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>) => void
   onOpenTaskOfficiality: (task: DispatcherTask) => void
@@ -49,6 +52,9 @@ export type RepeatedJointTaskActionsProps = {
 
 export function RepeatedJointTaskActions({
   task,
+  className,
+  workspace = false,
+  hideViewActions = false,
   onShowTask,
   onOpenTaskPicture,
   onOpenTaskOfficiality,
@@ -71,23 +77,28 @@ export function RepeatedJointTaskActions({
   if (task.kind === 'welder-stamp-expiry') return null
 
   return (
-    <div data-dispatcher-task-actions className="flex shrink-0 items-center gap-1.5 px-2 py-1.5">
+    <div data-dispatcher-task-actions className={`${workspace ? 'flex w-full min-w-0 flex-wrap items-center gap-1.5 [&_button]:h-auto [&_button]:min-h-7 [&_button]:max-w-full [&_button]:whitespace-normal [&_button]:py-1 [&_button]:text-left [&_button]:leading-4' : 'flex shrink-0 items-center gap-1.5 px-2 py-1.5'} ${className ?? ''}`}>
+      <div data-dispatcher-workflow-actions={workspace ? '' : undefined} className="contents">
       {(task.kind === 'create' || task.kind === 'coil') && canRunDispatcherMutation ? (
         <>
           <Button type="button" size="sm" onClick={() => onCreateTask(task)} disabled={isCreatePending} className={dispatcherPrimaryActionButtonClass}>
-            {task.kind === 'coil' ? 'Катушка' : 'Создать'}
+            {workspace
+              ? task.kind === 'coil' ? `Создать катушку ${task.targetJoints.join(' + ')}` : `Создать ${task.targetJoint}`
+              : task.kind === 'coil' ? 'Катушка' : 'Создать'}
           </Button>
           <Button
             type="button"
             size="sm"
             variant="outline"
             onClick={() => onOpenTaskOfficiality(task)}
-            className={dispatcherActionButtonClass}
+            className={workspace ? dispatcherPrimaryActionButtonClass : dispatcherActionButtonClass}
             aria-label={isUnofficialJoint(task.row)
               ? `Сделать ${String(task.row.joint ?? '-')} официальным`
               : `Сделать ${String(task.row.joint ?? '-')} неофициальным`}
           >
-            {isUnofficialJoint(task.row) ? 'Официальный' : 'Неофициальный'}
+            {workspace
+              ? isUnofficialJoint(task.row) ? 'Сделать официальным' : 'Сделать неофициальным'
+              : isUnofficialJoint(task.row) ? 'Официальный' : 'Неофициальный'}
           </Button>
           {task.kind === 'create' && canCreateEarlyCoil && !isUnofficialJoint(task.row) ? (
             <Button
@@ -96,27 +107,26 @@ export function RepeatedJointTaskActions({
               variant="outline"
               onClick={() => onCreateEarlyCoil(task)}
               disabled={isEarlyCoilPending}
-              className={dispatcherActionButtonClass}
+              className={workspace ? dispatcherPrimaryActionButtonClass : dispatcherActionButtonClass}
             >
-              Катушка досрочно
+              {workspace ? 'Врезать катушку досрочно' : 'Катушка досрочно'}
             </Button>
           ) : null}
         </>
       ) : task.kind === 'delete' && canRunDispatcherMutation ? (
         <>
           <Button type="button" size="sm" variant="outline" onClick={() => onDeleteTask(task)} disabled={isDeletePending} className={dispatcherDangerActionButtonClass}>
-            Удалить
+            {workspace ? `Удалить ${task.targetJoint}` : 'Удалить'}
           </Button>
         </>
       ) : task.kind === 'rename' && canRunDispatcherMutation ? (
         <>
           <Button type="button" size="sm" onClick={() => onRenameTask(task)} disabled={isRenamePending} className={dispatcherPrimaryActionButtonClass}>
-            Переименовать
+            {workspace ? `Переименовать в ${task.targetJoint}` : 'Переименовать'}
           </Button>
         </>
       ) : task.kind === 'percentage-line-control' && task.issue === 'rejected-primary' ? (
-        <DispatcherActionMenu
-          items={[
+        <WorkspaceOrMenuActions workspace={workspace} items={[
             {
               label: 'Принять',
               onClick: () => onAcceptPercentageLineTask(task),
@@ -125,20 +135,16 @@ export function RepeatedJointTaskActions({
               label: 'Сменить официальность',
               onClick: () => onOpenTaskOfficiality(task),
             },
-          ]}
-        />
+          ]} />
       ) : task.kind === 'percentage-line-control' && task.issue === 'excess' ? (
-        <DispatcherActionMenu
-          items={[
+        <WorkspaceOrMenuActions workspace={workspace} items={[
             {
               label: 'Принять',
               onClick: () => onAcceptPercentageLineTask(task),
             },
-          ]}
-        />
+          ]} />
       ) : task.kind === 'percentage-line-control' && task.issue === 'new-welder' ? (
-        <DispatcherActionMenu
-          items={[
+        <WorkspaceOrMenuActions workspace={workspace} items={[
             {
               label: 'Исправить клеймо',
               onClick: () => onEditPercentageLineTaskStamp(task),
@@ -147,11 +153,9 @@ export function RepeatedJointTaskActions({
               label: 'Принять',
               onClick: () => onAcceptPercentageLineTask(task),
             },
-          ]}
-        />
+          ]} />
       ) : task.kind === 'percentage-line-control' && task.issue === 'suspend-welder' ? (
-        <DispatcherActionMenu
-          items={[
+        <WorkspaceOrMenuActions workspace={workspace} items={[
             {
               label: 'Отстранить',
               onClick: () => onSuspendPercentageLineWelder(task),
@@ -160,14 +164,14 @@ export function RepeatedJointTaskActions({
               label: 'Не отстранять',
               onClick: () => onSkipPercentageLineWelderSuspension(task),
             },
-          ]}
-        />
+          ]} />
       ) : task.kind === 'percentage-line-control' && task.issue === 'missing' ? (
         <ModeledDispatcherActions
           task={task}
           actions={getDispatcherTaskActionSpecs(task)}
           onRunTaskAction={onRunTaskAction}
           onShowTask={onShowTask}
+          workspace={workspace}
         />
       ) : task.kind === 'line-consistency' && task.fieldKey === 'pstoPresence' ? (
         <ModeledDispatcherActions
@@ -175,6 +179,7 @@ export function RepeatedJointTaskActions({
           actions={getDispatcherTaskActionSpecs(task)}
           onRunTaskAction={onRunTaskAction}
           onShowTask={onShowTask}
+          workspace={workspace}
         />
       ) : task.kind === 'check' ? (
         <ModeledDispatcherActions
@@ -182,14 +187,42 @@ export function RepeatedJointTaskActions({
           actions={getDispatcherTaskActionSpecs(task)}
           onRunTaskAction={onRunTaskAction}
           onShowTask={onShowTask}
+          workspace={workspace}
         />
       ) : null}
+      </div>
+      {hideViewActions ? null : (
+        <DispatcherTaskViewActions
+          task={task}
+          onShowTask={onShowTask}
+          onOpenTaskPicture={onOpenTaskPicture}
+          workspace={workspace}
+        />
+      )}
+    </div>
+  )
+}
+
+export function DispatcherTaskViewActions({
+  task,
+  onShowTask,
+  onOpenTaskPicture,
+  workspace = false,
+  className,
+}: Pick<RepeatedJointTaskActionsProps, 'task' | 'onShowTask' | 'onOpenTaskPicture' | 'workspace' | 'className'>) {
+  if (task.kind === 'welder-stamp-expiry') return null
+
+  return (
+    <div
+      data-dispatcher-view-actions={workspace ? '' : undefined}
+      className={workspace ? `flex shrink-0 flex-wrap items-center gap-1 ${className ?? ''}` : 'contents'}
+    >
       <Button
         type="button"
         size="sm"
-        variant="outline"
+        variant={workspace ? 'ghost' : 'outline'}
         onClick={() => onShowTask(task)}
-        className={dispatcherActionButtonClass}
+        className={workspace ? 'h-7 rounded-md px-2 text-xs font-medium text-slate-600 shadow-none hover:bg-slate-100 hover:text-slate-900' : dispatcherActionButtonClass}
         title="Показать связанные строки в текущем отчете"
       >
         Показать
@@ -198,9 +231,9 @@ export function RepeatedJointTaskActions({
         <Button
           type="button"
           size="sm"
-          variant="outline"
+          variant={workspace ? 'ghost' : 'outline'}
           onClick={() => onOpenTaskPicture(task)}
-          className={dispatcherActionButtonClass}
+          className={workspace ? 'h-7 rounded-md px-2 text-xs font-medium text-slate-600 shadow-none hover:bg-slate-100 hover:text-slate-900' : dispatcherActionButtonClass}
           title={task.kind === 'line-consistency' || task.kind === 'percentage-line-control'
             ? `Открыть картину линии ${String(task.row.line ?? '-').trim() || '-'}`
             : `Открыть картину стыка ${String(task.row.joint ?? '-').trim() || '-'}`}
@@ -212,16 +245,34 @@ export function RepeatedJointTaskActions({
   )
 }
 
+function WorkspaceOrMenuActions({ workspace, items }: { workspace: boolean; items: DispatcherActionMenuItem[] }) {
+  if (!workspace) return <DispatcherActionMenu items={items} />
+  return <>{items.map((item) => (
+    <Button
+      key={item.key ?? item.label}
+      type="button"
+      size="sm"
+      variant="outline"
+      className={item.tone === 'danger' ? dispatcherDangerActionButtonClass : dispatcherPrimaryActionButtonClass}
+      onClick={item.onClick}
+    >
+      {item.label}
+    </Button>
+  ))}</>
+}
+
 function ModeledDispatcherActions({
   task,
   actions,
   onRunTaskAction,
   onShowTask,
+  workspace = false,
 }: {
   task: Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>
   actions: DispatcherTaskActionSpec[]
   onRunTaskAction: RepeatedJointTaskActionsProps['onRunTaskAction']
   onShowTask: RepeatedJointTaskActionsProps['onShowTask']
+  workspace?: boolean
 }) {
   const workflowActions = actions.filter((action) => action.id !== 'show-task')
   const hasMultipleRootCauseActions = workflowActions.length > 1 &&
@@ -231,6 +282,21 @@ function ModeledDispatcherActions({
   const run = (action: DispatcherTaskActionSpec) => {
     if (action.id === 'show-task') onShowTask(task)
     else onRunTaskAction(task, action)
+  }
+
+  if (workspace) {
+    return <>{workflowActions.map((action) => (
+      <Button
+        key={action.key ?? `${action.id}:${action.label}`}
+        type="button"
+        size="sm"
+        variant="outline"
+        className={action.tone === 'danger' ? dispatcherDangerActionButtonClass : dispatcherPrimaryActionButtonClass}
+        onClick={() => run(action)}
+      >
+        {action.label}
+      </Button>
+    ))}</>
   }
 
   if (hasMultipleRootCauseActions) {

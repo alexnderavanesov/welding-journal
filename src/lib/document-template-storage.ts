@@ -53,7 +53,7 @@ import {
 import {
   deleteRemoteDocumentTemplate,
   getRemoteDocumentTemplate,
-  listRemoteDocumentTemplates,
+  listRemoteDocumentTemplatesWithFiles,
   saveRemoteDocumentTemplate,
   updateRemoteDocumentTemplate,
 } from '@/server/document-templates-api'
@@ -1192,22 +1192,7 @@ export async function loadDocumentTemplate(templateId: DocumentTemplateId) {
 }
 
 export async function loadDocumentTemplates() {
-  const summaries = await listRemoteDocumentTemplates()
-  const records = await Promise.all(
-    summaries.map(async (summary) => {
-      try {
-        return await loadDocumentTemplate(summary.id)
-      } catch (error) {
-        if (
-          error instanceof Error
-          && error.message.includes('Файл шаблона не найден в общем хранилище')
-        ) {
-          return undefined
-        }
-        throw error
-      }
-    }),
-  )
+  const records = (await listRemoteDocumentTemplatesWithFiles()).map(fromRemoteDocumentTemplate)
   return records.reduce<Partial<Record<DocumentTemplateId, StoredDocumentTemplate>>>((accumulator, record) => {
     if (record) accumulator[record.id] = record
     return accumulator

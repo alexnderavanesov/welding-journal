@@ -39,6 +39,8 @@ import {
   requiresPrimaryStageResolutionForAssignedPstoLine,
   type PstoLineAssignmentAction,
   type PstoLineActivationDecision,
+  type PstoLineAssignmentPageRequest,
+  type PstoLineAssignmentPageResult,
   type PstoLineIdentity,
   type PstoLineRemovalDecision,
   type PstoLineRemovalDisposition,
@@ -76,13 +78,16 @@ import {
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 import { syncPreHeatTreatmentDocumentsInTransaction } from '@/server/pre-heat-treatment-system-documents'
 import { assertSecurityScope } from '@/server/security-functions'
-import { loadPstoLineAssignmentSummaries } from '@/server/psto-line-assignment-summary'
+import {
+  loadPstoLineAssignmentSummaryPage,
+  normalizePstoLineAssignmentPageRequest,
+} from '@/server/psto-line-assignment-summary'
 import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
 import { WELD_TABLE_COLUMNS, WELD_TABLE_RETURNING } from '@/server/weld-server-shared'
 import { assertExpectedInteractiveWeldVersions } from '@/server/weld-row-version'
 import { lockWeldLineMemberships } from '@/server/weld-line-membership-lock'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
-import { splitNumberBatches } from '@/server/weld-request-utils'
+import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import {
   removeSourcedSystemDocumentPositionsInTransaction,
   syncSystemDocumentsForWeldChangesInTransaction,
@@ -111,10 +116,13 @@ export function normalizePstoLineAssignmentPayload(value: PstoLineAssignmentPayl
   return normalizePayload(value)
 }
 
-export const listPstoLineAssignments = createServerFn({ method: 'GET' })
-  .handler(async () => {
+export const listPstoLineAssignmentPage = createServerFn({ method: 'POST' })
+  .validator((value: PstoLineAssignmentPageRequest | undefined) =>
+    normalizePstoLineAssignmentPageRequest(value),
+  )
+  .handler(async ({ data }): Promise<PstoLineAssignmentPageResult> => {
     await assertSecurityScope('entry')
-    return loadPstoLineAssignmentSummaries(requireDb())
+    return loadPstoLineAssignmentSummaryPage(requireDb(), data)
   })
 
 export const getPstoLineRemovalPreview = createServerFn({ method: 'POST' })
@@ -293,29 +301,24 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
       if (storedRows.length === 0) throw new Error('Линия больше не найдена. Обновите программу ПСТО.')
       const rowIds = storedRows.map((row) => row.id)
       assertExpectedInteractiveWeldVersions(rowIds, data.expectedVersions, storedRows)
-      for (const rowIdBatch of splitNumberBatches(rowIds, 1000)) {
-        await tx
-          .select({ id: preHeatTreatmentControls.id })
-          .from(preHeatTreatmentControls)
-          .where(inArray(preHeatTreatmentControls.weldJointId, rowIdBatch))
-          .orderBy(asc(preHeatTreatmentControls.id))
-          .for('update')
-        await tx
-          .select({ id: pstoRepeatCycles.id })
-          .from(pstoRepeatCycles)
-          .where(inArray(pstoRepeatCycles.weldJointId, rowIdBatch))
-          .orderBy(asc(pstoRepeatCycles.id))
-          .for('update')
-      }
+      await tx
+        .select({ id: preHeatTreatmentControls.id })
+        .from(preHeatTreatmentControls)
+        .where(buildNumberArrayMatch(preHeatTreatmentControls.weldJointId, rowIds))
+        .orderBy(asc(preHeatTreatmentControls.id))
+        .for('update')
+      await tx
+        .select({ id: pstoRepeatCycles.id })
+        .from(pstoRepeatCycles)
+        .where(buildNumberArrayMatch(pstoRepeatCycles.weldJointId, rowIds))
+        .orderBy(asc(pstoRepeatCycles.id))
+        .for('update')
 
       const rowsWithRelations = await attachHeatTreatmentControlRelations(storedRows as WeldRow[], tx)
-      const duplicateRecords: Array<typeof duplicateControls.$inferSelect> = []
-      for (const rowIdBatch of splitNumberBatches(rowIds, 1000)) {
-        duplicateRecords.push(...await tx
-          .select()
-          .from(duplicateControls)
-          .where(inArray(duplicateControls.weldJointId, rowIdBatch)))
-      }
+      const duplicateRecords = await tx
+        .select()
+        .from(duplicateControls)
+        .where(buildNumberArrayMatch(duplicateControls.weldJointId, rowIds))
       const duplicatesByRowId = groupByRowId(duplicateRecords)
       const rows: WeldRow[] = rowsWithRelations.map((row) => ({
         ...row,
@@ -468,11 +471,9 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
       )
       await syncSystemDocumentsForWeldChangesInTransaction(tx, updatedRows, previousRows)
       if (preRelationIds.length > 0) {
-        for (const idBatch of splitNumberBatches(preRelationIds, 1000)) {
-          await tx
-            .delete(preHeatTreatmentControls)
-            .where(inArray(preHeatTreatmentControls.id, idBatch))
-        }
+        await tx
+          .delete(preHeatTreatmentControls)
+          .where(buildNumberArrayMatch(preHeatTreatmentControls.id, preRelationIds))
       }
       if (unstartedRepeatCycles.length > 0) {
         await deletePstoRepeatCyclesInTransaction(

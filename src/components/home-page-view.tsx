@@ -1,4 +1,5 @@
 import { memo, type ComponentProps } from 'react'
+import { DispatcherWorkspaceDialog } from '@/components/dispatcher-workspace-dialog'
 import { ReportDialogs } from '@/components/report-dialogs'
 import { ReportHeaderActions, type ReportHeaderActionsProps } from '@/components/report-header-actions'
 import { ReportMainContent } from '@/components/report-main-content'
@@ -8,7 +9,7 @@ import { ReportSummaryBar, type ReportSummaryBarProps } from '@/components/repor
 import { ReportTaskPanels, type ReportTaskPanelsProps } from '@/components/report-task-panels'
 import { ReportWorkspace } from '@/components/report-workspace'
 import type { DocumentGenerationRequest } from '@/lib/document-generation'
-import type { WeldRow } from '@/lib/dispatcher-types'
+import type { FinalStatusRowsContext } from '@/lib/weld-status'
 import { useFrozenValue } from '@/lib/use-frozen-value'
 
 type HomePageViewProps = {
@@ -26,7 +27,8 @@ type HomePageViewProps = {
   reportTaskPanelsProps: ReportTaskPanelsProps
   documentGenerationRequest: DocumentGenerationRequest | null
   documentGenerationContextLoading: boolean
-  statisticsRows: WeldRow[]
+  documentGenerationContextError: string
+  documentGenerationFinalStatusContext: FinalStatusRowsContext
   welderStamps: ComponentProps<typeof ReportMainContent>['welderStamps']
   welderStampsRegistryProps: ComponentProps<typeof ReportMainContent>['welderStampsRegistryProps']
   weldTableProps: ComponentProps<typeof ReportMainContent>['weldTableProps']
@@ -70,7 +72,8 @@ export function HomePageView({
   reportTaskPanelsProps,
   documentGenerationRequest,
   documentGenerationContextLoading,
-  statisticsRows,
+  documentGenerationContextError,
+  documentGenerationFinalStatusContext,
   welderStamps,
   welderStampsRegistryProps,
   weldTableProps,
@@ -134,6 +137,25 @@ export function HomePageView({
     >
       <MemoizedReportBackground {...reportBackgroundProps} />
 
+      {reportTaskPanelsProps.dispatcherWorkspaceOpen ? (
+        <DispatcherWorkspaceDialog
+          tasks={reportTaskPanelsProps.repeatedJointTasks}
+          groups={reportTaskPanelsProps.repeatedJointTaskGroups}
+          totalTaskCount={reportTaskPanelsProps.repeatedJointTaskCount ?? reportTaskPanelsProps.repeatedJointTasks.length}
+          computedRevision={reportTaskPanelsProps.computedRevision ?? -1}
+          taskFilterOptions={reportTaskPanelsProps.taskFilterOptions ?? []}
+          isRefreshing={Boolean(reportTaskPanelsProps.dispatcherTasksRefreshing)}
+          hasMoreTasks={Boolean(reportTaskPanelsProps.hasMoreTasks)}
+          onLoadMoreTasks={reportTaskPanelsProps.onLoadMoreTasks}
+          isTaskBatchLoading={Boolean(reportTaskPanelsProps.isTaskBatchLoading)}
+          taskBatchError={reportTaskPanelsProps.taskBatchError}
+          onRetryTaskBatch={reportTaskPanelsProps.onRetryTaskBatch}
+          onRefreshTasks={reportTaskPanelsProps.onRefreshTasks}
+          handlers={reportTaskPanelsProps.handlers}
+          onClose={() => reportTaskPanelsProps.onDispatcherWorkspaceOpenChange(false)}
+        />
+      ) : null}
+
       <ReportNotificationToast {...reportNotificationToastProps} />
 
       <ReportDialogs
@@ -149,8 +171,9 @@ export function HomePageView({
           documentGenerationRequest
             ? {
                 request: documentGenerationRequest,
-                contextRows: statisticsRows,
+                finalStatusContext: documentGenerationFinalStatusContext,
                 contextLoading: documentGenerationContextLoading,
+                contextError: documentGenerationContextError,
                 onClose: () => onDocumentGenerationRequestHandled(documentGenerationRequest.id),
                 onGenerated: onDocumentGenerated,
               }

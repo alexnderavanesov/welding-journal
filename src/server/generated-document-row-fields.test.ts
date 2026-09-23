@@ -184,7 +184,7 @@ describe('generated document row fields', () => {
   it.each([
     [2, 1],
     [100, 1],
-    [1_200, 2],
+    [1_200, 1],
   ])('loads all generated-document assignments for %i rows with %i bounded queries', async (rowCount, queryCount) => {
     const where = vi.fn().mockResolvedValue([])
     const innerJoin = vi.fn(() => ({ where }))
@@ -208,7 +208,7 @@ describe('generated document row fields', () => {
   it.each([
     [2, 1],
     [100, 1],
-    [1_200, 2],
+    [1_200, 1],
   ])('loads system document ids for %i rows with %i bounded queries', async (rowCount, queryCount) => {
     const where = vi.fn().mockResolvedValue([])
     const innerJoin = vi.fn(() => ({ where }))

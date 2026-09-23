@@ -1,4 +1,4 @@
-import { and, eq, inArray, like } from 'drizzle-orm'
+import { and, eq, like } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import { generatedDocuments, generatedDocumentWeldJoints } from '@/db/schema'
@@ -8,7 +8,7 @@ import { getSystemDocumentTemplateIdForField } from '@/lib/system-document-templ
 import { getCurrentPstoCycle } from '@/lib/tvmt-cycle'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import { ensureLayeredControlDocumentsInitialized } from '@/server/layered-control-documents'
-import { splitNumberBatches } from '@/server/weld-request-utils'
+import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 
 export type GeneratedDocumentRowFields = {
   jsrDocument?: string | null
@@ -289,23 +289,18 @@ export async function loadGeneratedDocumentAssignments<Row extends GeneratedDocu
   if (ids.length === 0) return []
 
   const database = db ?? requireDb()
-  const assignments: GeneratedDocumentRowAssignment[] = []
-  for (const idBatch of splitNumberBatches(ids, 1000)) {
-    assignments.push(...await database
-      .select({
-        weldJointId: generatedDocumentWeldJoints.weldJointId,
-        documentId: generatedDocuments.id,
-        type: generatedDocuments.type,
-        title: generatedDocuments.title,
-        periodFrom: generatedDocuments.periodFrom,
-        sourceMetadata: generatedDocuments.sourceMetadata,
-      })
-      .from(generatedDocumentWeldJoints)
-      .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))
-      .where(inArray(generatedDocumentWeldJoints.weldJointId, idBatch)))
-  }
-
-  return assignments
+  return database
+    .select({
+      weldJointId: generatedDocumentWeldJoints.weldJointId,
+      documentId: generatedDocuments.id,
+      type: generatedDocuments.type,
+      title: generatedDocuments.title,
+      periodFrom: generatedDocuments.periodFrom,
+      sourceMetadata: generatedDocuments.sourceMetadata,
+    })
+    .from(generatedDocumentWeldJoints)
+    .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))
+    .where(buildNumberArrayMatch(generatedDocumentWeldJoints.weldJointId, ids))
 }
 
 export async function attachSystemDocumentIds<Row extends GeneratedDocumentCarrier>(
@@ -316,24 +311,21 @@ export async function attachSystemDocumentIds<Row extends GeneratedDocumentCarri
   const ids = [...new Set(rows.map((row) => Number(row.id)).filter(Number.isFinite))]
   if (ids.length === 0) return rows
 
-  const assignments: GeneratedDocumentRowAssignment[] = []
-  for (const idBatch of splitNumberBatches(ids, 1000)) {
-    assignments.push(...await db
-      .select({
-        weldJointId: generatedDocumentWeldJoints.weldJointId,
-        documentId: generatedDocuments.id,
-        type: generatedDocuments.type,
-        title: generatedDocuments.title,
-        periodFrom: generatedDocuments.periodFrom,
-        sourceMetadata: generatedDocuments.sourceMetadata,
-      })
-      .from(generatedDocumentWeldJoints)
-      .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))
-      .where(and(
-        inArray(generatedDocumentWeldJoints.weldJointId, idBatch),
-        like(generatedDocuments.type, 'system:%'),
-      )))
-  }
+  const assignments = await db
+    .select({
+      weldJointId: generatedDocumentWeldJoints.weldJointId,
+      documentId: generatedDocuments.id,
+      type: generatedDocuments.type,
+      title: generatedDocuments.title,
+      periodFrom: generatedDocuments.periodFrom,
+      sourceMetadata: generatedDocuments.sourceMetadata,
+    })
+    .from(generatedDocumentWeldJoints)
+    .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))
+    .where(and(
+      buildNumberArrayMatch(generatedDocumentWeldJoints.weldJointId, ids),
+      like(generatedDocuments.type, 'system:%'),
+    ))
 
   const assignmentsByWeldId = new Map<number, GeneratedDocumentRowAssignment[]>()
   for (const assignment of assignments) {

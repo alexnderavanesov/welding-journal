@@ -8,6 +8,18 @@ export type ReportTaskPanelsProps = {
   activeReport: ActiveReport
   repeatedJointTasks: RepeatedJointTask[]
   repeatedJointTaskGroups: RepeatedJointTaskGroup[]
+  repeatedJointTaskCount?: number
+  computedRevision?: number
+  taskFilterOptions?: Array<{ value: string; count: number; label: string }>
+  hasMoreTasks?: boolean
+  onLoadMoreTasks?: () => void
+  isTaskBatchLoading?: boolean
+  taskBatchError?: string
+  onRetryTaskBatch?: () => void
+  onRefreshTasks?: () => Promise<number | undefined>
+  dispatcherTasksRefreshing?: boolean
+  dispatcherWorkspaceOpen: boolean
+  onDispatcherWorkspaceOpenChange: (open: boolean) => void
   welderStampExpiryTasks: WelderStampExpiryTask[]
   welderStampNotificationGroups: RepeatedJointTaskGroup[]
   stickyLeft: number
@@ -16,14 +28,20 @@ export type ReportTaskPanelsProps = {
   onToggleDetails: (task: DispatcherTask) => void
   onCollapseTaskDetails: () => void
   onDismissTasks: (tasks: DispatcherTask[]) => void
-  columnFilters: Record<string, string>
-  onColumnFiltersChange: (filters: Record<string, string>) => void
 }
 
 export function ReportTaskPanels({
   activeReport,
   repeatedJointTasks,
   repeatedJointTaskGroups,
+  repeatedJointTaskCount,
+  hasMoreTasks,
+  onLoadMoreTasks,
+  isTaskBatchLoading,
+  taskBatchError,
+  onRetryTaskBatch,
+  dispatcherTasksRefreshing,
+  onDispatcherWorkspaceOpenChange,
   welderStampExpiryTasks,
   welderStampNotificationGroups,
   stickyLeft,
@@ -32,8 +50,6 @@ export function ReportTaskPanels({
   onToggleDetails,
   onCollapseTaskDetails,
   onDismissTasks,
-  columnFilters,
-  onColumnFiltersChange,
 }: ReportTaskPanelsProps) {
   if (activeReport === 'welderStamps') {
     return (
@@ -52,10 +68,16 @@ export function ReportTaskPanels({
       key={activeReport}
       tasks={repeatedJointTasks}
       groups={repeatedJointTaskGroups}
+      totalTaskCount={repeatedJointTaskCount}
+      hasMoreTasks={hasMoreTasks}
+      onLoadMoreTasks={onLoadMoreTasks}
+      isTaskBatchLoading={isTaskBatchLoading}
+      taskBatchError={taskBatchError}
+      onRetryTaskBatch={onRetryTaskBatch}
+      isRefreshing={dispatcherTasksRefreshing}
+      onWorkspaceOpenChange={onDispatcherWorkspaceOpenChange}
       stickyLeft={stickyLeft}
       handlers={handlers}
-      columnFilters={columnFilters}
-      onColumnFiltersChange={onColumnFiltersChange}
       onCollapseTaskDetails={onCollapseTaskDetails}
       defaultExpanded={activeReport !== 'heatTreatment'}
     />

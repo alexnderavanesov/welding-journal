@@ -87,20 +87,27 @@ export function DispatcherIncrementalListControls({
 
 type DispatcherTaskDetailsProps = {
   task: DispatcherTask
+  showHeading?: boolean
+  workspace?: boolean
+  workspaceTitle?: string
 }
 
-export function DispatcherTaskDetails({ task }: DispatcherTaskDetailsProps) {
+export function DispatcherTaskDetails({ task, showHeading = true, workspace = false, workspaceTitle }: DispatcherTaskDetailsProps) {
   const metrics = getDispatcherTaskMetrics(task)
+  const details = getRepeatedJointTaskDetails(task)
+  const showDetails = !workspace || details.trim() !== workspaceTitle?.trim()
 
   return (
     <div
       data-dispatcher-task-details
       data-dispatcher-hierarchy-level="3"
-      className="border-t border-sky-100 bg-white/75 px-4 py-3 text-xs leading-5 text-slate-600"
+      className={workspace
+        ? 'mt-1 text-[13px] leading-5 text-slate-600'
+        : 'border-t border-sky-100 bg-white/75 px-4 py-3 text-xs leading-5 text-slate-600'}
     >
-      <div className="w-full border-l-2 border-sky-200 pl-3">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <div className="text-[11px] font-semibold uppercase text-sky-700">Что обнаружено</div>
+      <div className={workspace ? 'min-w-0' : 'w-full border-l-2 border-sky-200 pl-3'}>
+        {!workspace || metrics.length > 0 ? <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {!workspace ? <div className="text-[11px] font-semibold uppercase text-sky-700">Что обнаружено</div> : null}
           {metrics.length > 0 ? (
             <div className="flex flex-wrap items-center gap-1.5" aria-label="Показатели задачи">
               {metrics.map((metric) => (
@@ -118,11 +125,11 @@ export function DispatcherTaskDetails({ task }: DispatcherTaskDetailsProps) {
               ))}
             </div>
           ) : null}
-        </div>
-        <div className="mt-1 font-semibold text-slate-800">{getRepeatedJointTaskDetailsHeading(task)}</div>
-        <div className="mt-1 max-w-none text-[13px] leading-5 text-slate-600">
-          {getRepeatedJointTaskDetails(task)}
-        </div>
+        </div> : null}
+        {showHeading ? <div className="mt-1 font-semibold text-slate-800">{getRepeatedJointTaskDetailsHeading(task)}</div> : null}
+        {showDetails ? <div className={`${workspace && metrics.length === 0 ? '' : 'mt-1'} max-w-none break-words text-[13px] leading-5 text-slate-600`}>
+          {details}
+        </div> : null}
       </div>
     </div>
   )

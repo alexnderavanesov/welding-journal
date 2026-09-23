@@ -66,6 +66,24 @@ export type PstoLineAssignmentSummary = PstoLineIdentity & {
   repeatCycleCount: number
 }
 
+export type PstoLineAssignmentFilter = 'all' | 'assigned' | 'cancelled' | 'unassigned' | 'partial'
+
+export type PstoLineAssignmentPageRequest = {
+  search?: string
+  filter?: PstoLineAssignmentFilter
+  page?: number
+  pageSize?: number
+}
+
+export type PstoLineAssignmentPageResult = {
+  rows: PstoLineAssignmentSummary[]
+  totalCount: number
+  page: number
+  pageSize: number
+  pageCount: number
+  counts: Record<PstoLineAssignmentFilter, number>
+}
+
 export type PstoLineRemovalPreviewRow = {
   rowId: number
   joint: string

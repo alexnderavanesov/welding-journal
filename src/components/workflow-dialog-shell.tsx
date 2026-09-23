@@ -16,11 +16,13 @@ import { cn } from '@/lib/utils'
 export function WorkflowDialogShell({
   children,
   variant = 'workflow',
+  ariaLabel,
   returnPageScrollPosition,
   elevated = false,
 }: {
   children: ReactNode
   variant?: 'workflow' | 'manager'
+  ariaLabel?: string
   returnPageScrollPosition?: PageScrollPosition
   elevated?: boolean
 }) {
@@ -28,6 +30,7 @@ export function WorkflowDialogShell({
   return (
     <LargeDialogShell
       maxWidthClassName={manager ? WORKFLOW_MANAGER_DIALOG_WIDTH_CLASS : WORKFLOW_DIALOG_WIDTH_CLASS}
+      ariaLabel={ariaLabel}
       maxHeightClassName={manager ? WORKFLOW_MANAGER_DIALOG_HEIGHT_CLASS : WORKFLOW_DIALOG_HEIGHT_CLASS}
       overlayClassName={cn(
         manager ? WORKFLOW_MANAGER_DIALOG_OVERLAY_CLASS : WORKFLOW_DIALOG_OVERLAY_CLASS,

@@ -31,7 +31,7 @@ const WAITING_LNK_FIELDS_WITH_STATUS = [
   { key: 'workflowStatus', dbName: '__workflow_status', label: 'Статус', kind: 'text', group: 'ЛНК', visible: true, virtual: true },
 ] as WeldField[]
 
-export function openLnkWaitingNkReportWindow(rows: ReportRow[]) {
+export function openLnkWaitingNkReportWindow(rows: ReportRow[], targetWindow?: Window) {
   return openNonEmptyTabularReportWindow({
     rows: buildLnkWaitingNkRows(rows) as WeldInput[],
     fields: WAITING_LNK_FIELDS_WITH_STATUS,
@@ -39,10 +39,11 @@ export function openLnkWaitingNkReportWindow(rows: ReportRow[]) {
     title: 'Ожидание НК',
     filename: 'lnk-waiting-nk.xlsx',
     emptyMessage: 'Нет стыков со статусом «ожидает НК»',
+    targetWindow,
   })
 }
 
-export function openLnkToRequestReportWindow(rows: ReportRow[]) {
+export function openLnkToRequestReportWindow(rows: ReportRow[], targetWindow?: Window) {
   return openNonEmptyTabularReportWindow({
     rows: buildLnkToRequestRows(rows) as WeldInput[],
     fields: WAITING_LNK_FIELDS_WITH_STATUS,
@@ -50,10 +51,11 @@ export function openLnkToRequestReportWindow(rows: ReportRow[]) {
     title: 'Ожидание заявки',
     filename: 'lnk-waiting-request.xlsx',
     emptyMessage: 'Нет стыков, по которым нужно создать заявку ЛНК',
+    targetWindow,
   })
 }
 
-export function openLnkConclusionsReportWindow(rows: ReportRow[]) {
+export function openLnkConclusionsReportWindow(rows: ReportRow[], targetWindow?: Window) {
   return openNonEmptyTabularReportWindow({
     rows: buildLnkConclusionsRows(rows) as WeldInput[],
     fields: LNK_CONCLUSIONS_FIELDS,
@@ -61,10 +63,11 @@ export function openLnkConclusionsReportWindow(rows: ReportRow[]) {
     title: 'Заключения ЛНК',
     filename: 'lnk-conclusions.xlsx',
     emptyMessage: 'Нет заключений ЛНК для показа',
+    targetWindow,
   })
 }
 
-export function openPstoWaitingRequestReportWindow(rows: ReportRow[]) {
+export function openPstoWaitingRequestReportWindow(rows: ReportRow[], targetWindow?: Window) {
   return openNonEmptyTabularReportWindow({
     rows: buildPstoWaitingRequestRows(rows) as WeldInput[],
     fields: PSTO_WAITING_REQUEST_FIELDS,
@@ -72,10 +75,11 @@ export function openPstoWaitingRequestReportWindow(rows: ReportRow[]) {
     title: 'Ожидает заявку ПСТО',
     filename: 'psto-waiting-request.xlsx',
     emptyMessage: 'Нет стыков, по которым нужно создать заявку ПСТО',
+    targetWindow,
   })
 }
 
-export function openPstoResultsReportWindow(rows: ReportRow[]) {
+export function openPstoResultsReportWindow(rows: ReportRow[], targetWindow?: Window) {
   return openNonEmptyTabularReportWindow({
     rows: buildPstoResultsRows(rows) as WeldInput[],
     fields: PSTO_RESULTS_FIELDS,
@@ -83,6 +87,7 @@ export function openPstoResultsReportWindow(rows: ReportRow[]) {
     title: 'Результаты ПСТО',
     filename: 'psto-results.xlsx',
     emptyMessage: 'Нет результатов ПСТО для показа',
+    targetWindow,
   })
 }
 
@@ -91,6 +96,7 @@ export function openCurrentReportWindow(
   fields: WeldField[],
   title: string,
   filename: string,
+  targetWindow?: Window,
 ) {
   return openNonEmptyTabularReportWindow({
     rows,
@@ -99,19 +105,21 @@ export function openCurrentReportWindow(
     title,
     filename,
     emptyMessage: 'В текущем фильтре нет стыков для показа',
+    targetWindow,
   })
 }
 
-export function openWeldingJournalCurrentReportWindow(rows: WeldInput[], fields: WeldField[]) {
+export function openWeldingJournalCurrentReportWindow(rows: WeldInput[], fields: WeldField[], targetWindow?: Window) {
   return openCurrentReportWindow(
     buildWeldingJournalRows(rows),
     fields,
     'Сварочный журнал: текущая версия',
     'welding-journal-current.xlsx',
+    targetWindow,
   )
 }
 
-export function openWeldingJournalWaitingWeldReportWindow(rows: WeldInput[]) {
+export function openWeldingJournalWaitingWeldReportWindow(rows: WeldInput[], targetWindow?: Window) {
   return openNonEmptyTabularReportWindow({
     rows: buildWeldingJournalRowsByStatus(rows, 'ожидает сварку'),
     fields: WELDING_JOURNAL_WAITING_WELD_FIELDS,
@@ -119,10 +127,11 @@ export function openWeldingJournalWaitingWeldReportWindow(rows: WeldInput[]) {
     title: 'Сварочный журнал: ожидает сварку',
     filename: 'welding-journal-waiting-weld.xlsx',
     emptyMessage: 'Нет стыков со статусом «ожидает сварку»',
+    targetWindow,
   })
 }
 
-export function openWeldingJournalWaitingRequestReportWindow(rows: WeldInput[]) {
+export function openWeldingJournalWaitingRequestReportWindow(rows: WeldInput[], targetWindow?: Window) {
   return openNonEmptyTabularReportWindow({
     rows: buildLnkToRequestRows(rows) as WeldInput[],
     fields: WAITING_LNK_FIELDS_WITH_STATUS,
@@ -130,10 +139,11 @@ export function openWeldingJournalWaitingRequestReportWindow(rows: WeldInput[]) 
     title: 'Сварочный журнал: ожидание заявки',
     filename: 'welding-journal-waiting-request.xlsx',
     emptyMessage: 'Нет стыков, по которым нужно создать заявку ЛНК',
+    targetWindow,
   })
 }
 
-export function openWeldingJournalWaitingControlReportWindow(rows: WeldInput[]) {
+export function openWeldingJournalWaitingControlReportWindow(rows: WeldInput[], targetWindow?: Window) {
   return openNonEmptyTabularReportWindow({
     rows: buildLnkWaitingNkRows(rows) as WeldInput[],
     fields: WAITING_LNK_FIELDS_WITH_STATUS,
@@ -141,10 +151,11 @@ export function openWeldingJournalWaitingControlReportWindow(rows: WeldInput[]) 
     title: 'Сварочный журнал: ожидание НК',
     filename: 'welding-journal-waiting-control.xlsx',
     emptyMessage: 'Нет стыков со статусом «ожидает НК»',
+    targetWindow,
   })
 }
 
-export function openWeldingJournalWaitingRepairReportWindow(rows: WeldInput[]) {
+export function openWeldingJournalWaitingRepairReportWindow(rows: WeldInput[], targetWindow?: Window) {
   return openNonEmptyTabularReportWindow({
     rows: buildWeldingJournalWaitingRepairRows(rows),
     fields: WELDING_JOURNAL_WAITING_REPAIR_FIELDS,
@@ -152,10 +163,11 @@ export function openWeldingJournalWaitingRepairReportWindow(rows: WeldInput[]) {
     title: 'Сварочный журнал: ожидает ремонт',
     filename: 'welding-journal-waiting-repair.xlsx',
     emptyMessage: 'Нет стыков со статусом «ожидает ремонт»',
+    targetWindow,
   })
 }
 
-export function openWeldingJournalCancelledAcceptedReportWindow(rows: WeldInput[]) {
+export function openWeldingJournalCancelledAcceptedReportWindow(rows: WeldInput[], targetWindow?: Window) {
   return openNonEmptyTabularReportWindow({
     rows: buildWeldingJournalCancelledAcceptedRows(rows),
     fields: LNK_CONCLUSIONS_FIELDS,
@@ -163,10 +175,11 @@ export function openWeldingJournalCancelledAcceptedReportWindow(rows: WeldInput[
     title: 'Сварочный журнал: отмененные годные результаты',
     filename: 'welding-journal-cancelled-accepted.xlsx',
     emptyMessage: 'Нет отмененных годных результатов для показа',
+    targetWindow,
   })
 }
 
-export function openWeldingJournalSystemReportWindow(rows: WeldInput[]) {
+export function openWeldingJournalSystemReportWindow(rows: WeldInput[], targetWindow?: Window) {
   return openNonEmptyTabularReportWindow({
     rows: buildWeldingJournalRows(rows),
     fields: WELDING_JOURNAL_SYSTEM_FIELDS,
@@ -174,5 +187,6 @@ export function openWeldingJournalSystemReportWindow(rows: WeldInput[]) {
     title: 'Сварочный журнал: системная версия',
     filename: 'welding-journal-system.xlsx',
     emptyMessage: 'Нет стыков для показа в системной версии',
+    targetWindow,
   })
 }

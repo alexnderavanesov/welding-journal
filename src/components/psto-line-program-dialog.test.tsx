@@ -1,18 +1,18 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { PstoLineProgramDialog } from '@/components/psto-line-program-dialog'
 import type { PstoLineAssignmentSummary, PstoLineRemovalPreview } from '@/lib/psto-line-assignment'
 import {
   getPstoLineRemovalPreview,
-  listPstoLineAssignments,
+  listPstoLineAssignmentPage,
   savePstoLineAssignment,
 } from '@/server/psto-line-assignment'
 
 vi.mock('@/server/psto-line-assignment', () => ({
   getPstoLineRemovalPreview: vi.fn(),
-  listPstoLineAssignments: vi.fn(),
+  listPstoLineAssignmentPage: vi.fn(),
   savePstoLineAssignment: vi.fn(),
 }))
 
@@ -151,7 +151,7 @@ function renderDialog() {
 
 describe('PstoLineProgramDialog', () => {
   beforeEach(() => {
-    vi.mocked(listPstoLineAssignments).mockResolvedValue([unassignedLine, assignedLine])
+    vi.mocked(listPstoLineAssignmentPage).mockResolvedValue(linePage([unassignedLine, assignedLine]))
     vi.mocked(getPstoLineRemovalPreview).mockImplementation(async ({ data }) => (
       data.line === unassignedLine.line ? cleanAssignmentPreview : removalPreview
     ))
@@ -167,6 +167,17 @@ describe('PstoLineProgramDialog', () => {
     expect(screen.queryByText(/дубл/i)).not.toBeInTheDocument()
   })
 
+  it('hides stale line actions while a new server search is pending', async () => {
+    renderDialog()
+    await screen.findByText('L-100')
+
+    fireEvent.change(screen.getByLabelText('Поиск линий'), { target: { value: 'L-200' } })
+
+    expect(screen.getByText('Загружаю линии...')).toBeInTheDocument()
+    expect(screen.queryByText('L-100')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Назначить' })).not.toBeInTheDocument()
+  })
+
   it('shows the full-line impact before assignment', async () => {
     const { onRunProtectedEdit } = renderDialog()
     await screen.findByText('L-100')
@@ -179,6 +190,23 @@ describe('PstoLineProgramDialog', () => {
     await waitFor(() => expect(submit).toBeEnabled())
     fireEvent.click(submit)
     await waitFor(() => expect(onRunProtectedEdit).toHaveBeenCalledOnce())
+  })
+
+  it('does not reset the requested page while the previous page is a placeholder', async () => {
+    let finishPage!: (value: ReturnType<typeof linePage>) => void
+    vi.mocked(listPstoLineAssignmentPage)
+      .mockResolvedValueOnce({ ...linePage([unassignedLine]), totalCount: 26, pageCount: 2 })
+      .mockImplementationOnce(() => new Promise((resolve) => { finishPage = resolve }))
+    renderDialog()
+    await screen.findByText('L-100')
+    fireEvent.click(screen.getByRole('button', { name: 'Следующая страница линий' }))
+    await waitFor(() => expect(listPstoLineAssignmentPage).toHaveBeenCalledWith({
+      data: expect.objectContaining({ page: 2 }),
+    }))
+    expect(screen.queryByText('L-100')).not.toBeInTheDocument()
+    await act(async () => finishPage({ ...linePage([assignedLine]), totalCount: 26, pageCount: 2, page: 2 }))
+    expect(await screen.findByText('L-200')).toBeInTheDocument()
+    expect(screen.getByText('2 из 2')).toBeInTheDocument()
   })
 
   it('requires an explicit decision and can preserve the primary LNK during late PSTO assignment', async () => {
@@ -335,7 +363,7 @@ describe('PstoLineProgramDialog', () => {
       cancelledCount: 1,
       historyRowCount: 1,
     }
-    vi.mocked(listPstoLineAssignments).mockResolvedValue([cancelledLine])
+    vi.mocked(listPstoLineAssignmentPage).mockResolvedValue(linePage([cancelledLine]))
     vi.mocked(getPstoLineRemovalPreview).mockResolvedValue({
       ...activationConflictPreview,
       identity: {
@@ -404,3 +432,24 @@ describe('PstoLineProgramDialog', () => {
     expect(screen.queryByText(/при необходимости выполнить повторную ПСТО/)).not.toBeInTheDocument()
   })
 })
+
+function linePage(rows: PstoLineAssignmentSummary[]) {
+  return {
+    rows,
+    totalCount: rows.length,
+    page: 1,
+    pageSize: 25,
+    pageCount: 1,
+    counts: {
+      all: rows.length,
+      assigned: rows.filter((row) => row.assignedCount === row.rowCount).length,
+      cancelled: rows.filter((row) => row.cancelledCount === row.rowCount).length,
+      unassigned: rows.filter((row) => row.assignedCount === 0 && row.cancelledCount === 0).length,
+      partial: rows.filter((row) => (
+        row.assignedCount !== row.rowCount &&
+        row.cancelledCount !== row.rowCount &&
+        (row.assignedCount > 0 || row.cancelledCount > 0)
+      )).length,
+    },
+  }
+}

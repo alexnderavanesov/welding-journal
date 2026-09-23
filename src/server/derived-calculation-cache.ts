@@ -10,13 +10,15 @@ import { DERIVED_CALCULATION_REVISION_FLOOR } from '@/lib/derived-calculation-ca
 const DERIVED_CALCULATION_STATE_ID = 1
 const MAX_CACHED_CALCULATIONS = 96
 const inFlightCalculations = new Map<string, Promise<unknown>>()
+type DerivedCalculationCacheSnapshot = { sourceRevision: number; payload: string | null }
+const inFlightSnapshotReads = new Map<string, Promise<DerivedCalculationCacheSnapshot>>()
 
 export const getOrComputeDerivedCalculation = createServerOnlyFn(
   async function getOrComputeDerivedCalculationOnServer<T>(
     cacheKey: string,
     compute: () => Promise<T>,
   ): Promise<T> {
-    const cacheSnapshot = await readCacheSnapshot(cacheKey)
+    const cacheSnapshot = await readCacheSnapshotCoalesced(cacheKey)
     const sourceRevision = cacheSnapshot.sourceRevision
     const inFlightKey = `${sourceRevision}:${cacheKey}`
     const existing = inFlightCalculations.get(inFlightKey)
@@ -125,6 +127,24 @@ async function readCacheSnapshot(cacheKey: string) {
   }
 }
 
+export async function readCacheSnapshotCoalesced(
+  cacheKey: string,
+  read: (cacheKey: string) => Promise<DerivedCalculationCacheSnapshot> = readCacheSnapshot,
+) {
+  const existing = inFlightSnapshotReads.get(cacheKey)
+  if (existing) return existing
+
+  const pending = read(cacheKey)
+  inFlightSnapshotReads.set(cacheKey, pending)
+  try {
+    return await pending
+  } finally {
+    if (inFlightSnapshotReads.get(cacheKey) === pending) {
+      inFlightSnapshotReads.delete(cacheKey)
+    }
+  }
+}
+
 async function getSourceRevision() {
-  return (await readCacheSnapshot('')).sourceRevision
+  return (await readCacheSnapshotCoalesced('')).sourceRevision
 }

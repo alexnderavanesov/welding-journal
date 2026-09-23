@@ -1,4 +1,4 @@
-import { and, asc, inArray, or, sql } from 'drizzle-orm'
+import { asc, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import {
@@ -49,12 +49,10 @@ import {
 } from '@/server/weld-save-validation'
 import { lockWeldLineMemberships } from '@/server/weld-line-membership-lock'
 import { assertExpectedInteractiveWeldVersions } from '@/server/weld-row-version'
-import { splitNumberBatches } from '@/server/weld-request-utils'
+import { buildNumberArrayMatch, buildTextArrayMatch } from '@/server/weld-request-utils'
 import { loadWeldWorkflowSettingsFromTransaction } from '@/server/weld-workflow-settings'
 
 const MAX_OFFICIALITY_TARGETS = 1_000
-const LINE_QUERY_BATCH_SIZE = 200
-
 export const LNK_OFFICIALITY_CHAIN_SELECT = {
   id: weldJoints.id,
   rowVersion: sql<string>`${weldJoints}.xmin::text`.as('row_version'),
@@ -281,15 +279,12 @@ async function loadTargetRows(
   tx: SystemDocumentSequenceTransaction,
   data: LnkOfficialityChangeRequest,
 ) {
-  const rows: LnkOfficialityChainRow[] = []
   const ids = data.targets.map((target) => target.id).sort((left, right) => left - right)
-  for (const batch of splitNumberBatches(ids, 1_000)) {
-    rows.push(...await tx
-      .select(LNK_OFFICIALITY_CHAIN_SELECT)
-      .from(weldJoints)
-      .where(inArray(weldJoints.id, batch))
-      .orderBy(asc(weldJoints.id)))
-  }
+  const rows = await tx
+    .select(LNK_OFFICIALITY_CHAIN_SELECT)
+    .from(weldJoints)
+    .where(buildNumberArrayMatch(weldJoints.id, ids))
+    .orderBy(asc(weldJoints.id))
   if (rows.length !== ids.length) {
     throw new Error('Один или несколько выбранных стыков больше не существуют. Обновите отчет.')
   }
@@ -318,22 +313,25 @@ async function loadLineChainRows(
     const identity = normalizePstoLineIdentity(row)
     return [getPstoLineIdentityKey(identity), identity] as const
   })).values()]
-  const rowsById = new Map<number, LnkOfficialityChainRow>()
-  for (let offset = 0; offset < identities.length; offset += LINE_QUERY_BATCH_SIZE) {
-    const clauses = identities.slice(offset, offset + LINE_QUERY_BATCH_SIZE).map((identity) => and(
-      normalizedTextEquals(weldJoints.projectTitle, identity.projectTitle),
-      normalizedTextEquals(weldJoints.subtitleCode, identity.subtitleCode),
-      normalizedTextEquals(weldJoints.line, identity.line),
-    ))
-    const query = tx
-      .select(LNK_OFFICIALITY_CHAIN_SELECT)
-      .from(weldJoints)
-      .where(or(...clauses))
-      .orderBy(asc(weldJoints.id))
-    const rows = lock ? await query.for('update') : await query
-    rows.forEach((row) => rowsById.set(row.id, row))
-  }
-  return [...rowsById.values()].sort((left, right) => left.id - right.id)
+  const projects = identities.map((identity) => normalizePstoLineIdentityPart(identity.projectTitle))
+  const subtitles = identities.map((identity) => normalizePstoLineIdentityPart(identity.subtitleCode))
+  const lines = identities.map((identity) => normalizePstoLineIdentityPart(identity.line))
+  const query = tx
+    .select(LNK_OFFICIALITY_CHAIN_SELECT)
+    .from(weldJoints)
+    .where(sql`exists (
+      select 1
+      from unnest(
+        ${sql.param(projects)}::text[],
+        ${sql.param(subtitles)}::text[],
+        ${sql.param(lines)}::text[]
+      ) as target(project_title, subtitle_code, line)
+      where lower(btrim(coalesce(${weldJoints.projectTitle}, ''))) = target.project_title
+        and lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))) = target.subtitle_code
+        and lower(btrim(coalesce(${weldJoints.line}, ''))) = target.line
+    )`)
+    .orderBy(asc(weldJoints.id))
+  return lock ? query.for('update') : query
 }
 
 function assertTargetsRemainInScope(
@@ -364,15 +362,15 @@ async function loadFullRowsByIds(
   rowIds: readonly number[],
   lock: boolean,
 ): Promise<HydratedWeldJoint[]> {
-  const rows: WeldJoint[] = []
-  for (const idBatch of splitNumberBatches([...rowIds].sort((left, right) => left - right), 1_000)) {
-    const query = tx
-      .select(WELD_TABLE_RETURNING)
-      .from(weldJoints)
-      .where(inArray(weldJoints.id, idBatch))
-      .orderBy(asc(weldJoints.id))
-    rows.push(...(lock ? await query.for('update') : await query))
-  }
+  const query = tx
+    .select(WELD_TABLE_RETURNING)
+    .from(weldJoints)
+    .where(buildNumberArrayMatch(
+      weldJoints.id,
+      [...rowIds].sort((left, right) => left - right),
+    ))
+    .orderBy(asc(weldJoints.id))
+  const rows: WeldJoint[] = lock ? await query.for('update') : await query
   return attachDuplicateControlRelations(
     await attachHeatTreatmentControlRelations(rows as WeldRow[], tx),
     tx,
@@ -385,17 +383,13 @@ async function loadEarlyCoilDecisionSourceRowIds(
   lock = false,
 ) {
   const keys = rows.map((row) => getEarlyCoilDecisionKey(row.id))
-  const storedKeys: string[] = []
-  for (let offset = 0; offset < keys.length; offset += 1_000) {
-    const batch = keys.slice(offset, offset + 1_000)
-    if (batch.length === 0) continue
-    const query = tx
-      .select({ key: dispatcherAcceptedWarnings.key })
-      .from(dispatcherAcceptedWarnings)
-      .where(inArray(dispatcherAcceptedWarnings.key, batch))
-    const warnings = lock ? await query.for('update') : await query
-    storedKeys.push(...warnings.map((warning) => warning.key))
-  }
+  if (keys.length === 0) return new Set<number>()
+  const query = tx
+    .select({ key: dispatcherAcceptedWarnings.key })
+    .from(dispatcherAcceptedWarnings)
+    .where(buildTextArrayMatch(dispatcherAcceptedWarnings.key, keys))
+  const warnings = lock ? await query.for('update') : await query
+  const storedKeys = warnings.map((warning) => warning.key)
   return getEarlyCoilDecisionSourceRowIds(storedKeys)
 }
 
@@ -425,11 +419,4 @@ async function insertEarlyCoilDecisions(
   if (inserted.length !== values.length) {
     throw new Error('Решение по катушке уже изменилось. Ничего не сохранено. Обновите картину стыка.')
   }
-}
-
-function normalizedTextEquals(
-  column: typeof weldJoints.projectTitle | typeof weldJoints.subtitleCode | typeof weldJoints.line,
-  value: unknown,
-) {
-  return sql`lower(btrim(coalesce(${column}, ''))) = ${normalizePstoLineIdentityPart(value)}`
 }

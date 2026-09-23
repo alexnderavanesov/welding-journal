@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  useLnkWorkflowRequestSummaryQuery,
   useLnkWorkflowRowsQuery,
   useLnkWorkflowSummaryQuery,
 } from '@/lib/use-lnk-workflow-context-query'
@@ -14,6 +15,7 @@ import {
 import type { LnkWorkflowRowsRequest } from '@/server/weld-contracts'
 
 const serverMocks = vi.hoisted(() => ({
+  getLnkWorkflowRequestSummary: vi.fn(),
   getLnkWorkflowSummary: vi.fn(),
   listLnkWorkflowRows: vi.fn(),
 }))
@@ -24,13 +26,12 @@ describe('LNK workflow query load policy', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     serverMocks.getLnkWorkflowSummary.mockResolvedValue({
-      requestNames: [],
-      requestOptions: [],
       pendingPrimaryResultRowCount: 0,
       primaryResultRowCount: 0,
       preHeatTreatmentRequestRowCount: 0,
       preHeatTreatmentResultRowCount: 0,
     })
+    serverMocks.getLnkWorkflowRequestSummary.mockResolvedValue({ requestNames: [], requestOptions: [], hasMore: false })
     serverMocks.listLnkWorkflowRows.mockResolvedValue([])
   })
 
@@ -64,6 +65,17 @@ describe('LNK workflow query load policy', () => {
     expect(serverMocks.listLnkWorkflowRows).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps heavy request options disabled while only the workflow menu is open', async () => {
+    const queryClient = createQueryClient()
+    renderHook(() => {
+      useLnkWorkflowSummaryQuery({ enabled: true })
+      useLnkWorkflowRequestSummaryQuery({ enabled: false, search: '' })
+    }, { wrapper: createWrapper(queryClient) })
+
+    await waitFor(() => expect(serverMocks.getLnkWorkflowSummary).toHaveBeenCalledTimes(1))
+    expect(serverMocks.getLnkWorkflowRequestSummary).not.toHaveBeenCalled()
+  })
+
   it('issues one new row request when the modal scope changes', async () => {
     const queryClient = createQueryClient()
     const { rerender } = renderHook(
@@ -81,6 +93,82 @@ describe('LNK workflow query load policy', () => {
 
     rerender({ request: { scope: 'resultCandidates', rowIds: null } })
     await waitFor(() => expect(serverMocks.listLnkWorkflowRows).toHaveBeenCalledTimes(2))
+  })
+
+  it('loads each selected request identity once without focus or reconnect repeats', async () => {
+    const queryClient = createQueryClient()
+    const { rerender } = renderHook(
+      ({ requestName }: { requestName: string }) => useLnkWorkflowRowsQuery({
+        request: {
+          scope: 'requestRegistry',
+          rowIds: null,
+          requestName,
+          requestDate: '2026-09-22',
+        },
+      }),
+      {
+        initialProps: { requestName: 'Заявка-001' },
+        wrapper: createWrapper(queryClient),
+      },
+    )
+
+    await waitFor(() => expect(serverMocks.listLnkWorkflowRows).toHaveBeenCalledTimes(1))
+    rerender({ requestName: 'Заявка-002' })
+    await waitFor(() => expect(serverMocks.listLnkWorkflowRows).toHaveBeenCalledTimes(2))
+    expect(serverMocks.listLnkWorkflowRows).toHaveBeenLastCalledWith({
+      data: {
+        scope: 'requestRegistry',
+        rowIds: null,
+        requestName: 'Заявка-002',
+        requestDate: '2026-09-22',
+      },
+    })
+
+    rerender({ requestName: 'Заявка-002' })
+    window.dispatchEvent(new Event('focus'))
+    window.dispatchEvent(new Event('online'))
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    expect(serverMocks.listLnkWorkflowRows).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps checkbox changes local and sends selected rows with the next server search', async () => {
+    const queryClient = createQueryClient()
+    const { rerender } = renderHook(
+      ({ request }: { request: LnkWorkflowRowsRequest }) =>
+        useLnkWorkflowRowsQuery({ request }),
+      {
+        initialProps: {
+          request: { scope: 'requestCandidates', rowIds: null, includeRowIds: [7] },
+        },
+        wrapper: createWrapper(queryClient),
+      },
+    )
+    await waitFor(() => expect(serverMocks.listLnkWorkflowRows).toHaveBeenCalledTimes(1))
+
+    rerender({
+      request: { scope: 'requestCandidates', rowIds: null, includeRowIds: [7, 9] },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    expect(serverMocks.listLnkWorkflowRows).toHaveBeenCalledTimes(1)
+
+    rerender({
+      request: {
+        scope: 'requestCandidates',
+        rowIds: null,
+        includeRowIds: [7, 9],
+        search: 'LINE-9',
+      },
+    })
+    await waitFor(() => expect(serverMocks.listLnkWorkflowRows).toHaveBeenCalledTimes(2))
+    expect(serverMocks.listLnkWorkflowRows).toHaveBeenLastCalledWith({
+      data: {
+        scope: 'requestCandidates',
+        rowIds: null,
+        includeRowIds: [7, 9],
+        search: 'LINE-9',
+        limit: 500,
+      },
+    })
   })
 
   it('refetches an invalidated scope when its modal is reopened', async () => {

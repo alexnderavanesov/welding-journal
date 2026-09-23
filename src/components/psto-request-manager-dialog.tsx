@@ -1,10 +1,11 @@
 import { useMemo, useRef, useState, type MouseEvent } from 'react'
-import { CalendarClock, Pencil, Trash2 } from 'lucide-react'
+import { CalendarClock, Pencil, Search, Trash2 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { SystemDocumentDateEditor } from '@/components/system-document-date-editor'
 import { PstoRequestManagerPosition } from '@/components/psto-request-manager-position'
+import { BufferedFilterInput } from '@/components/result-filters'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
 import {
   RequestDeletePanel,
@@ -40,6 +41,8 @@ export type PstoRequestManagerDialogProps = {
   requestName: string
   requestDate: string
   requestOptions: RequestDocumentIdentity[]
+  requestOptionsHasMore?: boolean
+  requestSearch?: string
   requestRows: WeldRow[]
   requestNameDraft: string
   isManagerPending: boolean
@@ -47,6 +50,7 @@ export type PstoRequestManagerDialogProps = {
   canOpenDocument: boolean
   onClose: () => void
   onChangeRequest: (request: RequestDocumentIdentity) => void
+  onRequestSearchChange?: (value: string) => void
   onRequestNameDraftChange: (requestName: string) => void
   onRenameRequest: () => void
   onOpenDocument: (row: WeldRow) => void
@@ -66,6 +70,8 @@ export function PstoRequestManagerDialog({
   requestName,
   requestDate,
   requestOptions,
+  requestOptionsHasMore = false,
+  requestSearch = '',
   requestRows,
   requestNameDraft,
   isManagerPending,
@@ -73,6 +79,7 @@ export function PstoRequestManagerDialog({
   canOpenDocument,
   onClose,
   onChangeRequest,
+  onRequestSearchChange,
   onRequestNameDraftChange,
   onRenameRequest,
   onOpenDocument,
@@ -183,12 +190,28 @@ export function PstoRequestManagerDialog({
         className="min-h-0 space-y-4 overflow-auto px-5 py-4"
         onContextMenu={openRequestContextMenu}
       >
-        <RequestManagerSelect
-          label="Заявка ПСТО"
-          value={selectedIdentity?.key ?? ''}
-          options={requestOptions}
-          onChange={onChangeRequest}
-        />
+        <div className="space-y-2">
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <BufferedFilterInput
+              value={requestSearch}
+              onValueChange={(value) => onRequestSearchChange?.(value)}
+              placeholder="Название, дата, стык или линия"
+              className="h-10 bg-white pl-9"
+            />
+          </label>
+          <RequestManagerSelect
+            label="Заявка ПСТО"
+            value={selectedIdentity?.key ?? ''}
+            options={requestOptions}
+            onChange={onChangeRequest}
+          />
+          {requestOptionsHasMore ? (
+            <p className="text-xs text-amber-700">
+              Показаны первые 200 заявок. Уточните поиск, чтобы найти остальные.
+            </p>
+          ) : null}
+        </div>
 
         {requestName ? (
           <RequestManagerUsagePanel>

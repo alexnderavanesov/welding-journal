@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 
 import { pstoRepeatCycles, weldJoints, type NewPstoRepeatCycle } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -12,7 +12,7 @@ import type { PstoRepeatCycleWrite } from '@/lib/psto-repeat-cycle-updates'
 import { splitWeldImportInsertBatches } from '@/lib/weld-import-limits'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
-import { splitNumberBatches } from '@/server/weld-request-utils'
+import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { WELD_TABLE_RETURNING } from '@/server/weld-server-shared'
 
 export type PstoCycleWorkflowAction =
@@ -177,15 +177,15 @@ async function updateExistingRepeatCycleWrites(
   if (new Set(ids).size !== ids.length) {
     throw new Error('Один повторный цикл нельзя изменить дважды за одно сохранение.')
   }
-  const locked: Array<{ id: number }> = []
-  for (const idBatch of splitNumberBatches([...ids].sort((left, right) => left - right), 1000)) {
-    locked.push(...await tx
-      .select({ id: pstoRepeatCycles.id })
-      .from(pstoRepeatCycles)
-      .where(inArray(pstoRepeatCycles.id, idBatch))
-      .orderBy(pstoRepeatCycles.id)
-      .for('update'))
-  }
+  const locked = await tx
+    .select({ id: pstoRepeatCycles.id })
+    .from(pstoRepeatCycles)
+    .where(buildNumberArrayMatch(
+      pstoRepeatCycles.id,
+      [...ids].sort((left, right) => left - right),
+    ))
+    .orderBy(pstoRepeatCycles.id)
+    .for('update')
   if (locked.length !== ids.length) {
     throw new Error('Один или несколько повторных циклов уже изменены. Обновите отчет.')
   }
@@ -240,9 +240,9 @@ export async function deletePstoRepeatCyclesInTransaction(
     .filter((id) => Number.isInteger(id) && id > 0))]
     .sort((left, right) => left - right)
   if (ids.length === 0) return
-  for (const idBatch of splitNumberBatches(ids, 1000)) {
-    await tx.delete(pstoRepeatCycles).where(inArray(pstoRepeatCycles.id, idBatch))
-  }
+  await tx
+    .delete(pstoRepeatCycles)
+    .where(buildNumberArrayMatch(pstoRepeatCycles.id, ids))
 }
 
 export async function savePstoCycleRowsInBatches(

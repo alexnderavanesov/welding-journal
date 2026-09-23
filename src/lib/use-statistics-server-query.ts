@@ -9,5 +9,8 @@ export function useStatisticsServerQuery(request: StatisticsServerRequest) {
     queryFn: () => getStatisticsServerResult({ data: request }),
     placeholderData: keepPreviousData,
     staleTime: 15_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 }

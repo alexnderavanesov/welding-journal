@@ -42,7 +42,7 @@ import { lockWeldLineMemberships } from '@/server/weld-line-membership-lock'
 import { loadControlProcessSettingsFromTransaction } from '@/server/control-process-settings'
 import { assertExpectedInteractiveWeldVersions } from '@/server/weld-row-version'
 import { WELD_TABLE_RETURNING } from '@/server/weld-server-shared'
-import { splitNumberBatches } from '@/server/weld-request-utils'
+import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 
 type EarlyCoilTransaction = SystemDocumentSequenceTransaction
 
@@ -289,13 +289,10 @@ async function hydrateRows(tx: EarlyCoilTransaction, rows: WeldJoint[]) {
 
 async function loadDocumentedRowIds(tx: EarlyCoilTransaction, rowIds: number[]) {
   if (rowIds.length === 0) return new Set<number>()
-  const links: Array<{ weldJointId: number }> = []
-  for (const rowIdBatch of splitNumberBatches(rowIds, 1000)) {
-    links.push(...await tx
-      .select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
-      .from(generatedDocumentWeldJoints)
-      .where(inArray(generatedDocumentWeldJoints.weldJointId, rowIdBatch)))
-  }
+  const links = await tx
+    .select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
+    .from(generatedDocumentWeldJoints)
+    .where(buildNumberArrayMatch(generatedDocumentWeldJoints.weldJointId, rowIds))
   return new Set(links.map((link) => link.weldJointId))
 }
 

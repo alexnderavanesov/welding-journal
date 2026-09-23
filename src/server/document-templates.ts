@@ -67,11 +67,19 @@ type UpdateDocumentTemplateInput = {
   constructorConfig?: DocumentTemplateConstructorConfig
 }
 
-export async function listRemoteDocumentTemplates() {
+export async function listRemoteDocumentTemplatesWithFiles(): Promise<RemoteDocumentTemplate[]> {
   await assertSecurityScope('entry')
-  const db = requireDb()
-  const rows = await db.select().from(documentTemplates)
-  return rows.map(toTemplateSummary)
+  const rows = await requireDb().select().from(documentTemplates)
+  const templates = await Promise.all(rows.map(async (record) => {
+    const fileData = await templateStore.get(record.blobKey)
+    return fileData
+      ? {
+          ...toTemplateSummary(record),
+          fileDataBase64: Buffer.from(fileData).toString('base64'),
+        }
+      : null
+  }))
+  return templates.filter((template): template is RemoteDocumentTemplate => template !== null)
 }
 
 export async function listRemoteDocumentTemplateIds() {

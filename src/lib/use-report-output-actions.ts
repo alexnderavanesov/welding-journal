@@ -20,146 +20,161 @@ import type { ReportRow } from '@/lib/report-row-actions'
 import type { ActiveReport } from '@/lib/home-state'
 import type { WeldInput } from '@/lib/weld-fields'
 import { useControlProcessSettings } from '@/lib/control-process-settings'
+import { reserveTabularReportWindow } from '@/lib/report-window'
+
+export type LnkOutputRowsKind = 'current' | 'waitingNk' | 'waitingRequest' | 'conclusions'
+export type PstoOutputRowsKind = 'current' | 'waitingRequest' | 'results'
+export type WeldingJournalOutputRowsKind =
+  | 'current'
+  | 'waitingWeld'
+  | 'waitingRequest'
+  | 'waitingControl'
+  | 'waitingRepair'
+  | 'cancelledAccepted'
+  | 'system'
 
 type UseReportOutputActionsParams = {
   activeReport: ActiveReport
   activeTitle: string
-  heatTreatmentRows: ReportRow[]
-  isLnkRowsContextReady: boolean
-  isPstoRowsContextReady: boolean
-  lnkRows: ReportRow[]
+  loadLnkRows: (kind: LnkOutputRowsKind) => Promise<ReportRow[]>
+  loadPstoRows: (kind: PstoOutputRowsKind) => Promise<ReportRow[]>
+  loadWeldingJournalRows: (kind: WeldingJournalOutputRowsKind) => Promise<WeldInput[]>
   setIsLnkShowMenuOpen: (value: boolean) => void
   setIsPstoShowMenuOpen: (value: boolean) => void
   setIsWeldingJournalShowMenuOpen: (value: boolean) => void
   setMessage: (message: string | null) => void
-  weldingJournalRows: WeldInput[]
-  visibleRows: WeldInput[]
 }
 
 export function useReportOutputActions({
   activeReport,
   activeTitle,
-  heatTreatmentRows,
-  isLnkRowsContextReady,
-  isPstoRowsContextReady,
-  lnkRows,
+  loadLnkRows,
+  loadPstoRows,
+  loadWeldingJournalRows,
   setIsLnkShowMenuOpen,
   setIsPstoShowMenuOpen,
   setIsWeldingJournalShowMenuOpen,
   setMessage,
-  weldingJournalRows,
-  visibleRows,
 }: UseReportOutputActionsParams) {
   const controlProcessSettings = useControlProcessSettings()
   return useMemo(() => {
-    function requireContextReady(ready: boolean, reportLabel: string) {
-      if (ready) return true
-      setMessage(`Данные отчета ${reportLabel} еще загружаются. Повторите действие через несколько секунд.`)
-      return false
+    async function openLoadedReport<Row>(
+      reportLabel: string,
+      loadRows: () => Promise<Row[]>,
+      showRows: (rows: Row[], targetWindow: Window) => Promise<{ ok: true } | { ok: false; message: string }>,
+    ) {
+      const targetWindow = reserveTabularReportWindow(reportLabel)
+      if (!targetWindow) {
+        setMessage('Браузер заблокировал открытие новой вкладки')
+        return
+      }
+      setMessage(`Загружаем данные отчета ${reportLabel}…`)
+      try {
+        const rows = await loadRows()
+        const result = await showRows(rows, targetWindow)
+        setMessage(result.ok ? null : result.message)
+      } catch (error) {
+        targetWindow.close()
+        setMessage(error instanceof Error ? error.message : `Не удалось загрузить данные отчета ${reportLabel}.`)
+      }
     }
 
     async function openLnkCurrentReport() {
-      if (!requireContextReady(isLnkRowsContextReady, 'ЛНК')) return
       setIsLnkShowMenuOpen(false)
-      const result = await openCurrentReportWindow(
-        visibleRows,
-        getReportExportOptions(activeReport, activeTitle, controlProcessSettings).fields,
-        'ЛНК: текущая версия',
-        getReportExportFilename(activeReport),
+      await openLoadedReport(
+        'ЛНК',
+        () => loadLnkRows('current'),
+        (rows, targetWindow) => openCurrentReportWindow(
+          rows,
+          getReportExportOptions(activeReport, activeTitle, controlProcessSettings).fields,
+          'ЛНК: текущая версия',
+          getReportExportFilename(activeReport),
+          targetWindow,
+        ),
       )
-      if (!result.ok) setMessage(result.message)
     }
 
     async function openLnkWaitingNkReport() {
-      if (!requireContextReady(isLnkRowsContextReady, 'ЛНК')) return
       setIsLnkShowMenuOpen(false)
-      const result = await openLnkWaitingNkReportWindow(lnkRows)
-      if (!result.ok) setMessage(result.message)
+      await openLoadedReport('ЛНК «Ожидание НК»', () => loadLnkRows('waitingNk'), openLnkWaitingNkReportWindow)
     }
 
     async function openLnkToRequestReport() {
-      if (!requireContextReady(isLnkRowsContextReady, 'ЛНК')) return
       setIsLnkShowMenuOpen(false)
-      const result = await openLnkToRequestReportWindow(lnkRows)
-      if (!result.ok) setMessage(result.message)
+      await openLoadedReport('ЛНК «Ожидание заявки»', () => loadLnkRows('waitingRequest'), openLnkToRequestReportWindow)
     }
 
     async function openLnkConclusionsReport() {
-      if (!requireContextReady(isLnkRowsContextReady, 'ЛНК')) return
       setIsLnkShowMenuOpen(false)
-      const result = await openLnkConclusionsReportWindow(lnkRows)
-      if (!result.ok) setMessage(result.message)
+      await openLoadedReport('ЛНК «Заключения»', () => loadLnkRows('conclusions'), openLnkConclusionsReportWindow)
     }
 
     async function openPstoCurrentReport() {
-      if (!requireContextReady(isPstoRowsContextReady, 'ПСТО')) return
       setIsPstoShowMenuOpen(false)
-      const result = await openCurrentReportWindow(
-        visibleRows,
-        getReportExportOptions(activeReport, activeTitle, controlProcessSettings).fields,
-        'ПСТО и ТВМТ: текущая версия',
-        getReportExportFilename(activeReport),
+      await openLoadedReport(
+        'ПСТО и ТВМТ',
+        () => loadPstoRows('current'),
+        (rows, targetWindow) => openCurrentReportWindow(
+          rows,
+          getReportExportOptions(activeReport, activeTitle, controlProcessSettings).fields,
+          'ПСТО и ТВМТ: текущая версия',
+          getReportExportFilename(activeReport),
+          targetWindow,
+        ),
       )
-      if (!result.ok) setMessage(result.message)
     }
 
     async function openPstoWaitingRequestReport() {
-      if (!requireContextReady(isPstoRowsContextReady, 'ПСТО')) return
       setIsPstoShowMenuOpen(false)
-      const result = await openPstoWaitingRequestReportWindow(heatTreatmentRows)
-      if (!result.ok) setMessage(result.message)
+      await openLoadedReport('ПСТО «Ожидание заявки»', () => loadPstoRows('waitingRequest'), openPstoWaitingRequestReportWindow)
     }
 
     async function openPstoResultsReport() {
-      if (!requireContextReady(isPstoRowsContextReady, 'ПСТО')) return
       setIsPstoShowMenuOpen(false)
-      const result = await openPstoResultsReportWindow(heatTreatmentRows)
-      if (!result.ok) setMessage(result.message)
+      await openLoadedReport('ПСТО «Результаты»', () => loadPstoRows('results'), openPstoResultsReportWindow)
     }
 
     async function openWeldingJournalCurrentReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      const result = await openWeldingJournalCurrentReportWindow(
-        visibleRows,
-        getReportExportOptions(activeReport, activeTitle, controlProcessSettings).fields,
+      await openLoadedReport(
+        'сварочного журнала',
+        () => loadWeldingJournalRows('current'),
+        (rows, targetWindow) => openWeldingJournalCurrentReportWindow(
+          rows,
+          getReportExportOptions(activeReport, activeTitle, controlProcessSettings).fields,
+          targetWindow,
+        ),
       )
-      if (!result.ok) setMessage(result.message)
     }
 
     async function openWeldingJournalWaitingWeldReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      const result = await openWeldingJournalWaitingWeldReportWindow(weldingJournalRows)
-      if (!result.ok) setMessage(result.message)
+      await openLoadedReport('«Ожидает сварку»', () => loadWeldingJournalRows('waitingWeld'), openWeldingJournalWaitingWeldReportWindow)
     }
 
     async function openWeldingJournalWaitingRequestReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      const result = await openWeldingJournalWaitingRequestReportWindow(weldingJournalRows)
-      if (!result.ok) setMessage(result.message)
+      await openLoadedReport('«Ожидание заявки»', () => loadWeldingJournalRows('waitingRequest'), openWeldingJournalWaitingRequestReportWindow)
     }
 
     async function openWeldingJournalWaitingControlReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      const result = await openWeldingJournalWaitingControlReportWindow(weldingJournalRows)
-      if (!result.ok) setMessage(result.message)
+      await openLoadedReport('«Ожидание НК»', () => loadWeldingJournalRows('waitingControl'), openWeldingJournalWaitingControlReportWindow)
     }
 
     async function openWeldingJournalWaitingRepairReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      const result = await openWeldingJournalWaitingRepairReportWindow(weldingJournalRows)
-      if (!result.ok) setMessage(result.message)
+      await openLoadedReport('«Ожидает ремонт»', () => loadWeldingJournalRows('waitingRepair'), openWeldingJournalWaitingRepairReportWindow)
     }
 
     async function openWeldingJournalCancelledAcceptedReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      const result = await openWeldingJournalCancelledAcceptedReportWindow(weldingJournalRows)
-      if (!result.ok) setMessage(result.message)
+      await openLoadedReport('«Отмененные годные»', () => loadWeldingJournalRows('cancelledAccepted'), openWeldingJournalCancelledAcceptedReportWindow)
     }
 
     async function openWeldingJournalSystemReport() {
       setIsWeldingJournalShowMenuOpen(false)
-      const result = await openWeldingJournalSystemReportWindow(weldingJournalRows)
-      if (!result.ok) setMessage(result.message)
+      await openLoadedReport('системной версии сварочного журнала', () => loadWeldingJournalRows('system'), openWeldingJournalSystemReportWindow)
     }
 
     return {
@@ -182,15 +197,12 @@ export function useReportOutputActions({
     activeReport,
     activeTitle,
     controlProcessSettings,
-    heatTreatmentRows,
-    isLnkRowsContextReady,
-    isPstoRowsContextReady,
-    lnkRows,
+    loadLnkRows,
+    loadPstoRows,
+    loadWeldingJournalRows,
     setIsLnkShowMenuOpen,
     setIsPstoShowMenuOpen,
     setIsWeldingJournalShowMenuOpen,
     setMessage,
-    weldingJournalRows,
-    visibleRows,
   ])
 }

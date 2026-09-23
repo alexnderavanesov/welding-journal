@@ -66,25 +66,6 @@ export type SystemDocumentSequenceTransaction = Parameters<Parameters<Db['transa
 
 const LNK_REQUEST_KEYS = new Set<WeldFieldKey>(LNK_METHODS.map((method) => method.requestKey))
 
-const SYSTEM_DOCUMENT_SEQUENCE_SELECT = {
-  id: weldJoints.id,
-  projectTitle: weldJoints.projectTitle,
-  subtitleCode: weldJoints.subtitleCode,
-  line: weldJoints.line,
-  ...Object.fromEntries(
-    LNK_METHODS.flatMap((method) => [
-      [method.requestKey, weldJoints[method.requestKey]],
-      [method.requestDateKey, weldJoints[method.requestDateKey]],
-      [method.conclusionKey, weldJoints[method.conclusionKey]],
-      [method.conclusionDateKey, weldJoints[method.conclusionDateKey]],
-    ]),
-  ),
-  pstoRequest: weldJoints.pstoRequest,
-  pstoRequestDate: weldJoints.pstoRequestDate,
-  heatTreatmentDiagram: weldJoints.heatTreatmentDiagram,
-  pstoDate: weldJoints.pstoDate,
-}
-
 export const getSystemDocumentSequences = createServerFn({ method: 'GET' }).handler(async () => {
   await assertSecurityScope('entry')
   const db = requireDb()
@@ -307,13 +288,12 @@ export async function reserveSystemDocumentNames(
 
 type SystemDocumentNameSource = {
   table: SQLWrapper
+  id: SQLWrapper
   name: SQLWrapper
   date: SQLWrapper
+  methodCode?: string
   predicate?: SQL
 }
-
-const SYSTEM_DOCUMENT_NAME_DATE_BATCH_SIZE = 1_000
-const SYSTEM_DOCUMENT_NAME_QUERY_PARAMETER_BUDGET = 10_000
 
 export async function loadExistingSystemDocumentNameKeys(
   db: Pick<SystemDocumentSequenceTransaction, 'execute'>,
@@ -326,55 +306,35 @@ export async function loadExistingSystemDocumentNameKeys(
     dates.add(request.date)
     datesBySequence.set(sequenceId, dates)
   }
-  const sourceQueryBatches: SQL[][] = []
-  let sourceQueries: SQL[] = []
-  let estimatedParameterCount = 0
-  const appendSourceQuery = (query: SQL, parameterCount: number) => {
-    if (
-      sourceQueries.length > 0 &&
-      estimatedParameterCount + parameterCount > SYSTEM_DOCUMENT_NAME_QUERY_PARAMETER_BUDGET
-    ) {
-      sourceQueryBatches.push(sourceQueries)
-      sourceQueries = []
-      estimatedParameterCount = 0
-    }
-    sourceQueries.push(query)
-    estimatedParameterCount += parameterCount
-  }
+  const sourceQueries: SQL[] = []
   for (const [sequenceId, dates] of datesBySequence) {
     const orderedDates = [...dates].sort()
-    for (let offset = 0; offset < orderedDates.length; offset += SYSTEM_DOCUMENT_NAME_DATE_BATCH_SIZE) {
-      const dateBatch = orderedDates.slice(offset, offset + SYSTEM_DOCUMENT_NAME_DATE_BATCH_SIZE)
-      for (const source of getSystemDocumentNameSources(sequenceId)) {
-        const dateValues = sql.join(dateBatch.map((date) => sql`${date}`), sql`, `)
-        appendSourceQuery(sql`
-          select
-            ${sequenceId}::text as "sequenceId",
-            coalesce(${source.date}::text, '') as "date",
-            btrim(coalesce(${source.name}, '')) as "name"
-          from ${source.table}
-          where ${source.date} in (${dateValues})
-            and nullif(btrim(${source.name}), '') is not null
-            ${source.predicate ? sql`and ${source.predicate}` : sql``}
-        `, dateBatch.length + 2)
-      }
-      const generatedDateValues = sql.join(dateBatch.map((date) => sql`${date}`), sql`, `)
-      appendSourceQuery(sql`
+    for (const source of getSystemDocumentNameSources(sequenceId)) {
+      sourceQueries.push(sql`
         select
           ${sequenceId}::text as "sequenceId",
-          coalesce(${generatedDocuments.periodFrom}::text, '') as "date",
-          btrim(coalesce(${generatedDocuments.title}, '')) as "name"
-        from ${generatedDocuments}
-        where ${generatedDocuments.type} = ${`system:${sequenceId}`}
-          and ${generatedDocuments.periodFrom} in (${generatedDateValues})
-          and nullif(btrim(${generatedDocuments.title}), '') is not null
-      `, dateBatch.length + 3)
+          coalesce(${source.date}::text, '') as "date",
+          btrim(coalesce(${source.name}, '')) as "name"
+        from ${source.table}
+        where ${source.date} = any(${sql.param(orderedDates)}::date[])
+          and nullif(btrim(${source.name}), '') is not null
+          ${source.predicate ? sql`and ${source.predicate}` : sql``}
+      `)
     }
+    sourceQueries.push(sql`
+      select
+        ${sequenceId}::text as "sequenceId",
+        coalesce(${generatedDocuments.periodFrom}::text, '') as "date",
+        btrim(coalesce(${generatedDocuments.title}, '')) as "name"
+      from ${generatedDocuments}
+      where ${generatedDocuments.type} = ${`system:${sequenceId}`}
+        and ${generatedDocuments.periodFrom} = any(${sql.param(orderedDates)}::date[])
+        and nullif(btrim(${generatedDocuments.title}), '') is not null
+    `)
   }
-  if (sourceQueries.length > 0) sourceQueryBatches.push(sourceQueries)
   const occupiedNames = new Map<SystemDocumentTemplateId, Set<string>>()
-  for (const queryBatch of sourceQueryBatches) {
-    const result = await db.execute(sql.join(queryBatch, sql` union all `))
+  if (sourceQueries.length > 0) {
+    const result = await db.execute(sql.join(sourceQueries, sql` union all `))
     for (const rawRow of result.rows) {
       const row = rawRow as { sequenceId?: unknown; date?: unknown; name?: unknown }
       const sequenceId = String(row.sequenceId ?? '') as SystemDocumentTemplateId
@@ -394,11 +354,13 @@ function getSystemDocumentNameSources(sequenceId: SystemDocumentTemplateId): Sys
         .filter((method) => method.code !== 'ТВМТ')
         .map((method) => ({
           table: weldJoints,
+          id: weldJoints.id,
           name: weldJoints[method.requestKey],
           date: weldJoints[method.requestDateKey],
         })),
       {
         table: preHeatTreatmentControls,
+        id: preHeatTreatmentControls.id,
         name: preHeatTreatmentControls.requestName,
         date: preHeatTreatmentControls.requestDate,
       },
@@ -408,35 +370,41 @@ function getSystemDocumentNameSources(sequenceId: SystemDocumentTemplateId): Sys
     return [
       {
         table: weldJoints,
+        id: weldJoints.id,
         name: weldJoints.tvmtRequest,
         date: weldJoints.tvmtRequestDate,
+        methodCode: 'ТВМТ',
       },
       {
         table: pstoRepeatCycles,
+        id: pstoRepeatCycles.id,
         name: pstoRepeatCycles.tvmtRequest,
         date: pstoRepeatCycles.tvmtRequestDate,
+        methodCode: 'ТВМТ',
       },
     ]
   }
   if (sequenceId === 'pstoRequest') {
     return [
-      { table: weldJoints, name: weldJoints.pstoRequest, date: weldJoints.pstoRequestDate },
-      { table: pstoRepeatCycles, name: pstoRepeatCycles.pstoRequest, date: pstoRepeatCycles.pstoRequestDate },
+      { table: weldJoints, id: weldJoints.id, name: weldJoints.pstoRequest, date: weldJoints.pstoRequestDate },
+      { table: pstoRepeatCycles, id: pstoRepeatCycles.id, name: pstoRepeatCycles.pstoRequest, date: pstoRepeatCycles.pstoRequestDate },
     ]
   }
   if (sequenceId === 'pstoConclusion') {
     return [
-      { table: weldJoints, name: weldJoints.heatTreatmentDiagram, date: weldJoints.pstoDate },
-      { table: pstoRepeatCycles, name: pstoRepeatCycles.heatTreatmentDiagram, date: pstoRepeatCycles.pstoDate },
+      { table: weldJoints, id: weldJoints.id, name: weldJoints.heatTreatmentDiagram, date: weldJoints.pstoDate },
+      { table: pstoRepeatCycles, id: pstoRepeatCycles.id, name: pstoRepeatCycles.heatTreatmentDiagram, date: pstoRepeatCycles.pstoDate },
     ]
   }
   if (sequenceId === 'tvmtConclusion') {
     return [
-      { table: weldJoints, name: weldJoints.tvmtConclusion, date: weldJoints.tvmtConclusionDate },
+      { table: weldJoints, id: weldJoints.id, name: weldJoints.tvmtConclusion, date: weldJoints.tvmtConclusionDate, methodCode: 'ТВМТ' },
       {
         table: pstoRepeatCycles,
+        id: pstoRepeatCycles.id,
         name: pstoRepeatCycles.tvmtConclusion,
         date: pstoRepeatCycles.tvmtConclusionDate,
+        methodCode: 'ТВМТ',
       },
     ]
   }
@@ -448,13 +416,17 @@ function getSystemDocumentNameSources(sequenceId: SystemDocumentTemplateId): Sys
     .flatMap((method) => [
       {
         table: weldJoints,
+        id: weldJoints.id,
         name: weldJoints[method.conclusionKey],
         date: weldJoints[method.conclusionDateKey],
+        methodCode: method.code,
       },
       {
         table: preHeatTreatmentControls,
+        id: preHeatTreatmentControls.id,
         name: preHeatTreatmentControls.conclusionName,
         date: preHeatTreatmentControls.conclusionDate,
+        methodCode: method.code,
         predicate: sql`${preHeatTreatmentControls.method} = ${method.code}`,
       },
     ])
@@ -465,7 +437,7 @@ function systemDocumentNameKey(date: string, name: string) {
 }
 
 export async function readSystemDocumentNextNumber(
-  db: Pick<SystemDocumentSequenceTransaction, 'select'>,
+  db: Pick<SystemDocumentSequenceTransaction, 'select' | 'execute'>,
   sequenceId: SystemDocumentTemplateId,
 ) {
   const [setting] = await db
@@ -475,18 +447,18 @@ export async function readSystemDocumentNextNumber(
     .limit(1)
   const stored = parsePositiveIntegerSetting(setting?.value)
   if (stored) return stored
-  const initial = await readInitialSequenceNumbers(db)
+  const initial = await readInitialSequenceNumbers(db, [sequenceId])
   return initial[sequenceId]
 }
 
 export async function readSystemDocumentNextNumbers<SequenceId extends SystemDocumentTemplateId>(
-  db: Pick<Db, 'select'>,
+  db: Pick<Db, 'select' | 'execute'>,
   sequenceIds: readonly SequenceId[],
 ): Promise<Record<SequenceId, number>> {
   const requestedIds = [...new Set(sequenceIds)].sort()
   const stored = await readStoredSequenceNumbers(db)
   const missingIds = requestedIds.filter((sequenceId) => stored[sequenceId] == null)
-  const initial = missingIds.length > 0 ? await readInitialSequenceNumbers(db) : null
+  const initial = missingIds.length > 0 ? await readInitialSequenceNumbers(db, missingIds) : null
   return Object.fromEntries(requestedIds.map((sequenceId) => [
     sequenceId,
     stored[sequenceId] ?? initial?.[sequenceId] ?? 1,
@@ -527,7 +499,9 @@ async function readAndInitializeSystemDocumentSequenceNumbers<SequenceId extends
     for (const sequenceId of missingIds) await lockSystemDocumentNumberCounter(tx, sequenceId)
     const currentStored = await readStoredSequenceNumbers(tx)
     const currentMissingIds = requestedIds.filter((sequenceId) => currentStored[sequenceId] === null)
-    const initial = currentMissingIds.length > 0 ? await readInitialSequenceNumbers(tx) : null
+    const initial = currentMissingIds.length > 0
+      ? await readInitialSequenceNumbers(tx, currentMissingIds)
+      : null
     for (const sequenceId of currentMissingIds) {
       await writeSystemDocumentNextNumber(tx, sequenceId, initial?.[sequenceId] ?? 1)
     }
@@ -540,29 +514,168 @@ async function readAndInitializeSystemDocumentSequenceNumbers<SequenceId extends
   })
 }
 
-async function readInitialSequenceNumbers(db: Pick<Db, 'select'>) {
-  const rows = await db.select(SYSTEM_DOCUMENT_SEQUENCE_SELECT).from(weldJoints)
-  const preControls = await db.select().from(preHeatTreatmentControls)
-  const repeatCycles = await db.select().from(pstoRepeatCycles)
+export async function readInitialSequenceNumbers(
+  db: Pick<Db, 'select' | 'execute'>,
+  sequenceIds: readonly SystemDocumentTemplateId[],
+) {
   const settings = await readRequestConclusionSettings(db)
-  const preControlsByWeldJointId = new Map<number, typeof preControls>()
-  for (const control of preControls) {
-    const current = preControlsByWeldJointId.get(control.weldJointId) ?? []
-    current.push(control)
-    preControlsByWeldJointId.set(control.weldJointId, current)
+  const requestedIds = [...new Set(sequenceIds)]
+  const query = buildInitialSystemDocumentSequenceQuery(settings, requestedIds)
+  const result = query ? await db.execute(query) : { rows: [] }
+  const maximums = new Map(
+    result.rows.map((rawRow) => {
+      const row = rawRow as { sequenceId?: unknown; maxNumber?: unknown }
+      return [String(row.sequenceId ?? ''), Number(row.maxNumber)] as const
+    }),
+  )
+  return Object.fromEntries(requestedIds.map((sequenceId) => {
+    const maximum = maximums.get(sequenceId)
+    return [
+      sequenceId,
+      Number.isSafeInteger(maximum) && Number(maximum) > 0 ? Number(maximum) + 1 : 1,
+    ]
+  })) as Record<SystemDocumentTemplateId, number>
+}
+
+export function buildInitialSystemDocumentSequenceQuery(
+  settings: RequestConclusionSettings,
+  sequenceIds: readonly SystemDocumentTemplateId[],
+) {
+  const entriesByTable = new Map<SQLWrapper, SQL[]>()
+  let sourceKey = 0
+  for (const sequenceId of [...new Set(sequenceIds)]) {
+    for (const source of getSystemDocumentNameSources(sequenceId)) {
+      sourceKey += 1
+      const patterns = getSystemDocumentNumberPatterns(settings, sequenceId, source.methodCode)
+      const entries = entriesByTable.get(source.table) ?? []
+      for (const pattern of patterns) {
+        entries.push(sql`(
+          ${source.id}::bigint,
+          ${sourceKey}::integer,
+          btrim(coalesce(${source.name}::text, '')),
+          ${sequenceId}::text,
+          ${buildSystemDocumentNumberRegex(pattern, source.date, source.methodCode)},
+          ${getSystemDocumentPatternLiteralPrefix(pattern)}::text,
+          (${source.predicate ?? sql`true`})::boolean
+        )`)
+      }
+      if (entries.length > 0) entriesByTable.set(source.table, entries)
+    }
   }
-  const repeatCyclesByWeldJointId = new Map<number, typeof repeatCycles>()
-  for (const cycle of repeatCycles) {
-    const current = repeatCyclesByWeldJointId.get(cycle.weldJointId) ?? []
-    current.push(cycle)
-    repeatCyclesByWeldJointId.set(cycle.weldJointId, current)
+  const tableQueries = [...entriesByTable].map(([table, entries]) => sql`
+    select
+      "source_numbers"."sequenceId",
+      max("source_numbers"."documentNumber") as "maxNumber"
+    from (
+      select
+        "sources"."sequenceId",
+        "sources"."sourceId",
+        "sources"."sourceKey",
+        min(
+          case
+            when char_length(("matched"."parts")[1]) <= 16
+              and (("matched"."parts")[1])::numeric between 1 and 9007199254740991
+            then (("matched"."parts")[1])::numeric
+            else null
+          end
+        ) as "documentNumber"
+      from ${table}
+      cross join lateral (values ${sql.join(entries, sql`, `)}) as "sources"(
+        "sourceId",
+        "sourceKey",
+        "name",
+        "sequenceId",
+        "pattern",
+        "literalPrefix",
+        "eligible"
+      )
+      cross join lateral regexp_match(
+        "sources"."name",
+        "sources"."pattern"
+      ) as "matched"("parts")
+      where "sources"."eligible"
+        and nullif("sources"."name", '') is not null
+        and starts_with("sources"."name", "sources"."literalPrefix")
+      group by "sources"."sequenceId", "sources"."sourceId", "sources"."sourceKey"
+    ) as "source_numbers"
+    group by "source_numbers"."sequenceId"
+  `)
+  if (tableQueries.length === 0) return null
+  return sql`
+    select "sequence_maximums"."sequenceId", max("sequence_maximums"."maxNumber") as "maxNumber"
+    from (${sql.join(tableQueries, sql` union all `)}) as "sequence_maximums"
+    group by "sequence_maximums"."sequenceId"
+  `
+}
+
+function getSystemDocumentNumberPatterns(
+  settings: RequestConclusionSettings,
+  sequenceId: SystemDocumentTemplateId,
+  methodCode?: string,
+) {
+  const type = sequenceId === 'pstoRequest' || sequenceId === 'pstoConclusion'
+    ? sequenceId
+    : sequenceId === 'lnkRequest' || sequenceId === 'tvmtRequest'
+      ? 'lnkRequest'
+      : 'lnkConclusion'
+  const namingKind = getRequestConclusionNamingKind({ type, methodCode })
+  const namingSettings = settings[namingKind]
+  return [...new Set([
+    namingSettings.systemPattern,
+    ...(namingSettings.systemPatternHistory ?? []),
+    REQUEST_CONCLUSION_DEFAULT_SETTINGS[namingKind].systemPattern,
+  ])].filter(hasSystemDocumentNumberField)
+}
+
+function buildSystemDocumentNumberRegex(
+  pattern: string,
+  dateColumn: SQLWrapper,
+  methodCode?: string,
+) {
+  const parts: SQL[] = [sql`${'^'}::text`]
+  const tokenPattern = /\{\{\s*([^{}]+?)\s*\}\}/g
+  let cursor = 0
+  for (const match of pattern.matchAll(tokenPattern)) {
+    const matchIndex = match.index ?? cursor
+    appendSystemDocumentRegexLiteral(parts, pattern.slice(cursor, matchIndex))
+    const token = match[1].trim().toLocaleLowerCase('ru-RU')
+    if (token === 'дата') {
+      parts.push(buildSystemDocumentDateRegex(dateColumn, false))
+    } else if (token === 'датакороткая' || token === 'короткая дата') {
+      parts.push(buildSystemDocumentDateRegex(dateColumn, true))
+    } else if (token === 'метод') {
+      appendSystemDocumentRegexLiteral(parts, methodCode ?? '')
+    } else if (token === '№' || token === 'номер') {
+      parts.push(sql`${'([0-9]+)'}::text`)
+    } else if (token === 'проект' || token === 'шифр' || token === 'линия') {
+      parts.push(sql`${'.*?'}::text`)
+    }
+    cursor = matchIndex + match[0].length
   }
-  const weldRows = rows.map((row) => ({
-    ...row,
-    preHeatTreatmentControls: preControlsByWeldJointId.get(row.id) ?? [],
-    pstoRepeatCycles: repeatCyclesByWeldJointId.get(row.id) ?? [],
-  })) as unknown as Array<Partial<WeldRow> & Pick<WeldRow, 'id'>>
-  return getInitialSystemDocumentSequenceNumbers(weldRows, settings)
+  appendSystemDocumentRegexLiteral(parts, pattern.slice(cursor))
+  parts.push(sql`${'$'}::text`)
+  return sql`concat(${sql.join(parts, sql`, `)})`
+}
+
+function getSystemDocumentPatternLiteralPrefix(pattern: string) {
+  const tokenIndex = pattern.search(/\{\{\s*[^{}]+?\s*\}\}/)
+  return tokenIndex < 0 ? pattern : pattern.slice(0, tokenIndex)
+}
+
+function buildSystemDocumentDateRegex(dateColumn: SQLWrapper, short: boolean) {
+  const date = sql`coalesce(${dateColumn}::date, current_date)`
+  return sql`concat(
+    to_char(${date}, 'DD'),
+    ${'\\.'}::text,
+    to_char(${date}, 'MM'),
+    ${'\\.'}::text,
+    to_char(${date}, ${short ? 'YY' : 'YYYY'}::text)
+  )`
+}
+
+function appendSystemDocumentRegexLiteral(parts: SQL[], value: string) {
+  if (!value) return
+  parts.push(sql`${value.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}::text`)
 }
 
 export async function readRequestConclusionSettings(

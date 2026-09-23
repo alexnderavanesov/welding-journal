@@ -24,8 +24,12 @@ import { calculateWdi, isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
 import { attachGeneratedDocumentFields } from '@/server/generated-document-row-fields'
 import { attachPreHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 import {
+  buildDocumentHistoryFilterOptionsSqlQuery,
   buildDocumentHistorySqlQuery,
+  DOCUMENT_HISTORY_FILTER_OPTION_LIMIT,
+  normalizeSqlDocumentHistoryFilterOptions,
   normalizeSqlDocumentHistoryResult,
+  type SqlDocumentHistoryFilterOptionsResult,
 } from '@/server/document-history-sql'
 import { buildCurrentWdiSqlExpression } from '@/server/current-wdi-sql'
 import { assertSecurityScope } from '@/server/security-functions'
@@ -44,7 +48,7 @@ import {
   lockAndAssertInteractiveWeldVersions,
   lockInteractiveWeldRows,
 } from '@/server/weld-row-version'
-import { splitNumberBatches } from '@/server/weld-request-utils'
+import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 
 export type { GeneratedDocumentType } from '@/lib/generated-document-types'
 
@@ -85,6 +89,15 @@ export type RemoteGeneratedDocumentHistoryResult = {
   documents: RemoteGeneratedDocument[]
   total: number
   filterOptions: Record<string, RemoteDocumentHistoryFilterOption[]>
+}
+
+export type RemoteGeneratedDocumentHistoryFilterOptionsRequest = {
+  type?: GeneratedDocumentType
+  types?: GeneratedDocumentType[]
+  documentId?: number
+  fieldKey: string
+  search?: string
+  columnFilters?: Record<string, string>
 }
 
 export type SaveGeneratedDocumentInput = {
@@ -169,7 +182,14 @@ export const listRemoteGeneratedDocumentHistory = createServerFn({ method: 'GET'
     return loadRemoteGeneratedDocumentHistory(data)
   })
 
-const GENERATED_DOCUMENT_HISTORY_FILTER_KEYS = [
+export const listRemoteGeneratedDocumentHistoryFilterOptions = createServerFn({ method: 'GET' })
+  .validator(normalizeGeneratedDocumentHistoryFilterOptionsRequest)
+  .handler(async ({ data }): Promise<SqlDocumentHistoryFilterOptionsResult> => {
+    await assertSecurityScope('entry')
+    return loadRemoteGeneratedDocumentHistoryFilterOptions(data)
+  })
+
+export const GENERATED_DOCUMENT_HISTORY_FILTER_KEYS = [
   'title',
   'stage',
   'project',
@@ -179,9 +199,38 @@ const GENERATED_DOCUMENT_HISTORY_FILTER_KEYS = [
   'rowCount',
   'wdi',
   'updatedAt',
-]
+] as const
 
-async function loadRemoteGeneratedDocumentHistory(
+export type GeneratedDocumentHistoryFilterKey = typeof GENERATED_DOCUMENT_HISTORY_FILTER_KEYS[number]
+
+export function isGeneratedDocumentHistoryFilterKey(value: unknown): value is GeneratedDocumentHistoryFilterKey {
+  return GENERATED_DOCUMENT_HISTORY_FILTER_KEYS.includes(value as GeneratedDocumentHistoryFilterKey)
+}
+
+export async function loadRemoteGeneratedDocumentHistoryFilterOptions(
+  data: ReturnType<typeof normalizeGeneratedDocumentHistoryFilterOptionsRequest>,
+): Promise<SqlDocumentHistoryFilterOptionsResult> {
+  if (data.types.some(isLayeredControlDocumentType)) {
+    await ensureLayeredControlDocumentsInitialized()
+  }
+  const db = requireDb()
+  const otherSettings = await loadGeneratedDocumentOtherSettings(db)
+  const baseQuery = buildRemoteGeneratedDocumentHistoryBaseQuery(data, otherSettings)
+  const result = await db.execute(buildDocumentHistoryFilterOptionsSqlQuery({
+    baseQuery,
+    columnFilters: data.columnFilters,
+    filterKeys: [...GENERATED_DOCUMENT_HISTORY_FILTER_KEYS],
+    key: data.fieldKey,
+    search: data.search,
+    limit: DOCUMENT_HISTORY_FILTER_OPTION_LIMIT,
+  }))
+  return normalizeSqlDocumentHistoryFilterOptions(
+    result.rows,
+    DOCUMENT_HISTORY_FILTER_OPTION_LIMIT,
+  )
+}
+
+export async function loadRemoteGeneratedDocumentHistory(
   data: ReturnType<typeof normalizeGeneratedDocumentHistoryRequest>,
 ): Promise<RemoteGeneratedDocumentHistoryResult> {
   if (data.types.some(isLayeredControlDocumentType)) {
@@ -189,6 +238,26 @@ async function loadRemoteGeneratedDocumentHistory(
   }
   const db = requireDb()
   const otherSettings = await loadGeneratedDocumentOtherSettings(db)
+  const baseQuery = buildRemoteGeneratedDocumentHistoryBaseQuery(data, otherSettings)
+  const result = await db.execute(buildDocumentHistorySqlQuery({
+    baseQuery,
+    columnFilters: data.columnFilters,
+    filterKeys: [...GENERATED_DOCUMENT_HISTORY_FILTER_KEYS],
+    optionKeys: [],
+    limit: data.limit,
+    orderBy: sql`"updatedAt" desc, "id" desc`,
+  }))
+  return normalizeSqlDocumentHistoryResult(
+    result.rows[0],
+    [...GENERATED_DOCUMENT_HISTORY_FILTER_KEYS],
+    toRemoteGeneratedDocumentHistoryRow,
+  )
+}
+
+function buildRemoteGeneratedDocumentHistoryBaseQuery(
+  data: Pick<ReturnType<typeof normalizeGeneratedDocumentHistoryRequest>, 'documentId' | 'types'>,
+  otherSettings: OtherSettings,
+) {
   const currentWdi = buildCurrentWdiSqlExpression(otherSettings, {
     connectionType: weldJoints.connectionType,
     d1: weldJoints.d1,
@@ -197,7 +266,7 @@ async function loadRemoteGeneratedDocumentHistory(
     t2: weldJoints.t2,
     wdi: weldJoints.wdi,
   })
-  const baseQuery = sql`
+  return sql`
     select
       "document_aggregate".*,
       array["document_aggregate"."title"]::text[] as "filter_title",
@@ -290,18 +359,6 @@ async function loadRemoteGeneratedDocumentHistory(
       group by ${generatedDocuments.id}
     ) as "document_aggregate"
   `
-  const result = await db.execute(buildDocumentHistorySqlQuery({
-    baseQuery,
-    columnFilters: data.columnFilters,
-    filterKeys: GENERATED_DOCUMENT_HISTORY_FILTER_KEYS,
-    limit: data.limit,
-    orderBy: sql`"updatedAt" desc, "id" desc`,
-  }))
-  return normalizeSqlDocumentHistoryResult(
-    result.rows[0],
-    GENERATED_DOCUMENT_HISTORY_FILTER_KEYS,
-    toRemoteGeneratedDocumentHistoryRow,
-  )
 }
 
 export function normalizeGeneratedDocumentHistoryRequest(
@@ -318,8 +375,26 @@ export function normalizeGeneratedDocumentHistoryRequest(
   }
 }
 
+export function normalizeGeneratedDocumentHistoryFilterOptionsRequest(
+  data: RemoteGeneratedDocumentHistoryFilterOptionsRequest | undefined,
+) {
+  if (!isGeneratedDocumentHistoryFilterKey(data?.fieldKey)) {
+    throw new Error('Неизвестный столбец фильтра истории документов.')
+  }
+  const types = normalizeGeneratedDocumentHistoryTypes(data)
+  const documentId = normalizeDocumentHistoryDocumentId(data?.documentId)
+  return {
+    type: types[0],
+    types,
+    ...(documentId ? { documentId } : {}),
+    fieldKey: data.fieldKey,
+    search: String(data?.search ?? '').trim().slice(0, 200),
+    columnFilters: normalizeDocumentHistoryColumnFilters(data?.columnFilters),
+  }
+}
+
 function normalizeGeneratedDocumentHistoryTypes(
-  data: RemoteGeneratedDocumentHistoryRequest | undefined,
+  data: RemoteGeneratedDocumentHistoryRequest | RemoteGeneratedDocumentHistoryFilterOptionsRequest | undefined,
 ): GeneratedDocumentType[] {
   const values = Array.isArray(data?.types) ? data.types : [data?.type]
   const types = [...new Set(values.filter(isGeneratedDocumentType))]
@@ -625,42 +700,39 @@ async function saveGeneratedDocumentBatchInTransaction(
   numberSequence: GeneratedDocumentNumberSequence,
   otherSettings: OtherSettings,
 ): Promise<RemoteGeneratedDocument[]> {
-  const selectedIds = data.flatMap((input) => input.weldJointIds)
+  const selectedIds = [...new Set(data.flatMap((input) => input.weldJointIds))]
   const currentRows = await lockAndAssertInteractiveWeldVersions(
     tx,
     selectedIds,
     data.flatMap((input) => input.expectedVersions),
   )
   const currentRowsById = new Map(currentRows.map((row) => [row.id, row]))
-  const existingAssignments: ExistingGeneratedDocumentAssignment[] = []
-  for (const selectedIdBatch of splitNumberBatches(selectedIds, 1000)) {
-    existingAssignments.push(...await tx
-      .select({
-        documentId: generatedDocumentWeldJoints.documentId,
-        weldJointId: generatedDocumentWeldJoints.weldJointId,
-        documentNumber: generatedDocuments.documentNumber,
-        documentUpdatedAt: generatedDocuments.updatedAt,
-      })
-      .from(generatedDocumentWeldJoints)
-      .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))
-      .where(
-        and(
-          inArray(generatedDocumentWeldJoints.weldJointId, selectedIdBatch),
-          eq(generatedDocuments.type, data[0].type),
-        ),
-      ))
-  }
+  const existingAssignments: ExistingGeneratedDocumentAssignment[] = await tx
+    .select({
+      documentId: generatedDocumentWeldJoints.documentId,
+      weldJointId: generatedDocumentWeldJoints.weldJointId,
+      documentNumber: generatedDocuments.documentNumber,
+      documentUpdatedAt: generatedDocuments.updatedAt,
+    })
+    .from(generatedDocumentWeldJoints)
+    .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))
+    .where(
+      and(
+        buildNumberArrayMatch(generatedDocumentWeldJoints.weldJointId, selectedIds),
+        eq(generatedDocuments.type, data[0].type),
+      ),
+    )
   const existingDocumentIds = [...new Set(existingAssignments.map((assignment) => assignment.documentId))]
   const documentAssignmentCounts = new Map<number, number>()
-  for (const documentIdBatch of splitNumberBatches(existingDocumentIds, 1000)) {
+  if (existingDocumentIds.length > 0) {
     const documentCounts = await tx
-        .select({
-          documentId: generatedDocumentWeldJoints.documentId,
-          total: count(),
-        })
-        .from(generatedDocumentWeldJoints)
-        .where(inArray(generatedDocumentWeldJoints.documentId, documentIdBatch))
-        .groupBy(generatedDocumentWeldJoints.documentId)
+      .select({
+        documentId: generatedDocumentWeldJoints.documentId,
+        total: count(),
+      })
+      .from(generatedDocumentWeldJoints)
+      .where(buildNumberArrayMatch(generatedDocumentWeldJoints.documentId, existingDocumentIds))
+      .groupBy(generatedDocumentWeldJoints.documentId)
     documentCounts.forEach((record) => {
       documentAssignmentCounts.set(record.documentId, Number(record.total))
     })
@@ -708,27 +780,29 @@ async function saveGeneratedDocumentBatchInTransaction(
   const resolvedDocumentIds = await persistGeneratedDocumentBatchRecordsInTransaction(tx, records)
 
   if (existingDocumentIds.length > 0) {
-    for (const selectedIdBatch of splitNumberBatches(selectedIds, 1000)) {
-      const idValues = sql.join(selectedIdBatch.map((id) => sql`${id}`), sql`, `)
-      await tx.execute(sql`
-        delete from "generated_document_weld_joints" as assignment
-        using "generated_documents" as document
-        where assignment."document_id" = document."id"
-          and document."type" = ${data[0].type}
-          and assignment."weld_joint_id" in (${idValues})
-      `)
-    }
+    await tx.execute(sql`
+      delete from "generated_document_weld_joints" as assignment
+      using "generated_documents" as document
+      where assignment."document_id" = document."id"
+        and document."type" = ${data[0].type}
+        and assignment."weld_joint_id" = any(${sql.param(selectedIds)}::integer[])
+    `)
   }
   const nextAssignments = data.flatMap((input, inputIndex) => {
     const documentId = resolvedDocumentIds.get(inputIndex)
     if (!documentId) throw new Error('Не удалось сохранить сформированный документ.')
     return input.weldJointIds.map((weldJointId) => ({ documentId, weldJointId }))
   })
-  for (let offset = 0; offset < nextAssignments.length; offset += 1000) {
-    await tx
-      .insert(generatedDocumentWeldJoints)
-      .values(nextAssignments.slice(offset, offset + 1000))
-      .onConflictDoNothing()
+  if (nextAssignments.length > 0) {
+    await tx.execute(sql`
+      insert into "generated_document_weld_joints" ("document_id", "weld_joint_id")
+      select source.document_id, source.weld_joint_id
+      from unnest(
+        ${sql.param(nextAssignments.map((assignment) => assignment.documentId))}::integer[],
+        ${sql.param(nextAssignments.map((assignment) => assignment.weldJointId))}::integer[]
+      ) as source(document_id, weld_joint_id)
+      on conflict do nothing
+    `)
   }
 
   const targetDocumentIds = new Set(resolvedDocumentIds.values())
@@ -746,14 +820,11 @@ async function saveGeneratedDocumentBatchInTransaction(
   })
 
   await touchWeldingProfile(tx, selectedIds, now)
-  const savedDocumentsById = new Map<number, typeof generatedDocuments.$inferSelect>()
-  for (const documentIdBatch of splitNumberBatches([...targetDocumentIds], 1000)) {
-    const savedDocuments = await tx
-      .select()
-      .from(generatedDocuments)
-      .where(inArray(generatedDocuments.id, documentIdBatch))
-    savedDocuments.forEach((document) => savedDocumentsById.set(document.id, document))
-  }
+  const savedDocuments = await tx
+    .select()
+    .from(generatedDocuments)
+    .where(buildNumberArrayMatch(generatedDocuments.id, [...targetDocumentIds]))
+  const savedDocumentsById = new Map(savedDocuments.map((document) => [document.id, document]))
 
   return data.map((_, inputIndex) => {
     const documentId = resolvedDocumentIds.get(inputIndex)
@@ -769,20 +840,7 @@ export async function persistGeneratedDocumentBatchRecordsInTransaction(
 ) {
   const resolvedDocumentIds = new Map<number, number>()
   const existingRecords = records.filter((record) => record.targetDocumentId != null)
-  for (let offset = 0; offset < existingRecords.length; offset += 250) {
-    const batch = existingRecords.slice(offset, offset + 250)
-    const values = sql.join(batch.map((record) => sql`(
-      ${record.targetDocumentId!}::integer,
-      ${record.title}::text,
-      ${record.fileName}::text,
-      ${record.mimeType}::text,
-      ${record.periodFrom}::date,
-      ${record.periodTo}::date,
-      ${record.rowCount}::integer,
-      ${record.wdiTotal}::numeric,
-      ${record.documentNumber}::integer,
-      ${record.updatedAt}::timestamptz
-    )`), sql`, `)
+  if (existingRecords.length > 0) {
     await tx.execute(sql`
       update "generated_documents" as document
       set
@@ -795,7 +853,18 @@ export async function persistGeneratedDocumentBatchRecordsInTransaction(
         "wdi_total" = refreshed.wdi_total,
         "document_number" = refreshed.document_number,
         "updated_at" = refreshed.updated_at
-      from (values ${values}) as refreshed(
+      from unnest(
+        ${sql.param(existingRecords.map((record) => record.targetDocumentId!))}::integer[],
+        ${sql.param(existingRecords.map((record) => record.title))}::text[],
+        ${sql.param(existingRecords.map((record) => record.fileName))}::text[],
+        ${sql.param(existingRecords.map((record) => record.mimeType))}::text[],
+        ${sql.param(existingRecords.map((record) => record.periodFrom))}::date[],
+        ${sql.param(existingRecords.map((record) => record.periodTo))}::date[],
+        ${sql.param(existingRecords.map((record) => record.rowCount))}::integer[],
+        ${sql.param(existingRecords.map((record) => record.wdiTotal))}::numeric[],
+        ${sql.param(existingRecords.map((record) => record.documentNumber))}::integer[],
+        ${sql.param(existingRecords.map((record) => record.updatedAt.toISOString()))}::timestamptz[]
+      ) as refreshed(
         id,
         title,
         file_name,
@@ -809,31 +878,64 @@ export async function persistGeneratedDocumentBatchRecordsInTransaction(
       )
       where document."id" = refreshed.id
     `)
-    batch.forEach((record) => resolvedDocumentIds.set(record.inputIndex, record.targetDocumentId!))
+    existingRecords.forEach((record) => resolvedDocumentIds.set(record.inputIndex, record.targetDocumentId!))
   }
 
   const newRecords = records.filter((record) => record.targetDocumentId == null)
-  for (let offset = 0; offset < newRecords.length; offset += 250) {
-    const batch = newRecords.slice(offset, offset + 250)
-    const inserted = await tx
-      .insert(generatedDocuments)
-      .values(batch.map((record) => ({
-        type: record.type,
-        title: record.title,
-        fileName: record.fileName,
-        mimeType: record.mimeType,
-        periodFrom: record.periodFrom,
-        periodTo: record.periodTo,
-        rowCount: record.rowCount,
-        wdiTotal: record.wdiTotal,
-        documentNumber: record.documentNumber,
-      })))
-      .returning({
-        id: generatedDocuments.id,
-        documentNumber: generatedDocuments.documentNumber,
-      })
+  if (newRecords.length > 0) {
+    const insertedResult = await tx.execute(sql`
+      insert into "generated_documents" (
+        "type",
+        "title",
+        "file_name",
+        "mime_type",
+        "period_from",
+        "period_to",
+        "row_count",
+        "wdi_total",
+        "document_number"
+      )
+      select
+        source.type,
+        source.title,
+        source.file_name,
+        source.mime_type,
+        source.period_from,
+        source.period_to,
+        source.row_count,
+        source.wdi_total,
+        source.document_number
+      from unnest(
+        ${sql.param(newRecords.map((record) => record.type))}::text[],
+        ${sql.param(newRecords.map((record) => record.title))}::text[],
+        ${sql.param(newRecords.map((record) => record.fileName))}::text[],
+        ${sql.param(newRecords.map((record) => record.mimeType))}::text[],
+        ${sql.param(newRecords.map((record) => record.periodFrom))}::date[],
+        ${sql.param(newRecords.map((record) => record.periodTo))}::date[],
+        ${sql.param(newRecords.map((record) => record.rowCount))}::integer[],
+        ${sql.param(newRecords.map((record) => record.wdiTotal))}::numeric[],
+        ${sql.param(newRecords.map((record) => record.documentNumber))}::integer[]
+      ) as source(
+        type,
+        title,
+        file_name,
+        mime_type,
+        period_from,
+        period_to,
+        row_count,
+        wdi_total,
+        document_number
+      )
+      returning
+        "id",
+        "document_number" as "documentNumber"
+    `)
+    const inserted = insertedResult.rows as Array<{
+      id: number
+      documentNumber: number | null
+    }>
     const insertedByNumber = new Map(inserted.map((document) => [document.documentNumber, document.id]))
-    for (const record of batch) {
+    for (const record of newRecords) {
       const documentId = insertedByNumber.get(record.documentNumber)
       if (!documentId) throw new Error('Не удалось определить номер сформированного документа.')
       resolvedDocumentIds.set(record.inputIndex, documentId)
@@ -1069,24 +1171,22 @@ async function calculateGeneratedDocumentWdiTotals(
   const totals = new Map(uniqueDocumentIds.map((documentId) => [documentId, 0]))
   if (uniqueDocumentIds.length === 0) return totals
   const otherSettings = settings ?? await loadGeneratedDocumentOtherSettings(db)
-  for (const documentIdBatch of splitNumberBatches(uniqueDocumentIds, 1_000)) {
-    const rows = await db
-      .select({
-        documentId: generatedDocumentWeldJoints.documentId,
-        connectionType: weldJoints.connectionType,
-        d1: weldJoints.d1,
-        d2: weldJoints.d2,
-        t1: weldJoints.t1,
-        t2: weldJoints.t2,
-        wdi: weldJoints.wdi,
-      })
-      .from(generatedDocumentWeldJoints)
-      .innerJoin(weldJoints, eq(weldJoints.id, generatedDocumentWeldJoints.weldJointId))
-      .where(inArray(generatedDocumentWeldJoints.documentId, documentIdBatch))
+  const rows = await db
+    .select({
+      documentId: generatedDocumentWeldJoints.documentId,
+      connectionType: weldJoints.connectionType,
+      d1: weldJoints.d1,
+      d2: weldJoints.d2,
+      t1: weldJoints.t1,
+      t2: weldJoints.t2,
+      wdi: weldJoints.wdi,
+    })
+    .from(generatedDocumentWeldJoints)
+    .innerJoin(weldJoints, eq(weldJoints.id, generatedDocumentWeldJoints.weldJointId))
+    .where(buildNumberArrayMatch(generatedDocumentWeldJoints.documentId, uniqueDocumentIds))
 
-    for (const row of rows) {
-      totals.set(row.documentId, (totals.get(row.documentId) ?? 0) + (calculateWdi(row as WeldInput, otherSettings) ?? 0))
-    }
+  for (const row of rows) {
+    totals.set(row.documentId, (totals.get(row.documentId) ?? 0) + (calculateWdi(row as WeldInput, otherSettings) ?? 0))
   }
   return totals
 }
@@ -1107,25 +1207,17 @@ export async function refreshStaleGeneratedDocumentsInTransaction({
   const documentIds = [...new Set(staleDocumentIds)].sort((left, right) => left - right)
   if (documentIds.length === 0) return
 
-  const summaries: Array<{
-    documentId: number
-    total: number | string
-    periodFrom: string | null
-    periodTo: string | null
-  }> = []
-  for (const documentIdBatch of splitNumberBatches(documentIds, 1_000)) {
-    summaries.push(...await tx
-      .select({
-        documentId: generatedDocumentWeldJoints.documentId,
-        total: count(),
-        periodFrom: min(weldJoints.weldDate),
-        periodTo: max(weldJoints.weldDate),
-      })
-      .from(generatedDocumentWeldJoints)
-      .innerJoin(weldJoints, eq(weldJoints.id, generatedDocumentWeldJoints.weldJointId))
-      .where(inArray(generatedDocumentWeldJoints.documentId, documentIdBatch))
-      .groupBy(generatedDocumentWeldJoints.documentId))
-  }
+  const summaries = await tx
+    .select({
+      documentId: generatedDocumentWeldJoints.documentId,
+      total: count(),
+      periodFrom: min(weldJoints.weldDate),
+      periodTo: max(weldJoints.weldDate),
+    })
+    .from(generatedDocumentWeldJoints)
+    .innerJoin(weldJoints, eq(weldJoints.id, generatedDocumentWeldJoints.weldJointId))
+    .where(buildNumberArrayMatch(generatedDocumentWeldJoints.documentId, documentIds))
+    .groupBy(generatedDocumentWeldJoints.documentId)
   const summariesById = new Map(summaries.map((summary) => [summary.documentId, summary]))
   const emptyDocumentIds = documentIds.filter((documentId) => !summariesById.has(documentId))
   const populatedDocumentIds = documentIds.filter((documentId) => summariesById.has(documentId))
@@ -1136,43 +1228,41 @@ export async function refreshStaleGeneratedDocumentsInTransaction({
   )
 
   if (emptyDocumentIds.length > 0) {
-    for (const documentIdBatch of splitNumberBatches(emptyDocumentIds, 1_000)) {
-      await tx.delete(generatedDocuments).where(inArray(generatedDocuments.id, documentIdBatch))
-    }
+    await tx
+      .delete(generatedDocuments)
+      .where(buildNumberArrayMatch(generatedDocuments.id, emptyDocumentIds))
   }
   if (populatedDocumentIds.length === 0) return
 
-  for (const documentIdBatch of splitNumberBatches(populatedDocumentIds, 1_000)) {
-    const values = sql.join(
-      documentIdBatch.map((documentId) => {
-        const summary = summariesById.get(documentId)!
-        const previousUpdatedAt = documentUpdatedAtById.get(documentId)
-        const updatedAt = previousUpdatedAt
-          ? getNextTimestampVersion(previousUpdatedAt, now)
-          : now
-        return sql`(
-          ${documentId}::integer,
-          ${Number(summary.total)}::integer,
-          ${summary.periodFrom}::date,
-          ${summary.periodTo}::date,
-          ${currentWdiTotals.get(documentId) ?? 0}::numeric,
-          ${updatedAt}::timestamptz
-        )`
-      }),
-      sql`, `,
-    )
-    await tx.execute(sql`
-      update "generated_documents" as document
-      set
-        "row_count" = refreshed.row_count,
-        "period_from" = refreshed.period_from,
-        "period_to" = refreshed.period_to,
-        "wdi_total" = refreshed.wdi_total,
-        "updated_at" = refreshed.updated_at
-      from (values ${values}) as refreshed(id, row_count, period_from, period_to, wdi_total, updated_at)
-      where document."id" = refreshed.id
-    `)
-  }
+  const populatedSummaries = populatedDocumentIds.map((documentId) => {
+    const summary = summariesById.get(documentId)!
+    const previousUpdatedAt = documentUpdatedAtById.get(documentId)
+    return {
+      documentId,
+      summary,
+      updatedAt: previousUpdatedAt
+        ? getNextTimestampVersion(previousUpdatedAt, now)
+        : now,
+    }
+  })
+  await tx.execute(sql`
+    update "generated_documents" as document
+    set
+      "row_count" = refreshed.row_count,
+      "period_from" = refreshed.period_from,
+      "period_to" = refreshed.period_to,
+      "wdi_total" = refreshed.wdi_total,
+      "updated_at" = refreshed.updated_at
+    from unnest(
+      ${sql.param(populatedSummaries.map(({ documentId }) => documentId))}::integer[],
+      ${sql.param(populatedSummaries.map(({ summary }) => Number(summary.total)))}::integer[],
+      ${sql.param(populatedSummaries.map(({ summary }) => summary.periodFrom))}::date[],
+      ${sql.param(populatedSummaries.map(({ summary }) => summary.periodTo))}::date[],
+      ${sql.param(populatedSummaries.map(({ documentId }) => currentWdiTotals.get(documentId) ?? 0))}::numeric[],
+      ${sql.param(populatedSummaries.map(({ updatedAt }) => updatedAt.toISOString()))}::timestamptz[]
+    ) as refreshed(id, row_count, period_from, period_to, wdi_total, updated_at)
+    where document."id" = refreshed.id
+  `)
 }
 
 async function touchWeldingProfile(
@@ -1182,12 +1272,10 @@ async function touchWeldingProfile(
 ) {
   const uniqueIds = [...new Set(weldJointIds)]
   if (uniqueIds.length === 0) return
-  for (const idBatch of splitNumberBatches(uniqueIds, 1_000)) {
-    await db
-      .update(weldJoints)
-      .set({ weldingUpdatedAt: now, updatedAt: now })
-      .where(inArray(weldJoints.id, idBatch))
-  }
+  await db
+    .update(weldJoints)
+    .set({ weldingUpdatedAt: now, updatedAt: now })
+    .where(buildNumberArrayMatch(weldJoints.id, uniqueIds))
 }
 
 function requireGeneratedDocumentType(value: unknown): GeneratedDocumentType {

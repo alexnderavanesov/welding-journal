@@ -89,8 +89,6 @@ type WeldInput
 } from '@/lib/weld-fields'
 import {
 canSuggestWeldFormField,
-getWeldFormSuggestionQueryFieldKeys,
-getWeldFormSuggestions,
 type WeldFormSuggestion,
 } from '@/lib/weld-form-suggestions'
 import { filterWeldRowsByColumns,getWeldColumnFilterRowText } from '@/lib/weld-table-filtering'
@@ -101,8 +99,14 @@ buildNullableControlEnabledWhere
 import {
 getOrComputeDerivedCalculation,
 } from '@/server/derived-calculation-cache'
+import { buildAcceptedWdiTotalQuery } from '@/server/wdi-aggregate-sql'
+import {
+buildWeldFormSuggestionsQuery,
+normalizeWeldFormSuggestionRows,
+} from '@/server/weld-form-suggestions-sql'
 import {
 ensureDispatcherTaskIndexFresh,
+readDispatcherTaskIndexState,
 } from '@/server/dispatcher-task-index'
 import {
 applyGeneratedDocumentFields,
@@ -145,6 +149,7 @@ buildColumnChoiceWhere,
 buildColumnTextEqualsWhere,
 buildControlAvailabilityColumnWhere,
 buildDispatcherTaskWhere,
+buildFinalStatusColumnWhere,
 buildGeneratedDocumentColumnWhere,
 buildJointChainWhere,
 buildPercentageLineStampWhere,
@@ -165,8 +170,9 @@ WELDING_JOURNAL_ORDER_BY,
 
 const SQL_QUERY_BUILDER = new QueryBuilder()
 import {
+  buildNumberArrayMatch,
+  buildTextArrayMatch,
   compactWeldRowsForTransport,
-  splitNumberBatches,
   type DuplicateControlCarrier,
 } from '@/server/weld-request-utils'
 
@@ -295,6 +301,7 @@ export const REPORT_SOURCE_COLUMN_FILTER_KEYS = new Set<WeldFieldKey>([
   'sheet',
   'revisionNumber',
   'officiality',
+  'finalStatus',
   'revisionActuality',
   'orderCode1',
   'orderCode2',
@@ -402,6 +409,7 @@ export async function listWeldReportContextRows({
     report: input?.report === 'heatTreatment' ? 'heatTreatment' : 'lnk',
   } as const
   await assertSecurityScope('entry')
+  await assertReportOutputWithinLimit(buildReportKindWhere(data.report))
   const rows = await requireDb()
     .select(getReportContextSelect(data.report))
     .from(weldJoints)
@@ -433,21 +441,18 @@ export async function listWeldFormSuggestions({
   }
   await assertSecurityScope('entry')
   if (!FIELD_BY_KEY.has(data.fieldKey) || !canSuggestWeldFormField(data.fieldKey)) return []
-  const selectedColumns = Object.fromEntries(
-    getWeldFormSuggestionQueryFieldKeys(data.fieldKey)
-      .map((fieldKey) => [fieldKey, getWeldColumn(fieldKey)] as const)
-      .filter((entry): entry is [WeldFieldKey, NonNullable<ReturnType<typeof getWeldColumn>>] => Boolean(entry[1])),
-  )
-  const rows = await requireDb()
-    .select(selectedColumns)
-    .from(weldJoints)
-    .orderBy(desc(weldJoints.createdAt))
-  return getWeldFormSuggestions({
+  const query = buildWeldFormSuggestionsQuery({
     fieldKey: data.fieldKey,
-    value: data.draft[data.fieldKey],
     draft: data.draft,
-    rows: rows as WeldInput[],
   })
+  if (!query) return []
+  const result = await requireDb().execute<{
+    value: string
+    context: string
+    count: number | string
+    score: number | string
+  }>(query)
+  return normalizeWeldFormSuggestionRows(result.rows)
 }
 
 export async function listWeldJointChain({
@@ -493,13 +498,13 @@ export async function listWeldJointChain({
       .filter((row) => row.earlyCoilDecisionAccepted)
       .map((row) => row.id),
   )
-  const documentLinks: Array<{ weldJointId: number }> = []
-  for (const idBatch of splitNumberBatches(hydratedRows.map((row) => row.id), 1000)) {
-    documentLinks.push(...await db
-      .select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
-      .from(generatedDocumentWeldJoints)
-      .where(inArray(generatedDocumentWeldJoints.weldJointId, idBatch)))
-  }
+  const documentLinks = await db
+    .select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
+    .from(generatedDocumentWeldJoints)
+    .where(buildNumberArrayMatch(
+      generatedDocumentWeldJoints.weldJointId,
+      hydratedRows.map((row) => row.id),
+    ))
   const documentedRowIds = new Set(documentLinks.map((link) => link.weldJointId))
   const typedRows = hydratedRows as WeldRow[]
   const transitions = buildJointCoilTransitions(typedRows, {
@@ -713,8 +718,11 @@ export function sortUsageAggregateRows(rows: UsageAggregateRow[]): Array<[string
 
 export async function listReportPage(report: WeldReportKind, data: ReturnType<typeof normalizeWeldPageRequest>) {
   const db = requireDb()
+  const hasFinalStatusFilter = Boolean(
+    String(data.finalStatus ?? '').trim() || String(data.columnFilters.finalStatus ?? '').trim(),
+  )
   const [dispatcherState, otherSettings] = await Promise.all([
-    ensureDispatcherTaskIndexFresh(),
+    hasFinalStatusFilter ? ensureDispatcherTaskIndexFresh() : readDispatcherTaskIndexState(),
     loadServerOtherSettings(),
   ])
   const hasCurrentSystemWdiFilter = isSystemWdiMode(otherSettings) && Boolean(data.columnFilters.wdi?.trim())
@@ -726,6 +734,12 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
   const sourceFilterData = sourceColumnFilters === data.columnFilters
     ? data
     : { ...data, columnFilters: sourceColumnFilters }
+  if (data.pageSize === WELD_PAGE_ALL_SIZE) {
+    const sourceWhere = report === 'weldingJournal'
+      ? buildWhere(sourceFilterData)
+      : and(buildReportKindWhere(report), buildReportSourceWhere(sourceFilterData))
+    await assertReportOutputWithinLimit(sourceWhere)
+  }
   if (report !== 'weldingJournal') {
     const where = and(buildReportKindWhere(report), buildReportSourceWhere(sourceFilterData)) ?? sql`true`
     if (canPaginateReportSource(data.columnFilters) && !hasCurrentSystemWdiFilter) {
@@ -880,6 +894,22 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
   }
 }
 
+export const MAX_REPORT_OUTPUT_ROWS = 10_000
+
+export async function assertReportOutputWithinLimit(where: SQL | undefined) {
+  // OFFSET scans at most the fixed safety threshold and returns one tiny row;
+  // do this before hydrating report rows, related controls, or browser output.
+  const overflow = await requireDb()
+    .select({ id: weldJoints.id })
+    .from(weldJoints)
+    .where(where)
+    .limit(1)
+    .offset(MAX_REPORT_OUTPUT_ROWS)
+  if (overflow.length > 0) {
+    throw new Error('Для вывода найдено более 10 000 строк. Сузьте фильтры и откройте «Текущую версию» отчета; большой полный вывод не формируется.')
+  }
+}
+
 export async function getCurrentAcceptedWdiTotal(
   data: ReturnType<typeof normalizeWeldPageRequest>,
   where: SQL | undefined,
@@ -887,24 +917,15 @@ export async function getCurrentAcceptedWdiTotal(
 ) {
   return getOrComputeDerivedCalculation(
     buildDerivedReportCacheKey(
-      'welding-journal-accepted-wdi:v2',
+      'welding-journal-accepted-wdi:v3',
       'weldingJournal',
       data,
     ),
     async () => {
-      const sourceRows = await requireDb()
-        .select(REPORT_DERIVED_FILTER_SELECT)
-        .from(weldJoints)
-        .where(where)
-      const currentRows = await attachCurrentFinalStatuses(
-        buildServerReportRows(applyCurrentSystemWdi(sourceRows, otherSettings), 'weldingJournal'),
+      const result = await requireDb().execute<{ total: string | number }>(
+        buildAcceptedWdiTotalQuery(where, otherSettings),
       )
-      return currentRows.reduce(
-        (sum, row) => String(row.finalStatus ?? '').trim().toLocaleLowerCase('ru') === 'годен'
-          ? sum + (Number(row.wdi) || 0)
-          : sum,
-        0,
-      )
+      return Number(result.rows[0]?.total) || 0
     },
   )
 }
@@ -918,15 +939,12 @@ export async function countAvailableLnkRequestRows(where: SQL) {
 }
 
 export async function countAvailableLnkRequestRowsByIds(ids: number[]) {
-  let total = 0
-  for (const idChunk of splitNumberBatches(ids, 1000)) {
-    const [row] = await requireDb()
-      .select({ total: count() })
-      .from(weldJoints)
-      .where(and(inArray(weldJoints.id, idChunk), buildAvailableLnkRequestWhere()))
-    total += Number(row?.total) || 0
-  }
-  return total
+  if (ids.length === 0) return 0
+  const [row] = await requireDb()
+    .select({ total: count() })
+    .from(weldJoints)
+    .where(and(buildNumberArrayMatch(weldJoints.id, ids), buildAvailableLnkRequestWhere()))
+  return Number(row?.total) || 0
 }
 
 export function buildAvailableLnkRequestWhere() {
@@ -1088,14 +1106,11 @@ export async function attachDuplicateControlsToPage<Row extends DuplicateControl
   if (ids.length === 0) return rows
 
   const db = requireDb()
-  const controls: DuplicateControl[] = []
-  for (const idChunk of splitNumberBatches(ids, 1000)) {
-    controls.push(...await db
-      .select()
-      .from(duplicateControls)
-      .where(inArray(duplicateControls.weldJointId, idChunk))
-      .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id)))
-  }
+  const controls = await db
+    .select()
+    .from(duplicateControls)
+    .where(buildNumberArrayMatch(duplicateControls.weldJointId, ids))
+    .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id))
 
   return mergeDuplicateControlsIntoRows(rows, controls.map(toDuplicateControlRecord))
 }
@@ -1119,19 +1134,16 @@ export async function attachDispatcherTaskCodesToPage<Row extends { id: number }
   if (rows.length === 0) return rows
   const ids = [...new Set(rows.map((row) => Number(row.id)).filter(Number.isFinite))]
   if (ids.length === 0) return rows
-  const taskRows: Array<DispatcherTaskCodeRow & { source: 'active' | 'background' }> = []
-  for (const idChunk of splitNumberBatches(ids, 1000)) {
-    const result = await requireDb().execute<DispatcherTaskCodeRow & { source: 'active' | 'background' }>(sql`
-      select ${dispatcherRowTasks.weldJointId} as "rowId", ${dispatcherRowTasks.code} as "code", 'active' as "source"
-      from ${dispatcherRowTasks}
-      where ${inArray(dispatcherRowTasks.weldJointId, idChunk)}
-      union all
-      select ${dispatcherBackgroundRowTasks.weldJointId} as "rowId", ${dispatcherBackgroundRowTasks.code} as "code", 'background' as "source"
-      from ${dispatcherBackgroundRowTasks}
-      where ${inArray(dispatcherBackgroundRowTasks.weldJointId, idChunk)}
-    `)
-    taskRows.push(...result.rows)
-  }
+  const result = await requireDb().execute<DispatcherTaskCodeRow & { source: 'active' | 'background' }>(sql`
+    select ${dispatcherRowTasks.weldJointId} as "rowId", ${dispatcherRowTasks.code} as "code", 'active' as "source"
+    from ${dispatcherRowTasks}
+    where ${buildNumberArrayMatch(dispatcherRowTasks.weldJointId, ids)}
+    union all
+    select ${dispatcherBackgroundRowTasks.weldJointId} as "rowId", ${dispatcherBackgroundRowTasks.code} as "code", 'background' as "source"
+    from ${dispatcherBackgroundRowTasks}
+    where ${buildNumberArrayMatch(dispatcherBackgroundRowTasks.weldJointId, ids)}
+  `)
+  const taskRows = result.rows
   const activeTaskRows = taskRows.filter((row) => row.source === 'active')
   const backgroundTaskRows = taskRows.filter((row) => row.source === 'background')
   return mergeDispatcherTaskCodesIntoRows(rows, activeTaskRows, backgroundTaskRows)
@@ -1148,7 +1160,7 @@ export async function attachReportPageMetadata<Row extends DuplicateControlCarri
 ) {
   const includeJointWorkflowMetadata = options.includeJointWorkflowMetadata ?? true
   const dispatcherState = rows.length > 0 && includeJointWorkflowMetadata
-    ? options.dispatcherState ?? await ensureDispatcherTaskIndexFresh()
+    ? options.dispatcherState ?? await readDispatcherTaskIndexState()
     : null
   const [
     rowsWithDuplicateControls,
@@ -1203,16 +1215,13 @@ export async function attachEarlyCoilDecisionMetadataToPage<Row extends { id: nu
   if (rows.length === 0) return rows as Array<Row & EarlyCoilDecisionMetadata>
   const ids = [...new Set(rows.map((row) => Number(row.id)).filter((id) => Number.isInteger(id) && id > 0))]
   if (ids.length === 0) return rows as Array<Row & EarlyCoilDecisionMetadata>
-  const warnings: Array<{ key: string }> = []
-  for (const idChunk of splitNumberBatches(ids, 1000)) {
-    warnings.push(...await requireDb()
-      .select({ key: dispatcherAcceptedWarnings.key })
-      .from(dispatcherAcceptedWarnings)
-      .where(and(
-        eq(dispatcherAcceptedWarnings.kind, EARLY_COIL_DECISION_KIND),
-        inArray(dispatcherAcceptedWarnings.key, idChunk.map(getEarlyCoilDecisionKey)),
-      )))
-  }
+  const warnings = await requireDb()
+    .select({ key: dispatcherAcceptedWarnings.key })
+    .from(dispatcherAcceptedWarnings)
+    .where(and(
+      eq(dispatcherAcceptedWarnings.kind, EARLY_COIL_DECISION_KIND),
+      buildTextArrayMatch(dispatcherAcceptedWarnings.key, ids.map(getEarlyCoilDecisionKey)),
+    ))
   return mergeEarlyCoilDecisionMetadataIntoRows(
     rows,
     getEarlyCoilDecisionSourceRowIds(warnings.map((warning) => warning.key)),
@@ -1426,14 +1435,11 @@ export async function loadWeldRowsByIdsInBatches(
   db: Pick<ReturnType<typeof requireDb>, 'select'>,
   ids: readonly number[],
 ) {
-  const rows: WeldRow[] = []
-  for (const idBatch of splitNumberBatches(ids, 1000)) {
-    rows.push(...await db
-      .select(WELD_TABLE_SELECT)
-      .from(weldJoints)
-      .where(inArray(weldJoints.id, idBatch)))
-  }
-  return rows
+  if (ids.length === 0) return []
+  return db
+    .select(WELD_TABLE_SELECT)
+    .from(weldJoints)
+    .where(buildNumberArrayMatch(weldJoints.id, ids))
 }
 
 export function parseStoredJson(value: unknown) {
@@ -1510,7 +1516,6 @@ export async function listColumnFilterOptions(data: ReturnType<typeof normalizeW
   const generatedDocumentType = GENERATED_DOCUMENT_FIELD_TYPES[data.fieldKey as keyof typeof GENERATED_DOCUMENT_FIELD_TYPES]
   const isDerivedField =
     data.fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY ||
-    data.fieldKey === 'finalStatus' ||
     data.fieldKey === 'rkExposureScheme' ||
     (data.fieldKey === 'wdi' && useCurrentSystemWdi)
   if (isDerivedField || hasDerivedColumnFilters) {
@@ -1618,34 +1623,25 @@ export async function listDispatcherTaskColumnFilterOptionsByWhere(where: SQL) {
 }
 
 export async function listDispatcherTaskColumnFilterOptionsByIds(rowIds: number[]) {
-  const rowIdsByCode = new Map<string, Set<number>>()
-  for (const ids of splitNumberBatches(rowIds, 1000)) {
-    const [activeRows, backgroundRows] = await Promise.all([
-      requireDb()
-        .select({ rowId: dispatcherRowTasks.weldJointId, code: dispatcherRowTasks.code })
-        .from(dispatcherRowTasks)
-        .where(inArray(dispatcherRowTasks.weldJointId, ids)),
-      requireDb()
-        .select({ rowId: dispatcherBackgroundRowTasks.weldJointId, code: dispatcherBackgroundRowTasks.code })
-        .from(dispatcherBackgroundRowTasks)
-        .where(inArray(dispatcherBackgroundRowTasks.weldJointId, ids)),
-    ])
-    for (const row of [...activeRows, ...backgroundRows]) {
-      const code = String(row.code ?? '').trim()
-      if (!code) continue
-      const matchingRowIds = rowIdsByCode.get(code) ?? new Set<number>()
-      matchingRowIds.add(row.rowId)
-      rowIdsByCode.set(code, matchingRowIds)
-    }
-  }
-
-  return sortColumnFilterOptions(
-    [...rowIdsByCode.entries()].map(([value, matchingRowIds]) => ({
-      value,
-      count: matchingRowIds.size,
-      label: value,
-    })),
-  )
+  if (rowIds.length === 0) return []
+  const result = await requireDb().execute<{ value: string; count: number | string }>(sql`
+    select "dispatcher_codes"."code" as "value", count(distinct "dispatcher_codes"."rowId")::integer as "count"
+    from (
+      select ${dispatcherRowTasks.weldJointId} as "rowId", ${dispatcherRowTasks.code} as "code"
+      from ${dispatcherRowTasks}
+      where ${buildNumberArrayMatch(dispatcherRowTasks.weldJointId, rowIds)}
+      union
+      select ${dispatcherBackgroundRowTasks.weldJointId} as "rowId", ${dispatcherBackgroundRowTasks.code} as "code"
+      from ${dispatcherBackgroundRowTasks}
+      where ${buildNumberArrayMatch(dispatcherBackgroundRowTasks.weldJointId, rowIds)}
+    ) as "dispatcher_codes"
+    group by "dispatcher_codes"."code"
+  `)
+  return sortColumnFilterOptions(result.rows.map((row) => ({
+    value: String(row.value ?? ''),
+    count: Number(row.count) || 0,
+    label: String(row.value ?? ''),
+  })))
 }
 
 export async function listDerivedReportRowIds(
@@ -1998,6 +1994,11 @@ export function addReportSourceColumnFilterClauses(clauses: SQL[], columnFilters
       continue
     }
 
+    if (key === 'finalStatus') {
+      clauses.push(buildFinalStatusColumnWhere(query))
+      continue
+    }
+
     if (!REPORT_SOURCE_COLUMN_FILTER_KEYS.has(key as WeldFieldKey)) continue
     const column = getWeldColumn(key as WeldFieldKey)
     if (!column) continue
@@ -2043,7 +2044,6 @@ export function getWeldColumnFilterOptionSourceFilters(
 ) {
   const derivedFieldKeys = [
     CONTROL_BASIS_SUMMARY_FIELD_KEY,
-    'finalStatus',
     'rkExposureScheme',
     ...PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS,
   ] as const
@@ -2061,7 +2061,12 @@ export function shouldEnsureDispatcherTaskIndexForColumnFilter(
   fieldKey: WeldFieldKey,
   columnFilters: Record<string, string>,
 ) {
-  return fieldKey === DISPATCHER_TASKS_FIELD_KEY || hasDispatcherTaskServerFilter(columnFilters)
+  return (
+    fieldKey === DISPATCHER_TASKS_FIELD_KEY ||
+    fieldKey === 'finalStatus' ||
+    Boolean(columnFilters.finalStatus?.trim()) ||
+    hasDispatcherTaskServerFilter(columnFilters)
+  )
 }
 
 export function canPaginateReportSource(columnFilters: Record<string, string>) {

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createServerFn } from '@tanstack/react-start'
-import { asc, inArray } from 'drizzle-orm'
+import { asc } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import { weldJoints } from '@/db/schema'
@@ -44,7 +44,7 @@ import {
 } from '@/server/system-document-sequences'
 import { assertSecurityScope } from '@/server/security-functions'
 import { updateWeldJointsInBatches } from '@/server/weld-persistence'
-import { splitNumberBatches } from '@/server/weld-request-utils'
+import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 
 type RebuildPreviewRequest = {
   templateIds?: SystemDocumentTemplateId[]
@@ -102,11 +102,11 @@ export const applySystemDocumentRebuild = createServerFn({ method: 'POST' })
         .filter((source) => data.templateIds.includes(getSystemDocumentTemplateId(source.document)))
         .flatMap((source) => source.document.rowIds)
       const orderedSelectedRowIds = [...new Set(selectedRowIds)].sort((left, right) => left - right)
-      for (const rowIdBatch of splitNumberBatches(orderedSelectedRowIds, 1000)) {
+      if (orderedSelectedRowIds.length > 0) {
         await tx
           .select({ id: weldJoints.id })
           .from(weldJoints)
-          .where(inArray(weldJoints.id, rowIdBatch))
+          .where(buildNumberArrayMatch(weldJoints.id, orderedSelectedRowIds))
           .orderBy(asc(weldJoints.id))
           .for('update')
       }
@@ -151,10 +151,12 @@ async function loadRebuildSnapshot(
     documents.push(...await loadIndexedSystemDocumentSummaries(tx, type))
   }
   const rowIds = Array.from(new Set(documents.flatMap((document) => document.rowIds)))
-  const rows: Array<typeof weldJoints.$inferSelect> = []
-  for (const rowIdBatch of splitNumberBatches(rowIds, 1000)) {
-    rows.push(...await tx.select().from(weldJoints).where(inArray(weldJoints.id, rowIdBatch)))
-  }
+  const rows: Array<typeof weldJoints.$inferSelect> = rowIds.length === 0
+    ? []
+    : await tx
+      .select()
+      .from(weldJoints)
+      .where(buildNumberArrayMatch(weldJoints.id, rowIds))
   const rowsById = new Map(rows.map((row) => [row.id, row as unknown as WeldRow]))
   const sources = documents.map((document) => ({
     document,

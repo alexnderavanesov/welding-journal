@@ -606,6 +606,9 @@ function LineAutofillButton({
     queryFn: () => getWeldLineAutofill({ data: { draft: debouncedRemoteDraft } }),
     enabled: !hasLocalSuggestionRows && Boolean(String(draft.line ?? '').trim()),
     staleTime: 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
   const remoteStateIsCurrent = debouncedRemoteDraft === remoteDraft
   const remoteStatePending = !hasLocalSuggestionRows && (!remoteStateIsCurrent || remoteStateQuery.isFetching)

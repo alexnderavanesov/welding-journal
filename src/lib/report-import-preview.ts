@@ -194,6 +194,14 @@ async function buildExistingRowsImportPreview({
     )
   }
   const rowsById = new Map(rows.map((row) => [row.id, row]))
+  const rowsByLineKey = new Map<string, WeldRow[]>()
+  for (const row of rows) {
+    const key = getPstoLineIdentityKey(row)
+    const lineRows = rowsByLineKey.get(key)
+    if (lineRows) lineRows.push(row)
+    else rowsByLineKey.set(key, [row])
+  }
+  const fullyAssignedPstoLineKeySet = new Set(fullyAssignedPstoLineKeys)
   const records: ReportImportRecord[] = []
   const validRecords: ReportImportRecord[] = []
   const errors: ReportImportPreviewError[] = []
@@ -294,8 +302,8 @@ async function buildExistingRowsImportPreview({
     const pstoLineMoveReason = getImportPstoLineMoveBlockReason(
       candidate,
       existingRow,
-      rows,
-      fullyAssignedPstoLineKeys,
+      rowsByLineKey,
+      fullyAssignedPstoLineKeySet,
       systemIndexSettings,
     )
     if (pstoLineMoveReason) {
@@ -394,8 +402,8 @@ async function buildExistingRowsImportPreview({
 function getImportPstoLineMoveBlockReason(
   candidate: ReportImportRecord,
   existingRow: WeldRow,
-  scopeRows: WeldRow[],
-  fullyAssignedPstoLineKeys: readonly string[],
+  rowsByLineKey: ReadonlyMap<string, WeldRow[]>,
+  fullyAssignedPstoLineKeys: ReadonlySet<string>,
   systemIndexSettings: SystemIndexSettings,
 ) {
   const sourceKey = getPstoLineIdentityKey(existingRow)
@@ -405,7 +413,7 @@ function getImportPstoLineMoveBlockReason(
 
   const parsedJoint = parseJointChainName(String(existingRow.joint ?? ''), systemIndexSettings)
   const rootJoint = parsedJoint.base || String(existingRow.joint ?? '').trim()
-  const chainRows = getJointChainRows(scopeRows, existingRow, systemIndexSettings)
+  const chainRows = getJointChainRows(rowsByLineKey.get(sourceKey) ?? [], existingRow, systemIndexSettings)
   const belongsToChain = parsedJoint.segments.length > 0 || chainRows.length > 1
   if (belongsToChain) {
     const sourceIdentity = normalizePstoLineIdentity(existingRow)
@@ -421,9 +429,9 @@ function getImportPstoLineMoveBlockReason(
       'в сварочном журнале: система перенесет все R/W/Y-стыки одной операцией.'
   }
 
-  const targetRows = scopeRows.filter((row) => getPstoLineIdentityKey(row) === targetKey)
+  const targetRows = rowsByLineKey.get(targetKey) ?? []
   const targetAssignedCount = targetRows.filter((row) => isControlEnabledValue(row.pstoRequired)).length
-  const targetAssigned = fullyAssignedPstoLineKeys.includes(targetKey) || (
+  const targetAssigned = fullyAssignedPstoLineKeys.has(targetKey) || (
     targetRows.length > 0 && targetAssignedCount === targetRows.length
   )
   if (targetAssigned) {

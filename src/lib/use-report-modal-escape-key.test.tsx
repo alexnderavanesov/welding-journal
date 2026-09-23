@@ -52,6 +52,7 @@ describe('useReportModalEscapeKey', () => {
   afterEach(() => {
     setContextActionMenuOpen(false)
     document.querySelectorAll('[data-confirm-action-dialog="true"]').forEach((node) => node.remove())
+    document.querySelectorAll('[data-modal-dialog="true"]').forEach((node) => node.remove())
   })
 
   it('closes the RK exposure editor on Escape', () => {
@@ -126,5 +127,52 @@ describe('useReportModalEscapeKey', () => {
     pressEscape()
 
     expect(onCloseTvmtWorkflow).toHaveBeenCalledOnce()
+  })
+
+  it('closes the dispatcher workspace on Escape without closing a report action underneath', () => {
+    const onCloseDispatcherWorkspace = vi.fn()
+    const onCloseRkExposureModal = vi.fn()
+    const { rerender } = renderHook(
+      (options: EscapeKeyOptions) => useReportModalEscapeKey(options),
+      { initialProps: createOptions({
+        isRkExposureModalOpen: false,
+        isDispatcherWorkspaceOpen: true,
+        onCloseDispatcherWorkspace,
+        onCloseRkExposureModal,
+      }) },
+    )
+    pressEscape()
+    expect(onCloseDispatcherWorkspace).toHaveBeenCalledOnce()
+    expect(onCloseRkExposureModal).not.toHaveBeenCalled()
+
+    rerender(createOptions({
+      isRkExposureModalOpen: true,
+      isDispatcherWorkspaceOpen: true,
+      onCloseDispatcherWorkspace,
+      onCloseRkExposureModal,
+    }))
+    pressEscape()
+    expect(onCloseRkExposureModal).toHaveBeenCalledOnce()
+    expect(onCloseDispatcherWorkspace).toHaveBeenCalledOnce()
+  })
+
+  it('leaves Escape to an independent picture or editor above the dispatcher', () => {
+    const onCloseDispatcherWorkspace = vi.fn()
+    const workspace = document.createElement('div')
+    const child = document.createElement('div')
+    workspace.dataset.modalDialog = 'true'
+    child.dataset.modalDialog = 'true'
+    document.body.append(workspace, child)
+    renderHook(() => useReportModalEscapeKey(createOptions({
+      isRkExposureModalOpen: false,
+      isDispatcherWorkspaceOpen: true,
+      onCloseDispatcherWorkspace,
+    })))
+
+    pressEscape()
+    expect(onCloseDispatcherWorkspace).not.toHaveBeenCalled()
+    child.remove()
+    pressEscape()
+    expect(onCloseDispatcherWorkspace).toHaveBeenCalledOnce()
   })
 })

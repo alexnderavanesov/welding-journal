@@ -1,5 +1,6 @@
 import { getDispatcherTaskCode } from '@/lib/dispatcher-settings'
 import type { DispatcherTask, RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
+import { encodeIdentityKey } from '@/lib/identity-key'
 import { parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
 
 export const DISPATCHER_TASKS_FIELD_KEY = 'dispatcherTasks' as const
@@ -28,14 +29,29 @@ export function buildMergedDispatcherTaskCodes(
 }
 
 export function buildDispatcherTaskIndexRows(tasks: DispatcherTask[], rows: WeldRow[]): DispatcherTaskIndexRow[] {
+  return buildDispatcherTaskIndexRowsWithMode(tasks, rows, false)
+}
+
+/** Persisted row filters only consume task codes, never individual task keys. */
+export function buildDispatcherTaskCodeIndexRows(tasks: DispatcherTask[], rows: WeldRow[]): DispatcherTaskIndexRow[] {
+  return buildDispatcherTaskIndexRowsWithMode(tasks, rows, true)
+}
+
+function buildDispatcherTaskIndexRowsWithMode(
+  tasks: DispatcherTask[],
+  rows: WeldRow[],
+  dedupeByCode: boolean,
+): DispatcherTaskIndexRow[] {
   const entries = new Map<string, DispatcherTaskIndexRow>()
+  const targetRows = buildDispatcherTaskTargetRows(rows)
 
   for (const task of tasks) {
     if (task.kind === 'welder-stamp-expiry') continue
     const code = getDispatcherTaskCode(task)
-    for (const rowId of getDispatcherTaskTargetRowIds(task, rows)) {
-      const entry = { rowId, taskKey: task.key, code }
-      entries.set(`${rowId}\u0000${task.key}`, entry)
+    for (const rowId of getDispatcherTaskTargetRowIds(task, targetRows)) {
+      const taskKey = dedupeByCode ? `code:${code}` : task.key
+      const entry = { rowId, taskKey, code }
+      entries.set(`${rowId}\u0000${taskKey}`, entry)
     }
   }
 
@@ -167,20 +183,38 @@ function buildDispatcherCodesByRowId(taskRows: DispatcherTaskCodeRow[]) {
   return result
 }
 
-function getDispatcherTaskTargetRowIds(task: Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>, rows: WeldRow[]) {
+type DispatcherTaskTargetRows = {
+  byLine: ReadonlyMap<string, number[]>
+  byJoint: ReadonlyMap<string, number[]>
+}
+
+function buildDispatcherTaskTargetRows(rows: WeldRow[]): DispatcherTaskTargetRows {
+  const byLine = new Map<string, number[]>()
+  const byJoint = new Map<string, number[]>()
+  for (const row of rows) {
+    const lineKey = getLineIdentityKey(row)
+    const lineRowIds = byLine.get(lineKey)
+    if (lineRowIds) lineRowIds.push(row.id)
+    else byLine.set(lineKey, [row.id])
+
+    const jointKey = getJointIdentityKey(row)
+    const jointRowIds = byJoint.get(jointKey)
+    if (jointRowIds) jointRowIds.push(row.id)
+    else byJoint.set(jointKey, [row.id])
+  }
+  return { byLine, byJoint }
+}
+
+function getDispatcherTaskTargetRowIds(
+  task: Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>,
+  rows: DispatcherTaskTargetRows,
+) {
   if (task.kind === 'line-consistency' || task.kind === 'percentage-line-control') {
-    return rows
-      .filter(
-        (row) =>
-          normalizeLinePart(row.projectTitle) === normalizeLinePart(task.projectTitle) &&
-          normalizeLinePart(row.subtitleCode) === normalizeLinePart(task.subtitleCode) &&
-          normalizeLinePart(row.line) === normalizeLinePart(task.line),
-      )
-      .map((row) => row.id)
+    return rows.byLine.get(getLineIdentityKey(task)) ?? []
   }
   if (task.kind === 'rename') return task.changes.map((change) => change.rowId)
   if (task.kind === 'duplicate-check') {
-    return rows.filter((row) => hasSameJointIdentity(task.row, row)).map((row) => row.id)
+    return rows.byJoint.get(getJointIdentityKey(task.row)) ?? []
   }
 
   return [task.row.id]
@@ -204,6 +238,23 @@ function hasSameJointIdentity(left: WeldRow, right: WeldRow) {
     normalizeLinePart(left.line) === normalizeLinePart(right.line) &&
     normalizeLinePart(left.joint) === normalizeLinePart(right.joint)
   )
+}
+
+function getLineIdentityKey(value: Pick<WeldRow, 'projectTitle' | 'subtitleCode' | 'line'>) {
+  return encodeIdentityKey([
+    normalizeLinePart(value.projectTitle),
+    normalizeLinePart(value.subtitleCode),
+    normalizeLinePart(value.line),
+  ])
+}
+
+function getJointIdentityKey(value: Pick<WeldRow, 'projectTitle' | 'subtitleCode' | 'line' | 'joint'>) {
+  return encodeIdentityKey([
+    normalizeLinePart(value.projectTitle),
+    normalizeLinePart(value.subtitleCode),
+    normalizeLinePart(value.line),
+    normalizeLinePart(value.joint),
+  ])
 }
 
 function normalizeLinePart(value: unknown) {

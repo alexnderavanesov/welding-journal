@@ -3,10 +3,11 @@ import 'dotenv/config'
 import { performance } from 'node:perf_hooks'
 
 import { Client } from 'pg'
+import { sql, TransactionRollbackError } from 'drizzle-orm'
 
-const LOAD_DATABASE_NAME = 'welding_tracker_load_500k'
-const DEFAULT_ROW_COUNT = 500_000
-const MAX_ROW_COUNT = 500_000
+const LOAD_DATABASE_NAME = 'welding_tracker_load_200k'
+const DEFAULT_ROW_COUNT = 200_000
+const MAX_ROW_COUNT = 200_000
 
 const command = process.argv[2] ?? 'measure'
 const rowCount = readPositiveInteger(process.argv[3], DEFAULT_ROW_COUNT, MAX_ROW_COUNT)
@@ -280,31 +281,47 @@ async function measureApplicationWorkflows({
 }: {
   includeColdDispatcher: boolean
 }) {
-  const onlyScenario = String(process.env.BENCHMARK_SCENARIO ?? '').trim()
+  const selectedScenarios = new Set(
+    String(process.env.BENCHMARK_SCENARIO ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+  )
+  const databaseRequestCounter = await installDatabaseRequestCounter()
   const [
     { db },
     dispatcher,
+    dispatcherStaging,
     weldRead,
     lnkWorkflow,
+    pstoWorkflow,
     pstoSummary,
     systemDocumentSequences,
     systemDocumentIndex,
     systemDocumentTemplateTypes,
+    generatedDocuments,
   ] = await Promise.all([
     import('../src/db/index.ts'),
     import('../src/server/dispatcher-task-index.ts'),
+    import('../src/server/dispatcher-task-index-staging.ts'),
     import('../src/server/weld-read.ts'),
     import('../src/server/lnk-workflow-context.ts'),
+    import('../src/server/psto-workflow-context.ts'),
     import('../src/server/psto-line-assignment-summary.ts'),
     import('../src/server/system-document-sequences.ts'),
     import('../src/server/system-document-index.ts'),
     import('../src/lib/system-document-template-types.ts'),
+    import('../src/server/generated-documents.ts'),
   ])
 
   const results: Record<string, unknown> = {}
   const record = async <T>(name: string, work: () => Promise<T>) => {
-    if (onlyScenario && onlyScenario !== name) return
-    results[name] = await measureResult(work)
+    if (selectedScenarios.size > 0 && !selectedScenarios.has(name)) return
+    const requestCountBefore = databaseRequestCounter.read()
+    results[name] = {
+      ...await measureResult(work),
+      databaseRequests: databaseRequestCounter.read() - requestCountBefore,
+    }
     console.log(JSON.stringify({ [name]: results[name] }, null, 2))
   }
   if (includeColdDispatcher) {
@@ -318,6 +335,62 @@ async function measureApplicationWorkflows({
       }
     })
   }
+  await record('dispatcherCalculationCold', async () => {
+    const calculation = await db.transaction((tx) => dispatcher.calculateFullDispatcherTasks(tx, {
+      onProgress: (stage) => console.log(JSON.stringify({
+        dispatcherStage: stage,
+        heapMb: Number((process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)),
+        rssMb: Number((process.memoryUsage().rss / 1024 / 1024).toFixed(1)),
+      })),
+    }))
+    return {
+      rows: calculation.preparedRows.length,
+      repeatedTasks: calculation.tasks.repeatedJointTasks.length,
+      repeatedTaskCount: calculation.repeatedJointTaskCount,
+      repeatedTasksTruncated: calculation.repeatedJointTasksTruncated,
+      welderTasks: calculation.tasks.welderStampExpiryTasks.length,
+      chainContinuations: calculation.chainContinuations.length,
+    }
+  })
+  await record('dispatcherTaskPageStageCold', async () => db.transaction(async (tx) => {
+    await dispatcherStaging.createDispatcherTaskPageStage(tx)
+    const writer = dispatcherStaging.createDispatcherTaskPageStageWriter(tx)
+    const calculation = await dispatcher.calculateFullDispatcherTasks(tx, {
+      onTaskPageRows: writer.append,
+      onProgress: (stage) => console.log(JSON.stringify({
+        dispatcherPageStage: stage,
+        heapMb: Number((process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)),
+        rssMb: Number((process.memoryUsage().rss / 1024 / 1024).toFixed(1)),
+      })),
+    })
+    await writer.flush()
+    const metrics = writer.getMetrics()
+    if (metrics.taskCount !== calculation.repeatedJointTaskCount) {
+      throw new Error('The staged dispatcher card count does not match the calculated task count.')
+    }
+    const size = await tx.execute<{ storedBytes: string | number }>(sql`
+      select pg_total_relation_size('pg_temp.dispatcher_task_page_stage'::regclass) as "storedBytes"
+    `)
+    return {
+      tasks: calculation.repeatedJointTaskCount,
+      pages: metrics.pageCount,
+      pageWriteRequests: metrics.insertRequestCount,
+      stageStoredMb: Number((Number(size.rows[0]?.storedBytes) / 1024 / 1024).toFixed(1)),
+    }
+  }))
+  await record('dispatcherIndexRefreshCold', async () => {
+    await dispatcher.markDispatcherTaskIndexDirty()
+    const state = await dispatcher.ensureDispatcherTaskIndexFresh()
+    const payload = (await import('../src/lib/dispatcher-task-index-payload.ts'))
+      .parseDispatcherTaskIndexPayload(state.repeatedTasks)
+    return {
+      sourceRevision: state.sourceRevision,
+      computedRevision: state.computedRevision,
+      snapshotTasks: payload.tasks.length,
+      repeatedTaskCount: payload.totalTaskCount,
+      tasksTruncated: payload.tasksTruncated,
+    }
+  })
   await record('dispatcherWarm', async () => {
     const snapshot = await dispatcher.getDispatcherTaskIndexSnapshot()
     return { repeatedTasks: snapshot.repeatedJointTasks.length }
@@ -332,6 +405,28 @@ async function measureApplicationWorkflows({
     )
     const sequences = await systemDocumentSequences.readSystemDocumentNextNumbers(db, sequenceIds)
     return { sequences: Object.keys(sequences).length }
+  })
+  await record('systemDocumentSequenceScanCold', async () => {
+    const sequenceIds = systemDocumentTemplateTypes.SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map(
+      (profile) => profile.id,
+    )
+    const sequences = await systemDocumentSequences.readInitialSequenceNumbers(db, sequenceIds)
+    return { sequences: Object.keys(sequences).length }
+  })
+  await record('systemDocumentIndexRebuildCold', async () => {
+    const indexType = String(process.env.BENCHMARK_SYSTEM_DOCUMENT_TYPE ?? 'lnkRequest') as
+      import('../src/lib/system-document-types.ts').SystemDocumentType
+    let rebuilt = false
+    try {
+      await db.transaction(async (tx) => {
+        await systemDocumentIndex.rebuildSystemDocumentIndexInTransaction(tx, indexType)
+        rebuilt = true
+        tx.rollback()
+      })
+    } catch (error) {
+      if (!(error instanceof TransactionRollbackError)) throw error
+    }
+    return { rebuilt, type: indexType }
   })
   await record('systemDocumentHistoryLnkRequest', async () => {
     const history = await systemDocumentIndex.loadIndexedSystemDocumentHistory({
@@ -348,6 +443,64 @@ async function measureApplicationWorkflows({
         0,
       ),
       responseMb: Number((Buffer.byteLength(serialized) / 1024 / 1024).toFixed(1)),
+    }
+  })
+  await record('systemDocumentHistoryLnkConclusion', async () => {
+    const history = await systemDocumentIndex.loadIndexedSystemDocumentHistory({
+      type: 'lnkConclusion',
+      limit: 100,
+      columnFilters: {},
+    })
+    return {
+      documents: history.documents.length,
+      total: history.total,
+      filterOptions: Object.values(history.filterOptions).reduce(
+        (sum, options) => sum + options.length,
+        0,
+      ),
+    }
+  })
+  await record('systemDocumentHistoryLnkRequestLineOptions', async () => {
+    const result = await systemDocumentIndex.loadIndexedSystemDocumentHistoryFilterOptions({
+      type: 'lnkRequest',
+      fieldKey: 'line',
+      search: '',
+      columnFilters: {},
+    })
+    return {
+      options: result.options.length,
+      hasMore: result.hasMore,
+      responseKb: Number((Buffer.byteLength(JSON.stringify(result)) / 1024).toFixed(1)),
+    }
+  })
+  await record('generatedDocumentHistoryWeldingJournal', async () => {
+    const history = await generatedDocuments.loadRemoteGeneratedDocumentHistory({
+      type: 'weldingJournal',
+      types: ['weldingJournal'],
+      limit: 100,
+      columnFilters: {},
+    })
+    return {
+      documents: history.documents.length,
+      total: history.total,
+      filterOptions: Object.values(history.filterOptions).reduce(
+        (sum, options) => sum + options.length,
+        0,
+      ),
+    }
+  })
+  await record('generatedDocumentHistoryWeldingJournalLineOptions', async () => {
+    const result = await generatedDocuments.loadRemoteGeneratedDocumentHistoryFilterOptions({
+      type: 'weldingJournal',
+      types: ['weldingJournal'],
+      fieldKey: 'line',
+      search: '',
+      columnFilters: {},
+    })
+    return {
+      options: result.options.length,
+      hasMore: result.hasMore,
+      responseKb: Number((Buffer.byteLength(JSON.stringify(result)) / 1024).toFixed(1)),
     }
   })
   await record('journalFirstPage', async () => summarizePage(
@@ -376,6 +529,12 @@ async function measureApplicationWorkflows({
     })
     return { options: options.length }
   })
+  await record('finalStatusFilterOptions', async () => {
+    const options = await weldRead.listWeldColumnFilterOptions({
+      data: { report: 'weldingJournal', page: 1, pageSize: 100, fieldKey: 'finalStatus' },
+    })
+    return { options: options.length }
+  })
   await record('formSuggestions', async () => {
     const suggestions = await weldRead.listWeldFormSuggestions({
       data: { fieldKey: 'line', draft: { projectTitle: 'Project 01', subtitleCode: 'LOAD-01' } },
@@ -385,16 +544,163 @@ async function measureApplicationWorkflows({
   await record('lnkWorkflowSummary', async () => {
     const summary = await lnkWorkflow.getLnkWorkflowSummary()
     return {
-      requestNames: summary.requestNames.length,
       pendingResults: summary.pendingPrimaryResultRowCount,
       primaryResults: summary.primaryResultRowCount,
       preRequests: summary.preHeatTreatmentRequestRowCount,
       preResults: summary.preHeatTreatmentResultRowCount,
     }
   })
-  await record('pstoLineSummaries', async () => {
-    const summaries = await pstoSummary.loadPstoLineAssignmentSummaries(db)
-    return { lines: summaries.length }
+  await record('lnkWorkflowRequestSummary', async () => {
+    const summary = await lnkWorkflow.getLnkWorkflowRequestSummary()
+    return {
+      requestNames: summary.requestNames.length,
+      requestOptions: summary.requestOptions.length,
+      hasMore: summary.hasMore,
+    }
+  })
+  await record('lnkRequestRegistrySelected', async () => {
+    const summary = await lnkWorkflow.getLnkWorkflowRequestSummary()
+    const selected = summary.requestOptions[0]
+    if (!selected) return { rows: 0, selected: null }
+    const rows = await lnkWorkflow.listLnkWorkflowRows({
+      scope: 'requestRegistry',
+      rowIds: null,
+      requestName: selected.name,
+      requestDate: selected.date,
+    })
+    return { rows: rows.length, selected: selected.label }
+  })
+  await record('lnkRequestCandidates', async () => {
+    const rows = await lnkWorkflow.listLnkWorkflowRows({
+      scope: 'requestCandidates',
+      rowIds: null,
+    })
+    return { rows: rows.length }
+  })
+  await record('lnkRequestCandidatesWithSelectedTail', async () => {
+    const selectedRowId = rowCount
+    const rows = await lnkWorkflow.listLnkWorkflowRows({
+      scope: 'requestCandidates',
+      rowIds: null,
+      includeRowIds: [selectedRowId],
+    })
+    if (!rows.some((row) => row.id === selectedRowId)) {
+      throw new Error(`LNK candidate page omitted selected row #${selectedRowId}.`)
+    }
+    return { rows: rows.length, selectedRowId }
+  })
+  await record('lnkResultCandidates', async () => {
+    const rows = await lnkWorkflow.listLnkWorkflowRows({
+      scope: 'resultCandidates',
+      rowIds: null,
+    })
+    return { rows: rows.length }
+  })
+  await record('lnkOfficialityCandidates', async () => {
+    const rows = await lnkWorkflow.listLnkWorkflowRows({
+      scope: 'officialityCandidates',
+      rowIds: null,
+    })
+    return { rows: rows.length }
+  })
+  await record('lnkPreHeatRequestCandidates', async () => {
+    const rows = await lnkWorkflow.listLnkWorkflowRows({
+      scope: 'preHeatTreatmentRequestCandidates',
+      rowIds: null,
+    })
+    return { rows: rows.length }
+  })
+  await record('lnkPreHeatResultCandidates', async () => {
+    const rows = await lnkWorkflow.listLnkWorkflowRows({
+      scope: 'preHeatTreatmentResultCandidates',
+      rowIds: null,
+    })
+    return { rows: rows.length }
+  })
+  await record('lnkResultRegistry', async () => {
+    const rows = await lnkWorkflow.listLnkWorkflowRows({
+      scope: 'resultRegistry',
+      rowIds: null,
+      limit: 500,
+    })
+    return { rows: rows.length }
+  })
+  await record('pstoWorkflowSummary', async () => {
+    return pstoWorkflow.getPstoWorkflowSummary()
+  })
+  await record('pstoWorkflowRequestOptions', async () => {
+    const result = await pstoWorkflow.getPstoWorkflowRequestOptions()
+    return {
+      options: result.options.length,
+      hasMore: result.hasMore,
+    }
+  })
+  await record('pstoRequestRegistrySelected', async () => {
+    const options = await pstoWorkflow.getPstoWorkflowRequestOptions()
+    const selected = options.options[0]
+    if (!selected) return { rows: 0, selected: null }
+    const rows = await pstoWorkflow.listPstoWorkflowRows({
+      scope: 'requestRegistry',
+      rowIds: null,
+      requestName: selected.name,
+      requestDate: selected.date,
+    })
+    return { rows: rows.length, selected: selected.label }
+  })
+  await record('pstoRequestCandidates', async () => {
+    const rows = await pstoWorkflow.listPstoWorkflowRows({
+      scope: 'requestCandidates',
+      rowIds: null,
+    })
+    return { rows: rows.length }
+  })
+  await record('pstoRequestCandidatesWithSelectedTail', async () => {
+    const selectedRowId = rowCount
+    const rows = await pstoWorkflow.listPstoWorkflowRows({
+      scope: 'requestCandidates',
+      rowIds: null,
+      includeRowIds: [selectedRowId],
+    })
+    if (!rows.some((row) => row.id === selectedRowId)) {
+      throw new Error(`PSTO candidate page omitted selected row #${selectedRowId}.`)
+    }
+    return { rows: rows.length, selectedRowId }
+  })
+  await record('pstoResultCandidates', async () => {
+    const rows = await pstoWorkflow.listPstoWorkflowRows({
+      scope: 'resultCandidates',
+      rowIds: null,
+    })
+    return { rows: rows.length }
+  })
+  await record('pstoTvmtRequestCandidates', async () => {
+    const rows = await pstoWorkflow.listPstoWorkflowRows({
+      scope: 'tvmtRequestCandidates',
+      rowIds: null,
+    })
+    return { rows: rows.length }
+  })
+  await record('pstoTvmtResultCandidates', async () => {
+    const rows = await pstoWorkflow.listPstoWorkflowRows({
+      scope: 'tvmtResultCandidates',
+      rowIds: null,
+    })
+    return { rows: rows.length }
+  })
+  await record('pstoResultRegistry', async () => {
+    const rows = await pstoWorkflow.listPstoWorkflowRows({
+      scope: 'resultRegistry',
+      rowIds: null,
+      limit: 500,
+    })
+    return { rows: rows.length }
+  })
+  await record('pstoLineSummaryPage', async () => {
+    const page = await pstoSummary.loadPstoLineAssignmentSummaryPage(db, {
+      page: 1,
+      pageSize: 25,
+    })
+    return { lines: page.rows.length, total: page.totalCount }
   })
   await record('dataUsage', async () => {
     const usage = await weldRead.getWeldDataUsageSummary()
@@ -414,8 +720,40 @@ async function measureApplicationWorkflows({
     const rows = await weldRead.listWeldReportContextRows({ data: { report: 'heatTreatment' } })
     return { rows: rows.length }
   })
+  if (selectedScenarios.has('reportOutputGuardLnk200k')) await record('reportOutputGuardLnk200k', async () => {
+    try {
+      await weldRead.listWeldReportContextRows({ data: { report: 'lnk' } })
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('более 10 000 строк')) return { blocked: true }
+      throw error
+    }
+    throw new Error('The LNK output unexpectedly bypassed the large-report safety limit.')
+  })
+  if (selectedScenarios.has('reportOutputGuardPsto200k')) await record('reportOutputGuardPsto200k', async () => {
+    try {
+      await weldRead.listWeldReportContextRows({ data: { report: 'heatTreatment' } })
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('более 10 000 строк')) return { blocked: true }
+      throw error
+    }
+    throw new Error('The PSTO output unexpectedly bypassed the large-report safety limit.')
+  })
 
-  if (!onlyScenario) console.log(JSON.stringify({ complete: results }, null, 2))
+  if (selectedScenarios.size === 0) console.log(JSON.stringify({ complete: results }, null, 2))
+}
+
+async function installDatabaseRequestCounter() {
+  const pgModule = await import('pg')
+  const clientPrototype = pgModule.Client.prototype as unknown as {
+    query: (...args: unknown[]) => unknown
+  }
+  const originalQuery = clientPrototype.query
+  let count = 0
+  clientPrototype.query = function countedQuery(this: unknown, ...args: unknown[]) {
+    count += 1
+    return originalQuery.apply(this, args)
+  }
+  return { read: () => count }
 }
 
 function buildWeldJointSeedSql() {
@@ -518,7 +856,7 @@ function buildWeldJointSeedSql() {
       'Контур ' || ((base.line_no - 1) % 30 + 1)::text,
       base.weld_date + 10,
       case when base.sequence % 200 = 0 then 'Непровар' else null end,
-      timestamp '2025-01-01 08:00:00+03' + ((base.sequence % 500000) * interval '1 second'),
+      timestamp '2025-01-01 08:00:00+03' + (base.sequence * interval '1 second'),
       now(),
       case when base.sequence % 10 < 3 then now() else null end,
       case when base.sequence % 10 < 3 then now() else null end,
@@ -559,11 +897,17 @@ async function measureMs(work: () => Promise<void>) {
 }
 
 function summarizePage(page: {
+  acceptedWdiTotal?: number
   hasMore: boolean
   rows: unknown[]
   total?: number
 }) {
-  return { rows: page.rows.length, total: page.total ?? null, hasMore: page.hasMore }
+  return {
+    rows: page.rows.length,
+    total: page.total ?? null,
+    hasMore: page.hasMore,
+    ...(page.acceptedWdiTotal === undefined ? {} : { acceptedWdiTotal: page.acceptedWdiTotal }),
+  }
 }
 
 function readPositiveInteger(value: string | undefined, fallback: number, maximum: number) {

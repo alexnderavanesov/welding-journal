@@ -65,7 +65,7 @@ describe('lnk officiality workflow load shape', () => {
     ]))
   })
 
-  it('loads production-sized officiality line scopes in bounded sequential batches', async () => {
+  it('loads production-sized officiality line scopes in one array-bound query', async () => {
     const queries: FakeSelectQuery[] = []
     const select = vi.fn((selection) => {
       expect(selection).toBe(LNK_OFFICIALITY_CHAIN_SELECT)
@@ -86,7 +86,7 @@ describe('lnk officiality workflow load shape', () => {
       true,
     )
 
-    expect(select).toHaveBeenCalledTimes(3)
+    expect(select).toHaveBeenCalledTimes(1)
     expect(queries.every((query) => query.for.mock.calls.length === 1)).toBe(true)
   })
 })

@@ -107,7 +107,6 @@ export async function listWeldingJournalImportScope({
   if (hasDispatcherTaskServerFilter(data.columnFilters)) await ensureDispatcherTaskIndexFresh()
   const db = requireDb()
   const otherSettings = await loadServerOtherSettings()
-  const fullyAssignedPstoLineKeys = await listFullyAssignedPstoLineKeys(db)
   const hasCurrentSystemWdiFilter = isSystemWdiMode(otherSettings) && Boolean(data.columnFilters.wdi?.trim())
   const sourceFilterData = hasCurrentSystemWdiFilter
     ? { ...data, columnFilters: getColumnFilterOptionFilters(data.columnFilters, 'wdi') }
@@ -124,30 +123,47 @@ export async function listWeldingJournalImportScope({
       applyCurrentSystemWdi(sourceRows, otherSettings),
       { wdi: data.columnFilters.wdi },
     )
-    const hydratedRows = await attachHeatTreatmentControlRelations(rows)
-    return rows.length > WELD_IMPORT_MAX_ROWS
-      ? { rows: [], total: rows.length, limitExceeded: true, fullyAssignedPstoLineKeys }
-      : {
-          rows: compactWeldRowsForTransport(hydratedRows),
-          total: rows.length,
-          limitExceeded: false,
-          fullyAssignedPstoLineKeys,
-        }
+    if (rows.length > WELD_IMPORT_MAX_ROWS) {
+      return {
+        rows: [],
+        total: rows.length,
+        limitExceeded: true,
+        fullyAssignedPstoLineKeys: [],
+      }
+    }
+    const [hydratedRows, fullyAssignedPstoLineKeys] = await Promise.all([
+      attachHeatTreatmentControlRelations(rows),
+      listFullyAssignedPstoLineKeys(db),
+    ])
+    return {
+      rows: compactWeldRowsForTransport(hydratedRows),
+      total: rows.length,
+      limitExceeded: false,
+      fullyAssignedPstoLineKeys,
+    }
   }
 
   const [{ total }] = await db.select({ total: count() }).from(weldJoints).where(where)
   const normalizedTotal = Number(total) || 0
 
   if (normalizedTotal > WELD_IMPORT_MAX_ROWS) {
-    return { rows: [], total: normalizedTotal, limitExceeded: true, fullyAssignedPstoLineKeys }
+    return {
+      rows: [],
+      total: normalizedTotal,
+      limitExceeded: true,
+      fullyAssignedPstoLineKeys: [],
+    }
   }
 
-  const rows = await db
-    .select(WELD_IMPORT_SCOPE_SELECT)
-    .from(weldJoints)
-    .where(where)
-    .orderBy(...WELDING_JOURNAL_ORDER_BY)
-  const hydratedRows = await attachHeatTreatmentControlRelations(rows)
+  const [hydratedRows, fullyAssignedPstoLineKeys] = await Promise.all([
+    db
+      .select(WELD_IMPORT_SCOPE_SELECT)
+      .from(weldJoints)
+      .where(where)
+      .orderBy(...WELDING_JOURNAL_ORDER_BY)
+      .then((rows) => attachHeatTreatmentControlRelations(rows)),
+    listFullyAssignedPstoLineKeys(db),
+  ])
 
   return {
     rows: compactWeldRowsForTransport(hydratedRows),

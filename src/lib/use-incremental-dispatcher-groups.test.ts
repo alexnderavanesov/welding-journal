@@ -2,6 +2,9 @@ import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import {
   DISPATCHER_GROUP_BATCH_SIZE,
+  DISPATCHER_CODE_BATCH_SIZE,
+  DISPATCHER_OBJECT_BATCH_SIZE,
+  DISPATCHER_JOINT_TASK_BATCH_SIZE,
   DISPATCHER_TASK_BATCH_SIZE,
   getNextDispatcherGroupCount,
   useIncrementalDispatcherGroups,
@@ -23,6 +26,13 @@ describe('incremental dispatcher groups', () => {
       .toBe(DISPATCHER_TASK_BATCH_SIZE)
     expect(getNextDispatcherGroupCount(DISPATCHER_TASK_BATCH_SIZE, 1178, DISPATCHER_TASK_BATCH_SIZE))
       .toBe(DISPATCHER_TASK_BATCH_SIZE * 2)
+  })
+
+  it('limits DZ headings to fifteen, objects to ten, and tasks to ten', () => {
+    expect(getNextDispatcherGroupCount(0, 538, DISPATCHER_CODE_BATCH_SIZE)).toBe(15)
+    expect(getNextDispatcherGroupCount(15, 538, DISPATCHER_CODE_BATCH_SIZE)).toBe(30)
+    expect(getNextDispatcherGroupCount(0, 538, DISPATCHER_OBJECT_BATCH_SIZE)).toBe(10)
+    expect(getNextDispatcherGroupCount(10, 538, DISPATCHER_JOINT_TASK_BATCH_SIZE)).toBe(20)
   })
 
   it('returns an expanded list to its first batch on demand', () => {

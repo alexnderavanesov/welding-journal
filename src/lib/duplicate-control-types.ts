@@ -15,6 +15,48 @@ export type DuplicateControlRecord = {
   conclusionDate: string
 }
 
+export const DUPLICATE_CONTROL_PAGE_SIZE_OPTIONS = [100, 300, 500, 1000] as const
+export const DUPLICATE_CONTROL_MASS_SELECTION_LIMIT = 5_000
+export const DUPLICATE_CONTROL_MASS_SELECTION_ERROR =
+  'Можно выбрать не более 5 000 стыков. Уточните поиск или снимите часть выбора.'
+
+export type DuplicateControlPageSize = (typeof DUPLICATE_CONTROL_PAGE_SIZE_OPTIONS)[number]
+
+export type DuplicateControlCandidatePageRequest = {
+  search?: string
+  page?: number
+  pageSize?: number
+}
+
+export type DuplicateControlCandidatePageResult = {
+  rows: import('@/lib/dispatcher-types').WeldRow[]
+  totalCount?: number
+  page: number
+  pageSize: DuplicateControlPageSize
+  hasMore: boolean
+}
+
+export type DuplicateControlRegistryRecord = DuplicateControlRecord & {
+  projectTitle: string
+  subtitleCode: string
+  line: string
+  spool: string
+  joint: string
+}
+
+export type DuplicateControlRegistryPageRequest = {
+  page?: number
+  pageSize?: number
+}
+
+export type DuplicateControlRegistryPageResult = {
+  rows: DuplicateControlRegistryRecord[]
+  totalCount?: number
+  page: number
+  pageSize: DuplicateControlPageSize
+  hasMore: boolean
+}
+
 export type DuplicateControlDraft = {
   id?: number
   expectedVersion?: string

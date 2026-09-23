@@ -11,6 +11,7 @@ import {
   invalidateDerivedCalculationCache,
   markDispatcherTaskIndexDirty,
 } from '@/server/dispatcher-task-index-dirty'
+import { DISPATCHER_BACKGROUND_INDEX_LOCK_ID } from '@/server/dispatcher-task-index-constants'
 import { getNextTimestampVersion } from '@/server/timestamp-version'
 import {
   lockWeldValidationSettings,
@@ -96,6 +97,12 @@ async function saveAppSettingToDb({ key, value, expectedUpdatedAt }: AppSettingP
     }
     if (projectSettingAffectsWeldValidationSnapshot(normalizedKey)) {
       await lockWeldValidationSettings(tx, 'exclusive')
+    }
+    if (normalizedKey === PROJECT_SETTING_KEYS.dispatcher ||
+      normalizedKey === PROJECT_SETTING_KEYS.dispatcherBackground) {
+      // Settings may prune or disable background rows after dirtying the active
+      // index. Serialize with background refresh before acquiring the index lock.
+      await tx.execute(sql`select pg_advisory_xact_lock(${DISPATCHER_BACKGROUND_INDEX_LOCK_ID})`)
     }
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${normalizedKey}))`)
     const [current] = await tx

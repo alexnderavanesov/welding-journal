@@ -11,7 +11,8 @@ import {
 import type { DispatcherTaskCodeGroup as DispatcherTaskCodeGroupValue } from '@/lib/dispatcher-code-groups'
 import { formatTaskCount } from '@/lib/dispatcher-format'
 import {
-  DISPATCHER_TASK_BATCH_SIZE,
+  DISPATCHER_JOINT_TASK_BATCH_SIZE,
+  DISPATCHER_OBJECT_BATCH_SIZE,
   useIncrementalDispatcherGroups,
 } from '@/lib/use-incremental-dispatcher-groups'
 import type {
@@ -126,7 +127,7 @@ export function DispatcherTaskGroup({ group, hideTaskSummaries = false, ...handl
     canCollapse,
     loadMore,
     collapseList,
-  } = useIncrementalDispatcherGroups(group.tasks, DISPATCHER_TASK_BATCH_SIZE)
+  } = useIncrementalDispatcherGroups(group.tasks, DISPATCHER_JOINT_TASK_BATCH_SIZE)
 
   return (
     <DispatcherTaskGroupFrame
@@ -170,14 +171,11 @@ export function DispatcherTaskCodeGroup({ group, ...handlers }: DispatcherTaskCo
     canCollapse,
     loadMore,
     collapseList,
-  } = useIncrementalDispatcherGroups(group.objectGroups)
-
-  if (group.tasks.length === 1) {
-    return <DispatcherTaskGroup group={group.objectGroups[0]} {...handlers} />
-  }
+  } = useIncrementalDispatcherGroups(group.objectGroups, DISPATCHER_OBJECT_BATCH_SIZE)
 
   return (
     <details
+      data-dispatcher-code-group={group.code}
       className="group/code w-full border-b border-sky-100 bg-[#f8fcfe] last:border-b-0"
       onToggle={(event) => {
         const open = event.currentTarget.open

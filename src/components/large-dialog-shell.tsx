@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 
 type LargeDialogShellProps = {
   children: ReactNode
+  ariaLabel?: string
   maxWidthClassName?: string
   maxHeightClassName?: string
   overlayClassName?: string
@@ -52,6 +53,7 @@ function schedulePageScrollRestore() {
 
 export function LargeDialogShell({
   children,
+  ariaLabel,
   maxWidthClassName = 'max-w-[1320px]',
   maxHeightClassName = 'max-h-[92vh]',
   overlayClassName = 'z-[70] bg-slate-950/30',
@@ -87,6 +89,7 @@ export function LargeDialogShell({
         data-modal-dialog="true"
         role="dialog"
         aria-modal="true"
+        aria-label={ariaLabel}
         className={cn(
           'flex w-full flex-col overscroll-contain border border-slate-200 bg-white shadow-2xl',
           maxHeightClassName,

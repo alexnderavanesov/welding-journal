@@ -104,6 +104,7 @@ export function useWeldPageQuery({
     },
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: 15 * 60_000,
+    retry: false,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,

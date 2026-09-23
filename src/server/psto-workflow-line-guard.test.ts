@@ -6,7 +6,7 @@ import {
 } from '@/server/psto-workflow-line-guard'
 
 describe('PSTO workflow line guard', () => {
-  it('checks production-sized multi-line documents in bounded query batches', async () => {
+  it('checks production-sized multi-line documents with one array-bound query', async () => {
     const selected = Array.from({ length: 1_001 }, (_, index) => ({
       id: index + 1,
       joint: `J${index + 1}`,
@@ -15,15 +15,13 @@ describe('PSTO workflow line guard', () => {
       line: `Line ${index + 1}`,
       pstoRequired: 'да',
     }))
-    const batches = [selected.slice(0, 500), selected.slice(500, 1_000), selected.slice(1_000)]
-    let readIndex = 0
-    const where = vi.fn(async () => batches[readIndex++] ?? [])
+    const where = vi.fn(async () => selected)
     const tx = {
       select: () => ({ from: () => ({ where }) }),
     }
 
     await expect(assertPstoWorkflowLinesFullyAssigned(tx as never, selected)).resolves.toBeUndefined()
-    expect(where).toHaveBeenCalledTimes(3)
+    expect(where).toHaveBeenCalledTimes(1)
   })
 
   it('allows a workflow only when every weld on the line has PSTO assigned', () => {

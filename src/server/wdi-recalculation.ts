@@ -22,8 +22,6 @@ export type RecalculateWdiInput = {
   sourceSignature: string
 }
 
-const WDI_UPDATE_BATCH_SIZE = 500
-
 export const previewWdiRecalculation = createServerFn({ method: 'GET' }).handler(async () => {
   await assertSecurityScope('entry')
   const db = requireDb()
@@ -55,19 +53,17 @@ export const recalculateWdi = createServerFn({ method: 'POST' })
         throw new Error('Стыки изменились после предпросмотра. Обновите проверку и повторите пересчет.')
       }
       const plan = buildWdiRecalculationPlan(rows, settings)
-      for (let offset = 0; offset < plan.changes.length; offset += WDI_UPDATE_BATCH_SIZE) {
-        const batch = plan.changes.slice(offset, offset + WDI_UPDATE_BATCH_SIZE)
-        const values = sql.join(
-          batch.map((change) => sql`(${change.id}::integer, ${change.wdi}::numeric)`),
-          sql`, `,
-        )
+      if (plan.changes.length > 0) {
         await tx.execute(sql`
           update "weld_joints" as weld
           set
             "wdi" = recalculated.wdi::numeric,
             "welding_updated_at" = now(),
             "updated_at" = now()
-          from (values ${values}) as recalculated(id, wdi)
+          from unnest(
+            ${sql.param(plan.changes.map((change) => change.id))}::integer[],
+            ${sql.param(plan.changes.map((change) => change.wdi))}::numeric[]
+          ) as recalculated(id, wdi)
           where weld."id" = recalculated.id
         `)
       }

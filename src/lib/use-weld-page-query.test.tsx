@@ -172,6 +172,36 @@ describe('useWeldPageQuery refresh policy', () => {
     })
   })
 
+  it('coalesces simultaneous focus and online refreshes into one request', async () => {
+    const queryClient = createQueryClient()
+    const queryKey = [...WELD_JOINT_PAGES_QUERY_KEY, 'weldingJournal', {}, 100] as const
+    queryClient.setQueryData(queryKey, createInfiniteData(3), {
+      updatedAt: Date.now() - 31_000,
+    })
+    const deferred = createDeferred<WeldPageResult>()
+    serverMocks.listWeldingJournalPage.mockReturnValue(deferred.promise)
+
+    renderHook(
+      () => useWeldPageQuery({ enabled: true, report: 'weldingJournal', columnFilters: {} }),
+      { wrapper: createWrapper(queryClient) },
+    )
+    expect(serverMocks.listWeldingJournalPage).not.toHaveBeenCalled()
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'))
+      window.dispatchEvent(new Event('online'))
+    })
+
+    expect(serverMocks.listWeldingJournalPage).toHaveBeenCalledTimes(1)
+    expect(serverMocks.listWeldingJournalPage).toHaveBeenCalledWith({
+      data: { page: 1, pageSize: 300, columnFilters: {} },
+    })
+
+    deferred.resolve(createPageResult(1, 300, 706))
+    await waitFor(() => expect(queryClient.getQueryState(queryKey)?.fetchStatus).toBe('idle'))
+    expect(serverMocks.listWeldingJournalPage).toHaveBeenCalledTimes(1)
+  })
+
   it('does not loop when a consolidated activation refresh fails', async () => {
     const queryClient = createQueryClient()
     const queryKey = [...WELD_JOINT_PAGES_QUERY_KEY, 'weldingJournal', {}, 100] as const
@@ -248,4 +278,14 @@ function createPageResult(page: number, pageSize: WeldPageResult['pageSize'], to
     pageSize,
     hasMore: page * numericPageSize < total,
   }
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
 }

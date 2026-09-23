@@ -3,14 +3,40 @@ import { PgDialect } from 'drizzle-orm/pg-core'
 
 import {
   applyReservedSystemDocumentNames,
+  buildInitialSystemDocumentSequenceQuery,
   getInitialSystemDocumentSequenceNumbers,
   loadExistingSystemDocumentNameKeys,
   normalizeSystemDocumentSequenceUpdate,
   reserveSystemDocumentNames,
 } from '@/server/system-document-sequences'
 import type { GeneratedDocumentsTransaction } from '@/server/generated-document-number-sequence'
+import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-settings'
 
 describe('system document sequence update', () => {
+  it('calculates cold counter maximums inside PostgreSQL without loading weld rows', () => {
+    const query = buildInitialSystemDocumentSequenceQuery(
+      REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+      ['lnkRequest', 'pstoRequest', 'tvmtConclusion'],
+    )
+    expect(query).not.toBeNull()
+    const compiled = new PgDialect().sqlToQuery(query!)
+
+    expect(compiled.sql).toContain('regexp_match')
+    expect(compiled.sql).toContain('max("source_numbers"."documentNumber")')
+    expect(compiled.sql).toContain(
+      'group by "sources"."sequenceId", "sources"."sourceId", "sources"."sourceKey"',
+    )
+    expect(compiled.sql).toContain('group by "sequence_maximums"."sequenceId"')
+    expect(compiled.sql).not.toContain('select "weld_joints".*')
+    expect(compiled.params).toEqual(expect.arrayContaining([
+      'lnkRequest',
+      'pstoRequest',
+      'tvmtConclusion',
+      'ТВМТ',
+      '([0-9]+)',
+    ]))
+  })
+
   it('accepts several LNK request fields in one system request', () => {
     expect(
       normalizeSystemDocumentSequenceUpdate({
@@ -248,7 +274,7 @@ describe('system document sequence update', () => {
     expect(insert).toHaveBeenCalledTimes(1)
   })
 
-  it('chunks a production-sized date set below the PostgreSQL parameter limit', async () => {
+  it('checks a production-sized date set with one array-bound query', async () => {
     const execute = vi.fn().mockResolvedValue({ rows: [] })
     const requests = Array.from({ length: 12_000 }, (_, index) => ({
       type: 'pstoRequest' as const,
@@ -259,9 +285,9 @@ describe('system document sequence update', () => {
 
     await loadExistingSystemDocumentNameKeys({ execute } as never, requests)
 
-    expect(execute.mock.calls.length).toBeGreaterThan(1)
-    for (const [query] of execute.mock.calls) {
-      expect(new PgDialect().sqlToQuery(query).params.length).toBeLessThanOrEqual(10_000)
-    }
+    expect(execute).toHaveBeenCalledTimes(1)
+    const compiled = new PgDialect().sqlToQuery(execute.mock.calls[0]![0])
+    expect(compiled.params.length).toBeLessThanOrEqual(10)
+    expect(compiled.params.some((parameter) => Array.isArray(parameter) && parameter.length === 12_000)).toBe(true)
   })
 })

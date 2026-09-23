@@ -89,7 +89,7 @@ import { attachDuplicateControlRelations } from '@/server/duplicate-control-rela
 import { WELD_TABLE_RETURNING } from '@/server/weld-server-shared'
 import { lockWeldValidationSettings } from '@/server/weld-validation-settings-lock'
 import { lockWelderStampRegistry } from '@/server/welder-stamp-registry-lock'
-import { splitNumberBatches } from '@/server/weld-request-utils'
+import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 
 type Db = ReturnType<typeof requireDb>
 type ValidationDb = Pick<Db, 'execute' | 'select'>
@@ -390,15 +390,12 @@ export async function loadPreviousWeldRows(db: ValidationDb, records: WeldInput[
     .filter((id) => Number.isInteger(id) && id > 0))]
     .sort((left, right) => left - right)
   if (ids.length === 0) return new Map<number, WeldJoint>()
-  const storedRows: WeldJoint[] = []
-  for (const idBatch of splitNumberBatches(ids, 1000)) {
-    storedRows.push(...await db
-      .select(WELD_TABLE_RETURNING)
-      .from(weldJoints)
-      .where(inArray(weldJoints.id, idBatch))
-      .orderBy(asc(weldJoints.id))
-      .for('update'))
-  }
+  const storedRows: WeldJoint[] = await db
+    .select(WELD_TABLE_RETURNING)
+    .from(weldJoints)
+    .where(buildNumberArrayMatch(weldJoints.id, ids))
+    .orderBy(asc(weldJoints.id))
+    .for('update')
   const rows = await attachDuplicateControlRelations(
     await attachHeatTreatmentControlRelations(
       storedRows,

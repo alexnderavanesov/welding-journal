@@ -69,37 +69,23 @@ describe('layered control history guard', () => {
 })
 
 describe('layered control document database load', () => {
-  it.each([2, 100])('inserts %i documents and assignments in two batch operations', async (documentCount) => {
-    const returning = vi.fn()
-    const onConflictDoNothing = vi.fn().mockResolvedValue(undefined)
-    let insertCall = 0
-    const insert = vi.fn(() => {
-      insertCall += 1
-      return {
-        values: vi.fn((records: Array<Record<string, unknown>>) => {
-          if (insertCall === 1) {
-            returning.mockResolvedValueOnce(records.map((record, index) => ({
-              id: 2_000 + index,
-              type: record.type,
-              documentNumber: record.documentNumber,
-            })).reverse())
-            return { returning }
-          }
-          return { onConflictDoNothing }
-        }),
-      }
-    })
-    const execute = vi.fn().mockResolvedValue(undefined)
+  it.each([2, 100])('inserts %i documents and all assignments with two database calls', async (documentCount) => {
+    const execute = vi.fn()
+      .mockResolvedValueOnce({
+        rows: Array.from({ length: documentCount }, (_, index) => ({
+          id: 2_000 + index,
+          type: 'layeredVikEdges',
+          documentNumber: index + 1,
+        })).reverse(),
+      })
+      .mockResolvedValue({ rows: [] })
 
     await persistLayeredControlDocumentWrites(
-      { insert, execute } as never,
+      { execute } as never,
       Array.from({ length: documentCount }, (_, index) => layeredWrite(index, null)),
     )
 
-    expect(insert).toHaveBeenCalledTimes(2)
-    expect(returning).toHaveBeenCalledTimes(1)
-    expect(onConflictDoNothing).toHaveBeenCalledTimes(1)
-    expect(execute).not.toHaveBeenCalled()
+    expect(execute).toHaveBeenCalledTimes(2)
   })
 
   it.each([2, 100])('updates %i changed documents with one batch operation', async (documentCount) => {

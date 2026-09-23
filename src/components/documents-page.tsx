@@ -63,6 +63,7 @@ import {
   downloadGeneratedDocumentArchive,
   downloadGeneratedDocument,
   loadGeneratedDocumentHistory,
+  loadGeneratedDocumentHistoryFilterOptions,
   loadGeneratedDocumentRows,
   openGeneratedDocument,
   type StoredGeneratedDocument,
@@ -97,6 +98,7 @@ import {
   createCurrentSystemDocumentBlob,
   downloadSystemDocument,
   loadSystemDocumentHistory,
+  loadSystemDocumentHistoryFilterOptions,
   loadSystemDocumentRows,
   openSystemDocument,
   renameSystemDocumentToCurrentName,
@@ -161,6 +163,7 @@ import {
   getSystemDocumentStageLabel,
   type SystemDocumentMethodScope,
 } from '@/lib/system-document-stage'
+import { useDebouncedValue } from '@/lib/use-debounced-value'
 
 type DocumentsPageProps = {
   welderStamps: WelderStampRecord[]
@@ -244,6 +247,15 @@ type DocumentHistoryColumnOption = {
   value: string
   label: string
   count: number
+}
+
+function getDocumentHistoryFiltersWithoutKey(
+  filters: Record<string, string>,
+  key: DocumentHistoryFilterKey,
+) {
+  const next = { ...filters }
+  delete next[key]
+  return next
 }
 
 export function getDocumentActionErrorMessage(error: unknown, fallback: string) {
@@ -506,6 +518,9 @@ export function DocumentsPage({
     enabled: isManualGeneratedDocumentView && activeWorkspaceTab === 'generation',
     staleTime: 15_000,
     placeholderData: keepPreviousData,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
   const rows = generationDataQuery.data?.rows ?? []
 
@@ -1430,6 +1445,9 @@ function GeneratedDocumentsPanel({
     }),
     staleTime: 30_000,
     placeholderData: keepPreviousData,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
   const documents = historyQuery.data?.documents ?? []
   const visibleDocuments = useMemo(
@@ -1629,6 +1647,21 @@ function GeneratedDocumentsPanel({
                 label={filter.label}
                 value={columnFilters[filter.key] ?? ''}
                 options={filterOptions[filter.key] ?? []}
+                optionsQueryKey={[
+                  ...GENERATED_DOCUMENT_HISTORY_QUERY_KEY,
+                  historyTypes,
+                  'filter-options',
+                  filter.key,
+                  getDocumentHistoryFiltersWithoutKey(columnFilters, filter.key),
+                  navigationDocumentId,
+                ]}
+                loadOptions={(search) => loadGeneratedDocumentHistoryFilterOptions({
+                  types: [...historyTypes],
+                  ...(navigationDocumentId === null ? {} : { documentId: navigationDocumentId }),
+                  fieldKey: filter.key,
+                  search,
+                  columnFilters: getDocumentHistoryFiltersWithoutKey(columnFilters, filter.key),
+                })}
                 className={filter.align === 'end' ? 'justify-end' : ''}
                 alignRight={filter.align === 'end'}
                 dateGrouped={filter.dateGrouped}
@@ -1930,6 +1963,9 @@ function SystemDocumentsPanel({
     }),
     staleTime: 30_000,
     placeholderData: keepPreviousData,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
   const documents = historyQuery.data?.documents ?? []
   const totalDocuments = historyQuery.data?.total ?? 0
@@ -2224,6 +2260,22 @@ function SystemDocumentsPanel({
                 label={filter.label}
                 value={columnFilters[filter.key] ?? ''}
                 options={filterOptions[filter.key] ?? []}
+                optionsQueryKey={[
+                  ...GENERATED_DOCUMENT_HISTORY_QUERY_KEY,
+                  'system-document-history',
+                  documentType,
+                  'filter-options',
+                  filter.key,
+                  getDocumentHistoryFiltersWithoutKey(effectiveColumnFilters, filter.key),
+                  navigationTarget?.documentId ?? null,
+                ]}
+                loadOptions={(search) => loadSystemDocumentHistoryFilterOptions({
+                  type: documentType,
+                  ...(navigationTarget?.documentId ? { documentId: navigationTarget.documentId } : {}),
+                  fieldKey: filter.key,
+                  search,
+                  columnFilters: getDocumentHistoryFiltersWithoutKey(effectiveColumnFilters, filter.key),
+                })}
                 className={filter.align === 'end' ? 'justify-end' : ''}
                 alignRight={filter.align === 'end'}
                 dateGrouped={filter.dateGrouped}
@@ -2550,6 +2602,8 @@ export function DocumentHistoryColumnFilter({
   label,
   value,
   options,
+  optionsQueryKey,
+  loadOptions,
   className = '',
   alignRight = false,
   dateGrouped = false,
@@ -2558,6 +2612,11 @@ export function DocumentHistoryColumnFilter({
   label: string
   value: string
   options: DocumentHistoryColumnOption[]
+  optionsQueryKey?: readonly unknown[]
+  loadOptions?: (search: string) => Promise<{
+    options: DocumentHistoryColumnOption[]
+    hasMore: boolean
+  }>
   className?: string
   alignRight?: boolean
   dateGrouped?: boolean
@@ -2572,9 +2631,51 @@ export function DocumentHistoryColumnFilter({
   const selectedValues = choiceFilter?.kind === 'values' ? choiceFilter.values : []
   const hasActiveFilter = Boolean(value.trim())
   const normalizedSearch = optionSearch.trim().toLocaleLowerCase('ru-RU')
-  const visibleOptions = normalizedSearch
-    ? options.filter((option) => option.label.toLocaleLowerCase('ru-RU').includes(normalizedSearch))
+  const debouncedOptionSearch = useDebouncedValue(optionSearch.trim(), 250)
+  const remoteOptionsQuery = useQuery({
+    queryKey: [
+      ...(optionsQueryKey ?? ['document-history-filter-options', label]),
+      debouncedOptionSearch,
+    ],
+    queryFn: () => {
+      if (!loadOptions) return Promise.resolve({ options, hasMore: false })
+      return loadOptions(debouncedOptionSearch)
+    },
+    enabled: isOpen && Boolean(loadOptions),
+    staleTime: 60_000,
+    placeholderData: keepPreviousData,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  })
+  const loadedOptions = loadOptions
+    ? remoteOptionsQuery.data?.options ?? options
     : options
+  const optionsWithSelectedValues = useMemo(() => {
+    const byValue = new Map(loadedOptions.map((option) => [option.value, option]))
+    for (const selectedValue of selectedValues) {
+      if (
+        !byValue.has(selectedValue)
+        && (!normalizedSearch || selectedValue.toLocaleLowerCase('ru-RU').includes(normalizedSearch))
+      ) {
+        byValue.set(selectedValue, {
+          value: selectedValue,
+          label: selectedValue || '(пусто)',
+          count: 0,
+        })
+      }
+    }
+    return [...byValue.values()]
+  }, [loadedOptions, normalizedSearch, selectedValues])
+  const visibleOptions = loadOptions
+    ? optionsWithSelectedValues
+    : normalizedSearch
+      ? optionsWithSelectedValues.filter((option) =>
+          option.label.toLocaleLowerCase('ru-RU').includes(normalizedSearch),
+        )
+      : optionsWithSelectedValues
+  const remoteHasMore = Boolean(loadOptions && remoteOptionsQuery.data?.hasMore)
+  const isRemoteOptionsLoading = Boolean(loadOptions && remoteOptionsQuery.isLoading)
 
   const toggleValue = (optionValue: string) => {
     const selectedSet = new Set(selectedValues)
@@ -2697,7 +2798,11 @@ export function DocumentHistoryColumnFilter({
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-slate-800">{label}</div>
                 <div className="mt-0.5 break-words text-xs text-slate-500">
-                  {hasActiveFilter ? `Активно: ${getDocumentHistoryFilterSummary(value)}` : `Значений: ${options.length}`}
+                  {hasActiveFilter
+                    ? `Активно: ${getDocumentHistoryFilterSummary(value)}`
+                    : remoteHasMore
+                      ? `Показаны первые ${visibleOptions.length}`
+                      : `Значений: ${visibleOptions.length}`}
                 </div>
               </div>
               <button type="button" className="shrink-0 text-xs text-slate-500 hover:text-slate-900" onClick={() => setIsOpen(false)}>
@@ -2723,7 +2828,7 @@ export function DocumentHistoryColumnFilter({
                 disabled={visibleOptions.length === 0}
                 onClick={() => onChange(buildWeldColumnValueFilter(visibleOptions.map((option) => option.value)))}
               >
-                Выбрать все
+                {remoteHasMore ? 'Выбрать показанные' : 'Выбрать все'}
               </button>
               <button
                 type="button"
@@ -2738,7 +2843,13 @@ export function DocumentHistoryColumnFilter({
             </div>
           </div>
           <div className="min-h-0 flex-1 overflow-auto border-t border-slate-100">
-            {dateGrouped ? (
+            {isRemoteOptionsLoading && visibleOptions.length === 0 ? (
+              <div className="px-3 py-6 text-center text-xs text-slate-500">Загружаем значения...</div>
+            ) : remoteOptionsQuery.isError ? (
+              <div className="px-3 py-6 text-center text-xs text-rose-600">
+                Не удалось загрузить значения фильтра.
+              </div>
+            ) : dateGrouped ? (
               <DocumentDateFilterOptions
                 options={visibleOptions}
                 selectedValues={selectedValues}
@@ -2781,6 +2892,11 @@ export function DocumentHistoryColumnFilter({
             ) : (
               <div className="px-3 py-6 text-center text-xs text-slate-500">Значений не найдено</div>
             )}
+            {remoteHasMore ? (
+              <div className="border-t border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                Уточните поиск, чтобы увидеть остальные значения.
+              </div>
+            ) : null}
           </div>
         </div>,
         document.body,

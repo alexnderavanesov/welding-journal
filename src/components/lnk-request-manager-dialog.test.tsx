@@ -43,35 +43,42 @@ function renderDialog(overrides: Partial<Parameters<typeof LnkRequestManagerDial
     vikRequestDate: openRequest.date,
   } as WeldRow
 
-  render(
-    <LnkRequestManagerDialog
-      requestName={openRequest.name}
-      requestDate={openRequest.date}
-      requestOptions={[openRequest, fixedRequest]}
-      allRows={[row]}
-      requestRows={[row]}
-      requestMethods={[LNK_METHODS[0]]}
-      requestNameDraft={openRequest.name}
-      isManagerPending={false}
-      isCorrectionPending={false}
-      canOpenDocument={() => true}
-      onClose={vi.fn()}
-      onChangeRequest={onChangeRequest}
-      onCreateRequest={vi.fn()}
-      onAddPositions={onAddPositions}
-      onOpenRows={vi.fn()}
-      onOpenDocument={onOpenDocument}
-      onOpenJournalRows={onOpenJournalRows}
-      onCopyDocumentName={vi.fn()}
-      onRequestNameDraftChange={vi.fn()}
-      onRenameRequest={vi.fn()}
-      onClearPosition={vi.fn()}
-      onDeleteRequest={vi.fn()}
-      {...overrides}
-    />,
-  )
+  const props: Parameters<typeof LnkRequestManagerDialog>[0] = {
+    requestName: openRequest.name,
+    requestDate: openRequest.date,
+    requestOptions: [openRequest, fixedRequest],
+    allRows: [row],
+    requestRows: [row],
+    requestMethods: [LNK_METHODS[0]],
+    requestNameDraft: openRequest.name,
+    isManagerPending: false,
+    isCorrectionPending: false,
+    canOpenDocument: () => true,
+    onClose: vi.fn(),
+    onChangeRequest,
+    onCreateRequest: vi.fn(),
+    onAddPositions,
+    onOpenRows: vi.fn(),
+    onOpenDocument,
+    onOpenJournalRows,
+    onCopyDocumentName: vi.fn(),
+    onRequestNameDraftChange: vi.fn(),
+    onRenameRequest: vi.fn(),
+    onClearPosition: vi.fn(),
+    onDeleteRequest: vi.fn(),
+    ...overrides,
+  }
+  const view = render(<LnkRequestManagerDialog {...props} />)
 
-  return { onAddPositions, onChangeRequest, onOpenDocument, onOpenJournalRows }
+  return {
+    onAddPositions,
+    onChangeRequest,
+    onOpenDocument,
+    onOpenJournalRows,
+    rerenderDialog: (next: Partial<Parameters<typeof LnkRequestManagerDialog>[0]>) => {
+      view.rerender(<LnkRequestManagerDialog {...props} {...next} />)
+    },
+  }
 }
 
 describe('LnkRequestManagerDialog', () => {
@@ -188,5 +195,46 @@ describe('LnkRequestManagerDialog', () => {
       [expect.objectContaining({ id: 1 })],
       'заявка ЛНК «Заявка-001»',
     )
+  })
+
+  it('loads a newly selected request before opening its context actions', async () => {
+    const rkMethod = LNK_METHODS.find((method) => method.code === 'РК')!
+    const onChangeControlStage = vi.fn()
+    const { onChangeRequest, rerenderDialog } = renderDialog({ onChangeControlStage })
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: /Заявка-002/ }))
+
+    expect(onChangeRequest).toHaveBeenCalledWith(fixedRequest)
+    expect(screen.queryByRole('button', { name: 'Изменить этап контроля' })).not.toBeInTheDocument()
+
+    const loadedRow = {
+      id: 2,
+      joint: 'F2',
+      line: 'Линия-2',
+      rkRequest: fixedRequest.name,
+      rkRequestDate: fixedRequest.date,
+      rkResult: 'годен',
+      systemDocumentIds: { rkRequest: 77 },
+    } as WeldRow
+    rerenderDialog({
+      requestName: fixedRequest.name,
+      requestDate: fixedRequest.date,
+      allRows: [loadedRow],
+      requestRows: [loadedRow],
+      requestMethods: [rkMethod],
+      requestNameDraft: fixedRequest.name,
+    })
+
+    const transferButton = await screen.findByRole('button', {
+      name: 'Изменить этап контроля',
+    })
+    expect(transferButton).toBeEnabled()
+    fireEvent.click(transferButton)
+    expect(onChangeControlStage).toHaveBeenCalledWith({
+      documentId: 77,
+      type: 'lnkRequest',
+      title: fixedRequest.name,
+      date: fixedRequest.date,
+    })
   })
 })

@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldPageResult } from '@/server/weld-contracts'
 import {
+  DISPATCHER_TASK_REFRESH_QUERY_KEY,
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
+  DUPLICATE_CONTROL_CANDIDATES_QUERY_KEY,
+  DUPLICATE_CONTROL_REGISTRY_QUERY_KEY,
   GENERATED_DOCUMENT_HISTORY_QUERY_KEY,
   invalidateWeldJoints,
   LNK_WORKFLOW_QUERY_KEY,
@@ -21,6 +24,16 @@ import {
 } from '@/lib/weld-query-utils'
 
 describe('weld query cache updates', () => {
+  it('keeps an active dispatcher refresh outside snapshot invalidation', async () => {
+    const queryClient = createQueryClient()
+    const refreshKey = [...DISPATCHER_TASK_REFRESH_QUERY_KEY, 7]
+    queryClient.setQueryData(refreshKey, { isFresh: false })
+
+    await queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY })
+
+    expect(queryClient.getQueryState(refreshKey)?.isInvalidated).toBe(false)
+  })
+
   it('merges saved rows into the complete snapshot without refetching it', async () => {
     const queryClient = createQueryClient()
     queryClient.setQueryData(WELD_COMPLETE_SNAPSHOT_QUERY_KEY, [
@@ -60,6 +73,8 @@ describe('weld query cache updates', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_FINAL_STATUS_CONTEXT_QUERY_KEY })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_FORM_SUGGESTIONS_QUERY_KEY })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_LINE_AUTOFILL_QUERY_KEY })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: DUPLICATE_CONTROL_CANDIDATES_QUERY_KEY })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: DUPLICATE_CONTROL_REGISTRY_QUERY_KEY })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: GENERATED_DOCUMENT_HISTORY_QUERY_KEY })
   })
 

@@ -382,7 +382,7 @@ test('возобновление отмененной линии также мо
   await page.getByRole('button', { name: 'Возобновить', exact: true }).click()
 
   await expect(page.getByRole('heading', { name: 'Возобновление ПСТО' })).toBeVisible()
-  await expect(page.getByText(REACTIVATED_JOINT, { exact: true })).toBeVisible()
+  await expect(page.getByRole('dialog').getByText(REACTIVATED_JOINT, { exact: true })).toBeVisible()
   const submit = page.getByRole('button', { name: 'Возобновить ПСТО', exact: true })
   await expect(submit).toBeDisabled()
   await page.getByRole('button', {
@@ -999,22 +999,32 @@ async function expectRepeatedJointCreateTask(page: Page, sourceJoint: string, ta
   const codeGroup = page.locator('details').filter({ hasText: 'ДЗ-07' }).first()
   await expect(codeGroup).toBeVisible({ timeout: 15_000 })
   await openDetails(codeGroup)
-
-  const taskButton = codeGroup.getByRole('button', {
-    name: new RegExp(
-      `^Создать повторный стык.*${escapeRegExp(targetJoint)}`,
-    ),
+  const objectGroup = codeGroup.locator('details[data-dispatcher-hierarchy-level="1"]').filter({
+    has: page.locator('summary').getByText(sourceJoint, { exact: true }),
   }).first()
-  if (await codeGroup.getAttribute('data-dispatcher-hierarchy-level') !== '1') {
-    const nestedObjectGroup = codeGroup.locator('details').filter({ hasText: sourceJoint }).first()
-    await expect(nestedObjectGroup).toBeVisible({ timeout: 15_000 })
-    await openDetails(nestedObjectGroup)
+  while (await objectGroup.count() === 0) {
+    const loadMore = codeGroup.getByRole('button', { name: 'Показать ещё' }).first()
+    if (await loadMore.count() === 0) break
+    await loadMore.click()
   }
-  await expect(taskButton).toBeVisible({ timeout: 15_000 })
+  await expect(objectGroup).toBeVisible()
+  await openDetails(objectGroup)
+  await expect(objectGroup.getByRole('button', {
+    name: new RegExp(`^Создать повторный стык.*${escapeRegExp(targetJoint)}`),
+  }).first()).toBeVisible({ timeout: 15_000 })
 }
 
 async function expectRepeatedJointCreateTaskToDisappear(page: Page, targetJoint: string) {
-  await expect.poll(async () => page.getByText(targetJoint, { exact: true }).count(), { timeout: 15_000 }).toBe(0)
+  await expect(page.getByRole('button', { name: `Выполнить: Создать ${targetJoint}` })).toHaveCount(0)
+  await expect.poll(async () => withE2eDatabase(async (client) => {
+    const result = await client.query<{ count: string }>(`
+      select count(*)::text as count
+      from dispatcher_row_tasks as tasks
+      join weld_joints as joints on joints.id = tasks.weld_joint_id
+      where joints.project_title = 'E2E проект' and joints.joint = $1 and tasks.code = 'ДЗ-07'
+    `, [JOINT])
+    return Number(result.rows[0]?.count ?? -1)
+  }), { timeout: 15_000 }).toBe(0)
 }
 
 async function openDetails(details: ReturnType<Page['locator']>) {

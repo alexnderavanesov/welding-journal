@@ -12,7 +12,6 @@ import {
 import { isUnofficialJoint } from '@/lib/joint-display'
 import { compareJointChainRows, getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
 import {
-  getOfficialRejectedJointChainRows,
   getPrimaryRejectedLnkResult,
 } from '@/lib/repeated-joint-task-helpers'
 import {
@@ -20,6 +19,7 @@ import {
   type SystemIndexSettings,
 } from '@/lib/system-index-settings'
 import { encodeIdentityKey } from '@/lib/identity-key'
+import { buildRepeatedJointLookup } from '@/lib/repeated-joint-lookup'
 
 export type JointCoilTransitionMode = 'limit' | 'early-decision'
 
@@ -81,7 +81,10 @@ export function buildJointCoilTransitions(
   const settings = options.systemIndexSettings ?? loadSystemIndexSettings()
   const earlyDecisionSourceRowIds = options.earlyCoilDecisionSourceRowIds ?? new Set<number>()
   const rejectionResolver = options.getPrimaryRejectedLnkResult ?? getPrimaryRejectedLnkResult
-  const officialRejectedRowsResolver = options.getOfficialRejectedJointChainRows ?? getOfficialRejectedJointChainRows
+  const repeatedJointLookup = buildRepeatedJointLookup(rows, rejectionResolver, settings)
+  // Custom resolvers are read-only. Copy once rather than once per rejected
+  // joint, which otherwise makes a large line allocate quadratically.
+  const resolverRows = options.getOfficialRejectedJointChainRows ? [...rows] : null
   const anchorsByParentBranch = new Map<string, { parentBranchJoint: string; row: WeldRow }>()
   const validSourcesByParentBranch = new Map<string, { mode: JointCoilTransitionMode; row: WeldRow }>()
 
@@ -99,7 +102,9 @@ export function buildJointCoilTransitions(
 
     const rejection = rejectionResolver(row)
     if (!rejection || isUnofficialJoint(row)) continue
-    const officialRejectedRows = officialRejectedRowsResolver([...rows], row, rowJoint, settings)
+    const officialRejectedRows = options.getOfficialRejectedJointChainRows
+      ? options.getOfficialRejectedJointChainRows(resolverRows!, row, rowJoint, settings)
+      : repeatedJointLookup.getOfficialRejectedJointChainRows(row, rowJoint)
     const mode = getCoilTransitionModeForSource({
       earlyCoilDecisionSourceRowIds: earlyDecisionSourceRowIds,
       officialRejectedRows,
@@ -120,15 +125,11 @@ export function buildJointCoilTransitions(
       const validSource = validSourcesByParentBranch.get(parentKey)
       const targetJoints = getCoilJointNames(parentBranchJoint, settings) as [string, string]
       const targetRows = targetJoints.map((targetJoint) =>
-        findMatchingJointRow(rows, anchorRow, targetJoint),
+        repeatedJointLookup.findMatchingJointRow(anchorRow, targetJoint) ?? undefined,
       ) as [WeldRow | undefined, WeldRow | undefined]
-      const fallbackSource = findLatestRejectedBranchRow(
-        rows,
-        anchorRow,
-        parentBranchJoint,
-        rejectionResolver,
-        settings,
-      )
+      const fallbackSource = repeatedJointLookup
+        .getRejectedJointChainRows(anchorRow, parentBranchJoint)
+        .at(-1)
       const sourceRow = validSource?.row ?? fallbackSource
       return {
         key: buildTransitionKey(anchorRow, parentBranchJoint),
@@ -219,32 +220,6 @@ function findMatchingJointRow(rows: readonly WeldRow[], anchorRow: WeldRow, targ
         candidateIdentity.joint === targetIdentity.joint,
     )
   })
-}
-
-function findLatestRejectedBranchRow(
-  rows: readonly WeldRow[],
-  anchorRow: WeldRow,
-  parentBranchJoint: string,
-  getRejectedResult: (row: WeldInput) => unknown,
-  settings: SystemIndexSettings,
-) {
-  const parentIdentity = getRepeatedJointIdentity(anchorRow, parentBranchJoint)
-  if (!parentIdentity) return undefined
-  return [...rows]
-    .filter((candidate) => {
-      if (!getRejectedResult(candidate)) return false
-      const candidateBranch = parseRepeatedJointName(String(candidate.joint ?? ''), settings).base
-      const identity = getRepeatedJointIdentity(candidate, candidateBranch)
-      return Boolean(
-        identity &&
-          identity.project === parentIdentity.project &&
-          identity.subtitle === parentIdentity.subtitle &&
-          identity.line === parentIdentity.line &&
-          identity.joint === parentIdentity.joint,
-      )
-    })
-    .sort((left, right) => compareJointChainRows(left, right, settings))
-    .at(-1)
 }
 
 function buildTransitionKey(row: WeldRow, parentBranchJoint: string) {

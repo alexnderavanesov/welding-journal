@@ -43,7 +43,6 @@ describe('DuplicateControlDialog', () => {
         draft={createEmptyDuplicateControlDraft()}
         filteredRows={rows}
         selectedRows={[]}
-        allRows={rows}
         controls={[]}
         saveBlockReason="Выберите один или несколько стыков."
         isSaving={false}
@@ -70,5 +69,53 @@ describe('DuplicateControlDialog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Выбрать найденные' }))
     expect(onSetVisibleRowsSelected).toHaveBeenCalledWith(true)
+  })
+
+  it('shows server totals without requiring every matching row in browser memory', () => {
+    const rows = [{
+      id: 1,
+      joint: 'F1',
+      projectTitle: 'Проект',
+      subtitleCode: 'Шифр',
+      line: 'Линия',
+    }] as WeldRow[]
+    const onExistingControlsOpenChange = vi.fn()
+
+    render(
+      <DuplicateControlDialog
+        draft={createEmptyDuplicateControlDraft()}
+        filteredRows={rows}
+        filteredRowCount={200_000}
+        candidatePagination={{
+          totalCount: 200_000,
+          firstItemNumber: 1,
+          lastItemNumber: 1,
+          pageSize: 100,
+          hasMore: true,
+          onLoadMore: vi.fn(),
+          onPageSizeChange: vi.fn(),
+        }}
+        selectedRows={[]}
+        controls={[]}
+        saveBlockReason="Выберите один или несколько стыков."
+        isSaving={false}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        onDelete={vi.fn()}
+        onEdit={vi.fn()}
+        onDraftChange={vi.fn()}
+        onToggleRow={vi.fn()}
+        onSetVisibleRowsSelected={vi.fn()}
+        onToggleMethod={vi.fn()}
+        onExistingControlsOpenChange={onExistingControlsOpenChange}
+      />,
+    )
+
+    expect(screen.getByText(/Найдено: 200000/)).toBeInTheDocument()
+    expect(screen.getByText(/из 200000 строк/)).toBeInTheDocument()
+    expect(screen.getAllByText('F1')).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole('button', { name: /Внесенные дубли/ }))
+    expect(onExistingControlsOpenChange).toHaveBeenCalledWith(true)
   })
 })

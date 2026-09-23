@@ -1,4 +1,5 @@
 import { act, renderHook } from '@testing-library/react'
+import { createBrowserHistory } from '@tanstack/react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ActiveReport } from '@/lib/home-state'
@@ -31,7 +32,8 @@ function createHookProps(activeReport: ActiveReport, overrides: Partial<HookProp
 describe('useReportNavigationContext', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    window.history.replaceState({}, '', '/journal')
+    window.sessionStorage.clear()
+    window.history.replaceState({ __TSR_key: 'journal' }, '', '/journal')
     Object.defineProperties(window, {
       scrollX: { configurable: true, value: 0 },
       scrollY: { configurable: true, value: 0 },
@@ -82,7 +84,7 @@ describe('useReportNavigationContext', () => {
       scrollX: { configurable: true, value: 0 },
       scrollY: { configurable: true, value: 0 },
     })
-    act(() => window.history.pushState({}, '', '/lnk'))
+    act(() => window.history.pushState({ __TSR_key: 'lnk' }, '', '/lnk'))
     const lnkProps = createHookProps('lnk', {
       lnkFilters: { line: '330-D02' },
       selectedLnkIds: new Set([21]),
@@ -132,7 +134,7 @@ describe('useReportNavigationContext', () => {
     const copiedSourceState = window.history.state
     vi.clearAllMocks()
 
-    act(() => window.history.pushState(copiedSourceState, '', '/lnk'))
+    act(() => window.history.pushState({ ...copiedSourceState, __TSR_key: 'lnk' }, '', '/lnk'))
     rerender(createHookProps('lnk', {
       lnkFilters: { line: 'target-line' },
       selectedLnkIds: new Set([8]),
@@ -155,6 +157,7 @@ describe('useReportNavigationContext', () => {
   })
 
   it('keeps the latest filters and selection in the current browser entry', () => {
+    window.history.replaceState({ __TSR_key: 'psto' }, '', '/psto')
     const setters = {
       setColumnFilters: vi.fn(),
       setHeatTreatmentFilters: vi.fn(),
@@ -191,7 +194,7 @@ describe('useReportNavigationContext', () => {
     expect(setters.setSelectedHeatTreatmentIds).toHaveBeenCalledWith(new Set([32, 33]))
   })
 
-  it('coalesces a long series of scroll events into one history update', () => {
+  it('coalesces scroll snapshots without notifying the real router history', () => {
     const setters = {
       setColumnFilters: vi.fn(),
       setHeatTreatmentFilters: vi.fn(),
@@ -200,13 +203,18 @@ describe('useReportNavigationContext', () => {
       setSelectedHeatTreatmentIds: vi.fn(),
       setSelectedLnkIds: vi.fn(),
     }
+    const history = createBrowserHistory()
+    const notifyRouter = vi.fn()
+    history.subscribe(notifyRouter)
     const replaceState = vi.spyOn(window.history, 'replaceState')
+    const store = vi.spyOn(Storage.prototype, 'setItem')
 
     renderHook(() => useReportNavigationContext({
       ...createHookProps('weldingJournal'),
       ...setters,
     }))
     replaceState.mockClear()
+    store.mockClear()
     Object.defineProperties(window, {
       scrollX: { configurable: true, value: 840 },
       scrollY: { configurable: true, value: 360 },
@@ -220,14 +228,79 @@ describe('useReportNavigationContext', () => {
     })
 
     expect(replaceState).not.toHaveBeenCalled()
+    expect(store).not.toHaveBeenCalled()
 
     act(() => vi.advanceTimersByTime(1))
 
-    expect(replaceState).toHaveBeenCalledOnce()
-    expect(window.history.state.__weldingReportContext.scrollPosition).toEqual({
+    expect(replaceState).not.toHaveBeenCalled()
+    expect(notifyRouter).not.toHaveBeenCalled()
+    expect(store.mock.calls.filter(([key]) => key === 'welding-report-navigation:v1:journal')).toHaveLength(1)
+    expect(JSON.parse(window.sessionStorage.getItem('welding-report-navigation:v1:journal')!).scrollPosition).toEqual({
       left: 840,
       top: 360,
     })
+    history.destroy()
+  })
+
+  it('does not bounce navigation or overwrite a source entry before a queued router push flushes', () => {
+    const history = createBrowserHistory()
+    const notifyRouter = vi.fn()
+    history.subscribe(notifyRouter)
+    const setters = {
+      setColumnFilters: vi.fn(), setHeatTreatmentFilters: vi.fn(), setLnkFilters: vi.fn(),
+      setSelectedWeldingJournalIds: vi.fn(), setSelectedHeatTreatmentIds: vi.fn(), setSelectedLnkIds: vi.fn(),
+    }
+    const { result, rerender } = renderHook(
+      (props: HookProps) => useReportNavigationContext({ ...props, ...setters }),
+      { initialProps: createHookProps('weldingJournal', { columnFilters: { line: 'source' } }) },
+    )
+    act(() => result.current.captureReportContext('heatTreatment'))
+    expect(notifyRouter).not.toHaveBeenCalled()
+    act(() => history.push('/psto', { __TSR_key: 'target' }))
+    const targetKey = history.location.state.__TSR_key
+    // Target state arrives before the browser URL/history entry is flushed.
+    rerender(createHookProps('heatTreatment', { selectedHeatTreatmentIds: new Set([42]) }))
+    expect(notifyRouter).toHaveBeenCalledTimes(1)
+    expect(history.location.pathname).toBe('/psto')
+    expect(JSON.parse(window.sessionStorage.getItem('welding-report-navigation:v1:journal')!).filters).toEqual({ line: 'source' })
+    act(() => history.flush())
+    rerender(createHookProps('heatTreatment', { selectedHeatTreatmentIds: new Set([42]) }))
+    expect(notifyRouter).toHaveBeenCalledTimes(1)
+    expect(window.location.pathname).toBe('/psto')
+    expect(JSON.parse(window.sessionStorage.getItem(`welding-report-navigation:v1:${targetKey}`)!).selectedRowIds).toEqual([42])
+    history.destroy()
+  })
+
+  it('keeps navigation available when browser storage is unavailable', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Quota exceeded') })
+    expect(() => renderHook(() => useReportNavigationContext({
+      ...createHookProps('weldingJournal'),
+      setColumnFilters: vi.fn(), setHeatTreatmentFilters: vi.fn(), setLnkFilters: vi.fn(),
+      setSelectedWeldingJournalIds: vi.fn(), setSelectedHeatTreatmentIds: vi.fn(), setSelectedLnkIds: vi.fn(),
+    }))).not.toThrow()
+  })
+
+  it('bounds saved entries and restores a recent entry without growing the cache indefinitely', () => {
+    const setters = {
+      setColumnFilters: vi.fn(), setHeatTreatmentFilters: vi.fn(), setLnkFilters: vi.fn(),
+      setSelectedWeldingJournalIds: vi.fn(), setSelectedHeatTreatmentIds: vi.fn(), setSelectedLnkIds: vi.fn(),
+    }
+    const { rerender } = renderHook(
+      (props: HookProps) => useReportNavigationContext({ ...props, ...setters }),
+      { initialProps: createHookProps('weldingJournal') },
+    )
+    for (let index = 0; index < 60; index += 1) {
+      const report = index % 2 ? 'heatTreatment' : 'lnk'
+      window.history.pushState({ __TSR_key: `entry-${index}` }, '', report === 'lnk' ? '/lnk' : '/psto')
+      rerender(createHookProps(report, { lnkFilters: { line: `L${index}` }, heatTreatmentFilters: { line: `L${index}` } }))
+    }
+    expect(JSON.parse(window.sessionStorage.getItem('welding-report-navigation:v1:entries')!)).toHaveLength(50)
+    expect(window.sessionStorage.getItem('welding-report-navigation:v1:entry-0')).toBeNull()
+    expect(window.sessionStorage.length).toBe(51)
+    window.history.replaceState({ __TSR_key: 'entry-58' }, '', '/lnk')
+    rerender(createHookProps('lnk'))
+    act(() => vi.runAllTimers())
+    expect(setters.setLnkFilters).toHaveBeenLastCalledWith({ line: 'L58' })
   })
 
   it('restores legacy status filters from browser history as officiality', () => {

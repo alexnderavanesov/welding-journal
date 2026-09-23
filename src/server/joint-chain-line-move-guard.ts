@@ -1,4 +1,4 @@
-import { and, or, sql } from 'drizzle-orm'
+import { sql } from 'drizzle-orm'
 
 import { weldJoints, type WeldJoint } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -107,19 +107,31 @@ export async function assertJointChainIdentityChangesUseDedicatedMove(
     const key = getScopeKey(previous)
     if (!identities.has(key)) identities.set(key, previous as unknown as WeldInput)
   }
-  const scopeRows: WeldJoint[] = []
   const identityRows = [...identities.values()]
-  for (let offset = 0; offset < identityRows.length; offset += 500) {
-    const conditions = identityRows.slice(offset, offset + 500).map((row) => and(
-      sql`lower(btrim(coalesce(${weldJoints.projectTitle}, ''))) = ${normalizePstoLineIdentityPart(row.projectTitle)}`,
-      sql`lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))) = ${normalizePstoLineIdentityPart(row.subtitleCode)}`,
-      sql`lower(btrim(coalesce(${weldJoints.line}, ''))) = ${normalizePstoLineIdentityPart(row.line)}`,
-    ))
-    scopeRows.push(...await tx.select().from(weldJoints).where(or(...conditions)))
+  const scopeRows: WeldJoint[] = await tx
+    .select()
+    .from(weldJoints)
+    .where(sql`exists (
+      select 1
+      from unnest(
+        ${sql.param(identityRows.map((row) => normalizePstoLineIdentityPart(row.projectTitle)))}::text[],
+        ${sql.param(identityRows.map((row) => normalizePstoLineIdentityPart(row.subtitleCode)))}::text[],
+        ${sql.param(identityRows.map((row) => normalizePstoLineIdentityPart(row.line)))}::text[]
+      ) as target(project_title, subtitle_code, line)
+      where lower(btrim(coalesce(${weldJoints.projectTitle}, ''))) = target.project_title
+        and lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))) = target.subtitle_code
+        and lower(btrim(coalesce(${weldJoints.line}, ''))) = target.line
+    )`)
+  const scopeRowsByKey = new Map<string, WeldRow[]>()
+  for (const row of scopeRows) {
+    const key = getScopeKey(row)
+    const rows = scopeRowsByKey.get(key)
+    if (rows) rows.push(row as WeldRow)
+    else scopeRowsByKey.set(key, [row as WeldRow])
   }
 
   for (const { record, previous } of changedRows) {
-    const sourceRows = scopeRows.filter((row) => getScopeKey(row) === getScopeKey(previous)) as WeldRow[]
+    const sourceRows = scopeRowsByKey.get(getScopeKey(previous)) ?? []
     const reason = getJointChainIdentityChangeBlockReason(
       record,
       previous as unknown as WeldRow,

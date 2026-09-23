@@ -11,7 +11,16 @@ import {
 import { useWelderStampRegistryState } from '@/lib/use-welder-stamp-registry-state'
 import { useReportSwitchReset } from '@/lib/use-report-switch-reset'
 import { useReportHighlights } from '@/lib/use-report-highlights'
-import { useReportOutputActions } from '@/lib/use-report-output-actions'
+import {
+  useReportOutputActions,
+  type LnkOutputRowsKind,
+  type PstoOutputRowsKind,
+  type WeldingJournalOutputRowsKind,
+} from '@/lib/use-report-output-actions'
+import {
+  loadCompleteReportOutputRows,
+  loadFilteredCurrentReportOutputRows,
+} from '@/lib/report-output-source'
 import { useReportModalEscapeKey } from '@/lib/use-report-modal-escape-key'
 import { useWorkflowRootCauseEscapeKey } from '@/lib/use-workflow-root-cause-escape-key'
 import { useReportModalSyncEffects } from '@/lib/use-report-modal-sync-effects'
@@ -22,8 +31,9 @@ import {
 } from '@/lib/dispatcher-task-row-codes'
 import { useDispatcherAcceptedWarnings } from '@/lib/use-dispatcher-accepted-warnings'
 import { useDispatcherTaskUiState } from '@/lib/use-dispatcher-task-ui-state'
-import { useReportRows } from '@/lib/use-report-rows'
+import { prepareReportRows, useReportRows } from '@/lib/use-report-rows'
 import { useWeldPageQuery } from '@/lib/use-weld-page-query'
+import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
 import { useReportRequestDerivedState } from '@/lib/use-report-request-derived-state'
 import { useActiveReportLayoutState } from '@/lib/use-active-report-layout-state'
@@ -82,21 +92,36 @@ import { createReportPstoDialogsProps } from '@/lib/report-psto-dialog-props'
 import { createReportLnkDialogsProps } from '@/lib/report-lnk-dialog-props'
 import {
   useWeldFinalStatusContextQuery,
-  useWeldReportContextQuery,
-  useWeldsQuery,
 } from '@/lib/use-welds-query'
 import {
+  useLnkWorkflowRequestSummaryQuery,
   useLnkWorkflowRowsQuery,
   useLnkWorkflowSummaryQuery,
 } from '@/lib/use-lnk-workflow-context-query'
 import {
+  usePstoWorkflowRequestOptionsQuery,
+  usePstoWorkflowRowsQuery,
+  usePstoWorkflowSummaryQuery,
+} from '@/lib/use-psto-workflow-context-query'
+import {
   getLnkWorkflowRowsRequest as buildLnkWorkflowRowsRequest,
-  shouldLoadFullLnkReportContext,
+  shouldLoadLnkWorkflowRequestSummary,
   shouldLoadLnkWorkflowSummary,
 } from '@/lib/lnk-workflow-context'
+import {
+  getPstoWorkflowRowsRequest as buildPstoWorkflowRowsRequest,
+  shouldLoadPstoWorkflowSummary,
+} from '@/lib/psto-workflow-context'
 import { useDuplicateControls } from '@/lib/use-duplicate-controls'
+import {
+  useDuplicateControlCandidates,
+  useDuplicateControlRowsByIds,
+} from '@/lib/use-duplicate-control-candidates'
 import type { ContextActionMenuItem } from '@/components/context-action-menu'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import {
+  invalidateWeldJoints,
+  WELD_FINAL_STATUS_CONTEXT_QUERY_KEY,
+} from '@/lib/weld-query-utils'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
   getLnkRequestIdentityForField,
@@ -123,10 +148,15 @@ import {
 import { getLnkRepairResultSaveReason, isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import { isFinalLnkResultValue } from '@/lib/lnk-status'
 import { filterWeldRowsByColumns } from '@/lib/weld-table-filtering'
+import { splitReportQuickSearch } from '@/lib/report-quick-search'
 import { buildHeatTreatmentReportRows, buildLnkReportRows, sumAcceptedWdi } from '@/lib/report-row-utils'
 import type { ReportImportRecord } from '@/lib/report-import-preview'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
-import { buildFinalStatusRowsContext, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
+import {
+  type FinalStatusRowsContext,
+  type WeldFieldKey,
+  type WeldInput,
+} from '@/lib/weld-fields'
 import {
   createDefaultLnkRequestDraft,
   createDefaultLnkResultDraft,
@@ -182,6 +212,7 @@ import { getLnkRowRequestNames } from '@/lib/report-modal-rows'
 import {
   getLnkRequestDocumentIdentities,
   getPstoRequestDocumentIdentities,
+  type RequestDocumentIdentity,
 } from '@/lib/request-document-identity'
 import {
   getArchivedOfficialStampValuesForRecord,
@@ -223,16 +254,31 @@ import {
 } from '@/lib/weld-row-stamps'
 import {
   createEmptyDuplicateControlDraft,
+  DUPLICATE_CONTROL_MASS_SELECTION_ERROR,
+  DUPLICATE_CONTROL_MASS_SELECTION_LIMIT,
   type DuplicateControlDraft,
   type DuplicateControlMethod,
   type DuplicateControlRecord,
+  type DuplicateControlRegistryRecord,
 } from '@/lib/duplicate-control-types'
+import { getDuplicateControls } from '@/lib/duplicate-control-utils'
 import {
   getDefaultNamingState,
   useRequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
-import { getWeldJointById, listWeldJointRowsByIds } from '@/server/weld-read-api'
+import {
+  getWeldJointById,
+  listWeldFinalStatusContextKeys,
+  listWeldJointRowsByIds,
+  listWeldingJournalPage,
+  WELD_PAGE_ALL_SIZE,
+} from '@/server/weld-read-api'
+import {
+  WORKFLOW_REGISTRY_MAX_LOADED_ROWS,
+  WORKFLOW_REGISTRY_PAGE_SIZE,
+} from '@/server/weld-contracts'
 import { updatePercentageLineControls } from '@/server/weld-mutations-api'
+import { listDuplicateControlCandidateIds } from '@/server/duplicate-controls'
 import { GENERATED_DOCUMENT_STORAGE_EVENT } from '@/lib/document-storage-events'
 import { useSystemDocumentTemplateAvailability } from '@/lib/use-system-document-template-availability'
 import { getSystemDocumentTemplateIdForField } from '@/lib/system-document-template-types'
@@ -251,9 +297,11 @@ type UseHomePageControllerOptions = {
 type DeferredJointNextAction = {
   targetReport: 'weldingJournal' | 'lnk' | 'heatTreatment'
   row: WeldRow
+} & ({
+  kind: 'joint-action'
   action: JointNextAction
   runDispatcherAction?: boolean
-}
+} | { kind: 'psto-program' })
 
 type WorkflowRootCauseNavigationFrame = {
   action: WorkflowRootCauseAction
@@ -272,10 +320,67 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     [controlProcessSettings.layeredControlEnabled, controlProcessSettings.preHeatTreatmentLnkEnabled],
   )
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
+  const [isDispatcherWorkspaceOpen, setIsDispatcherWorkspaceOpen] = useState(false)
+  const [isDuplicateControlRegistryOpen, setIsDuplicateControlRegistryOpen] = useState(false)
+  const [isSelectingDuplicateControlRows, setIsSelectingDuplicateControlRows] = useState(false)
   const [lnkStageTransferReference, setLnkStageTransferReference] = useState<
     (SystemDocumentReference & { documentId: number }) | null
   >(null)
   const [isLnkStageTransferPending, setIsLnkStageTransferPending] = useState(false)
+  const [lnkWorkflowRequestSearch, setLnkWorkflowRequestSearch] = useState('')
+  const [lnkResultRegistrySearch, setLnkResultRegistrySearch] = useState('')
+  const [lnkResultRegistryFilter, setLnkResultRegistryFilter] =
+    useState<'all' | 'годен' | 'ремонт' | 'вырез'>('all')
+  const [lnkResultRegistryLimit, setLnkResultRegistryLimit] = useState(WORKFLOW_REGISTRY_PAGE_SIZE)
+  const [pstoResultRegistrySearch, setPstoResultRegistrySearch] = useState('')
+  const [pstoResultRegistryLimit, setPstoResultRegistryLimit] = useState(WORKFLOW_REGISTRY_PAGE_SIZE)
+  const [pstoWorkflowRequestSearch, setPstoWorkflowRequestSearch] = useState('')
+  const [preHeatTreatmentCandidateSearch, setPreHeatTreatmentCandidateSearch] = useState('')
+  const [preHeatTreatmentCandidateIds, setPreHeatTreatmentCandidateIds] = useState<number[] | null>(null)
+  const [pstoRepeatCandidateIds, setPstoRepeatCandidateIds] = useState<number[] | null>(null)
+  const [tvmtCandidateIds, setTvmtCandidateIds] = useState<number[] | null>(null)
+  const [preHeatTreatmentCandidateFilter, setPreHeatTreatmentCandidateFilter] = useState<{
+    methodKeys: WeldFieldKey[]
+    requestName: string
+    requestDate: string
+  }>({ methodKeys: [], requestName: '', requestDate: '' })
+  const [pstoRepeatCandidateSearch, setPstoRepeatCandidateSearch] = useState('')
+  const [tvmtCandidateSearch, setTvmtCandidateSearch] = useState('')
+  const [pstoRepeatCandidateRequest, setPstoRepeatCandidateRequest] = useState({ name: '', date: '' })
+  const [tvmtCandidateRequest, setTvmtCandidateRequest] = useState({ name: '', date: '' })
+  const handlePstoRepeatCandidateRequestChange = useCallback((request: RequestDocumentIdentity | null) => {
+    const name = request?.name ?? ''
+    const date = request?.date ?? ''
+    setPstoRepeatCandidateRequest((current) => (
+      current.name === name && current.date === date ? current : { name, date }
+    ))
+  }, [])
+  const handleTvmtCandidateRequestChange = useCallback((request: RequestDocumentIdentity | null) => {
+    const name = request?.name ?? ''
+    const date = request?.date ?? ''
+    setTvmtCandidateRequest((current) => (
+      current.name === name && current.date === date ? current : { name, date }
+    ))
+  }, [])
+  const handlePreHeatTreatmentCandidateFilterChange = useCallback((filter: {
+    methodCodes: PreHeatTreatmentLnkMethodCode[]
+    request: RequestDocumentIdentity | null
+  }) => {
+    const methodKeys = filter.methodCodes.flatMap((methodCode) => {
+      const method = LNK_METHODS.find((candidate) => candidate.code === methodCode)
+      return method ? [method.requestKey] : []
+    })
+    const requestName = filter.request?.name ?? ''
+    const requestDate = filter.request?.date ?? ''
+    setPreHeatTreatmentCandidateFilter((current) => (
+      current.requestName === requestName &&
+      current.requestDate === requestDate &&
+      current.methodKeys.length === methodKeys.length &&
+      current.methodKeys.every((key, index) => key === methodKeys[index])
+        ? current
+        : { methodKeys, requestName, requestDate }
+    ))
+  }, [])
   const [percentageLineNavigationRequest, setPercentageLineNavigationRequest] =
     useState<PercentageLineNavigationRequest | null>(null)
   const percentageLineNavigationRequestIdRef = useRef(0)
@@ -452,6 +557,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     },
   })
   const {
+    selectionWarning,
+    dismissSelectionWarning,
     selectedHeatTreatmentIds,
     selectedLnkIds,
     selectedWeldingJournalIds,
@@ -580,6 +687,19 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setManagedLnkPendingResultChanges,
     setPreservedLnkOrderIds,
   } = lnkController
+  const debouncedLnkRequestSearch = useDebouncedValue(lnkRequestSearch, 250)
+  const debouncedLnkResultSearch = useDebouncedValue(lnkResultDraft.search, 250)
+  const debouncedLnkOfficialitySearch = useDebouncedValue(lnkOfficialityDraft.search, 250)
+  const debouncedLnkResultRegistrySearch = useDebouncedValue(lnkResultRegistrySearch, 250)
+  const debouncedLnkWorkflowRequestSearch = useDebouncedValue(lnkWorkflowRequestSearch, 250)
+  const debouncedPstoRequestSearch = useDebouncedValue(pstoRequestSearch, 250)
+  const debouncedPstoResultSearch = useDebouncedValue(pstoResultDraft.search, 250)
+  const debouncedPstoResultRegistrySearch = useDebouncedValue(pstoResultRegistrySearch, 250)
+  const debouncedPstoWorkflowRequestSearch = useDebouncedValue(pstoWorkflowRequestSearch, 250)
+  const debouncedPreHeatTreatmentCandidateSearch = useDebouncedValue(preHeatTreatmentCandidateSearch, 250)
+  const debouncedPstoRepeatCandidateSearch = useDebouncedValue(pstoRepeatCandidateSearch, 250)
+  const debouncedTvmtCandidateSearch = useDebouncedValue(tvmtCandidateSearch, 250)
+  const debouncedDuplicateControlSearch = useDebouncedValue(duplicateControlDraft.search, 250)
   const requestConclusionSettings = useRequestConclusionSettings()
   const defaultLnkRequestNaming = useMemo(
     () => getDefaultNamingState(requestConclusionSettings, 'lnkRequest'),
@@ -690,8 +810,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     Boolean(tvmtWorkflowMode) ||
     Boolean(pstoRepeatWorkflowMode)
   const isReportModalOpen =
-    isImportDialogOpen || Boolean(rkExposureEditing) || isReportDataModalOpen || isPstoLineProgramOpen
+    isImportDialogOpen || Boolean(rkExposureEditing) || isReportDataModalOpen || isPstoLineProgramOpen || isDispatcherWorkspaceOpen
 
+  useEffect(() => {
+    setIsDispatcherWorkspaceOpen(false)
+  }, [activeReport])
   useEffect(() => {
     if (activeReport !== 'heatTreatment' && tvmtWorkflowMode) setTvmtWorkflowMode(null)
     if (activeReport !== 'heatTreatment' && pstoRepeatWorkflowMode) setPstoRepeatWorkflowMode(null)
@@ -700,6 +823,24 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     if (activeReport !== 'lnk' && isPreHeatTreatmentResultManagerOpen) setIsPreHeatTreatmentResultManagerOpen(false)
     if (activeReport !== 'lnk' && lnkStageTransferReference) setLnkStageTransferReference(null)
   }, [activeReport, isPreHeatTreatmentResultManagerOpen, isPstoLineProgramOpen, lnkStageTransferReference, preHeatTreatmentLnkWorkflowMode, pstoRepeatWorkflowMode, tvmtWorkflowMode])
+
+  useEffect(() => {
+    if (!preHeatTreatmentLnkWorkflowMode) {
+      setPreHeatTreatmentCandidateSearch('')
+      setPreHeatTreatmentCandidateIds(null)
+      setPreHeatTreatmentCandidateFilter({ methodKeys: [], requestName: '', requestDate: '' })
+    }
+    if (!pstoRepeatWorkflowMode) {
+      setPstoRepeatCandidateSearch('')
+      setPstoRepeatCandidateIds(null)
+      setPstoRepeatCandidateRequest({ name: '', date: '' })
+    }
+    if (!tvmtWorkflowMode) {
+      setTvmtCandidateSearch('')
+      setTvmtCandidateIds(null)
+      setTvmtCandidateRequest({ name: '', date: '' })
+    }
+  }, [preHeatTreatmentLnkWorkflowMode, pstoRepeatWorkflowMode, tvmtWorkflowMode])
 
   useEscapeToClearReportFilters({
     activeReport,
@@ -756,17 +897,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   })
 
   const isServerPagedTab = activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment'
-  const shouldLoadFullWeldRows =
-    Boolean(documentGenerationRequest) ||
-    isDuplicateControlModalOpen ||
-    isWeldingJournalGenerateMenuOpen ||
-    isWeldingJournalShowMenuOpen
-  const weldsQuery = useWeldsQuery({ enabled: shouldLoadFullWeldRows })
-  const shouldLoadLnkContext = shouldLoadFullLnkReportContext({
-    shouldLoadFullWeldRows,
-    isLnkShowMenuOpen,
-    isLnkFieldEditing: heatTreatmentFieldEditing?.report === 'lnk',
-  })
   const rootCauseLnkRowsRequest = useMemo(() => {
     const target = currentWorkflowRootCauseAction?.target
     if (!target || target.kind !== 'lnk-control') return null
@@ -779,19 +909,27 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       }
     }
     if (currentWorkflowRootCauseDestination === 'lnk-request-manager') {
-      return { scope: 'requestRegistry' as const, rowIds: null }
+      const requestName = String(target.documentName ?? '').trim()
+      return requestName
+        ? {
+            scope: 'requestRegistry' as const,
+            rowIds: null,
+            requestName,
+            requestDate: String(target.documentDate ?? '').trim(),
+          }
+        : { scope: 'fieldRows' as const, rowIds: [target.rowId] }
     }
     if (currentWorkflowRootCauseDestination === 'lnk-request-dialog') {
-      return { scope: 'requestCandidates' as const, rowIds: null }
+      return { scope: 'requestCandidates' as const, rowIds: null, includeRowIds: [target.rowId] }
     }
     if (currentWorkflowRootCauseDestination === 'lnk-result-dialog') {
-      return { scope: 'resultCandidates' as const, rowIds: null }
+      return { scope: 'resultCandidates' as const, rowIds: null, includeRowIds: [target.rowId] }
     }
     return { scope: 'resultRegistry' as const, rowIds: [target.rowId] }
   }, [currentWorkflowRootCauseAction, currentWorkflowRootCauseDestination])
   const lnkWorkflowRowsRequest = useMemo(
     () => rootCauseLnkRowsRequest ?? buildLnkWorkflowRowsRequest({
-      shouldLoadFullWeldRows,
+      shouldLoadFullWeldRows: false,
       isLnkRequestModalOpen,
       isLnkRequestManagerOpen,
       isLnkResultModalOpen,
@@ -802,6 +940,31 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       preHeatTreatmentResultManagerMode,
       managedLnkResultOrderIds,
       preHeatTreatmentResultManagerRowIds,
+      fieldEditingRowId: heatTreatmentFieldEditing?.report === 'lnk'
+        ? heatTreatmentFieldEditing.record.id
+        : null,
+      managedLnkRequestName,
+      managedLnkRequestDate,
+      requestCandidateRowIds: [...selectedLnkIds],
+      requestCandidateSearch: debouncedLnkRequestSearch,
+      requestCandidateMethodKeys: [...lnkRequestDraft.methods],
+      resultCandidateRowIds: [...lnkResultDraft.rowIds],
+      resultCandidateSearch: debouncedLnkResultSearch,
+      resultCandidateMethodKey: lnkResultDraft.methodKey,
+      resultCandidateRequestName: lnkResultDraft.requestName,
+      resultCandidateRequestDate: lnkResultDraft.requestDate,
+      allowPrimaryBeforePreviousStagesComplete:
+        controlProcessSettings.allowPrimaryLnkBeforePreviousStagesComplete,
+      officialityCandidateRowIds: [...lnkOfficialityDraft.rowIds],
+      officialityCandidateSearch: debouncedLnkOfficialitySearch,
+      otherCandidateRowIds: preHeatTreatmentCandidateIds ?? [...selectedLnkIds],
+      otherCandidateSearch: debouncedPreHeatTreatmentCandidateSearch,
+      otherCandidateMethodKeys: preHeatTreatmentCandidateFilter.methodKeys,
+      otherCandidateRequestName: preHeatTreatmentCandidateFilter.requestName,
+      otherCandidateRequestDate: preHeatTreatmentCandidateFilter.requestDate,
+      resultRegistrySearch: debouncedLnkResultRegistrySearch,
+      resultRegistryFilter: lnkResultRegistryFilter,
+      resultRegistryLimit: lnkResultRegistryLimit,
     }),
     [
       isLnkOfficialityModalOpen,
@@ -810,37 +973,131 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       isLnkResultManagerOpen,
       isLnkResultModalOpen,
       isPreHeatTreatmentResultManagerOpen,
+      heatTreatmentFieldEditing,
       managedLnkResultOrderIds,
+      managedLnkRequestDate,
+      managedLnkRequestName,
+      lnkOfficialityDraft.rowIds,
+      debouncedLnkOfficialitySearch,
+      debouncedLnkRequestSearch,
+      debouncedLnkResultRegistrySearch,
+      debouncedLnkResultSearch,
+      debouncedPreHeatTreatmentCandidateSearch,
+      lnkResultDraft.rowIds,
+      lnkResultDraft.methodKey,
+      lnkResultDraft.requestDate,
+      lnkResultDraft.requestName,
+      lnkRequestDraft.methods,
+      lnkResultRegistryFilter,
+      lnkResultRegistryLimit,
       preHeatTreatmentLnkWorkflowMode,
+      preHeatTreatmentCandidateFilter,
+      preHeatTreatmentCandidateIds,
       preHeatTreatmentResultManagerMode,
       preHeatTreatmentResultManagerRowIds,
       rootCauseLnkRowsRequest,
-      shouldLoadFullWeldRows,
+      selectedLnkIds,
+      controlProcessSettings.allowPrimaryLnkBeforePreviousStagesComplete,
     ],
   )
-  const shouldLoadPstoContext =
-    !shouldLoadFullWeldRows &&
-    (isPstoDataModalOpen || isPstoShowMenuOpen || isPstoWorkflowMenuOpen || Boolean(heatTreatmentFieldEditing && heatTreatmentFieldEditing.report !== 'lnk'))
-  const lnkContextQuery = useWeldReportContextQuery({
-    enabled: shouldLoadLnkContext,
-    report: 'lnk',
-  })
+  const pstoWorkflowRowsRequest = useMemo(
+    () => buildPstoWorkflowRowsRequest({
+      shouldLoadFullWeldRows: false,
+      isPstoRequestModalOpen,
+      isPstoRequestManagerOpen,
+      isPstoResultModalOpen,
+      isPstoResultManagerOpen,
+      tvmtWorkflowMode,
+      pstoRepeatWorkflowMode,
+      fieldEditingRowId: heatTreatmentFieldEditing && heatTreatmentFieldEditing.report !== 'lnk'
+        ? heatTreatmentFieldEditing.record.id
+        : null,
+      resultManagerRowIds: [...pstoResultDraft.rowIds],
+      resultRegistryAll: isPstoResultRegistryAll,
+      resultRegistrySearch: debouncedPstoResultRegistrySearch,
+      resultRegistryLimit: pstoResultRegistryLimit,
+      managedRequestName: managedPstoRequestName,
+      managedRequestDate: managedPstoRequestDate,
+      requestCandidateRowIds: [...selectedHeatTreatmentIds],
+      requestCandidateSearch: debouncedPstoRequestSearch,
+      resultCandidateRowIds: [...pstoResultDraft.rowIds],
+      resultCandidateSearch: debouncedPstoResultSearch,
+      resultCandidateRequestName: pstoResultDraft.requestName,
+      resultCandidateRequestDate: pstoResultDraft.requestDate,
+      otherCandidateRowIds: (pstoRepeatWorkflowMode ? pstoRepeatCandidateIds : tvmtCandidateIds)
+        ?? [...selectedHeatTreatmentIds],
+      repeatCandidateSearch: debouncedPstoRepeatCandidateSearch,
+      tvmtCandidateSearch: debouncedTvmtCandidateSearch,
+      repeatCandidateRequestName: pstoRepeatCandidateRequest.name,
+      repeatCandidateRequestDate: pstoRepeatCandidateRequest.date,
+      tvmtCandidateRequestName: tvmtCandidateRequest.name,
+      tvmtCandidateRequestDate: tvmtCandidateRequest.date,
+    }),
+    [
+      heatTreatmentFieldEditing,
+      isPstoRequestManagerOpen,
+      isPstoRequestModalOpen,
+      isPstoResultManagerOpen,
+      isPstoResultModalOpen,
+      isPstoResultRegistryAll,
+      managedPstoRequestDate,
+      managedPstoRequestName,
+      debouncedPstoRequestSearch,
+      debouncedPstoRepeatCandidateSearch,
+      debouncedPstoResultRegistrySearch,
+      debouncedPstoResultSearch,
+      debouncedTvmtCandidateSearch,
+      pstoRepeatWorkflowMode,
+      pstoRepeatCandidateRequest,
+      pstoRepeatCandidateIds,
+      pstoResultDraft.rowIds,
+      pstoResultDraft.requestDate,
+      pstoResultDraft.requestName,
+      pstoResultRegistryLimit,
+      selectedHeatTreatmentIds,
+      tvmtWorkflowMode,
+      tvmtCandidateRequest,
+      tvmtCandidateIds,
+    ],
+  )
   const lnkWorkflowSummaryQuery = useLnkWorkflowSummaryQuery({
     enabled: shouldLoadLnkWorkflowSummary({
       isLnkReportActive: activeReport === 'lnk',
-      shouldLoadFullWeldRows,
+      shouldLoadFullWeldRows: false,
       isLnkWorkflowMenuOpen,
-      isLnkRequestModalOpen,
-      isLnkRequestManagerOpen,
     }),
   })
-  const lnkWorkflowRowsQuery = useLnkWorkflowRowsQuery({ request: lnkWorkflowRowsRequest })
-  const pstoContextQuery = useWeldReportContextQuery({
-    enabled: shouldLoadPstoContext,
-    report: 'heatTreatment',
+  const lnkWorkflowRequestSummaryQuery = useLnkWorkflowRequestSummaryQuery({
+    enabled: shouldLoadLnkWorkflowRequestSummary({
+      isLnkReportActive: activeReport === 'lnk',
+      shouldLoadFullWeldRows: false,
+      isLnkRequestModalOpen,
+      isLnkRequestManagerOpen,
+      isLnkFieldEditing: heatTreatmentFieldEditing?.report === 'lnk',
+    }),
+    search: debouncedLnkWorkflowRequestSearch,
   })
+  const lnkWorkflowRowsQuery = useLnkWorkflowRowsQuery({ request: lnkWorkflowRowsRequest })
+  const pstoWorkflowSummaryQuery = usePstoWorkflowSummaryQuery({
+    enabled: shouldLoadPstoWorkflowSummary({
+      isPstoReportActive: activeReport === 'heatTreatment',
+      shouldLoadFullWeldRows: false,
+      isPstoWorkflowMenuOpen,
+    }),
+  })
+  const pstoWorkflowRequestOptionsQuery = usePstoWorkflowRequestOptionsQuery({
+    enabled: isPstoRequestModalOpen || isPstoRequestManagerOpen,
+    search: debouncedPstoWorkflowRequestSearch,
+  })
+  const pstoWorkflowRowsQuery = usePstoWorkflowRowsQuery({ request: pstoWorkflowRowsRequest })
   const finalStatusContextQuery = useWeldFinalStatusContextQuery({
-    enabled: isServerPagedTab && !shouldLoadFullWeldRows,
+    enabled:
+      isServerPagedTab &&
+      (
+        lnkWorkflowRowsRequest !== null ||
+        pstoWorkflowRowsRequest !== null ||
+        documentGenerationRequest !== null
+      ),
   })
   const remoteFinalStatusContext = useMemo(
     () => ({
@@ -849,54 +1106,73 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     [finalStatusContextQuery.data],
   )
   const isRemoteFinalStatusContextReady = finalStatusContextQuery.data !== undefined
+  const duplicateControlCandidates = useDuplicateControlCandidates({
+    enabled: isDuplicateControlModalOpen,
+    search: debouncedDuplicateControlSearch,
+  })
+  const duplicateControlCandidateRowsById = useMemo(
+    () => new Map(duplicateControlCandidates.rows.map((row) => [row.id, row])),
+    [duplicateControlCandidates.rows],
+  )
+  const missingSelectedDuplicateControlRowIds = useMemo(
+    () => [...duplicateControlDraft.rowIds].filter((id) => !duplicateControlCandidateRowsById.has(id)),
+    [duplicateControlCandidateRowsById, duplicateControlDraft.rowIds],
+  )
+  const selectedDuplicateControlRowsQuery = useDuplicateControlRowsByIds(
+    missingSelectedDuplicateControlRowIds,
+    { enabled: isDuplicateControlModalOpen && duplicateControlCandidates.isReady },
+  )
   const {
     duplicateControls,
+    duplicateControlCount,
+    duplicateControlRegistryFirstItemNumber,
+    duplicateControlRegistryLastItemNumber,
+    duplicateControlRegistryPageSize,
+    duplicateControlRegistryHasMore,
+    duplicateControlRegistryLoading,
+    duplicateControlRegistryFetching,
+    duplicateControlRegistryReady,
+    duplicateControlRegistryError,
+    loadMoreDuplicateControls,
+    setDuplicateControlPageSize,
     saveDuplicateControlMutation,
     deleteDuplicateControlMutation,
   } = useDuplicateControls({
-    enabled: shouldLoadFullWeldRows,
+    registryEnabled:
+      isDuplicateControlModalOpen &&
+      isDuplicateControlRegistryOpen &&
+      duplicateControlDraft.rowIds.size === 0,
   })
 
   const reportContextSourceRows = useMemo(() => {
-    if (shouldLoadFullWeldRows) return weldsQuery.data
     const rowsById = new Map<number, WeldRow>()
     const contextRows = [
-      ...(shouldLoadLnkContext ? lnkContextQuery.data ?? [] : []),
       ...(lnkWorkflowRowsRequest ? lnkWorkflowRowsQuery.data ?? [] : []),
-      ...(shouldLoadPstoContext ? pstoContextQuery.data ?? [] : []),
+      ...(pstoWorkflowRowsRequest ? pstoWorkflowRowsQuery.data ?? [] : []),
     ]
     for (const row of contextRows) {
       rowsById.set(Number(row.id), row)
     }
     return [...rowsById.values()]
   }, [
-    lnkContextQuery.data,
     lnkWorkflowRowsQuery.data,
     lnkWorkflowRowsRequest,
-    pstoContextQuery.data,
-    shouldLoadFullWeldRows,
-    shouldLoadLnkContext,
-    shouldLoadPstoContext,
-    weldsQuery.data,
+    pstoWorkflowRowsQuery.data,
+    pstoWorkflowRowsRequest,
   ])
   const rows = useReportRows(
     reportContextSourceRows,
-    shouldLoadFullWeldRows ? duplicateControls : [],
+    [],
     undefined,
-    shouldLoadFullWeldRows ? undefined : remoteFinalStatusContext,
+    remoteFinalStatusContext,
     otherSettings,
   )
-  const isLnkRowsContextReady = shouldLoadFullWeldRows
-    ? weldsQuery.data !== undefined
-    : isRemoteFinalStatusContextReady && (
-      (shouldLoadLnkContext && lnkContextQuery.data !== undefined) ||
-      (lnkWorkflowRowsRequest !== null && lnkWorkflowRowsQuery.data !== undefined)
-    )
-  const isPstoRowsContextReady = shouldLoadFullWeldRows
-    ? weldsQuery.data !== undefined
-    : shouldLoadPstoContext &&
-      pstoContextQuery.data !== undefined &&
-      isRemoteFinalStatusContextReady
+  const isLnkRowsContextReady = isRemoteFinalStatusContextReady &&
+    lnkWorkflowRowsRequest !== null &&
+    lnkWorkflowRowsQuery.data !== undefined
+  const isPstoRowsContextReady = pstoWorkflowRowsRequest !== null &&
+    pstoWorkflowRowsQuery.data !== undefined &&
+    isRemoteFinalStatusContextReady
   const dispatcherTaskSnapshot = useDispatcherTaskSnapshot({
     dismissedRepeatedJointTaskKeys,
     enabled: isServerPagedTab || activeReport === 'welderStamps' || Boolean(chainRecord),
@@ -908,7 +1184,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     ? dispatcherTaskSnapshot.repeatedJointTasks
     : []
   const adviceRepeatedJointTasks = isServerPagedTab || Boolean(chainRecord)
-    ? dispatcherTaskSnapshot.allRepeatedJointTasks
+    ? dispatcherTaskSnapshot.adviceRepeatedJointTasks
     : []
   const visibleRepeatedJointTaskGroups = isServerPagedTab
     ? dispatcherTaskSnapshot.repeatedJointTaskGroups
@@ -1048,7 +1324,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     managedLnkRequestName,
     managedLnkRequestDate,
     requestConclusionSettings,
-    lnkWorkflowSummary: lnkWorkflowSummaryQuery.data,
+    lnkWorkflowRequestSummary: lnkWorkflowRequestSummaryQuery.data,
+    pstoWorkflowRequestOptions: pstoWorkflowRequestOptionsQuery.data?.options ?? [],
   })
   const {
     lnkRequestMutation,
@@ -1162,6 +1439,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const openLnkRequestRegistry = (requestName?: string, requestDate?: string) => {
     if (lnkRequestMutation.isPending || lnkRequestExtensionMutation.isPending) return
     setIsLnkRequestModalOpen(false)
+    setLnkWorkflowRequestSearch(requestName ?? '')
     openLnkRequestManager(requestName, requestDate)
   }
   const openCreateLnkRequestFromRegistry = () => {
@@ -1404,7 +1682,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setManagedLnkPendingResultChanges,
   })
 
-  const openAllLnkResultRegistry = () => openLnkResultManager({ rowIds: null })
+  const openAllLnkResultRegistry = () => {
+    setLnkResultRegistrySearch('')
+    setLnkResultRegistryFilter('all')
+    setLnkResultRegistryLimit(WORKFLOW_REGISTRY_PAGE_SIZE)
+    openLnkResultManager({ rowIds: null })
+  }
   const openSelectedLnkResultRegistry = () => openLnkResultManager({ rowIds: [...selectedLnkIds] })
   const openLnkResultRegistryForRows = (selectedRows: WeldRow[]) =>
     openLnkResultManager({ rowIds: selectedRows.map((selectedRow) => selectedRow.id) })
@@ -1598,25 +1881,64 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setIsOpen: setIsLnkOfficialityModalOpen,
     setMessage,
   })
-  const filteredDuplicateControlRows = useMemo(
-    () => filterDuplicateControlRows(rows, duplicateControlDraft.search),
-    [duplicateControlDraft.search, rows],
-  )
+  const filteredDuplicateControlRows = duplicateControlCandidates.rows
   const selectedDuplicateControlRows = useMemo(
-    () => rows.filter((row) => duplicateControlDraft.rowIds.has(row.id)),
-    [duplicateControlDraft.rowIds, rows],
+    () => {
+      const rowsById = new Map<number, WeldRow>([
+        ...duplicateControlCandidates.rows.map((row) => [row.id, row] as const),
+        ...(selectedDuplicateControlRowsQuery.data ?? []).map((row) => [row.id, row] as const),
+      ])
+      return [...duplicateControlDraft.rowIds].flatMap((id) => {
+        const row = rowsById.get(id)
+        return row ? [row] : []
+      })
+    }, [
+      duplicateControlCandidates.rows,
+      duplicateControlDraft.rowIds,
+      selectedDuplicateControlRowsQuery.data,
+    ],
   )
+  const selectedDuplicateControlRowsLoading =
+    isDuplicateControlModalOpen &&
+    duplicateControlDraft.rowIds.size > 0 &&
+    (
+      !duplicateControlCandidates.isReady ||
+      (missingSelectedDuplicateControlRowIds.length > 0 && selectedDuplicateControlRowsQuery.isPending)
+    )
   const duplicateControlDialogControls = useMemo(() => {
     if (duplicateControlDraft.rowIds.size === 0) return duplicateControls
-    return duplicateControls.filter((control) => duplicateControlDraft.rowIds.has(control.weldJointId))
-  }, [duplicateControlDraft.rowIds, duplicateControls])
-  const duplicateControlSaveBlockReason = getDuplicateControlSaveBlockReason({
-    draft: duplicateControlDraft,
-    isSaving: saveDuplicateControlMutation.isPending,
-    saveCheckSettings,
-    selectedRows: selectedDuplicateControlRows,
-    systemIndexSettings,
-  })
+    const seen = new Set<number>()
+    return selectedDuplicateControlRows.flatMap((row): DuplicateControlRegistryRecord[] =>
+      getDuplicateControls(row).flatMap((control) => {
+        if (seen.has(control.id)) return []
+        seen.add(control.id)
+        return [{
+          ...control,
+          projectTitle: String(row.projectTitle ?? ''),
+          subtitleCode: String(row.subtitleCode ?? ''),
+          line: String(row.line ?? ''),
+          spool: String(row.spool ?? ''),
+          joint: String(row.joint ?? ''),
+        }]
+      }),
+    )
+  }, [duplicateControlDraft.rowIds.size, duplicateControls, selectedDuplicateControlRows])
+  const selectedDuplicateControlRowsError = selectedDuplicateControlRowsQuery.error instanceof Error
+    ? selectedDuplicateControlRowsQuery.error.message
+    : null
+  const duplicateControlSaveBlockReason = selectedDuplicateControlRowsLoading
+    ? 'Загружаются выбранные стыки, дождитесь завершения.'
+    : selectedDuplicateControlRowsError
+      ? `Не удалось загрузить выбранные стыки: ${selectedDuplicateControlRowsError}`
+      : selectedDuplicateControlRows.length !== duplicateControlDraft.rowIds.size
+        ? 'Один или несколько выбранных стыков больше не существуют. Обновите выбор.'
+      : getDuplicateControlSaveBlockReason({
+          draft: duplicateControlDraft,
+          isSaving: saveDuplicateControlMutation.isPending,
+          saveCheckSettings,
+          selectedRows: selectedDuplicateControlRows,
+          systemIndexSettings,
+        })
   const {
     activeColumnFilters,
     activeFiltersSetter,
@@ -1659,12 +1981,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     columnFilters: isServerPagedTab ? dispatcherTaskServerFilters : {},
     sort: isServerPagedTab ? activeReportSort : null,
   })
-  const fullFinalStatusContext = useMemo(() => buildFinalStatusRowsContext(rows), [rows])
   const basePagedReportRows = useReportRows(
     weldPageQuery.rows,
-    duplicateControls,
-    shouldLoadFullWeldRows ? rows : undefined,
-    shouldLoadFullWeldRows ? fullFinalStatusContext : remoteFinalStatusContext,
+    [],
+    undefined,
+    remoteFinalStatusContext,
     otherSettings,
   )
   const pagedReportRows = basePagedReportRows
@@ -1680,25 +2001,19 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const tableActionRows = rows.length > 0 ? (visibleRows as WeldRow[]) : pagedReportRows
   useEffect(() => {
     const refreshDocumentAssignments = () => {
-      if (shouldLoadFullWeldRows) void weldsQuery.refetch()
-      if (lnkContextQuery.isEnabled) void lnkContextQuery.refetch()
       if (lnkWorkflowRowsQuery.isEnabled) void lnkWorkflowRowsQuery.refetch()
-      if (pstoContextQuery.isEnabled) void pstoContextQuery.refetch()
+      if (pstoWorkflowRowsQuery.isEnabled) void pstoWorkflowRowsQuery.refetch()
       if (isServerPagedTab) void weldPageQuery.refetch()
     }
     window.addEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, refreshDocumentAssignments)
     return () => window.removeEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, refreshDocumentAssignments)
   }, [
     isServerPagedTab,
-    lnkContextQuery.isEnabled,
-    lnkContextQuery.refetch,
     lnkWorkflowRowsQuery.isEnabled,
     lnkWorkflowRowsQuery.refetch,
-    pstoContextQuery.isEnabled,
-    pstoContextQuery.refetch,
-    shouldLoadFullWeldRows,
+    pstoWorkflowRowsQuery.isEnabled,
+    pstoWorkflowRowsQuery.refetch,
     weldPageQuery.refetch,
-    weldsQuery.refetch,
   ])
   const activeReportManualPagination = useMemo(
     () =>
@@ -1738,15 +2053,132 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     () => (activeReport === 'weldingJournal' ? sumAcceptedWdi(filteredVisibleRows) : 0),
     [activeReport, filteredVisibleRows],
   )
+  const loadWeldingJournalPageRows = useCallback(async ({
+    columnFilters,
+    includeSort,
+  }: {
+    columnFilters: Record<string, string>
+    includeSort: boolean
+  }) => {
+    const filters = splitReportQuickSearch(columnFilters)
+    const result = await listWeldingJournalPage({
+      data: {
+        page: 1,
+        pageSize: WELD_PAGE_ALL_SIZE,
+        columnFilters: filters.columnFilters,
+        ...(filters.search ? { search: filters.search } : {}),
+        ...(includeSort && activeReportSort ? { sort: activeReportSort } : {}),
+      },
+    })
+    return result.rows
+  }, [activeReportSort])
+  const loadCurrentWeldingJournalRows = useCallback(
+    () => loadWeldingJournalPageRows({
+      columnFilters: dispatcherTaskServerFilters,
+      includeSort: true,
+    }),
+    [dispatcherTaskServerFilters, loadWeldingJournalPageRows],
+  )
   const generateWeldingJournalDocumentForRows = (documentRows: WeldRow[]) =>
     generateDocumentForRows('weldingJournal', documentRows)
   const generateChecklistDocumentForRows = (documentRows: WeldRow[]) =>
     generateDocumentForRows('checklist', documentRows)
   const generateZniDocumentForRows = (documentRows: WeldRow[]) =>
     generateDocumentForRows('zni', documentRows)
-  const generateWeldingJournalDocument = () => generateWeldingJournalDocumentForRows(filteredVisibleRows)
-  const generateChecklistDocument = () => generateChecklistDocumentForRows(filteredVisibleRows)
-  const generateZniDocument = () => generateZniDocumentForRows(filteredVisibleRows)
+  const generateDocumentFromCurrentFilter = async (
+    type: 'weldingJournal' | 'checklist' | 'zni',
+  ) => {
+    setIsWeldingJournalGenerateMenuOpen(false)
+    setMessage('Загружаем стыки текущего фильтра для формирования документа…')
+    try {
+      const documentRows = await loadCurrentWeldingJournalRows()
+      setMessage(null)
+      generateDocumentForRows(type, documentRows)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Не удалось загрузить стыки для формирования документа.')
+    }
+  }
+  const generateWeldingJournalDocument = () => void generateDocumentFromCurrentFilter('weldingJournal')
+  const generateChecklistDocument = () => void generateDocumentFromCurrentFilter('checklist')
+  const generateZniDocument = () => void generateDocumentFromCurrentFilter('zni')
+  const prepareLnkOutputRows = useCallback(
+    (sourceRows: WeldRow[], finalStatusContext: FinalStatusRowsContext = remoteFinalStatusContext) => buildLnkReportRows(
+      prepareReportRows(sourceRows, [], undefined, finalStatusContext, otherSettings),
+      preservedLnkOrderIds,
+    ),
+    [otherSettings, preservedLnkOrderIds, remoteFinalStatusContext],
+  )
+  const preparePstoOutputRows = useCallback(
+    (sourceRows: WeldRow[], finalStatusContext: FinalStatusRowsContext = remoteFinalStatusContext) => buildHeatTreatmentReportRows(
+      prepareReportRows(sourceRows, [], undefined, finalStatusContext, otherSettings),
+    ),
+    [otherSettings, remoteFinalStatusContext],
+  )
+  const loadRemoteFinalStatusContext = useCallback(async (): Promise<FinalStatusRowsContext> => {
+    const keys = await queryClient.fetchQuery({
+      queryKey: WELD_FINAL_STATUS_CONTEXT_QUERY_KEY,
+      queryFn: () => listWeldFinalStatusContextKeys(),
+      staleTime: 60_000,
+      retry: false,
+    })
+    return { rejectedUnofficialSameNameRepairKeys: new Set(keys) }
+  }, [queryClient])
+  const loadLnkOutputRows = useCallback(async (kind: LnkOutputRowsKind) => {
+    const sourceRows = kind === 'current'
+      ? await loadFilteredCurrentReportOutputRows({
+          report: 'lnk',
+          columnFilters: dispatcherTaskServerFilters,
+          sort: activeReportSort,
+        })
+      : await loadCompleteReportOutputRows(queryClient, 'lnk')
+    if (sourceRows.length === 0) return []
+    const finalStatusContext = await loadRemoteFinalStatusContext()
+    return prepareLnkOutputRows(sourceRows, finalStatusContext)
+  }, [
+    activeReportSort,
+    dispatcherTaskServerFilters,
+    loadRemoteFinalStatusContext,
+    prepareLnkOutputRows,
+    queryClient,
+  ])
+  const loadPstoOutputRows = useCallback(async (kind: PstoOutputRowsKind) => {
+    const sourceRows = kind === 'current'
+      ? await loadFilteredCurrentReportOutputRows({
+          report: 'heatTreatment',
+          columnFilters: dispatcherTaskServerFilters,
+          sort: activeReportSort,
+        })
+      : await loadCompleteReportOutputRows(queryClient, 'heatTreatment')
+    if (sourceRows.length === 0) return []
+    const finalStatusContext = await loadRemoteFinalStatusContext()
+    return preparePstoOutputRows(sourceRows, finalStatusContext)
+  }, [
+    activeReportSort,
+    dispatcherTaskServerFilters,
+    loadRemoteFinalStatusContext,
+    preparePstoOutputRows,
+    queryClient,
+  ])
+  const loadWeldingJournalOutputRows = useCallback(async (
+    kind: WeldingJournalOutputRowsKind,
+  ): Promise<WeldInput[]> => {
+    if (kind === 'current') return loadCurrentWeldingJournalRows()
+    if (kind === 'waitingRequest') return loadLnkOutputRows('waitingRequest')
+    if (kind === 'waitingControl') return loadLnkOutputRows('waitingNk')
+    if (kind === 'waitingWeld' || kind === 'waitingRepair') {
+      return loadWeldingJournalPageRows({
+        columnFilters: {
+          finalStatus: kind === 'waitingWeld' ? '=ожидает сварку' : '=ожидает ремонт',
+        },
+        includeSort: false,
+      })
+    }
+    return loadWeldingJournalPageRows({ columnFilters: {}, includeSort: false })
+  }, [
+    loadCurrentWeldingJournalRows,
+    loadLnkOutputRows,
+    loadWeldingJournalPageRows,
+  ])
   const {
     openLnkConclusionsReport,
     openLnkCurrentReport,
@@ -1765,16 +2197,13 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   } = useReportOutputActions({
     activeReport,
     activeTitle,
-    heatTreatmentRows,
-    isLnkRowsContextReady,
-    isPstoRowsContextReady,
-    lnkRows,
+    loadLnkRows: loadLnkOutputRows,
+    loadPstoRows: loadPstoOutputRows,
+    loadWeldingJournalRows: loadWeldingJournalOutputRows,
     setIsLnkShowMenuOpen,
     setIsPstoShowMenuOpen,
     setIsWeldingJournalShowMenuOpen,
     setMessage,
-    weldingJournalRows: rows,
-    visibleRows,
   })
   useReportModalSyncEffects({
     controlProcessSettings,
@@ -1905,7 +2334,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   }
 
   const openDuplicateControlModal = () => {
+    if (selectedLnkIds.size > DUPLICATE_CONTROL_MASS_SELECTION_LIMIT) {
+      setMessage(DUPLICATE_CONTROL_MASS_SELECTION_ERROR)
+      return
+    }
     const initialRowIds = selectedLnkIds.size > 0 ? new Set(selectedLnkIds) : new Set<number>()
+    setIsDuplicateControlRegistryOpen(false)
     setDuplicateControlDraft({
       ...createEmptyDuplicateControlDraft(),
       rowIds: initialRowIds,
@@ -1914,6 +2348,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   }
 
   const openDuplicateControlModalForRow = useCallback((row: WeldRow) => {
+    setIsDuplicateControlRegistryOpen(false)
     setDuplicateControlDraft({
       ...createEmptyDuplicateControlDraft(),
       rowIds: new Set([row.id]),
@@ -1924,29 +2359,63 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
 
   const closeDuplicateControlModal = () => {
     setIsDuplicateControlModalOpen(false)
+    setIsDuplicateControlRegistryOpen(false)
+    setIsSelectingDuplicateControlRows(false)
     setDuplicateControlDraft(createEmptyDuplicateControlDraft())
   }
 
   const toggleDuplicateControlRow = (rowId: number) => {
+    if (!duplicateControlDraft.rowIds.has(rowId) &&
+      duplicateControlDraft.rowIds.size >= DUPLICATE_CONTROL_MASS_SELECTION_LIMIT) {
+      setMessage(DUPLICATE_CONTROL_MASS_SELECTION_ERROR)
+      return
+    }
     setDuplicateControlDraft((current) => {
       if (current.id) return current
       const rowIds = new Set(current.rowIds)
       if (rowIds.has(rowId)) rowIds.delete(rowId)
-      else rowIds.add(rowId)
+      else if (rowIds.size < DUPLICATE_CONTROL_MASS_SELECTION_LIMIT) rowIds.add(rowId)
       return { ...current, rowIds }
     })
   }
 
-  const setVisibleDuplicateControlRowsSelected = (selected: boolean) => {
-    setDuplicateControlDraft((current) => {
-      if (current.id) return current
-      const rowIds = new Set(current.rowIds)
-      for (const row of filteredDuplicateControlRows) {
-        if (selected) rowIds.add(row.id)
-        else rowIds.delete(row.id)
+  const setVisibleDuplicateControlRowsSelected = async (selected: boolean) => {
+    if (duplicateControlDraft.id || isSelectingDuplicateControlRows) return
+    const search = duplicateControlDraft.search.trim()
+    if (!selected && !search) {
+      setDuplicateControlDraft((current) => current.id ? current : { ...current, rowIds: new Set() })
+      return
+    }
+    if (selected && search === debouncedDuplicateControlSearch.trim() &&
+      duplicateControlCandidates.totalCount > DUPLICATE_CONTROL_MASS_SELECTION_LIMIT) {
+      setMessage(DUPLICATE_CONTROL_MASS_SELECTION_ERROR)
+      return
+    }
+
+    setIsSelectingDuplicateControlRows(true)
+    try {
+      const rowIdsForSearch = await listDuplicateControlCandidateIds({ data: { search } })
+      if (selected) {
+        const combinedIds = new Set([...duplicateControlDraft.rowIds, ...rowIdsForSearch])
+        if (combinedIds.size > DUPLICATE_CONTROL_MASS_SELECTION_LIMIT) {
+          throw new Error(DUPLICATE_CONTROL_MASS_SELECTION_ERROR)
+        }
       }
-      return { ...current, rowIds }
-    })
+      setDuplicateControlDraft((current) => {
+        if (current.id || current.search.trim() !== search) return current
+        const rowIds = new Set(current.rowIds)
+        for (const rowId of rowIdsForSearch) {
+          if (selected) rowIds.add(rowId)
+          else rowIds.delete(rowId)
+        }
+        if (rowIds.size > DUPLICATE_CONTROL_MASS_SELECTION_LIMIT) return current
+        return { ...current, rowIds }
+      })
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Не удалось изменить выбор найденных стыков.')
+    } finally {
+      setIsSelectingDuplicateControlRows(false)
+    }
   }
 
   const toggleDuplicateControlMethod = (method: DuplicateControlMethod) => {
@@ -2025,8 +2494,13 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   }
 
   async function runProtectedEdit<T>(actionLabel: string, action: () => T | Promise<T>) {
-    if (!(await requireEditPassword(actionLabel))) return undefined
-    return action()
+    try {
+      if (!(await requireEditPassword(actionLabel))) return undefined
+      return await action()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : `Не удалось выполнить действие «${actionLabel}».`)
+      return undefined
+    }
   }
 
   async function runProtectedImport(actionLabel: string, action: () => void | Promise<void>) {
@@ -2036,8 +2510,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   }
 
   async function runProtectedDelete(actionLabel: string, action: () => void | Promise<void>) {
-    if (!(await requireDeletePassword(actionLabel))) return
-    await action()
+    try {
+      if (!(await requireDeletePassword(actionLabel))) return
+      await action()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : `Не удалось выполнить действие «${actionLabel}».`)
+    }
   }
 
   async function handleProtectedEditRecord(row: WeldRow, fieldKey?: Parameters<typeof handleEditRecord>[1]) {
@@ -2259,10 +2737,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setIsPstoResultRegistryAll(false)
     setIsPstoResultManagerOpen(false)
     setManagedPstoDiagramDrafts({})
+    setPstoResultRegistrySearch('')
+    setPstoResultRegistryLimit(WORKFLOW_REGISTRY_PAGE_SIZE)
   }
 
   const openAllPstoHistory = () => {
     setIsPstoResultRegistryAll(true)
+    setPstoResultRegistrySearch('')
+    setPstoResultRegistryLimit(WORKFLOW_REGISTRY_PAGE_SIZE)
     setPstoResultDraft((current) => ({ ...current, rowIds: new Set() }))
     setManagedPstoDiagramDrafts({})
     setIsPstoResultManagerOpen(true)
@@ -2291,6 +2773,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
 
   useReportModalEscapeKey({
     isReportModalOpen,
+    isDispatcherWorkspaceOpen,
     isPstoRequestManagerOpen,
     isPstoResultManagerOpen,
     isLnkRequestManagerOpen,
@@ -2340,6 +2823,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onCloseLnkResultModal: closeAddLnkResultModal,
     onCloseLnkRequestModal: closeCreateLnkRequestModal,
     onCloseReportImportModal: () => setIsImportDialogOpen(false),
+    onCloseDispatcherWorkspace: () => setIsDispatcherWorkspaceOpen(false),
   })
 
   const dispatcherTaskCardProps = createDispatcherTaskCardHandlers({
@@ -3242,21 +3726,32 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     [heatTreatmentRows],
   )
   const hasAvailableTvmtRequestRows = useMemo(
-    () => heatTreatmentRows.some(canCreateTvmtRequest),
-    [heatTreatmentRows],
+    () => pstoWorkflowSummaryQuery.data
+      ? pstoWorkflowSummaryQuery.data.tvmtRequestCandidateCount > 0
+      : heatTreatmentRows.some(canCreateTvmtRequest),
+    [heatTreatmentRows, pstoWorkflowSummaryQuery.data],
   )
   const hasAvailableTvmtResultRows = useMemo(
-    () => heatTreatmentRows.some(canAddTvmtResult),
-    [heatTreatmentRows],
+    () => pstoWorkflowSummaryQuery.data
+      ? pstoWorkflowSummaryQuery.data.tvmtResultCandidateCount > 0
+      : heatTreatmentRows.some(canAddTvmtResult),
+    [heatTreatmentRows, pstoWorkflowSummaryQuery.data],
   )
   const hasAvailablePstoWorkflowRequestRows = useMemo(
-    () => heatTreatmentRows.some(canCreatePstoWorkflowRequest),
-    [heatTreatmentRows],
+    () => pstoWorkflowSummaryQuery.data
+      ? pstoWorkflowSummaryQuery.data.requestCandidateCount > 0
+      : heatTreatmentRows.some(canCreatePstoWorkflowRequest),
+    [heatTreatmentRows, pstoWorkflowSummaryQuery.data],
   )
   const hasAvailablePstoWorkflowResultRows = useMemo(
-    () => heatTreatmentRows.some(canAddPstoWorkflowResult),
-    [heatTreatmentRows],
+    () => pstoWorkflowSummaryQuery.data
+      ? pstoWorkflowSummaryQuery.data.resultCandidateCount > 0
+      : heatTreatmentRows.some(canAddPstoWorkflowResult),
+    [heatTreatmentRows, pstoWorkflowSummaryQuery.data],
   )
+  const hasPstoResultRegistryRows = pstoWorkflowSummaryQuery.data
+    ? pstoWorkflowSummaryQuery.data.resultRegistryCount > 0
+    : pstoResultRegistryRows.length > 0
   const preHeatTreatmentResultRegistryRows = useMemo(() => {
     const scopedIds = preHeatTreatmentResultManagerRowIds
       ? new Set(preHeatTreatmentResultManagerRowIds)
@@ -3342,7 +3837,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onOpenWeldingJournalCancelledAcceptedReport: openWeldingJournalCancelledAcceptedReport,
     onOpenWeldingJournalSystemReport: openWeldingJournalSystemReport,
     onCreatePstoRequest: () => openPstoRepeatWorkflow('request'),
-    createPstoRequestDisabled: !isPstoRowsContextReady || !hasAvailablePstoWorkflowRequestRows,
+    createPstoRequestDisabled:
+      pstoWorkflowSummaryQuery.isLoading || !hasAvailablePstoWorkflowRequestRows,
     onOpenPstoLineProgram: openPstoLineProgram,
     onEditSelectedPstoRequest: () => {
       setIsPstoResultRegistryAll(false)
@@ -3356,7 +3852,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     },
     pstoRequestPending: pstoRequestMutation.isPending,
     onAddPstoResult: () => openPstoRepeatWorkflow('result'),
-    pstoResultDisabled: !isPstoRowsContextReady || !hasAvailablePstoWorkflowResultRows,
+    pstoResultDisabled:
+      pstoWorkflowSummaryQuery.isLoading || !hasAvailablePstoWorkflowResultRows,
     onEditSelectedPstoResults: () => {
       setIsPstoResultRegistryAll(false)
       openPstoResultManagerForRows(selectedPstoHeaderRows)
@@ -3365,11 +3862,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onOpenPstoResultRegistry: () => {
       openAllPstoHistory()
     },
-    pstoResultRegistryDisabled: !isPstoRowsContextReady || pstoResultRegistryRows.length === 0,
+    pstoResultRegistryDisabled:
+      pstoWorkflowSummaryQuery.isLoading || !hasPstoResultRegistryRows,
     onCreateTvmtRequest: () => openTvmtWorkflow('request'),
-    createTvmtRequestDisabled: !isPstoRowsContextReady || !hasAvailableTvmtRequestRows,
+    createTvmtRequestDisabled:
+      pstoWorkflowSummaryQuery.isLoading || !hasAvailableTvmtRequestRows,
     onAddTvmtResult: () => openTvmtWorkflow('result'),
-    addTvmtResultDisabled: !isPstoRowsContextReady || !hasAvailableTvmtResultRows,
+    addTvmtResultDisabled:
+      pstoWorkflowSummaryQuery.isLoading || !hasAvailableTvmtResultRows,
     tvmtPending: false,
     isPstoShowMenuOpen,
     onTogglePstoShowMenu: () => setIsPstoShowMenuOpen((current) => !current),
@@ -3701,6 +4201,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         setManagedLnkRequestName(identity.name)
         setManagedLnkRequestDate(identity.date)
         setManagedLnkRequestNameDraft(identity.name)
+        setLnkWorkflowRequestSearch(identity.name)
         setIsLnkRequestManagerOpen(true)
       } else if (destination === 'lnk-result-manager' && target.kind === 'lnk-control') {
         const method = LNK_METHODS.find((candidate) => candidate.code === target.methodCode)
@@ -3745,6 +4246,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         setManagedPstoRequestName(identity.name)
         setManagedPstoRequestDate(identity.date)
         setManagedPstoRequestNameDraft(identity.name)
+        setPstoWorkflowRequestSearch(identity.name)
         setIsPstoRequestManagerOpen(true)
       } else if (destination === 'psto-result-manager' && target.kind === 'psto-cycle') {
         setPstoResultDraft((current) => ({ ...current, rowIds: new Set([row.id]) }))
@@ -3753,7 +4255,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         setIsPstoResultManagerOpen(true)
       } else if (destination === 'duplicate-control' && target.kind === 'duplicate-control') {
         const control = row.duplicateControls?.find((candidate) => candidate.id === target.relationId)
-          ?? duplicateControls.find((candidate) => candidate.id === target.relationId)
+        setIsDuplicateControlRegistryOpen(false)
         setDuplicateControlDraft(control ? {
           id: control.id,
           expectedVersion: String(control.version ?? ''),
@@ -3904,10 +4406,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     if (actionId === 'open-psto-program' && task.kind === 'line-consistency') {
       captureReportContext('heatTreatment')
       setChainRecord(null)
-      setHeatTreatmentFilters(buildLineFilters(task.row))
-      setActiveReport('heatTreatment')
-      openPstoLineProgram()
-      setMessage(`Открыта программа ПСТО для проверки линии ${task.line}.`)
+      if (activeReport !== 'heatTreatment') {
+        deferredJointNextActionRef.current = { kind: 'psto-program', targetReport: 'heatTreatment', row: task.row }
+        setActiveReport('heatTreatment')
+      } else {
+        openPstoLineProgramForRow(task.row)
+      }
       return
     }
     if (actionId === 'open-lnk') {
@@ -3958,20 +4462,23 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const reportContextLoadError =
     (lnkWorkflowRowsQuery.isEnabled ? lnkWorkflowRowsQuery.error : null) ??
     (lnkWorkflowSummaryQuery.isEnabled ? lnkWorkflowSummaryQuery.error : null) ??
-    (lnkContextQuery.isEnabled ? lnkContextQuery.error : null) ??
-    (pstoContextQuery.isEnabled ? pstoContextQuery.error : null) ??
+    (lnkWorkflowRequestSummaryQuery.isEnabled ? lnkWorkflowRequestSummaryQuery.error : null) ??
+    (pstoWorkflowRowsQuery.isEnabled ? pstoWorkflowRowsQuery.error : null) ??
+    (pstoWorkflowSummaryQuery.isEnabled ? pstoWorkflowSummaryQuery.error : null) ??
     (finalStatusContextQuery.isEnabled ? finalStatusContextQuery.error : null)
-  const reportLoadError = reportContextLoadError ?? (isServerPagedTab ? weldPageQuery.error : weldsQuery.error)
+  const reportLoadError = reportContextLoadError ?? (isServerPagedTab ? weldPageQuery.error : null)
   const reportLoadErrorMessage = reportLoadError instanceof Error ? reportLoadError.message : null
   const reportSummaryBarProps = {
     ...createReportSummaryBarProps({
       activeReport,
       left: stickyLeft,
-      isLoading: isServerPagedTab ? weldPageQuery.isLoading : weldsQuery.isLoading,
+      isLoading: isServerPagedTab ? weldPageQuery.isLoading : false,
       weldingRows: activeReport === 'weldingJournal' ? filteredVisibleRows : rows,
       weldingRowCount: activeReport === 'weldingJournal' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
       acceptedWdiTotal:
         activeReport === 'weldingJournal' && isServerPagedTab ? weldPageQuery.acceptedWdiTotal : filteredAcceptedWdiTotal,
+      isAcceptedWdiRecalculating: activeReport === 'weldingJournal' && isServerPagedTab &&
+        dispatcherTaskSnapshot.data?.isFresh === false,
       heatTreatmentRows: activeReport === 'heatTreatment' ? filteredVisibleRows : heatTreatmentRows,
       heatTreatmentRowCount: activeReport === 'heatTreatment' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
       selectedHeatTreatmentRowCount: selectedPstoHeaderRows.length,
@@ -3998,15 +4505,17 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       : {}),
   }
   const reportNotificationToastProps = {
-    message: reportLoadErrorMessage ?? lnkNotice ?? message ?? undefined,
-    tone: reportLoadErrorMessage
+    message: reportLoadErrorMessage ?? selectionWarning ?? lnkNotice ?? message ?? undefined,
+    tone: reportLoadErrorMessage || selectionWarning
       ? 'error' as const
       : lnkNotice
         ? 'success' as const
         : 'info' as const,
     onDismiss: reportLoadErrorMessage
       ? undefined
-      : lnkNotice
+      : selectionWarning
+        ? dismissSelectionWarning
+        : lnkNotice
         ? dismissLnkNotice
         : dismissMessage,
   }
@@ -4015,6 +4524,26 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     activeReport,
     repeatedJointTasks: visibleRepeatedJointTasks,
     repeatedJointTaskGroups: visibleRepeatedJointTaskGroups,
+    repeatedJointTaskCount: isServerPagedTab
+      ? dispatcherTaskSnapshot.repeatedJointTaskCount
+      : visibleRepeatedJointTasks.length,
+    computedRevision: dispatcherTaskSnapshot.data?.computedRevision,
+    taskFilterOptions: dispatcherTaskSnapshot.taskFilterOptions,
+    hasMoreTasks: dispatcherTaskSnapshot.hasMoreTasks,
+    onLoadMoreTasks: () => { void dispatcherTaskSnapshot.loadMoreTasks() },
+    isTaskBatchLoading: dispatcherTaskSnapshot.isTaskBatchLoading,
+    taskBatchError: dispatcherTaskSnapshot.taskBatchError instanceof Error
+      ? dispatcherTaskSnapshot.taskBatchError.message
+      : undefined,
+    onRetryTaskBatch: () => { void dispatcherTaskSnapshot.retryTaskBatch() },
+    onRefreshTasks: dispatcherTaskSnapshot.refreshTasks,
+    dispatcherTasksRefreshing: isServerPagedTab && (
+      dispatcherTaskSnapshot.isRefreshing || (
+        dispatcherTaskSnapshot.data?.isFresh === false && !dispatcherTaskSnapshot.error
+      )
+    ),
+    dispatcherWorkspaceOpen: isDispatcherWorkspaceOpen,
+    onDispatcherWorkspaceOpenChange: setIsDispatcherWorkspaceOpen,
     welderStampExpiryTasks: visibleWelderStampExpiryTasks,
     welderStampNotificationGroups: visibleWelderStampNotificationGroups,
     stickyLeft,
@@ -4023,8 +4552,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onToggleDetails: toggleRepeatedJointTaskDetails,
     onCollapseTaskDetails: resetExpandedRepeatedJointTasks,
     onDismissTasks: dismissRepeatedJointTasks,
-    columnFilters: activeColumnFilters,
-    onColumnFiltersChange: activeFiltersSetter,
   })
   function runJointNextAction(
     row: WeldRow,
@@ -4041,7 +4568,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     if (targetReport) captureReportContext(targetReport)
     setChainRecord(null)
     if (targetReport && targetReport !== activeReport) {
-      deferredJointNextActionRef.current = { targetReport, row, action, ...options }
+      deferredJointNextActionRef.current = { kind: 'joint-action', targetReport, row, action, ...options }
       setActiveReport(targetReport)
       return
     }
@@ -4106,10 +4633,20 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     }
   }
 
+  function openPstoLineProgramForRow(row: WeldRow) {
+    setHeatTreatmentFilters(buildLineFilters(row))
+    openPstoLineProgram()
+    setMessage(`Открыта программа ПСТО для проверки линии ${row.line}.`)
+  }
+
   useEffect(() => {
     const deferred = deferredJointNextActionRef.current
     if (!deferred || deferred.targetReport !== activeReport) return
     deferredJointNextActionRef.current = null
+    if (deferred.kind === 'psto-program') {
+      openPstoLineProgramForRow(deferred.row)
+      return
+    }
     openJointNextAction(deferred.row, deferred.action, {
       runDispatcherAction: deferred.runDispatcherAction,
     })
@@ -4292,7 +4829,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       isPending: pstoRequestMutation.isPending,
       saveCheckSettings,
       onClose: closeCreatePstoRequestModal,
-      onOpenRequestManager: openPstoRequestManager,
+      onOpenRequestManager: () => {
+        setPstoWorkflowRequestSearch('')
+        openPstoRequestManager()
+      },
       onRequestNamingChange: setPstoRequestNaming,
       onRequestDateChange: setPstoRequestDate,
       onRequestSearchChange: setPstoRequestSearch,
@@ -4318,6 +4858,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       requestName: managedPstoRequestName,
       requestDate: managedPstoRequestDate,
       requestOptions: pstoRequestManagerOptions,
+      requestOptionsHasMore: pstoWorkflowRequestOptionsQuery.data?.hasMore ?? false,
+      requestSearch: pstoWorkflowRequestSearch,
       requestRows: managedPstoRequestRows,
       requestNameDraft: managedPstoRequestNameDraft,
       isManagerPending: pstoRequestManagerMutation.isPending,
@@ -4327,6 +4869,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         ? returnFromWorkflowRootCause
         : () => setIsPstoRequestManagerOpen(false),
       onChangeRequest: changeManagedPstoRequest,
+      onRequestSearchChange: setPstoWorkflowRequestSearch,
       onRequestNameDraftChange: setManagedPstoRequestNameDraft,
       onRenameRequest: () => runProtectedEdit('переименование заявки ПСТО', renameManagedPstoRequest),
       onOpenDocument: (row) => openReportDocument(row, 'pstoRequest'),
@@ -4396,6 +4939,17 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         pstoCycleCorrectionMutation.isPending ||
         pstoTvmtCorrectionWithLaterCycleRemovalMutation.isPending,
       canOpenDocument: availableSystemDocumentTypes.has('pstoConclusion'),
+      hasMoreRows:
+        isPstoResultRegistryAll &&
+        (pstoWorkflowRowsQuery.data?.length ?? 0) >= pstoResultRegistryLimit &&
+        pstoResultRegistryLimit < WORKFLOW_REGISTRY_MAX_LOADED_ROWS,
+      onLoadMoreRows: () => setPstoResultRegistryLimit((current) =>
+        Math.min(current + WORKFLOW_REGISTRY_PAGE_SIZE, WORKFLOW_REGISTRY_MAX_LOADED_ROWS),
+      ),
+      onRegistrySearchChange: (value) => {
+        setPstoResultRegistrySearch(value)
+        setPstoResultRegistryLimit(WORKFLOW_REGISTRY_PAGE_SIZE)
+      },
       onClose: currentWorkflowRootCauseDestination === 'psto-result-manager'
         ? returnFromWorkflowRootCause
         : closePstoResultManager,
@@ -4473,6 +5027,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           mode: tvmtWorkflowMode,
           rows: heatTreatmentRows,
           initialSelectedIds: selectedHeatTreatmentIds,
+          onCandidateSearchChange: setTvmtCandidateSearch,
+          onCandidateSelectionChange: setTvmtCandidateIds,
+          onCandidateRequestChange: handleTvmtCandidateRequestChange,
           onClose: () => setTvmtWorkflowMode(null),
           onRunProtectedEdit: (actionLabel, action) => runProtectedEdit(actionLabel, action),
           onSaved: (savedRows, fieldKeys, nextMessage) => {
@@ -4490,6 +5047,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           mode: pstoRepeatWorkflowMode,
           rows: heatTreatmentRows,
           initialSelectedIds: selectedHeatTreatmentIds,
+          onCandidateSearchChange: setPstoRepeatCandidateSearch,
+          onCandidateSelectionChange: setPstoRepeatCandidateIds,
+          onCandidateRequestChange: handlePstoRepeatCandidateRequestChange,
           onClose: () => setPstoRepeatWorkflowMode(null),
           onRunProtectedEdit: (actionLabel, action) => runProtectedEdit(actionLabel, action),
           onSaved: (savedRows, fieldKeys, nextMessage) => {
@@ -4526,6 +5086,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       requestNaming: lnkRequestNaming,
       requestDate: lnkRequestDraft.requestDate,
       requestExtensionOptions: lnkRequestExtensionOptions,
+      requestOptionsHasMore: lnkWorkflowRequestSummaryQuery.data?.hasMore ?? false,
       initialMode: lnkRequestComposerMode,
       initialRequestKey: lnkRequestTargetKey,
       initialSelectedMethods: lnkRequestDraft.methods,
@@ -4548,6 +5109,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       onRequestNamingChange: setLnkRequestNaming,
       onRequestDateChange: (requestDate) => setLnkRequestDraft((current) => ({ ...current, requestDate })),
       onRequestSearchChange: setLnkRequestSearch,
+      onCandidateMethodsChange: (methodKeys) => setLnkRequestDraft((current) => ({
+        ...current,
+        methods: new Set(methodKeys),
+      })),
+      onExistingRequestSearchChange: setLnkWorkflowRequestSearch,
       onClearSelection: () => {
         void confirmClearSelectedRows(
           selectedLnkIds.size,
@@ -4579,6 +5145,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       requestName: managedLnkRequestName,
       requestDate: managedLnkRequestDate,
       requestOptions: lnkRequestExtensionOptions,
+      requestOptionsHasMore: lnkWorkflowRequestSummaryQuery.data?.hasMore ?? false,
       allRows: lnkRows,
       requestRows: managedLnkRequestRows,
       requestMethods: managedLnkRequestMethods,
@@ -4599,6 +5166,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           })
         : undefined,
       onChangeRequest: changeManagedLnkRequest,
+      onRequestSearchChange: setLnkWorkflowRequestSearch,
       onCreateRequest: openCreateLnkRequestFromRegistry,
       onAddPositions: (request) => {
         setIsLnkRequestManagerOpen(false)
@@ -4646,6 +5214,21 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       isResultReplacementPending: lnkResultReplacementMutation.isPending,
       isConclusionCorrectionPending: lnkConclusionCorrectionMutation.isPending,
       isRequestCorrectionPending: lnkRequestCorrectionMutation.isPending,
+      hasMoreRows:
+        managedLnkResultOrderIds === null &&
+        (lnkWorkflowRowsQuery.data?.length ?? 0) >= lnkResultRegistryLimit &&
+        lnkResultRegistryLimit < WORKFLOW_REGISTRY_MAX_LOADED_ROWS,
+      onLoadMoreRows: () => setLnkResultRegistryLimit((current) =>
+        Math.min(current + WORKFLOW_REGISTRY_PAGE_SIZE, WORKFLOW_REGISTRY_MAX_LOADED_ROWS),
+      ),
+      onRegistrySearchChange: (value) => {
+        setLnkResultRegistrySearch(value)
+        setLnkResultRegistryLimit(WORKFLOW_REGISTRY_PAGE_SIZE)
+      },
+      onRegistryResultFilterChange: (value) => {
+        setLnkResultRegistryFilter(value)
+        setLnkResultRegistryLimit(WORKFLOW_REGISTRY_PAGE_SIZE)
+      },
       onClose: currentWorkflowRootCauseDestination === 'lnk-result-manager'
         ? returnFromWorkflowRootCause
         : closeLnkResultManager,
@@ -4717,9 +5300,48 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       elevated: currentWorkflowRootCauseDestination === 'duplicate-control',
       draft: duplicateControlDraft,
       filteredRows: filteredDuplicateControlRows,
+      filteredRowCount: duplicateControlCandidates.totalCount,
+      candidateRowsLoading: duplicateControlCandidates.isLoading,
+      candidateRowsError: duplicateControlCandidates.error instanceof Error
+        ? duplicateControlCandidates.error.message
+        : null,
+      candidatePagination: {
+        totalCount: duplicateControlCandidates.totalCount,
+        firstItemNumber: duplicateControlCandidates.firstItemNumber,
+        lastItemNumber: duplicateControlCandidates.lastItemNumber,
+        pageSize: duplicateControlCandidates.pageSize,
+        hasMore: duplicateControlCandidates.hasMore,
+        onLoadMore: duplicateControlCandidates.loadMore,
+        onPageSizeChange: duplicateControlCandidates.setPageSize,
+      },
       selectedRows: selectedDuplicateControlRows,
-      allRows: rows,
+      selectedRowsLoading: selectedDuplicateControlRowsLoading,
+      selectingFilteredRows: isSelectingDuplicateControlRows,
       controls: duplicateControlDialogControls,
+      controlCount: duplicateControlDraft.rowIds.size > 0
+        ? duplicateControlDialogControls.length
+        : duplicateControlRegistryReady
+          ? duplicateControlCount
+          : undefined,
+      controlsLoading: duplicateControlDraft.rowIds.size > 0
+        ? selectedDuplicateControlRowsLoading
+        : duplicateControlRegistryLoading || duplicateControlRegistryFetching,
+      controlsError: duplicateControlDraft.rowIds.size > 0
+        ? selectedDuplicateControlRowsError
+        : duplicateControlRegistryError instanceof Error
+          ? duplicateControlRegistryError.message
+          : null,
+      controlsPagination: duplicateControlDraft.rowIds.size > 0
+        ? undefined
+        : {
+            totalCount: duplicateControlCount,
+            firstItemNumber: duplicateControlRegistryFirstItemNumber,
+            lastItemNumber: duplicateControlRegistryLastItemNumber,
+            pageSize: duplicateControlRegistryPageSize,
+            hasMore: duplicateControlRegistryHasMore,
+            onLoadMore: loadMoreDuplicateControls,
+            onPageSizeChange: setDuplicateControlPageSize,
+          },
       saveBlockReason: duplicateControlSaveBlockReason,
       isSaving: saveDuplicateControlMutation.isPending || deleteDuplicateControlMutation.isPending,
       onClose: currentWorkflowRootCauseDestination === 'duplicate-control'
@@ -4732,6 +5354,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       onToggleRow: toggleDuplicateControlRow,
       onSetVisibleRowsSelected: setVisibleDuplicateControlRowsSelected,
       onToggleMethod: toggleDuplicateControlMethod,
+      onExistingControlsOpenChange: setIsDuplicateControlRegistryOpen,
     },
     resultModalOpen: isLnkResultModalOpen,
     result: {
@@ -4803,6 +5426,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           initialSelectedIds: selectedLnkIds,
           initialMethodCode: preHeatTreatmentLnkInitialMethodCode,
           initialRequestSubmitMode: preHeatTreatmentLnkRequestSubmitMode,
+          onCandidateSearchChange: setPreHeatTreatmentCandidateSearch,
+          onCandidateSelectionChange: setPreHeatTreatmentCandidateIds,
+          onCandidateFilterChange: handlePreHeatTreatmentCandidateFilterChange,
           onClose: currentWorkflowRootCauseDestination === 'pre-lnk-workflow'
             ? returnFromWorkflowRootCause
             : () => {
@@ -4896,8 +5522,13 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     reportSummaryBarProps,
     reportTaskPanelsProps,
     documentGenerationRequest,
-    documentGenerationContextLoading: Boolean(documentGenerationRequest) && weldsQuery.isFetching,
-    statisticsRows: rows,
+    documentGenerationContextLoading:
+      Boolean(documentGenerationRequest) && finalStatusContextQuery.isFetching,
+    documentGenerationContextError:
+      documentGenerationRequest && finalStatusContextQuery.error instanceof Error
+        ? finalStatusContextQuery.error.message
+        : '',
+    documentGenerationFinalStatusContext: remoteFinalStatusContext,
     welderStamps,
     welderStampsRegistryProps,
     weldTableProps,
@@ -4985,17 +5616,6 @@ function formatLnkStageTransferReference(reference: SystemDocumentReference) {
   const documentLabel = reference.type === 'lnkRequest' ? 'Заявка' : 'Заключение'
   const stageLabel = reference.sourceKind === 'beforeHeatTreatment' ? 'До ТО' : 'Основной'
   return `${documentLabel} · ${stageLabel} · ${reference.title}`
-}
-
-function filterDuplicateControlRows(rows: WeldRow[], search: string) {
-  const query = search.trim().toLowerCase()
-  return query
-    ? rows.filter((row) =>
-        [row.projectTitle, row.subtitleCode, row.line, row.spool, row.joint]
-          .map((value) => String(value ?? '').toLowerCase())
-          .some((value) => value.includes(query)),
-      )
-    : rows
 }
 
 function getDuplicateControlSaveBlockReason({

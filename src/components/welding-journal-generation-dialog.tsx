@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { useSecurityGuard } from '@/lib/security-context'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DocumentGenerationRequest } from '@/lib/document-generation'
+import type { FinalStatusRowsContext } from '@/lib/weld-status'
 import { previewGeneratedDocumentNamePattern } from '@/lib/generated-document-naming'
 import {
   getWeldingJournalTemplateOptions,
@@ -25,16 +26,18 @@ import { getGeneratedDocumentProfile } from '@/lib/generated-document-types'
 
 export type WeldingJournalGenerationDialogProps = {
   request: DocumentGenerationRequest
-  contextRows: WeldRow[]
+  finalStatusContext?: FinalStatusRowsContext
   contextLoading?: boolean
+  contextError?: string
   onClose: () => void
   onGenerated: (message: string) => void
 }
 
 export function WeldingJournalGenerationDialog({
   request,
-  contextRows,
+  finalStatusContext,
   contextLoading = false,
+  contextError = '',
   onClose,
   onGenerated,
 }: WeldingJournalGenerationDialogProps) {
@@ -60,17 +63,17 @@ export function WeldingJournalGenerationDialog({
       template?.options?.zni,
     ],
   )
-  const effectiveContextRows = contextRows.length > 0 ? contextRows : request.rows
   const preparedRows = useMemo(
     () =>
       prepareWeldingJournalDocumentRows({
         sourceRows: request.rows,
-        contextRows: effectiveContextRows,
+        contextRows: request.rows,
         periodFrom: dateRange?.from ?? '',
         periodTo: dateRange?.to ?? '',
         options,
+        finalStatusContext,
       }),
-    [dateRange?.from, dateRange?.to, effectiveContextRows, options, request.rows],
+    [dateRange?.from, dateRange?.to, finalStatusContext, options, request.rows],
   )
   const plan = useMemo(
     () =>
@@ -128,7 +131,7 @@ export function WeldingJournalGenerationDialog({
   }, [isGenerating, onClose])
 
   const handleGenerate = async () => {
-    if (plan.groups.length === 0 || isGenerating || contextLoading || templateLoading) return
+    if (plan.groups.length === 0 || isGenerating || contextLoading || contextError || templateLoading) return
     setIsGenerating(true)
     const accessGranted = await requireDocumentGenerationPassword(`формирование ${documentLabel}`)
     if (!accessGranted) {
@@ -234,6 +237,11 @@ export function WeldingJournalGenerationDialog({
             Подготавливаем данные для формирования...
           </div>
         ) : null}
+        {contextError ? (
+          <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {contextError}
+          </div>
+        ) : null}
         {error ? (
           <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {error}
@@ -253,7 +261,7 @@ export function WeldingJournalGenerationDialog({
         <Button
           type="button"
           onClick={() => void handleGenerate()}
-          disabled={plan.groups.length === 0 || isGenerating || contextLoading || templateLoading}
+          disabled={plan.groups.length === 0 || isGenerating || contextLoading || Boolean(contextError) || templateLoading}
           className="min-w-40 gap-2 bg-[#17627d] text-white hover:bg-[#12536b] disabled:border disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-500 disabled:opacity-100"
         >
           <FileSpreadsheet className="h-4 w-4" />

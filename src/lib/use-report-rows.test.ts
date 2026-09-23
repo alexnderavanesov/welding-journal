@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { reuseEquivalentWeldRows } from '@/lib/use-report-rows'
+import {
+  prepareReportRows,
+  prepareReportRowsInPlace,
+  reuseEquivalentWeldRows,
+} from '@/lib/use-report-rows'
 
 describe('reuseEquivalentWeldRows', () => {
   it('preserves references for unchanged rows and replaces only a changed row', () => {
@@ -26,5 +30,41 @@ describe('reuseEquivalentWeldRows', () => {
     const next = [{ id: 1, duplicateControls: [control] }] as unknown as WeldRow[]
 
     expect(reuseEquivalentWeldRows(previous, next)[0]).toBe(previous[0])
+  })
+})
+
+describe('prepareReportRowsInPlace', () => {
+  it('keeps dispatcher status semantics without replacing owned row objects', () => {
+    const source = [{
+      id: 1,
+      weldDate: '2026-09-20',
+      hasVik: null,
+      hasRk: 'да',
+      rkRequest: 'РК-1',
+      rkResult: null,
+      pstoRequired: null,
+    }] as WeldRow[]
+    const duplicateControls = [{
+      id: 7,
+      version: '1',
+      weldJointId: 1,
+      method: 'РК' as const,
+      result: 'годен' as const,
+      controlDate: '2026-09-21',
+      conclusion: 'Д-1',
+      conclusionDate: '2026-09-21',
+    }]
+    const expected = prepareReportRows(source.map((row) => ({ ...row })), duplicateControls)
+    const originalReference = source[0]
+
+    const actual = prepareReportRowsInPlace(source, duplicateControls)
+
+    expect(actual[0]).toBe(originalReference)
+    expect(actual[0]).toMatchObject({
+      hasVik: expected[0]?.hasVik,
+      rkResult: expected[0]?.rkResult,
+      finalStatus: expected[0]?.finalStatus,
+      duplicateControls: expected[0]?.duplicateControls,
+    })
   })
 })

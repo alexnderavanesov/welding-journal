@@ -10,9 +10,9 @@ import {
 } from '../src/db/schema.ts'
 import { loadPstoLineAssignmentSummaries } from '../src/server/psto-line-assignment-summary.ts'
 
-const DEFAULT_ROW_COUNT = 100_000
+const DEFAULT_ROW_COUNT = 200_000
 const DEFAULT_LINE_COUNT = 1_000
-const MAX_ROW_COUNT = 500_000
+const MAX_ROW_COUNT = 200_000
 const MAX_LINE_COUNT = 20_000
 const BENCHMARK_WELD_ID_BASE = -2_000_000_000
 const BENCHMARK_PRE_CONTROL_ID_BASE = -1_900_000_000

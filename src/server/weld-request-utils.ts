@@ -2,6 +2,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import { migrateLegacyWeldFieldRecordKeys } from '@/lib/weld-fields'
 import type { WeldImportScopeRequest } from '@/server/weld-contracts'
+import { sql, type SQLWrapper } from 'drizzle-orm'
 import {
   CONTROL_ASSIGNMENT_FIELD_KEYS,
   normalizeControlAvailabilityFilterValue,
@@ -62,8 +63,16 @@ export function normalizeWeldImportScopeRequest(
   }
 }
 
-export function splitNumberBatches(values: readonly number[], batchSize: number) {
-  return Array.from({ length: Math.ceil(values.length / batchSize) }, (_, index) =>
-    values.slice(index * batchSize, (index + 1) * batchSize),
-  )
+export function buildNumberArrayMatch(column: SQLWrapper, values: readonly number[]) {
+  if (values.length === 0) return sql`false`
+  return sql`${column} = any(${sql.param(values)}::integer[])`
+}
+
+export function buildIncludedRowsFirstOrder(column: SQLWrapper, values: readonly number[]) {
+  return sql`case when ${buildNumberArrayMatch(column, values)} then 0 else 1 end`
+}
+
+export function buildTextArrayMatch(column: SQLWrapper, values: readonly string[]) {
+  if (values.length === 0) return sql`false`
+  return sql`${column} = any(${sql.param(values)}::text[])`
 }

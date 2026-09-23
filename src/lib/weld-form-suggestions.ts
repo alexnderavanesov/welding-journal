@@ -66,7 +66,7 @@ export function getWeldFormSuggestions({
 }): WeldFormSuggestion[] {
   if (DISABLED_SUGGESTION_FIELD_KEYS.has(fieldKey)) return []
 
-  const query = normalizeSuggestionText(value)
+  const query = normalizeWeldFormSuggestionText(value)
   const currentId = typeof draft.id === 'number' ? draft.id : null
   const sourceFieldKeys = SHARED_SUGGESTION_FIELD_KEYS[fieldKey] ?? [fieldKey]
   const suggestions = new Map<string, WeldFormSuggestion>()
@@ -75,9 +75,9 @@ export function getWeldFormSuggestions({
     if (currentId !== null && row.id === currentId) continue
 
     for (const sourceFieldKey of sourceFieldKeys) {
-      const candidate = normalizeSuggestionValue(row[sourceFieldKey])
+      const candidate = normalizeWeldFormSuggestionValue(row[sourceFieldKey])
       if (!candidate) continue
-      if (query && !normalizeSuggestionText(candidate).includes(query)) continue
+      if (query && !normalizeWeldFormSuggestionText(candidate).includes(query)) continue
 
       const previous = suggestions.get(candidate)
       const score = getContextScore(row, draft)
@@ -113,27 +113,27 @@ export function getWeldFormSuggestions({
 
 function getContextScore(row: WeldInput, draft: WeldInput) {
   return MATCH_CONTEXT_FIELDS.reduce((score, field) => {
-    const draftValue = normalizeSuggestionText(draft[field.key])
+    const draftValue = normalizeWeldFormSuggestionText(draft[field.key])
     if (!draftValue) return score
 
-    const rowValue = normalizeSuggestionText(row[field.key])
+    const rowValue = normalizeWeldFormSuggestionText(row[field.key])
     return rowValue && rowValue === draftValue ? score + field.score : score
   }, 0)
 }
 
 function getSuggestionContext(row: WeldInput, fieldKey: WeldFieldKey) {
   return CONTEXT_FIELDS.filter((key) => key !== fieldKey)
-    .map((key) => normalizeSuggestionValue(row[key]))
+    .map((key) => normalizeWeldFormSuggestionValue(row[key]))
     .filter(Boolean)
     .join(' · ')
 }
 
-function normalizeSuggestionValue(value: unknown) {
+export function normalizeWeldFormSuggestionValue(value: unknown) {
   const text = String(value ?? '').replace(/\s+/g, ' ').trim()
   if (!text || text === '-') return ''
   return text
 }
 
-function normalizeSuggestionText(value: unknown) {
-  return normalizeSuggestionValue(value).toLocaleLowerCase('ru')
+export function normalizeWeldFormSuggestionText(value: unknown) {
+  return normalizeWeldFormSuggestionValue(value).toLocaleLowerCase('ru')
 }

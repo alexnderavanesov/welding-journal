@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
@@ -10,6 +10,15 @@ import {
 import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 
 describe('joint coil transitions', () => {
+  it('does not copy the entire line for each rejected joint with an indexed resolver', () => {
+    const rows = Array.from({ length: 1_000 }, (_, index) => row(index + 1, `F${index}`, { rkResult: 'вырез' }))
+    const iterator = vi.spyOn(rows, Symbol.iterator)
+    const resolver = vi.fn((_rows: WeldRow[]) => [])
+    buildJointCoilTransitions(rows, { getOfficialRejectedJointChainRows: resolver })
+    expect(resolver).toHaveBeenCalledTimes(rows.length)
+    expect(iterator.mock.calls.length).toBeLessThanOrEqual(3)
+    expect(resolver.mock.calls[0]?.[0]).toBe(resolver.mock.calls.at(-1)?.[0])
+  })
   it('finds the immediate parent branch for regular and nested coils', () => {
     expect(getCoilParentBranchJoint('S1Y1')).toBe('S1')
     expect(getCoilParentBranchJoint('S1Y1R2')).toBe('S1')

@@ -1,7 +1,6 @@
 import {
   and,
   exists,
-  inArray,
   notExists,
   or,
   sql,
@@ -29,16 +28,23 @@ import {
   buildNormalizedControlAvailabilityWhere,
   buildNullableControlEnabledWhere,
 } from '@/server/control-availability-sql'
+import { attachSystemDocumentIds } from '@/server/generated-document-row-fields'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 import { assertSecurityScope } from '@/server/security-functions'
 import type {
+  LnkWorkflowRequestSummary,
+  LnkWorkflowRequestSummaryRequest,
   LnkWorkflowRowsRequest,
   LnkWorkflowSummary,
 } from '@/server/weld-contracts'
-import { normalizeLnkWorkflowRowsRequest } from '@/server/weld-contracts'
+import {
+  normalizeLnkWorkflowRequestSummaryRequest,
+  normalizeLnkWorkflowRowsRequest,
+} from '@/server/weld-contracts'
 import {
   buildAvailableLnkRequestWhere,
   buildLnkRequestCandidateWhere,
+  buildPrimaryLnkStageReadyWhere,
   buildPstoExecutionHistoryWhere,
   buildReportKindWhere,
   buildServerReportRows,
@@ -46,13 +52,16 @@ import {
   attachDuplicateControlsToPage,
   ENABLED_CONTROL_REPORT_VALUES,
 } from '@/server/weld-read'
-import { attachSystemDocumentIds } from '@/server/generated-document-row-fields'
 import {
   applyCurrentSystemWdi,
   loadServerOtherSettings,
   WELD_TABLE_SELECT,
 } from '@/server/weld-server-shared'
-import { compactWeldRowsForTransport } from '@/server/weld-request-utils'
+import {
+  buildIncludedRowsFirstOrder,
+  buildNumberArrayMatch,
+  compactWeldRowsForTransport,
+} from '@/server/weld-request-utils'
 
 const SQL_QUERY_BUILDER = new QueryBuilder()
 const FINAL_LNK_RESULTS = ['годен', 'ремонт', 'вырез', 'годен (отменен)'] as const
@@ -124,11 +133,24 @@ export async function listLnkWorkflowRows(
 ): Promise<WeldRow[]> {
   await assertSecurityScope('entry')
   const request = normalizeLnkWorkflowRowsRequest(input)
-  const sourceRows = await requireDb()
+  const db = requireDb()
+  const selectedRowsOrder = request.limit && request.includeRowIds?.length
+    ? [buildIncludedRowsFirstOrder(weldJoints.id, request.includeRowIds)]
+    : []
+  const readyCandidates = request.scope === 'requestCandidates' || request.scope === 'resultCandidates'
+    ? buildLnkCandidateMethodWhere(request, true)
+    : undefined
+  const readyRowsOrder = readyCandidates
+    ? [sql`case when ${readyCandidates} then 0 else 1 end`]
+    : []
+  const sourceQuery = db
     .select(LNK_WORKFLOW_ROW_SELECT)
     .from(weldJoints)
     .where(buildLnkWorkflowRowsWhere(request))
-    .orderBy(...getReportOrderBy('lnk'))
+    .orderBy(...selectedRowsOrder, ...readyRowsOrder, ...getReportOrderBy('lnk'))
+  const sourceRows = request.limit
+    ? await sourceQuery.limit(request.limit + (request.includeRowIds?.length ?? 0))
+    : await sourceQuery
   const reportRows = applyCurrentSystemWdi(
     buildServerReportRows(sourceRows as unknown as WeldJoint[], 'lnk'),
     await loadServerOtherSettings(),
@@ -142,28 +164,34 @@ export async function listLnkWorkflowRows(
     ...rowsWithDuplicateControls[index],
     ...rowsWithHeatTreatmentControls[index],
   }))
-  return compactWeldRowsForTransport(await attachSystemDocumentIds(rows))
+  const rowsWithSystemDocumentIds = isLnkDocumentRegistryScope(request.scope)
+    ? await attachSystemDocumentIds(rows, db)
+    : rows
+  return compactWeldRowsForTransport(rowsWithSystemDocumentIds)
+}
+
+function isLnkDocumentRegistryScope(scope: LnkWorkflowRowsRequest['scope']) {
+  return scope === 'requestRegistry' ||
+    scope === 'resultRegistry' ||
+    scope === 'preHeatTreatmentRequestRegistry' ||
+    scope === 'preHeatTreatmentResultRegistry'
 }
 
 export async function getLnkWorkflowSummary(): Promise<LnkWorkflowSummary> {
   await assertSecurityScope('entry')
   const db = requireDb()
   const reportWhere = buildReportKindWhere('lnk')
-  const [countRows, requestRowsResult] = await Promise.all([
-    db
-      .select({
-        pendingPrimaryResultRowCount: filteredCount(buildPendingPrimaryLnkResultWhere()),
-        primaryResultRowCount: filteredCount(buildFinalPrimaryLnkResultWhere()),
-        preHeatTreatmentRequestRowCount: filteredCount(buildPreHeatTreatmentRequestWhere()),
-        preHeatTreatmentResultRowCount: filteredCount(buildPreHeatTreatmentFinalResultWhere()),
-      })
-      .from(weldJoints)
-      .where(reportWhere),
-    db.execute<LnkWorkflowRequestSummaryRow>(buildLnkWorkflowRequestSummaryQuery()),
-  ])
+  const countRows = await db
+    .select({
+      pendingPrimaryResultRowCount: filteredCount(buildPendingPrimaryLnkResultWhere()),
+      primaryResultRowCount: filteredCount(buildFinalPrimaryLnkResultWhere()),
+      preHeatTreatmentRequestRowCount: filteredCount(buildPreHeatTreatmentRequestWhere()),
+      preHeatTreatmentResultRowCount: filteredCount(buildPreHeatTreatmentFinalResultWhere()),
+    })
+    .from(weldJoints)
+    .where(reportWhere)
   const counts = countRows[0]
   return {
-    ...buildLnkWorkflowRequestDocumentSummary(requestRowsResult.rows),
     pendingPrimaryResultRowCount: Number(counts?.pendingPrimaryResultRowCount) || 0,
     primaryResultRowCount: Number(counts?.primaryResultRowCount) || 0,
     preHeatTreatmentRequestRowCount: Number(counts?.preHeatTreatmentRequestRowCount) || 0,
@@ -171,7 +199,26 @@ export async function getLnkWorkflowSummary(): Promise<LnkWorkflowSummary> {
   }
 }
 
-export function buildLnkWorkflowRequestSummaryQuery(additionalWhere: SQL = sql`true`) {
+export async function getLnkWorkflowRequestSummary(
+  input?: LnkWorkflowRequestSummaryRequest,
+): Promise<LnkWorkflowRequestSummary> {
+  await assertSecurityScope('entry')
+  const request = normalizeLnkWorkflowRequestSummaryRequest(input)
+  const requestRowsResult = await requireDb().execute<LnkWorkflowRequestSummaryRow>(
+    buildLnkWorkflowRequestSummaryQuery(sql`true`, request),
+  )
+  const hasMore = requestRowsResult.rows.length > request.limit
+  return {
+    ...buildLnkWorkflowRequestDocumentSummary(requestRowsResult.rows.slice(0, request.limit)),
+    hasMore,
+  }
+}
+
+export function buildLnkWorkflowRequestSummaryQuery(
+  additionalWhere: SQL = sql`true`,
+  options?: LnkWorkflowRequestSummaryRequest,
+) {
+  const request = options ? normalizeLnkWorkflowRequestSummaryRequest(options) : null
   const primaryMethodCodes = new Set<string>(LNK_METHODS.map((method) => method.code))
   const reportWhere = and(buildReportKindWhere('lnk'), additionalWhere) ?? sql`false`
   const positionQueries = ALL_LNK_FIELD_METHODS.map((method, index) => sql`
@@ -200,10 +247,44 @@ export function buildLnkWorkflowRequestSummaryQuery(additionalWhere: SQL = sql`t
     where ${reportWhere}
       and ${hasTextWhere(weldJoints[method.requestKey])}
   `)
+  const searchPattern = request?.search ? `%${request.search.toLocaleLowerCase('ru-RU')}%` : ''
+  const resultLimit = request ? request.limit + 1 : null
+  const selectedPositionsCtes = request ? sql`,
+    selected_request_identities as (
+      select name, request_date
+      from request_positions
+      where is_primary
+        ${searchPattern ? sql`
+          and lower(concat_ws(
+            ' ',
+            name,
+            request_date,
+            project_title,
+            subtitle_code,
+            line,
+            spool,
+            joint,
+            method_code
+          )) like ${searchPattern}
+        ` : sql``}
+      group by name, request_date
+      order by request_date desc, name asc
+      limit ${request.limit + 1}
+    ),
+    selected_request_positions as (
+      select positions.*
+      from request_positions positions
+      inner join selected_request_identities selected
+        on selected.name = positions.name
+        and selected.request_date = positions.request_date
+    )
+  ` : sql``
+  const positionsSource = request ? sql`selected_request_positions` : sql`request_positions`
   return sql`
     with request_positions as (
       ${sql.join(positionQueries, sql` union all `)}
-    ),
+    )
+    ${selectedPositionsCtes},
     request_summaries as (
       select
         name,
@@ -225,7 +306,7 @@ export function buildLnkWorkflowRequestSummaryQuery(additionalWhere: SQL = sql`t
           nullif(string_agg(distinct lower(btrim(coalesce(joint, ''))), ' ')
             filter (where is_primary and btrim(coalesce(joint, '')) <> ''), '')
         ) as search_text
-      from request_positions
+      from ${positionsSource}
       group by name, request_date
     ),
     completed_positions as (
@@ -235,7 +316,7 @@ export function buildLnkWorkflowRequestSummaryQuery(additionalWhere: SQL = sql`t
         row_id,
         joint,
         method_code
-      from request_positions
+      from ${positionsSource}
       where is_primary and completed
       order by name, request_date, row_id, method_order
     )
@@ -255,12 +336,13 @@ export function buildLnkWorkflowRequestSummaryQuery(additionalWhere: SQL = sql`t
       on completed.name = summary.name
       and completed.request_date = summary.request_date
     order by summary.request_date desc, summary.name asc
+    ${resultLimit ? sql`limit ${resultLimit}` : sql``}
   `
 }
 
 export function buildLnkWorkflowRequestDocumentSummary(
   rows: readonly LnkWorkflowRequestSummaryRow[],
-): Pick<LnkWorkflowSummary, 'requestNames' | 'requestOptions'> {
+): LnkWorkflowRequestSummary {
   const requestNames = [...new Set(rows.map((row) => String(row.name ?? '').trim()).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right, 'ru'))
   const primaryRows = rows.filter((row) => row.hasPrimary)
@@ -293,18 +375,22 @@ export function buildLnkWorkflowRequestDocumentSummary(
       disabledReason,
     }
   })
-  return { requestNames, requestOptions }
+  return { requestNames, requestOptions, hasMore: false }
 }
 
 export function buildLnkWorkflowRowsWhere(
   input: LnkWorkflowRowsRequest,
 ): SQL {
   const request = normalizeLnkWorkflowRowsRequest(input)
-  const baseWhere = getScopeWhere(request.scope)
+  const baseWhere = request.scope === 'requestRegistry'
+    ? request.requestName
+      ? buildExactLnkRequestWhere(request.requestName, request.requestDate ?? '')
+      : sql`false`
+    : getScopeWhere(request.scope)
   const rowIdsWhere = request.rowIds === null
     ? null
     : request.rowIds.length > 0
-      ? inArray(weldJoints.id, request.rowIds)
+      ? buildNumberArrayMatch(weldJoints.id, request.rowIds)
       : sql`false`
   const candidatesIncludeSelected = request.scope.endsWith('Candidates')
   const scopedWhere = !rowIdsWhere
@@ -312,7 +398,147 @@ export function buildLnkWorkflowRowsWhere(
     : candidatesIncludeSelected
       ? or(baseWhere, rowIdsWhere) ?? sql`false`
       : and(baseWhere, rowIdsWhere) ?? sql`false`
-  return and(buildReportKindWhere('lnk'), scopedWhere) ?? sql`false`
+  const searchWhere = request.search ? buildLnkWorkflowSearchWhere(request.search) : undefined
+  const candidateMethodWhere = buildLnkCandidateMethodWhere(request)
+  const resultFilterWhere = request.scope === 'resultRegistry' && request.resultFilter
+    ? or(...LNK_METHODS.map((method) => sql`
+        lower(btrim(coalesce(${weldJoints[method.resultKey]}::text, ''))) = ${request.resultFilter}
+      `)) ?? sql`false`
+    : undefined
+  const filteredWhere = and(
+    scopedWhere,
+    searchWhere,
+    candidateMethodWhere,
+    resultFilterWhere,
+  ) ?? sql`false`
+  const includedRowsWhere = request.includeRowIds?.length
+    ? buildNumberArrayMatch(weldJoints.id, request.includeRowIds)
+    : undefined
+  return and(
+    buildReportKindWhere('lnk'),
+    includedRowsWhere ? or(filteredWhere, includedRowsWhere) : filteredWhere,
+  ) ?? sql`false`
+}
+
+function buildLnkCandidateMethodWhere(
+  request: ReturnType<typeof normalizeLnkWorkflowRowsRequest>,
+  requireReady = false,
+) {
+  if (!new Set([
+    'requestCandidates',
+    'resultCandidates',
+    'preHeatTreatmentRequestCandidates',
+    'preHeatTreatmentResultCandidates',
+  ]).has(request.scope)) {
+    return undefined
+  }
+  const selectedMethods = request.methodKeys?.length
+    ? LNK_METHODS.filter((method) => request.methodKeys?.includes(method.requestKey))
+    : LNK_METHODS
+  if (
+    (request.scope === 'requestCandidates' || request.scope === 'preHeatTreatmentRequestCandidates') &&
+    !request.methodKeys?.length && !requireReady
+  ) return undefined
+
+  if (request.scope === 'preHeatTreatmentRequestCandidates') {
+    return or(...selectedMethods.flatMap((method) => {
+      const preMethod = PRE_HEAT_TREATMENT_LNK_METHODS.find((candidate) => candidate.code === method.code)
+      if (!preMethod) return []
+      return [and(
+        buildEnabledTextWhere(weldJoints[preMethod.enabledKey]),
+        notExists(
+          SQL_QUERY_BUILDER
+            .select({ value: sql`1` })
+            .from(preHeatTreatmentControls)
+            .where(and(
+              sql`${preHeatTreatmentControls.weldJointId} = ${weldJoints.id}`,
+              sql`${preHeatTreatmentControls.method} = ${preMethod.code}`,
+              or(
+                hasTextWhere(preHeatTreatmentControls.requestName),
+                finalResultWhere(preHeatTreatmentControls.result),
+              ),
+            )),
+        ),
+      ) ?? sql`false`]
+    })) ?? sql`false`
+  }
+
+  if (request.scope === 'preHeatTreatmentResultCandidates') {
+    if (!request.methodKeys?.length && !request.requestName) return undefined
+    return or(...selectedMethods.flatMap((method) => {
+      const preMethod = PRE_HEAT_TREATMENT_LNK_METHODS.find((candidate) => candidate.code === method.code)
+      if (!preMethod) return []
+      return [exists(
+        SQL_QUERY_BUILDER
+          .select({ value: sql`1` })
+          .from(preHeatTreatmentControls)
+          .where(and(
+            sql`${preHeatTreatmentControls.weldJointId} = ${weldJoints.id}`,
+            sql`${preHeatTreatmentControls.method} = ${preMethod.code}`,
+            hasTextWhere(preHeatTreatmentControls.requestName),
+            sql`not (${finalResultWhere(preHeatTreatmentControls.result)})`,
+            request.requestName
+              ? and(
+                  sql`btrim(coalesce(${preHeatTreatmentControls.requestName}::text, '')) = ${request.requestName}`,
+                  sql`btrim(coalesce(${preHeatTreatmentControls.requestDate}::text, '')) = ${request.requestDate ?? ''}`,
+                )
+              : undefined,
+          )),
+      )]
+    })) ?? sql`false`
+  }
+
+  const stageAvailable = (method: (typeof LNK_METHODS)[number]) => (
+    !requireReady || request.allowPrimaryBeforePreviousStagesComplete
+      ? sql`true`
+      : buildPrimaryLnkStageReadyWhere(method.code)
+  )
+  if (request.scope === 'requestCandidates') {
+    return or(...selectedMethods.map((method) => and(
+      buildEnabledTextWhere(weldJoints[method.enabledKey]),
+      emptyTextWhere(weldJoints[method.requestKey]),
+      stageAvailable(method),
+    ) ?? sql`false`)) ?? sql`false`
+  }
+
+  return or(...selectedMethods.map((method) => and(
+    buildEnabledTextWhere(weldJoints[method.enabledKey]),
+    hasTextWhere(weldJoints[method.requestKey]),
+    sql`not (${finalResultWhere(weldJoints[method.resultKey])})`,
+    stageAvailable(method),
+    request.requestName
+      ? and(
+          sql`btrim(coalesce(${weldJoints[method.requestKey]}::text, '')) = ${request.requestName}`,
+          sql`btrim(coalesce(${weldJoints[method.requestDateKey]}::text, '')) = ${request.requestDate ?? ''}`,
+        )
+      : undefined,
+  ) ?? sql`false`)) ?? sql`false`
+}
+
+function buildLnkWorkflowSearchWhere(search: string) {
+  const pattern = `%${search.toLocaleLowerCase('ru-RU')}%`
+  return sql`lower(concat_ws(
+    ' ',
+    ${weldJoints.projectTitle},
+    ${weldJoints.subtitleCode},
+    ${weldJoints.line},
+    ${weldJoints.spool},
+    ${weldJoints.joint},
+    ${sql.join(LNK_METHODS.flatMap((method) => [
+      weldJoints[method.requestKey],
+      weldJoints[method.requestDateKey],
+      weldJoints[method.resultKey],
+      weldJoints[method.conclusionDateKey],
+      weldJoints[method.conclusionKey],
+    ]).map((column) => sql`${column}`), sql`, `)}
+  )) like ${pattern}`
+}
+
+function buildExactLnkRequestWhere(requestName: string, requestDate: string) {
+  return or(...LNK_METHODS.map((method) => and(
+    sql`btrim(coalesce(${weldJoints[method.requestKey]}::text, '')) = ${requestName}`,
+    sql`btrim(coalesce(${weldJoints[method.requestDateKey]}::text, '')) = ${requestDate}`,
+  ) ?? sql`false`)) ?? sql`false`
 }
 
 export function buildPendingPrimaryLnkResultWhere() {
@@ -353,6 +579,7 @@ export function buildPreHeatTreatmentFinalResultWhere() {
 }
 
 function getScopeWhere(scope: LnkWorkflowRowsRequest['scope']) {
+  if (scope === 'fieldRows') return sql`true`
   if (scope === 'requestCandidates') return buildLnkRequestCandidateWhere()
   if (scope === 'requestRegistry') return buildAnyLnkRequestWhere(false)
   if (scope === 'resultCandidates') return buildPendingPrimaryLnkResultWhere()
@@ -462,6 +689,10 @@ function finalResultWhere(column: SQLWrapper) {
 
 function hasTextWhere(column: SQLWrapper) {
   return sql`nullif(btrim(coalesce(${column}::text, '')), '') is not null`
+}
+
+function emptyTextWhere(column: SQLWrapper) {
+  return sql`btrim(coalesce(${column}::text, '')) = ''`
 }
 
 function buildEnabledTextWhere(column: SQLWrapper) {

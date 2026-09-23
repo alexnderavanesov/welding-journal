@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query'
 import { FileText } from 'lucide-react'
 import { memo, useMemo, useState, type Dispatch, type KeyboardEvent, type MutableRefObject, type SetStateAction } from 'react'
 import { Input } from '@/components/ui/input'
@@ -8,14 +7,13 @@ import { WeldFormTestTypesField, WeldFormWeldingMethodField } from '@/components
 import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { cn } from '@/lib/utils'
-import { WELD_FORM_SUGGESTIONS_QUERY_KEY } from '@/lib/weld-query-utils'
+import { useRemoteWeldFormSuggestions } from '@/lib/use-remote-weld-form-suggestions'
 import { getControlBasisFieldByAssignmentKey } from '@/lib/control-assignment-basis'
 import {
   getWeldFormSuggestionQueryFieldKeys,
   getWeldFormSuggestions,
   type WeldFormSuggestion,
 } from '@/lib/weld-form-suggestions'
-import { listWeldFormSuggestions } from '@/server/weld-read-api'
 import {
   FINAL_STATUS_OPTIONS,
   RESULT_FIELD_KEYS,
@@ -290,11 +288,10 @@ function FreeTextField({
     [field.key, suggestionDraft],
   )
   const debouncedSuggestionQueryDraft = useDebouncedValue(suggestionQueryDraft, 180)
-  const remoteSuggestionsQuery = useQuery({
-    queryKey: [...WELD_FORM_SUGGESTIONS_QUERY_KEY, field.key, debouncedSuggestionQueryDraft],
-    queryFn: () => listWeldFormSuggestions({ data: { fieldKey: field.key, draft: debouncedSuggestionQueryDraft } }),
+  const remoteSuggestionsQuery = useRemoteWeldFormSuggestions({
+    fieldKey: field.key,
+    draft: debouncedSuggestionQueryDraft,
     enabled: open && canShowSuggestions && !hasLocalSuggestionRows,
-    staleTime: 60_000,
   })
   const remoteSuggestionsAreCurrent = debouncedSuggestionQueryDraft === suggestionQueryDraft
   const suggestions = hasLocalSuggestionRows

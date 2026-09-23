@@ -30,7 +30,11 @@ import {
   SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
   loadSystemDocumentSequences,
 } from '@/lib/system-document-sequence-storage'
-import type { LnkWorkflowSummary } from '@/server/weld-contracts'
+import type { LnkWorkflowRequestSummary } from '@/server/weld-contracts'
+import {
+  withCurrentRequestDocumentIdentity,
+  type RequestDocumentIdentity,
+} from '@/lib/request-document-identity'
 
 interface ReportRequestDerivedStateOptions {
   enableLnkRequestState?: boolean
@@ -53,7 +57,8 @@ interface ReportRequestDerivedStateOptions {
   managedLnkRequestName: string
   managedLnkRequestDate: string
   requestConclusionSettings: RequestConclusionSettings
-  lnkWorkflowSummary?: LnkWorkflowSummary
+  lnkWorkflowRequestSummary?: LnkWorkflowRequestSummary
+  pstoWorkflowRequestOptions?: RequestDocumentIdentity[]
 }
 
 export function useReportRequestDerivedState({
@@ -77,7 +82,8 @@ export function useReportRequestDerivedState({
   managedLnkRequestName,
   managedLnkRequestDate,
   requestConclusionSettings,
-  lnkWorkflowSummary,
+  lnkWorkflowRequestSummary,
+  pstoWorkflowRequestOptions,
 }: ReportRequestDerivedStateOptions) {
   const shouldLoadSystemDocumentSequences =
     enableLnkRequestState || enableLnkResultState || enablePstoRequestState || enablePstoResultState
@@ -86,6 +92,9 @@ export function useReportRequestDerivedState({
     queryFn: loadSystemDocumentSequences,
     enabled: shouldLoadSystemDocumentSequences,
     staleTime: 30_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
   const selectedHeatTreatmentRows = useMemo(
     () => (enablePstoRequestState ? getSelectedRowsByIds(availablePstoRequestRows, selectedHeatTreatmentIds) : []),
@@ -117,8 +126,21 @@ export function useReportRequestDerivedState({
     rows,
   ])
   const pstoRequestManagerOptions = useMemo(
-    () => (enablePstoRequestState ? getPstoRequestManagerOptions(heatTreatmentRows) : []),
-    [enablePstoRequestState, heatTreatmentRows],
+    () => {
+      if (!enablePstoRequestState) return []
+      const options = pstoWorkflowRequestOptions ?? getPstoRequestManagerOptions(heatTreatmentRows)
+      return withCurrentRequestDocumentIdentity(options, {
+        name: managedPstoRequestName,
+        date: managedPstoRequestDate,
+      })
+    },
+    [
+      enablePstoRequestState,
+      heatTreatmentRows,
+      managedPstoRequestDate,
+      managedPstoRequestName,
+      pstoWorkflowRequestOptions,
+    ],
   )
   const managedPstoRequestRows = useMemo(
     () =>
@@ -136,21 +158,21 @@ export function useReportRequestDerivedState({
   )
   const lnkRequestOptions = useMemo(
     () => (enableLnkRequestState || enableLnkResultState
-      ? lnkWorkflowSummary?.requestNames ?? getLnkRequestOptions(rows)
+      ? lnkWorkflowRequestSummary?.requestNames ?? getLnkRequestOptions(rows)
       : []),
-    [enableLnkRequestState, enableLnkResultState, lnkWorkflowSummary?.requestNames, rows],
+    [enableLnkRequestState, enableLnkResultState, lnkWorkflowRequestSummary?.requestNames, rows],
   )
   const lnkRequestManagerOptions = useMemo(
     () => (enableLnkRequestState
-      ? lnkWorkflowSummary?.requestOptions ?? getLnkRequestManagerOptions(lnkRows)
+      ? lnkWorkflowRequestSummary?.requestOptions ?? getLnkRequestManagerOptions(lnkRows)
       : []),
-    [enableLnkRequestState, lnkRows, lnkWorkflowSummary?.requestOptions],
+    [enableLnkRequestState, lnkRows, lnkWorkflowRequestSummary?.requestOptions],
   )
   const lnkRequestExtensionOptions = useMemo(
     () => (enableLnkRequestState
-      ? lnkWorkflowSummary?.requestOptions ?? getLnkRequestExtensionOptions(lnkRows)
+      ? lnkWorkflowRequestSummary?.requestOptions ?? getLnkRequestExtensionOptions(lnkRows)
       : []),
-    [enableLnkRequestState, lnkRows, lnkWorkflowSummary?.requestOptions],
+    [enableLnkRequestState, lnkRows, lnkWorkflowRequestSummary?.requestOptions],
   )
   const lnkResultRequestOptions = useMemo(() => (enableLnkResultState ? getLnkResultRequestOptions(lnkRows) : []), [
     enableLnkResultState,

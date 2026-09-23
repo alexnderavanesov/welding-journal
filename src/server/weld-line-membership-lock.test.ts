@@ -34,13 +34,13 @@ describe('weld line membership lock', () => {
     const compiled = new PgDialect().sqlToQuery(query!)
     expect(compiled.sql).toContain('pg_advisory_xact_lock')
     expect(compiled.sql).toContain('order by')
-    expect(compiled.params).toEqual([
+    expect(compiled.params).toEqual([[
       'weld-line-membership:["p","s","l1"]',
       'weld-line-membership:["p","s","l2"]',
-    ])
+    ]])
   })
 
-  it('locks production-sized line selections in bounded ordered queries', async () => {
+  it('locks production-sized line selections in one ordered query', async () => {
     const execute = vi.fn().mockResolvedValue(undefined)
 
     await lockWeldLineMemberships(
@@ -52,9 +52,9 @@ describe('weld line membership lock', () => {
       })),
     )
 
-    expect(execute).toHaveBeenCalledTimes(3)
+    expect(execute).toHaveBeenCalledTimes(1)
     const dialect = new PgDialect()
-    const parameters = execute.mock.calls.flatMap(([query]) => dialect.sqlToQuery(query).params)
+    const [parameters] = dialect.sqlToQuery(execute.mock.calls[0]![0]).params as [string[]]
     expect(parameters).toEqual([...parameters].sort())
   })
 

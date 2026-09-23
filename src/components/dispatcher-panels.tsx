@@ -3,7 +3,6 @@ import { BellRing, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DispatcherTaskCodeGroup,
-  DispatcherTaskGroup,
   type DispatcherTaskCardHandlers,
 } from '@/components/dispatcher-task-card'
 import { DispatcherIncrementalListControls } from '@/components/dispatcher-task-ui'
@@ -12,23 +11,23 @@ import {
   type RepeatedJointTask,
   type RepeatedJointTaskGroup,
 } from '@/lib/dispatcher-types'
-import {
-  DISPATCHER_TASKS_FIELD_KEY,
-  DISPATCHER_TASKS_WITH_FILTER,
-  DISPATCHER_TASKS_WITHOUT_FILTER,
-  getDispatcherTaskFilterMode,
-} from '@/lib/dispatcher-task-row-codes'
 import { formatTaskCount } from '@/lib/dispatcher-format'
 import { getReportViewportWidth } from '@/lib/report-layout'
-import { useIncrementalDispatcherGroups } from '@/lib/use-incremental-dispatcher-groups'
+import { DISPATCHER_CODE_BATCH_SIZE, useIncrementalDispatcherGroups } from '@/lib/use-incremental-dispatcher-groups'
 
 type DispatcherTaskPanelProps = {
   tasks: RepeatedJointTask[]
   groups: RepeatedJointTaskGroup[]
+  totalTaskCount?: number
+  hasMoreTasks?: boolean
+  onLoadMoreTasks?: () => void
+  isTaskBatchLoading?: boolean
+  taskBatchError?: string
+  onRetryTaskBatch?: () => void
+  isRefreshing?: boolean
+  onWorkspaceOpenChange?: (open: boolean) => void
   stickyLeft: number
   handlers: DispatcherTaskCardHandlers
-  columnFilters: Record<string, string>
-  onColumnFiltersChange: (filters: Record<string, string>) => void
   onCollapseTaskDetails?: () => void
   defaultExpanded?: boolean
 }
@@ -36,31 +35,34 @@ type DispatcherTaskPanelProps = {
 export function DispatcherTaskPanel({
   tasks,
   groups,
+  totalTaskCount = tasks.length,
+  hasMoreTasks = false,
+  onLoadMoreTasks,
+  isTaskBatchLoading = false,
+  taskBatchError,
+  onRetryTaskBatch,
+  isRefreshing = false,
+  onWorkspaceOpenChange,
   stickyLeft,
   handlers,
-  columnFilters,
-  onColumnFiltersChange,
   onCollapseTaskDetails,
   defaultExpanded = true,
 }: DispatcherTaskPanelProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded)
-  const [groupingMode, setGroupingMode] = useState<DispatcherGroupingMode>(readDispatcherGroupingMode)
-  const {
-    visibleGroups,
-    visibleCount,
-    hasMore,
-    canCollapse,
-    loadMore,
-    collapseList,
-  } = useIncrementalDispatcherGroups(groups)
   const codeGroups = useMemo(() => buildDispatcherTaskCodeGroups(groups), [groups])
-  const dispatcherFilterMode = getDispatcherTaskFilterMode(columnFilters[DISPATCHER_TASKS_FIELD_KEY])
+  const {
+    visibleGroups: visibleCodeGroups,
+    visibleCount: visibleCodeCount,
+    hasMore: hasMoreCodes,
+    canCollapse: canCollapseCodes,
+    loadMore: loadMoreCodes,
+    collapseList: collapseCodeList,
+  } = useIncrementalDispatcherGroups(codeGroups, DISPATCHER_CODE_BATCH_SIZE)
 
   useEffect(() => {
     setIsExpanded(defaultExpanded)
   }, [defaultExpanded])
-
-  if (tasks.length === 0 && dispatcherFilterMode === 'all') return null
+  if (tasks.length === 0 && totalTaskCount === 0 && !isRefreshing && !taskBatchError) return null
 
   const viewportWidth = getReportViewportWidth(stickyLeft)
 
@@ -83,163 +85,70 @@ export function DispatcherTaskPanel({
               </span>
               <span className="shrink-0 text-sm font-semibold text-slate-900">Диспетчер</span>
               <span className="shrink-0 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">
-                {formatTaskCount(tasks.length)}
+                {formatTaskCount(totalTaskCount)}
               </span>
               <span className="hidden min-w-0 text-xs leading-snug text-slate-500 2xl:inline">
-                Изменения выполняются только после подтверждения.
+                {isRefreshing ? 'Выполняется фоновый пересчёт…' : 'Изменения выполняются только после подтверждения.'}
               </span>
             </div>
-            <DispatcherTaskQuickFilter
-              mode={dispatcherFilterMode}
-              columnFilters={columnFilters}
-              onColumnFiltersChange={onColumnFiltersChange}
-            />
-            <DispatcherGroupingControl mode={groupingMode} onChange={setGroupingMode} />
           </div>
-          {tasks.length > 0 ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                if (isExpanded) {
-                  collapseList()
-                  onCollapseTaskDetails?.()
-                }
-                setIsExpanded(!isExpanded)
-              }}
-              aria-expanded={isExpanded}
-              className="h-8 shrink-0 border-slate-200 bg-white px-3 text-xs text-slate-700 hover:bg-slate-50"
-            >
-              {isExpanded ? <ChevronUp className="mr-1.5 h-3.5 w-3.5" /> : <ChevronDown className="mr-1.5 h-3.5 w-3.5" />}
-              {isExpanded ? 'Свернуть' : 'Развернуть'}
-            </Button>
-          ) : null}
+          <div className="flex shrink-0 items-center gap-2">
+            {totalTaskCount > 0 ? (
+              <Button type="button" variant="outline" size="sm" className="h-8 border-sky-200 bg-white px-3 text-xs text-sky-800 hover:bg-sky-50" onClick={() => onWorkspaceOpenChange?.(true)}>
+                Открыть диспетчер
+              </Button>
+            ) : null}
+            {tasks.length > 0 ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (isExpanded) {
+                    collapseCodeList()
+                    onCollapseTaskDetails?.()
+                  }
+                  setIsExpanded(!isExpanded)
+                }}
+                aria-expanded={isExpanded}
+                className="h-8 shrink-0 border-slate-200 bg-white px-3 text-xs text-slate-700 hover:bg-slate-50"
+              >
+                {isExpanded ? <ChevronUp className="mr-1.5 h-3.5 w-3.5" /> : <ChevronDown className="mr-1.5 h-3.5 w-3.5" />}
+                {isExpanded ? 'Свернуть' : 'Развернуть'}
+              </Button>
+            ) : null}
+          </div>
         </div>
-        {isExpanded && groups.length > 0 ? (
-          <div className="overflow-hidden rounded-md border border-sky-100 bg-[#f8fcfe]">
-            {groupingMode === 'codes'
-              ? codeGroups.map((group) => (
-                  <DispatcherTaskCodeGroup key={group.code} group={group} {...handlers} />
-                ))
-              : visibleGroups.map((group) => (
-                  <DispatcherTaskGroup key={group.key} group={group} {...handlers} />
-                ))}
+        {taskBatchError ? (
+          <div className="flex items-center gap-2 text-xs text-red-700" role="alert">
+            <span>{taskBatchError}</span>
+            {onRetryTaskBatch ? <Button type="button" variant="outline" size="sm" onClick={onRetryTaskBatch}>Повторить загрузку</Button> : null}
           </div>
         ) : null}
-        {isExpanded && groupingMode === 'objects' ? (
+        {isExpanded && groups.length > 0 ? (
+          <div className="overflow-hidden rounded-md border border-sky-100 bg-[#f8fcfe]">
+            {visibleCodeGroups.map((group) => (
+              <DispatcherTaskCodeGroup key={group.code} group={group} {...handlers} />
+            ))}
+          </div>
+        ) : null}
+        {isExpanded ? (
           <DispatcherIncrementalListControls
-            visibleCount={visibleCount}
-            totalCount={groups.length}
-            itemLabel="групп"
-            hasMore={hasMore}
-            canCollapse={canCollapse}
-            onLoadMore={loadMore}
-            onCollapse={collapseList}
+            visibleCount={visibleCodeCount}
+            totalCount={codeGroups.length}
+            itemLabel="типов ДЗ"
+            hasMore={hasMoreCodes}
+            canCollapse={canCollapseCodes}
+            onLoadMore={loadMoreCodes}
+            onCollapse={collapseCodeList}
           />
+        ) : null}
+        {isExpanded && hasMoreTasks ? (
+          <Button type="button" variant="outline" size="sm" disabled={isTaskBatchLoading || isRefreshing} onClick={onLoadMoreTasks}>
+            {isTaskBatchLoading ? 'Загружаем задачи…' : `Загрузить ещё задачи (${tasks.length} из ${totalTaskCount})`}
+          </Button>
         ) : null}
       </div>
     </div>
-  )
-}
-
-type DispatcherGroupingMode = 'codes' | 'objects'
-
-const DISPATCHER_GROUPING_STORAGE_KEY = 'welding-dispatcher-grouping-mode'
-
-function readDispatcherGroupingMode(): DispatcherGroupingMode {
-  if (typeof window === 'undefined') return 'codes'
-  try {
-    return window.localStorage.getItem(DISPATCHER_GROUPING_STORAGE_KEY) === 'objects' ? 'objects' : 'codes'
-  } catch {
-    return 'codes'
-  }
-}
-
-function DispatcherGroupingControl({
-  mode,
-  onChange,
-}: {
-  mode: DispatcherGroupingMode
-  onChange: (mode: DispatcherGroupingMode) => void
-}) {
-  const setMode = (nextMode: DispatcherGroupingMode) => {
-    onChange(nextMode)
-    try {
-      window.localStorage.setItem(DISPATCHER_GROUPING_STORAGE_KEY, nextMode)
-    } catch {
-      // The view still works when browser storage is unavailable.
-    }
-  }
-
-  return (
-    <div
-      className="inline-flex h-7 items-center overflow-hidden rounded border border-slate-200 bg-white"
-      aria-label="Группировка задач диспетчера"
-    >
-      <DispatcherFilterButton label="По ДЗ" active={mode === 'codes'} onClick={() => setMode('codes')} />
-      <DispatcherFilterButton label="По объектам" active={mode === 'objects'} onClick={() => setMode('objects')} />
-    </div>
-  )
-}
-
-function DispatcherTaskQuickFilter({
-  mode,
-  columnFilters,
-  onColumnFiltersChange,
-}: {
-  mode: ReturnType<typeof getDispatcherTaskFilterMode>
-  columnFilters: Record<string, string>
-  onColumnFiltersChange: (filters: Record<string, string>) => void
-}) {
-  const setFilter = (value: string) => {
-    const nextFilters = { ...columnFilters }
-    if (value) nextFilters[DISPATCHER_TASKS_FIELD_KEY] = value
-    else delete nextFilters[DISPATCHER_TASKS_FIELD_KEY]
-    onColumnFiltersChange(nextFilters)
-  }
-
-  return (
-    <div
-      className="inline-flex h-7 items-center overflow-hidden rounded border border-slate-200 bg-white"
-      aria-label="Фильтр строк по задачам диспетчера"
-    >
-      <DispatcherFilterButton label="Все" active={mode === 'all'} onClick={() => setFilter('')} />
-      <DispatcherFilterButton
-        label="С задачами"
-        active={mode === 'with' || mode === 'codes'}
-        onClick={() => setFilter(DISPATCHER_TASKS_WITH_FILTER)}
-      />
-      <DispatcherFilterButton
-        label="Без задач"
-        active={mode === 'without'}
-        onClick={() => setFilter(DISPATCHER_TASKS_WITHOUT_FILTER)}
-      />
-    </div>
-  )
-}
-
-function DispatcherFilterButton({
-  label,
-  active,
-  onClick,
-}: {
-  label: string
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`h-full border-r border-slate-200 px-2.5 text-[12px] font-medium leading-none transition-colors last:border-r-0 ${
-        active
-          ? 'bg-slate-100 text-slate-900'
-          : 'bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800'
-      }`}
-    >
-      {label}
-    </button>
   )
 }

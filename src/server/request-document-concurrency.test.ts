@@ -56,7 +56,7 @@ describe('request-document concurrency keys', () => {
     expect(compiled.sql).toContain('order by "lock_order"')
   })
 
-  it('keeps the global lock order while chunking a large identity set', async () => {
+  it('keeps the global lock order in one query for a large identity set', async () => {
     const execute = vi.fn().mockResolvedValue({ rows: [] })
 
     await lockRequestDocumentAdvisoryKeys(
@@ -64,10 +64,10 @@ describe('request-document concurrency keys', () => {
       Array.from({ length: 2_001 }, (_, index) => `request-document:lnk:${String(2_001 - index).padStart(4, '0')}`),
     )
 
-    expect(execute).toHaveBeenCalledTimes(3)
-    const compiled = execute.mock.calls.map(([query]) => new PgDialect().sqlToQuery(query))
-    expect(compiled.every((query) => query.params.length <= 2_000)).toBe(true)
-    expect(String(compiled[0]?.params.at(-1)).localeCompare(String(compiled[1]?.params[1]))).toBeLessThan(0)
-    expect(String(compiled[1]?.params.at(-1)).localeCompare(String(compiled[2]?.params[1]))).toBeLessThan(0)
+    expect(execute).toHaveBeenCalledTimes(1)
+    const compiled = new PgDialect().sqlToQuery(execute.mock.calls[0]![0])
+    expect(compiled.params).toHaveLength(1)
+    const [keys] = compiled.params as [string[]]
+    expect(keys).toEqual([...keys].sort())
   })
 })

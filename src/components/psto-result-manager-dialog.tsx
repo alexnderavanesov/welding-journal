@@ -7,6 +7,7 @@ import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { SystemDocumentDateEditor } from '@/components/system-document-date-editor'
 import { RequestManagerEmptyState } from '@/components/request-manager-panels'
+import { BufferedFilterInput } from '@/components/result-filters'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -83,6 +84,9 @@ export type PstoResultManagerDialogProps = {
   onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
   onDocumentDateSaved?: () => void
   onMessage?: (message: string) => void
+  hasMoreRows?: boolean
+  onLoadMoreRows?: () => void
+  onRegistrySearchChange?: (value: string) => void
 }
 
 export function PstoResultManagerDialog({
@@ -108,6 +112,9 @@ export function PstoResultManagerDialog({
   onRunRootCauseAction,
   onDocumentDateSaved,
   onMessage,
+  hasMoreRows = false,
+  onLoadMoreRows,
+  onRegistrySearchChange,
 }: PstoResultManagerDialogProps) {
   const saveCheckSettings = useSaveCheckSettings()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
@@ -271,9 +278,12 @@ export function PstoResultManagerDialog({
           <div className="space-y-3 border-b border-slate-200 p-4">
             <label className="relative block">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input
+              <BufferedFilterInput
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onValueChange={(value) => {
+                  setSearch(value)
+                  onRegistrySearchChange?.(value)
+                }}
                 placeholder="Стык, линия или документ"
                 className="pl-9"
               />
@@ -321,6 +331,13 @@ export function PstoResultManagerDialog({
               <RequestManagerEmptyState>Циклы ПСТО/ТВМТ не найдены.</RequestManagerEmptyState>
             )}
           </div>
+          {hasMoreRows && onLoadMoreRows ? (
+            <div className="border-t border-slate-200 p-2">
+              <Button variant="outline" className="w-full" onClick={onLoadMoreRows}>
+                Загрузить ещё стыки
+              </Button>
+            </div>
+          ) : null}
           <DialogRowPagination
             totalCount={pagination.totalCount}
             firstItemNumber={pagination.firstItemNumber}

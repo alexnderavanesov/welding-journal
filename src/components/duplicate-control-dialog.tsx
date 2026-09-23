@@ -18,6 +18,7 @@ import {
   type DuplicateControlDraft,
   type DuplicateControlMethod,
   type DuplicateControlRecord,
+  type DuplicateControlRegistryRecord,
   type DuplicateControlResult,
 } from '@/lib/duplicate-control-types'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -30,8 +31,17 @@ export type DuplicateControlDialogProps = {
   draft: DuplicateControlDraft
   filteredRows: WeldRow[]
   selectedRows: WeldRow[]
-  allRows: WeldRow[]
-  controls: DuplicateControlRecord[]
+  filteredRowCount?: number
+  candidateRowsLoading?: boolean
+  candidateRowsError?: string | null
+  candidatePagination?: DuplicateControlPagination
+  selectedRowsLoading?: boolean
+  selectingFilteredRows?: boolean
+  controls: DuplicateControlRegistryRecord[]
+  controlCount?: number
+  controlsLoading?: boolean
+  controlsError?: string | null
+  controlsPagination?: DuplicateControlPagination
   saveBlockReason: string | null
   isSaving: boolean
   onClose: () => void
@@ -40,8 +50,19 @@ export type DuplicateControlDialogProps = {
   onEdit: (control: DuplicateControlRecord) => void
   onDraftChange: Dispatch<SetStateAction<DuplicateControlDraft>>
   onToggleRow: (rowId: number) => void
-  onSetVisibleRowsSelected: (selected: boolean) => void
+  onSetVisibleRowsSelected: (selected: boolean) => void | Promise<void>
   onToggleMethod: (method: DuplicateControlMethod) => void
+  onExistingControlsOpenChange?: (open: boolean) => void
+}
+
+type DuplicateControlPagination = {
+  totalCount: number
+  firstItemNumber: number
+  lastItemNumber: number
+  pageSize: number
+  hasMore: boolean
+  onLoadMore: () => void
+  onPageSizeChange: (pageSize: number) => void
 }
 
 export function DuplicateControlDialog({
@@ -49,8 +70,17 @@ export function DuplicateControlDialog({
   draft,
   filteredRows,
   selectedRows,
-  allRows,
+  filteredRowCount,
+  candidateRowsLoading = false,
+  candidateRowsError = null,
+  candidatePagination,
+  selectedRowsLoading = false,
+  selectingFilteredRows = false,
   controls,
+  controlCount,
+  controlsLoading = false,
+  controlsError = null,
+  controlsPagination,
   saveBlockReason,
   isSaving,
   onClose,
@@ -61,19 +91,12 @@ export function DuplicateControlDialog({
   onToggleRow,
   onSetVisibleRowsSelected,
   onToggleMethod,
+  onExistingControlsOpenChange,
 }: DuplicateControlDialogProps) {
   const isEditing = typeof draft.id === 'number'
   const [showExistingControls, setShowExistingControls] = useState(false)
   const [showSelectedPreview, setShowSelectedPreview] = useState(false)
   const stableOnToggleRow = useStableEventCallback(onToggleRow)
-  const rowsById = useMemo(
-    () => new Map([...allRows, ...filteredRows, ...selectedRows].map((row) => [row.id, row])),
-    [allRows, filteredRows, selectedRows],
-  )
-  const existingControls = useMemo(
-    () => getUniqueDuplicateControls([...controls, ...allRows.flatMap((row) => getDuplicateControls(row))]),
-    [allRows, controls],
-  )
   const paginationResetKeys = useMemo(() => [draft.search, filteredRows], [draft.search, filteredRows])
   const rowsPagination = usePagination({
     items: filteredRows,
@@ -83,7 +106,19 @@ export function DuplicateControlDialog({
   const handleEditControl = (control: DuplicateControlRecord) => {
     setShowExistingControls(false)
     setShowSelectedPreview(false)
+    onExistingControlsOpenChange?.(false)
     onEdit(control)
+  }
+  const candidateCount = filteredRowCount ?? filteredRows.length
+  const visibleRows = candidatePagination ? filteredRows : rowsPagination.pageItems
+  const activeCandidatePagination = candidatePagination ?? {
+    totalCount: rowsPagination.totalCount,
+    firstItemNumber: rowsPagination.firstItemNumber,
+    lastItemNumber: rowsPagination.lastItemNumber,
+    pageSize: rowsPagination.pageSize,
+    hasMore: rowsPagination.hasMore,
+    onLoadMore: rowsPagination.loadMore,
+    onPageSizeChange: rowsPagination.setPageSize,
   }
 
   return (
@@ -101,7 +136,15 @@ export function DuplicateControlDialog({
 
       {showExistingControls ? (
         <section className="min-h-0 flex-1 overflow-hidden px-6 py-5">
-          <DuplicateControlList controls={existingControls} rowsById={rowsById} onEdit={handleEditControl} onDelete={onDelete} fill />
+          <DuplicateControlList
+            controls={controls}
+            loading={controlsLoading}
+            error={controlsError}
+            pagination={controlsPagination}
+            onEdit={handleEditControl}
+            onDelete={onDelete}
+            fill
+          />
         </section>
       ) : (
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-6 py-5 xl:grid-cols-[340px_minmax(0,1fr)]">
@@ -203,10 +246,20 @@ export function DuplicateControlDialog({
               <p className="text-xs text-muted-foreground">Выберите стык для дубль-контроля. При создании можно выбрать несколько стыков.</p>
             </div>
             <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={() => onSetVisibleRowsSelected(true)} disabled={isEditing || filteredRows.length === 0}>
-                Выбрать найденные
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onSetVisibleRowsSelected(true)}
+                disabled={isEditing || candidateCount === 0 || candidateRowsLoading || selectingFilteredRows}
+              >
+                {selectingFilteredRows ? 'Загрузка выбора…' : 'Выбрать найденные'}
               </Button>
-              <Button type="button" variant="outline" onClick={() => onSetVisibleRowsSelected(false)} disabled={isEditing || draft.rowIds.size === 0}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onSetVisibleRowsSelected(false)}
+                disabled={isEditing || draft.rowIds.size === 0 || selectingFilteredRows}
+              >
                 Снять выбор
               </Button>
             </div>
@@ -216,19 +269,23 @@ export function DuplicateControlDialog({
             <RequestRowsSearch
               value={draft.search}
               placeholder="Проект, шифр, линия, спул или стык"
-              filteredCount={filteredRows.length}
-              availableCount={filteredRows.length}
-              statsLabel={<>Найдено: {filteredRows.length} · Выбрано: {draft.rowIds.size}</>}
+              filteredCount={candidateCount}
+              availableCount={candidateCount}
+              statsLabel={<>Найдено: {candidateCount} · Выбрано: {draft.rowIds.size}</>}
               onChange={(search) => onDraftChange((current) => ({ ...current, search }))}
             />
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-slate-200">
-            {filteredRows.length === 0 ? (
+            {candidateRowsLoading && filteredRows.length === 0 ? (
+              <DialogEmptyState minHeightClassName="min-h-60">Загрузка стыков…</DialogEmptyState>
+            ) : candidateRowsError && filteredRows.length === 0 ? (
+              <DialogEmptyState minHeightClassName="min-h-60">{candidateRowsError}</DialogEmptyState>
+            ) : filteredRows.length === 0 ? (
               <DialogEmptyState minHeightClassName="min-h-60">По фильтру ничего не найдено.</DialogEmptyState>
             ) : (
               <DialogVirtualizedRows
-                items={rowsPagination.pageItems}
+                items={visibleRows}
                 estimateRowHeight={74}
                 getItemKey={(row) => row.id}
                 renderItem={(row) => (
@@ -242,13 +299,13 @@ export function DuplicateControlDialog({
                 footer={(
                   <div className="p-3">
                     <PaginationBar
-                      totalCount={rowsPagination.totalCount}
-                      firstItemNumber={rowsPagination.firstItemNumber}
-                      lastItemNumber={rowsPagination.lastItemNumber}
-                      pageSize={rowsPagination.pageSize}
-                      hasMore={rowsPagination.hasMore}
-                      onLoadMore={rowsPagination.loadMore}
-                      onPageSizeChange={rowsPagination.setPageSize}
+                      totalCount={activeCandidatePagination.totalCount}
+                      firstItemNumber={activeCandidatePagination.firstItemNumber}
+                      lastItemNumber={activeCandidatePagination.lastItemNumber}
+                      pageSize={activeCandidatePagination.pageSize}
+                      hasMore={activeCandidatePagination.hasMore}
+                      onLoadMore={activeCandidatePagination.onLoadMore}
+                      onPageSizeChange={activeCandidatePagination.onPageSizeChange}
                     />
                   </div>
                 )}
@@ -264,7 +321,9 @@ export function DuplicateControlDialog({
           <button
             type="button"
             onClick={() => {
-              setShowExistingControls((current) => !current)
+              const next = !showExistingControls
+              setShowExistingControls(next)
+              onExistingControlsOpenChange?.(next)
               setShowSelectedPreview(false)
             }}
             className="flex w-full items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-left transition-colors hover:border-sky-200 hover:bg-sky-50"
@@ -272,7 +331,11 @@ export function DuplicateControlDialog({
             <span>
               <span className="block text-sm font-semibold text-slate-900">Внесенные дубли</span>
               <span className="text-xs text-slate-500">
-                {existingControls.length > 0 ? `${existingControls.length} записей` : 'пока нет записей'}
+                {controlCount === undefined
+                  ? 'открыть реестр'
+                  : controlCount > 0
+                    ? `${controlCount} записей`
+                    : 'пока нет записей'}
               </span>
             </span>
             {showExistingControls ? <ChevronDown className="h-4 w-4 text-slate-500" /> : <ChevronUp className="h-4 w-4 text-slate-500" />}
@@ -281,7 +344,11 @@ export function DuplicateControlDialog({
 
         <div className="flex items-center justify-between gap-4">
           <div className="text-sm text-slate-500">
-            {saveBlockReason ? saveBlockReason : `Будет сохранено: ${selectedRows.length * draft.methods.size}`}
+            {selectedRowsLoading
+              ? 'Загружаются выбранные стыки…'
+              : saveBlockReason
+                ? saveBlockReason
+                : `Будет сохранено: ${selectedRows.length * draft.methods.size}`}
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onClose}>
@@ -290,11 +357,11 @@ export function DuplicateControlDialog({
             <Button
               variant="outline"
               onClick={() => setShowSelectedPreview(true)}
-              disabled={selectedRows.length === 0 || showExistingControls}
+              disabled={selectedRows.length === 0 || selectedRowsLoading || showExistingControls}
             >
               {`Предпросмотр (${selectedRows.length})`}
             </Button>
-            <Button onClick={onSave} disabled={Boolean(saveBlockReason) || isSaving}>
+            <Button onClick={onSave} disabled={Boolean(saveBlockReason) || selectedRowsLoading || isSaving}>
               <Check className="mr-2 h-4 w-4" />
               {isEditing ? 'Сохранить дубль' : 'Добавить дубль'}
             </Button>
@@ -327,7 +394,7 @@ const DuplicateControlRow = memo(function DuplicateControlRow({
   onToggleRow,
 }: DuplicateControlRowProps) {
   const rowControls = getDuplicateControls(row)
-  const finalStatus = calculateFinalStatus(row)
+  const finalStatus = String(row.finalStatus ?? '').trim() || calculateFinalStatus(row)
   const finalStatusDisplay = formatFinalStatusDisplay(row, finalStatus)
   const isUnofficial = isUnofficialJoint(row)
 
@@ -383,15 +450,6 @@ const DuplicateControlRow = memo(function DuplicateControlRow({
   previous.disabled === next.disabled
 ))
 
-function getUniqueDuplicateControls(controls: DuplicateControlRecord[]) {
-  const seenIds = new Set<number>()
-  return controls.filter((control) => {
-    if (seenIds.has(control.id)) return false
-    seenIds.add(control.id)
-    return true
-  })
-}
-
 function DuplicateControlPreviewDialog({
   rows,
   draft,
@@ -429,7 +487,7 @@ function DuplicateControlPreviewDialog({
               estimateRowHeight={76}
               getItemKey={(row) => row.id}
               renderItem={(row) => {
-                const finalStatus = calculateFinalStatus(row)
+                const finalStatus = String(row.finalStatus ?? '').trim() || calculateFinalStatus(row)
                 const finalStatusDisplay = formatFinalStatusDisplay(row, finalStatus)
                 const isUnofficial = isUnofficialJoint(row)
                 return (
@@ -498,39 +556,58 @@ function DuplicateControlPreviewDialog({
 function DuplicateControlList({
   controls,
   fill = false,
+  loading,
+  error,
+  pagination,
   onDelete,
   onEdit,
-  rowsById,
 }: {
-  controls: DuplicateControlRecord[]
+  controls: DuplicateControlRegistryRecord[]
   fill?: boolean
+  loading: boolean
+  error: string | null
+  pagination?: DuplicateControlPagination
   onDelete: (control: DuplicateControlRecord) => void
   onEdit: (control: DuplicateControlRecord) => void
-  rowsById: Map<number, WeldRow>
 }) {
   const controlsPagination = usePagination({ items: controls, defaultPageSize: 100, resetKeys: [controls] })
+  const visibleControls = pagination ? controls : controlsPagination.pageItems
+  const activePagination = pagination ?? {
+    totalCount: controlsPagination.totalCount,
+    firstItemNumber: controlsPagination.firstItemNumber,
+    lastItemNumber: controlsPagination.lastItemNumber,
+    pageSize: controlsPagination.pageSize,
+    hasMore: controlsPagination.hasMore,
+    onLoadMore: controlsPagination.loadMore,
+    onPageSizeChange: controlsPagination.setPageSize,
+  }
 
   return (
     <div className={`overflow-y-auto rounded-md border border-slate-200 ${fill ? 'h-full' : 'max-h-36'}`}>
-      {controls.length === 0 ? (
+      {loading && controls.length === 0 ? (
+        <div className="px-3 py-3 text-sm text-slate-500">Загрузка реестра дубль-контроля…</div>
+      ) : error && controls.length === 0 ? (
+        <div className="px-3 py-3 text-sm text-rose-700">{error}</div>
+      ) : controls.length === 0 ? (
         <div className="px-3 py-3 text-sm text-slate-500">Пока нет дубль-контроля.</div>
       ) : (
         <>
-          {controlsPagination.pageItems.map((control) => {
-            const row = rowsById.get(control.weldJointId)
-            return (
+          {visibleControls.map((control) => (
               <div
                 key={control.id}
                 className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 last:border-b-0"
               >
                 <div className="min-w-0 text-sm">
                   <span className="mr-2 font-semibold text-slate-900">
-                    {String(row?.joint ?? `#${control.weldJointId}`)}
+                    {control.joint || `#${control.weldJointId}`}
                   </span>
                   <span className="font-medium text-slate-900">{control.method}</span>{' '}
                   <ResultBadge value={control.result} />{' '}
                   <span className="text-slate-500">
                     дата: {control.controlDate || '-'} · заключение: {control.conclusion || '-'}
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs text-slate-400">
+                    {[control.projectTitle, control.subtitleCode, control.line, control.spool].filter(Boolean).join(' · ')}
                   </span>
                 </div>
                 <div className="flex shrink-0 gap-2">
@@ -550,17 +627,16 @@ function DuplicateControlList({
                   </Button>
                 </div>
               </div>
-            )
-          })}
+          ))}
           <div className="p-3">
             <PaginationBar
-              totalCount={controlsPagination.totalCount}
-              firstItemNumber={controlsPagination.firstItemNumber}
-              lastItemNumber={controlsPagination.lastItemNumber}
-              pageSize={controlsPagination.pageSize}
-              hasMore={controlsPagination.hasMore}
-              onLoadMore={controlsPagination.loadMore}
-              onPageSizeChange={controlsPagination.setPageSize}
+              totalCount={activePagination.totalCount}
+              firstItemNumber={activePagination.firstItemNumber}
+              lastItemNumber={activePagination.lastItemNumber}
+              pageSize={activePagination.pageSize}
+              hasMore={activePagination.hasMore}
+              onLoadMore={activePagination.onLoadMore}
+              onPageSizeChange={activePagination.onPageSizeChange}
             />
           </div>
         </>

@@ -16,11 +16,15 @@ import {
   type RemoteDocumentHistoryFilterOption,
 } from '@/server/generated-documents'
 import {
+  isSystemDocumentHistoryFilterKey,
+  hasSystemDocumentNameConflict,
   loadSystemDocumentDateContext,
   loadIndexedSystemDocumentHistory,
+  loadIndexedSystemDocumentHistoryFilterOptions,
   loadSystemDocumentRows,
   loadSystemDocumentSummaries,
 } from '@/server/system-document-index'
+import type { SqlDocumentHistoryFilterOptionsResult } from '@/server/document-history-sql'
 import { assertSecurityScope } from '@/server/security-functions'
 
 export type RemoteSystemDocumentHistoryRequest = {
@@ -36,6 +40,22 @@ export type RemoteSystemDocumentHistoryResult = {
   filterOptions: Record<string, RemoteDocumentHistoryFilterOption[]>
 }
 
+export type RemoteSystemDocumentHistoryFilterOptionsRequest = {
+  type: SystemDocumentType
+  documentId?: number
+  fieldKey: string
+  search?: string
+  columnFilters?: Record<string, string>
+}
+
+export type RemoteSystemDocumentNameConflictRequest = {
+  type: SystemDocumentType
+  title: string
+  date: string
+  methodCode?: string
+  excludeDocumentId?: number
+}
+
 export const listSystemDocuments = createServerFn({ method: 'GET' })
   .validator((data: { type: SystemDocumentType }) => ({
     type: requireSystemDocumentType(data?.type),
@@ -43,6 +63,13 @@ export const listSystemDocuments = createServerFn({ method: 'GET' })
   .handler(async ({ data }): Promise<SystemDocumentSummary[]> => {
     await assertSecurityScope('entry')
     return loadSystemDocumentSummaries(data.type)
+  })
+
+export const checkSystemDocumentNameConflict = createServerFn({ method: 'POST' })
+  .validator(normalizeSystemDocumentNameConflictRequest)
+  .handler(async ({ data }): Promise<boolean> => {
+    await assertSecurityScope('entry')
+    return hasSystemDocumentNameConflict(data)
   })
 
 export const listSystemDocumentHistory = createServerFn({ method: 'GET' })
@@ -57,6 +84,13 @@ export const listSystemDocumentHistory = createServerFn({ method: 'GET' })
     })
   })
 
+export const listSystemDocumentHistoryFilterOptions = createServerFn({ method: 'GET' })
+  .validator(normalizeSystemDocumentHistoryFilterOptionsRequest)
+  .handler(async ({ data }): Promise<SqlDocumentHistoryFilterOptionsResult> => {
+    await assertSecurityScope('entry')
+    return loadIndexedSystemDocumentHistoryFilterOptions(data)
+  })
+
 export function normalizeSystemDocumentHistoryRequest(
   data: RemoteSystemDocumentHistoryRequest | undefined,
 ) {
@@ -66,6 +100,39 @@ export function normalizeSystemDocumentHistoryRequest(
     ...(documentId ? { documentId } : {}),
     limit: normalizeDocumentHistoryLimit(data?.limit),
     columnFilters: normalizeDocumentHistoryColumnFilters(data?.columnFilters),
+  }
+}
+
+export function normalizeSystemDocumentHistoryFilterOptionsRequest(
+  data: RemoteSystemDocumentHistoryFilterOptionsRequest | undefined,
+) {
+  if (!isSystemDocumentHistoryFilterKey(data?.fieldKey)) {
+    throw new Error('Неизвестный столбец фильтра истории документов.')
+  }
+  const documentId = normalizeDocumentHistoryDocumentId(data?.documentId)
+  return {
+    type: requireSystemDocumentType(data?.type),
+    ...(documentId ? { documentId } : {}),
+    fieldKey: data.fieldKey,
+    search: String(data?.search ?? '').trim().slice(0, 200),
+    columnFilters: normalizeDocumentHistoryColumnFilters(data?.columnFilters),
+  }
+}
+
+export function normalizeSystemDocumentNameConflictRequest(
+  data: RemoteSystemDocumentNameConflictRequest | undefined,
+) {
+  const excludeDocumentId = Math.floor(Number(data?.excludeDocumentId))
+  return {
+    type: requireSystemDocumentType(data?.type),
+    title: String(data?.title ?? '').trim(),
+    date: String(data?.date ?? '').trim().slice(0, 10),
+    ...(String(data?.methodCode ?? '').trim()
+      ? { methodCode: String(data?.methodCode ?? '').trim() }
+      : {}),
+    ...(Number.isInteger(excludeDocumentId) && excludeDocumentId > 0
+      ? { excludeDocumentId }
+      : {}),
   }
 }
 

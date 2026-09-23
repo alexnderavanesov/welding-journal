@@ -23,6 +23,9 @@ export function useSystemDocumentTemplateAvailability({
     queryFn: () => listRemoteDocumentTemplateIds(),
     enabled,
     staleTime: 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 
   useEffect(() => {

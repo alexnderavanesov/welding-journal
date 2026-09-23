@@ -78,6 +78,9 @@ export function ReportImportDialog({
     queryFn: () => listWeldingJournalImportScope({ data: { columnFilters } }),
     enabled: open && mode !== 'newRecords',
     staleTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
   const rows = importScopeQuery.data?.rows ?? []
   const fullyAssignedPstoLineKeys = importScopeQuery.data?.fullyAssignedPstoLineKeys ?? []

@@ -100,7 +100,9 @@ test('creates, navigates, revokes and safely protects an early coil', async ({ p
   await expect(page.getByText('Цепочка продолжена катушкой', { exact: true })).toBeVisible()
   await expect(page.getByText('Ожидается решение по негодному результату', { exact: true })).toHaveCount(0)
   await expect(page.getByText('Стык превратился в катушку')).toBeVisible()
-  await page.getByRole('button', { name: COIL_JOINTS[0], exact: true }).click()
+  await page.getByRole('region', { name: 'Продолжение цепочки катушкой' })
+    .getByRole('button', { name: COIL_JOINTS[0], exact: true })
+    .click()
   await expect(page.getByText(`${COIL_JOINTS[0]} является стыком катушки`)).toBeVisible()
   await expect(page.getByRole('button', { name: `Предыдущий: ${SOURCE_JOINT}` })).toBeVisible()
   await page.getByRole('button', { name: `Парный: ${COIL_JOINTS[1]}` }).click()
@@ -116,11 +118,8 @@ test('creates, navigates, revokes and safely protects an early coil', async ({ p
   })
 
   await page.goto('/journal')
-  const repeatedJointGroup = page
-    .locator('details')
-    .filter({ hasText: `Создать ${EXPECTED_REPAIR}` })
-    .first()
-  await repeatedJointGroup.locator('summary').click()
+  const repeatedJointGroup = await openDispatcherObjectGroup(page, SOURCE_JOINT, 'ДЗ-07')
+  await expect(repeatedJointGroup.getByText(`Создать ${EXPECTED_REPAIR}`, { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Катушка досрочно', exact: true }).click()
   await confirmEarlyCoil(page)
   await expect.poll(loadEarlyCoilState).toEqual({
@@ -171,7 +170,7 @@ test('creates, navigates, revokes and safely protects an early coil', async ({ p
 test('opens the selected rejected joint in LNK officiality and changes it only after save', async ({ page }) => {
   const sourceRowId = await seedUnofficialityChoice()
 
-  const taskGroup = await openDispatcherObjectGroup(page, UNOFFICIALITY_JOINT)
+  const taskGroup = await openDispatcherObjectGroup(page, UNOFFICIALITY_JOINT, 'ДЗ-07')
   const target = taskGroup.getByText(UNOFFICIALITY_EXPECTED_REPAIR, { exact: true })
   const taskCard = target.locator('xpath=ancestor::div[contains(@class,"grid")][1]')
   await taskCard
@@ -375,14 +374,15 @@ test('keeps dispatcher recovery actions after chain and automatic coil rows are 
     .getByText('Цепочка продолжена катушкой', { exact: true })).toBeVisible()
 
   await deleteJournalRows(page, [{ id: rowIds.get(RECOVERY_CHAIN[1])!, joint: RECOVERY_CHAIN[1] }])
-  let taskGroup = await openDispatcherObjectGroup(page, RECOVERY_CHAIN[0])
+  const integrityGroup = await openDispatcherObjectGroup(page, RECOVERY_CHAIN[0], 'ДЗ-13')
   const recoverySourceRow = page.locator(`tr[data-weld-row-id="${rowIds.get(RECOVERY_CHAIN[0])}"]`)
   await expect(recoverySourceRow.getByText(`Создать ${RECOVERY_CHAIN[1]}`, { exact: true })).toBeVisible()
   await expect(recoverySourceRow.getByText(
     `Цепочка продолжена стыком ${RECOVERY_CHAIN[1]}`,
     { exact: true },
   )).toHaveCount(0)
-  await expect(taskGroup.getByText('Проверить целостность цепочки', { exact: true })).toBeVisible()
+  await expect(integrityGroup.getByText('Проверить целостность цепочки', { exact: true })).toBeVisible()
+  let taskGroup = await openDispatcherObjectGroup(page, RECOVERY_CHAIN[0], 'ДЗ-07')
   await expectDispatcherCreateAction(taskGroup, RECOVERY_CHAIN[1])
   await expectDispatcherCreateAction(taskGroup, 'S961R2W1')
 
@@ -391,12 +391,13 @@ test('keeps dispatcher recovery actions after chain and automatic coil rows are 
     .toEqual([RECOVERY_CHAIN[1]])
 
   await deleteJournalRows(page, [{ id: rowIds.get(AUTOMATIC_COIL_JOINTS[0])!, joint: AUTOMATIC_COIL_JOINTS[0] }])
-  taskGroup = await openDispatcherObjectGroup(page, AUTOMATIC_COIL_CHAIN[0])
+  const automaticIntegrityGroup = await openDispatcherObjectGroup(page, AUTOMATIC_COIL_CHAIN[0], 'ДЗ-13')
   const automaticCoilSourceRow = page.locator(
     `tr[data-weld-row-id="${rowIds.get(AUTOMATIC_COIL_CHAIN[3])}"]`,
   )
   await expect(automaticCoilSourceRow.getByText('Цепочка продолжена катушкой', { exact: true })).toHaveCount(0)
-  await expect(taskGroup.getByText('Проверить целостность цепочки', { exact: true })).toBeVisible()
+  await expect(automaticIntegrityGroup.getByText('Проверить целостность цепочки', { exact: true })).toBeVisible()
+  taskGroup = await openDispatcherObjectGroup(page, AUTOMATIC_COIL_CHAIN[0], 'ДЗ-09')
   await expectDispatcherCoilAction(taskGroup, [AUTOMATIC_COIL_JOINTS[0]])
   await clickDispatcherAction(taskGroup, `катушка ${AUTOMATIC_COIL_JOINTS[0]}`, 'Катушка')
   await expect.poll(() => loadExistingJoints(RECOVERY_PROJECT, RECOVERY_LINE, [AUTOMATIC_COIL_JOINTS[0]]))
@@ -414,10 +415,11 @@ test('keeps dispatcher recovery actions after chain and automatic coil rows are 
     { id: refreshedIds.get(AUTOMATIC_COIL_JOINTS[1])!, joint: AUTOMATIC_COIL_JOINTS[1] },
   ])
 
-  taskGroup = await openDispatcherObjectGroup(page, AUTOMATIC_COIL_CHAIN[0])
-  const integrityChecks = taskGroup.getByText('Проверить целостность цепочки', { exact: true })
+  const finalIntegrityGroup = await openDispatcherObjectGroup(page, AUTOMATIC_COIL_CHAIN[0], 'ДЗ-13')
+  const integrityChecks = finalIntegrityGroup.getByText('Проверить целостность цепочки', { exact: true })
   await expect(integrityChecks).toHaveCount(2)
   await expect(integrityChecks.first()).toBeVisible()
+  taskGroup = await openDispatcherObjectGroup(page, AUTOMATIC_COIL_CHAIN[0], 'ДЗ-09')
   await expectDispatcherCoilAction(taskGroup, [...AUTOMATIC_COIL_JOINTS])
   await expect(taskGroup.getByText('S971W4', { exact: true })).toHaveCount(0)
   await clickDispatcherAction(
@@ -1043,14 +1045,8 @@ async function assertDirectCoilPairDeletionIsBlocked(page: Page) {
 }
 
 async function recreateCoilFromDispatcher(page: Page, targets: string[]) {
-  await page.goto('/journal')
-  const taskGroup = page
-    .locator('details')
-    .filter({ hasText: SOURCE_JOINT })
-    .filter({ hasText: `Создать ${targets.join(' + ')}` })
-    .first()
-  await expect(taskGroup).toBeVisible()
-  await taskGroup.locator('summary').click()
+  const taskGroup = await openDispatcherObjectGroup(page, SOURCE_JOINT, 'ДЗ-09')
+  await expect(taskGroup).toContainText(`Создать ${targets.join(' + ')}`)
   await taskGroup.getByRole('button', { name: 'Катушка', exact: true }).click()
 }
 
@@ -1155,13 +1151,21 @@ async function deleteJournalRows(page: Page, rows: Array<{ id: number; joint: st
   )).toEqual([])
 }
 
-async function openDispatcherObjectGroup(page: Page, baseJoint: string) {
+async function openDispatcherObjectGroup(page: Page, baseJoint: string, code: string) {
   await page.goto('/journal')
-  await page.getByRole('button', { name: 'По объектам', exact: true }).click()
-  const summary = page
-    .locator('details > summary')
-    .filter({ has: page.getByText(baseJoint, { exact: true }) })
+  const codeGroup = page.getByLabel('Диспетчер задач', { exact: true })
+    .locator('[data-dispatcher-code-group]')
+    .filter({ has: page.getByText(code, { exact: true }) })
+  await expect(codeGroup).toBeVisible()
+  await codeGroup.locator('summary').first().click()
+  const summary = codeGroup.locator('[data-dispatcher-object-summary]')
+    .filter({ hasText: baseJoint })
     .first()
+  for (let batch = 0; batch < 100 && !await summary.isVisible(); batch += 1) {
+    const showMore = codeGroup.getByRole('button', { name: 'Показать ещё' })
+    if (!await showMore.isVisible()) break
+    await showMore.click()
+  }
   await expect(summary).toBeVisible({ timeout: 15_000 })
   await summary.click()
   return summary.locator('..')

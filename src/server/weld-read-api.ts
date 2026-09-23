@@ -9,8 +9,14 @@ import type {
   WeldDataUsageSummary,
   WeldFormSuggestionsRequest,
   WeldJointChainResult,
+  LnkWorkflowRequestSummary,
+  LnkWorkflowRequestSummaryRequest,
   LnkWorkflowRowsRequest,
   LnkWorkflowSummary,
+  PstoWorkflowRowsRequest,
+  PstoWorkflowRequestOptionsRequest,
+  PstoWorkflowRequestOptionsResult,
+  PstoWorkflowSummary,
   WeldPageRequest,
   WeldPageResult,
   WeldReportContextKind,
@@ -20,7 +26,10 @@ import type {
   WeldSnapshotPageRequest,
   WeldSnapshotPageResult,
 } from '@/server/weld-contracts'
-import { normalizeLnkWorkflowRowsRequest } from '@/server/weld-contracts'
+import {
+  normalizeLnkWorkflowRowsRequest,
+  normalizePstoWorkflowRowsRequest,
+} from '@/server/weld-contracts'
 
 export const getLnkWorkflowSummary = createServerFn({ method: 'GET' })
   .handler(async (): Promise<LnkWorkflowSummary> => {
@@ -28,11 +37,38 @@ export const getLnkWorkflowSummary = createServerFn({ method: 'GET' })
     return server.getLnkWorkflowSummary()
   })
 
+export const getLnkWorkflowRequestSummary = createServerFn({ method: 'POST' })
+  .validator((data: LnkWorkflowRequestSummaryRequest | undefined) => data)
+  .handler(async ({ data }): Promise<LnkWorkflowRequestSummary> => {
+    const server = await import('@/server/lnk-workflow-context')
+    return server.getLnkWorkflowRequestSummary(data)
+  })
+
 export const listLnkWorkflowRows = createServerFn({ method: 'POST' })
   .validator((data: LnkWorkflowRowsRequest) => normalizeLnkWorkflowRowsRequest(data))
   .handler(async ({ data }): Promise<WeldRow[]> => {
     const server = await import('@/server/lnk-workflow-context')
     return server.listLnkWorkflowRows(data)
+  })
+
+export const getPstoWorkflowSummary = createServerFn({ method: 'GET' })
+  .handler(async (): Promise<PstoWorkflowSummary> => {
+    const server = await import('@/server/psto-workflow-context')
+    return server.getPstoWorkflowSummary()
+  })
+
+export const getPstoWorkflowRequestOptions = createServerFn({ method: 'POST' })
+  .validator((data: PstoWorkflowRequestOptionsRequest | undefined) => data)
+  .handler(async ({ data }): Promise<PstoWorkflowRequestOptionsResult> => {
+    const server = await import('@/server/psto-workflow-context')
+    return server.getPstoWorkflowRequestOptions(data)
+  })
+
+export const listPstoWorkflowRows = createServerFn({ method: 'POST' })
+  .validator((data: PstoWorkflowRowsRequest) => normalizePstoWorkflowRowsRequest(data))
+  .handler(async ({ data }): Promise<WeldRow[]> => {
+    const server = await import('@/server/psto-workflow-context')
+    return server.listPstoWorkflowRows(data)
   })
 
 export const listWeldJointSnapshotPage = createServerFn({ method: 'GET' })
@@ -141,6 +177,11 @@ export type {
   LnkWorkflowRowsRequest,
   LnkWorkflowRowScope,
   LnkWorkflowSummary,
+  PstoWorkflowRowsRequest,
+  PstoWorkflowRequestOptionsRequest,
+  PstoWorkflowRequestOptionsResult,
+  PstoWorkflowRowScope,
+  PstoWorkflowSummary,
   WeldPageRequest,
   WeldPageResult,
   WeldPageSize,

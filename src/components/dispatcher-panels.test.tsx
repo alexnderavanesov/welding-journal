@@ -1,8 +1,10 @@
 import { StrictMode } from 'react'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DispatcherTaskPanel } from '@/components/dispatcher-panels'
+import { DispatcherWorkspaceDialog } from '@/components/dispatcher-workspace-dialog'
 import {
   DispatcherTaskCard,
   DispatcherTaskGroup,
@@ -17,9 +19,13 @@ import type {
 } from '@/lib/dispatcher-types'
 import { shouldDeferModalEscape } from '@/lib/use-report-modal-escape-key'
 
+const serverSearch = vi.hoisted(() => vi.fn())
+vi.mock('@/server/dispatcher-task-pages', () => ({ searchDispatcherTaskPages: serverSearch }))
+
 describe('DispatcherTaskPanel', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    serverSearch.mockReset()
   })
 
   it('offers an early coil only for an official create task in the welding journal', () => {
@@ -88,10 +94,11 @@ describe('DispatcherTaskPanel', () => {
     expect(onOpenTaskOfficiality).toHaveBeenCalledWith(task)
   })
 
-  it('keeps quick filters available while the task list is collapsed', () => {
+  it('keeps a single task under its DZ heading and restores the panel after collapse', () => {
     const { task, group } = createTaskGroup()
     const onShowTask = vi.fn()
     const onCollapseTaskDetails = vi.fn()
+    const onWorkspaceOpenChange = vi.fn()
     const handlers = createHandlers(onShowTask)
 
     render(
@@ -101,34 +108,304 @@ describe('DispatcherTaskPanel', () => {
           groups={[group]}
           stickyLeft={0}
           handlers={handlers}
-          columnFilters={{}}
-          onColumnFiltersChange={vi.fn()}
           onCollapseTaskDetails={onCollapseTaskDetails}
+          onWorkspaceOpenChange={onWorkspaceOpenChange}
         />
       </StrictMode>,
     )
 
     expect(screen.getAllByText('1 задача')).toHaveLength(2)
-    expect(screen.getByRole('button', { name: 'С задачами' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'С задачами' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'По объектам' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Диспетчер задач')).not.toHaveClass('max-w-7xl')
     expect(screen.getByLabelText('Диспетчер задач')).toHaveClass('bg-[#eef7fb]/95', 'border-sky-200/80')
     expect(screen.getByLabelText('Диспетчер задач')).toHaveStyle({
       width: '100%',
       maxWidth: 'calc(100vw - 24px)',
     })
-    const groupSummary = screen.getByLabelText('Краткое описание задач 330-ATM-16-000')
-    expect(within(groupSummary).getByText('ДЗ-27')).toBeInTheDocument()
-    expect(within(groupSummary).getByText(/Проверить назначение контроля линии/)).toBeInTheDocument()
+    const codeSummary = screen.getByText('ДЗ-27').closest('summary')
+    expect(codeSummary).toHaveTextContent('1 задача')
+    expect(codeSummary).toHaveTextContent('1 объект')
+    expect(screen.queryByText('330-ATM-16-000')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть диспетчер' }))
+    expect(onWorkspaceOpenChange).toHaveBeenCalledWith(true)
+    const codeDetails = codeSummary?.closest('details')
+    if (codeDetails) {
+      codeDetails.open = true
+      fireEvent(codeDetails, new Event('toggle'))
+    }
+    expect(screen.getByText('330-ATM-16-000')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Свернуть' }))
 
     expect(onCollapseTaskDetails).toHaveBeenCalledOnce()
     expect(screen.getByRole('button', { name: 'Развернуть' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'С задачами' })).toBeInTheDocument()
     expect(screen.queryByText('330-ATM-16-000')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
-    expect(screen.getByText('330-ATM-16-000')).toBeInTheDocument()
+    expect(screen.getByText('ДЗ-27')).toBeInTheDocument()
+  })
+
+  it('shows the exact total without exposing technical pages', () => {
+    const { task, group } = createTaskGroup()
+    const onLoadMoreTasks = vi.fn()
+    render(
+      <DispatcherTaskPanel
+        tasks={[task]}
+        groups={[group]}
+        totalTaskCount={12_345}
+        hasMoreTasks
+        onLoadMoreTasks={onLoadMoreTasks}
+        isRefreshing
+        stickyLeft={0}
+        handlers={createHandlers(vi.fn())}
+      />,
+    )
+
+    expect(screen.getByText('12345 задач')).toBeInTheDocument()
+    expect(screen.getByText('Выполняется фоновый пересчёт…')).toBeInTheDocument()
+    expect(screen.queryByText(/Страница 51/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Загрузить ещё задачи (1 из 12345)' })).toBeDisabled()
+    expect(onLoadMoreTasks).not.toHaveBeenCalled()
+  })
+
+  it('offers retry after a batch request fails', () => {
+    const { task, group } = createTaskGroup()
+    const onRetryTaskBatch = vi.fn()
+    render(
+      <DispatcherTaskPanel
+        tasks={[task]}
+        groups={[group]}
+        totalTaskCount={12_345}
+        hasMoreTasks
+        taskBatchError="Не удалось загрузить задачи"
+        onRetryTaskBatch={onRetryTaskBatch}
+        stickyLeft={0}
+        handlers={createHandlers(vi.fn())}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку' }))
+    expect(onRetryTaskBatch).toHaveBeenCalledOnce()
+  })
+
+  it('opens an LNK-sized workspace with a task queue, search, and the same task actions', () => {
+    const { task, group } = createTaskGroup()
+    const onShowTask = vi.fn()
+    const onWorkspaceOpenChange = vi.fn()
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <DispatcherWorkspaceDialog
+          tasks={[task]}
+          groups={[group]}
+          totalTaskCount={1}
+          computedRevision={1}
+          taskFilterOptions={[]}
+          isRefreshing={false}
+          hasMoreTasks={false}
+          isTaskBatchLoading={false}
+          handlers={createHandlers(onShowTask)}
+          onClose={() => onWorkspaceOpenChange(false)}
+        />
+      </QueryClientProvider>,
+    )
+
+    const dialog = screen.getByRole('dialog', { name: 'Диспетчер задач' })
+    expect(dialog).toHaveClass('max-w-[1480px]')
+    const codeOption = within(within(dialog).getByLabelText('Типы ДЗ')).getByRole('button', { name: /ДЗ-27/ })
+    expect(codeOption).toHaveTextContent('Проверить назначение контроля линии')
+    expect(codeOption).toHaveTextContent('1')
+    expect(within(dialog).getByRole('heading', { name: 'Все задачи' })).toBeInTheDocument()
+    const queue = within(dialog).getByLabelText('Очередь задач диспетчера')
+    expect(within(queue).getByText('Стык или линия')).toBeInTheDocument()
+    expect(within(queue).getByText('Задача, причина и действия')).toBeInTheDocument()
+    expect(within(queue).getByText('ДЗ-27')).toBeInTheDocument()
+    expect(within(dialog).queryByLabelText('Подробности задачи диспетчера')).not.toBeInTheDocument()
+    expect(within(queue).getByText('Назначения контроля различаются.')).toBeInTheDocument()
+    expect(within(queue).getByRole('button', { name: 'Показать' })).toBeInTheDocument()
+    const location = queue.querySelector('[data-dispatcher-workspace-task-location]') as HTMLElement
+    expect(within(location).getByText('Линия')).toBeInTheDocument()
+    expect(within(location).getByText('330-ATM-16-000')).toBeInTheDocument()
+    expect(location.querySelector('strong')).toHaveTextContent('330-ATM-16-000')
+    expect(within(location).getByText('Проект 1')).toBeInTheDocument()
+    const subtitleCode = within(location).getByText('Шифр 1')
+    expect(subtitleCode).toHaveAttribute('title', 'Шифр 1')
+    expect(subtitleCode).toHaveClass('break-words')
+    expect(subtitleCode).not.toHaveClass('sm:truncate')
+    expect(queue.querySelector('[data-dispatcher-workspace-task-heading] [data-dispatcher-view-actions]')).not.toBeNull()
+    expect(queue.querySelector('[data-dispatcher-task-actions] [data-dispatcher-view-actions]')).toBeNull()
+    expect(queue.querySelector('[data-dispatcher-workspace-task-details] [data-dispatcher-task-actions]')).not.toBeNull()
+
+    const searchForm = within(dialog).getByRole('search', { name: 'Поиск задач' })
+    expect(searchForm).toHaveAttribute('data-expanded', 'false')
+    expect(within(dialog).queryByRole('button', { name: 'Найти' })).not.toBeInTheDocument()
+    const searchInput = within(dialog).getByRole('textbox', { name: 'Поиск задач диспетчера' })
+    fireEvent.focus(searchInput)
+    expect(searchForm).toHaveAttribute('data-expanded', 'true')
+    fireEvent.change(searchInput, {
+      target: { value: 'несуществующий стык' },
+    })
+    expect(within(dialog).getByRole('heading', { name: 'Все задачи' })).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Найти' }))
+    expect(within(dialog).getByText(/Найдено 0 задач/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/Задачи не найдены/)).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Очистить' }))
+    expect(within(dialog).getByRole('textbox', { name: 'Поиск задач диспетчера' })).toHaveFocus()
+    fireEvent.blur(searchInput, { relatedTarget: codeOption })
+    expect(searchForm).toHaveAttribute('data-expanded', 'false')
+    fireEvent.click(codeOption)
+    expect(within(dialog).getByRole('heading', { name: 'ДЗ-27 · Проверить назначение контроля линии' })).toBeInTheDocument()
+    const selectedQueue = within(dialog).getByLabelText('Очередь задач диспетчера')
+    expect(within(selectedQueue).getByText('ДЗ-27')).toBeInTheDocument()
+    expect(selectedQueue.querySelector('[data-dispatcher-workspace-task-details]')).toHaveTextContent('Назначения контроля различаются.')
+    fireEvent.click(within(selectedQueue).getByRole('button', { name: 'Показать' }))
+    expect(onShowTask).toHaveBeenCalledWith(task)
+    expect(onWorkspaceOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('does not request full-index search on each keystroke or focus event', async () => {
+    const { task, group } = createTaskGroup()
+    serverSearch.mockResolvedValue({ total: 1, tasks: [task] })
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <DispatcherWorkspaceDialog
+          tasks={[task]}
+          groups={[group]}
+          totalTaskCount={5_001}
+          hasMoreTasks
+          computedRevision={7}
+          taskFilterOptions={[]}
+          isRefreshing={false}
+          isTaskBatchLoading={false}
+          handlers={createHandlers(vi.fn())}
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>,
+    )
+
+    const dialog = screen.getByRole('dialog', { name: 'Диспетчер задач' })
+    const searchInput = within(dialog).getByRole('textbox', { name: 'Поиск задач диспетчера' })
+    fireEvent.focus(searchInput)
+    expect(serverSearch).not.toHaveBeenCalled()
+    fireEvent.change(searchInput, {
+      target: { value: 'F17' },
+    })
+    expect(serverSearch).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Найти' }))
+    await waitFor(() => expect(serverSearch).toHaveBeenCalledOnce())
+    expect(serverSearch).toHaveBeenCalledWith({
+      data: { search: 'F17', code: null, offset: 0, limit: 100, computedRevision: 7 },
+    })
+    await waitFor(() => expect(within(dialog).getByText('Назначения контроля различаются.')).toBeInTheDocument())
+    expect(serverSearch).toHaveBeenCalledOnce()
+    window.dispatchEvent(new Event('focus'))
+    window.dispatchEvent(new Event('online'))
+    expect(serverSearch).toHaveBeenCalledOnce()
+  })
+
+  it('shows every available correction beside its task without an action menu', () => {
+    const percentageTask = createPercentageTask('new-welder', 'Проверить нового сварщика', 2)
+    const row = percentageTask.row
+    const pstoAction = {
+      key: 'psto:26:1:pstoResult:date',
+      label: 'Исправить дату ПСТО',
+      tone: 'primary' as const,
+      target: { kind: 'psto-cycle' as const, rowId: 26, sequence: 1, stage: 'pstoResult' as const, focus: 'date' as const },
+    }
+    const tvmtAction = {
+      key: 'psto:26:1:tvmtResult:date',
+      label: 'Исправить дату ТВМТ',
+      tone: 'primary' as const,
+      target: { kind: 'psto-cycle' as const, rowId: 26, sequence: 1, stage: 'tvmtResult' as const, focus: 'date' as const },
+    }
+    const checkTask: RepeatedJointCheckTask = {
+      kind: 'check',
+      key: 'check:psto-date:F26',
+      row,
+      sourceRow: row,
+      sourceJoint: 'F26',
+      targetJoint: 'F26',
+      baseJoint: 'F26',
+      suffix: 'R',
+      reason: 'проверить даты ПСТО',
+      rootCauseActions: [pstoAction, tvmtAction],
+    }
+    const tasks = [percentageTask, checkTask]
+    const handlers = createHandlers(vi.fn())
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <DispatcherWorkspaceDialog
+          tasks={tasks}
+          groups={[{ key: 'line:F26', baseJoint: 'F26', tasks }]}
+          totalTaskCount={2}
+          computedRevision={1}
+          taskFilterOptions={[]}
+          isRefreshing={false}
+          hasMoreTasks={false}
+          isTaskBatchLoading={false}
+          handlers={handlers}
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>,
+    )
+
+    const queue = screen.getByLabelText('Очередь задач диспетчера')
+    const percentageRow = within(queue).getByText('Проверить нового сварщика').closest('[data-dispatcher-workspace-task-row]') as HTMLElement
+    expect(within(percentageRow).getByText('Проверить нового сварщика')).toBeInTheDocument()
+    expect(within(percentageRow).getByRole('button', { name: 'Исправить клеймо' })).toBeInTheDocument()
+    expect(within(percentageRow).getByRole('button', { name: 'Принять' })).toBeInTheDocument()
+    const percentageViewActions = percentageRow.querySelector('[data-dispatcher-workspace-task-heading] [data-dispatcher-view-actions]') as HTMLElement
+    expect(within(percentageViewActions).getByRole('button', { name: 'Показать' })).toBeInTheDocument()
+    expect(within(percentageViewActions).getByRole('button', { name: 'Картина' })).toBeInTheDocument()
+    expect(percentageRow.querySelector('[data-dispatcher-workflow-actions]')).not.toHaveTextContent('Показать')
+    fireEvent.click(within(percentageViewActions).getByRole('button', { name: 'Картина' }))
+    expect(handlers.onOpenTaskPicture).toHaveBeenCalledWith(percentageTask)
+    fireEvent.click(within(percentageRow).getByRole('button', { name: 'Исправить клеймо' }))
+    expect(handlers.onEditPercentageLineTaskStamp).toHaveBeenCalledWith(percentageTask)
+
+    const checkRow = within(queue).getByText('Проверить даты ПСТО').closest('[data-dispatcher-workspace-task-row]') as HTMLElement
+    expect(within(checkRow).getByRole('button', { name: 'Исправить дату ПСТО' })).toBeInTheDocument()
+    expect(within(checkRow).getByRole('button', { name: 'Исправить дату ТВМТ' })).toBeInTheDocument()
+    const checkViewActions = checkRow.querySelector('[data-dispatcher-workspace-task-heading] [data-dispatcher-view-actions]') as HTMLElement
+    expect(within(checkViewActions).getByRole('button', { name: 'Показать' })).toBeInTheDocument()
+    expect(within(checkViewActions).getByRole('button', { name: 'Картина' })).toBeInTheDocument()
+    fireEvent.click(within(checkRow).getByRole('button', { name: 'Исправить дату ТВМТ' }))
+    expect(handlers.onRunTaskAction).toHaveBeenCalledWith(checkTask, expect.objectContaining({
+      id: 'open-root-cause',
+      rootCauseAction: tvmtAction,
+    }))
+    expect(within(queue).queryByRole('button', { name: /^(Ещё|Действия|Исправить)$/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('renders only visible task rows when the workspace contains thousands of tasks', () => {
+    const { task, group } = createTaskGroup()
+    const tasks = Array.from({ length: 5_000 }, (_, index) => ({ ...task, key: `${task.key}:${index}` }))
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <DispatcherWorkspaceDialog
+          tasks={tasks}
+          groups={[{ ...group, tasks }]}
+          totalTaskCount={5_000}
+          computedRevision={1}
+          taskFilterOptions={[]}
+          isRefreshing={false}
+          hasMoreTasks={false}
+          isTaskBatchLoading={false}
+          handlers={createHandlers(vi.fn())}
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>,
+    )
+
+    const dialog = container.ownerDocument.querySelector('[role="dialog"][aria-label="Диспетчер задач"]')
+    expect(dialog).toHaveTextContent('5000 задач')
+    expect(dialog?.querySelectorAll('[data-dispatcher-workspace-task-row]').length).toBeLessThan(30)
+    const queue = within(dialog as HTMLElement).getByLabelText('Очередь задач диспетчера')
+    expect(queue.querySelectorAll('[data-dispatcher-workspace-task-details]').length).toBeLessThan(30)
+    expect(within(queue).getAllByText('Назначения контроля различаются.').length).toBeLessThan(30)
+    expect(dialog?.querySelectorAll('[data-dispatcher-workspace-task-row]').length).toBeLessThan(30)
+    expect(serverSearch).not.toHaveBeenCalled()
   })
 
   it('applies the compact default when the active report changes', () => {
@@ -138,8 +415,6 @@ describe('DispatcherTaskPanel', () => {
       groups: [group],
       stickyLeft: 0,
       handlers: createHandlers(vi.fn()),
-      columnFilters: {},
-      onColumnFiltersChange: vi.fn(),
     }
     const { rerender } = render(
       <DispatcherTaskPanel {...props} defaultExpanded />,
@@ -152,7 +427,7 @@ describe('DispatcherTaskPanel', () => {
     expect(screen.queryByText('330-ATM-16-000')).not.toBeInTheDocument()
   })
 
-  it('returns object grouping to its first batch after the whole dispatcher is collapsed', () => {
+  it('returns an expanded DZ to its first ten objects after the whole dispatcher is collapsed', () => {
     const { task } = createTaskGroup()
     const groups = Array.from({ length: 161 }, (_, index) => {
       const groupTask = {
@@ -178,24 +453,31 @@ describe('DispatcherTaskPanel', () => {
         groups={groups}
         stickyLeft={0}
         handlers={createHandlers(vi.fn())}
-        columnFilters={{}}
-        onColumnFiltersChange={vi.fn()}
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'По объектам' }))
-    expect(screen.getByText('Объект 80')).toBeInTheDocument()
-    expect(screen.queryByText('Объект 81')).not.toBeInTheDocument()
+    const details = screen.getByText('ДЗ-27').closest('details')
+    if (details) {
+      details.open = true
+      fireEvent(details, new Event('toggle'))
+    }
+    expect(screen.getByText('Объект 10')).toBeInTheDocument()
+    expect(screen.queryByText('Объект 11')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Показать ещё' }))
-    expect(screen.getByText('Объект 160')).toBeInTheDocument()
+    expect(screen.getByText('Объект 20')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Свернуть' }))
     fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
 
-    expect(screen.getByText('Объект 80')).toBeInTheDocument()
-    expect(screen.queryByText('Объект 81')).not.toBeInTheDocument()
-    expect(screen.getByText('Показано групп: 80 из 161')).toBeInTheDocument()
+    const reopened = screen.getByText('ДЗ-27').closest('details')
+    if (reopened) {
+      reopened.open = true
+      fireEvent(reopened, new Event('toggle'))
+    }
+    expect(screen.getByText('Объект 10')).toBeInTheDocument()
+    expect(screen.queryByText('Объект 11')).not.toBeInTheDocument()
+    expect(screen.getByText('Показано объектов: 10 из 161')).toBeInTheDocument()
   })
 
   it('uses expand and collapse as the only panel visibility controls', () => {
@@ -206,8 +488,6 @@ describe('DispatcherTaskPanel', () => {
         groups={[group]}
         stickyLeft={0}
         handlers={createHandlers(vi.fn())}
-        columnFilters={{}}
-        onColumnFiltersChange={vi.fn()}
       />,
     )
 
@@ -215,7 +495,7 @@ describe('DispatcherTaskPanel', () => {
     expect(screen.getByRole('button', { name: 'Свернуть' })).toBeInTheDocument()
   })
 
-  it('shows two task types and folds the remaining types into a counter', () => {
+  it('keeps distinct DZ types visible without the object-grouping switch', () => {
     const { task, group } = createTaskGroup()
     const excessTask = createPercentageTask('excess', 'Проверить лишний контроль', 5)
     const missingTask = createPercentageTask('missing', 'Назначить контроль', 2)
@@ -227,19 +507,13 @@ describe('DispatcherTaskPanel', () => {
         groups={[{ ...group, tasks }]}
         stickyLeft={0}
         handlers={createHandlers(vi.fn())}
-        columnFilters={{}}
-        onColumnFiltersChange={vi.fn()}
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'По объектам' }))
-
-    const groupSummary = screen.getByLabelText('Краткое описание задач 330-ATM-16-000')
-    expect(within(groupSummary).getByText('ДЗ-02')).toBeInTheDocument()
-    expect(within(groupSummary).getByText(/Лишний контроль/)).toBeInTheDocument()
-    expect(within(groupSummary).getByText('ДЗ-04')).toBeInTheDocument()
-    expect(within(groupSummary).getByText('+1')).toBeInTheDocument()
-    expect(within(groupSummary).queryByText('ДЗ-27')).not.toBeInTheDocument()
+    expect(screen.getByText('ДЗ-02')).toBeInTheDocument()
+    expect(screen.getByText('ДЗ-04')).toBeInTheDocument()
+    expect(screen.getByText('ДЗ-27')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'По объектам' })).not.toBeInTheDocument()
   })
 
   it('shows the key metric for one percentage-line task', () => {
@@ -256,11 +530,14 @@ describe('DispatcherTaskPanel', () => {
         groups={[group]}
         stickyLeft={0}
         handlers={createHandlers(vi.fn())}
-        columnFilters={{}}
-        onColumnFiltersChange={vi.fn()}
       />,
     )
 
+    const details = screen.getByText('ДЗ-02').closest('details')
+    if (details) {
+      details.open = true
+      fireEvent(details, new Event('toggle'))
+    }
     expect(screen.getByText('Клеймо ABC1 · лишних 5')).toBeInTheDocument()
   })
 
@@ -295,12 +572,9 @@ describe('DispatcherTaskPanel', () => {
         groups={groups}
         stickyLeft={0}
         handlers={createHandlers(vi.fn())}
-        columnFilters={{}}
-        onColumnFiltersChange={vi.fn()}
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'По ДЗ' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText('ДЗ-02')).toBeInTheDocument()
     expect(screen.getAllByText('2 задачи')).toHaveLength(2)
     expect(screen.getByText('2 объекта')).toBeInTheDocument()
@@ -341,8 +615,6 @@ describe('DispatcherTaskPanel', () => {
         groups={groups}
         stickyLeft={0}
         handlers={createHandlers(vi.fn())}
-        columnFilters={{}}
-        onColumnFiltersChange={vi.fn()}
       />,
     )
 
@@ -353,20 +625,20 @@ describe('DispatcherTaskPanel', () => {
       fireEvent(details, new Event('toggle'))
     }
 
-    expect(screen.getByText('Объект 80')).toBeInTheDocument()
-    expect(screen.queryByText('Объект 81')).not.toBeInTheDocument()
-    expect(screen.getByText('Показано объектов: 80 из 81')).toBeInTheDocument()
+    expect(screen.getByText('Объект 10')).toBeInTheDocument()
+    expect(screen.queryByText('Объект 11')).not.toBeInTheDocument()
+    expect(screen.getByText('Показано объектов: 10 из 81')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Показать ещё' }))
 
-    expect(screen.getByText('Объект 81')).toBeInTheDocument()
-    expect(screen.queryByText('Показано объектов: 80 из 81')).not.toBeInTheDocument()
-    expect(screen.getByText('Показано объектов: 81 из 81')).toBeInTheDocument()
+    expect(screen.getByText('Объект 20')).toBeInTheDocument()
+    expect(screen.queryByText('Объект 21')).not.toBeInTheDocument()
+    expect(screen.getByText('Показано объектов: 20 из 81')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Свернуть список' }))
 
-    expect(screen.queryByText('Объект 81')).not.toBeInTheDocument()
-    expect(screen.getByText('Показано объектов: 80 из 81')).toBeInTheDocument()
+    expect(screen.queryByText('Объект 11')).not.toBeInTheDocument()
+    expect(screen.getByText('Показано объектов: 10 из 81')).toBeInTheDocument()
   })
 
   it('keeps a single object with 1200 tasks in manual bounded batches', () => {
@@ -387,57 +659,43 @@ describe('DispatcherTaskPanel', () => {
     objectLevel.open = true
     fireEvent(objectLevel, new Event('toggle'))
 
-    expect(container.querySelectorAll('[data-dispatcher-task-card]')).toHaveLength(40)
-    expect(screen.getByText('Показано задач: 40 из 1200')).toBeInTheDocument()
+    expect(container.querySelectorAll('[data-dispatcher-task-card]')).toHaveLength(10)
+    expect(screen.getByText('Показано задач: 10 из 1200')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Показать ещё' }))
-    expect(container.querySelectorAll('[data-dispatcher-task-card]')).toHaveLength(80)
-    expect(screen.getByText('Показано задач: 80 из 1200')).toBeInTheDocument()
+    expect(container.querySelectorAll('[data-dispatcher-task-card]')).toHaveLength(20)
+    expect(screen.getByText('Показано задач: 20 из 1200')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Свернуть список' }))
-    expect(container.querySelectorAll('[data-dispatcher-task-card]')).toHaveLength(40)
+    expect(container.querySelectorAll('[data-dispatcher-task-card]')).toHaveLength(10)
 
     fireEvent.click(screen.getByRole('button', { name: 'Показать ещё' }))
-    expect(container.querySelectorAll('[data-dispatcher-task-card]')).toHaveLength(80)
+    expect(container.querySelectorAll('[data-dispatcher-task-card]')).toHaveLength(20)
 
     objectLevel.open = false
     fireEvent(objectLevel, new Event('toggle'))
     objectLevel.open = true
     fireEvent(objectLevel, new Event('toggle'))
 
-    expect(container.querySelectorAll('[data-dispatcher-task-card]')).toHaveLength(40)
-    expect(screen.getByText('Показано задач: 40 из 1200')).toBeInTheDocument()
+    expect(container.querySelectorAll('[data-dispatcher-task-card]')).toHaveLength(10)
+    expect(screen.getByText('Показано задач: 10 из 1200')).toBeInTheDocument()
   })
 
-  it('switches back to object grouping and remembers the choice', () => {
+  it('ignores the obsolete saved object-grouping preference', () => {
     const { task, group } = createTaskGroup()
-    const view = render(
-      <DispatcherTaskPanel
-        tasks={[task]}
-        groups={[group]}
-        stickyLeft={0}
-        handlers={createHandlers(vi.fn())}
-        columnFilters={{}}
-        onColumnFiltersChange={vi.fn()}
-      />,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'По объектам' }))
-    expect(window.localStorage.getItem('welding-dispatcher-grouping-mode')).toBe('objects')
-    view.unmount()
-
+    window.localStorage.setItem('welding-dispatcher-grouping-mode', 'objects')
     render(
       <DispatcherTaskPanel
         tasks={[task]}
         groups={[group]}
         stickyLeft={0}
         handlers={createHandlers(vi.fn())}
-        columnFilters={{}}
-        onColumnFiltersChange={vi.fn()}
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'По объектам' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('ДЗ-27')).toBeInTheDocument()
+    expect(screen.queryByText('330-ATM-16-000')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'По объектам' })).not.toBeInTheDocument()
   })
 
   it('opens the task description from its text and keeps navigation on the separate action', () => {

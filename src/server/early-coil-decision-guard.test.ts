@@ -166,16 +166,14 @@ describe('getEarlyCoilDecisionInvalidationReason', () => {
     expect(execute).toHaveBeenCalledTimes(1)
   })
 
-  it('refreshes production-sized accepted-decision selections in bounded reads and writes', async () => {
+  it('refreshes production-sized accepted-decision selections with one read and one write', async () => {
     const rows = Array.from({ length: 2_001 }, (_, index) => row({
       id: index + 1,
       joint: `S${index + 1}R1`,
       rkResult: 'ремонт',
     }))
-    let readIndex = 0
-    const warningBatches = [rows.slice(0, 1_000), rows.slice(1_000, 2_000), rows.slice(2_000)]
     const where = vi.fn(async () => (
-      warningBatches[readIndex++]?.map((source) => ({ key: getEarlyCoilDecisionKey(source.id) })) ?? []
+      rows.map((source) => ({ key: getEarlyCoilDecisionKey(source.id) }))
     ))
     const from = vi.fn().mockReturnValue({ where })
     const select = vi.fn().mockReturnValue({ from })
@@ -187,8 +185,8 @@ describe('getEarlyCoilDecisionInvalidationReason', () => {
       DEFAULT_SYSTEM_INDEX_SETTINGS,
     )
 
-    expect(select).toHaveBeenCalledTimes(3)
-    expect(execute).toHaveBeenCalledTimes(3)
+    expect(select).toHaveBeenCalledTimes(1)
+    expect(execute).toHaveBeenCalledTimes(1)
   })
 })
 

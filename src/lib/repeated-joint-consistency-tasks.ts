@@ -36,6 +36,7 @@ import {
 } from '@/lib/system-index-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 import { isSystemDispatcherWarningTask, type RepeatedJointCheckTask, type WeldRow } from '@/lib/dispatcher-types'
+import { encodeIdentityKey } from '@/lib/identity-key'
 
 type RejectionResolver = (row: WeldInput) => unknown
 type OfficialRejectedChainResolver = (rows: WeldRow[], sourceRow: WeldInput, sourceJoint: string) => WeldRow[]
@@ -152,12 +153,13 @@ function buildCoilIntegrityCheckTasks(
   systemIndexSettings: SystemIndexSettings,
 ) {
   const tasks: RepeatedJointCheckTask[] = []
+  const rowsById = new Map(rows.map((row) => [row.id, row] as const))
   for (const transition of transitions) {
     const targetRows = transition.targetRowIds
-      .map((rowId) => rows.find((row) => row.id === rowId))
+      .map((rowId) => rowId === null ? undefined : rowsById.get(rowId))
       .filter((row): row is WeldRow => Boolean(row))
     const sourceRow = transition.sourceRowId
-      ? rows.find((row) => row.id === transition.sourceRowId)
+      ? rowsById.get(transition.sourceRowId)
       : undefined
     const taskRow = sourceRow ?? targetRows[0]
     if (!taskRow) continue
@@ -206,8 +208,10 @@ function buildObsoleteChildBranchCheckTasks(
   systemIndexSettings: SystemIndexSettings,
 ) {
   const tasks: RepeatedJointCheckTask[] = []
+  const transitionByKey = new Map(transitions.map((transition) => [transition.key, transition] as const))
+  const rowsById = new Map(rows.map((row) => [row.id, row] as const))
   for (const [branchKey, group] of branchGroups) {
-    const transition = transitions.find((candidate) => candidate.key === branchKey)
+    const transition = transitionByKey.get(branchKey)
     if (!transition) continue
     const unofficialRejectedRowWithObsoleteCoil = group.find(
       (row) => isUnofficialJoint(row) && Boolean(getPrimaryRejectedLnkResult(row)),
@@ -227,7 +231,7 @@ function buildObsoleteChildBranchCheckTasks(
 
     const sourceRow = group.find((row) => !isUnofficialJoint(row) && getJointStatusLabel(row) === 'годен')
     const childRow = transition.targetRowIds
-      .map((rowId) => rows.find((row) => row.id === rowId))
+      .map((rowId) => rowId === null ? undefined : rowsById.get(rowId))
       .find(Boolean)
     if (sourceRow && childRow) {
       tasks.push(
@@ -249,6 +253,10 @@ function buildMissingRepeatedJointSourceCheckTasks(
   systemIndexSettings: SystemIndexSettings,
 ) {
   const tasks: RepeatedJointCheckTask[] = []
+  const jointIdentityKeys = new Set(rows.flatMap((row) => {
+    const identity = getRepeatedJointIdentity(row)
+    return identity ? [repeatedJointIdentityKey(identity)] : []
+  }))
   for (const row of rows) {
     const joint = String(row.joint ?? '').trim()
     if (!joint) continue
@@ -259,7 +267,9 @@ function buildMissingRepeatedJointSourceCheckTasks(
     const sourceCandidates = getStrictRepeatedJointSourceCandidates(parsed, systemIndexSettings)
     if (sourceCandidates.length === 0) continue
 
-    const hasSource = sourceCandidates.some((sourceJoint) => hasMatchingRepeatedJoint(rows, row, sourceJoint))
+    const hasSource = sourceCandidates.some((sourceJoint) =>
+      hasMatchingRepeatedJoint(jointIdentityKeys, row, sourceJoint),
+    )
     if (hasSource) continue
 
     const expectedSourceText = sourceCandidates.join(' или ')
@@ -300,19 +310,19 @@ function getStrictRepeatedJointSourceCandidates(
   return [...new Set(candidates.map((candidate) => candidate.trim()).filter(Boolean))]
 }
 
-function hasMatchingRepeatedJoint(rows: WeldRow[], row: WeldInput, joint: string) {
+function hasMatchingRepeatedJoint(identityKeys: ReadonlySet<string>, row: WeldInput, joint: string) {
   const expectedIdentity = getRepeatedJointIdentity(row, joint)
   if (!expectedIdentity) return false
-  return rows.some((candidate) => {
-    const candidateIdentity = getRepeatedJointIdentity(candidate)
-    return Boolean(
-      candidateIdentity &&
-        candidateIdentity.project === expectedIdentity.project &&
-        candidateIdentity.subtitle === expectedIdentity.subtitle &&
-        candidateIdentity.line === expectedIdentity.line &&
-        candidateIdentity.joint === expectedIdentity.joint,
-    )
-  })
+  return identityKeys.has(repeatedJointIdentityKey(expectedIdentity))
+}
+
+function repeatedJointIdentityKey(identity: {
+  project: string
+  subtitle: string
+  line: string
+  joint: string
+}) {
+  return encodeIdentityKey([identity.project, identity.subtitle, identity.line, identity.joint])
 }
 
 function isJointChainRowWeldedAfter(row: WeldInput, referenceRow: WeldInput) {

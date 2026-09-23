@@ -7,11 +7,25 @@ import { normalizeRowPstoRequest } from '@/lib/psto-status'
 import { toControlCancellationReportRow, withPendingLnkResults } from '@/lib/report-control-state'
 import { withAutoVikForWeldDate } from '@/lib/weld-import-export'
 import { buildFinalStatusRowsContext, calculateFinalStatusInRows, type FinalStatusRowsContext } from '@/lib/weld-fields'
+import { LNK_METHODS } from '@/lib/report-config'
 import type { OtherSettings } from '@/lib/other-settings'
 import { isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
 
 type ReportWdiSettings = Pick<OtherSettings, 'wdiCalculationMode' | 'wdiTable'> &
   Partial<Pick<OtherSettings, 'wdiCalculationRules'>>
+
+const IN_PLACE_REPORT_PREPARATION_KEYS = [
+  'hasVik',
+  'pstoRequest',
+  'pstoRequired',
+  'pstoResult',
+  ...LNK_METHODS.flatMap((method) => [
+    method.enabledKey,
+    method.requestKey,
+    method.requestDateKey,
+    method.resultKey,
+  ]),
+] as const
 
 export function prepareReportRows(
   sourceRows: unknown[] | undefined,
@@ -46,6 +60,43 @@ export function prepareReportRows(
   return otherSettings && isSystemWdiMode(otherSettings)
     ? preparedRows.map((row) => withSystemWdi(row, otherSettings))
     : preparedRows
+}
+
+/**
+ * Dispatcher-only variant for full-journal calculations. The caller owns the
+ * freshly loaded rows, so reusing those objects avoids retaining several wide
+ * copies of every weld joint while preserving prepareReportRows semantics.
+ */
+export function prepareReportRowsInPlace(
+  sourceRows: WeldRow[],
+  duplicateControls: DuplicateControlRecord[] = [],
+) {
+  const duplicateControlsByWeldId = new Map<number, DuplicateControlRecord[]>()
+  for (const control of duplicateControls) {
+    const current = duplicateControlsByWeldId.get(control.weldJointId) ?? []
+    current.push(control)
+    duplicateControlsByWeldId.set(control.weldJointId, current)
+  }
+
+  for (const row of sourceRows) {
+    const normalizedRow = clearDisabledLnkRequests(withAutoVikForWeldDate(normalizeRowPstoRequest(row)))
+    const withPendingLnk = withPendingLnkResults(normalizedRow)
+    const withPendingPsto = withPendingPstoResultStatus(withPendingLnk)
+    const prepared = toControlCancellationReportRow(withPendingPsto)
+    if (prepared !== row) {
+      for (const key of IN_PLACE_REPORT_PREPARATION_KEYS) {
+        if (!Object.is(row[key], prepared[key])) row[key] = prepared[key]
+      }
+    }
+    const rowDuplicateControls = duplicateControlsByWeldId.get(Number(row.id))
+    if (rowDuplicateControls?.length) row.duplicateControls = rowDuplicateControls
+  }
+
+  const finalStatusContext = buildFinalStatusRowsContext(sourceRows)
+  for (const row of sourceRows) {
+    row.finalStatus = calculateFinalStatusInRows(row, sourceRows, finalStatusContext)
+  }
+  return sourceRows
 }
 
 export function useReportRows(
