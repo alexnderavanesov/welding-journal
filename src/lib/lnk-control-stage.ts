@@ -1,6 +1,6 @@
 import { isControlEnabledValue } from '@/lib/control-availability-values'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
-import { hasHistoricalPreHeatTreatmentExemption, isPreHeatTreatmentStageEnabled, type PreHeatTreatmentPolicyRow } from '@/lib/pre-heat-treatment-policy'
+import { isPreHeatTreatmentStageEnabled, type PreHeatTreatmentPolicyRow } from '@/lib/pre-heat-treatment-policy'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import {
@@ -112,7 +112,7 @@ export function getRequiredLnkControlStages(
 }
 
 export function requiresPreHeatTreatmentLnk(row: PreHeatTreatmentPolicyRow) {
-  return isPreHeatTreatmentLnkAvailable(row) && !hasHistoricalPreHeatTreatmentExemption(row)
+  return isPreHeatTreatmentLnkAvailable(row)
 }
 
 export function isPreHeatTreatmentLnkAvailable(row: WeldInput) {

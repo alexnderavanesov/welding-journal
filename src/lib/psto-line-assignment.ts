@@ -14,7 +14,7 @@ import {
 } from '@/lib/lnk-control-stage'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { getPstoTvmtWorkflowState } from '@/lib/tvmt-cycle'
-import { hasHistoricalPreHeatTreatmentExemption, isPreHeatTreatmentStageEnabled } from '@/lib/pre-heat-treatment-policy'
+import { isPreHeatTreatmentStageEnabled } from '@/lib/pre-heat-treatment-policy'
 
 export type PstoLineIdentity = {
   projectTitle: string
@@ -391,7 +391,7 @@ export function getPrimaryStagedMethodCodes(row: WeldRow) {
 
 export function requiresPrimaryStageResolutionForAssignedPstoLine(row: WeldRow) {
   return (
-    isPreHeatTreatmentStageEnabled(row) && !hasHistoricalPreHeatTreatmentExemption(row) &&
+    isPreHeatTreatmentStageEnabled(row) &&
     !isControlEnabledValue(row.pstoRequired) &&
     !hasPstoWorkflowStageData(row) &&
     getPrimaryStagedMethodCodes(row).length > 0
@@ -399,7 +399,7 @@ export function requiresPrimaryStageResolutionForAssignedPstoLine(row: WeldRow) 
 }
 
 export function blocksPstoLineActivation(row: WeldRow) {
-  if (!isPreHeatTreatmentStageEnabled(row) || hasHistoricalPreHeatTreatmentExemption(row)) return false
+  if (!isPreHeatTreatmentStageEnabled(row)) return false
   if (isControlEnabledValue(row.pstoRequired)) return false
   if (getPrimaryStagedMethodCodes(row).length === 0) return false
   const reactivatedRow = {

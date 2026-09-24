@@ -25,7 +25,7 @@ CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES,
 normalizeControlAvailabilityFilterValue
 } from '@/lib/control-availability-values'
 import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
-import { buildNoRejectedPreHeatTreatmentWhere, buildPreHeatTreatmentRequirementsSkippedWhere, buildPstoExecutionHistoryWhere } from '@/server/pre-heat-treatment-policy'
+import { buildNoRejectedPreHeatTreatmentWhere, buildPreHeatTreatmentEnabledWhere, buildPstoExecutionHistoryWhere } from '@/server/pre-heat-treatment-policy'
 export { buildPstoExecutionHistoryWhere } from '@/server/pre-heat-treatment-policy'
 import {
 buildMergedDispatcherTaskCodes,
@@ -214,7 +214,6 @@ export const HEAT_TREATMENT_CONTEXT_REQUIRED_FIELD_KEYS = new Set<WeldFieldKey>(
 
 export const REPORT_DERIVED_FILTER_SELECT = {
   id: weldJoints.id,
-  preHeatTreatmentLnkExempt: weldJoints.preHeatTreatmentLnkExempt,
   heatTreatmentDiagram: weldJoints.heatTreatmentDiagram,
   weldDate: weldJoints.weldDate,
   projectTitle: weldJoints.projectTitle,
@@ -1012,7 +1011,7 @@ function buildHeatTreatmentStagedLnkReadyWhere() {
   ) ?? sql`false`
   const preHeatTreatmentRequired = and(
     heatTreatmentStagedLnkRequired,
-    sql`not (${buildPreHeatTreatmentRequirementsSkippedWhere()})`,
+    buildPreHeatTreatmentEnabledWhere(),
   ) ?? sql`false`
   const allPreHeatTreatmentControlsGood = and(
     ...PRE_HEAT_TREATMENT_LNK_METHODS.map((method) => {
@@ -1180,7 +1179,6 @@ export async function attachReportPageMetadata<Row extends DuplicateControlCarri
     ...rowsWithEarlyCoilDecisions[index],
     ...rowsWithChainContinuations[index],
     preHeatTreatmentLnkEnabled: rowsWithHeatTreatmentControls[index]?.preHeatTreatmentLnkEnabled,
-    preHeatTreatmentLnkExempt: rowsWithHeatTreatmentControls[index]?.preHeatTreatmentLnkExempt,
   }))
 }
 

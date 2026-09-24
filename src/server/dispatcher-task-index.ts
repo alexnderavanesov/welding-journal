@@ -141,6 +141,10 @@ export async function ensureDispatcherTaskIndexFresh() {
   pendingDispatcherTaskIndexRefresh = pending
   try {
     return await pending
+  } catch (error) {
+    // Report once per coalesced calculation, even if all HTTP callers left.
+    console.error('Не удалось выполнить пересчет индекса диспетчера.', error)
+    throw error
   } finally {
     if (pendingDispatcherTaskIndexRefresh === pending) pendingDispatcherTaskIndexRefresh = null
   }
@@ -158,9 +162,8 @@ export async function readDispatcherTaskIndexState(
 
 export function scheduleDispatcherTaskIndexRefresh() {
   if (pendingDispatcherTaskIndexRefresh) return
-  void ensureDispatcherTaskIndexFresh().catch((error) => {
-    console.error('Не удалось выполнить фоновый пересчет индекса диспетчера.', error)
-  })
+  // The shared calculation reports real failures itself, including detached work.
+  void ensureDispatcherTaskIndexFresh().catch(() => {})
 }
 
 async function ensureDispatcherTaskIndexFreshOnce(

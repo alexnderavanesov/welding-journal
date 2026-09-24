@@ -63,7 +63,9 @@ export function getPstoWorkflowResultBlockReason(row: WeldInput) {
     return getPrimaryPstoStartBlockReason(row)
   }
   const state = getPstoTvmtWorkflowState(row)
-  if (state === 'waiting-psto') return ''
+  if (state === 'waiting-psto') {
+    return getCurrentPstoCycle(row)?.source === 'primary' ? getPrimaryPstoStartBlockReason(row) : ''
+  }
   if (state === 'waiting-psto-request') {
     return getPstoRequestBlockReason(row) || 'Сначала создайте заявку ПСТО.'
   }

@@ -148,7 +148,7 @@ test('does not create layered documents while off and backfills all four after e
   await expect(enabledSwitch).toBeChecked()
 })
 
-test('blocks disabling unfinished pre-TO and protects only the joint that starts PSTO while off', async ({ page }) => {
+test('blocks disabling unfinished pre-TO; re-enabling requires pre-TO even for PSTO started while off', async ({ page }) => {
   await seedPreHeatTreatmentLines()
   await openControlProcesses(page)
 
@@ -196,10 +196,13 @@ test('blocks disabling unfinished pre-TO and protects only the joint that starts
   await expect(page.getByRole('switch', { name: /^Разрешать основной НК/ })).toBeEnabled()
   await expect.poll(() => loadPreHeatTreatmentExemptions()).toEqual([
     ['F-PRE-A1', false],
-    ['F-PRE-A2', true],
+    ['F-PRE-A2', false],
     ['F-PRE-B1', false],
     ['F-PRE-B2', false],
   ])
+  await page.goto('/lnk')
+  const started = page.getByRole('button', { name: 'Выбрать стык F-PRE-A2', exact: true }).locator('xpath=ancestor::tr')
+  await expect(started.getByRole('button', { name: 'Выполнить: Создать заявку НК до ТО', exact: true })).toBeVisible()
 })
 
 async function openControlProcesses(page: Page) {

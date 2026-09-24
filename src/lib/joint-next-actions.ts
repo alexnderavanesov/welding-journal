@@ -38,6 +38,7 @@ import {
   getPstoWorkflowRequestBlockReason,
 } from '@/lib/psto-status'
 import { isPstoCancelledValue } from '@/lib/psto-line-assignment'
+import { isPreHeatTreatmentStageEnabled } from '@/lib/pre-heat-treatment-policy'
 import { hasWeldDate } from '@/lib/report-value-utils'
 import { canAddTvmtResult, canCreateTvmtRequest } from '@/lib/tvmt-field-updates'
 import {
@@ -215,7 +216,7 @@ function buildDirectWorkflowAction(
   const activePhysicalCycleAction = buildActivePhysicalCycleAction(row, pstoState, currentCycle?.sequence ?? 1)
   if (activePhysicalCycleAction) return activePhysicalCycleAction
 
-  if (hasPermittedPrimaryStageDebt(row, controlProcessSettings)) {
+  if (hasNonBlockingPrimaryStageWarning(row, controlProcessSettings)) {
     const primaryAction = buildPrimaryWorkflowAction(row, controlProcessSettings)
     if (primaryAction) return withPrimaryStageDebtWarning(primaryAction)
 
@@ -330,13 +331,13 @@ function buildPrimaryWorkflowAction(
   return null
 }
 
-function hasPermittedPrimaryStageDebt(
+function hasNonBlockingPrimaryStageWarning(
   row: WeldRow,
   controlProcessSettings?: JointNextActionSettings,
 ) {
   if (
-    !controlProcessSettings?.preHeatTreatmentLnkEnabled ||
-    !controlProcessSettings.allowPrimaryLnkBeforePreviousStagesComplete
+    !isPreHeatTreatmentStageEnabled(row) ||
+    !controlProcessSettings?.allowPrimaryLnkBeforePreviousStagesComplete
   ) return false
 
   return LNK_METHODS.some((method) =>

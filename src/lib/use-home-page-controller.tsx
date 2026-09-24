@@ -142,6 +142,7 @@ import type {
 } from '@/lib/workflow-root-cause-actions'
 import {
   getCurrentWorkflowRequestIdentity,
+  getPreHeatTreatmentStageCompletionNextAction,
   getPstoStageCompletionNextAction,
   getWorkflowRootCauseDestination,
   type WorkflowRootCauseDestination,
@@ -295,14 +296,18 @@ type UseHomePageControllerOptions = {
   journalSelectionToken?: string
 }
 
+type JointNextActionOptions = {
+  runDispatcherAction?: boolean
+  preHeatTreatmentRequestMethodCode?: PreHeatTreatmentLnkMethodCode
+}
+
 type DeferredJointNextAction = {
   targetReport: 'weldingJournal' | 'lnk' | 'heatTreatment'
   row: WeldRow
 } & ({
   kind: 'joint-action'
   action: JointNextAction
-  runDispatcherAction?: boolean
-} | { kind: 'psto-program' })
+} & JointNextActionOptions | { kind: 'psto-program' })
 
 type WorkflowRootCauseNavigationFrame = {
   action: WorkflowRootCauseAction
@@ -4079,27 +4084,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         setIsLnkResultModalOpen(previous.open)
       }
     }
-    if (destination === 'pre-lnk-workflow') {
-      const previous = {
-        mode: preHeatTreatmentLnkWorkflowMode,
-        methodCode: preHeatTreatmentLnkInitialMethodCode,
-        requestSubmitMode: preHeatTreatmentLnkRequestSubmitMode,
-        selectedIds: selectedLnkIds,
-      }
-      return () => {
-        setSelectedLnkIds(previous.selectedIds)
-        if (previous.mode) {
-          openPreHeatTreatmentLnkWorkflowState(
-            previous.mode,
-            previous.methodCode,
-            previous.requestSubmitMode,
-          )
-        } else {
-          setPreHeatTreatmentLnkWorkflowMode(null)
-          setPreHeatTreatmentLnkInitialMethodCode(undefined)
-        }
-      }
-    }
     if (destination === 'pre-lnk-manager') {
       const previous = {
         open: isPreHeatTreatmentResultManagerOpen,
@@ -4166,6 +4150,18 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       return
     }
     const row = currentRow as WeldRow
+    if (target.kind === 'lnk-control' && target.stage === 'beforeHeatTreatment' && target.intent === 'complete-stage') {
+      const nextAction = getPreHeatTreatmentStageCompletionNextAction(target, row)
+      if (!nextAction) {
+        setMessage('Этап НК до ТО уже изменился или выключен. Обновите расчет диспетчера и повторите действие.')
+        return
+      }
+      setIsDispatcherWorkspaceOpen(false)
+      runJointNextAction(row, nextAction, {
+        preHeatTreatmentRequestMethodCode: target.methodCode as PreHeatTreatmentLnkMethodCode,
+      })
+      return
+    }
     if (target.kind === 'psto-cycle' && target.intent === 'complete-stage') {
       const nextAction = getPstoStageCompletionNextAction(target, row)
       if (!nextAction) {
@@ -4177,10 +4173,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       return
     }
     const destination = getWorkflowRootCauseDestination(target, row)
-    if (destination === 'pre-lnk-workflow' && !controlProcessSettings.preHeatTreatmentLnkEnabled) {
-      setMessage('НК до ТО выключен в настройках проекта. Включите процесс, чтобы завершить предыдущие этапы контроля.')
-      return
-    }
     const restore = captureWorkflowRootCauseRestore(destination)
     workflowRootCauseStackRef.current.push({ action, destination, restore })
     setCurrentWorkflowRootCauseAction(action)
@@ -4241,12 +4233,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           search: String(row.joint ?? row.line ?? ''),
         })
         setIsLnkResultModalOpen(true)
-      } else if (destination === 'pre-lnk-workflow' && target.kind === 'lnk-control') {
-        setSelectedLnkIds(new Set([row.id]))
-        openPreHeatTreatmentLnkWorkflow(
-          target.documentPart === 'request' ? 'request' : 'result',
-          target.methodCode as PreHeatTreatmentLnkMethodCode,
-        )
       } else if (destination === 'pre-lnk-manager' && target.kind === 'lnk-control') {
         setPreHeatTreatmentResultManagerRowIds([row.id])
         setPreHeatTreatmentResultManagerInitialRelationId(target.relationId ?? null)
@@ -4568,7 +4554,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   function runJointNextAction(
     row: WeldRow,
     action: JointNextAction,
-    options: { runDispatcherAction?: boolean } = {},
+    options: JointNextActionOptions = {},
   ) {
     const targetReport = action.kind === 'editWeld' || (action.kind === 'dispatcherTask' && !options.runDispatcherAction)
       ? 'weldingJournal'
@@ -4590,7 +4576,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   function openJointNextAction(
     row: WeldRow,
     action: JointNextAction,
-    options: { runDispatcherAction?: boolean } = {},
+    options: JointNextActionOptions = {},
   ) {
     if (action.kind === 'editWeld') {
       setEditing({ record: row })
@@ -4602,7 +4588,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         action.kind === 'preLnkRequest' ? 'request' : 'result',
         action.kind === 'preLnkResult'
           ? action.methodCode as PreHeatTreatmentLnkMethodCode | undefined
-          : undefined,
+          : options.preHeatTreatmentRequestMethodCode,
       )
       return
     }
@@ -4661,6 +4647,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     }
     openJointNextAction(deferred.row, deferred.action, {
       runDispatcherAction: deferred.runDispatcherAction,
+      preHeatTreatmentRequestMethodCode: deferred.preHeatTreatmentRequestMethodCode,
     })
   }, [activeReport])
   const reportChainDialogProps = createReportChainDialogProps({
@@ -5441,17 +5428,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           onCandidateSearchChange: setPreHeatTreatmentCandidateSearch,
           onCandidateSelectionChange: setPreHeatTreatmentCandidateIds,
           onCandidateFilterChange: handlePreHeatTreatmentCandidateFilterChange,
-          onClose: currentWorkflowRootCauseDestination === 'pre-lnk-workflow'
-            ? returnFromWorkflowRootCause
-            : () => {
-                setPreHeatTreatmentLnkWorkflowMode(null)
-                setPreHeatTreatmentLnkInitialMethodCode(undefined)
-              },
+          onClose: () => {
+            setPreHeatTreatmentLnkWorkflowMode(null)
+            setPreHeatTreatmentLnkInitialMethodCode(undefined)
+          },
           onRunProtectedEdit: (actionLabel, action) => runProtectedEdit(actionLabel, action),
           onSaved: (savedRows, fieldKeys, nextMessage) => {
             if (savedRows.length > 0) highlightChangedRows(savedRows, fieldKeys)
             setMessage(nextMessage)
-            completeWorkflowRootCause('pre-lnk-workflow')
           },
           onOpenJournalRows: openModalRowsInWeldingJournal,
           onOpenPstoHistory: openPstoHistoryFromDialog,

@@ -547,7 +547,7 @@ describe('joint next actions', () => {
     })
   })
 
-  it('finishes an already started physical cycle before backfilling missing pre-TO documents', () => {
+  it('backfills required pre-TO before adding the first PSTO result, even for an existing request', () => {
     const legacyRow = row({
       pstoRequired: 'да',
       hasVik: 'да',
@@ -558,8 +558,8 @@ describe('joint next actions', () => {
     })
 
     expect(buildJointNextActions(legacyRow)[0]).toMatchObject({
-      kind: 'pstoResult',
-      title: 'Внести результат ПСТО · цикл 1',
+      kind: 'preLnkRequest',
+      title: 'Создать заявку НК до ТО',
     })
   })
 

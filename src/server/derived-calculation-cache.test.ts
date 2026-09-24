@@ -1,8 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
+import { DERIVED_CALCULATION_CACHE_VERSION } from '@/lib/derived-calculation-cache-version'
 import { readCacheSnapshotCoalesced } from '@/server/derived-calculation-cache'
 
 describe('derived calculation cache keys', () => {
+  it('separates rule versions independently of how high the data revision has grown', () => {
+    expect(buildDerivedCalculationCacheKey('statistics:v1', { line: 'L' }))
+      .toBe(`rules:v${DERIVED_CALCULATION_CACHE_VERSION}:statistics:v1:{"line":"L"}`)
+  })
   it('does not depend on object key order', () => {
     expect(
       buildDerivedCalculationCacheKey('statistics:v1', {

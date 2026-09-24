@@ -16,19 +16,6 @@ export function buildPreHeatTreatmentEnabledWhere() {
   ), true)`
 }
 
-/** SQL counterpart of hasOwnPstoStart; no line-wide inheritance or waiting labels. */
-export function buildOwnPstoStartWhere() {
-  const cycleStarted = (cycle: typeof weldJoints | typeof pstoRepeatCycles) => sql`(
-    nullif(btrim(coalesce(${cycle.pstoRequest}, '')), '') is not null
-    or ${cycle.pstoRequestDate} is not null
-    or ${buildCycleExecutionWhere(cycle)}
-  )`
-  return sql`(${cycleStarted(weldJoints)} or exists (
-    select 1 from ${pstoRepeatCycles}
-    where ${pstoRepeatCycles.weldJointId} = ${weldJoints.id} and ${cycleStarted(pstoRepeatCycles)}
-  ))`
-}
-
 function buildCycleExecutionWhere(cycle: typeof weldJoints | typeof pstoRepeatCycles) {
   return sql`(${cycle.pstoDate} is not null
     or nullif(btrim(coalesce(${cycle.heatTreatmentDiagram}, '')), '') is not null
@@ -66,12 +53,4 @@ export function buildNoRejectedPreHeatTreatmentWhere() {
     where ${preHeatTreatmentControls.weldJointId} = ${weldJoints.id} and ${activeMethod}
       and lower(btrim(coalesce(${preHeatTreatmentControls.result}, ''))) in ('ремонт', 'вырез')
   ))`
-}
-
-export function buildHistoricalPreHeatTreatmentExemptionWhere() {
-  return sql`(${weldJoints.preHeatTreatmentLnkExempt} and ${buildOwnPstoStartWhere()})`
-}
-
-export function buildPreHeatTreatmentRequirementsSkippedWhere() {
-  return sql`(not (${buildPreHeatTreatmentEnabledWhere()}) or ${buildHistoricalPreHeatTreatmentExemptionWhere()})`
 }

@@ -69,7 +69,7 @@ describe('buildVisibleDispatcherTasks', () => {
     )
   })
 
-  it('does not calculate SP-01 while the parent pre-TO process is disabled', () => {
+  it('does not calculate SP-01 for an early request alone with pre-TO disabled', () => {
     const tasks = buildTasks(disabledSettings(), {
       rows: [row({
         id: 1,

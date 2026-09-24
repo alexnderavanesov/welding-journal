@@ -31,7 +31,6 @@ import {
 splitWeldImportInsertBatches
 } from '@/lib/weld-import-limits'
 import { calculateFinalStatus } from '@/lib/weld-status'
-import { getPreHeatTreatmentExemptionForSave } from '@/lib/pre-heat-treatment-policy'
 import {
 type SystemDocumentSequenceTransaction
 } from '@/server/system-document-sequences'
@@ -66,7 +65,6 @@ export const WELD_BATCH_UPDATE_FIELD_KEYS = [
   'pstoRequired',
   'pstoControlBasis',
   'pstoCancellationDate',
-  'preHeatTreatmentLnkExempt',
   ...WELD_BATCH_PROFILE_TIMESTAMP_KEYS,
 ] as readonly (keyof NewWeldJoint)[]
 
@@ -100,7 +98,6 @@ export function toDbInsert(input: WeldInput, isCreate = false): NewWeldJoint {
   data.pstoRequired = normalizeControlAvailabilityStorageText(normalized.pstoRequired)
   data.pstoControlBasis = normalized.pstoControlBasis ?? null
   data.pstoCancellationDate = normalized.pstoCancellationDate ?? null
-  data.preHeatTreatmentLnkExempt = getPreHeatTreatmentExemptionForSave(input)
   if (isCreate) {
     const now = new Date()
     data.weldingUpdatedAt = now
@@ -218,7 +215,6 @@ export function buildWeldBatchUpdatePayload(
   const values: Record<string, unknown> = {
     id,
     ...toDbInsert(record),
-    preHeatTreatmentLnkExempt: getPreHeatTreatmentExemptionForSave(record, previous),
     weldingUpdatedAt: timestampUpdates.weldingUpdatedAt ?? previous.weldingUpdatedAt,
     pstoCreatedAt: timestampUpdates.pstoCreatedAt ?? previous.pstoCreatedAt,
     pstoUpdatedAt: timestampUpdates.pstoUpdatedAt ?? previous.pstoUpdatedAt,

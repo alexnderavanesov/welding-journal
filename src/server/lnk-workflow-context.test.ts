@@ -24,7 +24,6 @@ describe('LNK modal workflow queries', () => {
       'joint',
       'd1',
       'd2',
-      'preHeatTreatmentLnkExempt',
       'vikRequest',
       'vikResult',
       'vikConclusion',

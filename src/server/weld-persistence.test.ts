@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import type { WeldJoint } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { buildWeldBatchUpdatePayload, toDbInsert } from '@/server/weld-persistence'
+import { buildWeldBatchUpdatePayload, toDbInsert, WELD_BATCH_UPDATE_SET } from '@/server/weld-persistence'
+import { getPrimaryPstoCyclePersistenceValues } from '@/server/psto-cycle-state'
 
 describe('weld persistence', () => {
   it('writes officiality only to its final database column', () => {
@@ -40,10 +41,10 @@ describe('weld persistence', () => {
       record,
       new Map([[previous.id, previous]]),
       new Date('2026-09-02T00:00:00.000Z'),
-    ).preHeatTreatmentLnkExempt).toBe(false)
+    )).not.toHaveProperty('preHeatTreatmentLnkExempt')
   })
 
-  it('does not revoke an existing exemption through an ordinary batch save', () => {
+  it('leaves the obsolete stored flag untouched in every persistence payload', () => {
     const previous = {
       id: 2,
       joint: 'F2',
@@ -59,7 +60,10 @@ describe('weld persistence', () => {
       record,
       new Map([[previous.id, previous]]),
       new Date('2026-09-02T00:00:00.000Z'),
-    ).preHeatTreatmentLnkExempt).toBe(true)
+    )).not.toHaveProperty('preHeatTreatmentLnkExempt')
+    expect(WELD_BATCH_UPDATE_SET).not.toHaveProperty('preHeatTreatmentLnkExempt')
+    expect(toDbInsert(record)).not.toHaveProperty('preHeatTreatmentLnkExempt')
+    expect(getPrimaryPstoCyclePersistenceValues(record)).not.toHaveProperty('preHeatTreatmentLnkExempt')
   })
 
   it('persists officiality in batch updates without a compatibility column', () => {

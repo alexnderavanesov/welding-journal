@@ -34,12 +34,12 @@ describe('LNK availability SQL', () => {
     expect(compiled.params).toEqual(expect.arrayContaining(['да', '1', '', '-', 'нет', '0']))
   })
 
-  it('keeps SQL readiness aligned with cancelled PSTO history and pre-TO exemptions', () => {
+  it('keeps SQL readiness aligned with cancelled PSTO history without legacy exemptions', () => {
     const compiled = new PgDialect().sqlToQuery(sql`
       select 1 where ${buildPrimaryLnkStageReadyWhere('ВИК')}
     `)
 
-    expect(compiled.sql).toContain('"weld_joints"."pre_heat_treatment_lnk_exempt"')
+    expect(compiled.sql).not.toContain('"pre_heat_treatment_lnk_exempt"')
     expect(compiled.sql).toContain("in ('не годен', 'негоден', 'ремонт', 'вырез')")
     expect(compiled.sql).toContain('"psto_repeat_cycles"."weld_joint_id" = "weld_joints"."id"')
   })

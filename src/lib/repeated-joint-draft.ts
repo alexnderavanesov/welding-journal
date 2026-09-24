@@ -8,7 +8,7 @@ import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 export function buildRepeatedJointDraft(sourceRow: WeldRow, targetJoint: string): WeldInput {
   const draft = { ...sourceRow } as WeldDraft & Pick<
     WeldRow,
-    'duplicateControls' | 'preHeatTreatmentControls' | 'pstoRepeatCycles' | 'preHeatTreatmentLnkExempt'
+    'duplicateControls' | 'preHeatTreatmentControls' | 'pstoRepeatCycles'
   >
   delete draft.id
   for (const fieldKey of repeatedJointClearedFieldKeys) {
@@ -17,7 +17,6 @@ export function buildRepeatedJointDraft(sourceRow: WeldRow, targetJoint: string)
   draft.duplicateControls = []
   draft.preHeatTreatmentControls = []
   draft.pstoRepeatCycles = []
-  draft.preHeatTreatmentLnkExempt = false
   restoreRepeatedJointControlAvailability(draft, sourceRow)
   draft.joint = targetJoint
   draft.officiality = null

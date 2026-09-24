@@ -64,7 +64,6 @@ export const LNK_OFFICIALITY_CHAIN_SELECT = {
   pstoRequired: weldJoints.pstoRequired,
   pstoControlBasis: weldJoints.pstoControlBasis,
   pstoCancellationDate: weldJoints.pstoCancellationDate,
-  preHeatTreatmentLnkExempt: weldJoints.preHeatTreatmentLnkExempt,
   joint: weldJoints.joint,
   officiality: weldJoints.officiality,
   finalStatus: weldJoints.finalStatus,

@@ -3,7 +3,6 @@ import { asc, eq } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { appSettings, preHeatTreatmentControls, pstoRepeatCycles } from '@/db/schema'
 import { normalizeControlProcessSettings, type ControlProcessSettings } from '@/lib/control-process-settings'
-import { hasHistoricalPreHeatTreatmentExemption } from '@/lib/pre-heat-treatment-policy'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import {
   mergePreHeatTreatmentControlsIntoRows,
@@ -92,7 +91,6 @@ async function attachCurrentPolicy<Row extends HeatTreatmentControlRelationsCarr
   }
   for (const row of rows) {
     row.preHeatTreatmentLnkEnabled = settings.preHeatTreatmentLnkEnabled
-    row.preHeatTreatmentLnkExempt = hasHistoricalPreHeatTreatmentExemption(row)
   }
   return rows
 }

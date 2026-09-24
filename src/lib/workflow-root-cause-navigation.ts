@@ -4,6 +4,29 @@ import { LNK_METHODS } from '@/lib/report-config'
 import type { WorkflowRootCauseTarget } from '@/lib/workflow-root-cause-actions'
 import type { JointNextAction } from '@/lib/joint-next-actions'
 import { getCurrentPstoCycle, getPstoTvmtWorkflowState, getPstoWorkflowCycleSequence } from '@/lib/tvmt-cycle'
+import { getPreHeatTreatmentControl, isPreHeatTreatmentLnkMethodCode } from '@/lib/lnk-control-stage'
+import { canAddPreHeatTreatmentResult, canCreatePreHeatTreatmentRequest } from '@/lib/pre-heat-treatment-control-updates'
+
+export function getPreHeatTreatmentStageCompletionNextAction(
+  target: Extract<WorkflowRootCauseTarget, { kind: 'lnk-control' }>,
+  row: WeldRow,
+): JointNextAction | null {
+  if (target.intent !== 'complete-stage' || target.stage !== 'beforeHeatTreatment' ||
+    target.rowId !== row.id || !isPreHeatTreatmentLnkMethodCode(target.methodCode)) return null
+  const control = getPreHeatTreatmentControl(row, target.methodCode)
+  if (target.relationId !== undefined && target.relationId !== control?.id) return null
+  const request = target.documentPart === 'request'
+  if (request ? !canCreatePreHeatTreatmentRequest(row, target.methodCode)
+    : target.documentPart !== 'result' || !canAddPreHeatTreatmentResult(row, target.methodCode)) return null
+  return {
+    key: `complete-stage:${row.id}:beforeHeatTreatment:${target.methodCode}:${target.documentPart}`,
+    kind: request ? 'preLnkRequest' : 'preLnkResult',
+    methodCode: target.methodCode,
+    title: request ? 'Создать заявку НК до ТО' : 'Внести результат НК до ТО',
+    description: `Недостающие данные ${target.methodCode} до ТО`,
+    tone: 'warning',
+  }
+}
 
 // Completion must use the creation workflow, not the existing-stage editor.
 // Compare with freshly loaded state so a stale card cannot target another cycle.
@@ -37,7 +60,6 @@ export type WorkflowRootCauseDestination =
   | 'lnk-result-manager'
   | 'lnk-result-dialog'
   | 'pre-lnk-manager'
-  | 'pre-lnk-workflow'
   | 'psto-request-manager'
   | 'psto-result-manager'
   | 'duplicate-control'
@@ -54,7 +76,7 @@ export function getWorkflowRootCauseDestination(
       : 'psto-result-manager'
   }
   if (target.stage === 'beforeHeatTreatment') {
-    return target.intent === 'complete-stage' ? 'pre-lnk-workflow' : 'pre-lnk-manager'
+    return 'pre-lnk-manager'
   }
   const method = LNK_METHODS.find((candidate) => candidate.code === target.methodCode)
   if (target.documentPart === 'request') {

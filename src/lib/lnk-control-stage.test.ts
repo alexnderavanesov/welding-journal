@@ -42,7 +42,7 @@ describe('LNK control stages', () => {
     expect(getRequiredLnkControlStages(row, 'ВИК')).toEqual(['primary'])
   })
 
-  it('does not restore pre-control requirements for a grandfathered PSTO row', () => {
+  it('requires pre-control for every assigned PSTO row, including obsolete exemptions', () => {
     const row = {
       pstoRequired: 'да',
       pstoRequest: 'Историческая заявка ПСТО',
@@ -50,10 +50,10 @@ describe('LNK control stages', () => {
       preHeatTreatmentLnkExempt: true,
     }
 
-    expect(getRequiredLnkControlStages(row, 'ВИК')).toEqual(['primary'])
-    expect(getPrimaryPstoStartBlockReason(row)).toBe('')
-    expect(getPreHeatTreatmentPendingFinalStatus(row)).toBeNull()
-    expect(getPrimaryLnkStageBlockReason(row, 'ВИК')).toContain('ПСТО')
+    expect(getRequiredLnkControlStages(row, 'ВИК')).toEqual(['beforeHeatTreatment', 'primary'])
+    expect(getPrimaryPstoStartBlockReason(row)).toContain('Сначала создайте заявки НК до ТО')
+    expect(getPreHeatTreatmentPendingFinalStatus(row)).toBe('ожидает заявку')
+    expect(getPrimaryLnkStageBlockReason(row, 'ВИК')).toContain('НК до ТО')
     expect(getPrimaryLnkStageBlockReason({
       ...row,
       pstoRequest: 'Заявка ПСТО',
@@ -62,7 +62,7 @@ describe('LNK control stages', () => {
       tvmtRequest: 'Заявка ТВМТ',
       tvmtResult: 'годен',
       tvmtConclusionDate: '2026-09-02',
-    }, 'ВИК')).toBe('')
+    }, 'ВИК')).toContain('НК до ТО')
   })
 
   it('opens primary LNK after an officially cancelled cycle with failed TVMT', () => {

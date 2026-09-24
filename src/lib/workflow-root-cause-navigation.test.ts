@@ -3,11 +3,29 @@ import { describe, expect, it } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   getCurrentWorkflowRequestIdentity,
+  getPreHeatTreatmentStageCompletionNextAction,
   getWorkflowRootCauseDestination,
 } from '@/lib/workflow-root-cause-navigation'
 import type { WorkflowRootCauseTarget } from '@/lib/workflow-root-cause-actions'
 
 describe('workflow root-cause navigation', () => {
+  it('routes pre-TO completion only while the exact stage is still pending on the fresh row', () => {
+    const target = { kind: 'lnk-control', rowId: 11, stage: 'beforeHeatTreatment',
+      methodCode: 'ВИК', documentPart: 'request', focus: 'name', intent: 'complete-stage' } as const
+    const fresh = row({ pstoRequired: 'да', hasVik: 'да', preHeatTreatmentLnkEnabled: true })
+    expect(getPreHeatTreatmentStageCompletionNextAction(target, fresh)?.kind).toBe('preLnkRequest')
+    expect(getPreHeatTreatmentStageCompletionNextAction(target, { ...fresh, preHeatTreatmentLnkEnabled: false })).toBeNull()
+    expect(getPreHeatTreatmentStageCompletionNextAction(target, { ...fresh, hasVik: 'нет' })).toBeNull()
+    expect(getPreHeatTreatmentStageCompletionNextAction({ ...target, rowId: 99 }, fresh)).toBeNull()
+    const requested = { ...fresh, preHeatTreatmentControls: [{ id: 9, weldJointId: 11, method: 'ВИК', requestName: 'PRE-11' }] }
+    expect(getPreHeatTreatmentStageCompletionNextAction(target, requested)).toBeNull()
+    const resultTarget = { ...target, documentPart: 'result', relationId: 9 } as const
+    expect(getPreHeatTreatmentStageCompletionNextAction(resultTarget, requested)?.kind).toBe('preLnkResult')
+    expect(getPreHeatTreatmentStageCompletionNextAction({ ...resultTarget, relationId: 10 }, requested)).toBeNull()
+    expect(getPreHeatTreatmentStageCompletionNextAction(resultTarget, { ...requested,
+      preHeatTreatmentControls: [{ ...requested.preHeatTreatmentControls[0], result: 'годен' }],
+    })).toBeNull()
+  })
   it.each([
     [{ kind: 'weld-field', rowId: 11, fieldKey: 'weldDate' }, 'weld-form'],
     [{ kind: 'duplicate-control', rowId: 11, relationId: 4 }, 'duplicate-control'],

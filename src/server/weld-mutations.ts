@@ -78,7 +78,6 @@ assertUniqueWeldMutationTargets,
 splitWeldImportInsertBatches
 } from '@/lib/weld-import-limits'
 import { calculateFinalStatus } from '@/lib/weld-status'
-import { getPreHeatTreatmentExemptionForSave, hasHistoricalPreHeatTreatmentExemption } from '@/lib/pre-heat-treatment-policy'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
 import { isLnkRepairForbiddenWithSettings } from '@/lib/lnk-result-rules'
 import { hasPstoCycleExecutionHistory } from '@/lib/psto-cycle'
@@ -447,7 +446,6 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       .update(weldJoints)
       .set({
         ...insertData,
-        preHeatTreatmentLnkExempt: getPreHeatTreatmentExemptionForSave(record, previousRows.get(id)),
         ...timestampUpdates,
         updatedAt: new Date(),
       })
@@ -764,7 +762,6 @@ async function preparePstoLineMoveRecordInTransaction({
     targetLineState.cancelledCount === targetLineState.rowCount,
   )
   const identityChanged = getPstoLineIdentityKey(previous) !== getPstoLineIdentityKey(targetIdentity)
-  record.preHeatTreatmentLnkExempt = hasHistoricalPreHeatTreatmentExemption(previous)
   if (
     (disposition === 'movePrimaryToBeforeHeatTreatment' || disposition === 'deletePrimary') &&
     !targetLineAssigned
@@ -775,7 +772,6 @@ async function preparePstoLineMoveRecordInTransaction({
     processSettings.preHeatTreatmentLnkEnabled &&
     identityChanged &&
     targetLineAssigned &&
-    !hasHistoricalPreHeatTreatmentExemption(previous) &&
     requiresPrimaryStageResolutionForAssignedPstoLine(previous)
   )
   const requiresLifecycleCleanup = identityChanged && !targetLineAssigned && hasPstoLifecycleHistory(previousStored)

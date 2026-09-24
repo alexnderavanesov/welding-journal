@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from 'node:fs'
+import { relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { formHiddenFieldKeys } from '@/lib/weld-form-field-sets'
@@ -9,6 +11,17 @@ import {
 } from '@/server/weld-mutation-policy'
 
 describe('weld mutation policy', () => {
+  it('keeps the obsolete exemption only in the schema and client-write denylist', () => {
+    const root = resolve(process.cwd(), 'src')
+    const scan = (directory: string): string[] => readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const path = resolve(directory, entry.name)
+      if (entry.isDirectory()) return scan(path)
+      return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) &&
+        /preHeatTreatmentLnkExempt|pre_heat_treatment_lnk_exempt/.test(readFileSync(path, 'utf8'))
+        ? [relative(root, path).replaceAll('\\', '/')] : []
+    })
+    expect(scan(root).sort()).toEqual(['db/schema.ts', 'server/weld-mutation-policy.ts'])
+  })
   it('persists every visible editable field from the weld form', () => {
     const allowed = new Set(WELD_MUTATION_FIELD_KEYS.welding)
     const silentlyDropped = WELD_FIELDS

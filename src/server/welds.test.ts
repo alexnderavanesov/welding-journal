@@ -741,7 +741,7 @@ describe('weld server pagination helpers', () => {
     }
     expect(selectedFieldKeys.has('pstoRequestDate')).toBe(true)
     expect(selectedFieldKeys.has('pstoDate')).toBe(true)
-    expect(REPORT_DERIVED_FILTER_SELECT).toHaveProperty('preHeatTreatmentLnkExempt')
+    expect(REPORT_DERIVED_FILTER_SELECT).not.toHaveProperty('preHeatTreatmentLnkExempt')
     expect(selectedFieldKeys.has('heatTreatmentDiagram')).toBe(true)
     expect(selectedFieldKeys.has('finalStatus')).toBe(true)
     expect(selectedFieldKeys.has('rkControlBasis')).toBe(true)

@@ -40,7 +40,7 @@ import {
   type PstoWorkflowSummary,
 } from '@/server/weld-contracts'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
-import { buildNoRejectedPreHeatTreatmentWhere, buildPreHeatTreatmentRequirementsSkippedWhere, buildPstoExecutionHistoryWhere } from '@/server/pre-heat-treatment-policy'
+import { buildNoRejectedPreHeatTreatmentWhere, buildPreHeatTreatmentEnabledWhere, buildPstoExecutionHistoryWhere } from '@/server/pre-heat-treatment-policy'
 import { assertSecurityScope } from '@/server/security-functions'
 import {
   buildReportKindWhere,
@@ -90,7 +90,6 @@ const PSTO_WORKFLOW_FIELD_KEYS = new Set<string>([
   'pstoUpdatedAt',
   'lnkCreatedAt',
   'lnkUpdatedAt',
-  'preHeatTreatmentLnkExempt',
   'pstoRequired',
   'pstoControlBasis',
   'pstoCancellationDate',
@@ -378,6 +377,7 @@ function buildPstoScopeWhere(scope: PstoWorkflowRowsRequest['scope']): SQL {
         and(
           hasTextWhere(weldJoints.pstoRequest),
           not(completedPstoResult(weldJoints.pstoResult)),
+          or(not(activePsto), buildPrimaryPstoPrerequisitesReadyWhere()),
         ) ?? sql`false`,
         and(
           hasTextWhere(CURRENT_REPEAT_CYCLE.pstoRequest),
@@ -481,7 +481,7 @@ function buildPrimaryPstoPrerequisitesReadyWhere() {
     ),
   ) ?? sql`false`)) ?? sql`true`
   return or(
-    buildPreHeatTreatmentRequirementsSkippedWhere(),
+    not(buildPreHeatTreatmentEnabledWhere()),
     requiredMethodsReady,
   ) ?? sql`false`
 }

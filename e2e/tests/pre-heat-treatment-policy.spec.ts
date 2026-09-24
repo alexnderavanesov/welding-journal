@@ -8,7 +8,7 @@ test('НК до ТО: PostgreSQL и серверные правила совпа
     env: { ...process.env, DATABASE_URL: E2E_DATABASE_URL, WELDING_ENV_LOADED: '1' },
   })
   expect(stderr).toBe('')
-  expect(JSON.parse(stdout.trim())).toMatchObject({ comparisons: 162, flagsDoNotRevive: true, ownHistoryOnly: true, settingInitPlan: true, fixtureRolledBack: true })
+  expect(JSON.parse(stdout.trim())).toMatchObject({ comparisons: 162, obsoleteFlagsUnchanged: true, settingInitPlan: true, fixtureRolledBack: true })
 })
 
 for (const historical of [false, true]) test(`НК до ТО доступен: ${historical ? 'исторический стык с завершённой ПСТО' : 'старый флаг и «ожидает заявку»'}`, async ({ page }) => {
@@ -32,8 +32,7 @@ for (const historical of [false, true]) test(`НК до ТО доступен: $
     })
     await page.goto('/lnk')
     const row = () => page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).locator('xpath=ancestor::tr')
-    await row().getByRole('button', { name: historical ? 'Выполнить: Создать заявку основного НК' : 'Выполнить: Создать заявку НК до ТО', exact: true }).click()
-    if (historical) await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
+    await row().getByRole('button', { name: 'Выполнить: Создать заявку НК до ТО', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Заявка ЛНК до ТО', exact: true })).toBeVisible()
     await page.getByLabel('Дата заявки', { exact: true }).fill('2026-09-17')
     await page.getByRole('button', { name: 'Создать заявку до ТО', exact: true }).click()

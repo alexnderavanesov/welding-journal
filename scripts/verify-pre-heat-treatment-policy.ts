@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import { and, eq, inArray, sql } from 'drizzle-orm'
-import { hasHistoricalPreHeatTreatmentExemption, hasOwnPstoStart } from '../src/lib/pre-heat-treatment-policy'
 import { canCreatePreHeatTreatmentRequest } from '../src/lib/pre-heat-treatment-control-updates'
 import { canCreatePstoWorkflowRequest, canAddPstoWorkflowResult } from '../src/lib/psto-status'
 import type { WeldRow } from '../src/lib/dispatcher-types'
@@ -49,13 +48,6 @@ await db.transaction(async (tx) => {
     await tx.insert(appSettings).values({ key: 'control-processes', value })
       .onConflictDoUpdate({ target: appSettings.key, set: { value } })
     const hydrated = await relations.attachHeatTreatmentControlRelations(rows, tx)
-    const sqlFacts = await tx.select({ id: weldJoints.id, started: policy.buildOwnPstoStartWhere(),
-      exempt: policy.buildHistoricalPreHeatTreatmentExemptionWhere() }).from(weldJoints).where(inArray(weldJoints.id, ids))
-    for (const row of hydrated) {
-      const facts = sqlFacts.find((item) => item.id === row.id)!
-      assert.equal(facts.started, hasOwnPstoStart(row), row.joint!)
-      assert.equal(facts.exempt, hasHistoricalPreHeatTreatmentExemption(row), row.joint!)
-    }
     const cases = [
       { where: read.buildAvailableLnkRequestWhere(), accept: (row: WeldRow) => canCreateLnkRequest(row) },
       { where: lnk.buildLnkWorkflowRowsWhere({ scope: 'requestCandidates', methodKeys: ['vikRequest'] }), accept: (row: WeldRow) => canCreateLnkRequest(row) },
@@ -70,18 +62,14 @@ await db.transaction(async (tx) => {
       comparisons += hydrated.length
     }
   }
-  // Starting PSTO after fixing pre-TO must not resurrect the old inherited flag.
+  // No persistence path may rewrite the obsolete column, in either direction.
   const [fresh] = await relations.attachHeatTreatmentControlRelations([rows[0]], tx)
-  assert.equal(fresh.preHeatTreatmentLnkExempt, false)
   await persistence.savePstoCycleRowsInBatches(tx, [{ ...fresh, pstoRequest: 'NEW-P', pstoRequestDate: '2026-07-12' } as WeldRow])
   const [saved] = await tx.select().from(weldJoints).where(eq(weldJoints.id, fresh.id))
-  assert.equal(saved.preHeatTreatmentLnkExempt, false)
-  // Work started while off records its own protection, without altering neighbours.
-  await persistence.savePstoCycleRowsInBatches(tx, [{ ...rows[1], preHeatTreatmentLnkEnabled: false, preHeatTreatmentLnkExempt: false, pstoRequest: 'OFF-P' } as WeldRow])
-  const [offSaved] = await tx.select().from(weldJoints).where(eq(weldJoints.id, rows[1].id))
-  assert.equal(offSaved.preHeatTreatmentLnkExempt, true)
-  const [neighbour] = await tx.select().from(weldJoints).where(eq(weldJoints.id, rows[6].id))
-  assert.equal(neighbour.preHeatTreatmentLnkExempt, false)
+  assert.equal(saved.preHeatTreatmentLnkExempt, true)
+  await persistence.savePstoCycleRowsInBatches(tx, [{ ...rows[6], preHeatTreatmentLnkEnabled: false, preHeatTreatmentLnkExempt: true, pstoRequest: 'OFF-P' } as WeldRow])
+  const [offSaved] = await tx.select().from(weldJoints).where(eq(weldJoints.id, rows[6].id))
+  assert.equal(offSaved.preHeatTreatmentLnkExempt, false)
   const plan = await tx.execute(sql`explain (analyze, format json) select ${policy.buildPreHeatTreatmentEnabledWhere()} from ${weldJoints} where ${inArray(weldJoints.id, ids)}`)
   const nodes = JSON.stringify(plan.rows)
   assert(nodes.includes('InitPlan'), 'Setting must be an uncorrelated init plan, never an N+1 lookup')
@@ -93,4 +81,4 @@ await db.transaction(async (tx) => {
   assert.equal(settingScans[0]['Actual Loops'], 1)
   throw rolledBack
 }).catch((error) => { if (error !== rolledBack) throw error })
-console.log(JSON.stringify({ comparisons, flagsDoNotRevive: true, ownHistoryOnly: true, settingInitPlan: true, fixtureRolledBack: true }))
+console.log(JSON.stringify({ comparisons, obsoleteFlagsUnchanged: true, settingInitPlan: true, fixtureRolledBack: true }))

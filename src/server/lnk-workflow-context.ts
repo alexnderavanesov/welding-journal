@@ -84,7 +84,6 @@ const LNK_WORKFLOW_FIELD_KEYS = new Set<string>([
   'officiality',
   'finalStatus',
   'lnkCreatedAt',
-  'preHeatTreatmentLnkExempt',
   'pstoRequired',
   'pstoControlBasis',
   'pstoCancellationDate',

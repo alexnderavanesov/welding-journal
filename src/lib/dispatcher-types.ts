@@ -20,7 +20,6 @@ export type WeldRow = WeldInput & {
   id: number
   chainContinuation?: JointChainContinuation
   earlyCoilDecisionAccepted?: boolean
-  preHeatTreatmentLnkExempt?: boolean
   preHeatTreatmentLnkEnabled?: boolean
   rowVersion?: string
   activeDispatcherTasks?: string
