@@ -2,7 +2,7 @@ import { LNK_EMPTY_RESULT_VALUE } from '@/lib/report-config'
 import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import { withLnkFinalStatus } from '@/lib/lnk-field-updates'
-import { assertNoLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
+import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import {
   assertLnkRepairAllowed,
   isValidLnkResultDraftValue,
@@ -18,6 +18,7 @@ import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { getPrimaryLnkStageAccess } from '@/lib/lnk-control-stage'
 import { transitionLnkDefectDescription } from '@/lib/lnk-defect-description'
 import type { LnkChronologyIssueKind } from '@/lib/lnk-chronology-checks'
+import { assertUnofficialLnkGoodResultAllowed } from './unofficial-lnk-result-guard'
 
 const PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS = new Set<LnkChronologyIssueKind>([
   'post-before-psto-cycle',
@@ -70,6 +71,7 @@ export function buildLnkResultRows({
   const lnkUpdatedAt = new Date().toISOString()
   const proposedRecords = records.map((record) => {
     const result = resultById[record.id] ?? ''
+    assertUnofficialLnkGoodResultAllowed(record, result, record[method.resultKey], method.code)
     const shouldClearResult = result === LNK_EMPTY_RESULT_VALUE
     let proposedRecord = {
       ...record,
@@ -102,8 +104,9 @@ export function buildLnkResultRows({
     }
     return withLnkFinalStatus(proposedRecord)
   })
-  assertNoLnkChronologyIssues(
+  assertNoNewLnkChronologyIssues(
     proposedRecords,
+    records,
     saveCheckSettings,
     controlProcessSettings?.preHeatTreatmentLnkEnabled &&
       controlProcessSettings.allowPrimaryLnkBeforePreviousStagesComplete

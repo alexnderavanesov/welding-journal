@@ -40,7 +40,7 @@ import {
   type PstoWorkflowSummary,
 } from '@/server/weld-contracts'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
-import { buildNoRejectedPreHeatTreatmentWhere, buildPreHeatTreatmentEnabledWhere, buildPstoExecutionHistoryWhere } from '@/server/pre-heat-treatment-policy'
+import { buildNoRejectedPreHeatTreatmentWhere, buildPreHeatTreatmentEnabledWhere, buildPstoExecutionHistoryWhere, buildRelevantPstoRepeatWhere } from '@/server/pre-heat-treatment-policy'
 import { assertSecurityScope } from '@/server/security-functions'
 import {
   buildReportKindWhere,
@@ -440,13 +440,14 @@ function buildPstoWorkflowActiveWhere(activePsto: SQL) {
 
 function buildCurrentPstoCycleWhere(primaryCondition: SQL, repeatCondition: SQL) {
   return or(
-    and(not(repeatExists(sql`true`)), primaryCondition),
+    and(not(repeatExists(buildRelevantPstoRepeatWhere(pstoRepeatCycles))), primaryCondition),
     exists(
       SQL_QUERY_BUILDER
         .select({ value: sql`1` })
         .from(CURRENT_REPEAT_CYCLE)
         .where(and(
           eq(CURRENT_REPEAT_CYCLE.weldJointId, weldJoints.id),
+          buildRelevantPstoRepeatWhere(CURRENT_REPEAT_CYCLE),
           repeatCondition,
           notExists(
             SQL_QUERY_BUILDER
@@ -455,6 +456,7 @@ function buildCurrentPstoCycleWhere(primaryCondition: SQL, repeatCondition: SQL)
               .where(and(
                 eq(NEWER_REPEAT_CYCLE.weldJointId, CURRENT_REPEAT_CYCLE.weldJointId),
                 gt(NEWER_REPEAT_CYCLE.sequence, CURRENT_REPEAT_CYCLE.sequence),
+                buildRelevantPstoRepeatWhere(NEWER_REPEAT_CYCLE),
               )),
           ),
         )),

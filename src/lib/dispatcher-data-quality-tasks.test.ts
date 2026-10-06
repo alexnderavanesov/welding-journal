@@ -449,13 +449,13 @@ describe('dispatcher data quality tasks', () => {
     expect(tasks[0].details).toContain('повторный цикл #2 ТВМТ')
   })
 
-  it('does not include duplicate controls in PSTO cycle completeness', () => {
+  it('does not include NK duplicate controls in PSTO cycle completeness', () => {
     const tasks = buildPstoResultCompletenessCheckTasks([
       row({
         duplicateControls: [{
           id: 10,
           weldJointId: 1,
-          method: 'ТВМТ',
+          method: 'РК',
           result: 'годен',
           controlDate: '',
           conclusion: '',

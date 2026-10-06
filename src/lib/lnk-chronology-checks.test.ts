@@ -24,7 +24,7 @@ describe('getLnkChronologyIssues', () => {
     expect(getLnkResultRemovalBlockReason(row, 'vikRequest', {
       ...DEFAULT_SAVE_CHECK_SETTINGS,
       lnkResultVikRequiredBeforeOther: false,
-    })).toBe('')
+    })).toContain('Результат ВИК нельзя удалить')
   })
 
   it('blocks a conclusion date before the LNK request date', () => {
@@ -220,7 +220,7 @@ describe('getLnkChronologyIssues', () => {
     )
   })
 
-  it('respects disabled save-check settings', () => {
+  it('disables optional checks but preserves the mandatory VIK prerequisite', () => {
     const issues = getLnkChronologyIssues(
       [
         {
@@ -240,7 +240,7 @@ describe('getLnkChronologyIssues', () => {
       },
     )
 
-    expect(issues).toEqual([])
+    expect(issues).toEqual([expect.objectContaining({ kind: 'method-order', methodCode: 'РК' })])
   })
 
   it('enforces ZV-15 independently when ZV-16 is disabled', () => {
@@ -268,6 +268,7 @@ describe('getLnkChronologyIssues', () => {
   it('does not apply ZV-16 request ordering when only ZV-15 is enabled', () => {
     const issues = getLnkChronologyIssues([{
       joint: 'F4',
+      vikResult: 'годен',
       weldDate: '2026-07-10',
       rkRequest: 'Заявка-РК',
       rkRequestDate: '2026-07-09',

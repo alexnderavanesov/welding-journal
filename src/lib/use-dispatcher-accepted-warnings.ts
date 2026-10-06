@@ -18,7 +18,7 @@ export function useDispatcherAcceptedWarnings({ setMessage }: UseDispatcherAccep
   const acceptWarningMutation = useMutation({
     mutationFn: async (task: DispatcherTask) =>
       acceptDispatcherWarning({
-        data: { key: task.key },
+        data: { key: task.key, ...('row' in task ? { scope: { projectTitle: String(task.row.projectTitle ?? ''), subtitleCode: String(task.row.subtitleCode ?? ''), line: String(task.row.line ?? '') } } : {}) },
       }),
     onSuccess: async () => {
       await Promise.all([

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { CoilRestorationDialog } from './coil-restoration-dialog'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
@@ -32,6 +33,7 @@ type AcceptedWarningsSettingsPanelProps = {
 const CATEGORY_OPTIONS: Array<{ value: DispatcherAcceptedWarningCategory; label: string }> = [
   { value: 'all', label: 'Все' },
   { value: 'percentage-line-control', label: 'Процентные линии' },
+  { value: 'line-program-control', label: 'Согласования контроля' },
   { value: 'early-coil', label: 'Досрочные катушки' },
   { value: 'other', label: 'Другие' },
 ]
@@ -52,6 +54,7 @@ export function AcceptedWarningsSettingsPanel({
   runProtectedSettingsChange,
 }: AcceptedWarningsSettingsPanelProps) {
   const [searchDraft, setSearchDraft] = useState('')
+  const [earlyCorrectionSourceId, setEarlyCorrectionSourceId] = useState<number | null>(null)
   const [category, setCategory] = useState<DispatcherAcceptedWarningCategory>('all')
   const [period, setPeriod] = useState<DispatcherAcceptedWarningPeriod>('all')
   const [sort, setSort] = useState<DispatcherAcceptedWarningSort>('newest')
@@ -76,8 +79,8 @@ export function AcceptedWarningsSettingsPanel({
     queryFn: () => listDispatcherAcceptedWarnings({ data: request }),
     enabled: searchIsSettled,
     staleTime: 15_000,
-    refetchOnWindowFocus: 'always',
-    refetchOnReconnect: 'always',
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
   const revokeAcceptedWarningMutation = useMutation({
     mutationFn: (key: string) => revokeDispatcherAcceptedWarning({ data: { key } }),
@@ -92,6 +95,7 @@ export function AcceptedWarningsSettingsPanel({
         queryClient.invalidateQueries({ queryKey: DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: ['line-program'], refetchType: 'active' }),
         invalidateWeldPageQueries(queryClient),
         queryClient.invalidateQueries({ queryKey: ['weld-joint-chain'] }),
       ])
@@ -156,6 +160,10 @@ export function AcceptedWarningsSettingsPanel({
 
   return (
     <div className="space-y-4">
+      {earlyCorrectionSourceId != null ? <CoilRestorationDialog rootId={earlyCorrectionSourceId} earlyDecision onClose={() => setEarlyCorrectionSourceId(null)} onSaved={text => {
+        setMessage({ text, tone: 'success' })
+        void queryClient.invalidateQueries({ queryKey: DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY, refetchType: 'active' })
+      }} /> : null}
       <div className="flex flex-col gap-3 rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -267,8 +275,8 @@ export function AcceptedWarningsSettingsPanel({
                   index > 0 ? 'border-l' : ''
                 } ${
                   category === option.value
-                    ? 'bg-slate-800 text-white'
-                    : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                    ? 'bg-sky-50 text-sky-700'
+                    : 'bg-white text-slate-600 hover:bg-sky-50 hover:text-sky-700'
                 }`}
                 aria-pressed={category === option.value}
               >
@@ -348,6 +356,8 @@ export function AcceptedWarningsSettingsPanel({
                     <Trash2 className="h-3.5 w-3.5" />
                     {isRevoking ? 'Отменяем...' : 'Отменить'}
                   </button>
+                  {parseEarlyCoilDecisionKey(warning.key) ? <button type="button" className="rounded border px-2.5 py-1.5 text-xs" disabled={revokeAcceptedWarningMutation.isPending}
+                    onClick={() => setEarlyCorrectionSourceId(parseEarlyCoilDecisionKey(warning.key)!.sourceRowId)}>Исправить ошибочное решение</button> : null}
                 </div>
               )
             })}

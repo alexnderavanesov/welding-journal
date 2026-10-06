@@ -1,6 +1,8 @@
 // This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
 
 import { requireDb } from '@/db'
+import { assertJointChainRowsCanBeDeleted } from './joint-chain-deletion'
+import { prepareLineProgramWeldRecords } from '@/server/line-program-registry'
 import {
 weldJoints
 } from '@/db/schema'
@@ -23,7 +25,8 @@ import {
 assertCurrentWeldRowVersions,
 type WeldRowVersionTarget,
 } from '@/lib/weld-row-version'
-import { filterWeldRowsByColumns } from '@/lib/weld-table-filtering'
+import { splitReportQuickSearch } from '@/lib/report-quick-search'
+import { buildDispatcherTaskServerFilters } from '@/lib/dispatcher-task-row-codes'
 import {
 ensureDispatcherTaskIndexFresh,
 } from '@/server/dispatcher-task-index'
@@ -77,7 +80,6 @@ lockWeldLineMemberships,
 import {
 applyCurrentSystemWdi,
 buildWhere,
-getColumnFilterOptionFilters,
 hasDispatcherTaskServerFilter,
 loadServerOtherSettings,
 WELD_ROW_VERSION_SELECT,
@@ -89,6 +91,12 @@ import {
   normalizeWeldImportScopeRequest,
 } from '@/server/weld-request-utils'
 import { CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES } from '@/lib/control-availability-values'
+import { loadProgramRuleContext } from './line-program-rule-context'
+import { loadProgramSystemIndexSettings } from './line-program'
+import { buildProgramRepairRequirements } from '@/lib/line-program-repair-requirements'
+import type { WeldRow } from '@/lib/dispatcher-types'
+import { getJournalDerivedFilters, getWeldColumnFilterOptionSourceFilters, loadJournalDerivedFilterMatches } from './journal-filter-source'
+import { buildNumberArrayMatch } from './weld-request-utils'
 
 const CONTROL_ENABLED_VALUES_SQL = sql.join(
   CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES.map((value) => sql`${value}`),
@@ -102,75 +110,43 @@ export async function listWeldingJournalImportScope({
 }: {
   data?: WeldImportScopeRequest
 }): Promise<WeldImportScopeResult> {
-  const data = normalizeWeldImportScopeRequest(input)
+  const data = splitReportQuickSearch(buildDispatcherTaskServerFilters(normalizeWeldImportScopeRequest(input).columnFilters))
   await assertSecurityScope('entry')
-  if (hasDispatcherTaskServerFilter(data.columnFilters)) await ensureDispatcherTaskIndexFresh()
+  if (hasDispatcherTaskServerFilter(data.columnFilters) || data.columnFilters.finalStatus) await ensureDispatcherTaskIndexFresh()
   const db = requireDb()
-  const otherSettings = await loadServerOtherSettings()
-  const hasCurrentSystemWdiFilter = isSystemWdiMode(otherSettings) && Boolean(data.columnFilters.wdi?.trim())
-  const sourceFilterData = hasCurrentSystemWdiFilter
-    ? { ...data, columnFilters: getColumnFilterOptionFilters(data.columnFilters, 'wdi') }
-    : data
-  const where = buildWhere(sourceFilterData)
-
-  if (hasCurrentSystemWdiFilter) {
-    const sourceRows = await db
-      .select(WELD_IMPORT_SCOPE_SELECT)
-      .from(weldJoints)
-      .where(where)
+  // Count, settings, selection, full cards and related pre-TO history belong
+  // to one read snapshot. An insert/update/delete cannot cross the 500 limit
+  // or change the matched record between these reads.
+  const scope = await db.transaction(async (tx) => {
+    const otherSettings = await loadServerOtherSettings(tx)
+    const useSystemWdi = isSystemWdiMode(otherSettings)
+    const derivedFilters = getJournalDerivedFilters(data.columnFilters, useSystemWdi)
+    const where = buildWhere({ ...data, columnFilters: getWeldColumnFilterOptionSourceFilters(data.columnFilters, useSystemWdi) })
+    const matches = Object.keys(derivedFilters).length
+      ? await loadJournalDerivedFilterMatches(tx, where, derivedFilters, otherSettings)
+      : null
+    const total = matches ? matches.length : Number((await tx.select({ total: count() }).from(weldJoints).where(where))[0].total)
+    if (total === 0 || total > WELD_IMPORT_MAX_ROWS) return { total, rows: [] }
+    const rows = await tx.select(WELD_IMPORT_SCOPE_SELECT).from(weldJoints)
+      .where(matches ? buildNumberArrayMatch(weldJoints.id, matches.map(row => row.id)) : where)
       .orderBy(...WELDING_JOURNAL_ORDER_BY)
-    const rows = filterWeldRowsByColumns(
-      applyCurrentSystemWdi(sourceRows, otherSettings),
-      { wdi: data.columnFilters.wdi },
-    )
-    if (rows.length > WELD_IMPORT_MAX_ROWS) {
-      return {
-        rows: [],
-        total: rows.length,
-        limitExceeded: true,
-        fullyAssignedPstoLineKeys: [],
-      }
-    }
-    const [hydratedRows, fullyAssignedPstoLineKeys] = await Promise.all([
-      attachHeatTreatmentControlRelations(rows),
-      listFullyAssignedPstoLineKeys(db),
-    ])
-    return {
-      rows: compactWeldRowsForTransport(hydratedRows),
-      total: rows.length,
-      limitExceeded: false,
-      fullyAssignedPstoLineKeys,
-    }
+    return { total, rows: await attachHeatTreatmentControlRelations(applyCurrentSystemWdi(rows, otherSettings), tx) }
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
+  if (scope.total > WELD_IMPORT_MAX_ROWS) {
+    return { rows: [], total: scope.total, limitExceeded: true, fullyAssignedPstoLineKeys: [] }
   }
-
-  const [{ total }] = await db.select({ total: count() }).from(weldJoints).where(where)
-  const normalizedTotal = Number(total) || 0
-
-  if (normalizedTotal > WELD_IMPORT_MAX_ROWS) {
-    return {
-      rows: [],
-      total: normalizedTotal,
-      limitExceeded: true,
-      fullyAssignedPstoLineKeys: [],
-    }
-  }
-
-  const [hydratedRows, fullyAssignedPstoLineKeys] = await Promise.all([
-    db
-      .select(WELD_IMPORT_SCOPE_SELECT)
-      .from(weldJoints)
-      .where(where)
-      .orderBy(...WELDING_JOURNAL_ORDER_BY)
-      .then((rows) => attachHeatTreatmentControlRelations(rows)),
-    listFullyAssignedPstoLineKeys(db),
+  const [rows, fullyAssignedPstoLineKeys] = await Promise.all([
+    attachImportRepairRequirements(scope.rows), listFullyAssignedPstoLineKeys(db),
   ])
+  return { rows: compactWeldRowsForTransport(rows), total: scope.total, limitExceeded: false, fullyAssignedPstoLineKeys }
+}
 
-  return {
-    rows: compactWeldRowsForTransport(hydratedRows),
-    total: normalizedTotal,
-    limitExceeded: false,
-    fullyAssignedPstoLineKeys,
-  }
+async function attachImportRepairRequirements<T extends { id: number }>(rows: T[]) {
+  if (!rows.length) return rows
+  const db = requireDb()
+  const context = await loadProgramRuleContext(db, rows as WeldRow[], (rows[0] as WeldRow).preHeatTreatmentLnkEnabled !== false)
+  const requirements = buildProgramRepairRequirements(context.rows, context.approved, await loadProgramSystemIndexSettings(db))
+  return rows.map(row => ({ ...row, programRepairRequirements: requirements.get(row.id) ?? [] }))
 }
 
 export async function listFullyAssignedPstoLineKeys(db: ReturnType<typeof requireDb>) {
@@ -301,6 +277,7 @@ export async function replaceWeldJoints({
         otherSettings: validationContext.otherSettings,
       })
       records = mergeWeldRecordsWithPrevious(records, previousRows)
+      await prepareLineProgramWeldRecords(tx, records, previousRows)
       await assertJointChainIdentityChangesUseDedicatedMove(
         tx,
         records,
@@ -324,6 +301,7 @@ export async function replaceWeldJoints({
 
     if (data.deleteIds.length > 0) {
       await assertEarlyCoilDecisionRowsCanBeDeleted(tx, deletedRows)
+      await assertJointChainRowsCanBeDeleted(tx, deletedRows)
     }
     const updated = await updateWeldJointsInBatches(tx, records, previousRows)
 
@@ -396,6 +374,7 @@ export async function importWeldJoints({
   return db.transaction(async (tx) => {
     const processSettings = await loadControlProcessSettingsFromTransaction(tx)
     await lockWeldLineMemberships(tx, data.records)
+    await prepareLineProgramWeldRecords(tx, data.records)
     const validationContext = await loadServerWeldValidationContext(tx, data.records)
     prepareServerWeldRecords({
       records: data.records,

@@ -1,6 +1,47 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Request } from '@playwright/test'
 
 import { withE2eDatabase } from '../database'
+import { rpcName } from '../rpc'
+
+test('дубли только ВИК/РК/УЗК/ПВК: массовое сохранение и запрет ТВМТ/ПСТО из старого клиента', async ({ page }) => {
+  await seedDuplicateControlRows(2, false)
+  const errors: string[] = [], writes: Request[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('request', request => {
+    if (request.url().includes('/_serverFn/') && rpcName(request.url()).startsWith('saveDuplicateControls_')) writes.push(request)
+  })
+  await page.goto('/lnk')
+  await page.locator('header').getByRole('button', { name: 'Дубль контроль', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  for (const method of ['ТВМТ', 'ПСТО']) await expect(dialog.getByRole('button', { name: method, exact: true })).toHaveCount(0)
+  await dialog.getByPlaceholder('Проект, шифр, линия, спул или стык').fill('E2E-DUP')
+  await expect(dialog.getByText('Найдено: 2 · Выбрано: 0', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Выбрать найденные' }).click()
+  await expect(dialog.getByText('Найдено: 2 · Выбрано: 2', { exact: true })).toBeVisible()
+  for (const method of ['ВИК', 'РК', 'УЗК', 'ПВК']) await dialog.getByRole('button', { name: method, exact: true }).click()
+  await dialog.getByRole('combobox', { name: 'Результат', exact: true }).selectOption('годен')
+  await dialog.getByRole('textbox', { name: 'Дата контроля', exact: true }).fill('02.08.2026')
+  await dialog.getByRole('textbox', { name: 'Заключение', exact: true }).fill('E2E-DUP-NK')
+  await dialog.getByRole('textbox', { name: 'Дата заключения', exact: true }).fill('03.08.2026')
+  await dialog.getByRole('button', { name: 'Добавить дубль', exact: true }).click()
+  await expect(page.getByText('Дубль-контроль внесен: 8', { exact: true })).toBeVisible()
+  expect(writes).toHaveLength(1)
+  const stored = () => withE2eDatabase(async db => (await db.query("select d.id,d.weld_joint_id,d.method,d.result,d.conclusion from duplicate_controls d join weld_joints w on w.id=d.weld_joint_id where w.project_title='E2E-DUP' order by d.id")).rows)
+  const before = await stored()
+  expect(before).toHaveLength(8)
+  expect([...new Set(before.map(record => record.method))].sort()).toEqual(['ВИК', 'ПВК', 'РК', 'УЗК'])
+  // Replay the actual wire format from an old client: reject the entire mixed batch.
+  const request = writes[0], body = request.postData()!
+  expect(body).toContain('ВИК')
+  const headers = await request.allHeaders()
+  delete headers['content-length']
+  for (const method of ['ТВМТ', 'ПСТО']) {
+    const response = await page.request.post(request.url(), { headers, data: body.replaceAll('ВИК', method) })
+    expect(await response.text()).toContain('Для дубль-контроля доступны только ВИК, РК, УЗК и ПВК')
+    expect(await stored()).toEqual(before)
+  }
+  expect(errors).toEqual([])
+})
 
 test.afterEach(async () => {
   await cleanupDuplicateControlRows()

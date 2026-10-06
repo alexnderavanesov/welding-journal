@@ -1,4 +1,4 @@
-import { getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
+import { formatDisplayDate, getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { getRejectedPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
@@ -41,7 +41,7 @@ export function buildRepeatPstoRequestCycle({
     assertNotBefore(
       date,
       currentCycle?.tvmtConclusionDate,
-      `Стык ${formatJoint(row)}: дата повторной заявки ПСТО не может быть раньше даты негодной ТВМТ.`,
+      `Стык ${formatJoint(row)}: дата повторной заявки ПСТО цикла #${getNextPstoCycleSequence(row)} (${formatDisplayDate(date)}) не может быть раньше даты негодной ТВМТ цикла #${currentCycle?.sequence} (${formatDisplayDate(parseDateLikeToIso(currentCycle?.tvmtConclusionDate))}).`,
     )
   }
   return {
@@ -74,13 +74,13 @@ export function buildRepeatPstoResultCycle({
     saveCheckSettings.pstoResultDateAfterWeldDate &&
     isDateBeforeWeldDate(date, row.weldDate)
   ) {
-    throw new Error(formatDateBeforeWeldDateSaveReason(row, date, 'Дата повторной ПСТО'))
+    throw new Error(formatDateBeforeWeldDateSaveReason(row, date, `Дата повторной ПСТО цикла #${cycle.sequence}`))
   }
   if (date && saveCheckSettings.pstoResultRequestDateOrder) {
     assertNotBefore(
       date,
       cycle.pstoRequestDate,
-      `Стык ${formatJoint(row)}: дата повторной ПСТО не может быть раньше даты заявки.`,
+      `Стык ${formatJoint(row)}: дата повторной ПСТО цикла #${cycle.sequence} (${formatDisplayDate(date)}) не может быть раньше даты заявки (${formatDisplayDate(parseDateLikeToIso(cycle.pstoRequestDate))}).`,
     )
   }
   return {
@@ -110,7 +110,7 @@ export function buildRepeatTvmtRequestCycle({
     assertNotBefore(
       date,
       cycle.pstoDate,
-      `Стык ${formatJoint(row)}: дата заявки ТВМТ не может быть раньше даты повторной ПСТО.`,
+      `Стык ${formatJoint(row)}: дата заявки ТВМТ цикла #${cycle.sequence} (${formatDisplayDate(date)}) не может быть раньше даты повторной ПСТО (${formatDisplayDate(parseDateLikeToIso(cycle.pstoDate))}).`,
     )
   }
   return {
@@ -144,12 +144,12 @@ export function buildRepeatTvmtResultCycle({
     assertNotBefore(
       date,
       cycle.pstoDate,
-      `Стык ${formatJoint(row)}: дата ТВМТ не может быть раньше даты повторной ПСТО.`,
+      `Стык ${formatJoint(row)}: дата ТВМТ цикла #${cycle.sequence} (${formatDisplayDate(date)}) не может быть раньше даты повторной ПСТО (${formatDisplayDate(parseDateLikeToIso(cycle.pstoDate))}).`,
     )
     assertNotBefore(
       date,
       cycle.tvmtRequestDate,
-      `Стык ${formatJoint(row)}: дата ТВМТ не может быть раньше даты заявки ТВМТ.`,
+      `Стык ${formatJoint(row)}: дата ТВМТ цикла #${cycle.sequence} (${formatDisplayDate(date)}) не может быть раньше даты заявки ТВМТ (${formatDisplayDate(parseDateLikeToIso(cycle.tvmtRequestDate))}).`,
     )
   }
   const nextCycle = {

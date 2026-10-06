@@ -17,7 +17,7 @@ describe('dispatcher background settings', () => {
       ...DEFAULT_DISPATCHER_SETTINGS,
       'check-welder-stamp': false,
       'check-joint-core-data': false,
-      'line-percent': false,
+      'line-control-presence': false,
       'welder-stamp-expiry': false,
       'welder-dls-expiry': false,
     }
@@ -25,7 +25,7 @@ describe('dispatcher background settings', () => {
 
     expect(background['check-welder-stamp']).toBe(true)
     expect(background['check-joint-core-data']).toBe(true)
-    expect(background['line-percent']).toBe(true)
+    expect(background['line-control-presence']).toBe(true)
     expect(background['percentage-new-welder']).toBe(false)
     expect(background['welder-stamp-expiry']).toBe(false)
     expect(background['welder-dls-expiry']).toBe(false)

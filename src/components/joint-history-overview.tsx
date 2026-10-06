@@ -10,10 +10,10 @@ import { formatDisplayDate } from '@/lib/date-format'
 import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import { buildJointNextActions, type JointNextAction } from '@/lib/joint-next-actions'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
-import { getPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
+import { getPreHeatTreatmentControls, getPreHeatTreatmentHistoryNote } from '@/lib/lnk-control-stage'
 import { getLnkDisplayValue, isPstoNoNeed } from '@/lib/lnk-status'
 import { PRE_HEAT_TREATMENT_REPORT_FIELDS } from '@/lib/pre-heat-treatment-report-fields'
-import { buildPstoCycleTimeline, type PstoCycleSnapshot } from '@/lib/psto-cycle'
+import { buildPstoCycleTimeline, getRetainedPstoRequestNote, getRetainedPstoCycleLabel, type PstoCycleSnapshot } from '@/lib/psto-cycle'
 import {
   buildPrimaryPstoSystemDocumentRow,
   buildPstoRepeatSystemDocumentRow,
@@ -106,6 +106,7 @@ export function JointHistoryOverview({
         </HistorySection>
 
         <HistorySection title="НК до ТО" empty={preControls.length === 0}>
+          {getPreHeatTreatmentHistoryNote(row) ? <p className="mb-2 text-xs leading-5 text-amber-800">{getPreHeatTreatmentHistoryNote(row)}</p> : null}
           {preControls.map((control) => {
             const requestField = getPreFieldKey(control.method, 'requestName')
             const resultField = getPreFieldKey(control.method, 'result')
@@ -128,6 +129,7 @@ export function JointHistoryOverview({
         </HistorySection>
 
         <HistorySection title="ПСТО и ТВМТ" empty={!pstoCancelled && cycles.length === 0}>
+          {getRetainedPstoRequestNote(row) ? <p className="mb-2 text-xs leading-5 text-amber-800">{getRetainedPstoRequestNote(row)}</p> : null}
           {pstoCancelled ? (
             <HistoryLine
               label="Линия ПСТО"
@@ -256,7 +258,7 @@ function PstoCycleLine({
   const documentRow = repeat
     ? buildPstoRepeatSystemDocumentRow(row, repeat)
     : buildPrimaryPstoSystemDocumentRow(row)
-  const workflowValue = isPstoNoNeed(row, cycle.pstoResult)
+  const workflowValue = getRetainedPstoCycleLabel(row, cycle) ?? (isPstoNoNeed(row, cycle.pstoResult)
     ? 'нет потребности'
     : text(cycle.tvmtResult)
     ? `ТВМТ: ${text(cycle.tvmtResult)}`
@@ -264,7 +266,7 @@ function PstoCycleLine({
       ? `ПСТО: ${text(cycle.pstoResult)} · ТВМТ ожидается`
       : text(cycle.pstoRequest)
         ? 'ожидает ПСТО'
-        : 'ожидает заявку ПСТО'
+        : 'ожидает заявку ПСТО')
 
   return (
     <HistoryLine

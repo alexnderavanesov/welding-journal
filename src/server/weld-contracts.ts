@@ -8,11 +8,6 @@ import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { SystemDocumentSequenceUpdate } from '@/server/system-document-sequences'
 import type { JointCoilTransition } from '@/lib/joint-chain-transitions'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
-import type {
-  PercentageLineControlAction,
-  PercentageLineControlScope,
-} from '@/lib/percentage-line-control-update'
-import type { PercentageControlMethod } from '@/lib/percentage-line-summary'
 import type { LnkRequestExtensionOption } from '@/lib/lnk-request-extension'
 import type { SystemDocumentReference } from '@/lib/system-document-types'
 import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
@@ -69,6 +64,14 @@ export type LnkWorkflowRowsRequest = {
   search?: string | null
   resultFilter?: 'годен' | 'ремонт' | 'вырез' | null
   limit?: number | null
+  offset?: number | null
+  requestFilter?: 'open' | 'fixed' | null
+}
+
+export const PRE_HEAT_TREATMENT_REGISTRY_PAGE_SIZE = 50
+
+export function isPreHeatTreatmentRegistryScope(scope: LnkWorkflowRowScope) {
+  return scope === 'preHeatTreatmentRequestRegistry' || scope === 'preHeatTreatmentResultRegistry'
 }
 
 export type LnkWorkflowSummary = {
@@ -156,10 +159,13 @@ export function normalizeLnkWorkflowRowsRequest(
   const limit = requestedLimit !== null && Number.isInteger(requestedLimit) && requestedLimit > 0
     ? Math.min(requestedLimit, WORKFLOW_REGISTRY_MAX_LOADED_ROWS)
     : null
+  const preRegistry = isPreHeatTreatmentRegistryScope(scope)
+  const requestedOffset = Number(value?.offset ?? 0)
+  const offset = Number.isSafeInteger(requestedOffset) && requestedOffset >= 0 ? requestedOffset : 0
   return {
     scope,
     rowIds,
-    ...(includeRowIds.length > 0 ? { includeRowIds } : {}),
+    ...(!preRegistry && includeRowIds.length > 0 ? { includeRowIds } : {}),
     ...(methodKeys.length > 0 ? { methodKeys } : {}),
     ...(value?.allowPrimaryBeforePreviousStagesComplete === true
       ? { allowPrimaryBeforePreviousStagesComplete: true }
@@ -168,8 +174,11 @@ export function normalizeLnkWorkflowRowsRequest(
       ? { requestName, requestDate }
       : {}),
     ...(search ? { search } : {}),
-    ...(scope === 'resultRegistry' && resultFilter ? { resultFilter } : {}),
-    ...(limit ? { limit } : {}),
+    ...((scope === 'resultRegistry' || scope === 'preHeatTreatmentResultRegistry') && resultFilter ? { resultFilter } : {}),
+    ...(scope === 'preHeatTreatmentRequestRegistry' && (value.requestFilter === 'open' || value.requestFilter === 'fixed')
+      ? { requestFilter: value.requestFilter } : {}),
+    ...(preRegistry || limit ? { limit: preRegistry ? PRE_HEAT_TREATMENT_REGISTRY_PAGE_SIZE + 1 : limit! } : {}),
+    ...(preRegistry ? { offset } : {}),
   }
 }
 
@@ -317,7 +326,6 @@ export type WeldImportScopeResult = {
 export type WeldColumnFilterOption = { value: string; count: number; label: string }
 export type WeldColumnFilterOptionsRequest = WeldPageRequest & { fieldKey: WeldFieldKey }
 export type WeldFormSuggestionsRequest = { fieldKey: WeldFieldKey; draft: WeldInput }
-export type WeldLineAutofillRequest = { draft: WeldInput }
 export type WeldJointChainEarlyCoilCandidate = {
   replacementJoint: string | null
   replacementRowId: number | null
@@ -385,6 +393,7 @@ export type WeldBatchUpdateData = {
   systemDocumentSequence?: SystemDocumentSequenceUpdate
   systemDocumentSequences?: SystemDocumentSequenceUpdate[]
   requireFullyAssignedPstoLines?: boolean
+  layeredControl?: { rowIds: number[]; confirmPvk: boolean }
 }
 
 export type WeldDeleteData = WeldRowVersionTarget
@@ -395,12 +404,6 @@ export type RepeatedJointDeleteData = {
 }
 
 export type WeldDeleteManyData = {
-  targets: WeldRowVersionTarget[]
-}
-
-export type PercentageLineControlUpdateData = PercentageLineControlScope & {
-  action: PercentageLineControlAction
-  method?: PercentageControlMethod
   targets: WeldRowVersionTarget[]
 }
 

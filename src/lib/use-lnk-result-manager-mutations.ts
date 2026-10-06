@@ -10,7 +10,7 @@ import {
   buildLnkResultReplacementRows,
 } from '@/lib/lnk-report-mutation-updates'
 import { getManagedLnkResultChangeKey } from '@/lib/lnk-result-draft'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import { updateWeldRowOrThrow, updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -46,7 +46,7 @@ export function useLnkResultManagerMutations({
     onSuccess: async (saved, variables) => {
       highlightChangedRows(saved ? [saved] : [], getLnkResultHighlightFields(variables.methodKey))
       setMessage(variables.result ? 'Результат ЛНК изменен' : 'Результат ЛНК удален')
-      await invalidateWeldJoints(queryClient, { upsertRows: [saved] })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: [saved] })
       onWorkflowCorrectionSaved?.()
     },
     onError: (error) => {
@@ -77,7 +77,7 @@ export function useLnkResultManagerMutations({
       )
       setManagedLnkResultChangeHint(null)
       setMessage(`Результат ЛНК изменен для стыков: ${savedRows.length}`)
-      await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: savedRows })
       onWorkflowCorrectionSaved?.()
     },
     onError: (error) => {
@@ -109,7 +109,7 @@ export function useLnkResultManagerMutations({
     onSuccess: async (savedRows, variables) => {
       highlightChangedRows(savedRows, getLnkConclusionHighlightFields(variables.methodKey))
       setMessage(`Заключение переименовано для позиций: ${savedRows.length}`)
-      await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: savedRows })
       onWorkflowCorrectionSaved?.()
     },
     onError: (error) => {

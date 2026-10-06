@@ -6,8 +6,22 @@ import {
 } from '@/lib/statistics-psto-cycle'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { buildStatisticsSummary } from '@/lib/statistics-summary'
+import { buildPercentageLineSummaries } from '@/lib/percentage-line-summary'
 
 describe('PSTO cycle values for statistics', () => {
+  it('applies the current stage setting before the line calculation without deleting saved history', () => {
+    const input: WeldRow[] = [{ id: 1, joint: 'F1', line: 'L', weldDate: '2026-09-01', connectionType: 'СШ', stamp1K: 'A',
+      weldControlPercent: 30, pvkControlPercent: 10, hasPvk: 'отменен' }]
+    const history = [{ id: 1, weldJointId: 1, method: 'ПВК', result: 'ремонт' }]
+    for (const enabled of [true, false, true]) {
+      const prepared = prepareStatisticsHeatTreatmentRows(input, [], history, { preHeatTreatmentLnkEnabled: enabled })
+      expect(prepared[0].preHeatTreatmentControls).toEqual(history)
+      const stamp = buildPercentageLineSummaries(prepared)[0].stamps[0]
+      expect(stamp.rejectedControlRows).toBe(0) // PVK is never an RK/UZK surcharge source.
+      expect(stamp.pvk.completedRowIds).toEqual(enabled ? [1] : [])
+    }
+    expect(input[0].preHeatTreatmentControls).toBeUndefined()
+  })
   it('hydrates pre-TO controls before statistics and percentage-line calculations', () => {
     const [prepared] = prepareStatisticsHeatTreatmentRows(
       [{ id: 7, joint: 'F7', pstoRequired: 'да', hasRk: 'да' } as WeldRow],

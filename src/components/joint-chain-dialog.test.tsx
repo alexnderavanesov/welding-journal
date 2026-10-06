@@ -13,8 +13,53 @@ import type {
   WeldRow,
 } from '@/lib/dispatcher-types'
 import { buildJointCoilTransitions, type JointCoilTransition } from '@/lib/joint-chain-transitions'
+vi.mock('./coil-restoration-dialog', () => ({ CoilRestorationHistory: () => null }))
 
 describe('JointChainDialog', () => {
+  it('offers correction of the physical root from its repair', () => {
+    const root = row({ id: 1, joint: 'S1', programChainState: { weldJointId: 1, kind: 'primary', physicalRootId: 1, sourceRowId: null, coilParentId: null, coilSide: null, replacedByCoil: true, replacementCoilIds: [3, 4] } })
+    const repair = row({ id: 2, joint: 'S1R1', programChainState: { ...root.programChainState!, weldJointId: 2, kind: 'repair', sourceRowId: 1, replacedByCoil: false, replacementCoilIds: [] } })
+    const open = vi.fn()
+    renderDialog({ rows: [root, repair], record: repair, onOpenCoilCorrection: open })
+    fireEvent.click(screen.getByRole('button', { name: 'Исправить ошибочную катушку' }))
+    expect(open).toHaveBeenCalledWith(root)
+  })
+  it.each([['F901'], ['S1', 'S1R1', 'S1R2']])('hides actuality controls when every record is active: %s', (...joints) => {
+    const rows = joints.map((joint, i) => row({ id: i + 1, joint }))
+    renderDialog({ rows, onChangeChainActuality: vi.fn() })
+    expect(screen.queryByRole('region', { name: 'Актуальность по ИЗМу' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /актуальн/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Исправить ошибочную катушку' })).not.toBeInTheDocument()
+    if (joints.length === 1) expect(screen.queryByText('Цепочка ремонта и выреза')).not.toBeInTheDocument()
+  })
+
+  it.each([['S1'], ['S1', 'S1R1']])('only offers reactivation for fully inactive records: %s', (...joints) => {
+    const rows = joints.map((joint, i) => row({ id: i + 1, joint, revisionActuality: 'не актуален' }))
+    const onChangeChainActuality = vi.fn()
+    renderDialog({ rows, onChangeChainActuality })
+    const controls = screen.getByRole('region', { name: 'Актуальность по ИЗМу' })
+    expect(within(controls).getAllByRole('button')).toHaveLength(1)
+    fireEvent.click(within(controls).getByRole('button', { name: joints.length === 1 ? 'Вернуть актуальность стыку' : 'Вернуть актуальность цепочке' }))
+    expect(onChangeChainActuality).toHaveBeenCalledWith(rows[0], true)
+  })
+
+  it('offers both decisions for mixed unofficial history, but not for the active coil side', () => {
+    const rows = [row({ id: 1, joint: 'S1', rkResult: 'ремонт' }),
+      row({ id: 2, joint: 'S1R1', rkResult: 'вырез', officiality: 'неофициальный', revisionActuality: 'не актуален' }),
+      row({ id: 3, joint: 'S1Y1' }), row({ id: 4, joint: 'S1Y2', revisionActuality: 'не актуален' })]
+    const onChangeChainActuality = vi.fn()
+    renderDialog({ rows, transitions: buildJointCoilTransitions(rows, { earlyCoilDecisionSourceRowIds: new Set([1]) }), onChangeChainActuality })
+    const controls = screen.getByRole('region', { name: 'Актуальность по ИЗМу' })
+    expect(within(controls).getByText('Актуальность записей различается. Выберите единое состояние соединения.')).toBeInTheDocument()
+    fireEvent.click(within(controls).getByRole('button', { name: 'Сделать цепочку неактуальной' }))
+    fireEvent.click(within(controls).getByRole('button', { name: 'Вернуть актуальность цепочке' }))
+    expect(onChangeChainActuality.mock.calls).toEqual([[rows[0], false], [rows[0], true]])
+    fireEvent.click(screen.getByRole('button', { name: 'S1Y1' }))
+    expect(screen.queryByRole('region', { name: 'Актуальность по ИЗМу' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Парный: S1Y2' }))
+    expect(screen.getByRole('button', { name: 'Вернуть актуальность стыку' })).toBeInTheDocument()
+  })
+
   it('opens editing for the joint currently selected in the picture', () => {
     const rows = [
       row({ id: 1, joint: 'S1' }),
@@ -214,6 +259,20 @@ describe('JointChainDialog', () => {
 
     expect(screen.queryByRole('button', { name: 'Сделать F51 неофициальным' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Сделать F51 официальным' })).toBeInTheDocument()
+  })
+
+  it('keeps the repair action but explains why a source with a duplicate cannot become unofficial', () => {
+    const rows = [row({ id: 1, joint: 'F51', rkResult: 'ремонт', duplicateControls: [{ id: 5, method: 'УЗК', result: 'годен' }] as WeldRow['duplicateControls'] })]
+    const task: RepeatedJointCreateTask = { kind: 'create', key: 'create:F51R1', row: rows[0]!, sourceJoint: 'F51', targetJoint: 'F51R1', result: 'ремонт', suffix: 'R', methodCode: 'РК' }
+    const onOpenOfficiality = vi.fn()
+    renderDialog({ rows, dispatcherTasks: [task], onOpenOfficiality })
+    const panel = screen.getByRole('region', { name: 'Продолжение цепочки стыка' })
+    expect(within(panel).getByRole('button', { name: 'Создать F51R1' })).toBeEnabled()
+    const blocked = within(panel).getByRole('button', { name: 'Сделать F51 неофициальным' })
+    expect(blocked).toBeDisabled()
+    expect(within(panel).getByText(/есть дубль-контроль/)).toBeVisible()
+    fireEvent.click(blocked)
+    expect(onOpenOfficiality).not.toHaveBeenCalled()
   })
 
   it('keeps officiality management hidden without an active continuation action', () => {
@@ -450,6 +509,8 @@ function renderDialog({
   onCreateEarlyCoil = vi.fn(),
   onOpenOfficiality = vi.fn(),
   onEditRow = vi.fn(),
+  onChangeChainActuality,
+  onOpenCoilCorrection,
   onRunDispatcherTaskAction = vi.fn(),
   onOpenLineInDispatcher = vi.fn(),
   initialTab = 'joint',
@@ -479,6 +540,8 @@ function renderDialog({
   }) => void
   onOpenOfficiality?: (row: WeldRow, officiality: 'official' | 'unofficial') => void
   onEditRow?: (row: WeldRow) => void
+  onChangeChainActuality?: ComponentProps<typeof JointChainDialog>['onChangeChainActuality']
+  onOpenCoilCorrection?: ComponentProps<typeof JointChainDialog>['onOpenCoilCorrection']
   onRunDispatcherTaskAction?: ComponentProps<typeof JointChainDialog>['onRunDispatcherTaskAction']
   onOpenLineInDispatcher?: (row: WeldRow) => void
   initialTab?: ComponentProps<typeof JointChainDialog>['initialTab']
@@ -508,6 +571,8 @@ function renderDialog({
       onOpenReport={vi.fn()}
       onOpenLineInDispatcher={onOpenLineInDispatcher}
       onEditRow={onEditRow}
+      onChangeChainActuality={onChangeChainActuality}
+      onOpenCoilCorrection={onOpenCoilCorrection}
       onRunNextAction={vi.fn()}
       onRunDispatcherTaskAction={onRunDispatcherTaskAction}
       onCreateRepeatedJoint={onCreateRepeatedJoint}

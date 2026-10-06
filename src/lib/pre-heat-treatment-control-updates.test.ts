@@ -15,6 +15,14 @@ import {
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
 describe('pre-heat-treatment control updates', () => {
+  it('requires separate officiality restoration for both entry and correction of a good pre-TO result', () => {
+    const current = control({ result: 'ремонт' })
+    const row = makeRow({ officiality: 'неофициальный', preHeatTreatmentControls: [current], pstoDate: null, pstoResult: null })
+    const checks = Object.fromEntries(Object.keys(DEFAULT_SAVE_CHECK_SETTINGS).map(key => [key, false])) as typeof DEFAULT_SAVE_CHECK_SETTINGS
+    expect(() => buildPreHeatTreatmentResultCorrectionWrite({ row, control: current, result: 'годен', controlDate: '2026-08-04', conclusionName: 'К-1', saveCheckSettings: checks })).toThrow('Сначала верните стыку официальность')
+    const waiting = { ...current, result: 'ожидает НК', conclusionDate: null, conclusionName: null }
+    expect(() => buildPreHeatTreatmentResultWrite({ row: { ...row, preHeatTreatmentControls: [waiting] }, methodCode: 'ВИК', result: 'годен', controlDate: '2026-08-04', conclusionName: 'К-1', saveCheckSettings: checks })).toThrow('Сначала верните стыку официальность')
+  })
   it('creates only assigned staged controls and keeps duplicates outside the stage', () => {
     const writes = buildPreHeatTreatmentRequestWrites({
       row: makeRow({
@@ -156,6 +164,7 @@ describe('pre-heat-treatment control updates', () => {
     const row = makeRow({
       preHeatTreatmentControls: [
         control(),
+        control({ id: 3, method: 'ПВК', result: 'годен' }),
         control({ id: 2, method: 'РК', requestName: 'Заявка РК', result: 'ожидает НК' }),
       ],
     })
@@ -163,7 +172,7 @@ describe('pre-heat-treatment control updates', () => {
     expect(canAddPreHeatTreatmentResult(row, 'РК')).toBe(true)
   })
 
-  it('blocks remaining results after one pre-heat-treatment method rejects the joint', () => {
+  it('allows opening factual prerequisite backfill after a later RK rejection', () => {
     const row = makeRow({
       preHeatTreatmentControls: [
         control(),
@@ -172,10 +181,8 @@ describe('pre-heat-treatment control updates', () => {
       ],
     })
 
-    expect(getPreHeatTreatmentResultBlockReason(row, 'ПВК')).toBe(
-      'НК до ТО уже имеет негодный результат: РК.',
-    )
-    expect(canAddPreHeatTreatmentResult(row, 'ПВК')).toBe(false)
+    expect(getPreHeatTreatmentResultBlockReason(row, 'ПВК')).toBe('')
+    expect(canAddPreHeatTreatmentResult(row, 'ПВК')).toBe(true)
   })
 
   it('builds a rejected result with an empty description for separate editing', () => {
@@ -209,6 +216,7 @@ describe('pre-heat-treatment control updates', () => {
       rkExposureConfirmedDiameter: 57,
       preHeatTreatmentControls: [
         control(),
+        control({ id: 3, method: 'ПВК', result: 'годен' }),
         control({
           id: 2,
           method: 'РК',

@@ -14,15 +14,15 @@ describe('control process settings', () => {
     vi.restoreAllMocks()
   })
 
-  it('keeps both independent processes enabled by default', () => {
+  it('defaults PVK-good-only off without changing pre-heat policy', () => {
     expect(normalizeControlProcessSettings(null)).toEqual(DEFAULT_CONTROL_PROCESS_SETTINGS)
-    expect(normalizeControlProcessSettings({ layeredControlEnabled: false })).toEqual({
-      layeredControlEnabled: false,
+    expect(normalizeControlProcessSettings({ pvkGoodOnly: false })).toEqual({
+      pvkGoodOnly: false,
       preHeatTreatmentLnkEnabled: true,
       allowPrimaryLnkBeforePreviousStagesComplete: false,
     })
     expect(normalizeControlProcessSettings({ preHeatTreatmentLnkEnabled: false })).toEqual({
-      layeredControlEnabled: true,
+      pvkGoodOnly: false,
       preHeatTreatmentLnkEnabled: false,
       allowPrimaryLnkBeforePreviousStagesComplete: false,
     })
@@ -30,13 +30,13 @@ describe('control process settings', () => {
 
   it('persists the normalized local snapshot', () => {
     saveControlProcessSettings({
-      layeredControlEnabled: false,
+      pvkGoodOnly: false,
       preHeatTreatmentLnkEnabled: true,
       allowPrimaryLnkBeforePreviousStagesComplete: false,
     }, { syncRemote: false })
 
     expect(loadControlProcessSettings()).toEqual({
-      layeredControlEnabled: false,
+      pvkGoodOnly: false,
       preHeatTreatmentLnkEnabled: true,
       allowPrimaryLnkBeforePreviousStagesComplete: false,
     })
@@ -44,13 +44,13 @@ describe('control process settings', () => {
 
   it('applies the authoritative project snapshot without a remote echo', () => {
     applyRemoteControlProcessSettings({
-      layeredControlEnabled: true,
+      pvkGoodOnly: true,
       preHeatTreatmentLnkEnabled: false,
       allowPrimaryLnkBeforePreviousStagesComplete: false,
     })
 
     expect(loadControlProcessSettings()).toEqual({
-      layeredControlEnabled: true,
+      pvkGoodOnly: true,
       preHeatTreatmentLnkEnabled: false,
       allowPrimaryLnkBeforePreviousStagesComplete: false,
     })

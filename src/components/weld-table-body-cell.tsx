@@ -13,6 +13,7 @@ import {
 import {
   getLayeredControlDocumentProfile,
   getLayeredControlDocumentTypesForCompositeField,
+  getLayeredControlWaitingLabel,
   isLayeredControlCompositeFieldKey,
 } from '@/lib/layered-control-documents'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
@@ -269,6 +270,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
 }: WeldTableBodyCellProps) {
   const visibleValue = field.key === 'finalStatus' ? formatFinalStatusDisplay(row, displayValue) : displayValue
   const fieldKey = field.key as WeldFieldKey
+  const layeredWaitingLabel = getLayeredControlWaitingLabel(row, fieldKey)
   const layeredDocumentTypes = isLayeredControlCompositeFieldKey(fieldKey)
     ? getLayeredControlDocumentTypesForCompositeField(fieldKey)
     : []
@@ -337,6 +339,11 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
     >
       {layeredDocumentTypes.length > 0 ? (
         <div className="flex h-[52px] flex-col items-stretch justify-center gap-0.5 px-2 py-1">
+          {layeredWaitingLabel ? (
+            <span title={layeredWaitingLabel} className="text-center text-[11px] font-medium leading-4 text-amber-800">
+              {layeredWaitingLabel}
+            </span>
+          ) : null}
           {layeredDocumentTypes.map((type) => {
             const profile = getLayeredControlDocumentProfile(type)
             const title = String(row[profile.fieldKey] ?? '').trim()

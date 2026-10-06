@@ -1,3 +1,4 @@
+import { normalizeControlResultText } from '@/lib/report-value-utils'
 import { FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
 import {
   LNK_METHODS,
@@ -567,7 +568,7 @@ function groupIssuesByRowAndReason<T extends { kind: string; reason: string; mes
 }
 
 function hasRealPstoResult(value: unknown) {
-  const result = String(value ?? '').trim().toLowerCase()
+  const result = normalizeControlResultText(value)
   return result === 'проведено' || result === 'проведено (отменен)' || result === 'да'
 }
 

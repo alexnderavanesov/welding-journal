@@ -6,7 +6,6 @@ import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 import {
   getControlAvailabilityReportHistoryIssues,
-  getWeldFormAutoClearHint,
   getWeldFormCancellationResultHint,
   getWeldFormReactivationResultHint,
   getWeldFormSaveBlockReason,
@@ -15,6 +14,16 @@ import {
 
 describe('getWeldFormSaveBlockReason', () => {
   const initialValue = { id: 1, joint: 'S1' } as WeldDraft
+
+  it.each([{ officiality: 'неофициальный' }, { revisionActuality: 'не актуален' }])('keeps excluded assignments read-only but allows reactivation and other edits: %j', excluded => {
+    const previous = { ...initialValue, ...excluded, hasRk: 'да' }
+    for (const hasRk of [null, 'отменен', 'дополнительный']) {
+      expect(getWeldFormSaveBlockReason({ ...previous, hasRk }, previous)).toContain('официального актуального')
+    }
+    expect(getWeldFormSaveBlockReason({ ...previous, isometry: 'ISO-2' }, previous)).toBeNull()
+    expect(getWeldFormSaveBlockReason({ ...previous, officiality: null, revisionActuality: null, hasUzk: 'да' }, previous)).toBeNull()
+    expect(getWeldFormSaveBlockReason({ ...initialValue, ...excluded, hasUzk: 'да' }, initialValue)).toContain('официального актуального')
+  })
 
   it('requires a material group when the weld date is filled', () => {
     const draft = {
@@ -115,14 +124,7 @@ describe('getWeldFormSaveBlockReason', () => {
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
   })
 
-  it('allows clearing LNK availability when request only has pending NDT status', () => {
-    const draft = { id: 1, joint: 'S1', hasVik: null, vikRequest: 'Заявка-001', vikResult: 'ожидает НК' } as WeldInput
 
-    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
-    expect(getWeldFormAutoClearHint(draft, { ...initialValue, hasVik: 'да' } as WeldDraft)).toBe(
-      'ВИК: фактического результата еще нет, поэтому позиция этого стыка будет исключена из заявки «Заявка-001». Другие виды НК и остальные стыки заявки не изменятся',
-    )
-  })
 
   it('blocks clearing LNK availability when method result history exists', () => {
     const draft = { id: 1, joint: 'S1', hasVik: null, vikRequest: 'Заявка-001', vikResult: 'годен' } as WeldInput
@@ -191,26 +193,19 @@ describe('getWeldFormSaveBlockReason', () => {
     const draft = { id: 1, joint: 'S1', hasVik: 'отменен', vikResult: 'годен' } as WeldInput
 
     expect(getWeldFormCancellationResultHint(draft, { ...initialValue, hasVik: 'да' } as WeldDraft)).toBe(
-      'ВИК: результат уже внесен, статус будет «годен (отменен)»',
+      'ВИК: назначение будет отменено. Заявки, результаты и заключения всех этапов сохраняются; фактический брак остаётся браком.',
     )
   })
 
-  it('explains cancelled rejected LNK result cleanup', () => {
+  it('explains that cancellation preserves rejected LNK history', () => {
     const draft = { id: 1, joint: 'S1', hasRk: 'отменен', rkResult: 'ремонт' } as WeldInput
 
     expect(getWeldFormCancellationResultHint(draft, { ...initialValue, hasRk: 'да' } as WeldDraft)).toBe(
-      'РК: результат уже внесен (ремонт), статус будет «отменен», заявка, дата и заключение будут аннулированы',
+      'РК: назначение будет отменено. Заявки, результаты и заключения всех этапов сохраняются; фактический брак остаётся браком.',
     )
   })
 
-  it('explains auto-cleared pending LNK request when availability is cancelled', () => {
-    const draft = { id: 1, joint: 'S1', hasVik: 'отменен', vikRequest: 'Заявка-001', vikResult: 'ожидает НК' } as WeldInput
 
-    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
-    expect(getWeldFormAutoClearHint(draft, { ...initialValue, hasVik: 'да' } as WeldDraft)).toBe(
-      'ВИК: фактического результата еще нет, поэтому позиция этого стыка будет исключена из заявки «Заявка-001». Другие виды НК и остальные стыки заявки не изменятся',
-    )
-  })
 
   it('allows clearing PSTO availability when only request and date exist', () => {
     const draft = { id: 1, joint: 'S1', pstoRequired: null, pstoDate: '10.06.2026' } as WeldInput
@@ -218,21 +213,7 @@ describe('getWeldFormSaveBlockReason', () => {
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
   })
 
-  it('allows clearing PSTO availability when request only has pending status', () => {
-    const draft = {
-      id: 1,
-      joint: 'S1',
-      pstoRequired: null,
-      pstoRequest: 'ПСТО-001',
-      pstoDate: '10.06.2026',
-      pstoResult: 'ожидает заявку',
-    } as WeldInput
 
-    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
-    expect(getWeldFormAutoClearHint(draft, { ...initialValue, pstoRequired: 'да' } as WeldDraft)).toBe(
-      'ПСТО: заявка и даты на стык будут удалены',
-    )
-  })
 
   it('keeps completed PSTO history valid without an active line assignment', () => {
     const draft = { id: 1, joint: 'S1', pstoRequired: null, pstoDate: '10.06.2026', pstoResult: 'проведено' } as WeldInput
@@ -257,7 +238,7 @@ describe('getWeldFormSaveBlockReason', () => {
     const draft = { id: 1, joint: 'S1', pstoRequired: 'отменен', pstoResult: 'проведено' } as WeldInput
 
     expect(getWeldFormCancellationResultHint(draft, { ...initialValue, pstoRequired: 'да' } as WeldDraft)).toBe(
-      'ПСТО: результат уже внесен, статус будет «проведено (отменен)»',
+      'ПСТО: назначение будет отменено. Заявки, результаты и заключения всех этапов сохраняются; фактический брак остаётся браком.',
     )
   })
 
@@ -303,7 +284,7 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-16 · Стык S1: дата заявки РК 08.07.2026 раньше даты сварки 10.07.2026.',
+      'ЗВ-16 · Стык S1: дата заявки РК (08.07.2026) раньше даты сварки (10.07.2026).',
     )
   })
 
@@ -324,7 +305,7 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-16 · Стык S1: дата заявки РК 06.07.2026 раньше даты сварки 07.07.2026.',
+      'ЗВ-16 · Стык S1: дата заявки РК (06.07.2026) раньше даты сварки (07.07.2026).',
     )
   })
 
@@ -364,7 +345,7 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-24 · Стык S1: дата заявки ПСТО 08.07.2026 раньше даты сварки 10.07.2026.',
+      'ЗВ-24 · Стык S1: дата заявки ПСТО (08.07.2026) раньше даты сварки (10.07.2026).',
     )
   })
 
@@ -385,7 +366,7 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-24 · Стык S1: дата заявки ПСТО 06.07.2026 раньше даты сварки 07.07.2026.',
+      'ЗВ-24 · Стык S1: дата заявки ПСТО (06.07.2026) раньше даты сварки (07.07.2026).',
     )
   })
 
@@ -437,7 +418,7 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-24 · Стык S1: дата заявки ПСТО 06.07.2026 раньше даты сварки 07.07.2026.',
+      'ЗВ-24 · Стык S1: дата заявки ПСТО (06.07.2026) раньше даты сварки (07.07.2026).',
     )
   })
 
@@ -681,35 +662,9 @@ describe('getWeldFormSaveBlockReason', () => {
     ).toBeNull()
   })
 
-  it('explains auto-cleared request-only report data', () => {
-    const draft = {
-      id: 1,
-      joint: 'S1',
-      hasVik: null,
-      vikRequest: 'Заявка-001',
-      pstoRequired: null,
-      pstoRequest: 'ПСТО-001',
-      pstoDate: '10.06.2026',
-    } as WeldInput
 
-    expect(getWeldFormAutoClearHint(draft, { ...initialValue, hasVik: 'да', pstoRequired: 'да' } as WeldDraft)).toBe(
-      'ВИК: фактического результата еще нет, поэтому позиция этого стыка будет исключена из заявки «Заявка-001». Другие виды НК и остальные стыки заявки не изменятся; ПСТО: заявка и даты на стык будут удалены',
-    )
-  })
 
-  it('explains auto-cleared PSTO request data when availability is cancelled without result', () => {
-    const draft = {
-      id: 1,
-      joint: 'S1',
-      pstoRequired: 'отменен',
-      pstoRequest: 'ПСТО-001',
-      pstoDate: '10.06.2026',
-    } as WeldInput
 
-    expect(getWeldFormAutoClearHint(draft, { ...initialValue, pstoRequired: 'да' } as WeldDraft)).toBe(
-      'ПСТО: заявка и даты на стык будут удалены',
-    )
-  })
 
   it('does not explain cancellation that was already present when the dialog opened', () => {
     const initialValue = { id: 1, joint: 'S1', hasRk: 'отменен', rkResult: 'годен' } as WeldDraft
@@ -723,7 +678,7 @@ describe('getWeldFormSaveBlockReason', () => {
     const draft = { id: 1, joint: 'S1', hasRk: 'да', rkResult: 'годен' } as WeldInput
 
     expect(getWeldFormReactivationResultHint(draft, initialValue)).toBe(
-      'РК: сейчас «годен (отменен)», после сохранения будет «годен»',
+      'РК: сейчас «годен · назначение отменено», после сохранения будет «годен»',
     )
   })
 
@@ -741,7 +696,7 @@ describe('getWeldFormSaveBlockReason', () => {
     const draft = { id: 1, joint: 'S1', pstoRequired: 'да', pstoResult: 'проведено' } as WeldInput
 
     expect(getWeldFormReactivationResultHint(draft, initialValue)).toBe(
-      'ПСТО: сейчас «проведено (отменен)», после сохранения будет «проведено»',
+      'ПСТО: сейчас «проведено · назначение отменено», после сохранения будет «проведено»',
     )
   })
 })

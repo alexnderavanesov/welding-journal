@@ -9,6 +9,8 @@ const modules = {
   line: read('weld-line-operations.ts'),
   mutationsApi: read('weld-mutations-api.ts'),
   mutations: read('weld-mutations.ts'),
+  chainMove: read('weld-chain-line-move.ts'),
+  lineMoveStage: read('weld-line-move-stage.ts'),
   importApi: read('weld-import-api.ts'),
   imports: read('weld-import.ts'),
   lnkOfficiality: read('lnk-officiality-workflow.ts'),
@@ -27,9 +29,11 @@ describe('weld server module boundaries', () => {
   it('keeps dependencies directed from shared persistence to mutations and import', () => {
     expect(moduleImports(modules.shared)).toEqual([])
     expect(moduleImports(modules.read)).toEqual(['weld-server-shared'])
-    expect(moduleImports(modules.line)).toEqual(['weld-server-shared'])
+    expect(moduleImports(modules.line)).toEqual([])
     expect(moduleImports(modules.persistence)).toEqual(['weld-server-shared'])
-    expect(moduleImports(modules.mutations)).toEqual(['weld-persistence'])
+    expect(moduleImports(modules.mutations)).toEqual(['weld-line-move-stage', 'weld-persistence'])
+    expect(moduleImports(modules.chainMove)).toEqual(['weld-line-move-stage', 'weld-persistence'])
+    expect(moduleImports(modules.lineMoveStage)).toEqual([])
     expect(moduleImports(modules.imports)).toEqual([
       'weld-mutations',
       'weld-persistence',
@@ -87,7 +91,7 @@ describe('weld server module boundaries', () => {
     expect(modules.read).toContain('export async function listWeldingJournalPage')
     expect(modules.mutations).toContain('export async function updateWeldJoint')
     expect(modules.imports).toContain('export async function importWeldJoints')
-    expect(modules.line).toContain('export const getWeldLineAutofill')
+    expect(modules.line).not.toContain('getWeldLineAutofill')
     expect(modules.persistence).toContain('export async function updateWeldJointsInBatches')
   })
 
@@ -113,21 +117,24 @@ describe('weld server module boundaries', () => {
       'psto-line-assignment.ts',
       'weld-import.ts',
       'weld-mutations.ts',
+      'weld-chain-line-move.ts',
     ]) {
       expect(read(fileName), fileName).toContain('lockWeldLineMemberships')
     }
   })
 
   it('revalidates dispatcher-driven writes inside line-scoped server workflows', () => {
-    const percentageWorkflow = read('percentage-line-control-workflow.ts')
+    const percentageWorkflow = read('line-program-control.ts')
     const repeatedJointDeleteWorkflow = read('repeated-joint-delete-workflow.ts')
 
     for (const source of [percentageWorkflow, repeatedJointDeleteWorkflow, modules.lnkOfficiality]) {
       expect(source).toContain('lockWeldLineMemberships')
       expect(source).toContain(".for('update')")
     }
-    expect(percentageWorkflow).toContain('buildPercentageLineControlUpdateRows')
-    expect(percentageWorkflow).toContain('new Map(hydratedRows.map')
+    expect(percentageWorkflow).toContain('previewProgramChanges(allRows')
+    expect(percentageWorkflow).toContain('assertExpectedInteractiveWeldVersions(ids, data.targets, storedRows)')
+    expect(percentageWorkflow.indexOf('data.previewToken !== token')).toBeLessThan(percentageWorkflow.indexOf('result.rows = await saveAssignedRows'))
+    expect(percentageWorkflow.indexOf('!data.confirmedExcess')).toBeLessThan(percentageWorkflow.indexOf('result.rows = await saveAssignedRows'))
     expect(repeatedJointDeleteWorkflow).toContain('findCurrentObsoleteRepeatedJointDeleteTask')
     expect(repeatedJointDeleteWorkflow.indexOf('findCurrentObsoleteRepeatedJointDeleteTask({'))
       .toBeLessThan(repeatedJointDeleteWorkflow.indexOf('deleteLockedWeldRowsInTransaction(tx'))
@@ -140,10 +147,22 @@ describe('weld server module boundaries', () => {
     const pstoLineAssignment = read('psto-line-assignment.ts')
 
     expect(pstoLineAssignment).toContain('assertPstoLineActivationTransferAllowed(rows, previewRows)')
-    expect(pstoLineAssignment).toContain('assertPstoLineCancellationPromotionAllowed(rows, nextRows)')
-    expect(modules.mutations).toContain('assertChainLineMoveLnkStageTransfersAllowed(records, previousRows, decisions)')
+    expect(pstoLineAssignment).not.toContain('assertPstoLineCancellationPromotionAllowed')
+    expect(modules.chainMove).toContain('assertChainLineMoveLnkStageTransfersAllowed(records, previousRows, decisions)')
+    expect(modules.mutations).toContain('assertChainLineMoveLnkStageTransfersAllowed([record], previousRows, new Map(')
     expect(pstoLineAssignment).toContain('findBlockingLnkStageTransferChronologyIssue')
-    expect(modules.mutations).toContain('findBlockingLnkStageTransferChronologyIssue')
+    expect(modules.lineMoveStage).toContain('findBlockingLnkStageTransferChronologyIssue')
+  })
+
+  it('keeps the chain move atomic and behind the edit/row-version guards', () => {
+    expect(modules.mutationsApi).toContain("await import('@/server/weld-chain-line-move')")
+    expect(modules.mutations).not.toContain('export async function moveWeldJointChain')
+    expect(modules.chainMove).toContain("await assertSecurityScope('edit')")
+    expect(modules.chainMove.match(/\.transaction\(/g)).toHaveLength(1)
+    expect(modules.chainMove.indexOf('lockWeldLineMemberships(tx')).toBeLessThan(modules.chainMove.indexOf(".for('update')"))
+    expect(modules.chainMove.indexOf('assertExpectedInteractiveWeldVersions(')).toBeLessThan(modules.chainMove.indexOf('applyPstoLineMoveCleanupInTransaction(tx'))
+    expect(modules.chainMove.indexOf('validateServerWeldRecords(')).toBeLessThan(modules.chainMove.indexOf('updateWeldJointsInBatches(tx'))
+    expect(modules.chainMove).toContain('scopes: getDispatcherDirtyScopes(records, previousRows)')
   })
 })
 
@@ -153,6 +172,8 @@ function read(fileName: string) {
 
 function moduleImports(source: string) {
   const boundaryModules = new Set([
+    'weld-chain-line-move',
+    'weld-line-move-stage',
     'weld-import',
     'weld-line-operations',
     'weld-mutations',

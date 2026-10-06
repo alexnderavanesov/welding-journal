@@ -3,6 +3,17 @@ import { describe, expect, it } from 'vitest'
 import { buildSourcedSystemDocumentMetadataSummary } from '@/lib/system-document-source-metadata'
 
 describe('sourced system document metadata', () => {
+  it('refreshes 200000 small documents using a shared index, without rescanning all welds', () => {
+    let idReads = 0
+    const rows = Array.from({ length: 200_000 }, (_, index) => ({ get id() { idReads++; return index + 1 }, line: 'L' }))
+    const rowsById = new Map(rows.map(row => [row.id, row]))
+    for (let id = 1; id <= rows.length; id++) {
+      const summary = buildSourcedSystemDocumentMetadataSummary({ rowsById,
+        sourcePositions: [{ kind: 'pstoCycle', weldJointId: id, relationId: id, sequence: 1 }] })
+      if (id === rows.length) expect(summary.rowIds).toEqual([id])
+    }
+    expect(idReads).toBe(2 * rows.length)
+  })
   it('keeps exact primary and repeat PSTO cycles in one document summary', () => {
     expect(buildSourcedSystemDocumentMetadataSummary({
       sourcePositions: [

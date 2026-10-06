@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
-  buildGeneratedDocumentBatchAssignmentPlans,
   buildRemoteDocumentHistoryResult,
   normalizeGeneratedDocumentHistoryRequest,
   normalizeDocumentHistoryLimit,
@@ -11,6 +10,7 @@ import {
   type SaveGeneratedDocumentInput,
 } from '@/server/generated-documents'
 import { buildWeldColumnValueFilter } from '@/lib/weld-table-filtering'
+import { buildGeneratedDocumentBatchAssignmentPlans } from '@/lib/generated-document-assignment'
 import { DEFAULT_OTHER_SETTINGS } from '@/lib/other-settings'
 import type { GeneratedDocumentsTransaction } from '@/server/generated-document-number-sequence'
 
@@ -82,6 +82,30 @@ describe('generated document batch', () => {
 })
 
 describe('generated document batch database load', () => {
+  it('plans one document with 200000 welds without spreading them into function arguments', () => {
+    const selected = Array.from({ length: 200_000 }, (_, index) => index + 1)
+    expect(buildGeneratedDocumentBatchAssignmentPlans({
+      selectedWeldJointIdGroups: [selected], existingAssignments: [], documentAssignmentCounts: new Map(),
+    })).toEqual([{ targetDocumentId: null, affectedDocumentIds: [] }])
+  })
+
+  it('inspects each batch selection once rather than rescanning the growing document history', () => {
+    let lookups = 0
+    const groups = Array.from({ length: 2_000 }, (_, index) => [index + 1])
+    const originalHas = Set.prototype.has
+    let plans: ReturnType<typeof buildGeneratedDocumentBatchAssignmentPlans>
+    try {
+      Set.prototype.has = function (value) { lookups += 1; return originalHas.call(this, value) }
+      plans = buildGeneratedDocumentBatchAssignmentPlans({
+        selectedWeldJointIdGroups: groups, existingAssignments: [], documentAssignmentCounts: new Map(),
+      })
+    } finally {
+      Set.prototype.has = originalHas
+    }
+    expect(plans).toHaveLength(2_000)
+    expect(lookups).toBeLessThanOrEqual(6 * groups.length)
+  })
+
   it.each([2, 100])('updates %i existing documents with one database operation', async (documentCount) => {
     const execute = vi.fn().mockResolvedValue(undefined)
     const tx = { execute } as unknown as GeneratedDocumentsTransaction

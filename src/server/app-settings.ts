@@ -114,6 +114,11 @@ async function saveAppSettingToDb({ key, value, expectedUpdatedAt }: AppSettingP
     assertAppSettingVersion(current?.updatedAt.toISOString() ?? null, expectedUpdatedAt)
     const nextUpdatedAt = current ? getNextTimestampVersion(current.updatedAt) : new Date()
     let preparedValue = value
+    if (normalizedKey === PROJECT_SETTING_KEYS.systemIndex) {
+      const { prepareSystemIndexSettingsChange } = await import('@/server/system-index-settings-policy')
+      preparedValue = prepareAppSettingValue(await prepareSystemIndexSettingsChange(tx,
+        current ? parseStoredSetting(current.value) : undefined, value))
+    }
     if (normalizedKey === PROJECT_SETTING_KEYS.saveCheck) {
       const { normalizeSaveCheckSettings } = await import('@/lib/save-check-settings')
       preparedValue = prepareAppSettingValue(normalizeSaveCheckSettings(value))

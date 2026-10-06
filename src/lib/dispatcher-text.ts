@@ -49,12 +49,14 @@ export function getRepeatedJointTaskTitle(task: DispatcherTask) {
   if (task.kind === 'duplicate-check') return { joint: task.baseJoint, type: 'Возможный дубль' }
   if (task.kind === 'line-consistency') return { joint: task.line, type: task.title }
   if (task.kind === 'percentage-line-control') return { joint: task.line, type: task.title }
+  if (task.systemWarningCode === 'СП-04') return { joint: task.sourceJoint, type: 'Проверить физическую цепочку' }
   if (task.systemWarningCode === 'СП-01') {
     return { joint: task.sourceJoint, type: 'Предыдущие этапы пропущены' }
   }
 
   const reason = task.reason ?? ''
   if (reason === 'проверить даты сварки') return { joint: task.sourceJoint, type: 'Проверить даты сварки' }
+  if (reason === 'проверить актуальность цепочки') return { joint: task.sourceJoint, type: 'Проверить актуальность цепочки' }
   if (reason === REPAIR_FORBIDDEN_BY_DIAMETER_REASON || reason === REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON) {
     return { joint: task.sourceJoint, type: 'Проверить допустимость ремонта' }
   }

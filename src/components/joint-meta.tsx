@@ -8,6 +8,10 @@ export function MetaSeparator() {
   return <span className="mx-1 text-sm font-semibold leading-none text-slate-400">·</span>
 }
 
+export function JointConnectionTypeMeta({ row }: { row: WeldInput }) {
+  return <span className="whitespace-nowrap">Тип: <span className="font-semibold text-slate-700">{String(row.connectionType ?? '').trim() || '—'}</span></span>
+}
+
 export function JointSpoolDiameterMeta({ row }: { row: WeldInput }) {
   const spool = String(row.spool ?? '').trim()
   return (
@@ -18,6 +22,8 @@ export function JointSpoolDiameterMeta({ row }: { row: WeldInput }) {
           <MetaSeparator />
         </>
       ) : null}
+      <JointConnectionTypeMeta row={row} />
+      <MetaSeparator />
       <span>Диаметр - </span>
       <span className="font-semibold text-slate-700">{formatJointDiameterLabel(row)}</span>
     </>

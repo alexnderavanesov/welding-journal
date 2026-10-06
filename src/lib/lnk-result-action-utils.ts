@@ -52,6 +52,7 @@ export function resolveLnkResultDraftAfterRequestChange(
     methodKey,
     rowIds,
     rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds),
+    layeredControlRowIds: keepLayeredControlRowIds(current, methodKey, rowIds),
   }
 }
 
@@ -61,7 +62,7 @@ export function resolveLnkResultDraftAfterMethodChange(
   methodKey: WeldFieldKey | '',
   controlProcessSettings?: ControlProcessSettings,
 ): LnkResultDraftState {
-  if (!methodKey) return { ...current, methodKey: '' }
+  if (!methodKey) return { ...current, methodKey: '', layeredControlRowIds: new Set() }
   const rowIds = new Set(
     [...current.rowIds].filter((id) => {
       const row = lnkRows.find((candidate) => candidate.id === id)
@@ -81,6 +82,7 @@ export function resolveLnkResultDraftAfterMethodChange(
     methodKey,
     rowIds,
     rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds),
+    layeredControlRowIds: keepLayeredControlRowIds(current, methodKey, rowIds),
   }
 }
 
@@ -110,5 +112,10 @@ export function resolveLnkResultDraftAfterRowIdsChange(
     methodKey,
     rowIds,
     rowResults: filterLnkResultDraftRowResults(current.rowResults, rowIds),
+    layeredControlRowIds: keepLayeredControlRowIds(current, methodKey, rowIds),
   }
+}
+
+function keepLayeredControlRowIds(current: LnkResultDraftState, methodKey: WeldFieldKey | '', rowIds: Set<number>) {
+  return new Set(methodKey === 'pvkRequest' ? [...current.layeredControlRowIds].filter((id) => rowIds.has(id)) : [])
 }

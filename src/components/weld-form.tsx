@@ -1,3 +1,5 @@
+import { ConfirmActionDialog } from './confirm-action-dialog'
+import { getControlAssignmentCancellations } from '@/lib/control-assignment-history'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
@@ -25,7 +27,6 @@ import {
   type WorkflowRootCauseAction,
 } from '@/lib/workflow-root-cause-actions'
 import {
-  getWeldFormAutoClearHint,
   getWeldFormCancellationResultHint,
   getWeldFormReactivationResultHint,
   getWeldFormSaveBlockReason,
@@ -80,6 +81,7 @@ export function WeldForm({
   elevated = false,
   onRunRootCauseAction,
 }: WeldFormProps) {
+  const [cancellationDraft, setCancellationDraft] = useState<WeldInput | null>(null)
   const [draft, setDraft] = useState<WeldInput>(value)
   const otherSettings = useOtherSettings()
   const saveCheckSettings = useSaveCheckSettings()
@@ -142,12 +144,11 @@ export function WeldForm({
       : { message: null, actions: [] },
     [saveCheckSettings, validationDraft, value],
   )
-  const autoClearHint = saveBlockReason ? null : getWeldFormAutoClearHint(validationDraft, value)
   const cancellationResultHint = saveBlockReason ? null : getWeldFormCancellationResultHint(validationDraft, value)
   const reactivationResultHint = saveBlockReason ? null : getWeldFormReactivationResultHint(validationDraft, value)
-  const saveHint = [autoClearHint, cancellationResultHint, reactivationResultHint].filter(Boolean).join('; ') || null
+  const saveHint = [cancellationResultHint, reactivationResultHint].filter(Boolean).join('; ') || null
   const handleSave = () => {
-    if (busy) return
+    if (busy || cancellationDraft) return
 
     const currentStampSelectOptions = resolveStampSelectOptions(stampSelectOptions, draft)
     const currentExternalSaveBlockReason = getExternalSaveBlockReason?.(draft) ?? null
@@ -164,6 +165,7 @@ export function WeldForm({
       return
     }
 
+    if (getControlAssignmentCancellations(draft, value).length) { setCancellationDraft(draft); return }
     onSave(withCalculatedFinalStatus(draft))
   }
   const handleSaveRef = useRef(handleSave)
@@ -281,7 +283,7 @@ export function WeldForm({
     <LargeDialogShell
       maxWidthClassName="max-w-[min(1500px,96vw)]"
       maxHeightClassName="h-[calc(100dvh-2rem)] max-h-[96vh]"
-      overlayClassName={elevated ? 'z-[110] bg-slate-950/30 py-4' : 'z-40 bg-slate-950/20 py-4'}
+      overlayClassName={elevated ? 'z-[110] bg-slate-950/30 py-4' : 'z-[70] bg-slate-950/20 py-4'}
       panelShadowClassName="shadow-slate-950/10"
       panelClassName="bg-slate-50"
       returnPageScrollPosition={returnPageScrollPosition}
@@ -342,6 +344,7 @@ export function WeldForm({
         onCancel={onCancel}
         onSave={handleSave}
       />
+      {cancellationDraft ? <ConfirmActionDialog title="Отменить назначения?" tone="warning" description={getWeldFormCancellationResultHint(cancellationDraft, value)} confirmLabel="Подтвердить отмену и сохранить" cancelLabel="Вернуться к редактированию" onClose={() => setCancellationDraft(null)} onConfirm={() => { setCancellationDraft(null); onSave(withCalculatedFinalStatus(cancellationDraft)) }} /> : null}
     </LargeDialogShell>
   )
 }

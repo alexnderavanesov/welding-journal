@@ -67,7 +67,7 @@ import {
 } from '@/lib/psto-status'
 import { usePagePagination } from '@/lib/use-page-pagination'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { useSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import {
@@ -274,7 +274,7 @@ export function PstoRepeatWorkflowDialog({
     } }),
     onSuccess: async (savedRows) => {
       const resultRows = savedRows as WeldRow[]
-      await invalidateWeldJoints(queryClient, { upsertRows: resultRows })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: resultRows })
       await queryClient.invalidateQueries({ queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY })
       onSaved(
         resultRows,

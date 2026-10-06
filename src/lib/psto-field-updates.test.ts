@@ -2,27 +2,27 @@ import { describe, expect, it } from 'vitest'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
-  clearCancelledPstoRequestWithoutResult,
+  clearInactivePstoWaitingStatus,
   restoreActivePstoCancelledResult,
   withPendingPstoResultStatus,
 } from '@/lib/psto-field-updates'
 
-describe('clearCancelledPstoRequestWithoutResult', () => {
-  it('clears PSTO request and date when PSTO is inactive without result', () => {
-    const row = clearCancelledPstoRequestWithoutResult({
+describe('clearInactivePstoWaitingStatus', () => {
+  it('preserves PSTO request and date when PSTO is inactive without result', () => {
+    const row = clearInactivePstoWaitingStatus({
       pstoRequired: null,
       pstoRequest: 'ПСТО-30.06.26-001',
       pstoDate: '30.06.2026',
       pstoResult: null,
     } as WeldRow)
 
-    expect(row.pstoRequest).toBeNull()
-    expect(row.pstoDate).toBeNull()
+    expect(row.pstoRequest).toBe('ПСТО-30.06.26-001')
+    expect(row.pstoDate).toBe('30.06.2026')
     expect(row.pstoResult).toBeNull()
   })
 
   it('clears a stale waiting status after PSTO is cancelled without a request', () => {
-    const row = clearCancelledPstoRequestWithoutResult({
+    const row = clearInactivePstoWaitingStatus({
       pstoRequired: 'отменен',
       pstoRequest: null,
       pstoRequestDate: null,
@@ -34,7 +34,7 @@ describe('clearCancelledPstoRequestWithoutResult', () => {
   })
 
   it('keeps PSTO request and date when inactive PSTO already has conducted result', () => {
-    const row = clearCancelledPstoRequestWithoutResult({
+    const row = clearInactivePstoWaitingStatus({
       pstoRequired: null,
       pstoRequest: 'ПСТО-30.06.26-001',
       pstoDate: '30.06.2026',
@@ -45,21 +45,21 @@ describe('clearCancelledPstoRequestWithoutResult', () => {
     expect(row.pstoDate).toBe('30.06.2026')
   })
 
-  it('does not treat pending PSTO statuses as report history', () => {
-    const row = clearCancelledPstoRequestWithoutResult({
+  it('preserves documents even when only a waiting status exists', () => {
+    const row = clearInactivePstoWaitingStatus({
       pstoRequired: null,
       pstoRequest: 'ПСТО-30.06.26-001',
       pstoDate: '30.06.2026',
       pstoResult: 'ожидает заявку',
     } as WeldRow)
 
-    expect(row.pstoRequest).toBeNull()
-    expect(row.pstoDate).toBeNull()
-    expect(row.pstoResult).toBeNull()
+    expect(row.pstoRequest).toBe('ПСТО-30.06.26-001')
+    expect(row.pstoDate).toBe('30.06.2026')
+    expect(row.pstoResult).toBe('ожидает заявку')
   })
 
-  it('does not let BoQ or KS3 keep an unfinished PSTO request active', () => {
-    const row = clearCancelledPstoRequestWithoutResult({
+  it('preserves a cancelled request and financial references', () => {
+    const row = clearInactivePstoWaitingStatus({
       pstoRequired: 'отменен',
       pstoRequest: 'ПСТО-30.06.26-001',
       pstoRequestDate: '2026-06-30',
@@ -68,8 +68,8 @@ describe('clearCancelledPstoRequestWithoutResult', () => {
       pstoKs3: 'КС3-ПСТО',
     } as WeldRow)
 
-    expect(row.pstoRequest).toBeNull()
-    expect(row.pstoRequestDate).toBeNull()
+    expect(row.pstoRequest).toBe('ПСТО-30.06.26-001')
+    expect(row.pstoRequestDate).toBe('2026-06-30')
     expect(row.pstoBoq).toBe('BoQ-ПСТО')
     expect(row.pstoKs3).toBe('КС3-ПСТО')
   })

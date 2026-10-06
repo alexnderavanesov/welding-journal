@@ -780,7 +780,7 @@ describe('buildRepeatedJointTasks', () => {
     )
   })
 
-  it('adds an excess-control task only for normal yes values on a percentage line', () => {
+  it('additional coverage displaces ordinary yes but is never itself an excess candidate', () => {
     const rows = [
       row({ id: 1, joint: 'S1', stamp1K: 'ABC1', hasRk: 'да' }),
       row({ id: 2, joint: 'S2', stamp1K: 'ABC1', hasRk: 'да' }),
@@ -796,7 +796,8 @@ describe('buildRepeatedJointTasks', () => {
           kind: 'percentage-line-control',
           issue: 'excess',
           stamp: 'ABC1',
-          count: 1,
+          count: 2,
+          targetRowIds: [2, 1],
         }),
       ]),
     )
@@ -912,7 +913,7 @@ describe('buildRepeatedJointTasks', () => {
       expect.arrayContaining([
         expect.objectContaining({
           kind: 'percentage-line-control',
-          issue: 'rejected-primary',
+          issue: 'rejected-rows',
           stamp: 'ABC1',
           count: 1,
         }),
@@ -920,7 +921,7 @@ describe('buildRepeatedJointTasks', () => {
     )
   })
 
-  it('does not start percentage-line follow-up when a primary joint is rejected by VIK', () => {
+  it('does not add percentage-line surcharge for VIK, including additional VIK', () => {
     const rows = Array.from({ length: 10 }, (_, index) =>
       row({
         id: index + 1,
@@ -937,18 +938,18 @@ describe('buildRepeatedJointTasks', () => {
       expect.arrayContaining([
         expect.objectContaining({
           kind: 'percentage-line-control',
-          issue: 'rejected-primary',
+          issue: 'rejected-rows',
           stamp: 'ABC1',
         }),
       ]),
     )
-    expect(tasks).not.toEqual(
+    expect(tasks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           kind: 'percentage-line-control',
           issue: 'missing',
           stamp: 'ABC1',
-          requiredControls: 3,
+          requiredControls: 1,
         }),
       ]),
     )
@@ -973,7 +974,7 @@ describe('buildRepeatedJointTasks', () => {
       expect.arrayContaining([
         expect.objectContaining({
           kind: 'percentage-line-control',
-          issue: 'rejected-primary',
+          issue: 'rejected-rows',
           stamp: 'ABC1',
         }),
       ]),
@@ -989,7 +990,7 @@ describe('buildRepeatedJointTasks', () => {
     )
   })
 
-  it('does not count rejected repair joints toward the primary rejected percentage-line limit', () => {
+  it('does not count a rejected repair toward the fourth rejection and full-control limit', () => {
     const rows = [
       row({ id: 1, joint: 'S1', stamp1K: 'ABC1', rkResult: 'вырез' }),
       row({ id: 2, joint: 'S2', stamp1K: 'ABC1', rkResult: 'вырез' }),
@@ -1013,7 +1014,7 @@ describe('buildRepeatedJointTasks', () => {
       expect.arrayContaining([
         expect.objectContaining({
           kind: 'percentage-line-control',
-          issue: 'rejected-primary',
+          issue: 'rejected-rows',
           stamp: 'ABC1',
           count: 3,
         }),
@@ -1021,7 +1022,7 @@ describe('buildRepeatedJointTasks', () => {
     )
   })
 
-  it('uses configured chain suffixes when counting primary percentage-line failures', () => {
+  it('excludes rejected repairs with configured chain suffixes too', () => {
     const systemIndexSettings = {
       ...DEFAULT_SYSTEM_INDEX_SETTINGS,
       shopJoint: 'A',
@@ -1050,7 +1051,7 @@ describe('buildRepeatedJointTasks', () => {
     expect(tasks).toEqual(expect.arrayContaining([
       expect.objectContaining({
         kind: 'percentage-line-control',
-        issue: 'rejected-primary',
+        issue: 'rejected-rows',
         stamp: 'ABC1',
         count: 3,
       }),
@@ -1186,6 +1187,10 @@ describe('buildRepeatedJointTasks', () => {
 
 function row(values: Partial<WeldRow>): WeldRow {
   return {
+    connectionType: 'СШ',
+    category: 'II',
+    groupName: 'A',
+    pvkControlPercent: 0,
     id: values.id ?? 1,
     projectTitle: values.projectTitle ?? 'ТКМ5',
     subtitleCode: values.subtitleCode ?? '-',

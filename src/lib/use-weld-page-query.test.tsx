@@ -113,6 +113,71 @@ describe('useWeldPageQuery refresh policy', () => {
     })).toBeDefined()
   })
 
+  it.each(['weldingJournal', 'lnk', 'heatTreatment'] as const)(
+    'keeps %s rows and totals in place while a new filter is loading', async (report) => {
+      const queryClient = createQueryClient()
+      const fetchPage = report === 'lnk' ? serverMocks.listLnkReportPage
+        : report === 'heatTreatment' ? serverMocks.listHeatTreatmentReportPage : serverMocks.listWeldingJournalPage
+      const { result, rerender } = renderHook(
+        ({ columnFilters }) => useWeldPageQuery({ enabled: true, report, columnFilters }),
+        { initialProps: { columnFilters: {} as Record<string, string> }, wrapper: createWrapper(queryClient) },
+      )
+      await waitFor(() => expect(result.current.rows).toHaveLength(100))
+      const originalRows = result.current.rows
+      const deferred = createDeferred<WeldPageResult>()
+      fetchPage.mockReturnValueOnce(deferred.promise)
+
+      rerender({ columnFilters: { line: '=L1' } })
+      await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(2))
+      expect(result.current.rows).toBe(originalRows)
+      expect(result.current.totalCount).toBe(706)
+      expect(result.current.isLoading).toBe(true)
+      act(() => result.current.loadMore())
+      expect(fetchPage).toHaveBeenCalledTimes(2)
+
+      deferred.resolve(createPageResult(1, 100, 2))
+      await waitFor(() => expect(result.current.rows).toHaveLength(2))
+      expect(result.current.totalCount).toBe(2)
+      expect(result.current.isLoading).toBe(false)
+      expect(fetchPage).toHaveBeenCalledTimes(2)
+
+      rerender({ columnFilters: {} })
+      await waitFor(() => expect(result.current.rows).toHaveLength(100))
+      expect(fetchPage).toHaveBeenCalledTimes(2)
+    },
+  )
+
+  it('never carries the previous report rows into a different report', async () => {
+    const deferred = createDeferred<WeldPageResult>()
+    serverMocks.listLnkReportPage.mockReturnValueOnce(deferred.promise)
+    const { result, rerender } = renderHook(
+      ({ report }: { report: 'weldingJournal' | 'lnk' }) => useWeldPageQuery({ enabled: true, report, columnFilters: {} }),
+      { initialProps: { report: 'weldingJournal' } as { report: 'weldingJournal' | 'lnk' }, wrapper: createWrapper(createQueryClient()) },
+    )
+    await waitFor(() => expect(result.current.rows).toHaveLength(100))
+    rerender({ report: 'lnk' })
+    await waitFor(() => expect(serverMocks.listLnkReportPage).toHaveBeenCalledTimes(1))
+    expect(result.current.rows).toEqual([])
+    deferred.resolve(createPageResult(1, 100, 1))
+    await waitFor(() => expect(result.current.rows).toHaveLength(1))
+  })
+
+  it('reports a failed filter request instead of presenting old rows as its result', async () => {
+    const deferred = createDeferred<WeldPageResult>()
+    const { result, rerender } = renderHook(
+      ({ columnFilters }) => useWeldPageQuery({ enabled: true, columnFilters }),
+      { initialProps: { columnFilters: {} as Record<string, string> }, wrapper: createWrapper(createQueryClient()) },
+    )
+    await waitFor(() => expect(result.current.rows).toHaveLength(100))
+    serverMocks.listWeldingJournalPage.mockReturnValueOnce(deferred.promise)
+    rerender({ columnFilters: { line: '=L1' } })
+    await waitFor(() => expect(serverMocks.listWeldingJournalPage).toHaveBeenCalledTimes(2))
+    deferred.reject(new Error('Не удалось загрузить строки'))
+    await waitFor(() => expect(result.current.error?.message).toBe('Не удалось загрузить строки'))
+    expect(result.current.rows).toEqual([])
+    expect(serverMocks.listWeldingJournalPage).toHaveBeenCalledTimes(2)
+  })
+
   it('drops the removed all-rows page size from an older browser setting', async () => {
     window.localStorage.setItem('welding-report-page-size:v1', JSON.stringify({ lnk: -1 }))
     const queryClient = createQueryClient()

@@ -40,17 +40,16 @@ describe('getReportExportOptions', () => {
 
   it('omits disabled process sections from the current LNK export', () => {
     const fieldKeys = getReportExportOptions('lnk', 'ЛНК', {
-      layeredControlEnabled: false,
       preHeatTreatmentLnkEnabled: false,
     }).fields.map((field) => field.key)
 
     expect(fieldKeys).not.toEqual(expect.arrayContaining([
-      'layeredVikDocuments',
-      'layeredPvkDocuments',
       'preVikRequest',
       'preRkResult',
     ]))
     expect(fieldKeys).toContain('vikRequest')
+    expect(fieldKeys).toContain('layeredVikDocuments')
+    expect(fieldKeys).toContain('layeredPvkDocuments')
   })
 
   it('exports PSTO and TVMT fields in the same operational order as the report', () => {

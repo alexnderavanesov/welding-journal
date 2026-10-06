@@ -10,6 +10,7 @@ import {
 import { QueryBuilder } from 'drizzle-orm/pg-core'
 
 import { requireDb } from '@/db'
+import { buildOwnLnkBackfillWhere } from './lnk-system-order-sql'
 import {
   duplicateControls,
   preHeatTreatmentControls,
@@ -20,6 +21,7 @@ import { getDateInputValidationReason } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { ALL_LNK_FIELD_METHODS, LNK_METHODS } from '@/lib/lnk-report-config'
 import { PRE_HEAT_TREATMENT_LNK_METHODS } from '@/lib/lnk-control-stage'
+import { normalizeSearchText } from '@/lib/report-row-utils'
 import {
   collectRequestDocumentIdentities,
   createRequestDocumentIdentity,
@@ -41,6 +43,7 @@ import type {
 import {
   normalizeLnkWorkflowRequestSummaryRequest,
   normalizeLnkWorkflowRowsRequest,
+  isPreHeatTreatmentRegistryScope,
 } from '@/server/weld-contracts'
 import {
   buildAvailableLnkRequestWhere,
@@ -76,6 +79,7 @@ const LNK_WORKFLOW_FIELD_KEYS = new Set<string>([
   'spool',
   'joint',
   'connectionType',
+  'layeredControlAssigned',
   'd1',
   'd2',
   't1',
@@ -146,9 +150,9 @@ export async function listLnkWorkflowRows(
     .select(LNK_WORKFLOW_ROW_SELECT)
     .from(weldJoints)
     .where(buildLnkWorkflowRowsWhere(request))
-    .orderBy(...selectedRowsOrder, ...readyRowsOrder, ...getReportOrderBy('lnk'))
+    .orderBy(...selectedRowsOrder, ...readyRowsOrder, ...getReportOrderBy('lnk'), weldJoints.id)
   const sourceRows = request.limit
-    ? await sourceQuery.limit(request.limit + (request.includeRowIds?.length ?? 0))
+    ? await sourceQuery.limit(request.limit + (request.includeRowIds?.length ?? 0)).offset(request.offset ?? 0)
     : await sourceQuery
   const reportRows = applyCurrentSystemWdi(
     buildServerReportRows(sourceRows as unknown as WeldJoint[], 'lnk'),
@@ -381,7 +385,8 @@ export function buildLnkWorkflowRowsWhere(
   input: LnkWorkflowRowsRequest,
 ): SQL {
   const request = normalizeLnkWorkflowRowsRequest(input)
-  const baseWhere = request.scope === 'requestRegistry'
+  const preRegistry = isPreHeatTreatmentRegistryScope(request.scope)
+  const baseWhere = preRegistry ? buildPreHeatTreatmentRegistryWhere(request) : request.scope === 'requestRegistry'
     ? request.requestName
       ? buildExactLnkRequestWhere(request.requestName, request.requestDate ?? '')
       : sql`false`
@@ -397,7 +402,7 @@ export function buildLnkWorkflowRowsWhere(
     : candidatesIncludeSelected
       ? or(baseWhere, rowIdsWhere) ?? sql`false`
       : and(baseWhere, rowIdsWhere) ?? sql`false`
-  const searchWhere = request.search ? buildLnkWorkflowSearchWhere(request.search) : undefined
+  const searchWhere = request.search && !preRegistry ? buildLnkWorkflowSearchWhere(request.search) : undefined
   const candidateMethodWhere = buildLnkCandidateMethodWhere(request)
   const resultFilterWhere = request.scope === 'resultRegistry' && request.resultFilter
     ? or(...LNK_METHODS.map((method) => sql`
@@ -410,13 +415,36 @@ export function buildLnkWorkflowRowsWhere(
     candidateMethodWhere,
     resultFilterWhere,
   ) ?? sql`false`
-  const includedRowsWhere = request.includeRowIds?.length
+  const includedRowsWhere = !preRegistry && request.includeRowIds?.length
     ? buildNumberArrayMatch(weldJoints.id, request.includeRowIds)
     : undefined
   return and(
     buildReportKindWhere('lnk'),
     includedRowsWhere ? or(filteredWhere, includedRowsWhere) : filteredWhere,
   ) ?? sql`false`
+}
+
+function buildPreHeatTreatmentRegistryWhere(request: ReturnType<typeof normalizeLnkWorkflowRowsRequest>) {
+  const controls = preHeatTreatmentControls
+  const isResultRegistry = request.scope === 'preHeatTreatmentResultRegistry'
+  const methodCodes = LNK_METHODS.filter(method => request.methodKeys?.includes(method.requestKey)).map(method => method.code)
+  const final = finalResultWhere(controls.result)
+  const searchText = sql`btrim(regexp_replace(replace(lower(concat_ws(' ',
+    ${weldJoints.projectTitle}, ${weldJoints.subtitleCode}, ${weldJoints.line}, ${weldJoints.spool}, ${weldJoints.joint},
+    ${controls.method}, ${controls.requestName}, ${controls.requestDate}, ${controls.conclusionName}, ${controls.conclusionDate}, ${controls.result}
+  )), 'ё', 'е'), '\\s+', ' ', 'g'))`
+  const pattern = request.search ? `%${normalizeSearchText(request.search).replace(/[\\%_]/g, '\\$&')}%` : undefined
+  return exists(SQL_QUERY_BUILDER.select({ value: sql`1` }).from(controls).where(and(
+    sql`${controls.weldJointId} = ${weldJoints.id}`,
+    isResultRegistry ? final : or(...[
+      controls.requestName, controls.requestDate, controls.result, controls.conclusionName, controls.conclusionDate,
+    ].map(hasTextWhere)),
+    methodCodes.length ? sql`${controls.method} in (${sql.join(methodCodes.map(code => sql`${code}`), sql`, `)})` : undefined,
+    isResultRegistry && request.resultFilter
+      ? sql`lower(btrim(coalesce(${controls.result}::text, ''))) = ${request.resultFilter}` : undefined,
+    request.requestFilter === 'open' ? sql`not (${final})` : request.requestFilter === 'fixed' ? final : undefined,
+    pattern ? sql`${searchText} like ${pattern}` : undefined,
+  )))
 }
 
 function buildLnkCandidateMethodWhere(
@@ -540,12 +568,17 @@ function buildExactLnkRequestWhere(requestName: string, requestDate: string) {
 }
 
 export function buildPendingPrimaryLnkResultWhere() {
-  const hasPendingMethod = or(...LNK_METHODS.map((method) => and(
+  const pendingMethod = (method: (typeof LNK_METHODS)[number]) => and(
     buildEnabledTextWhere(weldJoints[method.enabledKey]),
     hasTextWhere(weldJoints[method.requestKey]),
     sql`lower(btrim(coalesce(${weldJoints[method.resultKey]}::text, ''))) not in (${sql.join(FINAL_LNK_RESULTS.map((value) => sql`${value}`), sql`, `)})`,
-  ) ?? sql`false`)) ?? sql`false`
-  return and(hasPendingMethod, buildNoRejectedLnkResultWhere()) ?? sql`false`
+  ) ?? sql`false`
+  const hasPendingMethod = or(...LNK_METHODS.map(pendingMethod)) ?? sql`false`
+  return and(hasPendingMethod, or(
+    buildNoRejectedLnkResultWhere(),
+    and(buildNoRejectedPreHeatTreatmentWhere(), or(...LNK_METHODS.map(method =>
+      and(pendingMethod(method), buildOwnLnkBackfillWhere(method))))),
+  )) ?? sql`false`
 }
 
 export function buildFinalPrimaryLnkResultWhere() {
@@ -621,7 +654,6 @@ function buildPreHeatTreatmentRequestCandidateWhere() {
   return and(
     buildPreHeatTreatmentAvailableWhere(),
     hasAvailableMethod,
-    buildNoRejectedPreHeatTreatmentWhere(),
   ) ?? sql`false`
 }
 
@@ -639,7 +671,6 @@ function buildPreHeatTreatmentResultCandidateWhere() {
   return and(
     buildPreHeatTreatmentAvailableWhere(),
     hasPendingControl,
-    buildNoRejectedPreHeatTreatmentWhere(),
   ) ?? sql`false`
 }
 

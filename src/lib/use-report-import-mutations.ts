@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import { massFillWeldRowsOrThrow, replaceWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { ReportImportRecord } from '@/lib/report-import-preview'
 import { assertWeldImportRowLimit } from '@/lib/weld-import-limits'
@@ -45,7 +45,7 @@ export function useReportImportMutations({
     onSuccess: async (result) => {
       highlightChangedRows(result.rows, result.changedFieldKeys)
       setMessage(`Массовое заполнение: обновлено ${result.updated}; пропущено: ${result.skipped}`)
-      await invalidateWeldJoints(queryClient)
+      scheduleWeldDataRefresh(queryClient)
     },
     onError: (error) => {
       setMessage((error as Error).message)
@@ -82,7 +82,7 @@ export function useReportImportMutations({
     onSuccess: async (result) => {
       highlightChangedRows(result.rows, result.changedFieldKeys)
       setMessage(`Замена данных импортом: обновлено ${result.updated}; удалено ${result.deleted}; пропущено: ${result.skipped}`)
-      await invalidateWeldJoints(queryClient)
+      scheduleWeldDataRefresh(queryClient)
     },
     onError: (error) => {
       setMessage((error as Error).message)

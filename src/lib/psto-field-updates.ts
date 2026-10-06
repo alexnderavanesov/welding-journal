@@ -1,3 +1,4 @@
+import { normalizeControlResultText } from '@/lib/report-value-utils'
 import { hasText, isEnabledControlValue } from '@/lib/report-value-utils'
 import type { WeldInput } from '@/lib/weld-fields'
 
@@ -83,22 +84,11 @@ export function clearPstoRequestPosition<T extends PstoRow>(record: T, pstoUpdat
   }
 }
 
-export function clearCancelledPstoRequestWithoutResult<T extends PstoRow>(record: T): T {
-  if (isEnabledControlValue(record.pstoRequired) || hasPstoResultHistory(record)) return record
-  const hasPendingResult = isPendingPstoResult(record.pstoResult)
-  if (
-    !hasText(record.pstoRequest) &&
-    !hasText(record.pstoRequestDate) &&
-    !hasText(record.pstoDate) &&
-    !hasPendingResult
-  ) return record
-  return {
-    ...record,
-    pstoRequest: null,
-    pstoRequestDate: null,
-    pstoDate: null,
-    pstoResult: null,
-  }
+/** Cancellation retains every document; only a document-free waiting label is disposable. */
+export function clearInactivePstoWaitingStatus<T extends PstoRow>(record: T): T {
+  if (isEnabledControlValue(record.pstoRequired) || hasPstoResultHistory(record) ||
+    [record.pstoRequest, record.pstoRequestDate, record.pstoDate].some(hasText) || !isPendingPstoResult(record.pstoResult)) return record
+  return { ...record, pstoResult: null }
 }
 
 export function withPendingPstoResultStatus<T extends PstoRow>(record: T): T {
@@ -111,7 +101,7 @@ export function withPendingPstoResultStatus<T extends PstoRow>(record: T): T {
 }
 
 function isPendingPstoResult(value: unknown) {
-  const result = String(value ?? '').trim().toLowerCase()
+  const result = normalizeControlResultText(value)
   return result === 'ожидает' || result === 'ожидает заявку'
 }
 
@@ -128,7 +118,8 @@ export function restoreActivePstoCancelledResult<T extends PstoRow>(record: T): 
 }
 
 function getRestoredActivePstoResult(value: unknown) {
-  const result = String(value ?? '').trim().toLowerCase()
+  const result = normalizeControlResultText(value)
+  if (String(value ?? '').trim().endsWith(' · назначение отменено')) return result
   if (result === 'проведено (отменен)') return 'проведено'
   if (result === 'отменен') return null
   return undefined
@@ -141,7 +132,7 @@ function hasPstoResultHistory(record: PstoRow) {
 }
 
 function isRealPstoResult(value: unknown) {
-  const result = String(value ?? '').trim().toLowerCase()
+  const result = normalizeControlResultText(value)
   return result === 'проведено' || result === 'проведено (отменен)' || result === 'да'
 }
 

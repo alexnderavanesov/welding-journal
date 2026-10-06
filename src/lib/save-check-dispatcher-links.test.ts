@@ -12,9 +12,10 @@ import {
 } from '@/lib/save-check-dispatcher-links'
 
 describe('save check and dispatcher links', () => {
-  it('keeps 33 current dispatcher settings and reserves the removed DЗ-16 code', () => {
-    expect(Object.keys(DEFAULT_DISPATCHER_SETTINGS)).toHaveLength(33)
+  it('keeps 30 DZ settings; line metadata now belongs to mandatory SP-02', () => {
+    expect(Object.keys(DEFAULT_DISPATCHER_SETTINGS)).toHaveLength(30)
     expect(Object.values(DISPATCHER_SETTING_CODES)).not.toContain('ДЗ-16')
+    expect(Object.values(DISPATCHER_SETTING_CODES)).not.toEqual(expect.arrayContaining(['ДЗ-24', 'ДЗ-25', 'ДЗ-26']))
   })
 
   it('maps official stamp protections to DЗ-18 in both directions', () => {

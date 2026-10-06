@@ -194,9 +194,9 @@ describe('cancelled report controls', () => {
     } as WeldInput)
 
     expect(row.hasVik).toBe('отменен')
-    expect(row.vikResult).toBe('годен (отменен)')
+    expect(row.vikResult).toBe('годен · назначение отменено')
     expect(row.pstoRequired).toBe('отменен')
-    expect(row.pstoResult).toBe('проведено (отменен)')
+    expect(row.pstoResult).toBe('проведено · назначение отменено')
   })
 
   it('fills active LNK result with waiting request status when request is missing', () => {

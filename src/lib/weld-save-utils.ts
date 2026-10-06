@@ -85,6 +85,7 @@ export async function updateWeldRowsOrThrow<T extends RowWithId>(
     systemDocumentSequence?: SystemDocumentSequenceUpdate
     systemDocumentSequences?: SystemDocumentSequenceUpdate[]
     requireFullyAssignedPstoLines?: boolean
+    layeredControl?: { rowIds: number[]; confirmPvk: boolean }
   } = {},
 ) {
   const savedRows = await updateWeldJoints({
@@ -95,6 +96,7 @@ export async function updateWeldRowsOrThrow<T extends RowWithId>(
       systemDocumentSequence: options.systemDocumentSequence,
       systemDocumentSequences: options.systemDocumentSequences,
       requireFullyAssignedPstoLines: options.requireFullyAssignedPstoLines,
+      layeredControl: options.layeredControl,
     },
   })
   if (!savedRows.every(Boolean)) throw new Error(errorMessage)
@@ -149,7 +151,7 @@ const dateFieldKeys = [...FIELD_BY_KEY.entries()]
   .filter(([, field]) => field.kind === 'date')
   .map(([fieldKey]) => fieldKey as WeldFieldKey)
 
-function getExpectedWeldRowVersions(records: readonly RowWithId[]): WeldRowVersionTarget[] {
+export function getExpectedWeldRowVersions(records: readonly RowWithId[]): WeldRowVersionTarget[] {
   return records.map((record) => ({
     id: Number(record.id),
     version: getExpectedWeldRowVersion(record),

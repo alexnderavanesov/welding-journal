@@ -1,4 +1,5 @@
 export const LEGACY_CONTROL_REPLACEMENT_VALUE = 'замена РК/УЗК'
+const LEGACY_CONTROL_REPLACEMENT_NORMALIZED = LEGACY_CONTROL_REPLACEMENT_VALUE.toLowerCase()
 export const CONTROL_ASSIGNMENT_FIELD_KEYS = new Set([
   'hasVik',
   'hasRk',
@@ -34,8 +35,12 @@ export const CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES = [
 ] as const
 
 export function normalizeControlAvailabilityText(value: unknown) {
+  // Stored canonical values dominate large reports; avoid repeated Unicode
+  // case conversion, including conversion of the same legacy constant.
+  if (value == null) return ''
+  if (value === '' || value === 'да' || value === 'нет' || value === 'отменен' || value === 'дополнительный') return value
   const text = String(value ?? '').trim().toLowerCase()
-  return text === LEGACY_CONTROL_REPLACEMENT_VALUE.toLowerCase() ? 'дополнительный' : text
+  return text === LEGACY_CONTROL_REPLACEMENT_NORMALIZED ? 'дополнительный' : text
 }
 
 export function isControlCancelledValue(value: unknown) {

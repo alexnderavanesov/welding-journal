@@ -6,6 +6,7 @@ import {
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { hasRejectedLnkResult } from '@/lib/lnk-status'
+import { canBackfillOwnLnkResult, getHistoricalLnkRequestDateReason } from '@/lib/lnk-system-order'
 import {
   createRequestDocumentIdentity,
   getLnkRequestDocumentIdentities,
@@ -286,9 +287,11 @@ function getLnkRequestExtensionTargetReason(
   }
   const stageAccess = getPrimaryLnkRequestAccess(row, method.code, controlProcessSettings)
   if (stageAccess.status === 'blocked') return stageAccess.reason
-  if (hasRejectedLnkResult(row)) {
+  if (hasRejectedLnkResult(row) && !canBackfillOwnLnkResult(row, method.code)) {
     return 'стык уже имеет негодный результат, поэтому новые позиции НК для него не создаются.'
   }
+  const historicalReason = getHistoricalLnkRequestDateReason(row, method.code, requestDate)
+  if (historicalReason) return historicalReason
   if (hasText(row[method.requestKey]) || hasText(row[method.requestDateKey])) {
     if (isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], {
       name: requestName.trim(),

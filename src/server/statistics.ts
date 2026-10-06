@@ -1,9 +1,8 @@
 import { createServerFn } from '@tanstack/react-start'
-import { and, asc, desc, eq, inArray, like, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, sql, type SQL } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import {
   appSettings,
-  dispatcherAcceptedWarnings,
   duplicateControls,
   preHeatTreatmentControls,
   pstoRepeatCycles,
@@ -24,13 +23,15 @@ import {
 } from '@/lib/system-index-settings'
 import { DEFAULT_OTHER_SETTINGS, normalizeOtherSettings } from '@/lib/other-settings'
 import { prepareReportRows } from '@/lib/use-report-rows'
-import { PERCENTAGE_LINE_NEW_WELDER_WARNING_KEY_PREFIX } from '@/lib/percentage-line-summary'
 import { prepareStatisticsHeatTreatmentRows } from '@/lib/statistics-psto-cycle'
+import { normalizeControlProcessSettings } from '@/lib/control-process-settings'
 import { toWelderStampPayload } from '@/server/welder-stamps'
 import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
 import { getOrComputeDerivedCalculation } from '@/server/derived-calculation-cache'
 import { assertSecurityScope } from '@/server/security-functions'
 import { WELD_EFFECTIVE_OFFICIALITY } from '@/server/weld-server-shared'
+import { attachProgramChainStates } from '@/server/line-program-chain-state'
+import { isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
 
 const STATISTICS_STATUS_ROW_SELECT = {
   id: weldJoints.id,
@@ -51,6 +52,8 @@ const STATISTICS_STATUS_ROW_SELECT = {
   hasPvk: weldJoints.hasPvk,
   hasUzk: weldJoints.hasUzk,
   hasTvmt: weldJoints.hasTvmt,
+  layeredControlAssigned: weldJoints.layeredControlAssigned,
+  pvkControlPercent: weldJoints.pvkControlPercent,
   pstoRequired: weldJoints.pstoRequired,
   pstoRequest: weldJoints.pstoRequest,
   pstoRequestDate: weldJoints.pstoRequestDate,
@@ -112,23 +115,23 @@ const STATISTICS_WELDER_ROW_SELECT = {
 }
 
 const STATISTICS_LINE_ROW_SELECT = {
-  ...STATISTICS_STATUS_ROW_SELECT,
+  id: weldJoints.id,
+  weldDate: weldJoints.weldDate,
+  projectTitle: weldJoints.projectTitle,
+  subtitleCode: weldJoints.subtitleCode,
+  line: weldJoints.line,
+  joint: weldJoints.joint,
+  officiality: WELD_EFFECTIVE_OFFICIALITY,
+  wdi: weldJoints.wdi,
+  connectionType: weldJoints.connectionType,
+  d1: weldJoints.d1,
+  d2: weldJoints.d2,
+  t1: weldJoints.t1,
+  t2: weldJoints.t2,
   groupName: weldJoints.groupName,
   category: weldJoints.category,
   weldControlPercent: weldJoints.weldControlPercent,
   revisionActuality: weldJoints.revisionActuality,
-}
-
-const STATISTICS_PERCENTAGE_LINE_ROW_SELECT = {
-  ...STATISTICS_STATUS_ROW_SELECT,
-  weldControlPercent: weldJoints.weldControlPercent,
-  revisionActuality: weldJoints.revisionActuality,
-  stamp1K: weldJoints.stamp1K,
-  stamp1Z: weldJoints.stamp1Z,
-  stamp1O: weldJoints.stamp1O,
-  stamp2K: weldJoints.stamp2K,
-  stamp2Z: weldJoints.stamp2Z,
-  stamp2O: weldJoints.stamp2O,
 }
 
 export const getStatisticsServerResult = createServerFn({ method: 'POST' })
@@ -136,12 +139,12 @@ export const getStatisticsServerResult = createServerFn({ method: 'POST' })
   .handler(async ({ data }): Promise<StatisticsServerResult> => {
     await assertSecurityScope('entry')
     return getOrComputeDerivedCalculation(
-      buildDerivedCalculationCacheKey('statistics:v26', data),
+      buildDerivedCalculationCacheKey('statistics:v31', data),
       () => computeStatisticsServerResult(data),
     )
   })
 
-async function computeStatisticsServerResult(
+export async function computeStatisticsServerResult(
   data: StatisticsServerRequest,
 ): Promise<StatisticsServerResult> {
   const db = requireDb()
@@ -150,13 +153,14 @@ async function computeStatisticsServerResult(
     ? sql`lower(trim(coalesce(${weldJoints.projectTitle}, ''))) = ${data.projectFilter}`
     : undefined
   const rowSelect = getStatisticsRowSelect(data.tab)
-  const [sourceRows, duplicateRows, preControlRows, repeatCycleRows, projectRows, subtitleRows, stampRows, settingsRows, acceptedWarningRows] = await Promise.all([
+  const needsControlHistory = data.tab !== 'lineSummary'
+  const [sourceRows, duplicateRows, preControlRows, repeatCycleRows, projectRows, subtitleRows, stampRows, settingsRows] = await Promise.all([
     db
       .select(rowSelect)
       .from(weldJoints)
       .where(scopeWhere)
       .orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint)),
-    db
+    needsControlHistory ? db
       .select({
         id: duplicateControls.id,
         weldJointId: duplicateControls.weldJointId,
@@ -170,8 +174,8 @@ async function computeStatisticsServerResult(
       .from(duplicateControls)
       .innerJoin(weldJoints, eq(weldJoints.id, duplicateControls.weldJointId))
       .where(scopeWhere)
-      .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id)),
-    db
+      .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id)) : Promise.resolve([]),
+    needsControlHistory ? db
       .select({
         id: preHeatTreatmentControls.id,
         weldJointId: preHeatTreatmentControls.weldJointId,
@@ -187,8 +191,8 @@ async function computeStatisticsServerResult(
       .from(preHeatTreatmentControls)
       .innerJoin(weldJoints, eq(weldJoints.id, preHeatTreatmentControls.weldJointId))
       .where(scopeWhere)
-      .orderBy(asc(preHeatTreatmentControls.weldJointId), asc(preHeatTreatmentControls.id)),
-    db
+      .orderBy(asc(preHeatTreatmentControls.weldJointId), asc(preHeatTreatmentControls.id)) : Promise.resolve([]),
+    needsControlHistory ? db
       .select({
         id: pstoRepeatCycles.id,
         weldJointId: pstoRepeatCycles.weldJointId,
@@ -208,7 +212,7 @@ async function computeStatisticsServerResult(
       .from(pstoRepeatCycles)
       .innerJoin(weldJoints, eq(weldJoints.id, pstoRepeatCycles.weldJointId))
       .where(scopeWhere)
-      .orderBy(asc(pstoRepeatCycles.weldJointId), asc(pstoRepeatCycles.sequence)),
+      .orderBy(asc(pstoRepeatCycles.weldJointId), asc(pstoRepeatCycles.sequence)) : Promise.resolve([]),
     db.selectDistinct({ value: weldJoints.projectTitle }).from(weldJoints),
     db.selectDistinct({ value: weldJoints.subtitleCode }).from(weldJoints).where(projectWhere),
     data.tab === 'welders'
@@ -217,22 +221,20 @@ async function computeStatisticsServerResult(
     db
       .select()
       .from(appSettings)
-      .where(inArray(appSettings.key, [PROJECT_SETTING_KEYS.systemIndex, PROJECT_SETTING_KEYS.other])),
-    data.tab === 'percentageLines'
-      ? db
-          .select({ key: dispatcherAcceptedWarnings.key })
-          .from(dispatcherAcceptedWarnings)
-          .where(like(dispatcherAcceptedWarnings.key, `${PERCENTAGE_LINE_NEW_WELDER_WARNING_KEY_PREFIX}%`))
-      : Promise.resolve([]),
+      .where(inArray(appSettings.key, [PROJECT_SETTING_KEYS.systemIndex, PROJECT_SETTING_KEYS.other, PROJECT_SETTING_KEYS.controlProcesses])),
   ])
+  if (data.tab === 'general' || data.tab === 'lineSummary') await attachProgramChainStates(sourceRows, db)
   const otherSettings = normalizeOtherSettings(
     getStoredSetting(settingsRows, PROJECT_SETTING_KEYS.other) ?? DEFAULT_OTHER_SETTINGS,
   )
-  const rows = prepareReportRows(
+  const rows = !needsControlHistory
+    ? (sourceRows as WeldRow[]).map(row => isSystemWdiMode(otherSettings) ? withSystemWdi(row, otherSettings) : row)
+    : prepareReportRows(
     prepareStatisticsHeatTreatmentRows(
       sourceRows as WeldRow[],
       repeatCycleRows,
       preControlRows,
+      normalizeControlProcessSettings(getStoredSetting(settingsRows, PROJECT_SETTING_KEYS.controlProcesses)),
     ),
     duplicateRows.map(toDuplicateControlRecord),
     undefined,
@@ -247,7 +249,6 @@ async function computeStatisticsServerResult(
     rows,
     welderStamps: stampRows.map(toWelderStampPayload),
     systemIndexSettings,
-    acceptedDispatcherWarningKeys: new Set(acceptedWarningRows.map((row) => row.key)),
     request: data,
   })
   return {
@@ -260,17 +261,18 @@ async function computeStatisticsServerResult(
 function getStatisticsRowSelect(tab: StatisticsServerRequest['tab']) {
   if (tab === 'welders') return STATISTICS_WELDER_ROW_SELECT
   if (tab === 'lineSummary') return STATISTICS_LINE_ROW_SELECT
-  if (tab === 'percentageLines') return STATISTICS_PERCENTAGE_LINE_ROW_SELECT
   return STATISTICS_GENERAL_ROW_SELECT
 }
 
 export function normalizeStatisticsServerRequest(data: StatisticsServerRequest): StatisticsServerRequest {
+  if (String(data?.tab) === 'percentageLines') {
+    throw new Error('Откройте «Программу линий»: прежний процентный расчёт статистики больше не используется. Обновите страницу.')
+  }
   const tab =
     data?.tab === 'lnk' ||
     data?.tab === 'psto' ||
     data?.tab === 'welders' ||
-    data?.tab === 'lineSummary' ||
-    data?.tab === 'percentageLines'
+    data?.tab === 'lineSummary'
       ? data.tab
       : 'general'
 

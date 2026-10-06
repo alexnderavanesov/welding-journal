@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { LAYERED_CONTROL_WAITING_LABEL } from '@/lib/layered-control-documents'
 import {
   DISPATCHER_TASKS_FIELD_KEY,
   DISPATCHER_TASKS_WITH_FILTER,
@@ -26,6 +27,37 @@ function row(partial: Partial<WeldRow>): WeldRow {
 }
 
 describe('filterWeldRowsByColumns', () => {
+  it.each(['Vik', 'Pvk'] as const)('separates waiting %s assignments from empty and historical documents', (method) => {
+    const key = `layered${method}Documents`
+    const rows = [
+      row({ id: 1, layeredControlAssigned: true, pvkResult: 'ожидает НК' }),
+      row({ id: 2, layeredControlAssigned: false }),
+      row({ id: 3, layeredControlAssigned: true, pvkResult: 'годен' }),
+      row({ id: 4, layeredControlAssigned: true, [`layered${method}EdgesDocument`]: 'К-4' }),
+      row({ id: 5, layeredControlAssigned: true, preHeatTreatmentControls: [{ method: 'ПВК', result: 'годен' }], duplicateControls: [{ method: 'ПВК', result: 'годен' }] } as Partial<WeldRow>),
+    ]
+    for (const filter of [`=${LAYERED_CONTROL_WAITING_LABEL}`, 'ожидает основного', buildWeldColumnValueFilter([LAYERED_CONTROL_WAITING_LABEL])]) {
+      expect(filterWeldRowsByColumns(rows, { [key]: filter }).map((r) => r.id)).toEqual([1, 5])
+    }
+    expect(filterWeldRowsByColumns(rows, { [key]: buildWeldColumnValueFilter(['']) }).map((r) => r.id)).toEqual([2, 3])
+    expect(filterWeldRowsByColumns(rows, { [key]: buildWeldColumnValueFilter([LAYERED_CONTROL_WAITING_LABEL, 'К-4']) }).map((r) => r.id)).toEqual([1, 4, 5])
+  })
+
+  it.each(['Vik', 'Pvk'] as const)('matches either %s layered conclusion, not the combined display text', (method) => {
+    const key = `layered${method}Documents`
+    const rows = [
+      row({ id: 1, [key]: 'Кромки: К-1\nСлои: С-1', [`layered${method}EdgesDocument`]: 'К-1', [`layered${method}LayersDocument`]: 'С-1' }),
+      row({ id: 2, [key]: 'Кромки: К-2', [`layered${method}EdgesDocument`]: 'К-2' }),
+      row({ id: 3 }),
+    ]
+    for (const value of ['К-1', 'С-1']) {
+      expect(filterWeldRowsByColumns(rows, { [key]: buildWeldColumnValueFilter([value]) }).map((r) => r.id)).toEqual([1])
+      expect(filterWeldRowsByColumns(rows, { [key]: `=${value}` }).map((r) => r.id)).toEqual([1])
+    }
+    expect(filterWeldRowsByColumns(rows, { [key]: buildWeldColumnValueFilter(['']) }).map((r) => r.id)).toEqual([3])
+    expect(filterWeldRowsByColumns(rows, { [key]: buildWeldColumnValueFilter(['К-2', '']) }).map((r) => r.id)).toEqual([2, 3])
+  })
+
   it('applies the quick search across identity and material fields together with column filters', () => {
     const rows = [
       row({ joint: 'S13', line: 'LIN-1', materialFullName1: 'Труба 09Г2С' }),

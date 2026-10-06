@@ -1,4 +1,5 @@
-import { isControlEnabledValue } from '@/lib/control-availability-values'
+import { normalizeControlAvailabilityStorageText } from '@/lib/control-availability-values'
+import { isCompletedLineProgramResult } from '@/lib/line-program-calculation'
 import { isAngularConnectionType } from '@/lib/connection-type'
 import {
   LAYERED_CONTROL_DOCUMENT_TYPES,
@@ -10,6 +11,17 @@ import type { WeldInput } from '@/lib/weld-fields'
 export type LayeredControlMethod = 'ВИК' | 'ПВК'
 export type LayeredControlStage = 'edges' | 'layers'
 export type LayeredControlCompositeFieldKey = 'layeredVikDocuments' | 'layeredPvkDocuments'
+export const LAYERED_CONTROL_WAITING_LABEL = 'Назначен · ожидает основного ПВК'
+
+/** A waiting annotation, not a conclusion or evidence of completed control. */
+export function getLayeredControlWaitingLabel(row: Partial<WeldInput>, fieldKey: unknown) {
+  if (!isLayeredControlCompositeFieldKey(fieldKey) || row.layeredControlAssigned !== true ||
+    isCompletedLineProgramResult(row.pvkResult)) return ''
+  const hasDocument = getLayeredControlDocumentTypesForCompositeField(fieldKey).some((type) =>
+    String(row[LAYERED_CONTROL_DOCUMENT_PROFILES[type].fieldKey] ?? '').trim(),
+  )
+  return hasDocument ? '' : LAYERED_CONTROL_WAITING_LABEL
+}
 
 export const LAYERED_CONTROL_DOCUMENT_PROFILES = {
   layeredVikEdges: {
@@ -117,11 +129,13 @@ export function isLayeredControlDocumentRequired(
   row: Partial<WeldInput>,
   type: LayeredControlDocumentType,
 ) {
-  const profile = LAYERED_CONTROL_DOCUMENT_PROFILES[type]
+  void type
   return Boolean(
+    row.layeredControlAssigned === true &&
     normalizeDate(row.weldDate) &&
       isAngularConnectionType(row.connectionType) &&
-      isControlEnabledValue(row[profile.assignmentKey]),
+      normalizeControlAvailabilityStorageText(row.hasPvk) === 'да' &&
+      isCompletedLineProgramResult(row.pvkResult),
   )
 }
 

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { AlertTriangle, LoaderCircle, RefreshCw } from 'lucide-react'
+import { buttonVariants } from '@/components/ui/button'
 
 type DocumentTemplateLoadBoundaryProps = {
   children: ReactNode
@@ -46,7 +47,7 @@ export function DocumentTemplateLoadBoundary({
           <button
             type="button"
             onClick={onRetry}
-            className="mt-5 inline-flex items-center justify-center gap-2 rounded-md border border-slate-900 bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+            className={buttonVariants({ className: 'mt-5' })}
           >
             <RefreshCw className="h-4 w-4" />
             Повторить загрузку

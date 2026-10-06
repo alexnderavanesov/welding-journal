@@ -105,7 +105,7 @@ describe('PSTO cycle timeline', () => {
     expect(buildPstoCycleTimeline({
       pstoRequired: 'отменен',
       pstoRequest: 'ПСТО-001',
-    })).toEqual([])
+    })).toEqual([expect.objectContaining({ source: 'primary', pstoRequest: 'ПСТО-001' })])
   })
 
   it('does not treat derived waiting labels as performed PSTO history', () => {

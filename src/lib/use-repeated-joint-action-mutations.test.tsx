@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   createEarlyCoilDecision: vi.fn(),
   createWeldRowsOrThrow: vi.fn(),
   getWeldJointById: vi.fn(),
-  invalidateWeldJoints: vi.fn(),
+  scheduleWeldDataRefresh: vi.fn(),
   updateSystemWeldRowOrThrow: vi.fn(),
 }))
 
@@ -29,13 +29,13 @@ vi.mock('@/lib/weld-save-utils', () => ({
 }))
 
 vi.mock('@/lib/weld-query-utils', () => ({
-  invalidateWeldJoints: mocks.invalidateWeldJoints,
+  scheduleWeldDataRefresh: mocks.scheduleWeldDataRefresh,
 }))
 
 describe('useRepeatedJointActionMutations', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.invalidateWeldJoints.mockResolvedValue(undefined)
+    mocks.scheduleWeldDataRefresh.mockReturnValue(undefined)
   })
 
   it('loads the full weld row before creating a repeated joint', async () => {
@@ -110,7 +110,7 @@ describe('useRepeatedJointActionMutations', () => {
       data: { sourceRowId: 17, expectedVersion: '117' },
     })
     expect(mocks.createWeldRowsOrThrow).not.toHaveBeenCalled()
-    expect(mocks.invalidateWeldJoints).toHaveBeenCalledWith(
+    expect(mocks.scheduleWeldDataRefresh).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ deleteIds: [30] }),
     )

@@ -4,6 +4,19 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { buildLnkOfficialityChainPlan } from '@/lib/lnk-officiality-chain-plan'
 
 describe('buildLnkOfficialityChainPlan', () => {
+  it.each(['годен', 'ремонт', 'вырез', 'ожидает НК', ''])('blocks becoming unofficial when any duplicate exists: %s', result => {
+    const source = row({ rkResult: 'ремонт', duplicateControls: [{ id: 30, weldJointId: 1, method: 'УЗК', result }] as WeldRow['duplicateControls'] })
+    expect(() => buildLnkOfficialityChainPlan([source], [1], 'unofficial')).toThrow('есть дубль-контроль')
+  })
+  it('can restore officiality of a legacy unofficial row with duplicates without deleting its history', () => {
+    const source = row({ officiality: 'неофициальный', rkResult: 'ремонт', duplicateControls: [{ id: 30, weldJointId: 1, method: 'УЗК', result: 'ремонт' }] as WeldRow['duplicateControls'] })
+    expect(buildLnkOfficialityChainPlan([source], [1], 'official').officialityChanges[0].nextOfficiality).toBe('official')
+    expect(source.duplicateControls).toHaveLength(1)
+  })
+  it.each(['годен', 'ожидает НК', ''])('keeps official restoration available after a legacy result became %s', result => {
+    const source = row({ officiality: 'неофициальный', rkResult: result })
+    expect(buildLnkOfficialityChainPlan([source], [1], 'official').officialityChanges[0].nextOfficiality).toBe('official')
+  })
   it('reuses the existing continuation as the official same-name joint', () => {
     const plan = buildLnkOfficialityChainPlan([
       row({ id: 1, joint: 'S1', rkResult: 'ремонт' }),
@@ -57,8 +70,8 @@ describe('buildLnkOfficialityChainPlan', () => {
     ])
   })
 
-  it('rebuilds the continuation after a rejected duplicate control', () => {
-    const plan = buildLnkOfficialityChainPlan([
+  it('does not use officiality to rebuild away a rejected duplicate (user clarification 01.10.2026)', () => {
+    expect(() => buildLnkOfficialityChainPlan([
       row({ id: 1, joint: 'S1', rkResult: 'ремонт' }),
       row({
         id: 2,
@@ -74,11 +87,7 @@ describe('buildLnkOfficialityChainPlan', () => {
         }],
       }),
       row({ id: 3, joint: 'S1R1W1', finalStatus: 'годен' }),
-    ], [2], 'unofficial')
-
-    expect(plan.renames).toEqual([
-      { rowId: 3, currentJoint: 'S1R1W1', targetJoint: 'S1R1' },
-    ])
+    ], [2], 'unofficial')).toThrow('есть дубль-контроль')
   })
 
   it('ends the rebuilt chain on a good official replacement', () => {
@@ -115,12 +124,69 @@ describe('buildLnkOfficialityChainPlan', () => {
     ], [2], 'unofficial')).toThrow(/годен|продолж/)
   })
 
-  it('blocks restoring an unofficial row when an official same-name replacement exists', () => {
-    expect(() => buildLnkOfficialityChainPlan([
+  it('restores an unofficial source and previews the reverse rebuild without changing facts', () => {
+    const plan = buildLnkOfficialityChainPlan([
       row({ id: 1, joint: 'S1', rkResult: 'ремонт' }),
       row({ id: 2, joint: 'S1R1', officiality: 'неофициальный', rkResult: 'вырез' }),
       row({ id: 3, joint: 'S1R1', finalStatus: 'годен' }),
-    ], [2], 'official')).toThrow(/несколько официальных/)
+    ], [2], 'official')
+    expect(plan.renames).toEqual([{ rowId: 3, currentJoint: 'S1R1', targetJoint: 'S1R1W1' }])
+    expect(plan.affectedRowIds).toEqual([2, 3])
+  })
+
+  it('replays later results and keeps unofficial attempts beside their own official step', () => {
+    const plan = buildLnkOfficialityChainPlan([
+      row({ id: 1, joint: 'S1', officiality: 'неофициальный', rkResult: 'ремонт' }),
+      row({ id: 2, joint: 'S1', rkResult: 'вырез' }),
+      row({ id: 3, joint: 'S1W1', officiality: 'неофициальный', rkResult: 'вырез' }),
+      row({ id: 4, joint: 'S1W1', finalStatus: 'годен' }),
+    ], [1], 'official')
+    expect(plan.renames).toEqual([
+      { rowId: 2, currentJoint: 'S1', targetJoint: 'S1R1' },
+      { rowId: 3, currentJoint: 'S1W1', targetJoint: 'S1R1W1' },
+      { rowId: 4, currentJoint: 'S1W1', targetJoint: 'S1R1W1' },
+    ])
+  })
+
+  it('does not silently turn a forbidden third repair into a cutout during restoration', () => {
+    expect(() => buildLnkOfficialityChainPlan([
+      row({ id: 1, joint: 'S1', officiality: 'неофициальный', rkResult: 'ремонт' }),
+      row({ id: 2, joint: 'S1', rkResult: 'ремонт' }),
+      row({ id: 3, joint: 'S1R1', rkResult: 'ремонт' }),
+      row({ id: 4, joint: 'S1R2', finalStatus: 'годен' }),
+    ], [1], 'official')).toThrow(/двух|ремонт/)
+  })
+
+  it.each(['', 'годен'])('does not invent a continuation for a restored source with result %s', rkResult => {
+    expect(() => buildLnkOfficialityChainPlan([
+      row({ id: 1, joint: 'S1', officiality: 'неофициальный', rkResult }),
+      row({ id: 2, joint: 'S1', finalStatus: 'годен' }),
+    ], [1], 'official')).toThrow(/основан|негод|результат/)
+  })
+
+  it('refuses an ambiguous official namesake and a chronological inversion', () => {
+    const source = row({ id: 1, joint: 'S1', officiality: 'неофициальный', rkResult: 'ремонт', weldDate: '2026-09-03' })
+    const replacement = row({ id: 2, joint: 'S1', finalStatus: 'годен', weldDate: '2026-09-02' })
+    expect(() => buildLnkOfficialityChainPlan([source, replacement], [1], 'official')).toThrow(/дат|Дата|хронолог/)
+    expect(() => buildLnkOfficialityChainPlan([source, replacement, { ...replacement, id: 3 }], [1], 'official')).toThrow(/несколько|неоднознач/)
+  })
+
+  it('restores inside one coil side without renaming the other side or the removed source', () => {
+    const plan = buildLnkOfficialityChainPlan([
+      row({ id: 1, joint: 'S1', rkResult: 'вырез' }),
+      row({ id: 2, joint: 'S1Y1', rkResult: 'ремонт', officiality: 'неофициальный' }),
+      row({ id: 3, joint: 'S1Y1', finalStatus: 'годен' }),
+      row({ id: 4, joint: 'S1Y2', finalStatus: 'годен' }),
+    ], [2], 'official', { earlyCoilDecisionSourceRowIds: new Set([1]) })
+    expect(plan.renames).toEqual([{ rowId: 3, currentJoint: 'S1Y1', targetJoint: 'S1Y1R1' }])
+    expect(plan.affectedRowIds).toEqual([2, 3])
+  })
+
+  it('restores a pending same-name draft without inventing a good result', () => {
+    const rows = [row({ id: 1, joint: 'S1', rkResult: 'ремонт', officiality: 'неофициальный' }), row({ id: 2, joint: 'S1', weldDate: null })]
+    const before = structuredClone(rows)
+    expect(buildLnkOfficialityChainPlan(rows, [1], 'official').renames).toEqual([{ rowId: 2, currentJoint: 'S1', targetJoint: 'S1R1' }])
+    expect(rows).toEqual(before)
   })
 
   it('restores an unofficial row when no official same-name replacement exists', () => {

@@ -151,6 +151,47 @@ describe('WeldTable header layout', () => {
     }
   })
 
+  it('keeps the search and list in place for quick actions and skips unchanged filters', () => {
+    const onChange = vi.fn()
+    const hiddenFieldKeys = new Set(VISIBLE_FIELDS.map((field) => field.key as WeldFieldKey).filter((key) => key !== 'line'))
+    function Harness() {
+      const [columnFilters, setColumnFilters] = useState<Record<string, string>>({})
+      return <WeldTable
+        rows={[{ id: 1, line: 'L1' }, { id: 2, line: 'L2' }] as WeldRow[]}
+        columnFilters={columnFilters}
+        onColumnFiltersChange={(filters) => { onChange(filters); setColumnFilters(filters) }}
+        readOnly
+        hiddenFieldKeys={hiddenFieldKeys}
+      />
+    }
+    render(<QueryClientProvider client={new QueryClient()}><Harness /></QueryClientProvider>)
+    fireEvent.click(screen.getByRole('button', { name: 'Линия. Открыть фильтр' }))
+    const search = screen.getByPlaceholderText('Найти значение')
+    search.focus()
+    fireEvent.change(search, { target: { value: 'L' } })
+    const optionList = screen.getByRole('button', { name: /L1/ }).parentElement!
+    optionList.scrollTop = 85
+    fireEvent.scroll(optionList)
+    const selectAll = screen.getByRole('button', { name: 'Выбрать все' })
+    expect(fireEvent.mouseDown(selectAll)).toBe(false)
+    fireEvent.click(selectAll)
+    expect(search).toHaveFocus()
+    expect(search).toHaveValue('L')
+    expect(optionList.scrollTop).toBe(85)
+    expect(screen.getByRole('dialog', { name: 'Фильтр: Линия' })).toBeInTheDocument()
+    fireEvent.click(selectAll)
+    expect(onChange).toHaveBeenCalledTimes(1)
+
+    const clear = screen.getByRole('button', { name: 'Очистить' })
+    expect(fireEvent.mouseDown(clear)).toBe(false)
+    fireEvent.click(clear)
+    expect(search).toHaveFocus()
+    expect(search).toHaveValue('')
+    expect(onChange).toHaveBeenLastCalledWith({})
+    fireEvent.click(clear)
+    expect(onChange).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps task panels and the table on one inset right edge without a synthetic border', () => {
     const hiddenFieldKeys = new Set(
       VISIBLE_FIELDS

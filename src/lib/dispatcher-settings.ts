@@ -31,7 +31,7 @@ export type DispatcherSettingId =
   | 'percentage-full-control'
   | 'percentage-excess'
   | 'percentage-new-welder'
-  | 'percentage-rejected-primary'
+  | 'percentage-rejected-rows'
   | 'percentage-suspend-welder'
   | 'repeated-create'
   | 'repeated-create-official-from-unofficial'
@@ -49,9 +49,6 @@ export type DispatcherSettingId =
   | 'check-lnk-vik-date-order'
   | 'check-lnk-vik-required'
   | 'check-psto-request-date-order'
-  | 'line-percent'
-  | 'line-group'
-  | 'line-category'
   | 'line-control-presence'
   | 'line-psto-presence'
   | 'welder-stamp-expiry'
@@ -88,7 +85,7 @@ export type DispatcherSettingActionHelp = {
 export const DISPATCHER_SETTING_CODES: Record<DispatcherSettingId, string> = {
   'percentage-new-welder': 'ДЗ-01',
   'percentage-excess': 'ДЗ-02',
-  'percentage-rejected-primary': 'ДЗ-03',
+  'percentage-rejected-rows': 'ДЗ-03',
   'percentage-missing': 'ДЗ-04',
   'percentage-full-control': 'ДЗ-05',
   'percentage-suspend-welder': 'ДЗ-06',
@@ -108,9 +105,6 @@ export const DISPATCHER_SETTING_CODES: Record<DispatcherSettingId, string> = {
   'check-lnk-vik-date-order': 'ДЗ-21',
   'check-lnk-vik-required': 'ДЗ-22',
   'check-psto-request-date-order': 'ДЗ-23',
-  'line-percent': 'ДЗ-24',
-  'line-group': 'ДЗ-25',
-  'line-category': 'ДЗ-26',
   'line-control-presence': 'ДЗ-27',
   'welder-stamp-expiry': 'ДЗ-28',
   'welder-dls-expiry': 'ДЗ-29',
@@ -124,7 +118,7 @@ export const DISPATCHER_SETTING_CODES: Record<DispatcherSettingId, string> = {
 export const DISPATCHER_SETTING_TASK_TYPE_LABELS: Record<DispatcherSettingId, string> = {
   'percentage-new-welder': 'Новый сварщик на процентной линии',
   'percentage-excess': 'Лишний контроль',
-  'percentage-rejected-primary': 'Проверить официальность',
+  'percentage-rejected-rows': 'Проверить официальность',
   'percentage-missing': 'Назначить контроль',
   'percentage-full-control': 'Назначить 100% контроль',
   'percentage-suspend-welder': 'Отстранить сварщика',
@@ -144,9 +138,6 @@ export const DISPATCHER_SETTING_TASK_TYPE_LABELS: Record<DispatcherSettingId, st
   'check-lnk-vik-date-order': 'Проверить порядок НК',
   'check-lnk-vik-required': 'Дозаполнить ВИК',
   'check-psto-request-date-order': 'Проверить цикл ПСТО/ТВМТ',
-  'line-percent': 'Проверить % контроля линии',
-  'line-group': 'Проверить группу трубопровода линии',
-  'line-category': 'Проверить категорию трубопровода линии',
   'line-control-presence': 'Проверить назначение контроля линии',
   'line-psto-presence': 'Проверить ПСТО по линии',
   'welder-stamp-expiry': 'Срок НАКС заканчивается',
@@ -161,7 +152,7 @@ export const DISPATCHER_SETTING_GROUPS: DispatcherSettingGroup[] = [
   {
     id: 'percentage-lines',
     title: 'Процентные линии',
-    description: 'Задачи по добору РК/УЗК, ПВК на У-стыках, лишнему контролю, официальности и отстранению сварщиков.',
+    description: 'Задачи общей группы РК/УЗК/послойной замены и самостоятельного ПВК: недобор, лишние назначения, официальность и отстранение.',
     items: [
       {
         id: 'percentage-new-welder',
@@ -174,24 +165,24 @@ export const DISPATCHER_SETTING_GROUPS: DispatcherSettingGroup[] = [
         description: 'Показывать задачи, когда обычных назначений «да» больше расчетного процента.',
       },
       {
-        id: 'percentage-rejected-primary',
+        id: 'percentage-rejected-rows',
         label: 'Проверить официальность',
-        description: 'Показывать задачи по негодным первичным процентным контролям и дублям. На У-стыках учитывается и ПВК.',
+        description: 'Проверять официальность актуальных первичных С/У-стыков с негодным РК/УЗК — источников добора по своим официальным клеймам. Ремонты R/W, ВИК и ПВК добор не увеличивают.',
       },
       {
         id: 'percentage-missing',
         label: 'Назначить контроль',
-        description: 'Показывать задачи по недостающему расчетному контролю. Для У-стыка допустим ПВК.',
+        description: 'Показывать доступный недобор отдельно по РК/УЗК и ПВК. РК/УЗК у У-стыка заменяет только явно назначенный послойный контроль, а не обычный ПВК.',
       },
       {
         id: 'percentage-full-control',
         label: 'Назначить 100% контроль',
-        description: 'Показывать задачи 100% контроля после четвертого первичного негодного расчетного контроля.',
+        description: 'Показывать полный контроль РК/УЗК после четвёртого актуального официального первичного стыка клейма с негодным РК/УЗК. Ремонты R/W не входят в порог.',
       },
       {
         id: 'percentage-suspend-welder',
         label: 'Отстранить сварщика',
-        description: 'Показывать задачу отстранения сварщика после четвертого первичного негодного расчетного контроля.',
+        description: 'Показывать задачу отстранения после четвёртого актуального официального первичного стыка клейма с негодным РК/УЗК. Ремонты R/W не входят в порог.',
       },
     ],
   },
@@ -315,24 +306,9 @@ export const DISPATCHER_SETTING_GROUPS: DispatcherSettingGroup[] = [
     description: 'Проверки единых параметров внутри одной линии.',
     items: [
       {
-        id: 'line-percent',
-        label: 'Проверить % контроля линии',
-        description: 'Показывать задачи разных значений процента контроля на одной линии.',
-      },
-      {
-        id: 'line-group',
-        label: 'Проверить группу трубопровода линии',
-        description: 'Показывать задачи разных групп трубопровода на одной линии.',
-      },
-      {
-        id: 'line-category',
-        label: 'Проверить категорию трубопровода линии',
-        description: 'Показывать задачи разных категорий трубопровода на одной линии.',
-      },
-      {
         id: 'line-control-presence',
         label: 'Проверить назначение контроля линии',
-        description: 'Показывать задачи несогласованных назначений ВИК, РК, УЗК и ПВК на 100% линии. Для У-стыков РК, УЗК и ПВК считаются взаимозаменяемыми. ПСТО проверяется как единое назначение линии, а ТВМТ - в цикле термообработки.',
+        description: 'Показывать два и более обязательных взаимозаменяемых назначения на одном С/У при любом проценте. Обычный ПВК проверяется отдельно, послойная замена доступна только У.',
       },
       {
         id: 'line-psto-presence',
@@ -369,20 +345,20 @@ export const DISPATCHER_SETTING_HELP: Record<DispatcherSettingId, { meaning: str
     meaning: 'Находит обычный контроль со статусом "да", который превышает расчетный объем процентной линии.',
     example: 'По расчету нужно 2 стыка контроля, а обычным «да» назначено 4. Лишние назначения можно перевести в «дополнительный» или исправить.',
   },
-  'percentage-rejected-primary': {
-    meaning: 'Показывает негодный первичный процентный контроль, потому что он увеличивает добор и может менять расчет по клейму. Для У-стыка учитывается и ПВК.',
+  'percentage-rejected-rows': {
+    meaning: 'Показывает актуальные официальные первичные С/У-стыки с негодным РК/УЗК: собственный контроль, включённый НК до ТО и дубли. Каждый источник даёт один добор по каждому своему уникальному официальному клейму: при ровно 1% — +1, при другом положительном проценте ниже 100% — +2. Ремонты R/W, ВИК и ПВК добор не увеличивают; норма ПВК не растёт.',
     example: 'Первичный официальный стык F12 дал "вырез" по РК. Диспетчер попросит проверить официальность, чтобы добор считался только по реальным официальным стыкам.',
   },
   'percentage-missing': {
-    meaning: 'Находит недостающие назначения по процентной линии и предлагает доступных кандидатов. Для У-стыка можно выбрать ПВК.',
+    meaning: 'Находит недостающие назначения отдельно для общей группы и ПВК. Общую группу закрывает РК, УЗК или явная послойная замена У; обычный ПВК закрывает только свою норму.',
     example: 'По клейму нужно закрыть 3 стыка, закрыт только 1. Диспетчер покажет задачу назначить еще 2 стыка.',
   },
   'percentage-full-control': {
-    meaning: 'Включает задачу 100% контроля по клейму после четвертого первичного негодного процентного контроля.',
-    example: 'У сварщика A1 накопилось 4 первичных негодных процентных контроля. Новые и уже сваренные стыки этого клейма должны попасть под 100% контроль; на У-стыках допустим ПВК.',
+    meaning: 'Включает полный контроль РК/УЗК после четырёх разных актуальных официальных первичных С/У-стыков с негодным РК/УЗК одного клейма. Ремонты R/W не входят в порог.',
+    example: 'Негодны по РК/УЗК первичные F1, F2, F3 и F4 клейма A1. Все подходящие соединения A1 требуют РК/УЗК либо явной послойной замены У. ПВК сохраняет собственную норму.',
   },
   'percentage-suspend-welder': {
-    meaning: 'Напоминает оформить отстранение сварщика после четвертого первичного негодного результата на процентной линии.',
+    meaning: 'Напоминает оформить отстранение после четвёртого актуального официального первичного С/У-стыка с негодным РК/УЗК данного клейма на процентной линии. Ремонты R/W не входят в порог.',
     example: 'После четвертого выреза по РК диспетчер предложит открыть клеймо и внести период отстранения с даты контроля.',
   },
   'repeated-create': {
@@ -465,21 +441,9 @@ export const DISPATCHER_SETTING_HELP: Record<DispatcherSettingId, { meaning: str
     meaning: 'Находит сохраненный результат или заключение при выключенном назначении соответствующего контроля.',
     example: 'Назначение РК очищено, но заключение РК осталось. ДЗ-34 попросит вернуть назначение, выбрать «отменен» или удалить результат через отчет.',
   },
-  'line-percent': {
-    meaning: 'Проверяет, что у всех стыков одной линии одинаковое значение процента контроля.',
-    example: 'На линии LIN-1 у части стыков 10%, а у части 25%. Диспетчер попросит привести линию к одному значению.',
-  },
-  'line-group': {
-    meaning: 'Проверяет единое значение группы для всех стыков одной линии.',
-    example: 'В одной линии часть строк относится к группе B, часть к группе C. Диспетчер покажет проверку группы.',
-  },
-  'line-category': {
-    meaning: 'Проверяет единое значение категории для всех стыков одной линии.',
-    example: 'Для LIN-1 у одних стыков категория I, у других II. Нужно проверить импорт или ручной ввод.',
-  },
   'line-control-presence': {
-    meaning: 'На 100% линиях проверяет единое назначение ВИК, РК, УЗК и ПВК. На обычных стыках набор «да» должен совпадать. На стыке типа «У…» назначения РК, УЗК и ПВК взаимозаменяемы: достаточно хотя бы одного. ВИК сравнивается точно. ПСТО проверяется как единое назначение линии, а ТВМТ - в цикле термообработки.',
-    example: 'На обычных стыках 100% линии стоит ВИК+РК. У-стык с ВИК+ПВК не создаст ДЗ-27, а У-стык только с ВИК создаст: на нем нет ни РК, ни УЗК, ни ПВК.',
+    meaning: 'Один С/У закрывает одно место общей нормы. Два обязательных РК/УЗК/послойной замены на одном стыке дают ДЗ-27, включая 100%-ные линии. Соседние стыки могут иметь разные методы. Неполная программа даёт обязательный СП-02 без переключателя.',
+    example: 'РК = да и УЗК = да — лишние альтернативы. РК = да и УЗК = дополнительный допустимы. Обычный ПВК не является альтернативой РК/УЗК.',
   },
   'line-psto-presence': {
     meaning: 'Проверяет ПСТО отдельно от процента контроля. У всей связки Проект + Шифр + Линия должно быть одно состояние: ПСТО назначено всем, отменено для всех или не назначено никому.',
@@ -538,7 +502,7 @@ export const DISPATCHER_SETTING_ACTION_HELP: Record<DispatcherSettingId, Dispatc
     ACTION_SHOW,
     ACTION_DESCRIPTION,
   ],
-  'percentage-rejected-primary': [
+  'percentage-rejected-rows': [
     {
       label: 'Действия -> Сменить официальность',
       description: 'Открывает окно официальности стыков ЛНК, где можно установить нужную официальность негодного стыка по правилам проекта.',
@@ -670,18 +634,6 @@ export const DISPATCHER_SETTING_ACTION_HELP: Record<DispatcherSettingId, Dispatc
     ACTION_CHAIN,
     ACTION_DESCRIPTION,
   ],
-  'line-percent': [
-    ACTION_SHOW,
-    ACTION_DESCRIPTION,
-  ],
-  'line-group': [
-    ACTION_SHOW,
-    ACTION_DESCRIPTION,
-  ],
-  'line-category': [
-    ACTION_SHOW,
-    ACTION_DESCRIPTION,
-  ],
   'line-control-presence': [
     ACTION_SHOW,
     ACTION_DESCRIPTION,
@@ -793,7 +745,8 @@ export function applyRemoteDispatcherReminderSettings(settings: unknown) {
 
 export function isDispatcherTaskEnabled(task: DispatcherTask, settings: DispatcherSettings) {
   if (isSystemDispatcherWarningTask(task)) return true
-  return isDispatcherSettingEnabled(getDispatcherTaskSettingId(task), settings)
+  const settingId = getDispatcherTaskSettingId(task)
+  return settingId === null || isDispatcherSettingEnabled(settingId, settings)
 }
 
 export function isDispatcherSettingEnabled(id: DispatcherSettingId, settings: DispatcherSettings) {
@@ -814,16 +767,23 @@ export function getDispatcherSettingTaskTypeLabel(id: DispatcherSettingId) {
 
 export function getDispatcherTaskCode(task: DispatcherTask) {
   if (isSystemDispatcherWarningTask(task)) return task.systemWarningCode
-  return getDispatcherSettingCode(getDispatcherTaskSettingId(task))
+  const settingId = getDispatcherTaskSettingId(task)
+  return settingId === null ? 'СП-02' : getDispatcherSettingCode(settingId)
 }
 
 export function getDispatcherTaskTypeLabel(task: DispatcherTask) {
-  if (isSystemDispatcherWarningTask(task)) return 'Предыдущие этапы пропущены'
-  return getDispatcherSettingTaskTypeLabel(getDispatcherTaskSettingId(task))
+  if (task.kind === 'check' && task.systemWarningCode === 'СП-04') return 'Целостность физической цепочки'
+  if (task.kind === 'line-consistency' && task.systemWarningCode === 'СП-03') return 'Обязательный контроль ремонта'
+  if (isSystemDispatcherWarningTask(task)) return task.systemWarningCode === 'СП-02' ? 'Настроить программу линии' : 'Предыдущие этапы пропущены'
+  const settingId = getDispatcherTaskSettingId(task)
+  return settingId === null ? 'Настроить программу линии' : getDispatcherSettingTaskTypeLabel(settingId)
 }
 
 export function normalizeDispatcherSettings(value: unknown): DispatcherSettings {
-  const source = typeof value === 'object' && value ? (value as Partial<Record<DispatcherSettingId, unknown>>) : {}
+  const source = typeof value === 'object' && value ? { ...(value as Record<string, unknown>) } : {}
+  if (typeof source['percentage-rejected-rows'] !== 'boolean' && typeof source['percentage-rejected-primary'] === 'boolean') {
+    source['percentage-rejected-rows'] = source['percentage-rejected-primary']
+  }
   return Object.fromEntries(
     Object.entries(DEFAULT_DISPATCHER_SETTINGS).map(([id, defaultValue]) => [id, typeof source[id as DispatcherSettingId] === 'boolean' ? source[id as DispatcherSettingId] : defaultValue]),
   ) as DispatcherSettings
@@ -845,7 +805,8 @@ export function normalizeDispatcherReminderDays(value: unknown, fallback = MIN_D
   return Math.max(MIN_DISPATCHER_REMINDER_DAYS, Math.floor(parsed))
 }
 
-export function getDispatcherTaskSettingId(task: DispatcherTask): DispatcherSettingId {
+export function getDispatcherTaskSettingId(task: DispatcherTask): DispatcherSettingId | null {
+  if (isSystemDispatcherWarningTask(task)) return null
   if (task.kind === 'welder-stamp-expiry') return task.permitKind === 'dls' ? 'welder-dls-expiry' : 'welder-stamp-expiry'
   if (task.kind === 'create') return String(task.row.officiality ?? '').trim().toLowerCase() === 'неофициальный' ? 'repeated-create-official-from-unofficial' : 'repeated-create'
   if (task.kind === 'coil') return 'repeated-coil'
@@ -857,18 +818,16 @@ export function getDispatcherTaskSettingId(task: DispatcherTask): DispatcherSett
   return getCheckTaskSettingId(task.reason)
 }
 
-function getLineConsistencySettingId(fieldKey: 'weldControlPercent' | 'groupName' | 'category' | 'controlPresence' | 'pstoPresence') {
-  if (fieldKey === 'weldControlPercent') return 'line-percent'
-  if (fieldKey === 'groupName') return 'line-group'
-  if (fieldKey === 'category') return 'line-category'
+function getLineConsistencySettingId(fieldKey: 'weldControlPercent' | 'pvkControlPercent' | 'groupName' | 'category' | 'controlPresence' | 'pstoPresence') {
   if (fieldKey === 'pstoPresence') return 'line-psto-presence'
-  return 'line-control-presence'
+  if (fieldKey === 'controlPresence') return 'line-control-presence'
+  return null
 }
 
 function getPercentageLineSettingId(task: Extract<DispatcherTask, { kind: 'percentage-line-control' }>): DispatcherSettingId {
   if (task.issue === 'new-welder') return 'percentage-new-welder'
   if (task.issue === 'excess') return 'percentage-excess'
-  if (task.issue === 'rejected-primary') return 'percentage-rejected-primary'
+  if (task.issue === 'rejected-rows') return 'percentage-rejected-rows'
   if (task.issue === 'suspend-welder') return 'percentage-suspend-welder'
   if (task.issue === 'missing' && task.fullControlRequired === true) return 'percentage-full-control'
   return 'percentage-missing'

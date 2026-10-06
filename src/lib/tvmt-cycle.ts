@@ -2,11 +2,12 @@ import { isControlEnabledValue } from '@/lib/control-availability-values'
 import {
   buildPstoCycleTimeline,
   hasPstoExecutionHistory,
+  hasPstoCycleExecutionHistory,
   type PstoCycleSnapshot,
   type PstoRepeatCycleRecord,
 } from '@/lib/psto-cycle'
 import type { WeldInput } from '@/lib/weld-fields'
-import { isCancelledControlValue } from '@/lib/report-value-utils'
+import { isCancelledControlValue, normalizeControlResultText } from '@/lib/report-value-utils'
 
 export const TVMT_RESULT_OPTIONS = ['годен', 'не годен'] as const
 
@@ -25,12 +26,11 @@ export function getPstoTvmtWorkflowState(
   row: WeldInput,
   repeatCycles: readonly PstoRepeatCycleRecord[] = getRowRepeatCycles(row),
 ): PstoTvmtWorkflowState {
-  const timeline = buildPstoCycleTimeline(row, repeatCycles)
   const active = isControlEnabledValue(row.pstoRequired)
   const inactiveWithPerformedHistory = !active && hasPstoExecutionHistory(row, repeatCycles)
   if (!active && !inactiveWithPerformedHistory) return 'not-required'
 
-  const currentCycle = timeline.at(-1)
+  const currentCycle = getCurrentPstoCycle(row, repeatCycles)
   if (!currentCycle?.pstoRequest) return 'waiting-psto-request'
   if (!isCompletedPstoResult(currentCycle.pstoResult)) return 'waiting-psto'
   if (!currentCycle.tvmtRequest) return 'waiting-tvmt-request'
@@ -108,18 +108,20 @@ export function getCurrentPstoCycle(
   row: WeldInput,
   repeatCycles: readonly PstoRepeatCycleRecord[] = getRowRepeatCycles(row),
 ): PstoCycleSnapshot | null {
-  return buildPstoCycleTimeline(row, repeatCycles).at(-1) ?? null
+  const timeline = buildPstoCycleTimeline(row, repeatCycles)
+  // Unstarted cancelled cycles remain in history, but do not create a new waiting task.
+  return (!isControlEnabledValue(row.pstoRequired) ? timeline.filter(hasPstoCycleExecutionHistory).at(-1) : null) ?? timeline.at(-1) ?? null
 }
 
 export function normalizeTvmtResult(value: unknown): TvmtNormalizedResult {
-  const result = String(value ?? '').trim().toLocaleLowerCase('ru-RU')
+  const result = normalizeControlResultText(value)
   if (result === 'годен' || result === 'да') return 'good'
   if (result === 'не годен' || result === 'негоден' || result === 'ремонт' || result === 'вырез') return 'failed'
   return null
 }
 
 export function isCompletedPstoResult(value: unknown) {
-  const result = String(value ?? '').trim().toLocaleLowerCase('ru-RU')
+  const result = normalizeControlResultText(value)
   return result === 'проведено' || result === 'проведено (отменен)' || result === 'да'
 }
 

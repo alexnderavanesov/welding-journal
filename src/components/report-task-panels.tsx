@@ -79,7 +79,6 @@ export function ReportTaskPanels({
       stickyLeft={stickyLeft}
       handlers={handlers}
       onCollapseTaskDetails={onCollapseTaskDetails}
-      defaultExpanded={activeReport !== 'heatTreatment'}
     />
   )
 }

@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { buildPrintableReportHtml } from '@/lib/printable-report'
 
 describe('printable report', () => {
+  it('omits standalone controls in the embedded preview while retaining escaped content and print layout', () => {
+    const html = buildPrintableReportHtml({ title: '<Сводка>', tables: [{ title: 'Линии', columns: ['Линия'], rows: [['<L1>']] }] }, { embedded: true })
+    expect(html).not.toContain('<div class="toolbar">')
+    expect(html).not.toContain('id="print-report"')
+    expect(html).toContain('<td>&lt;L1&gt;</td>')
+    expect(html).toContain('@page { size: A4 landscape;')
+    expect(html).toContain('thead { display: table-header-group; }')
+  })
   it('builds a preview with print controls, metrics, chart and table', () => {
     const html = buildPrintableReportHtml({
       title: 'Статистика <проекта>',

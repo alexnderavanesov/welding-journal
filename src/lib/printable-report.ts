@@ -36,22 +36,7 @@ export type PrintableReport = {
   emptyMessage?: string
 }
 
-export function openPrintableReport(report: PrintableReport) {
-  const reportWindow = window.open('', '_blank')
-  if (!reportWindow) {
-    window.alert('Браузер заблокировал новую вкладку. Разрешите всплывающие окна для сайта и повторите.')
-    return false
-  }
-
-  reportWindow.document.open()
-  reportWindow.document.write(buildPrintableReportHtml(report))
-  reportWindow.document.close()
-  reportWindow.document.getElementById('print-report')?.addEventListener('click', () => reportWindow.print())
-  reportWindow.document.getElementById('close-report')?.addEventListener('click', () => reportWindow.close())
-  return true
-}
-
-export function buildPrintableReportHtml(report: PrintableReport) {
+export function buildPrintableReportHtml(report: PrintableReport, options: { embedded?: boolean } = {}) {
   const generatedAt = new Intl.DateTimeFormat('ru-RU', {
     dateStyle: 'short',
     timeStyle: 'short',
@@ -98,30 +83,31 @@ export function buildPrintableReportHtml(report: PrintableReport) {
     }
     button.primary { border-color: #182236; background: #182236; color: #fff; }
     .sheet {
-      width: min(1480px, calc(100% - 32px)); margin: 20px auto; padding: 28px;
+      width: min(1480px, calc(100% - 32px)); margin: 16px auto; padding: 24px;
       border: 1px solid #d9e2ea; border-radius: 8px; background: #fff;
       box-shadow: 0 12px 35px rgba(27, 42, 63, .08);
     }
     .report-header { padding-bottom: 18px; border-bottom: 2px solid #c9d7e3; }
-    h1 { margin: 0; color: #142033; font-size: 26px; line-height: 1.2; letter-spacing: 0; }
+    h1 { margin: 0; color: #142033; font-size: 22px; line-height: 1.25; letter-spacing: 0; overflow-wrap: anywhere; }
     .report-subtitle { max-width: 980px; margin: 8px 0 0; color: #64748b; font-size: 13px; line-height: 1.5; }
     .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 14px; color: #52647a; font-size: 12px; }
     .meta-item strong { margin-right: 5px; color: #25364b; }
     .metrics {
-      display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px;
+      display: grid; grid-template-columns: repeat(var(--metric-columns), minmax(0, 1fr)); gap: 10px;
       margin-top: 18px;
     }
     .metric {
-      min-height: 86px; padding: 11px 12px; border: 1px solid #dbe4ec; border-radius: 6px;
+      display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: start; align-items: baseline; gap: 6px 10px;
+      min-width: 0; padding: 10px 12px; border: 1px solid #dbe4ec; border-radius: 6px;
       background: #f8fafc; break-inside: avoid;
     }
     .metric.blue { border-color: #c8e3f3; background: #f1f9fd; }
     .metric.green { border-color: #c7eadc; background: #f1fbf7; }
     .metric.amber { border-color: #f1dfae; background: #fffaf0; }
     .metric.rose { border-color: #f0ced4; background: #fff6f7; }
-    .metric-label { color: #71839a; font-size: 10px; font-weight: 750; text-transform: uppercase; letter-spacing: .04em; }
-    .metric-value { margin-top: 6px; color: #172033; font-size: 20px; font-weight: 750; }
-    .metric-detail { margin-top: 5px; color: #607188; font-size: 10px; line-height: 1.35; }
+    .metric-label { min-width: 0; color: #52647a; font-size: 12px; font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; }
+    .metric-value { color: #243247; font-size: 20px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+    .metric-detail { grid-column: 1 / -1; min-width: 0; color: #607188; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
     .section {
       margin-top: 20px; padding-top: 2px; break-inside: avoid-page;
     }
@@ -145,14 +131,15 @@ export function buildPrintableReportHtml(report: PrintableReport) {
     .bar-label { margin-top: 3px; overflow: hidden; color: #52647a; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
     .bar-detail { min-height: 12px; margin-top: 2px; color: #7a8aa0; font-size: 8px; }
     .table-wrap {
-      margin-top: 12px; border: 1px solid #d6e0e8; border-radius: 6px; overflow: hidden;
+      margin-top: 12px; border: 1px solid #d6e0e8; border-radius: 6px; overflow: auto;
       break-inside: auto;
     }
-    table { width: 100%; border-collapse: collapse; table-layout: auto; font-size: 9px; }
+    table { width: 100%; border-collapse: collapse; table-layout: auto; font-size: 12px; line-height: 1.4; }
+    .wide-table { min-width: var(--table-min-width); }
     thead { display: table-header-group; }
     th {
       padding: 7px 8px; border-right: 1px solid #d4dee7; border-bottom: 2px solid #c5d4df;
-      background: #edf3f7; color: #334155; text-align: left; font-weight: 750;
+      background: #edf3f7; color: #334155; text-align: left; font-weight: 600;
     }
     td {
       padding: 6px 8px; border-top: 1px solid #e3e9ef; border-right: 1px solid #e6ebf0;
@@ -174,7 +161,14 @@ export function buildPrintableReportHtml(report: PrintableReport) {
       :root, body { background: #fff; }
       .toolbar { display: none !important; }
       .sheet { width: auto; margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
-      .metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+      .metrics { grid-template-columns: repeat(var(--metric-columns), minmax(0, 1fr)); }
+      .metric { padding: 8px 9px; gap: 4px 8px; }
+      .metric-label { font-size: 10px; }
+      .metric-value { font-size: 17px; }
+      .metric-detail { font-size: 9px; }
+      table { font-size: 9px; }
+      .wide-table { min-width: 0; table-layout: fixed; }
+      .wide-table th, .wide-table td { padding: 4px; overflow-wrap: anywhere; }
       .section { break-inside: auto; }
       .chart, .metric { break-inside: avoid; }
       .table-wrap { overflow: visible; }
@@ -183,7 +177,7 @@ export function buildPrintableReportHtml(report: PrintableReport) {
   </style>
 </head>
 <body>
-  <div class="toolbar">
+  ${options.embedded ? '' : `<div class="toolbar">
     <div class="toolbar-copy">
       <p class="toolbar-title">Предпросмотр отчета</p>
       <p class="toolbar-note">Проверьте отчет, затем выберите «Печать / Сохранить PDF».</p>
@@ -192,7 +186,7 @@ export function buildPrintableReportHtml(report: PrintableReport) {
       <button id="close-report" type="button">Закрыть</button>
       <button id="print-report" type="button" class="primary">Печать / Сохранить PDF</button>
     </div>
-  </div>
+  </div>`}
   <main class="sheet">
     <header class="report-header">
       <h1>${title}</h1>
@@ -217,7 +211,8 @@ function renderMeta(items: Array<{ label: string; value: string }>, generatedAt:
 
 function renderMetrics(metrics: PrintableReportMetric[]) {
   if (metrics.length === 0) return ''
-  return `<section class="metrics">${metrics
+  const columns = Math.ceil(metrics.length / Math.ceil(metrics.length / 5))
+  return `<section class="metrics" style="--metric-columns:${columns}">${metrics
     .map(
       (metric) => `<article class="metric ${metric.tone ?? 'slate'}">
         <div class="metric-label">${escapeHtml(metric.label)}</div>
@@ -259,10 +254,10 @@ function renderTable(table: PrintableReportTable) {
     })
     .join('')
   return `<section class="section">
-    <h2 class="section-title">${escapeHtml(table.title)}</h2>
+    ${table.title ? `<h2 class="section-title">${escapeHtml(table.title)}</h2>` : ''}
     ${table.subtitle ? `<p class="section-subtitle">${escapeHtml(table.subtitle)}</p>` : ''}
     <div class="table-wrap">
-      <table>
+      <table${table.columns.length > 8 ? ` class="wide-table" style="--table-min-width:${table.columns.length * 90}px"` : ''}>
         <thead><tr>${header}</tr></thead>
         <tbody>${rows}</tbody>
       </table>

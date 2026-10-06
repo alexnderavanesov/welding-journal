@@ -313,7 +313,7 @@ describe('LNK control stages', () => {
     })).toBe('ожидает заявку НК до ТО: ВИК')
   })
 
-  it('does not treat a rejected pre-TO result as active after the method is cancelled', () => {
+  it('preserves a factual rejection after cancelling the method or PSTO', () => {
     const control = {
       id: 1,
       weldJointId: 1,
@@ -333,12 +333,12 @@ describe('LNK control stages', () => {
       pstoRequired: 'да',
       hasRk: 'отменен',
       preHeatTreatmentControls: [control],
-    } as unknown as Parameters<typeof getRejectedPreHeatTreatmentControls>[0])).toEqual([])
+    } as unknown as Parameters<typeof getRejectedPreHeatTreatmentControls>[0])).toHaveLength(1)
     expect(getRejectedPreHeatTreatmentControls({
       pstoRequired: 'отменен',
       hasRk: 'да',
       preHeatTreatmentControls: [control],
-    } as unknown as Parameters<typeof getRejectedPreHeatTreatmentControls>[0])).toEqual([])
+    } as unknown as Parameters<typeof getRejectedPreHeatTreatmentControls>[0])).toHaveLength(1)
     expect(getRejectedPreHeatTreatmentControls({
       pstoRequired: 'отменен',
       pstoResult: 'проведено',

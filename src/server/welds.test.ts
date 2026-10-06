@@ -266,6 +266,20 @@ describe('weld server pagination helpers', () => {
     expect(sameNormalizedTextSet(['F1R1'], ['F1R1', 'f1r1'])).toBe(false)
   })
 
+  it('pauses required continuation while inactive and restores it without losing the unofficial history', () => {
+    const source = row({ id: 51, projectTitle: 'Проект', subtitleCode: 'Титул', line: 'Линия 1', joint: 'F1', rkResult: 'ремонт' }) as WeldRow
+    const inactive = { ...source, revisionActuality: 'не актуален' }
+    expect(getCurrentRepeatedJointTargets([inactive], inactive, DEFAULT_SYSTEM_INDEX_SETTINGS)).toEqual([])
+    expect(getCurrentRepeatedJointTargets([inactive], inactive, DEFAULT_SYSTEM_INDEX_SETTINGS, true)).toEqual([])
+    expect(getCurrentRepeatedJointTargets([source], source, DEFAULT_SYSTEM_INDEX_SETTINGS)).toEqual(['F1R1'])
+  })
+
+  it('does not treat an unofficial namesake as the required official repair', () => {
+    const source = row({ id: 51, projectTitle: 'Проект', subtitleCode: 'Титул', line: 'Линия 1', joint: 'F1', rkResult: 'ремонт' }) as WeldRow
+    const historical = { ...source, id: 52, joint: 'F1R1', officiality: 'неофициальный' }
+    expect(getCurrentRepeatedJointTargets([source, historical], source, DEFAULT_SYSTEM_INDEX_SETTINGS)).toEqual(['F1R1'])
+  })
+
   it('records the PSTO entry only when the joint actually enters the report', () => {
     const previous = row({ weldDate: null, pstoRequired: null, pstoCreatedAt: null, pstoUpdatedAt: null })
     const now = new Date('2026-08-12T12:00:00.000Z')

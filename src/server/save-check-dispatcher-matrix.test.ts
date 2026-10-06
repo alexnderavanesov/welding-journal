@@ -24,7 +24,7 @@ const base: WeldInput = {
 describe('every stored-data ZV / DZ pair', () => {
   it.each(SAVE_CHECK_DISPATCHER_LINKS)('%s blocks a new violation on the server and %s finds the stored violation', (saveCheck, dispatcherSetting) => {
     const { previous, record, context } = fixture(saveCheck)
-    expect(() => validateServerWeldRecords({ records: [record], previousRows: previous ? new Map([[1, previous as WeldJoint]]) : new Map(), context })).toThrow(SAVE_CHECK_SETTING_CODES[saveCheck])
+    expect(() => validateServerWeldRecords({ records: [record], previousRows: previous ? new Map([[1, previous as WeldJoint]]) : new Map(), context })).toThrow(saveCheck === 'controlHistoryProtection' ? 'нельзя снять назначение через «Пусто»' : SAVE_CHECK_SETTING_CODES[saveCheck])
     const result = buildVisibleDispatcherTasks({
       rows: [record as WeldRow], welderStamps: context.welderStamps, welderStampSuspensions: context.welderStampSuspensions,
       acceptedDispatcherWarningKeys: new Set(), dismissedRepeatedJointTaskKeys: new Set(),

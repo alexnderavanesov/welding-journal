@@ -7,6 +7,7 @@ import {
   type WelderStampRegistrySnapshot,
 } from '@/server/welder-stamps'
 import { useConfirmAction } from '@/lib/confirm-action-context'
+import { DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY } from '@/lib/dispatcher-accepted-warning-query'
 import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 import { createEmptyWelderStampFilters, filterWelderStampRecords } from '@/lib/welder-stamp-filters'
@@ -92,6 +93,7 @@ export function useWelderStampRegistryState({ enabled = true, setMessage }: Weld
     onSuccess: async (snapshot) => {
       applyRegistrySnapshot(snapshot)
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY, refetchType: 'none' }),
         queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY }),
         invalidateWeldPageQueries(queryClient),
         queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY }),

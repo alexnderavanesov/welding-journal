@@ -5,7 +5,7 @@ export function getInactiveLnkRequestBadgeClass() {
 }
 
 export function getLnkResultBadgeClass(value: unknown) {
-  const result = String(value ?? '').trim().toLowerCase()
+  const result = String(value ?? '').trim().toLowerCase().replace(/ · назначение отменено$/, '')
   if (result === LNK_EMPTY_RESULT_VALUE) return 'border-slate-300 bg-slate-100 text-slate-700'
   if (result === 'годен' || result === 'годен (отменен)') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
   if (result === 'не годен' || result === 'не годен по дублю') return 'border-rose-200 bg-rose-50 text-rose-800'
@@ -18,14 +18,15 @@ export function getLnkResultBadgeClass(value: unknown) {
 }
 
 export function getPstoResultBadgeClass(value: unknown) {
-  const result = String(value ?? '').trim().toLowerCase()
+  const result = String(value ?? '').trim().toLowerCase().replace(/ · назначение отменено$/, '')
   if (result === 'проведено' || result === 'проведено (отменен)') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
   if (result === 'отменен' || result === 'нет потребности') return 'border-slate-300 bg-slate-100 text-slate-600'
   return 'border-amber-200 bg-amber-50 text-amber-800'
 }
 
 export function getPstoResultLabel(value: unknown) {
-  const result = String(value ?? '').trim().toLowerCase()
+  if (String(value ?? '').trim().toLowerCase() === 'проведено · назначение отменено') return 'проведено · назначение отменено'
+  const result = String(value ?? '').trim().toLowerCase().replace(/ · назначение отменено$/, '')
   if (result === 'отменен') return 'отменен'
   if (result === 'нет потребности') return 'нет потребности'
   if (result === 'ожидает заявку') return 'ожидает заявку'

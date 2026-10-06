@@ -17,6 +17,7 @@ vi.mock('@/lib/report-import-preview', async (importOriginal) => {
 vi.mock('@/server/weld-import-api', () => ({
   listWeldingJournalImportScope: vi.fn(),
 }))
+vi.mock('@/server/line-program', () => ({ getLineProgramsForImport: vi.fn().mockResolvedValue([]) }))
 
 const preview = {
   fileName: 'import.xlsx',

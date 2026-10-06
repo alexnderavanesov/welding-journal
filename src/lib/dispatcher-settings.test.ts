@@ -33,6 +33,17 @@ import {
 const row = { id: 1, joint: 'F1' } as WeldRow
 
 describe('dispatcher settings', () => {
+  it('documents primary RK/UZK surcharge without the obsolete repair-chain threshold', () => {
+    for (const id of ['percentage-rejected-rows', 'percentage-full-control', 'percentage-suspend-welder'] as const) {
+      const item = DISPATCHER_SETTING_GROUPS.flatMap(group => group.items).find(item => item.id === id)!
+      expect(item.description).toContain('первичн')
+      expect(item.description).toContain('РК/УЗК')
+      expect(item.description).not.toContain('включая ремонты')
+      expect(DISPATCHER_SETTING_HELP[id].meaning).not.toContain('включая ремонт')
+    }
+    expect(DISPATCHER_SETTING_HELP['percentage-full-control'].example).toContain('F1, F2, F3 и F4')
+  })
+
   it('keeps every dispatcher setting documented once with a unique code', () => {
     const settingIds = Object.keys(DEFAULT_DISPATCHER_SETTINGS).sort()
     const groupedIds = DISPATCHER_SETTING_GROUPS.flatMap((group) => group.items.map((item) => item.id))
@@ -48,7 +59,7 @@ describe('dispatcher settings', () => {
       left.localeCompare(right, 'ru', { numeric: true }),
     )).toEqual(
       Array.from({ length: 34 }, (_, index) => index + 1)
-        .filter((number) => number !== 16)
+        .filter((number) => ![16, 24, 25, 26].includes(number))
         .map((number) => `ДЗ-${String(number).padStart(2, '0')}`),
     )
   })
@@ -57,7 +68,7 @@ describe('dispatcher settings', () => {
     const cases: Array<[DispatcherTask, keyof typeof DEFAULT_DISPATCHER_SETTINGS]> = [
       [makePercentageTask('new-welder'), 'percentage-new-welder'],
       [makePercentageTask('excess'), 'percentage-excess'],
-      [makePercentageTask('rejected-primary'), 'percentage-rejected-primary'],
+      [makePercentageTask('rejected-rows'), 'percentage-rejected-rows'],
       [makePercentageTask('suspend-welder'), 'percentage-suspend-welder'],
       [makePercentageTask('missing'), 'percentage-missing'],
       [{ ...makePercentageTask('missing'), fullControlRequired: true }, 'percentage-full-control'],
@@ -67,9 +78,6 @@ describe('dispatcher settings', () => {
       [makeTask('delete'), 'repeated-delete'],
       [makeTask('rename'), 'repeated-rename'],
       [makeTask('duplicate-check'), 'chain-duplicate'],
-      [makeLineTask('weldControlPercent'), 'line-percent'],
-      [makeLineTask('groupName'), 'line-group'],
-      [makeLineTask('category'), 'line-category'],
       [makeLineTask('controlPresence'), 'line-control-presence'],
       [makeLineTask('pstoPresence'), 'line-psto-presence'],
       [makeExpiryTask('naks'), 'welder-stamp-expiry'],
@@ -151,7 +159,7 @@ describe('dispatcher settings', () => {
 })
 
 function makePercentageTask(
-  issue: 'missing' | 'excess' | 'new-welder' | 'rejected-primary' | 'suspend-welder',
+  issue: 'missing' | 'excess' | 'new-welder' | 'rejected-rows' | 'suspend-welder',
   title = '',
 ): Extract<DispatcherTask, { kind: 'percentage-line-control' }> {
   return {

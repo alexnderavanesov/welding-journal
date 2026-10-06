@@ -86,6 +86,57 @@ describe('ContextActionMenu', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it.each([1200, 390])('keeps navigation behind one button at viewport width %i', (width) => {
+    vi.stubGlobal('innerWidth', width)
+    const onClose = vi.fn()
+    const openLine = vi.fn()
+    const openJournal = vi.fn()
+    const openPsto = vi.fn()
+    render(
+      <ContextActionMenu
+        menu={{
+          x: 20,
+          y: 20,
+          items: [{
+            id: 'navigate',
+            label: 'Перейти',
+            onSelect: vi.fn(),
+            children: [
+              { id: 'open-line', label: 'Открыть линию', onSelect: openLine },
+              { id: 'open-journal', label: 'Открыть в сварочном журнале (2)', onSelect: openJournal },
+              {
+                id: 'open-psto', label: 'Открыть в ПСТО (0)', onSelect: openPsto,
+                disabled: true, title: 'Среди выбранных стыков нет строк в отчете ПСТО',
+              },
+            ],
+          }],
+        }}
+        onClose={onClose}
+      />,
+    )
+
+    const navigate = screen.getByRole('button', { name: 'Перейти' })
+    expect(navigate).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('menu')).toHaveClass(width === 390 ? 'hidden' : 'invisible')
+    fireEvent.click(navigate)
+    expect(navigate).toHaveAttribute('aria-expanded', 'true')
+    expect(onClose).not.toHaveBeenCalled()
+    expect(openLine).not.toHaveBeenCalled()
+    expect(openJournal).not.toHaveBeenCalled()
+
+    const disabled = screen.getByRole('button', { name: 'Открыть в ПСТО (0)' })
+    expect(disabled).toBeDisabled()
+    expect(screen.getByText('Среди выбранных стыков нет строк в отчете ПСТО')).toBeVisible()
+    fireEvent.click(disabled)
+    expect(openPsto).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть в сварочном журнале (2)' }))
+    expect(openJournal).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(openLine).not.toHaveBeenCalled()
+  })
+
   it('leaves Escape for an open modal instead of closing the background menu', () => {
     const onClose = vi.fn()
     const modal = document.createElement('div')

@@ -1,8 +1,12 @@
 import type { LineConsistencyTask, WeldRow } from '@/lib/dispatcher-types'
-import { isControlAdditionalValue, isControlEnabledValue } from '@/lib/control-availability-values'
+import { isControlEnabledValue } from '@/lib/control-availability-values'
 import { isCancelledControlValue } from '@/lib/report-value-utils'
-import { isAngularConnectionType } from '@/lib/connection-type'
 import { encodeIdentityKey } from '@/lib/identity-key'
+import { calculateLineProgram, getLineProgramRowDemand, isLineProgramCalculationRow, isLineProgramControlRow, parseLineProgramPercent } from '@/lib/line-program-calculation'
+import { programExcessEntries } from '@/lib/line-program-workspace'
+import { programApprovalKey } from './program-control-approval'
+import type { SystemIndexSettings } from './system-index-settings'
+import { buildProgramRepairRequirements } from './line-program-repair-requirements'
 
 type LineMetadataFieldKey = Exclude<LineConsistencyTask['fieldKey'], 'controlPresence' | 'pstoPresence'>
 
@@ -12,32 +16,14 @@ type LineConsistencyField = {
   title: string
 }
 
-type ControlPresenceField = {
-  key: keyof WeldRow
-  label: string
-}
-
 const LINE_CONSISTENCY_FIELDS: LineConsistencyField[] = [
   { key: 'weldControlPercent', label: 'Контроль швов, (%)', title: 'Проверить % контроля линии' },
+  { key: 'pvkControlPercent', label: 'ПВК, (%)', title: 'Проверить % ПВК линии' },
   { key: 'groupName', label: 'Группа трубопровода', title: 'Проверить группу трубопровода линии' },
   { key: 'category', label: 'Категория трубопровода', title: 'Проверить категорию трубопровода линии' },
 ]
 
-const CONTROL_PRESENCE_FIELDS: ControlPresenceField[] = [
-  { key: 'hasVik', label: 'ВИК' },
-  { key: 'hasRk', label: 'РК' },
-  { key: 'hasUzk', label: 'УЗК' },
-  { key: 'hasPvk', label: 'ПВК' },
-]
-
-const ANGULAR_ALTERNATIVE_CONTROL_FIELDS = CONTROL_PRESENCE_FIELDS.filter(
-  ({ key }) => key === 'hasRk' || key === 'hasUzk' || key === 'hasPvk',
-)
-const EXACT_CONTROL_PRESENCE_FIELDS = CONTROL_PRESENCE_FIELDS.filter(
-  ({ key }) => key !== 'hasRk' && key !== 'hasUzk' && key !== 'hasPvk',
-)
-
-export function buildLineConsistencyTasks(rows: WeldRow[]): LineConsistencyTask[] {
+export function buildLineConsistencyTasks(rows: WeldRow[], accepted: ReadonlySet<string> = new Set(), settings?: SystemIndexSettings): LineConsistencyTask[] {
   const lineGroups = new Map<string, WeldRow[]>()
   for (const row of rows) {
     const line = normalizeDisplayValue(row.line)
@@ -57,14 +43,14 @@ export function buildLineConsistencyTasks(rows: WeldRow[]): LineConsistencyTask[
 
   const tasks: LineConsistencyTask[] = []
   for (const groupRows of lineGroups.values()) {
-    if (groupRows.length < 2) continue
     const representativeRow = groupRows[0]
     const line = normalizeDisplayValue(representativeRow.line)
     if (!line) continue
 
     for (const field of LINE_CONSISTENCY_FIELDS) {
+      if (field.key === 'pvkControlPercent' && groupRows.every((row) => row.pvkControlPercent === undefined)) continue
       const values = getDistinctLineValues(groupRows, field.key)
-      if (values.length < 2) continue
+      if (values.length < 2 && !values.includes('пусто')) continue
       const projectTitle = normalizeDisplayValue(representativeRow.projectTitle)
       const subtitleCode = normalizeDisplayValue(representativeRow.subtitleCode)
       const detailsContext = [
@@ -85,69 +71,42 @@ export function buildLineConsistencyTasks(rows: WeldRow[]): LineConsistencyTask[
         projectTitle,
         subtitleCode,
         fieldKey: field.key,
+        systemWarningCode: 'СП-02',
         fieldLabel: field.label,
         title: field.title,
         values,
-        details: `На линии ${line}${detailsContext ? ` (${detailsContext})` : ''} встречаются разные значения в столбце «${field.label}»: ${valuesText}. Для одной линии значение должно быть одинаковым. Нажмите «Показать», чтобы отфильтровать все стыки этой линии и исправить некорректные строки.`,
+        details: `На линии ${line}${detailsContext ? ` (${detailsContext})` : ''} не настроено единое значение «${field.label}»: ${valuesText}. Откройте «Программу линий» и настройте общие свойства линии.`,
       })
     }
 
-    tasks.push(...buildControlPresenceTasksForLine(groupRows, representativeRow, line))
-    tasks.push(...buildPstoPresenceTasksForLine(groupRows, representativeRow, line))
-  }
-
-  return tasks
-}
-
-function buildControlPresenceTasksForLine(groupRows: WeldRow[], representativeRow: WeldRow, line: string) {
-  const percentGroups = new Map<string, WeldRow[]>()
-  for (const row of groupRows) {
-    const percent = normalizeDisplayValue(row.weldControlPercent) || 'пусто'
-    const percentKey = normalizeKey(percent)
-    const group = percentGroups.get(percentKey)
-    if (group) {
-      group.push(row)
-    } else {
-      percentGroups.set(percentKey, [row])
+    const mandatory = buildProgramRepairRequirements(groupRows, accepted, settings)
+    let duplicateRows = groupRows.filter((row) =>
+      (parseLineProgramPercent(row.weldControlPercent) === 100 ? isLineProgramControlRow(row) : isLineProgramCalculationRow(row)) &&
+      !(mandatory.get(row.id)?.some(item => item.method === 'РК') && mandatory.get(row.id)?.some(item => item.method === 'УЗК')) &&
+      getLineProgramRowDemand(row, 'common').duplicate && !accepted.has(programApprovalKey(row, 'common', true)))
+    const lineId = representativeRow.lineProgramId
+    const percent = parseLineProgramPercent(representativeRow.weldControlPercent)
+    const pvkPercent = parseLineProgramPercent(representativeRow.pvkControlPercent)
+    // Reuse exact program decisions, not a blanket acceptance of the line task.
+    // Results/conclusions do not constitute approval and are never changed here.
+    if (duplicateRows.length && accepted.size && lineId && percent != null && pvkPercent != null &&
+      groupRows.every(row => row.lineProgramId === lineId) &&
+      LINE_CONSISTENCY_FIELDS.every(field => { const values = getDistinctLineValues(groupRows, field.key); return values.length === 1 && !values.includes('пусто') })) {
+      const entries = programExcessEntries(lineId, groupRows, calculateLineProgram(groupRows, percent, pvkPercent, settings, accepted))
+      const approvals = new Map<number, boolean>()
+      for (const entry of entries) if (entry.kind === 'common' && entry.duplicate) {
+        approvals.set(entry.rowId, (approvals.get(entry.rowId) ?? true) && accepted.has(entry.key))
+      }
+      duplicateRows = duplicateRows.filter(row => !approvals.get(row.id))
     }
-  }
-
-  const tasks: LineConsistencyTask[] = []
-  for (const [percentKey, percentRows] of percentGroups.entries()) {
-    if (percentRows.length < 2) continue
-    const percent = normalizeDisplayValue(percentRows[0]?.weldControlPercent) || 'пусто'
-    if (!isFullControlPercent(percent)) continue
-    const values = getControlPresenceConflictValues(percentRows)
-    if (values.length < 2) continue
-
-    const projectTitle = normalizeDisplayValue(representativeRow.projectTitle)
-    const subtitleCode = normalizeDisplayValue(representativeRow.subtitleCode)
-    const detailsContext = [
-      projectTitle ? `проект ${projectTitle}` : '',
-      subtitleCode ? `шифр ${subtitleCode}` : '',
-      `контроль швов (%) ${percent}`,
-    ].filter(Boolean).join(', ')
-    const valuesText = values.join(' / ')
-
-    tasks.push({
-      kind: 'line-consistency',
-      key: `line-consistency:controlPresence:${encodeIdentityKey([
-        normalizeKey(projectTitle),
-        normalizeKey(subtitleCode),
-        normalizeKey(line),
-        percentKey,
-        ...values.map(normalizeKey),
-      ])}`,
-      row: representativeRow,
-      line,
-      projectTitle,
-      subtitleCode,
-      fieldKey: 'controlPresence',
-      fieldLabel: 'Назначение контроля',
-      title: 'Проверить назначение контроля линии',
-      values,
-      details: `На линии ${line}${detailsContext ? ` (${detailsContext})` : ''} встречаются несогласованные назначения контроля: ${valuesText}. На обычных стыках 100% линии набор «да» должен совпадать. Для стыка типа «У…» РК, УЗК и ПВК взаимозаменяемы: достаточно хотя бы одного из этих назначений. ВИК сравнивается точно; ПСТО и следующая за ним ТВМТ проверяются отдельно. Нажмите «Показать», чтобы отфильтровать все стыки этой линии и исправить некорректные строки.`,
+    if (duplicateRows.length) tasks.push({
+      kind: 'line-consistency', key: `line-consistency:controlPresence:${encodeIdentityKey([representativeRow.projectTitle, representativeRow.subtitleCode, line])}`,
+      row: duplicateRows[0], projectTitle: normalizeDisplayValue(representativeRow.projectTitle), subtitleCode: normalizeDisplayValue(representativeRow.subtitleCode), line,
+      fieldKey: 'controlPresence', fieldLabel: 'Взаимозаменяемые назначения', title: 'Проверить лишние взаимозаменяемые назначения',
+      values: duplicateRows.slice(0, 8).map((row) => String(row.joint ?? row.id)),
+      details: 'На одном стыке несколько взаимозаменяемых назначений РК/УЗК/послойной замены либо обычное «да» дублирует уже выполненный отменённый метод. Один стык закрывает только одно место общей потребности, в том числе при 100%. «Да» вместе с «дополнительный» допустимо. Выполненный контроль не снимается; автоматической отмены нет.',
     })
+    tasks.push(...buildPstoPresenceTasksForLine(groupRows, representativeRow, line))
   }
 
   return tasks
@@ -215,87 +174,10 @@ function getDistinctLineValues(rows: WeldRow[], key: LineMetadataFieldKey) {
   return [...values.values()]
 }
 
-function getControlPresenceConflictValues(rows: WeldRow[]) {
-  const ordinaryRows = rows.filter((row) => !isAngularConnectionType(row.connectionType))
-  const hasConflict =
-    hasControlFieldConflict(rows, EXACT_CONTROL_PRESENCE_FIELDS) ||
-    hasControlFieldConflict(ordinaryRows, ANGULAR_ALTERNATIVE_CONTROL_FIELDS) ||
-    hasAngularAlternativeGroupConflict(rows)
-
-  if (!hasConflict) return []
-
-  const values = new Map<string, string>()
-  for (const row of rows) {
-    const labels = CONTROL_PRESENCE_FIELDS
-      .filter((field) => isRequiredControlPresence(row[field.key]))
-      .map((field) => field.label)
-    const isAngular = isAngularConnectionType(row.connectionType)
-    const displayValue = `${labels.length ? labels.join(', ') : 'нет отмеченных видов контроля'}${isAngular ? ' (У-стык)' : ''}`
-    const normalizedValue = `${labels.join('|') || 'none'}:${isAngular ? 'angular' : 'ordinary'}`
-    if (!values.has(normalizedValue)) values.set(normalizedValue, displayValue)
-  }
-  return [...values.values()]
-}
-
-function hasControlFieldConflict(rows: WeldRow[], fields: ControlPresenceField[]) {
-  return fields.some((field) => {
-    let hasYes = false
-    let hasNo = false
-    for (const row of rows) {
-      const value = row[field.key]
-      if (isRequiredControlPresence(value)) {
-        hasYes = true
-      } else if (!isNeutralPresenceValue(value)) {
-        hasNo = true
-      }
-      if (hasYes && hasNo) return true
-    }
-    return false
-  })
-}
-
-function hasAngularAlternativeGroupConflict(rows: WeldRow[]) {
-  let hasYes = false
-  let hasNo = false
-  for (const row of rows) {
-    const values = ANGULAR_ALTERNATIVE_CONTROL_FIELDS.map((field) => row[field.key])
-    if (values.some(isRequiredControlPresence)) {
-      hasYes = true
-    } else if (!values.some(isNeutralPresenceValue)) {
-      hasNo = true
-    }
-    if (hasYes && hasNo) return true
-  }
-  return false
-}
-
-function isRequiredControlPresence(value: unknown) {
-  const text = normalizeKey(value)
-  return text === 'да' || text === 'yes' || text === 'true' || text === '1'
-}
-
-function isCancelledValue(value: unknown) {
-  return normalizeKey(value) === 'отменен'
-}
-
-function isAdditionalValue(value: unknown) {
-  return isControlAdditionalValue(value)
-}
-
-function isNeutralPresenceValue(value: unknown) {
-  return isCancelledValue(value) || isAdditionalValue(value)
-}
-
 function normalizeDisplayValue(value: unknown) {
   return String(value ?? '').trim().replace(/\s+/g, ' ')
 }
 
 function normalizeKey(value: unknown) {
   return normalizeDisplayValue(value).toLowerCase()
-}
-
-function isFullControlPercent(value: unknown) {
-  const normalized = normalizeDisplayValue(value).replace(',', '.').replace('%', '')
-  const percent = Number(normalized)
-  return Number.isFinite(percent) && percent === 100
 }

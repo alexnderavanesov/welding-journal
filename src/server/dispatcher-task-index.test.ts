@@ -9,6 +9,7 @@ import {
 } from '@/db/schema'
 import {
   getFinalStatusPersistenceChanges,
+  compactDispatcherTasksForTransport,
   getDispatcherTaskPublicationRevision,
   lockWeldJointWritesForDispatcherReplacement,
   mergeDispatcherTaskFilterOptionCounts,
@@ -21,8 +22,17 @@ import { buildDispatcherTaskCodeIndexRows } from '@/lib/dispatcher-task-row-code
 import { mergeDispatcherTaskCodesIntoRows } from '@/server/weld-read'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '@/lib/control-process-settings'
+import { buildProgramIntegrityTasks } from '@/lib/coil-restoration'
+import { getDispatcherTaskActionSpecs } from '@/lib/dispatcher-task-actions-model'
 
 describe('prepareDispatcherReportRows', () => {
+  it('preserves coil restoration action through persisted compact task pages', () => {
+    const row: WeldRow = { id: 1, joint: 'S1', line: 'L', programChainState: { weldJointId: 1, kind: 'primary', physicalRootId: 1,
+      sourceRowId: null, coilParentId: null, coilSide: null, replacedByCoil: true, replacementCoilIds: [2, 3] } }
+    const [task] = compactDispatcherTasksForTransport(buildProgramIntegrityTasks([row]))
+    expect(task.row.programChainState).toBeUndefined()
+    expect(getDispatcherTaskActionSpecs(task)[0].id).toBe('restore-coil')
+  })
   it.each([true, false])('carries only actual primary result debt through the persisted index to dispatcherTasks (pre-TO=%s)', (preHeatTreatmentLnkEnabled) => {
     const requestOnly = { id: 1, joint: 'F1', pstoRequired: 'да', hasVik: 'да', vikRequest: '1503-2', vikRequestDate: '2026-03-15', vikResult: 'ожидает НК' } as WeldRow
     const result = { ...requestOnly, id: 2, joint: 'F2', vikResult: 'годен', vikConclusionDate: '2026-03-25' } as WeldRow
@@ -136,7 +146,7 @@ describe('prepareDispatcherReportRows', () => {
 
     const preparedRows = await prepareDispatcherReportRows(tx, rows, duplicates)
 
-    expect(select).toHaveBeenCalledTimes(3)
+    expect(select).toHaveBeenCalledTimes(4) // Stable chain state is read once for the whole batch.
     expect(preparedRows[0]?.preHeatTreatmentControls).toEqual([preControl])
     expect(preparedRows[0]?.pstoRepeatCycles).toEqual([repeatCycle])
     expect(preparedRows[0]?.duplicateControls).toHaveLength(1)
@@ -152,7 +162,7 @@ describe('dispatcher index concurrency', () => {
 
     expect(execute).toHaveBeenCalledTimes(1)
     expect(new PgDialect().sqlToQuery(execute.mock.calls[0][0]).sql)
-      .toBe('lock table "weld_joints" in share row exclusive mode')
+      .toBe('lock table "weld_joints" in exclusive mode')
   })
 
   it('locks the welder registry before the dispatcher index', () => {

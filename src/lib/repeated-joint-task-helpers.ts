@@ -19,6 +19,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { getRejectedDuplicateControls } from '@/lib/duplicate-control-utils'
 import { loadSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-index-settings'
 import { getRejectedPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
+import { getControlAssignmentHistory, HISTORY_ASSIGNMENTS } from './control-assignment-history'
 
 const repeatedJointUsageFieldKeys = [
   ...lnkRequestFieldKeys,
@@ -37,6 +38,9 @@ const repeatedJointPendingResultFieldKeys = new Set<WeldFieldKey>([
 
 export function isUnusedRepeatedJointDraft(row: WeldInput) {
   if (hasText(row.weldDate)) return false
+  // Includes orphan request dates and TVMT facts too. A waiting label is not a
+  // fact, but a missing request name must never make an actual result disposable.
+  if (HISTORY_ASSIGNMENTS.some(({ enabledKey }) => getControlAssignmentHistory(row, enabledKey))) return false
   return !repeatedJointUsageFieldKeys.some((fieldKey) => {
     const value = row[fieldKey]
     if (repeatedJointPendingResultFieldKeys.has(fieldKey) && isPendingLnkResultValue(value)) {

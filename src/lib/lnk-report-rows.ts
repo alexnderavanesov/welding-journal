@@ -30,7 +30,7 @@ export function buildLnkWaitingNkRows(rows: WeldInput[]) {
 
 export function buildLnkToRequestRows(rows: WeldInput[]) {
   return rows.flatMap((row) =>
-    getAvailableLnkRequestMethods(row).map((method) => ({
+    getAvailableLnkRequestMethods(row).filter(method => !isLnkMethodNoNeed(row, method)).map((method) => ({
       projectTitle: row.projectTitle ?? '',
       subtitleCode: row.subtitleCode ?? '',
       line: row.line ?? '',

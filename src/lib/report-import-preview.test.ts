@@ -39,6 +39,134 @@ const buildReportReplaceDataPreview: typeof buildReportReplaceDataPreviewImpl = 
   })
 
 describe('existing rows report import preview', () => {
+  it.each(['massFill', 'replaceData'] as const)('reports all excluded assignment edits together with a bad joint name in %s', async mode => {
+    const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
+      activeReport: 'weldingJournal',
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', FIELD_BY_KEY.get('hasRk')!.label, FIELD_BY_KEY.get('hasUzk')!.label], [[7, 'FВ013', 'да', 'да']]),
+      rows: [{ id: 7, joint: 'FВ013', officiality: 'неофициальный' } as WeldRow],
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('официального актуального')
+    expect(preview.errors[0]?.message).toContain('ЗВ-26')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['hasRk', 'hasUzk', 'joint']))
+  })
+  it('reports removal of two mandatory repair methods together with an independent invalid joint', async () => {
+    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', FIELD_BY_KEY.get('hasRk')!.label, FIELD_BY_KEY.get('hasUzk')!.label], [[7, 'FВ013R1', '', '']])
+    const preview = await buildReportReplaceDataPreview({ activeReport: 'weldingJournal', file,
+      rows: [{ id: 7, joint: 'FВ013R1', connectionType: 'С17', hasRk: 'да', hasUzk: 'да', programRepairRequirements: [
+        { method: 'РК', sourceRowId: 1, sourceJoint: 'F1', reason: 'РК обязателен после брака F1' },
+        { method: 'УЗК', sourceRowId: 1, sourceJoint: 'F1', reason: 'УЗК обязателен по согласованию F1' },
+      ] } as WeldRow], weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('РК обязателен')
+    expect(preview.errors[0]?.message).toContain('УЗК обязателен')
+    expect(preview.errors[0]?.message).toContain('ЗВ-26')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['hasRk', 'hasUzk', 'joint']))
+  })
+  it('checks new T assignments in new-row import too', async () => {
+    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: ['ТШ'] })
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file: buildWeldingJournalImportFile({
+        projectTitle: 'Проект', subtitleCode: 'Шифр', line: 'Линия', joint: 'F1',
+        connectionType: 'ТШ', hasRk: 'да',
+      }),
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('РК не назначается на Т-стыки')
+    expect(preview.errors[0]?.fieldKeys).toContain('hasRk')
+  })
+
+  it('preserves unchanged historical T assignments when importing another field', async () => {
+    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: ['ТШ'] })
+    const preview = await buildReportMassFillPreview({
+      activeReport: 'weldingJournal',
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', FIELD_BY_KEY.get('isometry')!.label], [[7, 'F1', 'ISO-2']]),
+      rows: [{ id: 7, joint: 'F1', connectionType: 'ТШ', hasRk: 'да' } as WeldRow],
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.errors).toEqual([])
+    // Mass-fill sends a patch: the historical assignment must not be overwritten.
+    expect(preview.validRecords).toEqual([{ id: 7, isometry: 'ISO-2' }])
+  })
+
+  it('reports new RK on a T joint together with an independent invalid joint name', async () => {
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', FIELD_BY_KEY.get('hasRk')!.label],
+      [[7, 'FВ013', 'да']],
+    )
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal', file,
+      rows: [{ id: 7, joint: 'FВ013', connectionType: 'ТШ' } as WeldRow],
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('РК не назначается на Т-стыки')
+    expect(preview.errors[0]?.message).toContain('ЗВ-26')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['hasRk', 'joint']))
+  })
+
+  it('checks retained layered assignment against imported connection type and PVK together', async () => {
+    saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: ['У17', 'С17'] })
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Тип соединения', FIELD_BY_KEY.get('hasPvk')!.label],
+      [[7, 'F1', 'С17', '']],
+    )
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal', file,
+      rows: [{ id: 7, joint: 'F1', connectionType: 'У17', hasPvk: 'да', layeredControlAssigned: true } as WeldRow],
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('только для У-стыков')
+    expect(preview.errors[0]?.message).toContain('требует назначения ПВК')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['connectionType', 'hasPvk']))
+  })
+
+  it.each([
+    { rkRequest: 'РК-1' },
+    { rkResult: 'годен', rkConclusion: 'ЗНК-1' },
+  ])('reports an invalid stored joint name alongside protected assignment removal: %o', async history => {
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', FIELD_BY_KEY.get('hasRk')!.label],
+      [[7, 'FВ013', '']],
+    )
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal', file,
+      rows: [{ id: 7, joint: 'FВ013', hasRk: 'да', ...history } as WeldRow],
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('нельзя снять назначение через «Пусто»')
+    expect(preview.errors[0]?.message).toContain('ЗВ-26')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['hasRk', 'joint']))
+  })
+  it('reports assignment-history protection together with independent import field errors', async () => {
+    saveSaveCheckSettings({ ...DEFAULT_SAVE_CHECK_SETTINGS, controlHistoryProtection: false })
+    const file = buildWorkbookFile(
+      [MASS_FILL_ROW_ID_HEADER, 'Стык', FIELD_BY_KEY.get('hasRk')!.label, FIELD_BY_KEY.get('hasPvk')!.label, 'Тип соединения'],
+      [[7, 'F1', '', '', 'НЕСУЩЕСТВУЮЩИЙ']],
+    )
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file,
+      rows: [{
+        id: 7, joint: 'F1', hasRk: 'да', hasPvk: 'да', pvkRequest: 'ПВК-1', connectionType: 'С17',
+        preHeatTreatmentControls: [{ id: 1, weldJointId: 7, method: 'РК', requestName: 'Заявка до ТО' }],
+      } as WeldRow],
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('нельзя снять назначение через «Пусто»')
+    expect(preview.errors[0]?.message).toContain('РК: нельзя снять')
+    expect(preview.errors[0]?.message).toContain('ПВК: нельзя снять')
+    expect(preview.errors[0]?.message).toContain('Тип соединения')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['hasRk', 'hasPvk', 'connectionType']))
+  })
+
   afterEach(() => {
     saveOtherSettings(DEFAULT_OTHER_SETTINGS)
     saveDataListSettings(DEFAULT_DATA_LIST_SETTINGS)
@@ -156,6 +284,8 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords).toEqual([])
     expect(preview.errors).toHaveLength(1)
     expect(preview.errors[0]?.message).toContain('сохранить основной комплект')
+    expect(preview.errors[0]?.message).toContain('Удаление ошибочных документов выполняется отдельно')
+    expect(preview.errors[0]?.message).not.toContain('или удалить')
     expect(preview.errors[0]?.message).toContain('Поле "Тип соединения"')
     expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['line', 'connectionType']))
   })

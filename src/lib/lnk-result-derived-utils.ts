@@ -1,8 +1,9 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { buildLayeredControlAssignment } from '@/lib/layered-control-rules'
 import { getDateInputValidationReason } from '@/lib/date-format'
 import { normalizeDateLikeForStorage } from '@/lib/date-format'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
-import { findFirstLnkChronologySaveBlockReason, getLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
+import { findFirstNewLnkChronologySaveBlockReason, getLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import {
   areLnkResultDraftRowsReady,
   findFirstLnkResultDateBeforeWeldDateIssue,
@@ -166,6 +167,15 @@ export function getLnkResultSaveBlockReason({
   if (selectedRows.length === 0) return 'Отметьте один или несколько стыков галочкой.'
   const hasNonEmptyRows = hasNonEmptyLnkResultDraftRows(selectedRows, draft, saveCheckSettings)
   if (!areLnkResultDraftRowsReady(selectedRows, draft, saveCheckSettings)) return 'Укажите результат для каждого выбранного стыка.'
+  if (draft.methodKey === 'pvkRequest') {
+    for (const row of selectedRows) {
+      if (!draft.layeredControlRowIds.has(row.id) && !row.layeredControlAssigned) continue
+      const pvkResult = getEffectiveLnkResultDraftValueForRow(row, draft, saveCheckSettings)
+      if (!row.layeredControlAssigned && !isFinalLnkResultValue(pvkResult)) return `Стык ${row.joint || row.id}: для послойного контроля нужен основной результат ПВК.`
+      try { buildLayeredControlAssignment({ ...row, pvkResult }, true) }
+      catch (error) { return `Стык ${row.joint || row.id}: ${(error as Error).message}` }
+    }
+  }
   if (saveCheckSettings.lnkResultControlDateRequired && hasNonEmptyRows && !draft.controlDate) {
     return formatSaveCheckBlockReason('lnkResultControlDateRequired', 'Укажите дату контроля.')
   }
@@ -197,8 +207,9 @@ export function getLnkResultSaveBlockReason({
   if (vikBeforeOtherIssue) return vikBeforeOtherIssue
 
   const chronologyIssue = hasNonEmptyRows
-    ? findFirstLnkChronologySaveBlockReason(
+    ? findFirstNewLnkChronologySaveBlockReason(
         buildProposedLnkResultRowsForChecks(selectedRows, draft, nextConclusionName, systemDocumentCreationPlan),
+        selectedRows,
         saveCheckSettings,
         isPrimaryLnkStageDebtAllowed(controlProcessSettings)
           ? { ignoredKinds: PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS }

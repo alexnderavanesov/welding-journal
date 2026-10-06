@@ -22,6 +22,7 @@ import type { SaveCheckSettings } from '@/lib/save-check-settings'
 import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { Ref } from 'react'
+import { useControlProcessSettings } from '@/lib/control-process-settings'
 
 type LnkResultMethod = (typeof LNK_METHODS)[number]
 
@@ -54,6 +55,10 @@ export function LnkResultSettings({
   onDefaultResultChange,
   onRequestChange,
 }: LnkResultSettingsProps) {
+  const processSettings = useControlProcessSettings()
+  const rejectedForbidden = (draft.methodKey === 'pvkRequest' && processSettings.pvkGoodOnly) ||
+    (draft.methodKey === 'pvkRequest' && selectedRows.some((row) => draft.layeredControlRowIds.has(row.id))) ||
+    (draft.methodKey !== 'tvmtRequest' && selectedRows.some((row) => row.layeredControlAssigned))
   const hasNonEmptyRows = hasNonEmptyLnkResultDraftRows(selectedRows, draft, saveCheckSettings)
   const hasRepairForbiddenRows = saveCheckSettings.lnkResultRepairRules && selectedRows.some(isLnkRepairForbidden)
   const vikBeforeOtherHint = getVikBeforeOtherHint(selectedRows, draft, saveCheckSettings)
@@ -107,7 +112,7 @@ export function LnkResultSettings({
               Разные результаты
             </option>
             {LNK_RESULT_OPTIONS.map((option) => (
-              <option key={option} value={option} disabled={option === 'ремонт' && hasRepairForbiddenRows}>
+              <option key={option} value={option} disabled={(option === 'ремонт' && hasRepairForbiddenRows) || (rejectedForbidden && (option === 'ремонт' || option === 'вырез'))}>
                 {option}
               </option>
             ))}

@@ -24,3 +24,19 @@ The upstream project has not published a fixed package yet. Keep this build only
 until an official release containing fixes for GHSA-w3rx-r6r6-pgpr and
 GHSA-5p2g-fcmc-qvqq is available. Regression tests import this package directly
 to verify that malformed image metadata is rejected safely.
+
+## braces local stack-depth mitigation
+
+- File: `braces-3.0.4-security.0.tgz`
+- Based on official `braces@3.0.3`; this is **not an upstream release**.
+- SHA-256: `7ed1737f05e7c6ba3b3fdecfa8ca4fd6d99b93fa668b4d90c76b3d1af9da82bf`
+- Advisory: https://github.com/advisories/GHSA-vfj7-8cjw-p6xm
+- The parser checks the combined brace/parenthesis stack; compile, expand and
+  stringify independently check recursive AST depth. The fixed ceiling is 256;
+  excess depth raises a bounded SyntaxError before native stack exhaustion.
+  The AST checks also cover direct caller-supplied trees, not only parsed strings.
+- The only source changes are these guards (`lib/depth-limit.js` and calls in
+  the four parser/walker files) and the local package version. MIT license retained.
+- Regression: `src/lib/braces-security.test.ts`. Dependency override covers all
+  transitive development consumers. No advisory ignore was added. Replace this
+  temporary local mitigation when an official reviewed fix becomes available.

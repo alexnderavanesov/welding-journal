@@ -1,4 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
+import { getLayeredControlSaveError } from '@/lib/layered-control-rules'
+import { getUnofficialLnkGoodResultReason } from '@/lib/unofficial-lnk-result-guard'
 import { asc, eq, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
@@ -24,6 +26,7 @@ import {
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import {
   buildPreHeatTreatmentToPrimaryTransfer,
+  removeTransferredPreHeatTreatmentControls,
   buildPrimaryToPreHeatTreatmentTransfer,
   findBlockingLnkStageTransferChronologyIssue,
   hasPrimaryLnkStageTrace,
@@ -150,15 +153,10 @@ export const transferLnkDocumentStage = createServerFn({ method: 'POST' })
         await syncSystemDocumentsForWeldChangesInTransaction(tx, nextRows, previousRows)
         await syncPreHeatTreatmentDocumentsInTransaction(tx, nextRows, savedControls)
       } else {
-        nextRows = buildPreHeatTreatmentToPrimaryTransfer({
+        nextRows = removeTransferredPreHeatTreatmentControls(buildPreHeatTreatmentToPrimaryTransfer({
           rows: rowsWithDuplicates,
           controls: context.controls,
-        }).map((row) => ({
-          ...row,
-          preHeatTreatmentControls: (row.preHeatTreatmentControls ?? []).filter((control) =>
-            !context.controls.some((moved) => moved.id === control.id),
-          ),
-        })).filter((row) => affectedRowIdSet.has(row.id))
+        }), context.controls).filter((row) => affectedRowIdSet.has(row.id))
         assertNoNewChronologyIssues(
           rowsWithDuplicates.filter((row) => affectedRowIdSet.has(row.id)),
           nextRows,
@@ -351,6 +349,13 @@ async function loadTransferContext(
     ? simulateStageTransfer({ rows, positions, controls: selectedControls, sourceStage })
     : rows
   if (positions.length > 0 && reference.positions !== undefined) {
+    const previousById = new Map(rows.map((row) => [row.id, row]))
+    for (const row of simulatedRows) {
+      const error = getLayeredControlSaveError(row, previousById.get(row.id))
+      if (error) throw new Error(error)
+    }
+  }
+  if (positions.length > 0 && reference.positions !== undefined) {
     assertNoNewChronologyIssues(rows, simulatedRows, targetStage, processSettings)
   }
 
@@ -393,7 +398,7 @@ async function loadTransferContext(
   }
 }
 
-function buildPositionPreview({
+export function buildPositionPreview({
   row,
   position,
   control,
@@ -407,35 +412,40 @@ function buildPositionPreview({
   processSettings: ControlProcessSettings
 }): LnkStageTransferPositionPreview {
   const method = ALL_LNK_FIELD_METHODS.find((candidate) => candidate.code === position.methodCode)!
-  let disabledReason: string | null = null
-  if (sourceStage === 'primary') {
-    if (!isPreHeatTreatmentLnkAvailable(row)) {
-      disabledReason = 'для этого стыка этап «До ТО» не применяется.'
-    } else if (getPreHeatTreatmentControl(row, position.methodCode)) {
-      disabledReason = `целевой комплект ${position.methodCode} до ТО уже заполнен.`
-    } else if (!hasPrimaryLnkStageTrace(row, position.methodCode)) {
-      disabledReason = `исходный основной комплект ${position.methodCode} уже пуст.`
-    }
-  } else if (!control) {
-    disabledReason = 'исходный комплект НК до ТО больше не существует.'
-  } else if (hasPrimaryLnkStageTrace(row, position.methodCode)) {
-    disabledReason = `целевой основной комплект ${position.methodCode} уже заполнен.`
-  } else {
-    const simulated = simulateStageTransfer({
-      rows: [row], positions: [position], controls: [control], sourceStage,
-    })[0]!
-    const getAccess = hasPrimaryLnkResultTrace(simulated, position.methodCode)
-      ? getPrimaryLnkStageAccess
-      : getPrimaryLnkRequestAccess
-    const currentAccess = getAccess(row, position.methodCode, processSettings)
-    if (currentAccess.status === 'blocked') {
-      disabledReason = currentAccess.reason
+  let disabledReason = getUnofficialLnkGoodResultReason(row,
+    sourceStage === 'primary' ? row[method.resultKey] : control?.result, null,
+    sourceStage === 'primary' ? `${position.methodCode} до ТО` : position.methodCode)
+  if (!disabledReason) {
+    if (sourceStage === 'primary') {
+      if (!isPreHeatTreatmentLnkAvailable(row)) {
+        disabledReason = 'для этого стыка этап «До ТО» не применяется.'
+      } else if (getPreHeatTreatmentControl(row, position.methodCode)) {
+        disabledReason = `целевой комплект ${position.methodCode} до ТО уже заполнен.`
+      } else if (!hasPrimaryLnkStageTrace(row, position.methodCode)) {
+        disabledReason = `исходный основной комплект ${position.methodCode} уже пуст.`
+      }
+    } else if (!control) {
+      disabledReason = 'исходный комплект НК до ТО больше не существует.'
+    } else if (hasPrimaryLnkStageTrace(row, position.methodCode)) {
+      disabledReason = `целевой основной комплект ${position.methodCode} уже заполнен.`
     } else {
+      const simulated = simulateStageTransfer({
+        rows: [row], positions: [position], controls: [control], sourceStage,
+      })[0]!
+      const getAccess = hasPrimaryLnkResultTrace(simulated, position.methodCode)
+        ? getPrimaryLnkStageAccess
+        : getPrimaryLnkRequestAccess
+      // This relocates an existing package; it does not start new control over
+      // a rejected pre-TO result. Check the state after removing that package.
       const nextAccess = getAccess(simulated, position.methodCode, processSettings)
       if (nextAccess.status === 'blocked') disabledReason = nextAccess.reason
     }
   }
 
+  if (!disabledReason) {
+    const simulated = simulateStageTransfer({ rows: [row], positions: [position], controls: control ? [control] : [], sourceStage })[0]!
+    disabledReason = getLayeredControlSaveError(simulated, row)
+  }
   return {
     ...position,
     projectTitle: text(row.projectTitle),
@@ -492,13 +502,7 @@ function simulateStageTransfer({
     }))
     return attachSavedControls(transfer.rows, previewControls)
   }
-  const movedControlIds = new Set(controls.map((control) => control.id))
-  return buildPreHeatTreatmentToPrimaryTransfer({ rows, controls }).map((row) => ({
-    ...row,
-    preHeatTreatmentControls: (row.preHeatTreatmentControls ?? []).filter(
-      (candidate) => !movedControlIds.has(candidate.id),
-    ),
-  }))
+  return removeTransferredPreHeatTreatmentControls(buildPreHeatTreatmentToPrimaryTransfer({ rows, controls }), controls)
 }
 
 async function loadWeldRowsByIds(

@@ -186,7 +186,7 @@ describe('generated document row fields', () => {
     [100, 1],
     [1_200, 1],
   ])('loads all generated-document assignments for %i rows with %i bounded queries', async (rowCount, queryCount) => {
-    const where = vi.fn().mockResolvedValue([])
+    const where = vi.fn(() => ({ groupBy: vi.fn().mockResolvedValue([]) }))
     const innerJoin = vi.fn(() => ({ where }))
     const from = vi.fn(() => ({ innerJoin }))
     const select = vi.fn(() => ({ from }))
@@ -210,7 +210,7 @@ describe('generated document row fields', () => {
     [100, 1],
     [1_200, 1],
   ])('loads system document ids for %i rows with %i bounded queries', async (rowCount, queryCount) => {
-    const where = vi.fn().mockResolvedValue([])
+    const where = vi.fn(() => ({ groupBy: vi.fn().mockResolvedValue([]) }))
     const innerJoin = vi.fn(() => ({ where }))
     const from = vi.fn(() => ({ innerJoin }))
     const select = vi.fn(() => ({ from }))
@@ -222,5 +222,20 @@ describe('generated document row fields', () => {
 
     expect(select).toHaveBeenCalledTimes(queryCount)
     expect(where).toHaveBeenCalledTimes(queryCount)
+  })
+
+  it('reads a shared document once and keeps only stage metadata for row links', async () => {
+    const sourceMetadata = JSON.stringify({ sourceKind: 'beforeHeatTreatment',
+      sourcePositions: Array.from({ length: 200_000 }, (_, n) => ({ weldJointId: n + 1, relationId: n + 1 })) })
+    const groupBy = vi.fn().mockResolvedValue([{ documentId: 9, type: 'system:lnkConclusionVik', title: 'PRE',
+      periodFrom: '2026-09-02', sourceMetadata, weldJointIds: [1, 2, 3] }])
+    const where = vi.fn(() => ({ groupBy }))
+    const select = vi.fn((_fields: unknown) => ({ from: () => ({ innerJoin: () => ({ where }) }) }))
+    const assignments = await loadGeneratedDocumentAssignments([{ id: 1 }, { id: 2 }, { id: 3 }], { select } as never)
+    expect(assignments.map(item => item.weldJointId)).toEqual([1, 2, 3])
+    expect(select).toHaveBeenCalledTimes(1)
+    expect(Object.keys(select.mock.calls[0][0] as object)).not.toContain('weldJointId')
+    expect(JSON.stringify(assignments).length).toBeLessThan(1200)
+    expect(JSON.parse(assignments[0].sourceMetadata!)).toEqual({ sourceKind: 'beforeHeatTreatment', cycleSequences: [] })
   })
 })

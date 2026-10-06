@@ -20,5 +20,5 @@ export function findFirstDateBeforeWeldDateIssue(rows: WeldRow[], eventDate: unk
 
 export function formatDateBeforeWeldDateSaveReason(row: WeldInput, eventDate: unknown, eventLabel: string) {
   const joint = String(row.joint ?? '').trim() || '-'
-  return `${eventLabel} не может быть раньше даты сварки: стык ${joint}, сварка ${formatDisplayDate(row.weldDate) || '-'}, дата ${formatDisplayDate(eventDate) || '-'}.`
+  return `Стык ${joint}: ${eventLabel} (${formatDisplayDate(parseDateLikeToIso(eventDate))}) не может быть раньше даты сварки (${formatDisplayDate(parseDateLikeToIso(row.weldDate))}).`
 }

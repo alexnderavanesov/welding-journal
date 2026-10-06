@@ -3,6 +3,9 @@ import type {
   LnkWorkflowRowScope,
 } from '@/server/weld-contracts'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { LNK_METHODS } from '@/lib/lnk-report-config'
+import { PRE_HEAT_TREATMENT_REGISTRY_PAGE_SIZE } from '@/server/weld-contracts'
+import type { PreHeatTreatmentRegistryFilters } from '@/lib/pre-heat-treatment-registry'
 
 type LnkWorkflowModalState = {
   shouldLoadFullWeldRows: boolean
@@ -38,6 +41,7 @@ type LnkWorkflowModalState = {
   resultRegistrySearch: string
   resultRegistryFilter: 'all' | 'годен' | 'ремонт' | 'вырез'
   resultRegistryLimit: number
+  preRegistry?: PreHeatTreatmentRegistryFilters & { page: number }
 }
 
 export function shouldLoadLnkWorkflowSummary({
@@ -145,11 +149,20 @@ export function getLnkWorkflowRowsRequest(
     )
   }
   if (state.isPreHeatTreatmentResultManagerOpen) {
+    const filters = state.preRegistry
+    const method = LNK_METHODS.find(method => method.code === filters?.methodCode)
     return {
       scope: state.preHeatTreatmentResultManagerMode === 'request'
         ? 'preHeatTreatmentRequestRegistry'
         : 'preHeatTreatmentResultRegistry',
       rowIds: toIds(state.preHeatTreatmentResultManagerRowIds),
+      offset: (filters?.page ?? 0) * PRE_HEAT_TREATMENT_REGISTRY_PAGE_SIZE,
+      ...(filters?.search.trim() ? { search: filters.search.trim() } : {}),
+      ...(method ? { methodKeys: [method.requestKey] } : {}),
+      ...(state.preHeatTreatmentResultManagerMode === 'result' && filters?.resultFilter && filters.resultFilter !== 'all'
+        ? { resultFilter: filters.resultFilter } : {}),
+      ...(state.preHeatTreatmentResultManagerMode === 'request' && filters?.requestFilter && filters.requestFilter !== 'all'
+        ? { requestFilter: filters.requestFilter } : {}),
     }
   }
   if (state.fieldEditingRowId) {

@@ -251,12 +251,9 @@ function getPstoLineMoveDraftDecisionSummary(
   if (disposition === 'movePrimaryToBeforeHeatTreatment') {
     return `Выбрано: при сохранении основной комплект ${primaryMethods} будет перенесен в «До ТО».`
   }
-  if (disposition === 'deletePrimary') {
-    return `Выбрано: при сохранении основной комплект ${primaryMethods} будет удален.`
-  }
   if (disposition === 'promoteBeforeHeatTreatment') {
-    const methods = preview.row.promotablePreMethods.join(', ') || 'НК до ТО'
-    return `Выбрано: при сохранении завершенный комплект ${methods} станет основным.`
+    const methods = preview.row.preMethods.join(', ') || 'НК до ТО'
+    return `Выбрано: при сохранении весь комплект ${methods}, включая заявки и результаты, перейдёт в основной этап.`
   }
   if (preview.targetState === 'assigned') {
     return `Выбрано: основной комплект ${primaryMethods} останется без изменений; отдельный НК до ТО можно оформить позже.`
@@ -264,5 +261,5 @@ function getPstoLineMoveDraftDecisionSummary(
   if (preview.row.preservesPerformedHistory) {
     return 'Выбрано: при сохранении выполненная история ПСТО, ТВМТ и НК останется доступной.'
   }
-  return 'Выбрано: при сохранении основной комплект останется, а незавершенные данные НК до ТО будут удалены.'
+  return 'Выбрано: изменится только линия; все этапы, заявки, результаты и заключения сохранятся. НК до ТО останется видимой историей.'
 }

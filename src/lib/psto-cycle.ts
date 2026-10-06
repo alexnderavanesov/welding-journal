@@ -1,4 +1,5 @@
 import { isControlCancelledValue, isControlEnabledValue } from '@/lib/control-availability-values'
+import { normalizeControlResultText } from '@/lib/report-value-utils'
 import type { WeldInput } from '@/lib/weld-fields'
 
 export type PstoRepeatCycleRecord = {
@@ -66,7 +67,7 @@ export function buildPstoCycleTimeline(
 
 export function hasPrimaryPstoCycle(row: WeldInput) {
   if (isControlCancelledValue(row.pstoRequired)) {
-    return hasPstoExecutionHistory(row, [])
+    return hasPstoExecutionHistory(row, []) || hasText(row.pstoRequest) || hasText(row.pstoRequestDate)
   }
   return (
     isControlEnabledValue(row.pstoRequired) ||
@@ -98,6 +99,27 @@ export function hasPstoExecutionHistory(
     hasText(row.tvmtConclusion) ||
     repeatCycles.some(hasPstoCycleExecutionHistory)
   )
+}
+
+/** A request is visible history, but is not evidence of performed heat treatment. */
+export function hasPstoDocumentHistory(row: WeldInput, repeatCycles: readonly PstoRepeatCycleRecord[] = getRowRepeatCycles(row)) {
+  return hasPstoExecutionHistory(row, repeatCycles) || hasText(row.pstoRequest) || hasText(row.pstoRequestDate) ||
+    repeatCycles.some(cycle => hasText(cycle.pstoRequest) || hasText(cycle.pstoRequestDate))
+}
+
+export function getRetainedPstoRequestNote(row: WeldInput): string | undefined {
+  if (!isControlEnabledValue(row.pstoRequired) && hasPstoDocumentHistory(row) && !hasPstoExecutionHistory(row)) {
+    return 'Сохранённая история заявок. На текущей линии ПСТО не требуется; эти заявки не означают выполненную термообработку и не создают ожидание её выполнения.'
+  }
+  return undefined
+}
+
+export function getRetainedPstoCycleLabel(row: WeldInput, cycle: PstoCycleSnapshot): string | undefined {
+  if (!isControlEnabledValue(row.pstoRequired) && !hasPstoCycleExecutionHistory(cycle) &&
+      (hasText(cycle.pstoRequest) || hasText(cycle.pstoRequestDate))) {
+    return 'Сохранённая заявка; выполнение ПСТО не требуется'
+  }
+  return undefined
 }
 
 export function hasPstoCycleExecutionHistory(
@@ -167,12 +189,12 @@ function hasText(value: unknown) {
 }
 
 function isCompletedPstoResult(value: unknown) {
-  const result = String(value ?? '').trim().toLocaleLowerCase('ru-RU')
+  const result = normalizeControlResultText(value)
   return result === 'проведено' || result === 'проведено (отменен)' || result === 'да'
 }
 
 function hasFinalTvmtResult(value: unknown) {
-  const result = String(value ?? '').trim().toLocaleLowerCase('ru-RU')
+  const result = normalizeControlResultText(value)
   return result === 'годен' || result === 'да' || result === 'не годен' || result === 'негоден' || result === 'ремонт' || result === 'вырез'
 }
 

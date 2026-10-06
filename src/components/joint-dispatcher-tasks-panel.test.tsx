@@ -10,6 +10,19 @@ import { LNK_RESULT_COMPLETENESS_REASON } from '@/lib/dispatcher-check-reasons'
 import type { LineConsistencyTask, RepeatedJointCheckTask, WeldRow } from '@/lib/dispatcher-types'
 
 describe('JointDispatcherTasksPanel', () => {
+  it('explains the duplicate restriction in the secondary officiality menu without running it', () => {
+    const current = { ...row(), duplicateControls: [{ id: 9, method: 'ВИК', result: 'годен' }] } as WeldRow
+    const task = { kind: 'create', key: 'create:duplicate', row: current, sourceJoint: 'F1', targetJoint: 'F1R1', result: 'ремонт', suffix: 'R', methodCode: 'РК' } as const
+    const onRunAction = vi.fn()
+    render(<JointDispatcherTasksPanel row={current} tasks={[task]} onRunAction={onRunAction} />)
+    fireEvent.click(screen.getByRole('button', { name: /^Другие действия/ }))
+    const blocked = screen.getByRole('menuitem', { name: 'Сделать неофициальным' })
+    expect(blocked).toBeDisabled()
+    expect(blocked).toHaveAttribute('title', expect.stringContaining('есть дубль-контроль'))
+    fireEvent.click(blocked)
+    expect(onRunAction).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Создать F1R1' })).toBeEnabled()
+  })
   it('shows a calm empty state for a joint without active dispatcher tasks', () => {
     render(<JointDispatcherTasksPanel row={row()} tasks={[]} onRunAction={vi.fn()} />)
 
@@ -213,14 +226,14 @@ describe('JointDispatcherTasksPanel', () => {
       <JointDispatcherTasksPanel
         row={row()}
         tasks={[]}
-        fallbackCodes="ДЗ-01, ДЗ-24, ДЗ-18"
+        fallbackCodes="ДЗ-01, СП-02, ДЗ-18"
         onRunAction={vi.fn()}
       />,
     )
 
     expect(screen.getByText('ДЗ-18')).toBeInTheDocument()
     expect(screen.queryByText('ДЗ-01')).not.toBeInTheDocument()
-    expect(screen.queryByText('ДЗ-24')).not.toBeInTheDocument()
+    expect(screen.queryByText('СП-02')).not.toBeInTheDocument()
     expect(screen.getByText('ДЗ · 1')).toBeInTheDocument()
   })
 

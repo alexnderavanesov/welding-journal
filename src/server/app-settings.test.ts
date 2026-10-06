@@ -5,6 +5,12 @@ import { describe, expect, it } from 'vitest'
 import { assertAppSettingVersion } from '@/server/app-settings'
 
 describe('app setting concurrency', () => {
+  it('checks immutable index letters under the validation lock and before writing the setting', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/server/app-settings.ts'), 'utf8')
+    const guard = source.indexOf('await prepareSystemIndexSettingsChange(tx,')
+    expect(guard).toBeGreaterThan(source.indexOf("await lockWeldValidationSettings(tx, 'exclusive')"))
+    expect(guard).toBeLessThan(source.indexOf('.insert(appSettings)'))
+  })
   it('takes the background refresh lock before invalidating and pruning dispatcher settings', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/server/app-settings.ts'), 'utf8')
     const lockIndex = source.indexOf('pg_advisory_xact_lock(${DISPATCHER_BACKGROUND_INDEX_LOCK_ID})')

@@ -220,10 +220,10 @@ export function getDialogMenuPoint(event: MouseEvent<HTMLElement>) {
   event.preventDefault()
   event.stopPropagation()
   if (event.type === 'contextmenu' && (event.clientX !== 0 || event.clientY !== 0)) {
-    return { x: event.clientX, y: event.clientY }
+    return { x: event.clientX, y: event.clientY, anchorElement: event.currentTarget }
   }
   const rect = event.currentTarget.getBoundingClientRect()
-  return { x: rect.right - 8, y: rect.bottom + 4 }
+  return { x: rect.right - 8, y: rect.bottom + 4, anchorElement: event.currentTarget }
 }
 
 function getRowsIdentity(row: WeldRow, rows: readonly WeldRow[]) {

@@ -1,3 +1,9 @@
+import { getControlAssignmentRemovalIssues } from './control-assignment-history'
+import { getLayeredControlSaveIssues } from './layered-control-rules'
+import { getProgramRepairAssignmentIssues } from './line-program-repair-requirements'
+import { getExcludedControlAssignmentIssues } from './control-assignment-eligibility'
+import { getUnofficialLnkResultIssues } from './unofficial-lnk-result-guard'
+import { loadControlProcessSettings } from './control-process-settings'
 import {
   emptyToNull,
   parseImportCell,
@@ -29,7 +35,7 @@ import { formatSaveCheckBlockReason, loadSaveCheckSettings } from '@/lib/save-ch
 import { loadSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-index-settings'
 import {
   getControlAvailabilityReportHistoryIssues,
-  getWeldFormSaveBlockReason,
+  getWeldFormFieldSaveBlockReason,
 } from '@/lib/weld-form-save-reasons'
 import { getMissingWeldImportIdentityFields } from '@/lib/weld-import-identity'
 import { validateManualJointName } from '@/lib/joint-name'
@@ -206,7 +212,9 @@ async function buildExistingRowsImportPreview({
   const validRecords: ReportImportRecord[] = []
   const errors: ReportImportPreviewError[] = []
   const expectedRowVersions: WeldRowVersionTarget[] = []
+  const recordRowNumbers: number[] = []
   const saveCheckSettings = loadSaveCheckSettings()
+  const { pvkGoodOnly } = loadControlProcessSettings()
   const systemIndexSettings = loadSystemIndexSettings()
   let skippedRows = parsed.skippedRows
 
@@ -237,6 +245,7 @@ async function buildExistingRowsImportPreview({
       }
       const deletedRecord = { ...existingRow, id: existingRow.id, deleteRequested: true } as ReportImportRecord
       records.push(deletedRecord)
+      recordRowNumbers.push(rowNumber)
       validRecords.push(deletedRecord)
       expectedRowVersions.push({ id: existingRow.id, version: expectedRowVersion })
       return
@@ -260,6 +269,27 @@ async function buildExistingRowsImportPreview({
 
     const changedKeys = Object.keys(updates).filter((key) => key !== 'id')
     const candidate = { ...existingRow, ...updates } as ReportImportRecord
+    getUnofficialLnkResultIssues(candidate, existingRow).forEach(issue => {
+      validationMessages.push(issue.message)
+      issue.fieldKeys.forEach(fieldKey => validationFieldKeys.add(fieldKey))
+    })
+    getExcludedControlAssignmentIssues(candidate, existingRow).forEach(issue => {
+      validationMessages.push(issue.message)
+      issue.fieldKeys.forEach(fieldKey => validationFieldKeys.add(fieldKey))
+    })
+    getProgramRepairAssignmentIssues(candidate, existingRow).forEach(issue => {
+      validationMessages.push(issue.message)
+      issue.fieldKeys.forEach(fieldKey => validationFieldKeys.add(fieldKey))
+    })
+    getLayeredControlSaveIssues(candidate, existingRow, pvkGoodOnly).forEach(issue => {
+      validationMessages.push(issue.message)
+      issue.fieldKeys.forEach(fieldKey => validationFieldKeys.add(fieldKey))
+    })
+    const assignmentRemovalIssues = getControlAssignmentRemovalIssues(candidate, existingRow)
+    assignmentRemovalIssues.forEach(issue => {
+      validationMessages.push(issue.message)
+      validationFieldKeys.add(issue.fieldKey)
+    })
     if (changedKeys.length === 0 && validationMessages.length === 0) {
       skippedRows += 1
       return
@@ -270,6 +300,7 @@ async function buildExistingRowsImportPreview({
     }
 
     records.push(candidate)
+    recordRowNumbers.push(rowNumber)
     const changedFieldKeys = getKnownFieldKeys(changedKeys)
     const controlHistoryIssues = saveCheckSettings.controlHistoryProtection
       ? getControlAvailabilityReportHistoryIssues(candidate)
@@ -283,10 +314,13 @@ async function buildExistingRowsImportPreview({
         issue.fieldKeys.forEach((fieldKey) => validationFieldKeys.add(fieldKey))
       })
     }
-    const formBlockReason = getWeldFormSaveBlockReason(candidate, existingRow, saveCheckSettings, {
+    // History issues have already been collected above; continue checking the other fields.
+    const formBlockReason = getWeldFormFieldSaveBlockReason(candidate, existingRow, {
+      ...saveCheckSettings, controlHistoryProtection: false,
+    }, {
       systemIndexSettings,
     })
-    if (formBlockReason && !(controlHistoryIssues.length > 0 && formBlockReason.includes('ЗВ-27'))) {
+    if (formBlockReason) {
       validationMessages.push(
         formBlockReason.includes('ЗВ-26')
           ? `${formBlockReason} Исправьте номер в карточке стыка: серое поле “Стык” не изменяется импортом.`
@@ -396,6 +430,7 @@ async function buildExistingRowsImportPreview({
     errors,
     skippedRows,
     expectedRowVersions,
+    recordRowNumbers,
   }
 }
 
@@ -436,7 +471,7 @@ function getImportPstoLineMoveBlockReason(
   )
   if (targetAssigned) {
     return requiresPrimaryStageResolutionForAssignedPstoLine(existingRow)
-      ? 'Стык переносится на линию с ПСТО, но у него уже есть основной комплект ВИК/РК/УЗК/ПВК. Выполните перенос через карточку стыка и выберите: сохранить основной комплект и позднее оформить отдельный НК до ТО, перенести комплект в «До ТО» или удалить.'
+      ? 'Стык переносится на линию с ПСТО, но у него уже есть основной комплект ВИК/РК/УЗК/ПВК. Выполните перенос через карточку стыка и выберите: сохранить основной комплект и позднее оформить отдельный НК до ТО либо перенести комплект в «До ТО». Удаление ошибочных документов выполняется отдельно.'
       : ''
   }
   if (!hasPstoLifecycleData(existingRow)) return ''
@@ -539,6 +574,7 @@ function validateReportImportRecords(
   const validRecords: ReportImportRecord[] = []
   const errors: ReportImportPreviewError[] = []
   const saveCheckSettings = loadSaveCheckSettings()
+  const { pvkGoodOnly } = loadControlProcessSettings()
   const systemIndexSettings = loadSystemIndexSettings()
 
   records.forEach((record, index) => {
@@ -548,6 +584,18 @@ function validateReportImportRecords(
     const validationFieldKeys = new Set<WeldFieldKey>(cellErrors.flatMap((error) =>
       error.fieldKeys.filter((fieldKey): fieldKey is WeldFieldKey => FIELD_BY_KEY.has(fieldKey as WeldFieldKey)),
     ))
+    getUnofficialLnkResultIssues(candidate).forEach(issue => {
+      validationMessages.push(issue.message)
+      issue.fieldKeys.forEach(fieldKey => validationFieldKeys.add(fieldKey))
+    })
+    getExcludedControlAssignmentIssues(candidate).forEach(issue => {
+      validationMessages.push(issue.message)
+      issue.fieldKeys.forEach(fieldKey => validationFieldKeys.add(fieldKey))
+    })
+    getLayeredControlSaveIssues(candidate, undefined, pvkGoodOnly).forEach(issue => {
+      validationMessages.push(issue.message)
+      issue.fieldKeys.forEach(fieldKey => validationFieldKeys.add(fieldKey))
+    })
     const controlHistoryIssues = saveCheckSettings.controlHistoryProtection
       ? getControlAvailabilityReportHistoryIssues(candidate)
       : []

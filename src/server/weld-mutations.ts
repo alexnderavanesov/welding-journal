@@ -1,157 +1,121 @@
 // This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
-
 import { requireDb } from '@/db'
-import {
-duplicateControls,
-generatedDocuments,
-generatedDocumentWeldJoints,
-preHeatTreatmentControls,
-weldJoints,
-type WeldJoint
-} from '@/db/schema'
+import { assertJointChainRowsCanBeDeleted } from './joint-chain-deletion'
+import { deleteChangedProgramApprovals } from './program-approval-lifecycle'
+import { generatedDocuments, generatedDocumentWeldJoints, preHeatTreatmentControls, weldJoints, type WeldJoint } from '@/db/schema'
 import { normalizeDateLikeForStorage } from '@/lib/date-format'
-import { isControlEnabledValue } from '@/lib/control-availability-values'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import {
-assertExistingRowsImportPayload,
-} from '@/lib/existing-row-import-validation'
-import {
-buildLnkRequestExtensionRows,
-getLnkRequestExtensionDisabledReason,
-normalizeLnkRequestExtensionRequest,
-type LnkRequestExtensionRequest,
-} from '@/lib/lnk-request-extension'
-import {
-buildLnkRequestManagerRows,
-buildLnkRequestPositionRemovalRow,
-} from '@/lib/lnk-request-mutation-updates'
+import { assertExistingRowsImportPayload } from '@/lib/existing-row-import-validation'
+import { buildLnkRequestExtensionRows, getLnkRequestExtensionDisabledReason, normalizeLnkRequestExtensionRequest, type LnkRequestExtensionRequest } from '@/lib/lnk-request-extension'
+import { buildLnkRequestManagerRows, buildLnkRequestPositionRemovalRow } from '@/lib/lnk-request-mutation-updates'
 import { buildPstoRequestManagerRows } from '@/lib/psto-report-mutation-updates'
-import {
-buildClearedPrimaryLnkStageRows,
-buildPrimaryToPreHeatTreatmentTransfer,
-findBlockingLnkStageTransferChronologyIssue,
-type LnkStageTransferControlWrite,
-} from '@/lib/lnk-stage-transfer'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
-import {
-assertPstoCancellationDateAfterHistory,
-buildPstoAssignedKeepPrimaryValidationRow,
-buildPstoCancelledRow,
-buildPstoMovedToUnassignedLineRow,
-getCompletedPreHeatTreatmentMethodCodes,
-getPrimaryStagedMethodCodes,
-getPstoLineIdentityKey,
-hasPerformedPstoHistory,
-normalizePstoLineIdentity,
-normalizePstoLineIdentityPart,
-requiresPrimaryStageResolutionForAssignedPstoLine,
-type PstoWeldLineMoveDisposition,
-} from '@/lib/psto-line-assignment'
-import { getCoilJointNames, normalizeJointChainPart, parseJointChainName, parseRepeatedJointName } from '@/lib/joint-chain'
+import { normalizePstoLineIdentity } from '@/lib/psto-line-assignment'
+import { getCoilJointNames, normalizeJointChainPart, parseRepeatedJointName } from '@/lib/joint-chain'
 import { getCoilTransitionModeForSource } from '@/lib/joint-chain-transitions'
-import { getDuplicateJointKey, getJointChainRows } from '@/lib/repeated-joint-row-utils'
+import { getDuplicateJointKey } from '@/lib/repeated-joint-row-utils'
 import { buildRepeatedJointDraft } from '@/lib/repeated-joint-draft'
 import { buildRepeatedJointTasks } from '@/lib/repeated-joint-tasks'
+import { isRevisionNotActual } from '@/lib/revision-actuality'
+import { isUnofficialJoint } from '@/lib/joint-display'
 import { hasCompletedParentBranch } from '@/lib/repeated-joint-consistency-tasks'
-import {
-getExpectedRepeatedJointName,
-getOfficialRejectedJointChainRows,
-getPrimaryRejectedLnkResult,
-hasRepeatedJointTarget,
-} from '@/lib/repeated-joint-task-helpers'
-import {
-isAuthorizedSystemRepeatedJointRename,
-type SystemRepeatedJointRenameRequest,
-} from '@/lib/repeated-joint-system-rename'
-import {
-LNK_METHODS
-} from '@/lib/report-config'
+import { getExpectedRepeatedJointName, getOfficialRejectedJointChainRows, getPrimaryRejectedLnkResult, hasRepeatedJointTarget } from '@/lib/repeated-joint-task-helpers'
+import { isAuthorizedSystemRepeatedJointRename, type SystemRepeatedJointRenameRequest } from '@/lib/repeated-joint-system-rename'
+import { LNK_METHODS } from '@/lib/report-config'
 import { isSameRequestDocument } from '@/lib/request-document-identity'
 import { isSystemDocumentNameForRows } from '@/lib/system-document-types'
 import { getSystemDocumentTemplateId } from '@/lib/system-document-template-types'
-import {
-type WeldFieldKey,
-type WeldInput
-} from '@/lib/weld-fields'
-import {
-assertUniqueWeldMutationTargets,
-splitWeldImportInsertBatches
-} from '@/lib/weld-import-limits'
+import { type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
+import { assertUniqueWeldMutationTargets, splitWeldImportInsertBatches } from '@/lib/weld-import-limits'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
 import { isLnkRepairForbiddenWithSettings } from '@/lib/lnk-result-rules'
-import { hasPstoCycleExecutionHistory } from '@/lib/psto-cycle'
-import {
-loadControlProcessSettingsFromTransaction,
-} from '@/server/control-process-settings'
-import {
-assertJointChainIdentityChangesUseDedicatedMove,
-normalizeWeldChainLineMovePlan,
-} from '@/server/joint-chain-line-move-guard'
+import { loadControlProcessSettingsFromTransaction } from '@/server/control-process-settings'
+import { assertJointChainIdentityChangesUseDedicatedMove } from '@/server/joint-chain-line-move-guard'
 import { attachDuplicateControlRelations } from '@/server/duplicate-control-relations'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
-import {
-getDispatcherDirtyScopes,
-markDispatcherTaskIndexDirty,
-} from '@/server/dispatcher-task-index-dirty'
-export { getDispatcherDirtyScopes } from '@/server/dispatcher-task-index-dirty'
+import { getDispatcherDirtyScopes, markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
 import { syncPreHeatTreatmentDocumentsInTransaction } from '@/server/pre-heat-treatment-system-documents'
-import { deletePstoRepeatCyclesInTransaction } from '@/server/psto-cycle-state'
 import { assertPstoWorkflowLinesFullyAssigned } from '@/server/psto-workflow-line-guard'
 import { assertSecurityScope } from '@/server/security-functions'
-import {
-removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction,
-removeSourcedSystemDocumentPositionsInTransaction,
-syncSystemDocumentsForWeldChangesInTransaction,
-} from '@/server/system-document-index'
-import {
-applyReservedSystemDocumentNames,
-reserveSystemDocumentNames,
-type SystemDocumentSequenceTransaction,
-} from '@/server/system-document-sequences'
-import {
-type WeldBatchUpdateData,
-type WeldDeleteData,
-type WeldDeleteManyData,
-type WeldMutationScope,
-type WeldPayload,
-type RequestDocumentManagerData,
-type RepeatedJointCreateData,
-} from '@/server/weld-contracts'
-import {
-hasPstoLifecycleHistory,
-loadPreviousWeldRows,
-loadServerWeldValidationContext,
-mergeWeldRecordsWithPrevious,
-prepareServerWeldRecords,
-validateServerWeldRecords,
-} from '@/server/weld-save-validation'
-import { and,asc,eq,inArray,isNull,notExists,or,sql } from 'drizzle-orm'
-
-import {
-getProfileTimestampUpdates,
-toDbInsert,
-updateWeldJointsInBatches,
-WELD_TABLE_RETURNING,
-} from '@/server/weld-persistence'
-import {
-assertExpectedInteractiveWeldVersions,
-lockInteractiveWeldRows,
-} from '@/server/weld-row-version'
-import {
-getChangedWeldLineMemberships,
-haveSameWeldLineMemberships,
-lockWeldLineMemberships,
-} from '@/server/weld-line-membership-lock'
+import { removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction, syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
+import { applyReservedSystemDocumentNames, reserveSystemDocumentNames, type SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
+import { type WeldBatchUpdateData, type WeldDeleteData, type WeldDeleteManyData, type WeldMutationScope, type WeldPayload, type RequestDocumentManagerData, type RepeatedJointCreateData } from '@/server/weld-contracts'
+import { loadPreviousWeldRows, loadServerWeldValidationContext, mergeWeldRecordsWithPrevious, prepareServerWeldRecords, validateServerWeldRecords } from '@/server/weld-save-validation'
+import { and, asc, eq, inArray, isNull, notExists, or, sql } from 'drizzle-orm'
+import { getProfileTimestampUpdates, toDbInsert, updateWeldJointsInBatches, WELD_TABLE_RETURNING } from '@/server/weld-persistence'
+import { assertExpectedInteractiveWeldVersions, lockInteractiveWeldRows } from '@/server/weld-row-version'
+import { getChangedWeldLineMemberships, haveSameWeldLineMemberships, lockWeldLineMemberships } from '@/server/weld-line-membership-lock'
 import { restrictWeldMutationRecord } from '@/server/weld-mutation-policy'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
-import {
-assertEarlyCoilDecisionRowsCanBeDeleted,
-assertEarlyCoilDecisionSourcesRemainValid,
-hasActiveEarlyCoilDecisionForSource,
-refreshEarlyCoilDecisionContextsInTransaction,
-} from '@/server/early-coil-decision-guard'
+import { assertEarlyCoilDecisionRowsCanBeDeleted, assertEarlyCoilDecisionSourcesRemainValid, hasActiveEarlyCoilDecisionForSource, refreshEarlyCoilDecisionContextsInTransaction } from '@/server/early-coil-decision-guard'
 import { readRequestConclusionSettings } from '@/server/system-document-sequences'
+import { prepareLineProgramWeldRecords } from '@/server/line-program-registry'
+import { buildLayeredControlAssignment } from '@/lib/layered-control-rules'
+import { persistLayeredControlFlags } from '@/server/line-program-control'
+
+import { assertChainLineMoveLnkStageTransfersAllowed, preparePstoLineMoveRecordInTransaction, applyPstoLineMoveCleanupInTransaction, buildWeldLineIdentityWhere } from '@/server/weld-line-move-stage'
+
+// This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+export { getDispatcherDirtyScopes } from '@/server/dispatcher-task-index-dirty'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 export { restrictWeldMutationRecord } from '@/server/weld-mutation-policy'
 
@@ -232,9 +196,11 @@ export async function createWeldJoint({ data }: { data: WeldPayload }) {
   await assertSecurityScope('edit')
   const db = requireDb()
   return db.transaction(async (tx) => {
-    const record = restrictWeldMutationRecord(data, 'welding')
+    let record = restrictWeldMutationRecord(data, 'welding')
+    if (data.layeredControlRequest?.assigned === true) record = buildLayeredControlAssignment(record as WeldRow, data.layeredControlRequest.confirmPvk === true)
     await loadControlProcessSettingsFromTransaction(tx)
     await lockWeldLineMemberships(tx, [record])
+    await prepareLineProgramWeldRecords(tx, [record])
     const validationContext = await loadServerWeldValidationContext(tx, [record])
     prepareServerWeldRecords({ records: [record], previousRows: new Map(), context: validationContext })
     validateServerWeldRecords({
@@ -244,7 +210,7 @@ export async function createWeldJoint({ data }: { data: WeldPayload }) {
     })
     const [created] = await tx
       .insert(weldJoints)
-      .values(toDbInsert(record, true))
+      .values({ ...toDbInsert(record, true), layeredControlAssigned: record.layeredControlAssigned === true })
       .returning(WELD_TABLE_RETURNING)
     await syncSystemDocumentsForWeldChangesInTransaction(tx, [created], new Map())
     await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes([record], new Map()) })
@@ -382,7 +348,7 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
     const processSettings = await loadControlProcessSettingsFromTransaction(tx)
     await lockWeldLineMemberships(
       tx,
-      getChangedWeldLineMemberships(identitySnapshot, identityDraft),
+      [identitySnapshot, identityDraft],
     )
     const previousRows = await loadPreviousWeldRows(tx, [scopedData])
     if (!previousRows.has(id)) throw new Error(`Запись ${id} не найдена`)
@@ -413,6 +379,8 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       disposition: data.pstoLineMoveDisposition,
     })
     record = preparedMove.record
+    await prepareLineProgramWeldRecords(tx, [record], previousRows)
+    if (data.layeredControlRequest?.assigned === true) record = buildLayeredControlAssignment(record, data.layeredControlRequest.confirmPvk === true)
     const validationPreviousRows = new Map([[id, preparedMove.validationPrevious]])
     const pendingPreHeatTreatmentControls = preparedMove.pendingPreHeatTreatmentControls
     const requiresLifecycleCleanup = preparedMove.requiresLifecycleCleanup
@@ -424,6 +392,9 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       context: validationContext,
       allowPstoLineLifecycleMove: requiresLifecycleCleanup,
     })
+    assertChainLineMoveLnkStageTransfersAllowed([record], previousRows, new Map(
+      data.pstoLineMoveDisposition ? [[id, data.pstoLineMoveDisposition]] : [],
+    ))
     validateServerWeldRecords({
       records: [record],
       previousRows: validationPreviousRows,
@@ -452,6 +423,11 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       .where(eq(weldJoints.id, id))
       .returning(WELD_TABLE_RETURNING)
     if (!updated) throw new Error(`Запись ${id} не найдена`)
+    await deleteChangedProgramApprovals(tx, [updated], previousRows)
+    if (data.layeredControlRequest?.assigned === true) {
+      await persistLayeredControlFlags(tx, [id], true)
+      updated.layeredControlAssigned = true
+    }
     await syncSystemDocumentsForWeldChangesInTransaction(tx, [updated], previousRows)
     if (savedPreHeatTreatmentControls.length > 0) {
       await syncPreHeatTreatmentDocumentsInTransaction(
@@ -465,580 +441,6 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       ? { ...updated, preHeatTreatmentControls: savedPreHeatTreatmentControls }
       : updated
   })
-}
-
-export async function moveWeldJointChain({ data }: { data: WeldPayload }) {
-  return moveWeldJointChainRecord(data)
-}
-
-export async function moveWeldJointChainRecord(data: WeldPayload) {
-  await assertSecurityScope('edit')
-  const sourceRowId = Number(data?.id)
-  const plan = normalizeWeldChainLineMovePlan(data?.weldChainLineMovePlan)
-  if (!Number.isInteger(sourceRowId) || sourceRowId <= 0 || !plan) {
-    throw new Error('Не передан план переноса цепочки стыка.')
-  }
-
-  return requireDb().transaction(async (tx) => {
-    const processSettings = await loadControlProcessSettingsFromTransaction(tx)
-    const [sourceSnapshot] = await tx
-      .select()
-      .from(weldJoints)
-      .where(eq(weldJoints.id, sourceRowId))
-      .limit(1)
-    if (!sourceSnapshot) throw new Error('Базовый стык для переноса больше не существует.')
-
-    const scopedData = restrictWeldMutationRecord(data, data.mutationScope ?? 'welding')
-    const [draftSnapshot] = mergeWeldRecordsWithPrevious(
-      [scopedData],
-      new Map([[sourceSnapshot.id, sourceSnapshot]]),
-    )
-    const targetIdentity = normalizePstoLineIdentity(draftSnapshot)
-    const sourceIdentity = normalizePstoLineIdentity(sourceSnapshot)
-    if (!targetIdentity.projectTitle || !targetIdentity.subtitleCode || !targetIdentity.line) {
-      throw new Error('Для переноса цепочки укажите проект, шифр и линию.')
-    }
-    if (normalizeJointChainPart(sourceIdentity.line) === normalizeJointChainPart(targetIdentity.line)) {
-      throw new Error('Новая линия совпадает с текущей линией цепочки.')
-    }
-
-    const sourceIdentityKey = getPstoLineIdentityKey(sourceIdentity)
-    const targetIdentityKey = getPstoLineIdentityKey(targetIdentity)
-    await lockWeldLineMemberships(tx, [sourceIdentity, targetIdentity])
-
-    const lockedScopeRows = await tx
-      .select()
-      .from(weldJoints)
-      .where(or(
-        buildWeldLineIdentityWhere(sourceIdentity),
-        buildWeldLineIdentityWhere(targetIdentity),
-      ))
-      .orderBy(asc(weldJoints.id))
-      .for('update')
-    const sourceScopeRows = lockedScopeRows.filter(
-      (row) => getPstoLineIdentityKey(row) === sourceIdentityKey,
-    )
-    const targetRows = lockedScopeRows.filter(
-      (row) => getPstoLineIdentityKey(row) === targetIdentityKey,
-    )
-    const storedSource = sourceScopeRows.find((row) => row.id === sourceRowId)
-    if (!storedSource || getPstoLineIdentityKey(storedSource) !== sourceIdentityKey) {
-      throw new Error('Исходный стык изменился во время переноса. Вернитесь к форме и повторите действие.')
-    }
-
-    const initialContext = await loadServerWeldValidationContext(tx, lockedScopeRows)
-    const parsedSource = parseJointChainName(
-      String(storedSource.joint ?? ''),
-      initialContext.systemIndexSettings,
-    )
-    const rootJoint = parsedSource.base || String(storedSource.joint ?? '').trim()
-    if (parsedSource.segments.length > 0) {
-      throw new Error(
-        `Стык ${String(storedSource.joint ?? '').trim() || `#${storedSource.id}`} входит в цепочку ${rootJoint}. ` +
-        `Линия всей цепочки изменяется через базовый стык ${rootJoint}.`,
-      )
-    }
-
-    const [draftSource] = mergeWeldRecordsWithPrevious(
-      [scopedData],
-      new Map([[storedSource.id, storedSource]]),
-    )
-    if (
-      getPstoLineIdentityKey(draftSource) !== targetIdentityKey ||
-      normalizeJointChainPart(sourceIdentity.projectTitle) !== normalizeJointChainPart(targetIdentity.projectTitle) ||
-      normalizeJointChainPart(sourceIdentity.subtitleCode) !== normalizeJointChainPart(targetIdentity.subtitleCode) ||
-      normalizeJointChainPart(storedSource.joint) !== normalizeJointChainPart(draftSource.joint)
-    ) {
-      throw new Error(
-        `Для цепочки ${rootJoint} можно изменить только линию. Проект, шифр и номер базового стыка должны остаться прежними.`,
-      )
-    }
-
-    const chainRows = getJointChainRows(
-      sourceScopeRows as WeldRow[],
-      storedSource,
-      initialContext.systemIndexSettings,
-    )
-    const hasEarlyCoilDecision = await hasActiveEarlyCoilDecisionForSource(tx, storedSource.id)
-    if (chainRows.length <= 1 && !hasEarlyCoilDecision) {
-      throw new Error(`Цепочка ${rootJoint} уже изменилась. Вернитесь к форме и повторите перенос.`)
-    }
-
-    assertExpectedChainRows(plan.expectedRowIds, chainRows)
-    assertNoTargetChainCollision(
-      targetRows as WeldRow[],
-      rootJoint,
-      initialContext.systemIndexSettings,
-    )
-
-    const previousRows = await loadPreviousWeldRows(
-      tx,
-      chainRows.map((row) => ({ id: row.id })),
-    )
-    if (previousRows.size !== chainRows.length) {
-      throw new Error('Состав цепочки изменился во время переноса. Повторите действие.')
-    }
-    assertExpectedInteractiveWeldVersions(
-      chainRows.map((row) => row.id),
-      plan.expectedVersions,
-      [...previousRows.values()],
-    )
-    assertExpectedInteractiveWeldVersions(
-      [sourceRowId],
-      [{ id: sourceRowId, version: String(data.expectedVersion ?? '').trim() }],
-      [previousRows.get(sourceRowId)!],
-    )
-    const validationContext = withLockedTargetLineState(
-      initialContext,
-      targetIdentity,
-      targetRows as WeldRow[],
-    )
-    const decisions = normalizeChainLineMoveDecisions(plan.decisions, new Set(previousRows.keys()))
-    const [mergedSource] = mergeWeldRecordsWithPrevious([scopedData], previousRows)
-    const records = chainRows.map((chainRow) => {
-      const previous = previousRows.get(chainRow.id) as unknown as WeldRow
-      return chainRow.id === sourceRowId
-        ? mergedSource as WeldRow
-        : { ...previous, line: targetIdentity.line } as WeldRow
-    })
-
-    const validationPreviousRows = new Map<number, WeldJoint>()
-    const pendingPreHeatTreatmentControls: LnkStageTransferControlWrite[] = []
-    const cleanupPlans: PstoLineMoveCleanupPlan[] = []
-    let requiresLifecycleCleanup = false
-    for (let index = 0; index < records.length; index += 1) {
-      const record = records[index]!
-      const previousStored = previousRows.get(Number(record.id))!
-      const prepared = await preparePstoLineMoveRecordInTransaction({
-        tx,
-        record,
-        previousStored,
-        validationContext,
-        processSettings,
-        disposition: decisions.get(Number(record.id)),
-      })
-      records[index] = prepared.record
-      validationPreviousRows.set(Number(record.id), prepared.validationPrevious)
-      pendingPreHeatTreatmentControls.push(...prepared.pendingPreHeatTreatmentControls)
-      cleanupPlans.push(prepared.cleanup)
-      requiresLifecycleCleanup ||= prepared.requiresLifecycleCleanup
-    }
-
-    const allowedLineMoveRowIds = new Set(records.map((record) => Number(record.id)))
-    await assertEarlyCoilDecisionSourcesRemainValid(tx, records, previousRows, {
-      allowedLineMoveRowIds,
-    })
-    prepareServerWeldRecords({
-      records,
-      previousRows: validationPreviousRows,
-      context: validationContext,
-      allowPstoLineLifecycleMove: requiresLifecycleCleanup,
-    })
-    assertChainLineMoveLnkStageTransfersAllowed(records, previousRows, decisions)
-    validateServerWeldRecords({
-      records,
-      previousRows: validationPreviousRows,
-      context: validationContext,
-      allowSystemJointNames: true,
-    })
-    await applyPstoLineMoveCleanupInTransaction(tx, cleanupPlans)
-
-    const savedPreHeatTreatmentControls = pendingPreHeatTreatmentControls.length > 0
-      ? await tx
-          .insert(preHeatTreatmentControls)
-          .values(pendingPreHeatTreatmentControls)
-          .returning()
-      : []
-    const savedControlsByRowId = new Map<number, typeof savedPreHeatTreatmentControls>()
-    for (const control of savedPreHeatTreatmentControls) {
-      const controls = savedControlsByRowId.get(control.weldJointId) ?? []
-      controls.push(control)
-      savedControlsByRowId.set(control.weldJointId, controls)
-    }
-    for (const record of records) {
-      const savedControls = savedControlsByRowId.get(Number(record.id))
-      if (!savedControls) continue
-      record.preHeatTreatmentControls = savedControls
-      record.finalStatus = calculateFinalStatus(record)
-    }
-
-    const updatedRows = await updateWeldJointsInBatches(tx, records, previousRows)
-    await syncSystemDocumentsForWeldChangesInTransaction(tx, updatedRows, previousRows)
-    if (savedPreHeatTreatmentControls.length > 0) {
-      await syncPreHeatTreatmentDocumentsInTransaction(
-        tx,
-        updatedRows.map((row) => ({
-          ...row,
-          preHeatTreatmentControls: savedControlsByRowId.get(row.id) ?? [],
-        })) as WeldRow[],
-        savedPreHeatTreatmentControls,
-      )
-    }
-    await refreshEarlyCoilDecisionContextsInTransaction(
-      tx,
-      updatedRows,
-      validationContext.systemIndexSettings,
-    )
-    await markDispatcherTaskIndexDirty(tx, {
-      scopes: getDispatcherDirtyScopes(records, previousRows),
-    })
-
-    const recordsById = new Map(records.map((record) => [Number(record.id), record]))
-    return updatedRows.map((row) => {
-      const prepared = recordsById.get(row.id)
-      return {
-        ...row,
-        duplicateControls: prepared?.duplicateControls ?? [],
-        preHeatTreatmentControls: prepared?.preHeatTreatmentControls ?? [],
-        pstoRepeatCycles: prepared?.pstoRepeatCycles ?? [],
-      } as WeldRow
-    })
-  })
-}
-
-function assertChainLineMoveLnkStageTransfersAllowed(
-  records: WeldRow[],
-  previousRows: ReadonlyMap<number, WeldJoint>,
-  decisions: ReadonlyMap<number, PstoWeldLineMoveDisposition>,
-) {
-  for (const record of records) {
-    const disposition = decisions.get(record.id)
-    const targetStage = disposition === 'movePrimaryToBeforeHeatTreatment'
-      ? 'beforeHeatTreatment'
-      : disposition === 'promoteBeforeHeatTreatment'
-        ? 'primary'
-        : null
-    if (!targetStage) continue
-    const previous = previousRows.get(record.id)
-    if (!previous) continue
-    const issue = findBlockingLnkStageTransferChronologyIssue({
-      previousRows: [previous as unknown as WeldRow],
-      nextRows: [record],
-      targetStage,
-    })
-    if (issue) {
-      throw new Error(`Перенос цепочки невозможен: смена этапа ЛНК нарушает данные. ${issue.message}`)
-    }
-  }
-}
-
-async function preparePstoLineMoveRecordInTransaction({
-  tx,
-  record: inputRecord,
-  previousStored,
-  validationContext,
-  processSettings,
-  disposition,
-}: {
-  tx: SystemDocumentSequenceTransaction
-  record: WeldRow
-  previousStored: WeldJoint
-  validationContext: Awaited<ReturnType<typeof loadServerWeldValidationContext>>
-  processSettings: Awaited<ReturnType<typeof loadControlProcessSettingsFromTransaction>>
-  disposition?: PstoWeldLineMoveDisposition
-}) {
-  const id = previousStored.id
-  const previous = previousStored as unknown as WeldRow
-  let record = inputRecord
-  let validationPrevious = previousStored
-  let pendingPreHeatTreatmentControls: LnkStageTransferControlWrite[] = []
-  const cleanup: PstoLineMoveCleanupPlan = {
-    preHeatTreatmentControlIds: [],
-    preHeatTreatmentWeldJointId: null,
-    unstartedRepeatCycles: [],
-  }
-  const targetIdentity = normalizePstoLineIdentity(record)
-  const targetLineState = targetIdentity.line
-    ? validationContext.pstoLineAssignments.get(getPstoLineIdentityKey(targetIdentity))
-    : undefined
-  const targetLineAssigned = Boolean(
-    targetLineState &&
-    targetLineState.rowCount > 0 &&
-    targetLineState.assignedCount === targetLineState.rowCount,
-  )
-  const targetLineCancelled = Boolean(
-    targetLineState &&
-    targetLineState.rowCount > 0 &&
-    targetLineState.cancelledCount === targetLineState.rowCount,
-  )
-  const identityChanged = getPstoLineIdentityKey(previous) !== getPstoLineIdentityKey(targetIdentity)
-  if (
-    (disposition === 'movePrimaryToBeforeHeatTreatment' || disposition === 'deletePrimary') &&
-    !targetLineAssigned
-  ) {
-    throw new Error('Назначение ПСТО целевой линии изменилось. Вернитесь к форме и проверьте линию еще раз.')
-  }
-  const requiresPrimaryStageResolution = (
-    processSettings.preHeatTreatmentLnkEnabled &&
-    identityChanged &&
-    targetLineAssigned &&
-    requiresPrimaryStageResolutionForAssignedPstoLine(previous)
-  )
-  const requiresLifecycleCleanup = identityChanged && !targetLineAssigned && hasPstoLifecycleHistory(previousStored)
-
-  if (requiresPrimaryStageResolution) {
-    if (
-      disposition !== 'keepPrimary' &&
-      disposition !== 'movePrimaryToBeforeHeatTreatment' &&
-      disposition !== 'deletePrimary'
-    ) {
-      throw new Error(
-        `Стык ${String(previous.joint ?? '').trim() || `#${id}`}: выберите, сохранить основной комплект, ` +
-        'перенести его в «До ТО» или удалить.',
-      )
-    }
-    const positions = getPrimaryStagedMethodCodes(previous).map((methodCode) => ({
-      rowId: id,
-      methodCode,
-    }))
-    const moveRow = {
-      ...record,
-      duplicateControls: previous.duplicateControls ?? [],
-      preHeatTreatmentControls: previous.preHeatTreatmentControls ?? [],
-      pstoRepeatCycles: previous.pstoRepeatCycles ?? [],
-    } as WeldRow
-
-    if (disposition === 'keepPrimary') {
-      record = moveRow
-      validationPrevious = buildPstoAssignedKeepPrimaryValidationRow(previous) as unknown as WeldJoint
-    } else if (disposition === 'movePrimaryToBeforeHeatTreatment') {
-      const transfer = buildPrimaryToPreHeatTreatmentTransfer({
-        rows: [moveRow],
-        positions,
-      })
-      pendingPreHeatTreatmentControls = transfer.controls
-      record = {
-        ...transfer.rows[0]!,
-        preHeatTreatmentControls: transfer.controls.map((control, index) => ({
-          ...control,
-          id: -(id * 10_000 + index + 1),
-        })),
-      }
-    } else {
-      record = buildClearedPrimaryLnkStageRows({
-        rows: [moveRow],
-        positions,
-      })[0]!
-    }
-  }
-
-  if (requiresLifecycleCleanup) {
-    if (disposition !== 'keepPrimary' && disposition !== 'promoteBeforeHeatTreatment') {
-      throw new Error(
-        `Стык ${String(previous.joint ?? '').trim() || `#${id}`}: выберите, какой комплект НК сохранить ` +
-        'при переносе на линию без ПСТО.',
-      )
-    }
-    const controls = previous.preHeatTreatmentControls ?? []
-    const preservesPerformedHistory = hasPerformedPstoHistory(previous)
-    if (targetLineCancelled && preservesPerformedHistory) {
-      assertPstoCancellationDateAfterHistory(
-        [previous],
-        String(targetLineState?.cancellationDate ?? '').trim(),
-      )
-    }
-    if (
-      disposition === 'promoteBeforeHeatTreatment' &&
-      (preservesPerformedHistory || getCompletedPreHeatTreatmentMethodCodes(controls).length === 0)
-    ) {
-      throw new Error(
-        `Стык ${String(previous.joint ?? '').trim() || `#${id}`}: ` +
-        'для переноса в основной комплект нет завершенного НК до ТО.',
-      )
-    }
-    const moveRow = {
-      ...record,
-      duplicateControls: previous.duplicateControls ?? [],
-    } as WeldRow
-    const cleanedRecord = targetLineCancelled
-      ? buildPstoCancelledRow({
-          row: moveRow,
-          controls,
-          disposition,
-          cancellationDate: targetLineState?.cancellationDate ?? '',
-          cancellationBasis: targetLineState?.cancellationBasis ?? '',
-        })
-      : buildPstoMovedToUnassignedLineRow({ row: moveRow, controls, disposition })
-    const unstartedRepeatCycles = (previous.pstoRepeatCycles ?? [])
-      .filter((cycle) => !hasPstoCycleExecutionHistory(cycle))
-    cleanedRecord.preHeatTreatmentControls = preservesPerformedHistory ? controls : []
-    cleanedRecord.finalStatus = calculateFinalStatus(cleanedRecord)
-    record = cleanedRecord
-
-    validationPrevious = {
-      ...cleanedRecord,
-      projectTitle: previous.projectTitle,
-      subtitleCode: previous.subtitleCode,
-      line: previous.line,
-    } as unknown as WeldJoint
-
-    if (!preservesPerformedHistory && controls.length > 0) {
-      cleanup.preHeatTreatmentControlIds = controls.map((control) => control.id)
-      cleanup.preHeatTreatmentWeldJointId = id
-    }
-    if (unstartedRepeatCycles.length > 0) {
-      cleanup.unstartedRepeatCycles = unstartedRepeatCycles
-    }
-  }
-
-  return {
-    record,
-    validationPrevious,
-    pendingPreHeatTreatmentControls,
-    requiresLifecycleCleanup,
-    cleanup,
-  }
-}
-
-type PstoLineMoveCleanupPlan = {
-  preHeatTreatmentControlIds: number[]
-  preHeatTreatmentWeldJointId: number | null
-  unstartedRepeatCycles: NonNullable<WeldRow['pstoRepeatCycles']>
-}
-
-async function applyPstoLineMoveCleanupInTransaction(
-  tx: SystemDocumentSequenceTransaction,
-  plans: readonly PstoLineMoveCleanupPlan[],
-) {
-  const preHeatTreatmentControlIds = [...new Set(
-    plans.flatMap((plan) => plan.preHeatTreatmentControlIds),
-  )]
-  const preHeatTreatmentWeldJointIds = [...new Set(
-    plans.flatMap((plan) => plan.preHeatTreatmentWeldJointId === null
-      ? []
-      : [plan.preHeatTreatmentWeldJointId]),
-  )]
-  if (preHeatTreatmentControlIds.length > 0) {
-    await removeSourcedSystemDocumentPositionsInTransaction({
-      tx,
-      sourceKind: 'beforeHeatTreatment',
-      relationIds: preHeatTreatmentControlIds,
-    })
-  }
-  if (preHeatTreatmentWeldJointIds.length > 0) {
-    await tx
-      .delete(preHeatTreatmentControls)
-      .where(buildNumberArrayMatch(
-        preHeatTreatmentControls.weldJointId,
-        preHeatTreatmentWeldJointIds,
-      ))
-  }
-
-  const unstartedRepeatCycles = [...new Map(
-    plans
-      .flatMap((plan) => plan.unstartedRepeatCycles)
-      .map((cycle) => [cycle.id, cycle]),
-  ).values()]
-  if (unstartedRepeatCycles.length === 0) return
-  await removeSourcedSystemDocumentPositionsInTransaction({
-    tx,
-    sourceKind: 'pstoCycle',
-    sourcePositions: unstartedRepeatCycles.map((cycle) => ({
-      weldJointId: cycle.weldJointId,
-      relationId: cycle.id,
-      sequence: cycle.sequence,
-    })),
-  })
-  await removeSourcedSystemDocumentPositionsInTransaction({
-    tx,
-    sourceKind: 'pstoRepeat',
-    relationIds: unstartedRepeatCycles.map((cycle) => cycle.id),
-  })
-  await deletePstoRepeatCyclesInTransaction(
-    tx,
-    unstartedRepeatCycles.map((cycle) => cycle.id),
-  )
-}
-
-function assertExpectedChainRows(expectedRowIds: readonly number[], rows: readonly WeldRow[]) {
-  const normalizedExpected = [...new Set(expectedRowIds.map(Number))]
-    .filter((id) => Number.isInteger(id) && id > 0)
-    .sort((left, right) => left - right)
-  const current = rows.map((row) => row.id).sort((left, right) => left - right)
-  if (
-    normalizedExpected.length !== expectedRowIds.length ||
-    normalizedExpected.length !== current.length ||
-    normalizedExpected.some((id, index) => id !== current[index])
-  ) {
-    throw new Error('Состав цепочки изменился после подтверждения. Вернитесь к форме и проверьте перенос еще раз.')
-  }
-}
-
-function normalizeChainLineMoveDecisions(
-  decisions: readonly { rowId: number; disposition: PstoWeldLineMoveDisposition }[],
-  chainRowIds: ReadonlySet<number>,
-) {
-  const allowedDispositions = new Set<PstoWeldLineMoveDisposition>([
-    'keepPrimary',
-    'movePrimaryToBeforeHeatTreatment',
-    'deletePrimary',
-    'promoteBeforeHeatTreatment',
-  ])
-  const result = new Map<number, PstoWeldLineMoveDisposition>()
-  for (const decision of decisions) {
-    const rowId = Number(decision?.rowId)
-    if (!chainRowIds.has(rowId)) {
-      throw new Error('План переноса содержит стык, который больше не входит в цепочку.')
-    }
-    if (result.has(rowId)) throw new Error(`Для стыка #${rowId} передано несколько решений переноса.`)
-    if (!allowedDispositions.has(decision.disposition)) {
-      throw new Error(`Для стыка #${rowId} передано неизвестное решение переноса.`)
-    }
-    result.set(rowId, decision.disposition)
-  }
-  return result
-}
-
-function assertNoTargetChainCollision(
-  targetRows: readonly WeldRow[],
-  rootJoint: string,
-  settings: Parameters<typeof parseJointChainName>[1],
-) {
-  const collisions = targetRows.filter((row) => (
-    normalizeJointChainPart(parseJointChainName(String(row.joint ?? ''), settings).base) ===
-    normalizeJointChainPart(rootJoint)
-  ))
-  if (collisions.length === 0) return
-  const joints = [...new Set(collisions.map((row) => String(row.joint ?? '').trim() || `#${row.id}`))]
-  throw new Error(
-    `На целевой линии уже есть цепочка ${rootJoint}: ${joints.slice(0, 8).join(', ')}` +
-    `${joints.length > 8 ? ` и еще ${joints.length - 8}` : ''}. Выберите другую линию или устраните конфликт.`,
-  )
-}
-
-function withLockedTargetLineState(
-  context: Awaited<ReturnType<typeof loadServerWeldValidationContext>>,
-  targetIdentity: ReturnType<typeof normalizePstoLineIdentity>,
-  targetRows: readonly WeldRow[],
-) {
-  const pstoLineAssignments = new Map(context.pstoLineAssignments)
-  const key = getPstoLineIdentityKey(targetIdentity)
-  if (targetRows.length === 0) {
-    pstoLineAssignments.delete(key)
-  } else {
-    const cancellationDates = targetRows
-      .map((row) => String(row.pstoCancellationDate ?? '').trim())
-      .filter(Boolean)
-      .sort()
-    pstoLineAssignments.set(key, {
-      rowCount: targetRows.length,
-      assignedCount: targetRows.filter((row) => isControlEnabledValue(row.pstoRequired)).length,
-      cancelledCount: targetRows.filter((row) => String(row.pstoRequired ?? '').trim().toLowerCase() === 'отменен').length,
-      cancellationDate: cancellationDates.at(-1) ?? '',
-      cancellationBasis: targetRows
-        .map((row) => String(row.pstoControlBasis ?? '').trim())
-        .find(Boolean) ?? '',
-    })
-  }
-  return { ...context, pstoLineAssignments }
-}
-
-function buildWeldLineIdentityWhere(identity: ReturnType<typeof normalizePstoLineIdentity>) {
-  return and(
-    sql`lower(btrim(coalesce(${weldJoints.projectTitle}, ''))) = ${normalizePstoLineIdentityPart(identity.projectTitle)}`,
-    sql`lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))) = ${normalizePstoLineIdentityPart(identity.subtitleCode)}`,
-    sql`lower(btrim(coalesce(${weldJoints.line}, ''))) = ${normalizePstoLineIdentityPart(identity.line)}`,
-  )
 }
 
 export async function createWeldJoints({
@@ -1130,7 +532,10 @@ export async function createWeldJoints({
       )
     }
     const records = data.targetJoints.map((targetJoint) =>
-      buildRepeatedJointDraft(hydratedSource, targetJoint),
+      buildRepeatedJointDraft(hydratedSource, targetJoint, {
+        rows: hydratedScopeRows, approved: validationContext.programRules?.approved,
+        settings: validationContext.systemIndexSettings,
+      }),
     )
     const targetKeys = new Set(records.map(getDuplicateJointKey).filter((key): key is string => Boolean(key)))
     const duplicate = scopeRows.find((row) => {
@@ -1166,6 +571,7 @@ export function getCurrentRepeatedJointTargets(
   settings: SystemIndexSettings,
   hasEarlyCoilDecision = false,
 ) {
+  if (isRevisionNotActual(sourceRow.revisionActuality)) return []
   const rejection = getPrimaryRejectedLnkResult(sourceRow)
   const sourceJoint = String(sourceRow.joint ?? '').trim()
   if (!rejection || !sourceJoint || hasCompletedParentBranch(rows, sourceRow, sourceJoint, settings)) return []
@@ -1181,7 +587,10 @@ export function getCurrentRepeatedJointTargets(
   const targets = coilTransitionMode
     ? getCoilJointNames(parseRepeatedJointName(sourceJoint, settings).base, settings)
     : [getExpectedRepeatedJointName(sourceRow, sourceJoint, rejection.result, settings)]
-  return targets.filter((targetJoint) => !hasRepeatedJointTarget(rows, sourceRow, targetJoint))
+  // Match the dispatcher: historical unofficial R/W namesakes do not fulfill
+  // the official continuation. Coil existence is a separate physical check.
+  const candidateRows = coilTransitionMode ? rows : rows.filter(row => !isUnofficialJoint(row))
+  return targets.filter((targetJoint) => !hasRepeatedJointTarget(candidateRows, sourceRow, targetJoint))
 }
 
 export function sameNormalizedTextSet(left: readonly string[], right: readonly string[]) {
@@ -1242,9 +651,7 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
         const previous = identityRowsById.get(Number(record.id))
         return previous ? getChangedWeldLineMemberships(previous, record) : []
       })
-      await lockWeldLineMemberships(tx, data.requireFullyAssignedPstoLines
-        ? [...changedLineMemberships, ...identityRows, ...identityDrafts]
-        : changedLineMemberships)
+      await lockWeldLineMemberships(tx, [...changedLineMemberships, ...identityRows, ...identityDrafts])
       const previousRows = await loadPreviousWeldRows(tx, records)
       if (!haveSameWeldLineMemberships(identityRows, [...previousRows.values()])) {
         throw new Error(
@@ -1272,6 +679,16 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
         records.map((record) => restrictWeldMutationRecord(record, mutationScope)),
         previousRows,
       )
+      await prepareLineProgramWeldRecords(tx, records, previousRows)
+      const layeredIds = new Set(data.layeredControl?.rowIds ?? [])
+      if (layeredIds.size && (importMode || mutationScope !== 'lnk' || [...layeredIds].some((id) => !previousRows.has(id)))) {
+        throw new Error('Послойную отметку можно сохранить только для выбранных стыков через ввод собственного основного ПВК.')
+      }
+      records = records.map((record) => {
+        if (!layeredIds.has(Number(record.id))) return record
+        if (!['годен', 'ремонт', 'вырез'].includes(String(record.pvkResult ?? '').trim().toLowerCase())) throw new Error('Сначала внесите собственный основной результат ПВК.')
+        return buildLayeredControlAssignment(record as WeldRow, data.layeredControl?.confirmPvk === true)
+      })
       if (data.requireFullyAssignedPstoLines) {
         await assertPstoWorkflowLinesFullyAssigned(tx, records)
       }
@@ -1295,6 +712,8 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
         importMode,
       })
       const updated = await updateWeldJointsInBatches(tx, records, previousRows)
+      await persistLayeredControlFlags(tx, [...layeredIds], true)
+      for (const row of updated) if (layeredIds.has(row.id)) row.layeredControlAssigned = true
       await syncSystemDocumentsForWeldChangesInTransaction(tx, updated, previousRows)
       await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes(records, previousRows) })
       return updated
@@ -1684,6 +1103,7 @@ export async function deleteLockedWeldRowsInTransaction(
   const previousRowsById = new Map(previousRows.map((row) => [row.id, row]))
 
   await assertEarlyCoilDecisionRowsCanBeDeleted(tx, previousRows)
+  await assertJointChainRowsCanBeDeleted(tx, previousRows)
   await removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction({
     tx,
     weldJointIds: ids,
@@ -1742,6 +1162,7 @@ export async function insertWeldJointsInBatches(
   processSettings: Awaited<ReturnType<typeof loadControlProcessSettingsFromTransaction>>,
 ) {
   const inserted: WeldJoint[] = []
+  await prepareLineProgramWeldRecords(tx, records)
   for (const batch of splitWeldImportInsertBatches(records)) {
     const rows = await tx
       .insert(weldJoints)

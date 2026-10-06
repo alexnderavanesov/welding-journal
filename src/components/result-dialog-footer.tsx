@@ -26,9 +26,9 @@ export function ResultDialogFooter({
   const showDangerReason = Boolean(saveBlockReason && saveBlockReasonVariant === 'danger')
 
   return (
-    <div className="flex items-end justify-between gap-4 border-t border-slate-200/80 px-5 py-4">
-      <div className="min-h-5 text-sm text-slate-500">
-        {saveBlockReason ? (
+    <div role="group" aria-label="Сохранение результата" className="shrink-0 border-t border-slate-200/80 bg-white px-5 py-3">
+      {saveBlockReason ? (
+        <div className="mb-3 max-h-[min(24vh,10rem)] overflow-y-auto overscroll-contain text-sm text-slate-500">
           <BlockedActionHint
             reason={showDangerReason ? `Сохранение заблокировано: ${saveBlockReason}` : saveBlockReason}
             actionLabel={blockReasonActionLabel}
@@ -36,26 +36,28 @@ export function ResultDialogFooter({
             actions={blockReasonActions}
             tone={showDangerReason ? 'danger' : 'warning'}
           />
-        ) : null}
-      </div>
-      <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={onClose}>
-          Отмена
-        </Button>
-        <span title={saveBlockReason || 'Можно сохранить результат'}>
-          <Button
-            onClick={onSave}
-            disabled={isSaveDisabled}
-            className={
-              isSaveDisabled
-                ? 'pointer-events-none border border-slate-200 bg-slate-100 text-slate-400 shadow-none opacity-100'
-                : ''
-            }
-          >
-            <Check className="mr-2 h-4 w-4" />
-            Сохранить результат
+        </div>
+      ) : null}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="ml-auto flex shrink-0 justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>
+            Отмена
           </Button>
-        </span>
+          <span title={saveBlockReason || 'Можно сохранить результат'}>
+            <Button
+              onClick={onSave}
+              disabled={isSaveDisabled}
+              className={
+                isSaveDisabled
+                  ? 'pointer-events-none border border-slate-200 bg-slate-100 text-slate-400 shadow-none opacity-100'
+                  : ''
+              }
+            >
+              <Check className="mr-2 h-4 w-4" />
+              Сохранить результат
+            </Button>
+          </span>
+        </div>
       </div>
     </div>
   )

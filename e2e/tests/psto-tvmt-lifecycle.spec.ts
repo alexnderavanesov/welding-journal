@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { LNK_VISIBLE_FIELD_SECTIONS } from '@/lib/lnk-visible-field-layout'
 import { getWeldLineMembershipLockKeys } from '@/server/weld-line-membership-lock'
 import { withE2eDatabase } from '../database'
+import { rpcName } from '../rpc'
 
 const JOINT = 'F1'
 const CANCELLED_CYCLE_JOINT = 'F2'
@@ -73,7 +74,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await runNextAction(page, 'Внести результат НК до ТО')
   await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК до ТО' })).toBeVisible()
   await fillDate(page, 'Дата контроля', '2026-08-03')
-  await page.getByRole('button', { name: 'годен', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'годен', exact: true }).click()
   await page.getByRole('button', { name: 'Сохранить результат до ТО' }).click()
   await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК до ТО' })).toBeHidden()
   await expectDatabaseRow('pre_heat_treatment_controls', {
@@ -152,7 +153,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК' })).toBeVisible()
   await chooseOptionByLabel(page, 'Метод контроля', 'ВИК')
   await fillDate(page, 'Дата контроля', '2026-08-13')
-  await page.getByRole('button', { name: 'ремонт', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'ремонт', exact: true }).click()
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
   await expectWeld({
     vik_result: 'ремонт',
@@ -164,7 +165,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await openHeaderMenuItem(page, 'Результат', 'Все результаты ЛНК')
   await expect(page.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeVisible()
   await page.getByRole('button', { name: new RegExp(`E2E-L1 · ${JOINT}`) }).click()
-  await page.getByRole('button', { name: 'годен', exact: true }).last().click()
+  await page.getByRole('dialog').getByRole('button', { name: 'годен', exact: true }).last().click()
   await page.getByRole('button', { name: 'Сохранить изменения' }).click()
   await expect(page.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeHidden()
   await expectWeld({
@@ -228,7 +229,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await expect(page.getByTitle('Фильтр: Этап')).toBeHidden()
 })
 
-test('официальная отмена сохраняет выполненный цикл, но удаляет незапущенный повтор', async ({ page }) => {
+test('официальная отмена сохраняет выполненный цикл и заявку незапущенного повтора', async ({ page }) => {
   await seedCancelledCycleJoint()
   await page.goto('/psto')
   await expect(page.getByText(CANCELLED_CYCLE_JOINT, { exact: true }).first()).toBeVisible()
@@ -267,8 +268,8 @@ test('официальная отмена сохраняет выполненн�
     result: 'годен',
     conclusion_name: 'Заключение ВИК до ТО E2E-2',
   })
-  await expectNoRepeatCycleForJoint(CANCELLED_CYCLE_JOINT)
-  await expectPstoCycleDocumentPosition(CANCELLED_CYCLE_JOINT, 2, false)
+  await expectRepeatCycleForJoint(CANCELLED_CYCLE_JOINT, { sequence: 2, psto_request_date: '2026-08-08' })
+  await expectPstoCycleDocumentPosition(CANCELLED_CYCLE_JOINT, 2, true)
 
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Программа ПСТО' })).toBeHidden()
@@ -279,6 +280,61 @@ test('официальная отмена сохраняет выполненн�
     'title',
     'ПСТО по линии отменена; новые циклы недоступны.',
   )
+  await openReport(page, 'Сварочный журнал', '/journal')
+  await page.getByRole('button', { name: CANCELLED_CYCLE_JOINT, exact: true }).click()
+  const picture = page.getByRole('dialog').filter({
+    has: page.getByRole('heading', { name: `Картина стыка ${CANCELLED_CYCLE_JOINT}`, exact: true }),
+  })
+  await expect(picture.getByText('Сохранённая заявка; выполнение ПСТО не требуется', { exact: false })).toBeVisible()
+  await expect(picture.getByText(/ПСТО: ожидает ПСТО/)).toHaveCount(0)
+  await expect(picture.getByText('ТВМТ: не годен', { exact: false })).toBeVisible()
+})
+
+test('устаревшее удаление назначения: новая заявка в другом окне ведёт к явной отмене без потери истории', async ({ page }, testInfo) => {
+  const joint = 'F-STALE-HISTORY'
+  const line = 'E2E-STALE-HISTORY'
+  await withE2eDatabase(async client => {
+    await client.query(`
+      insert into weld_joints (
+        weld_date, project_title, subtitle_code, line, isometry, joint, spool,
+        officiality, revision_actuality, welding_method, connection_type, material_group,
+        d1, d2, t1, t2, wdi, stamp_1_k, stamp_1_k_fact, has_vik, psto_required,
+        welding_updated_at, lnk_created_at, lnk_updated_at, psto_created_at, psto_updated_at
+      ) values (
+        '2026-08-24', 'E2E устаревшее окно', 'E2E-STALE', $1, 'ISO-STALE', $2, 'S-STALE',
+        'действующий', 'актуальная', 'РД', 'СШ', 'M01',
+        108, 108, 4, 4, 0.42, 'E2K1', 'E2K1', 'да', 'да',
+        now(), now(), now(), now(), now()
+      )
+    `, [line, joint])
+  })
+  await openPstoLineProgram(page, line)
+  await expect(page.getByRole('button', { name: 'Удалить назначение ПСТО', exact: true })).toBeVisible()
+  const other = await page.context().newPage()
+  try {
+    await other.goto('/lnk')
+    await runNextAction(other, 'Создать заявку НК до ТО', joint)
+    await fillDate(other, 'Дата заявки', '2026-08-25')
+    await other.getByRole('button', { name: 'Создать заявку до ТО', exact: true }).click()
+    await expect(other.getByRole('heading', { name: 'Заявка ЛНК до ТО' })).toBeHidden()
+
+    let saves = 0
+    page.on('request', request => { if (rpcName(request.url()) === 'savePstoLineAssignment') saves += 1 })
+    await page.getByRole('button', { name: 'Удалить назначение ПСТО', exact: true }).click()
+    await expect(page.getByText(/История линии изменилась/)).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Удалить назначение', exact: true })).toBeDisabled()
+    await expect(page.getByText(/будут удалены|Перенести завершенный НК/)).toHaveCount(0)
+    await page.screenshot({ path: testInfo.outputPath('stale-psto-removal.png') })
+    await page.getByRole('button', { name: 'Перейти к отмене ПСТО', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Отмена ПСТО', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Отменить ПСТО на линии', exact: true })).toBeEnabled()
+    await page.getByRole('button', { name: 'Отмена', exact: true }).click()
+    expect(saves).toBe(0)
+    await expectDatabaseWeld(joint, { psto_required: 'да' })
+    await expectPreControl(joint, { method: 'ВИК', request_date: '2026-08-25' })
+  } finally {
+    await other.close()
+  }
 })
 
 test('позднее назначение ПСТО сохраняет фактический основной НК для постепенного дозаполнения истории', async ({ page }) => {
@@ -484,10 +540,7 @@ test('этап НК одинаково меняется из ПСТО, доку�
   await openPstoLineProgram(page, STAGE_SYNC_SOURCE_LINE)
   await page.getByRole('button', { name: 'Назначить', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Назначение ПСТО' })).toBeVisible()
-  await expect(page.getByText('Основной НК: ВИК', { exact: true })).toBeVisible()
-  await page.getByRole('button', {
-    name: `Перенести основной НК стыка ${STAGE_SYNC_JOINT} в «До ТО»`,
-  }).click()
+  await page.getByRole('button', { name: `Перенести основной НК стыка ${STAGE_SYNC_JOINT} в «До ТО»` }).click()
   await page.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
   await closePstoLineProgram(page)
   await expectVikStageEverywhere(page, {
@@ -524,6 +577,13 @@ test('этап НК одинаково меняется из ПСТО, доку�
     .locator('xpath=ancestor::button')
   await expect(requestCard).toBeVisible()
   await requestCard.click({ button: 'right' })
+  await expect(page.getByTestId('context-action-menu')).toBeVisible()
+  // A scroll queued before the delayed request data arrived must not dismiss
+  // the freshly opened actions when the list's position has not changed.
+  await requestCard.evaluate((card) => {
+    card.closest('.overflow-auto')?.dispatchEvent(new Event('scroll'))
+    document.dispatchEvent(new Event('scroll'))
+  })
   await page.getByRole('button', { name: 'Изменить этап контроля', exact: true })
     .filter({ hasText: 'Изменить этап контроля' })
     .click()
@@ -535,6 +595,25 @@ test('этап НК одинаково меняется из ПСТО, доку�
     titles,
     completed: true,
   })
+
+  // A plain line correction must retain both generated documents and expose
+  // the old stage in the journal, document registry and joint picture.
+  await moveStageSyncKeepingHistory(page, STAGE_SYNC_TARGET_LINE, true)
+  await expectVikStageEverywhere(page, { joint: STAGE_SYNC_JOINT, line: STAGE_SYNC_TARGET_LINE,
+    stage: 'beforeHeatTreatment', titles, pstoRequired: null, completed: true })
+  await openReport(page, 'Сварочный журнал', '/journal')
+  await page.getByRole('button', { name: STAGE_SYNC_JOINT, exact: true }).click()
+  const historyPicture = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: `Картина стыка ${STAGE_SYNC_JOINT}`, exact: true }) })
+  await expect(historyPicture.getByText(/На текущей линии этап не предусмотрен/)).toBeVisible()
+  await expect(historyPicture.getByRole('button', { name: titles.conclusion, exact: true })).toBeVisible()
+  await historyPicture.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  await moveStageSyncKeepingHistory(page, STAGE_SYNC_SOURCE_LINE)
+  await openPstoLineProgram(page, STAGE_SYNC_SOURCE_LINE)
+  await page.getByRole('button', { name: 'Назначить', exact: true }).click()
+  await page.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
+  await closePstoLineProgram(page)
+  await expectVikStageEverywhere(page, { joint: STAGE_SYNC_JOINT, line: STAGE_SYNC_SOURCE_LINE,
+    stage: 'beforeHeatTreatment', titles, completed: true })
 
   await openReport(page, 'ЛНК', '/lnk')
   const preHeatTreatmentRow = page
@@ -561,7 +640,7 @@ test('этап НК одинаково меняется из ПСТО, доку�
   await lineInput.press('Tab')
   await expect(page.getByRole('heading', { name: 'Перенос стыка на линию без ПСТО' })).toBeVisible()
   await expect(page.getByText('До ТО: ВИК', { exact: false })).toBeVisible()
-  const promotePreControl = page.getByRole('button', { name: /^Перенести завершенный НК до ТО/ })
+  const promotePreControl = page.getByRole('button', { name: /^Перенести НК «До ТО»/ })
   await expect(promotePreControl).toBeVisible()
   await promotePreControl.click()
   await page.getByRole('button', { name: 'Применить решение', exact: true }).click()
@@ -579,10 +658,7 @@ test('этап НК одинаково меняется из ПСТО, доку�
   await openPstoLineProgram(page, STAGE_SYNC_TARGET_LINE)
   await page.getByRole('button', { name: 'Назначить', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Назначение ПСТО' })).toBeVisible()
-  await expect(page.getByText('Основной НК: ВИК', { exact: true })).toBeVisible()
-  await page.getByRole('button', {
-    name: `Перенести основной НК стыка ${STAGE_SYNC_JOINT} в «До ТО»`,
-  }).click()
+  await page.getByRole('button', { name: `Перенести основной НК стыка ${STAGE_SYNC_JOINT} в «До ТО»` }).click()
   await page.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
   await closePstoLineProgram(page)
   await expectDatabaseWeld('F9', { psto_required: 'да' })
@@ -598,7 +674,6 @@ test('этап НК одинаково меняется из ПСТО, доку�
   await page.getByRole('button', { name: 'Отменить ПСТО', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Отмена ПСТО' })).toBeVisible()
   await expect(page.getByText('НК до ТО: ВИК', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Перенести завершенный НК до ТО', exact: true }).click()
   await page.getByLabel(/Дата решения об отмене ПСТО/).fill('2026-08-22')
   await page.getByLabel('Основание отмены ПСТО', { exact: true }).fill('Сквозной E2E-тест этапа')
   await page.getByRole('button', { name: 'Отменить ПСТО на линии', exact: true }).click()
@@ -607,7 +682,7 @@ test('этап НК одинаково меняется из ПСТО, доку�
   await expectVikStageEverywhere(page, {
     joint: STAGE_SYNC_JOINT,
     line: STAGE_SYNC_TARGET_LINE,
-    stage: 'primary',
+    stage: 'beforeHeatTreatment',
     titles,
     pstoRequired: 'отменен',
     completed: true,
@@ -616,10 +691,6 @@ test('этап НК одинаково меняется из ПСТО, доку�
   await openPstoLineProgram(page, STAGE_SYNC_TARGET_LINE)
   await page.getByRole('button', { name: 'Возобновить', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Возобновление ПСТО' })).toBeVisible()
-  await expect(page.getByText('Основной НК: ВИК', { exact: true })).toBeVisible()
-  await page.getByRole('button', {
-    name: `Перенести основной НК стыка ${STAGE_SYNC_JOINT} в «До ТО»`,
-  }).click()
   await page.getByRole('button', { name: 'Возобновить ПСТО', exact: true }).click()
   await closePstoLineProgram(page)
   await expectDatabaseWeld('F9', { psto_required: 'да' })
@@ -708,6 +779,39 @@ type VikDocumentTitles = {
 }
 
 type ExpectedVikStage = 'primary' | 'beforeHeatTreatment'
+
+async function moveStageSyncKeepingHistory(page: Page, targetLine: string, cancelFirst = false) {
+  await openReport(page, 'Сварочный журнал', '/journal')
+  await page.getByRole('button', { name: `Выбрать стык ${STAGE_SYNC_JOINT}`, exact: true }).locator('xpath=ancestor::tr')
+    .getByRole('button', { name: 'Редактировать', exact: true }).click()
+  const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
+  const calls: string[] = []
+  const listener = (request: import('@playwright/test').Request) => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) }
+  page.on('request', listener)
+  try {
+    const input = editor.getByText('Линия', { exact: true }).locator('..').getByRole('textbox')
+    await input.fill(targetLine)
+    await input.press('Tab')
+    const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Перенос стыка на линию без ПСТО', exact: true }) })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Применить решение', exact: true })).toBeDisabled()
+    if (cancelFirst) {
+      await dialog.getByRole('button', { name: 'Вернуться к форме', exact: true }).click()
+      await editor.getByRole('button', { name: 'Отмена', exact: true }).click()
+      expect(calls.filter(name => name.startsWith('updateWeldJoint_'))).toHaveLength(0)
+    } else {
+      await dialog.getByRole('button', { name: /^Изменить только линию/ }).click()
+      await dialog.getByRole('button', { name: 'Применить решение', exact: true }).click()
+      await expect(dialog).toBeHidden()
+      await expect(editor.getByRole('button', { name: 'Сохранить', exact: true })).toBeEnabled()
+      await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
+      await expect(editor).toBeHidden()
+      expect(calls.filter(name => name.startsWith('updateWeldJoint_'))).toHaveLength(1)
+    }
+    expect(calls.filter(name => name.startsWith('getPstoWeldLineMovePreview_'))).toHaveLength(1)
+  } finally { page.off('request', listener) }
+  if (cancelFirst) await moveStageSyncKeepingHistory(page, targetLine)
+}
 
 async function showOnlyStageSynchronizationFields(page: Page) {
   const visibleFieldKeys = new Set([
@@ -845,7 +949,8 @@ async function expectVikCells(
   pstoRequired: string | null,
   completed: boolean,
 ) {
-  const pendingPrimaryResult = pstoRequired === 'да' ? 'ожидает заявку' : ''
+  // Neither cancellation nor a line move completes/cancels the assigned main VIK.
+  const pendingPrimaryResult = 'ожидает заявку'
   const activeResult = completed ? 'годен' : 'ожидает НК'
   const activeConclusion = completed ? titles.conclusion : ''
   const primaryValues = stage === 'primary'
@@ -893,6 +998,8 @@ async function expectStoredVikStage({
       where weld_joint_id = $1 and method = 'ВИК'
       order by id
     `, [weld.rows[0]?.id])
+    // Both storage forms mean no actual result; the report must display waiting.
+    if (weld.rows[0]?.vik_result === 'ожидает заявку') weld.rows[0].vik_result = null
     return {
       weld: pick(weld.rows[0] ?? {}, [
         'line',
@@ -996,6 +1103,10 @@ async function runNextAction(page: Page, title: string, joint = JOINT) {
 }
 
 async function expectRepeatedJointCreateTask(page: Page, sourceJoint: string, targetJoint: string) {
+  const panel = page.getByLabel('Диспетчер задач', { exact: true })
+  await expect(panel).toBeVisible()
+  const expand = panel.getByRole('button', { name: 'Развернуть', exact: true })
+  if (await expand.isVisible()) await expand.click()
   const codeGroup = page.locator('details').filter({ hasText: 'ДЗ-07' }).first()
   await expect(codeGroup).toBeVisible({ timeout: 15_000 })
   await openDetails(codeGroup)
@@ -1341,7 +1452,7 @@ async function enablePrimaryLnkBeforePreviousStages(): Promise<ControlProcessSet
       values ($1, $2, now())
       on conflict (key) do update set value = excluded.value, updated_at = now()
     `, [CONTROL_PROCESS_SETTINGS_KEY, JSON.stringify({
-      layeredControlEnabled: true,
+      pvkGoodOnly: false,
       preHeatTreatmentLnkEnabled: true,
       allowPrimaryLnkBeforePreviousStagesComplete: true,
     })])

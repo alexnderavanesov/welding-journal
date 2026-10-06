@@ -80,6 +80,7 @@ export type LnkResultDialogProps = {
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
   onOpenPstoHistory?: (row: WeldRow) => void
   onStageChange?: (stage: LnkControlStage, selectedRowIds: number[]) => void
+  onSetLayeredControl: (rowId: number, assigned: boolean) => void
   onSave: () => void
 }
 
@@ -120,6 +121,7 @@ export function LnkResultDialog({
   onOpenPstoHistory,
   onStageChange,
   onSave,
+  onSetLayeredControl,
 }: LnkResultDialogProps) {
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const controlDateInputRef = useRef<HTMLInputElement>(null)
@@ -129,6 +131,7 @@ export function LnkResultDialog({
   const [selectedRowsSearch, setSelectedRowsSearch] = useState('')
   const stableOnToggleRow = useStableEventCallback(onToggleRow)
   const stableOnSetRowResult = useStableEventCallback(onSetRowResult)
+  const stableOnSetLayeredControl = useStableEventCallback(onSetLayeredControl)
   const orderedVisibleRows = useMemo(
     () => pinInitiallySelectedRows(visibleRows, draft.rowIds, initiallySelectedIds),
     [draft.rowIds, initiallySelectedIds, visibleRows],
@@ -210,6 +213,8 @@ export function LnkResultDialog({
       resultAssignment: {
         values: LNK_RESULT_OPTIONS,
         getDisabledReason: (value, rows) => {
+          if (draft.methodKey === 'pvkRequest' && ['ремонт', 'вырез'].includes(value) &&
+            rows.some((row) => row.layeredControlAssigned || draft.layeredControlRowIds.has(row.id))) return 'Выбран послойный контроль.'
           if (!saveCheckSettings.lnkResultRepairRules || value !== 'ремонт') return null
           const forbiddenRow = rows.find(isLnkRepairForbidden)
           return forbiddenRow ? getLnkRepairForbiddenReason(forbiddenRow) : null
@@ -335,7 +340,7 @@ export function LnkResultDialog({
             <DialogVirtualizedRows
               key={rowsViewportResetKey}
               items={rowsPagination.pageItems}
-              estimateRowHeight={92}
+              estimateRowHeight={draft.methodKey === 'pvkRequest' ? 124 : 92}
               getItemKey={(row) => row.id}
               renderItem={(row) => (
                 <LnkResultRow
@@ -346,9 +351,11 @@ export function LnkResultDialog({
                   methodKey={draft.methodKey}
                   selected={draft.rowIds.has(row.id)}
                   rowResult={getEffectiveLnkResultDraftValue(row.id, draft)}
+                  layeredControlSelected={draft.layeredControlRowIds.has(row.id)}
                   saveCheckSettings={saveCheckSettings}
                   onToggleRow={stableOnToggleRow}
                   onSetRowResult={stableOnSetRowResult}
+                  onSetLayeredControl={stableOnSetLayeredControl}
                   onOpenContextMenu={openRowContextMenu}
                 />
               )}

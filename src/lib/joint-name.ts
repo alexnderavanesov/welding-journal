@@ -33,7 +33,8 @@ export function parseJointName(
   settings: SystemIndexSettings = loadSystemIndexSettings(),
 ): ParsedJointName {
   const raw = normalizeJointName(value)
-  const jointPrefixPattern = getJointPrefixPattern(settings)
+  const patterns = getJointPatterns(settings)
+  const jointPrefixPattern = patterns.prefix
   const prefixMatch = raw.match(jointPrefixPattern)
   if (!prefixMatch) {
     return { raw, base: raw, segments: [], hasRequiredPrefix: false }
@@ -41,12 +42,10 @@ export function parseJointName(
 
   const prefix = prefixMatch[1].toUpperCase()
   const tail = raw.slice(prefixMatch[1].length)
-  const segmentPattern = getSystemChainSegmentPattern(settings)
-  const firstSystemSegment = tail.search(new RegExp(`${segmentPattern}\\d+`, 'i'))
+  const firstSystemSegment = tail.search(patterns.firstSegment)
   const baseExtra = firstSystemSegment === -1 ? tail : tail.slice(0, firstSystemSegment)
   const systemTail = firstSystemSegment === -1 ? '' : tail.slice(firstSystemSegment)
-  const systemSegmentPattern = new RegExp(`(${segmentPattern})(\\d+)`, 'gi')
-  const segments = [...systemTail.matchAll(systemSegmentPattern)]
+  const segments = [...systemTail.matchAll(patterns.segments)]
     .map((match) => {
       const suffix = getSemanticJointChainSuffix(match[1], settings)
       return suffix ? { suffix, index: Number(match[2]) || 0 } : null
@@ -142,7 +141,24 @@ export function hasReservedJointSystemPart(
 }
 
 function getJointPrefixPattern(settings = loadSystemIndexSettings()) {
-  return new RegExp(`^([${escapeRegExp(settings.shopJoint)}${escapeRegExp(settings.fieldJoint)}](?:[A-Z])?\\d+)`, 'i')
+  return getJointPatterns(settings).prefix
+}
+
+// One value-keyed entry, not a growing cache of joint names. Comparing values
+// also catches an in-place settings change; no stale WeakMap-by-object result.
+let jointPatterns: { values: string[]; prefix: RegExp; firstSegment: RegExp; segments: RegExp } | undefined
+function getJointPatterns(settings: SystemIndexSettings) {
+  const values = [settings.shopJoint, settings.fieldJoint, settings.repair, settings.cutout, settings.coil]
+  if (!jointPatterns || values.some((value, index) => value !== jointPatterns!.values[index])) {
+    const segment = getSystemChainSegmentPattern(settings)
+    jointPatterns = { values,
+      prefix: new RegExp(`^([${escapeRegExp(settings.shopJoint)}${escapeRegExp(settings.fieldJoint)}](?:[A-Z])?\\d+)`, 'i'),
+      firstSegment: new RegExp(`${segment}\\d+`, 'i'),
+      // matchAll clones this regex and does not advance its lastIndex.
+      segments: new RegExp(`(${segment})(\\d+)`, 'gi'),
+    }
+  }
+  return jointPatterns
 }
 
 function getJointNameStartRequirement(settings: SystemIndexSettings) {

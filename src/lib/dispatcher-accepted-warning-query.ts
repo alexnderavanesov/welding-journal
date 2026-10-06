@@ -6,6 +6,7 @@ export const DEFAULT_DISPATCHER_ACCEPTED_WARNING_PAGE_SIZE = 50
 export type DispatcherAcceptedWarningCategory =
   | 'all'
   | 'percentage-line-control'
+  | 'line-program-control'
   | 'early-coil'
   | 'other'
 
@@ -33,6 +34,7 @@ export type NormalizedDispatcherAcceptedWarningsRequest = {
 const ACCEPTED_WARNING_CATEGORIES = new Set<DispatcherAcceptedWarningCategory>([
   'all',
   'percentage-line-control',
+  'line-program-control',
   'early-coil',
   'other',
 ])
@@ -104,6 +106,8 @@ export function getDispatcherAcceptedWarningCategoryLabel(kind: string) {
       return 'Проверка линии'
     case 'percentage-line-control':
       return 'Процентная линия'
+    case 'line-program-control':
+      return 'Согласование контроля'
     case 'welder-stamp-expiry':
       return 'Клеймо и допуски'
     default:

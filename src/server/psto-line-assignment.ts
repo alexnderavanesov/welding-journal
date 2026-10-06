@@ -30,6 +30,8 @@ import {
   getPstoLineAssignmentState,
   getPstoLineActivationBlockReason,
   getPstoLineIdentityKey,
+  getPstoStageTransferOfficialityBlockReason,
+  getPstoLineMovePromotionBlockReason,
   normalizePstoLineIdentityPart,
   hasPerformedPstoHistory,
   hasPstoLifecycleData,
@@ -42,8 +44,6 @@ import {
   type PstoLineAssignmentPageRequest,
   type PstoLineAssignmentPageResult,
   type PstoLineIdentity,
-  type PstoLineRemovalDecision,
-  type PstoLineRemovalDisposition,
   type PstoLineRemovalPreview,
   type PstoWeldLineMovePreview,
 } from '@/lib/psto-line-assignment'
@@ -58,7 +58,6 @@ import {
 } from '@/lib/lnk-control-stage'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import { splitWeldImportInsertBatches } from '@/lib/weld-import-limits'
-import { hasPstoCycleExecutionHistory } from '@/lib/psto-cycle'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import { getJointChainRows } from '@/lib/repeated-joint-row-utils'
 import {
@@ -72,7 +71,6 @@ import {
   hasActiveEarlyCoilDecisionForSource,
 } from '@/server/early-coil-decision-guard'
 import {
-  deletePstoRepeatCyclesInTransaction,
   getPrimaryPstoCyclePersistenceValues,
 } from '@/server/psto-cycle-state'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
@@ -89,7 +87,6 @@ import { lockWeldLineMemberships } from '@/server/weld-line-membership-lock'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import {
-  removeSourcedSystemDocumentPositionsInTransaction,
   syncSystemDocumentsForWeldChangesInTransaction,
 } from '@/server/system-document-index'
 
@@ -100,7 +97,6 @@ type PstoLineAssignmentPayload = {
   cancellationDate?: string
   cancellationBasis?: string
   activationDecisions?: PstoLineActivationDecision[]
-  decisions?: PstoLineRemovalDecision[]
 }
 
 function parseStoredJson(value: unknown) {
@@ -260,6 +256,7 @@ export const getPstoWeldLineMovePreview = createServerFn({ method: 'POST' })
     const sourceRowsById = new Map(chainRows.map((row) => [row.id, row]))
     const previewRows = preview.rows.map((row) => ({
       ...row,
+      promotionBlockedReason: getPstoLineMovePromotionBlockReason(sourceRowsById.get(row.rowId)!),
       requiresDisposition: targetAssigned
         ? requiresPrimaryStageResolutionForAssignedPstoLine(sourceRowsById.get(row.rowId)!)
         : hasPstoLifecycleData(sourceRowsById.get(row.rowId)!),
@@ -397,7 +394,7 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
           throw new Error('У линии уже есть история ПСТО или НК до ТО. Используйте официальную отмену ПСТО.')
         }
         const nextRows = rows.map((row) => {
-          const next = buildPstoRemovedRow({ row, controls: [], disposition: 'keepPrimary' })
+          const next = buildPstoRemovedRow(row)
           return {
             ...next,
             preHeatTreatmentControls: [],
@@ -415,72 +412,14 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
         throw new Error('У линии нет истории. Уберите ошибочное назначение без оформления отмены.')
       }
       assertPstoCancellationDateAfterHistory(rows, data.cancellationDate)
-      const decisionsByRowId = validateRemovalDecisions(rows, data.decisions)
-      const rowsWithoutPerformedPsto = rows.filter((row) => !hasPerformedPstoHistory(row))
-      const preRelationIds = rowsWithoutPerformedPsto.flatMap((row) =>
-        (row.preHeatTreatmentControls ?? []).map((control) => control.id),
-      )
-      const unstartedRepeatCycles = rows.flatMap((row) =>
-        (row.pstoRepeatCycles ?? []).filter((cycle) => !hasPstoCycleExecutionHistory(cycle)),
-      )
-      if (preRelationIds.length > 0) {
-        await removeSourcedSystemDocumentPositionsInTransaction({
-          tx,
-          sourceKind: 'beforeHeatTreatment',
-          relationIds: preRelationIds,
-        })
-      }
-      if (unstartedRepeatCycles.length > 0) {
-        await removeSourcedSystemDocumentPositionsInTransaction({
-          tx,
-          sourceKind: 'pstoCycle',
-          sourcePositions: unstartedRepeatCycles.map((cycle) => ({
-            weldJointId: cycle.weldJointId,
-            relationId: cycle.id,
-            sequence: cycle.sequence,
-          })),
-        })
-        await removeSourcedSystemDocumentPositionsInTransaction({
-          tx,
-          sourceKind: 'pstoRepeat',
-          relationIds: unstartedRepeatCycles.map((cycle) => cycle.id),
-        })
-      }
-
-      const nextRows = rows.map((row) => {
-        const preservesPerformedHistory = hasPerformedPstoHistory(row)
-        const next = buildPstoCancelledRow({
-          row,
-          controls: row.preHeatTreatmentControls ?? [],
-          disposition: decisionsByRowId.get(row.id) ?? 'keepPrimary',
-          cancellationDate: data.cancellationDate,
-          cancellationBasis: data.cancellationBasis,
-        })
-        next.preHeatTreatmentControls = preservesPerformedHistory ? row.preHeatTreatmentControls ?? [] : []
+      const nextRows = rows.map(row => {
+        const next = buildPstoCancelledRow({ row, cancellationDate: data.cancellationDate, cancellationBasis: data.cancellationBasis })
         next.finalStatus = calculateFinalStatus(next)
         return next
       })
-      if ([...decisionsByRowId.values()].includes('promoteBeforeHeatTreatment')) {
-        assertPstoLineCancellationPromotionAllowed(rows, nextRows)
-      }
-      const updatedRows = await persistPstoLineAssignmentRows(
-        tx,
-        nextRows,
-        now,
-        new Set(nextRows.map((row) => row.id)),
-      )
+      const updatedRows = await persistPstoLineAssignmentRows(tx, nextRows, now)
+      // No stage promotion, source-document removal or repeat-cycle deletion on cancellation.
       await syncSystemDocumentsForWeldChangesInTransaction(tx, updatedRows, previousRows)
-      if (preRelationIds.length > 0) {
-        await tx
-          .delete(preHeatTreatmentControls)
-          .where(buildNumberArrayMatch(preHeatTreatmentControls.id, preRelationIds))
-      }
-      if (unstartedRepeatCycles.length > 0) {
-        await deletePstoRepeatCyclesInTransaction(
-          tx,
-          unstartedRepeatCycles.map((cycle) => cycle.id),
-        )
-      }
       await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, rowIds)
       await markDispatcherTaskIndexDirty(tx, { scopes: [data.identity] })
       return updatedRows
@@ -497,11 +436,6 @@ function normalizePayload(value: PstoLineAssignmentPayload) {
   if (action === 'cancel' && !/^\d{4}-\d{2}-\d{2}$/.test(cancellationDate)) {
     throw new Error('Укажите дату решения об отмене ПСТО.')
   }
-  const decisions = (Array.isArray(value?.decisions) ? value.decisions : []).flatMap((decision) => {
-    const rowId = Math.floor(Number(decision?.rowId))
-    const disposition = decision?.disposition
-    return rowId > 0 && isRemovalDisposition(disposition) ? [{ rowId, disposition }] : []
-  })
   const activationDecisions = (Array.isArray(value?.activationDecisions) ? value.activationDecisions : [])
     .flatMap((decision) => {
       const rowId = Math.floor(Number(decision?.rowId))
@@ -525,7 +459,6 @@ function normalizePayload(value: PstoLineAssignmentPayload) {
     cancellationDate,
     cancellationBasis: String(value?.cancellationBasis ?? '').trim(),
     activationDecisions,
-    decisions,
   }
 }
 
@@ -564,11 +497,12 @@ function buildRemovalPreview(
       pstoResult: String(row.pstoResult ?? '').trim(),
       repeatCycleCount: row.pstoRepeatCycles?.length ?? 0,
       preservesPerformedHistory: hasPerformedPstoHistory(row),
-      hasConflict: promotablePreMethods.some((method) => primaryMethods.includes(method)),
       blocksActivation: blocksPstoLineActivation(row),
       activationTransferBlockedMethods: blocksPstoLineActivation(row)
         ? primaryMethods.filter((method) => preMethods.includes(method))
         : [],
+      activationTransferBlockedReason: getPstoStageTransferOfficialityBlockReason(row, 'beforeHeatTreatment'),
+      promotionBlockedReason: getPstoStageTransferOfficialityBlockReason(row, 'primary'),
     }
   })
   return {
@@ -579,6 +513,7 @@ function buildRemovalPreview(
     })),
     rowCount: rows.length,
     assignedCount: rows.filter((row) => isControlEnabledValue(row.pstoRequired)).length,
+    historyRowCount: rows.filter(hasPstoLifecycleData).length,
     requestOnlyCount: rows.filter((row) => (
       Boolean(String(row.pstoRequest ?? '').trim()) && !hasPerformedPstoHistory(row)
     )).length,
@@ -644,48 +579,6 @@ export function assertPstoLineActivationTransferAllowed(
   if (issue) {
     throw new Error(`Назначение ПСТО невозможно: перенос НК в «До ТО» нарушает данные. ${issue.message}`)
   }
-}
-
-export function assertPstoLineCancellationPromotionAllowed(
-  previousRows: WeldRow[],
-  nextRows: WeldRow[],
-) {
-  const issue = findBlockingLnkStageTransferChronologyIssue({
-    previousRows,
-    nextRows,
-    targetStage: 'primary',
-  })
-  if (issue) {
-    throw new Error(`Отмена ПСТО невозможна: перенос НК в основной комплект нарушает данные. ${issue.message}`)
-  }
-}
-
-function validateRemovalDecisions(rows: WeldRow[], decisions: PstoLineRemovalDecision[]) {
-  const validRowIds = new Set(rows.map((row) => row.id))
-  const byRowId = new Map<number, PstoLineRemovalDisposition>()
-  for (const decision of decisions) {
-    if (!validRowIds.has(decision.rowId)) continue
-    byRowId.set(decision.rowId, decision.disposition)
-  }
-  const missing = rows.find((row) => (
-    !hasPerformedPstoHistory(row) &&
-    getCompletedPreHeatTreatmentMethodCodes(row.preHeatTreatmentControls ?? []).length > 0 &&
-    !byRowId.has(row.id)
-  ))
-  if (missing) {
-    throw new Error(`Стык ${String(missing.joint ?? missing.id)}: выберите, какой комплект НК оставить основным.`)
-  }
-  const invalidPromotion = rows.find((row) => (
-    byRowId.get(row.id) === 'promoteBeforeHeatTreatment' &&
-    (
-      hasPerformedPstoHistory(row) ||
-      getCompletedPreHeatTreatmentMethodCodes(row.preHeatTreatmentControls ?? []).length === 0
-    )
-  ))
-  if (invalidPromotion) {
-    throw new Error(`Стык ${String(invalidPromotion.joint ?? invalidPromotion.id)}: нет завершенного НК до ТО для переноса.`)
-  }
-  return byRowId
 }
 
 function attachSavedPreHeatTreatmentControls(
@@ -856,10 +749,6 @@ function formatJoint(row: WeldRow) {
 function compareMethods(left: string, right: string) {
   const order = ['ВИК', 'РК', 'УЗК', 'ПВК']
   return order.indexOf(left) - order.indexOf(right)
-}
-
-function isRemovalDisposition(value: unknown): value is PstoLineRemovalDisposition {
-  return value === 'keepPrimary' || value === 'promoteBeforeHeatTreatment'
 }
 
 function groupByRowId<Row extends { weldJointId: number }>(records: Row[]) {

@@ -5,6 +5,7 @@ type CreateReportHeaderActionsPropsOptions = {
   activeReport: ActiveReport
   onOpenImportDialog: () => void
   onCreateWeldJoint: () => void
+  onOpenLineProgram?: () => void
   importDisabled: boolean
   isWeldingJournalShowMenuOpen: boolean
   onToggleWeldingJournalShowMenu: () => void
@@ -71,6 +72,7 @@ export function createReportHeaderActionsProps({
   activeReport,
   onOpenImportDialog,
   onCreateWeldJoint,
+  onOpenLineProgram,
   importDisabled,
   isWeldingJournalShowMenuOpen,
   onToggleWeldingJournalShowMenu,
@@ -133,6 +135,7 @@ export function createReportHeaderActionsProps({
   onLnkWorkflowMenuOpenChange,
 }: CreateReportHeaderActionsPropsOptions): ReportHeaderActionsProps {
   return {
+    onOpenLineProgram,
     activeReport,
     onOpenImportDialog,
     onCreateWeldJoint,

@@ -1,5 +1,6 @@
 import { type InfiniteData, QueryClient } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
+import { DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY } from '@/lib/dispatcher-accepted-warning-query'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldPageResult } from '@/server/weld-contracts'
 import {
@@ -8,7 +9,7 @@ import {
   DUPLICATE_CONTROL_CANDIDATES_QUERY_KEY,
   DUPLICATE_CONTROL_REGISTRY_QUERY_KEY,
   GENERATED_DOCUMENT_HISTORY_QUERY_KEY,
-  invalidateWeldJoints,
+  scheduleWeldDataRefresh,
   LNK_WORKFLOW_QUERY_KEY,
   LNK_WORKFLOW_ROWS_QUERY_KEY,
   STATISTICS_SERVER_QUERY_KEY,
@@ -18,12 +19,39 @@ import {
   WELD_FINAL_STATUS_CONTEXT_QUERY_KEY,
   WELD_FORM_SUGGESTIONS_QUERY_KEY,
   WELD_JOINT_PAGES_QUERY_KEY,
-  WELD_LINE_AUTOFILL_QUERY_KEY,
   WELD_REPORT_CONTEXT_QUERY_KEY,
   WELD_ROWS_BY_IDS_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 
 describe('weld query cache updates', () => {
+  it('patches saved data immediately without waiting for background requests', () => {
+    const queryClient = createQueryClient()
+    queryClient.setQueryData(WELD_COMPLETE_SNAPSHOT_QUERY_KEY, [{ id: 1, joint: 'F1' }] as WeldRow[])
+    // A slow or disconnected dependent screen must not keep the save pending.
+    const pending = new Promise<void>(() => {})
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries').mockReturnValue(pending)
+
+    const notification = scheduleWeldDataRefresh(queryClient, {
+      upsertRows: [{ id: 1, joint: 'F2' }],
+    })
+
+    expect(notification).toBeUndefined()
+    expect(queryClient.getQueryData<WeldRow[]>(WELD_COMPLETE_SNAPSHOT_QUERY_KEY)?.[0].joint).toBe('F2')
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: STATISTICS_SERVER_QUERY_KEY })
+    queryClient.clear()
+  })
+
+  it('invalidates exception names and cascaded deletions without refetching inactive pages', async () => {
+    const queryClient = createQueryClient()
+    const queryKey = [...DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY, { page: 1 }]
+    const queryFn = vi.fn(async () => ({ items: [{ context: 'Old object' }] }))
+    await queryClient.fetchQuery({ queryKey, queryFn })
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+    scheduleWeldDataRefresh(queryClient, { deleteIds: [1] })
+    expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(true)
+    expect(queryFn).toHaveBeenCalledTimes(1)
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY, refetchType: 'none' })
+  })
   it('keeps an active dispatcher refresh outside snapshot invalidation', async () => {
     const queryClient = createQueryClient()
     const refreshKey = [...DISPATCHER_TASK_REFRESH_QUERY_KEY, 7]
@@ -42,7 +70,7 @@ describe('weld query cache updates', () => {
     ] as WeldRow[])
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
 
-    await invalidateWeldJoints(queryClient, {
+    scheduleWeldDataRefresh(queryClient, {
       upsertRows: [
         { id: 1, joint: '1A', createdAt: '2026-01-01' },
         { id: 3, joint: '3', createdAt: '2026-01-03' },
@@ -72,17 +100,26 @@ describe('weld query cache updates', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_DATA_USAGE_QUERY_KEY })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_FINAL_STATUS_CONTEXT_QUERY_KEY })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_FORM_SUGGESTIONS_QUERY_KEY })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_LINE_AUTOFILL_QUERY_KEY })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['line-program'], refetchType: 'active' })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: DUPLICATE_CONTROL_CANDIDATES_QUERY_KEY })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: DUPLICATE_CONTROL_REGISTRY_QUERY_KEY })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: GENERATED_DOCUMENT_HISTORY_QUERY_KEY })
+  })
+
+  it('can leave section summaries stale without refetching all lines during a scoped assignment save', async () => {
+    const queryClient = createQueryClient()
+    queryClient.setQueryData(['line-program', 'section'], { rows: [] })
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+    scheduleWeldDataRefresh(queryClient, { upsertRows: [{ id: 1, hasRk: 'да' }] }, { skipLineProgramRefetch: true })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['line-program'], refetchType: 'none' })
+    expect(queryClient.getQueryState(['line-program', 'section'])?.isInvalidated).toBe(true)
   })
 
   it('removes deleted rows from an existing complete snapshot', async () => {
     const queryClient = createQueryClient()
     queryClient.setQueryData(WELD_COMPLETE_SNAPSHOT_QUERY_KEY, [{ id: 1 }, { id: 2 }] as WeldRow[])
 
-    await invalidateWeldJoints(queryClient, { deleteIds: [1] })
+    scheduleWeldDataRefresh(queryClient, { deleteIds: [1] })
 
     expect(queryClient.getQueryData<WeldRow[]>(WELD_COMPLETE_SNAPSHOT_QUERY_KEY)?.map((row) => row.id)).toEqual([2])
   })
@@ -109,7 +146,7 @@ describe('weld query cache updates', () => {
     const unchangedRows = unchangedPage.rows
     queryClient.setQueryData<InfiniteData<WeldPageResult>>(queryKey, cachedData)
 
-    invalidateWeldJoints(queryClient, {
+    scheduleWeldDataRefresh(queryClient, {
       upsertRows: [{ id: 1, joint: 'S1R1' }, { id: 3, joint: 'S3' }],
       deleteIds: [2],
     })
@@ -133,7 +170,7 @@ describe('weld query cache updates', () => {
     ] as WeldRow[])
     queryClient.setQueryData<WeldRow[]>(pstoContextKey, [{ id: 1, joint: 'F1' }] as WeldRow[])
 
-    invalidateWeldJoints(queryClient, {
+    scheduleWeldDataRefresh(queryClient, {
       upsertRows: [{ id: 1, preHeatTreatmentControls: [{ id: 10, result: null }] } as unknown as WeldRow],
       deleteIds: [2],
     })
@@ -166,7 +203,7 @@ describe('weld query cache updates', () => {
       { id: 1, joint: 'F1', rkResult: 'годен' },
     ] as WeldRow[])
 
-    invalidateWeldJoints(queryClient, {
+    scheduleWeldDataRefresh(queryClient, {
       upsertRows: [
         { id: 1, joint: 'F1R1' },
         { id: 3, joint: 'F3' },
@@ -186,7 +223,7 @@ describe('weld query cache updates', () => {
     const queryClient = createQueryClient()
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
 
-    invalidateWeldJoints(
+    scheduleWeldDataRefresh(
       queryClient,
       { upsertRows: [{ id: 1, joint: 'F1' }] },
       { refetchLnkWorkflow: true },
@@ -202,7 +239,7 @@ describe('weld query cache updates', () => {
     const queryClient = createQueryClient()
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
 
-    await invalidateWeldJoints(queryClient)
+    scheduleWeldDataRefresh(queryClient)
 
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: WELD_COMPLETE_SNAPSHOT_QUERY_KEY,

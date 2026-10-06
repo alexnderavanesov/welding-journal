@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { PstoCycleStage } from '@/lib/psto-cycle-corrections'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import {
   correctPstoCycleStage,
   correctPstoTvmtAndRemoveLaterCycles,
@@ -22,7 +22,7 @@ export function usePstoCycleCorrectionMutation({
     mutationFn: async (payload: CorrectPstoCycleStagePayload) =>
       correctPstoCycleStage({ data: payload }) as Promise<WeldRow>,
     onSuccess: async (row, variables) => {
-      await invalidateWeldJoints(queryClient, { upsertRows: [row] })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: [row] })
       onSaved(row, variables.stage)
       setMessage(variables.action === 'delete'
         ? 'Последний этап цикла ПСТО/ТВМТ удален.'
@@ -44,7 +44,7 @@ export function usePstoTvmtCorrectionWithLaterCycleRemovalMutation({
     mutationFn: async (payload: CorrectPstoTvmtAndRemoveLaterCyclesPayload) =>
       correctPstoTvmtAndRemoveLaterCycles({ data: payload }) as Promise<WeldRow>,
     onSuccess: async (row) => {
-      await invalidateWeldJoints(queryClient, { upsertRows: [row] })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: [row] })
       onSaved(row)
       setMessage('Результат ТВМТ исправлен, последующие циклы ПСТО/ТВМТ удалены.')
     },

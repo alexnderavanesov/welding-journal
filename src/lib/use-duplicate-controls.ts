@@ -5,7 +5,7 @@ import {
   DUPLICATE_CONTROL_PAGE_SIZE_OPTIONS,
   type DuplicateControlPageSize,
 } from '@/lib/duplicate-control-types'
-import { invalidateWeldJoints, DUPLICATE_CONTROL_REGISTRY_QUERY_KEY } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh, DUPLICATE_CONTROL_REGISTRY_QUERY_KEY } from '@/lib/weld-query-utils'
 import {
   deleteDuplicateControl,
   listDuplicateControlRegistryPage,
@@ -53,13 +53,13 @@ export function useDuplicateControls({ registryEnabled = false }: { registryEnab
 
   const saveDuplicateControlMutation = useMutation({
     mutationFn: async (records: DuplicateControlPayload[]) => saveDuplicateControls({ data: { records } }),
-    onSuccess: () => invalidateWeldJoints(queryClient),
+    onSuccess: () => scheduleWeldDataRefresh(queryClient),
   })
 
   const deleteDuplicateControlMutation = useMutation({
     mutationFn: async ({ id, expectedVersion }: { id: number; expectedVersion: string }) =>
       deleteDuplicateControl({ data: { id, expectedVersion } }),
-    onSuccess: () => invalidateWeldJoints(queryClient),
+    onSuccess: () => scheduleWeldDataRefresh(queryClient),
   })
 
   return {

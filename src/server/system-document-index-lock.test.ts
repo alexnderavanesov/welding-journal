@@ -1,12 +1,25 @@
 import { PgDialect } from 'drizzle-orm/pg-core'
 import { describe, expect, it, vi } from 'vitest'
+import { appSettings } from '@/db/schema'
 
 import {
   SYSTEM_DOCUMENT_INDEX_LOCK_ORDER,
   lockSystemDocumentIndexes,
+  initializeSystemDocumentIndexesInTransaction,
 } from '@/server/system-document-index'
 
 describe('system document index locks', () => {
+  it('preflights existing indexes without reading any document, position or weld', async () => {
+    const execute = vi.fn().mockResolvedValue({ rows: [] })
+    const select = vi.fn(() => ({ from: (table: unknown) => {
+      expect(table).toBe(appSettings)
+      return { where: () => ({ limit: async () => [{ value: '4' }] }) }
+    } }))
+    await initializeSystemDocumentIndexesInTransaction({ select, execute } as never)
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(select).toHaveBeenCalledTimes(4)
+  })
+
   it('deduplicates and locks document types in one canonical query', async () => {
     const execute = vi.fn().mockResolvedValue(undefined)
 

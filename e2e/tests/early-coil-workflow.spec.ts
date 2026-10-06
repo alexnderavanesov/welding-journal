@@ -165,6 +165,32 @@ test('creates, navigates, revokes and safely protects an early coil', async ({ p
     expectedRepairExists: false,
     coilJoints: [...COIL_JOINTS],
   })
+
+  // The new explicit correction is a separate exit for an edited draft. Closing
+  // the check does not revoke the decision, and passwords alone do not confirm it.
+  await markFirstCoilJointAsEdited()
+  await openAcceptedDecisions(page)
+  await page.getByRole('button', { name: 'Исправить ошибочное решение', exact: true }).click()
+  const correction = page.getByRole('dialog', { name: 'Отменить ошибочное досрочное решение', exact: true })
+  await expect(correction.getByLabel('ФИО подтвердившего')).toHaveCount(0)
+  await correction.getByRole('button', { name: 'Отмена', exact: true }).click()
+  expect((await loadEarlyCoilState()).accepted).toBe(true)
+  await page.getByRole('button', { name: 'Исправить ошибочное решение', exact: true }).click()
+  const confirm = correction.getByRole('button', { name: 'Отменить решение и удалить очищенные стороны', exact: true })
+  await expect(confirm).toBeDisabled()
+  await correction.getByRole('checkbox').check()
+  await confirm.click()
+  await expect(page.getByRole('heading', { name: 'Изменение настроек', exact: true })).toBeVisible()
+  await page.getByLabel('Пароль', { exact: true }).fill(SETTINGS_PASSWORD)
+  await page.getByRole('button', { name: 'Продолжить', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Подтверждение удаления', exact: true })).toBeVisible()
+  await page.getByLabel('Пароль', { exact: true }).fill(DELETE_PASSWORD)
+  await page.getByRole('button', { name: 'Продолжить', exact: true }).click()
+  await expect(correction).toBeHidden()
+  await expect.poll(loadEarlyCoilState).toEqual({ accepted: false, expectedRepairExists: false, coilJoints: [] })
+  await page.goto('/journal')
+  const recovered = await openDispatcherObjectGroup(page, SOURCE_JOINT, 'ДЗ-07')
+  await expect(recovered.getByText(`Создать ${EXPECTED_REPAIR}`, { exact: true })).toBeVisible()
 })
 
 test('opens the selected rejected joint in LNK officiality and changes it only after save', async ({ page }) => {
@@ -361,7 +387,7 @@ test('stops the whole officiality rebuild when another user changes the selected
   })
 })
 
-test('keeps dispatcher recovery actions after chain and automatic coil rows are deleted', async ({ page }) => {
+test('blocks predecessor deletion and keeps recovery after deleting a tail or automatic coil sides', async ({ page }) => {
   test.setTimeout(120_000)
   const rowIds = await seedDeletionRecoveryChains()
 
@@ -373,18 +399,18 @@ test('keeps dispatcher recovery actions after chain and automatic coil rows are 
   await expect(page.locator(`tr[data-weld-row-id="${rowIds.get(AUTOMATIC_COIL_CHAIN[3])}"]`)
     .getByText('Цепочка продолжена катушкой', { exact: true })).toBeVisible()
 
-  await deleteJournalRows(page, [{ id: rowIds.get(RECOVERY_CHAIN[1])!, joint: RECOVERY_CHAIN[1] }])
-  const integrityGroup = await openDispatcherObjectGroup(page, RECOVERY_CHAIN[0], 'ДЗ-13')
+  // Confirmed 01.10 rule: do not create an orphan by deleting the middle.
+  await deleteJournalRows(page, [{ id: rowIds.get(RECOVERY_CHAIN[1])!, joint: RECOVERY_CHAIN[1] }], true)
+  await deleteJournalRows(page, RECOVERY_CHAIN.slice(1).map(joint => ({ id: rowIds.get(joint)!, joint })))
   const recoverySourceRow = page.locator(`tr[data-weld-row-id="${rowIds.get(RECOVERY_CHAIN[0])}"]`)
   await expect(recoverySourceRow.getByText(`Создать ${RECOVERY_CHAIN[1]}`, { exact: true })).toBeVisible()
   await expect(recoverySourceRow.getByText(
     `Цепочка продолжена стыком ${RECOVERY_CHAIN[1]}`,
     { exact: true },
   )).toHaveCount(0)
-  await expect(integrityGroup.getByText('Проверить целостность цепочки', { exact: true })).toBeVisible()
   let taskGroup = await openDispatcherObjectGroup(page, RECOVERY_CHAIN[0], 'ДЗ-07')
   await expectDispatcherCreateAction(taskGroup, RECOVERY_CHAIN[1])
-  await expectDispatcherCreateAction(taskGroup, 'S961R2W1')
+  await expect(taskGroup.getByText('S961R2W1', { exact: true })).toHaveCount(0)
 
   await clickDispatcherAction(taskGroup, RECOVERY_CHAIN[1], 'Создать')
   await expect.poll(() => loadExistingJoints(RECOVERY_PROJECT, RECOVERY_LINE, [RECOVERY_CHAIN[1]]))
@@ -413,12 +439,15 @@ test('keeps dispatcher recovery actions after chain and automatic coil rows are 
     { id: refreshedIds.get(AUTOMATIC_COIL_CHAIN[2])!, joint: AUTOMATIC_COIL_CHAIN[2] },
     { id: refreshedIds.get(AUTOMATIC_COIL_JOINTS[0])!, joint: AUTOMATIC_COIL_JOINTS[0] },
     { id: refreshedIds.get(AUTOMATIC_COIL_JOINTS[1])!, joint: AUTOMATIC_COIL_JOINTS[1] },
-  ])
+  ], true)
+  await deleteJournalRows(page, AUTOMATIC_COIL_JOINTS.map(joint => ({ id: refreshedIds.get(joint)!, joint })))
 
-  const finalIntegrityGroup = await openDispatcherObjectGroup(page, AUTOMATIC_COIL_CHAIN[0], 'ДЗ-13')
-  const integrityChecks = finalIntegrityGroup.getByText('Проверить целостность цепочки', { exact: true })
-  await expect(integrityChecks).toHaveCount(2)
-  await expect(integrityChecks.first()).toBeVisible()
+  // These sides were never welded. Removing a draft pair is not undoing a
+  // completed physical replacement: DZ-09 returns, but no saved-cut SP-04.
+  expect(await withE2eDatabase(async db => (await db.query(
+    'select replaced_by_coil from weld_joint_program_states where weld_joint_id=$1',
+    [rowIds.get(AUTOMATIC_COIL_CHAIN[0])],
+  )).rows[0]?.replaced_by_coil)).toBe(false)
   taskGroup = await openDispatcherObjectGroup(page, AUTOMATIC_COIL_CHAIN[0], 'ДЗ-09')
   await expectDispatcherCoilAction(taskGroup, [...AUTOMATIC_COIL_JOINTS])
   await expect(taskGroup.getByText('S971W4', { exact: true })).toHaveCount(0)
@@ -482,7 +511,8 @@ test('moves an accepted coil chain through its base and preserves each row workf
   const firstCoilDecision = moveDialog
     .getByText(MOVE_COIL_JOINTS[0], { exact: true })
     .locator('xpath=ancestor::div[contains(@class,"border-b")][1]')
-  await firstCoilDecision.getByRole('button', { name: /Перенести завершенный НК до ТО/ }).click()
+  for (const keep of await moveDialog.getByRole('button', { name: /^Изменить только линию/ }).all()) await keep.click()
+  await firstCoilDecision.getByRole('button', { name: /Перенести НК «До ТО»/ }).click()
   await moveDialog.getByRole('button', { name: 'Подтвердить перенос цепочки', exact: true }).click()
 
   await expect(editor.getByText(/Подтвержден перенос всей цепочки S981: записей 3/)).toBeVisible()
@@ -679,7 +709,7 @@ async function seedOfficialityChainRebuild() {
         108, 108, 4, 4, 0.42,
         'E2E-K1', 'E2E-K1',
         'да', 'проект', 'E2E заявка ремонт', '2026-09-01',
-        'ремонт', '2026-09-01', 'E2E заключение ремонт', 'E2E корневой стык', 'ремонт',
+        'ремонт', '2026-09-01', 'E2E заключение ремонт', 'E2E корневой стык', 'не годен',
         now(), now(), now()
       ), (
         '2026-09-02', $1, 'E2E-REBUILD', $2, 'ISO-E2E-REBUILD', $4, 'E2E-REBUILD-S1',
@@ -687,7 +717,7 @@ async function seedOfficialityChainRebuild() {
         108, 108, 4, 4, 0.42,
         'E2E-K1', 'E2E-K1',
         'да', 'проект', 'E2E заявка вырез', '2026-09-02',
-        'вырез', '2026-09-02', 'E2E заключение вырез', 'E2E история вырезанного стыка', 'вырез',
+        'вырез', '2026-09-02', 'E2E заключение вырез', 'E2E история вырезанного стыка', 'не годен',
         now(), now(), now()
       ), (
         '2026-09-03', $1, 'E2E-REBUILD', $2, 'ISO-E2E-REBUILD', $5, 'E2E-REBUILD-S1',
@@ -695,7 +725,7 @@ async function seedOfficialityChainRebuild() {
         108, 108, 4, 4, 0.42,
         'E2E-K1', 'E2E-K1',
         'да', 'проект', 'E2E заявка годен', '2026-09-03',
-        'годен', '2026-09-03', 'E2E заключение годен', 'E2E данные продолжения', 'годен',
+        'годен', '2026-09-03', 'E2E заключение годен', 'E2E данные продолжения', 'ожидает заявку',
         now(), now(), now()
       )
       returning id, joint
@@ -1117,8 +1147,14 @@ async function seedDeletionRecoveryChains() {
   })
 }
 
-async function deleteJournalRows(page: Page, rows: Array<{ id: number; joint: string }>) {
+async function deleteJournalRows(page: Page, rows: Array<{ id: number; joint: string }>, expectBlocked = false) {
   await page.goto('/journal')
+  await expect(page.locator(`tr[data-weld-row-id="${rows[0].id}"]`)).toBeVisible()
+  const clearSelection = page.getByRole('button', { name: 'Снять выбор', exact: true })
+  if (await clearSelection.isVisible()) {
+    await clearSelection.click()
+    await expect(clearSelection).toBeHidden()
+  }
   if (rows.length === 1) {
     const row = page.locator(`tr[data-weld-row-id="${rows[0].id}"]`)
     await expect(row).toBeVisible()
@@ -1144,6 +1180,12 @@ async function deleteJournalRows(page: Page, rows: Array<{ id: number; joint: st
   await expect(page.getByRole('heading', { name: confirmTitle, exact: true })).toBeVisible()
   const confirmDialog = page.locator('[data-confirm-action-dialog="true"]').locator('..')
   await confirmDialog.getByRole('button', { name: 'Удалить', exact: true }).click()
+  if (expectBlocked) {
+    await expect(page.getByText(/Нельзя удалить предшественника: остаются продолжения цепочки/)).toBeVisible()
+    expect(await loadExistingJoints(RECOVERY_PROJECT, RECOVERY_LINE, rows.map(row => row.joint)))
+      .toEqual(rows.map(row => row.joint))
+    return
+  }
   await expect.poll(() => loadExistingJoints(
     RECOVERY_PROJECT,
     RECOVERY_LINE,
@@ -1153,6 +1195,7 @@ async function deleteJournalRows(page: Page, rows: Array<{ id: number; joint: st
 
 async function openDispatcherObjectGroup(page: Page, baseJoint: string, code: string) {
   await page.goto('/journal')
+  await page.getByLabel('Диспетчер задач', { exact: true }).getByRole('button', { name: 'Развернуть', exact: true }).click()
   const codeGroup = page.getByLabel('Диспетчер задач', { exact: true })
     .locator('[data-dispatcher-code-group]')
     .filter({ has: page.getByText(code, { exact: true }) })

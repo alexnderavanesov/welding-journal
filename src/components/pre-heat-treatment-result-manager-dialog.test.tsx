@@ -23,6 +23,7 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
       subtitleCode: '400',
       line: 'L-1',
       joint: 'F7',
+      connectionType: 'У17',
       preHeatTreatmentControls: [control],
     } as WeldRow
 
@@ -44,6 +45,7 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
     )
 
     expect(screen.getByRole('heading', { name: 'Редактирование заявок ЛНК до ТО' })).toBeInTheDocument()
+    expect(screen.getByText('У17').parentElement).toHaveTextContent('Тип: У17')
     expect(screen.getByRole('dialog')).toHaveClass('max-w-[1480px]', 'h-[calc(100dvh-1rem)]')
     expect(screen.getByRole('button', { name: 'Новая заявка' })).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Название, дата, стык или линия')).toBeInTheDocument()
@@ -90,6 +92,7 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
       subtitleCode: '400',
       line: 'L-1',
       joint: 'F8',
+      connectionType: 'С17',
       preHeatTreatmentControls: [completedControl, pendingControl],
     } as WeldRow
 

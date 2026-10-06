@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { importWeldJoints } from '@/server/weld-import-api'
 import { prepareImportedWeldRecords } from '@/lib/weld-journal-mutation-updates'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import type { WeldInput } from '@/lib/weld-fields'
 import type { UseWeldJournalMutationsOptions } from '@/lib/weld-journal-mutation-types'
 import { assertWeldImportRowLimit, compactWeldWritePayload } from '@/lib/weld-import-limits'
@@ -31,7 +31,7 @@ export function useWeldImportMutation({
     onSuccess: (result) => {
       highlightChangedRows(result.rows)
       setMessage(`Добавлено записей: ${result.inserted}`)
-      invalidateWeldJoints(queryClient)
+      scheduleWeldDataRefresh(queryClient)
     },
     onError: (error) => {
       setMessage((error as Error).message)

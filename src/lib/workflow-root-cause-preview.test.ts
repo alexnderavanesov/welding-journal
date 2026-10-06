@@ -24,6 +24,8 @@ describe('workflow draft root-cause preview', () => {
     })
 
     expect(state.message).toContain('позже даты ПСТО')
+    expect(state.message).toContain('(11.08.2026)')
+    expect(state.message).toContain('(10.08.2026)')
     expect(state.actions.map((action) => action.label)).toEqual([
       'Исправить дату заявки ВИК до ТО',
       'Исправить дату ПСТО',
@@ -56,6 +58,8 @@ describe('workflow draft root-cause preview', () => {
     })
 
     expect(state.message).toContain('раньше даты заявки')
+    expect(state.message).toContain('(19.08.2026)')
+    expect(state.message).toContain('(20.08.2026)')
     expect(state.actions.map((action) => action.label)).toEqual([
       'Исправить дату заявки ПСТО',
       'Исправить дату ПСТО',

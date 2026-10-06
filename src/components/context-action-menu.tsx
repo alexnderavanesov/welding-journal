@@ -32,6 +32,8 @@ export type ContextActionMenuState = {
   y: number
   anchorRowId?: number
   closeOnScroll?: boolean
+  /** Ignore queued pre-open scroll events when the anchor has not moved. */
+  anchorElement?: Element
   heading?: string
   description?: string
   items: ContextActionMenuItem[]
@@ -39,11 +41,12 @@ export type ContextActionMenuState = {
 
 type ContextActionMenuProps = {
   menu: ContextActionMenuState
+  autoFocus?: boolean
   closeOnEscapeWithModal?: boolean
   onClose: () => void
 }
 
-export function ContextActionMenu({ menu, closeOnEscapeWithModal = false, onClose }: ContextActionMenuProps) {
+export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithModal = false, onClose }: ContextActionMenuProps) {
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null)
   const [submenuLayout, setSubmenuLayout] = useState<{
     id: string
@@ -55,6 +58,10 @@ export function ContextActionMenu({ menu, closeOnEscapeWithModal = false, onClos
   const menuPanelRef = useRef<HTMLDivElement | null>(null)
   const submenuAnchorRefs = useRef(new Map<string, HTMLDivElement>())
   const submenuPanelRefs = useRef(new Map<string, HTMLDivElement>())
+
+  useLayoutEffect(() => {
+    if (menu && autoFocus) menuPanelRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true })
+  }, [menu, autoFocus])
 
   useEffect(() => {
     setContextActionMenuOpen(Boolean(menu))
@@ -108,6 +115,18 @@ export function ContextActionMenu({ menu, closeOnEscapeWithModal = false, onClos
   useEffect(() => {
     if (!menu) return
 
+    const scrollOrigins = new Map<EventTarget, { left: number; top: number; read: () => { left: number; top: number } }>()
+    if (menu.anchorElement) {
+      for (let element: Element | null = menu.anchorElement; element; element = element.parentElement) {
+        const anchor = element
+        const read = () => ({ left: anchor.scrollLeft, top: anchor.scrollTop })
+        scrollOrigins.set(anchor, { ...read(), read })
+      }
+      const read = () => ({ left: window.scrollX, top: window.scrollY })
+      const origin = { ...read(), read }
+      scrollOrigins.set(document, origin)
+      scrollOrigins.set(window, origin)
+    }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       if (isModalDialogOpen() && !closeOnEscapeWithModal) return
@@ -128,6 +147,11 @@ export function ContextActionMenu({ menu, closeOnEscapeWithModal = false, onClos
         )
       ) {
         return
+      }
+      const origin = target && scrollOrigins.get(target)
+      if (origin) {
+        const current = origin.read()
+        if (current.left === origin.left && current.top === origin.top) return
       }
       onClose()
     }
@@ -160,6 +184,7 @@ export function ContextActionMenu({ menu, closeOnEscapeWithModal = false, onClos
     <div className="fixed inset-0 z-[155]" onMouseDown={onClose} onContextMenu={(event) => event.preventDefault()}>
       <div
         ref={menuPanelRef}
+        data-testid="context-action-menu"
         className="absolute min-w-0 rounded-lg border border-slate-200 bg-white py-1.5 shadow-xl shadow-slate-900/12"
         style={{
           left: Math.max(viewportPadding, menuLeft),
@@ -172,8 +197,8 @@ export function ContextActionMenu({ menu, closeOnEscapeWithModal = false, onClos
       >
         {menu.heading ? (
           <div className="border-b border-slate-100 px-3 pb-2 pt-1">
-            <div className="truncate text-sm font-semibold text-slate-900">{menu.heading}</div>
-            {menu.description ? <div className="mt-0.5 truncate text-xs text-slate-500">{menu.description}</div> : null}
+            <div title={menu.heading} className="truncate text-sm font-semibold text-slate-900">{menu.heading}</div>
+            {menu.description ? <div title={menu.description} className="mt-0.5 truncate text-xs text-slate-500">{menu.description}</div> : null}
           </div>
         ) : null}
         {menu.items.map((item) => {

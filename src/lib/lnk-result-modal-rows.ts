@@ -22,6 +22,7 @@ import {
 } from '@/lib/request-document-identity'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { getPrimaryLnkStageAccess } from '@/lib/lnk-control-stage'
+import { canBackfillOwnLnkResult } from '@/lib/lnk-system-order'
 
 export function filterLnkRowsByRequestName(rows: WeldRow[], requestName: string, requestDate?: string) {
   const name = requestName.trim()
@@ -166,13 +167,13 @@ export function canSelectLnkResultRow(
   if (methodKey) {
     const method = getLnkMethodByRequestKey(methodKey)
     if (!method || !isLnkResultRowApplicable(row, requestName, methodKey, requestDate)) return false
-    if (isLnkMethodNoNeed(row, method)) return false
+    if (isLnkMethodNoNeed(row, method) && !canBackfillOwnLnkResult(row, method.code)) return false
     if (getPrimaryLnkStageAccess(row, method.code, settings).status === 'blocked') return false
     return !isFinalLnkResultValue(row[method.resultKey])
   }
   return LNK_METHODS.some((method) =>
     isLnkResultRowApplicable(row, requestName, method.requestKey, requestDate) &&
-    !isLnkMethodNoNeed(row, method) &&
+    (!isLnkMethodNoNeed(row, method) || canBackfillOwnLnkResult(row, method.code)) &&
     !isFinalLnkResultValue(row[method.resultKey]) &&
     getPrimaryLnkStageAccess(row, method.code, settings).status !== 'blocked',
   )

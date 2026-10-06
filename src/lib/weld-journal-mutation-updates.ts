@@ -1,15 +1,14 @@
 import { buildRepeatedJointDraft } from '@/lib/repeated-joint-draft'
 import {
-  clearCancelledRejectedLnkGeneratedData,
   clearDisabledLnkRequests,
   restoreActiveLnkCancelledResults,
   withLnkFinalStatus,
 } from '@/lib/lnk-field-updates'
-import { assertNoLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
+import { assertNoLnkChronologyIssues, assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { assertNoLnkRepairRuleIssues } from '@/lib/lnk-result-rules'
 import { assertNoPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import {
-  clearCancelledPstoRequestWithoutResult,
+  clearInactivePstoWaitingStatus,
   restoreActivePstoCancelledResult,
   withPendingPstoResultStatus,
 } from '@/lib/psto-field-updates'
@@ -67,7 +66,7 @@ export function prepareWeldSaveValue({
       withPendingLnkResults(
         clearDisabledLnkRequests(
           restoreActiveLnkCancelledResults(
-            restoreActivePstoCancelledResult(clearCancelledRejectedLnkGeneratedData(clearCancelledPstoRequestWithoutResult(value))),
+            restoreActivePstoCancelledResult(clearInactivePstoWaitingStatus(value)),
           ),
         ),
       ),
@@ -84,7 +83,7 @@ export function prepareWeldSaveValue({
     suspensions: welderStampSuspensions,
   })
   if (shouldCheckDocumentChronologyForSave(preparedValue, previousRow)) {
-    assertNoLnkChronologyIssues([preparedValue], saveCheckSettings)
+    assertNoNewLnkChronologyIssues([preparedValue], previousRow ? [previousRow] : [], saveCheckSettings)
     assertNoPstoChronologyIssues([preparedValue], saveCheckSettings)
   }
   return preparedValue

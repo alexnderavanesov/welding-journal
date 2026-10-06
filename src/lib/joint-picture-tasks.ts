@@ -10,15 +10,13 @@ import {
 } from '@/lib/dispatcher-types'
 
 const LINE_SCOPED_TASK_CODES = new Set([
+  'СП-02',
   DISPATCHER_SETTING_CODES['percentage-new-welder'],
   DISPATCHER_SETTING_CODES['percentage-excess'],
-  DISPATCHER_SETTING_CODES['percentage-rejected-primary'],
+  DISPATCHER_SETTING_CODES['percentage-rejected-rows'],
   DISPATCHER_SETTING_CODES['percentage-missing'],
   DISPATCHER_SETTING_CODES['percentage-full-control'],
   DISPATCHER_SETTING_CODES['percentage-suspend-welder'],
-  DISPATCHER_SETTING_CODES['line-percent'],
-  DISPATCHER_SETTING_CODES['line-group'],
-  DISPATCHER_SETTING_CODES['line-category'],
   DISPATCHER_SETTING_CODES['line-control-presence'],
   DISPATCHER_SETTING_CODES['line-psto-presence'],
 ])

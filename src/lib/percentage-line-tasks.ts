@@ -3,33 +3,49 @@ import {
   getPercentageLineNewWelderWarningKey,
   type PercentageLineStampSummary,
 } from '@/lib/percentage-line-summary'
-import { isAngularConnectionType } from '@/lib/connection-type'
 import { getRejectedDuplicateControls } from '@/lib/duplicate-control-utils'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
-import { OFFICIAL_WELDER_STAMP_FIELD_KEYS } from '@/lib/report-common-config'
 import { normalizeResultStatus } from '@/lib/weld-status'
 import { getSuspensionOverlapForStamp } from '@/lib/welder-stamp-suspensions'
 import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
 import type { PercentageLineControlTask, WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
-import { getRejectedPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS, type SystemIndexSettings } from '@/lib/system-index-settings'
+import { getLineProgramOfficialStamps } from '@/lib/line-program-calculation'
+import { isPreHeatTreatmentStageEnabled } from '@/lib/pre-heat-treatment-policy'
+import { formatProgramAssignmentAccounting, getProgramDemandAccounting } from './line-program-accounting'
 
 export function buildPercentageLineControlTasks(
   rows: WeldRow[],
   welderStampSuspensions: WelderStampSuspensionRecord[] = [],
   systemIndexSettings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
+  approved: ReadonlySet<string> = new Set(),
 ): PercentageLineControlTask[] {
   const tasks: PercentageLineControlTask[] = []
+  const rowsById = new Map(rows.map(row => [row.id, row]))
 
-  for (const lineSummary of buildPercentageLineSummaries(rows, systemIndexSettings)) {
-    const firstStampSummaryKey = getFirstStampSummaryKey(lineSummary.rows, lineSummary.stamps)
+  for (const lineSummary of buildPercentageLineSummaries(rows, systemIndexSettings, approved)) {
+    const firstRows = new Map<string, WeldRow>()
+    for (const row of lineSummary.rows) {
+      for (const stamp of getLineProgramOfficialStamps(row)) {
+        const key = normalizeValue(stamp)
+        const previous = firstRows.get(key)
+        if (!previous || compareDateLike(row.weldDate, previous.weldDate) < 0 ||
+          (compareDateLike(row.weldDate, previous.weldDate) === 0 && row.id < previous.id)) firstRows.set(key, row)
+      }
+    }
+    const firstStampSummaryKey = [...lineSummary.stamps].sort((a, b) => {
+      const left = firstRows.get(normalizeValue(a.stamp)) ?? lineSummary.rows[0]
+      const right = firstRows.get(normalizeValue(b.stamp)) ?? lineSummary.rows[0]
+      return compareDateLike(left.weldDate, right.weldDate) || left.id - right.id || a.stamp.localeCompare(b.stamp, 'ru')
+    })[0]?.key
+    const participatingStampCount = lineSummary.stamps.filter(stamp => stamp.officialJointCount > 0).length
     for (const stampSummary of lineSummary.stamps) {
-      const sampleRow = findStampRow(lineSummary.rows, stampSummary.stamp) ?? lineSummary.rows[0]
-      const rejectedRows = findRowsByIds(lineSummary.rows, stampSummary.rejectedPrimaryRowIds)
+      const sampleRow = firstRows.get(normalizeValue(stampSummary.stamp)) ?? lineSummary.rows[0]
+      const rejectedRows = stampSummary.rejectedRowIds.map((id) => rowsById.get(id)).filter((row): row is WeldRow => !!row).sort(compareRejectedRows)
       if (!sampleRow) continue
 
-      if (lineSummary.stamps.length > 1 && stampSummary.key !== firstStampSummaryKey) {
+      if (lineSummary.percent > 0 && lineSummary.percent < 100 && stampSummary.officialJointCount > 0 && participatingStampCount > 1 && stampSummary.key !== firstStampSummaryKey) {
         tasks.push(buildNewWelderTask(sampleRow, stampSummary, lineSummary.stamps.length))
       }
 
@@ -37,12 +53,32 @@ export function buildPercentageLineControlTasks(
         tasks.push(buildMissingControlTask(sampleRow, stampSummary))
       }
 
-      if (stampSummary.excessControls > 0) {
-        tasks.push(buildExcessControlTask(sampleRow, stampSummary))
+      if (stampSummary.common.excessRowIds.length > 0) {
+        tasks.push(buildExcessControlTask(sampleRow, { ...stampSummary,
+          excessControls: stampSummary.common.excessRowIds.length, excessCandidateRowIds: stampSummary.common.excessRowIds,
+          excessCandidateJointNames: stampSummary.common.excessRowIds.map((id) => String(rowsById.get(id)?.joint ?? id)),
+        }))
       }
 
-      if (stampSummary.rejectedPrimaryControls > 0) {
-        tasks.push(buildRejectedPrimaryControlTask(rejectedRows[0] ?? sampleRow, stampSummary))
+      for (const issue of ['missing', 'excess'] as const) {
+        const demand = stampSummary.pvk
+        const count = issue === 'missing' ? demand.missing : demand.excessRowIds.length
+        if (!count) continue
+        tasks.push({
+          kind: 'percentage-line-control', issue, demandKind: 'pvk',
+          key: `percentage-line-control:pvk:${issue}:${stampSummary.key}:${demand.required}:${demand.coveredRowIds.length}`,
+          row: sampleRow, projectTitle: stampSummary.projectTitle, subtitleCode: stampSummary.subtitleCode,
+          line: stampSummary.line, stamp: stampSummary.stamp,
+          title: issue === 'missing' ? 'Назначить ПВК по программе линии' : 'Проверить лишний ПВК',
+          details: `Линия ${stampSummary.line}${stampSummary.stamp ? `, клеймо ${stampSummary.stamp}` : ', по всей линии'}. ПВК ${demand.percent}%: расчётная норма ${demand.required}, к закрытию с учётом доступных стыков ${demand.actionableRequired}, зачтено ${demand.coveredRowIds.length}, выполнено ${demand.completedRowIds.length}. ${issue === 'missing' ? 'Доступный недобор' : 'Лишние назначения'}: ${count}. Сопутствующий ПВК, необходимый для послойной замены, защищён.`,
+          targetRowIds: issue === 'missing' ? demand.candidateRowIds : demand.excessRowIds,
+          requiredControls: demand.actionableRequired, coveredControls: demand.coveredRowIds.length,
+          assignedControls: new Set([...demand.assignedRowIds, ...demand.additionalRowIds]).size, count,
+        })
+      }
+
+      if (lineSummary.percent > 0 && lineSummary.percent < 100 && stampSummary.rejectedControlRows > 0) {
+        tasks.push(buildRejectedRowsControlTask(rejectedRows[0] ?? sampleRow, stampSummary))
       }
 
       if (stampSummary.fullControlRequired) {
@@ -91,11 +127,11 @@ function buildNewWelderTask(
 function buildMissingControlTask(row: WeldRow, summary: PercentageLineStampSummary): PercentageLineControlTask {
   const title = summary.fullControlRequired
     ? 'Назначить 100% контроль по клейму'
-    : 'Назначить контроль по процентной линии'
+    : summary.stamp ? 'Назначить контроль по процентной линии' : 'Назначить 100% контроль линии'
   const detailParts = [
-    `Линия ${summary.line}, контроль ${summary.percent}%, клеймо ${summary.stamp}.`,
+    `Линия ${summary.line}, контроль ${summary.percent}%${summary.stamp ? `, клеймо ${summary.stamp}` : ', по всей линии'}.`,
     summary.fullControlRequired
-      ? `По клейму уже ${summary.rejectedPrimaryControls} первичных негодных стыков по процентному контролю, включая дубль, поэтому требуется контроль всех ${summary.officialJointCount} стыков этого клейма.`
+      ? `По клейму уже ${summary.rejectedControlRows} первичных стыков с негодным РК/УЗК (собственным, до ТО при включённом этапе или дублем), поэтому требуется контроль всех ${summary.officialJointCount} физических соединений этого клейма. Ремонты и переварки не добавляют добор.`
       : `По расчету требуется ${summary.calculatedRequiredControls} стык(ов) контроля: базово ${summary.baseRequiredControls}, дополнительно ${summary.additionalRequiredControls}.`,
     summary.availableRequiredControls < summary.calculatedRequiredControls
       ? `Доступно для закрытия ${summary.availableRequiredControls} стык(ов), поэтому к закрытию берется ${summary.requiredControls}.`
@@ -106,7 +142,7 @@ function buildMissingControlTask(row: WeldRow, summary: PercentageLineStampSumma
     detailParts.push(`Кандидаты без закрытия расчета: ${formatJointList(summary.missingCandidateJointNames)}.`)
   }
   detailParts.push(
-    'Закрытием расчета для обычного стыка считается РК или УЗК, а для У-стыка — РК, УЗК или ПВК. Также учитываются выполненный результат или осознанная отмена РК+УЗК.',
+    'Общую потребность закрывают РК/УЗК с «да» или «дополнительный», для У также явно назначенная послойная замена. Один стык учитывается один раз. Обычный ПВК закрывает только самостоятельную норму ПВК. Совместная отмена РК+УЗК учитывается только для С.',
     'Если стык уже имеет негодный результат по любому контролю, он не попадает в кандидаты на новое назначение.',
   )
 
@@ -131,15 +167,16 @@ function buildMissingControlTask(row: WeldRow, summary: PercentageLineStampSumma
 }
 
 function buildExcessControlTask(row: WeldRow, summary: PercentageLineStampSummary): PercentageLineControlTask {
+  const accounting = getProgramDemandAccounting(summary.common)
   const detailParts = [
-    `Линия ${summary.line}, контроль ${summary.percent}%, клеймо ${summary.stamp}.`,
-    `По расчету требуется ${summary.requiredControls} стык(ов) контроля, а обычным статусом "да" назначено ${summary.normalAssignedControls}.`,
+    `Линия ${summary.line}, контроль ${summary.percent}%${summary.stamp ? `, клеймо ${summary.stamp}` : ', по всей линии'}.`,
+    `По расчету требуется ${summary.requiredControls} стык(ов) контроля, зачтено ${summary.coveredControls}. Назначено: ${formatProgramAssignmentAccounting(accounting.assignments)}.`,
     `Лишних обычных "да": ${summary.excessControls}.`,
   ]
   if (summary.excessCandidateJointNames.length > 0) {
     detailParts.push(`Проверь назначенные стыки: ${formatJointList(summary.excessCandidateJointNames)}.`)
   }
-  detailParts.push('Если контроль назначен осознанно сверх процента, используй статус "дополнительный", тогда диспетчер не будет считать его лишним обычным "да".')
+  detailParts.push('«Доп» закрывает норму и может сделать обычное «да» на другом стыке лишним. Сам «доп» не лишний. Проверьте назначения в программе линии: ненужное «да» можно снять через «Пусто», если нет защищённой истории. Дополнительный контроль сохраняйте только если он действительно нужен.')
 
   return {
     kind: 'percentage-line-control',
@@ -160,11 +197,11 @@ function buildExcessControlTask(row: WeldRow, summary: PercentageLineStampSummar
   }
 }
 
-function buildRejectedPrimaryControlTask(row: WeldRow, summary: PercentageLineStampSummary): PercentageLineControlTask {
-  const rejectedNames = summary.rejectedPrimaryJointNames
+function buildRejectedRowsControlTask(row: WeldRow, summary: PercentageLineStampSummary): PercentageLineControlTask {
+  const rejectedNames = summary.rejectedJointNames
   const detailParts = [
-    `Линия ${summary.line}, контроль ${summary.percent}%, клеймо ${summary.stamp}.`,
-    `Найдено ${summary.rejectedPrimaryControls} первичных официальных стык(ов) с негодным процентным контролем, включая дубль. На У-стыках сюда входит и ПВК.`,
+    `Линия ${summary.line}, контроль ${summary.percent}%${summary.stamp ? `, клеймо ${summary.stamp}` : ', по всей линии'}.`,
+    `Найдено ${summary.rejectedControlRows} официальных актуальных первичных стыков С/У с негодным РК/УЗК. Учитываются собственный контроль, включённый НК до ТО и дубли; источник считается один раз по каждому своему официальному клейму. Ремонты, переварки, ВИК и ПВК добор не увеличивают.`,
   ]
   if (rejectedNames.length > 0) {
     detailParts.push(`Проверь официальность стыков: ${formatJointList(rejectedNames)}.`)
@@ -173,20 +210,20 @@ function buildRejectedPrimaryControlTask(row: WeldRow, summary: PercentageLineSt
 
   return {
     kind: 'percentage-line-control',
-    key: `percentage-line-control:rejected-primary:${summary.key}:${summary.rejectedPrimaryControls}:${toTaskKeyPart(summary.rejectedPrimaryRowIds)}`,
+    key: `percentage-line-control:rejected-rows:${summary.key}:${summary.rejectedControlRows}:${toTaskKeyPart(summary.rejectedRowIds)}`,
     row,
-    issue: 'rejected-primary',
+    issue: 'rejected-rows',
     projectTitle: summary.projectTitle,
     subtitleCode: summary.subtitleCode,
     line: summary.line,
     stamp: summary.stamp,
     title: 'Проверить официальность на процентной линии',
     details: detailParts.join(' '),
-    targetRowIds: summary.rejectedPrimaryRowIds,
+    targetRowIds: summary.rejectedRowIds,
     requiredControls: summary.requiredControls,
     coveredControls: summary.coveredControls,
     assignedControls: summary.assignedControls,
-    count: summary.rejectedPrimaryControls,
+    count: summary.rejectedControlRows,
   }
 }
 
@@ -196,9 +233,9 @@ function buildSuspendWelderTask(
   suspensionFrom: string,
 ): PercentageLineControlTask {
   const detailParts = [
-    `Линия ${summary.line}, контроль ${summary.percent}%, клеймо ${summary.stamp}.`,
-    `По клейму найдено ${summary.rejectedPrimaryControls} первичных негодных стыков по процентному контролю, включая дубль: ${formatJointList(summary.rejectedPrimaryJointNames)}. На У-стыках сюда входит и ПВК.`,
-    'По правилу процентной линии после четвертого первичного негодного результата сварщика нужно отстранить от официальной сварки до отдельного решения.',
+    `Линия ${summary.line}, контроль ${summary.percent}%${summary.stamp ? `, клеймо ${summary.stamp}` : ', по всей линии'}.`,
+    `По клейму найдено ${summary.rejectedControlRows} первичных стыков С/У с негодным РК/УЗК: ${formatJointList(summary.rejectedJointNames)}. Учитываются собственный контроль, включённый НК до ТО и дубли. Ремонты и переварки исключены.`,
+    'После четвёртой отдельной негодной записи этого клейма требуется полный контроль и решение об отстранении сварщика.',
     suspensionFrom
       ? `Дату начала отстранения диспетчер предлагает взять по дате контроля четвертого негодного стыка: ${formatDisplayDate(suspensionFrom)}.`
       : 'Дату начала отстранения нужно определить по дате контроля четвертого негодного стыка.',
@@ -206,7 +243,7 @@ function buildSuspendWelderTask(
 
   return {
     kind: 'percentage-line-control',
-    key: `percentage-line-control:suspend-welder:${summary.key}:${summary.rejectedPrimaryControls}:${toTaskKeyPart(summary.rejectedPrimaryRowIds)}`,
+    key: `percentage-line-control:suspend-welder:${summary.key}:${summary.rejectedControlRows}:${toTaskKeyPart(summary.rejectedRowIds)}`,
     row,
     issue: 'suspend-welder',
     projectTitle: summary.projectTitle,
@@ -215,12 +252,12 @@ function buildSuspendWelderTask(
     stamp: summary.stamp,
     title: 'Отстранить сварщика от работы',
     details: detailParts.join(' '),
-    targetRowIds: summary.rejectedPrimaryRowIds,
+    targetRowIds: summary.rejectedRowIds,
     suspensionFrom,
     requiredControls: summary.requiredControls,
     coveredControls: summary.coveredControls,
     assignedControls: summary.assignedControls,
-    count: summary.rejectedPrimaryControls,
+    count: summary.rejectedControlRows,
   }
 }
 
@@ -233,34 +270,7 @@ function isWelderAlreadySuspended(
   return Boolean(getSuspensionOverlapForStamp(welderStampSuspensions, stamp, suspensionFrom))
 }
 
-function findStampRow(rows: WeldRow[], stamp: string) {
-  const normalizedStamp = normalizeValue(stamp)
-  return rows
-    .filter((row) => OFFICIAL_WELDER_STAMP_FIELD_KEYS.some((key) => normalizeValue(row[key]) === normalizedStamp))
-    .sort((left, right) => compareDateLike(left.weldDate, right.weldDate) || Number(left.id ?? 0) - Number(right.id ?? 0))[0]
-}
-
-function getFirstStampSummaryKey(rows: WeldRow[], summaries: PercentageLineStampSummary[]) {
-  const ordered = summaries
-    .map((summary) => ({ summary, row: findStampRow(rows, summary.stamp) }))
-    .filter((entry): entry is { summary: PercentageLineStampSummary; row: WeldRow } => Boolean(entry.row))
-    .sort(
-      (left, right) =>
-        compareDateLike(left.row.weldDate, right.row.weldDate) ||
-        Number(left.row.id ?? 0) - Number(right.row.id ?? 0) ||
-        left.summary.stamp.localeCompare(right.summary.stamp, 'ru', { numeric: true }),
-    )
-  return ordered[0]?.summary.key ?? ''
-}
-
-function findRowsByIds(rows: WeldRow[], rowIds: number[]) {
-  const ids = new Set(rowIds)
-  return rows
-    .filter((row) => ids.has(row.id))
-    .sort(compareRejectedPrimaryRows)
-}
-
-function compareRejectedPrimaryRows(left: WeldRow, right: WeldRow) {
+function compareRejectedRows(left: WeldRow, right: WeldRow) {
   return (
     compareDateLike(getRejectedControlEventDate(left), getRejectedControlEventDate(right)) ||
     compareDateLike(left.weldDate, right.weldDate) ||
@@ -269,9 +279,7 @@ function compareRejectedPrimaryRows(left: WeldRow, right: WeldRow) {
 }
 
 function getRejectedControlEventDate(row: WeldRow) {
-  const applicableCodes = new Set(
-    isAngularConnectionType(row.connectionType) ? ['РК', 'УЗК', 'ПВК'] : ['РК', 'УЗК'],
-  )
+  const applicableCodes = new Set(['РК', 'УЗК'])
   const rejectedDates = LNK_METHODS.filter((method) => applicableCodes.has(method.code)).flatMap((method) => {
     const result = normalizeResultStatus(row[method.resultKey])
     if (result !== 'ремонт' && result !== 'вырез') return []
@@ -282,9 +290,9 @@ function getRejectedControlEventDate(row: WeldRow) {
     if (!applicableCodes.has(control.method)) return []
     return control.conclusionDate || control.controlDate ? [control.conclusionDate || control.controlDate] : []
   })
-  const rejectedPreHeatTreatmentDates = getRejectedPreHeatTreatmentControls(row).flatMap((control) => {
-    if (!applicableCodes.has(control.methodCode)) return []
-    const date = String(control.control.conclusionDate ?? '').trim()
+  const rejectedPreHeatTreatmentDates = (isPreHeatTreatmentStageEnabled(row) ? row.preHeatTreatmentControls ?? [] : []).flatMap((control) => {
+    if (!applicableCodes.has(control.method) || !['ремонт', 'вырез'].includes(normalizeResultStatus(control.result) ?? '')) return []
+    const date = String(control.conclusionDate ?? '').trim()
     return date ? [date] : []
   })
 

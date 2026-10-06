@@ -4,6 +4,11 @@ import { describe, expect, it } from 'vitest'
 import { ReportPageHeader } from '@/components/report-page-header'
 
 describe('ReportPageHeader', () => {
+  it('aligns a fluid page to its container without the wide-table horizontal offset', () => {
+    const { container } = render(<ReportPageHeader title="Программа линий" stickyLeft={288} fluid><button>Показать</button></ReportPageHeader>)
+    expect(container.querySelector('header')).toHaveStyle({ left: '0px', width: '100%', maxWidth: '100%' })
+    expect(container.querySelector('[data-report-header-actions]')).toHaveClass('basis-full', 'sm:basis-auto')
+  })
   it('stays inside the visible report viewport during horizontal scrolling', () => {
     render(
       <ReportPageHeader title="ЛНК" stickyLeft={80}>
@@ -19,6 +24,7 @@ describe('ReportPageHeader', () => {
       maxWidth: 'calc(100vw - 104px)',
     })
     expect(header).toHaveClass('border-b', 'bg-white/95')
+    expect(header.querySelector('[data-report-header-actions]')).not.toHaveClass('basis-full')
   })
 
   it('keeps the report summary inside the same header surface', () => {

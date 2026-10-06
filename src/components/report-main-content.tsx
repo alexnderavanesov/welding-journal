@@ -4,8 +4,6 @@ import type { DocumentsPageType } from '@/components/documents-page'
 import { WeldTable, type WeldTableProps } from '@/components/weld-table'
 import type { ActiveReport } from '@/lib/home-state'
 import type { DocumentNavigationRequest } from '@/lib/document-navigation'
-import type { PercentageControlMethod } from '@/lib/percentage-line-summary'
-import type { PercentageLineControlScope } from '@/lib/percentage-line-control-update'
 import type {
   PercentageLineNavigationOutcome,
   PercentageLineNavigationRequest,
@@ -14,6 +12,7 @@ import type { PercentageLineStampFilter } from '@/lib/report-navigation'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 const StatisticsPage = lazy(() => import('@/components/statistics-page').then((module) => ({ default: module.StatisticsPage })))
+const LineProgramPage = lazy(() => import('@/components/line-program-page').then((module) => ({ default: module.LineProgramPage })))
 const WelderStampsRegistry = lazy(() =>
   import('@/components/welder-stamps-registry').then((module) => ({ default: module.WelderStampsRegistry })),
 )
@@ -26,15 +25,6 @@ type ReportMainContentProps = {
   welderStamps: WelderStampRecord[]
   welderStampsRegistryProps: WelderStampsRegistryProps
   weldTableProps: WeldTableProps
-  onAssignPercentageLineMissingControls?: (
-    scope: PercentageLineControlScope,
-    rowIds: number[],
-    method: PercentageControlMethod,
-  ) => Promise<void> | void
-  onCancelPercentageLineMissingControls?: (
-    scope: PercentageLineControlScope,
-    rowIds: number[],
-  ) => Promise<void> | void
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
   onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
   percentageLineNavigationRequest?: PercentageLineNavigationRequest | null
@@ -65,8 +55,6 @@ export function ReportMainContent({
   welderStamps,
   welderStampsRegistryProps,
   weldTableProps,
-  onAssignPercentageLineMissingControls,
-  onCancelPercentageLineMissingControls,
   onOpenPercentageLineStampRows,
   onOpenReportRowIds,
   onOpenWeldRowIds,
@@ -80,15 +68,16 @@ export function ReportMainContent({
   onDocumentNavigationRequestHandled,
   reportTaskPanels,
 }: ReportMainContentProps) {
-  if (activeReport === 'statistics' || activeReport === 'percentageLines') {
+  if (activeReport === 'percentageLines') {
+    return <Suspense fallback={<ReportSectionFallback label="Загружаем программу линий" />}>
+      <LineProgramPage onOpenReportRows={onOpenReportRowIds} navigationRequest={percentageLineNavigationRequest} onNavigationHandled={onPercentageLineNavigationRequestHandled} />
+    </Suspense>
+  }
+  if (activeReport === 'statistics') {
     return (
       <Suspense fallback={<ReportSectionFallback label="Загружаем статистику" />}>
         <StatisticsPage
           key={activeReport}
-          fixedTab={activeReport === 'percentageLines' ? 'percentageLines' : undefined}
-          onAssignPercentageLineMissingControls={onAssignPercentageLineMissingControls}
-          onCancelPercentageLineMissingControls={onCancelPercentageLineMissingControls}
-          onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
           onOpenReportRowIds={onOpenReportRowIds}
           onOpenWeldRowIds={onOpenWeldRowIds}
           percentageLineNavigationRequest={percentageLineNavigationRequest}

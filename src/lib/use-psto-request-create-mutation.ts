@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { formatRequestCreatedMessage } from '@/lib/report-naming'
 import { buildPstoRequestRows } from '@/lib/psto-report-mutation-updates'
 import { PSTO_REQUEST_HIGHLIGHT_FIELDS } from '@/lib/psto-report-mutation-highlight-fields'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RowWithId, UsePstoReportMutationsOptions } from '@/lib/psto-report-mutation-types'
@@ -83,7 +83,7 @@ export function usePstoRequestCreateMutation({
       setPstoRequestSearch('')
       setPstoRequestDate('')
       setIsPstoRequestModalOpen(false)
-      await invalidateWeldJoints(queryClient, { upsertRows: _result })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: _result })
       await queryClient.invalidateQueries({ queryKey: ['system-document-sequences'] })
     },
     onError: (error) => {

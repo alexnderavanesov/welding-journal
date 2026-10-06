@@ -16,6 +16,7 @@ export type LnkResultDraftState = {
   methodKey: WeldFieldKey | ''
   rowIds: Set<number>
   rowResults: Record<number, string>
+  layeredControlRowIds: Set<number>
   controlDate: string
   result: string
   conclusionNaming: RequestNamingState
@@ -45,6 +46,7 @@ export function createDefaultLnkResultDraft(conclusionNaming: RequestNamingState
     methodKey: '',
     rowIds: new Set(),
     rowResults: {},
+    layeredControlRowIds: new Set(),
     controlDate: formatDateInputValue(new Date()),
     result: '',
     conclusionNaming,

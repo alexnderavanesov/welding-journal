@@ -6,7 +6,7 @@ import {
 import { getLnkResultHighlightFields } from '@/lib/lnk-report-mutation-highlight-fields'
 import { buildLnkResultRows } from '@/lib/lnk-report-mutation-updates'
 import { createDefaultLnkResultDraft } from '@/lib/report-draft-state'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -34,6 +34,7 @@ export function useLnkResultEntryMutations({
       conclusionName,
       useSystemName,
       documentGroups,
+      layeredControlRowIds,
     }: {
       records: RowWithId[]
       methodKey: WeldFieldKey
@@ -42,6 +43,7 @@ export function useLnkResultEntryMutations({
       conclusionName: string
       useSystemName?: boolean
       documentGroups?: SystemDocumentCreationGroup[]
+      layeredControlRowIds?: number[]
     }) => {
       const method = LNK_METHODS.find((candidate) => candidate.requestKey === methodKey)
       const hasConclusion = Object.values(resultById).some((result) => result !== LNK_EMPTY_RESULT_VALUE)
@@ -80,6 +82,7 @@ export function useLnkResultEntryMutations({
         'Не удалось сохранить часть записей',
         {
           mutationScope: 'lnk',
+          layeredControl: layeredControlRowIds?.length && method?.code === 'ПВК' ? { rowIds: layeredControlRowIds, confirmPvk: true } : undefined,
           systemDocumentSequences: method
             ? groups.filter((group) => group.useSystemName).map((group) => ({
                 type: 'lnkConclusion',
@@ -103,7 +106,7 @@ export function useLnkResultEntryMutations({
       )
       setIsLnkResultModalOpen(false)
       setLnkResultDraft(createDefaultLnkResultDraft(defaultLnkConclusionNaming))
-      await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: savedRows })
       await queryClient.invalidateQueries({ queryKey: ['system-document-sequences'] })
       onWorkflowCorrectionSaved?.()
     },

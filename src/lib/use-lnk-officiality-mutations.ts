@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createDefaultLnkOfficialityDraft } from '@/lib/report-draft-state'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RowWithId, UseLnkReportMutationsOptions } from '@/lib/lnk-report-mutation-types'
 import type { LnkOfficialityChainPlan } from '@/lib/lnk-officiality-chain-plan'
@@ -79,8 +79,8 @@ export function useLnkOfficialityMutations({
       setMessage(messages.join('; '))
       setLnkOfficialityDraft(createDefaultLnkOfficialityDraft())
       setIsLnkOfficialityModalOpen(false)
+      scheduleWeldDataRefresh(queryClient, { upsertRows: savedRows })
       await Promise.all([
-        invalidateWeldJoints(queryClient, { upsertRows: savedRows }),
         queryClient.invalidateQueries({ queryKey: ['weld-joint-chain'] }),
         ...(result.plan.earlyCoilDecisions.length > 0
           ? [queryClient.invalidateQueries({ queryKey: DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY })]

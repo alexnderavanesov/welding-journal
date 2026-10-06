@@ -1,4 +1,5 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getLayeredControlWaitingLabel } from '@/lib/layered-control-documents'
 import { OFFICIAL_WELDER_STAMP_FIELD_KEYS } from '@/lib/report-common-config'
 import {
   DISPATCHER_TASKS_FIELD_KEY,
@@ -130,7 +131,7 @@ function buildWeldColumnFilterMatchers(columnFilters: Record<string, string>): W
     const choiceFilter = parseWeldColumnChoiceFilter(value)
     if (choiceFilter) {
       const normalizedValues = new Set(normalizeWeldColumnFilterChoiceValues(key, choiceFilter.values))
-      return [(row: WeldRow) => normalizedValues.has(normalizeWeldColumnChoiceValue(getWeldColumnFilterRowText(row, key)))]
+      return [(row: WeldRow) => getWeldColumnFilterRowValues(row, key).some((value) => normalizedValues.has(normalizeWeldColumnChoiceValue(value)))]
     }
 
     if (query.startsWith('=')) {
@@ -139,11 +140,11 @@ function buildWeldColumnFilterMatchers(columnFilters: Record<string, string>): W
         ? normalizeControlAvailabilityFilterValue(expectedValue)
         : expectedValue
       return [(row: WeldRow) => (
-        getWeldColumnFilterRowText(row, key).trim().toLowerCase() === normalizedExpectedValue
+        getWeldColumnFilterRowValues(row, key).some((value) => value.toLowerCase() === normalizedExpectedValue)
       )]
     }
 
-    return [(row: WeldRow) => getWeldColumnFilterRowText(row, key).trim().toLowerCase().includes(query)]
+    return [(row: WeldRow) => getWeldColumnFilterRowValues(row, key).some((value) => value.toLowerCase().includes(query))]
   })
 }
 
@@ -166,6 +167,17 @@ export function getWeldColumnFilterRowText(row: WeldRow, fieldKey: string) {
     : CONTROL_ASSIGNMENT_FIELD_KEYS.has(fieldKey)
       ? normalizeControlAvailabilityFilterValue(value)
     : getWeldColumnFilterCellText(value)
+}
+
+export function getWeldColumnFilterRowValues(row: WeldRow, fieldKey: string): string[] {
+  const keys = fieldKey === 'layeredVikDocuments'
+    ? ['layeredVikEdgesDocument', 'layeredVikLayersDocument'] as const
+    : fieldKey === 'layeredPvkDocuments'
+      ? ['layeredPvkEdgesDocument', 'layeredPvkLayersDocument'] as const
+      : null
+  if (!keys) return [getWeldColumnFilterRowText(row, fieldKey).trim()]
+  const values = [...new Set(keys.map((key) => String(row[key] ?? '').trim()).filter(Boolean))]
+  return values.length > 0 ? values : [getLayeredControlWaitingLabel(row, fieldKey)]
 }
 
 function matchesPercentageLineStampFilter(row: WeldRow, filter: ReturnType<typeof parsePercentageLineStampFilter>) {

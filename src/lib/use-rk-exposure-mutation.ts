@@ -3,7 +3,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import type { RkExposureEditingState } from '@/lib/home-state'
 import type { RkExposureLine } from '@/lib/rk-exposure'
 import { buildRkExposureEditedRow } from '@/lib/rk-exposure-mutation-updates'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import { updateWeldRowOrThrow } from '@/lib/weld-save-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
@@ -53,7 +53,7 @@ export function useRkExposureMutation({
       )
       setEditing(null)
       setMessage(`Снимки и описание дефектов РК${isBeforeHeatTreatment ? ' до ТО' : ''} обновлены`)
-      await invalidateWeldJoints(queryClient, { upsertRows: [saved] })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: [saved] })
     },
     onError: (error) => setMessage((error as Error).message),
   })

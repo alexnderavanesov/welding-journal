@@ -1,11 +1,11 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { ActiveReport } from '@/lib/home-state'
 import { resetPageScrollPosition } from '@/lib/page-scroll-position'
-import type { WeldInput } from '@/lib/weld-fields'
+import type { WeldInput, WeldFieldKey } from '@/lib/weld-fields'
 
 type EditingState = {
   record: Partial<WeldInput> & { id?: number }
-  focusField?: keyof WeldInput
+  focusField?: WeldFieldKey
 } | null
 
 type UseReportChangeActionsOptions = {

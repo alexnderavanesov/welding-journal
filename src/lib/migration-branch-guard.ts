@@ -28,11 +28,22 @@ export function assertLocalMigrationDatabaseUrl(databaseUrl: unknown) {
   if (!['postgres:', 'postgresql:'].includes(parsedUrl.protocol)) {
     throw new Error('DATABASE_URL должна использовать протокол postgres или postgresql.')
   }
+  assertExplicitMigrationTarget(parsedUrl)
   if (!LOCAL_DATABASE_HOSTS.has(parsedUrl.hostname.toLowerCase())) {
     throw new Error(
       'Локальная миграция остановлена: DATABASE_URL указывает не на localhost. '
       + 'Для удаленной базы разрешена только команда pnpm db:remote-migration.',
     )
+  }
+}
+
+// node-postgres accepts ?host= and ?port= overrides. Checking only hostname
+// would otherwise allow a visibly local URL to connect to a different server.
+export function assertExplicitMigrationTarget(url: URL) {
+  if (!url.hostname) throw new Error('В URL миграции требуется явное имя сервера.')
+  const overrides = new Set(['host', 'hostaddr', 'port', 'database', 'dbname', 'user', 'password', 'service', 'servicefile'])
+  if ([...url.searchParams.keys()].some(key => overrides.has(key.toLowerCase()))) {
+    throw new Error('Нельзя переопределять сервер, базу или пользователя в параметрах URL миграции. Укажите их в основной части URL.')
   }
 }
 

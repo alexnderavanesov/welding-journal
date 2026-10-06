@@ -18,6 +18,8 @@ export type JointChainContinuation = {
 
 export type WeldRow = WeldInput & {
   id: number
+  programRepairRequirements?: import('./line-program-repair-requirements').RepairControlRequirement[]
+  programChainState?: import('./line-program-chain-state').ProgramChainState
   chainContinuation?: JointChainContinuation
   earlyCoilDecisionAccepted?: boolean
   preHeatTreatmentLnkEnabled?: boolean
@@ -100,7 +102,9 @@ export type RepeatedJointCheckTask = {
   reason?: string
   details?: string
   rootCauseActions?: WorkflowRootCauseAction[]
-  systemWarningCode?: 'СП-01'
+  systemWarningCode?: 'СП-01' | 'СП-04'
+  coilRestorationRootId?: number
+  actualityRowIds?: number[]
 }
 
 export type RepeatedJointDuplicateCheckTask = {
@@ -119,7 +123,8 @@ export type LineConsistencyTask = {
   line: string
   projectTitle: string
   subtitleCode: string
-  fieldKey: 'weldControlPercent' | 'groupName' | 'category' | 'controlPresence' | 'pstoPresence'
+  fieldKey: 'weldControlPercent' | 'pvkControlPercent' | 'groupName' | 'category' | 'controlPresence' | 'pstoPresence'
+  systemWarningCode?: 'СП-02' | 'СП-03'
   fieldLabel: string
   title: string
   values: string[]
@@ -130,7 +135,8 @@ export type PercentageLineControlTask = {
   kind: 'percentage-line-control'
   key: string
   row: WeldRow
-  issue: 'missing' | 'excess' | 'new-welder' | 'rejected-primary' | 'suspend-welder'
+  issue: 'missing' | 'excess' | 'new-welder' | 'rejected-rows' | 'suspend-welder'
+  demandKind?: 'common' | 'pvk'
   projectTitle: string
   subtitleCode: string
   line: string
@@ -172,8 +178,9 @@ export type DispatcherTask = RepeatedJointTask | WelderStampExpiryTask
 
 export function isSystemDispatcherWarningTask(
   task: { kind?: string; systemWarningCode?: string },
-): task is RepeatedJointCheckTask & { systemWarningCode: 'СП-01' } {
-  return task.kind === 'check' && task.systemWarningCode === 'СП-01'
+): task is (RepeatedJointCheckTask & { systemWarningCode: 'СП-01' | 'СП-04' }) | (LineConsistencyTask & { systemWarningCode: 'СП-02' | 'СП-03' }) {
+  return (task.kind === 'check' && (task.systemWarningCode === 'СП-01' || task.systemWarningCode === 'СП-04')) ||
+    (task.kind === 'line-consistency' && (task.systemWarningCode === 'СП-02' || task.systemWarningCode === 'СП-03'))
 }
 
 export type RepeatedJointTaskGroup = {

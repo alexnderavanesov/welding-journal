@@ -37,6 +37,7 @@ import {
 import type { WeldInput } from '@/lib/weld-fields'
 import { isSystemDispatcherWarningTask, type RepeatedJointCheckTask, type WeldRow } from '@/lib/dispatcher-types'
 import { encodeIdentityKey } from '@/lib/identity-key'
+import { CHAIN_ACTUALITY_REASON } from './dispatcher-check-reasons'
 
 type RejectionResolver = (row: WeldInput) => unknown
 type OfficialRejectedChainResolver = (rows: WeldRow[], sourceRow: WeldInput, sourceJoint: string) => WeldRow[]
@@ -133,6 +134,7 @@ export function isBlockingRepeatedJointCheckTask(task: RepeatedJointCheckTask) {
   return (
     !isSystemDispatcherWarningTask(task) &&
     task.reason !== UNOFFICIAL_REJECTED_WITH_COIL_REASON &&
+    task.reason !== CHAIN_ACTUALITY_REASON &&
     task.reason !== 'проверить целостность цепочки' &&
     task.reason !== COIL_CHAIN_INTEGRITY_REASON &&
     task.reason !== 'проверить клеймо' &&

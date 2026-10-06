@@ -6,6 +6,19 @@ import { LNK_RESULT_COMPLETENESS_REASON } from '@/lib/dispatcher-check-reasons'
 import type { RepeatedJointCheckTask, RepeatedJointCreateTask, WeldRow } from '@/lib/dispatcher-types'
 
 describe('JointHistoryOverview', () => {
+  it.each([null, 'отменен'])('labels an unperformed repeat as history, not waiting, on an inactive line (%s)', pstoRequired => {
+    const row = { id: 91, joint: 'S91', pstoRequired, pstoRequest: 'P1', pstoResult: 'проведено', tvmtResult: 'не годен',
+      pstoRepeatCycles: [{ id: 92, weldJointId: 91, sequence: 2, pstoRequest: 'P2', pstoRequestDate: '2026-09-02', pstoResult: 'ожидает ПСТО' }],
+    } as WeldRow
+    const onOpenDocument = vi.fn()
+    render(<JointHistoryOverview row={row} onOpenDocument={onOpenDocument} onOpenReport={vi.fn()}
+      onShowInReport={vi.fn()} onEditRow={vi.fn()} onRunNextAction={vi.fn()} onOpenTasks={vi.fn()} />)
+    expect(screen.getByText('Сохранённая заявка; выполнение ПСТО не требуется')).toBeInTheDocument()
+    expect(screen.queryByText(/ПСТО: ожидает ПСТО/)).not.toBeInTheDocument()
+    expect(screen.getByText('ТВМТ: не годен')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'P2' }))
+    expect(onOpenDocument).toHaveBeenCalledWith(expect.objectContaining({ pstoRequest: 'P2' }), 'pstoRequest')
+  })
   it('uses the compact PSTO label and opens the standard weld editor', () => {
     const row = {
       id: 2,

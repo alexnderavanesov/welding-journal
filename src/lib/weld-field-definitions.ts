@@ -344,6 +344,13 @@ export const DATE_TIME_WELD_FIELD_KEYS = new Set<WeldFieldKey>([
 export type WeldFieldValue = string | number | boolean | Date | null
 export type WeldInput = Partial<Record<Exclude<WeldFieldKey, 'id'>, WeldFieldValue>> & {
   id?: number
+  /** Dedicated line-program and layered-control workflows; never ordinary form fields. */
+  lineProgramId?: number | null
+  pvkControlPercent?: number | null
+  layeredControlAssigned?: boolean
+  layeredControlRequest?: { assigned: true; confirmPvk: boolean }
+  /** Read-only validation context; not an editable/storage field. Rebuilt on save. */
+  programRepairRequirements?: import('./line-program-repair-requirements').RepairControlRequirement[]
 }
 
 export const WELDING_MATERIAL_FIELD_KEYS = [

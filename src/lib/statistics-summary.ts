@@ -1,3 +1,4 @@
+import { normalizeControlResultText } from '@/lib/report-value-utils'
 import { parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { parseJointChainName } from '@/lib/joint-chain'
@@ -611,7 +612,7 @@ function getLnkRequestDate(row: WeldRow, method: (typeof LNK_METHODS)[number]) {
 
 function hasPstoClosedData(row: WeldRow) {
   if (isStatisticsPstoNoNeed(row)) return false
-  const result = String(row.pstoResult ?? '').trim().toLowerCase()
+  const result = normalizeControlResultText(row.pstoResult)
   return result === 'проведено' || result === 'проведено (отменен)'
 }
 

@@ -43,4 +43,17 @@ describe('ScrollToTopButton', () => {
 
     expect(scrollTo).toHaveBeenCalledWith({ left: 180, top: 0, behavior: 'smooth' })
   })
+
+  it('keeps the arrow inside the report boundary and updates its inset on resize', () => {
+    vi.spyOn(window, 'scrollY', 'get').mockReturnValue(900)
+    const { container } = render(<><div data-scroll-top-boundary /><ScrollToTopButton /></>)
+    const boundary = container.querySelector('[data-scroll-top-boundary]')!
+    let right = window.innerWidth - 60
+    vi.spyOn(boundary, 'getBoundingClientRect').mockImplementation(() => ({ right, width: 500 }) as DOMRect)
+    fireEvent.scroll(window)
+    expect(screen.getByRole('button', { name: 'Вернуться в начало страницы' })).toHaveStyle({ right: '76px' })
+    right = window.innerWidth + 500
+    fireEvent.resize(window)
+    expect(screen.getByRole('button', { name: 'Вернуться в начало страницы' })).toHaveStyle({ right: '16px' })
+  })
 })

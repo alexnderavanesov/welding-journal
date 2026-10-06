@@ -120,6 +120,9 @@ export function useProjectSettingsSync() {
           const affectsDispatcherIndex = projectSettingAffectsDispatcherIndex(key)
           const affectsDispatcherBackground = key === PROJECT_SETTING_KEYS.dispatcherBackground
           const invalidations: Promise<unknown>[] = []
+          if (key === PROJECT_SETTING_KEYS.controlProcesses) {
+            invalidations.push(queryClient.invalidateQueries({ queryKey: ['line-program'] }))
+          }
           if (affectsDerivedCalculations) {
             invalidations.push(
               queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY }),

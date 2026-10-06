@@ -1,6 +1,7 @@
 import { Check, ChevronDown, Columns3, LayoutTemplate, Save, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { buttonVariants } from '@/components/ui/button'
 
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import {
@@ -381,7 +382,7 @@ function SavedViewsPanel({
           type="button"
           onClick={onSave}
           disabled={!viewName.trim()}
-          className="inline-flex h-9 items-center gap-1.5 rounded bg-slate-900 px-3 text-xs font-semibold text-white hover:bg-slate-800 disabled:bg-slate-300"
+          className={buttonVariants({ size: 'sm', className: 'h-9 gap-1.5 text-xs' })}
         >
           <Save className="h-3.5 w-3.5" />
           Сохранить

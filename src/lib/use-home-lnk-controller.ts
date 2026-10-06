@@ -1,4 +1,14 @@
-import { startTransition, useCallback, useState } from 'react'
+import {
+  DEFAULT_PRE_HEAT_TREATMENT_REGISTRY_FILTERS,
+  type PreHeatTreatmentRegistryFilters,
+} from '@/lib/pre-heat-treatment-registry'
+import { LNK_METHODS } from '@/lib/report-config'
+import { type WeldFieldKey } from '@/lib/weld-fields'
+import { type RequestDocumentIdentity } from '@/lib/request-document-identity'
+import { WORKFLOW_REGISTRY_PAGE_SIZE } from '@/server/weld-contracts'
+import { type SystemDocumentReference } from '@/lib/system-document-types'
+
+import { startTransition, useCallback, useEffect, useState } from 'react'
 import { createEmptyDuplicateControlDraft, type DuplicateControlDraft } from '@/lib/duplicate-control-types'
 import type { PreHeatTreatmentLnkMethodCode } from '@/lib/lnk-control-stage'
 import type { LnkRequestComposerMode } from '@/lib/use-lnk-request-modal-state'
@@ -34,6 +44,52 @@ export function useHomeLnkController() {
   const [duplicateControlDraft, setDuplicateControlDraft] = useState<DuplicateControlDraft>(() =>
     createEmptyDuplicateControlDraft(),
   )
+
+  const [isDuplicateControlRegistryOpen, setIsDuplicateControlRegistryOpen] = useState(false)
+  const [isSelectingDuplicateControlRows, setIsSelectingDuplicateControlRows] = useState(false)
+  const [lnkStageTransferReference, setLnkStageTransferReference] = useState<
+    (SystemDocumentReference & { documentId: number }) | null
+  >(null)
+  const [isLnkStageTransferPending, setIsLnkStageTransferPending] = useState(false)
+  const [lnkWorkflowRequestSearch, setLnkWorkflowRequestSearch] = useState('')
+  const [lnkResultRegistrySearch, setLnkResultRegistrySearch] = useState('')
+  const [lnkResultRegistryFilter, setLnkResultRegistryFilter] =
+    useState<'all' | 'годен' | 'ремонт' | 'вырез'>('all')
+  const [lnkResultRegistryLimit, setLnkResultRegistryLimit] = useState(WORKFLOW_REGISTRY_PAGE_SIZE)
+  const [preRegistry, setPreRegistry] = useState<PreHeatTreatmentRegistryFilters & { page: number }>(
+    { ...DEFAULT_PRE_HEAT_TREATMENT_REGISTRY_FILTERS, page: 0 },
+  )
+  const [preHeatTreatmentCandidateSearch, setPreHeatTreatmentCandidateSearch] = useState('')
+  const [preHeatTreatmentCandidateIds, setPreHeatTreatmentCandidateIds] = useState<number[] | null>(null)
+  const [preHeatTreatmentCandidateFilter, setPreHeatTreatmentCandidateFilter] = useState<{
+    methodKeys: WeldFieldKey[]
+    requestName: string
+    requestDate: string
+  }>({ methodKeys: [], requestName: '', requestDate: '' })
+  const handlePreHeatTreatmentCandidateFilterChange = useCallback((filter: {
+    methodCodes: PreHeatTreatmentLnkMethodCode[]
+    request: RequestDocumentIdentity | null
+  }) => {
+    const methodKeys = filter.methodCodes.flatMap((methodCode) => {
+      const method = LNK_METHODS.find((candidate) => candidate.code === methodCode)
+      return method ? [method.requestKey] : []
+    })
+    const requestName = filter.request?.name ?? ''
+    const requestDate = filter.request?.date ?? ''
+    setPreHeatTreatmentCandidateFilter((current) => (
+      current.requestName === requestName &&
+      current.requestDate === requestDate &&
+      current.methodKeys.length === methodKeys.length &&
+      current.methodKeys.every((key, index) => key === methodKeys[index])
+        ? current
+        : { methodKeys, requestName, requestDate }
+    ))
+  }, [])
+  useEffect(() => {
+    if (!isPreHeatTreatmentResultManagerOpen) {
+      setPreRegistry({ ...DEFAULT_PRE_HEAT_TREATMENT_REGISTRY_FILTERS, page: 0 })
+    }
+  }, [isPreHeatTreatmentResultManagerOpen])
 
   const closePrimaryLnkDialogs = useCallback(() => {
     setIsLnkRequestModalOpen(false)
@@ -92,6 +148,31 @@ export function useHomeLnkController() {
 
   return {
     ...request,
+    isDuplicateControlRegistryOpen,
+    setIsDuplicateControlRegistryOpen,
+    isSelectingDuplicateControlRows,
+    setIsSelectingDuplicateControlRows,
+    lnkStageTransferReference,
+    setLnkStageTransferReference,
+    isLnkStageTransferPending,
+    setIsLnkStageTransferPending,
+    lnkWorkflowRequestSearch,
+    setLnkWorkflowRequestSearch,
+    lnkResultRegistrySearch,
+    setLnkResultRegistrySearch,
+    lnkResultRegistryFilter,
+    setLnkResultRegistryFilter,
+    lnkResultRegistryLimit,
+    setLnkResultRegistryLimit,
+    preRegistry,
+    setPreRegistry,
+    preHeatTreatmentCandidateSearch,
+    setPreHeatTreatmentCandidateSearch,
+    preHeatTreatmentCandidateIds,
+    setPreHeatTreatmentCandidateIds,
+    preHeatTreatmentCandidateFilter,
+    setPreHeatTreatmentCandidateFilter,
+    handlePreHeatTreatmentCandidateFilterChange,
     ...result,
     isLnkWorkflowMenuOpen: isWorkflowMenuOpen,
     setIsLnkWorkflowMenuOpen: setIsWorkflowMenuOpen,

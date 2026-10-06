@@ -22,7 +22,7 @@ describe('psto chronology checks', () => {
     ] as Parameters<typeof getPstoChronologyIssues>[0]
 
     expect(getPstoChronologyIssues(rows)[0]?.message).toBe(
-      'Стык F1: дата результата ПСТО 05.07.2026 раньше даты заявки ПСТО 08.07.2026.',
+      'Стык F1: дата результата ПСТО (05.07.2026) раньше даты заявки ПСТО (08.07.2026).',
     )
   })
 

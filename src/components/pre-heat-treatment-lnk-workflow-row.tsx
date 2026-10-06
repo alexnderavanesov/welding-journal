@@ -164,6 +164,7 @@ function PreHeatTreatmentLnkWorkflowRowComponent({
       <span className="min-w-0" onClick={(event) => event.stopPropagation()}>
         {selected ? (
           <LnkResultRowResultPicker
+            methodCode={resultMethod}
             row={row}
             rowResult={rowResult}
             saveCheckSettings={saveCheckSettings}

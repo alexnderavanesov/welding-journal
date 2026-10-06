@@ -1,4 +1,6 @@
-import { memo, type ComponentProps } from 'react'
+import { lazy, Suspense, memo, type ComponentProps } from 'react'
+const CoilRestorationDialog = lazy(() => import('./coil-restoration-dialog').then(module => ({ default: module.CoilRestorationDialog })))
+const ChainActualityDialog = lazy(() => import('./chain-actuality-dialog').then(module => ({ default: module.ChainActualityDialog })))
 import { DispatcherWorkspaceDialog } from '@/components/dispatcher-workspace-dialog'
 import { ReportDialogs } from '@/components/report-dialogs'
 import { ReportHeaderActions, type ReportHeaderActionsProps } from '@/components/report-header-actions'
@@ -11,8 +13,14 @@ import { ReportWorkspace } from '@/components/report-workspace'
 import type { DocumentGenerationRequest } from '@/lib/document-generation'
 import type { FinalStatusRowsContext } from '@/lib/weld-status'
 import { useFrozenValue } from '@/lib/use-frozen-value'
+import { PrintableReportPreview } from '@/components/printable-report-preview'
+import { Button } from './ui/button'
 
 type HomePageViewProps = {
+  coilRestorationDialogProps?: ComponentProps<typeof CoilRestorationDialog> | null
+  coilCorrectionReturnProps?: { onReturn: () => void; onDismiss: () => void } | null
+  chainActualityDialogProps?: ComponentProps<typeof ChainActualityDialog> | null
+  reportPreviewProps: ComponentProps<typeof PrintableReportPreview> | null
   activeReport: ComponentProps<typeof ReportWorkspace>['activeReport']
   activeTitle: string
   freezeReportBackground: boolean
@@ -32,8 +40,6 @@ type HomePageViewProps = {
   welderStamps: ComponentProps<typeof ReportMainContent>['welderStamps']
   welderStampsRegistryProps: ComponentProps<typeof ReportMainContent>['welderStampsRegistryProps']
   weldTableProps: ComponentProps<typeof ReportMainContent>['weldTableProps']
-  onAssignPercentageLineMissingControls: ComponentProps<typeof ReportMainContent>['onAssignPercentageLineMissingControls']
-  onCancelPercentageLineMissingControls: ComponentProps<typeof ReportMainContent>['onCancelPercentageLineMissingControls']
   onOpenPercentageLineStampRows: ComponentProps<typeof ReportMainContent>['onOpenPercentageLineStampRows']
   onOpenReportRowIds: ComponentProps<typeof ReportMainContent>['onOpenReportRowIds']
   onOpenWeldRowIds: ComponentProps<typeof ReportMainContent>['onOpenWeldRowIds']
@@ -58,6 +64,10 @@ type HomePageViewProps = {
 }
 
 export function HomePageView({
+  coilRestorationDialogProps,
+  coilCorrectionReturnProps,
+  chainActualityDialogProps,
+  reportPreviewProps,
   activeReport,
   activeTitle,
   freezeReportBackground,
@@ -77,8 +87,6 @@ export function HomePageView({
   welderStamps,
   welderStampsRegistryProps,
   weldTableProps,
-  onAssignPercentageLineMissingControls,
-  onCancelPercentageLineMissingControls,
   onOpenPercentageLineStampRows,
   onOpenReportRowIds,
   onOpenWeldRowIds,
@@ -112,8 +120,6 @@ export function HomePageView({
     welderStamps,
     welderStampsRegistryProps,
     weldTableProps,
-    onAssignPercentageLineMissingControls,
-    onCancelPercentageLineMissingControls,
     onOpenPercentageLineStampRows,
     onOpenReportRowIds,
     onOpenWeldRowIds,
@@ -135,6 +141,11 @@ export function HomePageView({
       onNavCollapsedChange={onNavCollapsedChange}
       onReportChange={onReportChange}
     >
+      {coilCorrectionReturnProps && !freezeReportBackground ? <section aria-label="Продолжение исправления катушки" className="flex w-fit items-center gap-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm">
+        <Button variant="outline" size="sm" onClick={coilCorrectionReturnProps.onReturn}>Вернуться к исправлению катушки</Button>
+        <span>Возврат к исходной цепочке без сброса фильтров.</span>
+        <Button variant="ghost" size="sm" onClick={coilCorrectionReturnProps.onDismiss}>Скрыть подсказку</Button>
+      </section> : null}
       <MemoizedReportBackground {...reportBackgroundProps} />
 
       {reportTaskPanelsProps.dispatcherWorkspaceOpen ? (
@@ -157,6 +168,9 @@ export function HomePageView({
       ) : null}
 
       <ReportNotificationToast {...reportNotificationToastProps} />
+      {coilRestorationDialogProps ? <Suspense fallback={null}><CoilRestorationDialog key={coilRestorationDialogProps.rootId} {...coilRestorationDialogProps} /></Suspense> : null}
+      {chainActualityDialogProps ? <Suspense fallback={null}><ChainActualityDialog key={`${chainActualityDialogProps.rowId}:${chainActualityDialogProps.active}`} {...chainActualityDialogProps} /></Suspense> : null}
+      {reportPreviewProps ? <PrintableReportPreview {...reportPreviewProps} /> : null}
 
       <ReportDialogs
         chainDialogProps={reportChainDialogProps}
@@ -196,8 +210,6 @@ type ReportBackgroundProps = Pick<
   | 'welderStamps'
   | 'welderStampsRegistryProps'
   | 'weldTableProps'
-  | 'onAssignPercentageLineMissingControls'
-  | 'onCancelPercentageLineMissingControls'
   | 'onOpenPercentageLineStampRows'
   | 'onOpenReportRowIds'
   | 'onOpenWeldRowIds'
@@ -224,8 +236,6 @@ function ReportBackground({
   welderStamps,
   welderStampsRegistryProps,
   weldTableProps,
-  onAssignPercentageLineMissingControls,
-  onCancelPercentageLineMissingControls,
   onOpenPercentageLineStampRows,
   onOpenReportRowIds,
   onOpenWeldRowIds,
@@ -254,9 +264,11 @@ function ReportBackground({
       <ReportPageHeader
         title={activeTitle}
         stickyLeft={stickyLeft}
+        fluid={activeReport === 'percentageLines'}
         summary={!isStandaloneReport ? <ReportSummaryBar {...reportSummaryBarProps} embedded /> : undefined}
       >
-        {activeReport !== 'documents' && activeReport !== 'settings' && activeReport !== 'userGuide' ? (
+        {activeReport === 'percentageLines' ? <div data-line-program-report-actions /> : null}
+        {activeReport !== 'percentageLines' && activeReport !== 'documents' && activeReport !== 'settings' && activeReport !== 'userGuide' ? (
           <ReportHeaderActions {...reportHeaderActionsProps} />
         ) : null}
       </ReportPageHeader>
@@ -268,8 +280,6 @@ function ReportBackground({
         welderStamps={welderStamps}
         welderStampsRegistryProps={welderStampsRegistryProps}
         weldTableProps={weldTableProps}
-        onAssignPercentageLineMissingControls={onAssignPercentageLineMissingControls}
-        onCancelPercentageLineMissingControls={onCancelPercentageLineMissingControls}
         onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
         onOpenReportRowIds={onOpenReportRowIds}
         onOpenWeldRowIds={onOpenWeldRowIds}

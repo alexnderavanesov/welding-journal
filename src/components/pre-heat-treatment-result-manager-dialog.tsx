@@ -3,6 +3,7 @@ import { ArrowLeftRight, CalendarClock, FileSpreadsheet, Plus, Search, Trash2 } 
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
+import { JointConnectionTypeMeta, MetaSeparator } from '@/components/joint-meta'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
@@ -34,6 +35,7 @@ import { getLnkResultBadgeClass } from '@/lib/report-badges'
 import { normalizeSearchText } from '@/lib/report-row-utils'
 import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import { usePagePagination } from '@/lib/use-page-pagination'
+import type { PreHeatTreatmentRegistryFilters } from '@/lib/pre-heat-treatment-registry'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import {
   getSystemDocumentReferenceForField,
@@ -63,6 +65,16 @@ export type PreHeatTreatmentResultManagerDialogProps = {
   readOnly?: boolean
   initialRelationId?: number | null
   isPending: boolean
+  serverPage?: {
+    filters: PreHeatTreatmentRegistryFilters
+    page: number
+    hasMore: boolean
+    isLoading: boolean
+    error?: string
+    onRetry: () => void
+    onPageChange: (page: number) => void
+    onFiltersChange: (filters: PreHeatTreatmentRegistryFilters) => void
+  }
   onClose: () => void
   onStageChange?: () => void
   onOpenWorkflow: () => void
@@ -89,6 +101,7 @@ export function PreHeatTreatmentResultManagerDialog({
   readOnly = false,
   initialRelationId,
   isPending,
+  serverPage,
   onClose,
   onStageChange,
   onOpenWorkflow,
@@ -108,10 +121,22 @@ export function PreHeatTreatmentResultManagerDialog({
 }: PreHeatTreatmentResultManagerDialogProps) {
   const saveCheckSettings = useSaveCheckSettings()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
-  const [search, setSearch] = useState('')
-  const [methodFilter, setMethodFilter] = useState('')
-  const [requestFilter, setRequestFilter] = useState<RequestFilter>('all')
-  const [resultFilter, setResultFilter] = useState<ResultFilter>('all')
+  const [localSearch, setSearch] = useState('')
+  const [localMethodFilter, setMethodFilter] = useState('')
+  const [localRequestFilter, setRequestFilter] = useState<RequestFilter>('all')
+  const [localResultFilter, setResultFilter] = useState<ResultFilter>('all')
+  const search = serverPage?.filters.search ?? localSearch
+  const methodFilter = serverPage?.filters.methodCode ?? localMethodFilter
+  const requestFilter = serverPage?.filters.requestFilter ?? localRequestFilter
+  const resultFilter = serverPage?.filters.resultFilter ?? localResultFilter
+  const changeFilters = (patch: Partial<PreHeatTreatmentRegistryFilters>) => {
+    const next = { search, methodCode: methodFilter, requestFilter, resultFilter, ...patch }
+    setSearch(next.search)
+    setMethodFilter(next.methodCode)
+    setRequestFilter(next.requestFilter)
+    setResultFilter(next.resultFilter)
+    serverPage?.onFiltersChange(next)
+  }
   const [dateEditorTarget, setDateEditorTarget] = useState<{ relationId: number; token: number } | null>(null)
   const entries = useMemo(() => buildEntries(rows, registryMode), [registryMode, rows])
   const filteredEntries = useMemo(() => {
@@ -134,7 +159,9 @@ export function PreHeatTreatmentResultManagerDialog({
         entry.row.joint,
         entry.methodCode,
         entry.control.requestName,
+        entry.control.requestDate,
         entry.control.conclusionName,
+        entry.control.conclusionDate,
         entry.control.result,
       ].join(' ')).includes(query)
     })
@@ -144,6 +171,7 @@ export function PreHeatTreatmentResultManagerDialog({
     defaultPageSize: 50,
     resetKeys: [methodFilter, registryMode, requestFilter, resultFilter, search],
   })
+  const pageEntries = serverPage ? filteredEntries : pagination.pageItems
   const [selectedRelationId, setSelectedRelationId] = useState<number | null>(initialRelationId ?? null)
   const selectedEntry = useMemo(
     () => filteredEntries.find((entry) => entry.control.id === selectedRelationId)
@@ -312,7 +340,7 @@ export function PreHeatTreatmentResultManagerDialog({
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <BufferedFilterInput
                 value={search}
-                onValueChange={setSearch}
+                onValueChange={(search) => changeFilters({ search })}
                 placeholder={registryMode === 'request'
                   ? 'Название, дата, стык или линия'
                   : 'Стык, линия, заявка или заключение'}
@@ -322,7 +350,7 @@ export function PreHeatTreatmentResultManagerDialog({
             <Select
               aria-label="Вид контроля в реестре"
               value={methodFilter}
-              onChange={(event) => setMethodFilter(event.target.value)}
+              onChange={(event) => changeFilters({ methodCode: event.target.value })}
             >
               <option value="">Все виды контроля</option>
               {PRE_HEAT_TREATMENT_LNK_METHODS.map((method) => (
@@ -340,7 +368,7 @@ export function PreHeatTreatmentResultManagerDialog({
                     key={value}
                     type="button"
                     aria-pressed={requestFilter === value}
-                    onClick={() => setRequestFilter(value)}
+                    onClick={() => changeFilters({ requestFilter: value })}
                     className={`min-h-8 rounded px-2 font-medium transition ${requestFilter === value
                       ? 'bg-sky-50 text-sky-800 shadow-sm'
                       : 'text-slate-500 hover:text-slate-800'}`}
@@ -356,7 +384,7 @@ export function PreHeatTreatmentResultManagerDialog({
                     key={value}
                     type="button"
                     aria-pressed={resultFilter === value}
-                    onClick={() => setResultFilter(value)}
+                    onClick={() => changeFilters({ resultFilter: value })}
                     className={`min-h-8 rounded px-1.5 font-medium transition ${resultFilter === value
                       ? 'bg-sky-50 text-sky-800 shadow-sm'
                       : 'text-slate-500 hover:text-slate-800'}`}
@@ -367,14 +395,21 @@ export function PreHeatTreatmentResultManagerDialog({
               </div>
             )}
             <div className="flex justify-between text-xs text-slate-500">
-              <span>Найдено: {filteredEntries.length}</span>
-              <span>Стыков в области: {rows.length}</span>
+              <span>{serverPage ? 'Позиций на странице' : 'Найдено'}: {filteredEntries.length}</span>
+              <span>{serverPage ? 'Стыков на странице' : 'Стыков в области'}: {rows.length}</span>
             </div>
           </div>
           <div className="flex min-h-0 flex-1 flex-col p-2">
-            {pagination.pageItems.length > 0 ? (
+            {serverPage?.error ? (
+              <div role="alert" className="space-y-2 p-3 text-sm text-rose-800">
+                <p>{serverPage.error}</p>
+                <Button variant="outline" onClick={serverPage.onRetry}>Повторить загрузку</Button>
+              </div>
+            ) : serverPage?.isLoading ? (
+              <RequestManagerEmptyState>Загрузка НК до ТО…</RequestManagerEmptyState>
+            ) : pageEntries.length > 0 ? (
               <DialogVirtualizedRows
-                items={pagination.pageItems}
+                items={pageEntries}
                 estimateRowHeight={112}
                 getItemKey={(entry) => entry.control.id}
                 renderItem={(entry) => {
@@ -443,7 +478,17 @@ export function PreHeatTreatmentResultManagerDialog({
               </RequestManagerEmptyState>
             )}
           </div>
-          <DialogRowPagination
+          {serverPage ? (
+            <div className="space-y-2 border-t border-slate-200 p-3 text-xs text-slate-500">
+              <p>Страница {serverPage.page + 1} · до 50 стыков. Поиск и фильтры — по всей выбранной области.</p>
+              <div className="flex justify-between gap-2">
+                <Button variant="outline" size="sm" disabled={serverPage.page === 0 || serverPage.isLoading || isPending}
+                  onClick={() => serverPage.onPageChange(serverPage.page - 1)}>Предыдущие стыки</Button>
+                <Button variant="outline" size="sm" disabled={!serverPage.hasMore || serverPage.isLoading || isPending}
+                  onClick={() => serverPage.onPageChange(serverPage.page + 1)}>Следующие стыки</Button>
+              </div>
+            </div>
+          ) : <DialogRowPagination
             totalCount={pagination.totalCount}
             firstItemNumber={pagination.firstItemNumber}
             lastItemNumber={pagination.lastItemNumber}
@@ -454,7 +499,7 @@ export function PreHeatTreatmentResultManagerDialog({
             onNextPage={pagination.goToNextPage}
             onPageSizeChange={pagination.setPageSize}
             itemLabel="позиций"
-          />
+          />}
         </aside>
         <main className="min-h-0 overflow-y-auto bg-white p-5 lg:p-6">
           {!selectedEntry ? (
@@ -491,6 +536,7 @@ export function PreHeatTreatmentResultManagerDialog({
                       {registryMode === 'request'
                         ? `Стык: ${text(selectedEntry.row.line) || '-'} · ${text(selectedEntry.row.joint) || '-'} · Проект: ${text(selectedEntry.row.projectTitle) || '-'}`
                         : `Проект: ${text(selectedEntry.row.projectTitle) || '-'} · Шифр: ${text(selectedEntry.row.subtitleCode) || '-'}`}
+                      <MetaSeparator /><JointConnectionTypeMeta row={selectedEntry.row} />
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">

@@ -53,9 +53,9 @@ describe('LnkHeaderActions', () => {
 
     for (const name of ['Заявка', 'Результат', 'Официальность', 'Дубль контроль', 'Показать']) {
       expect(screen.getByRole('button', { name })).toHaveClass(
-        'border-sky-200',
+        'border-sky-100',
         'bg-sky-50',
-        'text-sky-900',
+        'text-sky-700',
       )
     }
   })
@@ -221,9 +221,9 @@ describe('HeatTreatmentHeaderActions', () => {
 
     for (const name of ['Программа ПСТО', 'Заявка', 'Результат', 'ТВМТ', 'Показать']) {
       expect(screen.getByRole('button', { name })).toHaveClass(
-        'border-sky-200',
+        'border-sky-100',
         'bg-sky-50',
-        'text-sky-900',
+        'text-sky-700',
       )
     }
   })

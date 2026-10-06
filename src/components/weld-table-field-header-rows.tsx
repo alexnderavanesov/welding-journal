@@ -18,7 +18,7 @@ import { splitReportQuickSearch } from '@/lib/report-quick-search'
 import {
   buildWeldColumnValueFilter,
   filterWeldRowsByColumns,
-  getWeldColumnFilterRowText,
+  getWeldColumnFilterRowValues,
   normalizeWeldColumnFilterChoiceValues,
   groupWeldDateTimeFilterOptions,
   parseWeldColumnChoiceFilter,
@@ -232,6 +232,7 @@ function WeldColumnFilterControl({
   const selectedValues = choiceFilter?.kind === 'values' ? choiceFilter.values : []
 
   const setFilterValue = (value: string) => {
+    if (value === filterValue) return
     pendingOptionListScrollTopRef.current = optionListRef.current?.scrollTop ?? optionListScrollTopRef.current
     const nextFilters = { ...columnFilters }
     if (value) nextFilters[fieldKey] = value
@@ -586,6 +587,7 @@ function FilterQuickButton({
     <button
       type="button"
       disabled={disabled}
+      onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
       className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-normal text-slate-600 hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
     >
@@ -600,8 +602,9 @@ function getColumnFilterOptions(rows: WeldRow[], fieldKey: WeldFieldKey, columnF
   const sourceRows = filterWeldRowsByColumns(rows, filtersWithoutCurrent)
   const counts = new Map<string, number>()
   for (const row of sourceRows) {
-    const value = getWeldColumnFilterRowText(row, fieldKey).trim()
-    counts.set(value, (counts.get(value) ?? 0) + 1)
+    for (const value of getWeldColumnFilterRowValues(row, fieldKey)) {
+      counts.set(value, (counts.get(value) ?? 0) + 1)
+    }
   }
   return Array.from(counts.entries())
     .map(([value, count]) => ({

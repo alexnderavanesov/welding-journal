@@ -3,6 +3,13 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('dispatcher warning concurrency', () => {
+  it('locks decision owners before the index and revalidates the saved task after waiting', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/server/dispatcher-warnings.ts'), 'utf8')
+    const acceptance = source.slice(source.indexOf('export const acceptDispatcherWarning'), source.indexOf('export async function findCurrentDispatcherTask'))
+    expect(acceptance.indexOf('await lockAcceptedWarningWrites(tx)')).toBeLessThan(acceptance.indexOf('await lockAcceptedWarningOwners(tx, object)'))
+    expect(acceptance.indexOf('await lockAcceptedWarningOwners(tx, object)')).toBeLessThan(acceptance.indexOf('pg_advisory_xact_lock'))
+    expect(acceptance.indexOf('const task = await findCurrentDispatcherTask')).toBeGreaterThan(acceptance.indexOf('pg_advisory_xact_lock'))
+  })
   it('reads a bounded registry page and its counters from one repeatable snapshot', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/server/dispatcher-warnings.ts'), 'utf8')
     const listStart = source.indexOf('export const listDispatcherAcceptedWarnings')

@@ -5,7 +5,7 @@ const ACTIVE_REPORT_TITLES: Record<ActiveReport, string> = {
   heatTreatment: 'ПСТО и ТВМТ',
   lnk: 'ЛНК',
   welderStamps: 'Клейма',
-  percentageLines: 'Процентные линии',
+  percentageLines: 'Программа линий',
   statistics: 'Статистика',
   documents: 'Документы',
   settings: 'Настройки',

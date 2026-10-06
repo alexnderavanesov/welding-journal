@@ -64,6 +64,10 @@ function renderDialog(
 }
 
 describe('TvmtWorkflowDialog', () => {
+  it.each(['request', 'result'] as const)('shows connection type in TVMT %s metadata', (mode) => {
+    renderDialog(mode, makeRow({ connectionType: 'С17', tvmtRequest: 'ТВМТ-1', tvmtRequestDate: '2026-08-29' }))
+    expect(screen.getByText('С17').parentElement).toHaveTextContent('Тип: С17')
+  })
   it('preselects a joint for a TVMT request only after completed PSTO', () => {
     renderDialog('request', makeRow())
 

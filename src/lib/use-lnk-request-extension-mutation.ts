@@ -5,7 +5,7 @@ import { LNK_METHODS } from '@/lib/report-config'
 import type { LnkRequestExtensionTarget } from '@/lib/lnk-request-extension'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { UseLnkReportMutationsOptions } from '@/lib/lnk-report-mutation-types'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import { extendLnkRequest } from '@/server/weld-mutations-api'
 
 export function useLnkRequestExtensionMutation({
@@ -48,7 +48,7 @@ export function useLnkRequestExtensionMutation({
       setLnkRequestDraft(createDefaultLnkRequestDraft())
       setLnkRequestNaming(defaultLnkRequestNaming)
       setIsLnkRequestModalOpen(false)
-      await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: savedRows })
     },
     onError: (error) => {
       setMessage((error as Error).message)

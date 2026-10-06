@@ -1,4 +1,4 @@
-import { getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
+import { formatDisplayDate, getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getLnkChronologyIssues, type LnkChronologyIssue } from '@/lib/lnk-chronology-checks'
 import {
@@ -220,7 +220,7 @@ function assertPstoNotAfterCancellation(
   const eventDate = parseDateLikeToIso(input.date)
   if (cancellationDate && eventDate && eventDate > cancellationDate) {
     throw new Error(
-      `Дата ${input.stage === 'pstoRequest' ? 'заявки ПСТО' : 'результата ПСТО'} не может быть позже даты официальной отмены ПСТО.`,
+      `Дата ${input.stage === 'pstoRequest' ? 'заявки ПСТО' : 'результата ПСТО'} цикла #${input.sequence} (${formatDisplayDate(eventDate)}) не может быть позже даты официальной отмены ПСТО (${formatDisplayDate(cancellationDate)}).`,
     )
   }
 }
@@ -360,7 +360,7 @@ function validateTimeline(
     if (cycle.pstoRequest || requestDate) {
       if (!cycle.pstoRequest || !requestDate) throw new Error(`У заявки ПСТО ${label} должны быть имя и дата.`)
       if (saveCheckSettings.pstoResultRequestDateOrder && weldDate && requestDate < weldDate) {
-        throw new Error(`Дата заявки ПСТО ${label} не может быть раньше даты сварки.`)
+        throw new Error(`Дата заявки ПСТО ${label} (${formatDisplayDate(requestDate)}) не может быть раньше даты сварки (${formatDisplayDate(weldDate)}).`)
       }
     }
     if (hasPstoResult || pstoDate || cycle.heatTreatmentDiagram) {
@@ -373,17 +373,17 @@ function validateTimeline(
         throw new Error(`У результата ПСТО ${label} должна быть диаграмма.`)
       }
       if (saveCheckSettings.pstoResultDateAfterWeldDate && pstoDate && weldDate && pstoDate < weldDate) {
-        throw new Error(`Дата результата ПСТО ${label} не может быть раньше даты сварки.`)
+        throw new Error(`Дата результата ПСТО ${label} (${formatDisplayDate(pstoDate)}) не может быть раньше даты сварки (${formatDisplayDate(weldDate)}).`)
       }
       if (saveCheckSettings.pstoResultRequestDateOrder && pstoDate && pstoDate < requestDate) {
-        throw new Error(`Дата результата ПСТО ${label} не может быть раньше даты заявки.`)
+        throw new Error(`Дата результата ПСТО ${label} (${formatDisplayDate(pstoDate)}) не может быть раньше даты заявки (${formatDisplayDate(requestDate)}).`)
       }
     }
     if (cycle.tvmtRequest || tvmtRequestDate) {
       if (!hasPstoResult) throw new Error(`Сначала восстановите результат ПСТО ${label}.`)
       if (!cycle.tvmtRequest || !tvmtRequestDate) throw new Error(`У заявки ТВМТ ${label} должны быть имя и дата.`)
       if (saveCheckSettings.pstoResultRequestDateOrder && pstoDate && tvmtRequestDate < pstoDate) {
-        throw new Error(`Дата заявки ТВМТ ${label} не может быть раньше ПСТО.`)
+        throw new Error(`Дата заявки ТВМТ ${label} (${formatDisplayDate(tvmtRequestDate)}) не может быть раньше ПСТО (${formatDisplayDate(pstoDate)}).`)
       }
     }
     if (tvmtResult || tvmtDate || cycle.tvmtConclusion) {
@@ -392,10 +392,10 @@ function validateTimeline(
         throw new Error(`У результата ТВМТ ${label} должны быть результат, дата и заключение.`)
       }
       if (saveCheckSettings.pstoResultRequestDateOrder && pstoDate && tvmtDate < pstoDate) {
-        throw new Error(`Дата результата ТВМТ ${label} не может быть раньше ПСТО.`)
+        throw new Error(`Дата результата ТВМТ ${label} (${formatDisplayDate(tvmtDate)}) не может быть раньше ПСТО (${formatDisplayDate(pstoDate)}).`)
       }
       if (saveCheckSettings.pstoResultRequestDateOrder && tvmtDate < tvmtRequestDate) {
-        throw new Error(`Дата результата ТВМТ ${label} не может быть раньше даты заявки.`)
+        throw new Error(`Дата результата ТВМТ ${label} (${formatDisplayDate(tvmtDate)}) не может быть раньше даты заявки (${formatDisplayDate(tvmtRequestDate)}).`)
       }
     }
 
@@ -414,7 +414,7 @@ function validateTimeline(
         requestDate &&
         requestDate < previousTvmtDate
       ) {
-        throw new Error(`Дата заявки ПСТО цикла #${cycle.sequence} не может быть раньше предыдущей ТВМТ.`)
+        throw new Error(`Дата заявки ПСТО цикла #${cycle.sequence} (${formatDisplayDate(requestDate)}) не может быть раньше предыдущей ТВМТ цикла #${previous.sequence} (${formatDisplayDate(previousTvmtDate)}).`)
       }
     }
   }

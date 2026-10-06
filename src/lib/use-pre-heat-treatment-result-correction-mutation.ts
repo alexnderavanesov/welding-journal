@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import {
   correctPreHeatTreatmentLnkResult,
   type CorrectPreHeatTreatmentLnkResultPayload,
@@ -19,7 +19,7 @@ export function usePreHeatTreatmentResultCorrectionMutation({
     mutationFn: async (payload: CorrectPreHeatTreatmentLnkResultPayload) =>
       correctPreHeatTreatmentLnkResult({ data: payload }) as Promise<WeldRow>,
     onSuccess: async (row, variables) => {
-      await invalidateWeldJoints(queryClient, { upsertRows: [row] })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: [row] })
       onSaved(row)
       setMessage(variables.stage === 'request'
         ? variables.action === 'delete'

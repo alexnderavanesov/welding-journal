@@ -35,6 +35,33 @@ const context: ServerWeldValidationContext = {
 }
 
 describe('validateServerWeldRecords', () => {
+  it.each([false, true])('protects unofficial results after merging partial input (import=%s)', importMode => {
+    const previous = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1', officiality: 'неофициальный', hasVik: 'да', vikResult: 'годен', hasUzk: 'да', uzkResult: 'ремонт', uzkRequest: 'УЗК-1', uzkRequestDate: '2026-09-01' } as WeldJoint
+    const previousRows = new Map([[1, previous]])
+    const records = mergeWeldRecordsWithPrevious([{ id: 1, uzkResult: 'годен' }], previousRows)
+    const checksOff = Object.fromEntries(Object.keys(DEFAULT_SAVE_CHECK_SETTINGS).map(key => [key, false])) as typeof DEFAULT_SAVE_CHECK_SETTINGS
+    expect(() => validateServerWeldRecords({ records, previousRows, context: { ...context, saveCheckSettings: checksOff }, importMode }))
+      .toThrow('Сначала верните стыку официальность')
+  })
+  it.each([{ officiality: 'неофициальный' }, { revisionActuality: 'не актуален' }])('validates the final merged excluded assignment, allowing restoration with missing obligations: %j', excluded => {
+    const root = { id: 1, joint: 'S1', line: 'L', hasVik: 'да', uzkResult: 'ремонт' } as WeldRow
+    const previous = { id: 2, joint: 'S1R1', line: 'L', hasVik: 'да', ...excluded } as unknown as WeldJoint
+    const rules = { ...context, programRules: { rows: [root, previous], approved: new Set<string>() } }
+    const previousRows = new Map([[2, previous]])
+    const records = mergeWeldRecordsWithPrevious([{ id: 2, hasUzk: 'да' }], previousRows)
+    expect(() => validateServerWeldRecords({ records, previousRows, context: rules })).toThrow('официального актуального')
+    expect(() => validateServerWeldRecords({ records: [{ ...previous, officiality: null, revisionActuality: null }], previousRows, context: rules })).not.toThrow()
+    expect(() => validateServerWeldRecords({ records: [{ ...previous, weldingJournalNote: 'История' }], previousRows, context: rules })).not.toThrow()
+  })
+  it('rebuilds mandatory repair controls from trusted scope, ignoring spoofed client chain/requirements', () => {
+    const root = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1', hasVik: 'да', rkResult: 'ремонт' } as WeldRow
+    const repair = { ...root, id: 2, joint: 'F1R1', rkResult: null, hasRk: 'да' } as WeldJoint
+    const rules = { ...context, programRules: { rows: [root, repair], approved: new Set<string>() } }
+    const forged = { ...repair, hasRk: null, programRepairRequirements: [], programChainState: { kind: 'primary', weldJointId: 2, physicalRootId: 2, sourceRowId: null, coilParentId: null, coilSide: null, replacedByCoil: false } } as WeldInput
+    expect(() => validateServerWeldRecords({ records: [forged], previousRows: new Map([[2, repair]]), context: rules, allowSystemJointNames: true })).toThrow('Обязателен после негодного РК на F1')
+    const legacy = { ...repair, hasRk: null }
+    expect(() => validateServerWeldRecords({ records: [{ ...legacy, weldingJournalNote: 'Дозаполнение примечания' }], previousRows: new Map([[2, legacy]]), context: { ...rules, programRules: { ...rules.programRules, rows: [root, legacy] } }, allowSystemJointNames: true })).not.toThrow()
+  })
   it('protects fixed request and TVMT document dates at the server boundary', () => {
     const previous = {
       id: 70,
@@ -472,7 +499,7 @@ describe('validateServerWeldRecords', () => {
 
   it('allows a validated system descendant of an indexed base', () => {
     expect(() => validateServerWeldRecords({
-      records: [{ joint: 'FB01R1' }],
+      records: [{ joint: 'FB01R1', hasVik: 'да' }],
       previousRows: new Map(),
       context,
       allowSystemJointNames: true,
@@ -905,7 +932,7 @@ describe('validateServerWeldRecords', () => {
       previousRows: new Map([[previous.id, previous]]),
       context: assignedTargetContext,
       importMode: true,
-    })).toThrow('сохранить основной комплект')
+    })).toThrow(/сохранить основной комплект.*Удаление ошибочных документов выполняется отдельно/)
   })
 
   it('does not let a line-inherited exemption bypass the stage decision during import', () => {

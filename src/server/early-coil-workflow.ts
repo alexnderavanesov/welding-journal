@@ -1,13 +1,14 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
+import { assertJointChainRowsCanBeDeleted } from './joint-chain-deletion'
 import {
   dispatcherAcceptedWarnings,
   generatedDocumentWeldJoints,
   weldJoints,
   type WeldJoint,
 } from '@/db/schema'
-import { evaluateEarlyCoilCandidate, isSafeEarlyCoilReplacementRow } from '@/lib/early-coil-candidate'
+import { evaluateEarlyCoilCandidate, isSafeEarlyCoilReplacementRow, isClearedErroneousCoilRow } from '@/lib/early-coil-candidate'
 import {
   EARLY_COIL_DECISION_KIND,
   getEarlyCoilDecisionKey,
@@ -125,6 +126,7 @@ export async function createEarlyCoilDecision({
     const deletedRowIds = candidate.replacementRow ? [candidate.replacementRow.id] : []
     const previousRows = new Map<number, WeldJoint>()
     if (candidate.replacementRow) {
+      await assertJointChainRowsCanBeDeleted(tx, [candidate.replacementRow])
       previousRows.set(candidate.replacementRow.id, candidate.replacementRow as unknown as WeldJoint)
       await removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction({
         tx,
@@ -149,6 +151,7 @@ export async function createEarlyCoilDecision({
 
     await tx.insert(dispatcherAcceptedWarnings).values({
       key: decisionKey,
+      weldJointId: candidate.sourceRow.id,
       kind: EARLY_COIL_DECISION_KIND,
       code: 'ДЗ-09',
       title: `Досрочная врезка катушки ${candidate.targetJoints.join(' + ')}`,
@@ -171,6 +174,7 @@ export async function createEarlyCoilDecision({
 export async function revokeEarlyCoilDecisionInTransaction(
   tx: EarlyCoilTransaction,
   key: string,
+  correction?: { allowEditedClearedRows: true },
 ): Promise<RevokeEarlyCoilDecisionResult> {
   const parsedDecision = parseEarlyCoilDecisionKey(key)
   if (!parsedDecision) return { handled: false, deletedRowIds: [] }
@@ -237,7 +241,7 @@ export async function revokeEarlyCoilDecisionInTransaction(
   }
 
   for (const targetRow of targetRows) {
-    if (!isSafeEarlyCoilReplacementRow(targetRow, documentedRowIds)) {
+    if (!(correction?.allowEditedClearedRows ? isClearedErroneousCoilRow : isSafeEarlyCoilReplacementRow)(targetRow, documentedRowIds)) {
       throw new Error(
         `Нельзя отменить решение: стык ${String(targetRow.joint ?? '').trim() || targetRow.id} уже содержит данные, историю, изменения или документы.`,
       )
@@ -252,6 +256,7 @@ export async function revokeEarlyCoilDecisionInTransaction(
   const deletedRowIds = targetRows.map((row) => row.id)
   const previousRows = new Map(targetRows.map((row) => [row.id, row as unknown as WeldJoint]))
   if (deletedRowIds.length > 0) {
+    await assertJointChainRowsCanBeDeleted(tx, targetRows)
     await removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction({
       tx,
       weldJointIds: deletedRowIds,

@@ -3,7 +3,7 @@ import { createDefaultLnkRequestDraft } from '@/lib/report-draft-state'
 import { formatRequestCreatedMessage } from '@/lib/report-naming'
 import { LNK_METHODS } from '@/lib/report-config'
 import { buildLnkRequestRows } from '@/lib/lnk-report-mutation-updates'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -99,7 +99,7 @@ export function useLnkRequestCreateMutation({
       setLnkRequestDraft(createDefaultLnkRequestDraft())
       setLnkRequestNaming(defaultLnkRequestNaming)
       setIsLnkRequestModalOpen(false)
-      await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: savedRows })
       await queryClient.invalidateQueries({ queryKey: ['system-document-sequences'] })
       onWorkflowCorrectionSaved?.()
     },

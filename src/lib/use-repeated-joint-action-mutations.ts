@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createEarlyCoilDecision, deleteObsoleteRepeatedJoint } from '@/server/weld-mutations-api'
 import { getWeldJointById } from '@/server/weld-read-api'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import { createWeldRowsOrThrow, updateSystemWeldRowOrThrow } from '@/lib/weld-save-utils'
 import type {
   RepeatedJointCoilTask,
@@ -36,11 +36,11 @@ export function useRepeatedJointActionMutations({
       setMessage(
         `Созданы стыки катушки ${result.targetJoints.join(', ')} для ${result.sourceJoint}. Решение сохранено в принятых исключениях.`,
       )
+      scheduleWeldDataRefresh(queryClient, {
+        deleteIds: result.deletedRowIds,
+        upsertRows: createdRows,
+      })
       await Promise.all([
-        invalidateWeldJoints(queryClient, {
-          deleteIds: result.deletedRowIds,
-          upsertRows: createdRows,
-        }),
         queryClient.invalidateQueries({ queryKey: DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: ['weld-joint-chain'] }),
       ])
@@ -70,7 +70,7 @@ export function useRepeatedJointActionMutations({
           ? `Созданы стыки катушки ${task.targetJoints.join(', ')} для ${task.sourceJoint}`
           : `Создан повторный стык ${task.targetJoint} для ${task.sourceJoint}`,
       )
-      await invalidateWeldJoints(queryClient, { upsertRows: createdRows })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: createdRows })
     },
     onError: (error) => {
       setMessage((error as Error).message)
@@ -91,7 +91,7 @@ export function useRepeatedJointActionMutations({
     onSuccess: async (_result, task) => {
       dismissRepeatedJointTask(task)
       setMessage(`Удален лишний повторный стык ${task.targetJoint}`)
-      await invalidateWeldJoints(queryClient, { deleteIds: [task.row.id] })
+      scheduleWeldDataRefresh(queryClient, { deleteIds: [task.row.id] })
     },
     onError: (error) => {
       setMessage((error as Error).message)
@@ -110,10 +110,8 @@ export function useRepeatedJointActionMutations({
           ? `Цепочка исправлена: переименовано стыков - ${task.changes.length}`
           : `Стык ${task.currentJoint} переименован в ${task.targetJoint}`,
       )
-      await Promise.all([
-        invalidateWeldJoints(queryClient, { upsertRows: savedRows }),
-        queryClient.invalidateQueries({ queryKey: ['weld-joint-chain'] }),
-      ])
+      scheduleWeldDataRefresh(queryClient, { upsertRows: savedRows })
+      await queryClient.invalidateQueries({ queryKey: ['weld-joint-chain'] })
     },
     onError: (error) => {
       setMessage((error as Error).message)

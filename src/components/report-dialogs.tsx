@@ -8,6 +8,8 @@ import type { ReportWeldEditorProps } from '@/components/report-weld-editor'
 import type { WeldingJournalGenerationDialogProps } from '@/components/welding-journal-generation-dialog'
 import type { RkExposureEditDialogProps } from '@/components/rk-exposure-edit-dialog'
 import { hasOpenReportDialogProps } from '@/lib/report-modal-open-state'
+import { tracePstoProgramModule } from '@/lib/psto-program-diagnostics'
+import { PstoProgramDiagnosticBoundary, PstoProgramLoading } from './psto-program-diagnostic-boundary'
 import {
   WorkflowRootCauseNavigation,
   type WorkflowRootCauseNavigationProps,
@@ -16,7 +18,7 @@ import {
 const ReportChainDialog = lazy(() => import('@/components/report-chain-dialog').then((module) => ({ default: module.ReportChainDialog })))
 const ReportWeldEditor = lazy(() => import('@/components/report-weld-editor').then((module) => ({ default: module.ReportWeldEditor })))
 const ReportFieldEditor = lazy(() => import('@/components/report-field-editor').then((module) => ({ default: module.ReportFieldEditor })))
-const ReportPstoDialogs = lazy(() => import('@/components/report-psto-dialogs').then((module) => ({ default: module.ReportPstoDialogs })))
+const ReportPstoDialogs = lazy(() => tracePstoProgramModule('group', () => import('@/components/report-psto-dialogs')).then((module) => ({ default: module.ReportPstoDialogs })))
 const ReportLnkDialogs = lazy(() => import('@/components/report-lnk-dialogs').then((module) => ({ default: module.ReportLnkDialogs })))
 const ReportImportDialog = lazy(() =>
   import('@/components/report-import-dialog').then((module) => ({ default: module.ReportImportDialog })),
@@ -64,9 +66,11 @@ export function ReportDialogs({
         </Suspense>
       ) : null}
       {hasOpenReportDialogProps(pstoDialogsProps) ? (
-        <Suspense fallback={null}>
-          <ReportPstoDialogs {...pstoDialogsProps} />
-        </Suspense>
+        <PstoProgramDiagnosticBoundary open={!!pstoDialogsProps.lineProgramDialogProps?.open} onClose={() => pstoDialogsProps.lineProgramDialogProps?.onClose()}>
+          <Suspense fallback={<PstoProgramLoading open={!!pstoDialogsProps.lineProgramDialogProps?.open} onClose={() => pstoDialogsProps.lineProgramDialogProps?.onClose()} />}>
+            <ReportPstoDialogs {...pstoDialogsProps} />
+          </Suspense>
+        </PstoProgramDiagnosticBoundary>
       ) : null}
       {hasOpenReportDialogProps(lnkDialogsProps) ? (
         <Suspense fallback={null}>

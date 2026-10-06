@@ -73,7 +73,7 @@ describe('filterLnkResultRows', () => {
     }
     const actions = useLnkResultActions({
       controlProcessSettings: {
-        layeredControlEnabled: true,
+        pvkGoodOnly: false,
         preHeatTreatmentLnkEnabled: true,
         allowPrimaryLnkBeforePreviousStagesComplete: true,
       },

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LnkResultRow } from '@/components/lnk-result-row'
@@ -18,6 +18,30 @@ vi.mock('@/components/request-row-joint-heading', () => ({
 describe('LnkResultRow', () => {
   beforeEach(() => {
     renderJointHeading.mockClear()
+  })
+
+  it('updates only its own draft mark without toggling joint selection or changing the saved mark', () => {
+    const row = { id: 9, line: 'L1', joint: 'F9', connectionType: 'У19', hasPvk: 'да', pvkRequest: 'ПВК-9', pvkRequestDate: '2026-08-26' } as WeldRow
+    const props = { row, requestName: '', requestDate: '', methodKey: 'pvkRequest' as const, selected: true,
+      rowResult: 'годен', saveCheckSettings: DEFAULT_SAVE_CHECK_SETTINGS, controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
+      onToggleRow: vi.fn(), onSetRowResult: vi.fn(), onSetLayeredControl: vi.fn(), onOpenContextMenu: vi.fn() }
+    const { rerender } = render(<LnkResultRow {...props} />)
+    const checkbox = screen.getByRole('checkbox', { name: 'Послойный контроль: L1 · F9' })
+    fireEvent.click(checkbox)
+    expect(props.onSetLayeredControl).toHaveBeenCalledWith(9, true)
+    expect(props.onToggleRow).not.toHaveBeenCalled()
+    rerender(<LnkResultRow {...props} layeredControlSelected />)
+    expect(checkbox).toBeChecked()
+    expect(screen.getByRole('button', { name: 'вырез' })).toBeDisabled()
+    rerender(<LnkResultRow {...props} row={{ ...row, layeredControlAssigned: true }} />)
+    expect(checkbox).toBeChecked()
+    expect(checkbox).toBeDisabled()
+    fireEvent.click(screen.getByText('Послойный контроль'))
+    expect(props.onToggleRow).not.toHaveBeenCalled()
+    expect(props.onSetLayeredControl).toHaveBeenCalledTimes(1)
+    rerender(<LnkResultRow {...props} selected={false} />)
+    expect(checkbox).not.toBeChecked()
+    expect(checkbox).toBeDisabled()
   })
 
   it('does not rerender an unchanged unselected row when another draft row changes', () => {

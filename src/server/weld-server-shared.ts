@@ -1,6 +1,8 @@
 // This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
 
 import { requireDb } from '@/db'
+import { buildNormalizedLnkResultText } from './lnk-system-order-sql'
+import { isLayeredControlCompositeFieldKey, LAYERED_CONTROL_WAITING_LABEL } from '@/lib/layered-control-documents'
 import {
 appSettings,
 dispatcherBackgroundRowTasks,
@@ -101,8 +103,8 @@ export const WELD_TABLE_RETURNING = {
 
 void OMITTED_UPDATED_AT_COLUMN
 
-export async function loadServerOtherSettings() {
-  const [storedSettings] = await requireDb()
+export async function loadServerOtherSettings(db: Pick<ReturnType<typeof requireDb>, 'select'> = requireDb()) {
+  const [storedSettings] = await db
     .select({ value: appSettings.value })
     .from(appSettings)
     .where(eq(appSettings.key, PROJECT_SETTING_KEYS.other))
@@ -214,7 +216,7 @@ export function addColumnFilterClauses(clauses: SQL[], columnFilters: Record<str
     if (!FIELD_BY_KEY.has(key as WeldFieldKey)) continue
     const generatedDocumentType = GENERATED_DOCUMENT_FIELD_TYPES[key as keyof typeof GENERATED_DOCUMENT_FIELD_TYPES]
     if (generatedDocumentType) {
-      clauses.push(buildGeneratedDocumentColumnWhere(query, generatedDocumentType))
+      clauses.push(buildGeneratedDocumentColumnWhere(query, generatedDocumentType, key))
       continue
     }
     if (key === 'finalStatus') {
@@ -248,9 +250,20 @@ export function addColumnFilterClauses(clauses: SQL[], columnFilters: Record<str
   }
 }
 
+export function buildGeneratedDocumentMissingValue(fieldKey?: string) {
+  if (!isLayeredControlCompositeFieldKey(fieldKey)) return sql<string>`''::text`
+  // Same completed-result aliases as normalizeResultStatus/isCompletedLineProgramResult.
+  // Only the joint's own primary PVK can end this wait, not pre-TO or duplicate results.
+  return sql<string>`case when ${weldJoints.layeredControlAssigned} is true
+    and ${buildNormalizedLnkResultText(weldJoints.pvkResult)} not in
+      ('годен', 'ремонт', 'вырез', 'да', 'проведено', 'годен (отменен)', 'проведено (отменен)')
+    then ${LAYERED_CONTROL_WAITING_LABEL} else '' end`
+}
+
 export function buildGeneratedDocumentColumnWhere(
   query: string,
   documentType: string | readonly string[],
+  fieldKey?: string,
 ) {
   const documentTypes = Array.isArray(documentType) ? [...documentType] : [documentType]
   const typeWhere = documentTypes.length === 1
@@ -274,18 +287,27 @@ export function buildGeneratedDocumentColumnWhere(
     where ${generatedDocumentWeldJoints.weldJointId} = ${weldJoints.id}
       and ${typeWhere}
   )`
+  const missingValue = buildGeneratedDocumentMissingValue(fieldKey)
+  const missingMatch = (value: string) => and(withoutDocument,
+    sql`lower(trim(${missingValue})) = lower(trim(${value}))`)!
+  const exactMatch = (value: string) => {
+    if (!isLayeredControlCompositeFieldKey(fieldKey)) return value ? titleMatch(value) : withoutDocument
+    if (!value) return missingMatch('')
+    return value.toLowerCase() === LAYERED_CONTROL_WAITING_LABEL.toLowerCase()
+      ? or(titleMatch(value), missingMatch(value))!
+      : titleMatch(value)
+  }
   const choiceFilter = parseWeldColumnChoiceFilter(query)
   if (choiceFilter?.kind === 'values') {
     const values = [...new Set(choiceFilter.values.map((value) => String(value ?? '').trim()))]
-    const choices = values.filter(Boolean).map(titleMatch)
-    if (values.includes('')) choices.push(withoutDocument)
+    const choices = values.map(exactMatch)
     return choices.length > 0 ? or(...choices) ?? sql`false` : sql`false`
   }
   if (query.startsWith('=')) {
     const value = query.slice(1).trim().replace(/^["']|["']$/g, '')
-    return value ? titleMatch(value) : withoutDocument
+    return exactMatch(value)
   }
-  return sql`exists (
+  const matchingDocument = sql`exists (
     select 1
     from ${generatedDocumentWeldJoints}
     inner join ${generatedDocuments}
@@ -294,6 +316,9 @@ export function buildGeneratedDocumentColumnWhere(
       and ${typeWhere}
       and coalesce(${generatedDocuments.title}, '') ilike ${`%${query}%`}
   )`
+  return isLayeredControlCompositeFieldKey(fieldKey)
+    ? or(matchingDocument, and(withoutDocument, sql`${missingValue} ilike ${`%${query}%`}`))!
+    : matchingDocument
 }
 
 export function getWeldColumn(fieldKey: WeldFieldKey) {

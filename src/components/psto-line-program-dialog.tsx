@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { tracePstoProgram } from '@/lib/psto-program-diagnostics'
+import { PstoProgramDiagnostics } from './psto-program-diagnostic-boundary'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -26,13 +28,11 @@ import {
   type PstoLineActivationDisposition,
   type PstoLineAssignmentFilter,
   type PstoLineIdentity,
-  type PstoLineRemovalDecision,
-  type PstoLineRemovalDisposition,
   type PstoLineRemovalPreview,
 } from '@/lib/psto-line-assignment'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { usePagePagination } from '@/lib/use-page-pagination'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import {
   getPstoLineRemovalPreview,
   listPstoLineAssignmentPage,
@@ -72,14 +72,18 @@ export function PstoLineProgramDialog({
   const [view, setView] = useState<PstoLineProgramView>({ type: 'list' })
   const [cancellationDate, setCancellationDate] = useState(() => formatDateInputValue(new Date()))
   const [cancellationBasis, setCancellationBasis] = useState('')
-  const [decisions, setDecisions] = useState<Record<number, PstoLineRemovalDisposition>>({})
   const [activationDispositions, setActivationDispositions] =
     useState<Record<number, PstoLineActivationDisposition>>({})
   const linesQuery = useQuery({
     queryKey: [...PSTO_LINE_ASSIGNMENTS_QUERY_KEY, { search: debouncedSearch, filter, page, pageSize }],
-    queryFn: () => listPstoLineAssignmentPage({
-      data: { search: debouncedSearch, filter, page, pageSize },
-    }),
+    queryFn: async () => {
+      tracePstoProgram('query-start')
+      try {
+        const result = await listPstoLineAssignmentPage({ data: { search: debouncedSearch, filter, page, pageSize } })
+        tracePstoProgram('query-ready')
+        return result
+      } catch (error) { tracePstoProgram('query-error', error); throw error }
+    },
     enabled: open,
     staleTime: 10_000,
     placeholderData: keepPreviousData,
@@ -96,7 +100,7 @@ export function PstoLineProgramDialog({
       savePstoLineAssignment({ data: payload }),
     onSuccess: async (savedRows, payload) => {
       const rows = savedRows as WeldRow[]
-      await invalidateWeldJoints(queryClient, { upsertRows: rows })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: rows })
       await queryClient.invalidateQueries({ queryKey: PSTO_LINE_ASSIGNMENTS_QUERY_KEY })
       onSaved(
         rows,
@@ -111,7 +115,6 @@ export function PstoLineProgramDialog({
       setView({ type: 'list' })
       setCancellationDate(formatDateInputValue(new Date()))
       setCancellationBasis('')
-      setDecisions({})
       setActivationDispositions({})
       previewMutation.reset()
     },
@@ -120,6 +123,7 @@ export function PstoLineProgramDialog({
 
   useEffect(() => {
     if (!open) return
+    tracePstoProgram('mounted')
     setSearch('')
     setFilter('all')
     setPage(1)
@@ -127,7 +131,6 @@ export function PstoLineProgramDialog({
     setView({ type: 'list' })
     setCancellationDate(formatDateInputValue(new Date()))
     setCancellationBasis('')
-    setDecisions({})
     setActivationDispositions({})
     previewMutation.reset()
     saveMutation.reset()
@@ -149,7 +152,6 @@ export function PstoLineProgramDialog({
     setView({ type: 'list' })
     setCancellationDate(formatDateInputValue(new Date()))
     setCancellationBasis('')
-    setDecisions({})
     setActivationDispositions({})
     previewMutation.reset()
     saveMutation.reset()
@@ -167,7 +169,6 @@ export function PstoLineProgramDialog({
     previewMutation.mutate(toIdentity(line))
   }
   const openRemove = (line: PstoLineAssignmentSummary) => {
-    setDecisions({})
     setCancellationDate(formatDateInputValue(new Date()))
     setCancellationBasis('')
     setView({ type: line.historyRowCount > 0 ? 'cancel' : 'remove', line })
@@ -185,7 +186,7 @@ export function PstoLineProgramDialog({
       const disposition = activationDispositions[row.rowId]
       return !disposition || (
         disposition === 'movePrimaryToBeforeHeatTreatment' &&
-        row.activationTransferBlockedMethods.length > 0
+        (row.activationTransferBlockedMethods.length > 0 || row.activationTransferBlockedReason)
       )
     })) return
     const activationDecisions: PstoLineActivationDecision[] = blockedRows.map((row) => ({
@@ -205,14 +206,7 @@ export function PstoLineProgramDialog({
   const submitRemoval = () => {
     if ((view.type !== 'remove' && view.type !== 'cancel') || !previewMutation.data || saveMutation.isPending) return
     const cancelling = view.type === 'cancel'
-    const requiredRows = previewMutation.data.rows.filter(
-      (row) => !row.preservesPerformedHistory && row.promotablePreMethods.length > 0,
-    )
-    if (requiredRows.some((row) => !decisions[row.rowId])) return
-    const payloadDecisions: PstoLineRemovalDecision[] = requiredRows.map((row) => ({
-      rowId: row.rowId,
-      disposition: decisions[row.rowId],
-    }))
+    if (cancelling !== (previewMutation.data.historyRowCount > 0)) return
     onRunProtectedDelete(cancelling ? 'официальная отмена ПСТО на линии' : 'удаление ошибочного назначения ПСТО', async () => {
       await saveMutation.mutateAsync({
         identity: toIdentity(view.line),
@@ -220,7 +214,6 @@ export function PstoLineProgramDialog({
         expectedVersions: previewMutation.data.expectedVersions,
         cancellationDate: cancelling ? cancellationDate : undefined,
         cancellationBasis: cancelling ? cancellationBasis : undefined,
-        decisions: payloadDecisions,
       })
     })
   }
@@ -249,6 +242,7 @@ export function PstoLineProgramDialog({
         onClose={handleClose}
       />
 
+      {linesQuery.isError ? <PstoProgramDiagnostics /> : null}
       {view.type === 'list' ? (
         <LineListView
           lines={linesQuery.data?.rows ?? []}
@@ -301,27 +295,20 @@ export function PstoLineProgramDialog({
         />
       ) : (
         <RemovalView
-          line={view.line}
           preview={previewMutation.data ?? null}
           loading={previewMutation.isPending}
           previewError={(previewMutation.error as Error | null)?.message ?? ''}
           saveError={(saveMutation.error as Error | null)?.message ?? ''}
           pending={saveMutation.isPending}
-          decisions={decisions}
           officialCancellation={view.type === 'cancel'}
           cancellationDate={cancellationDate}
           cancellationBasis={cancellationBasis}
           onCancellationDateChange={setCancellationDate}
           onCancellationBasisChange={setCancellationBasis}
-          onDecisionChange={(rowId, disposition) => setDecisions((current) => ({
-            ...current,
-            [rowId]: disposition,
-          }))}
-          onSetAll={(disposition) => setDecisions(Object.fromEntries(
-            (previewMutation.data?.rows ?? [])
-              .filter((row) => !row.preservesPerformedHistory && row.promotablePreMethods.length > 0)
-              .map((row) => [row.rowId, disposition]),
-          ))}
+          onUseCurrentAction={() => setView({
+            type: (previewMutation.data?.historyRowCount ?? 0) > 0 ? 'cancel' : 'remove',
+            line: view.line,
+          })}
           onRetry={() => previewMutation.mutate(toIdentity(view.line))}
           onCancel={goBack}
           onSubmit={submitRemoval}
@@ -604,7 +591,7 @@ function AssignmentView({
   ).length
   const hasInvalidTransfer = blockedRows.some(
     (row) => activationDispositions[row.rowId] === 'movePrimaryToBeforeHeatTreatment' &&
-      row.activationTransferBlockedMethods.length > 0,
+      (row.activationTransferBlockedMethods.length > 0 || Boolean(row.activationTransferBlockedReason)),
   )
   const submitDisabled = (
     pending ||
@@ -617,7 +604,7 @@ function AssignmentView({
   const setAllActivationDispositions = (mode: 'keepPrimary' | 'moveAvailable') => {
     const next: Record<number, PstoLineActivationDisposition> = {}
     for (const row of blockedRows) {
-      next[row.rowId] = mode === 'keepPrimary' || row.activationTransferBlockedMethods.length > 0
+      next[row.rowId] = mode === 'keepPrimary' || row.activationTransferBlockedMethods.length > 0 || row.activationTransferBlockedReason
         ? 'keepPrimary'
         : 'movePrimaryToBeforeHeatTreatment'
     }
@@ -715,11 +702,12 @@ function AssignmentView({
                             Для этого стыка доступно только сохранение основного комплекта.
                           </p>
                         ) : null}
+                        {row.activationTransferBlockedReason ? <p className="mt-1 text-xs leading-5 text-amber-700">{row.activationTransferBlockedReason}</p> : null}
                       </div>
                       <ActivationDispositionSelector
                         jointLabel={jointLabel}
                         selected={activationDispositions[row.rowId]}
-                        transferDisabled={row.activationTransferBlockedMethods.length > 0}
+                        transferDisabled={row.activationTransferBlockedMethods.length > 0 || Boolean(row.activationTransferBlockedReason)}
                         onChange={(disposition) => onActivationDispositionsChange({
                           ...activationDispositions,
                           [row.rowId]: disposition,
@@ -806,48 +794,39 @@ function ActivationDispositionSelector({
 }
 
 function RemovalView({
-  line,
   preview,
   loading,
   previewError,
   saveError,
   pending,
-  decisions,
   officialCancellation,
   cancellationDate,
   cancellationBasis,
   onCancellationDateChange,
   onCancellationBasisChange,
-  onDecisionChange,
-  onSetAll,
+  onUseCurrentAction,
   onRetry,
   onCancel,
   onSubmit,
 }: {
-  line: PstoLineAssignmentSummary
   preview: PstoLineRemovalPreview | null
   loading: boolean
   previewError: string
   saveError: string
   pending: boolean
-  decisions: Record<number, PstoLineRemovalDisposition>
   officialCancellation: boolean
   cancellationDate: string
   cancellationBasis: string
   onCancellationDateChange: (value: string) => void
   onCancellationBasisChange: (value: string) => void
-  onDecisionChange: (rowId: number, disposition: PstoLineRemovalDisposition) => void
-  onSetAll: (disposition: PstoLineRemovalDisposition) => void
+  onUseCurrentAction: () => void
   onRetry: () => void
   onCancel: () => void
   onSubmit: () => void
 }) {
   const rows = preview?.rows ?? []
   const pagination = usePagePagination({ items: rows, defaultPageSize: 25, resetKeys: [preview] })
-  const requiredRows = rows.filter(
-    (row) => !row.preservesPerformedHistory && row.promotablePreMethods.length > 0,
-  )
-  const undecidedCount = requiredRows.filter((row) => !decisions[row.rowId]).length
+  const actionOutdated = Boolean(preview && officialCancellation !== (preview.historyRowCount > 0))
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-slate-50">
@@ -900,15 +879,14 @@ function RemovalView({
                 </label>
               </div>
             ) : null}
-            {requiredRows.length > 0 ? (
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm text-slate-600">
-                  Нужно выбрать комплект для {requiredRows.length} стыков. Без решения: <strong className="text-slate-900">{undecidedCount}</strong>.
-                </p>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => onSetAll('keepPrimary')}>Всем: оставить основной</Button>
-                  <Button variant="outline" size="sm" onClick={() => onSetAll('promoteBeforeHeatTreatment')}>Всем: перенести до ТО</Button>
-                </div>
+            {actionOutdated ? (
+              <div className="mt-3 space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <p>{preview.historyRowCount > 0
+                  ? 'История линии изменилась: появились данные ПСТО, ТВМТ или НК до ТО. Удалить только назначение уже нельзя. Можно официально отменить ПСТО с сохранением всей истории.'
+                  : 'История линии изменилась: данных ПСТО, ТВМТ и НК до ТО больше нет. Теперь можно удалить ошибочное назначение без официальной отмены.'}</p>
+                <Button variant="outline" size="sm" onClick={onUseCurrentAction}>
+                  {preview.historyRowCount > 0 ? 'Перейти к отмене ПСТО' : 'Перейти к удалению назначения'}
+                </Button>
               </div>
             ) : null}
           </div>
@@ -938,26 +916,9 @@ function RemovalView({
                       ) : null}
                     </div>
                     <div>
-                      {row.preservesPerformedHistory ? (
-                        <p className="text-xs leading-5 text-emerald-700">
-                          Выполненная ПСТО, ТВМТ, повторные циклы и документы сохранятся. Если текущая физическая ПСТО уже проведена, внесите фактическую ТВМТ: любой результат завершит отмененный цикл, а новый повтор не откроется. Затем можно завершить основной НК.
-                        </p>
-                      ) : row.promotablePreMethods.length > 0 ? (
-                        <div className="grid grid-cols-2 gap-2 rounded-md border border-slate-200 bg-slate-50 p-1">
-                          <DecisionButton
-                            selected={decisions[row.rowId] === 'keepPrimary'}
-                            onClick={() => onDecisionChange(row.rowId, 'keepPrimary')}
-                            label="Оставить основной комплект"
-                          />
-                          <DecisionButton
-                            selected={decisions[row.rowId] === 'promoteBeforeHeatTreatment'}
-                            onClick={() => onDecisionChange(row.rowId, 'promoteBeforeHeatTreatment')}
-                            label="Перенести завершенный НК до ТО"
-                          />
-                        </div>
-                      ) : row.pendingPreMethods.length > 0 ? (
-                        <p className="text-xs leading-5 text-amber-700">Заявки до ТО без результата будут удалены. Основной комплект не изменится.</p>
-                      ) : (
+                      {actionOutdated ? (
+                        <p className="text-xs leading-5 text-amber-700">Ничего не изменится, пока не выбран актуальный способ снятия ПСТО.</p>
+                      ) : officialCancellation ? (<p className="text-xs leading-5 text-emerald-700">Назначение ПСТО будет отменено. Все заявки, результаты, заключения НК до ТО, основного этапа и повторных циклов сохранятся на своих этапах. Если физическая ПСТО уже проведена, внесите фактическую ТВМТ; новый повтор не откроется.</p>) : (
                         <p className="text-xs text-slate-500">Основной комплект НК не изменится.</p>
                       )}
                     </div>
@@ -986,8 +947,10 @@ function RemovalView({
           <div className="flex max-w-3xl items-start gap-3 text-sm leading-5 text-rose-800">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
             <p>
-              {officialCancellation
-                ? 'Выполненная и оплачиваемая история ПСТО/ТВМТ сохранится. У необработанных стыков удалятся заявки ПСТО без результата и данные НК до ТО по показанному выбору; после отмены им не потребуется двойной контроль.'
+              {actionOutdated
+                ? 'Предпросмотр обнаружил изменение истории. Выберите предложенный способ снятия ПСТО либо вернитесь назад; документы автоматически не удаляются.'
+                : officialCancellation
+                ? 'Все заявки, результаты и заключения ПСТО, ТВМТ и НК до ТО сохранятся на своих этапах. Отмена не удаляет историю и не переносит её в основной НК.'
                 : 'У линии нет документов и результатов. Будет удалено только ошибочное назначение ПСТО; другие данные стыков не изменятся.'}
             </p>
           </div>
@@ -996,7 +959,7 @@ function RemovalView({
             <Button
               variant="destructive"
               onClick={onSubmit}
-              disabled={!preview || pending || undecidedCount > 0 || (officialCancellation && !cancellationDate)}
+              disabled={!preview || pending || actionOutdated || (officialCancellation && !cancellationDate)}
             >
               {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CircleSlash2 className="mr-2 h-4 w-4" />}
               {officialCancellation ? 'Отменить ПСТО на линии' : 'Удалить назначение'}
@@ -1006,23 +969,6 @@ function RemovalView({
         {saveError ? <p className="mt-3 text-sm font-medium text-rose-700">{saveError}</p> : null}
       </div>
     </div>
-  )
-}
-
-function DecisionButton({ selected, onClick, label }: { selected: boolean; onClick: () => void; label: string }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      onClick={onClick}
-      className={`min-h-11 rounded px-3 py-2 text-left text-xs font-medium leading-4 transition-colors ${
-        selected
-          ? 'bg-sky-600 text-white shadow-sm'
-          : 'bg-white text-slate-700 hover:bg-sky-50 hover:text-sky-900'
-      }`}
-    >
-      {label}
-    </button>
   )
 }
 

@@ -8,7 +8,8 @@ import {
   generatedDocumentWeldJoints,
   weldJoints,
 } from '@/db/schema'
-import { isControlEnabledValue, normalizeControlAvailabilityText } from '@/lib/control-availability-values'
+import { getLayeredControlSaveError } from '@/lib/layered-control-rules'
+import { isCompletedLineProgramResult } from '@/lib/line-program-calculation'
 import { isAngularConnectionType } from '@/lib/connection-type'
 import { buildDocumentTemplateName, type DocumentTemplateNameConfig } from '@/lib/document-template-name'
 import { resolveGeneratedDocumentNamePattern } from '@/lib/generated-document-naming'
@@ -24,8 +25,6 @@ import {
   normalizeLayeredControlDate,
 } from '@/lib/layered-control-documents'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { DEFAULT_CONTROL_PROCESS_SETTINGS, normalizeControlProcessSettings } from '@/lib/control-process-settings'
-import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import {
   lockGeneratedDocumentNumberSequence,
   type GeneratedDocumentNumberSequence,
@@ -35,7 +34,7 @@ import { lockControlProcessSettings } from '@/server/control-process-settings-lo
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 
 const LAYERED_CONTROL_INDEX_SETTING_KEY = 'layered-control-document-index-version'
-const LAYERED_CONTROL_INDEX_VERSION = '1'
+const LAYERED_CONTROL_INDEX_VERSION = '2'
 const LAYERED_CONTROL_SYNC_LOCK_KEY = 'layered-control-documents:sync'
 const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
@@ -92,15 +91,11 @@ export function getLayeredControlHistoryGuardError({
   methodsWithDocuments?: Array<'ВИК' | 'ПВК'>
   protectPreviousEligibility?: boolean
 }) {
-  const previousHadLayeredVik = previous
-    ? hasLayeredControlBasis(previous, 'hasVik')
-    : false
-  const previousHadLayeredPvk = previous
-    ? hasLayeredControlBasis(previous, 'hasPvk')
-    : false
+  const assignmentError = getLayeredControlSaveError(current, previous)
+  if (assignmentError) return assignmentError
   const hasLayeredHistory =
     methodsWithDocuments.length > 0 ||
-    (protectPreviousEligibility && (previousHadLayeredVik || previousHadLayeredPvk))
+    (protectPreviousEligibility && previous?.layeredControlAssigned === true && isCompletedLineProgramResult(previous.pvkResult))
   if (!hasLayeredHistory) return null
 
   const joint = String(current.joint ?? previous?.joint ?? current.id).trim()
@@ -111,15 +106,8 @@ export function getLayeredControlHistoryGuardError({
     return `Нельзя изменить У-стык ${joint} на другой тип соединения: по нему уже создан послойный контроль.`
   }
 
-  const protectedMethods = new Set<'ВИК' | 'ПВК'>(methodsWithDocuments)
-  if (protectPreviousEligibility && previousHadLayeredVik) protectedMethods.add('ВИК')
-  if (protectPreviousEligibility && previousHadLayeredPvk) protectedMethods.add('ПВК')
-  for (const method of protectedMethods) {
-    const assignmentKey = method === 'ВИК' ? 'hasVik' : 'hasPvk'
-    const value = normalizeControlAvailabilityText(current[assignmentKey])
-    if (!isControlEnabledValue(value) && value !== 'отменен') {
-      return `Нельзя очистить назначение ${method} у стыка ${joint}: выберите «отменен», чтобы сохранить историю послойного контроля.`
-    }
+  if (current.layeredControlAssigned && !String(current.pvkResult ?? '').trim()) {
+    return `Сначала уберите послойный контроль стыка ${joint}, затем удалите основной результат ПВК.`
   }
   return null
 }
@@ -133,39 +121,20 @@ export async function syncLayeredControlDocumentsForWeldChangesInTransaction(
     .sort((left, right) => left - right)
   if (requestedIds.length === 0) return
   await lockLayeredControlDocumentsForWeldChange(tx)
-  const persistedRows = await tx
-    .select()
-    .from(weldJoints)
-    .where(buildNumberArrayMatch(weldJoints.id, requestedIds))
-  await syncLayeredControlRowsInTransaction(
-    tx,
-    persistedRows,
-    previousRows,
-    { allowCreate: await isLayeredControlCreationEnabled(tx) },
-  )
+  // A naming rebuild can touch the whole journal. Check even unassigned rows
+  // and legacy linked documents, but do not retain a second full journal copy.
+  // All batches stay inside the caller's transaction and shared settings lock.
+  for (let offset = 0; offset < requestedIds.length; offset += 5000) {
+    const persistedRows = await tx.select().from(weldJoints)
+      .where(buildNumberArrayMatch(weldJoints.id, requestedIds.slice(offset, offset + 5000)))
+    await syncLayeredControlRowsInTransaction(tx, persistedRows, previousRows, { allowCreate: true })
+  }
 }
 
 export async function lockLayeredControlDocumentsForWeldChange(
   tx: GeneratedDocumentsTransaction,
 ) {
   await lockControlProcessSettings(tx, 'layeredControl')
-  await lockLayeredControlSync(tx)
-}
-
-export async function ensureLayeredControlDocumentsInitialized() {
-  const db = requireDb()
-  await db.transaction(async (tx) => {
-    await lockControlProcessSettings(tx, 'layeredControl')
-    const [setting] = await tx
-      .select({ value: appSettings.value })
-      .from(appSettings)
-      .where(eq(appSettings.key, LAYERED_CONTROL_INDEX_SETTING_KEY))
-      .limit(1)
-    if (setting?.value === LAYERED_CONTROL_INDEX_VERSION) return
-    await rebuildAllLayeredControlDocumentsInTransaction(tx, {
-      allowCreate: await isLayeredControlCreationEnabled(tx),
-    })
-  })
 }
 
 export async function rebuildLayeredControlDocuments() {
@@ -181,7 +150,7 @@ export async function rebuildLayeredControlDocumentsInTransaction(
 ) {
   if (!processSettingsLocked) await lockControlProcessSettings(tx, 'layeredControl')
   await rebuildAllLayeredControlDocumentsInTransaction(tx, {
-    allowCreate: await isLayeredControlCreationEnabled(tx),
+    allowCreate: true,
   })
 }
 
@@ -193,14 +162,11 @@ export async function rebuildAllLayeredControlDocumentsInTransaction(
   const rows = await tx
     .select()
     .from(weldJoints)
-    .orderBy(
-      asc(weldJoints.weldDate),
-      asc(weldJoints.projectTitle),
-      asc(weldJoints.subtitleCode),
-      asc(weldJoints.line),
-      asc(weldJoints.joint),
-      asc(weldJoints.id),
-    )
+    .where(eq(weldJoints.layeredControlAssigned, true))
+    // Lock in the same id order as interactive mutations. A concurrent removal
+    // must not be followed by rebuilding documents from a stale assignment.
+    .orderBy(asc(weldJoints.id))
+    .for('update')
   await syncLayeredControlRowsInTransaction(tx, rows, new Map(), { allowCreate })
   await tx
     .insert(appSettings)
@@ -469,7 +435,7 @@ export async function persistLayeredControlDocumentWrites(
         source.row_count,
         source.wdi_total,
         source.document_number,
-        ${JSON.stringify({ kind: 'layeredControl', version: 1 })}::text
+        ${JSON.stringify({ kind: 'layeredControl', version: 2 })}::text
       from unnest(
         ${sql.param(newWrites.map((write) => write.type))}::text[],
         ${sql.param(newWrites.map((write) => write.title))}::text[],
@@ -562,14 +528,6 @@ function layeredDocumentNumberKey(type: LayeredControlDocumentType, documentNumb
   return `${type}:${documentNumber}`
 }
 
-function hasLayeredControlBasis(row: LayeredRow, assignmentKey: 'hasVik' | 'hasPvk') {
-  return Boolean(
-    normalizeLayeredControlDate(row.weldDate) &&
-      isAngularConnectionType(row.connectionType) &&
-      isControlEnabledValue(row[assignmentKey]),
-  )
-}
-
 function assignmentKey(weldJointId: number, type: LayeredControlDocumentType) {
   return `${weldJointId}:${type}`
 }
@@ -581,18 +539,4 @@ function makeXlsxFileName(title: string) {
 
 async function lockLayeredControlSync(tx: GeneratedDocumentsTransaction) {
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${LAYERED_CONTROL_SYNC_LOCK_KEY}))`)
-}
-
-async function isLayeredControlCreationEnabled(tx: GeneratedDocumentsTransaction) {
-  const [stored] = await tx
-    .select({ value: appSettings.value })
-    .from(appSettings)
-    .where(eq(appSettings.key, PROJECT_SETTING_KEYS.controlProcesses))
-    .limit(1)
-  if (!stored) return DEFAULT_CONTROL_PROCESS_SETTINGS.layeredControlEnabled
-  try {
-    return normalizeControlProcessSettings(JSON.parse(stored.value)).layeredControlEnabled
-  } catch {
-    return DEFAULT_CONTROL_PROCESS_SETTINGS.layeredControlEnabled
-  }
 }

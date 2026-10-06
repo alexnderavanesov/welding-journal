@@ -437,7 +437,7 @@ function GuideTableMock() {
         <div className="border-r border-t border-slate-200 px-2 py-2 text-slate-400">Линия</div>
         <div className="border-r border-t border-slate-200 px-2 py-2 text-slate-400">Дата</div>
         <div className="border-r border-t border-slate-200 px-2 py-2 text-slate-400">Корень_1</div>
-        <div className="border-t border-slate-200 px-2 py-2 text-slate-400">РК / УЗК</div>
+        <div className="border-t border-slate-200 px-2 py-2 text-slate-400">РК - УЗК</div>
       </div>
     </div>
   )

@@ -111,15 +111,22 @@ export function isSafeEarlyCoilReplacementRow(
   row: WeldRow,
   documentedRowIds: ReadonlySet<number> = new Set(),
 ) {
+  if (!isClearedErroneousCoilRow(row, documentedRowIds)) return false
+  const auditRow = row as WeldRow & { updatedAt?: unknown }
+  const createdAt = timestamp(auditRow.createdAt)
+  const updatedAt = timestamp(auditRow.updatedAt)
+  return createdAt !== null && updatedAt !== null && createdAt === updatedAt
+}
+
+/** Only the separately confirmed correction may disregard edit timestamps.
+ * Ordinary cancellation and automatic replacement keep the untouched-draft rule. */
+export function isClearedErroneousCoilRow(row: WeldRow, documentedRowIds: ReadonlySet<number> = new Set()) {
   if (!isUnusedRepeatedJointDraft(row) || documentedRowIds.has(row.id)) return false
   if ((row.duplicateControls?.length ?? 0) > 0) return false
   if ((row.preHeatTreatmentControls?.length ?? 0) > 0) return false
   if ((row.pstoRepeatCycles?.length ?? 0) > 0) return false
 
-  const auditRow = row as WeldRow & { updatedAt?: unknown }
-  const createdAt = timestamp(auditRow.createdAt)
-  const updatedAt = timestamp(auditRow.updatedAt)
-  return createdAt !== null && updatedAt !== null && createdAt === updatedAt
+  return true
 }
 
 function blocked(reason: string): EarlyCoilCandidateEvaluation {

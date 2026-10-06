@@ -46,7 +46,7 @@ const rows = [
 const contracts: DispatcherRuleContract[] = [
   percentageContract('percentage-new-welder', 'new-welder'),
   percentageContract('percentage-excess', 'excess'),
-  percentageContract('percentage-rejected-primary', 'rejected-primary'),
+  percentageContract('percentage-rejected-rows', 'rejected-rows'),
   percentageContract('percentage-missing', 'missing'),
   percentageContract('percentage-full-control', 'missing', true),
   percentageContract('percentage-suspend-welder', 'suspend-welder'),
@@ -66,9 +66,6 @@ const contracts: DispatcherRuleContract[] = [
   rowContract('check-lnk-vik-date-order', checkTask(LNK_VIK_DATE_ORDER_REASON), [1]),
   rowContract('check-lnk-vik-required', checkTask(LNK_VIK_REQUIRED_REASON), [1]),
   rowContract('check-psto-request-date-order', checkTask(PSTO_REQUEST_DATE_ORDER_REASON), [1]),
-  lineContract('line-percent', 'weldControlPercent'),
-  lineContract('line-group', 'groupName'),
-  lineContract('line-category', 'category'),
   lineContract('line-control-presence', 'controlPresence'),
   reminderContract('welder-stamp-expiry', 'naks'),
   reminderContract('welder-dls-expiry', 'dls'),

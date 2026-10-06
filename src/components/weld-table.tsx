@@ -372,7 +372,7 @@ export function WeldTable({
       if (!items?.length) return
       event.preventDefault()
       const identity = getWeldContextMenuIdentity(actionRow, contextRows)
-      setContextMenu({ x: event.clientX, y: event.clientY, anchorRowId: row.id, ...identity, items })
+      setContextMenu({ x: event.clientX, y: event.clientY, anchorRowId: row.id, anchorElement: event.currentTarget, ...identity, items })
     },
     [getActionRow, selectedRowIds, selectedRows, stableGetContextMenuItems],
   )

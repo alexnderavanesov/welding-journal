@@ -29,7 +29,7 @@ describe('getAcceptedWarningContextParts', () => {
 
   it('restores useful context from a legacy percentage-line key', () => {
     expect(getAcceptedWarningContextParts({
-      key: 'percentage-line-control:rejected-primary:риформинг|400|lin-243-11-31|abc1:1:128',
+      key: 'percentage-line-control:rejected-rows:риформинг|400|lin-243-11-31|abc1:1:128',
       kind: 'percentage-line-control',
       context: '',
     })).toEqual([

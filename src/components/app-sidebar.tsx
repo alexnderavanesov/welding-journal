@@ -4,10 +4,10 @@ import {
   ClipboardCheck,
   FileText,
   Flame,
-  NotebookTabs,
+  ClipboardList,
   PanelLeftClose,
   PanelLeftOpen,
-  Percent,
+  ListTree,
   Settings,
   Stamp,
 } from 'lucide-react'
@@ -26,13 +26,13 @@ type AppSidebarProps = {
 const sidebarItems: Array<{
   report: ActiveReport
   label: string
-  icon: typeof NotebookTabs
+  icon: typeof ClipboardList
 }> = [
-  { report: 'weldingJournal', label: 'Сварочный журнал', icon: NotebookTabs },
+  { report: 'weldingJournal', label: 'Сварочный журнал', icon: ClipboardList },
+  { report: 'percentageLines', label: 'Программа линий', icon: ListTree },
   { report: 'heatTreatment', label: 'ПСТО и ТВМТ', icon: Flame },
   { report: 'lnk', label: 'ЛНК', icon: ClipboardCheck },
   { report: 'welderStamps', label: 'Клейма', icon: Stamp },
-  { report: 'percentageLines', label: 'Процентные линии', icon: Percent },
   { report: 'statistics', label: 'Статистика', icon: BarChart3 },
   { report: 'documents', label: 'Документы', icon: FileText },
 ]
@@ -43,15 +43,13 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
   const settingsItem = { report: 'settings' as const, label: 'Настройки', icon: Settings }
   const guideItem = { report: 'userGuide' as const, label: 'Руководство пользователя', icon: BookOpenText }
   const itemClassName = (isActive: boolean, muted = false) =>
-    `flex items-center gap-2 rounded-md text-left text-sm font-medium transition-colors ${
+    `flex items-center gap-3 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${
       isActive
-        ? muted
-          ? 'bg-slate-100 text-slate-950'
-          : 'bg-primary text-primary-foreground'
+        ? 'bg-sky-50 text-sky-700'
         : muted
           ? 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'
-          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
-    } ${collapsed ? 'mx-auto h-10 w-10 shrink-0 justify-center p-0' : 'w-full px-3 py-2'}`
+          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+    } ${collapsed ? 'mx-auto h-10 w-10 shrink-0 justify-center rounded-xl p-0' : 'w-full rounded-lg px-3 py-2.5'}`
 
   useLayoutEffect(() => {
     const sidebar = sidebarRef.current
@@ -105,7 +103,7 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
       data-app-sidebar="true"
       style={{ transform: 'translate3d(var(--sidebar-viewport-x, 0px), 0, 0)' }}
     >
-      <div className={`mb-3 flex items-start ${collapsed ? 'justify-center [&>div]:sr-only' : 'justify-between gap-3'}`}>
+      <div className={`mb-3 flex shrink-0 items-start ${collapsed ? 'justify-center [&>div]:sr-only' : 'justify-between gap-3'}`}>
         <div className="text-lg font-semibold tracking-tight">Сварка</div>
         <Button
           variant="ghost"
@@ -118,35 +116,39 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
           {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
         </Button>
       </div>
-      <nav className="space-y-1">
+      <nav className="min-h-0 space-y-2 overflow-y-auto py-1" aria-label="Разделы программы">
         {sidebarItems.map((item) => {
           const Icon = item.icon
           const isActive = activeReport === item.report
           return (
             <button
               key={item.report}
+              type="button"
+              aria-current={isActive ? 'page' : undefined}
               className={itemClassName(isActive)}
               onClick={() => onReportChange(item.report)}
               title={item.label}
             >
-              <Icon className="h-4 w-4 shrink-0" />
+              <Icon className="h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
               <span className={collapsed ? 'sr-only' : ''}>{item.label}</span>
             </button>
           )
         })}
       </nav>
-      <nav className="mt-auto space-y-1 border-t border-slate-100 pb-7 pt-3 lg:pb-10">
+      <nav className="mt-auto shrink-0 space-y-2 border-t border-slate-100 pb-7 pt-3 lg:pb-10" aria-label="Настройки и помощь">
         {(() => {
           const Icon = settingsItem.icon
           const isActive = activeReport === settingsItem.report
           return (
             <button
               key={settingsItem.report}
+              type="button"
+              aria-current={isActive ? 'page' : undefined}
               className={itemClassName(isActive)}
               onClick={() => onReportChange(settingsItem.report)}
               title={settingsItem.label}
             >
-              <Icon className="h-4 w-4 shrink-0" />
+              <Icon className="h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
               <span className={collapsed ? 'sr-only' : ''}>{settingsItem.label}</span>
             </button>
           )
@@ -157,11 +159,13 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
           return (
             <button
               key={guideItem.report}
+              type="button"
+              aria-current={isActive ? 'page' : undefined}
               className={itemClassName(isActive, true)}
               onClick={() => onReportChange(guideItem.report)}
               title={guideItem.label}
             >
-              <Icon className="h-4 w-4 shrink-0" />
+              <Icon className="h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
               <span className={collapsed ? 'sr-only' : ''}>{guideItem.label}</span>
             </button>
           )

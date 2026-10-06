@@ -9,9 +9,10 @@ type DialogHeaderProps = {
   onClose: () => void
   actions?: ReactNode
   closeLabel?: string
+  closeDisabled?: boolean
 }
 
-export function DialogHeader({ title, subtitle, onClose, actions, closeLabel = 'Закрыть' }: DialogHeaderProps) {
+export function DialogHeader({ title, subtitle, onClose, actions, closeLabel = 'Закрыть', closeDisabled = false }: DialogHeaderProps) {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
       <div>
@@ -20,7 +21,7 @@ export function DialogHeader({ title, subtitle, onClose, actions, closeLabel = '
       </div>
       <div className="flex items-center gap-2">
         {actions}
-        <Button variant="ghost" size="icon" onClick={onClose} aria-label={closeLabel}>
+        <Button variant="ghost" size="icon" onClick={onClose} aria-label={closeLabel} disabled={closeDisabled}>
           <X className="h-4 w-4" />
         </Button>
       </div>

@@ -9,7 +9,7 @@ import {
   useLnkWorkflowSummaryQuery,
 } from '@/lib/use-lnk-workflow-context-query'
 import {
-  invalidateWeldJoints,
+  scheduleWeldDataRefresh,
   LNK_WORKFLOW_ROWS_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 import type { LnkWorkflowRowsRequest } from '@/server/weld-contracts'
@@ -33,6 +33,24 @@ describe('LNK workflow query load policy', () => {
     })
     serverMocks.getLnkWorkflowRequestSummary.mockResolvedValue({ requestNames: [], requestOptions: [], hasMore: false })
     serverMocks.listLnkWorkflowRows.mockResolvedValue([])
+  })
+
+  it('loads one bounded pre-TO page per navigation, reuses cached pages and ignores focus/reconnect', async () => {
+    const queryClient = createQueryClient()
+    const { rerender } = renderHook(({ offset }: { offset: number }) => useLnkWorkflowRowsQuery({
+      request: { scope: 'preHeatTreatmentResultRegistry', search: 'PRE', offset },
+    }), { initialProps: { offset: 0 }, wrapper: createWrapper(queryClient) })
+    await waitFor(() => expect(serverMocks.listLnkWorkflowRows).toHaveBeenCalledTimes(1))
+    expect(serverMocks.listLnkWorkflowRows).toHaveBeenLastCalledWith({ data: {
+      scope: 'preHeatTreatmentResultRegistry', rowIds: null, search: 'PRE', offset: 0, limit: 51,
+    } })
+    rerender({ offset: 50 })
+    await waitFor(() => expect(serverMocks.listLnkWorkflowRows).toHaveBeenCalledTimes(2))
+    rerender({ offset: 0 })
+    window.dispatchEvent(new Event('focus'))
+    window.dispatchEvent(new Event('online'))
+    await new Promise(resolve => setTimeout(resolve, 25))
+    expect(serverMocks.listLnkWorkflowRows).toHaveBeenCalledTimes(2)
   })
 
   it('coalesces summary and equivalent scoped row requests across rerenders', async () => {
@@ -203,7 +221,7 @@ describe('LNK workflow query load policy', () => {
       useLnkWorkflowRowsQuery({ request: activeRequest })
       return async () => {
         setActiveRequest(null)
-        await invalidateWeldJoints(client)
+        scheduleWeldDataRefresh(client)
       }
     }, { wrapper: createWrapper(queryClient) })
     await waitFor(() => expect(serverMocks.listLnkWorkflowRows).toHaveBeenCalledTimes(1))
@@ -228,7 +246,7 @@ describe('LNK workflow query load policy', () => {
     })
 
     await act(async () => {
-      invalidateWeldJoints(
+      scheduleWeldDataRefresh(
         queryClient,
         { upsertRows: [{ id: 1, joint: 'F1' }] },
         { refetchLnkWorkflow: true },

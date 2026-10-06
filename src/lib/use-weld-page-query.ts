@@ -102,6 +102,10 @@ export function useWeldPageQuery({
       if (report === 'heatTreatment') return listHeatTreatmentReportPage({ data })
       return listWeldingJournalPage({ data })
     },
+    // Keep the table geometry stable during filtering. Never show rows from
+    // another report while that report's first page is still loading.
+    placeholderData: (previousData, previousQuery) =>
+      previousQuery?.queryKey[1] === report ? previousData : undefined,
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: 15 * 60_000,
     retry: false,
@@ -150,7 +154,7 @@ export function useWeldPageQuery({
     }
     activeQueryIdentityRef.current = queryIdentity
     if (becameActive) pendingActivationRefreshRef.current = queryIdentity
-    if (pendingActivationRefreshRef.current !== queryIdentity || !query.data || query.isFetching) return
+    if (pendingActivationRefreshRef.current !== queryIdentity || !query.data || query.isFetching || query.isPlaceholderData) return
     pendingActivationRefreshRef.current = null
     const state = queryClient.getQueryState(queryKey)
     if (!state) return
@@ -158,7 +162,7 @@ export function useWeldPageQuery({
     if (shouldRefreshWeldPageOnActivation(state.dataUpdatedAt, refreshRequired)) {
       void refresh(refreshRequired)
     }
-  }, [enabled, query.data, query.isFetching, queryClient, queryIdentity, queryKey, refresh])
+  }, [enabled, query.data, query.isFetching, query.isPlaceholderData, queryClient, queryIdentity, queryKey, refresh])
 
   useEffect(() => {
     if (!enabled) return
@@ -186,9 +190,9 @@ export function useWeldPageQuery({
   }, [enabled, queryClient, queryKey, refresh])
 
   const loadMore = useCallback(() => {
-    if (!hasNextPage || isFetchingNextPage) return
+    if (!hasNextPage || isFetchingNextPage || query.isPlaceholderData) return
     void fetchNextPage()
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage])
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, query.isPlaceholderData])
 
   return {
     rows,
@@ -200,7 +204,7 @@ export function useWeldPageQuery({
     pageSize,
     hasMore,
     isFetching: query.isFetching,
-    isLoading: query.isLoading,
+    isLoading: query.isLoading || query.isPlaceholderData,
     error: refreshError ?? query.error,
     loadMore,
     setPageSize,

@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DispatcherTaskPanel } from '@/components/dispatcher-panels'
+import { ReportTaskPanels } from '@/components/report-task-panels'
 import { DispatcherWorkspaceDialog } from '@/components/dispatcher-workspace-dialog'
 import {
   DispatcherTaskCard,
@@ -94,6 +95,19 @@ describe('DispatcherTaskPanel', () => {
     expect(onOpenTaskOfficiality).toHaveBeenCalledWith(task)
   })
 
+  it('blocks becoming unofficial with a duplicate but keeps the repair action', () => {
+    const onOpenTaskOfficiality = vi.fn()
+    const task = { kind: 'create', key: 'create:duplicate', row: { id: 51, joint: 'F51', rkResult: 'ремонт', duplicateControls: [{ id: 9, method: 'УЗК', result: 'годен' }] } as WeldRow,
+      sourceJoint: 'F51', targetJoint: 'F51R1', result: 'ремонт', suffix: 'R', methodCode: 'РК' } as const
+    render(<DispatcherTaskCard task={task} {...createHandlers(vi.fn())} onOpenTaskOfficiality={onOpenTaskOfficiality} />)
+    const blocked = screen.getByRole('button', { name: 'Сделать F51 неофициальным' })
+    expect(blocked).toBeDisabled()
+    expect(blocked).toHaveAttribute('title', expect.stringContaining('есть дубль-контроль'))
+    fireEvent.click(blocked)
+    expect(onOpenTaskOfficiality).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Создать' })).toBeEnabled()
+  })
+
   it('keeps a single task under its DZ heading and restores the panel after collapse', () => {
     const { task, group } = createTaskGroup()
     const onShowTask = vi.fn()
@@ -114,6 +128,15 @@ describe('DispatcherTaskPanel', () => {
       </StrictMode>,
     )
 
+    expect(screen.getAllByText('1 задача')).toHaveLength(1)
+    expect(screen.queryByText('ДЗ-27')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть диспетчер' }))
+    expect(onWorkspaceOpenChange).toHaveBeenCalledWith(true)
+    const toggle = screen.getByRole('button', { name: 'Развернуть' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveClass('w-28', 'shrink-0')
+    fireEvent.click(toggle)
+    expect(screen.getByRole('button', { name: 'Свернуть' })).toHaveClass('w-28', 'shrink-0')
     expect(screen.getAllByText('1 задача')).toHaveLength(2)
     expect(screen.queryByRole('button', { name: 'С задачами' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'По объектам' })).not.toBeInTheDocument()
@@ -165,6 +188,7 @@ describe('DispatcherTaskPanel', () => {
     expect(screen.getByText('12345 задач')).toBeInTheDocument()
     expect(screen.getByText('Выполняется фоновый пересчёт…')).toBeInTheDocument()
     expect(screen.queryByText(/Страница 51/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
     expect(screen.getByRole('button', { name: 'Загрузить ещё задачи (1 из 12345)' })).toBeDisabled()
     expect(onLoadMoreTasks).not.toHaveBeenCalled()
   })
@@ -408,23 +432,37 @@ describe('DispatcherTaskPanel', () => {
     expect(serverSearch).not.toHaveBeenCalled()
   })
 
-  it('applies the compact default when the active report changes', () => {
+  it.each(['weldingJournal', 'lnk', 'heatTreatment'] as const)('starts %s collapsed, preserves manual expansion on updates and resets on report change', (activeReport) => {
     const { task, group } = createTaskGroup()
     const props = {
-      tasks: [task],
-      groups: [group],
+      activeReport,
+      repeatedJointTasks: [task],
+      repeatedJointTaskGroups: [group],
+      dispatcherWorkspaceOpen: false,
+      onDispatcherWorkspaceOpenChange: vi.fn(),
+      welderStampExpiryTasks: [],
+      welderStampNotificationGroups: [],
+      isTaskExpanded: () => false,
+      onToggleDetails: vi.fn(),
+      onCollapseTaskDetails: vi.fn(),
+      onDismissTasks: vi.fn(),
       stickyLeft: 0,
       handlers: createHandlers(vi.fn()),
     }
     const { rerender } = render(
-      <DispatcherTaskPanel {...props} defaultExpanded />,
+      <ReportTaskPanels {...props} />,
     )
 
+    expect(screen.getByRole('button', { name: 'Развернуть' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('ДЗ-27')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
+    rerender(<ReportTaskPanels {...props} repeatedJointTasks={[task]} />)
     expect(screen.getByRole('button', { name: 'Свернуть' })).toBeInTheDocument()
-    rerender(<DispatcherTaskPanel {...props} defaultExpanded={false} />)
+    expect(screen.getByText('ДЗ-27')).toBeInTheDocument()
+    rerender(<ReportTaskPanels {...props} activeReport={activeReport === 'lnk' ? 'weldingJournal' : 'lnk'} />)
 
     expect(screen.getByRole('button', { name: 'Развернуть' })).toBeInTheDocument()
-    expect(screen.queryByText('330-ATM-16-000')).not.toBeInTheDocument()
+    expect(screen.queryByText('ДЗ-27')).not.toBeInTheDocument()
   })
 
   it('returns an expanded DZ to its first ten objects after the whole dispatcher is collapsed', () => {
@@ -456,6 +494,7 @@ describe('DispatcherTaskPanel', () => {
       />,
     )
 
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
     const details = screen.getByText('ДЗ-27').closest('details')
     if (details) {
       details.open = true
@@ -492,7 +531,7 @@ describe('DispatcherTaskPanel', () => {
     )
 
     expect(screen.queryByRole('button', { name: 'Скрыть карточки' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Свернуть' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Развернуть' })).toBeInTheDocument()
   })
 
   it('keeps distinct DZ types visible without the object-grouping switch', () => {
@@ -510,6 +549,7 @@ describe('DispatcherTaskPanel', () => {
       />,
     )
 
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
     expect(screen.getByText('ДЗ-02')).toBeInTheDocument()
     expect(screen.getByText('ДЗ-04')).toBeInTheDocument()
     expect(screen.getByText('ДЗ-27')).toBeInTheDocument()
@@ -533,6 +573,7 @@ describe('DispatcherTaskPanel', () => {
       />,
     )
 
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
     const details = screen.getByText('ДЗ-02').closest('details')
     if (details) {
       details.open = true
@@ -575,6 +616,7 @@ describe('DispatcherTaskPanel', () => {
       />,
     )
 
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
     expect(screen.getByText('ДЗ-02')).toBeInTheDocument()
     expect(screen.getAllByText('2 задачи')).toHaveLength(2)
     expect(screen.getByText('2 объекта')).toBeInTheDocument()
@@ -618,6 +660,7 @@ describe('DispatcherTaskPanel', () => {
       />,
     )
 
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
     const details = screen.getByText('ДЗ-02').closest('details')
     expect(details).not.toBeNull()
     if (details) {
@@ -693,6 +736,7 @@ describe('DispatcherTaskPanel', () => {
       />,
     )
 
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
     expect(screen.getByText('ДЗ-27')).toBeInTheDocument()
     expect(screen.queryByText('330-ATM-16-000')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'По объектам' })).not.toBeInTheDocument()

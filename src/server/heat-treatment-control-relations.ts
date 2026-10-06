@@ -10,6 +10,7 @@ import {
   type HeatTreatmentControlRelationsCarrier,
 } from '@/lib/heat-treatment-control-relations'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
+import { attachProgramChainStates } from './line-program-chain-state'
 
 type RelationDb = Pick<ReturnType<typeof requireDb>, 'select'>
 
@@ -82,6 +83,7 @@ export async function attachHeatTreatmentControlRelationsInPlace<
 async function attachCurrentPolicy<Row extends HeatTreatmentControlRelationsCarrier>(
   rows: Row[], db: RelationDb, settings?: ControlProcessSettings,
 ) {
+  await attachProgramChainStates(rows, db)
   if (!settings) {
     const [stored] = await db.select({ value: appSettings.value }).from(appSettings)
       .where(eq(appSettings.key, PROJECT_SETTING_KEYS.controlProcesses)).orderBy(appSettings.key)

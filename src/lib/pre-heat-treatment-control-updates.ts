@@ -1,4 +1,4 @@
-import { getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
+import { formatDisplayDate, getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   getPreHeatTreatmentControl,
@@ -22,6 +22,9 @@ import { applyRkExposureResultTransition } from '@/lib/rk-exposure'
 import { transitionLnkDefectDescription } from '@/lib/lnk-defect-description'
 import { loadSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import { loadSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-index-settings'
+import { getSystemLnkPrerequisiteBlockReason, canBackfillOwnLnkResult, getHistoricalLnkRequestDateReason } from '@/lib/lnk-system-order'
+import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
+import { assertUnofficialLnkGoodResultAllowed } from './unofficial-lnk-result-guard'
 
 export const PRE_HEAT_TREATMENT_RESULT_OPTIONS = ['годен', 'ремонт', 'вырез'] as const
 
@@ -43,7 +46,7 @@ export function getPreHeatTreatmentRequestBlockReason(
   }
   const method = PRE_HEAT_TREATMENT_LNK_METHODS.find((candidate) => candidate.code === methodCode)!
   if (!isControlEnabledValue(row[method.enabledKey])) return `${methodCode} не назначен.`
-  if (getRejectedPreHeatTreatmentControls(row).length > 0) {
+  if (getRejectedPreHeatTreatmentControls(row).length > 0 && !canBackfillOwnLnkResult(row, methodCode, 'beforeHeatTreatment')) {
     return 'Уже сохранен негодный результат НК до ТО.'
   }
   const current = getPreHeatTreatmentControl(row, methodCode)
@@ -63,7 +66,7 @@ export function canCreatePreHeatTreatmentRequest(
 export function getPreHeatTreatmentResultBlockReason(
   row: WeldRow,
   rawMethodCode: string,
-  saveCheckSettings: SaveCheckSettings = loadSaveCheckSettings(),
+  _saveCheckSettings: SaveCheckSettings = loadSaveCheckSettings(),
 ) {
   const methodCode = normalizeMethodCode(rawMethodCode)
   if (!isPreHeatTreatmentLnkMethodCode(methodCode)) return 'Выберите вид НК до ТО.'
@@ -74,17 +77,7 @@ export function getPreHeatTreatmentResultBlockReason(
   const current = getPreHeatTreatmentControl(row, methodCode)
   if (!current || !text(current.requestName)) return `Сначала создайте заявку ${methodCode} до ТО.`
   if (hasFinalResult(current.result)) return `Результат ${methodCode} до ТО уже сохранен.`
-  const rejected = getRejectedPreHeatTreatmentControls(row)
-  if (rejected.length > 0) {
-    return `НК до ТО уже имеет негодный результат: ${rejected.map(({ methodCode: code }) => code).join(', ')}.`
-  }
-  if (saveCheckSettings.lnkResultVikRequiredBeforeOther && methodCode !== 'ВИК') {
-    const vik = getPreHeatTreatmentControl(row, 'ВИК')
-    if (text(vik?.result).toLocaleLowerCase('ru-RU') !== 'годен') {
-      return 'Сначала внесите годный результат ВИК до ТО.'
-    }
-  }
-  return ''
+  return getSystemLnkPrerequisiteBlockReason(row, methodCode, 'beforeHeatTreatment')
 }
 
 export function canAddPreHeatTreatmentResult(
@@ -126,6 +119,8 @@ export function buildPreHeatTreatmentRequestWrites({
     if (!isPreHeatTreatmentLnkMethodCode(methodCode)) {
       throw new Error(`Метод ${methodCode || '-'} не выполняется как НК до ТО.`)
     }
+    const historicalReason = getHistoricalLnkRequestDateReason(row, methodCode, date, 'beforeHeatTreatment')
+    if (historicalReason) throw new Error(`Стык ${formatJoint(row)}: ${historicalReason}`)
     const current = getPreHeatTreatmentControl(row, methodCode)
     return {
       ...(current ?? { weldJointId: row.id, method: methodCode }),
@@ -174,6 +169,7 @@ export function buildPreHeatTreatmentResultWrite({
   validatePreHeatTreatmentResultDate(row, current, methodCode, date, saveCheckSettings)
 
   const normalizedResult = text(result).toLocaleLowerCase('ru-RU')
+  assertUnofficialLnkGoodResultAllowed(row, normalizedResult, current.result, `${methodCode} до ТО`)
   if (!PRE_HEAT_TREATMENT_RESULT_OPTIONS.includes(normalizedResult as never)) {
     throw new Error('Выберите результат НК до ТО.')
   }
@@ -203,7 +199,7 @@ export function buildPreHeatTreatmentResultWrite({
       }, normalizedResult, rkExposureTable)
     : null
 
-  return {
+  const write: PreHeatTreatmentControlWrite = {
     ...current,
     weldJointId: row.id,
     method: methodCode,
@@ -221,6 +217,8 @@ export function buildPreHeatTreatmentResultWrite({
       ? { rkExposureConfirmedDiameter: exposureRecord?.rkExposureConfirmedDiameter ?? null }
       : {}),
   }
+  assertResultWriteChronology(row, write, saveCheckSettings)
+  return write
 }
 
 export function buildPreHeatTreatmentResultCorrectionWrite({
@@ -251,6 +249,7 @@ export function buildPreHeatTreatmentResultCorrectionWrite({
 
   const normalizedResult = text(result).toLocaleLowerCase('ru-RU')
   const currentResult = text(control.result).toLocaleLowerCase('ru-RU')
+  assertUnofficialLnkGoodResultAllowed(row, normalizedResult, currentResult, `${methodCode} до ТО`)
   if (!PRE_HEAT_TREATMENT_RESULT_OPTIONS.includes(normalizedResult as never)) {
     throw new Error('Выберите результат НК до ТО.')
   }
@@ -267,7 +266,6 @@ export function buildPreHeatTreatmentResultCorrectionWrite({
     )
   }
   if (
-    saveCheckSettings.lnkResultVikRequiredBeforeOther &&
     methodCode === 'ВИК' &&
     normalizedResult !== currentResult &&
     normalizedResult !== 'годен'
@@ -293,7 +291,7 @@ export function buildPreHeatTreatmentResultCorrectionWrite({
       }, normalizedResult, rkExposureTable)
     : null
 
-  return {
+  const write: PreHeatTreatmentControlWrite = {
     ...control,
     result: normalizedResult,
     conclusionDate: date,
@@ -311,6 +309,14 @@ export function buildPreHeatTreatmentResultCorrectionWrite({
           }),
         }),
   }
+  assertResultWriteChronology(row, write, saveCheckSettings)
+  return write
+}
+
+function assertResultWriteChronology(row: WeldRow, write: PreHeatTreatmentControlWrite, settings: SaveCheckSettings) {
+  const finalRow = { ...row, preHeatTreatmentControls: (row.preHeatTreatmentControls ?? []).map(control =>
+    control.method === write.method ? { ...control, ...write } : control) }
+  assertNoNewLnkChronologyIssues([finalRow], [row], settings)
 }
 
 export function buildPreHeatTreatmentRequestCorrectionWrite({
@@ -331,12 +337,16 @@ export function buildPreHeatTreatmentRequestCorrectionWrite({
   const name = requestName.trim()
   if (!name) throw new Error('Укажите наименование заявки НК до ТО.')
   const date = requireDate(requestDate, 'Укажите дату заявки НК до ТО.')
+  if (date !== parseDateLikeToIso(control.requestDate)) {
+    const historicalReason = getHistoricalLnkRequestDateReason(row, methodCode, date, 'beforeHeatTreatment')
+    if (historicalReason) throw new Error(`Стык ${formatJoint(row)}: ${historicalReason}`)
+  }
   if (saveCheckSettings.lnkResultRequestDateOrder) {
     assertNotBeforeWeld(row, date, 'Дата заявки НК до ТО')
     assertNotBefore(
       parseDateLikeToIso(control.conclusionDate) ?? date,
       date,
-      `Стык ${formatJoint(row)}: дата заявки НК до ТО не может быть позже даты контроля.`,
+      `Стык ${formatJoint(row)}: дата заявки НК до ТО (${formatDisplayDate(date)}) не может быть позже даты контроля (${formatDisplayDate(parseDateLikeToIso(control.conclusionDate))}).`,
     )
     assertNotAfterPsto(row, date, 'Дата заявки НК до ТО')
   }
@@ -376,18 +386,17 @@ export function getPreHeatTreatmentRequestRemovalBlockReason(
 export function getPreHeatTreatmentResultRemovalBlockReason(
   row: WeldRow,
   control: PreHeatTreatmentControlRecord,
-  saveCheckSettings: SaveCheckSettings = loadSaveCheckSettings(),
+  _saveCheckSettings: SaveCheckSettings = loadSaveCheckSettings(),
 ) {
   if (hasDownstreamPsto(row)) {
     return 'Результат НК до ТО нельзя удалить, пока сохранены заявка, результат ПСТО, ТВМТ или повторный цикл.'
   }
-  if (
-    !saveCheckSettings.lnkResultVikRequiredBeforeOther ||
-    normalizeMethodCode(control.method) !== 'ВИК'
-  ) return ''
+  const method = normalizeMethodCode(control.method)
+  if (!['ВИК', 'ПВК'].includes(method)) return ''
   const dependentMethods = getDependentPreHeatTreatmentResultMethods(row)
+    .filter(candidate => method === 'ВИК' || candidate === 'РК' || candidate === 'УЗК')
   return dependentMethods.length > 0
-    ? `Результат ВИК до ТО нельзя удалить, пока сохранены результаты: ${dependentMethods.join(', ')}.`
+    ? `Результат ${method} до ТО нельзя удалить, пока сохранены результаты: ${dependentMethods.join(', ')}.`
     : ''
 }
 
@@ -417,14 +426,14 @@ function assertPreHeatTreatmentVikOrder(
         return controlDate && date > controlDate
       })
     if (laterControl) {
-      throw new Error(`Стык ${formatJoint(row)}: ВИК до ТО должен быть выполнен не позже остальных видов НК до ТО.`)
+      throw new Error(`Стык ${formatJoint(row)}: ВИК до ТО (${formatDisplayDate(date)}) должен быть выполнен не позже остальных видов НК до ТО: ${laterControl.method} (${formatDisplayDate(parseDateLikeToIso(laterControl.conclusionDate))}).`)
     }
     return
   }
   const vik = getPreHeatTreatmentControl(row, 'ВИК')
   const vikDate = parseDateLikeToIso(vik?.conclusionDate)
   if (vikDate && date < vikDate) {
-    throw new Error(`Стык ${formatJoint(row)}: ${methodCode} до ТО не может быть раньше ВИК до ТО.`)
+    throw new Error(`Стык ${formatJoint(row)}: ${methodCode} до ТО (${formatDisplayDate(date)}) не может быть раньше ВИК до ТО (${formatDisplayDate(vikDate)}).`)
   }
 }
 
@@ -441,7 +450,7 @@ function validatePreHeatTreatmentResultDate(
     assertNotBefore(
       date,
       control.requestDate,
-      `Стык ${formatJoint(row)}: дата НК до ТО не может быть раньше даты заявки.`,
+      `Стык ${formatJoint(row)}: дата НК до ТО (${formatDisplayDate(date)}) не может быть раньше даты заявки (${formatDisplayDate(parseDateLikeToIso(control.requestDate))}).`,
     )
     assertNotAfterPsto(row, date, 'Дата НК до ТО')
   }
@@ -468,14 +477,14 @@ function assertNotBeforeWeld(row: WeldRow, date: string, label: string) {
   assertNotBefore(
     date,
     row.weldDate,
-    `Стык ${formatJoint(row)}: ${label.toLowerCase()} не может быть раньше даты сварки.`,
+    `Стык ${formatJoint(row)}: ${label.charAt(0).toLowerCase() + label.slice(1)} (${formatDisplayDate(date)}) не может быть раньше даты сварки (${formatDisplayDate(parseDateLikeToIso(row.weldDate))}).`,
   )
 }
 
 function assertNotAfterPsto(row: WeldRow, date: string, label: string) {
   const pstoDate = parseDateLikeToIso(row.pstoDate)
   if (pstoDate && date > pstoDate) {
-    throw new Error(`Стык ${formatJoint(row)}: ${label.toLowerCase()} не может быть позже даты ПСТО.`)
+    throw new Error(`Стык ${formatJoint(row)}: ${label.charAt(0).toLowerCase() + label.slice(1)} (${formatDisplayDate(date)}) не может быть позже даты ПСТО (${formatDisplayDate(pstoDate)}).`)
   }
 }
 

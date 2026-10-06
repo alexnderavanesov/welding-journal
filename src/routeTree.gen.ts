@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppDocumentsRouteImport } from './routes/_app.documents'
 import { Route as AppJournalRouteImport } from './routes/_app.journal'
+import { Route as AppLineProgramRouteImport } from './routes/_app.line-program'
 import { Route as AppLnkRouteImport } from './routes/_app.lnk'
 import { Route as AppPercentageLinesRouteImport } from './routes/_app.percentage-lines'
 import { Route as AppPstoRouteImport } from './routes/_app.psto'
@@ -39,6 +40,11 @@ const AppDocumentsRoute = AppDocumentsRouteImport.update({
 const AppJournalRoute = AppJournalRouteImport.update({
   id: '/journal',
   path: '/journal',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLineProgramRoute = AppLineProgramRouteImport.update({
+  id: '/line-program',
+  path: '/line-program',
   getParentRoute: () => AppRoute,
 } as any)
 const AppLnkRoute = AppLnkRouteImport.update({
@@ -87,6 +93,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/documents': typeof AppDocumentsRoute
   '/journal': typeof AppJournalRoute
+  '/line-program': typeof AppLineProgramRoute
   '/lnk': typeof AppLnkRoute
   '/percentage-lines': typeof AppPercentageLinesRoute
   '/psto': typeof AppPstoRoute
@@ -100,6 +107,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/documents': typeof AppDocumentsRoute
   '/journal': typeof AppJournalRoute
+  '/line-program': typeof AppLineProgramRoute
   '/lnk': typeof AppLnkRoute
   '/percentage-lines': typeof AppPercentageLinesRoute
   '/psto': typeof AppPstoRoute
@@ -115,6 +123,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/_app/documents': typeof AppDocumentsRoute
   '/_app/journal': typeof AppJournalRoute
+  '/_app/line-program': typeof AppLineProgramRoute
   '/_app/lnk': typeof AppLnkRoute
   '/_app/percentage-lines': typeof AppPercentageLinesRoute
   '/_app/psto': typeof AppPstoRoute
@@ -130,6 +139,7 @@ export interface FileRouteTypes {
     | '/'
     | '/documents'
     | '/journal'
+    | '/line-program'
     | '/lnk'
     | '/percentage-lines'
     | '/psto'
@@ -143,6 +153,7 @@ export interface FileRouteTypes {
     | '/'
     | '/documents'
     | '/journal'
+    | '/line-program'
     | '/lnk'
     | '/percentage-lines'
     | '/psto'
@@ -157,6 +168,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/_app/documents'
     | '/_app/journal'
+    | '/_app/line-program'
     | '/_app/lnk'
     | '/_app/percentage-lines'
     | '/_app/psto'
@@ -201,6 +213,13 @@ declare module '@tanstack/react-router' {
       path: '/journal'
       fullPath: '/journal'
       preLoaderRoute: typeof AppJournalRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/line-program': {
+      id: '/_app/line-program'
+      path: '/line-program'
+      fullPath: '/line-program'
+      preLoaderRoute: typeof AppLineProgramRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/lnk': {
@@ -265,6 +284,7 @@ declare module '@tanstack/react-router' {
 interface AppRouteChildren {
   AppDocumentsRoute: typeof AppDocumentsRoute
   AppJournalRoute: typeof AppJournalRoute
+  AppLineProgramRoute: typeof AppLineProgramRoute
   AppLnkRoute: typeof AppLnkRoute
   AppPercentageLinesRoute: typeof AppPercentageLinesRoute
   AppPstoRoute: typeof AppPstoRoute
@@ -277,6 +297,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppDocumentsRoute: AppDocumentsRoute,
   AppJournalRoute: AppJournalRoute,
+  AppLineProgramRoute: AppLineProgramRoute,
   AppLnkRoute: AppLnkRoute,
   AppPercentageLinesRoute: AppPercentageLinesRoute,
   AppPstoRoute: AppPstoRoute,

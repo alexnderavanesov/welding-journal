@@ -5,7 +5,7 @@ import {
 } from '@/lib/report-config'
 import { loadRequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { isSystemDocumentNameForRows } from '@/lib/system-document-types'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { UseLnkReportMutationsOptions } from '@/lib/lnk-report-mutation-types'
@@ -112,7 +112,7 @@ export function useLnkRequestManagerMutation({
         setManagedLnkRequestNameDraft('')
         setIsLnkRequestManagerOpen(false)
       }
-      await invalidateWeldJoints(
+      scheduleWeldDataRefresh(
         queryClient,
         { upsertRows: savedRows },
         { refetchLnkWorkflow: variables.action === 'rename' },

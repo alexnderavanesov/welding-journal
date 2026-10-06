@@ -6,14 +6,18 @@ import { DialogEmptyState } from '@/components/dialog-empty-state'
 import { DialogHeader } from '@/components/dialog-header'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { JointConnectionTypeMeta, MetaSeparator } from '@/components/joint-meta'
 import { PaginationBar } from '@/components/pagination-bar'
 import { RequestRowsSearch } from '@/components/request-rows-search'
 import { Button } from '@/components/ui/button'
 import { ResultBadge } from '@/lib/weld-table-badges'
 import { getDuplicateControls } from '@/lib/duplicate-control-utils'
+import { getDuplicateControlOfficialityBlockReason } from '@/lib/duplicate-control-officiality'
 import { isUnofficialJoint } from '@/lib/joint-display'
 import {
   DUPLICATE_CONTROL_METHODS,
+  DUPLICATE_CONTROL_METHOD_ERROR,
+  isDuplicateControlMethod,
   DUPLICATE_CONTROL_RESULTS,
   type DuplicateControlDraft,
   type DuplicateControlMethod,
@@ -45,7 +49,7 @@ export type DuplicateControlDialogProps = {
   saveBlockReason: string | null
   isSaving: boolean
   onClose: () => void
-  onSave: () => void
+  onSave: () => void | Promise<void>
   onDelete: (control: DuplicateControlRecord) => void
   onEdit: (control: DuplicateControlRecord) => void
   onDraftChange: Dispatch<SetStateAction<DuplicateControlDraft>>
@@ -93,9 +97,28 @@ export function DuplicateControlDialog({
   onToggleMethod,
   onExistingControlsOpenChange,
 }: DuplicateControlDialogProps) {
+  const layeredControlBlocked = selectedRows.some((row) => row.layeredControlAssigned) &&
+    draft.methods.size > 0
+  if (layeredControlBlocked) {
+    saveBlockReason = 'Любой дубль ВИК/РК/УЗК/ПВК недоступен: у выбранного стыка назначен послойный контроль. Сначала уберите послойный контроль.'
+  }
+  if ([...draft.methods].some(method => !isDuplicateControlMethod(method))) {
+    saveBlockReason = DUPLICATE_CONTROL_METHOD_ERROR
+  }
+  const officialityBlockReason = selectedRows.map(getDuplicateControlOfficialityBlockReason).find(Boolean)
+  if (officialityBlockReason) saveBlockReason = officialityBlockReason
   const isEditing = typeof draft.id === 'number'
   const [showExistingControls, setShowExistingControls] = useState(false)
   const [showSelectedPreview, setShowSelectedPreview] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const handleSave = async () => {
+    setSaveError(null)
+    try {
+      await onSave()
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Не удалось сохранить дубль-контроль. Повторите попытку.')
+    }
+  }
   const stableOnToggleRow = useStableEventCallback(onToggleRow)
   const paginationResetKeys = useMemo(() => [draft.search, filteredRows], [draft.search, filteredRows])
   const rowsPagination = usePagination({
@@ -192,7 +215,7 @@ export function DuplicateControlDialog({
                   Выберите результат
                 </option>
                 {DUPLICATE_CONTROL_RESULTS.map((result) => (
-                  <option key={result} value={result} className="font-normal">
+                  <option key={result} value={result} disabled={layeredControlBlocked || Boolean(officialityBlockReason)} className="font-normal">
                     {result}
                   </option>
                 ))}
@@ -342,6 +365,7 @@ export function DuplicateControlDialog({
           </button>
         </div>
 
+        {saveError ? <p role="alert" className="mb-3 text-sm text-red-700">{saveError}</p> : null}
         <div className="flex items-center justify-between gap-4">
           <div className="text-sm text-slate-500">
             {selectedRowsLoading
@@ -361,7 +385,7 @@ export function DuplicateControlDialog({
             >
               {`Предпросмотр (${selectedRows.length})`}
             </Button>
-            <Button onClick={onSave} disabled={Boolean(saveBlockReason) || selectedRowsLoading || isSaving}>
+            <Button onClick={handleSave} disabled={Boolean(saveBlockReason) || selectedRowsLoading || isSaving}>
               <Check className="mr-2 h-4 w-4" />
               {isEditing ? 'Сохранить дубль' : 'Добавить дубль'}
             </Button>
@@ -422,7 +446,7 @@ const DuplicateControlRow = memo(function DuplicateControlRow({
           <ResultBadge value={finalStatusDisplay} />
         </span>
         <span className="block text-xs text-slate-500">
-          {String(row.projectTitle ?? '-')} · {String(row.subtitleCode ?? '-')} · {String(row.line ?? '-')} · D:{' '}
+          {String(row.projectTitle ?? '-')} · {String(row.subtitleCode ?? '-')} · {String(row.line ?? '-')} · <JointConnectionTypeMeta row={row} /><MetaSeparator />D:{' '}
           {String(row.d1 ?? '-') || '-'} · WDI: {String(row.wdi ?? '-') || '-'} · дата сварки:{' '}
           {String(row.weldDate ?? '-') || '-'}
         </span>
@@ -507,7 +531,7 @@ function DuplicateControlPreviewDialog({
                         <ResultBadge value={finalStatusDisplay} />
                       </div>
                       <div className="mt-1 text-xs text-slate-500">
-                        {String(row.projectTitle ?? '-')} · {String(row.subtitleCode ?? '-')} · {String(row.line ?? '-')} · D:{' '}
+                        {String(row.projectTitle ?? '-')} · {String(row.subtitleCode ?? '-')} · {String(row.line ?? '-')} · <JointConnectionTypeMeta row={row} /><MetaSeparator />D:{' '}
                         {String(row.d1 ?? '-') || '-'} · WDI: {String(row.wdi ?? '-') || '-'} · дата сварки:{' '}
                         {String(row.weldDate ?? '-') || '-'}
                       </div>

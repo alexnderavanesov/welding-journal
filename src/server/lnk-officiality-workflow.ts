@@ -51,6 +51,7 @@ import { lockWeldLineMemberships } from '@/server/weld-line-membership-lock'
 import { assertExpectedInteractiveWeldVersions } from '@/server/weld-row-version'
 import { buildNumberArrayMatch, buildTextArrayMatch } from '@/server/weld-request-utils'
 import { loadWeldWorkflowSettingsFromTransaction } from '@/server/weld-workflow-settings'
+import { prepareRebuiltProgramChainStates, syncRebuiltProgramChainStates } from '@/server/program-chain-rebuild'
 
 const MAX_OFFICIALITY_TARGETS = 1_000
 export const LNK_OFFICIALITY_CHAIN_SELECT = {
@@ -66,6 +67,7 @@ export const LNK_OFFICIALITY_CHAIN_SELECT = {
   pstoCancellationDate: weldJoints.pstoCancellationDate,
   joint: weldJoints.joint,
   officiality: weldJoints.officiality,
+  revisionActuality: weldJoints.revisionActuality,
   finalStatus: weldJoints.finalStatus,
   d1: weldJoints.d1,
   d2: weldJoints.d2,
@@ -137,7 +139,7 @@ export async function previewLnkOfficialityChange({
     const hydratedRows = await hydrateRows(tx, scopeRows)
     const settings = await loadWeldWorkflowSettingsFromTransaction(tx)
     const earlyCoilDecisionSourceRowIds = await loadEarlyCoilDecisionSourceRowIds(tx, scopeRows)
-    return buildLnkOfficialityChainPlan(
+    const plan = buildLnkOfficialityChainPlan(
       hydratedRows,
       data.targets.map((target) => target.id),
       data.officiality,
@@ -146,6 +148,13 @@ export async function previewLnkOfficialityChange({
         systemIndexSettings: settings.systemIndexSettings,
       },
     )
+    const renamed = new Map(plan.renames.map(change => [change.rowId, change.targetJoint]))
+    const officialities = new Map(plan.officialityChanges.map(change => [change.rowId, change.nextOfficiality]))
+    await prepareRebuiltProgramChainStates(tx, hydratedRows.map(row => ({ ...row,
+      ...(renamed.has(row.id) ? { joint: renamed.get(row.id)! } : {}),
+      ...(officialities.has(row.id) ? { officiality: officialities.get(row.id) === 'unofficial' ? 'неофициальный' : null } : {}),
+    })), plan.renames.map(change => change.rowId), settings.systemIndexSettings)
+    return plan
   })
 }
 
@@ -232,6 +241,12 @@ export async function applyLnkOfficialityChange({
 
     const savedRows = await updateWeldJointsInBatches(tx, records, previousRows)
     await syncSystemDocumentsForWeldChangesInTransaction(tx, savedRows, previousRows)
+    const savedById = new Map(savedRows.map(row => [row.id, row]))
+    await syncRebuiltProgramChainStates(tx,
+      hydratedRows.map(row => ({ ...row, ...savedById.get(row.id) })),
+      plan.renames.map(change => change.rowId),
+      validationContext.systemIndexSettings,
+    )
     await insertEarlyCoilDecisions(tx, plan, recordsById, fullAffectedRowsById)
     await refreshEarlyCoilDecisionContextsInTransaction(
       tx,
@@ -404,6 +419,7 @@ async function insertEarlyCoilDecisions(
     if (!source) throw new Error('Не найдено основание сохраняемой досрочной катушки.')
     return {
       key: getEarlyCoilDecisionKey(decision.sourceRowId),
+      weldJointId: decision.sourceRowId,
       kind: EARLY_COIL_DECISION_KIND,
       code: 'ДЗ-09',
       title: `Досрочная врезка катушки ${decision.targetJoints.join(' + ')}`,

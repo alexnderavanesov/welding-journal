@@ -197,6 +197,22 @@ describe('LnkRequestManagerDialog', () => {
     )
   })
 
+  it('keeps request actions after a queued scroll but closes them on new scrolling', () => {
+    renderDialog()
+    const request = screen.getByRole('button', { name: /Заявка-001/ })
+    const viewport = request.closest('.overflow-auto')!
+    viewport.scrollTop = 80
+
+    fireEvent.contextMenu(request)
+    fireEvent.scroll(viewport)
+    fireEvent.scroll(document)
+    expect(screen.getByRole('button', { name: 'Открыть заявку' })).toBeVisible()
+
+    viewport.scrollTop = 100
+    fireEvent.scroll(viewport)
+    expect(screen.queryByRole('button', { name: 'Открыть заявку' })).not.toBeInTheDocument()
+  })
+
   it('loads a newly selected request before opening its context actions', async () => {
     const rkMethod = LNK_METHODS.find((method) => method.code === 'РК')!
     const onChangeControlStage = vi.fn()
@@ -228,6 +244,8 @@ describe('LnkRequestManagerDialog', () => {
     const transferButton = await screen.findByRole('button', {
       name: 'Изменить этап контроля',
     })
+    fireEvent.scroll(document)
+    expect(screen.getByRole('button', { name: 'Изменить этап контроля' })).toBeVisible()
     expect(transferButton).toBeEnabled()
     fireEvent.click(transferButton)
     expect(onChangeControlStage).toHaveBeenCalledWith({

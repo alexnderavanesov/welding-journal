@@ -12,11 +12,11 @@ describe('normalizeWeldChainLineMovePlan', () => {
     expect(normalizeWeldChainLineMovePlan({
       expectedRowIds: ['1', 2],
       expectedVersions: [{ id: '1', version: '101' }, { id: 2, version: '102' }],
-      decisions: [{ rowId: '2', disposition: 'deletePrimary' }],
+      decisions: [{ rowId: '2', disposition: 'keepPrimary' }],
     })).toEqual({
       expectedRowIds: [1, 2],
       expectedVersions: [{ id: 1, version: '101' }, { id: 2, version: '102' }],
-      decisions: [{ rowId: 2, disposition: 'deletePrimary' }],
+      decisions: [{ rowId: 2, disposition: 'keepPrimary' }],
     })
   })
 
@@ -29,6 +29,7 @@ describe('normalizeWeldChainLineMovePlan', () => {
     { expectedRowIds: [1], expectedVersions: [{ id: 2, version: '101' }], decisions: [] },
     { expectedRowIds: [1], expectedVersions: [{ id: 1, version: '' }], decisions: [] },
     { expectedRowIds: [1], decisions: [{ rowId: 2, disposition: 'deletePrimary' }] },
+    { expectedRowIds: [1], expectedVersions: [{ id: 1, version: '101' }], decisions: [{ rowId: 1, disposition: 'deletePrimary' }] },
     { expectedRowIds: [1], decisions: [{ rowId: 1, disposition: 'unknown' }] },
     { expectedRowIds: Array.from({ length: 1_001 }, (_, index) => index + 1), decisions: [] },
   ])('rejects a malformed or unbounded plan', (value) => {

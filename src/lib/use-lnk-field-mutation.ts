@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { buildLnkFieldRow } from '@/lib/lnk-report-mutation-updates'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import { updateWeldRowOrThrow } from '@/lib/weld-save-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -67,7 +67,7 @@ export function useLnkFieldMutation({
       highlightChangedRows(saved ? [saved] : [], [variables.fieldKey, 'lnkCreatedAt', 'finalStatus'])
       setMessage('Поле ЛНК обновлено')
       setHeatTreatmentFieldEditing(null)
-      await invalidateWeldJoints(queryClient, { upsertRows: [saved] })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: [saved] })
     },
     onError: (error) => {
       setMessage((error as Error).message)

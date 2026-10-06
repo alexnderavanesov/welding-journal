@@ -117,6 +117,24 @@ describe('LNK workflow context routing', () => {
     expect(getLnkWorkflowRowsRequest(registry)).toEqual({
       scope: 'preHeatTreatmentRequestRegistry',
       rowIds: [12],
+      offset: 0,
+    })
+  })
+
+  it('pages and filters the whole pre-TO area without substituting the currently loaded IDs', () => {
+    const state = createState()
+    state.isPreHeatTreatmentResultManagerOpen = true
+    state.preRegistry = { page: 3, search: 'PRE-900', methodCode: 'УЗК', resultFilter: 'ремонт', requestFilter: 'all' }
+    expect(getLnkWorkflowRowsRequest(state)).toEqual({
+      scope: 'preHeatTreatmentResultRegistry', rowIds: null, offset: 150,
+      search: 'PRE-900', methodKeys: ['uzkRequest'], resultFilter: 'ремонт',
+    })
+    state.preHeatTreatmentResultManagerRowIds = [9, 5]
+    state.preHeatTreatmentResultManagerMode = 'request'
+    state.preRegistry.requestFilter = 'open'
+    expect(getLnkWorkflowRowsRequest(state)).toEqual({
+      scope: 'preHeatTreatmentRequestRegistry', rowIds: [9, 5], offset: 150,
+      search: 'PRE-900', methodKeys: ['uzkRequest'], requestFilter: 'open',
     })
   })
 

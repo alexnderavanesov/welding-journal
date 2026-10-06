@@ -33,6 +33,13 @@ describe('migration branch guard', () => {
     )
   })
 
+  it('rejects query parameters that can override the displayed local target', () => {
+    for (const query of ['host=remote.example', 'port=6543', '%68ost=remote.example']) {
+      expect(() => assertLocalMigrationDatabaseUrl(`postgres://user:pass@127.0.0.1/db?${query}`)).toThrow(/параметрах URL/)
+    }
+    expect(() => assertLocalMigrationDatabaseUrl('postgres://user:pass@127.0.0.1/db?sslmode=disable&application_name=release')).not.toThrow()
+  })
+
   it('requires the exact commit published at origin/main', () => {
     const commit = 'ABCDEF0123456789'
     expect(() => assertRemoteMigrationPublishedCommit(commit, commit.toLowerCase())).not.toThrow()

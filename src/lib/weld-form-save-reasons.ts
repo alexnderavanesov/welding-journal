@@ -1,4 +1,6 @@
+import { normalizeControlResultText } from '@/lib/report-value-utils'
 import type { WeldDraft } from '@/lib/dispatcher-types'
+import { getControlAssignmentRemovalReason, getControlAssignmentCancellations } from './control-assignment-history'
 import { getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import {
   hasReservedJointSystemPart,
@@ -39,18 +41,34 @@ import {
   getRequiredWeldingMethodMessage,
 } from '@/lib/weld-validation'
 import type { StampSelectOption, StampSelectOptions } from '@/lib/weld-form-types'
-import { getStampSelectValue, isAdditionalValue, isCancelledValue, isYesValue } from '@/lib/weld-form-value-utils'
+import { getStampSelectValue, isCancelledValue, isYesValue } from '@/lib/weld-form-value-utils'
 import { shouldValidateOfficialStampCompatibilityForSave } from '@/lib/welder-stamp-compatibility-validation'
+import { getExcludedControlAssignmentIssues } from './control-assignment-eligibility'
+import { getUnofficialLnkResultIssues } from './unofficial-lnk-result-guard'
+
+type WeldFormSaveBlockOptions = {
+  allowSystemJointName?: boolean
+  allowPrimaryLnkStageDebt?: boolean
+  systemIndexSettings?: SystemIndexSettings
+}
 
 export function getWeldFormSaveBlockReason(
   draft: WeldInput,
   initialValue: WeldDraft,
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
-  options: {
-    allowSystemJointName?: boolean
-    allowPrimaryLnkStageDebt?: boolean
-    systemIndexSettings?: SystemIndexSettings
-  } = {},
+  options: WeldFormSaveBlockOptions = {},
+) {
+  return getUnofficialLnkResultIssues(draft, initialValue)[0]?.message ||
+    getExcludedControlAssignmentIssues(draft, initialValue)[0]?.message || getControlAssignmentRemovalReason(draft, initialValue) ||
+    getWeldFormFieldSaveBlockReason(draft, initialValue, saveCheckSettings, options)
+}
+
+/** Import collects assignment-removal issues separately, without masking independent field errors. */
+export function getWeldFormFieldSaveBlockReason(
+  draft: WeldInput,
+  initialValue: WeldDraft,
+  saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+  options: WeldFormSaveBlockOptions = {},
 ) {
   const dateReason = getWeldFormDateSaveBlockReason(draft, saveCheckSettings)
   if (dateReason) return dateReason
@@ -212,7 +230,7 @@ export function getControlAvailabilityReportHistoryIssues(draft: WeldInput): Con
   return issues
 }
 
-function getNewControlAvailabilityReportHistoryReason(draft: WeldInput, initialValue: WeldDraft) {
+export function getNewControlAvailabilityReportHistoryReason(draft: WeldInput, initialValue: WeldDraft) {
   const previousIssueCodes = new Set(
     getControlAvailabilityReportHistoryIssues(initialValue).map((issue) => issue.code),
   )
@@ -220,62 +238,9 @@ function getNewControlAvailabilityReportHistoryReason(draft: WeldInput, initialV
     .find((issue) => !previousIssueCodes.has(issue.code))?.message ?? null
 }
 
-export function getWeldFormAutoClearHint(draft: WeldInput, initialValue: WeldDraft) {
-  const hints: string[] = []
-
-  for (const method of LNK_METHODS) {
-    if (!hasControlAvailabilityChanged(draft[method.enabledKey], initialValue[method.enabledKey])) continue
-    if (isYesValue(draft[method.enabledKey])) continue
-    if (!hasText(draft[method.requestKey])) continue
-    if (hasRealLnkReportHistory(draft, method)) continue
-
-    const requestName = String(draft[method.requestKey] ?? '').trim()
-    hints.push(
-      `${method.code}: фактического результата еще нет, поэтому позиция этого стыка будет исключена из заявки «${requestName}». Другие виды НК и остальные стыки заявки не изменятся`,
-    )
-  }
-
-  if (
-    hasControlAvailabilityChanged(draft.pstoRequired, initialValue.pstoRequired) &&
-    !isYesValue(draft.pstoRequired) &&
-    (hasText(draft.pstoRequest) || hasText(draft.pstoRequestDate) || hasText(draft.pstoDate)) &&
-    !hasRealPstoReportHistory(draft)
-  ) {
-    hints.push(
-      hasText(draft.pstoRequestDate) || hasText(draft.pstoDate)
-        ? 'ПСТО: заявка и даты на стык будут удалены'
-        : 'ПСТО: заявка на стык будет удалена',
-    )
-  }
-
-  return hints.length ? hints.join('; ') : null
-}
-
 export function getWeldFormCancellationResultHint(draft: WeldInput, initialValue: WeldDraft) {
-  const hints: string[] = []
-
-  for (const method of LNK_METHODS) {
-    if (!isCancelledValue(draft[method.enabledKey])) continue
-    if (isCancelledValue(initialValue[method.enabledKey])) continue
-
-    const result = getNormalizedResult(draft[method.resultKey])
-    if (result === 'годен' || result === 'годен (отменен)' || result === 'да') {
-      hints.push(`${method.code}: результат уже внесен, статус будет «годен (отменен)»`)
-    } else if (result === 'ремонт' || result === 'вырез') {
-      hints.push(`${method.code}: результат уже внесен (${result}), статус будет «отменен», заявка, дата и заключение будут аннулированы`)
-    }
-  }
-
-  if (isCancelledValue(draft.pstoRequired)) {
-    if (isCancelledValue(initialValue.pstoRequired)) return hints.length ? hints.join('; ') : null
-
-    const pstoResult = getNormalizedResult(draft.pstoResult)
-    if (pstoResult === 'проведено' || pstoResult === 'проведено (отменен)' || pstoResult === 'да') {
-      hints.push('ПСТО: результат уже внесен, статус будет «проведено (отменен)»')
-    }
-  }
-
-  return hints.length ? hints.join('; ') : null
+  const methods = getControlAssignmentCancellations(draft, initialValue)
+  return methods.length ? `${methods.join(', ')}: назначение будет отменено. Заявки, результаты и заключения всех этапов сохраняются; фактический брак остаётся браком.` : null
 }
 
 export function getWeldFormReactivationResultHint(draft: WeldInput, initialValue: WeldDraft) {
@@ -310,17 +275,6 @@ function isActiveControlAvailability(value: unknown) {
   return isYesValue(value) || isCancelledValue(value)
 }
 
-function hasControlAvailabilityChanged(currentValue: unknown, initialValue: unknown) {
-  return normalizeControlAvailabilityForHint(currentValue) !== normalizeControlAvailabilityForHint(initialValue)
-}
-
-function normalizeControlAvailabilityForHint(value: unknown) {
-  if (isCancelledValue(value)) return 'отменен'
-  if (isAdditionalValue(value)) return 'дополнительный'
-  if (isYesValue(value)) return 'да'
-  return ''
-}
-
 
 function hasAnyText(row: WeldInput, fieldKeys: readonly WeldFieldKey[]) {
   return fieldKeys.some((fieldKey) => hasText(row[fieldKey]))
@@ -349,12 +303,12 @@ function hasRealPstoReportHistory(row: WeldInput) {
 }
 
 function isRealPstoResult(value: unknown) {
-  const result = String(value ?? '').trim().toLowerCase()
+  const result = normalizeControlResultText(value)
   return result === 'проведено' || result === 'проведено (отменен)' || result === 'да'
 }
 
 function getNormalizedResult(value: unknown) {
-  return String(value ?? '').trim().toLowerCase()
+  return normalizeControlResultText(value)
 }
 
 function getActiveLnkResultAfterSave(row: WeldInput, method: (typeof LNK_METHODS)[number]) {

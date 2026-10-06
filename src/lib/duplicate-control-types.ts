@@ -1,8 +1,14 @@
-export const DUPLICATE_CONTROL_METHODS = ['ВИК', 'РК', 'УЗК', 'ПВК', 'ТВМТ'] as const
+export const DUPLICATE_CONTROL_METHODS = ['ВИК', 'РК', 'УЗК', 'ПВК'] as const
 export const DUPLICATE_CONTROL_RESULTS = ['годен', 'ремонт', 'вырез'] as const
 
 export type DuplicateControlMethod = (typeof DUPLICATE_CONTROL_METHODS)[number]
 export type DuplicateControlResult = (typeof DUPLICATE_CONTROL_RESULTS)[number]
+
+export const DUPLICATE_CONTROL_METHOD_ERROR = 'Для дубль-контроля доступны только ВИК, РК, УЗК и ПВК. ПСТО и ТВМТ оформляются в разделе «ПСТО и ТВМТ».'
+
+export function isDuplicateControlMethod(value: unknown): value is DuplicateControlMethod {
+  return DUPLICATE_CONTROL_METHODS.some(method => method === value)
+}
 
 export type DuplicateControlRecord = {
   id: number

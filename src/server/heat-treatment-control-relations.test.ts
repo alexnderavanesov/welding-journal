@@ -29,17 +29,17 @@ describe('server heat-treatment relation loading', () => {
 
     await attachHeatTreatmentControlRelations(rows, db as never)
 
-    expect(query).toHaveBeenCalledTimes(3)
+    expect(query).toHaveBeenCalledTimes(4) // Includes one batched stable-chain-state read.
   })
 
-  it('keeps a 200,000-joint in-place dispatcher batch at two queries without reloading known settings', async () => {
+  it('keeps a 200,000-joint in-place dispatcher batch at three queries without reloading known settings', async () => {
     const query = vi.fn(async () => [])
     const db = createRelationDb(query)
     const rows = Array.from({ length: 200_000 }, (_, index) => ({ id: index + 1 }))
 
     const result = await attachHeatTreatmentControlRelationsInPlace(rows, db as never, DEFAULT_CONTROL_PROCESS_SETTINGS)
 
-    expect(query).toHaveBeenCalledTimes(2)
+    expect(query).toHaveBeenCalledTimes(3)
     expect(result).toBe(rows)
     expect(result[0]).not.toHaveProperty('preHeatTreatmentControls')
     expect(result[0]).not.toHaveProperty('pstoRepeatCycles')

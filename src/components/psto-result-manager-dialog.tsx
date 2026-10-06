@@ -3,6 +3,7 @@ import { ArrowRight, CalendarClock, FileSpreadsheet, Search, Trash2 } from 'luci
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
+import { JointConnectionTypeMeta, MetaSeparator } from '@/components/joint-meta'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { SystemDocumentDateEditor } from '@/components/system-document-date-editor'
@@ -365,6 +366,7 @@ export function PstoResultManagerDialog({
                     </h2>
                     <p className="mt-1 text-sm text-slate-500">
                       Проект: {text(selectedRow.projectTitle) || '-'} · Шифр: {text(selectedRow.subtitleCode) || '-'}
+                      <MetaSeparator /><JointConnectionTypeMeta row={selectedRow} />
                     </p>
                   </div>
                   <span className="rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800">

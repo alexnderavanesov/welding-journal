@@ -15,8 +15,9 @@ import {
 } from '@/lib/report-value-utils'
 import type { WeldInput } from '@/lib/weld-fields'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
-import { requiresPostHeatTreatmentCompletion } from '@/lib/tvmt-cycle'
+import { hasPstoDocumentHistory } from '@/lib/psto-cycle'
 import { canCreatePrimaryLnkRequest } from '@/lib/lnk-control-stage'
+import { canBackfillOwnLnkResult } from '@/lib/lnk-system-order'
 
 export function hasAnyLnkControl(row: WeldInput) {
   return LNK_METHODS.some((method) => isEnabledControlValue(row[method.enabledKey]))
@@ -70,7 +71,7 @@ export function toControlCancellationReportRow<T extends WeldInput>(row: T): T {
 }
 
 export function hasHeatTreatmentReportState(row: WeldInput) {
-  return isYesText(row.pstoRequired) || isCancelledPstoControl(row) || requiresPostHeatTreatmentCompletion(row)
+  return isYesText(row.pstoRequired) || isCancelledPstoControl(row) || hasPstoDocumentHistory(row)
 }
 
 export function toHeatTreatmentReportRow<T extends WeldInput>(row: T): T {
@@ -108,8 +109,9 @@ export function canCreateLnkRequest(
   row: WeldInput,
   settings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>,
 ) {
-  if (hasRejectedLnkResult(row)) return false
+  const rejected = hasRejectedLnkResult(row)
   return LNK_METHODS.some((method) =>
+    (!rejected || (!hasCompletedLnkRequestPosition(row, method) && canBackfillOwnLnkResult(row, method.code))) &&
     isEnabledControlValue(row[method.enabledKey]) &&
     !hasText(row[method.requestKey]) &&
     canCreatePrimaryLnkRequest(row, method.code, settings),

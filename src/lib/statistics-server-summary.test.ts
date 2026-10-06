@@ -6,10 +6,22 @@ import { buildStatisticsServerResult } from '@/lib/statistics-server-summary'
 import { buildStatisticsSummary } from '@/lib/statistics-summary'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 import { prepareReportRows } from '@/lib/use-report-rows'
-import { getPercentageLineNewWelderWarningKey } from '@/lib/percentage-line-summary'
 import { buildWeldingDynamics } from '@/lib/welding-dynamics'
+import { captureProgramChainStates } from '@/lib/line-program-chain-state'
 
 describe('buildStatisticsServerResult', () => {
+  it('filters current physical representatives without discarding stable predecessor context', () => {
+    const input = [makeRow(1, { joint: 'S1' }), makeRow(2, { joint: 'S1R1', weldDate: '' })]
+    const states = captureProgramChainStates(input)
+    const rows = input.map(row => ({ ...row, programChainState: states.get(row.id)! }))
+    rows[1].joint = 'F900'
+    for (const jointFilter of ['all', 'f', 's'] as const) {
+      const result = buildStatisticsServerResult({ rows, welderStamps: [], systemIndexSettings: DEFAULT_SYSTEM_INDEX_SETTINGS,
+        request: { tab: 'general', unit: 'joints', jointFilter } })
+      expect(result.generalProgressSummary).toMatchObject({ total: jointFilter === 's' ? 0 : 1,
+        completed: 0, remaining: jointFilter === 's' ? 0 : 1 })
+    }
+  })
   it('uses the current system WDI rule for stored rows before building statistics', () => {
     const rows = prepareReportRows(
       [
@@ -147,63 +159,10 @@ describe('buildStatisticsServerResult', () => {
     expect(result.generalStateRowIds.good).toContain(3)
   })
 
-  it('returns aggregate percentage-line data and keeps detailed rows server-side', () => {
-    const rows = Array.from({ length: 5_101 }, (_, index) =>
-      makeRow(index + 1, {
-        joint: `S${index + 1}`,
-        weldControlPercent: '10',
-        stamp1K: 'ABC1',
-      }),
-    )
-
-    const result = buildStatisticsServerResult({
-      rows,
-      welderStamps: [],
-      systemIndexSettings: DEFAULT_SYSTEM_INDEX_SETTINGS,
-      request: {
-        tab: 'percentageLines',
-        unit: 'joints',
-      },
-    })
-
-    expect(result.percentageLineSummary).toHaveLength(1)
-    expect(result.percentageLineSummary[0].rowCount).toBe(5_101)
-    expect(result.percentageLineSummary[0].rows).toEqual([])
-    expect(result.percentageLineSummary[0].stamps[0].officialJointCount).toBe(5_101)
-  })
-
-  it('passes accepted new-welder warnings into the potential control reduction calculation', () => {
-    const rows = Array.from({ length: 10 }, (_, index) =>
-      makeRow(index + 1, {
-        joint: `S${index + 1}`,
-        weldControlPercent: '10',
-        stamp1K: index < 5 ? 'AAA1' : 'BBB2',
-        hasRk: index === 0 || index === 1 || index === 5 || index === 6 ? 'да' : '',
-      }),
-    )
-    const request = { tab: 'percentageLines' as const, unit: 'joints' as const }
-    const initial = buildStatisticsServerResult({
-      rows,
-      welderStamps: [],
-      systemIndexSettings: DEFAULT_SYSTEM_INDEX_SETTINGS,
-      request,
-    })
-    const acceptedStamp = initial.percentageLineSummary[0].stamps.find((stamp) => stamp.stamp === 'BBB2')
-
-    expect(initial.percentageLineSummary[0].potentialControlReduction).toBe(1)
-    expect(acceptedStamp).toBeDefined()
-
-    const accepted = buildStatisticsServerResult({
-      rows,
-      welderStamps: [],
-      systemIndexSettings: DEFAULT_SYSTEM_INDEX_SETTINGS,
-      acceptedDispatcherWarningKeys: new Set([
-        getPercentageLineNewWelderWarningKey(acceptedStamp?.key ?? ''),
-      ]),
-      request,
-    })
-
-    expect(accepted.percentageLineSummary[0].potentialControlReduction).toBe(0)
+  it.each(['general', 'lnk', 'psto', 'welders', 'lineSummary'] as const)('does not expose an alternative percentage calculation through %s', tab => {
+    const result = buildStatisticsServerResult({ rows: [makeRow(1)], welderStamps: [],
+      systemIndexSettings: DEFAULT_SYSTEM_INDEX_SETTINGS, request: { tab } })
+    expect(result).not.toHaveProperty('percentageLineSummary')
   })
 
   it('uses configured chain suffixes in every statistics tab', () => {
@@ -240,38 +199,12 @@ describe('buildStatisticsServerResult', () => {
     ])
   })
 
-  it('does not count a configured repeated joint as a primary percentage-line rejection', () => {
-    const systemIndexSettings = {
-      ...DEFAULT_SYSTEM_INDEX_SETTINGS,
-      shopJoint: 'A',
-      fieldJoint: 'B',
-      repair: 'C',
-      cutout: 'D',
-      coil: 'E',
-    }
-    const rows = [
-      makeRow(1, {
-        joint: 'B1C1',
-        weldControlPercent: '10',
-        stamp1K: 'ABC1',
-        rkResult: 'ремонт',
-      }),
-    ]
-
-    const result = buildStatisticsServerResult({
-      rows,
-      welderStamps: [],
-      systemIndexSettings,
-      request: { tab: 'percentageLines', unit: 'joints' },
-    })
-
-    expect(result.percentageLineSummary[0].stamps[0].rejectedPrimaryControls).toBe(0)
-  })
 })
 
 function makeRow(id: number, overrides: Partial<WeldRow> = {}): WeldRow {
   return {
     id,
+    connectionType: 'СШ',
     projectTitle: 'Проект',
     subtitleCode: '400',
     line: 'LIN-001',

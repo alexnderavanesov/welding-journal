@@ -1,4 +1,6 @@
 import { lazy, Suspense } from 'react'
+import { tracePstoProgramModule } from '@/lib/psto-program-diagnostics'
+import { PstoProgramLoading } from './psto-program-diagnostic-boundary'
 import type { PstoRequestDialogProps } from '@/components/psto-request-dialog'
 import type { PstoRequestManagerDialogProps } from '@/components/psto-request-manager-dialog'
 import type { PstoResultDialogProps } from '@/components/psto-result-dialog'
@@ -13,7 +15,7 @@ const PstoResultDialog = lazy(() => import('@/components/psto-result-dialog').th
 const PstoResultManagerDialog = lazy(() => import('@/components/psto-result-manager-dialog').then((module) => ({ default: module.PstoResultManagerDialog })))
 const TvmtWorkflowDialog = lazy(() => import('@/components/tvmt-workflow-dialog').then((module) => ({ default: module.TvmtWorkflowDialog })))
 const PstoRepeatWorkflowDialog = lazy(() => import('@/components/psto-repeat-workflow-dialog').then((module) => ({ default: module.PstoRepeatWorkflowDialog })))
-const PstoLineProgramDialog = lazy(() => import('@/components/psto-line-program-dialog').then((module) => ({ default: module.PstoLineProgramDialog })))
+const PstoLineProgramDialog = lazy(() => tracePstoProgramModule('dialog', () => import('@/components/psto-line-program-dialog')).then((module) => ({ default: module.PstoLineProgramDialog })))
 
 export type ReportPstoDialogsProps = {
   requestDialogProps: PstoRequestDialogProps | null
@@ -35,7 +37,7 @@ export function ReportPstoDialogs({
   lineProgramDialogProps,
 }: ReportPstoDialogsProps) {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<PstoProgramLoading open={!!lineProgramDialogProps?.open} onClose={() => lineProgramDialogProps?.onClose()} />}>
       {requestDialogProps ? <PstoRequestDialog {...requestDialogProps} /> : null}
       {requestManagerDialogProps ? <PstoRequestManagerDialog {...requestManagerDialogProps} /> : null}
       {resultDialogProps ? <PstoResultDialog {...resultDialogProps} /> : null}

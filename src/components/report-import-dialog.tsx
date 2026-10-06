@@ -26,6 +26,9 @@ import {
   type ReportImportRecord,
 } from '@/lib/report-import-preview'
 import { cn } from '@/lib/utils'
+import { addLineProgramImportErrors } from '@/lib/line-program-import'
+import { getLineProgramIdentityKey, normalizeLineProgramIdentity, type LineProgramRecord } from '@/lib/line-program'
+import { getLineProgramsForImport } from '@/server/line-program'
 import type { StampSelectOptionLike } from '@/lib/weld-journal-mutation-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
@@ -66,6 +69,7 @@ export function ReportImportDialog({
   const [mode, setMode] = useState<ReportImportMode>('newRecords')
   const [templateDownloaded, setTemplateDownloaded] = useState(false)
   const [preview, setPreview] = useState<ReportImportPreview | null>(null)
+  const [previewPrograms, setPreviewPrograms] = useState<LineProgramRecord[]>([])
   const [previewRowLimit, setPreviewRowLimit] = useState<PreviewRowLimit>(50)
   const [errorsCollapsed, setErrorsCollapsed] = useState(false)
   const [showOnlyErrorRows, setShowOnlyErrorRows] = useState(false)
@@ -187,7 +191,10 @@ export function ReportImportDialog({
               welderStamps,
               welderStampSuspensions,
             })
-      setPreview(nextPreview)
+      const identities = [...new Map(nextPreview.records.filter((row) => !row.deleteRequested && String(row.line ?? '').trim()).map((row) => [getLineProgramIdentityKey(row), normalizeLineProgramIdentity(row)])).values()]
+      const programs = identities.length ? await getLineProgramsForImport({ data: { identities } }) : []
+      setPreviewPrograms(programs)
+      setPreview(addLineProgramImportErrors(nextPreview, programs, rows))
       setPreviewRowLimit(50)
       setErrorsCollapsed(false)
       setShowOnlyErrorRows(false)
@@ -222,12 +229,12 @@ export function ReportImportDialog({
 
   const handleFixPreviewErrors = () => {
     if (mode !== 'newRecords' || !preview || preview.errors.length === 0) return
-    setPreview(fixReportImportPreviewErrors(preview, {
+    setPreview(addLineProgramImportErrors(fixReportImportPreviewErrors(preview, {
       activeReport,
       weldFormStampSelectOptions,
       welderStamps,
       welderStampSuspensions,
-    }))
+    }), previewPrograms, rows))
   }
 
   const handleNextError = () => {

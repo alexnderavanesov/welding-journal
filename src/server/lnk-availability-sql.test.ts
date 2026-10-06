@@ -50,7 +50,8 @@ describe('LNK availability SQL', () => {
     `)
 
     expect(compiled.sql).not.toContain('"pre_heat_treatment_lnk_exempt"')
-    expect(compiled.sql).not.toContain("= 'годен'")
+    expect(compiled.sql).not.toContain(`lower(btrim(coalesce("weld_joints"."tvmt_result"::text, ''))) = 'годен'`)
+    expect(compiled.sql).toContain('"vik_result"') // historical backfill still requires its own prerequisites
     expect(compiled.sql).toContain('"pre_heat_treatment_controls"')
   })
 })

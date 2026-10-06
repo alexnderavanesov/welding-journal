@@ -16,7 +16,7 @@ import {
   type SystemDocumentReference,
 } from '@/lib/system-document-types'
 import { useSaveCheckSettings } from '@/lib/save-check-settings'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import { useSecurityGuard } from '@/lib/security-context'
 import {
   getNewChronologyRootCauseState,
@@ -119,7 +119,7 @@ export function SystemDocumentDateEditor({
       if (!result) return
       setServerError(null)
       setNextDate(result.nextDate)
-      await invalidateWeldJoints(
+      scheduleWeldDataRefresh(
         queryClient,
         { upsertRows: result.rows },
         {

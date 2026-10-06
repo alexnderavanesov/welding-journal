@@ -7,30 +7,28 @@ import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 
 describe('buildVisibleDispatcherTasks', () => {
-  it('keeps dispatcher row tasks tied to their individual settings', () => {
+  it('keeps conflicting program requirements mandatory even when all DZ settings are off', () => {
     const enabledTasks = buildTasks({
       ...disabledSettings(),
-      'line-percent': true,
     })
 
     expect(enabledTasks.repeatedJointTasks).toHaveLength(1)
     expect(enabledTasks.repeatedJointTasks[0]).toMatchObject({
       kind: 'line-consistency',
       fieldKey: 'weldControlPercent',
+      systemWarningCode: 'СП-02',
     })
 
     const disabledTasks = buildTasks({
       ...disabledSettings(),
-      'line-percent': false,
     })
 
-    expect(disabledTasks.repeatedJointTasks).toEqual([])
+    expect(disabledTasks.repeatedJointTasks).toEqual(enabledTasks.repeatedJointTasks)
   })
 
-  it('hides accepted dispatcher warning keys without changing the source rows', () => {
+  it('does not hide SP-02 using a saved acceptance key', () => {
     const initialTasks = buildTasks({
       ...disabledSettings(),
-      'line-percent': true,
     })
     const taskKey = initialTasks.repeatedJointTasks[0]?.key
 
@@ -39,12 +37,11 @@ describe('buildVisibleDispatcherTasks', () => {
     const hiddenTasks = buildTasks(
       {
         ...disabledSettings(),
-        'line-percent': true,
       },
       { acceptedDispatcherWarningKeys: new Set([taskKey ?? '']) },
     )
 
-    expect(hiddenTasks.repeatedJointTasks).toEqual([])
+    expect(hiddenTasks.repeatedJointTasks).toEqual(initialTasks.repeatedJointTasks)
   })
 
   it('keeps SP-01 visible despite disabled DZ settings and saved hide or accept keys', () => {
@@ -78,7 +75,7 @@ describe('buildVisibleDispatcherTasks', () => {
         vikRequest: 'Основная заявка ВИК',
       })],
       controlProcessSettings: {
-        layeredControlEnabled: true,
+        pvkGoodOnly: false,
         preHeatTreatmentLnkEnabled: false,
         allowPrimaryLnkBeforePreviousStagesComplete: false,
       },
@@ -90,7 +87,6 @@ describe('buildVisibleDispatcherTasks', () => {
   it('builds compact row id index for table highlighting', () => {
     const tasks = buildTasks({
       ...disabledSettings(),
-      'line-percent': true,
     })
 
     const rowIds = getDispatcherTaskRowIds(tasks.repeatedJointTasks)
@@ -111,7 +107,7 @@ describe('buildVisibleDispatcherTasks', () => {
       },
     )
 
-    expect(tasks.repeatedJointTasks).toHaveLength(1)
+    expect(tasks.repeatedJointTasks.filter(task => task.kind === 'rename')).toHaveLength(1)
     expect(getDispatcherTaskRowIds(tasks.repeatedJointTasks)).toEqual(new Set([2, 3]))
   })
 
@@ -119,7 +115,6 @@ describe('buildVisibleDispatcherTasks', () => {
     const tasks = buildTasks(
       {
         ...disabledSettings(),
-        'line-percent': true,
       },
       { includeRepeatedJointTasks: false },
     )
@@ -671,6 +666,10 @@ function disabledSettings(): DispatcherSettings {
 
 function row(values: Partial<WeldRow>): WeldRow {
   return {
+    category: 'II',
+    groupName: 'A',
+    weldControlPercent: 10,
+    pvkControlPercent: 1,
     id: values.id ?? 1,
     projectTitle: 'Проект',
     subtitleCode: '400',

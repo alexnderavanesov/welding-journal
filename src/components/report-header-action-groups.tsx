@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { WorkflowActionMenuItem } from '@/components/workflow-action-menu-item'
 
 const REPORT_WORKFLOW_BUTTON_CLASS =
-  'border-sky-200 bg-sky-50 text-sky-900 hover:bg-sky-100 hover:text-sky-950'
+  'border-sky-100 bg-sky-50 text-sky-700 hover:border-sky-200 hover:bg-sky-100 hover:text-sky-800'
 
 type WeldingJournalHeaderActionsProps = {
   onCreateWeldJoint: () => void

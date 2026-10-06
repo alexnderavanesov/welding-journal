@@ -5,6 +5,7 @@ import { getLnkResultBadgeClass } from '@/lib/report-badges'
 import { LNK_METHODS, LNK_RESULT_OPTIONS } from '@/lib/report-config'
 import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
+import { getUnofficialLnkGoodResultReason } from '@/lib/unofficial-lnk-result-guard'
 
 type LnkResultMethod = (typeof LNK_METHODS)[number]
 
@@ -31,23 +32,26 @@ export function LnkResultManagerActions({
 }: LnkResultManagerActionsProps) {
   const saveCheckSettings = useSaveCheckSettings()
   const removalBlockReason = getLnkResultRemovalBlockReason(row, method.requestKey, saveCheckSettings)
+  const officialityReason = getUnofficialLnkGoodResultReason(row, 'годен', currentResult, method.code)
   return (
     <div className="flex content-start flex-col items-end gap-1.5">
       <div className="flex flex-wrap justify-end gap-1.5">
         <span className="w-full text-right text-xs font-medium text-slate-500">Изменить на:</span>
         {LNK_RESULT_OPTIONS.map((option) => {
           const disabledByRepairRule = saveCheckSettings.lnkResultRepairRules && option === 'ремонт' && isLnkRepairForbidden(row)
+          const blockReason = getUnofficialLnkGoodResultReason(row, option, currentResult, method.code) ||
+            (disabledByRepairRule ? getLnkRepairForbiddenReason(row) : null)
           return (
             <button
               key={option}
               type="button"
               onClick={() => {
-                if (!disabledByRepairRule) onReplaceResult(row, method.requestKey, option)
+                if (!blockReason) onReplaceResult(row, method.requestKey, option)
               }}
-              disabled={disabledByRepairRule || isResultCorrectionPending || isResultReplacementPending}
-              title={disabledByRepairRule ? getLnkRepairForbiddenReason(row) : undefined}
+              disabled={Boolean(blockReason) || isResultCorrectionPending || isResultReplacementPending}
+              title={blockReason ?? undefined}
               className={`rounded border px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                disabledByRepairRule
+                blockReason
                   ? 'border-slate-200 bg-slate-50 text-slate-400'
                   : (pendingResult || currentResult) === option
                     ? getLnkResultBadgeClass(option)
@@ -70,6 +74,7 @@ export function LnkResultManagerActions({
           Удалить результат
         </button>
       </div>
+      {officialityReason ? <p className="max-w-sm text-right text-xs leading-5 text-amber-700">{officialityReason}</p> : null}
       {removalBlockReason ? (
         <p className="max-w-sm text-right text-xs leading-5 text-amber-700">{removalBlockReason}</p>
       ) : null}

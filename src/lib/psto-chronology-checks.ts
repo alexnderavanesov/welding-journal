@@ -1,3 +1,4 @@
+import { normalizeControlResultText } from '@/lib/report-value-utils'
 import { formatDisplayDate, getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import {
   DEFAULT_SAVE_CHECK_SETTINGS,
@@ -279,7 +280,7 @@ function getCycleIssues({
       row,
       cycle,
       'weld-after-request',
-      `Стык ${joint}: дата заявки ${pstoLabel} ${formatDisplayDate(requestDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
+      `Стык ${joint}: дата заявки ${pstoLabel} (${formatDisplayDate(requestDate)}) раньше даты сварки (${formatDisplayDate(weldDate)}).`,
     ))
   }
   if (
@@ -293,7 +294,7 @@ function getCycleIssues({
       row,
       cycle,
       'weld-after-result',
-      `Стык ${joint}: дата результата ${pstoLabel} ${formatDisplayDate(resultDate)} раньше даты сварки ${formatDisplayDate(weldDate)}.`,
+      `Стык ${joint}: дата результата ${pstoLabel} (${formatDisplayDate(resultDate)}) раньше даты сварки (${formatDisplayDate(weldDate)}).`,
     ))
   }
   if (settings.pstoResultRequestDateOrder && requestDate && resultDate && resultDate < requestDate) {
@@ -301,7 +302,7 @@ function getCycleIssues({
       row,
       cycle,
       'request-after-result',
-      `Стык ${joint}: дата результата ${pstoLabel} ${formatDisplayDate(resultDate)} раньше даты заявки ПСТО ${formatDisplayDate(requestDate)}.`,
+      `Стык ${joint}: дата результата ${pstoLabel} (${formatDisplayDate(resultDate)}) раньше даты заявки ${pstoLabel} (${formatDisplayDate(requestDate)}).`,
     ))
   }
   if (settings.pstoResultRequestDateOrder && requestDate && previousTvmtDate && requestDate < previousTvmtDate) {
@@ -309,7 +310,7 @@ function getCycleIssues({
       row,
       cycle,
       'previous-tvmt-after-repeat-request',
-      `Стык ${joint}: дата заявки ${pstoLabel} ${formatDisplayDate(requestDate)} раньше результата предыдущей ТВМТ ${formatDisplayDate(previousTvmtDate)}.`,
+      `Стык ${joint}: дата заявки ${pstoLabel} (${formatDisplayDate(requestDate)}) раньше результата предыдущей ТВМТ цикла #${previousCycle?.sequence} (${formatDisplayDate(previousTvmtDate)}).`,
     ))
   }
   if (settings.pstoResultRequestDateOrder && tvmtRequestDate && resultDate && tvmtRequestDate < resultDate) {
@@ -317,7 +318,7 @@ function getCycleIssues({
       row,
       cycle,
       'psto-after-tvmt-request',
-      `Стык ${joint}: дата заявки ${tvmtLabel} ${formatDisplayDate(tvmtRequestDate)} раньше даты ${pstoLabel} ${formatDisplayDate(resultDate)}.`,
+      `Стык ${joint}: дата заявки ${tvmtLabel} (${formatDisplayDate(tvmtRequestDate)}) раньше даты ${pstoLabel} (${formatDisplayDate(resultDate)}).`,
     ))
   }
   if (settings.pstoResultRequestDateOrder && tvmtResultDate && resultDate && tvmtResultDate < resultDate) {
@@ -325,7 +326,7 @@ function getCycleIssues({
       row,
       cycle,
       'psto-after-tvmt-result',
-      `Стык ${joint}: дата результата ${tvmtLabel} ${formatDisplayDate(tvmtResultDate)} раньше даты ${pstoLabel} ${formatDisplayDate(resultDate)}.`,
+      `Стык ${joint}: дата результата ${tvmtLabel} (${formatDisplayDate(tvmtResultDate)}) раньше даты ${pstoLabel} (${formatDisplayDate(resultDate)}).`,
     ))
   }
   if (settings.pstoResultRequestDateOrder && tvmtRequestDate && tvmtResultDate && tvmtResultDate < tvmtRequestDate) {
@@ -333,7 +334,7 @@ function getCycleIssues({
       row,
       cycle,
       'tvmt-request-after-result',
-      `Стык ${joint}: дата результата ${tvmtLabel} ${formatDisplayDate(tvmtResultDate)} раньше даты заявки ТВМТ ${formatDisplayDate(tvmtRequestDate)}.`,
+      `Стык ${joint}: дата результата ${tvmtLabel} (${formatDisplayDate(tvmtResultDate)}) раньше даты заявки ${tvmtLabel} (${formatDisplayDate(tvmtRequestDate)}).`,
     ))
   }
   return issues
@@ -379,10 +380,12 @@ function getIssueDocumentStage(kind: PstoChronologyIssueKind): PstoChronologyIss
 }
 
 export function getPstoChronologyIssueIdentity(issue: PstoChronologyIssue) {
+  const prefix = `Стык ${formatJoint(issue.row)}: `
+  const detail = issue.message.startsWith(prefix) ? issue.message.slice(prefix.length) : issue.message
   return JSON.stringify([
     issue.row.id ?? [issue.row.projectTitle, issue.row.subtitleCode, issue.row.line, issue.row.joint],
     issue.cycleSource, issue.cycleId, issue.sequence, issue.documentStage,
-    issue.kind, issue.message,
+    issue.kind, detail,
   ])
 }
 
@@ -394,7 +397,7 @@ function formatPstoChronologyIssueSaveBlockReason(issue: PstoChronologyIssue) {
 }
 
 function hasFinalPstoResult(value: unknown) {
-  const result = String(value ?? '').trim().toLowerCase()
+  const result = normalizeControlResultText(value)
   return result === 'проведено' || result === 'проведено (отменен)' || result === 'да'
 }
 

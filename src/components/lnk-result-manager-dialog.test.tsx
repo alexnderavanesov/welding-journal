@@ -7,6 +7,7 @@ import { LNK_METHODS } from '@/lib/lnk-report-config'
 
 const vikMethod = LNK_METHODS.find((method) => method.requestKey === 'vikRequest')!
 const rkMethod = LNK_METHODS.find((method) => method.requestKey === 'rkRequest')!
+const pvkMethod = LNK_METHODS.find((method) => method.requestKey === 'pvkRequest')!
 
 const vikRow = {
   id: 1,
@@ -80,6 +81,63 @@ function renderDialog(overrides: Partial<Parameters<typeof LnkResultManagerDialo
 }
 
 describe('LnkResultManagerDialog', () => {
+  const layeredRow = { ...vikRow, layeredControlAssigned: true, pvkResult: 'годен', pvkConclusion: 'ПВК-1', pvkConclusionDate: '2026-08-15', hasPvk: 'да' } as WeldRow
+  const layeredEntry = { row: layeredRow, method: pvkMethod, changeKey: '1:pvkRequest' }
+
+  it('offers a distinct layered removal only for the selected assigned PVK result', () => {
+    const onRemoveLayeredControl = vi.fn()
+    const onClearResult = vi.fn()
+    renderDialog({ rows: [layeredRow, rkRow], entries: [layeredEntry, { row: rkRow, method: rkMethod, changeKey: '2:rkRequest' }], initialEntryKey: layeredEntry.changeKey, onRemoveLayeredControl, onClearResult })
+    fireEvent.click(screen.getByRole('button', { name: 'Убрать послойный контроль' }))
+    expect(onRemoveLayeredControl).toHaveBeenCalledExactlyOnceWith(layeredRow)
+    expect(onClearResult).not.toHaveBeenCalled()
+    expect(screen.getByText(/обычный ПВК сохранится/)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: /Линия-2 · F2/ }))
+    expect(screen.queryByRole('button', { name: 'Убрать послойный контроль' })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    { row: { ...layeredRow, layeredControlAssigned: false }, method: pvkMethod },
+    { row: layeredRow, method: vikMethod },
+  ])('does not offer removal without an assigned PVK card', ({ row, method }) => {
+    renderDialog({ rows: [row], entries: [{ row, method, changeKey: 'selected' }], initialEntryKey: 'selected', onRemoveLayeredControl: vi.fn() })
+    expect(screen.queryByRole('button', { name: 'Убрать послойный контроль' })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    { pendingResultChanges: { '2:rkRequest': 'годен' } },
+    { conclusionDrafts: { '1:pvkRequest': 'Новое имя' } },
+    { isResultReplacementPending: true },
+    { isConclusionCorrectionPending: true },
+    { isRequestCorrectionPending: true },
+    { isResultCorrectionPending: true },
+  ])('protects unfinished edits and in-flight mutations from immediate layered removal: %j', (overrides) => {
+    const onRemoveLayeredControl = vi.fn()
+    renderDialog({ rows: [layeredRow], entries: [layeredEntry], initialEntryKey: layeredEntry.changeKey, onRemoveLayeredControl, ...overrides })
+    const button = screen.getByRole('button', { name: 'Убрать послойный контроль' })
+    expect(button).toBeDisabled()
+    fireEvent.click(button)
+    expect(onRemoveLayeredControl).not.toHaveBeenCalled()
+  })
+
+  it('blocks competing writes while removing and shows feedback only on the affected PVK card', () => {
+    renderDialog({ rows: [layeredRow], entries: [layeredEntry], initialEntryKey: layeredEntry.changeKey, onRemoveLayeredControl: vi.fn(), isLayeredControlRemovalPending: true,
+      layeredControlRemovalFeedback: { rowId: 2, tone: 'error', message: 'Ошибка другого стыка' } })
+    expect(screen.getByRole('button', { name: 'Удаление…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Удалить результат' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Сохранить изменения' })).toBeDisabled()
+    expect(screen.getByPlaceholderText('Наименование заключения для этого стыка')).toBeDisabled()
+    expect(screen.queryByText('Ошибка другого стыка')).not.toBeInTheDocument()
+  })
+
+  it.each([false, true])('does not keep an outdated removal notice after reassignment: assigned=%s', (assigned) => {
+    const row = { ...layeredRow, layeredControlAssigned: assigned }
+    renderDialog({ rows: [row], entries: [{ ...layeredEntry, row }], initialEntryKey: layeredEntry.changeKey,
+      onRemoveLayeredControl: vi.fn(), layeredControlRemovalFeedback: { rowId: row.id, tone: 'success', message: 'Послойный контроль убран.' } })
+    if (assigned) expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    else expect(screen.getByRole('status')).toHaveTextContent('Послойный контроль убран.')
+  })
+
   it('opens the exact result card requested by table navigation', () => {
     const actions = renderDialog()
 

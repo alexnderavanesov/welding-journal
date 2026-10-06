@@ -3,6 +3,7 @@ import { asc, inArray, or, sql, type SQL } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import { requireDb } from '@/db'
 import {
+  dispatcherAcceptedWarnings,
   welderStampSuspensions,
   welderStamps,
   weldJoints,
@@ -199,22 +200,49 @@ export const saveWelderStampRecords = createServerFn({ method: 'POST' })
       )
       await assertRemovedWelderStampAliasesAreUnused(tx, currentStampRows, preparedRecords)
 
-      await tx.delete(welderStamps)
-
-      if (preparedRecords.length === 0) {
-        await tx.execute(sql`select setval(pg_get_serial_sequence('welder_stamps','id'), 1, false)`)
-      } else {
-        await tx.insert(welderStamps).values(preparedRecords.map(toDbInsert))
-        await tx.execute(
-          sql`select setval(pg_get_serial_sequence('welder_stamps','id'), coalesce((select max(id) from welder_stamps), 1), true)`,
-        )
-      }
+      // Preserve object IDs and dependent decisions during ordinary edits. Only truly
+      // removed registry objects may cascade-delete their accepted exceptions.
+      await persistWelderStampObjects(tx, currentStampRows, preparedRecords)
       await markDispatcherTaskIndexDirty(tx)
       const savedStampRows = await tx.select().from(welderStamps).orderBy(asc(welderStamps.id))
       const savedSuspensionRows = await tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id))
       return createRegistrySnapshot(savedStampRows, savedSuspensionRows)
     })
   })
+
+/** Validation and registry lock belong to the caller. Retained IDs are never deleted/recreated. */
+export async function persistWelderStampObjects(
+  tx: import('./system-document-sequences').SystemDocumentSequenceTransaction,
+  current: readonly WelderStamp[], records: readonly WelderStampPayload[],
+) {
+  const remaining = new Set(records.map(record => record.id))
+  const removed = current.filter(record => !remaining.has(record.id)).map(record => record.id)
+  if (removed.length) await tx.delete(welderStamps).where(inArray(welderStamps.id, removed))
+  if (!records.length) return
+  const before = new Map(current.map(record => [record.id, record]))
+  const renamed = records.flatMap(record => {
+    const old = before.get(record.id)
+    const oldName = (old?.naksStamp ?? '').trim(), newName = record.naksStamp.trim()
+    return old && oldName !== newName ? [{ id: record.id, oldName, newName,
+      oldToken: ',' + JSON.stringify(oldName.toLocaleLowerCase('ru')) + ']', newToken: ',' + JSON.stringify(newName.toLocaleLowerCase('ru')) + ']' }] : []
+  })
+  const expiryPrefix = sql`'welder-stamp-expiry:' || split_part(decisions.key, ':', 2) || ':' || changes.id || ':'`
+  if (renamed.length) await tx.execute(sql`update ${dispatcherAcceptedWarnings} as decisions set key = case
+      when decisions.kind = 'percentage-line-control' then replace(decisions.key, changes.old_token, changes.new_token)
+      else ${expiryPrefix} || changes.new_name || ':' || substring(decisions.key from length(${expiryPrefix} || changes.old_name || ':') + 1) end
+    from unnest(${sql.param(renamed.map(change => change.id))}::integer[], ${sql.param(renamed.map(change => change.oldToken))}::text[], ${sql.param(renamed.map(change => change.newToken))}::text[],
+      ${sql.param(renamed.map(change => change.oldName))}::text[], ${sql.param(renamed.map(change => change.newName))}::text[]) as changes(id, old_token, new_token, old_name, new_name)
+    where decisions.welder_stamp_id = changes.id and (decisions.kind = 'percentage-line-control'
+      or (decisions.kind = 'welder-stamp-expiry' and left(decisions.key, length(${expiryPrefix} || changes.old_name || ':')) = ${expiryPrefix} || changes.old_name || ':'))`)
+  const updateSet = Object.fromEntries(Object.keys(toDbInsert(records[0])).filter(key => key !== 'id').map(key => [key,
+    sql`excluded.${sql.identifier(welderStamps[key as keyof typeof welderStamps.$inferInsert].name)}`,
+  ]))
+  for (let offset = 0; offset < records.length; offset += 500) {
+    await tx.insert(welderStamps).values(records.slice(offset, offset + 500).map(toDbInsert))
+      .onConflictDoUpdate({ target: welderStamps.id, set: { ...updateSet, updatedAt: new Date() } })
+  }
+  await tx.execute(sql`select setval(pg_get_serial_sequence('welder_stamps','id'), greatest((select last_value from welder_stamps_id_seq), (select max(id) from welder_stamps)), true)`)
+}
 
 function getWelderStampAliasSet(
   records: readonly WelderStampAliasRecord[],

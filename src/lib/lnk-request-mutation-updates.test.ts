@@ -45,7 +45,7 @@ describe('lnk request mutation updates', () => {
     const [issue] = getLnkChronologyIssues(proposedRows)
 
     expect(proposedRows[0]?.vikRequestDate).toBe('2026-07-01')
-    expect(issue?.message).toBe('Стык F4: дата заявки ВИК 01.07.2026 раньше даты сварки 04.07.2026.')
+    expect(issue?.message).toBe('Стык F4: дата заявки ВИК (01.07.2026) раньше даты сварки (04.07.2026).')
   })
 
   it('allows a scheduled request in both strict and permissive result modes', () => {

@@ -267,6 +267,48 @@
       "when": 1790108513295,
       "tag": "0037_regular_ultron",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1790429060589,
+      "tag": "0038_motionless_master_mold",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1790430147238,
+      "tag": "0039_peaceful_jetstream",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1790674537560,
+      "tag": "0040_curious_iceman",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790787567042,
+      "tag": "0041_warm_madrox",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1790857824540,
+      "tag": "0042_large_timeslip",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1790858612301,
+      "tag": "0043_unknown_slapstick",
+      "breakpoints": true
     }
   ]
 }

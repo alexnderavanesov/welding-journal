@@ -142,7 +142,7 @@ export function normalizeRkResult(value: unknown) {
 
 export function isRkCancelledResult(value: unknown) {
   const normalized = normalizeRkResult(value)
-  return normalized === 'годен (отменен)' || normalized === 'отменен'
+  return normalized === 'годен (отменен)' || normalized === 'отменен' || normalized.endsWith(' · назначение отменено')
 }
 
 function areStringListsEqual(left: readonly string[], right: readonly string[]) {

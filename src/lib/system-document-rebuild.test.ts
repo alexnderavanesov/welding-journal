@@ -14,6 +14,26 @@ const rows = [
 ] as WeldRow[]
 
 describe('system document rebuild preview', () => {
+  it('refuses multiplied large output without returning a truncated set of groups', () => {
+    const longRows = Array.from({ length: 10 }, (_, i) => ({ ...rows[0], id: i + 1, joint: `${i}-${'X'.repeat(500_000)}` }))
+    expect(() => buildSystemDocumentRebuildDocuments({
+      sources: [{ document: { documentId: 1, type: 'pstoRequest', title: 'Ручной', date: '2026-09-01', rowIds: longRows.map(row => row.id) } as never, rows: longRows }],
+      settings: { ...REQUEST_CONCLUSION_DEFAULT_SETTINGS, splitModes: { ...REQUEST_CONCLUSION_DEFAULT_SETTINGS.splitModes, pstoRequest: 'joint' } },
+      nextNumbers: {},
+    })).toThrow('Предпросмотр пакета слишком объёмный')
+    expect(longRows).toHaveLength(10)
+  })
+
+  it('reserves numbers owned outside the selected packet as well', () => {
+    const preview = buildSystemDocumentRebuildDocuments({
+      sources: [{ document: { documentId: 1, type: 'lnkConclusion', methodCode: 'РК', title: 'Заключение-РК-24.08.2026-005',
+        date: '2026-08-24', rowIds: [1, 2] } as never, rows }],
+      settings: { ...REQUEST_CONCLUSION_DEFAULT_SETTINGS, splitModes: { ...REQUEST_CONCLUSION_DEFAULT_SETTINGS.splitModes, lnkConclusionRk: 'joint' } },
+      nextNumbers: { lnkConclusionRk: 6 }, occupiedNumbers: new Map([['lnkConclusionRk', new Set([6, 7])]]),
+    })
+    expect(preview.documents[0].groups.map(group => group.previewName)).toEqual(['ЗНК-РК-24.08.2026-005', 'ЗНК-РК-24.08.2026-008'])
+  })
+
   it('splits one system RK conclusion into separate numbered documents', () => {
     const settings = {
       ...REQUEST_CONCLUSION_DEFAULT_SETTINGS,
@@ -173,7 +193,7 @@ describe('system document rebuild preview', () => {
     })).toContain('Заполните поля разделения')
   })
 
-  it('leaves pre-TO and repeat-cycle documents outside the legacy history rebuild', () => {
+  it('leaves pre-TO documents outside the rebuild', () => {
     const preview = buildSystemDocumentRebuildDocuments({
       sources: [{
         document: {

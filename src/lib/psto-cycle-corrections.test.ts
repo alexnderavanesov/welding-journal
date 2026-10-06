@@ -257,7 +257,7 @@ describe('PSTO cycle corrections', () => {
       date: '2026-08-08',
       name: 'ЗТВМТ-2',
       result: 'годен',
-    })).toThrow('раньше ТВМТ, завершившей цикл')
+    })).toThrow('раньше ТВМТ цикла #1')
   })
 
   it('does not turn the latest TVMT into a failed result while post-control exists', () => {
@@ -417,7 +417,7 @@ describe('PSTO cycle corrections', () => {
       date: '2026-08-11',
       name: 'ЗТВМТ-1 исправлено',
       result: 'годен',
-    })).toThrow('раньше ТВМТ, завершившей цикл')
+    })).toThrow('раньше ТВМТ цикла #1')
     expect(row.pstoRepeatCycles).toHaveLength(1)
     expect(row.tvmtResult).toBe('не годен')
   })

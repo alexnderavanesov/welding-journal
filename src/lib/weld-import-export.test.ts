@@ -8,7 +8,7 @@ import {
   recordsToExportMatrix,
   normalizeWeldInput,
 } from './weld-record-transforms'
-import { buildExportWorkbook } from './weld-export-builders'
+import { buildExportWorkbook } from '@/test/weld-workbook-fixture'
 import { buildExportXlsxBytes } from './weld-export-xlsx-xml'
 import { recordsToVisibleExportMatrix } from './weld-export-utils'
 import { emptyToNull, excelSerialDateToIso, parseBoolean, parseDate, parseImportCell } from './weld-import-parsers'

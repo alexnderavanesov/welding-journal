@@ -1,20 +1,14 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { parseJointChainName } from '@/lib/joint-chain'
-import { OFFICIAL_WELDER_STAMP_FIELD_KEYS } from '@/lib/report-common-config'
-import {
-  hasText,
-  isAdditionalControlValue,
-  isCancelledControlValue,
-  isEnabledControlValue,
-} from '@/lib/report-value-utils'
-import { calculateFinalStatus, CONTROL_RESULT_PAIRS, normalizeFinalStatus, normalizeResultStatus } from '@/lib/weld-status'
-import { getRejectedDuplicateControls, hasRejectedDuplicateControl } from '@/lib/duplicate-control-utils'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
-import { isAngularConnectionType } from '@/lib/connection-type'
-import { getRejectedPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
+import { calculateFinalStatus, normalizeFinalStatus } from '@/lib/weld-status'
 import { encodeIdentityKey } from '@/lib/identity-key'
+import { getLineProgramIdentityKey } from '@/lib/line-program'
+import {
+  calculateLineProgram, isLineProgramCalculationRow, isLineProgramControlRow, parseLineProgramPercent,
+  type LineProgramDemand, type LineProgramStampCalculation,
+} from '@/lib/line-program-calculation'
+import { buildLineProgramTopology } from './line-program-topology'
 
-export type PercentageControlMethod = 'РК' | 'УЗК' | 'ПВК'
 
 export type PercentageLineStampSummary = {
   key: string
@@ -37,7 +31,7 @@ export type PercentageLineStampSummary = {
   coveredControls: number
   rejectedCoveredControls: number
   completedControls: number
-  rejectedPrimaryControls: number
+  rejectedControlRows: number
   goodJoints: number
   rejectedJoints: number
   waitingRequestJoints: number
@@ -54,8 +48,8 @@ export type PercentageLineStampSummary = {
   rejectedCoveredRowIds: number[]
   completedJointNames: string[]
   completedRowIds: number[]
-  rejectedPrimaryJointNames: string[]
-  rejectedPrimaryRowIds: number[]
+  rejectedJointNames: string[]
+  rejectedRowIds: number[]
   missingCandidateJointNames: string[]
   missingCandidateRowIds: number[]
   assignmentCandidateJointNames: string[]
@@ -65,6 +59,9 @@ export type PercentageLineStampSummary = {
   missingControls: number
   excessControls: number
   fullControlRequired: boolean
+  common: LineProgramDemand
+  pvk: LineProgramDemand
+  duplicateAssignmentRowIds: number[]
 }
 
 export type PercentageLineSummary = {
@@ -73,470 +70,110 @@ export type PercentageLineSummary = {
   subtitleCode: string
   line: string
   percent: number
-  potentialControlReduction: number
   rowCount: number
   rows: WeldRow[]
   stamps: PercentageLineStampSummary[]
 }
 
-type LineGroup = {
-  key: string
-  projectTitle: string
-  subtitleCode: string
-  line: string
-  percent: number
-  rows: WeldRow[]
-}
-
-type StampAccumulator = {
-  stamp: string
-  rows: WeldRow[]
-}
-
-const PERCENTAGE_CONTROL_METHODS = [
-  { code: 'РК' as const, enabledKey: 'hasRk' as const, resultKey: 'rkResult' as const },
-  { code: 'УЗК' as const, enabledKey: 'hasUzk' as const, resultKey: 'uzkResult' as const },
-]
-
-const ANGULAR_PERCENTAGE_CONTROL_METHODS = [
-  ...PERCENTAGE_CONTROL_METHODS,
-  { code: 'ПВК' as const, enabledKey: 'hasPvk' as const, resultKey: 'pvkResult' as const },
-]
 
 export const PERCENTAGE_LINE_NEW_WELDER_WARNING_KEY_PREFIX = 'percentage-line-control:new-welder:'
-
 export function getPercentageLineNewWelderWarningKey(summaryKey: string) {
   return `${PERCENTAGE_LINE_NEW_WELDER_WARNING_KEY_PREFIX}${summaryKey}`
 }
 
+/** Dispatcher projection using the same full-line engine as the program. */
 export function buildPercentageLineSummaries(
   rows: WeldRow[],
   systemIndexSettings?: SystemIndexSettings,
-  acceptedDispatcherWarningKeys?: ReadonlySet<string>,
+  approved: ReadonlySet<string> = new Set(),
 ): PercentageLineSummary[] {
-  const lineGroups = getPercentageLineGroups(rows)
-
-  return lineGroups
-    .map((group) => {
-      const entries = buildStampEntries(group)
-      const stamps = buildStampSummaries(group, entries, systemIndexSettings)
-      return {
-        lineKey: group.key,
-        projectTitle: group.projectTitle,
-        subtitleCode: group.subtitleCode,
-        line: group.line,
-        percent: group.percent,
-        potentialControlReduction: acceptedDispatcherWarningKeys
-          ? getPotentialControlReduction(
-              group,
-              entries,
-              stamps,
-              acceptedDispatcherWarningKeys,
-              systemIndexSettings,
-            )
-          : 0,
-        rowCount: group.rows.length,
-        rows: group.rows,
-        stamps,
-      }
-    })
-    .filter((summary) => summary.stamps.length > 0)
-    .sort(
-      (left, right) =>
-        getLineRequiredControls(right) - getLineRequiredControls(left) ||
-        right.stamps.length - left.stamps.length ||
-        left.projectTitle.localeCompare(right.projectTitle, 'ru', { numeric: true }) ||
-        left.subtitleCode.localeCompare(right.subtitleCode, 'ru', { numeric: true }) ||
-        left.line.localeCompare(right.line, 'ru', { numeric: true }),
-    )
-}
-
-function getLineRequiredControls(summary: PercentageLineSummary) {
-  return summary.stamps.reduce((total, stamp) => total + stamp.requiredControls, 0)
-}
-
-function getPercentageLineGroups(rows: WeldRow[]) {
-  const lineRows = new Map<string, WeldRow[]>()
-
+  const lines = new Map<string, WeldRow[]>()
   for (const row of rows) {
-    if (isRevisionNotActual(row) || !hasText(row.line)) continue
-    const key = getLineKey(row)
-    const current = lineRows.get(key) ?? []
-    current.push(row)
-    lineRows.set(key, current)
+    if (!String(row.line ?? '').trim()) continue
+    const key = getLineProgramIdentityKey(row)
+    const group = lines.get(key) ?? []
+    group.push(row)
+    lines.set(key, group)
   }
-
-  return Array.from(lineRows.entries()).flatMap(([key, groupedRows]) => {
-    const parsedPercents = groupedRows.map((row) => parsePercent(row.weldControlPercent))
-    if (!parsedPercents.every(isValidPercent)) return []
-
-    const percents = new Set(parsedPercents)
-    if (percents.size !== 1) return []
-
-    const [percent] = Array.from(percents)
-    if (percent >= 100) return []
-
-    const sample = groupedRows[0]
-    const weldedOfficialRows = groupedRows.filter((row) => !isUnofficial(row) && hasText(row.weldDate))
-    if (weldedOfficialRows.length === 0) return []
-
-    return [
-      {
-        key,
-        projectTitle: displayValue(sample.projectTitle),
-        subtitleCode: displayValue(sample.subtitleCode),
-        line: displayValue(sample.line),
-        percent,
-        rows: weldedOfficialRows,
-      } satisfies LineGroup,
-    ]
-  })
-}
-
-function buildStampEntries(group: LineGroup) {
-  const stampRows = new Map<string, StampAccumulator>()
-
-  for (const row of group.rows) {
-    for (const stamp of getOfficialStamps(row)) {
-      const key = normalizeText(stamp)
-      const current = stampRows.get(key) ?? { stamp, rows: [] }
-      current.rows.push(row)
-      stampRows.set(key, current)
+  return [...lines].flatMap(([lineKey, allRows]) => {
+    const metadataRows = allRows.filter(row => String(row.revisionActuality ?? '').trim().toLowerCase() !== 'не актуален')
+    if (!metadataRows.length) return []
+    for (const field of ['category', 'groupName'] as const) {
+      // Legacy projections may omit metadata; persisted rows have explicit nulls.
+      if (metadataRows.every((row) => row[field] === undefined)) continue
+      const values = new Set(metadataRows.map((row) => String(row[field] ?? '').trim().toLocaleLowerCase('ru')))
+      if (values.size !== 1 || values.has('')) return []
     }
-  }
-
-  return Array.from(stampRows.values())
-}
-
-function buildStampSummaries(
-  group: LineGroup,
-  entries: StampAccumulator[],
-  systemIndexSettings?: SystemIndexSettings,
-) {
-  return entries
-    .map((entry) => buildStampSummary(group, entry, systemIndexSettings))
-    .sort(
-      (left, right) =>
-        right.officialJointCount - left.officialJointCount ||
-        right.excessControls - left.excessControls ||
-        left.stamp.localeCompare(right.stamp, 'ru', { numeric: true }),
-    )
-}
-
-function getPotentialControlReduction(
-  group: LineGroup,
-  entries: StampAccumulator[],
-  actualStampSummaries: PercentageLineStampSummary[],
-  acceptedDispatcherWarningKeys: ReadonlySet<string>,
-  systemIndexSettings?: SystemIndexSettings,
-) {
-  const actualRequiredControls = actualStampSummaries.reduce(
-    (total, summary) => total + summary.requiredControls,
-    0,
-  )
-  const actualSummariesByKey = new Map(actualStampSummaries.map((summary) => [summary.key, summary]))
-  const baseRows = new Map<number, WeldRow>()
-  let theoreticalRequiredControls = 0
-
-  for (const entry of entries) {
-    const summaryKey = encodeIdentityKey([group.key, normalizeText(entry.stamp)])
-    const warningKey = getPercentageLineNewWelderWarningKey(summaryKey)
-    if (acceptedDispatcherWarningKeys.has(warningKey)) {
-      theoreticalRequiredControls += actualSummariesByKey.get(summaryKey)?.requiredControls ?? 0
-      continue
+    const percents = new Set(metadataRows.map((row) => parseLineProgramPercent(row.weldControlPercent)))
+    const pvkPercents = new Set(metadataRows.map((row) => parseLineProgramPercent(
+      row.pvkControlPercent === undefined ? row.weldControlPercent : row.pvkControlPercent,
+    )))
+    if (percents.size !== 1 || percents.has(null) || pvkPercents.size !== 1 || pvkPercents.has(null)) return []
+    const percent = [...percents][0]!
+    const pvkPercent = [...pvkPercents][0]!
+    if (percent === 100 ? pvkPercent < 1 : pvkPercent > percent) return []
+    const calculationRows = buildLineProgramTopology(allRows, percent === 100, systemIndexSettings).physicalRows.filter(percent === 100 ? isLineProgramControlRow : isLineProgramCalculationRow)
+    const sample = allRows[0]
+    const group = {
+      lineKey, projectTitle: String(sample.projectTitle ?? '').trim(),
+      subtitleCode: String(sample.subtitleCode ?? '').trim(), line: String(sample.line ?? '').trim(), percent,
     }
-    for (const row of entry.rows) baseRows.set(row.id, row)
-  }
-
-  if (baseRows.size > 0) {
-    theoreticalRequiredControls += buildStampSummary(
-      group,
-      { stamp: '__base__', rows: [...baseRows.values()] },
-      systemIndexSettings,
-    ).requiredControls
-  }
-
-  return Math.max(0, actualRequiredControls - theoreticalRequiredControls)
+    const rowById = new Map(allRows.map((row) => [row.id, row]))
+    const calculations = calculateLineProgram(allRows, percent, pvkPercent, systemIndexSettings, approved)
+    if (!calculationRows.length && !calculations.length) return []
+    const stamps = calculations.map((stamp) => toSummary(group, stamp, rowById)).sort((a, b) =>
+      b.officialJointCount - a.officialJointCount || b.excessControls - a.excessControls || a.stamp.localeCompare(b.stamp, 'ru', { numeric: true }))
+    const contextIds = new Set(calculations.flatMap(item => item.contextRowIds ?? item.rowIds))
+    return [{ ...group, rows: allRows.filter(row => contextIds.has(row.id)), rowCount: calculationRows.length, stamps }]
+  }).sort((a, b) => b.stamps.reduce((sum, s) => sum + s.requiredControls, 0) - a.stamps.reduce((sum, s) => sum + s.requiredControls, 0) ||
+    b.stamps.length - a.stamps.length || a.projectTitle.localeCompare(b.projectTitle, 'ru', { numeric: true }) ||
+    a.subtitleCode.localeCompare(b.subtitleCode, 'ru', { numeric: true }) || a.line.localeCompare(b.line, 'ru', { numeric: true }))
 }
 
-function buildStampSummary(
-  group: LineGroup,
-  entry: StampAccumulator,
-  systemIndexSettings?: SystemIndexSettings,
+function toSummary(
+  group: Pick<PercentageLineSummary, 'lineKey' | 'projectTitle' | 'subtitleCode' | 'line' | 'percent'>,
+  stamp: LineProgramStampCalculation,
+  rows: ReadonlyMap<number, WeldRow>,
 ): PercentageLineStampSummary {
-  const officialJointCount = entry.rows.length
-  const baseRequiredControls = getBaseRequiredControls(officialJointCount, group.percent)
-  const rejectedPrimaryControls = entry.rows.filter((row) =>
-    isRejectedPrimaryPercentageControl(row, systemIndexSettings),
-  ).length
-  const fullControlRequired = rejectedPrimaryControls >= 4
-  const additionalRequiredControls = fullControlRequired
-    ? Math.max(0, officialJointCount - baseRequiredControls)
-    : getAdditionalRequiredControls(rejectedPrimaryControls, group.percent)
-  const calculatedRequiredControls = Math.min(
-    officialJointCount,
-    fullControlRequired ? officialJointCount : baseRequiredControls + additionalRequiredControls,
-  )
-  const availableRequiredControls = entry.rows.filter(isPercentageControlRequiredAvailable).length
-  const requiredControls = Math.min(calculatedRequiredControls, availableRequiredControls)
-  const assignedControls = entry.rows.filter(hasAssignedPercentageControl).length
-  const additionalAssignedControls = entry.rows.filter(hasAdditionalAssignedPercentageControl).length
-  const cancelledAssignedControls = entry.rows.filter(hasCancelledPercentageControlCoverage).length
-  const coveredControls = entry.rows.filter(hasIntentionalRequiredPercentageControlCoverage).length
-  const rejectedCoveredControls = entry.rows.filter(hasRejectedClosurePercentageControl).length
-  const completedControls = entry.rows.filter(hasCompletedPercentageControl).length
-  const normalAssignedRows = entry.rows.filter(hasNormalAssignedPercentageControl)
-  const normalAssignedControls = normalAssignedRows.length
-  const allowedNormalAssignedControls = Math.max(0, requiredControls - cancelledAssignedControls)
-  const statusCounters = entry.rows.reduce(
-    (result, row) => {
-      const status = normalizeFinalStatus(calculateFinalStatus(row))
-      if (status === 'годен') result.goodJoints += 1
-      else if (status === 'не годен') result.rejectedJoints += 1
-      else if (status === 'ожидает заявку') result.waitingRequestJoints += 1
-      else if (status === 'ожидает НК') result.waitingControlJoints += 1
-      return result
-    },
-    { goodJoints: 0, rejectedJoints: 0, waitingRequestJoints: 0, waitingControlJoints: 0 },
-  )
-  const assignedJointNames = entry.rows.filter(hasAssignedPercentageControl).map(getJointDisplayName)
-  const assignedRowIds = entry.rows.filter(hasAssignedPercentageControl).map(getRowId)
-  const additionalAssignedJointNames = entry.rows.filter(hasAdditionalAssignedPercentageControl).map(getJointDisplayName)
-  const additionalAssignedRowIds = entry.rows.filter(hasAdditionalAssignedPercentageControl).map(getRowId)
-  const cancelledAssignedJointNames = entry.rows.filter(hasCancelledPercentageControlCoverage).map(getJointDisplayName)
-  const cancelledAssignedRowIds = entry.rows.filter(hasCancelledPercentageControlCoverage).map(getRowId)
-  const coveredJointNames = entry.rows.filter(hasIntentionalRequiredPercentageControlCoverage).map(getJointDisplayName)
-  const coveredRowIds = entry.rows.filter(hasIntentionalRequiredPercentageControlCoverage).map(getRowId)
-  const rejectedCoveredJointNames = entry.rows.filter(hasRejectedClosurePercentageControl).map(getJointDisplayName)
-  const rejectedCoveredRowIds = entry.rows.filter(hasRejectedClosurePercentageControl).map(getRowId)
-  const completedJointNames = entry.rows.filter(hasCompletedPercentageControl).map(getJointDisplayName)
-  const completedRowIds = entry.rows.filter(hasCompletedPercentageControl).map(getRowId)
-  const rejectedPrimaryRows = entry.rows.filter((row) =>
-    isRejectedPrimaryPercentageControl(row, systemIndexSettings),
-  )
-  const rejectedPrimaryJointNames = rejectedPrimaryRows.map(getJointDisplayName)
-  const rejectedPrimaryRowIds = rejectedPrimaryRows.map((row) => row.id)
-  const missingCandidateRows = entry.rows.filter(
-    (row) => isPercentageControlRequiredAvailable(row) && !hasIntentionalRequiredPercentageControlCoverage(row),
-  )
-  const missingCandidateJointNames = missingCandidateRows.map(getJointDisplayName)
-  const missingCandidateRowIds = missingCandidateRows.map(getRowId)
-  const assignmentCandidateRows = entry.rows.filter(isPercentageControlAssignmentCandidate)
-  const assignmentCandidateJointNames = assignmentCandidateRows.map(getJointDisplayName)
-  const assignmentCandidateRowIds = assignmentCandidateRows.map(getRowId)
-  const excessCandidateJointNames = normalAssignedRows.slice(allowedNormalAssignedControls).map(getJointDisplayName)
-  const excessCandidateRowIds = normalAssignedRows.slice(allowedNormalAssignedControls).map(getRowId)
-
+  const demand = stamp.common
+  const names = (ids: readonly number[]) => ids.map((id) => String(rows.get(id)?.joint ?? '').trim() || `#${id}`)
+  const counters = { goodJoints: 0, rejectedJoints: 0, waitingRequestJoints: 0, waitingControlJoints: 0 }
+  for (const id of stamp.rowIds) {
+    const status = normalizeFinalStatus(calculateFinalStatus(rows.get(id)!))
+    if (status === 'годен') counters.goodJoints++
+    else if (status === 'не годен') counters.rejectedJoints++
+    else if (status === 'ожидает заявку') counters.waitingRequestJoints++
+    else if (status === 'ожидает НК') counters.waitingControlJoints++
+  }
+  // Match the program's «Назначено»: active yes/additional only. Cancellation
+  // can still cover quota, but is displayed separately rather than as an assignment.
+  const assignedIds = [...new Set([...demand.assignedRowIds, ...demand.additionalRowIds])]
+  const rejectedSet = new Set(stamp.rejectedRowIds)
+  const rejectedCoveredIds = demand.coveredRowIds.filter((id) => rejectedSet.has(id))
+  const excessIds = [...new Set([...demand.excessRowIds, ...demand.duplicateAssignmentRowIds])]
   return {
-    key: encodeIdentityKey([group.key, normalizeText(entry.stamp)]),
-    stamp: entry.stamp,
-    lineKey: group.key,
-    projectTitle: group.projectTitle,
-    subtitleCode: group.subtitleCode,
-    line: group.line,
-    percent: group.percent,
-    officialJointCount,
-    baseRequiredControls,
-    additionalRequiredControls: Math.min(additionalRequiredControls, Math.max(0, officialJointCount - baseRequiredControls)),
-    calculatedRequiredControls,
-    availableRequiredControls,
-    requiredControls,
-    assignedControls,
-    normalAssignedControls,
-    additionalAssignedControls,
-    cancelledAssignedControls,
-    coveredControls,
-    rejectedCoveredControls,
-    completedControls,
-    rejectedPrimaryControls,
-    ...statusCounters,
-    assignedJointNames,
-    assignedRowIds,
-    additionalAssignedJointNames,
-    additionalAssignedRowIds,
-    cancelledAssignedJointNames,
-    cancelledAssignedRowIds,
-    coveredJointNames,
-    coveredRowIds,
-    rejectedCoveredJointNames,
-    rejectedCoveredRowIds,
-    completedJointNames,
-    completedRowIds,
-    rejectedPrimaryJointNames,
-    rejectedPrimaryRowIds,
-    missingCandidateJointNames,
-    missingCandidateRowIds,
-    assignmentCandidateJointNames,
-    assignmentCandidateRowIds,
-    excessCandidateJointNames,
-    excessCandidateRowIds,
-    missingControls: Math.max(0, requiredControls - coveredControls),
-    excessControls: Math.max(0, normalAssignedControls - allowedNormalAssignedControls),
-    fullControlRequired,
+    ...group, key: encodeIdentityKey([group.lineKey, stamp.stamp.toLocaleLowerCase('ru')]), stamp: stamp.stamp,
+    officialJointCount: stamp.rowIds.length,
+    baseRequiredControls: demand.baseRequired, additionalRequiredControls: demand.additionalRequired,
+    calculatedRequiredControls: demand.required,
+    availableRequiredControls: demand.coveredRowIds.length + demand.candidateRowIds.length,
+    requiredControls: demand.actionableRequired,
+    assignedControls: assignedIds.length, normalAssignedControls: demand.assignedRowIds.length,
+    additionalAssignedControls: demand.additionalRowIds.length, cancelledAssignedControls: demand.cancelledRowIds.length,
+    coveredControls: demand.coveredRowIds.length, completedControls: demand.completedRowIds.length,
+    rejectedCoveredControls: rejectedCoveredIds.length, rejectedControlRows: stamp.rejectedRowIds.length,
+    ...counters,
+    assignedRowIds: assignedIds, assignedJointNames: names(assignedIds),
+    additionalAssignedRowIds: demand.additionalRowIds, additionalAssignedJointNames: names(demand.additionalRowIds),
+    cancelledAssignedRowIds: demand.cancelledRowIds, cancelledAssignedJointNames: names(demand.cancelledRowIds),
+    coveredRowIds: demand.coveredRowIds, coveredJointNames: names(demand.coveredRowIds),
+    rejectedCoveredRowIds: rejectedCoveredIds, rejectedCoveredJointNames: names(rejectedCoveredIds),
+    completedRowIds: demand.completedRowIds, completedJointNames: names(demand.completedRowIds),
+    rejectedRowIds: stamp.rejectedRowIds, rejectedJointNames: names(stamp.rejectedRowIds),
+    missingCandidateRowIds: demand.candidateRowIds, missingCandidateJointNames: names(demand.candidateRowIds),
+    assignmentCandidateRowIds: demand.candidateRowIds, assignmentCandidateJointNames: names(demand.candidateRowIds),
+    excessCandidateRowIds: excessIds, excessCandidateJointNames: names(excessIds),
+    missingControls: demand.missing, excessControls: demand.excessAssignments?.length ?? excessIds.length, fullControlRequired: stamp.fullControlRequired,
+    common: demand, pvk: stamp.pvk, duplicateAssignmentRowIds: demand.duplicateAssignmentRowIds,
   }
-}
-
-function getBaseRequiredControls(officialJointCount: number, percent: number) {
-  if (officialJointCount <= 0) return 0
-  return Math.max(1, Math.ceil((officialJointCount * percent) / 100))
-}
-
-function getAdditionalRequiredControls(rejectedPrimaryControls: number, percent: number) {
-  if (rejectedPrimaryControls <= 0) return 0
-  return rejectedPrimaryControls * (percent === 1 ? 1 : 2)
-}
-
-function getOfficialStamps(row: WeldRow) {
-  const stamps = new Set<string>()
-
-  for (const key of OFFICIAL_WELDER_STAMP_FIELD_KEYS) {
-    const value = String(row[key] ?? '').trim()
-    if (value) stamps.add(value)
-  }
-
-  return Array.from(stamps)
-}
-
-function hasAssignedPercentageControl(row: WeldRow) {
-  return (
-    getPercentageControlMethods(row).some(({ enabledKey }) => isEnabledControlValue(row[enabledKey])) ||
-    hasBothPercentageControlsCancelled(row)
-  )
-}
-
-function hasNormalAssignedPercentageControl(row: WeldRow) {
-  return getPercentageControlMethods(row).some(({ enabledKey }) => {
-    const value = row[enabledKey]
-    return isEnabledControlValue(value) && !isAdditionalControlValue(value)
-  })
-}
-
-function hasAdditionalAssignedPercentageControl(row: WeldRow) {
-  return getPercentageControlMethods(row).some(({ enabledKey }) => isAdditionalControlValue(row[enabledKey]))
-}
-
-function hasIntentionalRequiredPercentageControlCoverage(row: WeldRow) {
-  return (
-    hasDirectPercentageControlCoverage(row) ||
-    hasBothPercentageControlsCancelled(row)
-  )
-}
-
-function hasDirectPercentageControlCoverage(row: WeldRow) {
-  return getPercentageControlMethods(row).some(({ enabledKey, resultKey }) => {
-    const controlValue = row[enabledKey]
-    if (isAdditionalControlValue(controlValue)) return false
-    return isEnabledControlValue(controlValue) || hasCompletedResult(row[resultKey])
-  })
-}
-
-function hasRejectedClosurePercentageControl(row: WeldRow) {
-  return hasRejectedAnyControlResult(row) && !hasDirectPercentageControlCoverage(row)
-}
-
-function isPercentageControlAssignmentCandidate(row: WeldRow) {
-  return !hasAssignedPercentageControl(row) && !hasRejectedAnyControlResult(row)
-}
-
-function isPercentageControlRequiredAvailable(row: WeldRow) {
-  return hasIntentionalRequiredPercentageControlCoverage(row) || isPercentageControlAssignmentCandidate(row)
-}
-
-function hasCompletedPercentageControl(row: WeldRow) {
-  return getPercentageControlMethods(row).some(({ resultKey }) => hasCompletedResult(row[resultKey])) || hasRejectedAnyControlResult(row)
-}
-
-function hasBothPercentageControlsCancelled(row: WeldRow) {
-  return PERCENTAGE_CONTROL_METHODS.every(({ enabledKey }) => isCancelledControlValue(row[enabledKey]))
-}
-
-function hasCancelledPercentageControlCoverage(row: WeldRow) {
-  return hasBothPercentageControlsCancelled(row)
-}
-
-function isRejectedPrimaryPercentageControl(row: WeldRow, systemIndexSettings?: SystemIndexSettings) {
-  if (parseJointChainName(String(row.joint ?? ''), systemIndexSettings).segments.length > 0) return false
-  return hasRejectedPercentageControlResult(row)
-}
-
-function hasRejectedAnyControlResult(row: WeldRow) {
-  if (hasRejectedDuplicateControl(row)) return true
-  if (getRejectedPreHeatTreatmentControls(row).length > 0) return true
-  return CONTROL_RESULT_PAIRS.some(({ resultKey }) => {
-    const result = normalizeResultStatus(row[resultKey])
-    return result === 'ремонт' || result === 'вырез'
-  })
-}
-
-function hasRejectedPercentageControlResult(row: WeldRow) {
-  const applicableMethods = getPercentageControlMethods(row)
-  const hasRejectedApplicableResult = applicableMethods.some(({ resultKey }) => {
-    const result = normalizeResultStatus(row[resultKey])
-    return result === 'ремонт' || result === 'вырез'
-  })
-  if (hasRejectedApplicableResult) return true
-
-  const applicableCodes = new Set(applicableMethods.map(({ code }) => code))
-  if (getRejectedPreHeatTreatmentControls(row).some(
-    (control) => control.methodCode !== 'ВИК' && applicableCodes.has(control.methodCode),
-  )) {
-    return true
-  }
-  return getRejectedDuplicateControls(row).some((control) => applicableCodes.has(control.method as PercentageControlMethod))
-}
-
-function getPercentageControlMethods(row: WeldRow) {
-  return isAngularConnectionType(row.connectionType)
-    ? ANGULAR_PERCENTAGE_CONTROL_METHODS
-    : PERCENTAGE_CONTROL_METHODS
-}
-
-export function isPercentageControlMethodAvailableForRow(method: PercentageControlMethod, row: WeldRow) {
-  return method !== 'ПВК' || isAngularConnectionType(row.connectionType)
-}
-
-function hasCompletedResult(value: unknown) {
-  const result = normalizeResultStatus(value)
-  return result === 'годен' || result === 'ремонт' || result === 'вырез'
-}
-
-function getLineKey(row: WeldRow) {
-  return encodeIdentityKey([
-    normalizeText(row.projectTitle),
-    normalizeText(row.subtitleCode),
-    normalizeText(row.line),
-  ])
-}
-
-function parsePercent(value: unknown) {
-  const parsed = Number(String(value ?? '').trim().replace(',', '.'))
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-function isValidPercent(value: number | null): value is number {
-  return value !== null && value > 0
-}
-
-function isRevisionNotActual(row: WeldRow) {
-  return String(row.revisionActuality ?? '').trim().toLowerCase() === 'не актуален'
-}
-
-function isUnofficial(row: WeldRow) {
-  return String(row.officiality ?? '').trim().toLowerCase() === 'неофициальный'
-}
-
-function normalizeText(value: unknown) {
-  return String(value ?? '').trim().toLowerCase()
-}
-
-function displayValue(value: unknown) {
-  return String(value ?? '').trim() || '-'
-}
-
-function getJointDisplayName(row: WeldRow) {
-  return String(row.joint ?? '').trim() || `#${row.id ?? '-'}`
-}
-
-function getRowId(row: WeldRow) {
-  return row.id
 }

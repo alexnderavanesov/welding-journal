@@ -27,10 +27,11 @@ describe('lazy loading boundaries', () => {
     )
 
     expect(reportDialogs).toContain("lazy(() => import('@/components/report-lnk-dialogs')")
-    expect(reportDialogs).toContain("lazy(() => import('@/components/report-psto-dialogs')")
+    expect(reportDialogs).toContain("lazy(() => tracePstoProgramModule('group', () => import('@/components/report-psto-dialogs'))")
     expect(reportDialogs).toContain("import('@/components/report-import-dialog')")
     expect(lnkDialogs.match(/lazy\(\(\) => import\(/g)?.length ?? 0).toBeGreaterThanOrEqual(8)
-    expect(pstoDialogs.match(/lazy\(\(\) => import\(/g)?.length ?? 0).toBeGreaterThanOrEqual(7)
+    expect(pstoDialogs.match(/lazy\(\(\) => (?:import\(|tracePstoProgramModule\()/g)?.length ?? 0).toBeGreaterThanOrEqual(7)
+    expect(pstoDialogs).toContain("tracePstoProgramModule('dialog', () => import('@/components/psto-line-program-dialog'))")
   })
 
   it('loads the full user guide reference in separate content chunks', () => {

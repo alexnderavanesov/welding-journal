@@ -13,12 +13,32 @@ import { normalizeLnkWorkflowRowsRequest } from '@/server/weld-contracts'
 import { WELD_TABLE_SELECT } from '@/server/weld-server-shared'
 
 describe('LNK modal workflow queries', () => {
+  it.each(['preHeatTreatmentRequestRegistry', 'preHeatTreatmentResultRegistry'] as const)(
+    'bounds %s even when a client omits the limit or requests the whole database', (scope) => {
+      expect(normalizeLnkWorkflowRowsRequest({ scope })).toMatchObject({ limit: 51, offset: 0 })
+      expect(normalizeLnkWorkflowRowsRequest({ scope, limit: 200_000, offset: 150 })).toMatchObject({ limit: 51, offset: 150 })
+      expect(normalizeLnkWorkflowRowsRequest({ scope, limit: -1, offset: -5 })).toMatchObject({ limit: 51, offset: 0 })
+    },
+  )
+
+  it('searches before-TO documents rather than only the primary-stage columns', () => {
+    const query = new PgDialect().sqlToQuery(buildLnkWorkflowRowsWhere({
+      scope: 'preHeatTreatmentResultRegistry', search: 'Ёлка 100%', methodKeys: ['rkRequest'], resultFilter: 'ремонт',
+    }))
+    expect(query.sql).toContain('"pre_heat_treatment_controls"."conclusion_name"')
+    expect(query.params).toContain('РК')
+    expect(query.params).toContain('ремонт')
+    // Literal search, not a user-provided LIKE wildcard.
+    expect(query.params).toContain('%елка 100\\%%')
+  })
+
   it('uses a compact row projection with every workflow-critical field', () => {
     const keys = Object.keys(LNK_WORKFLOW_ROW_SELECT)
 
     expect(keys).toEqual(expect.arrayContaining([
       'id',
       'rowVersion',
+      'layeredControlAssigned',
       'projectTitle',
       'line',
       'joint',

@@ -3,6 +3,41 @@ import { boolean, check, date, index, integer, numeric, pgTable, primaryKey, ser
 
 const numericNumber = (name: string) => numeric(name, { precision: 12, scale: 3, mode: 'number' })
 
+export const linePrograms = pgTable('line_programs', {
+  id: serial('id').primaryKey(),
+  projectTitle: text('project_title').notNull().default(''),
+  subtitleCode: text('subtitle_code').notNull().default(''),
+  line: text('line').notNull(),
+  category: text('category'),
+  groupName: text('group_name'),
+  weldControlPercent: numericNumber('weld_control_percent'),
+  pvkControlPercent: numericNumber('pvk_control_percent'),
+  configurationIssue: text('configuration_issue'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('line_programs_identity_idx').on(
+    sql`lower(btrim(${table.projectTitle}))`,
+    sql`lower(btrim(${table.subtitleCode}))`,
+    sql`lower(btrim(${table.line}))`,
+  ),
+  check('line_programs_line_required', sql`btrim(${table.line}) <> ''`),
+  check('line_programs_percent_range', sql`${table.weldControlPercent} between 0 and 100`),
+  check('line_programs_pvk_range', sql`${table.pvkControlPercent} between 0 and 100`),
+  check('line_programs_pvk_limit', sql`${table.weldControlPercent} is null or ${table.pvkControlPercent} is null or
+    (${table.weldControlPercent} = 100 and ${table.pvkControlPercent} >= 1) or
+    (${table.weldControlPercent} < 100 and ${table.pvkControlPercent} <= ${table.weldControlPercent})`),
+])
+
+export type LineProgram = typeof linePrograms.$inferSelect
+
+// Transition recovery data is isolated from settings and all ordinary read paths.
+export const lineProgramTransitionBackups = pgTable('line_program_transition_backups', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
 export const weldJoints = pgTable(
   'weld_joints',
   {
@@ -18,6 +53,9 @@ export const weldJoints = pgTable(
     pstoCancellationDate: date('psto_cancellation_date'),
     preHeatTreatmentLnkExempt: boolean('pre_heat_treatment_lnk_exempt').default(false).notNull(),
     weldControlPercent: numericNumber('weld_control_percent'),
+    lineProgramId: integer('line_program_id').references(() => linePrograms.id, { onDelete: 'restrict' }),
+    pvkControlPercent: numericNumber('pvk_control_percent'),
+    layeredControlAssigned: boolean('layered_control_assigned').default(false).notNull(),
     isometry: text('isometry'),
     sheet: numericNumber('sheet'),
     revisionNumber: numericNumber('revision_number'),
@@ -156,6 +194,7 @@ export const weldJoints = pgTable(
     index('weld_joints_project_title_idx').on(table.projectTitle),
     index('weld_joints_subtitle_code_idx').on(table.subtitleCode),
     index('weld_joints_line_idx').on(table.line),
+    index('weld_joints_line_program_idx').on(table.lineProgramId),
     index('weld_joints_joint_idx').on(table.joint),
     index('weld_joints_final_status_idx').on(table.finalStatus),
     index('weld_joints_psto_required_idx').on(table.pstoRequired),
@@ -188,6 +227,34 @@ export const weldJoints = pgTable(
 
 export type WeldJoint = typeof weldJoints.$inferSelect
 export type NewWeldJoint = typeof weldJoints.$inferInsert
+
+// System-owned identity and physical replacement facts. Source IDs intentionally survive
+// deletion of their referenced journal record; names cannot reattach a new object.
+export const weldJointProgramStates = pgTable('weld_joint_program_states', {
+  // Retain deleted nodes so restoration can find moved descendants through them.
+  weldJointId: integer('weld_joint_id').primaryKey(),
+  kind: text('kind').notNull(),
+  physicalRootId: integer('physical_root_id'),
+  sourceRowId: integer('source_row_id'),
+  coilParentId: integer('coil_parent_id'),
+  coilSide: integer('coil_side'),
+  replacedByCoil: boolean('replaced_by_coil').notNull().default(false),
+  replacementCoilIds: integer('replacement_coil_ids').array().notNull().default(sql`'{}'::integer[]`),
+}, table => [
+  index('weld_joint_program_states_root_idx').on(table.physicalRootId),
+  index('weld_joint_program_states_coil_idx').on(table.coilParentId),
+  index('weld_joint_program_states_source_idx').on(table.sourceRowId),
+  check('weld_joint_program_states_kind_check', sql`${table.kind} in ('primary', 'repair', 'coil')`),
+  check('weld_joint_program_states_side_check', sql`${table.coilSide} in (1, 2)`),
+])
+
+export const coilRestorationEvents = pgTable('coil_restoration_events', {
+  token: text('token').primaryKey(),
+  sourceWeldJointId: integer('source_weld_joint_id').notNull(),
+  confirmedBy: text('confirmed_by').notNull(),
+  snapshot: text('snapshot').notNull(),
+  confirmedAt: timestamp('confirmed_at', { withTimezone: true }).defaultNow().notNull(),
+}, table => [index('coil_restoration_events_source_idx').on(table.sourceWeldJointId)])
 
 export const welderStamps = pgTable('welder_stamps', {
   id: serial('id').primaryKey(),
@@ -316,8 +383,16 @@ export const dispatcherAcceptedWarnings = pgTable('dispatcher_accepted_warnings'
   code: text('code'),
   title: text('title'),
   context: text('context'),
+  weldJointId: integer('weld_joint_id').references(() => weldJoints.id, { onDelete: 'cascade' }),
+  lineProgramId: integer('line_program_id').references(() => linePrograms.id, { onDelete: 'cascade' }),
+  welderStampId: integer('welder_stamp_id').references(() => welderStamps.id, { onDelete: 'cascade' }),
   acceptedAt: timestamp('accepted_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (table) => [
+  index('accepted_warnings_joint_idx').on(table.weldJointId),
+  index('accepted_warnings_line_idx').on(table.lineProgramId),
+  index('accepted_warnings_stamp_idx').on(table.welderStampId),
+  index('accepted_warnings_date_idx').on(table.acceptedAt, table.key),
+])
 
 export type DispatcherAcceptedWarning = typeof dispatcherAcceptedWarnings.$inferSelect
 export type NewDispatcherAcceptedWarning = typeof dispatcherAcceptedWarnings.$inferInsert

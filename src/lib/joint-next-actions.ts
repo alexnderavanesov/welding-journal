@@ -40,6 +40,8 @@ import {
 import { isPstoCancelledValue } from '@/lib/psto-line-assignment'
 import { isPreHeatTreatmentStageEnabled } from '@/lib/pre-heat-treatment-policy'
 import { hasWeldDate } from '@/lib/report-value-utils'
+import { isRevisionNotActual } from '@/lib/revision-actuality'
+import { CHAIN_ACTUALITY_REASON } from '@/lib/dispatcher-check-reasons'
 import { canAddTvmtResult, canCreateTvmtRequest } from '@/lib/tvmt-field-updates'
 import {
   getCurrentPstoCycle,
@@ -94,10 +96,20 @@ export function buildJointNextActions(
     .sort(compareTasks)
   const taskActions = rowTasks.map(buildDispatcherAction)
   const chainStructureActions = rowTasks
-    .filter((task) => task.kind === 'create' || task.kind === 'coil' || task.kind === 'delete' || task.kind === 'rename')
+    .filter((task) => task.kind === 'create' || task.kind === 'coil' || task.kind === 'delete' || task.kind === 'rename' || task.kind === 'check' && (task.systemWarningCode === 'СП-04' || task.reason === CHAIN_ACTUALITY_REASON))
     .map(buildDispatcherAction)
 
   if (chainStructureActions.length > 0) return chainStructureActions
+
+  if (isRevisionNotActual(row.revisionActuality) && hasRejectedLnkResult(row)) {
+    return [{
+      key: `inactive-continuation:${row.id}`,
+      kind: 'blocked',
+      title: 'Продолжение не требуется',
+      description: 'Стык неактуален по ИЗМу. История негодного результата сохранена; требование продолжения появится после возврата актуальности, если оно всё ещё необходимо. Ошибки целостности проверяются отдельно.',
+      tone: 'default',
+    }, ...taskActions]
+  }
 
   if (!hasWeldDate(row)) {
     return [
@@ -305,6 +317,8 @@ function buildPrimaryWorkflowAction(
   row: WeldRow,
   controlProcessSettings?: JointNextActionSettings,
 ): JointNextAction | null {
+  // Historical entry stays available in the document workflows, not as new work.
+  if (hasRejectedLnkResult(row)) return null
   const primaryRequestMethods = getAvailableLnkRequestMethods(row, controlProcessSettings)
   if (primaryRequestMethods.length > 0) {
     return buildControlAction({

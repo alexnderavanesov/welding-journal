@@ -1,5 +1,6 @@
 import { FileText } from 'lucide-react'
-import { memo, useMemo, useState, type Dispatch, type KeyboardEvent, type MutableRefObject, type SetStateAction } from 'react'
+import { isTConnectionType } from '@/lib/connection-type'
+import { memo, useEffect, useMemo, useState, type Dispatch, type KeyboardEvent, type MutableRefObject, type SetStateAction } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { WeldFormConnectionTypeField, WeldFormMaterialGroupField } from '@/components/weld-form-connection-type-field'
@@ -9,9 +10,16 @@ import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { cn } from '@/lib/utils'
 import { useRemoteWeldFormSuggestions } from '@/lib/use-remote-weld-form-suggestions'
 import { getControlBasisFieldByAssignmentKey } from '@/lib/control-assignment-basis'
+import { getControlAssignmentRemovalReason, HISTORY_ASSIGNMENTS } from '@/lib/control-assignment-history'
+import { getNewControlAvailabilityReportHistoryReason } from '@/lib/weld-form-save-reasons'
+import { loadSaveCheckSettings } from '@/lib/save-check-settings'
+import { getLayeredControlSaveError } from '@/lib/layered-control-rules'
+import { REPAIR_CONTROL_FIELDS } from '@/lib/line-program-repair-requirements'
+import { EDITABLE_NK_ASSIGNMENT_FIELDS, EXCLUDED_CONTROL_ASSIGNMENT_REASON, isActiveOfficialWeld } from '@/lib/control-assignment-eligibility'
 import {
   getWeldFormSuggestionQueryFieldKeys,
   getWeldFormSuggestions,
+  canSuggestWeldFormField,
   type WeldFormSuggestion,
 } from '@/lib/weld-form-suggestions'
 import {
@@ -59,9 +67,18 @@ function WeldFormFieldComponent({
   hideLabel = false,
   controlPickerLayout = 'grid',
 }: WeldFormFieldProps) {
+  const label = hideLabel ? null : <span className="text-[13px] font-medium leading-none text-slate-700">{getFormFieldLabel(field)}</span>
+  if (field.key === 'hasRk' && isTConnectionType(draft.connectionType)) return <div className="space-y-1.5 text-sm">{label}<Input readOnly aria-label={field.label} value={String(draft.hasRk ?? '')} title="РК не назначается на Т-стыки; исторические сведения не изменяются автоматически." /></div>
+  const readOnlyReason = getReadOnlyReason(field.key, draft)
+  if (readOnlyReason) {
+    return <div className="space-y-1.5 text-sm">{label}<Input readOnly aria-label={field.label}
+      className="cursor-default bg-slate-100/70 shadow-none"
+      title={readOnlyReason}
+      value={field.key === 'hasVik' ? 'да' : String(draft[field.key] ?? '')} /></div>
+  }
   return (
     <div className="space-y-1.5 text-sm">
-      {hideLabel ? null : <span className="text-[13px] font-medium leading-none text-slate-700">{getFormFieldLabel(field)}</span>}
+      {label}
       {stampSelectOptions?.[field.key] ? (
         <Select
           ref={(element) => {
@@ -181,6 +198,8 @@ function WeldFormFieldComponent({
         <ControlAvailabilityPicker
           value={getControlAvailabilityValue(draft[field.key])}
           basisValue={getControlBasisValue(draft, field.key)}
+          removalReason={getAssignmentRemovalReason(draft, field.key)}
+          requiredReason={getRepairRequiredReason(draft, field.key)}
           layout={controlPickerLayout}
           inputRef={(element) => {
             fieldRefs.current[field.key] = element
@@ -266,12 +285,14 @@ function FreeTextField({
 }) {
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
+  const [remoteResult, setRemoteResult] = useState<RemoteSuggestionResult | null>(null)
   const value = String(draft[field.key] ?? '')
-  const canShowSuggestions = !disabled && (field.kind === 'text' || field.kind === 'number')
+  const canShowSuggestions = !disabled && canSuggestWeldFormField(field.key) && (field.kind === 'text' || field.kind === 'number')
   const hasLocalSuggestionRows = suggestionRows !== undefined
+  const suggestionsAreCurrent = Object.is(draft[field.key], suggestionDraft[field.key])
   const localSuggestions = useMemo(
     () =>
-      open && canShowSuggestions && hasLocalSuggestionRows
+      open && canShowSuggestions && hasLocalSuggestionRows && suggestionsAreCurrent
         ? getWeldFormSuggestions({
             fieldKey: field.key,
             value: suggestionDraft[field.key],
@@ -279,25 +300,12 @@ function FreeTextField({
             rows: suggestionRows ?? [],
           })
         : [],
-    [canShowSuggestions, field.key, hasLocalSuggestionRows, open, suggestionDraft, suggestionRows],
+    [canShowSuggestions, field.key, hasLocalSuggestionRows, open, suggestionDraft, suggestionRows, suggestionsAreCurrent],
   )
-  const suggestionQueryDraft = useMemo(
-    () => Object.fromEntries(
-      getWeldFormSuggestionQueryFieldKeys(field.key).map((fieldKey) => [fieldKey, suggestionDraft[fieldKey]]),
-    ) as WeldInput,
-    [field.key, suggestionDraft],
-  )
-  const debouncedSuggestionQueryDraft = useDebouncedValue(suggestionQueryDraft, 180)
-  const remoteSuggestionsQuery = useRemoteWeldFormSuggestions({
-    fieldKey: field.key,
-    draft: debouncedSuggestionQueryDraft,
-    enabled: open && canShowSuggestions && !hasLocalSuggestionRows,
-  })
-  const remoteSuggestionsAreCurrent = debouncedSuggestionQueryDraft === suggestionQueryDraft
   const suggestions = hasLocalSuggestionRows
     ? localSuggestions
-    : remoteSuggestionsAreCurrent
-      ? (remoteSuggestionsQuery.data ?? [])
+    : suggestionsAreCurrent && remoteResult?.draft === suggestionDraft
+      ? remoteResult.suggestions
       : []
   const visibleSuggestions = open ? suggestions : []
 
@@ -355,6 +363,7 @@ function FreeTextField({
         inputMode={field.kind === 'number' ? 'decimal' : undefined}
         min={field.kind === 'date' ? MIN_ALLOWED_DATE_ISO : undefined}
         value={value}
+        aria-label={field.label}
         autoComplete="off"
         disabled={disabled}
         title={disabled && field.key === 'wdi' ? 'WDI считается автоматически по выбранному режиму в настройках.' : undefined}
@@ -362,7 +371,7 @@ function FreeTextField({
           if (canShowSuggestions) setOpen(true)
         }}
         onBlur={() => {
-          window.setTimeout(() => setOpen(false), 120)
+          setOpen(false)
         }}
         onKeyDown={handleKeyDown}
         onChange={(event) => {
@@ -372,6 +381,9 @@ function FreeTextField({
           setOpen(true)
         }}
       />
+      {open && canShowSuggestions && !hasLocalSuggestionRows ? (
+        <RemoteSuggestionSource fieldKey={field.key} draft={suggestionDraft} onResult={setRemoteResult} />
+      ) : null}
       {visibleSuggestions.length > 0 ? (
         <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 overflow-hidden rounded-md border border-slate-200 bg-white shadow-xl shadow-slate-200/70">
           <div className="max-h-64 overflow-auto py-1">
@@ -408,6 +420,29 @@ function FreeTextField({
   )
 }
 
+type RemoteSuggestionResult = { draft: WeldInput; suggestions: WeldFormSuggestion[] }
+const EMPTY_SUGGESTIONS: WeldFormSuggestion[] = []
+
+// Only the active remote field subscribes to the query cache. Closed fields and
+// forms with already loaded suggestion rows create no query observers or timers.
+function RemoteSuggestionSource({ fieldKey, draft, onResult }: {
+  fieldKey: WeldFieldKey
+  draft: WeldInput
+  onResult: Dispatch<SetStateAction<RemoteSuggestionResult | null>>
+}) {
+  const queryDraft = useMemo(() => Object.fromEntries(
+    getWeldFormSuggestionQueryFieldKeys(fieldKey).map((key) => [key, draft[key]]),
+  ) as WeldInput, [fieldKey, draft])
+  const debounced = useDebouncedValue(queryDraft, 180)
+  const query = useRemoteWeldFormSuggestions({ fieldKey, draft: debounced, enabled: debounced === queryDraft })
+  const suggestions = debounced === queryDraft ? query.data ?? EMPTY_SUGGESTIONS : EMPTY_SUGGESTIONS
+  useEffect(() => {
+    onResult((current) => current?.draft === draft && current.suggestions === suggestions
+      ? current : { draft, suggestions })
+  }, [draft, suggestions, onResult])
+  return null
+}
+
 type ControlAvailabilityValue = '' | 'yes' | 'cancelled' | 'additional'
 
 type ControlAvailabilityOption = {
@@ -426,6 +461,8 @@ function ControlAvailabilityPicker({
   inputRef,
   onChange,
   onBasisChange,
+  removalReason,
+  requiredReason,
 }: {
   value: ControlAvailabilityValue
   basisValue: string
@@ -433,11 +470,16 @@ function ControlAvailabilityPicker({
   inputRef: (element: HTMLButtonElement | null) => void
   onChange: (value: ControlAvailabilityValue) => void
   onBasisChange: (value: string) => void
+  removalReason: string
+  requiredReason: string
 }) {
-  const options = getControlAvailabilityOptions()
+  const options = getControlAvailabilityOptions().map(option => requiredReason && (option.value === '' || option.value === 'cancelled')
+    ? { ...option, disabled: true, disabledReason: requiredReason } : option.value === '' && removalReason
+      ? { ...option, disabled: true, disabledReason: removalReason } : option)
 
   return (
-    <div className="rounded-md border border-slate-200 bg-slate-50/60 p-2 shadow-sm shadow-slate-200/30">
+    <div className={`rounded-md border ${requiredReason ? 'border-amber-400 ring-1 ring-inset ring-amber-200' : 'border-slate-200'} bg-slate-50/60 p-2 shadow-sm shadow-slate-200/30`}>
+      {requiredReason ? <p className="mb-2 text-xs text-amber-800" title={requiredReason}>Обязательный метод: {requiredReason}</p> : null}
       <div className={cn('grid gap-1.5', layout === 'row' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-5' : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3')}>
         {options.map((option, index) => {
           const active = value === option.value
@@ -447,6 +489,7 @@ function ControlAvailabilityPicker({
               ref={index === 0 ? inputRef : undefined}
               type="button"
               disabled={option.disabled}
+              aria-label={option.label}
               title={option.disabledReason}
               onClick={() => {
                 if (!option.disabled) onChange(option.value)
@@ -541,19 +584,24 @@ function getFormFieldLabel(field: WeldField & { key: WeldFieldKey }) {
   return field.label
 }
 
-const suggestionContextFieldKeys: WeldFieldKey[] = [
-  'projectTitle',
-  'subtitleCode',
-  'line',
-  'groupName',
-  'category',
-  'isometry',
-  'spool',
-  'element1',
-  'element2',
-  'material1',
-  'material2',
-]
+function getReadOnlyReason(fieldKey: WeldFieldKey, draft: WeldInput) {
+  if (fieldKey === 'hasVik') return 'ВИК всегда назначен.'
+  if (EDITABLE_NK_ASSIGNMENT_FIELDS.some(key => key === fieldKey) && !isActiveOfficialWeld(draft)) return EXCLUDED_CONTROL_ASSIGNMENT_REASON
+  if (['category', 'groupName', 'weldControlPercent'].includes(fieldKey)) return 'Общее свойство программы линии. Изменяется в «Программе линий».'
+  if (draft.id && (fieldKey === 'projectTitle' || fieldKey === 'subtitleCode')) return 'Принадлежность существующего стыка к проекту и шифру — только для просмотра в карточке.'
+  return null
+}
+
+function getAssignmentRemovalReason(draft: WeldInput, field: WeldFieldKey) {
+  if (!HISTORY_ASSIGNMENTS.some(item => item.enabledKey === field)) return ''
+  const next = { ...draft, [field]: null }
+  return getControlAssignmentRemovalReason(next, draft) || getLayeredControlSaveError(next, draft) ||
+    (loadSaveCheckSettings().controlHistoryProtection ? getNewControlAvailabilityReportHistoryReason(next, draft) : '') || ''
+}
+
+function getRepairRequiredReason(draft: WeldInput, field: WeldFieldKey) {
+  return draft.programRepairRequirements?.find(item => REPAIR_CONTROL_FIELDS[item.method] === field)?.reason ?? ''
+}
 
 function areWeldFormFieldPropsEqual(previous: WeldFormFieldProps, next: WeldFormFieldProps) {
   const controlBasisField = getControlBasisFieldByAssignmentKey(previous.field.key)
@@ -565,6 +613,10 @@ function areWeldFormFieldPropsEqual(previous: WeldFormFieldProps, next: WeldForm
     previous.setDraft !== next.setDraft ||
     previous.hideLabel !== next.hideLabel ||
     previous.controlPickerLayout !== next.controlPickerLayout ||
+    getRepairRequiredReason(previous.draft, previous.field.key) !== getRepairRequiredReason(next.draft, next.field.key) ||
+    getAssignmentRemovalReason(previous.draft, previous.field.key) !== getAssignmentRemovalReason(next.draft, next.field.key) ||
+    getReadOnlyReason(previous.field.key, previous.draft) !== getReadOnlyReason(next.field.key, next.draft) ||
+    (previous.field.key === 'hasRk' && previous.draft.connectionType !== next.draft.connectionType) ||
     previous.stampSelectOptions?.[previous.field.key] !== next.stampSelectOptions?.[next.field.key] ||
     !Object.is(previous.draft[previous.field.key], next.draft[next.field.key]) ||
     Boolean(
@@ -575,6 +627,8 @@ function areWeldFormFieldPropsEqual(previous: WeldFormFieldProps, next: WeldForm
     return false
   }
 
+  if (getReadOnlyReason(next.field.key, next.draft)) return true
+
   if (previous.field.key === 'finalStatus') {
     return calculateFinalStatus(previous.draft) === calculateFinalStatus(next.draft)
   }
@@ -582,7 +636,7 @@ function areWeldFormFieldPropsEqual(previous: WeldFormFieldProps, next: WeldForm
   if (previous.field.kind === 'text' || previous.field.kind === 'number') {
     const previousSuggestionDraft = previous.suggestionDraft ?? previous.draft
     const nextSuggestionDraft = next.suggestionDraft ?? next.draft
-    return suggestionContextFieldKeys.every((fieldKey) =>
+    return getWeldFormSuggestionQueryFieldKeys(next.field.key).every((fieldKey) =>
       Object.is(previousSuggestionDraft[fieldKey], nextSuggestionDraft[fieldKey]),
     )
   }

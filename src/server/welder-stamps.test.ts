@@ -28,7 +28,7 @@ describe('welder stamp registry references', () => {
     const suspensionSaveStart = source.indexOf('export const saveWelderStampSuspensionRecords')
     const saveSource = source.slice(saveStart, suspensionSaveStart)
     const validationIndex = saveSource.indexOf('assertWelderStampSuspensionsReferenceRegistry(')
-    const deleteIndex = saveSource.indexOf('tx.delete(welderStamps)')
+    const deleteIndex = saveSource.indexOf('persistWelderStampObjects(tx')
 
     expect(validationIndex).toBeGreaterThanOrEqual(0)
     expect(deleteIndex).toBeGreaterThan(validationIndex)
@@ -55,7 +55,7 @@ describe('welder stamp registry references', () => {
     const suspensionSaveStart = source.indexOf('export const saveWelderStampSuspensionRecords')
     const saveSource = source.slice(saveStart, suspensionSaveStart)
     const referenceValidationIndex = saveSource.indexOf('assertRemovedWelderStampAliasesAreUnused(')
-    const deleteIndex = saveSource.indexOf('tx.delete(welderStamps)')
+    const deleteIndex = saveSource.indexOf('persistWelderStampObjects(tx')
 
     expect(referenceValidationIndex).toBeGreaterThanOrEqual(0)
     expect(deleteIndex).toBeGreaterThan(referenceValidationIndex)

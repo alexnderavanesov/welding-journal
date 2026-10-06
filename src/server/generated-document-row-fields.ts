@@ -1,4 +1,4 @@
-import { and, eq, like } from 'drizzle-orm'
+import { and, eq, like, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import { generatedDocuments, generatedDocumentWeldJoints } from '@/db/schema'
@@ -7,7 +7,6 @@ import { PRE_HEAT_TREATMENT_REPORT_FIELDS } from '@/lib/pre-heat-treatment-repor
 import { getSystemDocumentTemplateIdForField } from '@/lib/system-document-template-types'
 import { getCurrentPstoCycle } from '@/lib/tvmt-cycle'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
-import { ensureLayeredControlDocumentsInitialized } from '@/server/layered-control-documents'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 
 export type GeneratedDocumentRowFields = {
@@ -282,38 +281,19 @@ export async function attachGeneratedDocumentFields<Row extends GeneratedDocumen
 export async function loadGeneratedDocumentAssignments<Row extends GeneratedDocumentCarrier>(
   rows: Row[],
   db?: Pick<ReturnType<typeof requireDb>, 'select'>,
+  systemOnly = false,
 ): Promise<GeneratedDocumentRowAssignment[]> {
   if (rows.length === 0) return []
-  await ensureLayeredControlDocumentsInitialized()
   const ids = [...new Set(rows.map((row) => Number(row.id)).filter(Number.isFinite))]
   if (ids.length === 0) return []
 
   const database = db ?? requireDb()
-  return database
+  // A shared document may contain hundreds of thousands of source positions.
+  // Fetch it once, not once per weld of the visible page. Row links only need
+  // the stage/cycle discriminator; the persisted metadata remains untouched.
+  const documents = await database
     .select({
-      weldJointId: generatedDocumentWeldJoints.weldJointId,
-      documentId: generatedDocuments.id,
-      type: generatedDocuments.type,
-      title: generatedDocuments.title,
-      periodFrom: generatedDocuments.periodFrom,
-      sourceMetadata: generatedDocuments.sourceMetadata,
-    })
-    .from(generatedDocumentWeldJoints)
-    .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))
-    .where(buildNumberArrayMatch(generatedDocumentWeldJoints.weldJointId, ids))
-}
-
-export async function attachSystemDocumentIds<Row extends GeneratedDocumentCarrier>(
-  rows: Row[],
-  db: Pick<ReturnType<typeof requireDb>, 'select'> = requireDb(),
-): Promise<Array<Row & Pick<GeneratedDocumentRowFields, 'systemDocumentIds'>>> {
-  if (rows.length === 0) return rows
-  const ids = [...new Set(rows.map((row) => Number(row.id)).filter(Number.isFinite))]
-  if (ids.length === 0) return rows
-
-  const assignments = await db
-    .select({
-      weldJointId: generatedDocumentWeldJoints.weldJointId,
+      weldJointIds: sql<number[]>`array_agg(${generatedDocumentWeldJoints.weldJointId})`,
       documentId: generatedDocuments.id,
       type: generatedDocuments.type,
       title: generatedDocuments.title,
@@ -324,8 +304,21 @@ export async function attachSystemDocumentIds<Row extends GeneratedDocumentCarri
     .innerJoin(generatedDocuments, eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId))
     .where(and(
       buildNumberArrayMatch(generatedDocumentWeldJoints.weldJointId, ids),
-      like(generatedDocuments.type, 'system:%'),
+      systemOnly ? like(generatedDocuments.type, 'system:%') : undefined,
     ))
+    .groupBy(generatedDocuments.id)
+  return documents.flatMap(({ weldJointIds, sourceMetadata, ...document }) => {
+    const compactMetadata = JSON.stringify(parseSystemDocumentSourceMetadata(sourceMetadata))
+    return weldJointIds.map(weldJointId => ({ ...document, weldJointId, sourceMetadata: compactMetadata }))
+  })
+}
+
+export async function attachSystemDocumentIds<Row extends GeneratedDocumentCarrier>(
+  rows: Row[],
+  db: Pick<ReturnType<typeof requireDb>, 'select'> = requireDb(),
+): Promise<Array<Row & Pick<GeneratedDocumentRowFields, 'systemDocumentIds'>>> {
+  if (rows.length === 0) return rows
+  const assignments = await loadGeneratedDocumentAssignments(rows, db, true)
 
   const assignmentsByWeldId = new Map<number, GeneratedDocumentRowAssignment[]>()
   for (const assignment of assignments) {

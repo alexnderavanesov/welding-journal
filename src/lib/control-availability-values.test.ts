@@ -7,9 +7,17 @@ import {
   isRecognizedControlAvailabilityValue,
   normalizeControlAvailabilityFilterValue,
   normalizeControlAvailabilityStorageText,
+  normalizeControlAvailabilityText,
 } from '@/lib/control-availability-values'
 
 describe('control availability values', () => {
+  it('fast canonical normalization preserves aliases, unknown values and non-string inputs', () => {
+    for (const value of [null, undefined, '', 'да', 'нет', 'отменен', 'дополнительный', true, false, 0, 1,
+      ' YES ', ' ЗАМЕНА РК/УЗК ', ' Нестандартное значение ', { toString: () => ' Да ' }]) {
+      const normalized = String(value ?? '').trim().toLowerCase()
+      expect(normalizeControlAvailabilityText(value)).toBe(normalized === 'замена рк/узк' ? 'дополнительный' : normalized)
+    }
+  })
   it.each([
     ['Да', 'да'],
     ['ДА', 'да'],

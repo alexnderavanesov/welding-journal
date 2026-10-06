@@ -54,6 +54,7 @@ test('повтор загрузки задач учитывает пересче
   await page.goto('/lnk')
   const panel = page.getByLabel('Диспетчер задач', { exact: true })
   await expect(panel).toContainText('5001 задача')
+  await panel.getByRole('button', { name: 'Развернуть', exact: true }).click()
 
   await withE2eDatabase(async (client) => {
     await client.query(`
@@ -109,6 +110,7 @@ test('восемь задач двух линий видны в одном сп�
   const panel = page.getByLabel('Диспетчер задач', { exact: true })
   await expect(panel).toContainText('8 задач')
   await expect(page.getByLabel('Страницы задач диспетчера')).toHaveCount(0)
+  await panel.getByRole('button', { name: 'Развернуть', exact: true }).click()
   await panel.locator('details').first().locator('summary').click()
   await expect(panel.getByText('E2E-L1')).toBeVisible()
   await expect(panel.getByText('E2E-L2')).toBeVisible()

@@ -47,6 +47,7 @@ function lineTask(rowValue: WeldRow): DispatcherTask {
     subtitleCode: String(rowValue.subtitleCode),
     line: String(rowValue.line),
     fieldKey: 'weldControlPercent',
+    systemWarningCode: 'СП-02',
     fieldLabel: 'Контроль швов, (%)',
     title: 'Проверить % контроля линии',
     values: ['10', '25'],
@@ -203,9 +204,9 @@ describe('dispatcher task row codes', () => {
     ]
 
     expect(buildDispatcherTaskIndexRows([lineTask(rows[0]), stampTask(rows[0])], rows)).toEqual([
+      { rowId: 1, taskKey: 'line-percent', code: 'СП-02' },
       { rowId: 1, taskKey: 'stamp-1', code: 'ДЗ-18' },
-      { rowId: 1, taskKey: 'line-percent', code: 'ДЗ-24' },
-      { rowId: 2, taskKey: 'line-percent', code: 'ДЗ-24' },
+      { rowId: 2, taskKey: 'line-percent', code: 'СП-02' },
     ])
   })
 
@@ -215,8 +216,8 @@ describe('dispatcher task row codes', () => {
     const second = { ...first, key: 'line-percent-duplicate' }
 
     expect(buildDispatcherTaskCodeIndexRows([first, second], rows)).toEqual([
-      { rowId: 1, taskKey: 'code:ДЗ-24', code: 'ДЗ-24' },
-      { rowId: 2, taskKey: 'code:ДЗ-24', code: 'ДЗ-24' },
+      { rowId: 1, taskKey: 'code:СП-02', code: 'СП-02' },
+      { rowId: 2, taskKey: 'code:СП-02', code: 'СП-02' },
     ])
   })
 

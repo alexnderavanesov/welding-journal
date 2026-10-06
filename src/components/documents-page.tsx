@@ -123,7 +123,7 @@ import {
 } from '@/lib/system-document-sequence-storage'
 import {
   GENERATED_DOCUMENT_HISTORY_QUERY_KEY,
-  invalidateWeldJoints,
+  scheduleWeldDataRefresh,
   WELD_JOINTS_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 import { getDocumentGenerationData } from '@/server/weld-read-api'
@@ -602,7 +602,7 @@ export function DocumentsPage({
 
   useEffect(() => {
     const handleGeneratedDocumentChange = () => {
-      void invalidateWeldJoints(queryClient)
+      scheduleWeldDataRefresh(queryClient)
     }
 
     window.addEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, handleGeneratedDocumentChange)
@@ -802,10 +802,10 @@ export function DocumentsPage({
                   setTemplateDocumentPreview(null)
                   setTemplatePreviewError(null)
                 }}
-                className={`rounded-md border px-4 py-2 text-sm font-semibold shadow-sm transition ${
+                className={`rounded-xl border px-4 py-2 text-sm font-medium transition ${
                   isActive
-                    ? 'border-[#17627d] bg-[#17627d] text-white'
-                    : 'border-[#cbdde6] bg-white text-[#31566a] hover:border-[#79aebe] hover:bg-[#edf7fa]'
+                    ? 'border-sky-100 bg-sky-50 text-sky-700'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
                 }`}
               >
                 {option.label}
@@ -824,10 +824,10 @@ export function DocumentsPage({
                   setTemplateDocumentPreview(null)
                   setTemplatePreviewError(null)
                 }}
-                className={`rounded-md border px-4 py-2 text-sm font-semibold shadow-sm transition ${
+                className={`rounded-xl border px-4 py-2 text-sm font-medium transition ${
                   activeDocumentType === option.id
-                    ? 'border-[#17627d] bg-[#17627d] text-white'
-                    : 'border-[#cbdde6] bg-white text-[#31566a] hover:border-[#79aebe] hover:bg-[#edf7fa]'
+                    ? 'border-sky-100 bg-sky-50 text-sky-700'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
                 }`}
               >
                 {option.label}
@@ -845,10 +845,10 @@ export function DocumentsPage({
                   setTemplateDocumentPreview(null)
                   setTemplatePreviewError(null)
                 }}
-                className={`rounded-md border px-4 py-2 text-sm font-semibold shadow-sm transition ${
+                className={`rounded-xl border px-4 py-2 text-sm font-medium transition ${
                   activeDocumentType === option.id
-                    ? 'border-[#17627d] bg-[#17627d] text-white'
-                    : 'border-[#cbdde6] bg-white text-[#31566a] hover:border-[#79aebe] hover:bg-[#edf7fa]'
+                    ? 'border-sky-100 bg-sky-50 text-sky-700'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
                 }`}
               >
                 {option.label}
@@ -866,10 +866,10 @@ export function DocumentsPage({
                   setTemplateDocumentPreview(null)
                   setTemplatePreviewError(null)
                 }}
-                className={`rounded-md border px-4 py-2 text-sm font-semibold shadow-sm transition ${
+                className={`rounded-xl border px-4 py-2 text-sm font-medium transition ${
                   activeDocumentType === view.id
-                    ? 'border-[#17627d] bg-[#17627d] text-white'
-                    : 'border-[#cbdde6] bg-white text-[#31566a] hover:border-[#79aebe] hover:bg-[#edf7fa]'
+                    ? 'border-sky-100 bg-sky-50 text-sky-700'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
                 }`}
               >
                 {view.label}
@@ -897,10 +897,10 @@ export function DocumentsPage({
             role="tab"
             aria-selected={activeWorkspaceTab === 'history'}
             onClick={() => setActiveWorkspaceTab('history')}
-            className={`inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded px-4 text-sm font-semibold transition ${
+            className={`inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-xl px-4 text-sm font-medium transition ${
               activeWorkspaceTab === 'history'
-                ? 'bg-[#17627d] text-white shadow-sm'
-                : 'text-slate-600 hover:bg-white hover:text-[#17627d]'
+                ? 'bg-sky-50 text-sky-700'
+                : 'text-slate-600 hover:bg-sky-50 hover:text-sky-700'
             }`}
           >
             <FileText className="h-4 w-4" />
@@ -911,10 +911,10 @@ export function DocumentsPage({
             role="tab"
             aria-selected={activeWorkspaceTab === 'generation'}
             onClick={() => setActiveWorkspaceTab('generation')}
-            className={`inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded px-4 text-sm font-semibold transition ${
+            className={`inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-xl px-4 text-sm font-medium transition ${
               activeWorkspaceTab === 'generation'
-                ? 'bg-[#17627d] text-white shadow-sm'
-                : 'text-slate-600 hover:bg-white hover:text-[#17627d]'
+                ? 'bg-sky-50 text-sky-700'
+                : 'text-slate-600 hover:bg-sky-50 hover:text-sky-700'
             }`}
           >
             <FileSpreadsheet className="h-4 w-4" />
@@ -993,7 +993,7 @@ export function DocumentsPage({
                 type="button"
                 onClick={() => void handleGenerateDocuments()}
                 disabled={journalRows.length === 0 || isGenerating || generationDataQuery.isFetching}
-                className="h-10 gap-2 bg-slate-900 px-4 text-white hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 sm:min-w-40"
+                className="h-10 gap-2 px-4 sm:min-w-40"
               >
                 <FileSpreadsheet className="h-4 w-4" />
                 {isGenerating
@@ -1250,11 +1250,11 @@ export function DocumentsPage({
               onOpenJointHistory?.(documentRows[0].id)
             }}
             onRenamed={async (savedRows) => {
+              scheduleWeldDataRefresh(
+                queryClient,
+                savedRows ? { upsertRows: savedRows } : undefined,
+              )
               await Promise.all([
-                invalidateWeldJoints(
-                  queryClient,
-                  savedRows ? { upsertRows: savedRows } : undefined,
-                ),
                 queryClient.invalidateQueries({
                   queryKey: [...GENERATED_DOCUMENT_HISTORY_QUERY_KEY, 'system-document-history'],
                 }),
@@ -1529,14 +1529,19 @@ function GeneratedDocumentsPanel({
   }
 
   const deleteDocumentRecord = async (documentRecord: StoredGeneratedDocument) => {
-    if (!(await requireDeletePassword(`удаление документа «${documentRecord.title}»`))) return
-    const confirmed = await confirmAction({
-      title: 'Удалить документ',
-      itemName: documentRecord.title,
-      description: `Документ «${documentLabel}» связан с ${documentRecord.rowCount} ${formatJointCount(documentRecord.rowCount)}. После удаления поле «${documentFieldLabel}» у этих стыков будет очищено.`,
-      warning: 'Документ будет удален из истории сформированных документов. Это действие нельзя отменить.',
-    })
-    if (confirmed) await deleteGeneratedDocument(documentRecord.id, documentRecord.updatedAt)
+    setOpenRowsError(null)
+    try {
+      if (!(await requireDeletePassword(`удаление документа «${documentRecord.title}»`))) return
+      const confirmed = await confirmAction({
+        title: 'Удалить документ',
+        itemName: documentRecord.title,
+        description: `Документ «${documentLabel}» связан с ${documentRecord.rowCount} ${formatJointCount(documentRecord.rowCount)}. После удаления поле «${documentFieldLabel}» у этих стыков будет очищено.`,
+        warning: 'Документ будет удален из истории сформированных документов. Это действие нельзя отменить.',
+      })
+      if (confirmed) await deleteGeneratedDocument(documentRecord.id, documentRecord.updatedAt)
+    } catch (error) {
+      setOpenRowsError(getDocumentActionErrorMessage(error, 'Не удалось удалить документ. Обновите историю и проверьте его состояние.'))
+    }
   }
   const openDocumentRows = async (documentRecord: StoredGeneratedDocument) => {
     setOpeningRowsDocumentId(documentRecord.id)
@@ -1610,7 +1615,15 @@ function GeneratedDocumentsPanel({
           <button type="button" className="rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold" onClick={() => void historyQuery.refetch()}>Повторить</button>
         </div>
       ) : null}
-      {openRowsError ? <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{openRowsError}</div> : null}
+      {openRowsError ? (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+          <span>{openRowsError}</span>
+          <button type="button" disabled={historyQuery.isFetching} className="rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold" onClick={() => {
+            setOpenRowsError(null)
+            void historyQuery.refetch()
+          }}>Обновить историю</button>
+        </div>
+      ) : null}
 
       {historyQuery.isLoading ? (
         <div className="px-4 py-10 text-center text-sm text-slate-500">Загружаем актуальную историю...</div>
@@ -2170,7 +2183,7 @@ function SystemDocumentsPanel({
             }}
             className={`h-8 rounded-md border px-3 text-xs font-semibold transition-colors ${
               lnkConclusionTemplateFilter === 'all'
-                ? 'border-[#17627d] bg-[#17627d] text-white'
+                ? 'border-sky-100 bg-sky-50 text-sky-700'
                 : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-sky-800'
             }`}
           >
@@ -2201,13 +2214,13 @@ function SystemDocumentsPanel({
                 }}
                 className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-semibold transition-colors ${
                   isActive
-                    ? 'border-[#17627d] bg-[#17627d] text-white'
+                    ? 'border-sky-100 bg-sky-50 text-sky-700'
                     : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-sky-800'
                 }`}
               >
                 {profile.label}
                 <span className={`rounded px-1.5 py-0.5 text-[10px] ${
-                  isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                  isActive ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-500'
                 }`}>
                   {documentCount}
                 </span>

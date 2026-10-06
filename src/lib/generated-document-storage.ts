@@ -5,7 +5,6 @@ import {
   getRemoteGeneratedDocumentRows,
   listRemoteGeneratedDocumentHistory,
   listRemoteGeneratedDocumentHistoryFilterOptions,
-  listRemoteGeneratedDocuments,
   resetRemoteGeneratedDocumentSequence,
   saveRemoteGeneratedDocuments,
   type RemoteGeneratedDocument,
@@ -32,10 +31,6 @@ export async function saveGeneratedDocuments(inputs: SaveGeneratedDocumentInput[
   const records = await saveRemoteGeneratedDocuments({ data: inputs })
   if (records.length > 0) notifyGeneratedDocumentStorageChanged()
   return records
-}
-
-export async function loadGeneratedDocuments(type: SaveGeneratedDocumentInput['type']) {
-  return listRemoteGeneratedDocuments({ data: { type } })
 }
 
 export async function loadGeneratedDocumentHistory(request: RemoteGeneratedDocumentHistoryRequest) {

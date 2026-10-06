@@ -15,6 +15,7 @@ test('точное исправление ZV возвращает чернови
 
   const requestDate = page.getByLabel('Дата заявки', { exact: true })
   await requestDate.fill('2026-07-31')
+  await expect(page.getByText(/Стык F5: дата заявки ВИК \(31\.07\.2026\) раньше даты сварки \(01\.08\.2026\)/)).toBeVisible()
   await expect(page.getByRole('button', { name: 'Исправить дату заявки ВИК' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Исправить дату ПСТО' })).toBeHidden()
   await page.getByRole('button', { name: 'Исправить дату заявки ВИК' }).click()

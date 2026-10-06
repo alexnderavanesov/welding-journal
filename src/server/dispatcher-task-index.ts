@@ -83,6 +83,7 @@ import {
   getDispatcherTaskPageStageTable,
 } from '@/server/dispatcher-task-index-staging'
 import { persistCalculatedFinalStatuses } from '@/server/final-status-persistence'
+import { loadScopedAcceptedWarningKeys } from './accepted-warning-scope'
 
 export { getFinalStatusPersistenceChanges } from '@/server/final-status-persistence'
 
@@ -224,7 +225,6 @@ function getScopedDispatcherDirtyScopes(
   return (
     isDispatcherTaskIndexPayloadCurrent(state.repeatedTasks) &&
     !state.fullRebuild &&
-    dirtyScopes.length > 0 &&
     dirtyScopes.length <= MAX_SCOPED_REBUILD_SCOPES &&
     state.computedAt &&
     isDispatcherTaskIndexBusinessDateCurrent(state.computedAt)
@@ -441,9 +441,8 @@ export async function calculateFullDispatcherTasks(
     .from(duplicateControls)
     .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id))
   const acceptedWarnings = await tx
-    .select()
+    .select({ key: dispatcherAcceptedWarnings.key })
     .from(dispatcherAcceptedWarnings)
-    .orderBy(asc(dispatcherAcceptedWarnings.acceptedAt))
   const settingsRows = await tx.select().from(appSettings)
   options.onProgress?.('supporting-rows-loaded')
   const sourceRows = rows.map((row) => ({ id: row.id, finalStatus: row.finalStatus }))
@@ -454,10 +453,12 @@ export async function calculateFullDispatcherTasks(
   options.onProgress?.('report-rows-prepared')
   const currentDispatcherSettings = getDispatcherSettings(settingsRows)
   const acceptedDispatcherWarningKeys = new Set(acceptedWarnings.map((row) => row.key))
+  const earlyCoilDecisionSourceRowIds = getEarlyCoilDecisionSourceRowIds(acceptedDispatcherWarningKeys)
   const systemIndexSettings = getSystemIndexSettings(settingsRows)
   const dispatcherSettings = options.dispatcherSettings?.(currentDispatcherSettings) ?? currentDispatcherSettings
   const dispatcherTaskInput = {
     acceptedDispatcherWarningKeys,
+    earlyCoilDecisionSourceRowIds,
     dismissedRepeatedJointTaskKeys: new Set<string>(),
     dispatcherReminderSettings: getDispatcherReminderSettings(settingsRows),
     dispatcherSettings,
@@ -468,7 +469,7 @@ export async function calculateFullDispatcherTasks(
     welderStampSuspensions: suspensionRows.map(toWelderStampSuspensionRecord),
   }
   const chainContinuationOptions = {
-    earlyCoilDecisionSourceRowIds: getEarlyCoilDecisionSourceRowIds(acceptedDispatcherWarningKeys),
+    earlyCoilDecisionSourceRowIds,
     systemIndexSettings,
   }
   const chainContinuations: ReturnType<typeof buildJointChainContinuations> = []
@@ -552,9 +553,12 @@ export async function lockWeldJointWritesForDispatcherReplacement(
   // deletion cascades into dispatcher_row_tasks; otherwise a full replacement
   // can hold an index row while waiting for the deleted parent, and the delete
   // can wait for that same index row (PostgreSQL deadlock 40P01).
-  // Self-exclusive: active and background refreshes must not each hold SHARE
-  // while one upgrades to ROW EXCLUSIVE to persist calculated final statuses.
-  await tx.execute(sql`lock table ${weldJoints} in share row exclusive mode`)
+  // Also exclude SELECT FOR UPDATE/SHARE (ROW SHARE table mode). Otherwise a
+  // writer can lock a weld row during publication, then wait for ROW EXCLUSIVE
+  // while publication waits for that same row to persist its final status.
+  // EXCLUSIVE still permits ordinary SELECT report reads. Existing row-locking
+  // transactions finish first; new ones wait before acquiring any weld rows.
+  await tx.execute(sql`lock table ${weldJoints} in exclusive mode`)
 }
 
 async function rebuildScopedDispatcherTaskIndex(
@@ -585,10 +589,7 @@ async function rebuildScopedDispatcherTaskIndex(
       .where(buildNumberArrayMatch(duplicateControls.weldJointId, rowIds))
       .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id))
     : []
-  const acceptedWarnings = await tx
-    .select()
-    .from(dispatcherAcceptedWarnings)
-    .orderBy(asc(dispatcherAcceptedWarnings.acceptedAt))
+  const acceptedWarnings = await loadScopedAcceptedWarningKeys(tx, rows)
   const settingsRows = await tx.select().from(appSettings)
   const preparedRows = await prepareDispatcherReportRows(tx, rows, duplicateRows)
   const finalStatusChangeCount = await persistCalculatedFinalStatuses(tx, rows, preparedRows)
@@ -601,6 +602,7 @@ async function rebuildScopedDispatcherTaskIndex(
   }
   const dispatcherTaskInput = {
     acceptedDispatcherWarningKeys,
+    earlyCoilDecisionSourceRowIds: chainContinuationOptions.earlyCoilDecisionSourceRowIds,
     dismissedRepeatedJointTaskKeys: new Set<string>(),
     dispatcherReminderSettings: getDispatcherReminderSettings(settingsRows),
     dispatcherSettings: getDispatcherSettings(settingsRows),
@@ -675,6 +677,7 @@ async function rebuildScopedDispatcherTaskIndex(
     .update(dispatcherTaskIndexState)
     .set({
       computedRevision: lockedState.sourceRevision,
+      welderStampExpiryTasks: JSON.stringify(buildVisibleDispatcherTasks({ ...dispatcherTaskInput, rows: [], includeRepeatedJointTasks: false }).welderStampExpiryTasks),
       repeatedTasks: serializeDispatcherTaskIndexPayload(repeatedTasks, chainContinuations, {
         totalTaskCount: repeatedJointTaskCount,
         totalPageCount: repeatedJointTaskPageCount,

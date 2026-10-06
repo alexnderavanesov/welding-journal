@@ -25,7 +25,7 @@ import {
 } from '@/lib/dialog-context-menu-items'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
-import { getLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
+import { getNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { buildLnkRequestDraftRows } from '@/lib/lnk-request-mutation-updates'
 import {
   analyzeLnkRequestExtensionTargets,
@@ -257,7 +257,7 @@ export function LnkRequestDialog({
       requestDate,
       controlProcessSettings,
     })
-    return getLnkChronologyIssues(proposedRows, saveCheckSettings).filter(
+    return getNewLnkChronologyIssues(proposedRows, selectedRows, saveCheckSettings).filter(
       (issue) => issue.kind !== 'post-before-psto-cycle' ||
         !controlProcessSettings.allowPrimaryLnkBeforePreviousStagesComplete,
     )

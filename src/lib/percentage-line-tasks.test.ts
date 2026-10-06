@@ -1,12 +1,30 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { buildPercentageLineControlTasks } from '@/lib/percentage-line-tasks'
+import * as summaries from '@/lib/percentage-line-summary'
 
 describe('percentage line tasks for U-joints', () => {
-  it('does not create a missing-control task when PVK closes the U-joint slot', () => {
+  it('counts participating stamps once, not once for every new-welder task', () => {
+    const size = 2000
+    const rows = Array.from({ length: size }, (_, i) => row(i + 1, { stamp1K: `A${i}`, hasRk: 'да' }))
+    const prepared = summaries.buildPercentageLineSummaries(rows)
+    let reads = 0
+    for (const stamp of prepared[0].stamps) {
+      const count = stamp.officialJointCount
+      Object.defineProperty(stamp, 'officialJointCount', { get: () => { reads++; return count } })
+    }
+    const spy = vi.spyOn(summaries, 'buildPercentageLineSummaries').mockReturnValue(prepared)
+    try {
+      const tasks = buildPercentageLineControlTasks(rows)
+      expect(tasks.filter(task => task.issue === 'new-welder')).toHaveLength(size - 1)
+      expect(reads).toBeLessThanOrEqual(size * 10)
+    } finally { spy.mockRestore() }
+  })
+
+  it('does not create a missing-control task when explicit layered PVK closes the U-joint slot', () => {
     const tasks = buildPercentageLineControlTasks([
-      row(1, { connectionType: 'У', hasPvk: 'да' }),
+      row(1, { connectionType: 'У', hasPvk: 'да', layeredControlAssigned: true }),
       row(2),
       row(3),
       row(4),
@@ -25,7 +43,7 @@ describe('percentage line tasks for U-joints', () => {
       row(5),
     ])
 
-    expect(tasks).toEqual([
+    expect(tasks.filter((task) => task.demandKind !== 'pvk')).toEqual([
       expect.objectContaining({
         issue: 'missing',
         title: 'Назначить контроль по процентной линии',
@@ -34,7 +52,7 @@ describe('percentage line tasks for U-joints', () => {
     ])
   })
 
-  it('uses rejected PVK on a U-joint for add-on and dispatcher details', () => {
+  it('never uses rejected PVK on a U-joint for RK/UZK add-on', () => {
     const tasks = buildPercentageLineControlTasks([
       row(1, { connectionType: 'У17', hasPvk: 'да', pvkResult: 'вырез' }),
       row(2),
@@ -43,16 +61,16 @@ describe('percentage line tasks for U-joints', () => {
       row(5),
     ])
 
-    expect(tasks.map((task) => task.issue).sort()).toEqual(['missing', 'rejected-primary'])
+    expect(tasks.filter((task) => task.demandKind !== 'pvk').map((task) => task.issue).sort()).toEqual(['missing'])
     expect(tasks.find((task) => task.issue === 'missing')).toMatchObject({
-      requiredControls: 3,
-      coveredControls: 1,
-      count: 2,
+      requiredControls: 1,
+      coveredControls: 0,
+      count: 1,
     })
-    expect(tasks.find((task) => task.issue === 'rejected-primary')?.details).toContain('На У-стыках сюда входит и ПВК')
+    expect(tasks.find((task) => task.issue === 'rejected-rows')).toBeUndefined()
   })
 
-  it('creates full-control and suspension tasks after four rejected PVK U-joints', () => {
+  it('does not create full-control or suspension tasks after four rejected PVK U-joints', () => {
     const tasks = buildPercentageLineControlTasks(
       Array.from({ length: 6 }, (_, index) =>
         row(index + 1, {
@@ -64,16 +82,14 @@ describe('percentage line tasks for U-joints', () => {
       ),
     )
 
-    expect(tasks.map((task) => task.issue).sort()).toEqual(['missing', 'rejected-primary', 'suspend-welder'])
+    expect(tasks.filter((task) => task.demandKind !== 'pvk').map((task) => task.issue).sort()).toEqual(['missing'])
     expect(tasks.find((task) => task.issue === 'missing')).toMatchObject({
-      title: 'Назначить 100% контроль по клейму',
-      requiredControls: 6,
-      coveredControls: 4,
-      count: 2,
+      title: 'Назначить контроль по процентной линии',
+      requiredControls: 1,
+      coveredControls: 0,
+      count: 1,
     })
-    expect(tasks.find((task) => task.issue === 'suspend-welder')).toMatchObject({
-      suspensionFrom: '2026-08-04',
-    })
+    expect(tasks.find((task) => task.issue === 'suspend-welder')).toBeUndefined()
   })
 
   it('never proposes a malformed control date for suspension', () => {
@@ -99,6 +115,8 @@ describe('percentage line tasks for U-joints', () => {
 function row(id: number, overrides: Partial<WeldRow> = {}): WeldRow {
   return {
     id,
+    connectionType: 'СШ',
+    pvkControlPercent: 0,
     projectTitle: 'TKM5',
     subtitleCode: '-',
     line: '330-01',

@@ -14,6 +14,7 @@ import {
   normalizeDuplicateControlPageRequest,
   normalizeDuplicateControlDate,
   persistDuplicateControlUpdates,
+  prepareDuplicateControlWrite,
   refreshWeldedFinalStatusesAfterDuplicateControlChange,
   splitDuplicateControlInsertBatches,
 } from '@/server/duplicate-controls'
@@ -23,7 +24,26 @@ import type { WeldInput } from '@/lib/weld-fields'
 import {
   DUPLICATE_CONTROL_MASS_SELECTION_ERROR,
   DUPLICATE_CONTROL_MASS_SELECTION_LIMIT,
+  DUPLICATE_CONTROL_METHOD_ERROR,
 } from '@/lib/duplicate-control-types'
+
+describe('duplicate-control supported methods', () => {
+  it.each(['годен', 'ремонт', 'вырез'] as const)('forbids any %s duplicate on an unofficial joint even with repair checks disabled', result => {
+    for (const method of ['ВИК', 'РК', 'УЗК', 'ПВК'] as const) {
+      expect(() => assertDuplicateControlRepairAllowed({ joint: 'S1', officiality: 'неофициальный', d1: 108 }, { method, result }, { ...DEFAULT_SAVE_CHECK_SETTINGS, lnkResultRepairRules: false }, DEFAULT_SYSTEM_INDEX_SETTINGS))
+        .toThrow('Дубль-контроль недоступен для неофициального стыка')
+    }
+  })
+  const base = { weldJointId: 1, result: 'годен' as const, controlDate: '2026-09-01', conclusion: 'Дубль-1', conclusionDate: '2026-09-01' }
+  it.each(['ВИК', 'РК', 'УЗК', 'ПВК'] as const)('accepts %s in the common single/bulk save boundary', method => {
+    expect(prepareDuplicateControlWrite({ ...base, method }).method).toBe(method)
+  })
+  it.each(['ТВМТ', 'ПСТО'])('rejects %s for creates and edits, including stale clients', method => {
+    for (const id of [undefined, 42]) {
+      expect(() => prepareDuplicateControlWrite({ ...base, id, method } as Parameters<typeof prepareDuplicateControlWrite>[0])).toThrow(DUPLICATE_CONTROL_METHOD_ERROR)
+    }
+  })
+})
 
 describe('duplicate-control affected weld joints', () => {
   it('keeps both the previous and next weld when a control is reassigned', () => {
@@ -62,7 +82,7 @@ describe('duplicate-control affected weld joints', () => {
     )
 
     expect(changed).toBe(1)
-    expect(select).toHaveBeenCalledTimes(4)
+    expect(select).toHaveBeenCalledTimes(5) // Includes stable physical-connection state.
     expect(execute).toHaveBeenCalledTimes(1)
     expect(compiledQueries[0]?.params).toEqual([7, 'не годен по дублю', 'годен'])
   })
@@ -161,9 +181,9 @@ describe('duplicate-control concurrent editing', () => {
 })
 
 describe('duplicate-control batch writes', () => {
-  it('rejects a save payload larger than the five methods for 5,000 selected joints', () => {
-    expect(() => assertDuplicateControlSaveBatchLimit(25_000)).not.toThrow()
-    expect(() => assertDuplicateControlSaveBatchLimit(25_001)).toThrow('Слишком много записей')
+  it('rejects a save payload larger than the four methods for 5,000 selected joints', () => {
+    expect(() => assertDuplicateControlSaveBatchLimit(20_000)).not.toThrow()
+    expect(() => assertDuplicateControlSaveBatchLimit(20_001)).toThrow('Слишком много записей')
   })
 
   it('keeps query growth bounded for a large set of new controls', () => {

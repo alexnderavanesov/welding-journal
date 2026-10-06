@@ -1,0 +1,1 @@
+ALTER TABLE "weld_joint_program_states" ADD COLUMN "replacement_coil_ids" integer[] DEFAULT '{}'::integer[] NOT NULL;

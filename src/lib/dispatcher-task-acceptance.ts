@@ -3,7 +3,7 @@ import type { DispatcherTask } from '@/lib/dispatcher-types'
 const ACCEPTABLE_PERCENTAGE_LINE_ISSUES = new Set([
   'excess',
   'new-welder',
-  'rejected-primary',
+  'rejected-rows',
   'suspend-welder',
 ])
 

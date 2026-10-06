@@ -1,4 +1,7 @@
-import { memo, type MouseEvent } from 'react'
+import { memo, useId, type MouseEvent } from 'react'
+import { Layers3, LockKeyhole } from 'lucide-react'
+import { isAngularConnectionType } from '@/lib/connection-type'
+import { getLayeredControlSaveError } from '@/lib/layered-control-rules'
 import { DialogRowMenuButton } from '@/components/dialog-row-menu-button'
 import { LNK_RESULT_ROW_GRID_CLASS } from '@/components/lnk-dialog-layout'
 import { LnkResultRowRequestBadges } from '@/components/lnk-result-row-request-badges'
@@ -29,6 +32,8 @@ type LnkResultRowProps = {
   methodKey: WeldFieldKey | ''
   selected: boolean
   rowResult: string
+  layeredControlSelected?: boolean
+  onSetLayeredControl?: (rowId: number, assigned: boolean) => void
   saveCheckSettings: SaveCheckSettings
   onToggleRow: (rowId: number) => void
   onSetRowResult: (rowId: number, result: string) => void
@@ -43,11 +48,14 @@ function LnkResultRowComponent({
   methodKey,
   selected: selectedById,
   rowResult: draftRowResult,
+  layeredControlSelected = false,
+  onSetLayeredControl,
   saveCheckSettings,
   onToggleRow,
   onSetRowResult,
   onOpenContextMenu,
 }: LnkResultRowProps) {
+  const layeredHintId = useId()
   const method = getLnkMethodByRequestKey(methodKey)
   const stageAccess = method
     ? getPrimaryLnkStageAccess(row, method.code, controlProcessSettings)
@@ -67,6 +75,15 @@ function LnkResultRowComponent({
   const hasSavedFinalResult = Boolean(
     method && LNK_RESULT_OPTIONS.includes(String(row[method.resultKey] ?? '').trim().toLowerCase() as never),
   )
+  const showLayeredControl = methodKey === 'pvkRequest' && isAngularConnectionType(row.connectionType)
+  const layeredAssigned = row.layeredControlAssigned === true
+  const layeredChecked = layeredAssigned || layeredControlSelected
+  const layeredBlockReason = !layeredChecked ? getLayeredControlSaveError({
+    ...row, hasVik: 'да', hasPvk: 'да', pvkResult: rowResult || row.pvkResult, layeredControlAssigned: true,
+  }, row) : null
+  const layeredHint = layeredAssigned ? 'Уже назначен · снятие — отдельной командой'
+    : !selected ? 'Сначала выберите стык'
+    : layeredBlockReason || 'Назначить ВИК и ПВК кромок и слоёв при сохранении'
 
   return (
     <div
@@ -125,8 +142,10 @@ function LnkResultRowComponent({
       <span className="min-w-0">
         {selected ? (
           <LnkResultRowResultPicker
+            methodCode={method?.code}
             row={row}
             rowResult={rowResult}
+            layeredControlSelected={showLayeredControl && layeredChecked}
             saveCheckSettings={saveCheckSettings}
             compact
             onSetRowResult={onSetRowResult}
@@ -153,6 +172,24 @@ function LnkResultRowComponent({
         label={`Действия: стык ${String(row.joint ?? row.line ?? row.id)}`}
         onOpen={(event) => onOpenContextMenu(event, row)}
       />
+      {showLayeredControl ? (
+        <div className="col-start-2 -col-end-1 flex flex-wrap items-center gap-x-3 gap-y-1 pb-1 text-xs"
+          onClick={(event) => event.stopPropagation()}>
+          <label className={`inline-flex items-center gap-2 rounded py-1 font-medium focus-within:ring-2 focus-within:ring-sky-500/40 ${layeredChecked ? 'text-sky-800' : 'text-slate-600'} ${layeredAssigned || !selected || layeredBlockReason ? 'cursor-default' : 'cursor-pointer'}`}>
+            <input type="checkbox"
+              aria-label={`Послойный контроль: ${row.line || 'Без линии'} · ${row.joint || row.id}`}
+              aria-describedby={layeredHintId}
+              checked={layeredChecked}
+              disabled={layeredAssigned || !selected || Boolean(layeredBlockReason) || !onSetLayeredControl}
+              onChange={(event) => onSetLayeredControl?.(row.id, event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 accent-sky-600 disabled:opacity-100" />
+            <Layers3 className="h-3.5 w-3.5" aria-hidden="true" />
+            Послойный контроль
+            {layeredAssigned ? <LockKeyhole className="h-3 w-3" aria-hidden="true" /> : null}
+          </label>
+          <span id={layeredHintId} className={layeredBlockReason ? 'text-amber-700' : 'text-slate-500'}>{layeredHint}</span>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -164,6 +201,8 @@ export const LnkResultRow = memo(LnkResultRowComponent, (previous, next) => {
     previous.requestName !== next.requestName ||
     previous.requestDate !== next.requestDate ||
     previous.methodKey !== next.methodKey ||
+    previous.layeredControlSelected !== next.layeredControlSelected ||
+    previous.onSetLayeredControl !== next.onSetLayeredControl ||
     previous.selected !== next.selected ||
     previous.saveCheckSettings !== next.saveCheckSettings ||
     previous.onOpenContextMenu !== next.onOpenContextMenu

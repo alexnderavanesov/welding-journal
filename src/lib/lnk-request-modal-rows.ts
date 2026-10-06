@@ -7,6 +7,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { canCreatePrimaryLnkRequest } from '@/lib/lnk-control-stage'
+import { canBackfillOwnLnkResult } from '@/lib/lnk-system-order'
 
 export function getLnkRequestMethodsForRows(rows: WeldInput[], requestName: string) {
   const name = requestName.trim()
@@ -21,7 +22,7 @@ export function getLnkInputMethodsForRows(rows: WeldInput[], requestName: string
       const rowRequestName = String(row[method.requestKey] ?? '').trim()
       if (!rowRequestName) return false
       if (name && rowRequestName !== name) return false
-      if (isLnkMethodNoNeed(row, method)) return false
+      if (isLnkMethodNoNeed(row, method) && !canBackfillOwnLnkResult(row, method.code)) return false
       return !isFinalLnkResultValue(row[method.resultKey])
     }),
   )

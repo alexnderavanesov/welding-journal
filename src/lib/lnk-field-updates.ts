@@ -50,7 +50,7 @@ export function applyLnkFieldUpdate<T extends WeldInput>(record: T, fieldKey: We
 export function clearDisabledLnkRequests<T extends WeldInput>(row: T): T {
   let nextRow: (T & Record<string, unknown>) | null = null
   for (const method of LNK_METHODS) {
-    if (isEnabledControlValue(row[method.enabledKey]) || hasLnkMethodReportHistory(row, method)) continue
+    if (isEnabledControlValue(row[method.enabledKey]) || isCancelledControlValue(row[method.enabledKey]) || hasLnkMethodReportHistory(row, method) || hasText(row[method.requestKey]) || hasText(row[method.requestDateKey])) continue
     if (!hasText(row[method.requestKey]) && !isPendingLnkResultValue(row[method.resultKey])) continue
     nextRow = nextRow ?? ({ ...row } as T & Record<string, unknown>)
     nextRow[method.requestKey] = null
@@ -58,20 +58,6 @@ export function clearDisabledLnkRequests<T extends WeldInput>(row: T): T {
     if (isPendingLnkResultValue(row[method.resultKey])) {
       nextRow[method.resultKey] = null
     }
-  }
-  return (nextRow ?? row) as T
-}
-
-export function clearCancelledRejectedLnkGeneratedData<T extends WeldInput>(row: T): T {
-  let nextRow: (T & Record<string, unknown>) | null = null
-  for (const method of LNK_METHODS) {
-    if (!isCancelledControlValue(row[method.enabledKey]) || !isRejectedLnkResultValue(row[method.resultKey])) continue
-    nextRow = nextRow ?? ({ ...row } as T & Record<string, unknown>)
-    nextRow[method.requestKey] = null
-    nextRow[method.requestDateKey] = null
-    nextRow[method.resultKey] = null
-    nextRow[method.conclusionDateKey] = null
-    nextRow[method.conclusionKey] = null
   }
   return (nextRow ?? row) as T
 }
@@ -122,14 +108,10 @@ export function normalizeLnkResultValue(value: unknown) {
 
 function getRestoredActiveLnkResult(value: unknown) {
   const text = String(value ?? '').trim().toLowerCase()
+  if (text.endsWith(' · назначение отменено')) return text.replace(/ · назначение отменено$/, '')
   if (text === 'годен (отменен)') return 'годен'
   if (text === 'отменен') return null
   return undefined
-}
-
-function isRejectedLnkResultValue(value: unknown) {
-  const text = String(value ?? '').trim().toLowerCase()
-  return text === 'ремонт' || text === 'вырез'
 }
 
 export function withTouchedLnkTimestamp<T extends WeldInput>(row: T): T {

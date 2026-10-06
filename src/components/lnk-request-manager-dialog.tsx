@@ -134,7 +134,7 @@ export function LnkRequestManagerDialog({
   const [filter, setFilter] = useState<RegistryFilter>('all')
   const [showRequestSettings, setShowRequestSettings] = useState(false)
   const [pendingRequestContextMenu, setPendingRequestContextMenu] = useState<{
-    point: { x: number; y: number }
+    point: ReturnType<typeof getDialogMenuPoint>
     request: LnkRequestExtensionOption
   } | null>(null)
   const requestConclusionSettings = useRequestConclusionSettings()
@@ -207,7 +207,7 @@ export function LnkRequestManagerDialog({
     return { rows, row, method }
   }, [allRows])
   const openLoadedRequestContextMenu = useStableEventCallback((
-    point: { x: number; y: number },
+    point: ReturnType<typeof getDialogMenuPoint>,
     request: LnkRequestExtensionOption,
   ) => {
     const context = getRequestContext(request)

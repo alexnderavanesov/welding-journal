@@ -2,10 +2,34 @@ import { describe, expect, it } from 'vitest'
 
 import type { WeldJoint } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { LNK_METHODS } from '@/lib/report-config'
 import { buildWeldBatchUpdatePayload, toDbInsert, WELD_BATCH_UPDATE_SET } from '@/server/weld-persistence'
 import { getPrimaryPstoCyclePersistenceValues } from '@/server/psto-cycle-state'
 
 describe('weld persistence', () => {
+  it.each(LNK_METHODS)('preserves incomplete $code request history on an unrelated save', (method) => {
+    const previous = {
+      id: 1,
+      joint: 'F1',
+      [method.enabledKey]: null,
+      [method.requestKey]: null,
+      [method.requestDateKey]: '2026-09-01',
+      [method.resultKey]: 'ожидает НК',
+    } as unknown as WeldJoint
+    const record = { ...previous, note: 'Исправлено примечание' } as unknown as WeldRow
+    const expected = {
+      [method.requestDateKey]: '2026-09-01',
+      [method.resultKey]: 'ожидает НК',
+    }
+
+    expect(toDbInsert(record)).toMatchObject(expected)
+    expect(buildWeldBatchUpdatePayload(
+      record,
+      new Map([[previous.id, previous]]),
+      new Date('2026-09-02T00:00:00.000Z'),
+    )).toMatchObject(expected)
+  })
+
   it('writes officiality only to its final database column', () => {
     const populated = toDbInsert({ officiality: 'неофициальный' })
     const empty = toDbInsert({ officiality: null })

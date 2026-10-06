@@ -1,4 +1,4 @@
-import { isControlEnabledValue } from '@/lib/control-availability-values'
+import { isControlEnabledValue, isControlCancelledValue } from '@/lib/control-availability-values'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { isPreHeatTreatmentStageEnabled, type PreHeatTreatmentPolicyRow } from '@/lib/pre-heat-treatment-policy'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
@@ -129,6 +129,13 @@ export function getPreHeatTreatmentControls(row: WeldInput) {
   }).preHeatTreatmentControls ?? [])
 }
 
+export function getPreHeatTreatmentHistoryNote(row: WeldInput): string | undefined {
+  if (getPreHeatTreatmentControls(row).length === 0) return undefined
+  if (!isPreHeatTreatmentStageEnabled(row)) return 'История: НК до ТО выключен, в расчёте не учитывается.'
+  if (!isPreHeatTreatmentLnkAvailable(row)) return 'Сохранённая история. На текущей линии этап не предусмотрен. Заявки и заключения доступны для просмотра и отдельного исправления; основной этап ими автоматически не закрывается. Негодный результат сохраняет силу.'
+  return undefined
+}
+
 export function getPreHeatTreatmentControl(
   row: WeldInput,
   methodCode: PreHeatTreatmentLnkMethodCode,
@@ -141,7 +148,9 @@ export function getPreHeatTreatmentControl(
 export function getRejectedPreHeatTreatmentControls(
   row: WeldInput,
 ): RejectedPreHeatTreatmentControl[] {
-  if (!isPreHeatTreatmentLnkAvailable(row)) return []
+  // A changed line removes future stage requirements, not an already recorded
+  // rejection. The separately agreed global switch still suspends this stage.
+  if (!isPreHeatTreatmentStageEnabled(row)) return []
 
   return getPreHeatTreatmentControls(row).flatMap((control) => {
     const methodCode = normalizeMethodCode(control.method)
@@ -149,7 +158,7 @@ export function getRejectedPreHeatTreatmentControls(
     if (!isPreHeatTreatmentLnkMethodCode(methodCode)) return []
     const method = PRE_HEAT_TREATMENT_LNK_METHODS.find((candidate) => candidate.code === methodCode)
     return method &&
-      isControlEnabledValue(row[method.enabledKey]) &&
+      (isControlEnabledValue(row[method.enabledKey]) || isControlCancelledValue(row[method.enabledKey])) &&
       (result === 'ремонт' || result === 'вырез')
       ? [{ control, methodCode, result } satisfies RejectedPreHeatTreatmentControl]
       : []
@@ -260,15 +269,13 @@ export function getPrimaryLnkStageAccess(
     row = { ...row, preHeatTreatmentLnkEnabled: effectiveSettings.preHeatTreatmentLnkEnabled } as WeldInput
   }
   const normalizedMethod = normalizeMethodCode(methodCode)
-  if (
-    !isPreHeatTreatmentLnkMethodCode(normalizedMethod) ||
-    !requiresHeatTreatmentStagedLnk(row)
-  ) {
+  if (!isPreHeatTreatmentLnkMethodCode(normalizedMethod)) {
     return { status: 'ready', reason: '', debt: null }
   }
 
   const requestAccess = getPrimaryLnkRequestAccess(row, normalizedMethod)
   if (requestAccess.status === 'blocked') return requestAccess
+  if (!requiresHeatTreatmentStagedLnk(row)) return { status: 'ready', reason: '', debt: null }
 
   const debt = getPrimaryLnkStageDebt(row, normalizedMethod)
   if (!debt) return { status: 'ready', reason: '', debt: null }

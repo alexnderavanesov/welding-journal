@@ -334,7 +334,9 @@ export async function loadExistingSystemDocumentNameKeys(
   }
   const occupiedNames = new Map<SystemDocumentTemplateId, Set<string>>()
   if (sourceQueries.length > 0) {
-    const result = await db.execute(sql.join(sourceQueries, sql` union all `))
+    // One name may occur on hundreds of thousands of positions/cycles.
+    // Return unique names, not one identical driver object per position.
+    const result = await db.execute(sql`select distinct "sequenceId", date, name from (${sql.join(sourceQueries, sql` union all `)}) names`)
     for (const rawRow of result.rows) {
       const row = rawRow as { sequenceId?: unknown; date?: unknown; name?: unknown }
       const sequenceId = String(row.sequenceId ?? '') as SystemDocumentTemplateId

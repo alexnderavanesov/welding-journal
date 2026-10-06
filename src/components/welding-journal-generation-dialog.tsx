@@ -262,7 +262,7 @@ export function WeldingJournalGenerationDialog({
           type="button"
           onClick={() => void handleGenerate()}
           disabled={plan.groups.length === 0 || isGenerating || contextLoading || Boolean(contextError) || templateLoading}
-          className="min-w-40 gap-2 bg-[#17627d] text-white hover:bg-[#12536b] disabled:border disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-500 disabled:opacity-100"
+          className="min-w-40 gap-2"
         >
           <FileSpreadsheet className="h-4 w-4" />
           {isGenerating

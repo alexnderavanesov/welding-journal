@@ -99,7 +99,7 @@ export function buildWeldingJournalCancelledAcceptedRows(rows: WeldInput[]) {
 
 function isCancelledAcceptedResult(value: unknown) {
   const text = String(value ?? '').trim().toLowerCase()
-  return text === 'годен (отменен)' || text === 'проведено (отменен)'
+  return text === 'годен (отменен)' || text === 'проведено (отменен)' || text === 'годен · назначение отменено' || text === 'проведено · назначение отменено'
 }
 
 type PreviousRejectedSources = { latest: WeldInput; previous?: WeldInput }

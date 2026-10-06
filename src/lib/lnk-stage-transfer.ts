@@ -12,6 +12,7 @@ import {
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { isFinalLnkResultValue } from '@/lib/lnk-status'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
+import { assertUnofficialLnkGoodResultAllowed } from './unofficial-lnk-result-guard'
 
 export type LnkStageTransferStage = 'primary' | 'beforeHeatTreatment'
 
@@ -125,6 +126,9 @@ export function buildPrimaryToPreHeatTreatmentTransfer({
       }
       const requestName = text(row[method.requestKey])
       const result = text(row[method.resultKey])
+      // A good fact in another stage is not permission to introduce it into
+      // this stage while unofficial. Restore officiality as a separate action.
+      assertUnofficialLnkGoodResultAllowed(row, result, null, `${methodCode} до ТО`)
       if (!hasPrimaryTrace(row, methodCode)) {
         throw new Error(`Стык ${formatJoint(row)}: основной комплект ${methodCode} уже пуст.`)
       }
@@ -150,32 +154,6 @@ export function buildPrimaryToPreHeatTreatmentTransfer({
     methodCode: normalizeMethodCode(control.method) as PreHeatTreatmentLnkMethodCode,
   })))
   return { rows: nextRows, controls }
-}
-
-export function buildClearedPrimaryLnkStageRows({
-  rows,
-  positions,
-}: {
-  rows: WeldRow[]
-  positions: LnkStageTransferPosition[]
-}) {
-  const positionsByRowId = groupPositions(positions)
-  const resolved: LnkStageTransferPosition[] = []
-  const nextRows = rows.map((row) => {
-    const methodCodes = positionsByRowId.get(row.id)
-    if (!methodCodes) return row
-    let next = { ...row } as WeldRow
-    for (const methodCode of methodCodes) {
-      if (!hasPrimaryTrace(row, methodCode)) {
-        throw new Error(`Стык ${formatJoint(row)}: основной комплект ${methodCode} уже пуст.`)
-      }
-      next = clearPrimaryMethod(next, methodCode)
-      resolved.push({ rowId: row.id, methodCode })
-    }
-    return next
-  })
-  assertAllPositionsResolved(positions, resolved)
-  return nextRows
 }
 
 export function buildPreHeatTreatmentToPrimaryTransfer({
@@ -204,6 +182,7 @@ export function buildPreHeatTreatmentToPrimaryTransfer({
       if (hasPrimaryTrace(row, methodCode)) {
         throw new Error(`Стык ${formatJoint(row)}: основной комплект ${methodCode} уже заполнен.`)
       }
+      assertUnofficialLnkGoodResultAllowed(row, control.result, null, methodCode)
       next = {
         ...next,
         [method.requestKey]: textOrNull(control.requestName),
@@ -234,6 +213,12 @@ export function buildPreHeatTreatmentToPrimaryTransfer({
 
 export function hasPrimaryLnkStageTrace(row: WeldRow, methodCode: PreHeatTreatmentLnkMethodCode) {
   return hasPrimaryTrace(row, methodCode)
+}
+
+export function removeTransferredPreHeatTreatmentControls(rows: WeldRow[], controls: PreHeatTreatmentControlRecord[]) {
+  const movedIds = new Set(controls.map(control => control.id))
+  return rows.map(row => ({ ...row, preHeatTreatmentControls: (row.preHeatTreatmentControls ?? [])
+    .filter(control => !movedIds.has(control.id)) }))
 }
 
 function groupPositions(positions: LnkStageTransferPosition[]) {

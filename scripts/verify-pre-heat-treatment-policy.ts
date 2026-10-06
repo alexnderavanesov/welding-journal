@@ -5,7 +5,8 @@ import { canCreatePstoWorkflowRequest, canAddPstoWorkflowResult } from '../src/l
 import type { WeldRow } from '../src/lib/dispatcher-types'
 import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '../src/lib/control-process-settings'
 import { isPrimaryLnkStageReady } from '../src/lib/lnk-control-stage'
-import { canCreateLnkRequest } from '../src/lib/report-control-state'
+import { canCreateLnkRequest, hasHeatTreatmentReportState } from '../src/lib/report-control-state'
+import { canAddTvmtResult, canCreateTvmtRequest } from '../src/lib/tvmt-field-updates'
 
 // Only the disposable E2E database. No .env fallback, remote access or migrations.
 const url = new URL(process.env.DATABASE_URL ?? '')
@@ -18,7 +19,7 @@ const [{ requireDb }, schema, policy, relations, lnk, psto, persistence, read] =
   import('../src/server/psto-workflow-context'), import('../src/server/psto-cycle-state'),
   import('../src/server/weld-read'),
 ])
-const { appSettings, weldJoints, preHeatTreatmentControls } = schema
+const { appSettings, weldJoints, preHeatTreatmentControls, pstoRepeatCycles } = schema
 const db = requireDb()
 const rolledBack = new Error('intentional fixture rollback')
 let comparisons = 0
@@ -37,17 +38,35 @@ await db.transaction(async (tx) => {
     { ...base, joint: 'NORMAL', preHeatTreatmentLnkExempt: false },
     { ...base, joint: 'WAITING-ONLY', pstoRequired: null, tvmtResult: 'ожидает', pstoNote: 'заметка' },
     { ...base, joint: 'CANCELLED', pstoRequired: 'отменен', tvmtResult: 'ожидает' },
+    { ...base, joint: 'MOVED-BAD', pstoRequired: null },
+    { ...base, joint: 'MOVED-GOOD', pstoRequired: null },
+    { ...base, joint: 'MOVED-PENDING', pstoRequired: null },
+    { ...base, joint: 'MOVED-PSTO-REQUEST', pstoRequired: null, pstoRequest: 'OLD-PSTO', pstoRequestDate: '2026-07-10' },
+    { ...base, joint: 'MOVED-PSTO-DATE', pstoRequired: null, pstoRequestDate: '2026-07-10' },
+    ...([null, 'отменен', 'да'] as const).map((pstoRequired, index) => ({ ...base, ...history,
+      joint: `PENDING-REPEAT-${index}`, pstoRequired, tvmtResult: 'не годен' })),
   ]).returning()
   const ids = rows.map((row) => row.id)
   await tx.insert(preHeatTreatmentControls).values([
     { weldJointId: rows[2].id, method: 'ВИК', requestName: 'НК-SB057', requestDate: '2026-07-10', result: 'годен', conclusionDate: '2026-07-11', conclusionName: 'К-SB057' },
     { weldJointId: rows[4].id, method: 'ВИК', requestName: 'НК-BAD', requestDate: '2026-07-10', result: 'вырез', conclusionDate: '2026-07-11', conclusionName: 'К-BAD' },
+    ...(['ремонт', 'годен', 'ожидает НК'] as const).map((result, index) => ({ weldJointId: rows[9 + index].id, method: 'ВИК', requestName: `MOVED-${index}`, requestDate: '2026-07-10', result, conclusionDate: index < 2 ? '2026-07-11' : null, conclusionName: index < 2 ? `MOVED-C-${index}` : null })),
+    ...rows.filter(row => row.joint?.startsWith('PENDING-REPEAT-')).map(row => ({ weldJointId: row.id,
+      method: 'ВИК', requestName: `PRE-${row.id}`, requestDate: '2026-07-10', result: 'годен', conclusionDate: '2026-07-11', conclusionName: `PRE-C-${row.id}` })),
   ])
+  await tx.insert(pstoRepeatCycles).values(rows.filter(row => row.joint?.startsWith('PENDING-REPEAT-')).map(row => ({
+    weldJointId: row.id, sequence: 2, pstoRequest: `REPEAT-${row.id}`, pstoRequestDate: '2026-07-13', pstoResult: 'ожидает ПСТО',
+  })))
   for (const enabled of [true, false, true]) {
     const value = JSON.stringify({ ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentLnkEnabled: enabled })
     await tx.insert(appSettings).values({ key: 'control-processes', value })
       .onConflictDoUpdate({ target: appSettings.key, set: { value } })
     const hydrated = await relations.attachHeatTreatmentControlRelations(rows, tx)
+    // An unperformed repeat becomes history on cancellation/move, not a new debt.
+    // The performed failed TVMT cycle closes there; an active line still needs the repeat.
+    for (const row of hydrated.filter(row => row.joint?.startsWith('PENDING-REPEAT-'))) {
+      assert.equal(isPrimaryLnkStageReady(row, 'ВИК'), row.pstoRequired !== 'да', row.joint!)
+    }
     const cases = [
       { where: read.buildAvailableLnkRequestWhere(), accept: (row: WeldRow) => canCreateLnkRequest(row) },
       { where: lnk.buildLnkWorkflowRowsWhere({ scope: 'requestCandidates', methodKeys: ['vikRequest'] }), accept: (row: WeldRow) => canCreateLnkRequest(row) },
@@ -55,10 +74,14 @@ await db.transaction(async (tx) => {
       { where: psto.buildPstoWorkflowRowsWhere({ scope: 'requestCandidates' }), accept: canCreatePstoWorkflowRequest },
       { where: psto.buildPstoWorkflowRowsWhere({ scope: 'resultCandidates' }), accept: canAddPstoWorkflowResult },
       { where: read.buildPrimaryLnkStageReadyWhere('ВИК'), accept: (row: WeldRow) => isPrimaryLnkStageReady(row, 'ВИК') },
+      { where: read.buildReportKindWhere('heatTreatment'), accept: (row: WeldRow) => hasHeatTreatmentReportState(row) },
+      { where: psto.buildPstoWorkflowRowsWhere({ scope: 'requestRegistry' }), accept: (row: WeldRow) => hasHeatTreatmentReportState(row) && Boolean(row.pstoRequest) },
+      { where: psto.buildPstoWorkflowRowsWhere({ scope: 'tvmtRequestCandidates' }), accept: canCreateTvmtRequest },
+      { where: psto.buildPstoWorkflowRowsWhere({ scope: 'tvmtResultCandidates' }), accept: canAddTvmtResult },
     ]
-    for (const entry of cases) {
+    for (const [index, entry] of cases.entries()) {
       const found = await tx.select({ id: weldJoints.id }).from(weldJoints).where(and(inArray(weldJoints.id, ids), entry.where))
-      assert.deepEqual(found.map((row) => row.id).sort(), hydrated.filter(entry.accept).map((row) => row.id).sort(), `SQL/JS candidates; enabled=${enabled}`)
+      assert.deepEqual(found.map((row) => row.id).sort(), hydrated.filter(entry.accept).map((row) => row.id).sort(), `SQL/JS candidates; case=${index}; enabled=${enabled}; rows=${JSON.stringify(rows.map(row => ({ id: row.id, joint: row.joint })))}`)
       comparisons += hydrated.length
     }
   }

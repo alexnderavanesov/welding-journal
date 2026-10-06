@@ -7,7 +7,7 @@
 ## Production boundary
 
 - Read-only viewing of production is allowed when relevant to the user's task. Opening existing pages, searching, filtering, and viewing records are permitted only when they do not change stored state. This does not authorize production tests, load runs, or operational commands.
-- Never create, edit, save, delete, or otherwise change production code, data, schema, settings, infrastructure, or documents. Do not run production migrations, maintenance commands, recalculations, or deployments. If a viewing action might mutate stored state, inspect the local code first or ask the user instead of trying it on production.
+- Without a direct user instruction explicitly authorizing the specific production action, never create, edit, save, delete, or otherwise change production code, data, schema, settings, infrastructure, or documents. Do not run production migrations, maintenance commands, recalculations, or deployments under testing permission. If a viewing action might mutate stored state, inspect the local code first or ask the user instead of trying it on production.
 - Do not push to a branch that triggers a production autodeploy. A general request to test, migrate, commit, or push does not lift this boundary; the user must explicitly change the production restriction first.
 - Keep development and automated checks local. A local production-mode build is allowed; it must not connect to production services or databases.
 
@@ -26,8 +26,9 @@
 
 - Never write migration SQL files manually.
 - Never run migrations from a non-main branch.
-- Standing permission: migrations for automated task checks may run without asking again, but only in a separate, empty, disposable local test database. Verify the local host, exact database name, isolation, and empty initial state before migration; never use a user database, a production copy, or a remote target under this exception.
-- For any other permitted migration, ask the user exactly: "могу ли я запустить миграцию" and wait for an affirmative answer. Production migrations remain prohibited by the production boundary above.
+- Standing permission (user clarification, 2026-09-29): local migrations, including the main local working database and disposable local test databases, may run without asking again. Verify the local host and exact database name, review the generated migration, and preserve existing data. Do not request repeated permission for local/test migrations.
+- Automated tests, synthetic fixtures, and load runs must still use a separate disposable local test database; verify its isolation and empty initial state before setup. Permission to migrate the main local database does not authorize replacing it, clearing it, or using it for destructive tests.
+- Remote migrations, especially production migrations, require separate direct authorization for the specific action under the production boundary above. Local/testing permission never authorizes production migrations or other production changes.
 - Treat `src/db/schema.ts` as the source of truth for database shape.
 - For schema changes, update the Drizzle schema first, then generate migrations with `pnpm db:generate`.
 - Review generated migrations before running them, but do not hand-author migration files.
@@ -52,6 +53,8 @@
 
 ## Full pre-commit audit
 
+- Next-audit scope agreed on 2026-10-05: include the deferred real-production-backup restore/upgrade rehearsal, resource-limited mixed multiuser load, and a system-wide architecture/simplification review broader than the preliminary review on 2026-10-05. See the opening section of `docs/precommit-audit-2026-10-01.md` for prerequisites, scope, and the distinction between deferred and verified work. Run these checks locally; this agreement does not authorize obtaining backups from production or performing any production operation.
+- Before the next pre-commit audit, read the agreed implementation plan in full and compare each requirement and exception with the actual implementation, tests, and user-visible states. For the line program, use `docs/line-program-plan-2026-09-25.md` plus the latest user clarifications. Record discrepancies; ask the user about material ambiguities before changing business behavior. In particular, an unreachable theoretical quota must not be reintroduced as an assignment debt through labels, counters, progress bars, or warnings.
 - When the user says `Проведи полную предкоммитную проверку.`, treat it as a request for a risk-based audit of all uncommitted changes, not just a test-suite run. Review the complete diff, trace affected workflows end to end, check interactions with existing rules and settings, remove dead, duplicate, obsolete, or stale compatibility code, and run focused regression tests plus the full typecheck, unit suite, production build, and relevant user-facing E2E scenarios.
 - Reconstruct the acceptance criteria from all user requests and the latest clarifications represented by the current changes, then verify each requirement against the implementation and observable user behavior. Do not assume that passing tests proves the requested logic. Look for missed requirements, stale assumptions, contradictory rules, inconsistent behavior between entry points, and regressions in adjacent workflows. If a material ambiguity or contradiction cannot be resolved safely from the existing rules, stop and ask the user how it should work instead of guessing.
 - Perform an explicit gray-zone audit for affected workflows: empty, partial, legacy, and unusually large records; alternate entry points; repeated actions; cancellation and retry; stale or concurrent clients; intermediate workflow states; error recovery; and transitions between related document, LNK, PSTO, dispatcher, import, and edit flows. Add regression coverage for uncovered behavior and clean up unreachable or misleading branches discovered during the audit.

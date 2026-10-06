@@ -20,15 +20,12 @@ export async function syncPreHeatTreatmentDocumentsInTransaction(
   })
 
   const documents = [] as Parameters<typeof upsertSourcedSystemDocumentsInTransaction>[0]['documents'][number][]
+  const controlsByDocument = indexPreHeatTreatmentDocumentControls(controls)
   for (const type of ['lnkRequest', 'lnkConclusion'] as const) {
     for (const summary of buildSystemDocumentSummaries(virtualRows, type)) {
-      const documentControls = controls.filter((control) => (
-        type === 'lnkRequest'
-          ? text(control.requestName) === summary.title && text(control.requestDate) === summary.date
-          : text(control.method) === summary.methodCode &&
-            text(control.conclusionName) === summary.title &&
-            text(control.conclusionDate) === summary.date
-      ))
+      const documentControls = type === 'lnkRequest'
+        ? controlsByDocument.requests.get(JSON.stringify([summary.title, summary.date])) ?? []
+        : controlsByDocument.conclusions.get(JSON.stringify([summary.title, summary.date, summary.methodCode])) ?? []
       documents.push({
         summary: { ...summary, sourceKind: 'beforeHeatTreatment' },
         sourcePositions: documentControls.map((control) => ({
@@ -41,6 +38,21 @@ export async function syncPreHeatTreatmentDocumentsInTransaction(
     }
   }
   await upsertSourcedSystemDocumentsInTransaction({ tx, documents })
+}
+
+/** One pass across positions, even when every weld has a separate document. */
+export function indexPreHeatTreatmentDocumentControls(controls: readonly PreHeatTreatmentControlRecord[]) {
+  const requests = new Map<string, PreHeatTreatmentControlRecord[]>()
+  const conclusions = new Map<string, PreHeatTreatmentControlRecord[]>()
+  const add = (index: typeof requests, key: string, control: PreHeatTreatmentControlRecord) => {
+    const group = index.get(key) ?? []
+    group.push(control); index.set(key, group)
+  }
+  for (const control of controls) {
+    add(requests, JSON.stringify([text(control.requestName), text(control.requestDate)]), control)
+    add(conclusions, JSON.stringify([text(control.conclusionName), text(control.conclusionDate), text(control.method)]), control)
+  }
+  return { requests, conclusions }
 }
 
 function groupByRowId<Row extends { weldJointId: number }>(records: Row[]) {

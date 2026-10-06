@@ -178,7 +178,7 @@ export function JointDispatcherTaskItem({
   }, [isHighlighted])
 
   const runAction = async (action: DispatcherTaskActionSpec) => {
-    if (!onRunAction || pendingAction) return
+    if (!onRunAction || pendingAction || action.disabledReason) return
     setPendingAction(action.key ?? action.id)
     try {
       await onRunAction(row, task, action)
@@ -269,7 +269,8 @@ export function JointDispatcherTaskItem({
                   'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
                 primaryAction.tone === 'danger' && 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100',
               )}
-              disabled={Boolean(pendingAction)}
+              disabled={Boolean(pendingAction || primaryAction.disabledReason)}
+              title={primaryAction.disabledReason}
               onClick={() => void runAction(primaryAction)}
             >
               {primaryAction.label}
@@ -283,6 +284,7 @@ export function JointDispatcherTaskItem({
                 key: action.key ?? action.id,
                 label: action.label,
                 tone: action.tone,
+                disabledReason: action.disabledReason,
                 onClick: () => void runAction(action),
               }))}
               triggerContent={<MoreHorizontal className="h-4 w-4" />}

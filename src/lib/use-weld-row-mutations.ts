@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { deleteWeldJoint, deleteWeldJoints } from '@/server/weld-mutations-api'
 import { prepareWeldSaveValue } from '@/lib/weld-journal-mutation-updates'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import {
   createWeldRowOrThrow,
   moveWeldJointChainOrThrow,
@@ -60,7 +60,7 @@ export function useWeldRowMutations({
       setMessage(variables.weldChainLineMovePlan
         ? `Цепочка стыка перенесена · записей: ${savedRows.length}`
         : 'Запись сохранена')
-      invalidateWeldJoints(queryClient, { upsertRows: savedRows as WeldRow[] })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: savedRows as WeldRow[] })
       const savedEditedRow = variables.id
         ? savedRows.find((row) => Number(row.id) === Number(variables.id))
         : undefined
@@ -85,7 +85,7 @@ export function useWeldRowMutations({
     },
     onSuccess: async (_result, target) => {
       setMessage('Запись удалена')
-      invalidateWeldJoints(queryClient, { deleteIds: [target.id] })
+      scheduleWeldDataRefresh(queryClient, { deleteIds: [target.id] })
     },
     onError: (error) => {
       setMessage((error as Error).message)
@@ -99,7 +99,7 @@ export function useWeldRowMutations({
       })
     },
     onSuccess: async (_result, targets) => {
-      invalidateWeldJoints(queryClient, { deleteIds: targets.map((target) => target.id) })
+      scheduleWeldDataRefresh(queryClient, { deleteIds: targets.map((target) => target.id) })
     },
     onError: (error) => {
       setMessage((error as Error).message)

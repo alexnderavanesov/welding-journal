@@ -19,4 +19,8 @@ describe('application report routes', () => {
   it('falls back to the welding journal for an unknown path', () => {
     expect(getActiveReportFromPath('/unknown')).toBe('weldingJournal')
   })
+  it('uses the new program URL and recognizes legacy bookmarks', () => {
+    expect(getAppReportPath('percentageLines')).toBe('/line-program')
+    expect(getActiveReportFromPath('/percentage-lines/')).toBe('percentageLines')
+  })
 })

@@ -1,4 +1,4 @@
-import { getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
+import { formatDisplayDate, getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { getRejectedPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
@@ -130,7 +130,7 @@ export function buildPrimaryTvmtResultRows({
       const requestDate = parseDateLikeToIso(record.tvmtRequestDate)
       if (requestDate && date < requestDate) {
         throw new Error(
-          `Стык ${formatJoint(record)}: дата ТВМТ не может быть раньше даты заявки ТВМТ.`,
+          `Стык ${formatJoint(record)}: дата ТВМТ (${formatDisplayDate(date)}) не может быть раньше даты заявки ТВМТ (${formatDisplayDate(requestDate)}).`,
         )
       }
     }
@@ -148,7 +148,7 @@ export function buildPrimaryTvmtResultRows({
 function assertDateNotBeforePsto(record: WeldRow, date: string, label: string) {
   const pstoDate = parseDateLikeToIso(record.pstoDate)
   if (pstoDate && date < pstoDate) {
-    throw new Error(`Стык ${formatJoint(record)}: ${label.toLowerCase()} не может быть раньше даты ПСТО.`)
+    throw new Error(`Стык ${formatJoint(record)}: ${label.charAt(0).toLowerCase() + label.slice(1)} (${formatDisplayDate(date)}) не может быть раньше даты ПСТО (${formatDisplayDate(pstoDate)}).`)
   }
 }
 

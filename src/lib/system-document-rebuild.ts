@@ -1,10 +1,13 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { REBUILD_PREVIEW_BYTES_LIMIT, type RebuildBatch } from '@/lib/system-document-rebuild-batch'
 import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import {
   buildCurrentSystemDocumentName,
   getSystemDocumentNumber,
   type SystemDocumentSummary,
+  type SystemDocumentSourcePosition,
 } from '@/lib/system-document-types'
+import type { PstoRepeatCycleRecord } from '@/lib/psto-cycle'
 import {
   getSystemDocumentTemplateId,
   type SystemDocumentTemplateId,
@@ -19,6 +22,7 @@ import {
 export type SystemDocumentRebuildSource = {
   document: SystemDocumentSummary
   rows: WeldRow[]
+  cyclePositions?: Array<{ position: SystemDocumentSourcePosition; cycle?: PstoRepeatCycleRecord }>
 }
 
 export type SystemDocumentRebuildGroupPreview = {
@@ -29,6 +33,7 @@ export type SystemDocumentRebuildGroupPreview = {
   joints: string[]
   previewName: string
   isMissingValueFallback: boolean
+  cycleSequences?: number[]
 }
 
 export type SystemDocumentRebuildDocumentPreview = {
@@ -50,6 +55,7 @@ export type SystemDocumentRebuildDocumentPreview = {
 }
 
 export type SystemDocumentRebuildPreview = {
+  batch?: RebuildBatch
   fingerprint: string
   scopeRevisions: Partial<Record<SystemDocumentTemplateId, string>>
   documents: SystemDocumentRebuildDocumentPreview[]
@@ -82,6 +88,7 @@ export function getSystemDocumentRebuildSelectionSummary({
       decisionsByDocument.get(document.documentId)?.action === 'rebuild'
     ),
   )
+  const changedDocumentIds = new Set(changedDocuments.map(document => document.documentId))
   return {
     selectedDocuments,
     changedDocuments,
@@ -89,7 +96,7 @@ export function getSystemDocumentRebuildSelectionSummary({
       changedDocuments.flatMap((document) => document.groups.flatMap((group) => group.rowIds)),
     ).size,
     resultingDocumentCount: selectedDocuments.reduce((count, document) => {
-      const rebuilt = changedDocuments.includes(document)
+      const rebuilt = changedDocumentIds.has(document.documentId)
       return count + (rebuilt ? document.groups.length : 1)
     }, 0),
   }
@@ -99,10 +106,12 @@ export function buildSystemDocumentRebuildDocuments({
   sources,
   settings,
   nextNumbers,
+  occupiedNumbers,
 }: {
   sources: SystemDocumentRebuildSource[]
   settings: RequestConclusionSettings
   nextNumbers: Partial<Record<SystemDocumentTemplateId, number>>
+  occupiedNumbers?: ReadonlyMap<SystemDocumentTemplateId, ReadonlySet<number>>
 }): Omit<SystemDocumentRebuildPreview, 'fingerprint' | 'scopeRevisions'> {
   const numberCursors = new Map<SystemDocumentTemplateId, number>(
     Object.entries(nextNumbers).map(([id, number]) => [
@@ -110,7 +119,10 @@ export function buildSystemDocumentRebuildDocuments({
       Math.max(1, Math.floor(number ?? 1)),
     ]),
   )
-  const usedNumbersByTemplate = new Map<SystemDocumentTemplateId, Set<number>>()
+  let previewBytes = 0
+  const usedNumbersByTemplate = new Map<SystemDocumentTemplateId, Set<number>>(
+    [...(occupiedNumbers ?? new Map())].map(([id, numbers]) => [id, new Set(numbers)]),
+  )
   for (const { document } of sources) {
     const number = Number(getSystemDocumentNumber(document, settings))
     if (!Number.isInteger(number) || number <= 0) continue
@@ -120,15 +132,21 @@ export function buildSystemDocumentRebuildDocuments({
     usedNumbersByTemplate.set(templateId, usedNumbers)
   }
   const documents = sources
-    .filter(({ document }) => !document.sourceKind)
+    .filter(({ document }) => document.sourceKind !== 'beforeHeatTreatment')
     .sort(compareSources)
-    .map(({ document, rows }) => {
+    .map(({ document, rows, cyclePositions }) => {
       const templateId = getSystemDocumentTemplateId(document)
       const settingId = getSystemDocumentSplitSettingId(document)
       const mode = settings.splitModes[settingId]
       const splitGroups = buildSystemDocumentSplitGroups(rows, mode)
       const systemNumber = getSystemDocumentNumber(document, settings)
       const isSystemName = Boolean(systemNumber)
+      const cyclesByRow = new Map<number, Set<number>>()
+      for (const { position, cycle } of cyclePositions ?? []) {
+        const sequences = cyclesByRow.get(position.weldJointId) ?? new Set<number>()
+        sequences.add(position.sequence ?? cycle?.sequence ?? 1)
+        cyclesByRow.set(position.weldJointId, sequences)
+      }
       const groups = splitGroups.map((group, index) => {
         let previewName = ''
         if (isSystemName) {
@@ -137,18 +155,28 @@ export function buildSystemDocumentRebuildDocuments({
             : takeNextNumber(numberCursors, usedNumbersByTemplate, templateId)
           previewName = buildCurrentSystemDocumentName(document, group.rows, settings, number)
         }
-        return {
+        const previewGroup = {
           key: group.key,
           label: group.label,
           rowIds: group.rowIds,
           rowCount: group.rows.length,
           joints: group.rows
             .slice(0, 5)
-            .map((row) => String(row.joint ?? `ID ${row.id}`).trim())
+            .map((row) => {
+              const joint = String(row.joint ?? `ID ${row.id}`).trim()
+              const cycles = [...cyclesByRow.get(row.id) ?? []].sort((a, b) => a - b)
+              return cycles.length ? `${joint} (циклы: ${cycles.join(', ')})` : joint
+            })
             .filter(Boolean),
           previewName,
           isMissingValueFallback: group.isMissingValueFallback,
+          ...(cyclePositions ? { cycleSequences: [...new Set(group.rowIds.flatMap(id => [...cyclesByRow.get(id) ?? []]))].sort((a, b) => a - b) } : {}),
         }
+        // Bound the retained output too: a long naming pattern multiplied by
+        // many groups can be much larger than its input. No partial plan saves.
+        previewBytes += JSON.stringify(previewGroup).length * 2
+        if (previewBytes > REBUILD_PREVIEW_BYTES_LIMIT) throw new Error('Предпросмотр пакета слишком объёмный из-за состава групп или длинных названий. Документы не изменены; уменьшите объём названий или разделения.')
+        return previewGroup
       })
       const willChangeAutomatically = isSystemName && (
         groups.length !== 1 || groups[0]?.previewName !== document.title

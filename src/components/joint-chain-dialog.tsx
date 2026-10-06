@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { CoilRestorationHistory } from './coil-restoration-dialog'
 import { GitFork, History, ListTodo, LoaderCircle, RotateCcw, ShieldAlert, X } from 'lucide-react'
 
 import { DialogCloseFooter } from '@/components/dialog-close-footer'
@@ -20,6 +21,9 @@ import type {
   WeldRow,
 } from '@/lib/dispatcher-types'
 import { getJointChainSubtitle, isUnofficialJoint } from '@/lib/joint-display'
+import { getUnofficialDuplicateControlBlockReason } from '@/lib/duplicate-control-officiality'
+import { buildChainActualityGroups } from '@/lib/chain-actuality'
+import { isRevisionNotActual } from '@/lib/revision-actuality'
 import { hasRejectedLnkResult } from '@/lib/lnk-status'
 import {
   getJointBranchRows,
@@ -51,6 +55,8 @@ type JointChainDialogProps = {
   onOpenReport: (row: WeldRow, report: 'weldingJournal' | 'lnk' | 'heatTreatment') => void
   onOpenLineInDispatcher: (row: WeldRow) => void
   onEditRow: (row: WeldRow) => void
+  onChangeChainActuality?: (row: WeldRow, active: boolean) => void
+  onOpenCoilCorrection?: (row: WeldRow) => void
   onRunNextAction: (row: WeldRow, action: JointNextAction) => void
   onRunDispatcherTaskAction: JointDispatcherTaskActionHandler
   canCreateRepeatedJoint: boolean
@@ -84,6 +90,8 @@ export function JointChainDialog({
   onOpenReport,
   onOpenLineInDispatcher,
   onEditRow,
+  onChangeChainActuality,
+  onOpenCoilCorrection,
   onRunNextAction,
   onRunDispatcherTaskAction,
   canCreateRepeatedJoint,
@@ -105,6 +113,14 @@ export function JointChainDialog({
     ?? rows[0]
     ?? record
   const branchRows = getJointBranchRows(rows, selectedRow)
+  const physicalRoot = rows.find(row => row.id === selectedRow.programChainState?.physicalRootId) ?? selectedRow
+  const coilParent = rows.find(row => row.id === physicalRoot.programChainState?.coilParentId)
+  const hasCoilCorrection = (root: WeldRow) => root.programChainState?.replacedByCoil || rows.some(row =>
+    row.programChainState?.coilParentId === root.id || (row.id === root.id || row.programChainState?.physicalRootId === root.id) && row.earlyCoilDecisionAccepted)
+  const correctionRoot = hasCoilCorrection(physicalRoot) ? physicalRoot : coilParent && hasCoilCorrection(coilParent) ? coilParent : null
+  const actualityGroups = useMemo(() => buildChainActualityGroups(rows).groups, [rows])
+  const actualityGroup = actualityGroups.find(group => group.rows.some(row => row.id === selectedRow.id))
+  const hasInactiveHistory = actualityGroup?.rows.some(row => isRevisionNotActual(row.revisionActuality))
   const relations = getJointCoilRelations(selectedRow, rows, transitions)
   const branchRowIds = new Set(branchRows.map((row) => row.id))
   const repeatedJointCreateTasks = dispatcherTasks.filter(
@@ -216,7 +232,16 @@ export function JointChainDialog({
           <div className="grid h-full min-h-0 lg:grid-cols-[380px_minmax(0,1fr)]">
             <aside className="flex min-h-0 flex-col overflow-y-auto border-b border-slate-200 bg-slate-50/70 p-4 lg:border-b-0 lg:border-r">
               <div>
-                <div className="mb-2 text-xs font-semibold uppercase text-slate-500">Цепочка ремонта и выреза</div>
+                <div className="mb-2 text-xs font-semibold uppercase text-slate-500">{branchRows.length === 1 ? 'Стык' : 'Цепочка ремонта и выреза'}</div>
+                {onChangeChainActuality && hasInactiveHistory ? <section aria-label="Актуальность по ИЗМу" className="mb-3 flex flex-col items-start gap-2">
+                  <p className="text-sm text-slate-600">{actualityGroup?.mixed
+                    ? 'Актуальность записей различается. Выберите единое состояние соединения.'
+                    : actualityGroup?.rows.length === 1 ? 'Стык неактуален по ИЗМу.' : 'Все записи цепочки неактуальны по ИЗМу.'}</p>
+                  {actualityGroup?.mixed ? <Button variant="outline" size="sm" onClick={() => onChangeChainActuality(selectedRow, false)}>Сделать цепочку неактуальной</Button> : null}
+                  <Button variant="outline" size="sm" onClick={() => onChangeChainActuality(selectedRow, true)}>{actualityGroup?.rows.length === 1 ? 'Вернуть актуальность стыку' : 'Вернуть актуальность цепочке'}</Button>
+                </section> : null}
+                {onOpenCoilCorrection && correctionRoot ? <Button className="mb-2" variant="outline" size="sm" onClick={() => onOpenCoilCorrection(correctionRoot)}>Исправить ошибочную катушку</Button> : null}
+                {physicalRoot.programChainState ? <CoilRestorationHistory key={physicalRoot.id} rootId={physicalRoot.id} /> : null}
                 <div className="space-y-2">
                   {branchRows.map((row, index) => (
                     <JointChainCard
@@ -453,6 +478,9 @@ function ChainContinuationActionsPanel({
         : null
     : null
   const replacementJoint = earlyCoilCandidate?.replacementJoint ?? null
+  const officialityBlockReason = officialityAction?.value === 'unofficial'
+    ? getUnofficialDuplicateControlBlockReason(selectedRow) : null
+  const canChangeOfficiality = officialityAction && !officialityBlockReason
   if (!hasRepeatedJointAction && !hasRenameAction && !hasEarlyCoilAction && !officialityAction) return null
   const title = hasRenameAction
     ? 'Исправить имена цепочки'
@@ -475,18 +503,18 @@ function ChainContinuationActionsPanel({
             {hasRenameAction
               ? 'Диспетчер повторно прошел фактические результаты: порядок R/W отражает их историю, а номера каждого вида пересчитаны заново.'
               : hasRepeatedJointAction && hasEarlyCoilAction
-              ? officialityAction
+              ? canChangeOfficiality
                   ? `Можно продолжить цепочку по счетчику, сменить официальность выбранного стыка либо завершить ветку ${earlyCoilCandidate!.sourceJoint} катушкой.`
                   : `Можно продолжить цепочку по счетчику либо завершить ветку ${earlyCoilCandidate!.sourceJoint} катушкой.`
               : hasRepeatedJointAction
-                ? officialityAction
+                ? canChangeOfficiality
                   ? 'Можно продолжить цепочку по счетчику либо сменить официальность выбранного стыка.'
                   : 'Диспетчер подтвердил допустимое продолжение цепочки.'
                 : replacementJoint
                   ? `Будут созданы ${earlyCoilCandidate!.targetJoints.join(' и ')} по негодному результату ${earlyCoilCandidate!.sourceJoint}.`
                   : hasEarlyCoilAction
                     ? `Можно завершить ветку ${earlyCoilCandidate!.sourceJoint} и создать ${earlyCoilCandidate!.targetJoints.join(' + ')}.`
-                    : 'Официальность выбранного стыка можно изменить с предварительной проверкой всей цепочки.'}
+                    : officialityBlockReason ?? 'Официальность выбранного стыка можно изменить с предварительной проверкой всей цепочки.'}
           </p>
         </div>
       </div>
@@ -525,11 +553,15 @@ function ChainContinuationActionsPanel({
             size="sm"
             variant="outline"
             className="h-auto min-h-8 w-full whitespace-normal border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100"
-            disabled={isRepeatedJointPending || isRenameRepeatedJointPending || isEarlyCoilPending}
+            disabled={Boolean(officialityBlockReason) || isRepeatedJointPending || isRenameRepeatedJointPending || isEarlyCoilPending}
+            title={officialityBlockReason ?? undefined}
             onClick={() => onOpenOfficiality(selectedRow, officialityAction.value)}
           >
             {officialityAction.label}
           </Button>
+        ) : null}
+        {officialityBlockReason && (hasRepeatedJointAction || hasEarlyCoilAction || hasRenameAction) ? (
+          <p className="text-xs leading-5 text-slate-600">{officialityBlockReason}</p>
         ) : null}
         {earlyCoilCandidate && earlyCoilSourceRow ? (
           <Button

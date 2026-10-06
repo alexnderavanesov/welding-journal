@@ -22,14 +22,11 @@ const PERCENTAGE_LINE_DISPATCHER_SETTING_IDS = [
   'percentage-full-control',
   'percentage-excess',
   'percentage-new-welder',
-  'percentage-rejected-primary',
+  'percentage-rejected-rows',
   'percentage-suspend-welder',
 ] satisfies DispatcherSettingId[]
 
 const LINE_CONSISTENCY_DISPATCHER_SETTING_IDS = [
-  'line-percent',
-  'line-group',
-  'line-category',
   'line-control-presence',
   'line-psto-presence',
 ] satisfies DispatcherSettingId[]
@@ -42,6 +39,7 @@ export type BuildVisibleDispatcherTasksInput = {
   dataListSettings?: DataListSettings
   systemIndexSettings?: SystemIndexSettings
   controlProcessSettings?: ControlProcessSettings
+  earlyCoilDecisionSourceRowIds?: Set<number>
   includeRepeatedJointTasks?: boolean
   includeWelderStampExpiryTasks?: boolean
   rows: WeldRow[]
@@ -57,18 +55,20 @@ export function buildVisibleDispatcherTasks({
   dataListSettings,
   systemIndexSettings,
   controlProcessSettings,
+  earlyCoilDecisionSourceRowIds: preparedEarlyCoilIds,
   includeRepeatedJointTasks = true,
   includeWelderStampExpiryTasks = true,
   rows,
   welderStamps,
   welderStampSuspensions,
 }: BuildVisibleDispatcherTasksInput) {
-  const hiddenDispatcherTaskKeys = new Set([...dismissedRepeatedJointTaskKeys, ...acceptedDispatcherWarningKeys])
-  const earlyCoilDecisionSourceRowIds = getEarlyCoilDecisionSourceRowIds(acceptedDispatcherWarningKeys)
+  const isHidden = (key: string) => dismissedRepeatedJointTaskKeys.has(key) || acceptedDispatcherWarningKeys.has(key)
+  const earlyCoilDecisionSourceRowIds = preparedEarlyCoilIds ?? getEarlyCoilDecisionSourceRowIds(acceptedDispatcherWarningKeys)
   const repeatedJointTasks = includeRepeatedJointTasks
     ? buildRepeatedJointTasks(rows, welderStamps, welderStampSuspensions, {
         dataListSettings,
         earlyCoilDecisionSourceRowIds,
+        acceptedProgramControlKeys: acceptedDispatcherWarningKeys,
         systemIndexSettings,
         controlProcessSettings,
         includeControlHistoryChecks: isDispatcherSettingEnabled('check-control-history', dispatcherSettings),
@@ -81,7 +81,7 @@ export function buildVisibleDispatcherTasks({
         includeWelderStampCompatibilityChecks: isDispatcherSettingEnabled('check-welder-stamp', dispatcherSettings),
       }).filter(
         (task) => isSystemDispatcherWarningTask(task) ||
-          (!hiddenDispatcherTaskKeys.has(task.key) && isDispatcherTaskEnabled(task, dispatcherSettings)),
+          (!isHidden(task.key) && isDispatcherTaskEnabled(task, dispatcherSettings)),
       )
     : []
   const welderStampExpiryTasks =
@@ -90,7 +90,7 @@ export function buildVisibleDispatcherTasks({
       !isDispatcherSettingEnabled('welder-dls-expiry', dispatcherSettings))
       ? []
       : buildWelderStampExpiryTasks(welderStamps, dispatcherReminderSettings).filter(
-          (task) => !hiddenDispatcherTaskKeys.has(task.key) && isDispatcherTaskEnabled(task, dispatcherSettings),
+          (task) => !isHidden(task.key) && isDispatcherTaskEnabled(task, dispatcherSettings),
         )
 
   return {
@@ -104,6 +104,7 @@ export function getDispatcherTaskRowIds(tasks: DispatcherTask[]) {
   for (const task of tasks) {
     if (task.kind === 'welder-stamp-expiry') continue
     rowIds.add(task.row.id)
+    if (task.kind === 'check') task.actualityRowIds?.forEach(id => rowIds.add(id))
     if (task.kind === 'rename') {
       task.changes.forEach((change) => rowIds.add(change.rowId))
     }

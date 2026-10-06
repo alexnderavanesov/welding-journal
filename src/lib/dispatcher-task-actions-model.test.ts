@@ -12,6 +12,13 @@ import {
 } from '@/lib/dispatcher-check-reasons'
 
 describe('dispatcher task action model', () => {
+  it('marks unofficiality unavailable with duplicates but leaves official restoration available', () => {
+    const task = { kind: 'create', key: 'create:duplicate', row: { ...row(), duplicateControls: [{ id: 9, method: 'УЗК', result: 'годен' }] } as WeldRow,
+      sourceJoint: 'F1', targetJoint: 'F1R1', result: 'ремонт', suffix: 'R', methodCode: 'РК' } as const
+    expect(getDispatcherTaskActionSpecs(task).find(action => action.id === 'toggle-officiality')?.disabledReason).toContain('есть дубль-контроль')
+    expect(getDispatcherTaskActionSpecs({ ...task, row: { ...task.row, officiality: 'неофициальный' } }).find(action => action.id === 'toggle-officiality')).toMatchObject({ label: 'Сделать официальным' })
+    expect(getDispatcherTaskActionSpecs({ ...task, row: { ...task.row, officiality: 'неофициальный' } }).find(action => action.id === 'toggle-officiality')?.disabledReason).toBeUndefined()
+  })
   it('opens the existing assignment workflow for percentage-line shortages', () => {
     const task = percentageTask('missing')
 

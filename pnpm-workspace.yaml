@@ -25,6 +25,7 @@ minimumReleaseAgeExclude:
   - '@tanstack/start-storage-context@1.167.23'
 
 overrides:
+  'braces@<=3.0.3': 'file:vendor/braces-3.0.4-security.0.tgz'
   'esbuild@>=0.27.3 <0.28.1': '0.28.1'
   'image-size@<=2.0.2': 'file:vendor/image-size-2.0.3-security.0.tgz'
   'js-yaml@>=4.0.0 <4.3.2': '4.3.2'

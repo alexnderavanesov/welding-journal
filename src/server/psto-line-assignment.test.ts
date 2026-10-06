@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   assertPstoLineActivationTransferAllowed,
-  assertPstoLineCancellationPromotionAllowed,
   normalizePstoLineAssignmentPayload,
   persistPstoLineAssignmentRows,
 } from '@/server/psto-line-assignment'
@@ -46,39 +45,7 @@ describe('PSTO line assignment payload', () => {
     )).not.toThrow()
   })
 
-  it('uses the same chronology barrier when cancellation promotes pre-TO LNK', () => {
-    const previous = {
-      id: 1,
-      joint: 'F1',
-      weldDate: '2026-08-01',
-      pstoRequired: 'да',
-      preHeatTreatmentControls: [{
-        id: 10,
-        weldJointId: 1,
-        method: 'ВИК',
-        requestName: 'Заявка ВИК до ТО',
-        requestDate: '2023-12-31',
-        result: 'годен',
-        conclusionDate: '2026-08-02',
-        conclusionName: 'Заключение ВИК',
-      }],
-    } as WeldRow
-    const next = {
-      ...previous,
-      pstoRequired: 'отменен',
-      preHeatTreatmentControls: [],
-      vikRequest: 'Заявка ВИК до ТО',
-      vikRequestDate: '2023-12-31',
-      vikResult: 'годен',
-      vikConclusionDate: '2026-08-02',
-      vikConclusion: 'Заключение ВИК',
-    } as WeldRow
-
-    expect(() => assertPstoLineCancellationPromotionAllowed([previous], [next]))
-      .toThrow(/Отмена ПСТО невозможна.*01\.01\.2024/)
-  })
-
-  it('normalizes the full project/subtitle/line identity and removal decisions', () => {
+  it('normalizes the full line identity and activation decisions, ignoring obsolete removal decisions', () => {
     expect(normalizePstoLineAssignmentPayload({
       identity: { projectTitle: ' Проект ', subtitleCode: ' 400 ', line: ' L-1 ' },
       action: 'remove',
@@ -95,11 +62,11 @@ describe('PSTO line assignment payload', () => {
           methodCodes: ['ПВК'],
         },
       ],
-      decisions: [
+      ...{ decisions: [
         { rowId: 1, disposition: 'keepPrimary' },
         { rowId: 2, disposition: 'promoteBeforeHeatTreatment' },
         { rowId: -1, disposition: 'keepPrimary' },
-      ],
+      ] },
     })).toEqual({
       identity: { projectTitle: 'Проект', subtitleCode: '400', line: 'L-1' },
       action: 'remove',
@@ -115,10 +82,6 @@ describe('PSTO line assignment payload', () => {
         disposition: 'keepPrimary',
         methodCodes: ['ПВК'],
       }],
-      decisions: [
-        { rowId: 1, disposition: 'keepPrimary' },
-        { rowId: 2, disposition: 'promoteBeforeHeatTreatment' },
-      ],
     })
   })
 

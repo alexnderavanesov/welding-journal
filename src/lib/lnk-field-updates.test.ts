@@ -1,106 +1,56 @@
 import { describe, expect, it } from 'vitest'
 import {
-  clearCancelledRejectedLnkGeneratedData,
   clearDisabledLnkRequests,
   normalizeActiveLnkDefectDescriptions,
   restoreActiveLnkCancelledResults,
   withTouchedLnkTimestamp,
 } from './lnk-field-updates'
 import type { WeldInput } from './weld-fields'
+import { LNK_METHODS } from './report-config'
 
-describe('clearCancelledRejectedLnkGeneratedData', () => {
-  it('clears request, result, conclusion date and conclusion for cancelled rejected LNK results', () => {
-    const row = clearCancelledRejectedLnkGeneratedData({
-      hasVik: 'отменен',
-      vikRequest: 'Заявка-001',
-      vikResult: 'ремонт',
-      vikConclusionDate: '30.06.2026',
-      vikConclusion: 'Заключение-ВИК-30.06.2026-001',
-    } as WeldInput)
+describe('clearDisabledLnkRequests', () => {
+  it.each(LNK_METHODS)('preserves a lone request date for $code even with a waiting label', (method) => {
+    for (const result of [null, 'ожидает заявку', 'ожидает НК']) {
+      const input = {
+        [method.enabledKey]: null,
+        [method.requestKey]: null,
+        [method.requestDateKey]: '2026-09-01',
+        [method.resultKey]: result,
+      } as WeldInput
 
-    expect(row.vikRequest).toBeNull()
-    expect(row.vikResult).toBeNull()
-    expect(row.vikConclusionDate).toBeNull()
-    expect(row.vikConclusion).toBeNull()
+      expect(clearDisabledLnkRequests(input)).toEqual(input)
+    }
   })
 
-  it('keeps generated data for cancelled positive LNK results', () => {
-    const row = clearCancelledRejectedLnkGeneratedData({
-      hasVik: 'отменен',
+  it('preserves request-only history; validation decides whether an assignment can be removed', () => {
+    const row = clearDisabledLnkRequests({
+      hasVik: null,
       vikRequest: 'Заявка-001',
-      vikResult: 'годен',
-      vikConclusionDate: '30.06.2026',
-      vikConclusion: 'Заключение-ВИК-30.06.2026-001',
     } as WeldInput)
 
     expect(row.vikRequest).toBe('Заявка-001')
-    expect(row.vikConclusionDate).toBe('30.06.2026')
-    expect(row.vikConclusion).toBe('Заключение-ВИК-30.06.2026-001')
   })
 
-  it('keeps RK exposure history when a rejected RK result is cancelled', () => {
-    const row = clearCancelledRejectedLnkGeneratedData({
-      hasRk: 'отменен',
-      rkRequest: 'Заявка-РК-001',
-      rkResult: 'ремонт',
-      rkConclusionDate: '30.06.2026',
-      rkConclusion: 'Заключение-РК-30.06.2026-001',
-      lnkDefectDescription: '0-250: дефект 12 мм\n250-0:',
-      rkExposureConfirmedDiameter: 159,
-    } as WeldInput)
-
-    expect(row.rkRequest).toBeNull()
-    expect(row.rkResult).toBeNull()
-    expect(row.rkConclusionDate).toBeNull()
-    expect(row.rkConclusion).toBeNull()
-    expect(row.lnkDefectDescription).toBe('0-250: дефект 12 мм\n250-0:')
-    expect(row.rkExposureConfirmedDiameter).toBe(159)
-  })
-
-  it('keeps a simple defect description as read-only history when a rejected control is cancelled', () => {
-    const row = clearCancelledRejectedLnkGeneratedData({
-      hasUzk: 'отменен',
-      uzkRequest: 'Заявка-УЗК-001',
-      uzkResult: 'ремонт',
-      uzkConclusion: 'ЗНК-УЗК-001',
-      uzkDefectDescription: 'Несплошность',
-    } as WeldInput)
-
-    expect(row.uzkResult).toBeNull()
-    expect(row.uzkDefectDescription).toBe('Несплошность')
-  })
-})
-
-describe('clearDisabledLnkRequests', () => {
-  it('clears request-only data when control availability is empty', () => {
-    const row = clearDisabledLnkRequests({
-      hasVik: null,
-      vikRequest: 'Заявка-001',
-    } as WeldInput)
-
-    expect(row.vikRequest).toBeNull()
-  })
-
-  it('clears pending NDT status together with request-only data', () => {
+  it('preserves a request and its waiting status', () => {
     const row = clearDisabledLnkRequests({
       hasVik: null,
       vikRequest: 'Заявка-001',
       vikResult: 'ожидает НК',
     } as WeldInput)
 
-    expect(row.vikRequest).toBeNull()
-    expect(row.vikResult).toBeNull()
+    expect(row.vikRequest).toBe('Заявка-001')
+    expect(row.vikResult).toBe('ожидает НК')
   })
 
-  it('clears pending NDT request when availability is cancelled', () => {
+  it('preserves the request when availability is cancelled', () => {
     const row = clearDisabledLnkRequests({
       hasVik: 'отменен',
       vikRequest: 'Заявка-001',
       vikResult: 'ожидает НК',
     } as WeldInput)
 
-    expect(row.vikRequest).toBeNull()
-    expect(row.vikResult).toBeNull()
+    expect(row.vikRequest).toBe('Заявка-001')
+    expect(row.vikResult).toBe('ожидает НК')
   })
 
   it('clears pending request status together with request-only data', () => {

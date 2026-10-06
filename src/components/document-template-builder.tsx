@@ -20,6 +20,7 @@ import {
 
 import { ContextActionMenu, type ContextActionMenuState } from '@/components/context-action-menu'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { buttonVariants } from '@/components/ui/button'
 import {
   DOCUMENT_TEMPLATE_CELL_CLIPBOARD_STORAGE_KEY,
   cloneDocumentTemplateCellBinding,
@@ -985,7 +986,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                             onClick={() => setRepeatRow(row)}
                             title="Выбрать строку или расширить повторяемый блок"
                             className={`flex h-7 w-full items-center justify-center rounded text-xs font-semibold ${
-                              isRowInRepeatBlock(draft, row) ? 'bg-sky-600 text-white' : 'text-slate-500 hover:bg-slate-200'
+                              isRowInRepeatBlock(draft, row) ? 'bg-sky-50 text-sky-700' : 'text-slate-500 hover:bg-sky-50 hover:text-sky-700'
                             }`}
                           >
                             {row}
@@ -1357,7 +1358,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
           type="button"
           onClick={handleSave}
           disabled={isSaving}
-          className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-50"
+          className={buttonVariants()}
         >
           <Save className="h-4 w-4" />
           {isSaving ? 'Сохраняю...' : 'Сохранить конструктор'}

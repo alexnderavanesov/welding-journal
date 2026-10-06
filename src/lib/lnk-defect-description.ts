@@ -52,6 +52,8 @@ export function transitionLnkDefectDescription({
   const next = normalizeResult(nextResult)
   const description = normalizeDescription(currentDescription)
 
+  if (next.endsWith(' · назначение отменено')) return description
+
   if (next === 'годен') return LNK_NO_DEFECTS_DESCRIPTION
   if (next === 'годен (отменен)' || next === 'отменен') return description
   if (next === 'ремонт' || next === 'вырез') {

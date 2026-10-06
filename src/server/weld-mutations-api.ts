@@ -10,7 +10,6 @@ import type {
   WeldDeleteData,
   WeldDeleteManyData,
   WeldPayload,
-  PercentageLineControlUpdateData,
   SystemDocumentDateChangeData,
 } from '@/server/weld-contracts'
 import type { LnkDefectDescriptionUpdate } from '@/lib/lnk-defect-description'
@@ -54,7 +53,7 @@ export const applyLnkOfficialityChange = createServerFn({ method: 'POST' })
 export const moveWeldJointChain = createServerFn({ method: 'POST' })
   .validator((data: WeldPayload) => data)
   .handler(async ({ data }) => {
-    const server = await import('@/server/weld-mutations')
+    const server = await import('@/server/weld-chain-line-move')
     return server.moveWeldJointChain({ data })
   })
 
@@ -77,13 +76,6 @@ export const updateWeldJoints = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const server = await import('@/server/weld-mutations')
     return server.updateWeldJoints({ data })
-  })
-
-export const updatePercentageLineControls = createServerFn({ method: 'POST' })
-  .validator((data: PercentageLineControlUpdateData) => data)
-  .handler(async ({ data }) => {
-    const server = await import('@/server/percentage-line-control-workflow')
-    return server.updatePercentageLineControls({ data })
   })
 
 export const extendLnkRequest = createServerFn({ method: 'POST' })

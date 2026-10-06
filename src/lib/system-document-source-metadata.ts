@@ -10,12 +10,13 @@ export type SourcedSystemDocumentMetadataRow = {
 
 export function buildSourcedSystemDocumentMetadataSummary({
   sourcePositions,
-  rows,
+  rows = [],
+  rowsById = new Map(rows.map((row) => [row.id, row])),
 }: {
   sourcePositions: readonly SystemDocumentSourcePosition[]
-  rows: readonly SourcedSystemDocumentMetadataRow[]
+  rows?: readonly SourcedSystemDocumentMetadataRow[]
+  rowsById?: ReadonlyMap<number, SourcedSystemDocumentMetadataRow>
 }) {
-  const rowsById = new Map(rows.map((row) => [row.id, row]))
   const retainedPositions = sourcePositions.filter((position) => rowsById.has(position.weldJointId))
   const retainedRows = [...new Set(retainedPositions.map((position) => position.weldJointId))]
     .map((rowId) => rowsById.get(rowId)!)

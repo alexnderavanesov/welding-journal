@@ -10,22 +10,23 @@ import {
 export function recordsToVisibleExportMatrix(records: WeldInput[], fields: readonly WeldField[] = VISIBLE_FIELDS) {
   return [
     fields.map((field) => field.label),
-    ...records.map((record) =>
-      fields.map((field) => {
-        const defectDescriptor = getLnkDefectDescriptionDescriptor(field.key as never)
-        const hasPreControls = (record as WeldInput & { preHeatTreatmentControls?: unknown[] })
-          .preHeatTreatmentControls !== undefined
-        const value = defectDescriptor && (defectDescriptor.stage === 'primary' || hasPreControls)
-          ? getLnkDefectDescriptionDisplayValue(record, defectDescriptor)
-          : record[field.key as keyof WeldInput]
-        if (field.kind === 'boolean') return formatControlAvailabilityForExport(value)
-        if (field.kind === 'date') return formatExportDate(value)
-        if (DATE_TIME_WELD_FIELD_KEYS.has(field.key as never)) return formatDateTimeWithSeconds(value)
-        if (field.key === 'wdi') return formatExportNumber(value)
-        return value ?? ''
-      }),
-    ),
+    ...records.map((record) => fields.map((field) => formatReportFieldValue(record, field))),
   ]
+}
+
+/** One display contract for preview, print and Excel; numeric cells stay numeric. */
+export function formatReportFieldValue(record: WeldInput, field: WeldField) {
+  const defectDescriptor = getLnkDefectDescriptionDescriptor(field.key as never)
+  const hasPreControls = (record as WeldInput & { preHeatTreatmentControls?: unknown[] })
+    .preHeatTreatmentControls !== undefined
+  const value = defectDescriptor && (defectDescriptor.stage === 'primary' || hasPreControls)
+    ? getLnkDefectDescriptionDisplayValue(record, defectDescriptor)
+    : record[field.key as keyof WeldInput]
+  if (field.kind === 'boolean') return formatControlAvailabilityForExport(value)
+  if (field.kind === 'date') return formatExportDate(value)
+  if (DATE_TIME_WELD_FIELD_KEYS.has(field.key as never)) return formatDateTimeWithSeconds(value)
+  if (field.key === 'wdi') return formatExportNumber(value)
+  return value ?? ''
 }
 
 export function getExportColumnWidth(field: WeldField) {

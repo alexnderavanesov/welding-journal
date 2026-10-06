@@ -3,6 +3,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import {
   buildLnkResultDraftById,
+  getEffectiveLnkResultDraftValue,
   isValidLnkResultDraftValue,
 } from '@/lib/lnk-result-draft'
 import { LNK_CUSTOM_RESULT_VALUE, LNK_EMPTY_RESULT_VALUE } from '@/lib/report-config'
@@ -16,6 +17,7 @@ import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { useConfirmAction } from '@/lib/confirm-action-context'
 import { getPrimaryLnkStageAccess } from '@/lib/lnk-control-stage'
+import { buildLayeredControlAssignment } from '@/lib/layered-control-rules'
 
 type LnkResultMutation = {
   mutate: (variables: {
@@ -26,6 +28,7 @@ type LnkResultMutation = {
     conclusionName: string
     useSystemName?: boolean
     documentGroups?: SystemDocumentCreationGroup[]
+    layeredControlRowIds?: number[]
   }) => void
 }
 
@@ -69,6 +72,8 @@ export function useLnkResultSaveActions({
       if (targetIds.size === 0) return current
       const targetRows = lnkRows.filter((candidate) => targetIds.has(candidate.id))
       if (saveCheckSettings.lnkResultRepairRules && result === 'ремонт' && targetRows.some(isLnkRepairForbidden)) return current
+      if (['ремонт', 'вырез'].includes(result) && current.methodKey !== 'tvmtRequest' && targetRows.some((row) =>
+        row.layeredControlAssigned || (current.methodKey === 'pvkRequest' && current.layeredControlRowIds.has(row.id)))) return current
       const baseline = current.result && current.result !== LNK_CUSTOM_RESULT_VALUE ? current.result : ''
       const rowResults: Record<number, string> = {}
       for (const id of current.rowIds) {
@@ -76,6 +81,21 @@ export function useLnkResultSaveActions({
       }
       for (const rowId of targetIds) rowResults[rowId] = result
       return { ...current, result: LNK_CUSTOM_RESULT_VALUE, rowResults }
+    })
+  }
+
+  function setLnkResultLayeredControl(rowId: number, assigned: boolean) {
+    setDraft((current) => {
+      const row = lnkRows.find((candidate) => candidate.id === rowId)
+      if (current.methodKey !== 'pvkRequest' || !current.rowIds.has(rowId) || !row || row.layeredControlAssigned) return current
+      if (assigned) {
+        try { buildLayeredControlAssignment({ ...row, pvkResult: getEffectiveLnkResultDraftValue(rowId, current) }, true) }
+        catch { return current }
+      }
+      const layeredControlRowIds = new Set(current.layeredControlRowIds)
+      if (assigned) layeredControlRowIds.add(rowId)
+      else layeredControlRowIds.delete(rowId)
+      return { ...current, layeredControlRowIds }
     })
   }
 
@@ -104,6 +124,18 @@ export function useLnkResultSaveActions({
       return
     }
     const method = getLnkMethodByRequestKey(draft.methodKey)
+    const layeredRows = method?.code === 'ПВК'
+      ? selectedRows.filter((row) => draft.layeredControlRowIds.has(row.id) && !row.layeredControlAssigned)
+      : []
+    if (layeredRows.length) {
+      try {
+        for (const row of layeredRows) {
+          if (resultById[row.id] === LNK_EMPTY_RESULT_VALUE) throw new Error('Для назначения послойного контроля внесите основной результат ПВК.')
+          buildLayeredControlAssignment({ ...row, pvkResult: resultById[row.id] }, true)
+        }
+      } catch (error) { setMessage((error as Error).message); return }
+      if (!await confirmAction({ title: 'Назначить послойный контроль?', itemName: `Новых назначений: ${layeredRows.length}`, description: 'Только для отмеченных У-стыков вместе с основным ПВК назначаются послойные ВИК и ПВК и создаются четыре заключения. ПВК переводится в «да», в том числе из «отменен» или «дополнительный». Остальные стыки и ранее назначенный послойный контроль не изменяются.', confirmLabel: 'Назначить и сохранить' })) return
+    }
     const conclusionRows = selectedRows.filter((row) => resultById[row.id] !== LNK_EMPTY_RESULT_VALUE)
     const creationPlan = buildSystemDocumentCreationPlan({
       type: 'lnkConclusion',
@@ -150,6 +182,7 @@ export function useLnkResultSaveActions({
       conclusionName,
       useSystemName: hasNonEmptyResult && draft.conclusionNaming.mode === 'system',
       documentGroups: creationPlan.groups,
+      layeredControlRowIds: layeredRows.map((row) => row.id),
     })
   }
 
@@ -157,5 +190,6 @@ export function useLnkResultSaveActions({
     handleAddLnkResult,
     setLnkResultForRow,
     setLnkResultForRows,
+    setLnkResultLayeredControl,
   }
 }

@@ -36,7 +36,9 @@ import {
   matchesSourcedSystemDocumentReference,
   parseSystemDocumentMetadata,
   systemDocumentStorageType,
+  lockSystemDocumentIndexes,
 } from '@/server/system-document-index'
+import { lockLayeredControlDocumentsForWeldChange } from '@/server/layered-control-documents'
 import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
 import { updateWeldJointsInBatches } from '@/server/weld-persistence'
 import { WELD_TABLE_RETURNING } from '@/server/weld-server-shared'
@@ -72,14 +74,13 @@ export async function changeSystemDocumentDate({
   return db.transaction(async (tx) => {
     await loadControlProcessSettingsFromTransaction(tx)
     const workflowSettings = await loadWeldWorkflowSettingsFromTransaction(tx)
-    const document = await lockSystemDocument(tx, data.reference)
-    const metadata = parseSystemDocumentMetadata(document.sourceMetadata)
+    const initialDocument = await loadSystemDocument(tx, data.reference)
+    const metadata = parseSystemDocumentMetadata(initialDocument.sourceMetadata)
     const assignments = await tx
       .select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
       .from(generatedDocumentWeldJoints)
-      .where(eq(generatedDocumentWeldJoints.documentId, document.id))
+      .where(eq(generatedDocumentWeldJoints.documentId, initialDocument.id))
       .orderBy(asc(generatedDocumentWeldJoints.weldJointId))
-      .for('update')
     const rowIds = [...new Set(assignments.map((assignment) => assignment.weldJointId))]
     if (rowIds.length === 0) throw new Error('В документе больше нет позиций. Обновите данные.')
 
@@ -89,6 +90,19 @@ export async function changeSystemDocumentDate({
     }
     assertExpectedInteractiveWeldVersions(rowIds, data.expectedVersions, storedRows)
     await lockSourceRelations(tx, metadata?.sourcePositions ?? [])
+    // Match weld saves, transfers and rebuilds: welds, relations, layered
+    // documents, indexes, then the actual document/assignment records.
+    await lockLayeredControlDocumentsForWeldChange(tx)
+    await lockSystemDocumentIndexes(tx, [data.reference.type])
+    const document = await loadSystemDocument(tx, data.reference, true)
+    const lockedAssignments = await tx.select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
+      .from(generatedDocumentWeldJoints).where(eq(generatedDocumentWeldJoints.documentId, document.id))
+      .orderBy(asc(generatedDocumentWeldJoints.weldJointId)).for('update')
+    if (document.id !== initialDocument.id ||
+      JSON.stringify(lockedAssignments.map(row => row.weldJointId)) !== JSON.stringify(rowIds) ||
+      JSON.stringify(parseSystemDocumentMetadata(document.sourceMetadata)?.sourcePositions ?? []) !== JSON.stringify(metadata?.sourcePositions ?? [])) {
+      throw new Error('Состав или циклы документа изменились. Обновите данные. Ничего не сохранено.')
+    }
 
     const currentRows = await attachDuplicateControlRelations(
       await attachHeatTreatmentControlRelations(storedRows as WeldRow[], tx),
@@ -185,13 +199,14 @@ function normalizeReference(value: SystemDocumentReference | undefined): SystemD
   }
 }
 
-async function lockSystemDocument(
+async function loadSystemDocument(
   tx: SystemDocumentSequenceTransaction,
   reference: SystemDocumentReference,
+  forUpdate = false,
 ) {
   const storageType = systemDocumentStorageType(getSystemDocumentTemplateId(reference))
-  const candidates = reference.documentId
-    ? await tx
+  const query = reference.documentId
+    ? tx
         .select()
         .from(generatedDocuments)
         .where(and(
@@ -199,8 +214,7 @@ async function lockSystemDocument(
           eq(generatedDocuments.type, storageType),
         ))
         .limit(1)
-        .for('update')
-    : await tx
+    : tx
         .select()
         .from(generatedDocuments)
         .where(and(
@@ -209,7 +223,7 @@ async function lockSystemDocument(
           sql`coalesce(${generatedDocuments.periodFrom}::text, '') = ${reference.date}`,
         ))
         .orderBy(asc(generatedDocuments.id))
-        .for('update')
+  const candidates = forUpdate ? await query.for('update') : await query
   const document = candidates.find((candidate) => {
     if (candidate.title !== reference.title || (candidate.periodFrom ?? '') !== reference.date) return false
     const metadata = parseSystemDocumentMetadata(candidate.sourceMetadata)

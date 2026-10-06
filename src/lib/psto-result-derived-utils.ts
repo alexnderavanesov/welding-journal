@@ -1,3 +1,4 @@
+import { normalizeControlResultText } from '@/lib/report-value-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
@@ -162,7 +163,7 @@ export function getManagedPstoResultRows(rows: WeldRow[], selectedRowIds: Set<nu
 }
 
 export function hasPstoResultData(row: WeldRow) {
-  const result = String(row.pstoResult ?? '').trim().toLowerCase()
+  const result = normalizeControlResultText(row.pstoResult)
   const hasStoredResult = result === 'проведено' || result === 'проведено (отменен)' || result === 'да'
   return hasStoredResult || hasText(row.heatTreatmentDiagram) || hasText(row.pstoDate)
 }

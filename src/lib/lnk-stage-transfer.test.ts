@@ -4,14 +4,32 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import { getDispatcherLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { buildPrimaryLnkStageDebtSystemWarnings } from '@/lib/repeated-joint-check-tasks'
+import { LNK_METHODS } from './lnk-report-config'
 import {
-  buildClearedPrimaryLnkStageRows,
   buildPreHeatTreatmentToPrimaryTransfer,
   buildPrimaryToPreHeatTreatmentTransfer,
   findBlockingLnkStageTransferChronologyIssue,
 } from '@/lib/lnk-stage-transfer'
 
 describe('LNK stage transfer', () => {
+  it.each(LNK_METHODS)('requires officiality before moving an existing good $code conclusion in either direction', method => {
+    const row = makeRow({ officiality: 'неофициальный' })
+    const primary = { ...row, [method.resultKey]: 'годен', [method.conclusionKey]: 'Сохранённое заключение' }
+    const control = { id: 9, weldJointId: row.id, method: method.code, result: 'годен', conclusionName: 'Сохранённое заключение' }
+    const before = structuredClone({ primary, control })
+    expect(() => buildPrimaryToPreHeatTreatmentTransfer({ rows: [primary], positions: [{ rowId: row.id, methodCode: method.code }] })).toThrow('Сначала верните стыку официальность')
+    expect(() => buildPreHeatTreatmentToPrimaryTransfer({ rows: [row], controls: [control] })).toThrow('Сначала верните стыку официальность')
+    expect({ primary, control }).toEqual(before)
+    expect(buildPrimaryToPreHeatTreatmentTransfer({ rows: [{ ...primary, officiality: 'действующий' }], positions: [{ rowId: row.id, methodCode: method.code }] }).controls[0]).toMatchObject({ result: 'годен', conclusionName: 'Сохранённое заключение' })
+    expect(buildPreHeatTreatmentToPrimaryTransfer({ rows: [{ ...row, officiality: 'действующий' }], controls: [control] })[0]).toMatchObject({ [method.resultKey]: 'годен', [method.conclusionKey]: 'Сохранённое заключение' })
+  })
+
+  it.each(['ремонт', 'вырез', 'ожидает НК'])('does not add a new ban on moving an unchanged non-good package (%s)', result => {
+    const row = makeRow({ officiality: 'неофициальный', uzkRequest: 'Заявка УЗК', uzkResult: result })
+    expect(buildPrimaryToPreHeatTreatmentTransfer({ rows: [row], positions: [{ rowId: 1, methodCode: 'УЗК' }] }).controls[0].result).toBe(result)
+    expect(buildPreHeatTreatmentToPrimaryTransfer({ rows: [makeRow({ officiality: 'неофициальный' })], controls: [{ id: 9, weldJointId: 1, method: 'УЗК', requestName: 'Заявка УЗК', result }] })[0].uzkResult).toBe(result)
+  })
+
   it('moves only the selected primary method to pre-TO and leaves duplicates and unrelated methods intact', () => {
     const duplicateControls: DuplicateControlRecord[] = [{
       id: 51,
@@ -205,42 +223,6 @@ describe('LNK stage transfer', () => {
     })
     expect(transfer.rows[0]?.lnkDefectDescription).toBeNull()
     expect(transfer.rows[0]?.rkExposureConfirmedDiameter).toBeNull()
-  })
-
-  it('deletes only selected primary stage fields and preserves assignments, duplicates, BoQ and KS3', () => {
-    const duplicateControls = [{
-      id: 9,
-      weldJointId: 1,
-      method: 'ВИК' as const,
-      result: 'годен' as const,
-      controlDate: '2026-08-01',
-      conclusion: 'Дубль-1',
-      conclusionDate: '2026-08-01',
-    }]
-    const [next] = buildClearedPrimaryLnkStageRows({
-      rows: [makeRow({
-        hasVik: 'да',
-        vikRequest: 'Заявка-1',
-        vikResult: 'годен',
-        vikConclusion: 'ЗНК-1',
-        vikDefectDescription: 'ДНО',
-        vikBoq: 'BoQ-1',
-        vikKs3: 'КС3-1',
-        duplicateControls,
-      })],
-      positions: [{ rowId: 1, methodCode: 'ВИК' }],
-    })
-
-    expect(next).toMatchObject({
-      hasVik: 'да',
-      vikRequest: null,
-      vikResult: null,
-      vikConclusion: null,
-      vikDefectDescription: null,
-      vikBoq: 'BoQ-1',
-      vikKs3: 'КС3-1',
-    })
-    expect(next?.duplicateControls).toBe(duplicateControls)
   })
 
   it('refuses to overwrite an occupied destination stage', () => {

@@ -14,6 +14,7 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RowWithId } from '@/lib/lnk-report-mutation-types'
 import type { RkExposureTableSettings } from '@/lib/other-settings'
 import { transitionLnkDefectDescription } from '@/lib/lnk-defect-description'
+import { assertUnofficialLnkGoodResultAllowed } from './unofficial-lnk-result-guard'
 
 export function buildLnkResultCorrectionRow({
   record,
@@ -33,6 +34,7 @@ export function buildLnkResultCorrectionRow({
   const method = getLnkMethodByRequestKey(methodKey)
   if (!method) throw new Error('Выберите метод контроля')
   if (result) assertValidLnkResultValue(result)
+  assertUnofficialLnkGoodResultAllowed(record, result, record[method.resultKey], method.code)
   assertLnkRepairAllowed(record, result, saveCheckSettings)
   const exposureRecord = method.code === 'РК'
     ? applyRkExposureResultTransition(record, result, rkExposureTable)
@@ -76,6 +78,7 @@ export function buildLnkResultReplacementRows({
     const method = getLnkMethodByRequestKey(methodKey)
     if (!method) throw new Error('Выберите метод контроля')
     assertValidLnkResultValue(result)
+    assertUnofficialLnkGoodResultAllowed(record, result, record[method.resultKey], method.code)
     assertLnkRepairAllowed(record, result, saveCheckSettings)
     const currentRecord = updatedById.get(record.id) ?? record
     const exposureRecord = method.code === 'РК'

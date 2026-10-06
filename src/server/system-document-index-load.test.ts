@@ -218,19 +218,19 @@ describe('sourced system document database load', () => {
     )
   })
 
-  it.each([2, 100])('batch-inserts %i sourced documents and their assignments', async (documentCount) => {
+  it.each([2, 100, 1001])('batch-inserts %i sourced documents and their assignments', async (documentCount) => {
     const plans = Array.from({ length: documentCount }, (_, index) => sourcedPlan(index, null))
-    const execute = vi.fn()
-      .mockResolvedValueOnce({
-        rows: plans.map((plan, index) => ({
-          id: 5_000 + index,
-          type: plan.storageType,
-          title: plan.summary.title,
-          periodFrom: plan.summary.date,
-          sourceMetadata: plan.sourceMetadata,
-        })).reverse(),
-      })
-      .mockResolvedValue({ rows: [] })
+    const execute = vi.fn(async query => {
+      const compiled = new PgDialect().sqlToQuery(query)
+      if (!compiled.sql.includes('insert into "generated_documents"')) return { rows: [] }
+      const titles = compiled.params[1] as string[]
+      expect(titles.length).toBeLessThanOrEqual(100)
+      const selected = new Set(titles)
+      return { rows: plans.flatMap((plan, index) => selected.has(plan.summary.title) ? [{
+        id: 5_000 + index, type: plan.storageType, title: plan.summary.title,
+        periodFrom: plan.summary.date, sourceMetadata: plan.sourceMetadata,
+      }] : []).reverse() }
+    })
     const deleteRows = vi.fn()
 
     const documentIds = await persistSourcedSystemDocumentUpsertPlans(
@@ -240,13 +240,19 @@ describe('sourced system document database load', () => {
     )
 
     expect(documentIds.size).toBe(documentCount)
-    expect(execute).toHaveBeenCalledTimes(2)
+    expect(execute).toHaveBeenCalledTimes(Math.ceil(documentCount / 100) + 1)
     expect(deleteRows).not.toHaveBeenCalled()
   })
 
-  it.each([2, 100])('batch-updates %i sourced documents and their assignments', async (documentCount) => {
+  it.each([2, 100, 1001])('batch-updates %i sourced documents and their assignments', async (documentCount) => {
     const plans = Array.from({ length: documentCount }, (_, index) => sourcedPlan(index, 6_000 + index))
-    const execute = vi.fn().mockResolvedValue(undefined)
+    const execute = vi.fn(async query => {
+      const compiled = new PgDialect().sqlToQuery(query)
+      if (compiled.sql.includes('update "generated_documents"')) {
+        const ids = compiled.params.find(Array.isArray) as number[]
+        expect(ids.length).toBeLessThanOrEqual(100)
+      }
+    })
     const deleteWhere = vi.fn().mockResolvedValue(undefined)
     const deleteRows = vi.fn(() => ({ where: deleteWhere }))
 
@@ -257,7 +263,7 @@ describe('sourced system document database load', () => {
     )
 
     expect(documentIds.size).toBe(documentCount)
-    expect(execute).toHaveBeenCalledTimes(2)
+    expect(execute).toHaveBeenCalledTimes(Math.ceil(documentCount / 100) + 1)
     expect(deleteRows).toHaveBeenCalledTimes(1)
     expect(deleteWhere).toHaveBeenCalledTimes(1)
   })

@@ -3,8 +3,6 @@ import { describe, expect, it } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   buildPercentageLineSummaries,
-  getPercentageLineNewWelderWarningKey,
-  isPercentageControlMethodAvailableForRow,
 } from '@/lib/percentage-line-summary'
 
 describe('buildPercentageLineSummaries', () => {
@@ -55,12 +53,12 @@ describe('buildPercentageLineSummaries', () => {
     const stamp = getOnlyStamp(rows)
 
     expect(stamp.baseRequiredControls).toBe(1)
-    expect(stamp.rejectedPrimaryControls).toBe(1)
+    expect(stamp.rejectedControlRows).toBe(1)
     expect(stamp.additionalRequiredControls).toBe(2)
     expect(stamp.requiredControls).toBe(3)
   })
 
-  it('does not add required RK/UZK controls after a rejected primary joint by VIK', () => {
+  it('does not add surcharge for rejected VIK without pretending RK was performed', () => {
     const rows = [
       makeRow(1, { joint: 'S1', hasVik: 'дополнительный', vikResult: 'вырез', hasRk: 'да' }),
       makeRow(2, { joint: 'S2' }),
@@ -71,14 +69,14 @@ describe('buildPercentageLineSummaries', () => {
 
     const stamp = getOnlyStamp(rows)
 
-    expect(stamp.completedControls).toBe(1)
-    expect(stamp.rejectedPrimaryControls).toBe(0)
+    expect(stamp.completedControls).toBe(0)
+    expect(stamp.rejectedControlRows).toBe(0)
     expect(stamp.rejectedJoints).toBe(1)
     expect(stamp.additionalRequiredControls).toBe(0)
     expect(stamp.requiredControls).toBe(1)
   })
 
-  it('uses rejected RK before heat treatment for percentage-line growth but ignores VIK before heat treatment', () => {
+  it('counts only rejected RK/UZK before heat treatment for surcharge', () => {
     const rkRows = [
       makeRow(1, {
         joint: 'S1',
@@ -98,11 +96,11 @@ describe('buildPercentageLineSummaries', () => {
       : row)
 
     expect(getOnlyStamp(rkRows)).toEqual(expect.objectContaining({
-      rejectedPrimaryControls: 1,
+      rejectedControlRows: 1,
       additionalRequiredControls: 2,
     }))
     expect(getOnlyStamp(vikRows)).toEqual(expect.objectContaining({
-      rejectedPrimaryControls: 0,
+      rejectedControlRows: 0,
       additionalRequiredControls: 0,
     }))
   })
@@ -121,12 +119,12 @@ describe('buildPercentageLineSummaries', () => {
 
     const stamp = getOnlyStamp(rows)
 
-    expect(stamp.rejectedPrimaryControls).toBe(1)
+    expect(stamp.rejectedControlRows).toBe(1)
     expect(stamp.additionalRequiredControls).toBe(2)
     expect(stamp.requiredControls).toBe(3)
   })
 
-  it('does not add required RK/UZK controls after a rejected primary duplicate by another method', () => {
+  it('excludes rejected duplicate VIK from common surcharge', () => {
     const rows = [
       makeRow(1, {
         joint: 'S1',
@@ -140,7 +138,7 @@ describe('buildPercentageLineSummaries', () => {
 
     const stamp = getOnlyStamp(rows)
 
-    expect(stamp.rejectedPrimaryControls).toBe(0)
+    expect(stamp.rejectedControlRows).toBe(0)
     expect(stamp.rejectedJoints).toBe(1)
     expect(stamp.additionalRequiredControls).toBe(0)
     expect(stamp.requiredControls).toBe(1)
@@ -178,7 +176,7 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.missingControls).toBe(2)
   })
 
-  it('limits required controls by available unresolved joints instead of closing rejected joints by defect', () => {
+  it('preserves full norm but limits actionable demand when no candidates remain', () => {
     const rows = [
       ...Array.from({ length: 4 }, (_, index) =>
         makeRow(index + 1, {
@@ -203,13 +201,13 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.availableRequiredControls).toBe(4)
     expect(stamp.requiredControls).toBe(4)
     expect(stamp.coveredControls).toBe(4)
-    expect(stamp.rejectedCoveredControls).toBe(1)
-    expect(stamp.rejectedCoveredJointNames).toEqual(['S5'])
+    expect(stamp.rejectedCoveredControls).toBe(4)
+    expect(stamp.rejectedCoveredJointNames).toEqual(['S1', 'S2', 'S3', 'S4'])
     expect(stamp.missingControls).toBe(0)
     expect(stamp.missingCandidateJointNames).toEqual([])
   })
 
-  it('keeps required controls open when enough assignable joints are still available after other rejected methods', () => {
+  it('neither adds surcharge nor common coverage for rejected additional PVK', () => {
     const rows = [
       makeRow(1, { joint: 'S1', weldControlPercent: '25', hasRk: 'да' }),
       makeRow(2, { joint: 'S2', weldControlPercent: '25', hasRk: 'да' }),
@@ -219,15 +217,15 @@ describe('buildPercentageLineSummaries', () => {
 
     const stamp = getOnlyStamp(rows)
 
-    expect(stamp.calculatedRequiredControls).toBe(5)
+    expect(stamp.calculatedRequiredControls).toBe(4)
     expect(stamp.availableRequiredControls).toBe(16)
-    expect(stamp.requiredControls).toBe(5)
+    expect(stamp.requiredControls).toBe(4)
     expect(stamp.coveredControls).toBe(2)
-    expect(stamp.rejectedCoveredControls).toBe(1)
-    expect(stamp.missingControls).toBe(3)
+    expect(stamp.rejectedCoveredControls).toBe(0)
+    expect(stamp.missingControls).toBe(2)
   })
 
-  it('does not count rejected repair descendants toward the full-control counter', () => {
+  it('does not count rejected repair descendants toward the fourth primary rejection', () => {
     const rows = [
       makeRow(1, { joint: 'S1', rkResult: 'вырез' }),
       makeRow(2, { joint: 'S1R1', rkResult: 'вырез' }),
@@ -238,8 +236,8 @@ describe('buildPercentageLineSummaries', () => {
 
     const stamp = getOnlyStamp(rows)
 
-    expect(stamp.rejectedPrimaryControls).toBe(3)
-    expect(stamp.rejectedPrimaryJointNames).toEqual(['S1', 'S2', 'S3'])
+    expect(stamp.rejectedControlRows).toBe(3)
+    expect(stamp.rejectedJointNames).toEqual(['S1', 'S2', 'S3'])
     expect(stamp.fullControlRequired).toBe(false)
   })
 
@@ -257,7 +255,7 @@ describe('buildPercentageLineSummaries', () => {
 
     expect(stamp.fullControlRequired).toBe(true)
     expect(stamp.requiredControls).toBe(6)
-    expect(stamp.assignedControls).toBe(6)
+    expect(stamp.assignedControls).toBe(4)
     expect(stamp.cancelledAssignedControls).toBe(2)
     expect(stamp.coveredControls).toBe(6)
     expect(stamp.missingControls).toBe(0)
@@ -275,7 +273,7 @@ describe('buildPercentageLineSummaries', () => {
     const stamp = getOnlyStamp(rows)
 
     expect(stamp.requiredControls).toBe(1)
-    expect(stamp.assignedControls).toBe(2)
+    expect(stamp.assignedControls).toBe(1)
     expect(stamp.cancelledAssignedControls).toBe(1)
     expect(stamp.cancelledAssignedJointNames).toEqual(['S2'])
     expect(stamp.coveredControls).toBe(2)
@@ -299,9 +297,9 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.excessControls).toBe(0)
   })
 
-  it('uses PVK as one percentage-control slot only for a U-joint', () => {
+  it('uses explicit layered PVK as a common slot only for a U-joint', () => {
     const uJointStamp = getOnlyStamp([
-      makeRow(1, { connectionType: 'У17', hasPvk: 'да', pvkResult: 'годен' }),
+      makeRow(1, { connectionType: 'У17', layeredControlAssigned: true, hasPvk: 'да', pvkResult: 'годен' }),
       makeRow(2),
     ])
 
@@ -321,7 +319,7 @@ describe('buildPercentageLineSummaries', () => {
     expect(ordinaryStamp.assignmentCandidateRowIds).toEqual([1, 2])
   })
 
-  it('counts several accepted methods on one U-joint as one slot', () => {
+  it('counts several normal methods as one slot and flags the duplicate assignment', () => {
     const stamp = getOnlyStamp([
       makeRow(1, { connectionType: 'У', hasRk: 'да', hasUzk: 'да', hasPvk: 'да' }),
       makeRow(2),
@@ -330,23 +328,26 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.assignedControls).toBe(1)
     expect(stamp.normalAssignedControls).toBe(1)
     expect(stamp.coveredControls).toBe(1)
-    expect(stamp.excessControls).toBe(0)
+    expect(stamp.excessControls).toBe(1)
+    expect(stamp.duplicateAssignmentRowIds).toEqual([1])
   })
 
-  it('keeps additional PVK on a U-joint outside required coverage and excess', () => {
+  it('counts additional PVK only in its own PVK quota, never in common coverage', () => {
     const stamp = getOnlyStamp([
       makeRow(1, { connectionType: 'У', hasPvk: 'дополнительный' }),
       makeRow(2),
     ])
 
-    expect(stamp.assignedControls).toBe(1)
-    expect(stamp.additionalAssignedControls).toBe(1)
+    expect(stamp.assignedControls).toBe(0)
+    expect(stamp.pvk.additionalRowIds).toEqual([1])
+    expect(stamp.pvk.coveredRowIds).toEqual([1])
+    expect(stamp.additionalAssignedControls).toBe(0)
     expect(stamp.coveredControls).toBe(0)
     expect(stamp.missingControls).toBe(1)
     expect(stamp.excessControls).toBe(0)
   })
 
-  it('uses rejected primary and duplicate PVK on U-joints for add-on and full control', () => {
+  it('never uses rejected own or duplicate PVK for surcharge or common coverage', () => {
     const addOnStamp = getOnlyStamp([
       makeRow(1, { connectionType: 'У', hasPvk: 'да', pvkResult: 'вырез' }),
       makeRow(2),
@@ -355,9 +356,9 @@ describe('buildPercentageLineSummaries', () => {
       makeRow(5),
     ])
 
-    expect(addOnStamp.rejectedPrimaryControls).toBe(1)
-    expect(addOnStamp.additionalRequiredControls).toBe(2)
-    expect(addOnStamp.requiredControls).toBe(3)
+    expect(addOnStamp.rejectedControlRows).toBe(0)
+    expect(addOnStamp.additionalRequiredControls).toBe(0)
+    expect(addOnStamp.requiredControls).toBe(1)
 
     const fullControlStamp = getOnlyStamp(
       Array.from({ length: 6 }, (_, index) =>
@@ -372,18 +373,13 @@ describe('buildPercentageLineSummaries', () => {
       ),
     )
 
-    expect(fullControlStamp.rejectedPrimaryControls).toBe(4)
-    expect(fullControlStamp.fullControlRequired).toBe(true)
-    expect(fullControlStamp.requiredControls).toBe(6)
+    expect(fullControlStamp.rejectedControlRows).toBe(0)
+    expect(fullControlStamp.fullControlRequired).toBe(false)
+    expect(fullControlStamp.calculatedRequiredControls).toBe(1)
+    expect(fullControlStamp.requiredControls).toBe(1)
   })
 
-  it('allows assigning PVK only to U-joints', () => {
-    expect(isPercentageControlMethodAvailableForRow('ПВК', makeRow(1, { connectionType: 'У' }))).toBe(true)
-    expect(isPercentageControlMethodAvailableForRow('ПВК', makeRow(2, { connectionType: 'С' }))).toBe(false)
-    expect(isPercentageControlMethodAvailableForRow('РК', makeRow(2, { connectionType: 'С' }))).toBe(true)
-  })
-
-  it('subtracts cancelled controls from the allowed normal assignments', () => {
+  it('additional control and C cancellation both displace ordinary yes from the rounded allowance', () => {
     const rows = [
       ...Array.from({ length: 6 }, (_, index) => makeRow(index + 1, { joint: `S${index + 1}`, weldControlPercent: '25', hasRk: 'да' })),
       makeRow(7, { joint: 'S7', weldControlPercent: '25', hasRk: 'дополнительный' }),
@@ -393,16 +389,16 @@ describe('buildPercentageLineSummaries', () => {
 
     const stamp = getOnlyStamp(rows)
 
-    expect(stamp.requiredControls).toBe(6)
-    expect(stamp.assignedControls).toBe(8)
+    expect(stamp.requiredControls).toBe(5)
+    expect(stamp.assignedControls).toBe(7)
     expect(stamp.additionalAssignedControls).toBe(1)
     expect(stamp.cancelledAssignedControls).toBe(1)
     expect(stamp.normalAssignedControls).toBe(6)
-    expect(stamp.excessControls).toBe(1)
-    expect(stamp.excessCandidateJointNames).toEqual(['S6'])
+    expect(stamp.excessControls).toBe(3)
+    expect(stamp.excessCandidateJointNames).toEqual(['S6', 'S5', 'S4'])
   })
 
-  it('does not use additional RK or UZK to cover required add-on controls after rejection', () => {
+  it('counts additional RK toward the rounded norm and integer surcharge', () => {
     const rows = [
       ...Array.from({ length: 6 }, (_, index) =>
         makeRow(index + 1, {
@@ -418,16 +414,16 @@ describe('buildPercentageLineSummaries', () => {
 
     const stamp = getOnlyStamp(rows)
 
-    expect(stamp.baseRequiredControls).toBe(6)
+    expect(stamp.baseRequiredControls).toBe(5)
     expect(stamp.additionalRequiredControls).toBe(2)
-    expect(stamp.requiredControls).toBe(8)
+    expect(stamp.requiredControls).toBe(7)
     expect(stamp.assignedControls).toBe(7)
     expect(stamp.additionalAssignedControls).toBe(1)
-    expect(stamp.coveredControls).toBe(6)
-    expect(stamp.missingControls).toBe(2)
+    expect(stamp.coveredControls).toBe(7)
+    expect(stamp.missingControls).toBe(0)
   })
 
-  it('keeps assignment candidates only for active official unresolved joints without RK/UZK coverage', () => {
+  it('does not offer an already additional-covered joint as a missing-control candidate', () => {
     const rows = [
       makeRow(1, { joint: 'S1', hasRk: 'да' }),
       makeRow(2, { joint: 'S2', rkResult: 'вырез' }),
@@ -459,10 +455,11 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.assignedControls).toBe(2)
     expect(stamp.additionalAssignedControls).toBe(1)
     expect(stamp.additionalAssignedJointNames).toEqual(['S2'])
-    expect(stamp.excessControls).toBe(0)
+    expect(stamp.excessControls).toBe(1)
+    expect(stamp.excessCandidateRowIds).toEqual([1])
   })
 
-  it('calculates potential control reduction as one base stamp plus accepted new-welder stamps', () => {
+  it('keeps actual per-stamp quotas without the removed theoretical potential', () => {
     const rows = [
       ...Array.from({ length: 30 }, (_, index) =>
         makeRow(index + 1, {
@@ -487,22 +484,13 @@ describe('buildPercentageLineSummaries', () => {
       ),
     ]
 
-    const initial = buildPercentageLineSummaries(rows, undefined, new Set())[0]
+    const initial = buildPercentageLineSummaries(rows)[0]
     expect(initial.stamps.reduce((total, stamp) => total + stamp.excessControls, 0)).toBe(2)
     expect(initial.stamps.reduce((total, stamp) => total + stamp.requiredControls, 0)).toBe(5)
-    expect(initial.potentialControlReduction).toBe(1)
-
-    const acceptedStamp = initial.stamps.find((stamp) => stamp.stamp === 'BBB2')
-    expect(acceptedStamp).toBeDefined()
-    const acceptedWarnings = new Set([
-      getPercentageLineNewWelderWarningKey(acceptedStamp?.key ?? ''),
-    ])
-    const withAcceptedStamp = buildPercentageLineSummaries(rows, undefined, acceptedWarnings)[0]
-
-    expect(withAcceptedStamp.potentialControlReduction).toBe(0)
+    expect(initial).not.toHaveProperty('potentialControlReduction')
   })
 
-  it('reports a 6 minus 4 reduction when two unaccepted stamps are added to a 35-joint line', () => {
+  it('retains all six actual places when two stamps are added to a 35-joint line', () => {
     const rows = Array.from({ length: 35 }, (_, index) =>
       makeRow(index + 1, {
         joint: `S${index + 1}`,
@@ -511,14 +499,14 @@ describe('buildPercentageLineSummaries', () => {
       }),
     )
 
-    const summary = buildPercentageLineSummaries(rows, undefined, new Set())[0]
+    const summary = buildPercentageLineSummaries(rows)[0]
 
     expect(summary.stamps).toHaveLength(3)
     expect(summary.stamps.reduce((total, stamp) => total + stamp.requiredControls, 0)).toBe(6)
-    expect(summary.potentialControlReduction).toBe(2)
+    expect(summary).not.toHaveProperty('potentialControlReduction')
   })
 
-  it('keeps full-control requirements in the potential control reduction calculation', () => {
+  it('keeps full control on the rejected stamp separate from the other stamp', () => {
     const rows = Array.from({ length: 8 }, (_, index) =>
       makeRow(index + 1, {
         joint: `S${index + 1}`,
@@ -529,9 +517,9 @@ describe('buildPercentageLineSummaries', () => {
       }),
     )
 
-    const summary = buildPercentageLineSummaries(rows, undefined, new Set())[0]
-
-    expect(summary.potentialControlReduction).toBe(0)
+    const summary = buildPercentageLineSummaries(rows)[0]
+    expect(summary.stamps.find(stamp => stamp.stamp === 'AAA1')).toMatchObject({ requiredControls: 4, fullControlRequired: true })
+    expect(summary.stamps.find(stamp => stamp.stamp === 'BBB2')).toMatchObject({ requiredControls: 1, fullControlRequired: false })
   })
 
   it('sorts percentage lines by required controls, project, subtitle and line', () => {
@@ -544,6 +532,7 @@ describe('buildPercentageLineSummaries', () => {
       makeRow(6, { line: 'LINE-HIGH', joint: 'S6', weldControlPercent: '25' }),
       makeRow(7, { projectTitle: 'A', subtitleCode: '500', line: 'LINE-SAME-B', joint: 'S7' }),
       makeRow(8, { projectTitle: 'A', subtitleCode: '400', line: 'LINE-SAME-A', joint: 'S8' }),
+      makeRow(9, { line: 'LINE-HIGH', joint: 'S9', weldControlPercent: '25' }),
     ]
 
     const summaries = buildPercentageLineSummaries(rows)
@@ -598,6 +587,7 @@ function getOnlyStamp(rows: WeldRow[]) {
 function makeRow(id: number, overrides: Partial<WeldRow> = {}): WeldRow {
   return {
     id,
+    connectionType: 'СШ',
     projectTitle: 'TKM5',
     subtitleCode: '-',
     line: '330-01',

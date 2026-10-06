@@ -76,7 +76,7 @@ import {
 import { getSystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import { usePagePagination } from '@/lib/use-page-pagination'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { LnkRequestComposerMode } from '@/lib/use-lnk-request-modal-state'
 import { useSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
@@ -517,7 +517,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
       }
     },
     onSuccess: async (result) => {
-      await invalidateWeldJoints(queryClient, { upsertRows: result.rows })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: result.rows })
       await queryClient.invalidateQueries({ queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY })
       const methodCodes = mode === 'request' ? [...selectedMethods] : resultMethod ? [resultMethod] : []
       const fieldKeys = methodCodes.flatMap((methodCode) => PRE_REPORT_FIELD_KEYS[methodCode][mode])

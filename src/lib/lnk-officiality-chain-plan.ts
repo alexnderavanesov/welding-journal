@@ -1,4 +1,5 @@
 import { getDispatcherTaskSettingId } from '@/lib/dispatcher-settings'
+import { getUnofficialDuplicateControlBlockReason } from '@/lib/duplicate-control-officiality'
 import type {
   RepeatedJointRenameChange,
   RepeatedJointRenameTask,
@@ -11,6 +12,7 @@ import {
   type JointCoilTransition,
 } from '@/lib/joint-chain-transitions'
 import { hasRejectedLnkResult } from '@/lib/lnk-status'
+import { buildOfficialityRestorationRenames } from './lnk-officiality-restoration'
 import { buildRepeatedJointTasks } from '@/lib/repeated-joint-tasks'
 import { getOfficialRejectedJointChainRows } from '@/lib/repeated-joint-task-helpers'
 import {
@@ -92,6 +94,10 @@ export function buildLnkOfficialityChainPlan(
   const officialityChanges = targetRows.flatMap((row): LnkOfficialityChange[] => {
     const previousOfficiality = isUnofficial(row) ? 'unofficial' : 'official'
     if (previousOfficiality === officiality) return []
+    if (officiality === 'unofficial') {
+      const duplicateReason = getUnofficialDuplicateControlBlockReason(row)
+      if (duplicateReason) throw new Error(duplicateReason)
+    }
     if (officiality === 'unofficial' && !hasRejectedLnkResult(row)) {
       throw new Error(
         `Стык ${formatJoint(row)} нельзя сделать неофициальным: нужен результат контроля «ремонт» или «вырез».`,
@@ -134,14 +140,19 @@ export function buildLnkOfficialityChainPlan(
   const officialityChangesByRowId = new Map(
     officialityChanges.map((change) => [change.rowId, change]),
   )
+  const restorationRenames = officiality === 'official'
+    ? buildOfficialityRestorationRenames(rows, changedRows, settings)
+    : []
+  const renameByRowId = new Map<number, RepeatedJointRenameChange>(
+    restorationRenames.map(change => [change.rowId, change]),
+  )
   let workingRows = rows.map((row) => {
-    if (!officialityChangesByRowId.has(row.id)) return row
     return {
       ...row,
-      officiality: officiality === 'unofficial' ? 'неофициальный' : null,
+      ...(officialityChangesByRowId.has(row.id) ? { officiality: officiality === 'unofficial' ? 'неофициальный' : null } : {}),
+      ...(renameByRowId.has(row.id) ? { joint: renameByRowId.get(row.id)!.targetJoint } : {}),
     }
   })
-  const renameByRowId = new Map<number, RepeatedJointRenameChange>()
 
   for (let pass = 0; pass <= workingRows.length; pass += 1) {
     const tasks = buildPlanTasks(workingRows, earlyCoilDecisionSourceRowIds, settings)

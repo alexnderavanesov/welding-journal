@@ -1,3 +1,5 @@
+import { normalizeControlResultText } from '@/lib/report-value-utils'
+import { canBackfillOwnLnkResult } from '@/lib/lnk-system-order'
 import {
   LNK_METHODS,
   LNK_RESULT_OPTIONS,
@@ -9,6 +11,7 @@ import {
 } from '@/lib/report-badges'
 import {
   getCancelledLnkResultDisplay,
+  getCancelledPstoResultDisplay,
   hasText,
   hasWeldDate,
   isCancelledControlValue,
@@ -62,7 +65,7 @@ export function getLnkMethodByResultKey(fieldKey: WeldFieldKey | '') {
 }
 
 export function isFinalLnkResultValue(value: unknown) {
-  const result = String(value ?? '').trim().toLowerCase()
+  const result = normalizeControlResultText(value)
   return LNK_RESULT_OPTIONS.includes(result as never) || result === 'годен (отменен)'
 }
 
@@ -70,7 +73,7 @@ export function hasRejectedLnkResult(row: WeldInput) {
   if (getRejectedDuplicateControls(row).length > 0) return true
   if (getRejectedPreHeatTreatmentControls(row).length > 0) return true
   return LNK_METHODS.some((method) => {
-    const result = String(row[method.resultKey] ?? '').trim().toLowerCase()
+    const result = normalizeControlResultText(row[method.resultKey])
     return result === 'ремонт' || result === 'вырез'
   })
 }
@@ -84,7 +87,7 @@ export function isLnkMethodNoNeed(row: WeldInput, method: (typeof LNK_METHODS)[n
 export function hasPendingLnkRequestResult(row: WeldInput) {
   return LNK_METHODS.some(
     (method) =>
-      hasText(row[method.requestKey]) &&
+      isEnabledControlValue(row[method.enabledKey]) && hasText(row[method.requestKey]) &&
       !isFinalLnkResultValue(row[method.resultKey]) &&
       !isLnkMethodNoNeed(row, method),
   )
@@ -100,8 +103,9 @@ export function getAvailableLnkRequestMethods(
 }
 
 export function getLnkRequestCandidateMethods(row: WeldInput) {
-  if (hasRejectedLnkResult(row)) return []
+  const rejected = hasRejectedLnkResult(row)
   return LNK_METHODS.filter((method) =>
+    (!rejected || (!isFinalLnkResultValue(row[method.resultKey]) && canBackfillOwnLnkResult(row, method.code))) &&
     isEnabledControlValue(row[method.enabledKey]) &&
     !hasText(row[method.requestKey]),
   )
@@ -173,6 +177,7 @@ export function getPstoDisplayValue(row: WeldInput, fieldKey: WeldFieldKey) {
   const cycleValue = currentCycle && PSTO_CYCLE_REPORT_FIELD_KEYS.has(fieldKey)
     ? currentCycle[fieldKey as PstoCycleReportFieldKey]
     : undefined
+  if (fieldKey === 'pstoResult' && isCancelledControlValue(row.pstoRequired)) return getCancelledPstoResultDisplay(cycleValue ?? row.pstoResult)
   if (fieldKey === 'pstoResult' && isPstoNoNeed(row, cycleValue)) return 'нет потребности'
   if (cycleValue !== undefined) return cycleValue
   return row[fieldKey]
@@ -261,7 +266,7 @@ export function getPstoCycleDisplaySummary(row: WeldInput) {
 export function isPstoNoNeed(row: WeldInput, resultValue: unknown = row.pstoResult) {
   if (!isYesText(row.pstoRequired)) return false
   if (!hasRejectedLnkResult(row) && !isRejectedJoint(row)) return false
-  const result = String(resultValue ?? '').trim().toLowerCase()
+  const result = normalizeControlResultText(resultValue)
   return result !== 'проведено' && result !== 'проведено (отменен)' && result !== 'отменен'
 }
 

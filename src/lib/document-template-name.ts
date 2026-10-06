@@ -1,4 +1,4 @@
-import { FIELD_BY_KEY, type WeldInput } from '@/lib/weld-fields'
+import { FIELD_BY_KEY, type WeldInput, type WeldFieldKey } from '@/lib/weld-fields'
 import {
   DOCUMENT_FORMATION_DATE_TOKEN,
   DOCUMENT_SEQUENCE_NUMBER_TOKEN,
@@ -84,7 +84,7 @@ export function buildDocumentTemplateName({
       if (part.field === '__formationDate') return DOCUMENT_FORMATION_DATE_TOKEN
       if (part.field === '__documentNumber') return DOCUMENT_SEQUENCE_NUMBER_TOKEN
 
-      const field = FIELD_BY_KEY.get(part.field)
+      const field = FIELD_BY_KEY.get(part.field as WeldFieldKey)
       const values = Array.from(
         new Set(
           records

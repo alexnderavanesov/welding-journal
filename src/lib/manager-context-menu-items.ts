@@ -6,6 +6,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 type BuildManagerContextMenuOptions = {
   x: number
   y: number
+  anchorElement?: Element
   heading: string
   description?: string
   documentName: string
@@ -24,6 +25,7 @@ type BuildManagerContextMenuOptions = {
 export function buildManagerContextMenu({
   x,
   y,
+  anchorElement,
   heading,
   description,
   documentName,
@@ -89,7 +91,7 @@ export function buildManagerContextMenu({
     items.push({ type: 'separator', id: 'danger-separator' }, ...dangerActions)
   }
 
-  return { x, y, heading, description, items }
+  return { x, y, anchorElement, heading, description, items }
 }
 
 export function isNativeContextMenuTarget(target: EventTarget | null) {

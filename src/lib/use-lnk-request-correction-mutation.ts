@@ -3,7 +3,7 @@ import { LNK_METHODS } from '@/lib/report-config'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import { getLnkRequestPositionHighlightFields } from '@/lib/lnk-report-mutation-highlight-fields'
 import { buildLnkRequestCorrectionRow } from '@/lib/lnk-report-mutation-updates'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import { updateWeldRowOrThrow } from '@/lib/weld-save-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -108,7 +108,7 @@ export function useLnkRequestCorrectionMutation({
           ? 'Реквизиты заявки ЛНК исправлены'
           : variables.requestName ? 'Заявка ЛНК заменена' : 'Заявка ЛНК удалена')
       }
-      await invalidateWeldJoints(
+      scheduleWeldDataRefresh(
         queryClient,
         { upsertRows: [saved] },
         { refetchLnkWorkflow: true },

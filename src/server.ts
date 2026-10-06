@@ -1,4 +1,12 @@
 import defaultEntry from '@tanstack/react-start/server-entry'
+import { createReleaseRequestGate } from './server/release-request-gate'
+
+const releaseGate = createReleaseRequestGate(async () => {
+  const [{ requireDb }, { isDatabaseReleaseReady }] = await Promise.all([
+    import('./db'), import('./server/release-readiness'),
+  ])
+  return isDatabaseReleaseReady(requireDb())
+})
 
 // TanStack's internal H3 adapter logs rejected Error values before fetch returns.
 // Give only actual transport cancellations a handled Response as their reason.
@@ -6,6 +14,10 @@ import defaultEntry from '@tanstack/react-start/server-entry'
 export default {
   async fetch(...args: Parameters<typeof defaultEntry.fetch>) {
     const [request, options] = args
+    if (process.env.NODE_ENV === 'production') {
+      const blocked = await releaseGate(request)
+      if (blocked) return blocked
+    }
     // Page/streaming SSR requests retain their original abort lifecycle.
     if (!new URL(request.url).pathname.startsWith('/_serverFn/')) return defaultEntry.fetch(...args)
     const controller = new AbortController()

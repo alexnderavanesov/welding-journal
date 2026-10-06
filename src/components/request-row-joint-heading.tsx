@@ -25,7 +25,7 @@ export function RequestRowJointHeading({ row, stackMetadata = false }: RequestRo
           </span>
         </span>
       ) : (
-        <span className="mt-0.5 block truncate text-xs leading-4 text-slate-500">
+        <span className="mt-0.5 block break-words text-xs leading-4 text-slate-500">
           <JointFullMeta row={row} />
         </span>
       )}

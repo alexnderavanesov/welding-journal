@@ -3,7 +3,7 @@ import { type PstoRequestManagerAction } from '@/lib/psto-field-updates'
 import { PSTO_GENERATED_HIGHLIGHT_FIELDS } from '@/lib/psto-report-mutation-highlight-fields'
 import { loadRequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { isSystemDocumentNameForRows } from '@/lib/system-document-types'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { UsePstoReportMutationsOptions } from '@/lib/psto-report-mutation-types'
 import { isSameRequestDocument } from '@/lib/request-document-identity'
@@ -97,7 +97,7 @@ export function usePstoRequestManagerMutation({
         setManagedPstoRequestNameDraft('')
         setIsPstoRequestManagerOpen(false)
       }
-      await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: savedRows })
       onWorkflowCorrectionSaved?.()
     },
     onError: (error) => {

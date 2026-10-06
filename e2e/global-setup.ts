@@ -1,9 +1,9 @@
 import { spawnSync } from 'node:child_process'
 
-import { E2E_DATABASE_URL, recreateE2eDatabase, withE2eDatabase } from './database'
+import { E2E_DATABASE_URL, createE2eDatabase, withE2eDatabase } from './database'
 
 export default async function globalSetup() {
-  await recreateE2eDatabase()
+  await createE2eDatabase()
   const migration = spawnSync('pnpm', ['db:migrate'], {
     cwd: process.cwd(),
     env: {
@@ -16,6 +16,13 @@ export default async function globalSetup() {
   if (migration.status !== 0) {
     throw new Error(`E2E migration failed:\n${migration.stdout}\n${migration.stderr}`)
   }
+
+  const preparation = spawnSync('pnpm', ['db:prepare-release-local'], {
+    cwd: process.cwd(),
+    env: { ...process.env, DATABASE_URL: E2E_DATABASE_URL, WELDING_ENV_LOADED: '1' },
+    encoding: 'utf8',
+  })
+  if (preparation.status !== 0) throw new Error(`E2E release preparation failed:\n${preparation.stdout}\n${preparation.stderr}`)
 
   await withE2eDatabase(async (client) => {
     await client.query(`

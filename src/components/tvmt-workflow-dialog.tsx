@@ -65,7 +65,7 @@ import {
 } from '@/lib/tvmt-cycle'
 import { usePagePagination } from '@/lib/use-page-pagination'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import {
@@ -300,7 +300,7 @@ export function TvmtWorkflowDialog({
       return { rows: savedRows as WeldRow[], documentCount: creationPlan.groups.length }
     },
     onSuccess: async (result) => {
-      await invalidateWeldJoints(queryClient, { upsertRows: result.rows })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: result.rows })
       await queryClient.invalidateQueries({ queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY })
       onSaved(
         result.rows,

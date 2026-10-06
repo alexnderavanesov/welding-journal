@@ -1,4 +1,5 @@
 import { getDispatcherTaskCode } from '@/lib/dispatcher-settings'
+import { CHAIN_ACTUALITY_REASON } from '@/lib/dispatcher-check-reasons'
 import type { DispatcherTask, RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import { encodeIdentityKey } from '@/lib/identity-key'
 import { parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
@@ -64,6 +65,7 @@ function buildDispatcherTaskIndexRowsWithMode(
 }
 
 export function isDispatcherTaskRelatedToRow(task: RepeatedJointTask, row: WeldRow) {
+  if (task.kind === 'line-consistency' && task.systemWarningCode === 'СП-03') return task.row.id === row.id
   if (task.kind === 'line-consistency' || task.kind === 'percentage-line-control') {
     return hasSameLineIdentity(task, row)
   }
@@ -71,7 +73,7 @@ export function isDispatcherTaskRelatedToRow(task: RepeatedJointTask, row: WeldR
     return task.sourceRow.id === row.id || task.changes.some((change) => change.rowId === row.id)
   }
   if (task.kind === 'delete' || task.kind === 'check') {
-    return task.row.id === row.id || task.sourceRow.id === row.id
+    return task.row.id === row.id || task.sourceRow.id === row.id || (task.kind === 'check' && !!task.actualityRowIds?.includes(row.id))
   }
   if (task.kind === 'duplicate-check') {
     return hasSameJointIdentity(task.row, row)
@@ -84,6 +86,7 @@ export function getDispatcherTasksForRow(tasks: readonly RepeatedJointTask[], ro
 }
 
 export function isDispatcherTaskDirectlyRelatedToJoint(task: RepeatedJointTask, row: WeldRow) {
+  if (task.kind === 'line-consistency' && task.systemWarningCode === 'СП-03') return task.row.id === row.id
   if (task.kind === 'line-consistency' || task.kind === 'percentage-line-control') return false
   return isDispatcherTaskRelatedToRow(task, row)
 }
@@ -209,6 +212,8 @@ function getDispatcherTaskTargetRowIds(
   task: Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>,
   rows: DispatcherTaskTargetRows,
 ) {
+  if (task.kind === 'check' && task.reason === CHAIN_ACTUALITY_REASON) return task.actualityRowIds ?? [task.sourceRow.id, task.row.id]
+  if (task.kind === 'line-consistency' && task.systemWarningCode === 'СП-03') return [task.row.id]
   if (task.kind === 'line-consistency' || task.kind === 'percentage-line-control') {
     return rows.byLine.get(getLineIdentityKey(task)) ?? []
   }

@@ -2,6 +2,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { isControlEnabledValue } from '@/lib/control-availability-values'
 import { mergePreHeatTreatmentControlsIntoRows } from '@/lib/heat-treatment-control-relations'
 import type { PreHeatTreatmentControlRecord } from '@/lib/lnk-control-stage'
+import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import {
   hasPstoCycleExecutionHistory,
   type PstoRepeatCycleRecord,
@@ -11,11 +12,14 @@ export function prepareStatisticsHeatTreatmentRows(
   rows: readonly WeldRow[],
   repeatCycles: readonly PstoRepeatCycleRecord[],
   preHeatTreatmentControls: readonly PreHeatTreatmentControlRecord[],
+  settings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled'>,
 ) {
-  return mergePreHeatTreatmentControlsIntoRows(
+  const hydrated = mergePreHeatTreatmentControlsIntoRows(
     applyLatestPstoCycleToStatisticsRows(rows, repeatCycles),
     preHeatTreatmentControls,
   )
+  if (settings) for (const row of hydrated) row.preHeatTreatmentLnkEnabled = settings.preHeatTreatmentLnkEnabled
+  return hydrated
 }
 
 export function applyLatestPstoCycleToStatisticsRows(

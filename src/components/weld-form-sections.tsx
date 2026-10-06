@@ -1,15 +1,11 @@
-import { useQuery } from '@tanstack/react-query'
-import { useMemo, type Dispatch, type RefObject, type SetStateAction } from 'react'
-import { AlertTriangle, CheckCircle2, Info, UserRoundCheck, WandSparkles } from 'lucide-react'
+import { Fragment, useMemo, type Dispatch, type RefObject, type SetStateAction } from 'react'
+import { AlertTriangle, CheckCircle2, Info, UserRoundCheck } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { WeldFormField } from '@/components/weld-form-field'
 import { WeldFormSectionHeader } from '@/components/weld-form-section-header'
 import { OFFICIAL_WELDER_STAMP_FIELD_KEYS } from '@/lib/report-config'
-import { getWeldLineAutofillState, LINE_AUTOFILL_FIELD_KEYS } from '@/lib/weld-line-autofill'
 import { getWeldStampAutofillState } from '@/lib/weld-stamp-autofill'
-import { useDebouncedValue } from '@/lib/use-debounced-value'
-import { WELD_LINE_AUTOFILL_QUERY_KEY } from '@/lib/weld-query-utils'
 import {
   getStampSelectValue,
   secondaryWeldFormSectionNames,
@@ -19,7 +15,8 @@ import {
 } from '@/lib/weld-form-utils'
 import { parseOfficialStampWeldingMethods, normalizeStampForCompare } from '@/lib/welder-stamp-compatibility-utils'
 import { FIELD_BY_KEY, type WeldField, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
-import { getWeldLineAutofill } from '@/server/weld-line-operations'
+import { WeldLineProgramFields, WeldLayeredControlField } from '@/components/weld-line-program-fields'
+import { WeldLineProgramImpact } from '@/components/weld-line-program-impact'
 
 export type WeldFormTab = 'joint' | 'control' | 'weldingMaterials' | 'workClosure'
 const EMPTY_FIELD_STATUS_KEYS = new Set<WeldFieldKey>()
@@ -156,24 +153,28 @@ export function WeldFormSections({
               ) : null}
             </div>
             <div className="mt-1 text-sm text-slate-500">Выберите состояние для каждого вида контроля. Правила замены РК/УЗК применяются сразу.</div>
+            {draft.id && (['hasRk', 'hasUzk', 'hasPvk'].some(key => fieldStatusKeys.has(key as WeldFieldKey)) || draft.layeredControlRequest?.assigned) ? <WeldLineProgramImpact draft={draft} /> : null}
           </div>
           <div className="divide-y-2 divide-slate-200">
             {controlAvailabilityFields.map((field) => (
-              <div key={field.key} className="grid grid-cols-1 gap-3 bg-white px-4 py-4 xl:grid-cols-[180px_minmax(0,1fr)]">
-                <div className="border-l-4 border-slate-300 pl-3 pt-1 text-sm font-semibold text-slate-800">{field.label}</div>
-                <WeldFormField
-                  field={field}
-                  draft={draft}
-                  suggestionDraft={calculationDraft}
-                  suggestionRows={suggestionRows}
-                  stampSelectOptions={stampSelectOptions}
-                  systemWdiEnabled={systemWdiEnabled}
-                  fieldRefs={fieldRefs}
-                  setDraft={setDraft}
-                  hideLabel
-                  controlPickerLayout="row"
-                />
-              </div>
+              <Fragment key={field.key}>
+                <div className="grid grid-cols-1 gap-3 bg-white px-4 py-4 xl:grid-cols-[180px_minmax(0,1fr)]">
+                  <div className="border-l-4 border-slate-300 pl-3 pt-1 text-sm font-semibold text-slate-800">{field.label}</div>
+                  <WeldFormField
+                    field={field}
+                    draft={draft}
+                    suggestionDraft={calculationDraft}
+                    suggestionRows={suggestionRows}
+                    stampSelectOptions={stampSelectOptions}
+                    systemWdiEnabled={systemWdiEnabled}
+                    fieldRefs={fieldRefs}
+                    setDraft={setDraft}
+                    hideLabel
+                    controlPickerLayout="row"
+                  />
+                </div>
+                {field.key === 'hasPvk' ? <WeldLayeredControlField draft={draft} setDraft={setDraft} /> : null}
+              </Fragment>
             ))}
           </div>
         </section>
@@ -257,7 +258,7 @@ export function WeldFormSections({
                 statusLabel={fieldStatusLabel}
                 actions={
                   section === 'Проект' ? (
-                    <LineAutofillButton draft={calculationDraft} suggestionRows={suggestionRows} setDraft={setDraft} />
+                    <WeldLineProgramFields draft={draft} setDraft={setDraft} />
                   ) : section === 'Клейма' ? (
                     <StampAutofillButton draft={calculationDraft} setDraft={setDraft} />
                   ) : undefined
@@ -577,83 +578,4 @@ function StampAutofillButton({
       Заполнить клейма
     </Button>
   )
-}
-
-function LineAutofillButton({
-  draft,
-  suggestionRows,
-  setDraft,
-}: {
-  draft: WeldInput
-  suggestionRows?: readonly WeldInput[]
-  setDraft: Dispatch<SetStateAction<WeldInput>>
-}) {
-  const hasLocalSuggestionRows = suggestionRows !== undefined
-  const localState = useMemo(
-    () => hasLocalSuggestionRows ? getWeldLineAutofillState(draft, suggestionRows ?? []) : null,
-    [draft, hasLocalSuggestionRows, suggestionRows],
-  )
-  const remoteDraft = useMemo(
-    () => Object.fromEntries(
-      [...new Set(['id', 'line', 'projectTitle', 'subtitleCode', ...LINE_AUTOFILL_FIELD_KEYS] as const)]
-        .map((fieldKey) => [fieldKey, draft[fieldKey]]),
-    ) as WeldInput,
-    [draft],
-  )
-  const debouncedRemoteDraft = useDebouncedValue(remoteDraft, 180)
-  const remoteStateQuery = useQuery({
-    queryKey: [...WELD_LINE_AUTOFILL_QUERY_KEY, debouncedRemoteDraft],
-    queryFn: () => getWeldLineAutofill({ data: { draft: debouncedRemoteDraft } }),
-    enabled: !hasLocalSuggestionRows && Boolean(String(draft.line ?? '').trim()),
-    staleTime: 60_000,
-    retry: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  })
-  const remoteStateIsCurrent = debouncedRemoteDraft === remoteDraft
-  const remoteStatePending = !hasLocalSuggestionRows && (!remoteStateIsCurrent || remoteStateQuery.isFetching)
-  const state = localState ?? (remoteStateIsCurrent ? remoteStateQuery.data : undefined) ?? getWeldLineAutofillState(draft, [])
-  const isDisabled = remoteStatePending || Boolean(state.disabledReason)
-  const helpText =
-    'Заполняется по уже существующим стыкам этой линии: Проект, Шифр, группа трубопровода, категория трубопровода, Контроль швов (%) и назначения контроля.'
-  const sourceText = state.sourceRowsCount > 0 ? `Источник: ${formatSourceRowsCount(state.sourceRowsCount)} линии ${state.line}.` : ''
-  const resultText = state.changedFieldsCount > 0 ? `Будет заполнено полей: ${state.changedFieldsCount}.` : 'Данные по линии уже совпадают.'
-  const title = remoteStatePending
-    ? `Проверяем данные по текущей линии. ${helpText}`
-    : state.disabledReason
-      ? `${state.disabledReason} ${helpText}`
-      : `${helpText} ${sourceText} ${resultText}`
-
-  function handleAutofill() {
-    if (isDisabled || !hasLocalSuggestionRows && remoteStateQuery.data !== state) return
-    setDraft((current) => {
-      const currentState = hasLocalSuggestionRows
-        ? getWeldLineAutofillState(current, suggestionRows ?? [])
-        : state
-      return currentState.disabledReason ? current : { ...current, ...currentState.values }
-    })
-  }
-
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      disabled={isDisabled}
-      title={title}
-      onClick={handleAutofill}
-      className="h-7 border-sky-200 bg-white px-2.5 text-xs text-sky-800 shadow-sm shadow-sky-100 hover:bg-sky-50 hover:text-sky-950 disabled:bg-slate-100 disabled:text-slate-400"
-    >
-      <WandSparkles className="mr-1.5 h-3.5 w-3.5" />
-      Заполнить по линии
-    </Button>
-  )
-}
-
-function formatSourceRowsCount(count: number) {
-  const lastDigit = count % 10
-  const lastTwoDigits = count % 100
-  if (lastDigit === 1 && lastTwoDigits !== 11) return `${count} стык`
-  if ([2, 3, 4].includes(lastDigit) && ![12, 13, 14].includes(lastTwoDigits)) return `${count} стыка`
-  return `${count} стыков`
 }

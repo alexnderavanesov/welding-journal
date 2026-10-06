@@ -30,7 +30,7 @@ export function ReportWorkspace({
     activeReport === 'weldingJournal' ||
     activeReport === 'heatTreatment' ||
     activeReport === 'lnk'
-  const workspaceBackgroundClass = isWideTableReport ? 'bg-white' : 'bg-[#f4f7f9]'
+  const workspaceBackgroundClass = isWideTableReport || activeReport === 'percentageLines' ? 'bg-white' : 'bg-[#f4f7f9]'
 
   return (
     <main className={`relative min-h-screen ${workspaceBackgroundClass}`}>
@@ -47,6 +47,7 @@ export function ReportWorkspace({
         }`}
       >
         <div
+          data-scroll-top-boundary
           className={`space-y-3 ${workspaceBackgroundClass} pb-5 ${
             isFluidReport ? 'min-w-0 w-full' : 'min-w-full w-max'
           }`}

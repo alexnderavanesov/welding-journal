@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { weldJoints } from '@/db/schema'
 import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
+import { cleanupLineProgramProjects } from '../line-program-fixtures'
 
 test('историческая заявка переименовывается, ТВМТ довносится между заявкой и результатом ВИК', async ({ page }) => {
   const joint = 'F543'
@@ -48,7 +49,7 @@ test('историческая заявка переименовывается, 
     })
   } finally {
     await page.close()
-    if (id) await withE2eDatabase(async (client) => { await client.query('delete from weld_joints where id = $1', [id]) })
+    if (id) await cleanupLineProgramProjects(['E2E early primary'])
     await withE2eDatabase(async (client) => {
       if (previousNaming) await client.query("update app_settings set value = $1, updated_at = $2 where key = 'request-conclusion'", [previousNaming.value, previousNaming.updated_at])
       else await client.query("delete from app_settings where key = 'request-conclusion'")
@@ -71,6 +72,11 @@ test('новая заявка основного ВИК доступна до П
     const choice = page.getByRole('checkbox', { name: `Выбрать стык E2E-EARLY-L ${joint}`, exact: true })
     await expect(choice).toBeEnabled()
     await choice.check()
+    // This scenario verifies the right to create primary VIK before PSTO,
+    // not optional preselection while the previous stage's rows are loading.
+    const vik = page.getByRole('dialog').getByRole('button', { name: 'ВИК', exact: true })
+    if (await vik.getAttribute('aria-pressed') !== 'true') await vik.click()
+    await expect(vik).toHaveAttribute('aria-pressed', 'true')
     await page.getByLabel('Дата заявки', { exact: true }).fill('2026-03-15')
     await expect(page.getByLabel('Дата заявки', { exact: true })).toHaveValue('2026-03-15')
     await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
@@ -84,7 +90,7 @@ test('новая заявка основного ВИК доступна до П
     expect(await withE2eDatabase(async (client) => (await client.query("select code from dispatcher_row_tasks where weld_joint_id = $1 and code in ('СП-01', 'ДЗ-20')", [id])).rows)).toEqual([])
   } finally {
     await page.close()
-    if (id) await withE2eDatabase(async (client) => { await client.query('delete from weld_joints where id = $1', [id]) })
+    if (id) await cleanupLineProgramProjects(['E2E early primary'])
   }
 })
 

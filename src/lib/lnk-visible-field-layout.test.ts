@@ -9,11 +9,11 @@ import { getAvailableWeldTableSections } from '@/lib/weld-table-sections'
 import { LNK_HIDDEN_FIELD_KEYS } from '@/lib/welding-journal-report-config'
 
 describe('LNK visible field layout', () => {
-  it('can hide each optional process section independently', () => {
-    const withoutLayered = getLnkVisibleFieldSections({ layeredControlEnabled: false })
+  it('keeps explicit layered control visible and can hide the disabled pre-heat stage', () => {
+    const withoutLayered = getLnkVisibleFieldSections({})
     const withoutPreHeatTreatment = getLnkVisibleFieldSections({ preHeatTreatmentLnkEnabled: false })
 
-    expect(withoutLayered.some((section) => section.section === 'Послойный контроль')).toBe(false)
+    expect(withoutLayered.some((section) => section.section === 'Послойный контроль')).toBe(true)
     expect(withoutLayered.some((section) => section.section === 'НК до ТО')).toBe(true)
     expect(withoutPreHeatTreatment.some((section) => section.section === 'Послойный контроль')).toBe(true)
     expect(withoutPreHeatTreatment.some((section) => section.section === 'НК до ТО')).toBe(false)
@@ -26,7 +26,7 @@ describe('LNK visible field layout', () => {
     expect(ALL_LNK_FIELD_METHODS.map((method) => method.code)).toEqual([...lnkMethodCodes, 'ТВМТ'])
     expect(CONTROL_ASSIGNMENT_BASIS_FIELDS.map((method) => method.code)).toEqual(lnkMethodCodes)
     expect(CONTROL_RESULT_PAIRS.map((method) => method.code)).toEqual(lnkMethodCodes)
-    expect(DUPLICATE_CONTROL_METHODS).toEqual([...lnkMethodCodes, 'ТВМТ'])
+    expect(DUPLICATE_CONTROL_METHODS).toEqual(lnkMethodCodes)
   })
 
   it('keeps the approved chronological section order', () => {

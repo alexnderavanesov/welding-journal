@@ -8,10 +8,6 @@ export {
 } from '@/server/weld-import'
 
 export {
-  getWeldLineAutofill,
-} from '@/server/weld-line-operations'
-
-export {
   clearLnkRequestPosition,
   createWeldJoint,
   createWeldJoints,

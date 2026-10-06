@@ -248,7 +248,7 @@ export function DispatcherWorkspaceDialog({
                         <X className="h-4 w-4" />
                       </button>
                     ) : null}
-                    {showExpandedSearch ? <Button type="submit" size="sm" className="h-7 shrink-0 rounded-md bg-sky-600 px-3 text-white hover:bg-sky-700 focus-visible:ring-sky-200">Найти</Button> : null}
+                    {showExpandedSearch ? <Button type="submit" size="sm" className="h-7 shrink-0 px-3">Найти</Button> : null}
                   </div>
                 </form>
               </div>

@@ -11,6 +11,25 @@ import {
 } from '@/server/weld-mutation-policy'
 
 describe('weld mutation policy', () => {
+  it.each(['welding', 'lnk', 'psto'] as const)('allows officiality changes only through the dedicated workflow, not %s payloads', scope => {
+    expect(restrictWeldMutationRecord({ id: 7, officiality: 'неофициальный' }, scope)).toEqual({ id: 7 })
+    expect(restrictWeldMutationRecord({ id: 7, officiality: null }, scope)).toEqual({ id: 7 })
+  })
+  it.each(['welding', 'lnk', 'psto'] as const)('cannot restore a coil by forging %s fields', scope => {
+    const payload = { id: 7, replacedByCoil: false, replacementCoilIds: [],
+      programChainState: { weldJointId: 7, replacedByCoil: false }, confirmedNotInstalled: true }
+    expect(restrictWeldMutationRecord(payload, scope)).toEqual({ id: 7 })
+    for (const key of ['replacedByCoil', 'replacementCoilIds', 'programChainState', 'confirmedNotInstalled']) {
+      expect(WELD_FIELDS.some(field => String(field.key) === key)).toBe(false)
+    }
+  })
+  it.each(['welding', 'lnk', 'psto'] as const)('protects program and layered flags from raw %s payloads', (scope) => {
+    const payload = { id: 7, lineProgramId: 99, pvkControlPercent: 100, layeredControlAssigned: true }
+    expect(restrictWeldMutationRecord(payload, scope)).toEqual({ id: 7 })
+    for (const key of ['lineProgramId', 'pvkControlPercent', 'layeredControlAssigned']) {
+      expect(WELD_FIELDS.some((field) => String(field.key) === key)).toBe(false)
+    }
+  })
   it('keeps the obsolete exemption only in the schema and client-write denylist', () => {
     const root = resolve(process.cwd(), 'src')
     const scan = (directory: string): string[] => readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

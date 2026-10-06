@@ -41,6 +41,7 @@ function createDraft(): LnkResultDraftState {
     methodKey: 'vikRequest',
     rowIds: new Set([1, 2]),
     rowResults: {},
+    layeredControlRowIds: new Set(),
     controlDate: '2026-08-27',
     result: 'годен',
     conclusionNaming: { mode: 'system', customName: '', customGroupNames: {} },
@@ -61,7 +62,7 @@ function useHarness(
     controlProcessSettings: options.controlProcessSettings ?? DEFAULT_CONTROL_PROCESS_SETTINGS,
     lnkRows,
     draft,
-    selectedRows: lnkRows,
+    selectedRows: lnkRows.filter((row) => draft.rowIds.has(row.id)),
     saveBlockReason: null,
     nextConclusionName: 'ЗНК-ВИК-001',
     nextConclusionNumber: 1,
@@ -77,6 +78,61 @@ describe('useLnkResultSaveActions', () => {
   beforeEach(() => {
     confirmAction.mockReset()
     confirmAction.mockResolvedValue(true)
+  })
+
+  const mixedRows = [
+    { id: 1, joint: 'U1', connectionType: 'У19', hasPvk: 'да', vikResult: 'годен' },
+    { id: 2, joint: 'U2', connectionType: 'У19', hasPvk: 'да', vikResult: 'годен' },
+    { id: 3, joint: 'C3', connectionType: 'С17', hasPvk: 'да', vikResult: 'годен' },
+    { id: 4, joint: 'U4', connectionType: 'У19', hasPvk: 'да', vikResult: 'годен', layeredControlAssigned: true },
+  ] as WeldRow[]
+  const pvkDraft = () => ({ ...createDraft(), methodKey: 'pvkRequest' as const, rowIds: new Set([1, 2, 3, 4]) })
+
+  it('assigns only the individually checked U-joint in a mixed save and never unsets stored assignments', async () => {
+    const mutate = vi.fn<LnkResultMutate>()
+    const { result } = renderHook(() => useHarness(pvkDraft(), mixedRows, { mutate }))
+    act(() => result.current.setLnkResultLayeredControl(1, true))
+    act(() => result.current.setLnkResultLayeredControl(3, true))
+    act(() => result.current.setLnkResultLayeredControl(4, false))
+    expect(result.current.draft.layeredControlRowIds).toEqual(new Set([1]))
+    act(() => result.current.setLnkResultForRows([1], 'вырез'))
+    expect(result.current.draft.result).toBe('годен')
+    act(() => result.current.setLnkResultForRows([2], 'вырез'))
+    await act(async () => result.current.handleAddLnkResult())
+    expect(confirmAction).toHaveBeenCalledOnce()
+    expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({ itemName: 'Новых назначений: 1' }))
+    expect(mutate).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ records: mixedRows, layeredControlRowIds: [1] }))
+    expect(mutate.mock.calls[0]![0].resultById).toEqual({ 1: 'годен', 2: 'вырез', 3: 'годен', 4: 'годен' })
+    expect(mutate.mock.calls[0]![0].records[3]?.layeredControlAssigned).toBe(true)
+  })
+
+  it('does not ask for a new assignment when only the stored locked mark remains', async () => {
+    const mutate = vi.fn<LnkResultMutate>()
+    const { result } = renderHook(() => useHarness(pvkDraft(), mixedRows, { mutate }))
+    act(() => result.current.setLnkResultLayeredControl(1, true))
+    act(() => result.current.setLnkResultLayeredControl(1, false))
+    await act(async () => result.current.handleAddLnkResult())
+    expect(confirmAction).not.toHaveBeenCalled()
+    expect(mutate).toHaveBeenCalledWith(expect.objectContaining({ layeredControlRowIds: [] }))
+  })
+
+  it('keeps choices on cancellation and sends no mutation', async () => {
+    confirmAction.mockResolvedValue(false)
+    const mutate = vi.fn<LnkResultMutate>()
+    const { result } = renderHook(() => useHarness(pvkDraft(), mixedRows, { mutate }))
+    act(() => result.current.setLnkResultLayeredControl(2, true))
+    await act(async () => result.current.handleAddLnkResult())
+    expect(mutate).not.toHaveBeenCalled()
+    expect(result.current.draft.layeredControlRowIds).toEqual(new Set([2]))
+  })
+
+  it.each(['unselected', 'other-method', 'rejected'] as const)('cannot mark an ineligible row: %s', (reason) => {
+    const draft = pvkDraft()
+    if (reason === 'unselected') draft.rowIds.delete(1)
+    if (reason === 'rejected') draft.result = 'вырез'
+    const { result } = renderHook(() => useHarness(reason === 'other-method' ? { ...draft, methodKey: 'vikRequest' } : draft, mixedRows))
+    act(() => result.current.setLnkResultLayeredControl(1, true))
+    expect(result.current.draft.layeredControlRowIds.size).toBe(0)
   })
 
   it('changes only the context rows while preserving the shared result for the others', () => {

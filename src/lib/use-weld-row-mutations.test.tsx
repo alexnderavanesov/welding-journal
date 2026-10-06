@@ -8,14 +8,14 @@ import { useWeldRowMutations } from '@/lib/use-weld-row-mutations'
 const mocks = vi.hoisted(() => ({
   deleteWeldJoint: vi.fn(),
   deleteWeldJoints: vi.fn(),
-  invalidateWeldJoints: vi.fn(),
+  scheduleWeldDataRefresh: vi.fn(),
   prepareWeldSaveValue: vi.fn(),
   moveWeldJointChainOrThrow: vi.fn(),
   updateWeldRowOrThrow: vi.fn(),
 }))
 
 vi.mock('@/lib/weld-query-utils', () => ({
-  invalidateWeldJoints: mocks.invalidateWeldJoints,
+  scheduleWeldDataRefresh: mocks.scheduleWeldDataRefresh,
 }))
 
 vi.mock('@/lib/weld-journal-mutation-updates', () => ({
@@ -44,7 +44,7 @@ describe('useWeldRowMutations', () => {
 
     mocks.prepareWeldSaveValue.mockReturnValue(savedRow)
     mocks.updateWeldRowOrThrow.mockResolvedValue(savedRow)
-    mocks.invalidateWeldJoints.mockReturnValue(undefined)
+    mocks.scheduleWeldDataRefresh.mockReturnValue(undefined)
 
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -76,7 +76,7 @@ describe('useWeldRowMutations', () => {
       savePromise = result.current.saveMutation.mutateAsync(savedRow)
     })
 
-    await waitFor(() => expect(mocks.invalidateWeldJoints).toHaveBeenCalledOnce())
+    await waitFor(() => expect(mocks.scheduleWeldDataRefresh).toHaveBeenCalledOnce())
     await act(async () => {
       await savePromise
     })
@@ -127,7 +127,7 @@ describe('useWeldRowMutations', () => {
       })
     })
 
-    expect(mocks.invalidateWeldJoints).toHaveBeenCalledWith(queryClient, { upsertRows: movedRows })
+    expect(mocks.scheduleWeldDataRefresh).toHaveBeenCalledWith(queryClient, { upsertRows: movedRows })
     expect(onWeldRowSaved).toHaveBeenCalledWith(editingRecord, source)
     expect(setMessage).toHaveBeenCalledWith('Цепочка стыка перенесена · записей: 2')
   })
@@ -171,7 +171,7 @@ describe('useWeldRowMutations', () => {
         ],
       },
     })
-    expect(mocks.invalidateWeldJoints).toHaveBeenCalledWith(queryClient, { deleteIds: [17] })
-    expect(mocks.invalidateWeldJoints).toHaveBeenCalledWith(queryClient, { deleteIds: [18, 19] })
+    expect(mocks.scheduleWeldDataRefresh).toHaveBeenCalledWith(queryClient, { deleteIds: [17] })
+    expect(mocks.scheduleWeldDataRefresh).toHaveBeenCalledWith(queryClient, { deleteIds: [18, 19] })
   })
 })

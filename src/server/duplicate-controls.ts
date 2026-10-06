@@ -1,12 +1,15 @@
 import { createServerFn } from '@tanstack/react-start'
 import { asc, count, eq, ilike, or, sql, type SQL } from 'drizzle-orm'
 import { requireDb } from '@/db'
+import { haveSameWeldLineMemberships, lockWeldLineMembershipsForWeldIds } from '@/server/weld-line-membership-lock'
 import { duplicateControls, weldJoints, type DuplicateControl, type NewDuplicateControl } from '@/db/schema'
 import {
   DUPLICATE_CONTROL_PAGE_SIZE_OPTIONS,
   DUPLICATE_CONTROL_MASS_SELECTION_ERROR,
   DUPLICATE_CONTROL_MASS_SELECTION_LIMIT,
   DUPLICATE_CONTROL_METHODS,
+  DUPLICATE_CONTROL_METHOD_ERROR,
+  isDuplicateControlMethod,
   DUPLICATE_CONTROL_RESULTS,
   type DuplicateControlCandidatePageRequest,
   type DuplicateControlCandidatePageResult,
@@ -29,6 +32,7 @@ import { assertStoredEarlyCoilDecisionSourcesRemainValid } from '@/server/early-
 import { getNextTimestampVersion } from '@/server/timestamp-version'
 import { loadWeldWorkflowSettingsFromTransaction } from '@/server/weld-workflow-settings'
 import { getLnkRepairResultSaveReason } from '@/lib/lnk-result-rules'
+import { getDuplicateControlOfficialityBlockReason } from '@/lib/duplicate-control-officiality'
 import { formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
 import type { WeldInput } from '@/lib/weld-fields'
@@ -56,7 +60,6 @@ export type DuplicateControlPayload = {
   conclusionDate: string
 }
 
-const methodSet = new Set<string>(DUPLICATE_CONTROL_METHODS)
 const resultSet = new Set<string>(DUPLICATE_CONTROL_RESULTS)
 const DUPLICATE_CONTROL_INSERT_BATCH_SIZE = 500
 const DUPLICATE_CONTROL_MAX_SAVE_RECORDS =
@@ -91,6 +94,7 @@ const DUPLICATE_CONTROL_UPDATE_SET = Object.fromEntries(
 
 const DUPLICATE_CONTROL_CANDIDATE_SELECT = {
   id: weldJoints.id,
+  layeredControlAssigned: weldJoints.layeredControlAssigned,
   weldDate: weldJoints.weldDate,
   projectTitle: weldJoints.projectTitle,
   subtitleCode: weldJoints.subtitleCode,
@@ -314,8 +318,8 @@ export const saveDuplicateControl = createServerFn({ method: 'POST' })
   .validator((data: DuplicateControlPayload) => data)
   .handler(async ({ data }) => {
     await assertSecurityScope('edit')
+    const insertData = prepareDuplicateControlWrite(data)
     const db = requireDb()
-    const insertData = toDbInsert(data)
     return db.transaction(async (tx) => {
       await loadControlProcessSettingsFromTransaction(tx)
       const workflowSettings = await loadWeldWorkflowSettingsFromTransaction(tx)
@@ -383,7 +387,7 @@ export const saveDuplicateControls = createServerFn({ method: 'POST' })
     if (data.records.length === 0) return []
     assertDuplicateControlSaveBatchLimit(data.records.length)
     assertDuplicateControlSelectionLimit(new Set(data.records.map((record) => record.weldJointId)).size)
-    const prepared = data.records.map((record, index) => ({ record, insertData: toDbInsert(record), index }))
+    const prepared = data.records.map((record, index) => ({ record, insertData: prepareDuplicateControlWrite(record), index }))
     const existingIds = prepared.flatMap(({ record }) => record.id ? [Number(record.id)] : [])
     if (new Set(existingIds).size !== existingIds.length) {
       throw new Error('Один дубль-контроль нельзя изменить несколько раз за одно сохранение.')
@@ -508,11 +512,11 @@ export const deleteDuplicateControl = createServerFn({ method: 'POST' })
     return { ok: true }
   })
 
-function toDbInsert(record: DuplicateControlPayload): NewDuplicateControl {
+export function prepareDuplicateControlWrite(record: DuplicateControlPayload): NewDuplicateControl {
   if (!Number.isInteger(record.weldJointId) || record.weldJointId <= 0) {
     throw new Error('Не выбран стык для дубль-контроля')
   }
-  if (!methodSet.has(record.method)) throw new Error('Выберите метод дубль-контроля')
+  if (!isDuplicateControlMethod(record.method)) throw new Error(DUPLICATE_CONTROL_METHOD_ERROR)
   if (!resultSet.has(record.result)) throw new Error('Выберите результат дубль-контроля')
 
   return {
@@ -668,6 +672,7 @@ async function lockWeldJointsForDuplicateControlChange(
 ) {
   const ids = getDuplicateControlAffectedWeldJointIds(...weldJointIds).sort((left, right) => left - right)
   if (ids.length === 0) return []
+  const membership = await lockWeldLineMembershipsForWeldIds(tx, ids)
   const rows = await tx
     .select()
     .from(weldJoints)
@@ -676,6 +681,9 @@ async function lockWeldJointsForDuplicateControlChange(
     .for('update')
   if (rows.length !== ids.length) {
     throw new Error('Один или несколько стыков больше не существуют. Обновите отчет.')
+  }
+  if (!haveSameWeldLineMemberships(membership, rows)) {
+    throw new Error('Стык перенесён на другую линию. Обновите отчет.')
   }
   return rows
 }
@@ -697,6 +705,11 @@ export function assertDuplicateControlRepairAllowed(
   saveCheckSettings: SaveCheckSettings,
   systemIndexSettings: SystemIndexSettings,
 ) {
+  const officialityReason = getDuplicateControlOfficialityBlockReason(row)
+  if (officialityReason) throw new Error(officialityReason)
+  if (row.layeredControlAssigned) {
+    throw new Error('При послойном контроле любой дубль ВИК/РК/УЗК/ПВК недоступен, включая годный и ожидающий. Сначала уберите послойный контроль.')
+  }
   if (String(control.result ?? '').trim().toLowerCase() !== 'ремонт') return
   const reason = getLnkRepairResultSaveReason(
     row,

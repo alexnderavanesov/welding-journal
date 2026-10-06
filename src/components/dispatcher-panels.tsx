@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { BellRing, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -29,7 +29,6 @@ type DispatcherTaskPanelProps = {
   stickyLeft: number
   handlers: DispatcherTaskCardHandlers
   onCollapseTaskDetails?: () => void
-  defaultExpanded?: boolean
 }
 
 export function DispatcherTaskPanel({
@@ -46,9 +45,8 @@ export function DispatcherTaskPanel({
   stickyLeft,
   handlers,
   onCollapseTaskDetails,
-  defaultExpanded = true,
 }: DispatcherTaskPanelProps) {
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded)
+  const [isExpanded, setIsExpanded] = useState(false)
   const codeGroups = useMemo(() => buildDispatcherTaskCodeGroups(groups), [groups])
   const {
     visibleGroups: visibleCodeGroups,
@@ -59,9 +57,6 @@ export function DispatcherTaskPanel({
     collapseList: collapseCodeList,
   } = useIncrementalDispatcherGroups(codeGroups, DISPATCHER_CODE_BATCH_SIZE)
 
-  useEffect(() => {
-    setIsExpanded(defaultExpanded)
-  }, [defaultExpanded])
   if (tasks.length === 0 && totalTaskCount === 0 && !isRefreshing && !taskBatchError) return null
 
   const viewportWidth = getReportViewportWidth(stickyLeft)
@@ -111,7 +106,7 @@ export function DispatcherTaskPanel({
                   setIsExpanded(!isExpanded)
                 }}
                 aria-expanded={isExpanded}
-                className="h-8 shrink-0 border-slate-200 bg-white px-3 text-xs text-slate-700 hover:bg-slate-50"
+                className="h-8 w-28 shrink-0 border-slate-200 bg-white px-3 text-xs text-slate-700 hover:bg-slate-50"
               >
                 {isExpanded ? <ChevronUp className="mr-1.5 h-3.5 w-3.5" /> : <ChevronDown className="mr-1.5 h-3.5 w-3.5" />}
                 {isExpanded ? 'Свернуть' : 'Развернуть'}

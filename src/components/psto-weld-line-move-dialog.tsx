@@ -36,13 +36,17 @@ export function PstoWeldLineMoveDialog({
   const sourceLabel = formatLineIdentity(preview.sourceIdentity)
   const targetLabel = formatLineIdentity(preview.targetIdentity)
   const decisionRowCount = preview.rows.filter((row) => row.requiresDisposition).length
-  const hasDestructiveDecision = decisions.some((decision) => decision.disposition === 'deletePrimary')
-  const hasLifecycleDecision = !targetIsAssigned && decisionRowCount > 0
+  const rowsById = new Map(preview.rows.map(row => [row.rowId, row]))
+  const dispositionsById = new Map(decisions.map(decision => [decision.rowId, decision.disposition]))
+  const hasMissingDecision = preview.rows.some(row => row.requiresDisposition && !dispositionsById.has(row.rowId))
+  const hasBlockedTransfer = decisions.some(decision => {
+    const row = rowsById.get(decision.rowId)
+    return decision.disposition === 'promoteBeforeHeatTreatment' && Boolean(row?.promotionBlockedReason) ||
+      decision.disposition === 'movePrimaryToBeforeHeatTreatment' && Boolean(row?.activationTransferBlockedReason || row?.activationTransferBlockedMethods.length)
+  })
 
   const setDisposition = (rowId: number, disposition: PstoWeldLineMoveDisposition) => {
-    setDecisions((current) => current.map((decision) =>
-      decision.rowId === rowId ? { ...decision, disposition } : decision,
-    ))
+    setDecisions((current) => [...current.filter(decision => decision.rowId !== rowId), { rowId, disposition }])
   }
 
   return (
@@ -121,7 +125,7 @@ export function PstoWeldLineMoveDialog({
               key={row.rowId}
               row={row}
               targetIsAssigned={targetIsAssigned}
-              disposition={getDisposition(decisions, row.rowId)}
+              disposition={dispositionsById.get(row.rowId)}
               onDispositionChange={(disposition) => setDisposition(row.rowId, disposition)}
             />
           ))}
@@ -143,8 +147,9 @@ export function PstoWeldLineMoveDialog({
                 </p>
               ) : (
                 <p className="mt-1">
-                  Выполненные ПСТО, ТВМТ, повторные циклы, заключения и документы останутся в истории.
-                  Незавершенные данные будут обработаны отдельно для каждого стыка по выбранному варианту.
+                  Заявки, результаты, заключения и повторные циклы сохранятся. По вашему выбору
+                  комплект НК «До ТО» останется на своём этапе либо целиком перейдёт в основной.
+                  Удаление ошибочных документов выполняется отдельно.
                 </p>
               )}
               {!preview.isChainMove ? (
@@ -165,9 +170,8 @@ export function PstoWeldLineMoveDialog({
       <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-4">
         <Button variant="outline" onClick={onClose} disabled={pending}>Вернуться к форме</Button>
         <Button
-          variant={hasDestructiveDecision || hasLifecycleDecision ? 'destructive' : 'default'}
-          onClick={() => onConfirm(decisions)}
-          disabled={pending}
+          onClick={() => onConfirm(preview.rows.map(row => ({ rowId: row.rowId, disposition: dispositionsById.get(row.rowId) ?? 'keepPrimary' })))}
+          disabled={pending || hasBlockedTransfer || hasMissingDecision}
         >
           {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
           {preview.isChainMove ? 'Подтвердить перенос цепочки' : 'Применить решение'}
@@ -185,11 +189,11 @@ function MoveRow({
 }: {
   row: PstoWeldLineMovePreviewRow
   targetIsAssigned: boolean
-  disposition: PstoWeldLineMoveDisposition
+  disposition?: PstoWeldLineMoveDisposition
   onDispositionChange: (disposition: PstoWeldLineMoveDisposition) => void
 }) {
-  const canPromote = row.promotablePreMethods.length > 0 && !row.preservesPerformedHistory
-  const transferBlocked = row.activationTransferBlockedMethods.length > 0
+  const canPromote = row.preMethods.length > 0 && !row.preservesPerformedHistory && !row.promotionBlockedReason
+  const transferBlocked = row.activationTransferBlockedMethods.length > 0 || Boolean(row.activationTransferBlockedReason)
   const details = [
     row.primaryMethods.length > 0 ? `Основной НК: ${row.primaryMethods.join(', ')}` : '',
     row.preMethods.length > 0 ? `До ТО: ${row.preMethods.join(', ')}` : '',
@@ -219,7 +223,7 @@ function MoveRow({
       </div>
 
       {row.requiresDisposition && targetIsAssigned ? (
-        <div className="mt-3 grid gap-2 lg:grid-cols-3">
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
           <DecisionButton
             selected={disposition === 'keepPrimary'}
             title="Сохранить существующий основной НК"
@@ -230,34 +234,27 @@ function MoveRow({
             selected={disposition === 'movePrimaryToBeforeHeatTreatment'}
             disabled={transferBlocked}
             title="Перенести основной комплект в «До ТО»"
-            description={transferBlocked
+            description={row.activationTransferBlockedReason || (transferBlocked
               ? `До ТО уже заняты методы: ${row.activationTransferBlockedMethods.join(', ')}.`
-              : 'Основной этап освободится, а комплект целиком сохранится на этапе «До ТО».'}
+              : 'Основной этап освободится, а комплект целиком сохранится на этапе «До ТО».')}
             onClick={() => onDispositionChange('movePrimaryToBeforeHeatTreatment')}
           />
-          <DecisionButton
-            selected={disposition === 'deletePrimary'}
-            title="Удалить основной комплект"
-            description="Заявки, результаты и заключения основного этапа будут удалены."
-            tone="danger"
-            onClick={() => onDispositionChange('deletePrimary')}
-          />
         </div>
-      ) : row.requiresDisposition && !row.preservesPerformedHistory ? (
+      ) : row.requiresDisposition ? (
         <div className="mt-3 grid gap-2 md:grid-cols-2">
           <DecisionButton
             selected={disposition === 'keepPrimary'}
-            title="Оставить основной комплект"
-            description="Основной комплект сохранится, незавершенный комплект «До ТО» будет удален."
+            title="Изменить только линию, сохранить этапы контроля"
+            description="Все заявки, результаты и заключения сохранятся на своих этапах. НК до ТО останется видимой историей и не заполнит основной этап автоматически."
             onClick={() => onDispositionChange('keepPrimary')}
           />
           <DecisionButton
             selected={disposition === 'promoteBeforeHeatTreatment'}
             disabled={!canPromote}
-            title="Перенести завершенный НК до ТО"
-            description={canPromote
-              ? `Основным станет завершенный комплект: ${row.promotablePreMethods.join(', ')}.`
-              : 'Нет завершенного результата НК до ТО, который можно перенести.'}
+            title="Перенести НК «До ТО» в основной"
+            description={row.promotionBlockedReason || (canPromote
+              ? `Перейдёт весь комплект: ${row.preMethods.join(', ')} — заявки, результаты и заключения. Занятые методы не перезаписываются.`
+              : row.preservesPerformedHistory ? 'ПСТО уже выполнено: сохраните исходные этапы и историю контроля.' : 'Нет комплекта НК до ТО для переноса.')}
             onClick={() => onDispositionChange('promoteBeforeHeatTreatment')}
           />
         </div>
@@ -271,14 +268,12 @@ function DecisionButton({
   disabled = false,
   title,
   description,
-  tone = 'default',
   onClick,
 }: {
   selected: boolean
   disabled?: boolean
   title: string
   description: string
-  tone?: 'default' | 'danger'
   onClick: () => void
 }) {
   return (
@@ -289,9 +284,7 @@ function DecisionButton({
       onClick={onClick}
       className={`min-h-24 rounded-md border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
         selected
-          ? tone === 'danger'
-            ? 'border-rose-400 bg-rose-50 ring-1 ring-rose-300'
-            : 'border-sky-400 bg-sky-50 ring-1 ring-sky-300'
+          ? 'border-sky-400 bg-sky-50 ring-1 ring-sky-300'
           : 'border-slate-200 bg-white hover:border-sky-200 hover:bg-sky-50/50'
       }`}
     >
@@ -335,14 +328,12 @@ function buildInitialDecisions(
   initialDecisions?: PstoWeldLineMoveDecision[] | null,
 ) {
   const initialByRowId = new Map((initialDecisions ?? []).map((decision) => [decision.rowId, decision.disposition]))
-  return preview.rows.map((row) => ({
-    rowId: row.rowId,
-    disposition: initialByRowId.get(row.rowId) ?? 'keepPrimary',
-  }))
-}
-
-function getDisposition(decisions: PstoWeldLineMoveDecision[], rowId: number) {
-  return decisions.find((decision) => decision.rowId === rowId)?.disposition ?? 'keepPrimary'
+  return preview.rows.flatMap((row) => {
+    const disposition = initialByRowId.get(row.rowId)
+    return disposition && ['keepPrimary', 'promoteBeforeHeatTreatment', 'movePrimaryToBeforeHeatTreatment'].includes(disposition)
+      ? [{ rowId: row.rowId, disposition }]
+      : []
+  })
 }
 
 function formatLineIdentity(identity: PstoWeldLineMovePreview['sourceIdentity']) {

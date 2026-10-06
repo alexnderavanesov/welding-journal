@@ -7,6 +7,8 @@ import {
   assertPstoLineAssignmentActionAllowed,
   blocksPstoLineActivation,
   buildPstoCancelledRow,
+  buildPstoMovedToCancelledLineRow,
+  buildPstoMovedToUnassignedLineRow,
   buildPstoRemovedRow,
   getPrimaryStagedMethodCodes,
   getPstoLineActivationBlockReason,
@@ -86,11 +88,7 @@ describe('PSTO line assignment', () => {
 
   it('cleanly removes a mistaken assignment only when the line has no lifecycle data', () => {
     const row = makeRequestOnlyRow({ pstoRequest: null, pstoRequestDate: null })
-    const next = buildPstoRemovedRow({
-      row,
-      controls: [],
-      disposition: 'keepPrimary',
-    })
+    const next = buildPstoRemovedRow(row)
 
     expect(next).toMatchObject({
       pstoRequired: null,
@@ -150,7 +148,7 @@ describe('PSTO line assignment', () => {
     })
   })
 
-  it('removes derived waiting results when an untreated line is cancelled', () => {
+  it('cancels an untreated line without inventing result history', () => {
     const next = buildPstoCancelledRow({
       row: makeRequestOnlyRow({
         pstoRequest: null,
@@ -167,12 +165,12 @@ describe('PSTO line assignment', () => {
     expect(next).toMatchObject({
       pstoRequired: 'отменен',
       pstoRequest: null,
-      pstoResult: null,
-      tvmtResult: null,
+      pstoResult: 'ожидает заявку',
+      tvmtResult: 'ожидает ТВМТ',
     })
   })
 
-  it('drops an unstarted repeat request but preserves a physically started repeat during cancellation', () => {
+  it('preserves both request-only and physically started repeats during cancellation', () => {
     const requestOnly = {
       id: 21,
       weldJointId: 1,
@@ -193,7 +191,7 @@ describe('PSTO line assignment', () => {
       cancellationDate: '2026-08-09',
       cancellationBasis: 'ТР №8',
     })
-    expect(cancelledBeforeRepeat.pstoRepeatCycles).toEqual([])
+    expect(cancelledBeforeRepeat.pstoRepeatCycles).toEqual([requestOnly])
 
     const cancelledAfterRepeatStarted = buildPstoCancelledRow({
       row: makeRow({ tvmtResult: 'не годен', pstoRepeatCycles: [started] }),
@@ -218,7 +216,7 @@ describe('PSTO line assignment', () => {
           tvmtConclusionDate: '2026-08-10',
         }],
       }),
-    ], '2026-08-09')).toThrow('2026-08-10')
+    ], '2026-08-09')).toThrow('последнего сохраненного события (10.08.2026)')
 
     expect(() => assertPstoCancellationDateAfterHistory([
       makeRow({ tvmtConclusionDate: '2026-08-06' }),
@@ -231,25 +229,23 @@ describe('PSTO line assignment', () => {
         pstoDate: '08.08.2026',
         tvmtConclusionDate: '10.08.2026',
       }),
-    ], '09.08.2026')).toThrow('2026-08-10')
+    ], '09.08.2026')).toThrow('последнего сохраненного события (10.08.2026)')
 
     expect(() => assertPstoCancellationDateAfterHistory([
       makeRow({ tvmtConclusionDate: '10.08.2026' }),
     ], '10.08.2026')).not.toThrow()
   })
 
-  it('promotes the selected pre-heat-treatment set for an untreated cancelled joint', () => {
-    const next = buildPstoCancelledRow({
-      row: makeRequestOnlyRow(),
+  it('resolves the selected pre-heat-treatment set only during an explicit line move', () => {
+    const next = buildPstoMovedToUnassignedLineRow({
+      row: makeRequestOnlyRow({ vikRequest: null, vikRequestDate: null, vikResult: null, vikConclusionDate: null, vikConclusion: null }),
       controls: [preControl()],
       disposition: 'promoteBeforeHeatTreatment',
-      cancellationDate: '2026-08-04',
-      cancellationBasis: '',
     })
 
     expect(next).toMatchObject({
-      pstoRequired: 'отменен',
-      pstoRequest: null,
+      pstoRequired: null,
+      pstoRequest: 'Заявка ПСТО',
       vikRequest: 'Заявка до ТО',
       vikRequestDate: '2026-08-02',
       vikResult: 'ремонт',
@@ -260,8 +256,17 @@ describe('PSTO line assignment', () => {
     expect(getPrimaryStagedMethodCodes(next)).toEqual(['ВИК'])
   })
 
-  it('promotes RK exposure data without changing its coordinate format', () => {
-    const next = buildPstoCancelledRow({
+  it.each(['unassigned', 'cancelled'] as const)('a line move to %s cannot promote a good pre-heat-treatment result while unofficial', target => {
+    const row = makeRequestOnlyRow({ officiality: 'неофициальный' })
+    const controls = [{ ...preControl(), result: 'годен' }]
+    const input = { row, controls, disposition: 'promoteBeforeHeatTreatment' as const, cancellationDate: '2026-08-09', cancellationBasis: 'Решение' }
+    expect(() => target === 'cancelled' ? buildPstoMovedToCancelledLineRow(input) : buildPstoMovedToUnassignedLineRow(input)).toThrow('Сначала верните стыку официальность')
+    expect(row.officiality).toBe('неофициальный')
+    expect(controls[0].result).toBe('годен')
+  })
+
+  it('preserves RK exposure coordinates during an explicit line-move stage resolution', () => {
+    const next = buildPstoMovedToUnassignedLineRow({
       row: makeRequestOnlyRow(),
       controls: [{
         id: 3,
@@ -276,16 +281,14 @@ describe('PSTO line assignment', () => {
         rkExposureConfirmedDiameter: 57,
       }],
       disposition: 'promoteBeforeHeatTreatment',
-      cancellationDate: '2026-08-04',
-      cancellationBasis: '',
     })
 
     expect(next.lnkDefectDescription).toBe('0-100: ДНО\n100-0: ДНО')
     expect(next.rkExposureConfirmedDiameter).toBe(57)
   })
 
-  it('does not mix the promoted completed set with old staged fields or pending pre-TO requests', () => {
-    const next = buildPstoCancelledRow({
+  it('rejects a stage conflict instead of deleting primary facts and pending pre-TO requests', () => {
+    expect(() => buildPstoMovedToUnassignedLineRow({
       row: makeRequestOnlyRow({
         rkRequest: 'Заявка РК после ТО',
         rkResult: 'годен',
@@ -303,15 +306,7 @@ describe('PSTO line assignment', () => {
         },
       ],
       disposition: 'promoteBeforeHeatTreatment',
-      cancellationDate: '2026-08-04',
-      cancellationBasis: '',
-    })
-
-    expect(next.vikConclusion).toBe('ЗНК до ТО')
-    expect(next.rkRequest).toBeNull()
-    expect(next.rkResult).toBeNull()
-    expect(next.rkConclusion).toBeNull()
-    expect(getPrimaryStagedMethodCodes(next)).toEqual(['ВИК'])
+    })).toThrow(/уже заполнен/)
   })
 
   it('does not inspect or alter duplicate controls when removing PSTO', () => {
@@ -324,15 +319,11 @@ describe('PSTO line assignment', () => {
       conclusion: 'Дубль',
       conclusionDate: '2026-08-05',
     }]
-    const next = buildPstoRemovedRow({
-      row: makeRequestOnlyRow({
+    const next = buildPstoRemovedRow(makeRequestOnlyRow({
         pstoRequest: null,
         pstoRequestDate: null,
         duplicateControls,
-      }),
-      controls: [],
-      disposition: 'keepPrimary',
-    })
+    }))
 
     expect(next.duplicateControls).toBe(duplicateControls)
   })

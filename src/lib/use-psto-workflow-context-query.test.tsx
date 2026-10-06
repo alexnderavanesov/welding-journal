@@ -9,7 +9,7 @@ import {
   usePstoWorkflowSummaryQuery,
 } from '@/lib/use-psto-workflow-context-query'
 import {
-  invalidateWeldJoints,
+  scheduleWeldDataRefresh,
   PSTO_WORKFLOW_ROWS_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 import type { PstoWorkflowRowsRequest } from '@/server/weld-contracts'
@@ -155,7 +155,7 @@ describe('PSTO workflow query load policy', () => {
       usePstoWorkflowRowsQuery({ request: activeRequest })
       return async () => {
         setActiveRequest(null)
-        await invalidateWeldJoints(client)
+        scheduleWeldDataRefresh(client)
       }
     }, { wrapper: createWrapper(queryClient) })
     await waitFor(() => expect(serverMocks.listPstoWorkflowRows).toHaveBeenCalledTimes(1))
@@ -180,7 +180,7 @@ describe('PSTO workflow query load policy', () => {
     })
 
     await act(async () => {
-      invalidateWeldJoints(
+      scheduleWeldDataRefresh(
         queryClient,
         { upsertRows: [{ id: 1, pstoResult: 'Проведено' }] },
         { refetchPstoWorkflow: true },

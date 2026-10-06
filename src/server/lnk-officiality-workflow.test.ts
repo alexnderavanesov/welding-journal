@@ -43,6 +43,7 @@ describe('lnk officiality workflow load shape', () => {
       'spool',
       'joint',
       'officiality',
+      'revisionActuality',
       'finalStatus',
       'weldDate',
       'pstoDate',

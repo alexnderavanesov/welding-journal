@@ -4,6 +4,8 @@ import { useHomeDocumentController } from '@/lib/use-home-document-controller'
 import { useHomeLnkController } from '@/lib/use-home-lnk-controller'
 import { useHomePstoController } from '@/lib/use-home-psto-controller'
 import { useHomeWeldEditorController } from '@/lib/use-home-weld-editor-controller'
+import { useHomeJournalController } from '@/lib/use-home-journal-controller'
+import { createRequestDocumentIdentity } from '@/lib/request-document-identity'
 
 function useDomainControllers() {
   return {
@@ -16,10 +18,65 @@ function useDomainControllers() {
       welderStamps: [],
     }),
     weldEditor: useHomeWeldEditorController(),
+    journal: useHomeJournalController(),
   }
 }
 
 describe('home page domain controllers', () => {
+  it('keeps registry searches, candidate selections and journal dialogs in their owning domains', () => {
+    const { result } = renderHook(() => useDomainControllers())
+    const pstoDraft = result.current.psto.pstoResultDraft
+    act(() => {
+      result.current.lnk.setLnkResultRegistrySearch('F901')
+      result.current.lnk.setPreHeatTreatmentCandidateIds([1, 2, 3])
+      result.current.journal.setCoilRestorationRootId(7)
+      result.current.journal.setIsImportDialogOpen(true)
+    })
+    expect(result.current.lnk.lnkResultRegistrySearch).toBe('F901')
+    expect(result.current.lnk.preHeatTreatmentCandidateIds).toEqual([1, 2, 3])
+    expect(result.current.psto.pstoResultRegistrySearch).toBe('')
+    expect(result.current.psto.pstoResultDraft).toBe(pstoDraft)
+    expect(result.current.journal.coilRestorationRootId).toBe(7)
+    expect(result.current.journal.isImportDialogOpen).toBe(true)
+  })
+
+  it('does not render again when candidate document identity has not changed', () => {
+    let renders = 0
+    const { result } = renderHook(() => { renders++; return useHomePstoController() })
+    act(() => result.current.handlePstoRepeatCandidateRequestChange(createRequestDocumentIdentity('P1', '2026-10-01')))
+    const stored = result.current.pstoRepeatCandidateRequest
+    // React may perform one bailout render after a changed state; subsequent
+    // identical dialog notifications must settle, not form an effect loop.
+    act(() => result.current.handlePstoRepeatCandidateRequestChange(createRequestDocumentIdentity('P1', '2026-10-01')))
+    const settledRenders = renders
+    for (let attempt = 0; attempt < 10; attempt++) {
+      act(() => result.current.handlePstoRepeatCandidateRequestChange(createRequestDocumentIdentity('P1', '2026-10-01')))
+    }
+    expect(result.current.pstoRepeatCandidateRequest).toBe(stored)
+    expect(renders).toBe(settledRenders)
+  })
+
+  it('opens and closes the PSTO history with fresh selection and bounded registry size', () => {
+    const { result } = renderHook(() => useHomePstoController())
+    act(() => {
+      result.current.setPstoResultRegistrySearch('old search')
+      result.current.setPstoResultRegistryLimit(500)
+      result.current.setPstoResultDraft(current => ({ ...current, rowIds: new Set([17]) }))
+      result.current.setManagedPstoDiagramDrafts({ 17: 'old diagram' })
+    })
+    act(() => result.current.openAllPstoHistory())
+    expect(result.current.isPstoResultManagerOpen).toBe(true)
+    expect(result.current.isPstoResultRegistryAll).toBe(true)
+    expect(result.current.pstoResultRegistrySearch).toBe('')
+    expect(result.current.pstoResultDraft.rowIds.size).toBe(0)
+    expect(result.current.managedPstoDiagramDrafts).toEqual({})
+    const initialLimit = result.current.pstoResultRegistryLimit
+    act(() => result.current.closePstoResultManager())
+    expect(result.current.isPstoResultManagerOpen).toBe(false)
+    expect(result.current.isPstoResultRegistryAll).toBe(false)
+    expect(result.current.pstoResultRegistryLimit).toBe(initialLimit)
+  })
+
   it('keeps LNK interaction state isolated from PSTO, documents, and weld editing', () => {
     const { result } = renderHook(() => useDomainControllers())
     const pstoDraft = result.current.psto.pstoResultDraft

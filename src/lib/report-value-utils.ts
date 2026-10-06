@@ -23,8 +23,9 @@ export function isAdditionalControlValue(value: unknown) {
 }
 
 export function getCancelledLnkResultDisplay(value: unknown) {
-  const result = String(value ?? '').trim().toLowerCase()
-  return result === 'годен' || result === 'да' || result === 'годен (отменен)' ? 'годен (отменен)' : 'отменен'
+  const result = normalizeControlResultText(value)
+  if (result === 'ремонт' || result === 'вырез' || result === 'не годен' || result === 'негоден') return `${result} · назначение отменено`
+  return result === 'годен' || result === 'да' || result === 'годен (отменен)' ? 'годен · назначение отменено' : 'отменен'
 }
 
 export function isPendingLnkResultValue(value: unknown) {
@@ -33,13 +34,18 @@ export function isPendingLnkResultValue(value: unknown) {
 }
 
 export function hasRealLnkResultValue(value: unknown) {
-  const result = String(value ?? '').trim().toLowerCase()
+  const result = normalizeControlResultText(value)
   return result === 'годен' || result === 'ремонт' || result === 'вырез'
 }
 
 export function getCancelledPstoResultDisplay(value: unknown) {
-  const result = String(value ?? '').trim().toLowerCase()
-  return result === 'проведено' || result === 'да' || result === 'проведено (отменен)' ? 'проведено (отменен)' : 'отменен'
+  const result = normalizeControlResultText(value)
+  return result === 'проведено' || result === 'да' || result === 'проведено (отменен)' ? 'проведено · назначение отменено' : 'отменен'
+}
+
+/** Display annotations must not change the underlying fact when a report is prepared again. */
+export function normalizeControlResultText(value: unknown) {
+  return String(value ?? '').trim().toLowerCase().replace(/ · назначение отменено$/, '')
 }
 
 export function normalizeControlAvailabilityValue(value: unknown) {

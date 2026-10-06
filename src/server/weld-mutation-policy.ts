@@ -29,6 +29,9 @@ export const SYSTEM_FIELD_KEYS = new Set([
   'pstoCancellationDate',
   'preHeatTreatmentLnkExempt',
   'preHeatTreatmentLnkEnabled',
+  'lineProgramId',
+  'pvkControlPercent',
+  'layeredControlAssigned',
   CONTROL_BASIS_SUMMARY_FIELD_KEY,
   'createdAt',
   'weldingUpdatedAt',
@@ -111,6 +114,7 @@ export const WELD_MUTATION_FIELD_KEYS = {
   welding: WELDING_PROFILE_FIELD_KEYS,
   lnk: [...LNK_PROFILE_FIELD_KEYS].filter(
     (fieldKey) =>
+      fieldKey !== 'officiality' &&
       !LNK_METHODS.some((method) => method.enabledKey === fieldKey) &&
       !(new Set<WeldFieldKey>(LNK_CONTROL_BASIS_FIELD_KEYS)).has(fieldKey),
   ),

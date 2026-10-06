@@ -3,6 +3,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { getJointStatusLabel, hasRejectedLnkResult } from '@/lib/lnk-status'
 import { filterLnkOfficialityRows } from '@/lib/report-modal-rows'
 import { compareLnkRequestRows } from '@/lib/report-row-utils'
+import { getUnofficialDuplicateControlBlockReason } from '@/lib/duplicate-control-officiality'
 
 export type LnkOfficialityCounters = {
   unofficial: number
@@ -50,6 +51,12 @@ export function getLnkOfficialitySaveBlockReason({
   if (isLnkOfficialitySaving) return 'Официальность сохраняется, дождитесь завершения.'
   if (!lnkOfficialityDraft.officiality) return 'Выберите значение «официальный» или «неофициальный».'
   if (selectedLnkOfficialityRows.length === 0) return 'Отметьте один или несколько стыков.'
+  if (lnkOfficialityDraft.officiality === 'unofficial') {
+    const duplicateReason = selectedLnkOfficialityRows
+      .filter(row => !isUnofficialLnkOfficialityRow(row))
+      .map(getUnofficialDuplicateControlBlockReason).find(Boolean)
+    if (duplicateReason) return duplicateReason
+  }
   if (lnkOfficialityDraft.officiality === 'unofficial' && selectedLnkOfficialityRows.some((row) => !hasRejectedLnkResult(row))) {
     return 'Значение «неофициальный» можно назначить только стыкам с результатом контроля «ремонт» или «вырез».'
   }
@@ -61,8 +68,10 @@ function getActionableLnkOfficialityRows(rows: WeldRow[]) {
 }
 
 function isActionableLnkOfficialityRow(row: WeldRow) {
+  // Legacy records must retain a way back even after clearing an erroneous result.
+  if (isUnofficialLnkOfficialityRow(row)) return true
   if (getJointStatusLabel(row) === 'ожидает НК') return false
-  return isRejectedOfficialLnkOfficialityRow(row) || isUnofficialLnkOfficialityRow(row)
+  return isRejectedOfficialLnkOfficialityRow(row)
 }
 
 function sortLnkOfficialityRows(rows: WeldRow[]) {

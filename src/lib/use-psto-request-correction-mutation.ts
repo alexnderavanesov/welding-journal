@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { buildPstoRequestCorrectionRow } from '@/lib/psto-report-mutation-updates'
 import { PSTO_GENERATED_HIGHLIGHT_FIELDS } from '@/lib/psto-report-mutation-highlight-fields'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import { updateWeldRowOrThrow } from '@/lib/weld-save-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RowWithId, UsePstoReportMutationsOptions } from '@/lib/psto-report-mutation-types'
@@ -39,7 +39,7 @@ export function usePstoRequestCorrectionMutation({
       } else {
         setMessage('Позиция заявки ПСТО удалена')
       }
-      await invalidateWeldJoints(queryClient, { upsertRows: [saved] })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: [saved] })
     },
     onError: (error) => {
       setMessage((error as Error).message)

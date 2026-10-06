@@ -4,7 +4,7 @@ import { and, asc, count, eq, inArray, max, min, sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { appSettings, generatedDocuments, generatedDocumentWeldJoints, weldJoints } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { buildGeneratedDocumentAssignmentPlan } from '@/lib/generated-document-assignment'
+import { buildGeneratedDocumentBatchAssignmentPlans } from '@/lib/generated-document-assignment'
 import { resolveGeneratedDocumentNamePattern } from '@/lib/generated-document-naming'
 import {
   GENERATED_DOCUMENT_TYPES,
@@ -35,7 +35,6 @@ import { buildCurrentWdiSqlExpression } from '@/server/current-wdi-sql'
 import { assertSecurityScope } from '@/server/security-functions'
 import { getNextTimestampVersion } from '@/server/timestamp-version'
 import { getLayeredControlStageLabel } from '@/lib/layered-control-documents'
-import { ensureLayeredControlDocumentsInitialized } from '@/server/layered-control-documents'
 import {
   lockGeneratedDocumentNumberCounter,
   lockGeneratedDocumentNumberSequence,
@@ -113,68 +112,6 @@ export type SaveGeneratedDocumentInput = {
   wdiTotal?: number
 }
 
-export const listRemoteGeneratedDocuments = createServerFn({ method: 'GET' })
-  .validator((data: { type: GeneratedDocumentType }) => ({
-    type: isGeneratedDocumentType(data?.type) ? data.type : 'weldingJournal',
-  }))
-  .handler(async ({ data }) => {
-    await assertSecurityScope('entry')
-    return loadRemoteGeneratedDocuments(data.type)
-  })
-
-async function loadRemoteGeneratedDocuments(type: GeneratedDocumentType) {
-  if (isLayeredControlDocumentType(type)) await ensureLayeredControlDocumentsInitialized()
-  const db = requireDb()
-  const records = await db
-    .select({
-      document: generatedDocuments,
-      assignmentCount: count(generatedDocumentWeldJoints.weldJointId),
-      periodFrom: min(weldJoints.weldDate),
-      periodTo: max(weldJoints.weldDate),
-      projects: sql<string[]>`
-        coalesce(
-          array_agg(distinct ${weldJoints.projectTitle} order by ${weldJoints.projectTitle})
-            filter (where nullif(btrim(${weldJoints.projectTitle}), '') is not null),
-          array[]::text[]
-        )
-      `,
-      subtitleCodes: sql<string[]>`
-        coalesce(
-          array_agg(distinct ${weldJoints.subtitleCode} order by ${weldJoints.subtitleCode})
-            filter (where nullif(btrim(${weldJoints.subtitleCode}), '') is not null),
-          array[]::text[]
-        )
-      `,
-      lines: sql<string[]>`
-        coalesce(
-          array_agg(distinct ${weldJoints.line} order by ${weldJoints.line})
-            filter (where nullif(btrim(${weldJoints.line}), '') is not null),
-          array[]::text[]
-        )
-      `,
-    })
-    .from(generatedDocuments)
-    .leftJoin(generatedDocumentWeldJoints, eq(generatedDocumentWeldJoints.documentId, generatedDocuments.id))
-    .leftJoin(weldJoints, eq(weldJoints.id, generatedDocumentWeldJoints.weldJointId))
-    .where(eq(generatedDocuments.type, type))
-    .groupBy(generatedDocuments.id)
-    .orderBy(sql`${generatedDocuments.updatedAt} desc`)
-
-  const currentWdiTotals = await calculateGeneratedDocumentWdiTotals(db, records.map(({ document }) => document.id))
-  return records.map(({ document, assignmentCount, periodFrom, periodTo, projects, subtitleCodes, lines }) =>
-    toRemoteGeneratedDocument({
-      ...document,
-      rowCount: Number(assignmentCount),
-      periodFrom,
-      periodTo,
-      wdiTotal: currentWdiTotals.get(document.id) ?? 0,
-      projects,
-      subtitleCodes,
-      lines,
-    }),
-  )
-}
-
 export const listRemoteGeneratedDocumentHistory = createServerFn({ method: 'GET' })
   .validator(normalizeGeneratedDocumentHistoryRequest)
   .handler(async ({ data }): Promise<RemoteGeneratedDocumentHistoryResult> => {
@@ -210,9 +147,6 @@ export function isGeneratedDocumentHistoryFilterKey(value: unknown): value is Ge
 export async function loadRemoteGeneratedDocumentHistoryFilterOptions(
   data: ReturnType<typeof normalizeGeneratedDocumentHistoryFilterOptionsRequest>,
 ): Promise<SqlDocumentHistoryFilterOptionsResult> {
-  if (data.types.some(isLayeredControlDocumentType)) {
-    await ensureLayeredControlDocumentsInitialized()
-  }
   const db = requireDb()
   const otherSettings = await loadGeneratedDocumentOtherSettings(db)
   const baseQuery = buildRemoteGeneratedDocumentHistoryBaseQuery(data, otherSettings)
@@ -233,9 +167,6 @@ export async function loadRemoteGeneratedDocumentHistoryFilterOptions(
 export async function loadRemoteGeneratedDocumentHistory(
   data: ReturnType<typeof normalizeGeneratedDocumentHistoryRequest>,
 ): Promise<RemoteGeneratedDocumentHistoryResult> {
-  if (data.types.some(isLayeredControlDocumentType)) {
-    await ensureLayeredControlDocumentsInitialized()
-  }
   const db = requireDb()
   const otherSettings = await loadGeneratedDocumentOtherSettings(db)
   const baseQuery = buildRemoteGeneratedDocumentHistoryBaseQuery(data, otherSettings)
@@ -564,24 +495,21 @@ export const getRemoteGeneratedDocument = createServerFn({ method: 'GET' })
   .validator((data: { id: number }) => ({ id: requirePositiveId(data?.id, 'документа') }))
   .handler(async ({ data }): Promise<RemoteGeneratedDocument | null> => {
     await assertSecurityScope('entry')
-    const db = requireDb()
-    const [record] = await db
-      .select()
-      .from(generatedDocuments)
-      .where(
-        and(
-          eq(generatedDocuments.id, data.id),
-          inArray(generatedDocuments.type, [...GENERATED_DOCUMENT_TYPES]),
-        ),
-      )
-      .limit(1)
-    if (!record) return null
-    const currentWdiTotals = await calculateGeneratedDocumentWdiTotals(db, [record.id])
-    return toRemoteGeneratedDocument({
-      ...record,
-      wdiTotal: currentWdiTotals.get(record.id) ?? record.wdiTotal,
-    })
+    return loadRemoteGeneratedDocument(data.id)
   })
+
+export async function loadRemoteGeneratedDocument(id: number): Promise<RemoteGeneratedDocument | null> {
+  const documentId = normalizeDocumentHistoryDocumentId(id)
+  if (!documentId) throw new Error('Не передан ID документа.')
+  // A saved document keeps its identity, not a frozen copy of its welds.
+  // Use the same scoped aggregate as history, without loading every weld for WDI.
+  const result = await loadRemoteGeneratedDocumentHistory(normalizeGeneratedDocumentHistoryRequest({
+    documentId,
+    types: [...GENERATED_DOCUMENT_TYPES],
+    limit: 1,
+  }))
+  return result.documents[0] ?? null
+}
 
 export const saveRemoteGeneratedDocuments = createServerFn({ method: 'POST' })
   .validator(normalizeSaveGeneratedDocumentBatch)
@@ -606,7 +534,6 @@ export const getRemoteGeneratedDocumentSequence = createServerFn({ method: 'GET'
   .validator((data: { type: GeneratedDocumentType }) => ({ type: requireGeneratedDocumentType(data?.type) }))
   .handler(async ({ data }) => {
     await assertSecurityScope('entry')
-    if (isLayeredControlDocumentType(data.type)) await ensureLayeredControlDocumentsInitialized()
     const db = requireDb()
     return {
       type: data.type,
@@ -646,52 +573,6 @@ type GeneratedDocumentBatchRecord = {
   documentNumber: number
   targetDocumentId: number | null
   updatedAt: Date
-}
-
-export function buildGeneratedDocumentBatchAssignmentPlans({
-  selectedWeldJointIdGroups,
-  existingAssignments,
-  documentAssignmentCounts,
-}: {
-  selectedWeldJointIdGroups: readonly (readonly number[])[]
-  existingAssignments: readonly Pick<ExistingGeneratedDocumentAssignment, 'documentId' | 'weldJointId'>[]
-  documentAssignmentCounts: ReadonlyMap<number, number>
-}) {
-  let simulatedAssignments = existingAssignments.map((assignment) => ({ ...assignment }))
-  const simulatedCounts = new Map(documentAssignmentCounts)
-  let nextVirtualDocumentId = -1
-
-  return selectedWeldJointIdGroups.map((selectedWeldJointIds) => {
-    const assignmentPlan = buildGeneratedDocumentAssignmentPlan({
-      selectedWeldJointIds,
-      existingAssignments: simulatedAssignments,
-      documentAssignmentCounts: simulatedCounts,
-    })
-    const selectedIds = new Set(selectedWeldJointIds)
-    const removedAssignments = simulatedAssignments.filter((assignment) =>
-      selectedIds.has(assignment.weldJointId),
-    )
-    simulatedAssignments = simulatedAssignments.filter((assignment) =>
-      !selectedIds.has(assignment.weldJointId),
-    )
-    for (const assignment of removedAssignments) {
-      simulatedCounts.set(
-        assignment.documentId,
-        Math.max(0, (simulatedCounts.get(assignment.documentId) ?? 0) - 1),
-      )
-    }
-
-    const simulatedTargetId = assignmentPlan.targetDocumentId ?? nextVirtualDocumentId--
-    simulatedAssignments.push(...selectedWeldJointIds.map((weldJointId) => ({
-      documentId: simulatedTargetId,
-      weldJointId,
-    })))
-    simulatedCounts.set(
-      simulatedTargetId,
-      (simulatedCounts.get(simulatedTargetId) ?? 0) + selectedWeldJointIds.length,
-    )
-    return assignmentPlan
-  })
 }
 
 async function saveGeneratedDocumentBatchInTransaction(
@@ -948,36 +829,40 @@ export const getRemoteGeneratedDocumentRows = createServerFn({ method: 'GET' })
   .validator((data: { id: number }) => ({ id: requirePositiveId(data?.id, 'документа') }))
   .handler(async ({ data }): Promise<WeldRow[]> => {
     await assertSecurityScope('entry')
-    const db = requireDb()
-    const rows = await db
-      .select({ weld: weldJoints })
-      .from(generatedDocumentWeldJoints)
-      .innerJoin(
-        generatedDocuments,
-        and(
-          eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId),
-          inArray(generatedDocuments.type, [...GENERATED_DOCUMENT_TYPES]),
-        ),
-      )
-      .innerJoin(weldJoints, eq(weldJoints.id, generatedDocumentWeldJoints.weldJointId))
-      .where(eq(generatedDocumentWeldJoints.documentId, data.id))
-      .orderBy(asc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
-    const otherSettings = await loadGeneratedDocumentOtherSettings(db)
-    const currentRows = rows.map(({ weld }) => weld as unknown as WeldRow)
-    return attachGeneratedDocumentFields(
-      await attachPreHeatTreatmentControlRelations(
-        isSystemWdiMode(otherSettings)
-          ? currentRows.map((row) => withSystemWdi(row, otherSettings))
-          : currentRows,
-        db,
+    return loadRemoteGeneratedDocumentRows(data.id)
+  })
+
+export async function loadRemoteGeneratedDocumentRows(id: number): Promise<WeldRow[]> {
+  const db = requireDb()
+  const rows = await db
+    .select({ weld: weldJoints })
+    .from(generatedDocumentWeldJoints)
+    .innerJoin(
+      generatedDocuments,
+      and(
+        eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId),
+        inArray(generatedDocuments.type, [...GENERATED_DOCUMENT_TYPES]),
       ),
     )
-  })
+    .innerJoin(weldJoints, eq(weldJoints.id, generatedDocumentWeldJoints.weldJointId))
+    .where(eq(generatedDocumentWeldJoints.documentId, id))
+    .orderBy(asc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
+  const otherSettings = await loadGeneratedDocumentOtherSettings(db)
+  const currentRows = rows.map(({ weld }) => weld as unknown as WeldRow)
+  return attachGeneratedDocumentFields(
+    await attachPreHeatTreatmentControlRelations(
+      isSystemWdiMode(otherSettings)
+        ? currentRows.map((row) => withSystemWdi(row, otherSettings))
+        : currentRows,
+      db,
+    ),
+  )
+}
 
 export const deleteRemoteGeneratedDocument = createServerFn({ method: 'POST' })
   .validator((data: { id: number; expectedUpdatedAt: string }) => ({
     id: requirePositiveId(data?.id, 'документа'),
-    expectedUpdatedAt: String(data?.expectedUpdatedAt ?? '').trim(),
+    expectedUpdatedAt: normalizeGeneratedDocumentTimestamp(data?.expectedUpdatedAt),
   }))
   .handler(async ({ data }) => {
     await assertSecurityScope('delete')
@@ -1137,9 +1022,14 @@ function toRemoteGeneratedDocumentHistoryRow(
     projects: normalizeDocumentHistoryStringArray(record.projects),
     subtitleCodes: normalizeDocumentHistoryStringArray(record.subtitleCodes),
     lines: normalizeDocumentHistoryStringArray(record.lines),
-    createdAt: String(record.createdAt ?? ''),
-    updatedAt: String(record.updatedAt ?? ''),
+    createdAt: normalizeGeneratedDocumentTimestamp(record.createdAt),
+    updatedAt: normalizeGeneratedDocumentTimestamp(record.updatedAt),
   }
+}
+
+function normalizeGeneratedDocumentTimestamp(value: unknown) {
+  const date = new Date(value instanceof Date ? value.getTime() : String(value ?? ''))
+  return Number.isFinite(date.getTime()) ? date.toISOString() : ''
 }
 
 function normalizeDocumentHistoryStringArray(value: unknown) {

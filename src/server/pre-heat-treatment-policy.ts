@@ -1,4 +1,4 @@
-import { and, or, sql } from 'drizzle-orm'
+import { and, or, sql, type SQLWrapper } from 'drizzle-orm'
 
 import { appSettings, preHeatTreatmentControls, pstoRepeatCycles, weldJoints } from '@/db/schema'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
@@ -16,7 +16,10 @@ export function buildPreHeatTreatmentEnabledWhere() {
   ), true)`
 }
 
-function buildCycleExecutionWhere(cycle: typeof weldJoints | typeof pstoRepeatCycles) {
+type CycleSqlFields = Record<'pstoDate' | 'heatTreatmentDiagram' | 'pstoResult' | 'tvmtRequest' |
+  'tvmtRequestDate' | 'tvmtResult' | 'tvmtConclusionDate' | 'tvmtConclusion', SQLWrapper>
+
+function buildCycleExecutionWhere(cycle: CycleSqlFields) {
   return sql`(${cycle.pstoDate} is not null
     or nullif(btrim(coalesce(${cycle.heatTreatmentDiagram}, '')), '') is not null
     or lower(btrim(coalesce(${cycle.pstoResult}, ''))) in ('проведено', 'проведено (отменен)', 'да')
@@ -27,6 +30,14 @@ function buildCycleExecutionWhere(cycle: typeof weldJoints | typeof pstoRepeatCy
     or ${cycle.tvmtConclusionDate} is not null
     or nullif(btrim(coalesce(${cycle.tvmtConclusion}, '')), '') is not null
   )`
+}
+
+/** Inactive lines retain unperformed repeats as history, not as the current cycle. */
+export function buildRelevantPstoRepeatWhere(cycle: CycleSqlFields) {
+  return or(
+    buildNullableControlEnabledWhere(weldJoints.pstoRequired, CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES),
+    buildCycleExecutionWhere(cycle),
+  ) ?? sql`false`
 }
 
 export function buildPstoExecutionHistoryWhere() {
@@ -43,12 +54,22 @@ export function buildPreHeatTreatmentAvailableWhere() {
   )) ?? sql`false`
 }
 
+export function buildPstoDocumentHistoryWhere() {
+  return sql`(${buildPstoExecutionHistoryWhere()}
+    or nullif(btrim(coalesce(${weldJoints.pstoRequest}, '')), '') is not null
+    or ${weldJoints.pstoRequestDate} is not null
+    or exists (select 1 from ${pstoRepeatCycles}
+      where ${pstoRepeatCycles.weldJointId} = ${weldJoints.id}
+        and (nullif(btrim(coalesce(${pstoRepeatCycles.pstoRequest}, '')), '') is not null
+          or ${pstoRepeatCycles.pstoRequestDate} is not null)))`
+}
+
 export function buildNoRejectedPreHeatTreatmentWhere() {
   const activeMethod = or(...PRE_HEAT_TREATMENT_LNK_METHODS.map((method) => and(
     sql`${preHeatTreatmentControls.method} = ${method.code}`,
-    buildNullableControlEnabledWhere(weldJoints[method.enabledKey], CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES),
+    buildNullableControlEnabledWhere(weldJoints[method.enabledKey], [...CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES, 'отменен']),
   ))) ?? sql`false`
-  return sql`(not (${buildPreHeatTreatmentAvailableWhere()}) or not exists (
+  return sql`(not (${buildPreHeatTreatmentEnabledWhere()}) or not exists (
     select 1 from ${preHeatTreatmentControls}
     where ${preHeatTreatmentControls.weldJointId} = ${weldJoints.id} and ${activeMethod}
       and lower(btrim(coalesce(${preHeatTreatmentControls.result}, ''))) in ('ремонт', 'вырез')

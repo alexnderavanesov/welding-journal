@@ -4,8 +4,30 @@ import { describe, expect, it, vi } from 'vitest'
 import { getWeldTableBodyCellTooltip, WeldTableBodyCell } from '@/components/weld-table-body-cell'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldField } from '@/lib/weld-fields'
+import { LAYERED_CONTROL_WAITING_LABEL } from '@/lib/layered-control-documents'
 
 describe('WeldTableBodyCell background', () => {
+  it.each(['Vik', 'Pvk'] as const)('shows a compact, non-clickable waiting state in the %s cell and removes it on cancellation', (method) => {
+    const onOpenDocument = vi.fn()
+    const field = { key: `layered${method}Documents`, dbName: '__layered', label: 'Послойный', kind: 'text', group: 'Документы', virtual: true } satisfies WeldField
+    const draw = (row: WeldRow) => <table><tbody><tr><WeldTableBodyCell
+      row={row} field={field} displayValue="" isEditableCell={false} isBlockedEditableCell={false}
+      isHighlightedRow={false} isSelectedRow={false} hasDispatcherTask={false} isHighlightedCell={false}
+      isResultField={false} stickyLeft={0} stickyIdentityLeadingWidth={0} stickyIdentityColumns={false}
+      stickyBackgroundClassName="bg-white" isSectionEnd={false} onOpenDocument={onOpenDocument}
+    /></tr></tbody></table>
+    const row = { id: 42, layeredControlAssigned: true, pvkResult: 'ожидает заявку' } as WeldRow
+    const { rerender } = render(draw(row))
+    fireEvent.click(screen.getByText(LAYERED_CONTROL_WAITING_LABEL))
+    expect(onOpenDocument).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    rerender(draw({ ...row, layeredControlAssigned: false }))
+    expect(screen.queryByText(LAYERED_CONTROL_WAITING_LABEL)).not.toBeInTheDocument()
+    rerender(draw({ ...row, [`layered${method}EdgesDocument`]: 'Историческое заключение', [`layered${method}EdgesDocumentId`]: 42 }))
+    expect(screen.queryByText(LAYERED_CONTROL_WAITING_LABEL)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Кромки' })).toBeVisible()
+  })
+
   it('keeps a blocked LNK field neutral when its background is disabled', () => {
     const field = {
       key: 'prePvkDefectDescription',

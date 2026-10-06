@@ -71,16 +71,13 @@ const LNK_SECTION_LAYOUT: Array<{ section: string; fieldKeys: WeldFieldKey[] }> 
 ]
 
 export type LnkVisibleFieldSectionOptions = {
-  layeredControlEnabled: boolean
   preHeatTreatmentLnkEnabled: boolean
 }
 
 export function getLnkVisibleFieldSections({
-  layeredControlEnabled = true,
   preHeatTreatmentLnkEnabled = true,
 }: Partial<LnkVisibleFieldSectionOptions> = {}): WeldTableSection[] {
   return LNK_SECTION_LAYOUT
-    .filter(({ section }) => layeredControlEnabled || section !== 'Послойный контроль')
     .filter(({ section }) => preHeatTreatmentLnkEnabled || section !== 'НК до ТО')
     .map(({ section, fieldKeys }) => ({
       section,

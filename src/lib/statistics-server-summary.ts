@@ -2,7 +2,6 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { isUnofficialJoint } from '@/lib/joint-display'
 import { parseJointChainName } from '@/lib/joint-chain'
 import { buildLineSummary, type LineSummary } from '@/lib/line-summary'
-import { buildPercentageLineSummaries, type PercentageLineSummary } from '@/lib/percentage-line-summary'
 import {
   buildStatisticsSummary,
   buildStatisticsStateRowIds,
@@ -27,7 +26,7 @@ import {
   type WeldingDynamicsSummary,
 } from '@/lib/welding-dynamics'
 
-export type StatisticsTab = 'general' | 'lnk' | 'psto' | 'welders' | 'lineSummary' | 'percentageLines'
+export type StatisticsTab = 'general' | 'lnk' | 'psto' | 'welders' | 'lineSummary'
 
 export type StatisticsFilterOption = {
   value: string
@@ -53,7 +52,6 @@ export type StatisticsServerResult = {
   weldingDynamics: WeldingDynamicsSummary
   welderSummary: WelderStatisticsSummary
   lineSummary: LineSummary
-  percentageLineSummary: PercentageLineSummary[]
   generalProgressSummary: LineSummary
   generalStateRowIds: StatisticsStateRowIds
   unofficialCount: number
@@ -225,13 +223,11 @@ export function buildStatisticsServerResult({
   rows,
   welderStamps,
   systemIndexSettings,
-  acceptedDispatcherWarningKeys = new Set(),
   request,
 }: {
   rows: WeldRow[]
   welderStamps: WelderStampRecord[]
   systemIndexSettings: SystemIndexSettings
-  acceptedDispatcherWarningKeys?: ReadonlySet<string>
   request: StatisticsServerRequest
 }): StatisticsServerResult {
   const tab = request.tab
@@ -299,17 +295,9 @@ export function buildStatisticsServerResult({
       tab === 'lineSummary'
         ? buildLineSummary(scopedRows, unit, systemIndexSettings)
         : EMPTY_LINE_SUMMARY,
-    percentageLineSummary:
-      tab === 'percentageLines'
-        ? buildPercentageLineSummaries(
-            scopedRows,
-            systemIndexSettings,
-            acceptedDispatcherWarningKeys,
-          ).map((line) => ({ ...line, rows: [] }))
-        : [],
     generalProgressSummary:
       tab === 'general'
-        ? buildLineSummary(generalRows, unit, systemIndexSettings)
+        ? buildLineSummary(scopedRows, unit, systemIndexSettings, row => matchesJointFilter(row, jointFilter, systemIndexSettings))
         : EMPTY_LINE_SUMMARY,
     generalStateRowIds:
       isGeneralLikeTab

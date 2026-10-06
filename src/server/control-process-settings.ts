@@ -14,7 +14,6 @@ import {
   lockAllControlProcessSettings,
   lockControlProcessSettings,
 } from '@/server/control-process-settings-lock'
-import { rebuildAllLayeredControlDocumentsInTransaction } from '@/server/layered-control-documents'
 import type { GeneratedDocumentsTransaction } from '@/server/generated-document-number-sequence'
 import { assertSecurityScope } from '@/server/security-functions'
 
@@ -61,13 +60,13 @@ export async function prepareControlProcessSettingsChangeInTransaction({
   const preHeatTreatmentChanged = (
     current.preHeatTreatmentLnkEnabled !== next.preHeatTreatmentLnkEnabled
   )
-  const layeredControlChanged = current.layeredControlEnabled !== next.layeredControlEnabled
+  const pvkGoodOnlyChanged = current.pvkGoodOnly !== next.pvkGoodOnly
 
   // Keep this order aligned with weld mutations that can touch both processes.
   if (preHeatTreatmentChanged && !processLocksAlreadyHeld) {
     await lockControlProcessSettings(tx, 'preHeatTreatmentLnk', 'exclusive')
   }
-  if (layeredControlChanged && !processLocksAlreadyHeld) {
+  if (pvkGoodOnlyChanged && !processLocksAlreadyHeld) {
     await lockControlProcessSettings(tx, 'layeredControl', 'exclusive')
   }
 
@@ -79,10 +78,6 @@ export async function prepareControlProcessSettingsChangeInTransaction({
         'Сначала завершите или исправьте их в отчете ЛНК.',
       )
     }
-  }
-
-  if (!current.layeredControlEnabled && next.layeredControlEnabled) {
-    await rebuildAllLayeredControlDocumentsInTransaction(tx, { allowCreate: true })
   }
 
   return next

@@ -11,7 +11,7 @@ import { E2E_DATABASE_URL, withE2eDatabase } from '../database'
 test('уход со страницы не прерывает публикацию индекса и не запускает повторный пересчет', async ({ page, context }) => {
   test.skip(process.env.E2E_USE_PRODUCTION_BUILD !== '1', 'Verifies the real built server entry and RPC manifest')
   const checked = await promisify(execFile)(process.execPath, ['scripts/verify-server-cancellation.mjs'], {
-    env: { ...process.env, DATABASE_URL: E2E_DATABASE_URL, WELDING_ENV_LOADED: '1' },
+    env: { ...process.env, FORCE_COLOR: undefined, DATABASE_URL: E2E_DATABASE_URL, WELDING_ENV_LOADED: '1' },
   })
   expect(checked.stderr).toBe('')
   expect(JSON.parse(checked.stdout.trim())).toEqual({ cancellations: 2, status: 499 })

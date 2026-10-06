@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
+import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { and, asc, eq, sql, type SQL } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
@@ -9,6 +10,7 @@ import {
   type NewWeldJoint,
 } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getLayeredControlSaveError } from '@/lib/layered-control-rules'
 import {
   PRE_HEAT_TREATMENT_LNK_METHODS,
   type PreHeatTreatmentControlRecord,
@@ -110,7 +112,7 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
     await assertSecurityScope('edit')
     const db = requireDb()
     return db.transaction(async (tx) => {
-      await assertPreHeatTreatmentLnkEnabled(tx)
+      const processSettings = await assertPreHeatTreatmentLnkEnabled(tx)
       const workflowSettings = await loadWeldWorkflowSettingsFromTransaction(tx)
       const rowIds = [...new Set(data.groups.flatMap((group) =>
         group.positions.map((position) => position.rowId),
@@ -195,6 +197,21 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
         saveCheckSettings: workflowSettings.saveCheckSettings,
         systemIndexSettings: workflowSettings.systemIndexSettings,
       }))
+      const writesById = new Map<number, typeof writes>()
+      for (const write of writes) {
+        const current = writesById.get(write.weldJointId) ?? []
+        current.push(write)
+        writesById.set(write.weldJointId, current)
+      }
+      for (const row of rows) {
+        const updates = writesById.get(row.id) ?? []
+        const controls = new Map((row.preHeatTreatmentControls ?? []).map((control) => [control.method, control]))
+        for (const write of updates) controls.set(write.method, { ...controls.get(write.method), ...write } as PreHeatTreatmentControlRecord)
+        const reason = getLayeredControlSaveError({ ...row, preHeatTreatmentControls: [...controls.values()] }, row, processSettings.pvkGoodOnly)
+        if (reason) throw new Error(reason)
+        const finalRow = { ...row, preHeatTreatmentControls: [...controls.values()] }
+        assertNoNewLnkChronologyIssues([finalRow], [row], workflowSettings.saveCheckSettings)
+      }
       const savedControls = await savePreHeatTreatmentControlWrites(tx, data.action, writes)
       await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, rowIds)
       await syncPreHeatTreatmentDocuments({
@@ -296,7 +313,7 @@ export const correctPreHeatTreatmentLnkResult = createServerFn({ method: 'POST' 
     await assertSecurityScope('edit')
     const db = requireDb()
     return db.transaction(async (tx) => {
-      await assertPreHeatTreatmentLnkEnabled(tx)
+      const processSettings = await assertPreHeatTreatmentLnkEnabled(tx)
       const workflowSettings = await loadWeldWorkflowSettingsFromTransaction(tx)
       const [controlReference] = await tx
         .select({ weldJointId: preHeatTreatmentControls.weldJointId })
@@ -304,6 +321,7 @@ export const correctPreHeatTreatmentLnkResult = createServerFn({ method: 'POST' 
         .where(eq(preHeatTreatmentControls.id, data.relationId))
         .limit(1)
       if (!controlReference) throw new Error('Позиция НК до ТО больше не существует. Обновите отчет.')
+      const membership = await lockWeldLineMembershipsForWeldIds(tx, [controlReference.weldJointId])
       const [storedRow] = await tx
         .select(WELD_TABLE_RETURNING)
         .from(weldJoints)
@@ -311,6 +329,9 @@ export const correctPreHeatTreatmentLnkResult = createServerFn({ method: 'POST' 
         .for('update')
         .limit(1)
       if (!storedRow) throw new Error('Стык больше не существует. Обновите отчет.')
+      if (!haveSameWeldLineMemberships(membership, [storedRow])) {
+        throw new Error('Стык перенесён на другую линию. Обновите отчет.')
+      }
       assertExpectedInteractiveWeldVersions(
         [storedRow.id],
         [{ id: storedRow.id, version: data.expectedVersion }],
@@ -394,6 +415,15 @@ export const correctPreHeatTreatmentLnkResult = createServerFn({ method: 'POST' 
         })
       }
 
+      const reason = getLayeredControlSaveError({
+        ...row,
+        preHeatTreatmentControls: row.preHeatTreatmentControls?.map((control) =>
+          control.id === currentControl.id ? { ...control, ...nextControl } : control),
+      }, row, processSettings.pvkGoodOnly)
+      if (reason) throw new Error(reason)
+      const finalRow = { ...row, preHeatTreatmentControls: row.preHeatTreatmentControls?.map(control =>
+        control.id === currentControl.id ? { ...control, ...nextControl } : control) }
+      assertNoNewLnkChronologyIssues([finalRow], [row], workflowSettings.saveCheckSettings)
       const [savedControl] = await tx
         .update(preHeatTreatmentControls)
         .set({ ...toControlInsert(nextControl), updatedAt: new Date() })
@@ -619,6 +649,7 @@ async function assertPreHeatTreatmentLnkEnabled(tx: SystemDocumentSequenceTransa
   if (!settings.preHeatTreatmentLnkEnabled) {
     throw new Error('НК до ТО выключен в настройках проекта. Существующая история доступна только для просмотра.')
   }
+  return settings
 }
 
 function normalizeNullableNumber(value: unknown) {

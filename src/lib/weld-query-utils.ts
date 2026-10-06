@@ -1,6 +1,7 @@
 import type { InfiniteData, QueryClient } from '@tanstack/react-query'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { sortWeldSnapshotRows } from '@/lib/weld-snapshot'
+import { DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY } from '@/lib/dispatcher-accepted-warning-query'
 import type { WeldPageResult } from '@/server/weld-contracts'
 import {
   invalidateWeldPageQueries,
@@ -30,7 +31,6 @@ export const WELD_ROWS_BY_IDS_QUERY_KEY = [...WELD_JOINTS_QUERY_KEY, 'by-ids'] a
 export const WELD_DATA_USAGE_QUERY_KEY = [...WELD_JOINTS_QUERY_KEY, 'settings-data-usage'] as const
 export const WELD_FINAL_STATUS_CONTEXT_QUERY_KEY = [...WELD_JOINTS_QUERY_KEY, 'final-status-context'] as const
 export const WELD_FORM_SUGGESTIONS_QUERY_KEY = ['weld-form-suggestions'] as const
-export const WELD_LINE_AUTOFILL_QUERY_KEY = ['weld-line-autofill'] as const
 export const DUPLICATE_CONTROL_CANDIDATES_QUERY_KEY = ['duplicate-control-candidates'] as const
 export const DUPLICATE_CONTROL_REGISTRY_QUERY_KEY = ['duplicate-control-registry'] as const
 
@@ -42,13 +42,21 @@ type WeldCacheChange = {
 type WeldInvalidationOptions = {
   refetchLnkWorkflow?: boolean
   refetchPstoWorkflow?: boolean
+  /** The line workspace replaces its changed summary and refreshes only active details. */
+  skipLineProgramRefetch?: boolean
 }
 
-export function invalidateWeldJoints(
+/**
+ * Applies returned rows synchronously and schedules background refreshes.
+ * Saving is already complete: callers must not await this void notification.
+ * A workflow that needs fresh details must separately await its scoped query
+ * (or refreshActiveLoadedWeldPages), not every dependent screen.
+ */
+export function scheduleWeldDataRefresh(
   queryClient: QueryClient,
   change?: WeldCacheChange,
   options: WeldInvalidationOptions = {},
-) {
+): void {
   if (change) {
     updateCompleteWeldSnapshot(queryClient, change)
     updateLoadedWeldPages(queryClient, change)
@@ -67,10 +75,11 @@ export function invalidateWeldJoints(
   void queryClient.invalidateQueries({ queryKey: WELD_DATA_USAGE_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: WELD_FINAL_STATUS_CONTEXT_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: WELD_FORM_SUGGESTIONS_QUERY_KEY })
-  void queryClient.invalidateQueries({ queryKey: WELD_LINE_AUTOFILL_QUERY_KEY })
+  void queryClient.invalidateQueries({ queryKey: ['line-program'], refetchType: options.skipLineProgramRefetch ? 'none' : 'active' })
   void queryClient.invalidateQueries({ queryKey: DUPLICATE_CONTROL_CANDIDATES_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: DUPLICATE_CONTROL_REGISTRY_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: GENERATED_DOCUMENT_HISTORY_QUERY_KEY })
+  void queryClient.invalidateQueries({ queryKey: DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY, refetchType: 'none' })
   void invalidateWeldPageQueries(queryClient, { deferActiveRefresh: Boolean(change) })
   void queryClient.invalidateQueries({ queryKey: WELD_REPORT_CONTEXT_QUERY_KEY })
   void queryClient.invalidateQueries({

@@ -53,6 +53,7 @@ import {
 } from '@/server/layered-control-documents'
 import { WELD_TABLE_SELECT } from '@/server/weld-server-shared'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
+import { syncProgramChainStates } from './line-program-chain-state'
 
 const BASE_HISTORY_SELECT = {
   id: weldJoints.id,
@@ -110,6 +111,15 @@ export async function loadSystemDocumentSummaries(type: SystemDocumentType) {
     await ensureSystemDocumentIndexInitializedInTransaction(tx, type)
     return loadIndexedSystemDocumentSummaries(tx, type)
   })
+}
+
+/** Rebuild preflight only needs initialized indexes, not a discarded copy of
+ * every document and assignment before loading the real snapshot. */
+export async function initializeSystemDocumentIndexesInTransaction(tx: SystemDocumentSequenceTransaction) {
+  await lockSystemDocumentIndexes(tx)
+  for (const type of SYSTEM_DOCUMENT_INDEX_LOCK_ORDER) {
+    await ensureSystemDocumentIndexInitializedInTransaction(tx, type)
+  }
 }
 
 export type SystemDocumentNameConflictTarget = {
@@ -259,37 +269,43 @@ export async function loadIndexedSystemDocumentHistoryFilterOptions({
 }
 
 export async function loadSystemDocumentRows(data: SystemDocumentReference): Promise<WeldRow[]> {
-  const { db, rows, metadata } = await loadSystemDocumentRowSource(data)
+  return requireDb().transaction(async db => {
+    const { rows, metadata } = await loadSystemDocumentRowSource(db, data)
 
-  if (metadata?.sourceKind === 'beforeHeatTreatment') {
-    const rowsWithPreControls = await attachPreHeatTreatmentControlRelations(rows, db)
-    return (await overlaySourcedSystemDocumentRows(rowsWithPreControls, metadata))
+    if (metadata?.sourceKind === 'beforeHeatTreatment') {
+      const rowsWithPreControls = await attachPreHeatTreatmentControlRelations(rows, db)
+      return (await overlaySourcedSystemDocumentRows(rowsWithPreControls, metadata, db))
+        .map(compactSystemDocumentRow)
+    }
+
+    const hydratedRows = metadata?.sourceKind
+      ? await overlaySourcedSystemDocumentRows(rows, metadata, db)
+      : rows
+    return (await attachPreHeatTreatmentControlRelations(hydratedRows, db))
       .map(compactSystemDocumentRow)
-  }
-
-  const hydratedRows = metadata?.sourceKind
-    ? await overlaySourcedSystemDocumentRows(rows, metadata)
-    : rows
-  return (await attachPreHeatTreatmentControlRelations(hydratedRows, db))
-    .map(compactSystemDocumentRow)
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
 export async function loadSystemDocumentDateContext(
   data: SystemDocumentReference,
 ): Promise<SystemDocumentDateContext> {
-  const { db, rows, metadata } = await loadSystemDocumentRowSource(data)
-  const hydratedRows = await attachDuplicateControlRelations(
-    await attachHeatTreatmentControlRelations(rows, db),
-    db,
-  )
-  return {
-    rows: hydratedRows.map(compactSystemDocumentRow),
-    sourcePositions: metadata?.sourcePositions ?? [],
-  }
+  return requireDb().transaction(async db => {
+    const { rows, metadata } = await loadSystemDocumentRowSource(db, data)
+    const hydratedRows = await attachDuplicateControlRelations(
+      await attachHeatTreatmentControlRelations(rows, db),
+      db,
+    )
+    return {
+      rows: hydratedRows.map(compactSystemDocumentRow),
+      sourcePositions: metadata?.sourcePositions ?? [],
+    }
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
-async function loadSystemDocumentRowSource(data: SystemDocumentReference) {
-  const db = requireDb()
+async function loadSystemDocumentRowSource(
+  db: Pick<ReturnType<typeof requireDb>, 'select'>,
+  data: SystemDocumentReference,
+) {
   const expectedStorageType = systemDocumentStorageType(getSystemDocumentTemplateId(data))
   let sourceMetadata: unknown = null
   const sourcedDocumentId = !data.documentId && data.sourceKind
@@ -297,11 +313,21 @@ async function loadSystemDocumentRowSource(data: SystemDocumentReference) {
     : undefined
   const documentId = data.documentId ?? sourcedDocumentId
   if (data.sourceKind && !documentId && data.sourceKind !== 'pstoCycle') {
-    return { db, rows: [] as WeldRow[], metadata: null }
+    return { rows: [] as WeldRow[], metadata: null }
+  }
+  if (documentId) {
+    // Shared metadata can contain every document position. Fetch it once in the
+    // same snapshot as the welds, never repeat the whole payload on each row.
+    const [document] = await db.select({ sourceMetadata: generatedDocuments.sourceMetadata })
+      .from(generatedDocuments)
+      .where(and(eq(generatedDocuments.id, documentId), eq(generatedDocuments.type, expectedStorageType)))
+      .limit(1)
+    if (!document) return { rows: [] as WeldRow[], metadata: null }
+    sourceMetadata = document.sourceMetadata
   }
   const rows = documentId
     ? await db
-        .select({ ...WELD_TABLE_SELECT, sourceMetadata: generatedDocuments.sourceMetadata })
+        .select(WELD_TABLE_SELECT)
         .from(generatedDocumentWeldJoints)
         .innerJoin(
           generatedDocuments,
@@ -318,10 +344,6 @@ async function loadSystemDocumentRowSource(data: SystemDocumentReference) {
           asc(weldJoints.line),
           asc(weldJoints.joint),
         )
-        .then((records) => {
-          sourceMetadata = records[0]?.sourceMetadata ?? null
-          return records.map(({ sourceMetadata: _sourceMetadata, ...record }) => record)
-        })
     : await db
         .select(WELD_TABLE_SELECT)
         .from(weldJoints)
@@ -334,14 +356,13 @@ async function loadSystemDocumentRowSource(data: SystemDocumentReference) {
         )
 
   return {
-    db,
     rows: rows as WeldRow[],
     metadata: parseSystemDocumentMetadata(sourceMetadata),
   }
 }
 
 async function findSourcedSystemDocumentId(
-  db: ReturnType<typeof requireDb>,
+  db: Pick<ReturnType<typeof requireDb>, 'select'>,
   reference: SystemDocumentReference,
   storageType: string,
 ) {
@@ -438,6 +459,12 @@ export async function upsertSourcedSystemDocumentsInTransaction({
       .where(buildNumberArrayMatch(generatedDocumentWeldJoints.documentId, candidateIds))
     : []
   const candidatesByLookupKey = new Map<string, typeof candidates>()
+  const assignmentsByDocument = new Map<number, typeof existingAssignments>()
+  for (const assignment of existingAssignments) {
+    const group = assignmentsByDocument.get(assignment.documentId) ?? []
+    group.push(assignment)
+    assignmentsByDocument.set(assignment.documentId, group)
+  }
   for (const candidate of candidates) {
     const key = sourcedSystemDocumentLookupKey(candidate.type, candidate.title, candidate.periodFrom ?? '')
     const current = candidatesByLookupKey.get(key) ?? []
@@ -468,7 +495,7 @@ export async function upsertSourcedSystemDocumentsInTransaction({
       ...legacyPrimaryDocuments.filter((document) => document.id !== sourcedExisting?.id),
     ]
     const mergedDocumentIds = new Set(mergedDocuments.map((document) => document.id))
-    const assignments = existingAssignments.filter((assignment) => mergedDocumentIds.has(assignment.documentId))
+    const assignments = [...mergedDocumentIds].flatMap(id => assignmentsByDocument.get(id) ?? [])
     const existingMetadata = parseSystemDocumentMetadata(existing?.sourceMetadata)
     const rowIds = [...new Set([
       ...assignments.map((assignment) => assignment.weldJointId),
@@ -621,7 +648,10 @@ export async function persistSourcedSystemDocumentUpsertPlans(
 ) {
   const documentIdsByScope = new Map<string, number>()
   const existingPlans = plans.filter((plan) => plan.targetDocumentId != null)
-  if (existingPlans.length > 0) {
+  // Metadata contains every source position. Bound parameter/RETURNING copies
+  // in the driver without changing the one enclosing atomic transaction.
+  for (let offset = 0; offset < existingPlans.length; offset += 100) {
+    const batch = existingPlans.slice(offset, offset + 100)
     await tx.execute(sql`
       update "generated_documents" as document
       set
@@ -630,18 +660,19 @@ export async function persistSourcedSystemDocumentUpsertPlans(
         "source_metadata" = refreshed.source_metadata,
         "updated_at" = ${now}
       from unnest(
-        ${sql.param(existingPlans.map((plan) => plan.targetDocumentId!))}::integer[],
-        ${sql.param(existingPlans.map((plan) => plan.summary.fileName))}::text[],
-        ${sql.param(existingPlans.map((plan) => plan.rowIds.length))}::integer[],
-        ${sql.param(existingPlans.map((plan) => plan.sourceMetadata))}::text[]
+        ${sql.param(batch.map((plan) => plan.targetDocumentId!))}::integer[],
+        ${sql.param(batch.map((plan) => plan.summary.fileName))}::text[],
+        ${sql.param(batch.map((plan) => plan.rowIds.length))}::integer[],
+        ${sql.param(batch.map((plan) => plan.sourceMetadata))}::text[]
       ) as refreshed(id, file_name, row_count, source_metadata)
       where document."id" = refreshed.id
     `)
-    existingPlans.forEach((plan) => documentIdsByScope.set(plan.scopeKey, plan.targetDocumentId!))
+    batch.forEach((plan) => documentIdsByScope.set(plan.scopeKey, plan.targetDocumentId!))
   }
 
   const newPlans = plans.filter((plan) => plan.targetDocumentId == null)
-  if (newPlans.length > 0) {
+  for (let offset = 0; offset < newPlans.length; offset += 100) {
+    const batch = newPlans.slice(offset, offset + 100)
     const insertedResult = await tx.execute(sql`
       insert into "generated_documents" (
         "type",
@@ -663,12 +694,12 @@ export async function persistSourcedSystemDocumentUpsertPlans(
         source.row_count,
         source.source_metadata
       from unnest(
-        ${sql.param(newPlans.map((plan) => plan.storageType))}::text[],
-        ${sql.param(newPlans.map((plan) => plan.summary.title))}::text[],
-        ${sql.param(newPlans.map((plan) => plan.summary.fileName))}::text[],
-        ${sql.param(newPlans.map((plan) => plan.summary.date || null))}::date[],
-        ${sql.param(newPlans.map((plan) => plan.rowIds.length))}::integer[],
-        ${sql.param(newPlans.map((plan) => plan.sourceMetadata))}::text[]
+        ${sql.param(batch.map((plan) => plan.storageType))}::text[],
+        ${sql.param(batch.map((plan) => plan.summary.title))}::text[],
+        ${sql.param(batch.map((plan) => plan.summary.fileName))}::text[],
+        ${sql.param(batch.map((plan) => plan.summary.date || null))}::date[],
+        ${sql.param(batch.map((plan) => plan.rowIds.length))}::integer[],
+        ${sql.param(batch.map((plan) => plan.sourceMetadata))}::text[]
       ) as source(type, title, file_name, period_date, row_count, source_metadata)
       returning
         "id",
@@ -695,7 +726,7 @@ export async function persistSourcedSystemDocumentUpsertPlans(
         document.id,
       )
     }
-    for (const plan of newPlans) {
+    for (const plan of batch) {
       if (!documentIdsByScope.has(plan.scopeKey)) {
         throw new Error('Не удалось сопоставить созданный системный документ.')
       }
@@ -941,6 +972,7 @@ export async function syncSystemDocumentsForWeldChangesInTransaction(
   tx: SystemDocumentSequenceTransaction,
   currentRows: Array<Partial<WeldRow> & Pick<WeldRow, 'id'>>,
   previousRows: ReadonlyMap<number, Partial<WeldRow> & Pick<WeldRow, 'id'>>,
+  options: { documentNamesOnly?: boolean } = {},
 ) {
   const rowIds = new Set<number>([
     ...currentRows.map((row) => Number(row.id)),
@@ -948,6 +980,12 @@ export async function syncSystemDocumentsForWeldChangesInTransaction(
   ])
   if (rowIds.size === 0) return
 
+  if (!options.documentNamesOnly) {
+    await syncProgramChainStates(tx, currentRows, previousRows)
+  }
+  // Layered title constructors can include an ordinary NK document name.
+  // Refresh this bounded set even when only names changed; unlike sourced
+  // metadata below, these titles really can depend on the changed values.
   await syncLayeredControlDocumentsForWeldChangesInTransaction(tx, currentRows, previousRows)
 
   const changes = SYSTEM_DOCUMENT_INDEX_LOCK_ORDER.flatMap((type) => {
@@ -979,7 +1017,9 @@ export async function syncSystemDocumentsForWeldChangesInTransaction(
       affectedRowIds: rowIds,
     })
   }
-  await refreshSourcedSystemDocumentMetadataInTransaction(tx, [...rowIds])
+  // A names-only rebuild recreates its exact sourced documents separately.
+  // It changes no line/project/weld date used by other source metadata.
+  if (!options.documentNamesOnly) await refreshSourcedSystemDocumentMetadataInTransaction(tx, [...rowIds])
 }
 
 async function refreshSourcedSystemDocumentMetadataInTransaction(
@@ -1021,10 +1061,11 @@ async function refreshSourcedSystemDocumentMetadataInTransaction(
       .where(buildNumberArrayMatch(weldJoints.id, sourceRowIds))
     : []
 
+  const rowsById = new Map(rows.map(row => [row.id, row]))
   const changes = sourcedDocuments.map(({ document, metadata }) => {
     const summary = buildSourcedSystemDocumentMetadataSummary({
       sourcePositions: metadata.sourcePositions,
-      rows,
+      rowsById,
     })
     if (summary.sourcePositions.length === 0) {
       return { documentId: document.id, rowIds: [], sourceMetadata: document.sourceMetadata ?? '' }
@@ -1432,18 +1473,12 @@ function getStoredDocumentLogicalKey(
   })
 }
 
-function buildGeneratedDocumentReferenceWhere(references: SystemDocumentReference[]) {
-  const clauses = references.map((reference) =>
-    and(
-      eq(
-        generatedDocuments.type,
-        systemDocumentStorageType(getSystemDocumentTemplateId(reference)),
-      ),
-      eq(generatedDocuments.title, reference.title),
-      sql`coalesce(${generatedDocuments.periodFrom}::text, '') = ${reference.date}`,
-    ),
-  )
-  return clauses.length > 0 ? or(...clauses) : undefined
+export function buildGeneratedDocumentReferenceWhere(references: SystemDocumentReference[]) {
+  return references.length ? buildSourcedSystemDocumentCandidateWhere(references.map(reference => ({
+    storageType: systemDocumentStorageType(getSystemDocumentTemplateId(reference)),
+    title: reference.title,
+    date: reference.date,
+  }))) : undefined
 }
 
 async function loadSystemDocumentRowsForReferences(
@@ -1451,7 +1486,7 @@ async function loadSystemDocumentRowsForReferences(
   type: SystemDocumentType,
   references: SystemDocumentReference[],
 ) {
-  const where = or(...references.map(buildSystemDocumentWhere)) ?? sql`false`
+  const where = buildSystemDocumentReferencesWhere(references)
   if (type === 'lnkRequest') {
     return db.select(LNK_REQUEST_HISTORY_SELECT).from(weldJoints).where(where)
   }
@@ -1462,6 +1497,27 @@ async function loadSystemDocumentRowsForReferences(
     return db.select(PSTO_REQUEST_HISTORY_SELECT).from(weldJoints).where(where)
   }
   return db.select(PSTO_CONCLUSION_HISTORY_SELECT).from(weldJoints).where(where)
+}
+
+export function buildSystemDocumentReferencesWhere(references: readonly SystemDocumentReference[]): SQL {
+  const groups = new Map<string, DocumentReferenceColumns & { references: SystemDocumentReference[] }>()
+  for (const reference of references) for (const columns of getDocumentReferenceColumns(reference)) {
+    const group = groups.get(columns.title.name)
+    if (group) group.references.push(reference)
+    else groups.set(columns.title.name, { ...columns, references: [reference] })
+  }
+  // Pair membership, not independent name/date filters: equal names on other
+  // dates must not join this document. The SQL grows only with method count,
+  // never with the number of renamed documents or welds.
+  return or(...[...groups.values()].map(group => sql`
+    (btrim(coalesce(${group.title}, '')), coalesce(${group.date}::text, '')) in (
+      select lookup.title, lookup.document_date
+      from unnest(
+        ${sql.param(group.references.map(reference => reference.title))}::text[],
+        ${sql.param(group.references.map(reference => reference.date))}::text[]
+      ) as lookup(title, document_date)
+    )
+  `)) ?? sql`false`
 }
 
 async function isSystemDocumentIndexInitialized(
@@ -1975,13 +2031,16 @@ function toIndexedSystemDocumentHistorySummary(
 export async function loadIndexedSystemDocumentSummaries(
   tx: SystemDocumentSequenceTransaction,
   type: SystemDocumentType,
+  selectedDocumentIds?: number[],
 ): Promise<SystemDocumentSummary[]> {
   const storageTypes = getSystemDocumentStorageTypes(type)
   if (storageTypes.length === 0) return []
+  if (selectedDocumentIds?.length === 0) return []
   const documents = await tx
     .select()
     .from(generatedDocuments)
-    .where(inArray(generatedDocuments.type, storageTypes))
+    .where(and(inArray(generatedDocuments.type, storageTypes), selectedDocumentIds
+      ? buildNumberArrayMatch(generatedDocuments.id, selectedDocumentIds) : undefined))
   if (documents.length === 0) return []
   const documentIds = documents.map((document) => document.id)
   const assignments = documentIds.length > 0
@@ -2225,6 +2284,7 @@ function includesCycleSequences(available: readonly unknown[] | undefined, reque
 async function overlaySourcedSystemDocumentRows(
   rows: Array<WeldRow & Pick<WeldRow, 'preHeatTreatmentControls'>>,
   metadata: SystemDocumentMetadata,
+  db: Pick<ReturnType<typeof requireDb>, 'select'>,
 ) {
   if (metadata.sourceKind === 'beforeHeatTreatment') {
     const relationIds = new Set(metadata.sourcePositions
@@ -2238,7 +2298,6 @@ async function overlaySourcedSystemDocumentRows(
     ))
   }
 
-  const db = requireDb()
   if (metadata.sourceKind === 'pstoCycle') {
     const repeatRelationIds = metadata.sourcePositions
       .filter((position) => position.kind === 'pstoCycle' && Number(position.sequence) >= 2)
@@ -2365,39 +2424,31 @@ export function systemDocumentStorageType(templateId: string) {
 }
 
 function buildSystemDocumentWhere(reference: SystemDocumentReference): SQL {
+  return or(...getDocumentReferenceColumns(reference).map(columns => and(
+    textEquals(columns.title, reference.title), dateEquals(columns.date, reference.date),
+  ))) ?? sql`false`
+}
+
+type DocumentReferenceColumns = { title: SQLWrapper & { name: string }; date: SQLWrapper }
+
+function getDocumentReferenceColumns(reference: SystemDocumentReference): DocumentReferenceColumns[] {
   if (reference.type === 'lnkRequest') {
     const requestMethods = reference.methodCode === 'ТВМТ'
       ? LNK_METHODS.filter((method) => method.code === 'ТВМТ')
       : LNK_METHODS.filter((method) => method.code !== 'ТВМТ')
-    const conditions = requestMethods.map((method) =>
-      and(
-        textEquals(weldJoints[method.requestKey], reference.title),
-        dateEquals(weldJoints[method.requestDateKey], reference.date),
-      ),
-    )
-    return or(...conditions) ?? sql`false`
+    return requestMethods.map(method => ({ title: weldJoints[method.requestKey], date: weldJoints[method.requestDateKey] }))
   }
 
   if (reference.type === 'lnkConclusion') {
     const method = LNK_METHODS.find((candidate) => candidate.code === reference.methodCode)
-    if (!method) return sql`false`
-    return and(
-      textEquals(weldJoints[method.conclusionKey], reference.title),
-      dateEquals(weldJoints[method.conclusionDateKey], reference.date),
-    ) ?? sql`false`
+    return method ? [{ title: weldJoints[method.conclusionKey], date: weldJoints[method.conclusionDateKey] }] : []
   }
 
   if (reference.type === 'pstoRequest') {
-    return and(
-      textEquals(weldJoints.pstoRequest, reference.title),
-      dateEquals(weldJoints.pstoRequestDate, reference.date),
-    ) ?? sql`false`
+    return [{ title: weldJoints.pstoRequest, date: weldJoints.pstoRequestDate }]
   }
 
-  return and(
-    textEquals(weldJoints.heatTreatmentDiagram, reference.title),
-    dateEquals(weldJoints.pstoDate, reference.date),
-  ) ?? sql`false`
+  return [{ title: weldJoints.heatTreatmentDiagram, date: weldJoints.pstoDate }]
 }
 
 function hasAnyLnkRequest() {

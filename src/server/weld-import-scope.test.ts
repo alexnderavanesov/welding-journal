@@ -4,11 +4,12 @@ import { WELD_IMPORT_MAX_ROWS } from '@/lib/weld-import-limits'
 
 const testState = vi.hoisted(() => ({
   select: vi.fn(),
+  transaction: vi.fn(async (run: (tx: unknown) => unknown) => run({ select: testState.select })),
   assertSecurityScope: vi.fn(async () => undefined),
 }))
 
 vi.mock('@/db', () => ({
-  requireDb: () => ({ select: testState.select }),
+  requireDb: () => ({ select: testState.select, transaction: testState.transaction }),
 }))
 
 vi.mock('@/lib/wdi', () => ({
@@ -29,7 +30,6 @@ vi.mock('@/server/weld-server-shared', async (importOriginal) => {
     ...actual,
     applyCurrentSystemWdi: (rows: unknown[]) => rows,
     buildWhere: () => undefined,
-    getColumnFilterOptionFilters: (filters: unknown) => filters,
     hasDispatcherTaskServerFilter: () => false,
     loadServerOtherSettings: vi.fn(async () => ({})),
   }
@@ -59,5 +59,8 @@ describe('welding journal import scope query lifecycle', () => {
 
     expect(testState.select).toHaveBeenCalledTimes(1)
     expect(where).toHaveBeenCalledTimes(1)
+    expect(testState.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: 'repeatable read', accessMode: 'read only',
+    })
   })
 })

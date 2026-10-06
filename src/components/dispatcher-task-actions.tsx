@@ -16,6 +16,7 @@ import type {
   RepeatedJointRenameTask,
 } from '@/lib/dispatcher-types'
 import { isUnofficialJoint } from '@/lib/joint-display'
+import { getUnofficialDuplicateControlBlockReason } from '@/lib/duplicate-control-officiality'
 import {
   canOpenDispatcherTaskPicture,
   getDispatcherTaskActionSpecs,
@@ -75,6 +76,8 @@ export function RepeatedJointTaskActions({
   isRenamePending,
 }: RepeatedJointTaskActionsProps) {
   if (task.kind === 'welder-stamp-expiry') return null
+  const officialityBlockReason = !isUnofficialJoint(task.row)
+    ? getUnofficialDuplicateControlBlockReason(task.row) : null
 
   return (
     <div data-dispatcher-task-actions className={`${workspace ? 'flex w-full min-w-0 flex-wrap items-center gap-1.5 [&_button]:h-auto [&_button]:min-h-7 [&_button]:max-w-full [&_button]:whitespace-normal [&_button]:py-1 [&_button]:text-left [&_button]:leading-4' : 'flex shrink-0 items-center gap-1.5 px-2 py-1.5'} ${className ?? ''}`}>
@@ -91,6 +94,8 @@ export function RepeatedJointTaskActions({
             size="sm"
             variant="outline"
             onClick={() => onOpenTaskOfficiality(task)}
+            disabled={Boolean(officialityBlockReason)}
+            title={officialityBlockReason ?? undefined}
             className={workspace ? dispatcherPrimaryActionButtonClass : dispatcherActionButtonClass}
             aria-label={isUnofficialJoint(task.row)
               ? `Сделать ${String(task.row.joint ?? '-')} официальным`
@@ -125,7 +130,7 @@ export function RepeatedJointTaskActions({
             {workspace ? `Переименовать в ${task.targetJoint}` : 'Переименовать'}
           </Button>
         </>
-      ) : task.kind === 'percentage-line-control' && task.issue === 'rejected-primary' ? (
+      ) : task.kind === 'percentage-line-control' && task.issue === 'rejected-rows' ? (
         <WorkspaceOrMenuActions workspace={workspace} items={[
             {
               label: 'Принять',
@@ -173,7 +178,7 @@ export function RepeatedJointTaskActions({
           onShowTask={onShowTask}
           workspace={workspace}
         />
-      ) : task.kind === 'line-consistency' && task.fieldKey === 'pstoPresence' ? (
+      ) : task.kind === 'line-consistency' ? (
         <ModeledDispatcherActions
           task={task}
           actions={getDispatcherTaskActionSpecs(task)}
@@ -255,6 +260,8 @@ function WorkspaceOrMenuActions({ workspace, items }: { workspace: boolean; item
       variant="outline"
       className={item.tone === 'danger' ? dispatcherDangerActionButtonClass : dispatcherPrimaryActionButtonClass}
       onClick={item.onClick}
+      disabled={Boolean(item.disabledReason)}
+      title={item.disabledReason}
     >
       {item.label}
     </Button>
@@ -280,6 +287,7 @@ function ModeledDispatcherActions({
   const [primaryAction, ...secondaryActions] = workflowActions
   if (!primaryAction) return null
   const run = (action: DispatcherTaskActionSpec) => {
+    if (action.disabledReason) return
     if (action.id === 'show-task') onShowTask(task)
     else onRunTaskAction(task, action)
   }
@@ -293,6 +301,8 @@ function ModeledDispatcherActions({
         variant="outline"
         className={action.tone === 'danger' ? dispatcherDangerActionButtonClass : dispatcherPrimaryActionButtonClass}
         onClick={() => run(action)}
+        disabled={Boolean(action.disabledReason)}
+        title={action.disabledReason}
       >
         {action.label}
       </Button>
@@ -305,6 +315,7 @@ function ModeledDispatcherActions({
         triggerLabel="Исправить"
         items={workflowActions.map((action) => ({
           label: action.label,
+          disabledReason: action.disabledReason,
           onClick: () => run(action),
         }))}
       />
@@ -318,6 +329,8 @@ function ModeledDispatcherActions({
         size="sm"
         variant={primaryAction.tone === 'primary' ? 'default' : 'outline'}
         onClick={() => run(primaryAction)}
+        disabled={Boolean(primaryAction.disabledReason)}
+        title={primaryAction.disabledReason}
         className={primaryAction.tone === 'primary'
           ? dispatcherPrimaryActionButtonClass
           : dispatcherStandaloneActionButtonClass}
@@ -328,6 +341,7 @@ function ModeledDispatcherActions({
         <DispatcherActionMenu
           items={secondaryActions.map((action) => ({
             label: action.label,
+            disabledReason: action.disabledReason,
             onClick: () => run(action),
           }))}
         />
@@ -341,6 +355,7 @@ export type DispatcherActionMenuItem = {
   label: string
   onClick: () => void
   tone?: DispatcherTaskActionSpec['tone']
+  disabledReason?: string
 }
 
 export function DispatcherActionMenu({
@@ -467,6 +482,8 @@ export function DispatcherActionMenu({
               key={item.key ?? item.label}
               type="button"
               role="menuitem"
+              disabled={Boolean(item.disabledReason)}
+              title={item.disabledReason}
               className={`block w-full px-3 py-2 text-left text-xs font-medium hover:bg-slate-50 ${
                 item.tone === 'danger' ? 'text-rose-700 hover:bg-rose-50' : 'text-slate-700'
               }`}

@@ -12,6 +12,8 @@ import { encodeIdentityKey } from '@/lib/identity-key'
 export const RESULT_STATUS_OPTIONS = ['годен', 'ремонт', 'вырез', 'ожидает', 'ожидает НК', 'ожидает заявку'] as const
 export const PSTO_RESULT_STATUS_OPTIONS = ['проведено'] as const
 export const FINAL_STATUS_OPTIONS = ['годен', 'не годен', 'не годен по дублю', 'ожидает сварку', 'ожидает ремонт', 'ожидает заявку', 'ожидает НК', 'ошибка'] as const
+const resultStatusByText = new Map(RESULT_STATUS_OPTIONS.map(status => [status.toLowerCase(), status]))
+const finalStatusByText = new Map(FINAL_STATUS_OPTIONS.map(status => [status.toLowerCase(), status]))
 export const RESULT_FIELD_KEYS = new Set<WeldFieldKey>([
   'vikResult',
   'rkResult',
@@ -61,6 +63,8 @@ export function calculateFinalStatus(record: WeldInput) {
   if (hasResultWithoutEnabledControl) return 'ошибка'
 
   if (hasRejectedDuplicateControl(record)) return 'не годен по дублю'
+  // Cancellation never erases a factual rejection of this joint.
+  if (CONTROL_RESULT_PAIRS.some(({ resultKey }) => ['ремонт', 'вырез'].includes(normalizeResultStatus(record[resultKey]) ?? ''))) return 'не годен'
 
   if (!hasText(record.weldDate)) return getPendingWeldFinalStatus(record)
 
@@ -122,21 +126,19 @@ export function getFinalStatusErrorReason(record: WeldInput) {
 }
 
 export function normalizeResultStatus(value: unknown) {
-  const text = String(value ?? '').trim().toLowerCase()
+  const text = String(value ?? '').trim().toLowerCase().replace(/ · назначение отменено$/, '')
   if (text === 'да') return 'годен'
   if (text === 'проведено') return 'годен'
   if (text === 'годен (отменен)') return 'годен'
   if (text === 'проведено (отменен)') return 'годен'
-  const option = RESULT_STATUS_OPTIONS.find((status) => status.toLowerCase() === text)
-  return option ?? null
+  return resultStatusByText.get(text) ?? null
 }
 
 export function normalizeFinalStatus(value: unknown) {
   const text = String(value ?? '').trim().toLowerCase()
   if (text === 'ожидает') return 'ожидает НК'
   if (text === 'не годен по дублю') return 'не годен'
-  const option = FINAL_STATUS_OPTIONS.find((status) => status.toLowerCase() === text)
-  return option ?? null
+  return finalStatusByText.get(text) ?? null
 }
 
 export function hasRejectedControlResult(record: WeldInput) {

@@ -13,6 +13,7 @@ export type ReportShowMenuProps = {
   items: ReportShowMenuItem[]
   widthClassName?: string
   buttonClassName?: string
+  disabled?: boolean
 }
 
 export function ReportShowMenu({
@@ -22,10 +23,11 @@ export function ReportShowMenu({
   items,
   widthClassName = 'w-52',
   buttonClassName,
+  disabled,
 }: ReportShowMenuProps) {
   return (
-    <div className="relative">
-      <Button variant="outline" onClick={onToggle} className={buttonClassName}>
+    <div className="relative" data-report-show-menu>
+      <Button variant="outline" onClick={onToggle} className={buttonClassName} disabled={disabled} aria-expanded={isOpen}>
         {label}
         <ChevronDown className="ml-2 h-4 w-4" />
       </Button>

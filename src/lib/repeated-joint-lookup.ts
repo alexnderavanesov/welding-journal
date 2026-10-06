@@ -62,7 +62,7 @@ export function buildRepeatedJointLookup(
     }
   }
 
-  const findRepeatedJointTarget = (sourceRow: WeldInput, joint: string) => {
+  const findRepeatedJointTarget = (sourceRow: WeldInput, joint: string, options: { officialOnly?: boolean } = {}) => {
     const targetIdentity = getRepeatedJointIdentity(sourceRow, joint)
     if (!targetIdentity) return null
     const sourceId = typeof (sourceRow as { id?: unknown }).id === 'number'
@@ -78,7 +78,7 @@ export function buildRepeatedJointLookup(
       .get(identityKey(targetIdentity))
       ?.find((row) => (
         (sourceId === null || row.id !== sourceId) &&
-        (!needsOfficialSameNameTarget || !isUnofficialJoint(row))
+        (!(needsOfficialSameNameTarget || options.officialOnly) || !isUnofficialJoint(row))
       )) ?? null
   }
 

@@ -1,10 +1,12 @@
 import { HeatTreatmentHeaderActions, LnkHeaderActions, WeldingJournalHeaderActions } from '@/components/report-header-action-groups'
 import type { ActiveReport } from '@/lib/home-state'
+import { Button } from '@/components/ui/button'
 
 export type ReportHeaderActionsProps = {
   activeReport: ActiveReport
   onOpenImportDialog: () => void
   onCreateWeldJoint: () => void
+  onOpenLineProgram?: () => void
   importDisabled: boolean
   isWeldingJournalShowMenuOpen: boolean
   onToggleWeldingJournalShowMenu: () => void
@@ -71,6 +73,7 @@ export function ReportHeaderActions({
   activeReport,
   onOpenImportDialog,
   onCreateWeldJoint,
+  onOpenLineProgram,
   importDisabled,
   isWeldingJournalShowMenuOpen,
   onToggleWeldingJournalShowMenu,
@@ -134,6 +137,7 @@ export function ReportHeaderActions({
 }: ReportHeaderActionsProps) {
   return (
     <div className="flex flex-wrap gap-2 lg:pt-0.5">
+      {activeReport === 'weldingJournal' && onOpenLineProgram ? <Button variant="outline" onClick={onOpenLineProgram}>Программа линий</Button> : null}
       {activeReport === 'heatTreatment' ? (
         <HeatTreatmentHeaderActions
           onOpenLineProgram={onOpenPstoLineProgram}

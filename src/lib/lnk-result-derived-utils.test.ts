@@ -22,6 +22,7 @@ const baseDraft: LnkResultDraftState = {
   rowIds: new Set([1]),
   result: 'годен',
   rowResults: {},
+  layeredControlRowIds: new Set(),
   controlDate: '2026-07-01',
   conclusionNaming: {
     mode: 'system',
@@ -55,6 +56,15 @@ const rkExposureTable = {
 }
 
 describe('getLnkResultSaveBlockReason', () => {
+  it.each(['вырез', '__empty__'])('blocks an invalid result for a newly checked layered joint: %s', (result) => {
+    const row = { ...baseRow, connectionType: 'У19', hasPvk: 'да', pvkRequest: 'ПВК-1', pvkRequestDate: '2026-07-03' } as WeldRow
+    const reason = getLnkResultSaveBlockReason({
+      draft: { ...baseDraft, methodKey: 'pvkRequest', result, controlDate: '2026-07-04', layeredControlRowIds: new Set([1]) },
+      selectedRows: [row], isSaving: false, nextConclusionName: 'ПВК-1',
+    })
+    expect(reason).toMatch(/послойно|Послойно/)
+  })
+
   it('does not expose a result method when every requested control is complete', () => {
     const completeRow = {
       ...baseRow,
@@ -93,7 +103,7 @@ describe('getLnkResultSaveBlockReason', () => {
         nextConclusionName: 'Заключение-001',
         selectedRows: [baseRow],
       }),
-    ).toContain('Дата контроля РК не может быть раньше даты сварки')
+    ).toContain('Дата контроля РК (01.07.2026) не может быть раньше даты сварки (03.07.2026)')
   })
 
   it('allows LNK control date before weld date when the check is disabled', () => {
@@ -108,7 +118,7 @@ describe('getLnkResultSaveBlockReason', () => {
           lnkResultRequestDateOrder: false,
           lnkResultVikDateBeforeOther: false,
         },
-        selectedRows: [baseRow],
+        selectedRows: [{ ...baseRow, vikConclusionDate: '2026-07-01' }],
       }),
     ).toBe('')
   })

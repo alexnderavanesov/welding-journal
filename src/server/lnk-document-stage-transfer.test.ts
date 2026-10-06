@@ -1,10 +1,35 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '@/lib/control-process-settings'
 import {
+  buildPositionPreview,
   normalizeLnkDocumentStageTransferReference,
   persistPrimaryStageRows,
 } from '@/server/lnk-document-stage-transfer'
+
+describe('existing rejected stage package', () => {
+  const control = { id: 8, weldJointId: 1, method: 'ВИК', result: 'ремонт',
+    requestName: 'ВИК до ТО', requestDate: '2026-09-10', conclusionName: 'Брак', conclusionDate: '2026-09-11' }
+  const row = { id: 1, joint: 'S1', hasVik: 'да', pstoRequired: 'нет',
+    preHeatTreatmentControls: [control] } as WeldRow
+  const preview = (candidate: WeldRow) => buildPositionPreview({ row: candidate, control,
+    position: { rowId: 1, methodCode: 'ВИК' }, sourceStage: 'beforeHeatTreatment',
+    processSettings: DEFAULT_CONTROL_PROCESS_SETTINGS })
+
+  it('allows relocating the unchanged rejected package when the resulting stage is valid', () => {
+    expect(preview(row)).toMatchObject({ disabledReason: null, source: { result: 'ремонт', conclusionName: 'Брак' } })
+    expect(row.preHeatTreatmentControls).toEqual([control])
+  })
+  it('still checks the target and other remaining rejected pre-TO methods', () => {
+    expect(preview({ ...row, vikResult: 'годен' }).disabledReason).toContain('уже заполнен')
+    expect(preview({ ...row, hasUzk: 'да', preHeatTreatmentControls: [control,
+      { id: 9, weldJointId: 1, method: 'УЗК', result: 'вырез' }] }).disabledReason).toBeTruthy()
+  })
+  it('does not remove prerequisites on a line that still requires heat treatment', () => {
+    expect(preview({ ...row, pstoRequired: 'да' }).disabledReason).toBeTruthy()
+  })
+})
 
 describe('LNK document stage transfer request', () => {
   const reference = {

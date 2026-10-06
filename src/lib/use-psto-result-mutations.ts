@@ -14,7 +14,7 @@ import {
   getPstoFieldHighlightFields,
   PSTO_RESULT_HIGHLIGHT_FIELDS,
 } from '@/lib/psto-report-mutation-highlight-fields'
-import { invalidateWeldJoints } from '@/lib/weld-query-utils'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import { updateWeldRowOrThrow, updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
@@ -91,7 +91,7 @@ export function usePstoResultMutations({
       setMessage(`Результат ПСТО внесен для стыков: ${savedRows.length}`)
       setIsPstoResultModalOpen(false)
       setPstoResultDraft(createDefaultPstoResultDraft(defaultPstoConclusionNaming))
-      await invalidateWeldJoints(queryClient, { upsertRows: savedRows })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: savedRows })
       await queryClient.invalidateQueries({ queryKey: ['system-document-sequences'] })
       onWorkflowCorrectionSaved?.()
     },
@@ -122,7 +122,7 @@ export function usePstoResultMutations({
     onSuccess: async (saved, variables) => {
       highlightChangedRows(saved ? [saved] : [], [...PSTO_RESULT_HIGHLIGHT_FIELDS])
       setMessage(variables.action === 'deleteResult' ? 'Результат ПСТО удален' : 'Диаграмма ПСТО переименована')
-      await invalidateWeldJoints(queryClient, { upsertRows: [saved] })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: [saved] })
       onWorkflowCorrectionSaved?.()
     },
     onError: (error) => {
@@ -154,7 +154,7 @@ export function usePstoResultMutations({
       highlightChangedRows(saved ? [saved] : [], getPstoFieldHighlightFields(variables.fieldKey))
       setMessage(`${variables.fieldKey === 'pstoDate' ? 'Дата ПСТО' : 'Поле ПСТО'} обновлено`)
       setHeatTreatmentFieldEditing(null)
-      await invalidateWeldJoints(queryClient, { upsertRows: [saved] })
+      scheduleWeldDataRefresh(queryClient, { upsertRows: [saved] })
     },
     onError: (error) => {
       setMessage((error as Error).message)

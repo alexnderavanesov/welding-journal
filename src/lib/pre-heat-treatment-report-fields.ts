@@ -1,3 +1,5 @@
+import { getCancelledLnkResultDisplay, isCancelledControlValue } from './report-value-utils'
+import { PRE_HEAT_TREATMENT_LNK_METHODS } from './lnk-control-stage'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   getPreHeatTreatmentControl,
@@ -84,6 +86,7 @@ export function getPreHeatTreatmentReportValue(row: WeldInput, fieldKey: WeldFie
   const field = getPreHeatTreatmentReportField(fieldKey)
   if (!field) return undefined
   const control = getPreHeatTreatmentControl(row, field.methodCode)
+  if (field.valueKey === 'result' && isCancelledControlValue(row[PRE_HEAT_TREATMENT_LNK_METHODS.find(method => method.code === field.methodCode)!.enabledKey])) return getCancelledLnkResultDisplay(control?.result)
   if (field.valueKey === 'result' && isPreHeatTreatmentMethodNoNeed(row, field.methodCode)) {
     return 'нет потребности'
   }

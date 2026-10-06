@@ -1,5 +1,8 @@
-import { useEffect, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useEffect, useState, type ReactNode } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
+import { decodeRebuildPreview } from '@/lib/system-document-rebuild-transport'
+import type { RebuildCursor } from '@/lib/system-document-rebuild-batch'
 import { AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react'
 
 import { DialogHeader } from '@/components/dialog-header'
@@ -32,10 +35,15 @@ export function SystemDocumentRebuildDialog({
   onClose: () => void
   onApplied: (message: string) => void
 }) {
+  const queryClient = useQueryClient()
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<Set<SystemDocumentTemplateId>>(new Set())
   const [decisions, setDecisions] = useState<Record<number, SystemDocumentRebuildCustomDecision>>({})
+  const [cursor, setCursor] = useState<RebuildCursor | undefined>()
+  const [batchNumber, setBatchNumber] = useState(1)
+  const [saved, setSaved] = useState('')
+  const [blocked, setBlocked] = useState<Array<{ documentId: number; title: string; reason: string }>>([])
   const previewMutation = useMutation({
-    mutationFn: () => previewSystemDocumentRebuild({ data: {} }),
+    mutationFn: async (nextCursor: RebuildCursor | undefined) => decodeRebuildPreview(await previewSystemDocumentRebuild({ data: { cursor: nextCursor } })),
   })
   const applyMutation = useMutation({
     mutationFn: (data: Parameters<typeof applySystemDocumentRebuild>[0]['data']) =>
@@ -46,13 +54,24 @@ export function SystemDocumentRebuildDialog({
     if (!open) return
     setSelectedTemplateIds(new Set())
     setDecisions({})
+    setCursor(undefined)
+    setBatchNumber(1)
+    setSaved('')
+    setBlocked([])
     applyMutation.reset()
-    previewMutation.mutate()
+    previewMutation.mutate(undefined)
   }, [open])
 
   useEffect(() => {
     const preview = previewMutation.data
     if (!preview) return
+    const checkedBatch = preview.batch
+    if (checkedBatch) setCursor(checkedBatch.cursor)
+    if (checkedBatch) setBlocked(current => {
+      const checkedThrough = checkedBatch.nextCursor?.afterId ?? checkedBatch.cursor.throughId
+      const otherPackets = current.filter(item => item.documentId <= checkedBatch.cursor.afterId || item.documentId > checkedThrough)
+      return [...otherPackets, ...checkedBatch.blocked]
+    })
     const configurableTemplateIds = new Set<SystemDocumentTemplateId>(
       CONFIGURABLE_SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map((profile) => profile.id),
     )
@@ -92,13 +111,28 @@ export function SystemDocumentRebuildDialog({
     decisions: selectedDecisions,
   })
   const canApply = Boolean(
-    preview && selectedTemplateIds.size > 0 && changedDocuments.length > 0 && !decisionError && !applyMutation.isPending,
+    preview && selectedTemplateIds.size > 0 && changedDocuments.length > 0 && !decisionError &&
+    !previewMutation.isPending && !previewMutation.isError && !applyMutation.isPending && !saved,
   )
-  const previewError = (previewMutation.error as Error | null)?.message || ''
+  const previewError = previewMutation.error
+    ? rebuildFailureMessage(previewMutation.error, 'Не удалось загрузить пакет. Повторите проверку.') : ''
+  const applyError = applyMutation.error
+    ? rebuildFailureMessage(applyMutation.error, 'Не удалось подтвердить сохранение пакета. Обновите предпросмотр перед повтором. Ранее сохранённые пакеты остаются.') : ''
 
   function refreshPreview() {
     applyMutation.reset()
-    previewMutation.mutate()
+    setSaved('')
+    previewMutation.mutate(cursor)
+  }
+
+  function nextBatch() {
+    const next = preview?.batch?.nextCursor
+    if (!next || applyMutation.isPending) return
+    setCursor(next)
+    setBatchNumber(value => value + 1)
+    setSaved('')
+    applyMutation.reset()
+    previewMutation.mutate(next)
   }
 
   async function handleApply() {
@@ -110,11 +144,15 @@ export function SystemDocumentRebuildDialog({
           fingerprint: preview.fingerprint,
           scopeRevisions: preview.scopeRevisions,
           decisions: selectedDecisions,
+          cursor: preview.batch?.cursor,
         })
+        scheduleWeldDataRefresh(queryClient)
         onApplied(
           `Пересобрано документов: ${result.rebuiltDocumentCount} · затронуто стыков: ${result.affectedRowCount}`,
         )
-        onClose()
+        if (preview.batch?.nextCursor || batchNumber > 1 || blocked.length) {
+          setSaved(`Пакет ${batchNumber} сохранён. Пересобрано документов: ${result.rebuiltDocumentCount}.`)
+        } else onClose()
       })
     } catch {
       // The mutation renders its error inside the confirmation dialog.
@@ -127,6 +165,7 @@ export function SystemDocumentRebuildDialog({
         title="Пересборка системных документов"
         subtitle="Проверьте область и будущую структуру. До нажатия «Применить пересборку» данные не изменяются."
         onClose={onClose}
+        closeDisabled={applyMutation.isPending}
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 px-5 py-5">
@@ -146,6 +185,16 @@ export function SystemDocumentRebuildDialog({
           </div>
         ) : preview ? (
           <div className="space-y-5">
+            {preview.batch ? <section className="rounded-md border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
+              <p className="font-semibold">Пакет {batchNumber}: до {preview.batch.documentLimit} документов, до {preview.batch.positionLimit.toLocaleString('ru-RU')} позиций</p>
+              <p className="mt-1">Все числа ниже относятся только к этому пакету. Документы не обрезаются. Каждый пакет сохраняется целиком отдельным подтверждением; при ошибке или закрытии окна ранее сохранённые пакеты остаются.</p>
+              <p className="mt-1">{preview.batch.nextCursor ? 'Есть следующие документы — после проверки этого пакета перейдите к следующему.' : 'Это последний пакет текущего просмотра.'} Новые документы, появившиеся во время работы, проверяются при новом открытии окна.</p>
+              {saved ? <p role="status" className="mt-2 font-semibold">{saved}</p> : null}
+            </section> : null}
+            {blocked.length ? <section role="alert" className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+              <p className="font-semibold">Не пересобраны из-за объёма: {blocked.length}</p>
+              <RebuildItemsPage items={blocked} label="документы сверх лимита">{items => items.map(item => <p key={item.documentId}>{item.title}: {item.reason}</p>)}</RebuildItemsPage>
+            </section> : null}
             <RebuildSummary
               checked={selectedDocuments.length}
               changed={changedDocuments.length}
@@ -158,6 +207,7 @@ export function SystemDocumentRebuildDialog({
                 <h3 className="text-sm font-semibold text-slate-900">Область пересборки</h3>
                 <p className="mt-1 text-xs leading-5 text-slate-500">
                   По умолчанию выбраны виды, где обнаружено разделение или требуется решение по пользовательскому названию.
+                  {' '}ПСТО/ТВМТ включает первый и все повторные циклы. Номера циклов, даты и результаты сохраняются; НК до ТО не пересобирается.
                 </p>
               </div>
               <div className="grid gap-px bg-slate-200 sm:grid-cols-2">
@@ -169,7 +219,7 @@ export function SystemDocumentRebuildDialog({
                       <input
                         type="checkbox"
                         checked={selectedTemplateIds.has(profile.id)}
-                        disabled={documents.length === 0}
+                        disabled={documents.length === 0 || applyMutation.isPending || Boolean(saved)}
                         onChange={() => setSelectedTemplateIds((current) => {
                           const next = new Set(current)
                           if (next.has(profile.id)) next.delete(profile.id)
@@ -193,6 +243,7 @@ export function SystemDocumentRebuildDialog({
             <CustomNameDecisions
               documents={selectedDocuments.filter((document) => document.requiresCustomNameDecision)}
               decisions={decisions}
+              disabled={applyMutation.isPending || Boolean(saved)}
               onChange={(decision) => setDecisions((current) => ({ ...current, [decision.documentId]: decision }))}
             />
 
@@ -203,7 +254,7 @@ export function SystemDocumentRebuildDialog({
               </div>
               {changedDocuments.length ? (
                 <div className="divide-y divide-slate-100">
-                  {changedDocuments.slice(0, 100).map((document) => {
+                  <RebuildItemsPage items={changedDocuments} label="изменяемые документы">{visibleDocuments => visibleDocuments.map((document) => {
                     const decision = decisions[document.documentId]
                     return (
                       <div key={document.documentId} className="px-4 py-4">
@@ -218,19 +269,22 @@ export function SystemDocumentRebuildDialog({
                           </div>
                           <span className="hidden pt-2 text-slate-400 md:block">→</span>
                           <div className="space-y-1.5">
-                            {document.groups.map((group) => (
+                            <RebuildItemsPage items={document.groups} label={`группы ${document.title}`}>{visibleGroups => visibleGroups.map((group) => (
                               <div key={group.key} className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-sky-950">
                                 <div className="font-semibold">
                                   {document.isSystemName ? group.previewName : decision?.groupNames?.[group.key] || 'Название не указано'}
                                 </div>
                                 <div className="mt-0.5 text-xs text-sky-700">{group.label} · стыков: {group.rowCount}</div>
+                                {group.cycleSequences?.length ? <div className="mt-0.5 text-xs text-sky-700">
+                                  Циклы: {group.cycleSequences.join(', ')}. {group.joints.join('; ')}{group.rowCount > 5 ? '; …' : ''}
+                                </div> : null}
                               </div>
-                            ))}
+                            ))}</RebuildItemsPage>
                           </div>
                         </div>
                       </div>
                     )
-                  })}
+                  })}</RebuildItemsPage>
                 </div>
               ) : (
                 <div className="px-4 py-8 text-center text-sm text-slate-500">
@@ -248,26 +302,41 @@ export function SystemDocumentRebuildDialog({
               </p>
             </div>
 
-            {decisionError ? <p className="text-sm font-medium text-rose-700">{decisionError}</p> : null}
-            {applyMutation.error ? <p className="text-sm font-medium text-rose-700">{(applyMutation.error as Error).message}</p> : null}
           </div>
         ) : null}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 py-4">
-        <Button variant="outline" onClick={refreshPreview} disabled={previewMutation.isPending || applyMutation.isPending}>
-          <RefreshCw className="mr-2 h-4 w-4" />
-          Обновить предпросмотр
-        </Button>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={onClose} disabled={applyMutation.isPending}>Отмена</Button>
-          <Button onClick={handleApply} disabled={!canApply}>
-            {applyMutation.isPending ? 'Применяю...' : 'Применить пересборку'}
+      <div className="shrink-0 border-t border-slate-200 bg-white px-5 py-4">
+        {decisionError || applyError ? <div role="alert" className="mb-3 max-h-[24vh] overflow-y-auto break-words text-sm font-medium text-rose-700">
+          {decisionError ? <p>{decisionError}</p> : null}
+          {applyError ? <p>{applyError}</p> : null}
+        </div> : null}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Button variant="outline" onClick={refreshPreview} disabled={previewMutation.isPending || applyMutation.isPending}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Обновить предпросмотр
           </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose} disabled={applyMutation.isPending}>Отмена</Button>
+            {preview?.batch?.nextCursor ? <Button variant="outline" onClick={nextBatch}
+              disabled={previewMutation.isPending || previewMutation.isError || applyMutation.isPending}>
+              {saved || !changedDocuments.length ? 'Следующий пакет' : 'Пропустить этот пакет'}
+            </Button> : null}
+            <Button onClick={handleApply} disabled={!canApply}>
+              {applyMutation.isPending ? 'Применяю...' : 'Применить пересборку'}
+            </Button>
+          </div>
         </div>
       </div>
     </LargeDialogShell>
   )
+}
+
+function rebuildFailureMessage(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : ''
+  // Keep actionable validation messages, never dump a SQL query/parameters
+  // into the dialog. A failed response alone does not prove transaction rollback.
+  return message && !/Failed query:/i.test(message) ? message : fallback
 }
 
 function RebuildSummary({
@@ -303,10 +372,12 @@ function CustomNameDecisions({
   documents,
   decisions,
   onChange,
+  disabled,
 }: {
   documents: SystemDocumentRebuildPreview['documents']
   decisions: Record<number, SystemDocumentRebuildCustomDecision>
   onChange: (decision: SystemDocumentRebuildCustomDecision) => void
+  disabled: boolean
 }) {
   if (documents.length === 0) return null
   return (
@@ -318,7 +389,7 @@ function CustomNameDecisions({
         </p>
       </div>
       <div className="divide-y divide-slate-100">
-        {documents.map((document) => {
+        <RebuildItemsPage items={documents} label="пользовательские документы">{visibleDocuments => visibleDocuments.map((document) => {
           const decision = decisions[document.documentId] ?? {
             documentId: document.documentId,
             action: 'keep' as const,
@@ -333,11 +404,13 @@ function CustomNameDecisions({
                 </div>
                 <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-1">
                   <DecisionButton
+                    disabled={disabled}
                     active={decision.action === 'keep'}
                     label="Оставить как есть"
                     onClick={() => onChange({ ...decision, action: 'keep' })}
                   />
                   <DecisionButton
+                    disabled={disabled}
                     active={decision.action === 'rebuild'}
                     label="Пересобрать вручную"
                     onClick={() => onChange({ ...decision, action: 'rebuild' })}
@@ -346,10 +419,11 @@ function CustomNameDecisions({
               </div>
               {decision.action === 'rebuild' ? (
                 <div className="mt-3 grid gap-2">
-                  {document.groups.map((group) => (
+                  <RebuildItemsPage items={document.groups} label={`названия ${document.title}`}>{visibleGroups => visibleGroups.map((group) => (
                     <label key={group.key} className="grid gap-1.5 sm:grid-cols-[minmax(180px,0.7fr)_minmax(240px,1.3fr)] sm:items-center">
                       <span className="text-xs font-medium text-slate-600">{group.label} · {group.rowCount} ст.</span>
                       <Input
+                        disabled={disabled}
                         value={decision.groupNames?.[group.key] ?? ''}
                         onChange={(event) => onChange({
                           ...decision,
@@ -361,7 +435,7 @@ function CustomNameDecisions({
                         placeholder="Название нового документа"
                       />
                     </label>
-                  ))}
+                  ))}</RebuildItemsPage>
                 </div>
               ) : (
                 <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
@@ -371,17 +445,39 @@ function CustomNameDecisions({
               )}
             </div>
           )
-        })}
+        })}</RebuildItemsPage>
       </div>
     </section>
   )
 }
 
-function DecisionButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+export function RebuildItemsPage<T>({ items, label, children }: {
+  items: readonly T[]
+  label: string
+  children: (items: readonly T[]) => ReactNode
+}) {
+  const [page, setPage] = useState(0)
+  const pageSize = 50
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(items.length / pageSize) - 1))
+  const start = currentPage * pageSize
+  return <>
+    {children(items.slice(start, start + pageSize))}
+    {items.length > pageSize ? <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-slate-600">
+      <span>{start + 1}–{Math.min(start + pageSize, items.length)} из {items.length}. Применение относится ко всем выбранным группам.</span>
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" aria-label={`Назад: ${label}`} disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Назад</Button>
+        <Button size="sm" variant="outline" aria-label={`Далее: ${label}`} disabled={start + pageSize >= items.length} onClick={() => setPage(currentPage + 1)}>Далее</Button>
+      </div>
+    </div> : null}
+  </>
+}
+
+function DecisionButton({ active, label, onClick, disabled }: { active: boolean; label: string; onClick: () => void; disabled: boolean }) {
   return (
     <button
       type="button"
       aria-pressed={active}
+      disabled={disabled}
       onClick={onClick}
       className={`min-h-8 rounded px-2.5 text-xs font-semibold transition ${
         active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'

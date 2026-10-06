@@ -5,10 +5,10 @@ import { E2E_DATABASE_URL, withE2eDatabase } from '../database'
 
 test('НК до ТО: PostgreSQL и серверные правила совпадают после выключения и включения', async () => {
   const { stdout, stderr } = await promisify(execFile)(process.execPath, ['--import', 'tsx', 'scripts/verify-pre-heat-treatment-policy.ts'], {
-    env: { ...process.env, DATABASE_URL: E2E_DATABASE_URL, WELDING_ENV_LOADED: '1' },
+    env: { ...process.env, FORCE_COLOR: undefined, DATABASE_URL: E2E_DATABASE_URL, WELDING_ENV_LOADED: '1' },
   })
   expect(stderr).toBe('')
-  expect(JSON.parse(stdout.trim())).toMatchObject({ comparisons: 162, obsoleteFlagsUnchanged: true, settingInitPlan: true, fixtureRolledBack: true })
+  expect(JSON.parse(stdout.trim())).toMatchObject({ comparisons: 510, obsoleteFlagsUnchanged: true, settingInitPlan: true, fixtureRolledBack: true })
 })
 
 for (const historical of [false, true]) test(`НК до ТО доступен: ${historical ? 'исторический стык с завершённой ПСТО' : 'старый флаг и «ожидает заявку»'}`, async ({ page }) => {
@@ -31,6 +31,9 @@ for (const historical of [false, true]) test(`НК до ТО доступен: $
         tvmt_conclusion_date = '2026-09-20', tvmt_conclusion = 'C-HISTORY' where id = $1`, [id])
     })
     await page.goto('/lnk')
+    // Other scenarios leave hundreds of rows: locate this joint through server search,
+    // not by assuming it is rendered on the first virtualized page.
+    await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(joint)
     const row = () => page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).locator('xpath=ancestor::tr')
     await row().getByRole('button', { name: 'Выполнить: Создать заявку НК до ТО', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Заявка ЛНК до ТО', exact: true })).toBeVisible()
@@ -39,7 +42,7 @@ for (const historical of [false, true]) test(`НК до ТО доступен: $
     await expect(page.getByRole('heading', { name: 'Заявка ЛНК до ТО', exact: true })).toBeHidden()
     await row().getByRole('button', { name: 'Выполнить: Внести результат НК до ТО', exact: true }).click()
     await page.getByLabel('Дата контроля', { exact: true }).fill('2026-09-18')
-    await page.getByRole('button', { name: 'годен', exact: true }).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'годен', exact: true }).click()
     await page.getByRole('button', { name: 'Сохранить результат до ТО', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК до ТО' })).toBeHidden()
     await expect(row().getByRole('button', { name: historical ? 'Выполнить: Создать заявку основного НК' : 'Выполнить: Создать заявку ПСТО', exact: true })).toBeVisible()
@@ -69,6 +72,7 @@ test('открытая заявка не обходит выключение э�
       return inserted.rows[0].id
     })
     await page.goto('/lnk')
+    await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(joint)
     const row = page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).locator('xpath=ancestor::tr')
     await row.getByRole('button', { name: 'Выполнить: Создать заявку НК до ТО', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Заявка ЛНК до ТО', exact: true })).toBeVisible()

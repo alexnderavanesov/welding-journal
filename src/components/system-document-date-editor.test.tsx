@@ -11,7 +11,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 const mocks = vi.hoisted(() => ({
   changeDate: vi.fn(),
   confirm: vi.fn(),
-  invalidateWeldJoints: vi.fn(),
+  scheduleWeldDataRefresh: vi.fn(),
   loadRows: vi.fn(),
   requireEditPassword: vi.fn(),
 }))
@@ -21,7 +21,7 @@ vi.mock('@/lib/system-document-storage', () => ({
 }))
 
 vi.mock('@/lib/weld-query-utils', () => ({
-  invalidateWeldJoints: mocks.invalidateWeldJoints,
+  scheduleWeldDataRefresh: mocks.scheduleWeldDataRefresh,
 }))
 
 vi.mock('@/server/weld-mutations-api', () => ({
@@ -40,7 +40,7 @@ describe('SystemDocumentDateEditor', () => {
   beforeEach(() => {
     mocks.changeDate.mockReset()
     mocks.confirm.mockReset().mockResolvedValue(true)
-    mocks.invalidateWeldJoints.mockReset()
+    mocks.scheduleWeldDataRefresh.mockReset()
     mocks.loadRows.mockReset()
     mocks.requireEditPassword.mockReset().mockResolvedValue(true)
   })
@@ -106,7 +106,7 @@ describe('SystemDocumentDateEditor', () => {
     }))
     expect(mocks.requireEditPassword).toHaveBeenCalledWith('изменение даты документа')
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce())
-    expect(mocks.invalidateWeldJoints).toHaveBeenCalledWith(
+    expect(mocks.scheduleWeldDataRefresh).toHaveBeenCalledWith(
       expect.any(QueryClient),
       { upsertRows: rows },
       { refetchLnkWorkflow: true },
@@ -242,7 +242,7 @@ describe('SystemDocumentDateEditor', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Изменить дату' }))
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce())
-    expect(mocks.invalidateWeldJoints).toHaveBeenLastCalledWith(
+    expect(mocks.scheduleWeldDataRefresh).toHaveBeenLastCalledWith(
       queryClient,
       { upsertRows: savedRealRows },
       { refetchLnkWorkflow: false },

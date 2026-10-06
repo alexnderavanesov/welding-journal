@@ -1,3 +1,4 @@
+import { normalizeControlResultText } from '@/lib/report-value-utils'
 import { Badge } from '@/components/ui/badge'
 import {
   isControlAdditionalValue,
@@ -39,7 +40,7 @@ export function AdditionalBadge() {
 
 export function ResultBadge({ value }: { value: unknown }) {
   const text = String(value ?? '').trim()
-  const normalized = text.toLowerCase()
+  const normalized = normalizeControlResultText(text)
   if (!text) return ''
 
   const className =

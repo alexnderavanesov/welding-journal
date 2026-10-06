@@ -7,6 +7,26 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { VISIBLE_FIELDS, type WeldFieldKey } from '@/lib/weld-fields'
 
 describe('WeldTable context menu row', () => {
+  it('ignores a queued pre-open scroll but closes after real movement', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <WeldTable rows={[{ id: 1, joint: 'F1' }]} columnFilters={{}} onColumnFiltersChange={vi.fn()}
+          hiddenFieldKeys={new Set(VISIBLE_FIELDS.filter(field => field.key !== 'joint').map(field => field.key))}
+          getContextMenuItems={() => [{ id: 'action', label: 'Действие стыка', onSelect: vi.fn() }]} />
+      </QueryClientProvider>,
+    )
+    fireEvent.contextMenu(container.querySelector('[data-weld-field-key="joint"]')!)
+    fireEvent.scroll(document)
+    expect(screen.getByRole('button', { name: 'Действие стыка' })).toBeVisible()
+    const previous = document.documentElement.scrollLeft
+    try {
+      document.documentElement.scrollLeft = previous + 25
+      fireEvent.scroll(document.documentElement)
+      expect(screen.queryByRole('button', { name: 'Действие стыка' })).not.toBeInTheDocument()
+    } finally { document.documentElement.scrollLeft = previous }
+  })
+
   it('uses current visible document data when the action row is stale', () => {
     const displayRow = {
       id: 1,

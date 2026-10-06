@@ -26,6 +26,7 @@ import {
   X,
 } from 'lucide-react'
 import { DialogHeader } from '@/components/dialog-header'
+import { buttonVariants } from '@/components/ui/button'
 import { AcceptedWarningsSettingsPanel } from '@/components/accepted-warnings-settings-panel'
 import { DocumentTemplateLoadBoundary } from '@/components/document-template-load-boundary'
 import { DocumentTemplateBuilder } from '@/components/document-template-builder'
@@ -184,7 +185,7 @@ import { saveRemoteSecuritySettings } from '@/server/security-functions'
 import {
   DISPATCHER_BACKGROUND_STATUS_QUERY_KEY,
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
-  invalidateWeldJoints,
+  scheduleWeldDataRefresh,
   invalidateWeldPageQueries,
   WELD_DATA_USAGE_QUERY_KEY,
 } from '@/lib/weld-query-utils'
@@ -445,13 +446,13 @@ export function SettingsPage({
                   key={tab.id}
                   type="button"
                   onClick={() => navigateToSettings(tab.id)}
-                  className={`flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-[13px] font-medium transition-colors ${
+                  className={`flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[13px] font-medium transition-colors ${
                     isActive
-                      ? 'border-slate-900 bg-slate-900 text-white'
-                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'border-sky-100 bg-sky-50 text-sky-700'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
                   }`}
                 >
-                  <Icon className="h-4 w-4" />
+                  <Icon className="h-4 w-4" strokeWidth={1.5} />
                   {tab.label}
                   {dirtyTabs.has(tab.id) ? <span className="h-2 w-2 rounded-full bg-amber-400" title="Есть несохраненные изменения" /> : null}
                 </button>
@@ -474,7 +475,7 @@ export function SettingsPage({
                   setPendingScrollTarget(next.targetId ?? null)
                   setSettingsSearch('')
                 }}
-                className="rounded-md border border-amber-700 bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white"
+                className={buttonVariants({ variant: 'warning', size: 'sm', className: 'text-xs' })}
               >
                 Перейти без сохранения
               </button>
@@ -1090,7 +1091,7 @@ function OtherSettingsPanel({
         })
       })
       if (!saved) return
-      await invalidateWeldJoints(queryClient)
+      scheduleWeldDataRefresh(queryClient)
       window.dispatchEvent(new Event(GENERATED_DOCUMENT_STORAGE_EVENT))
       setWdiRulesMessage(`WDI пересчитан. Обновлено стыков: ${wdiPreview.changed}.`)
       setWdiPreview(await previewWdiRecalculation())
@@ -1289,7 +1290,7 @@ function OtherSettingsPanel({
                       type="button"
                       disabled={!wdiRulesDirty}
                       onClick={() => void saveWdiRules()}
-                      className="inline-flex items-center justify-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-200 disabled:text-slate-500"
+                      className={buttonVariants({ className: 'px-3' })}
                     >
                       <Save className="h-4 w-4" />
                       Сохранить правило
@@ -1430,8 +1431,8 @@ function ControlProcessesSettingsPanel({
       )
       if (!saved) return
       await queryClient.invalidateQueries({ queryKey: ['control-process-settings-overview'] })
-      const settingLabel = key === 'layeredControlEnabled'
-        ? 'Послойный НК'
+      const settingLabel = key === 'pvkGoodOnly'
+        ? 'ПВК — только годен'
         : key === 'preHeatTreatmentLnkEnabled'
           ? 'НК до ТО'
           : 'Разрешение основного НК до завершения предыдущих этапов'
@@ -1470,15 +1471,13 @@ function ControlProcessesSettingsPanel({
         </div>
         <div className="divide-y divide-slate-200">
           <ControlProcessToggle
-            title="Послойный НК"
-            description="Автоматическое формирование заключений ВИК и ПВК кромок и слоев для заваренных У-стыков."
-            detail={settings.layeredControlEnabled
-              ? 'Новые документы создаются автоматически. Существующие документы продолжают обновляться по шаблонам.'
-              : 'Новые документы не создаются. История и номера сохранены; после включения недостающие заключения будут сформированы автоматически.'}
-            checked={settings.layeredControlEnabled}
+            title="ПВК — только годен"
+            description="Разрешать только годный результат нашего ПВК на основном этапе и до ТО."
+            detail="Дубль-контроль этим переключателем не ограничивается. Сохранённые негодные результаты остаются в истории. При послойном назначении действуют отдельные ограничения всех четырёх методов, включая дубли."
+            checked={settings.pvkGoodOnly}
             disabled={savingKey !== null}
-            busy={savingKey === 'layeredControlEnabled'}
-            onChange={(enabled) => void changeProcessSetting('layeredControlEnabled', enabled)}
+            busy={savingKey === 'pvkGoodOnly'}
+            onChange={(enabled) => void changeProcessSetting('pvkGoodOnly', enabled)}
           />
           <ControlProcessToggle
             title="НК до ТО"
@@ -1655,20 +1654,20 @@ function getControlProcessSettingConfirmation(
   key: keyof ControlProcessSettings,
   enabled: boolean,
 ) {
-  if (key === 'layeredControlEnabled') {
+  if (key === 'pvkGoodOnly') {
     return enabled
       ? {
-          title: 'Включить послойный НК',
-          itemName: 'Автоматическое формирование заключений',
-          description: 'Система сразу проверит все ранее созданные заваренные У-стыки и сформирует недостающие документы ВИК/ПВК кромок и слоев.',
-          warning: 'Существующие документы и их номера останутся без изменений.',
+          title: 'Включить «ПВК — только годен»',
+          itemName: 'Наш ПВК на обоих этапах',
+          description: 'Новые негодные результаты нашего ПВК будут недоступны. Дубль-контроль сохраняет обычные правила.',
+          warning: 'Исторические негодные результаты сохраняются.',
           confirmLabel: 'Включить',
         }
       : {
-          title: 'Выключить послойный НК',
-          itemName: 'Остановить создание новых документов',
-          description: 'Новые заключения послойного контроля создаваться не будут. Основные ВИК и ПВК продолжат работать обычно.',
-          warning: 'Существующие документы, история и номера сохранятся и останутся доступными.',
+          title: 'Выключить «ПВК — только годен»',
+          itemName: 'Наш ПВК на обоих этапах',
+          description: 'Для обычного ПВК снова доступны негодные результаты по действующим правилам ремонта.',
+          warning: 'Ограничения при явном послойном назначении продолжают действовать.',
           confirmLabel: 'Выключить',
         }
   }
@@ -1877,7 +1876,7 @@ function WdiRecalculationPreviewDialog({
           type="button"
           disabled={preview.changed === 0 || isRecalculating}
           onClick={onRecalculate}
-          className="inline-flex items-center justify-center gap-2 rounded-md border border-amber-700 bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-200 disabled:text-slate-500"
+          className={buttonVariants({ variant: 'warning' })}
         >
           <RefreshCw className={`h-4 w-4 ${isRecalculating ? 'animate-spin' : ''}`} />
           {isRecalculating ? 'Пересчитываем...' : `Пересчитать ${preview.changed} стыков`}
@@ -2389,7 +2388,7 @@ function SystemIndexesSettingsPanel({
               type="button"
               disabled={!canSave}
               onClick={saveDraft}
-              className="inline-flex items-center justify-center rounded-md border border-slate-900 bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              className={buttonVariants({ className: 'px-3' })}
             >
               Сохранить настройки
             </button>
@@ -2464,7 +2463,7 @@ function SystemIndexesSettingsPanel({
           <span className="text-sm font-semibold text-amber-900">Есть несохраненные изменения системных индексов.</span>
           <div className="flex gap-2">
             <button type="button" onClick={() => setDraft(settings)} className="rounded-md border border-amber-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Отменить</button>
-            <button type="button" disabled={!canSave} onClick={saveDraft} className="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:bg-slate-300">Сохранить настройки</button>
+            <button type="button" disabled={!canSave} onClick={saveDraft} className={buttonVariants({ className: 'px-3' })}>Сохранить настройки</button>
           </div>
         </div>
       ) : null}
@@ -2818,22 +2817,18 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                       ? activeTemplateId
                       : LAYERED_CONTROL_DOCUMENT_TYPES[0],
                   )}
-                  className={`flex w-full items-start justify-between gap-3 rounded-md px-3 py-3 text-left transition-colors ${
-                    isActive ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  className={`flex w-full items-start justify-between gap-3 rounded-xl px-3 py-3 text-left transition-colors ${
+                    isActive ? 'bg-sky-50 text-sky-700' : 'text-slate-600 hover:bg-sky-50 hover:text-sky-700'
                   }`}
                 >
                   <span>
                     <span className="block text-sm font-semibold">Послойный НК</span>
-                    <span className={`mt-1 block text-xs ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
+                    <span className={`mt-1 block text-xs ${isActive ? 'text-sky-700' : 'text-slate-500'}`}>
                       Четыре формы ВИК и ПВК по кромкам и слоям.
                     </span>
                   </span>
                   {uploadedCount > 0 ? (
-                    <span className={`mt-0.5 shrink-0 rounded border px-1.5 py-0.5 text-[11px] font-semibold ${
-                      isActive
-                        ? 'border-slate-600 bg-slate-800 text-emerald-300'
-                        : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    }`}>
+                    <span className="mt-0.5 shrink-0 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700">
                       {uploadedCount}/{LAYERED_CONTROL_DOCUMENT_TYPES.length}
                     </span>
                   ) : null}
@@ -2862,23 +2857,19 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                         : LNK_CONCLUSION_TEMPLATE_PROFILES[0].id,
                     )
                   }
-                  className={`flex w-full items-start justify-between gap-3 rounded-md px-3 py-3 text-left transition-colors ${
-                    isActive ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  className={`flex w-full items-start justify-between gap-3 rounded-xl px-3 py-3 text-left transition-colors ${
+                    isActive ? 'bg-sky-50 text-sky-700' : 'text-slate-600 hover:bg-sky-50 hover:text-sky-700'
                   }`}
                 >
                   <span>
                     <span className="block text-sm font-semibold">Заключения ЛНК</span>
-                    <span className={`mt-1 block text-xs ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
+                    <span className={`mt-1 block text-xs ${isActive ? 'text-sky-700' : 'text-slate-500'}`}>
                       Отдельные формы ВИК, РК, УЗК и ПВК.
                     </span>
                   </span>
                   {uploadedCount > 0 ? (
                     <span
-                      className={`mt-0.5 shrink-0 rounded border px-1.5 py-0.5 text-[11px] font-semibold ${
-                        isActive
-                          ? 'border-slate-600 bg-slate-800 text-emerald-300'
-                          : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                      }`}
+                      className="mt-0.5 shrink-0 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700"
                     >
                       {uploadedCount}/{LNK_CONCLUSION_TEMPLATE_PROFILES.length}
                     </span>
@@ -2893,16 +2884,16 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                 key={templateType.id}
                 type="button"
                 onClick={() => setActiveTemplateId(templateType.id)}
-                className={`flex w-full items-start justify-between gap-3 rounded-md px-3 py-3 text-left transition-colors ${
-                  isActive ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                className={`flex w-full items-start justify-between gap-3 rounded-xl px-3 py-3 text-left transition-colors ${
+                  isActive ? 'bg-sky-50 text-sky-700' : 'text-slate-600 hover:bg-sky-50 hover:text-sky-700'
                 }`}
               >
                 <span>
                   <span className="block text-sm font-semibold">{templateType.label}</span>
-                  <span className={`mt-1 block text-xs ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>{templateType.description}</span>
+                  <span className={`mt-1 block text-xs ${isActive ? 'text-sky-700' : 'text-slate-500'}`}>{templateType.description}</span>
                 </span>
                 {hasUpload ? (
-                  <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${isActive ? 'text-emerald-300' : 'text-emerald-600'}`} />
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
                 ) : null}
               </button>
             )
@@ -2925,15 +2916,15 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                       role="tab"
                       aria-selected={isActive}
                       onClick={() => setActiveTemplateId(profile.id)}
-                      className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition-colors ${
+                      className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors ${
                         isActive
-                          ? 'border-sky-700 bg-sky-700 text-white'
+                          ? 'border-sky-100 bg-sky-50 text-sky-700'
                           : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-sky-800'
                       }`}
                     >
                       {profile.label}
                       {uploads[profile.id] ? (
-                        <CheckCircle2 className={`h-3.5 w-3.5 ${isActive ? 'text-emerald-200' : 'text-emerald-600'}`} />
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
                       ) : null}
                     </button>
                   )
@@ -2960,15 +2951,15 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                       role="tab"
                       aria-selected={isActive}
                       onClick={() => setActiveTemplateId(type)}
-                      className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition-colors ${
+                      className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors ${
                         isActive
-                          ? 'border-sky-700 bg-sky-700 text-white'
+                          ? 'border-sky-100 bg-sky-50 text-sky-700'
                           : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-sky-800'
                       }`}
                     >
                       {profile.templateLabel}
                       {uploads[type] ? (
-                        <CheckCircle2 className={`h-3.5 w-3.5 ${isActive ? 'text-emerald-200' : 'text-emerald-600'}`} />
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
                       ) : null}
                     </button>
                   )
@@ -3069,7 +3060,7 @@ function DocumentTemplatesSettings({ runProtectedSettingsChange }: { runProtecte
                 type="button"
                 disabled={isUploadingTemplate}
                 onClick={() => void handleTemplateUploadRequest()}
-                className="inline-flex items-center justify-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-50"
+                className={buttonVariants({ className: 'px-3' })}
               >
                 <Upload className="h-4 w-4" />
                 {isUploadingTemplate ? 'Загружаю...' : 'Загрузить первый шаблон'}
@@ -3349,7 +3340,7 @@ function DocumentTemplateReplacementDialog({
             onClick={() => {
               if (analysis.constructorConfig) onApply(analysis.constructorConfig)
             }}
-            className="rounded-md border border-sky-700 bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-200 disabled:text-slate-500"
+            className={buttonVariants()}
           >
             {isSaving ? 'Сохраняю...' : 'Перенести и заменить'}
           </button>
@@ -4137,7 +4128,7 @@ function RequestNamingSettingsCard({
                   type="button"
                   disabled={!hasPattern || !hasNumberField || !hasChanges}
                   onClick={() => void onPatternSave(patternDraft)}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-md bg-sky-700 px-3 text-xs font-semibold text-white shadow-sm hover:bg-sky-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+                  className={buttonVariants({ size: 'sm', className: 'h-9 text-xs gap-1.5' })}
                 >
                   <Save className="h-4 w-4" />
                   Сохранить правило

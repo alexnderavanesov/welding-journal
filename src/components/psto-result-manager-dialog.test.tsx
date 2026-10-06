@@ -14,6 +14,7 @@ describe('PstoResultManagerDialog', () => {
       subtitleCode: '400',
       line: 'L-1',
       joint: 'F7',
+      connectionType: 'С17',
       weldDate: '2026-08-01',
       pstoRequired: 'да',
       pstoRequest: 'ПСТО-1',
@@ -45,6 +46,7 @@ describe('PstoResultManagerDialog', () => {
       />,
     )
 
+    expect(screen.getByText('С17').parentElement).toHaveTextContent('Тип: С17')
     expect(screen.getByText('Результат: -')).toBeInTheDocument()
     const resultSelect = screen.getByLabelText('Результат')
     const resultArticle = resultSelect.closest('article')

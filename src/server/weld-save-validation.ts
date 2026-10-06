@@ -1,3 +1,4 @@
+import { getControlAssignmentRemovalReason } from '@/lib/control-assignment-history'
 import { asc, eq, inArray, sql } from 'drizzle-orm'
 
 import type { requireDb } from '@/db'
@@ -63,19 +64,15 @@ import {
   requiresPrimaryStageResolutionForAssignedPstoLine,
 } from '@/lib/psto-line-assignment'
 import {
-  isControlCancelledValue,
   isControlEnabledValue,
   CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES,
 } from '@/lib/control-availability-values'
 import {
-  getPreHeatTreatmentControl,
   getPrimaryLnkStageAccess,
   getPrimaryLnkRequestAccess,
   hasPrimaryLnkResultTrace,
   getPrimaryPstoStartBlockReason,
   isPreHeatTreatmentLnkMethodCode,
-  PRE_HEAT_TREATMENT_LNK_METHODS,
-  type PreHeatTreatmentControlRecord,
 } from '@/lib/lnk-control-stage'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { isFinalLnkResultValue } from '@/lib/lnk-status'
@@ -92,6 +89,9 @@ import { WELD_TABLE_RETURNING } from '@/server/weld-server-shared'
 import { lockWeldValidationSettings } from '@/server/weld-validation-settings-lock'
 import { lockWelderStampRegistry } from '@/server/welder-stamp-registry-lock'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
+import { getLayeredControlSaveError } from '@/lib/layered-control-rules'
+import { buildProgramRepairRequirements, getProgramRepairAssignmentIssues } from '@/lib/line-program-repair-requirements'
+import { loadProgramRuleContext } from './line-program-rule-context'
 
 type Db = ReturnType<typeof requireDb>
 type ValidationDb = Pick<Db, 'execute' | 'select'>
@@ -103,6 +103,7 @@ const CONTROL_ENABLED_VALUES_SQL = sql.join(
 const PSTO_LINE_VALIDATION_SCOPE_BATCH_SIZE = 500
 
 export type ServerWeldValidationContext = {
+  programRules?: Awaited<ReturnType<typeof loadProgramRuleContext>>
   controlProcessSettings: ControlProcessSettings
   saveCheckSettings: SaveCheckSettings
   dataListSettings: DataListSettings
@@ -189,7 +190,11 @@ export async function loadServerWeldValidationContext(
   const otherSettings = settingsByKey.has(PROJECT_SETTING_KEYS.other)
     ? normalizeOtherSettings(settingsByKey.get(PROJECT_SETTING_KEYS.other))
     : DEFAULT_OTHER_SETTINGS
+  const controlProcessSettings = settingsByKey.has(PROJECT_SETTING_KEYS.controlProcesses)
+    ? normalizeControlProcessSettings(settingsByKey.get(PROJECT_SETTING_KEYS.controlProcesses)) : DEFAULT_CONTROL_PROCESS_SETTINGS
+  const programRules = await loadProgramRuleContext(db, lineScopeRows, controlProcessSettings.preHeatTreatmentLnkEnabled)
   return {
+    programRules,
     controlProcessSettings: settingsByKey.has(PROJECT_SETTING_KEYS.controlProcesses)
       ? normalizeControlProcessSettings(settingsByKey.get(PROJECT_SETTING_KEYS.controlProcesses))
       : DEFAULT_CONTROL_PROCESS_SETTINGS,
@@ -259,6 +264,7 @@ export function prepareServerWeldRecords({
     allowPstoLineLifecycleMove,
   })
   records.forEach((record) => {
+    record.hasVik = 'да'
     const policyRow = record as WeldRow
     policyRow.preHeatTreatmentLnkEnabled = context.controlProcessSettings.preHeatTreatmentLnkEnabled
     record.finalStatus = calculateFinalStatus(record)
@@ -343,7 +349,7 @@ function applyPstoLineAssignments({
         record,
         index,
         importMode,
-        details: 'стык переносится на линию с ПСТО, но у него уже есть основной комплект ВИК/РК/УЗК/ПВК. Выполните перенос через карточку стыка и выберите: сохранить основной комплект и позднее оформить отдельный НК до ТО, перенести комплект в «До ТО» или удалить.',
+        details: 'стык переносится на линию с ПСТО, но у него уже есть основной комплект ВИК/РК/УЗК/ПВК. Выполните перенос через карточку стыка и выберите: сохранить основной комплект и позднее оформить отдельный НК до ТО либо перенести комплект в «До ТО». Удаление ошибочных документов выполняется отдельно.',
       })
     }
     if (
@@ -446,11 +452,26 @@ export function validateServerWeldRecords({
   importMode?: boolean
   allowSystemJointNames?: boolean
 }) {
+  const changedById = new Map(records.filter(row => row.id != null).map(row => [Number(row.id), row]))
+  const ruleRows = (context.programRules?.rows ?? []).map(row => ({ ...row, ...changedById.get(row.id), programChainState: row.programChainState }))
+  const knownIds = new Set(ruleRows.map(row => row.id))
+  const newIds = new Map<WeldInput, number>()
+  records.forEach((row, index) => {
+    const id = row.id == null ? -(index + 1) : Number(row.id)
+    newIds.set(row, id)
+    if (!knownIds.has(id)) ruleRows.push({ ...row, id, programChainState: undefined })
+  })
+  const requirements = buildProgramRepairRequirements(ruleRows, context.programRules?.approved, context.systemIndexSettings)
   records.forEach((record, index) => {
     const previous = record.id ? previousRows.get(Number(record.id)) : undefined
     const prefix = importMode
       ? `Импорт остановлен: строка ${index + 2}, стык "${String(record.joint ?? '').trim() || 'пусто'}". `
       : 'Сохранение невозможно: '
+
+    const layeredReason = getLayeredControlSaveError(record, previous, context.controlProcessSettings.pvkGoodOnly)
+    if (layeredReason) throw new Error(`${prefix}${layeredReason}`)
+    const repairIssues = getProgramRepairAssignmentIssues({ ...record, programRepairRequirements: requirements.get(newIds.get(record)!) }, previous)
+    if (repairIssues.length) throw new Error(`${prefix}${repairIssues.map(issue => issue.message).join('\n')}`)
 
     if (context.saveCheckSettings.manualJointName) {
       const structureReason = validateJointNameStructure(record.joint, context.systemIndexSettings)
@@ -681,7 +702,7 @@ export function getSystemWorkflowStageTransitionReason(
     ...record,
     preHeatTreatmentLnkEnabled: context.controlProcessSettings.preHeatTreatmentLnkEnabled,
   } as WeldInput
-  const preControlAssignmentReason = getPreHeatTreatmentAssignmentRemovalReason(record, previous)
+  const preControlAssignmentReason = getControlAssignmentRemovalReason(record, previous)
   if (preControlAssignmentReason) return preControlAssignmentReason
 
   const startsPrimaryPsto = (
@@ -739,29 +760,6 @@ export function getSystemWorkflowStageTransitionReason(
   return ''
 }
 
-function getPreHeatTreatmentAssignmentRemovalReason(
-  record: WeldInput,
-  previous: WeldJoint | undefined,
-) {
-  if (!previous) return ''
-  const previousWithRelations = previous as unknown as WeldInput & {
-    preHeatTreatmentControls?: PreHeatTreatmentControlRecord[]
-  }
-
-  for (const method of PRE_HEAT_TREATMENT_LNK_METHODS) {
-    const wasAssigned = isControlEnabledValue(previous[method.enabledKey]) ||
-      isControlCancelledValue(previous[method.enabledKey])
-    const remainsAssigned = isControlEnabledValue(record[method.enabledKey]) ||
-      isControlCancelledValue(record[method.enabledKey])
-    if (!wasAssigned || remainsAssigned) continue
-
-    const control = getPreHeatTreatmentControl(previousWithRelations, method.code)
-    if (!control) continue
-    return `${method.code}: нельзя снять назначение, пока существует заявка или результат НК до ТО. Сначала удалите позицию ${method.code} до ТО через отчет ЛНК либо выберите «отменен».`
-  }
-
-  return ''
-}
 
 function getFullyAssignedPstoLineReason(
   record: WeldInput,

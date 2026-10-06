@@ -1,4 +1,5 @@
 import { type WeldInput } from '@/lib/weld-fields'
+import { buildProgramIntegrityTasks } from './coil-restoration'
 import { getJointStatusLabel } from '@/lib/lnk-status'
 import { normalizeSearchText } from '@/lib/report-row-utils'
 import { hasWeldDate } from '@/lib/report-value-utils'
@@ -47,6 +48,9 @@ import type { DataListSettings } from '@/lib/data-list-settings'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS, type SystemIndexSettings } from '@/lib/system-index-settings'
 import { encodeIdentityKey } from '@/lib/identity-key'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
+import { buildProgramRepairTasks } from './line-program-repair-requirements'
+import { isRevisionNotActual } from './revision-actuality'
+import { buildChainActualityCheckTasks } from './chain-actuality-check'
 
 export { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 export { isUnusedRepeatedJointDraft } from '@/lib/repeated-joint-task-helpers'
@@ -64,6 +68,7 @@ type ObsoleteRepeatedJointInfo = {
 type MatchingJointRowsIndex = Map<string, WeldRow[]>
 
 type BuildRepeatedJointTasksOptions = {
+  acceptedProgramControlKeys?: ReadonlySet<string>
   earlyCoilDecisionSourceRowIds?: ReadonlySet<number>
   dataListSettings?: DataListSettings
   systemIndexSettings?: SystemIndexSettings
@@ -77,6 +82,7 @@ type BuildRepeatedJointTasksOptions = {
   includeWelderStampCompatibilityChecks?: boolean
   controlProcessSettings?: ControlProcessSettings
 }
+
 
 export function buildRepeatedJointTasks(
   rows: WeldRow[],
@@ -119,6 +125,8 @@ export function buildRepeatedJointTasks(
   )
   const orphanGoodRenameRowIds = new Set(orphanGoodRenameTasks.map((task) => task.row.id))
   const chainCheckTasks = [
+    ...buildChainActualityCheckTasks(rows, systemIndexSettings),
+    ...buildProgramIntegrityTasks(rows, systemIndexSettings),
     ...buildPrimaryLnkStageDebtSystemWarnings(rows, options.controlProcessSettings),
     ...buildJointChainConsistencyCheckTasks(
       rows,
@@ -147,9 +155,13 @@ export function buildRepeatedJointTasks(
     ...(includeIncompleteStampChecks ? buildIncompleteWelderStampGroupTasks(rows, systemIndexSettings) : []),
   ].filter((task) => !(task.reason === 'проверить целостность цепочки' && orphanGoodRenameRowIds.has(task.row.id)))
   const duplicateCheckTasks = buildDuplicateJointCheckTasks(rows, systemIndexSettings)
-  const lineConsistencyTasks = includeLineConsistencyTasks ? buildLineConsistencyTasks(rows) : []
+  const lineConsistencyTasks = [
+    ...buildLineConsistencyTasks(rows, options.acceptedProgramControlKeys, systemIndexSettings)
+      .filter((task) => includeLineConsistencyTasks || task.systemWarningCode === 'СП-02'),
+    ...buildProgramRepairTasks(rows, options.acceptedProgramControlKeys ?? new Set(), systemIndexSettings),
+  ]
   const percentageLineControlTasks = includePercentageLineControlTasks
-    ? buildPercentageLineControlTasks(rows, welderStampSuspensions, systemIndexSettings)
+    ? buildPercentageLineControlTasks(rows, welderStampSuspensions, systemIndexSettings, options.acceptedProgramControlKeys)
     : []
   const blockedChainKeys = new Set(
     [
@@ -191,6 +203,9 @@ export function buildRepeatedJointTasks(
   const createTaskTargetKeys = new Set<string>()
 
   for (const row of rows) {
+    // Keep excluded rows in the lookup and integrity audit: an active repair
+    // can still inherit their history. Only the demand for new work is paused.
+    if (isRevisionNotActual(row.revisionActuality)) continue
     if (obsoleteByRowId.has(row.id)) continue
     if (isRowInBlockedRepeatedJointChain(row, renameBlockedChainKeys, systemIndexSettings)) continue
     const rejection = getPrimaryRejectedLnkResult(row)
@@ -202,7 +217,6 @@ export function buildRepeatedJointTasks(
     const suffix = getExpectedRepeatedJointSuffix(row, rejection.result, systemIndexSettings)
     const parsed = parseRepeatedJointName(sourceJoint, systemIndexSettings)
     const officialRejectedChainRows = repeatedJointLookup.getOfficialRejectedJointChainRows(row, sourceJoint)
-    const lastOfficialRejectedRow = officialRejectedChainRows.at(-1)
     const coilTransitionMode = getCoilTransitionModeForSource({
       earlyCoilDecisionSourceRowIds,
       officialRejectedRows: officialRejectedChainRows,
@@ -228,7 +242,10 @@ export function buildRepeatedJointTasks(
     }
 
     const targetJoint = getExpectedRepeatedJointName(row, sourceJoint, rejection.result, systemIndexSettings)
-    if (repeatedJointLookup.findRepeatedJointTarget(row, targetJoint)) continue
+    // An unofficial namesake is historical work, not the official continuation
+    // of this rejected connection. Good unofficial finals still have their
+    // separate blocking officiality check above.
+    if (repeatedJointLookup.findRepeatedJointTarget(row, targetJoint, { officialOnly: true })) continue
     const createTargetKey = getCreateTaskTargetKey(row, targetJoint)
     if (createTargetKey && renameReplacementTargetKeys.has(createTargetKey)) continue
     if (createTargetKey && createTaskTargetKeys.has(createTargetKey)) continue

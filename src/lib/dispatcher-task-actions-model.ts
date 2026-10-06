@@ -1,7 +1,9 @@
 import { getDispatcherTaskSettingId } from '@/lib/dispatcher-settings'
+import { CHAIN_ACTUALITY_REASON } from '@/lib/dispatcher-check-reasons'
 import type { RepeatedJointTask } from '@/lib/dispatcher-types'
 import { isSystemDispatcherWarningTask } from '@/lib/dispatcher-types'
 import { isUnofficialJoint } from '@/lib/joint-display'
+import { getUnofficialDuplicateControlBlockReason } from '@/lib/duplicate-control-officiality'
 import type { WorkflowRootCauseAction } from '@/lib/workflow-root-cause-actions'
 
 export type DispatcherTaskActionId =
@@ -15,9 +17,13 @@ export type DispatcherTaskActionId =
   | 'open-lnk'
   | 'open-psto'
   | 'open-psto-program'
+  | 'open-line-program'
   | 'open-root-cause'
   | 'open-stamp-registry'
   | 'rename-joint'
+  | 'restore-coil'
+  | 'set-chain-inactive'
+  | 'set-chain-active'
   | 'show-task'
   | 'skip-suspension'
   | 'suspend-welder'
@@ -29,6 +35,7 @@ export type DispatcherTaskActionSpec = {
   tone?: 'default' | 'danger' | 'primary'
   key?: string
   rootCauseAction?: WorkflowRootCauseAction
+  disabledReason?: string
 }
 
 type DispatcherTaskActionOptions = {
@@ -39,8 +46,19 @@ export function getDispatcherTaskActionSpecs(
   task: RepeatedJointTask,
   options: DispatcherTaskActionOptions = {},
 ): DispatcherTaskActionSpec[] {
+  if (task.kind === 'check' && task.reason === CHAIN_ACTUALITY_REASON) return [
+    action('set-chain-inactive', 'Сделать цепочку неактуальной', 'primary'),
+    action('set-chain-active', 'Вернуть актуальность цепочке'),
+  ]
+  if (task.kind === 'check' && task.systemWarningCode === 'СП-04') return [
+    ...(task.coilRestorationRootId === task.row.id ? [action('restore-coil', 'Проверить отмену ошибочной катушки', 'primary')] : []),
+    action('edit-weld', 'Открыть стык'),
+  ]
+  if (task.kind === 'line-consistency' && task.fieldKey !== 'pstoPresence') {
+    return [action('open-line-program', 'Открыть программу линии', 'primary'), action('show-task', 'Показать стыки')]
+  }
   if (isSystemDispatcherWarningTask(task)) {
-    return (task.rootCauseActions ?? []).map((rootCauseAction) => ({
+    return (task.kind === 'check' ? task.rootCauseActions ?? [] : []).map((rootCauseAction) => ({
       id: 'open-root-cause' as const,
       key: rootCauseAction.key,
       label: rootCauseAction.label,
@@ -51,10 +69,7 @@ export function getDispatcherTaskActionSpecs(
   if (task.kind === 'create') {
     return compactActions([
       action('create-joint', `Создать ${task.targetJoint}`, 'primary'),
-      action(
-        'toggle-officiality',
-        isUnofficialJoint(task.row) ? 'Сделать официальным' : 'Сделать неофициальным',
-      ),
+      officialityAction(task),
       options.canCreateEarlyCoil && !isUnofficialJoint(task.row)
         ? action('create-early-coil', 'Врезать катушку досрочно')
         : null,
@@ -65,10 +80,7 @@ export function getDispatcherTaskActionSpecs(
   if (task.kind === 'coil') {
     return [
       action('create-joint', `Создать катушку ${task.targetJoints.join(' + ')}`, 'primary'),
-      action(
-        'toggle-officiality',
-        isUnofficialJoint(task.row) ? 'Сделать официальным' : 'Сделать неофициальным',
-      ),
+      officialityAction(task),
       action('show-task', 'Показать в отчете'),
     ]
   }
@@ -101,7 +113,7 @@ export function getDispatcherTaskActionSpecs(
         action('show-task', 'Показать стыки'),
       ]
     }
-    if (task.issue === 'rejected-primary') {
+    if (task.issue === 'rejected-rows') {
       return [
         action('toggle-officiality', 'Проверить официальность', 'primary'),
         action('accept-warning', 'Принять исключение'),
@@ -186,6 +198,7 @@ export function getDispatcherTaskActionSpecs(
 }
 
 export function getDispatcherTaskScopeLabel(task: RepeatedJointTask) {
+  if (task.kind === 'check' && task.reason === CHAIN_ACTUALITY_REASON) return 'Цепочка стыка'
   if (task.kind === 'line-consistency') return 'Вся линия'
   if (task.kind === 'percentage-line-control') return 'Линия и клеймо'
   if (task.kind === 'duplicate-check') return 'Совпадающие стыки'
@@ -197,6 +210,15 @@ export function getDispatcherTaskScopeLabel(task: RepeatedJointTask) {
 
 export function canOpenDispatcherTaskPicture(task: RepeatedJointTask) {
   return Boolean(task.row)
+}
+
+function officialityAction(task: RepeatedJointTask): DispatcherTaskActionSpec {
+  const unofficial = isUnofficialJoint(task.row)
+  const reason = unofficial ? null : getUnofficialDuplicateControlBlockReason(task.row)
+  return {
+    ...action('toggle-officiality', unofficial ? 'Сделать официальным' : 'Сделать неофициальным'),
+    ...(reason ? { disabledReason: reason } : {}),
+  }
 }
 
 function action(

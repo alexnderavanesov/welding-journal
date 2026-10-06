@@ -138,7 +138,7 @@ export function DispatcherTaskDetails({ task, showHeading = true, workspace = fa
 function getDispatcherTaskMetrics(task: DispatcherTask) {
   if (task.kind !== 'percentage-line-control') return []
 
-  const percent = String(task.row.weldControlPercent ?? '').trim()
+  const percent = String((task.demandKind === 'pvk' ? task.row.pvkControlPercent ?? task.row.weldControlPercent : task.row.weldControlPercent) ?? '').trim()
   const issueLabel = task.issue === 'missing'
     ? 'Осталось'
     : task.issue === 'excess'
