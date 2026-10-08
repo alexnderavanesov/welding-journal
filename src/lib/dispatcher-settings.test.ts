@@ -7,6 +7,7 @@ import {
   DISPATCHER_SETTING_GROUPS,
   DISPATCHER_SETTING_HELP,
   DISPATCHER_SETTING_TASK_TYPE_LABELS,
+  OPTIONAL_DISPATCHER_SETTING_IDS,
   getDispatcherTaskCode,
   getDispatcherTaskSettingId,
   isDispatcherTaskEnabled,
@@ -19,8 +20,6 @@ import {
 } from '@/lib/lnk-chronology-checks'
 import { PSTO_REQUEST_DATE_ORDER_REASON } from '@/lib/psto-chronology-checks'
 import {
-  REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
-  REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON,
   UNOFFICIAL_REJECTED_WITH_COIL_REASON,
 } from '@/lib/report-config'
 import {
@@ -35,10 +34,8 @@ const row = { id: 1, joint: 'F1' } as WeldRow
 describe('dispatcher settings', () => {
   it('documents primary RK/UZK surcharge without the obsolete repair-chain threshold', () => {
     for (const id of ['percentage-rejected-rows', 'percentage-full-control', 'percentage-suspend-welder'] as const) {
-      const item = DISPATCHER_SETTING_GROUPS.flatMap(group => group.items).find(item => item.id === id)!
-      expect(item.description).toContain('первичн')
-      expect(item.description).toContain('РК/УЗК')
-      expect(item.description).not.toContain('включая ремонты')
+      expect(DISPATCHER_SETTING_HELP[id].meaning).toContain('первичн')
+      expect(DISPATCHER_SETTING_HELP[id].meaning).toContain('РК/УЗК')
       expect(DISPATCHER_SETTING_HELP[id].meaning).not.toContain('включая ремонт')
     }
     expect(DISPATCHER_SETTING_HELP['percentage-full-control'].example).toContain('F1, F2, F3 и F4')
@@ -49,19 +46,12 @@ describe('dispatcher settings', () => {
     const groupedIds = DISPATCHER_SETTING_GROUPS.flatMap((group) => group.items.map((item) => item.id))
 
     expect(groupedIds).toHaveLength(new Set(groupedIds).size)
-    expect([...groupedIds].sort()).toEqual(settingIds)
+    expect([...groupedIds].sort()).toEqual([...OPTIONAL_DISPATCHER_SETTING_IDS].sort())
     expect(Object.keys(DISPATCHER_SETTING_CODES).sort()).toEqual(settingIds)
     expect(Object.keys(DISPATCHER_SETTING_TASK_TYPE_LABELS).sort()).toEqual(settingIds)
     expect(Object.keys(DISPATCHER_SETTING_HELP).sort()).toEqual(settingIds)
     expect(Object.keys(DISPATCHER_SETTING_ACTION_HELP).sort()).toEqual(settingIds)
-    expect(new Set(Object.values(DISPATCHER_SETTING_CODES)).size).toBe(settingIds.length)
-    expect(Object.values(DISPATCHER_SETTING_CODES).sort((left, right) =>
-      left.localeCompare(right, 'ru', { numeric: true }),
-    )).toEqual(
-      Array.from({ length: 34 }, (_, index) => index + 1)
-        .filter((number) => ![16, 24, 25, 26].includes(number))
-        .map((number) => `ДЗ-${String(number).padStart(2, '0')}`),
-    )
+    expect(groupedIds.map(id => DISPATCHER_SETTING_CODES[id])).toEqual(['ДЗ-01', 'ДЗ-02', 'ДЗ-03', 'ДЗ-04', 'ДЗ-05'])
   })
 
   it('maps every dispatcher task family to its own setting and code', () => {
@@ -83,8 +73,6 @@ describe('dispatcher settings', () => {
       [makeExpiryTask('naks'), 'welder-stamp-expiry'],
       [makeExpiryTask('dls'), 'welder-dls-expiry'],
       [makeCheckTask('проверить даты сварки'), 'chain-date-order'],
-      [makeCheckTask(REPAIR_FORBIDDEN_BY_DIAMETER_REASON), 'check-repair-diameter'],
-      [makeCheckTask(REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON), 'check-repair-diameter'],
       [makeCheckTask('проверить клеймо'), 'check-welder-stamp'],
       [makeCheckTask('дозаполнить клейма_1'), 'check-incomplete-stamps'],
       [makeCheckTask('дозаполнить клейма_2'), 'check-incomplete-stamps'],
@@ -109,12 +97,12 @@ describe('dispatcher settings', () => {
     }
   })
 
-  it('filters a disabled percentage line task without disabling other percentage issues', () => {
+  it('ignores an old disabled flag for mandatory line program tasks', () => {
     const settings = { ...DEFAULT_DISPATCHER_SETTINGS, 'percentage-excess': false }
     const excessTask = makePercentageTask('excess', 'Проверить лишний контроль процентной линии')
     const missingTask = makePercentageTask('missing', 'Назначить РК/УЗК по процентной линии')
 
-    expect(isDispatcherTaskEnabled(excessTask, settings)).toBe(false)
+    expect(isDispatcherTaskEnabled(excessTask, settings)).toBe(true)
     expect(isDispatcherTaskEnabled(missingTask, settings)).toBe(true)
   })
 
@@ -153,7 +141,7 @@ describe('dispatcher settings', () => {
     const unofficialCreateTask = makeCreateTask('неофициальный')
     const regularCreateTask = makeCreateTask('')
 
-    expect(isDispatcherTaskEnabled(unofficialCreateTask, settings)).toBe(false)
+    expect(isDispatcherTaskEnabled(unofficialCreateTask, settings)).toBe(true)
     expect(isDispatcherTaskEnabled(regularCreateTask, settings)).toBe(true)
   })
 })

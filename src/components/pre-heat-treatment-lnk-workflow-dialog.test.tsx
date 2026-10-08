@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { PreHeatTreatmentLnkWorkflowDialog } from '@/components/pre-heat-treatment-lnk-workflow-dialog'
@@ -79,6 +79,32 @@ function renderDialog(mode: 'request' | 'result', row: WeldRow) {
 }
 
 describe('PreHeatTreatmentLnkWorkflowDialog', () => {
+  it('applies the same selected-row matrix before heat treatment with hover and focus reasons', async () => {
+    const request = { requestName: 'РК-до-ТО', requestDate: '2026-08-20', result: 'ожидает НК' }
+    renderDialogRows('result', [
+      makeRow({ id: 1, joint: 'F1', d1: 57, preHeatTreatmentControls: [
+        { id: 11, weldJointId: 1, method: 'ВИК', result: 'годен' },
+        { id: 1, weldJointId: 1, method: 'РК', ...request },
+      ] }),
+      makeRow({ id: 2, joint: 'F2R2', d1: 89, preHeatTreatmentControls: [
+        { id: 12, weldJointId: 2, method: 'ВИК', result: 'годен' },
+        { id: 2, weldJointId: 2, method: 'РК', ...request },
+      ] }),
+    ], new Set([1, 2]), 'РК')
+    const picker = within(screen.getByRole('group', { name: 'Результат для всех выбранных' }))
+    await waitFor(() => expect(screen.getAllByRole('checkbox', { name: /Выбрать стык/ })[0]).toBeChecked())
+    expect(picker.getByRole('button', { name: 'ремонт' })).toBeDisabled()
+    fireEvent.focus(picker.getByRole('group', { name: 'ремонт' }))
+    expect(screen.getByRole('tooltip')).toHaveTextContent('меньше 89 мм')
+    expect(screen.getByRole('tooltip')).toHaveTextContent('два ремонта')
+    expect(picker.getByRole('button', { name: 'вырез' })).toBeEnabled()
+    for (const button of screen.getAllByRole('button', { name: 'годен' })) {
+      expect(button).toHaveAttribute('aria-pressed', 'false')
+    }
+    fireEvent.blur(picker.getByRole('group', { name: 'ремонт' }))
+    fireEvent.mouseEnter(screen.getAllByRole('group', { name: 'ремонт' })[1]!)
+    expect(screen.getByRole('tooltip')).toHaveTextContent('меньше 89 мм')
+  })
   it('preselects only assigned request methods and keeps duplicate controls outside the workflow', () => {
     renderDialog('request', makeRow({
       duplicateControls: [{
@@ -306,12 +332,9 @@ describe('PreHeatTreatmentLnkWorkflowDialog', () => {
     ])
 
     await waitFor(() => expect(screen.getAllByRole('checkbox', { name: /Выбрать стык/ })).toHaveLength(2))
-    fireEvent.change(screen.getByRole('combobox', { name: 'Результат для всех выбранных' }), {
-      target: { value: 'годен' },
-    })
-    fireEvent.click(screen.getAllByRole('button', { name: 'ремонт' })[0]!)
+    fireEvent.click(within(screen.getByRole('group', { name: 'Результат для всех выбранных' })).getByRole('button', { name: 'годен' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'ремонт' })[1]!)
 
-    expect(screen.getByRole('combobox', { name: 'Результат для всех выбранных' })).toHaveValue('__custom__')
-    expect(screen.getByRole('option', { name: 'Разные результаты' })).toBeInTheDocument()
+    expect(screen.getByText('Разные результаты')).toBeInTheDocument()
   })
 })

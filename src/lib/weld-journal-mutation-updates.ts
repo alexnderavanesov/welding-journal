@@ -5,7 +5,7 @@ import {
   withLnkFinalStatus,
 } from '@/lib/lnk-field-updates'
 import { assertNoLnkChronologyIssues, assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
-import { assertNoLnkRepairRuleIssues } from '@/lib/lnk-result-rules'
+import { assertNoLnkResultRuleIssues } from '@/lib/lnk-result-policy'
 import { assertNoPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import {
   clearInactivePstoWaitingStatus,
@@ -28,6 +28,7 @@ import {
 } from '@/lib/weld-validation'
 import { normalizeWeldingMethodsForImport, validateWelderStampFieldsForImport } from '@/lib/welder-stamp-import'
 import { loadDataListSettings, normalizeDataListOption } from '@/lib/data-list-settings'
+import { getWeldMaterialGroupsError, normalizeWeldMaterialGroups } from '@/lib/weld-material-groups'
 import {
   validateOfficialStampCompatibilityForImport,
   validateOfficialStampCompatibilityForSave,
@@ -97,7 +98,7 @@ export function buildRepeatedJointRows(task: RepeatedJointCreateTask | RepeatedJ
 type PrepareImportedWeldRecordsOptions = {
   records: WeldInput[]
   skipManualJointNameValidation?: boolean
-  skipLnkRepairRuleValidation?: boolean
+  skipLnkResultRuleValidation?: boolean
   allowedArchivedOfficialStamps?: readonly string[]
   weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
   welderStamps: WelderStampRecord[]
@@ -127,7 +128,7 @@ export function collectImportedWeldRecordPreparationErrors(
 function getImportedWeldRecordPreparationSteps({
   records,
   skipManualJointNameValidation = false,
-  skipLnkRepairRuleValidation = false,
+  skipLnkResultRuleValidation = false,
   allowedArchivedOfficialStamps = [],
   weldFormStampSelectOptions,
   welderStamps,
@@ -156,8 +157,8 @@ function getImportedWeldRecordPreparationSteps({
       saveCheckSettings,
       suspensions: welderStampSuspensions,
     }),
-    ...(!skipLnkRepairRuleValidation
-      ? [() => assertNoLnkRepairRuleIssues(records, saveCheckSettings)]
+    ...(!skipLnkResultRuleValidation
+      ? [() => assertNoLnkResultRuleIssues(records)]
       : []),
     () => assertNoLnkChronologyIssues(records, saveCheckSettings),
     () => assertNoPstoChronologyIssues(records, saveCheckSettings),
@@ -197,6 +198,11 @@ function normalizeConfiguredDataListField(
   options: string[],
 ) {
   const rawValue = String(record[fieldKey] ?? '').trim()
+  if (fieldKey === 'materialGroup') {
+    const error = getWeldMaterialGroupsError(rawValue, options)
+    if (!error) record.materialGroup = normalizeWeldMaterialGroups(rawValue) || null
+    return error
+  }
   const value = normalizeDataListOption(rawValue)
   if (!value) {
     record[fieldKey] = null

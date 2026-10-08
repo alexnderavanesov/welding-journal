@@ -31,9 +31,10 @@ import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-
 import { assertStoredEarlyCoilDecisionSourcesRemainValid } from '@/server/early-coil-decision-guard'
 import { getNextTimestampVersion } from '@/server/timestamp-version'
 import { loadWeldWorkflowSettingsFromTransaction } from '@/server/weld-workflow-settings'
-import { getLnkRepairResultSaveReason } from '@/lib/lnk-result-rules'
+import { assertLnkResultAllowed } from '@/lib/lnk-result-policy'
 import { getDuplicateControlOfficialityBlockReason } from '@/lib/duplicate-control-officiality'
-import { formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
+import { isUnofficialJoint } from '@/lib/joint-display'
+import { assertUnofficialLastRejectionRetained } from '@/lib/unofficial-lnk-result-guard'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 import { prepareReportRows } from '@/lib/use-report-rows'
@@ -321,7 +322,7 @@ export const saveDuplicateControl = createServerFn({ method: 'POST' })
     const insertData = prepareDuplicateControlWrite(data)
     const db = requireDb()
     return db.transaction(async (tx) => {
-      await loadControlProcessSettingsFromTransaction(tx)
+      const processSettings = await loadControlProcessSettingsFromTransaction(tx)
       const workflowSettings = await loadWeldWorkflowSettingsFromTransaction(tx)
       if (data.id) {
         const [reference] = await tx
@@ -334,15 +335,18 @@ export const saveDuplicateControl = createServerFn({ method: 'POST' })
           reference.weldJointId,
           insertData.weldJointId,
         ])
-        assertDuplicateControlRepairAllowed(
+        assertDuplicateControlResultAllowed(
           getLockedWeldJoint(lockedWeldRows, insertData.weldJointId),
           data,
-          workflowSettings.saveCheckSettings,
           workflowSettings.systemIndexSettings,
+          processSettings.pvkGoodOnly,
         )
         const previous = await lockDuplicateControl(tx, data.id)
         if (!previous) throw new Error(`Дубль-контроль ${data.id} не найден`)
         assertDuplicateControlVersion(previous, data.expectedVersion)
+        if (previous.weldJointId !== insertData.weldJointId) {
+          await assertUnofficialDuplicateRejectionsRetained(tx, lockedWeldRows, [previous])
+        }
         const [updated] = await tx
           .update(duplicateControls)
           .set({ ...insertData, updatedAt: getNextTimestampVersion(previous.updatedAt) })
@@ -362,11 +366,11 @@ export const saveDuplicateControl = createServerFn({ method: 'POST' })
       }
 
       const lockedWeldRows = await lockWeldJointsForDuplicateControlChange(tx, [insertData.weldJointId])
-      assertDuplicateControlRepairAllowed(
+      assertDuplicateControlResultAllowed(
         getLockedWeldJoint(lockedWeldRows, insertData.weldJointId),
         data,
-        workflowSettings.saveCheckSettings,
         workflowSettings.systemIndexSettings,
+        processSettings.pvkGoodOnly,
       )
       const [created] = await tx.insert(duplicateControls).values(insertData).returning()
       await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, [created.weldJointId])
@@ -394,7 +398,7 @@ export const saveDuplicateControls = createServerFn({ method: 'POST' })
     }
     const db = requireDb()
     return db.transaction(async (tx) => {
-      await loadControlProcessSettingsFromTransaction(tx)
+      const processSettings = await loadControlProcessSettingsFromTransaction(tx)
       const workflowSettings = await loadWeldWorkflowSettingsFromTransaction(tx)
       const saved: Array<DuplicateControlRecord | undefined> = Array(prepared.length)
       const affectedWeldJointIds: number[] = []
@@ -417,11 +421,11 @@ export const saveDuplicateControls = createServerFn({ method: 'POST' })
       ])
       const lockedWeldRowsById = new Map(lockedWeldRows.map((row) => [row.id, row]))
       for (const { record, insertData } of prepared) {
-        assertDuplicateControlRepairAllowed(
+        assertDuplicateControlResultAllowed(
           getLockedWeldJoint(lockedWeldRowsById, insertData.weldJointId),
           record,
-          workflowSettings.saveCheckSettings,
           workflowSettings.systemIndexSettings,
+          processSettings.pvkGoodOnly,
         )
       }
       const lockedControls: DuplicateControl[] = updateIds.length > 0
@@ -442,6 +446,8 @@ export const saveDuplicateControls = createServerFn({ method: 'POST' })
         assertDuplicateControlVersion(previous, record.expectedVersion)
         return { index, insertData, previous }
       })
+      await assertUnofficialDuplicateRejectionsRetained(tx, lockedWeldRows,
+        updateWrites.filter(write => write.previous.weldJointId !== write.insertData.weldJointId).map(write => write.previous))
       for (const { index, previous, updated } of await persistDuplicateControlUpdates(tx, updateWrites)) {
         saved[index] = toPayload(updated)
         affectedWeldJointIds.push(previous.weldJointId, updated.weldJointId)
@@ -493,10 +499,11 @@ export const deleteDuplicateControl = createServerFn({ method: 'POST' })
         .where(eq(duplicateControls.id, data.id))
         .limit(1)
       if (!reference) throw new Error(`Дубль-контроль ${data.id} не найден`)
-      await lockWeldJointsForDuplicateControlChange(tx, [reference.weldJointId])
+      const lockedWeldRows = await lockWeldJointsForDuplicateControlChange(tx, [reference.weldJointId])
       const previous = await lockDuplicateControl(tx, data.id)
       if (!previous) throw new Error(`Дубль-контроль ${data.id} не найден`)
       assertDuplicateControlVersion(previous, data.expectedVersion)
+      await assertUnofficialDuplicateRejectionsRetained(tx, lockedWeldRows, [previous])
       const [deleted] = await tx
         .delete(duplicateControls)
         .where(eq(duplicateControls.id, data.id))
@@ -511,6 +518,23 @@ export const deleteDuplicateControl = createServerFn({ method: 'POST' })
     })
     return { ok: true }
   })
+
+async function assertUnofficialDuplicateRejectionsRetained(
+  tx: Parameters<Parameters<ReturnType<typeof requireDb>['transaction']>[0]>[0],
+  lockedRows: Awaited<ReturnType<typeof lockWeldJointsForDuplicateControlChange>>,
+  removed: readonly Pick<DuplicateControl, 'id' | 'weldJointId'>[],
+) {
+  const affectedIds = new Set(removed.map(control => control.weldJointId))
+  const protectedRows = lockedRows.filter(row => affectedIds.has(row.id) && isUnofficialJoint(row))
+  if (protectedRows.length === 0) return
+  // Load relations once for the affected batch; never query inside the row loop.
+  const rows = await attachDuplicateControlRelations(await attachHeatTreatmentControlRelations(
+    protectedRows.map(row => ({ ...row, duplicateControls: [] as DuplicateControlRecord[] })), tx), tx)
+  const removedIds = new Set(removed.map(control => control.id))
+  for (const row of rows) assertUnofficialLastRejectionRetained({ ...row,
+    duplicateControls: row.duplicateControls?.filter(control => !removedIds.has(control.id)),
+  }, row)
+}
 
 export function prepareDuplicateControlWrite(record: DuplicateControlPayload): NewDuplicateControl {
   if (!Number.isInteger(record.weldJointId) || record.weldJointId <= 0) {
@@ -699,27 +723,18 @@ function getLockedWeldJoint<T extends { id: number }>(
   return row
 }
 
-export function assertDuplicateControlRepairAllowed(
+export function assertDuplicateControlResultAllowed(
   row: WeldInput,
   control: Pick<DuplicateControlPayload, 'method' | 'result'>,
-  saveCheckSettings: SaveCheckSettings,
   systemIndexSettings: SystemIndexSettings,
+  pvkGoodOnly = false,
 ) {
   const officialityReason = getDuplicateControlOfficialityBlockReason(row)
   if (officialityReason) throw new Error(officialityReason)
   if (row.layeredControlAssigned) {
     throw new Error('При послойном контроле любой дубль ВИК/РК/УЗК/ПВК недоступен, включая годный и ожидающий. Сначала уберите послойный контроль.')
   }
-  if (String(control.result ?? '').trim().toLowerCase() !== 'ремонт') return
-  const reason = getLnkRepairResultSaveReason(
-    row,
-    `${control.method} (дубль)`,
-    saveCheckSettings,
-    systemIndexSettings,
-  )
-  if (reason) {
-    throw new Error(`Сохранение невозможно: ${formatSaveCheckBlockReason('lnkResultRepairRules', reason)}`)
-  }
+  assertLnkResultAllowed(row, control.method, control.result, { systemIndexSettings, pvkGoodOnly, scope: 'duplicate' })
 }
 
 async function touchLnkProfile(

@@ -207,12 +207,12 @@ describe('welding journal import template', () => {
     }
     saveSaveCheckSettings(withoutOfficialChecks)
 
-    expect(getReportImportCellKind('weldingJournal', 'stamp1K')).toBe('free')
+    expect(getReportImportCellKind('weldingJournal', 'stamp1K')).toBe('checked')
     expect(getReportImportCellKind('weldingJournal', 'stamp1KFact')).toBe('free')
 
     saveSaveCheckSettings({ ...withoutOfficialChecks, requiredRootStampWithWeldDate: true })
     expect(getReportImportCellKind('weldingJournal', 'stamp1K')).toBe('checked')
-    expect(getReportImportCellKind('weldingJournal', 'stamp1Z')).toBe('free')
+    expect(getReportImportCellKind('weldingJournal', 'stamp1Z')).toBe('checked')
 
     saveSaveCheckSettings({ ...withoutOfficialChecks, officialArchive: true })
     expect(getReportImportCellKind('weldingJournal', 'stamp1K')).toBe('checked')
@@ -243,7 +243,7 @@ describe('welding journal import template', () => {
       const payload = new TextDecoder().decode(bytes)
       const column = findTemplateHeaderColumn(payload, 'Корень_1')
       expect(column).toBeTruthy()
-      expect(payload).toContain(`<c r="${column}2" s="0"/>`)
+      expect(payload).toContain(`<c r="${column}2" s="3"/>`)
     }
 
     saveSaveCheckSettings(DEFAULT_SAVE_CHECK_SETTINGS)
@@ -261,8 +261,8 @@ describe('welding journal import template', () => {
 
   it('marks thicknesses yellow when a thickness rule or table WDI uses them', () => {
     saveSaveCheckSettings({ ...DEFAULT_SAVE_CHECK_SETTINGS, officialThickness: false })
-    expect(getReportImportCellKind('weldingJournal', 't1')).toBe('free')
-    expect(getReportImportCellKind('weldingJournal', 't2')).toBe('free')
+    expect(getReportImportCellKind('weldingJournal', 't1')).toBe('checked')
+    expect(getReportImportCellKind('weldingJournal', 't2')).toBe('checked')
 
     saveSaveCheckSettings(DEFAULT_SAVE_CHECK_SETTINGS)
     expect(getReportImportCellKind('weldingJournal', 't1')).toBe('checked')
@@ -288,7 +288,7 @@ describe('welding journal import template', () => {
     expect(getReportImportTemplateFields('weldingJournal').some((field) => field.key === 'dispatcherTasks')).toBe(false)
     expect(getReportImportCellKind('weldingJournal', 'id')).toBe('ignored')
     expect(getReportImportCellKind('weldingJournal', 'dispatcherTasks')).toBe('ignored')
-    expect(stripIgnoredImportFields({ id: 999, dispatcherTasks: 'ДЗ-18', joint: 'S1' }, 'weldingJournal')).toEqual({
+    expect(stripIgnoredImportFields({ id: 999, dispatcherTasks: 'СП-02', joint: 'S1' }, 'weldingJournal')).toEqual({
       joint: 'S1',
     })
     for (const fieldKey of [

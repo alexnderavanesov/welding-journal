@@ -29,7 +29,7 @@ import { type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import { assertUniqueWeldMutationTargets, splitWeldImportInsertBatches } from '@/lib/weld-import-limits'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
-import { isLnkRepairForbiddenWithSettings } from '@/lib/lnk-result-rules'
+import { getLnkResultRuleIssues } from '@/lib/lnk-result-policy'
 import { loadControlProcessSettingsFromTransaction } from '@/server/control-process-settings'
 import { assertJointChainIdentityChangesUseDedicatedMove } from '@/server/joint-chain-line-move-guard'
 import { attachDuplicateControlRelations } from '@/server/duplicate-control-relations'
@@ -575,7 +575,7 @@ export function getCurrentRepeatedJointTargets(
   const rejection = getPrimaryRejectedLnkResult(sourceRow)
   const sourceJoint = String(sourceRow.joint ?? '').trim()
   if (!rejection || !sourceJoint || hasCompletedParentBranch(rows, sourceRow, sourceJoint, settings)) return []
-  if (rejection.result === 'ремонт' && isLnkRepairForbiddenWithSettings(sourceRow, settings)) return []
+  if (getLnkResultRuleIssues(sourceRow, settings).length > 0) return []
 
   const officialRejectedRows = getOfficialRejectedJointChainRows(rows, sourceRow, sourceJoint, settings)
   const coilTransitionMode = getCoilTransitionModeForSource({

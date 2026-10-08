@@ -3,7 +3,9 @@ import { persistProjectSettingToRemoteAndWait, PROJECT_SETTING_KEYS } from '@/li
 import {
   DEFAULT_DISPATCHER_SETTINGS,
   DISPATCHER_SETTING_CODES,
+  isDispatcherSettingEnabled,
   isDispatcherReminderSettingId,
+  OPTIONAL_DISPATCHER_SETTING_IDS,
   type DispatcherSettings,
 } from '@/lib/dispatcher-settings'
 import { getBusinessDateIso } from '@/lib/business-date'
@@ -25,7 +27,7 @@ export function buildDisabledDispatcherSettings(current: DispatcherSettings): Di
   return Object.fromEntries(
     Object.keys(DEFAULT_DISPATCHER_SETTINGS).map((rawId) => {
       const id = rawId as keyof DispatcherSettings
-      return [id, isDispatcherReminderSettingId(id) ? false : current[id] === false]
+      return [id, OPTIONAL_DISPATCHER_SETTING_IDS.includes(id) && !isDispatcherReminderSettingId(id) && current[id] === false]
     }),
   ) as DispatcherSettings
 }
@@ -33,7 +35,7 @@ export function buildDisabledDispatcherSettings(current: DispatcherSettings): Di
 export function getEnabledDispatcherTaskCodes(current: DispatcherSettings) {
   return [...new Set(
     Object.entries(DISPATCHER_SETTING_CODES)
-      .filter(([rawId]) => current[rawId as keyof DispatcherSettings] !== false)
+      .filter(([rawId]) => isDispatcherSettingEnabled(rawId as keyof DispatcherSettings, current))
       .map(([, code]) => code),
   )]
 }

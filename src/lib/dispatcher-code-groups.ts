@@ -1,6 +1,7 @@
 import { getDispatcherTaskCode, getDispatcherTaskTypeLabel } from '@/lib/dispatcher-settings'
 import { compareDispatcherTaskCodes } from '@/lib/dispatcher-task-row-codes'
 import type { DispatcherTask, RepeatedJointTaskGroup } from '@/lib/dispatcher-types'
+import { getSystemRule } from './system-rule-catalog'
 
 export type DispatcherTaskCodeGroup = {
   code: string
@@ -40,7 +41,7 @@ export function buildDispatcherTaskCodeGroups(
       const firstTask = tasks[0]
       codeGroups.set(code, {
         code,
-        label: getDispatcherTaskTypeLabel(firstTask),
+        label: getSystemRule(code)?.title ?? getDispatcherTaskTypeLabel(firstTask),
         tasks: [...tasks],
         objectGroups: [splitObjectGroup],
         metric: null,

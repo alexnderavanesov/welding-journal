@@ -35,6 +35,33 @@ const context: ServerWeldValidationContext = {
 }
 
 describe('validateServerWeldRecords', () => {
+  it.each([false, true])('blocks a partial removal of the last unofficial rejection with checks disabled (import=%s)', importMode => {
+    const previous = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1', officiality: 'неофициальный', hasUzk: 'да', uzkResult: 'ремонт' } as WeldJoint
+    const previousRows = new Map([[1, previous]])
+    const records = mergeWeldRecordsWithPrevious([{ id: 1, uzkResult: null }], previousRows)
+    const checksOff = Object.fromEntries(Object.keys(DEFAULT_SAVE_CHECK_SETTINGS).map(key => [key, false])) as typeof DEFAULT_SAVE_CHECK_SETTINGS
+    expect(() => validateServerWeldRecords({ records, previousRows, context: { ...context, saveCheckSettings: checksOff }, importMode })).toThrow('последний негодный результат')
+  })
+  it('cannot rename a recorded repair even when its legacy name is ordinary and the client forges the chain state', () => {
+    const previous = { id: 9, joint: 'F9', line: 'L' } as WeldJoint
+    const stored = { ...previous, programChainState: { weldJointId: 9, kind: 'repair', physicalRootId: 1,
+      sourceRowId: 1, coilParentId: null, coilSide: null, replacedByCoil: false } } as WeldRow
+    const rules = { ...context, saveCheckSettings: { ...DEFAULT_SAVE_CHECK_SETTINGS, manualJointName: false, systemJointRenameProtection: false },
+      programRules: { rows: [stored], approved: new Set<string>() } }
+    const record = { ...previous, joint: 'CUSTOM', programChainState: { ...stored.programChainState, kind: 'primary' } } as WeldInput
+    expect(() => validateServerWeldRecords({ records: [record], previousRows: new Map([[9, previous]]), context: rules })).toThrow('СП-09')
+    expect(() => validateServerWeldRecords({ records: [{ ...previous, weldingJournalNote: 'Фактическое уточнение' }], previousRows: new Map([[9, previous]]), context: rules })).not.toThrow()
+  })
+
+  it.each(['vikResult', 'pvkResult'] as const)('cannot bypass SP-05 for %s through old disabled checks or partial imports', resultKey => {
+    const previous = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1', hasVik: 'да', hasPvk: 'да', [resultKey]: 'вырез' } as unknown as WeldJoint
+    const previousRows = new Map([[1, previous]])
+    const records = mergeWeldRecordsWithPrevious([{ id: 1, responsible: 'Новый ответственный' }], previousRows)
+    const checksOff = Object.fromEntries(Object.keys(DEFAULT_SAVE_CHECK_SETTINGS).map(key => [key, false])) as typeof DEFAULT_SAVE_CHECK_SETTINGS
+    expect(() => validateServerWeldRecords({ records, previousRows, context: { ...context, saveCheckSettings: checksOff }, importMode: true })).toThrow('СП-07')
+    expect(previous[resultKey]).toBe('вырез')
+  })
+
   it.each([false, true])('protects unofficial results after merging partial input (import=%s)', importMode => {
     const previous = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1', officiality: 'неофициальный', hasVik: 'да', vikResult: 'годен', hasUzk: 'да', uzkResult: 'ремонт', uzkRequest: 'УЗК-1', uzkRequestDate: '2026-09-01' } as WeldJoint
     const previousRows = new Map([[1, previous]])
@@ -188,7 +215,7 @@ describe('validateServerWeldRecords', () => {
       records: [{ ...previous, stamp1K: 'NEW' } as unknown as WeldInput],
       previousRows: new Map([[previous.id, previous]]),
       context,
-    })).toThrow('ЗВ-01')
+    })).toThrow('СП-02')
   })
 
   it('audits a legacy control-history issue without blocking an unrelated edit', () => {
@@ -218,7 +245,7 @@ describe('validateServerWeldRecords', () => {
       } as unknown as WeldInput],
       previousRows: new Map([[previous.id, previous]]),
       context,
-    })).toThrow('ЗВ-27')
+    })).toThrow('СП-12')
   })
 
   it('locks stored weld rows before merging a scoped workflow update', async () => {
@@ -273,7 +300,7 @@ describe('validateServerWeldRecords', () => {
     )).toBe('')
   })
 
-  it('blocks a saved weld date without a material group and allows disabling ZВ-29', () => {
+  it('allows incomplete welding data with mandatory SP-03 follow-up: material group', () => {
     const record = {
       joint: 'F1',
       weldDate: '2026-07-01',
@@ -299,7 +326,7 @@ describe('validateServerWeldRecords', () => {
       records: [record],
       previousRows: new Map(),
       context: contextWithoutRootCheck,
-    })).toThrow('ЗВ-29')
+    })).not.toThrow()
 
     expect(() => validateServerWeldRecords({
       records: [record],
@@ -314,7 +341,7 @@ describe('validateServerWeldRecords', () => {
     })).not.toThrow()
   })
 
-  it('blocks a saved weld date without a connection type and allows disabling ZВ-30', () => {
+  it('allows incomplete welding data with mandatory SP-03 follow-up: connection type', () => {
     const record = {
       joint: 'F1',
       weldDate: '2026-07-01',
@@ -338,7 +365,7 @@ describe('validateServerWeldRecords', () => {
       records: [record],
       previousRows: new Map(),
       context: contextWithoutRootCheck,
-    })).toThrow('ЗВ-30')
+    })).not.toThrow()
 
     expect(() => validateServerWeldRecords({
       records: [record],
@@ -381,7 +408,7 @@ describe('validateServerWeldRecords', () => {
         },
       },
       importMode: true,
-    })).toThrow('ЗВ-29')
+    })).not.toThrow()
 
     expect(() => validateServerWeldRecords({
       records: [record],
@@ -395,7 +422,7 @@ describe('validateServerWeldRecords', () => {
         },
       },
       importMode: true,
-    })).toThrow('ЗВ-30')
+    })).not.toThrow()
 
     expect(() => validateServerWeldRecords({
       records: [record],
@@ -410,10 +437,10 @@ describe('validateServerWeldRecords', () => {
         },
       },
       importMode: true,
-    })).toThrow('ЗВ-31')
+    })).not.toThrow()
   })
 
-  it('blocks a saved weld date without a welding method and allows disabling ZВ-31', () => {
+  it('allows incomplete welding data with mandatory SP-03 follow-up: welding method', () => {
     const record = {
       joint: 'F1',
       weldDate: '2026-07-01',
@@ -438,7 +465,7 @@ describe('validateServerWeldRecords', () => {
       records: [record],
       previousRows: new Map(),
       context: validationContext,
-    })).toThrow('ЗВ-31')
+    })).not.toThrow()
 
     expect(() => validateServerWeldRecords({
       records: [record],
@@ -471,7 +498,7 @@ describe('validateServerWeldRecords', () => {
       records: [record],
       previousRows: new Map(),
       context,
-    })).toThrow('ЗВ-26')
+    })).toThrow('ЗВ-02')
 
     expect(() => validateServerWeldRecords({
       records: [record],
@@ -494,7 +521,7 @@ describe('validateServerWeldRecords', () => {
       records: [record],
       previousRows: new Map([[previous.id, previous]]),
       context,
-    })).toThrow('ЗВ-26')
+    })).toThrow('ЗВ-02')
   })
 
   it('allows a validated system descendant of an indexed base', () => {
@@ -1157,7 +1184,7 @@ describe('validateServerWeldRecords', () => {
         previousRows: new Map([[previous.id, previous]]),
         context,
       }),
-    ).toThrow('ЗВ-18')
+    ).toThrow('СП-05')
   })
 
   it('uses remotely configured welding methods for server-side stamp validation', () => {
@@ -1361,7 +1388,7 @@ describe('validateServerWeldRecords', () => {
         previousRows: new Map(),
         context: incompatibleContext,
       }),
-    ).toThrow('ЗВ-08')
+    ).toThrow('СП-02')
   })
 
   it('blocks a result-only change that introduces a forbidden small-diameter repair', () => {
@@ -1390,7 +1417,7 @@ describe('validateServerWeldRecords', () => {
         previousRows: new Map([[previous.id, previous]]),
         context,
       }),
-    ).toThrow('ЗВ-20')
+    ).toThrow('СП-07')
   })
 
   it('blocks an unrelated edit when an old repair is forbidden by diameter', () => {
@@ -1414,10 +1441,10 @@ describe('validateServerWeldRecords', () => {
         previousRows: new Map([[previous.id, previous]]),
         context,
       }),
-    ).toThrow('ЗВ-20')
+    ).toThrow('СП-07')
   })
 
-  it('blocks repair after two official repairs through ZВ-20', () => {
+  it('blocks repair after two official repairs through SP-05', () => {
     const previous = {
       id: 19,
       joint: 'F1R2',
@@ -1433,10 +1460,10 @@ describe('validateServerWeldRecords', () => {
       records: [record],
       previousRows: new Map([[previous.id, previous]]),
       context,
-    })).toThrow(/ЗВ-20.*после двух ремонтов/)
+    })).toThrow(/СП-07.*Третий ремонт/)
   })
 
-  it('applies ZВ-20 to a forbidden pre-TO repair too', () => {
+  it('applies SP-05 to a forbidden pre-TO repair too', () => {
     const previous = {
       id: 20,
       joint: 'F2R2',
@@ -1458,10 +1485,10 @@ describe('validateServerWeldRecords', () => {
       records: [record],
       previousRows: new Map([[previous.id, previous]]),
       context,
-    })).toThrow(/ЗВ-20.*РК до ТО/)
+    })).toThrow(/СП-07.*РК до ТО/)
   })
 
-  it('enforces LNK result date and conclusion settings on the server', () => {
+  it('allows incomplete LNK requisites but rejects an invalid date', () => {
     const previous = {
       id: 21,
       joint: 'F21',
@@ -1475,7 +1502,7 @@ describe('validateServerWeldRecords', () => {
       records: [{ ...previous, vikResult: 'годен' } as unknown as WeldInput],
       previousRows: new Map([[previous.id, previous]]),
       context,
-    })).toThrow('ЗВ-13')
+    })).not.toThrow()
 
     expect(() => validateServerWeldRecords({
       records: [{
@@ -1486,7 +1513,7 @@ describe('validateServerWeldRecords', () => {
       } as unknown as WeldInput],
       previousRows: new Map([[previous.id, previous]]),
       context,
-    })).toThrow('ЗВ-14')
+    })).toThrow('формате')
 
     expect(() => validateServerWeldRecords({
       records: [{
@@ -1497,7 +1524,7 @@ describe('validateServerWeldRecords', () => {
       } as unknown as WeldInput],
       previousRows: new Map([[previous.id, previous]]),
       context,
-    })).toThrow('ЗВ-19')
+    })).not.toThrow()
   })
 
   it('does not let the general ZВ-11 override disabled LNK result checks', () => {
@@ -1528,7 +1555,7 @@ describe('validateServerWeldRecords', () => {
           lnkResultConclusionRequired: false,
         },
       },
-    })).toThrow('ЗВ-14')
+    })).toThrow('формате')
   })
 
   it('keeps ZВ-15 and ZВ-16 independent at the server boundary', () => {
@@ -1568,7 +1595,7 @@ describe('validateServerWeldRecords', () => {
           lnkResultRequestDateOrder: false,
         },
       },
-    })).toThrow('ЗВ-15')
+    })).toThrow('СП-04')
 
     expect(() => validateServerWeldRecords({
       records: [beforeWeld],
@@ -1581,7 +1608,7 @@ describe('validateServerWeldRecords', () => {
           lnkResultRequestDateOrder: false,
         },
       },
-    })).not.toThrow()
+    })).toThrow('СП-04')
 
     const requestAfterConclusion = {
       ...beforeWeld,
@@ -1599,10 +1626,10 @@ describe('validateServerWeldRecords', () => {
           lnkResultRequestDateOrder: true,
         },
       },
-    })).toThrow('ЗВ-16')
+    })).toThrow('СП-04')
   })
 
-  it('enforces PSTO result date and diagram settings on the server', () => {
+  it('allows incomplete PSTO requisites for subsequent SP-11 backfill', () => {
     const previous = {
       id: 23,
       projectTitle: 'Проект',
@@ -1626,7 +1653,7 @@ describe('validateServerWeldRecords', () => {
       records: [{ ...previous, pstoResult: 'проведено' } as unknown as WeldInput],
       previousRows: new Map([[previous.id, previous]]),
       context: pstoContext,
-    })).toThrow('ЗВ-21')
+    })).not.toThrow()
 
     expect(() => validateServerWeldRecords({
       records: [{
@@ -1637,7 +1664,7 @@ describe('validateServerWeldRecords', () => {
       } as unknown as WeldInput],
       previousRows: new Map([[previous.id, previous]]),
       context: pstoContext,
-    })).toThrow('ЗВ-25')
+    })).not.toThrow()
   })
 
   it('keeps ZВ-23 and ZВ-24 independent at the server boundary', () => {
@@ -1683,7 +1710,7 @@ describe('validateServerWeldRecords', () => {
           pstoResultRequestDateOrder: false,
         },
       },
-    })).toThrow('ЗВ-23')
+    })).toThrow('СП-04')
 
     expect(() => validateServerWeldRecords({
       records: [beforeWeld],
@@ -1697,7 +1724,7 @@ describe('validateServerWeldRecords', () => {
           pstoResultRequestDateOrder: false,
         },
       },
-    })).not.toThrow()
+    })).toThrow('СП-04')
 
     const requestAfterResult = {
       ...beforeWeld,
@@ -1716,6 +1743,6 @@ describe('validateServerWeldRecords', () => {
           pstoResultRequestDateOrder: true,
         },
       },
-    })).toThrow('ЗВ-24')
+    })).toThrow('СП-04')
   })
 })

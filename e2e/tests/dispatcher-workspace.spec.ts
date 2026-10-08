@@ -152,7 +152,7 @@ test('восемь задач двух линий видны в одном сп�
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
   await panel.getByRole('button', { name: 'Развернуть', exact: true }).click()
-  await expect(panel.getByText('ДЗ-27', { exact: true })).toBeVisible()
+  await expect(panel.getByText('СП-01', { exact: true })).toBeVisible()
 })
 
 test('замена индекса ждёт удаление стыка до захвата блокировки диспетчера', async () => {

@@ -1,5 +1,7 @@
 import { Check, Columns3 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { getDocumentHistoryFilterMenuPosition, type DocumentHistoryFilterMenuPosition } from '@/lib/document-history-filter-menu'
 import type {
   DocumentHistoryColumnDefinition,
   DocumentHistoryColumnKey,
@@ -16,24 +18,49 @@ export function DocumentHistoryColumnChooser({
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const [position, setPosition] = useState<DocumentHistoryFilterMenuPosition | null>(null)
   const visibleSet = new Set(visibleColumnKeys)
+
+  useLayoutEffect(() => {
+    if (!isOpen) { setPosition(null); return }
+    const updatePosition = () => {
+      const rect = buttonRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const next = getDocumentHistoryFilterMenuPosition({
+        anchorLeft: rect.left, anchorRight: rect.right, anchorTop: rect.top, anchorBottom: rect.bottom,
+        viewportWidth: window.innerWidth, viewportHeight: window.innerHeight, alignRight: true,
+      })
+      setPosition(current => current && Object.keys(next).every(key => current[key as keyof typeof next] === next[key as keyof typeof next]) ? current : next)
+    }
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    document.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      document.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [isOpen])
 
   useEffect(() => {
     if (!isOpen) return undefined
     const closeOnOutsidePointer = (event: PointerEvent) => {
       const target = event.target
-      if (target instanceof Node && !rootRef.current?.contains(target)) setIsOpen(false)
+      if (target instanceof Node && !rootRef.current?.contains(target) && !menuRef.current?.contains(target)) setIsOpen(false)
     }
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       event.preventDefault()
+      event.stopImmediatePropagation()
       setIsOpen(false)
+      buttonRef.current?.focus({ preventScroll: true })
     }
     document.addEventListener('pointerdown', closeOnOutsidePointer)
-    window.addEventListener('keydown', closeOnEscape)
+    window.addEventListener('keydown', closeOnEscape, true)
     return () => {
       document.removeEventListener('pointerdown', closeOnOutsidePointer)
-      window.removeEventListener('keydown', closeOnEscape)
+      window.removeEventListener('keydown', closeOnEscape, true)
     }
   }, [isOpen])
 
@@ -48,6 +75,7 @@ export function DocumentHistoryColumnChooser({
   return (
     <div ref={rootRef} className="relative ml-auto shrink-0">
       <button
+        ref={buttonRef}
         type="button"
         aria-haspopup="dialog"
         aria-expanded={isOpen}
@@ -65,13 +93,18 @@ export function DocumentHistoryColumnChooser({
         </span>
       </button>
 
-      {isOpen ? (
+      {isOpen && typeof document !== 'undefined' ? createPortal(
         <div
+          ref={menuRef}
           role="dialog"
           aria-label="Столбцы истории документов"
-          className="absolute right-0 top-12 z-[70] w-64 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl shadow-slate-300/40"
+          className="fixed z-[80] flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl shadow-slate-300/40"
+          style={position ? {
+            left: position.left, width: position.width, maxHeight: position.maxHeight,
+            ...(position.placement === 'above' ? { bottom: position.offset } : { top: position.offset }),
+          } : { visibility: 'hidden' }}
         >
-          <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-2.5">
+          <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-2.5">
             <span className="text-sm font-semibold text-slate-800">Столбцы таблицы</span>
             <button
               type="button"
@@ -81,7 +114,7 @@ export function DocumentHistoryColumnChooser({
               Показать все
             </button>
           </div>
-          <div className="max-h-80 overflow-y-auto py-1">
+          <div className="min-h-0 overflow-y-auto overscroll-contain py-1">
             {columns.map((column) => {
               const checked = column.required || visibleSet.has(column.key)
               return (
@@ -105,7 +138,7 @@ export function DocumentHistoryColumnChooser({
               )
             })}
           </div>
-        </div>
+        </div>, document.body,
       ) : null}
     </div>
   )

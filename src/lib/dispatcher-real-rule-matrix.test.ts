@@ -22,6 +22,6 @@ describe('real dispatcher rule matrix', () => {
     expect(tasks, code).not.toHaveLength(0)
     expect(buildDispatcherTaskCodeIndexRows(tasks, fixture.rows).map(({ rowId }) => rowId).sort((a, b) => a - b)).toEqual(fixture.expectedRowIds)
     const disabled = buildVisibleDispatcherTasks({ ...input, dispatcherSettings: { ...DEFAULT_DISPATCHER_SETTINGS, [fixture.settingId]: false } })
-    expect([...disabled.repeatedJointTasks, ...disabled.welderStampExpiryTasks].filter((task) => getDispatcherTaskCode(task) === code)).toEqual([])
+    expect([...disabled.repeatedJointTasks, ...disabled.welderStampExpiryTasks].filter((task) => getDispatcherTaskCode(task) === code)).toEqual(code.startsWith('СП-') ? tasks : [])
   })
 })

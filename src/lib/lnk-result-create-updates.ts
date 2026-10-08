@@ -3,10 +3,8 @@ import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import { withLnkFinalStatus } from '@/lib/lnk-field-updates'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
-import {
-  assertLnkRepairAllowed,
-  isValidLnkResultDraftValue,
-} from '@/lib/lnk-result-draft'
+import { isValidLnkResultDraftValue } from '@/lib/lnk-result-draft'
+import { assertLnkResultAllowed } from '@/lib/lnk-result-policy'
 import { formatDateBeforeWeldDateSaveReason, isDateBeforeWeldDate } from '@/lib/report-date-rules'
 import { loadSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import { loadOtherSettings } from '@/lib/other-settings'
@@ -14,7 +12,7 @@ import { applyRkExposureResultTransition } from '@/lib/rk-exposure'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RowWithId } from '@/lib/lnk-report-mutation-types'
 import type { RkExposureTableSettings } from '@/lib/other-settings'
-import type { ControlProcessSettings } from '@/lib/control-process-settings'
+import { loadControlProcessSettings, type ControlProcessSettings } from '@/lib/control-process-settings'
 import { getPrimaryLnkStageAccess } from '@/lib/lnk-control-stage'
 import { transitionLnkDefectDescription } from '@/lib/lnk-defect-description'
 import type { LnkChronologyIssueKind } from '@/lib/lnk-chronology-checks'
@@ -41,7 +39,7 @@ export function buildLnkResultRows({
   conclusionName: string
   rkExposureTable?: RkExposureTableSettings | null
   saveCheckSettings?: SaveCheckSettings
-  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
+  controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'> & Partial<Pick<ControlProcessSettings, 'pvkGoodOnly'>>
 }) {
   const rkExposureTable = suppliedRkExposureTable === undefined
     ? loadOtherSettings().rkExposureTable
@@ -65,7 +63,8 @@ export function buildLnkResultRows({
       .find((access) => access.status === 'blocked')
     if (blockedAccess) throw new Error(blockedAccess.reason)
   }
-  records.forEach((record) => assertLnkRepairAllowed(record, resultById[record.id] ?? '', saveCheckSettings))
+  const pvkGoodOnly = controlProcessSettings?.pvkGoodOnly ?? loadControlProcessSettings().pvkGoodOnly
+  records.forEach((record) => assertLnkResultAllowed(record, method.code, resultById[record.id] ?? '', { pvkGoodOnly }))
   const normalizedControlDate = normalizeDateLikeForStorage(controlDate) ?? (controlDate.trim() || null)
 
   const lnkUpdatedAt = new Date().toISOString()

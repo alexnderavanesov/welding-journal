@@ -153,7 +153,7 @@ export async function createEarlyCoilDecision({
       key: decisionKey,
       weldJointId: candidate.sourceRow.id,
       kind: EARLY_COIL_DECISION_KIND,
-      code: 'ДЗ-09',
+      code: 'v2:СП-09',
       title: `Досрочная врезка катушки ${candidate.targetJoints.join(' + ')}`,
       context: buildEarlyCoilDecisionContext(candidate.sourceRow, candidate.sourceJoint, candidate.targetJoints),
     })

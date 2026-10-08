@@ -138,7 +138,7 @@ export function useLnkResultDerivedState({
     const method = getLnkMethodByRequestKey(lnkResultDraft.methodKey)
     if (!method) return null
     const documentRows = selectedLnkResultRows.filter(
-      (row) => getEffectiveLnkResultDraftValueForRow(row, lnkResultDraft, saveCheckSettings) !== LNK_EMPTY_RESULT_VALUE,
+      (row) => getEffectiveLnkResultDraftValueForRow(row, lnkResultDraft) !== LNK_EMPTY_RESULT_VALUE,
     )
     return buildSystemDocumentCreationPlan({
       type: 'lnkConclusion',

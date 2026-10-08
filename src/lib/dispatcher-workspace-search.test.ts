@@ -23,11 +23,11 @@ const task = {
 
 describe('dispatcher workspace search', () => {
   it('searches code, joint, project, line, and description without case or ё/е mismatch', () => {
-    expect(matchesDispatcherWorkspaceTask(task, 'ДЗ-27 F17', null)).toBe(true)
+    expect(matchesDispatcherWorkspaceTask(task, 'СП-01 F17', null)).toBe(true)
     expect(matchesDispatcherWorkspaceTask(task, 'елка линия a', null)).toBe(true)
     expect(matchesDispatcherWorkspaceTask(task, 'нет единообразия', null)).toBe(true)
-    expect(matchesDispatcherWorkspaceTask(task, '', 'ДЗ-27')).toBe(true)
-    expect(matchesDispatcherWorkspaceTask(task, 'F17', 'ДЗ-02')).toBe(false)
+    expect(matchesDispatcherWorkspaceTask(task, '', 'СП-01')).toBe(true)
+    expect(matchesDispatcherWorkspaceTask(task, 'F17', 'СП-02')).toBe(false)
     expect(matchesDispatcherWorkspaceTask(task, 'чужой стык', null)).toBe(false)
   })
 

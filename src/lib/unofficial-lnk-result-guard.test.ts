@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { getWeldFormSaveBlockReason } from './weld-form-save-reasons'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from './save-check-settings'
 import type { WeldInput } from './weld-fields'
-import { assertUnofficialLnkGoodResultAllowed } from './unofficial-lnk-result-guard'
+import { assertUnofficialLnkGoodResultAllowed, getUnofficialLastRejectionRemovalReason } from './unofficial-lnk-result-guard'
+import type { WeldRow } from './dispatcher-types'
 import { LNK_METHODS } from './lnk-report-config'
 import { buildLnkResultCorrectionRow, buildLnkResultReplacementRows } from './lnk-result-correction-updates'
 import type { RowWithId } from './lnk-report-mutation-types'
@@ -19,6 +20,36 @@ describe('unofficial LNK result correction', () => {
     const record = previous as RowWithId
     expect(() => buildLnkResultCorrectionRow({ record, methodKey: 'uzkRequest', result: 'годен' })).toThrow('Сначала верните')
     expect(() => buildLnkResultReplacementRows({ updates: [{ record, methodKey: 'uzkRequest', result: 'годен' }] })).toThrow('Сначала верните')
+  })
+  it.each([null, '', 'ожидает НК', 'ожидает заявку'])('blocks removing the last rejection to %s, including a simultaneous restoration', result => {
+    expect(getWeldFormSaveBlockReason({ ...previous, uzkResult: result }, previous, checksOff)).toContain('последний негодный результат')
+    expect(getWeldFormSaveBlockReason({ ...previous, officiality: null, uzkResult: result }, previous, checksOff)).toContain('Сначала верните')
+  })
+  it('blocks local deletion before any request, but allows it after a separate restoration', () => {
+    expect(() => buildLnkResultCorrectionRow({ record: previous as RowWithId, methodKey: 'uzkRequest', result: null })).toThrow('последний негодный результат')
+    const official = { ...previous, officiality: null }
+    expect(() => buildLnkResultCorrectionRow({ record: official as RowWithId, methodKey: 'uzkRequest', result: null })).not.toThrow()
+  })
+  it('does not block clearing one of several rejections, metadata or legacy waiting records', () => {
+    const mixed = { ...previous, rkResult: 'вырез' }
+    expect(getWeldFormSaveBlockReason({ ...mixed, uzkResult: null }, mixed, checksOff)).toBeNull()
+    const legacy = { ...previous, uzkResult: 'ожидает НК' }
+    expect(getWeldFormSaveBlockReason({ ...legacy, weldingJournalNote: 'Уточнение' }, legacy, checksOff)).toBeNull()
+    expect(getWeldFormSaveBlockReason({ ...legacy, officiality: null }, legacy, checksOff)).toBeNull()
+  })
+  it.each([true, false])('checks saved pre-TO facts independently of the stage toggle (%s)', enabled => {
+    const row = { ...previous, uzkResult: null, preHeatTreatmentLnkEnabled: enabled,
+      preHeatTreatmentControls: [{ id: 8, method: 'УЗК', result: 'ремонт' }] } as WeldRow
+    expect(getUnofficialLastRejectionRemovalReason({ ...row, preHeatTreatmentControls: [] }, row)).toContain('последний негодный результат')
+    expect(getUnofficialLastRejectionRemovalReason({ ...row, preHeatTreatmentControls: [], uzkResult: 'ремонт' }, row)).toBeNull()
+    const mixed = { ...row, uzkResult: 'вырез' }
+    expect(getUnofficialLastRejectionRemovalReason({ ...mixed, uzkResult: null }, mixed)).toBeNull()
+  })
+  it('blocks removing the last legacy rejected duplicate but permits clearing a waiting duplicate', () => {
+    const row = { ...previous, uzkResult: null, duplicateControls: [{ id: 7, method: 'УЗК', result: 'вырез' }] } as WeldRow
+    expect(getUnofficialLastRejectionRemovalReason({ ...row, duplicateControls: [] }, row)).toContain('последний негодный результат')
+    const waiting = { ...row, duplicateControls: [{ ...row.duplicateControls![0], result: 'ожидает НК' }] } as unknown as WeldRow
+    expect(getUnofficialLastRejectionRemovalReason({ ...waiting, duplicateControls: [] }, waiting)).toBeNull()
   })
   it.each(['ВИК (дубль)', 'РК (дубль)', 'УЗК (дубль)', 'ПВК (дубль)', 'УЗК до ТО'])('applies the same factual guard to %s', method => {
     expect(() => assertUnofficialLnkGoodResultAllowed(previous, 'годен', 'вырез', method)).toThrow('Сначала верните')

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { eq, inArray, like } from 'drizzle-orm'
 import { createDispatcherRuleFixtures } from '../src/test/dispatcher-rule-fixtures'
-import { DEFAULT_DISPATCHER_SETTINGS, DISPATCHER_SETTING_CODES, getDispatcherTaskCode } from '../src/lib/dispatcher-settings'
+import { DEFAULT_DISPATCHER_SETTINGS, DISPATCHER_SETTING_CODES, getDispatcherTaskCode, getDispatcherTaskSettingId } from '../src/lib/dispatcher-settings'
+import type { RepeatedJointTask } from '../src/lib/dispatcher-types'
 import { PROJECT_SETTING_KEYS } from '../src/lib/project-settings-remote'
 
 // This script never prepares a schema and must never run against user data.
@@ -20,6 +21,7 @@ const fixtures = createDispatcherRuleFixtures()
 const previousSettings = await db.select().from(appSettings).where(eq(appSettings.key, PROJECT_SETTING_KEYS.dispatcher))
 const fixtureIds: number[] = []
 const programWarningIds: number[] = []
+const resultRuleIds: number[] = []
 const actualityIds: number[] = []
 const stampIds: number[] = []
 const idMap = new Map<number, number>()
@@ -53,6 +55,13 @@ try {
   programWarningIds.push(...programWarnings.map(({ id }) => id))
   fixtureIds.push(...programWarningIds)
   const { id: _templateId, ...template } = fixtures.find(fixture => fixture.settingId === 'repeated-create')!.rows[0]
+  // Deliberately retained invalid historical facts: СП-07 must be indexed even
+  // when all configurable dispatcher checks, including the old ДЗ-17, are off.
+  const resultRows = await db.insert(weldJoints).values([
+    { ...template, projectTitle: 'MATRIX SP-05', joint: 'S1', vikResult: 'вырез', rkResult: null },
+    { ...template, projectTitle: 'MATRIX SP-05', joint: 'S2', pvkResult: 'вырез', rkResult: null },
+  ] as Array<typeof weldJoints.$inferInsert>).returning({ id: weldJoints.id })
+  resultRuleIds.push(...resultRows.map(row => row.id)); fixtureIds.push(...resultRuleIds)
   const actualityRows = await db.insert(weldJoints).values([
     { ...template, projectTitle: 'MATRIX actuality', joint: 'S1', rkResult: 'ремонт' },
     { ...template, projectTitle: 'MATRIX actuality', joint: 'S1R1', rkResult: 'годен', revisionActuality: 'не актуален' },
@@ -88,12 +97,12 @@ try {
     assert.deepEqual(visible.filter((row) => scopeIds.has(row.id) && row.dispatcherTasks.split(', ').includes(code)).map((row) => row.id).sort((a, b) => a - b), expectedIds, `${code}: virtual dispatcherTasks`)
   }
   for (const id of programWarningIds) {
-    assert(persisted.some((row) => row.weldJointId === id && row.code === 'СП-02'), 'Incomplete/conflicting program must enter the persisted row index')
-    assert(visible.find((row) => row.id === id)?.dispatcherTasks.includes('СП-02'), 'SP-02 must appear in the SQL-backed virtual field')
+    assert(persisted.some((row) => row.weldJointId === id && row.code === 'СП-01'), 'Incomplete/conflicting program must enter the persisted row index')
+    assert(visible.find((row) => row.id === id)?.dispatcherTasks.includes('СП-01'), 'SP-02 must appear in the SQL-backed virtual field')
   }
   for (const id of actualityIds) {
-    assert(persisted.some(row => row.weldJointId === id && row.code === 'ДЗ-13'), 'Actuality mismatch must index both source and excluded continuation')
-    assert(visible.find(row => row.id === id)?.dispatcherTasks.includes('ДЗ-13'), 'Actuality mismatch must appear in both virtual fields')
+    assert(persisted.some(row => row.weldJointId === id && row.code === 'СП-09'), 'Actuality mismatch must index both source and excluded continuation')
+    assert(visible.find(row => row.id === id)?.dispatcherTasks.includes('СП-09'), 'Actuality mismatch must appear in both virtual fields')
   }
   for (const [sourceActuality, repairActuality, expected] of [[null, null, false], [null, 'не актуален', true], ['не актуален', 'не актуален', false]] as const) {
     await db.update(weldJoints).set({ revisionActuality: sourceActuality }).where(eq(weldJoints.id, actualityIds[0]))
@@ -103,8 +112,8 @@ try {
     const stored = await db.select().from(dispatcherRowTasks).where(inArray(dispatcherRowTasks.weldJointId, actualityIds))
     const virtual = await read.attachDispatcherTaskCodesToPage(actualityIds.map(id => ({ id }))) as Array<{ id: number; dispatcherTasks: string }>
     for (const id of actualityIds) {
-      assert.equal(stored.some(row => row.weldJointId === id && row.code === 'ДЗ-13'), expected)
-      assert.equal(virtual.find(row => row.id === id)?.dispatcherTasks.includes('ДЗ-13'), expected)
+      assert.equal(stored.some(row => row.weldJointId === id && row.code === 'СП-09'), expected)
+      assert.equal(virtual.find(row => row.id === id)?.dispatcherTasks.includes('СП-09'), expected)
     }
   }
   // Existing records: actuality changes clear and restore both task pages and
@@ -126,11 +135,30 @@ try {
       const code = DISPATCHER_SETTING_CODES[fixture.settingId]
       const scopeIds = new Set(fixture.rows.map(row => idMap.get(row.id)!))
       const expectedIds = revisionActuality === 'не актуален' ? [] : fixture.expectedRowIds.map(id => idMap.get(id)!).sort((a, b) => a - b)
-      assert.deepEqual(codes.filter(row => scopeIds.has(row.weldJointId) && row.code === code).map(row => row.weldJointId).sort((a, b) => a - b), expectedIds)
-      assert.deepEqual(virtual.filter(row => scopeIds.has(row.id) && row.dispatcherTasks.split(', ').includes(code)).map(row => row.id).sort((a, b) => a - b), expectedIds)
-      const cards = storedPages.flatMap(page => JSON.parse(page.tasks) as Array<{ row: { id: number } }>).filter(task => scopeIds.has(task.row.id) && getDispatcherTaskCode(task as Parameters<typeof getDispatcherTaskCode>[0]) === code)
-      assert.equal(cards.length > 0, expectedIds.length > 0)
+      // Several chain checks now share SP-09: inactivation removes continuation
+      // actions, not other factual structural problems with that same code.
+      const allCards = storedPages.flatMap(page => JSON.parse(page.tasks) as RepeatedJointTask[]).filter(task => scopeIds.has(task.row.id))
+      const cards = allCards.filter(task => getDispatcherTaskSettingId(task) === fixture.settingId)
+      assert.deepEqual(cards.map(task => task.row.id).sort((a, b) => a - b), expectedIds)
+      const codedIds = codes.filter(row => scopeIds.has(row.weldJointId) && row.code === code).map(row => row.weldJointId).sort((a, b) => a - b)
+      assert.deepEqual(virtual.filter(row => scopeIds.has(row.id) && row.dispatcherTasks.split(', ').includes(code)).map(row => row.id).sort((a, b) => a - b), codedIds)
+      for (const id of expectedIds) assert(codedIds.includes(id))
+      assert.equal(codedIds.length > 0, allCards.some(task => getDispatcherTaskCode(task) === code))
     }
+  }
+  await db.update(appSettings).set({ value: JSON.stringify({
+    ...Object.fromEntries(Object.keys(DEFAULT_DISPATCHER_SETTINGS).map(key => [key, false])),
+    'check-repair-diameter': false,
+  }) }).where(eq(appSettings.key, PROJECT_SETTING_KEYS.dispatcher))
+  await dirty.markDispatcherTaskIndexDirty(db)
+  await dispatcher.ensureDispatcherTaskIndexFresh()
+  const resultCodes = await db.select().from(dispatcherRowTasks).where(inArray(dispatcherRowTasks.weldJointId, resultRuleIds))
+  const resultVirtual = await read.attachDispatcherTaskCodesToPage(resultRuleIds.map(id => ({ id }))) as Array<{ id: number; dispatcherTasks: string }>
+  const resultPages = await db.select().from(dispatcherTaskPages)
+  for (const id of resultRuleIds) {
+    assert(resultCodes.some(row => row.weldJointId === id && row.code === 'СП-07'))
+    assert(resultVirtual.find(row => row.id === id)?.dispatcherTasks.includes('СП-07'))
+    assert(resultPages.some(page => (JSON.parse(page.tasks) as Array<{ row: { id: number }; systemWarningCode?: string }>).some(task => task.row.id === id && task.systemWarningCode === 'СП-07')))
   }
   // Removing facts must clear both the old row codes and per-line task pages.
   await db.delete(weldJoints).where(inArray(weldJoints.id, fixtureIds))
@@ -138,13 +166,14 @@ try {
     ...fixtures.flatMap(({ rows }) => rows),
     ...programWarningIds.map((id) => ({ id, projectTitle: 'MATRIX SP-02', subtitleCode: 'M-1', line: 'L-SP' })),
     ...actualityIds.map(id => ({ id, projectTitle: 'MATRIX actuality', subtitleCode: template.subtitleCode!, line: template.line! })),
+    ...resultRuleIds.map(id => ({ id, projectTitle: 'MATRIX SP-05', subtitleCode: template.subtitleCode!, line: template.line! })),
   ], new Map()) })
   await dispatcher.ensureDispatcherTaskIndexFresh()
   assert.equal((await db.select().from(dispatcherRowTasks).where(inArray(dispatcherRowTasks.weldJointId, fixtureIds))).length, 0)
   const remaining = await db.select().from(dispatcherTaskPages)
   assert(!remaining.some((page) => (JSON.parse(page.tasks) as Array<{ row: { id: number } }>).some((task) => fixtureIds.includes(task.row.id))))
   console.log(JSON.stringify({ settings: fixtures.length, persistedRuleChains: fixtures.filter((fixture) => fixture.rows.length).length,
-    reminderRules: 2, mandatoryProgramRule: true, fixtureJoints: fixtureIds.length, refreshStatements, virtualFieldStatementsPerPage: 1, removedFactsCleared: true,
+    reminderRules: 2, mandatoryProgramRule: true, mandatoryResultRules: resultRuleIds.length, fixtureJoints: fixtureIds.length, refreshStatements, virtualFieldStatementsPerPage: 1, removedFactsCleared: true,
     actualityRestoresContinuations: true, actualityMismatchBothRecoveryPaths: true, continuationRefreshStatements }))
 } finally {
   if (fixtureIds.length) await db.delete(weldJoints).where(inArray(weldJoints.id, fixtureIds))

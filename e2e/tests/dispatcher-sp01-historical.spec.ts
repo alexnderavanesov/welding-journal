@@ -10,7 +10,7 @@ import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-
 import { attachDispatcherTaskCodesToPage } from '@/server/weld-read'
 import { withE2eDatabase } from '../database'
 
-for (const report of ['/journal', '/lnk', '/psto']) test(`СП-01 из ${report}: единые требования, сохранность ПСТО/ТВМТ и довнесение до ТО`, async ({ page }) => {
+for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}: единые требования, сохранность ПСТО/ТВМТ и довнесение до ТО`, async ({ page }) => {
   test.setTimeout(120_000)
   page.setDefaultTimeout(15_000)
   const joint = 'F626'
@@ -56,7 +56,7 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-01 из ${report}
     // Simulate a clean-but-obsolete pre-fix index. A version bump must repair
     // both saved row codes and the report's virtual field without editing a weld.
     await withE2eDatabase(async (client) => {
-      await client.query("delete from dispatcher_row_tasks where weld_joint_id = $1 and code = 'СП-01'", [id])
+      await client.query("delete from dispatcher_row_tasks where weld_joint_id = $1 and code = 'СП-06'", [id])
       await client.query(`update dispatcher_task_index_state set repeated_tasks =
         jsonb_set(repeated_tasks::jsonb, '{version}', to_jsonb($1::int))::text`, [DISPATCHER_TASK_CALCULATION_VERSION - 1])
     })
@@ -82,7 +82,7 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-01 из ${report}
       const search = workspace.getByRole('textbox', { name: 'Поиск задач диспетчера' })
       await search.fill(joint)
       await search.press('Enter')
-      const task = workspace.locator('[data-dispatcher-workspace-task-row]').filter({ hasText: 'СП-01' })
+      const task = workspace.locator('[data-dispatcher-workspace-task-row]').filter({ hasText: 'СП-06' })
       await expect(task).toHaveCount(1)
       return task
     }
@@ -148,17 +148,17 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-01 из ${report}
     const resultHeading = page.getByRole('heading', { name: 'Внесение результатов ЛНК до ТО', exact: true })
     await expect(resultHeading).toBeVisible()
     await page.getByLabel('Дата контроля', { exact: true }).fill('2026-07-11')
-    await page.getByRole('dialog').getByRole('button', { name: 'годен', exact: true }).click()
+    await page.getByRole('dialog').getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
     await expect(page.getByText('Стык F626: дата НК до ТО (11.07.2026) не может быть позже даты ПСТО (10.07.2026).', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Сохранить результат до ТО', exact: true })).toBeDisabled()
     if (report === '/journal') await page.screenshot({ path: test.info().outputPath('chronology-result-dates.png') })
     await page.getByLabel('Дата контроля', { exact: true }).fill('2026-07-10')
-    await page.getByRole('dialog').getByRole('button', { name: 'годен', exact: true }).click()
+    await page.getByRole('dialog').getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Сохранить результат до ТО', exact: true })).toBeEnabled()
     await page.getByRole('button', { name: 'Сохранить результат до ТО', exact: true }).click()
     await expect(resultHeading).toBeHidden()
     await expect.poll(() => withE2eDatabase(async (client) =>
-      (await client.query("select code from dispatcher_row_tasks where weld_joint_id = $1 and code = 'СП-01'", [id])).rows,
+      (await client.query("select code from dispatcher_row_tasks where weld_joint_id = $1 and code = 'СП-06'", [id])).rows,
     )).toEqual([])
     await expectWarning(id, false)
     await expectFinalStatus(id, 'годен')
@@ -179,11 +179,11 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-01 из ${report}
 
 async function expectWarning(id: number, expected: boolean) {
   const codes = await withE2eDatabase(async (client) => (await client.query(
-    "select code from dispatcher_row_tasks where weld_joint_id = $1 and code = 'СП-01'", [id],
+    "select code from dispatcher_row_tasks where weld_joint_id = $1 and code = 'СП-06'", [id],
   )).rows)
   expect(codes.length).toBe(expected ? 1 : 0)
   const [visible] = await attachDispatcherTaskCodesToPage([{ id }]) as Array<{ id: number; dispatcherTasks: string }>
-  expect(visible.dispatcherTasks.split(', ').includes('СП-01')).toBe(expected)
+  expect(visible.dispatcherTasks.split(', ').includes('СП-06')).toBe(expected)
 }
 
 async function readPreservedState(id: number) {

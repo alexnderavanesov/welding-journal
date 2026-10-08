@@ -96,7 +96,7 @@ export function buildJointNextActions(
     .sort(compareTasks)
   const taskActions = rowTasks.map(buildDispatcherAction)
   const chainStructureActions = rowTasks
-    .filter((task) => task.kind === 'create' || task.kind === 'coil' || task.kind === 'delete' || task.kind === 'rename' || task.kind === 'check' && (task.systemWarningCode === 'СП-04' || task.reason === CHAIN_ACTUALITY_REASON))
+    .filter((task) => task.kind === 'create' || task.kind === 'coil' || task.kind === 'delete' || task.kind === 'rename' || task.kind === 'check' && (task.systemWarningCode === 'СП-09' || task.reason === CHAIN_ACTUALITY_REASON))
     .map(buildDispatcherAction)
 
   if (chainStructureActions.length > 0) return chainStructureActions
@@ -237,7 +237,7 @@ function buildDirectWorkflowAction(
         key: `primary-lnk-recorded-with-debt:${row.id}`,
         kind: 'complete',
         title: 'Результаты основного НК внесены',
-        description: 'СП-01 остаётся, пока пропущенные этапы контроля не будут подтверждены фактическими данными.',
+        description: 'СП-06 остаётся, пока пропущенные этапы контроля не будут подтверждены фактическими данными.',
         tone: 'warning',
       }
     }
@@ -372,7 +372,7 @@ function hasCompletedAssignedPrimaryControls(row: WeldRow) {
 function withPrimaryStageDebtWarning(action: JointNextAction): JointNextAction {
   return {
     ...action,
-    description: `${action.description} СП-01: предыдущие этапы пропущены.`,
+    description: `${action.description} СП-06: предыдущие этапы пропущены.`,
   }
 }
 

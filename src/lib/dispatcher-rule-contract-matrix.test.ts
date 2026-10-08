@@ -26,7 +26,6 @@ import {
 } from '@/lib/lnk-chronology-checks'
 import { PSTO_REQUEST_DATE_ORDER_REASON } from '@/lib/psto-chronology-checks'
 import {
-  REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
   UNOFFICIAL_REJECTED_WITH_COIL_REASON,
 } from '@/lib/report-config'
 
@@ -59,7 +58,6 @@ const contracts: DispatcherRuleContract[] = [
   rowContract('chain-consistency', checkTask(UNOFFICIAL_REJECTED_WITH_COIL_REASON), [1]),
   rowContract('chain-duplicate', duplicateTask(), [1]),
   rowContract('chain-date-order', checkTask('проверить даты сварки'), [1]),
-  rowContract('check-repair-diameter', checkTask(REPAIR_FORBIDDEN_BY_DIAMETER_REASON), [1]),
   rowContract('check-welder-stamp', checkTask('проверить клеймо'), [1]),
   rowContract('check-incomplete-stamps', checkTask('дозаполнить клейма_1'), [1]),
   rowContract('check-lnk-request-date-order', checkTask(LNK_REQUEST_DATE_ORDER_REASON), [1]),
@@ -92,7 +90,7 @@ describe('dispatcher rule contract matrix', () => {
     expect(isDispatcherTaskEnabled(task, {
       ...DEFAULT_DISPATCHER_SETTINGS,
       [settingId]: false,
-    })).toBe(false)
+    })).toBe(DISPATCHER_SETTING_CODES[settingId].startsWith('СП-'))
   })
 
   it.each(contracts.filter((contract) => contract.storage === 'row-index'))(

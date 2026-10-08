@@ -25,7 +25,9 @@ import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getDialogMenuPoint } from '@/lib/dialog-context-menu-items'
 import { getLnkResultRemovalBlockReason } from '@/lib/lnk-chronology-checks'
-import { getLnkRepairForbiddenReason, isLnkRepairForbidden } from '@/lib/lnk-result-rules'
+import { getLnkResultRestrictionReasons } from '@/lib/lnk-result-policy'
+import { useControlProcessSettings } from '@/lib/control-process-settings'
+import { useSystemIndexSettings } from '@/lib/system-index-settings'
 import { getUnofficialLnkGoodResultReason } from '@/lib/unofficial-lnk-result-guard'
 import { buildManagerContextMenu, isNativeContextMenuTarget } from '@/lib/manager-context-menu-items'
 import { getLnkResultBadgeClass } from '@/lib/report-badges'
@@ -148,6 +150,8 @@ export function LnkResultManagerDialog({
     () => initialEntryKey || entries[0]?.changeKey || '',
   )
   const saveCheckSettings = useSaveCheckSettings()
+  const processSettings = useControlProcessSettings()
+  const systemIndexSettings = useSystemIndexSettings()
   const filteredEntries = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('ru')
     return entries.filter(({ row, method }) => {
@@ -273,10 +277,13 @@ export function LnkResultManagerDialog({
           disabled: actionPending,
           onSelect: () => undefined,
           children: LNK_RESULT_OPTIONS.map((option) => {
-            const repairReason = saveCheckSettings.lnkResultRepairRules && option === 'ремонт' && isLnkRepairForbidden(row)
-              ? getLnkRepairForbiddenReason(row)
-              : null
-            const blockReason = getUnofficialLnkGoodResultReason(row, option, currentResult, method.code) || repairReason
+            const blockReason = [
+              ...getLnkResultRestrictionReasons(row, method.code, option, {
+                systemIndexSettings,
+                pvkGoodOnly: processSettings.pvkGoodOnly,
+              }),
+              getUnofficialLnkGoodResultReason(row, option, currentResult, method.code),
+            ].filter(Boolean).join('\n') || undefined
             return {
               id: `replace-result-${option}`,
               label: option,

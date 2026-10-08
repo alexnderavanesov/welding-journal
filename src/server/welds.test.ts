@@ -260,6 +260,16 @@ describe('weld server pagination helpers', () => {
     )).toEqual([])
   })
 
+  it.each(['vikResult', 'pvkResult'] as const)('blocks repeat and coil targets for historical invalid %s cuts', field => {
+    const source = row({ id: 51, joint: 'F1', [field]: 'вырез', rkResult: 'вырез' }) as WeldRow
+    for (const earlyCoil of [false, true]) {
+      expect(getCurrentRepeatedJointTargets([source], source, DEFAULT_SYSTEM_INDEX_SETTINGS, earlyCoil)).toEqual([])
+    }
+    expect(source[field]).toBe('вырез')
+    const repaired = { ...source, [field]: 'ремонт', rkResult: null, d1: 57, d2: 57 }
+    expect(getCurrentRepeatedJointTargets([repaired], repaired, DEFAULT_SYSTEM_INDEX_SETTINGS)).toEqual(['F1R1'])
+  })
+
   it('rejects repeated-joint targets duplicated only by letter case', () => {
     expect(sameNormalizedTextSet(['F1R1'], ['F1R1'])).toBe(true)
     expect(sameNormalizedTextSet(['F1R1', 'f1r1'], ['F1R1'])).toBe(false)
@@ -511,7 +521,7 @@ describe('weld server pagination helpers', () => {
 
   it('keeps the virtual dispatcher filter in the server import scope', () => {
     const filters = buildDispatcherTaskServerFilters({
-      dispatcherTasks: buildWeldColumnValueFilter(['ДЗ-31']),
+      dispatcherTasks: buildWeldColumnValueFilter(['СП-03']),
       projectTitle: ' Риформинг ',
       joint: '   ',
     })

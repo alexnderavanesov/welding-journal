@@ -224,6 +224,7 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
                 else submenuPanelRefs.current.delete(item.id)
               }}
               role="menu"
+              aria-label={item.label}
               className={`${
                 stackSubmenus
                   ? 'relative mx-2 mb-1 w-[calc(100%-1rem)] border-l-2 border-sky-100 bg-slate-50 py-1'
@@ -255,8 +256,14 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
                 const ChildIcon = child.icon
                 const childDescription = child.description ?? (child.disabled ? child.title : undefined)
                 return (
-                  <button
+                  <div
                     key={child.id}
+                    tabIndex={child.disabled && childDescription ? 0 : undefined}
+                    role={child.disabled && childDescription ? 'group' : undefined}
+                    aria-label={child.disabled && childDescription ? `${child.label}: ${childDescription}` : undefined}
+                    className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500"
+                  >
+                  <button
                     type="button"
                     disabled={child.disabled}
                     title={child.title}
@@ -284,6 +291,7 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
                       ) : null}
                     </span>
                   </button>
+                  </div>
                 )
               })}
             </div>
@@ -295,7 +303,10 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
                 if (node) submenuAnchorRefs.current.set(item.id, node)
                 else submenuAnchorRefs.current.delete(item.id)
               }}
-              className="relative"
+              tabIndex={item.disabled && description ? 0 : undefined}
+              role={item.disabled && description ? 'group' : undefined}
+              aria-label={item.disabled && description ? `${item.label}: ${description}` : undefined}
+              className="relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500"
               onMouseEnter={() => setOpenSubmenuId(hasChildren ? item.id : null)}
             >
               <button

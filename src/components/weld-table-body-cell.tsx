@@ -27,6 +27,7 @@ import {
   type SystemDocumentTemplateId,
 } from '@/lib/system-document-template-types'
 import { memo } from 'react'
+import { cn } from '@/lib/utils'
 import {
   getPreHeatTreatmentReportField,
   PRE_HEAT_TREATMENT_REQUEST_FIELD_KEYS,
@@ -309,7 +310,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
   return (
     <td
       data-weld-field-key={field.key}
-      className={`${bodyCellClass(
+      className={cn(bodyCellClass(
         field.key,
         !isEditableCell,
         isHighlightedRow,
@@ -318,7 +319,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
         isHighlightedCell,
         isBlockedEditableCell && showBlockedEditableCellBackground,
         isSectionEnd,
-      )} ${
+      ),
         isStickyCell
           ? getStickyWeldTableBodyCellClass({
               isHighlightedRow,
@@ -329,7 +330,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
               stickyBackgroundClassName,
             })
           : ''
-      }`}
+      )}
       style={isStickyCell ? getStickyWeldTableFieldStyle(field.key, stickyLeft, stickyIdentityLeadingWidth) : undefined}
       onClick={(event) => {
         if (isDocumentLink || isLnkRequestCardLink || isLnkResultCardLink || isControlBasisEditorLink || isJointHistoryLink || !isEditableCell) return
@@ -524,7 +525,7 @@ function getStickyWeldTableBodyCellClass({
   const background = isSelectedRow
     ? stickyBackgroundClassName
     : isHighlightedCell
-      ? 'bg-lime-100/95'
+      ? 'bg-lime-100'
       : isHighlightedRow
         ? 'bg-emerald-50'
         : hasDispatcherTask

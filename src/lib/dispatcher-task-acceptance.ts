@@ -1,10 +1,8 @@
 import type { DispatcherTask } from '@/lib/dispatcher-types'
 
 const ACCEPTABLE_PERCENTAGE_LINE_ISSUES = new Set([
-  'excess',
   'new-welder',
   'rejected-rows',
-  'suspend-welder',
 ])
 
 export function canAcceptDispatcherTask(task: DispatcherTask) {

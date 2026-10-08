@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react'
 import {
-  REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
-  REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON,
   UNOFFICIAL_REJECTED_WITH_COIL_REASON,
 } from '@/lib/report-config'
 import { persistProjectSettingToRemote, PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
@@ -18,6 +16,7 @@ import {
   PSTO_RESULT_COMPLETENESS_REASON,
 } from '@/lib/dispatcher-check-reasons'
 import { isSystemDispatcherWarningTask, type DispatcherTask } from '@/lib/dispatcher-types'
+import { getSystemRule } from './system-rule-catalog'
 
 export const DISPATCHER_SETTINGS_EVENT = 'dispatcher-settings-change'
 
@@ -42,7 +41,6 @@ export type DispatcherSettingId =
   | 'chain-consistency'
   | 'chain-duplicate'
   | 'chain-date-order'
-  | 'check-repair-diameter'
   | 'check-welder-stamp'
   | 'check-incomplete-stamps'
   | 'check-lnk-request-date-order'
@@ -84,35 +82,34 @@ export type DispatcherSettingActionHelp = {
 
 export const DISPATCHER_SETTING_CODES: Record<DispatcherSettingId, string> = {
   'percentage-new-welder': 'ДЗ-01',
-  'percentage-excess': 'ДЗ-02',
-  'percentage-rejected-rows': 'ДЗ-03',
-  'percentage-missing': 'ДЗ-04',
-  'percentage-full-control': 'ДЗ-05',
-  'percentage-suspend-welder': 'ДЗ-06',
-  'repeated-create': 'ДЗ-07',
-  'repeated-create-official-from-unofficial': 'ДЗ-08',
-  'repeated-coil': 'ДЗ-09',
-  'repeated-delete': 'ДЗ-10',
-  'repeated-rename': 'ДЗ-11',
-  'repeated-obsolete-check': 'ДЗ-12',
-  'chain-consistency': 'ДЗ-13',
-  'chain-duplicate': 'ДЗ-14',
-  'chain-date-order': 'ДЗ-15',
-  'check-repair-diameter': 'ДЗ-17',
-  'check-welder-stamp': 'ДЗ-18',
-  'check-incomplete-stamps': 'ДЗ-19',
-  'check-lnk-request-date-order': 'ДЗ-20',
-  'check-lnk-vik-date-order': 'ДЗ-21',
-  'check-lnk-vik-required': 'ДЗ-22',
-  'check-psto-request-date-order': 'ДЗ-23',
-  'line-control-presence': 'ДЗ-27',
-  'welder-stamp-expiry': 'ДЗ-28',
-  'welder-dls-expiry': 'ДЗ-29',
-  'line-psto-presence': 'ДЗ-30',
-  'check-joint-core-data': 'ДЗ-31',
-  'check-lnk-result-completeness': 'ДЗ-32',
-  'check-psto-result-completeness': 'ДЗ-33',
-  'check-control-history': 'ДЗ-34',
+  'percentage-excess': 'СП-01',
+  'percentage-rejected-rows': 'ДЗ-02',
+  'percentage-missing': 'СП-01',
+  'percentage-full-control': 'СП-01',
+  'percentage-suspend-welder': 'СП-02',
+  'repeated-create': 'СП-09',
+  'repeated-create-official-from-unofficial': 'СП-09',
+  'repeated-coil': 'СП-09',
+  'repeated-delete': 'СП-09',
+  'repeated-rename': 'СП-09',
+  'repeated-obsolete-check': 'СП-09',
+  'chain-consistency': 'СП-09',
+  'chain-duplicate': 'ДЗ-03',
+  'chain-date-order': 'СП-04',
+  'check-welder-stamp': 'СП-02',
+  'check-incomplete-stamps': 'СП-03',
+  'check-lnk-request-date-order': 'СП-04',
+  'check-lnk-vik-date-order': 'СП-05',
+  'check-lnk-vik-required': 'СП-05',
+  'check-psto-request-date-order': 'СП-04',
+  'line-control-presence': 'СП-01',
+  'welder-stamp-expiry': 'ДЗ-04',
+  'welder-dls-expiry': 'ДЗ-05',
+  'line-psto-presence': 'СП-10',
+  'check-joint-core-data': 'СП-03',
+  'check-lnk-result-completeness': 'СП-11',
+  'check-psto-result-completeness': 'СП-11',
+  'check-control-history': 'СП-12',
 }
 
 export const DISPATCHER_SETTING_TASK_TYPE_LABELS: Record<DispatcherSettingId, string> = {
@@ -131,7 +128,6 @@ export const DISPATCHER_SETTING_TASK_TYPE_LABELS: Record<DispatcherSettingId, st
   'chain-consistency': 'Проверить целостность цепочки',
   'chain-duplicate': 'Возможный дубль',
   'chain-date-order': 'Проверить даты сварки',
-  'check-repair-diameter': 'Проверить допустимость ремонта',
   'check-welder-stamp': 'Проверить клеймо',
   'check-incomplete-stamps': 'Дозаполнить клейма/дату сварки',
   'check-lnk-request-date-order': 'Проверить документы и даты ЛНК',
@@ -148,193 +144,40 @@ export const DISPATCHER_SETTING_TASK_TYPE_LABELS: Record<DispatcherSettingId, st
   'check-control-history': 'Проверить историю контроля',
 }
 
-export const DISPATCHER_SETTING_GROUPS: DispatcherSettingGroup[] = [
-  {
-    id: 'percentage-lines',
-    title: 'Процентные линии',
-    description: 'Задачи общей группы РК/УЗК/послойной замены и самостоятельного ПВК: недобор, лишние назначения, официальность и отстранение.',
-    items: [
-      {
-        id: 'percentage-new-welder',
-        label: 'Новый сварщик на процентной линии',
-        description: 'Показывать предупреждение при появлении нового официального клейма на процентной линии.',
-      },
-      {
-        id: 'percentage-excess',
-        label: 'Лишний контроль',
-        description: 'Показывать задачи, когда обычных назначений «да» больше расчетного процента.',
-      },
-      {
-        id: 'percentage-rejected-rows',
-        label: 'Проверить официальность',
-        description: 'Проверять официальность актуальных первичных С/У-стыков с негодным РК/УЗК — источников добора по своим официальным клеймам. Ремонты R/W, ВИК и ПВК добор не увеличивают.',
-      },
-      {
-        id: 'percentage-missing',
-        label: 'Назначить контроль',
-        description: 'Показывать доступный недобор отдельно по РК/УЗК и ПВК. РК/УЗК у У-стыка заменяет только явно назначенный послойный контроль, а не обычный ПВК.',
-      },
-      {
-        id: 'percentage-full-control',
-        label: 'Назначить 100% контроль',
-        description: 'Показывать полный контроль РК/УЗК после четвёртого актуального официального первичного стыка клейма с негодным РК/УЗК. Ремонты R/W не входят в порог.',
-      },
-      {
-        id: 'percentage-suspend-welder',
-        label: 'Отстранить сварщика',
-        description: 'Показывать задачу отстранения после четвёртого актуального официального первичного стыка клейма с негодным РК/УЗК. Ремонты R/W не входят в порог.',
-      },
-    ],
-  },
-  {
-    id: 'joint-chains',
-    title: 'Цепочки стыков',
-    description: 'Создание, переименование и проверка повторных стыков с системными индексами.',
-    items: [
-      {
-        id: 'repeated-create',
-        label: 'Создать ремонт/вырез',
-        description: 'Показывать задачи создания следующего ремонтного или вырезного стыка после негодного результата.',
-      },
-      {
-        id: 'repeated-create-official-from-unofficial',
-        label: 'Создать официальный после неофициального',
-        description: 'Показывать задачи создания официального стыка с тем же номером после неофициального негодного стыка.',
-      },
-      {
-        id: 'repeated-coil',
-        label: 'Создать катушку',
-        description: 'Показывать задачи создания двух стыков катушки при требовании катушки.',
-      },
-      {
-        id: 'repeated-delete',
-        label: 'Удалить лишний повторный стык',
-        description: 'Показывать задачи удаления незаполненных повторных стыков, которые больше не нужны.',
-      },
-      {
-        id: 'repeated-rename',
-        label: 'Исправить имена цепочки',
-        description: 'Показывать задачи атомарного переименования измененного стыка и всего его продолжения с пересчетом счетчиков.',
-      },
-      {
-        id: 'repeated-obsolete-check',
-        label: 'Проверить лишний заполненный стык',
-        description: 'Показывать ручную проверку повторных стыков, которые уже содержат данные.',
-      },
-      {
-        id: 'chain-consistency',
-        label: 'Проверить целостность цепочки',
-        description: 'Показывать проверки разрывов цепочки, катушек, неофициальных финалов и лишних веток.',
-      },
-      {
-        id: 'chain-duplicate',
-        label: 'Проверить дубли стыков',
-        description: 'Показывать задачи по возможным дублям стыков в одной цепочке.',
-      },
-      {
-        id: 'chain-date-order',
-        label: 'Проверить порядок дат сварки',
-        description: 'Показывать задачи, когда даты сварки в цепочке идут не по порядку.',
-      },
-    ],
-  },
-  {
-    id: 'data-quality',
-    title: 'Проверки данных',
-    description: 'Проверки дат, клейм, совместимости и заполненности обязательных полей.',
-    items: [
-      {
-        id: 'check-repair-diameter',
-        label: 'Ремонт запрещен правилами',
-        description: 'Показывать задачи, когда ремонт указан на малом диаметре или после двух официальных ремонтов.',
-      },
-      {
-        id: 'check-welder-stamp',
-        label: 'Показывать задачи по проблемным клеймам',
-        description: 'Показывать задачи по уже существующим стыкам независимо от галочек защит ввода: архив, срок, отстранение, НАКС, ДЛС, D/T, способ сварки или группа материалов.',
-      },
-      {
-        id: 'check-incomplete-stamps',
-        label: 'Дозаполнить клейма/дату сварки',
-        description: 'Показывать задачи неполного заполнения клейм или даты сварки.',
-      },
-      {
-        id: 'check-lnk-request-date-order',
-        label: 'Проверить документы и даты ЛНК',
-        description: 'Показывать задачи, когда дата ЛНК некорректна, заявка заполнена неполностью, контроль выполнен раньше сварки или нарушен порядок сварка -> заявка ЛНК -> заключение.',
-      },
-      {
-        id: 'check-lnk-vik-date-order',
-        label: 'Проверить порядок ВИК и НК',
-        description: 'Показывать задачи, когда заключение другого НК датировано раньше заключения ВИК.',
-      },
-      {
-        id: 'check-lnk-vik-required',
-        label: 'Дозаполнить ВИК перед другим НК',
-        description: 'Показывать задачи, когда по стыку есть результат другого НК, но еще нет результата ВИК.',
-      },
-      {
-        id: 'check-psto-request-date-order',
-        label: 'Проверить цикл ПСТО/ТВМТ',
-        description: 'Показывать задачи по некорректным датам, неполным заявкам и последовательности основного и повторных циклов ПСТО/ТВМТ.',
-      },
-      {
-        id: 'check-joint-core-data',
-        label: 'Проверить основные данные стыка',
-        description: 'Показывать задачи по некорректным общим датам, будущей дате сварки, пустым группе материалов, типу соединения или способу сварки при заполненной сварке и некорректной структуре номера стыка.',
-      },
-      {
-        id: 'check-lnk-result-completeness',
-        label: 'Дозаполнить результат ЛНК',
-        description: 'Показывать одну задачу на стык, если у итогового результата ЛНК нет даты контроля или заключения.',
-      },
-      {
-        id: 'check-psto-result-completeness',
-        label: 'Дозаполнить ПСТО/ТВМТ',
-        description: 'Показывать одну задачу на стык, если в любом цикле у ПСТО нет даты/диаграммы или у ТВМТ нет даты/заключения.',
-      },
-      {
-        id: 'check-control-history',
-        label: 'Проверить историю контроля',
-        description: 'Показывать задачи, если назначение контроля выключено, но по стыку сохранен результат или заключение.',
-      },
-    ],
-  },
-  {
-    id: 'line-consistency',
-    title: 'Согласованность линий',
-    description: 'Проверки единых параметров внутри одной линии.',
-    items: [
-      {
-        id: 'line-control-presence',
-        label: 'Проверить назначение контроля линии',
-        description: 'Показывать два и более обязательных взаимозаменяемых назначения на одном С/У при любом проценте. Обычный ПВК проверяется отдельно, послойная замена доступна только У.',
-      },
-      {
-        id: 'line-psto-presence',
-        label: 'Проверить ПСТО по линии',
-        description: 'Показывать задачи, если у стыков одной связки Проект + Шифр + Линия различаются состояния ПСТО: назначено, отменено или не назначено.',
-      },
-    ],
-  },
-  {
-    id: 'reminders',
-    title: 'Напоминания',
-    description: 'Напоминания, которые показываются в связанных рабочих разделах.',
-    items: [
-      {
-        id: 'welder-stamp-expiry',
-        label: 'Срок действия НАКС',
-        description: 'Показывать напоминания в разделе «Клейма» о подходящем или истекшем сроке действия НАКС. Количество дней до окончания настраивается рядом.',
-      },
-      {
-        id: 'welder-dls-expiry',
-        label: 'Срок действия ДЛС',
-        description: 'Показывать напоминания в разделе «Клейма» о подходящем или истекшем сроке действия ДЛС. Количество дней до окончания настраивается рядом.',
-      },
-    ],
-  },
+export const OPTIONAL_DISPATCHER_SETTING_IDS: readonly DispatcherSettingId[] = [
+  'percentage-new-welder', 'percentage-rejected-rows', 'chain-duplicate', 'welder-stamp-expiry', 'welder-dls-expiry',
 ]
+export const DISPATCHER_SETTING_GROUPS: DispatcherSettingGroup[] = [{
+  id: 'optional-reminders', title: 'Подсказки диспетчера',
+  description: 'Необязательные напоминания и проверки предположений. Отключение не меняет обязательные правила, факты или расчет программы.',
+  items: [
+    {
+      id: 'percentage-new-welder',
+      label: 'Новый сварщик на процентной линии',
+      description: 'Показывать предупреждение при появлении нового официального клейма на процентной линии.',
+    },
+    {
+      id: 'percentage-rejected-rows',
+      label: 'Проверить официальность',
+      description: 'Проверять официальность актуальных первичных С/У-стыков с негодным РК/УЗК — источников добора по своим официальным клеймам. Ремонты R/W, ВИК и ПВК добор не увеличивают.',
+    },
+    {
+      id: 'chain-duplicate',
+      label: 'Проверить дубли стыков',
+      description: 'Показывать задачи по возможным дублям стыков в одной цепочке.',
+    },
+    {
+      id: 'welder-stamp-expiry',
+      label: 'Срок действия НАКС',
+      description: 'Показывать напоминания в разделе «Клейма» о подходящем или истекшем сроке действия НАКС. Количество дней до окончания настраивается рядом.',
+    },
+    {
+      id: 'welder-dls-expiry',
+      label: 'Срок действия ДЛС',
+      description: 'Показывать напоминания в разделе «Клейма» о подходящем или истекшем сроке действия ДЛС. Количество дней до окончания настраивается рядом.',
+    },
+  ],
+}]
 
 export const DISPATCHER_SETTING_HELP: Record<DispatcherSettingId, { meaning: string; example: string }> = {
   'percentage-new-welder': {
@@ -397,10 +240,6 @@ export const DISPATCHER_SETTING_HELP: Record<DispatcherSettingId, { meaning: str
     meaning: 'Проверяет, что даты сварки в цепочке идут последовательно от исходного стыка к последующим системным шагам.',
     example: 'Повторный стык сварен 05.07, а исходный указан 07.07. Диспетчер покажет задачу проверить порядок дат.',
   },
-  'check-repair-diameter': {
-    meaning: 'Показывает задачу, если результат "ремонт" указан там, где правила разрешают только вырез: для малого диаметра либо после двух официальных ремонтов.',
-    example: 'Для D57 по РК выбран "ремонт" или в официальной цепочке уже выполнены R1 и R2. Диспетчер попросит проверить результат и выбрать вырез.',
-  },
   'check-welder-stamp': {
     meaning: 'Это не блокировка сохранения, а независимый аудит уже существующих строк журнала. Даже если отдельная защита ввода отключена, эта задача продолжает проверять клеймо по НАКС, ДЛС, D/T, сроку, отстранению, способу и группе материалов.',
     example: 'Дата сварки попала в период отстранения клейма, D/T вне допуска или клеймо не имеет подходящего ДЛС. Диспетчер покажет задачу по проблемному клейму.',
@@ -411,7 +250,7 @@ export const DISPATCHER_SETTING_HELP: Record<DispatcherSettingId, { meaning: str
   },
   'check-lnk-request-date-order': {
     meaning: 'Проверяет формат всех дат основного ЛНК, НК до ТО и дубль-контроля, целостность заявки и календарную логику: у заявки должны быть имя и дата, контроль не раньше сварки, затем заявка и заключение в правильном порядке.',
-    example: 'В дате РК записан текст, у заявки заполнено только имя, контроль выполнен раньше сварки либо заключение датировано раньше заявки. Диспетчер соберет точные причины в ДЗ-20.',
+    example: 'В дате РК записан текст, у заявки заполнено только имя, контроль выполнен раньше сварки либо заключение датировано раньше заявки. Диспетчер соберет точные причины в СП-04.',
   },
   'check-lnk-vik-date-order': {
     meaning: 'Следит, чтобы ВИК был оформлен не позже других видов ЛНК.',
@@ -423,26 +262,26 @@ export const DISPATCHER_SETTING_HELP: Record<DispatcherSettingId, { meaning: str
   },
   'check-psto-request-date-order': {
     meaning: 'Проверяет формат дат, целостность заявок, календарную и этапную логику основного и повторных циклов: сварка -> заявка ПСТО -> ПСТО -> заявка ТВМТ -> ТВМТ -> следующий цикл.',
-    example: 'В дате ПСТО записан текст, у заявки нет имени или даты, ТВМТ раньше ПСТО либо повторный цикл создан без негодной ТВМТ. Диспетчер соберет точные причины в ДЗ-23.',
+    example: 'В дате ПСТО записан текст, у заявки нет имени или даты, ТВМТ раньше ПСТО либо повторный цикл создан без негодной ТВМТ. Диспетчер соберет точные причины в СП-04.',
   },
   'check-joint-core-data': {
     meaning: 'Находит уже сохраненные стыки с некорректной датой сварки, ГИ, ПИ или отмены ПСТО, будущей датой сварки, пустыми группой материалов, типом соединения или способом сварки при заполненной сварке либо неверной структурой номера.',
-    example: 'В дате ГИ записано 31.02, дата сварки находится в будущем, обязательное поле не заполнено либо номер стыка не начинается с настроенного индекса S/F. ДЗ-31 объединит причины в одной задаче.',
+    example: 'В дате ГИ записано 31.02, дата сварки находится в будущем, обязательное поле не заполнено либо номер стыка не начинается с настроенного индекса S/F. СП-03 объединит причины в одной задаче.',
   },
   'check-lnk-result-completeness': {
     meaning: 'Проверяет, что у каждого итогового результата ЛНК заполнены дата контроля и заключение.',
-    example: 'По РК сохранен результат «годен», но заключение пустое. ДЗ-32 перечислит метод и недостающие поля.',
+    example: 'По РК сохранен результат «годен», но заключение пустое. СП-11 перечислит метод и недостающие поля.',
   },
   'check-psto-result-completeness': {
     meaning: 'Проверяет все циклы стыка: у итогового ПСТО должны быть дата и диаграмма, а у итоговой ТВМТ - дата и заключение.',
-    example: 'В повторном цикле ПСТО нет диаграммы или у ТВМТ не указано заключение. ДЗ-33 объединит все недостающие реквизиты в одну задачу на стык.',
+    example: 'В повторном цикле ПСТО нет диаграммы или у ТВМТ не указано заключение. СП-11 объединит все недостающие реквизиты в одну задачу на стык.',
   },
   'check-control-history': {
     meaning: 'Находит сохраненный результат или заключение при выключенном назначении соответствующего контроля.',
-    example: 'Назначение РК очищено, но заключение РК осталось. ДЗ-34 попросит вернуть назначение, выбрать «отменен» или удалить результат через отчет.',
+    example: 'Назначение РК очищено, но заключение РК осталось. СП-12 попросит вернуть назначение, выбрать «отменен» или удалить результат через отчет.',
   },
   'line-control-presence': {
-    meaning: 'Один С/У закрывает одно место общей нормы. Два обязательных РК/УЗК/послойной замены на одном стыке дают ДЗ-27, включая 100%-ные линии. Соседние стыки могут иметь разные методы. Неполная программа даёт обязательный СП-02 без переключателя.',
+    meaning: 'Один С/У закрывает одно место общей нормы. Два обязательных РК/УЗК/послойной замены на одном стыке дают СП-01, включая 100%-ные линии. Соседние стыки могут иметь разные методы. Неполная программа даёт обязательный СП-01 без переключателя.',
     example: 'РК = да и УЗК = да — лишние альтернативы. РК = да и УЗК = дополнительный допустимы. Обычный ПВК не является альтернативой РК/УЗК.',
   },
   'line-psto-presence': {
@@ -469,11 +308,6 @@ const ACTION_CHAIN: DispatcherSettingActionHelp = {
   description: 'Открывает картину конкретного стыка: хронологию, документы, ремонты, вырезы, катушку и следующий шаг.',
 }
 
-const ACTION_MENU_ACCEPT: DispatcherSettingActionHelp = {
-  label: 'Действия -> Принять',
-  description: 'Скрывает предупреждение как проверенное. Данные журнала при этом не меняются.',
-}
-
 const ACTION_DESCRIPTION: DispatcherSettingActionHelp = {
   label: 'Описание',
   description: 'Раскрывает подробности задачи в диспетчере: причину, связанные стыки и контекст проверки.',
@@ -498,7 +332,6 @@ export const DISPATCHER_SETTING_ACTION_HELP: Record<DispatcherSettingId, Dispatc
     ACTION_DESCRIPTION,
   ],
   'percentage-excess': [
-    ACTION_MENU_ACCEPT,
     ACTION_SHOW,
     ACTION_DESCRIPTION,
   ],
@@ -526,10 +359,6 @@ export const DISPATCHER_SETTING_ACTION_HELP: Record<DispatcherSettingId, Dispatc
     {
       label: 'Действия -> Отстранить',
       description: 'Открывает оформление отстранения сварщика по найденному основанию.',
-    },
-    {
-      label: 'Действия -> Не отстранять',
-      description: 'Принимает предупреждение без создания отстранения, если решение принято вне системы.',
     },
     ACTION_SHOW,
     ACTION_DESCRIPTION,
@@ -590,10 +419,6 @@ export const DISPATCHER_SETTING_ACTION_HELP: Record<DispatcherSettingId, Dispatc
     ACTION_CHAIN,
     ACTION_DESCRIPTION,
   ],
-  'check-repair-diameter': [
-    ACTION_CHAIN,
-    ACTION_DESCRIPTION,
-  ],
   'check-welder-stamp': [
     ACTION_CHAIN,
     ACTION_DESCRIPTION,
@@ -651,7 +476,7 @@ export const DISPATCHER_SETTING_ACTION_HELP: Record<DispatcherSettingId, Dispatc
 }
 
 export const DEFAULT_DISPATCHER_SETTINGS: DispatcherSettings = Object.fromEntries(
-  DISPATCHER_SETTING_GROUPS.flatMap((group) => group.items.map((item) => [item.id, true])),
+  Object.keys(DISPATCHER_SETTING_CODES).map(id => [id, true]),
 ) as DispatcherSettings
 
 export const DEFAULT_DISPATCHER_REMINDER_SETTINGS: DispatcherReminderSettings = {
@@ -750,7 +575,11 @@ export function isDispatcherTaskEnabled(task: DispatcherTask, settings: Dispatch
 }
 
 export function isDispatcherSettingEnabled(id: DispatcherSettingId, settings: DispatcherSettings) {
-  return settings[id] !== false
+  return !OPTIONAL_DISPATCHER_SETTING_IDS.includes(id) || settings[id] !== false
+}
+
+export function isMandatoryDispatcherTask(task: DispatcherTask) {
+  return getDispatcherTaskCode(task).startsWith('СП-')
 }
 
 export function isAnyDispatcherSettingEnabled(ids: readonly DispatcherSettingId[], settings: DispatcherSettings) {
@@ -768,13 +597,11 @@ export function getDispatcherSettingTaskTypeLabel(id: DispatcherSettingId) {
 export function getDispatcherTaskCode(task: DispatcherTask) {
   if (isSystemDispatcherWarningTask(task)) return task.systemWarningCode
   const settingId = getDispatcherTaskSettingId(task)
-  return settingId === null ? 'СП-02' : getDispatcherSettingCode(settingId)
+  return settingId === null ? 'СП-01' : getDispatcherSettingCode(settingId)
 }
 
 export function getDispatcherTaskTypeLabel(task: DispatcherTask) {
-  if (task.kind === 'check' && task.systemWarningCode === 'СП-04') return 'Целостность физической цепочки'
-  if (task.kind === 'line-consistency' && task.systemWarningCode === 'СП-03') return 'Обязательный контроль ремонта'
-  if (isSystemDispatcherWarningTask(task)) return task.systemWarningCode === 'СП-02' ? 'Настроить программу линии' : 'Предыдущие этапы пропущены'
+  if (isSystemDispatcherWarningTask(task)) return getSystemRule(task.systemWarningCode)?.title ?? task.systemWarningCode
   const settingId = getDispatcherTaskSettingId(task)
   return settingId === null ? 'Настроить программу линии' : getDispatcherSettingTaskTypeLabel(settingId)
 }
@@ -785,7 +612,9 @@ export function normalizeDispatcherSettings(value: unknown): DispatcherSettings 
     source['percentage-rejected-rows'] = source['percentage-rejected-primary']
   }
   return Object.fromEntries(
-    Object.entries(DEFAULT_DISPATCHER_SETTINGS).map(([id, defaultValue]) => [id, typeof source[id as DispatcherSettingId] === 'boolean' ? source[id as DispatcherSettingId] : defaultValue]),
+    Object.entries(DEFAULT_DISPATCHER_SETTINGS).map(([id, defaultValue]) => [id,
+      !OPTIONAL_DISPATCHER_SETTING_IDS.includes(id as DispatcherSettingId) ? true
+        : typeof source[id as DispatcherSettingId] === 'boolean' ? source[id as DispatcherSettingId] : defaultValue]),
   ) as DispatcherSettings
 }
 
@@ -806,7 +635,8 @@ export function normalizeDispatcherReminderDays(value: unknown, fallback = MIN_D
 }
 
 export function getDispatcherTaskSettingId(task: DispatcherTask): DispatcherSettingId | null {
-  if (isSystemDispatcherWarningTask(task)) return null
+  // Internal task families drive concrete actions even when several now share an SP code.
+  if (isSystemDispatcherWarningTask(task) && ['СП-01', 'СП-06', 'СП-07', 'СП-08', 'СП-09'].includes(task.systemWarningCode)) return null
   if (task.kind === 'welder-stamp-expiry') return task.permitKind === 'dls' ? 'welder-dls-expiry' : 'welder-stamp-expiry'
   if (task.kind === 'create') return String(task.row.officiality ?? '').trim().toLowerCase() === 'неофициальный' ? 'repeated-create-official-from-unofficial' : 'repeated-create'
   if (task.kind === 'coil') return 'repeated-coil'
@@ -835,10 +665,6 @@ function getPercentageLineSettingId(task: Extract<DispatcherTask, { kind: 'perce
 
 function getCheckTaskSettingId(reason?: string): DispatcherSettingId {
   if (reason === 'проверить даты сварки') return 'chain-date-order'
-  if (
-    reason === REPAIR_FORBIDDEN_BY_DIAMETER_REASON ||
-    reason === REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON
-  ) return 'check-repair-diameter'
   if (reason === 'проверить клеймо') return 'check-welder-stamp'
   if (isIncompleteWeldStampGroupReason(reason)) return 'check-incomplete-stamps'
   if (reason === LNK_REQUEST_DATE_ORDER_REASON) return 'check-lnk-request-date-order'

@@ -47,7 +47,7 @@ function lineTask(rowValue: WeldRow): DispatcherTask {
     subtitleCode: String(rowValue.subtitleCode),
     line: String(rowValue.line),
     fieldKey: 'weldControlPercent',
-    systemWarningCode: 'СП-02',
+    systemWarningCode: 'СП-01',
     fieldLabel: 'Контроль швов, (%)',
     title: 'Проверить % контроля линии',
     values: ['10', '25'],
@@ -82,7 +82,7 @@ function systemWarningTask(rowValue: WeldRow): RepeatedJointCheckTask {
     ...stampTask(rowValue),
     key: `sp-01-${rowValue.id}`,
     reason: 'завершить предыдущие этапы контроля',
-    systemWarningCode: 'СП-01',
+    systemWarningCode: 'СП-06',
   }
 }
 
@@ -125,7 +125,7 @@ describe('dispatcher task row codes', () => {
       { [DISPATCHER_TASKS_FIELD_KEY]: DISPATCHER_TASKS_WITHOUT_FILTER },
     )
     const exactCode = buildDispatcherTaskServerFilters(
-      { [DISPATCHER_TASKS_FIELD_KEY]: buildWeldColumnValueFilter(['ДЗ-18']) },
+      { [DISPATCHER_TASKS_FIELD_KEY]: buildWeldColumnValueFilter(['СП-02']) },
     )
 
     expect(parseDispatcherTaskServerFilter(withTasks[DISPATCHER_TASK_FILTER_KEY])).toEqual({
@@ -138,7 +138,7 @@ describe('dispatcher task row codes', () => {
     })
     expect(parseDispatcherTaskServerFilter(exactCode[DISPATCHER_TASK_FILTER_KEY])).toEqual({
       mode: 'codes',
-      codes: ['ДЗ-18'],
+      codes: ['СП-02'],
     })
     expect(Object.keys(withTasks)).not.toContain(ROW_ID_LIST_FILTER_KEY)
   })
@@ -166,7 +166,7 @@ describe('dispatcher task row codes', () => {
       {
         projectTitle: buildWeldColumnValueFilter(['Проект А']),
         line: buildWeldColumnValueFilter(['Линия 1']),
-        [DISPATCHER_TASKS_FIELD_KEY]: buildWeldColumnValueFilter(['ДЗ-30']),
+        [DISPATCHER_TASKS_FIELD_KEY]: buildWeldColumnValueFilter(['СП-10']),
       },
       'line',
     )
@@ -176,7 +176,7 @@ describe('dispatcher task row codes', () => {
     expect(filters[DISPATCHER_TASKS_FIELD_KEY]).toBeUndefined()
     expect(parseDispatcherTaskServerFilter(filters[DISPATCHER_TASK_FILTER_KEY])).toEqual({
       mode: 'codes',
-      codes: ['ДЗ-30'],
+      codes: ['СП-10'],
     })
   })
 
@@ -185,7 +185,7 @@ describe('dispatcher task row codes', () => {
       {
         projectTitle: buildWeldColumnValueFilter(['Проект А']),
         line: buildWeldColumnValueFilter(['Линия 1']),
-        [DISPATCHER_TASKS_FIELD_KEY]: buildWeldColumnValueFilter(['ДЗ-30']),
+        [DISPATCHER_TASKS_FIELD_KEY]: buildWeldColumnValueFilter(['СП-10']),
       },
       DISPATCHER_TASKS_FIELD_KEY,
     )
@@ -204,9 +204,9 @@ describe('dispatcher task row codes', () => {
     ]
 
     expect(buildDispatcherTaskIndexRows([lineTask(rows[0]), stampTask(rows[0])], rows)).toEqual([
-      { rowId: 1, taskKey: 'line-percent', code: 'СП-02' },
-      { rowId: 1, taskKey: 'stamp-1', code: 'ДЗ-18' },
-      { rowId: 2, taskKey: 'line-percent', code: 'СП-02' },
+      { rowId: 1, taskKey: 'line-percent', code: 'СП-01' },
+      { rowId: 1, taskKey: 'stamp-1', code: 'СП-02' },
+      { rowId: 2, taskKey: 'line-percent', code: 'СП-01' },
     ])
   })
 
@@ -216,8 +216,8 @@ describe('dispatcher task row codes', () => {
     const second = { ...first, key: 'line-percent-duplicate' }
 
     expect(buildDispatcherTaskCodeIndexRows([first, second], rows)).toEqual([
-      { rowId: 1, taskKey: 'code:СП-02', code: 'СП-02' },
-      { rowId: 2, taskKey: 'code:СП-02', code: 'СП-02' },
+      { rowId: 1, taskKey: 'code:СП-01', code: 'СП-01' },
+      { rowId: 2, taskKey: 'code:СП-01', code: 'СП-01' },
     ])
   })
 
@@ -290,8 +290,8 @@ describe('dispatcher task row codes', () => {
     }
 
     expect(buildDispatcherTaskIndexRows([task], rows)).toEqual([
-      { rowId: 1, taskKey: task.key, code: 'ДЗ-14' },
-      { rowId: 2, taskKey: task.key, code: 'ДЗ-14' },
+      { rowId: 1, taskKey: task.key, code: 'ДЗ-03' },
+      { rowId: 2, taskKey: task.key, code: 'ДЗ-03' },
     ])
   })
 
@@ -314,7 +314,7 @@ describe('dispatcher task row codes', () => {
     const rows = [row(1)]
 
     expect(buildDispatcherTaskIndexRows([coreDataTask(rows[0])], rows)).toEqual([
-      { rowId: 1, taskKey: 'core-1', code: 'ДЗ-31' },
+      { rowId: 1, taskKey: 'core-1', code: 'СП-03' },
     ])
   })
 
@@ -323,29 +323,29 @@ describe('dispatcher task row codes', () => {
     const persistedRows = buildDispatcherTaskIndexRows([systemWarningTask(rows[0])], rows)
 
     expect(persistedRows).toEqual([
-      { rowId: 1, taskKey: 'sp-01-1', code: 'СП-01' },
+      { rowId: 1, taskKey: 'sp-01-1', code: 'СП-06' },
     ])
     const { activeByRowId, allByRowId } = buildMergedDispatcherTaskCodes(
       persistedRows.map(({ rowId, code }) => ({ rowId, code })),
       [],
     )
-    expect(activeByRowId.get(1)).toBe('СП-01')
-    expect(allByRowId.get(1)).toBe('СП-01')
+    expect(activeByRowId.get(1)).toBe('СП-06')
+    expect(allByRowId.get(1)).toBe('СП-06')
   })
 
-  it('persists an accepted early-coil recovery task as ДЗ-09 in the virtual field', () => {
+  it('persists an accepted early-coil recovery task as СП-09 in the virtual field', () => {
     const rows = [row(1)]
     const persistedRows = buildDispatcherTaskIndexRows([earlyCoilTask(rows[0])], rows)
 
     expect(persistedRows).toEqual([
-      { rowId: 1, taskKey: 'early-coil-1', code: 'ДЗ-09' },
+      { rowId: 1, taskKey: 'early-coil-1', code: 'СП-09' },
     ])
     const { activeByRowId, allByRowId } = buildMergedDispatcherTaskCodes(
       persistedRows.map(({ rowId, code }) => ({ rowId, code })),
       [],
     )
-    expect(activeByRowId.get(1)).toBe('ДЗ-09')
-    expect(allByRowId.get(1)).toBe('ДЗ-09')
+    expect(activeByRowId.get(1)).toBe('СП-09')
+    expect(allByRowId.get(1)).toBe('СП-09')
   })
 
   it('indexes one chain rename task on every row changed by the atomic plan', () => {
@@ -358,29 +358,29 @@ describe('dispatcher task row codes', () => {
     const persistedRows = buildDispatcherTaskIndexRows([renameTask(rows)], rows)
 
     expect(persistedRows).toEqual([
-      { rowId: 2, taskKey: 'rename-chain-2', code: 'ДЗ-11' },
-      { rowId: 3, taskKey: 'rename-chain-2', code: 'ДЗ-11' },
+      { rowId: 2, taskKey: 'rename-chain-2', code: 'СП-09' },
+      { rowId: 3, taskKey: 'rename-chain-2', code: 'СП-09' },
     ])
     const { allByRowId } = buildMergedDispatcherTaskCodes(persistedRows, [])
-    expect(allByRowId.get(2)).toBe('ДЗ-11')
-    expect(allByRowId.get(3)).toBe('ДЗ-11')
+    expect(allByRowId.get(2)).toBe('СП-09')
+    expect(allByRowId.get(3)).toBe('СП-09')
   })
 
   it('keeps active codes separate while exposing the union in the virtual field', () => {
     const { activeByRowId, allByRowId } = buildMergedDispatcherTaskCodes(
       [
-        { rowId: 1, code: 'ДЗ-18' },
+        { rowId: 1, code: 'СП-02' },
         { rowId: 2, code: 'ДЗ-24' },
       ],
       [
         { rowId: 1, code: 'ДЗ-24' },
-        { rowId: 1, code: 'ДЗ-18' },
+        { rowId: 1, code: 'СП-02' },
         { rowId: 3, code: 'ДЗ-01' },
       ],
     )
 
-    expect(activeByRowId.get(1)).toBe('ДЗ-18')
-    expect(allByRowId.get(1)).toBe('ДЗ-18, ДЗ-24')
+    expect(activeByRowId.get(1)).toBe('СП-02')
+    expect(allByRowId.get(1)).toBe('СП-02, ДЗ-24')
     expect(activeByRowId.has(3)).toBe(false)
     expect(allByRowId.get(3)).toBe('ДЗ-01')
   })

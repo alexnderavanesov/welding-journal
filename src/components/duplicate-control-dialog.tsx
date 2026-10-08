@@ -10,6 +10,11 @@ import { JointConnectionTypeMeta, MetaSeparator } from '@/components/joint-meta'
 import { PaginationBar } from '@/components/pagination-bar'
 import { RequestRowsSearch } from '@/components/request-rows-search'
 import { Button } from '@/components/ui/button'
+import { WorkflowResultOptionPicker } from '@/components/workflow-result-option-picker'
+import { getLnkSelectionResultRestrictionReason } from '@/components/lnk-result-selection-restrictions'
+import { useControlProcessSettings } from '@/lib/control-process-settings'
+import { useSystemIndexSettings } from '@/lib/system-index-settings'
+import { getSystemRuleSettingsHref } from '@/lib/system-rule-catalog'
 import { ResultBadge } from '@/lib/weld-table-badges'
 import { getDuplicateControls } from '@/lib/duplicate-control-utils'
 import { getDuplicateControlOfficialityBlockReason } from '@/lib/duplicate-control-officiality'
@@ -97,6 +102,8 @@ export function DuplicateControlDialog({
   onToggleMethod,
   onExistingControlsOpenChange,
 }: DuplicateControlDialogProps) {
+  const processSettings = useControlProcessSettings()
+  const systemIndexSettings = useSystemIndexSettings()
   const layeredControlBlocked = selectedRows.some((row) => row.layeredControlAssigned) &&
     draft.methods.size > 0
   if (layeredControlBlocked) {
@@ -107,6 +114,19 @@ export function DuplicateControlDialog({
   }
   const officialityBlockReason = selectedRows.map(getDuplicateControlOfficialityBlockReason).find(Boolean)
   if (officialityBlockReason) saveBlockReason = officialityBlockReason
+  const getDisabledResultReason = (result: string) => [
+    getLnkSelectionResultRestrictionReason(selectedRows, [...draft.methods], result, {
+      systemIndexSettings,
+      pvkGoodOnly: processSettings.pvkGoodOnly,
+      scope: 'duplicate',
+    }),
+    layeredControlBlocked ? 'Любой дубль ВИК/РК/УЗК/ПВК недоступен: у выбранного стыка назначен послойный контроль. Сначала уберите послойный контроль.' : undefined,
+    ...new Set(selectedRows.map(getDuplicateControlOfficialityBlockReason).filter(Boolean)),
+    selectedRowsLoading ? 'Загружаются выбранные стыки…' : undefined,
+    draft.methods.size === 0 ? 'Выберите метод контроля.' : undefined,
+    selectedRows.length === 0 ? 'Выберите стыки.' : undefined,
+  ].filter(Boolean).join('\n') || undefined
+  if (draft.result) saveBlockReason = saveBlockReason || getDisabledResultReason(draft.result) || null
   const isEditing = typeof draft.id === 'number'
   const [showExistingControls, setShowExistingControls] = useState(false)
   const [showSelectedPreview, setShowSelectedPreview] = useState(false)
@@ -117,6 +137,14 @@ export function DuplicateControlDialog({
       await onSave()
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'Не удалось сохранить дубль-контроль. Повторите попытку.')
+    }
+  }
+  const handleDelete = async (control: DuplicateControlRecord) => {
+    setSaveError(null)
+    try {
+      await onDelete(control)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Не удалось удалить дубль-контроль. Данные не изменены.')
     }
   }
   const stableOnToggleRow = useStableEventCallback(onToggleRow)
@@ -165,7 +193,7 @@ export function DuplicateControlDialog({
             error={controlsError}
             pagination={controlsPagination}
             onEdit={handleEditControl}
-            onDelete={onDelete}
+            onDelete={handleDelete}
             fill
           />
         </section>
@@ -199,28 +227,22 @@ export function DuplicateControlDialog({
               })}
             </div>
 
-            <label className="mt-4 block text-xs font-semibold text-slate-600">
-              Результат
-              <select
+            <div className="mt-4">
+              <WorkflowResultOptionPicker
+                compact
                 value={draft.result}
-                onChange={(event) =>
+                options={DUPLICATE_CONTROL_RESULTS}
+                restrictionHelpHref={draft.methods.size && selectedRows.length ? getSystemRuleSettingsHref('СП-07') : undefined}
+                getDisabledReason={getDisabledResultReason}
+                onChange={(result) =>
                   onDraftChange((current) => ({
                     ...current,
-                    result: event.target.value as DuplicateControlResult | '',
+                    result: result as DuplicateControlResult,
                   }))
                 }
-                className="mt-1 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-normal outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
-              >
-                <option value="" className="font-normal">
-                  Выберите результат
-                </option>
-                {DUPLICATE_CONTROL_RESULTS.map((result) => (
-                  <option key={result} value={result} disabled={layeredControlBlocked || Boolean(officialityBlockReason)} className="font-normal">
-                    {result}
-                  </option>
-                ))}
-              </select>
-            </label>
+              />
+              {!draft.result ? <span className="text-xs text-slate-500">Выберите результат</span> : null}
+            </div>
           </section>
 
           <section className="rounded-md border border-slate-200 bg-slate-50 p-4">

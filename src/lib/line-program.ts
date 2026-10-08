@@ -29,10 +29,12 @@ export function getLineProgramIdentityKey(row: Pick<WeldInput, 'projectTitle' | 
 export function hasLineProgramIdentityChanges(previous: LineProgramIdentity, next: LineProgramIdentity) {
   return (['projectTitle', 'subtitleCode', 'line'] as const).some((key) => previous[key].trim() !== next[key].trim())
 }
-export function getLineProgramConfigurationIssue(record: LineProgramProperties) {
+export function getLineProgramConfigurationIssue(record: LineProgramProperties & { configurationIssue?: string | null }) {
+  // The stored conflict is still meaningful; only its obsolete display code changes.
+  if (record.configurationIssue) return record.configurationIssue.replace(/^СП-02(?=:|\s|$)/, 'СП-01')
   const missing = [!record.category?.trim() && 'категория', !record.groupName?.trim() && 'группа',
     record.weldControlPercent == null && 'базовый процент', record.pvkControlPercent == null && 'процент ПВК'].filter(Boolean)
-  return missing.length ? `СП-02: не настроены ${missing.join(', ')}.` : null
+  return missing.length ? `СП-01: не настроены ${missing.join(', ')}.` : null
 }
 export function normalizeLineProgramSaveRequest(data: LineProgramSaveRequest): LineProgramSaveRequest {
   if (!data || (data.id != null && (!Number.isSafeInteger(data.id) || data.id <= 0 || !data.version))) throw new Error('Обновите программу линии: отсутствует корректная версия записи.')

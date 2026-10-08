@@ -206,6 +206,23 @@ describe('ContextActionMenu', () => {
     expect(screen.getByRole('button', { name: 'Открыть линию' })).toBeInTheDocument()
   })
 
+  it.each([false, true])('keeps disabled reasons keyboard-accessible (submenu: %s)', nested => {
+    const onSelect = vi.fn()
+    const onClose = vi.fn()
+    const blocked = { id: 'cut', label: 'вырез', disabled: true, title: 'По ВИК вырез недоступен.', onSelect }
+    render(<ContextActionMenu menu={{ x: 20, y: 20, items: nested
+      ? [{ id: 'results', label: 'Результат', onSelect: vi.fn(), children: [blocked] }]
+      : [blocked] }} onClose={onClose} />)
+    if (nested) fireEvent.click(screen.getByRole('button', { name: 'Результат' }))
+    const explanation = screen.getByRole('group', { name: 'вырез: По ВИК вырез недоступен.' })
+    explanation.focus()
+    expect(explanation).toHaveFocus()
+    fireEvent.keyDown(explanation, { key: 'Enter' })
+    fireEvent.click(screen.getByRole('button', { name: 'вырез' }))
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('shows a disabled action reason without relying on a hover tooltip', () => {
     render(
       <ContextActionMenu

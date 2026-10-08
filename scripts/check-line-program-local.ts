@@ -46,7 +46,7 @@ try {
     assert.equal(Number(registry.rows[0].pvk_control_percent), 10)
     assert.equal(registry.rows[1].category, null)
     assert.equal(registry.rows[1].weld_control_percent, null)
-    assert.match(String(registry.rows[1].configuration_issue), /СП-02/)
+    assert.match(String(registry.rows[1].configuration_issue), /СП-01/)
     const documents = await tx.execute(sql`select id from generated_documents order by id`)
     assert.deepEqual(documents.rows.map((row) => row.id), [-4, -3, -2])
     const rows = await loadLineProgramRows(tx, { projectTitle: 'TEST', subtitleCode: 'A', line: 'L1' })

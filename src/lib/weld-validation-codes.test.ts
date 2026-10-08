@@ -9,12 +9,12 @@ import {
 
 describe('weld validation codes', () => {
   it.each([
-    ['testDate', 'ЗВ-11'],
-    ['vikRequestDate', 'ЗВ-16'],
-    ['rkConclusionDate', 'ЗВ-14'],
-    ['pstoRequestDate', 'ЗВ-24'],
-    ['pstoDate', 'ЗВ-22'],
-    ['tvmtConclusionDate', 'ЗВ-24'],
+    ['testDate', 'Дата ГИ'],
+    ['vikRequestDate', 'Дата заявки ВИК'],
+    ['rkConclusionDate', 'Дата РК'],
+    ['pstoRequestDate', 'Дата заявки ПСТО'],
+    ['pstoDate', 'Дата ПСТО'],
+    ['tvmtConclusionDate', 'Дата ТВМТ'],
   ] as const)('routes invalid %s to %s', (fieldKey, expectedCode) => {
     expect(() => validateWeldDatesForImport([
       { joint: 'F1', [fieldKey]: '31.02.2026' } as WeldInput,
@@ -25,10 +25,10 @@ describe('weld validation codes', () => {
     expect(() => validateRequiredRootStampForSave({
       joint: 'F1',
       weldDate: '2026-09-04',
-    })).toThrow('ЗВ-10')
+    })).not.toThrow()
     expect(() => validateManualJointNamesForImport([
       { joint: 'F1R1' } as WeldInput,
-    ])).toThrow('ЗВ-26')
+    ])).toThrow('СП-09')
   })
 
   it('reports all invalid date fields from one import row together', () => {
@@ -37,6 +37,6 @@ describe('weld validation codes', () => {
       testDate: '31.02.2026',
       vikRequestDate: '32.03.2026',
       pstoDate: 'not-a-date',
-    } as WeldInput])).toThrow(/ЗВ-16.*ЗВ-22.*ЗВ-11/)
+    } as WeldInput])).toThrow(/Дата заявки ВИК.*Дата ПСТО.*Дата ГИ/)
   })
 })

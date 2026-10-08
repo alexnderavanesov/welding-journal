@@ -11,7 +11,7 @@ import { canSelectPstoResultRow } from '@/lib/report-modal-rows'
 import { filterPstoResultRows } from '@/lib/report-row-utils'
 import { hasText } from '@/lib/report-value-utils'
 import { hasAnyPstoCycle } from '@/lib/psto-cycle'
-import { DEFAULT_SAVE_CHECK_SETTINGS, formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
+import { DEFAULT_SAVE_CHECK_SETTINGS, formatSaveCheckBlockReason, normalizeSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import type { SystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 import { getPstoChronologyRootCauseActions } from '@/lib/workflow-root-cause-actions'
 import {
@@ -79,7 +79,7 @@ export function getPstoResultSaveBlockReason({
   if (selectedRows.length === 0) return 'Отметьте один или несколько стыков галочкой.'
   if (!draft.result) return 'Выберите результат ПСТО.'
   if (draft.result !== 'проведено') return 'Выберите результат ПСТО.'
-  if (saveCheckSettings.pstoResultDateRequired && !draft.pstoDate) return formatSaveCheckBlockReason('pstoResultDateRequired', 'Укажите дату ПСТО.')
+  saveCheckSettings = normalizeSaveCheckSettings(saveCheckSettings)
 
   {
     const dateReason = getDateInputValidationReason(draft.pstoDate, 'Дата ПСТО')

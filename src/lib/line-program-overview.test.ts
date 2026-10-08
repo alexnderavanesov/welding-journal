@@ -21,7 +21,7 @@ describe('line card overview', () => {
   })
   it('never marks an empty, unknown, merely assigned, rejected or erroneous line finished', () => {
     for (const overview of [undefined, null, summarizeLineProgram([], line),
-      summarizeLineProgram([good], { ...line, configurationIssue: 'СП-02' }),
+      summarizeLineProgram([good], { ...line, configurationIssue: 'СП-01' }),
       summarizeLineProgram([{ ...good, rkResult: null }], line),
       summarizeLineProgram([{ ...good, vikResult: 'ремонт' }], line),
       summarizeLineProgram([{ ...good, hasRk: null }], line),
@@ -64,7 +64,7 @@ describe('line card overview', () => {
       common: { required: 2, actionableRequired: 2, covered: 2, missing: 0, excess: 0 }, pvk: { required: 2, actionableRequired: 2, covered: 0, missing: 2, excess: 0 } })
   })
   it('retains unknown requirements instead of presenting a false zero/complete state', () => {
-    expect(summarizeLineProgram([row], { ...line, configurationIssue: 'СП-02', pvkControlPercent: null })).toMatchObject({ joints: 1, stamps: 1, common: null, pvk: null })
+    expect(summarizeLineProgram([row], { ...line, configurationIssue: 'СП-01', pvkControlPercent: null })).toMatchObject({ joints: 1, stamps: 1, common: null, pvk: null })
     expect(summarizeLineProgram([row], { ...line, weldControlPercent: 0, pvkControlPercent: 0 })).toMatchObject({ common: { required: 0 }, pvk: { required: 0 } })
   })
   it('includes planned stamps but excludes unofficial/obsolete ones without changing the welded calculation base', () => {

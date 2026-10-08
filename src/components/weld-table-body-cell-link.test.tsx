@@ -7,6 +7,23 @@ import type { WeldField } from '@/lib/weld-fields'
 import { LAYERED_CONTROL_WAITING_LABEL } from '@/lib/layered-control-documents'
 
 describe('WeldTableBodyCell background', () => {
+  it.each([
+    { hasDispatcherTask: true, isHighlightedCell: false, isHighlightedRow: false, isSelectedRow: false, background: 'bg-amber-100' },
+    { hasDispatcherTask: true, isHighlightedCell: true, isHighlightedRow: false, isSelectedRow: false, background: 'bg-lime-100' },
+    { hasDispatcherTask: true, isHighlightedCell: false, isHighlightedRow: true, isSelectedRow: false, background: 'bg-emerald-50' },
+    { hasDispatcherTask: true, isHighlightedCell: false, isHighlightedRow: false, isSelectedRow: true, background: 'bg-[#dff3ff]' },
+  ])('keeps the pinned identity cell opaque: $background', ({ background, ...state }) => {
+    render(<table><tbody><tr><WeldTableBodyCell
+      row={{ id: 1, joint: 'F1' } as WeldRow}
+      field={{ key: 'joint', dbName: 'joint', label: 'Стык', kind: 'text', group: 'Стык' }}
+      displayValue="F1" isEditableCell={false} isBlockedEditableCell={false} {...state}
+      isResultField={false} stickyLeft={64} stickyIdentityLeadingWidth={52} stickyIdentityColumns
+      stickyBackgroundClassName={state.isSelectedRow ? 'bg-[#dff3ff]' : 'bg-white'} isSectionEnd={false}
+    /></tr></tbody></table>)
+    const cell = screen.getByRole('cell')
+    expect([...cell.classList].filter(name => name.startsWith('bg-'))).toEqual([background])
+  })
+
   it.each(['Vik', 'Pvk'] as const)('shows a compact, non-clickable waiting state in the %s cell and removes it on cancellation', (method) => {
     const onOpenDocument = vi.fn()
     const field = { key: `layered${method}Documents`, dbName: '__layered', label: 'Послойный', kind: 'text', group: 'Документы', virtual: true } satisfies WeldField

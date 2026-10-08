@@ -15,7 +15,7 @@ describe('compact WDI journal filtering', () => {
     expect(getJournalWdiFilterSelect({ wdi: '=10' }, 'weldingJournalNote')).toHaveProperty('weldingJournalNote')
   })
   it('does not silently strip dependencies from unsupported virtual filters', () => {
-    expect(getJournalWdiFilterSelect({ wdi: '=10', dispatcherTasks: 'СП-04' })).toBe(WELD_TABLE_SELECT)
+    expect(getJournalWdiFilterSelect({ wdi: '=10', dispatcherTasks: 'СП-09' })).toBe(WELD_TABLE_SELECT)
   })
   it.each([
     [{}, 'годен'],

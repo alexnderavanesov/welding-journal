@@ -48,6 +48,7 @@ export type DispatcherAcceptedWarningPayload = {
   key: string
   kind: string
   code: string
+  numberingVersion?: 1 | 2
   title: string
   context: string
   acceptedAt: string
@@ -69,7 +70,8 @@ type AcceptDispatcherWarningInput = {
 const toPayload = (row: DispatcherAcceptedWarning): DispatcherAcceptedWarningPayload => ({
   key: row.key,
   kind: row.kind,
-  code: row.code ?? '',
+  code: (row.code ?? '').replace(/^v2:/, ''),
+  numberingVersion: row.code?.startsWith('v2:') ? 2 : 1,
   title: row.title ?? '',
   context: row.context ?? '',
   acceptedAt: row.acceptedAt.toISOString(),
@@ -109,7 +111,7 @@ export const acceptDispatcherWarning = createServerFn({ method: 'POST' })
       const context = getDispatcherTaskAcceptanceContext(task)
       const inserted = await tx
         .insert(dispatcherAcceptedWarnings)
-        .values({ key, kind, ...object, code: code || null, title: title || null, context: context || null })
+        .values({ key, kind, ...object, code: code ? `v2:${code}` : null, title: title || null, context: context || null })
         .onConflictDoNothing()
         .returning()
       const [row] = inserted.length > 0

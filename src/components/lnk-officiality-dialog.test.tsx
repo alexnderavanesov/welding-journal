@@ -58,4 +58,17 @@ describe('LnkOfficialityDialog', () => {
     expect(screen.getByText(/1-100/)).toBeInTheDocument()
     expect(screen.getByText(/из 120 строк/)).toBeInTheDocument()
   })
+
+  it('explains a legacy unofficial waiting row without inventing a rejection or hiding restoration', () => {
+    const row = { id: 1, joint: 'S1', line: 'Л1', officiality: 'неофициальный', finalStatus: 'ожидает НК', vikResult: 'ожидает НК' } as WeldRow
+    render(<LnkOfficialityDialog draft={{ search: '', officiality: 'official', rowIds: new Set([1]) }}
+      filteredRows={[row]} selectedRows={[row]} counters={{ unofficial: 1, rejectedOfficial: 0 }}
+      saveBlockReason={null} isSaveDisabled={false} onClose={vi.fn()} onSave={vi.fn()} onDraftChange={vi.fn()}
+      onToggleRow={vi.fn()} onSetVisibleRowsSelected={vi.fn()} />)
+    expect(screen.getByText('ожидает НК')).toBeVisible()
+    expect(screen.getByText('Неофициальный стык без негодного результата. Проверьте историю и официальность.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Сохранить официальность' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /^Неофициальный/ })).toBeDisabled()
+    expect(screen.getByRole('region', { name: 'Параметры официальности' })).toHaveClass('lg:overflow-y-auto')
+  })
 })

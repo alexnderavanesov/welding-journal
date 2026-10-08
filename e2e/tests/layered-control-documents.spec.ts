@@ -153,14 +153,14 @@ test('послойное назначение вместе с результат
   await row().getByRole('button', { name: 'Выполнить: Внести результат основного НК', exact: true }).click()
   const resultDialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Внесение результатов ЛНК', exact: true }) })
   await resultDialog.getByLabel('Метод контроля', { exact: true }).selectOption('pvkRequest')
-  await resultDialog.getByLabel('Результат для всех выбранных', { exact: true }).selectOption('годен')
+  await resultDialog.getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
   // A result before its request (but after welding) offers both date-correction actions.
   await resultDialog.getByLabel('Дата контроля', { exact: true }).fill('2026-08-16')
   const footer = resultDialog.getByRole('group', { name: 'Сохранение результата', exact: true })
   const layeredControl = resultDialog.getByRole('checkbox', { name: `Послойный контроль: E2E-LAYER-L1 · ${joint}`, exact: true })
   await expect(footer.getByRole('checkbox')).toHaveCount(0)
   const save = footer.getByRole('button', { name: 'Сохранить результат', exact: true })
-  const warning = footer.getByText(/Сохранение заблокировано: ЗВ-/)
+  const warning = footer.getByText(/Сохранение заблокировано: СП-/)
   await expect(warning).toBeVisible()
   await layeredControl.check()
   await expect(save).toBeDisabled()
@@ -178,8 +178,10 @@ test('послойное назначение вместе с результат
         warning.boundingBox(), correction.boundingBox(),
       ])
       if (!optionBox || !saveBox || !warningBox || !correctionBox) return false
+      // The stable footer places explanations beside actions on wide screens,
+      // and above them on narrower screens. Both must stay visible and separate.
       return optionBox.y + optionBox.height <= warningBox.y
-        && Math.max(warningBox.y + warningBox.height, correctionBox.y + correctionBox.height) <= saveBox.y
+        && [warningBox, correctionBox].every(box => box.y + box.height <= saveBox.y || box.x + box.width <= saveBox.x)
         && saveBox.y + saveBox.height <= viewport.height
     }).toBe(true)
   }
@@ -288,7 +290,7 @@ test('послойные отметки сохраняются отдельно 
   await expect(dialog.getByText('Найдено: 4 · Доступно: 4', { exact: true })).toBeVisible()
   for (const joint of joints) await expect(dialog.getByRole('checkbox', { name: `Выбрать стык E2E-LAYER-L1 ${joint}`, exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: 'Выбрать все доступные', exact: true }).click()
-  await dialog.getByLabel('Результат для всех выбранных', { exact: true }).selectOption('годен')
+  await dialog.getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
   await dialog.getByLabel('Дата контроля', { exact: true }).fill('2026-08-17')
   const layered = (joint: string) => dialog.getByRole('checkbox', { name: `Послойный контроль: E2E-LAYER-L1 · ${joint}`, exact: true })
   await expect(layered('F219')).toBeChecked()

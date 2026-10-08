@@ -2,8 +2,7 @@ import { normalizeControlResultText } from '@/lib/report-value-utils'
 import { FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
 import {
   LNK_METHODS,
-  REPAIR_FORBIDDEN_BY_DIAMETER_REASON,
-  REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON,
+  OFFICIAL_WELDER_STAMP_FIELD_KEYS,
   WELD_STAMP_COMPLETION_GROUPS,
 } from '@/lib/report-config'
 import { hasText, isEnabledControlValue } from '@/lib/report-value-utils'
@@ -15,17 +14,15 @@ import {
 } from '@/lib/date-format'
 import { parseJointChainName } from '@/lib/joint-chain'
 import { validateJointNameStructure } from '@/lib/joint-name'
-import { formatJointDiameterLabel, isUnofficialJoint } from '@/lib/joint-display'
-import {
-  isLnkRepairForbiddenByDiameter,
-  isLnkRepairForbiddenWithSettings,
-} from '@/lib/lnk-result-rules'
+import { isUnofficialJoint } from '@/lib/joint-display'
+import { getLnkResultRuleIssues } from '@/lib/lnk-result-policy'
 import { getDispatcherLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { getDispatcherPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import { formatOfficialStampCompatibilityIssue, getOfficialStampCompatibilityIssues } from '@/lib/welder-stamp-compatibility'
+import { normalizeStampForCompare } from '@/lib/welder-stamp-compatibility-utils'
 import { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 import type { RepeatedJointCheckTask, WeldRow } from '@/lib/dispatcher-types'
-import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
+import { DEFAULT_SAVE_CHECK_SETTINGS, normalizeSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import {
   CONTROL_HISTORY_REASON,
   JOINT_CORE_DATA_REASON,
@@ -39,14 +36,12 @@ import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welde
 import {
   getPreHeatTreatmentControls,
   getPrimaryLnkStageDebt,
-  getRejectedPreHeatTreatmentControls,
   hasPrimaryLnkResultTrace,
   type PrimaryLnkStageDebt,
 } from '@/lib/lnk-control-stage'
 import { buildPstoCycleTimeline, type PstoRepeatCycleRecord } from '@/lib/psto-cycle'
 import { normalizeTvmtResult } from '@/lib/tvmt-cycle'
 import { isFinalLnkResultValue } from '@/lib/lnk-status'
-import { getDuplicateControls } from '@/lib/duplicate-control-utils'
 import {
   getLnkChronologyRootCauseActions,
   getPstoChronologyRootCauseActions,
@@ -56,6 +51,8 @@ import {
 import { getPstoTvmtWorkflowLabel } from '@/lib/tvmt-cycle'
 import { isPreHeatTreatmentStageEnabled } from '@/lib/pre-heat-treatment-policy'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
+import { getLnkChronologyRuleCode, getPstoChronologyRuleCode } from './chronology-rule-code'
+import type { SystemRuleCode } from './system-rule-catalog'
 
 export const PRIMARY_LNK_STAGE_DEBT_SYSTEM_WARNING_REASON = 'завершить предыдущие этапы контроля'
 
@@ -113,22 +110,9 @@ export function buildPrimaryLnkStageDebtSystemWarnings(
         `но в системе не подтверждено завершение предыдущих этапов: ${missingStages.join(', ')}. ` +
         'Подтвердите этапы после получения фактических данных. После этого предупреждение исчезнет автоматически.',
       rootCauseActions: [getPrimaryLnkStageDebtRootCauseAction(row, debt)],
-      systemWarningCode: 'СП-01' as const,
+      systemWarningCode: 'СП-06' as const,
     }]
   })
-}
-
-const WELDER_STAMP_AUDIT_SAVE_CHECK_SETTINGS = {
-  ...DEFAULT_SAVE_CHECK_SETTINGS,
-  officialRegistry: true,
-  officialArchive: true,
-  officialNaksDate: true,
-  officialSuspension: true,
-  officialWeldingMethod: true,
-  officialMaterialGroup: true,
-  officialDiameter: true,
-  officialThickness: true,
-  officialDls: true,
 }
 
 const CORE_DATE_AUDIT_FIELDS = [
@@ -138,51 +122,24 @@ const CORE_DATE_AUDIT_FIELDS = [
   'pstoCancellationDate',
 ] as const satisfies readonly WeldFieldKey[]
 
-export function buildForbiddenRepairByDiameterCheckTasks(
+export function buildLnkResultRuleCheckTasks(
   rows: WeldRow[],
   systemIndexSettings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
 ): RepeatedJointCheckTask[] {
   const tasks: RepeatedJointCheckTask[] = []
   for (const row of rows) {
-    const repairMethods = LNK_METHODS.filter(
-      (method) => String(row[method.resultKey] ?? '').trim().toLowerCase() === 'ремонт',
-    )
-    const preHeatTreatmentRepairs = getRejectedPreHeatTreatmentControls(row)
-      .filter((control) => control.result === 'ремонт')
-    const duplicateRepairs = getDuplicateControls(row)
-      .filter((control) => String(control.result ?? '').trim().toLowerCase() === 'ремонт')
-    if (
-      (repairMethods.length === 0 && preHeatTreatmentRepairs.length === 0 && duplicateRepairs.length === 0) ||
-      !isLnkRepairForbiddenWithSettings(row, systemIndexSettings)
-    ) continue
-
-    const joint = String(row.joint ?? '').trim() || '-'
-    const methodCodes = [
-      ...repairMethods.map((method) => method.code),
-      ...preHeatTreatmentRepairs.map((control) => `${control.methodCode} до ТО`),
-      ...duplicateRepairs.map((control) => `${control.method} (дубль)`),
-    ].join(', ')
-    const repairResultKeys: string[] = [
-      ...repairMethods.map((method) => method.resultKey),
-      ...preHeatTreatmentRepairs.map((control) => `preHeatTreatment:${control.control.id}`),
-      ...duplicateRepairs.map((control) => `duplicate:${control.id}`),
-    ]
-    const forbiddenByDiameter = isLnkRepairForbiddenByDiameter(row)
-    const reason = forbiddenByDiameter
-      ? REPAIR_FORBIDDEN_BY_DIAMETER_REASON
-      : REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON
-    const details = forbiddenByDiameter
-      ? `Стык ${joint}: результат ${methodCodes} - ремонт указан при минимальном диаметре ${formatJointDiameterLabel(row)} мм. Ремонт на стыке с диаметром меньше 89 мм недопустим; для такого диаметра выбирается только "вырез". Проверь D1/D2 или результат контроля.`
-      : `Стык ${joint}: результат ${methodCodes} - ремонт указан после двух уже выполненных официальных ремонтов. На этом шаге доступен только "вырез". Проверь имя цепочки, официальность или результат контроля.`
-    tasks.push(
-      createJointChainCheckTask(
+    const issues = getLnkResultRuleIssues(row, systemIndexSettings)
+    if (!issues.length) continue
+    tasks.push({
+      ...createJointChainCheckTask(
         row,
-        `${getJointChainConsistencyKey(row, systemIndexSettings) ?? row.id}:repair-rule:${row.id}:${repairResultKeys.join(',')}`,
-        reason,
-        details,
+        `lnk-result-rule:${row.id}`,
+        'проверить допустимые результаты ЛНК',
+        issues.map((issue) => issue.message).join('\n'),
         systemIndexSettings,
       ),
-    )
+      systemWarningCode: 'СП-07',
+    })
   }
   return tasks
 }
@@ -191,16 +148,16 @@ export function buildLnkChronologyCheckTasks(
   rows: WeldRow[],
   systemIndexSettings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
 ): RepeatedJointCheckTask[] {
-  return groupIssuesByRowAndReason(getDispatcherLnkChronologyIssues(rows)).map((group) => {
+  return groupIssuesByRowAndReason(getDispatcherLnkChronologyIssues(rows).map(issue => ({ ...issue, systemWarningCode: getLnkChronologyRuleCode(issue.kind) }))).map((group) => {
     const row = group.row
-    return createJointChainCheckTask(
+    return { ...createJointChainCheckTask(
       row,
       `${getJointChainConsistencyKey(row, systemIndexSettings) ?? row.id}:lnk-chronology:${group.issueKeys.join('|')}`,
       group.reason,
       group.messages.join(' '),
       systemIndexSettings,
       getLnkChronologyRootCauseActions(group.issues),
-    )
+    ), systemWarningCode: group.issues[0].systemWarningCode }
   })
 }
 
@@ -208,16 +165,16 @@ export function buildPstoChronologyCheckTasks(
   rows: WeldRow[],
   systemIndexSettings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
 ): RepeatedJointCheckTask[] {
-  return groupIssuesByRowAndReason(getDispatcherPstoChronologyIssues(rows)).map((group) => {
+  return groupIssuesByRowAndReason(getDispatcherPstoChronologyIssues(rows).map(issue => ({ ...issue, systemWarningCode: getPstoChronologyRuleCode(issue.kind) }))).map((group) => {
     const row = group.row
-    return createJointChainCheckTask(
+    return { ...createJointChainCheckTask(
       row,
       `${getJointChainConsistencyKey(row, systemIndexSettings) ?? row.id}:psto-chronology:${group.issueKeys.join('|')}`,
       group.reason,
       group.messages.join(' '),
       systemIndexSettings,
       getPstoChronologyRootCauseActions(group.issues),
-    )
+    ), systemWarningCode: group.issues[0].systemWarningCode }
   })
 }
 
@@ -241,6 +198,7 @@ export function buildJointCoreDataCheckTasks(
       issues.push(`дата сварки ${formatDisplayDate(weldDate)} позже сегодняшней даты ${formatDisplayDate(today)}`)
       issueKeys.push('future-weld-date')
     }
+    const dateIssueCount = issues.length
 
     const hasWeldDate = hasText(row.weldDate)
     const missingMaterialGroup = hasWeldDate && !hasText(row.materialGroup)
@@ -264,24 +222,20 @@ export function buildJointCoreDataCheckTasks(
       issues.push(`при заполненной дате сварки ${missingRequiredFieldsReason}`)
     }
 
-    const jointStructureReason = validateJointNameStructure(row.joint, systemIndexSettings)
-    if (jointStructureReason) {
-      issues.push(jointStructureReason)
-      issueKeys.push('joint-name')
-    }
     if (issues.length === 0) return []
 
     const joint = String(row.joint ?? '').trim() || `ID ${row.id}`
-    const details = issues
-      .map((issue) => issue.trim().replace(/[.!?]+$/u, ''))
-      .join('; ')
-    return [createJointChainCheckTask(
+    const groups = [
+      { code: 'СП-04' as const, issues: issues.slice(0, dateIssueCount), keys: issueKeys.slice(0, dateIssueCount) },
+      { code: 'СП-03' as const, issues: issues.slice(dateIssueCount), keys: issueKeys.slice(dateIssueCount) },
+    ]
+    return groups.filter(group => group.issues.length > 0).map(({ code, ...group }) => ({ ...createJointChainCheckTask(
       row,
-      `${getJointChainConsistencyKey(row, systemIndexSettings) ?? row.id}:joint-core-data:${row.id}:${issueKeys.join('|')}`,
+      `${getJointChainConsistencyKey(row, systemIndexSettings) ?? row.id}:joint-core-data:${row.id}:${code}:${group.keys.join('|')}`,
       JOINT_CORE_DATA_REASON,
-      `Стык ${joint}: ${details}. Проверь основные данные карточки стыка.`,
+      `Стык ${joint}: ${group.issues.join('; ')}. Проверь основные данные карточки стыка.`,
       systemIndexSettings,
-    )]
+    ), systemWarningCode: code }))
   })
 }
 
@@ -409,13 +363,27 @@ export function buildWelderStampCompatibilityCheckTasks(
   welderStampSuspensions: WelderStampSuspensionRecord[] = [],
   dataListSettings?: DataListSettings,
   systemIndexSettings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
+  saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 ): RepeatedJointCheckTask[] {
   const tasks: RepeatedJointCheckTask[] = []
+  const recordsByStamp = new Map<string, WelderStampRecord[]>()
+  for (const record of welderStampRecords) {
+    const key = normalizeStampForCompare(record.naksStamp)
+    const matches = recordsByStamp.get(key) ?? []
+    matches.push(record)
+    recordsByStamp.set(key, matches)
+  }
+  const auditSettings = { ...normalizeSaveCheckSettings(saveCheckSettings), officialArchive: false }
   for (const row of rows) {
-    const issues = getOfficialStampCompatibilityIssues(row, welderStampRecords, {
+    // Keep all cards for each stamp, including archived permits, but do not
+    // scan the entire registry for each of the 200,000 journal rows.
+    const stamps = new Set(OFFICIAL_WELDER_STAMP_FIELD_KEYS.map(key => normalizeStampForCompare(row[key])))
+    const matchingRecords = [...stamps].flatMap(stamp => recordsByStamp.get(stamp) ?? [])
+    const issues = getOfficialStampCompatibilityIssues(row, matchingRecords, {
       archiveValidationMode: 'audit',
       materialGroups: dataListSettings?.materialGroups,
-      saveCheckSettings: WELDER_STAMP_AUDIT_SAVE_CHECK_SETTINGS,
+      // Archive is an optional administrative guard, not a qualification defect.
+      saveCheckSettings: auditSettings,
       suspensions: welderStampSuspensions,
       weldingTypes: dataListSettings?.weldingTypes,
     })
@@ -545,7 +513,7 @@ function formatWeldStampCompletionFieldLabel(fieldKey: WeldFieldKey) {
   return FIELD_BY_KEY.get(fieldKey)?.label ?? fieldKey
 }
 
-function groupIssuesByRowAndReason<T extends { kind: string; reason: string; message: string; row: { id?: number }; methodCode?: string }>(
+function groupIssuesByRowAndReason<T extends { kind: string; reason: string; message: string; row: { id?: number }; methodCode?: string; systemWarningCode?: SystemRuleCode }>(
   issues: T[],
 ) {
   const groups = new Map<string, {
@@ -557,7 +525,7 @@ function groupIssuesByRowAndReason<T extends { kind: string; reason: string; mes
   }>()
   for (const issue of issues) {
     const row = issue.row as WeldRow
-    const groupKey = `${row.id}:${issue.reason}`
+    const groupKey = `${row.id}:${issue.reason}:${issue.systemWarningCode ?? ''}`
     const group = groups.get(groupKey) ?? { issueKeys: [], messages: [], reason: issue.reason, row, issues: [] }
     group.issueKeys.push(`${issue.kind}:${issue.methodCode ?? ''}`)
     group.messages.push(issue.message)

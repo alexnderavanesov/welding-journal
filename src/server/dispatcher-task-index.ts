@@ -40,6 +40,8 @@ import { buildJointChainContinuations } from '@/lib/joint-chain-continuations'
 import { getEarlyCoilDecisionSourceRowIds } from '@/lib/early-coil-decision'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
+import { normalizeSaveCheckSettings } from '@/lib/save-check-settings'
+import { normalizeOtherSettings } from '@/lib/other-settings'
 import { DEFAULT_DATA_LIST_SETTINGS, normalizeDataListSettings } from '@/lib/data-list-settings'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS, normalizeSystemIndexSettings } from '@/lib/system-index-settings'
 import { prepareReportRows, prepareReportRowsInPlace } from '@/lib/use-report-rows'
@@ -463,6 +465,7 @@ export async function calculateFullDispatcherTasks(
     dispatcherReminderSettings: getDispatcherReminderSettings(settingsRows),
     dispatcherSettings,
     dataListSettings: getDataListSettings(settingsRows),
+    saveCheckSettings: getRuleSaveSettings(settingsRows),
     controlProcessSettings: getControlProcessSettings(settingsRows),
     systemIndexSettings,
     welderStamps: stampRows.map(toWelderStampRecord),
@@ -607,6 +610,7 @@ async function rebuildScopedDispatcherTaskIndex(
     dispatcherReminderSettings: getDispatcherReminderSettings(settingsRows),
     dispatcherSettings: getDispatcherSettings(settingsRows),
     dataListSettings: getDataListSettings(settingsRows),
+    saveCheckSettings: getRuleSaveSettings(settingsRows),
     controlProcessSettings: getControlProcessSettings(settingsRows),
     systemIndexSettings,
     welderStamps: stampRows.map(toWelderStampRecord),
@@ -948,6 +952,11 @@ export function compactDispatcherTasksForTransport(tasks: RepeatedJointTask[]): 
     }
     return task
   })
+}
+
+function getRuleSaveSettings(rows: AppSetting[]) {
+  const other = normalizeOtherSettings(getStoredSetting(rows, PROJECT_SETTING_KEYS.other))
+  return normalizeSaveCheckSettings(getStoredSetting(rows, PROJECT_SETTING_KEYS.saveCheck), { officialDlsFallback: other.requireDlsForOfficialStamps })
 }
 
 function getDispatcherSettings(rows: AppSetting[]) {

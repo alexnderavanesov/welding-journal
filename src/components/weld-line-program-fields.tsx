@@ -38,7 +38,7 @@ export function WeldLineProgramFields({ draft, setDraft }: { draft: WeldInput; s
   return <span className="text-xs text-slate-600">{query.error ? 'Не удалось прочитать программу линии. Повторите открытие.' :
     !current || query.isFetching ? 'Читаем программу линии…' : query.data ?
       `Программа линии: базовый ${query.data.weldControlPercent ?? '—'}%, ПВК ${query.data.pvkControlPercent ?? '—'}%. ${query.data.configurationIssue ?? 'Общие свойства изменяются в программе линий.'}` :
-      'Новая линия появится в программе после сохранения. Настройте её общие свойства в «Программе линий» (СП-02).'}</span>
+      'Новая линия появится в программе после сохранения. Настройте её общие свойства в «Программе линий» (СП-01).'}</span>
 }
 
 export function WeldLayeredControlField({ draft, setDraft }: { draft: WeldInput; setDraft: Dispatch<SetStateAction<WeldInput>> }) {

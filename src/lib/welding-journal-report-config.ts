@@ -204,8 +204,6 @@ export const WELD_STAMP_COMPLETION_GROUPS = [
 ] as const satisfies ReadonlyArray<{ index: 1 | 2; reason: string; fields: readonly WeldFieldKey[] }>
 
 export const UNOFFICIAL_REJECTED_WITH_COIL_REASON = 'катушка требует проверки после смены официальности'
-export const REPAIR_FORBIDDEN_BY_DIAMETER_REASON = 'проверить ремонт по диаметру'
-export const REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON = 'после двух ремонтов доступен только вырез'
 
 const WELDING_JOURNAL_BASE_REPORT_FIELD_KEYS = [
   'projectTitle',

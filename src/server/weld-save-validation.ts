@@ -1,4 +1,5 @@
 import { getControlAssignmentRemovalReason } from '@/lib/control-assignment-history'
+import { getWeldMaterialGroupsError, normalizeWeldMaterialGroups } from '@/lib/weld-material-groups'
 import { asc, eq, inArray, sql } from 'drizzle-orm'
 
 import type { requireDb } from '@/db'
@@ -452,6 +453,7 @@ export function validateServerWeldRecords({
   importMode?: boolean
   allowSystemJointNames?: boolean
 }) {
+  context = { ...context, saveCheckSettings: normalizeSaveCheckSettings(context.saveCheckSettings) }
   const changedById = new Map(records.filter(row => row.id != null).map(row => [Number(row.id), row]))
   const ruleRows = (context.programRules?.rows ?? []).map(row => ({ ...row, ...changedById.get(row.id), programChainState: row.programChainState }))
   const knownIds = new Set(ruleRows.map(row => row.id))
@@ -462,6 +464,7 @@ export function validateServerWeldRecords({
     if (!knownIds.has(id)) ruleRows.push({ ...row, id, programChainState: undefined })
   })
   const requirements = buildProgramRepairRequirements(ruleRows, context.programRules?.approved, context.systemIndexSettings)
+  const trustedChainStates = new Map((context.programRules?.rows ?? []).map(row => [row.id, row.programChainState]))
   records.forEach((record, index) => {
     const previous = record.id ? previousRows.get(Number(record.id)) : undefined
     const prefix = importMode
@@ -494,7 +497,7 @@ export function validateServerWeldRecords({
     if (systemDocumentReason) throw new Error(`${prefix}${systemDocumentReason}`)
     const formReason = getWeldFormSaveBlockReason(
       record,
-      (previous ?? {}) as WeldInput,
+      { ...previous, programChainState: previous ? trustedChainStates.get(previous.id) : undefined } as WeldInput,
       context.saveCheckSettings,
       {
         allowSystemJointName: allowSystemJointNames,
@@ -828,6 +831,12 @@ function validateConfiguredListValue(
   const rawValue = String(record[fieldKey] ?? '').trim()
   if (!rawValue) return
   const allowed = settings[settingKey]
+  if (fieldKey === 'materialGroup') {
+    const error = getWeldMaterialGroupsError(rawValue, allowed)
+    if (error) throw new Error(`${prefix}${error}`)
+    record.materialGroup = normalizeWeldMaterialGroups(rawValue)
+    return
+  }
   const values = fieldKey === 'weldingMethod'
     ? rawValue.split(/[,+]+/).map(normalizeDataListOption).filter(Boolean)
     : [normalizeDataListOption(rawValue)]

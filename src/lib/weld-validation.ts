@@ -16,6 +16,7 @@ import { getDateInputValidationReason } from '@/lib/date-format'
 import { LEGACY_CONTROL_REPLACEMENT_VALUE } from '@/lib/control-availability-values'
 import {
   DEFAULT_SAVE_CHECK_SETTINGS,
+  normalizeSaveCheckSettings,
   formatSaveCheckBlockReason,
   type SaveCheckSettingId,
   type SaveCheckSettings,
@@ -28,6 +29,7 @@ export function validateManualJointNameForSave(
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
   systemIndexSettings: SystemIndexSettings = loadSystemIndexSettings(),
 ) {
+  saveCheckSettings = normalizeSaveCheckSettings(saveCheckSettings)
   validateDateFieldsForSave(value, saveCheckSettings)
 
   if (saveCheckSettings.manualJointName) {
@@ -39,6 +41,10 @@ export function validateManualJointNameForSave(
   const previousRow = value.id ? rows.find((row) => row.id === value.id) : null
   const previousJoint = normalizeJointName(previousRow?.joint)
   if (value.id && currentJoint === previousJoint) return
+
+  if (hasReservedJointSystemPart(value.joint, systemIndexSettings)) {
+    throw new Error(formatSaveCheckBlockReason('systemJointRenameProtection', 'Системные индексы зарезервированы для повторных стыков и катушек. Создайте продолжение через диспетчер или цепочку.'))
+  }
 
   if (saveCheckSettings.systemJointRenameProtection && previousRow && hasReservedJointSystemPart(previousRow.joint, systemIndexSettings)) {
     throw new Error(formatSaveCheckBlockReason(
@@ -65,6 +71,7 @@ export function validateDateFieldsForSave(
   record: WeldInput,
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 ) {
+  saveCheckSettings = normalizeSaveCheckSettings(saveCheckSettings)
   for (const fieldKey of dateFieldKeys) {
     const field = FIELD_BY_KEY.get(fieldKey)
     const reason = getDateInputValidationReason(record[fieldKey], field?.label ?? 'Дата', {
@@ -78,6 +85,7 @@ export function validateRequiredRootStampForSave(
   record: WeldInput,
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 ) {
+  saveCheckSettings = normalizeSaveCheckSettings(saveCheckSettings)
   if (!saveCheckSettings.requiredRootStampWithWeldDate) return
 
   const message = getRequiredRootStampMessage(record)
@@ -98,6 +106,7 @@ export function validateRequiredMaterialGroupForSave(
   record: WeldInput,
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 ) {
+  saveCheckSettings = normalizeSaveCheckSettings(saveCheckSettings)
   if (!saveCheckSettings.requiredMaterialGroupWithWeldDate) return
 
   const message = getRequiredMaterialGroupMessage(record)
@@ -118,6 +127,7 @@ export function validateRequiredConnectionTypeForSave(
   record: WeldInput,
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 ) {
+  saveCheckSettings = normalizeSaveCheckSettings(saveCheckSettings)
   if (!saveCheckSettings.requiredConnectionTypeWithWeldDate) return
 
   const message = getRequiredConnectionTypeMessage(record)
@@ -138,6 +148,7 @@ export function validateRequiredWeldingMethodForSave(
   record: WeldInput,
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 ) {
+  saveCheckSettings = normalizeSaveCheckSettings(saveCheckSettings)
   if (!saveCheckSettings.requiredWeldingMethodWithWeldDate) return
 
   const message = getRequiredWeldingMethodMessage(record)
@@ -162,6 +173,7 @@ export function validateRequiredRootStampsForImport(
   records: WeldInput[],
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 ) {
+  saveCheckSettings = normalizeSaveCheckSettings(saveCheckSettings)
   if (!saveCheckSettings.requiredRootStampWithWeldDate) return
 
   const invalidRecord = records
@@ -181,6 +193,7 @@ export function validateRequiredWeldCoreFieldsForImport(
   records: WeldInput[],
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 ) {
+  saveCheckSettings = normalizeSaveCheckSettings(saveCheckSettings)
   const invalidRecord = records
     .map((record, index) => ({
       record,
@@ -223,6 +236,9 @@ export function validateManualJointNamesForImport(
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
   systemIndexSettings: SystemIndexSettings = loadSystemIndexSettings(),
 ) {
+  saveCheckSettings = normalizeSaveCheckSettings(saveCheckSettings)
+  const reserved = records.find(record => hasReservedJointSystemPart(record.joint, systemIndexSettings))
+  if (reserved) throw new Error(formatSaveCheckBlockReason('systemJointRenameProtection', `Стык ${String(reserved.joint)}: системные индексы зарезервированы для повторных стыков и катушек.`))
   if (!saveCheckSettings.manualJointName) return
 
   const invalidRecord = records
@@ -242,6 +258,7 @@ export function validateWeldDatesForImport(
   records: WeldInput[],
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 ) {
+  saveCheckSettings = normalizeSaveCheckSettings(saveCheckSettings)
   const invalidRecord = records
     .map((record, index) => ({
       record,
@@ -272,9 +289,9 @@ function getDateSaveCheckSettingId(fieldKey: WeldFieldKey, reason: string): Save
     return 'weldDateNotFuture'
   }
   if (LNK_CONCLUSION_DATE_FIELD_KEYS.has(fieldKey)) return 'lnkResultControlDateFormat'
-  if (LNK_REQUEST_DATE_FIELD_KEYS.has(fieldKey)) return 'lnkResultRequestDateOrder'
+  if (LNK_REQUEST_DATE_FIELD_KEYS.has(fieldKey)) return 'lnkResultControlDateFormat'
   if (fieldKey === 'pstoDate') return 'pstoResultDateFormat'
-  if (PSTO_CYCLE_DATE_FIELD_KEYS.has(fieldKey)) return 'pstoResultRequestDateOrder'
+  if (PSTO_CYCLE_DATE_FIELD_KEYS.has(fieldKey)) return 'pstoResultDateFormat'
   return 'dateFormat'
 }
 

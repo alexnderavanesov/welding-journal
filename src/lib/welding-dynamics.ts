@@ -1,4 +1,5 @@
 import { formatDateInputValue, parseDateLikeToIso } from '@/lib/date-format'
+import { getStatisticalMaterialGroup } from '@/lib/weld-material-groups'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { parseJointChainName } from '@/lib/joint-chain'
 import type { StatisticsUnit } from '@/lib/statistics-summary'
@@ -830,7 +831,7 @@ function getWeldingDynamicsJointTypeKey(
 }
 
 function getMaterialGroupKey(value: unknown) {
-  return String(value ?? '').trim() || WELDING_DYNAMICS_MISSING_MATERIAL_GROUP_KEY
+  return getStatisticalMaterialGroup(value) || WELDING_DYNAMICS_MISSING_MATERIAL_GROUP_KEY
 }
 
 function getMaterialGroupLabel(key: string) {

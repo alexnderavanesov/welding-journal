@@ -1,4 +1,5 @@
 import { loadDataListSettings } from '@/lib/data-list-settings'
+import { normalizeWeldMaterialGroups, splitWeldMaterialGroups } from '@/lib/weld-material-groups'
 import type { WeldInput } from '@/lib/weld-fields'
 import type { WelderStampNaksPermit } from '@/lib/welder-stamp-types'
 import { splitWelderStampMaterialGroups, splitWelderStampWeldTypes } from '@/lib/welder-stamp-format'
@@ -26,7 +27,7 @@ export function parseOfficialStampWeldingMethods(value: unknown, configuredOptio
 }
 
 export function parseOfficialStampMaterialGroup(value: unknown, configuredOptions?: readonly string[]) {
-  const raw = String(value ?? '').trim().toUpperCase()
+  const raw = normalizeWeldMaterialGroups(value)
   if (!raw) return ''
   const materialGroupOptions = configuredOptions ?? loadDataListSettings().materialGroups
   return materialGroupOptions.find((option) => option === raw) ?? raw
@@ -175,6 +176,24 @@ function parseJointDiameterValue(value: unknown) {
   if (!match) return null
   const parsed = Number(match[0])
   return Number.isFinite(parsed) ? parsed : null
+}
+
+/** Dissimilar materials retain their side even for angular/equal-diameter joints. */
+export function getOfficialStampMaterialScopes(record: WeldInput) {
+  return splitWeldMaterialGroups(record.materialGroup).map((group, index) => {
+    const side = index === 0 ? 1 : 2
+    const diameter = parseJointDiameterValue(side === 1 ? record.d1 : record.d2)
+    const thickness = parseJointDiameterValue(side === 1 ? record.t1 : record.t2)
+    return {
+      group, side,
+      label: `Материал ${side}: ${group}; D${side} = ${diameter ?? 'не указан'}, T${side} = ${thickness ?? 'не указана'}`,
+      dimensions: {
+        diameters: diameter === null ? [] : [diameter],
+        thicknesses: thickness === null ? [] : [thickness],
+        diameterCoverage: 'all', thicknessCoverage: 'all',
+      } satisfies OfficialStampJointDimensionRequirements,
+    }
+  })
 }
 
 export function getOfficialStampJointDimensionRequirements(

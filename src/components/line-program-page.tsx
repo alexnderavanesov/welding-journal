@@ -1,8 +1,8 @@
 import { PROGRAM_DEMAND_LABELS } from '@/lib/line-program-labels'
 import type { ProgramReportNavigation } from './line-program-context-menu'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Calculator, ChevronDown, ChevronRight, ListFilter, Plus, Search, Settings2, X } from 'lucide-react'
+import { Calculator, Check, ChevronDown, ChevronRight, ListFilter, Plus, Search, Settings2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { LineProgramEditor } from './line-program-editor'
@@ -19,7 +19,7 @@ import { isProgramRowClick, type ProgramSelection } from '@/lib/line-program-wor
 import type { PercentageLineNavigationRequest, PercentageLineNavigationOutcome } from '@/lib/percentage-line-navigation'
 import { findLineProgram, getLineProgramSection } from '@/server/line-program'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
-import { LineProgramReports } from './line-program-reports'
+import { LineProgramReports, type LineProgramReportsHandle } from './line-program-reports'
 import { LineProgramSectionCalculationDialog } from './line-program-section-calculation-dialog'
 import { summarizeProgramSection, programSectionMetricSelection, type ProgramSectionMetric } from '@/lib/line-program-section-summary'
 
@@ -58,7 +58,8 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
   const [target, setTarget] = useState<{ id: number; selection: ProgramSelection } | null>(null)
   const [command, setCommand] = useState<{ lineId: number; value: ProgramScopeCommand } | null>(null)
   const [sectionMetric, setSectionMetric] = useState<ProgramSectionMetric | null>(null)
-  const scopeMenu = useProgramScopeMenu()
+  const reports = useRef<LineProgramReportsHandle>(null)
+  const scopeMenu = useProgramScopeMenu(request => reports.current?.open(request))
   const query = useQuery({ queryKey: ['line-program', 'section'], queryFn: () => getLineProgramSection({ data: {} }), ...lineProgramQueryPolicy })
   // Search and tabs use compact line summaries, not repeated 200k-joint calculations.
   const needle = debouncedSearch.trim().toLocaleLowerCase('ru')
@@ -101,12 +102,16 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
   }, [navigationRequest, reportNavigationHandled])
   const totals = summarizeProgramSection(lines)
   const sectionContext = `${tab === 'lines' ? 'Все линии' : tab === 'full' ? '100%-ные линии' : 'Процентные линии'}${debouncedSearch.trim() ? ` · поиск: ${debouncedSearch.trim()}` : ''}`
+  const reportContext = `${sectionContext} · ${filterNames[filter]}`
+  const reportDisabled = !query.data || query.isFetching || search !== debouncedSearch
+  const reportIds = filtered.map(line => line.id)
   const selectFilter = (next: Filter) => { setFilter(next); setPage(0); collapseAll() }
   const openSectionMenu = (event: ProgramScopeMenuEvent) => scopeMenu.openSection(event, {
     description: sectionContext, onSelect: selectFilter, onCalculation: query.data ? setSectionMetric : undefined,
+    report: reportDisabled ? undefined : { ids: reportIds, context: reportContext },
   })
   return <div className="min-w-0 space-y-3 pb-4 lg:pb-6" data-testid="line-program" onContextMenu={openSectionMenu} onKeyDown={openSectionMenu}>
-    <LineProgramReports ids={filtered.map(line => line.id)} context={`${tab === 'lines' ? 'Все линии' : tab === 'full' ? '100%-ные линии' : 'Процентные линии'} · ${filterNames[filter]}${debouncedSearch.trim() ? ` · поиск: ${debouncedSearch.trim()}` : ''}`} disabled={!query.data || query.isFetching || search !== debouncedSearch}>{query.data ? <Button variant="ghost" size="sm" className="h-10 gap-2" aria-label="Расчёт итогов раздела" aria-haspopup="dialog" onClick={() => setSectionMetric('common')}><Calculator className="h-4 w-4" />Расчёт итогов</Button> : null}</LineProgramReports>
+    <LineProgramReports ref={reports} ids={reportIds} context={reportContext} disabled={reportDisabled}>{query.data ? <Button variant="ghost" size="sm" className="h-10 gap-2" aria-label="Расчёт итогов раздела" aria-haspopup="dialog" onClick={() => setSectionMetric('common')}><Calculator className="h-4 w-4" />Расчёт итогов</Button> : null}</LineProgramReports>
     <div ref={toolbarRef} data-testid="line-program-toolbar" className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white py-1.5"><div className="flex max-w-full gap-1 overflow-x-auto rounded-md border border-slate-200 bg-white p-1">{([['lines', 'Все линии'], ['full', '100%-ные линии'], ['percentage', 'Процентные линии']] as const).map(([key, label]) => <button type="button" key={key} aria-pressed={tab === key} className={`whitespace-nowrap rounded px-3 py-1.5 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 ${tab === key ? 'bg-sky-50 text-sky-800' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`} onClick={() => { setTab(key); setPage(0); collapseAll(); setFilter('all') }}>{label}</button>)}</div>
       <div className={`flex min-w-0 flex-1 items-center justify-end gap-2 ${filter === 'all' ? 'basis-[28rem]' : 'basis-[44rem]'}`}>
         {tab === 'lines' ? <Button className="shrink-0 gap-2" onClick={() => setEditing({ projectTitle: '', subtitleCode: '', line: '', category: null, groupName: null, weldControlPercent: null, pvkControlPercent: null })}><Plus className="h-4 w-4" />Новая линия</Button> : null}
@@ -124,7 +129,7 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
       <ProgramQuotaSummary fluid common={totals.common} pvk={totals.pvk} onCommon={() => selectFilter('common')} onPvk={() => selectFilter('pvk')} />
       <div data-testid="program-action-metrics" className={`grid min-w-0 grid-cols-2 gap-2 md:col-span-2 2xl:col-span-1 ${totals.issues ? 'sm:grid-cols-3' : ''}`}>
         <DeficitMetric fluid common={totals.common} pvk={totals.pvk} onNeeded={() => selectFilter('missing')} /><ExcessMetric fluid reducible={totals.reducible} onReduction={() => selectFilter('reduction')} excess={totals.common.excess + totals.pvk.excess} approved={totals.approved} additional={totals.additional} onExcess={() => selectFilter('excess')} onApproved={() => selectFilter('approved')} onAdditional={() => selectFilter('additional')} onOpenMenu={openSectionMenu} />
-        {totals.issues ? <button type="button" data-section-metric="configuration" className="flex min-h-20 min-w-0 flex-col justify-between rounded-lg border border-amber-200 bg-amber-50/40 px-3 py-2 text-left text-sm font-medium leading-[18px] text-amber-800 hover:bg-amber-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500" onClick={() => selectFilter('configuration')}>Нужна настройка: {totals.issues}<span className="text-sm font-normal leading-[18px] text-amber-700">СП-02</span></button> : null}
+        {totals.issues ? <button type="button" data-section-metric="configuration" className="flex min-h-20 min-w-0 flex-col justify-between rounded-lg border border-amber-200 bg-amber-50/40 px-3 py-2 text-left text-sm font-medium leading-[18px] text-amber-800 hover:bg-amber-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500" onClick={() => selectFilter('configuration')}>Нужна настройка: {totals.issues}<span className="text-sm font-normal leading-[18px] text-amber-700">СП-01</span></button> : null}
       </div>
     </div> : null}
     {sectionMetric && query.data ? <LineProgramSectionCalculationDialog lines={lines} totals={totals} context={sectionContext} initialMetric={sectionMetric} onClose={() => setSectionMetric(null)} onOpenLine={(line, metric) => { setSectionMetric(null); requestCommand(line, 'calculation', programSectionMetricSelection(metric), true) }} /> : null}
@@ -183,10 +188,13 @@ function LineCard({ line, expanded, onToggle, onEdit, onSelect, onOpenMenu, chil
   return <section data-testid="line-program-card" data-program-finished={finished} title={finished ? 'Линия завершена: назначения достаточны, все учитываемые стыки годны' : undefined} onContextMenu={onOpenMenu} onKeyDown={onOpenMenu} data-line={line.line} className={`program-line-card min-w-0 rounded-lg border bg-white ${border}`}>
     <div ref={headerRef} data-testid="line-program-header" className={`sticky top-[var(--program-toolbar-height,0px)] z-20 grid min-h-[4.5rem] cursor-pointer grid-cols-[minmax(0,1fr)_2rem] items-center gap-x-2 gap-y-0.5 ${expanded ? 'rounded-t-lg' : 'rounded-lg'} bg-white px-3 py-1 xl:grid-cols-[18rem_minmax(0,1fr)_2rem]`} onContextMenu={onOpenMenu} onKeyDown={onOpenMenu} onClick={event => { if (isProgramRowClick(event.target)) onToggle() }}>
       <button type="button" aria-label={`Расчёт линии ${line.line}`} aria-expanded={expanded} onClick={onToggle} className="flex min-w-0 items-start gap-2 py-1 text-left">
-        <span className="mt-0.5 shrink-0 text-sky-700">{expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</span><span className="min-w-0 flex-1"><span className="flex min-w-0 items-center gap-2"><span data-testid="line-name" className="truncate whitespace-nowrap text-sm font-semibold text-slate-800" title={line.line}>{line.line}</span><span className="shrink-0 rounded bg-sky-50 px-1.5 py-0.5 text-xs text-sky-700">{line.weldControlPercent == null ? '—' : `${line.weldControlPercent}%`}</span>{finished ? <span data-testid="program-finished-label" className="shrink-0 whitespace-nowrap text-xs font-medium text-emerald-700">✓ Линия завершена</span> : null}</span><span className="mt-1 flex min-h-8 min-w-0 flex-wrap items-start gap-x-2 gap-y-0.5 text-xs text-slate-500" title={`${line.projectTitle || 'Без проекта'} · ${line.subtitleCode || 'Без шифра'}${details ? ` · ${details}` : ''}`}><span data-testid="line-description" className="min-w-0 break-words [overflow-wrap:anywhere]">{line.projectTitle || 'Без проекта'} · {line.subtitleCode || 'Без шифра'}{details ? ` · ${details}` : ''}</span></span></span>
+        <span className="mt-0.5 shrink-0 text-sky-700">{expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</span><span className="min-w-0 flex-1"><span className="flex min-w-0 items-center gap-2"><span data-testid="line-name" className="truncate whitespace-nowrap text-sm font-semibold text-slate-800" title={line.line}>{line.line}</span><span className="shrink-0 rounded bg-sky-50 px-1.5 py-0.5 text-xs text-sky-700">{line.weldControlPercent == null ? '—' : `${line.weldControlPercent}%`}</span></span><span className="mt-1 flex min-h-8 min-w-0 flex-wrap items-start gap-x-2 gap-y-0.5 text-xs text-slate-500" title={`${line.projectTitle || 'Без проекта'} · ${line.subtitleCode || 'Без шифра'}${details ? ` · ${details}` : ''}`}><span data-testid="line-description" className="min-w-0 break-words [overflow-wrap:anywhere]">{line.projectTitle || 'Без проекта'} · {line.subtitleCode || 'Без шифра'}{details ? ` · ${details}` : ''}</span></span></span>
       </button>
       <div className="col-span-2 row-start-2 min-w-0 xl:col-span-1 xl:col-start-2 xl:row-start-1">{line.configurationIssue ? <p className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">{line.configurationIssue}</p> : o ? <CompactLineMetrics overview={o} select={onSelect} onOpenMenu={onOpenMenu} /> : null}</div>
-      {onEdit ? <Button variant="ghost" size="icon" className="col-start-2 row-start-1 h-8 w-8 shrink-0 text-slate-400 hover:text-sky-700 xl:col-start-3" aria-label="Настроить" title="Настроить линию" onClick={onEdit}><Settings2 className="h-4 w-4" /></Button> : null}
-    </div>{o?.integrityIssues ? <p className="px-4 pb-2 text-xs text-amber-800">СП-04 · Нарушена целостность цепочки. Проверьте диспетчер и подробности расчёта; линия не завершена.</p> : null}{children}
+      {finished || onEdit ? <div className={`col-start-2 row-start-1 flex flex-col items-center gap-1 self-stretch py-1 xl:col-start-3 ${finished ? 'justify-between' : 'justify-center'}`}>
+        {finished ? <span data-testid="program-finished-label" role="img" aria-label="Линия завершена" title="Линия завершена" className="flex h-5 w-8 shrink-0 items-center justify-center text-emerald-700"><Check aria-hidden="true" className="h-4 w-4" /></span> : null}
+        {onEdit ? <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-slate-400 hover:text-sky-700" aria-label="Настроить" title="Настроить линию" onClick={onEdit}><Settings2 className="h-4 w-4" /></Button> : null}
+      </div> : null}
+    </div>{o?.integrityIssues ? <p className="px-4 pb-2 text-xs text-amber-800">СП-09 · Нарушена целостность цепочки. Проверьте диспетчер и подробности расчёта; линия не завершена.</p> : null}{children}
   </section>
 }

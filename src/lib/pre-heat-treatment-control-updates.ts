@@ -10,10 +10,7 @@ import {
   type PreHeatTreatmentControlRecord,
   type PreHeatTreatmentLnkMethodCode,
 } from '@/lib/lnk-control-stage'
-import {
-  getLnkRepairForbiddenReasonWithSettings,
-  isLnkRepairForbiddenWithSettings,
-} from '@/lib/lnk-result-rules'
+import { assertLnkResultAllowed } from '@/lib/lnk-result-policy'
 import { isControlEnabledValue } from '@/lib/control-availability-values'
 import type { RkExposureTableSettings } from '@/lib/other-settings'
 import { hasPrimaryPstoHistory } from '@/lib/psto-line-assignment'
@@ -24,7 +21,7 @@ import { loadSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-
 import { loadSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-index-settings'
 import { getSystemLnkPrerequisiteBlockReason, canBackfillOwnLnkResult, getHistoricalLnkRequestDateReason } from '@/lib/lnk-system-order'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
-import { assertUnofficialLnkGoodResultAllowed } from './unofficial-lnk-result-guard'
+import { assertUnofficialLnkGoodResultAllowed, assertUnofficialLastRejectionRetained, getUnofficialLastRejectionRemovalReason } from './unofficial-lnk-result-guard'
 
 export const PRE_HEAT_TREATMENT_RESULT_OPTIONS = ['годен', 'ремонт', 'вырез'] as const
 
@@ -173,15 +170,7 @@ export function buildPreHeatTreatmentResultWrite({
   if (!PRE_HEAT_TREATMENT_RESULT_OPTIONS.includes(normalizedResult as never)) {
     throw new Error('Выберите результат НК до ТО.')
   }
-  if (
-    saveCheckSettings.lnkResultRepairRules &&
-    normalizedResult === 'ремонт' &&
-    isLnkRepairForbiddenWithSettings(row, systemIndexSettings)
-  ) {
-    throw new Error(
-      `Стык ${formatJoint(row)}: результат «ремонт» нельзя сохранить: ${getLnkRepairForbiddenReasonWithSettings(row, systemIndexSettings)}.`,
-    )
-  }
+  assertLnkResultAllowed(row, methodCode, normalizedResult, { systemIndexSettings })
   const name = conclusionName.trim()
   if (saveCheckSettings.lnkResultConclusionRequired && !name) {
     throw new Error('Укажите наименование заключения НК до ТО.')
@@ -253,13 +242,7 @@ export function buildPreHeatTreatmentResultCorrectionWrite({
   if (!PRE_HEAT_TREATMENT_RESULT_OPTIONS.includes(normalizedResult as never)) {
     throw new Error('Выберите результат НК до ТО.')
   }
-  if (
-    saveCheckSettings.lnkResultRepairRules &&
-    normalizedResult === 'ремонт' &&
-    isLnkRepairForbiddenWithSettings(row, systemIndexSettings)
-  ) {
-    throw new Error(`Стык ${formatJoint(row)}: результат «ремонт» нельзя сохранить: ${getLnkRepairForbiddenReasonWithSettings(row, systemIndexSettings)}.`)
-  }
+  assertLnkResultAllowed(row, methodCode, normalizedResult, { systemIndexSettings })
   if (normalizedResult !== currentResult && normalizedResult !== 'годен' && hasDownstreamPsto(row)) {
     throw new Error(
       `Стык ${formatJoint(row)}: нельзя установить «${normalizedResult}» для НК до ТО, пока сохранены последующие этапы ПСТО/ТВМТ.`,
@@ -316,6 +299,7 @@ export function buildPreHeatTreatmentResultCorrectionWrite({
 function assertResultWriteChronology(row: WeldRow, write: PreHeatTreatmentControlWrite, settings: SaveCheckSettings) {
   const finalRow = { ...row, preHeatTreatmentControls: (row.preHeatTreatmentControls ?? []).map(control =>
     control.method === write.method ? { ...control, ...write } : control) }
+  assertUnofficialLastRejectionRetained(finalRow, row)
   assertNoNewLnkChronologyIssues([finalRow], [row], settings)
 }
 
@@ -388,6 +372,10 @@ export function getPreHeatTreatmentResultRemovalBlockReason(
   control: PreHeatTreatmentControlRecord,
   _saveCheckSettings: SaveCheckSettings = loadSaveCheckSettings(),
 ) {
+  const officialityReason = getUnofficialLastRejectionRemovalReason({ ...row,
+    preHeatTreatmentControls: getPreHeatTreatmentControls(row).map(candidate => candidate.id === control.id ? { ...candidate, result: null } : candidate),
+  }, row)
+  if (officialityReason) return officialityReason
   if (hasDownstreamPsto(row)) {
     return 'Результат НК до ТО нельзя удалить, пока сохранены заявка, результат ПСТО, ТВМТ или повторный цикл.'
   }

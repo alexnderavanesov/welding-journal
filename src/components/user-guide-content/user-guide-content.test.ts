@@ -6,6 +6,50 @@ import { REFERENCE_GUIDE_SECTIONS as REFERENCE_GUIDE_SECTIONS_3 } from '@/compon
 import { WORK_GUIDE_SECTIONS } from '@/components/user-guide-content/work-sections'
 
 describe('user guide content', () => {
+  it('explains the read-only stamp check tab and preserved registry state', () => {
+    const stamps = REFERENCE_GUIDE_SECTIONS_2.find(section => section.id === 'stamps')!
+    const content = JSON.stringify(stamps)
+    expect(content).toContain('Вкладки «Клейма» и «Параметры проверки»')
+    expect(content).toContain('таблица из 12 вариантов')
+    expect(content).toContain('сохраняются поиск, фильтры и раскрытая карточка')
+    expect(content).toContain('не меняет настройки или допуски')
+    expect(content).toContain('без внутреннего окна')
+    expect(content).toContain('Разобрать свой пример проверки клейма')
+    expect(content).toContain('не решение «допущен»')
+    expect(content).toContain('Цветные примеры: у кого проверяется параметр')
+    expect(content).toContain('фиолетовый — проверяется отдельно у каждого')
+    expect(content).toContain('варианты через «ИЛИ» равноправны')
+    expect(content).toContain('Номера сторон 1/2 не обозначают сварщиков А/Б')
+    expect(content).toContain('ввод находится слева, а результат — справа')
+    expect(content).toContain('короткие строки «группа → D И T»')
+    expect(content).toContain('условия расположены слева, а пояснения — справа')
+  })
+  it('uses the inch calculation settings name without renaming report sections', () => {
+    const reference = JSON.stringify([...REFERENCE_GUIDE_SECTIONS_2, ...REFERENCE_GUIDE_SECTIONS_3])
+    expect(reference).toContain('Настройки → Расчет дюймов')
+    expect(reference).toContain('Настройка “Расчет дюймов”')
+    expect(reference).not.toContain('Настройки → Прочее')
+    expect(reference).not.toContain('Настройка “Прочее”')
+    expect(JSON.stringify(REFERENCE_GUIDE_SECTIONS_1)).toContain('разделе “Прочее” сварочного журнала')
+  })
+
+  it('documents mandatory SP-05 across methods and keeps the older SP-01 warning behavior', () => {
+    const settings = REFERENCE_GUIDE_SECTIONS_3.find((section) => section.id === 'settings')!
+    const matrix = settings.blocks.find((block) => block.type === 'table' && block.title === 'СП-07: допустимые результаты ЛНК')
+    expect(matrix?.type === 'table' ? matrix.table.rows : undefined).toEqual([
+      ['ВИК / ПВК', 'Любой D, до двух ремонтов', 'годен, ремонт'],
+      ['ВИК / ПВК', 'Любой D, после двух ремонтов', 'только годен'],
+      ['РК / УЗК', 'Dmin < 89 мм, до двух ремонтов', 'годен, вырез'],
+      ['РК / УЗК', 'Dmin ≥ 89 мм, до двух ремонтов', 'годен, ремонт, вырез'],
+      ['РК / УЗК', 'Любой D, после двух ремонтов', 'годен, вырез'],
+    ])
+    const content = JSON.stringify(settings)
+    expect(content).toContain('Само СП-06 не означает запрет любого действия')
+    expect(content).toContain('старые выключенные ЗВ-20/ДЗ-17 правило не отключают')
+    expect(content).not.toContain('Отключать только если по проекту действует отдельное решение')
+    expect(JSON.stringify(REFERENCE_GUIDE_SECTIONS_2)).toContain('даже если в Excel изменен только диаметр')
+    expect(JSON.stringify(WORK_GUIDE_SECTIONS)).toContain('Все правила перенумерованы: 12 обязательных СП, 2 отключаемые ЗВ и 5 отключаемых ДЗ')
+  })
   it('explains the release waiting page and avoids automatic retry of a save', () => {
     const content = JSON.stringify(WORK_GUIDE_SECTIONS)
     expect(content).toContain('Идёт обновление системы')

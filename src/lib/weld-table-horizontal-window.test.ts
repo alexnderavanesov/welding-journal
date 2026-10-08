@@ -6,6 +6,7 @@ import {
   buildWeldTableFieldSpans,
   buildWeldTableRenderColumns,
   getVisibleWeldTableFieldKeys,
+  getWeldTableHorizontalRange,
 } from '@/lib/weld-table-horizontal-window'
 
 const sections = [
@@ -46,6 +47,30 @@ const nextActionColumn = {
 } satisfies WeldTableExtraColumn
 
 describe('weld table horizontal window', () => {
+  it('retains a bounded buffer until an edge approaches and refreshes on resize', () => {
+    const options = { viewportStart: 1000, viewportEnd: 2600, contentEnd: 20000, overscan: 720 }
+    const first = getWeldTableHorizontalRange({ ...options, current: null })
+    expect(first).toEqual({ start: 280, end: 3320, viewportWidth: 1600 })
+    expect(getWeldTableHorizontalRange({ ...options, current: first, viewportStart: 1400, viewportEnd: 3000 })).toBe(first)
+    const next = getWeldTableHorizontalRange({ ...options, current: first, viewportStart: 1600, viewportEnd: 3200 })
+    expect(next).not.toBe(first)
+    expect(next.end - next.start).toBe(1600 + 1440)
+    expect(getWeldTableHorizontalRange({ ...options, current: next, viewportEnd: 3000 })).toMatchObject({ viewportWidth: 2000 })
+  })
+
+  it('keeps edge buffers stable and handles zero overscan and long jumps', () => {
+    const options = { contentEnd: 5000, overscan: 720, viewportStart: -100, viewportEnd: 1500 }
+    const first = getWeldTableHorizontalRange({ ...options, current: null })
+    expect(first.start).toBe(0)
+    expect(getWeldTableHorizontalRange({ ...options, current: first })).toBe(first)
+    const last = getWeldTableHorizontalRange({ ...options, current: first, viewportStart: 3500, viewportEnd: 5100 })
+    expect(last.end).toBe(5000)
+    expect(getWeldTableHorizontalRange({ ...options, current: last, viewportStart: 3501, viewportEnd: 5101 })).toBe(last)
+    const exact = getWeldTableHorizontalRange({ ...options, current: null, viewportStart: 100, viewportEnd: 1700, overscan: 0 })
+    expect(exact).toMatchObject({ start: 100, end: 1700 })
+    expect(getWeldTableHorizontalRange({ ...options, current: exact, viewportStart: 101, viewportEnd: 1701, overscan: 0 })).toMatchObject({ start: 101, end: 1701 })
+  })
+
   it('keeps sticky identity fields outside the visible range', () => {
     const spans = buildWeldTableFieldSpans({ sections, extraColumns: [], leadingWidth: 0 })
     const visible = getVisibleWeldTableFieldKeys({

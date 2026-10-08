@@ -57,7 +57,7 @@ test('историческая заявка переименовывается, 
   }
 })
 
-test('новая заявка основного ВИК доступна до ПСТО в строгом режиме и не создает СП-01', async ({ page }) => {
+test('новая заявка основного ВИК доступна до ПСТО в строгом режиме и не создает СП-06', async ({ page }) => {
   const joint = 'F544'
   let id = 0
   try {
@@ -87,7 +87,7 @@ test('новая заявка основного ВИК доступна до П
       const state = (await client.query('select source_revision, computed_revision from dispatcher_task_index_state where id = 1')).rows[0]
       return state && state.source_revision === state.computed_revision
     })).toBe(true)
-    expect(await withE2eDatabase(async (client) => (await client.query("select code from dispatcher_row_tasks where weld_joint_id = $1 and code in ('СП-01', 'ДЗ-20')", [id])).rows)).toEqual([])
+    expect(await withE2eDatabase(async (client) => (await client.query("select code from dispatcher_row_tasks where weld_joint_id = $1 and code in ('СП-06', 'СП-04')", [id])).rows)).toEqual([])
   } finally {
     await page.close()
     if (id) await cleanupLineProgramProjects(['E2E early primary'])

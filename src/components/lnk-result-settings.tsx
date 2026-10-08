@@ -1,4 +1,6 @@
 import { LnkResultControlBar } from '@/components/lnk-result-control-bar'
+import { getLnkSelectionResultRestrictionReason } from '@/components/lnk-result-selection-restrictions'
+import { WorkflowResultOptionPicker } from '@/components/workflow-result-option-picker'
 import { RequestDocumentCombobox } from '@/components/request-document-combobox'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -8,10 +10,6 @@ import {
   getEffectiveLnkResultDraftValueForRow,
   hasNonEmptyLnkResultDraftRows,
 } from '@/lib/lnk-result-draft'
-import {
-  getLnkResultRepairForbiddenSummary,
-  isLnkRepairForbidden,
-} from '@/lib/lnk-result-rules'
 import {
   getLnkMethodByRequestKey,
   isFinalLnkResultValue,
@@ -23,6 +21,8 @@ import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { Ref } from 'react'
 import { useControlProcessSettings } from '@/lib/control-process-settings'
+import { useSystemIndexSettings } from '@/lib/system-index-settings'
+import { getSystemRuleSettingsHref } from '@/lib/system-rule-catalog'
 
 type LnkResultMethod = (typeof LNK_METHODS)[number]
 
@@ -56,11 +56,14 @@ export function LnkResultSettings({
   onRequestChange,
 }: LnkResultSettingsProps) {
   const processSettings = useControlProcessSettings()
-  const rejectedForbidden = (draft.methodKey === 'pvkRequest' && processSettings.pvkGoodOnly) ||
-    (draft.methodKey === 'pvkRequest' && selectedRows.some((row) => draft.layeredControlRowIds.has(row.id))) ||
-    (draft.methodKey !== 'tvmtRequest' && selectedRows.some((row) => row.layeredControlAssigned))
-  const hasNonEmptyRows = hasNonEmptyLnkResultDraftRows(selectedRows, draft, saveCheckSettings)
-  const hasRepairForbiddenRows = saveCheckSettings.lnkResultRepairRules && selectedRows.some(isLnkRepairForbidden)
+  const systemIndexSettings = useSystemIndexSettings()
+  const methodCode = getLnkMethodByRequestKey(draft.methodKey)?.code ?? ''
+  const getDisabledReason = (result: string) => getLnkSelectionResultRestrictionReason(selectedRows, [methodCode], result, {
+    systemIndexSettings,
+    pvkGoodOnly: processSettings.pvkGoodOnly,
+    layeredControlRowIds: draft.layeredControlRowIds,
+  }) || (!methodCode ? 'Выберите метод контроля.' : selectedRows.length === 0 ? 'Выберите стыки.' : undefined)
+  const hasNonEmptyRows = hasNonEmptyLnkResultDraftRows(selectedRows, draft)
   const vikBeforeOtherHint = getVikBeforeOtherHint(selectedRows, draft, saveCheckSettings)
   const disabledCheckHint = vikBeforeOtherHint && !vikBeforeOtherHint.blocking ? vikBeforeOtherHint.message : ''
   return (
@@ -99,25 +102,20 @@ export function LnkResultSettings({
         </label>
       )}
       resultControl={(
-        <label className="block space-y-1.5 text-sm">
-          <span className="text-[13px] font-medium leading-none text-slate-700">Результат для всех выбранных</span>
-          <Select
-            aria-label="Результат для всех выбранных"
+        <div className="space-y-1.5 text-sm">
+          <WorkflowResultOptionPicker
+            label="Результат для всех выбранных"
+            compact
+            reserveHelpSpace
+            restrictionHelpLabel="Правило СП-07"
+            helperText={!draft.result || draft.result === LNK_CUSTOM_RESULT_VALUE ? draft.result ? 'Разные результаты' : 'Выберите результат' : undefined}
             value={draft.result}
-            onChange={(event) => onDefaultResultChange(event.target.value)}
-            className="h-9 bg-white"
-          >
-            <option value="">Выберите результат</option>
-            <option value={LNK_CUSTOM_RESULT_VALUE} disabled>
-              Разные результаты
-            </option>
-            {LNK_RESULT_OPTIONS.map((option) => (
-              <option key={option} value={option} disabled={(option === 'ремонт' && hasRepairForbiddenRows) || (rejectedForbidden && (option === 'ремонт' || option === 'вырез'))}>
-                {option}
-              </option>
-            ))}
-          </Select>
-        </label>
+            options={LNK_RESULT_OPTIONS}
+            restrictionHelpHref={methodCode && selectedRows.length ? getSystemRuleSettingsHref('СП-07') : undefined}
+            getDisabledReason={getDisabledReason}
+            onChange={onDefaultResultChange}
+          />
+        </div>
       )}
       requestControl={(
         <label className="block min-w-0 space-y-1.5 text-sm">
@@ -132,9 +130,7 @@ export function LnkResultSettings({
       )}
       hint={(
         <span title={disabledCheckHint || undefined}>
-          {hasRepairForbiddenRows ? (
-            <>Ремонт недоступен: {getLnkResultRepairForbiddenSummary(selectedRows)}.</>
-          ) : disabledCheckHint ? (
+          {disabledCheckHint ? (
             <><span className="font-semibold text-amber-800">Проверка выключена:</span> {disabledCheckHint}</>
           ) : null}
         </span>
@@ -152,7 +148,7 @@ function getVikBeforeOtherHint(
   if (!method || method.code === 'ВИК') return null
 
   const rowsWithoutVik = selectedRows.filter((row) => {
-    const nextResult = getEffectiveLnkResultDraftValueForRow(row, draft, saveCheckSettings)
+    const nextResult = getEffectiveLnkResultDraftValueForRow(row, draft)
     return isFinalLnkResultValue(nextResult) && !isFinalLnkResultValue(row.vikResult)
   })
   if (rowsWithoutVik.length === 0) return null

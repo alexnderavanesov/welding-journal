@@ -4,6 +4,14 @@ import { describe, expect, it } from 'vitest'
 import { UserGuidePage } from '@/components/user-guide-page'
 
 describe('UserGuidePage', () => {
+  it('finds the mandatory LNK rule using its former editable-setting code', () => {
+    render(<UserGuidePage />)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Поиск по руководству' }), { target: { value: 'ЗВ20' } })
+    expect(screen.getByText('СП-07: допустимые результаты ЛНК')).toBeVisible()
+    expect(screen.getByText('СП-07: допустимые результаты ЛНК').parentElement).toHaveTextContent(
+      'Прежние ЗВ20/ЗВ-20 и ДЗ17/ДЗ-17 также ведут к СП-07',
+    )
+  })
   it('explains explicit line move decisions and visible retained pre-TO history', () => {
     render(<UserGuidePage />)
     fireEvent.change(screen.getByRole('textbox', { name: 'Поиск по руководству' }), { target: { value: 'Смена линии: выбрать судьбу НК' } })
@@ -56,7 +64,7 @@ describe('UserGuidePage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Все правила' }))
 
-    expect((await screen.findAllByText(/ЗВ-27 заблокирует весь импорт/)).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText(/СП-12 заблокирует весь импорт/)).length).toBeGreaterThan(0)
     expect(screen.queryByText(/может очистить заявку, результат, заключение и дату/)).not.toBeInTheDocument()
   })
 

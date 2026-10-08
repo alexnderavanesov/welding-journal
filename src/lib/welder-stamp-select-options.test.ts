@@ -134,7 +134,7 @@ describe('welder stamp select options', () => {
 
     const reason = getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp])
 
-    expect(reason).toContain('ЗВ-02')
+    expect(reason).toContain('ЗВ-01')
     expect(reason).toContain('архиве с 01.08.2026')
   })
 
@@ -207,7 +207,7 @@ describe('welder stamp select options', () => {
     expect(blockReason).toContain('отстранено')
   })
 
-  it('allows disabling official registry compatibility in save checks', () => {
+  it('cannot disable official registry compatibility in SP-02', () => {
     const row = {
       [officialStampField]: 'UNKNOWN',
       weldingMethod: 'РАД',
@@ -223,7 +223,7 @@ describe('welder stamp select options', () => {
           officialRegistry: false,
         },
       }),
-    ).toBeNull()
+    ).toContain('СП-02')
   })
 
   it('allows disabling official archive compatibility in save checks', () => {
@@ -235,7 +235,7 @@ describe('welder stamp select options', () => {
       d2: '11',
     } as WeldInput
 
-    expect(getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp])).toContain('ЗВ-02')
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp])).toContain('ЗВ-01')
     expect(getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp])).toContain('находится в архиве')
     expect(
       getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp], {
@@ -245,6 +245,10 @@ describe('welder stamp select options', () => {
         },
       }),
     ).toBeNull()
+    const options = buildWeldFormStampSelectOptions([archivedStamp], row, [], [], {
+      saveCheckSettings: { ...DEFAULT_SAVE_CHECK_SETTINGS, officialArchive: false },
+    })
+    expect(options[officialStampField]).toContainEqual({ value: 'ABC1', disabled: false, reason: undefined })
   })
 
   it('keeps the archive check active when only the registry check is disabled', () => {
@@ -264,11 +268,11 @@ describe('welder stamp select options', () => {
       },
     })
 
-    expect(reason).toContain('ЗВ-02')
+    expect(reason).toContain('ЗВ-01')
     expect(reason).toContain('находится в архиве')
   })
 
-  it('allows disabling official suspension compatibility in save checks', () => {
+  it('cannot disable official suspension compatibility in SP-02', () => {
     const activeStamp = stampRecord('ABC1', false)
     const suspension = suspensionRecord('ABC1')
     const row = {
@@ -288,10 +292,10 @@ describe('welder stamp select options', () => {
           officialSuspension: false,
         },
       }),
-    ).toBeNull()
+    ).toContain('СП-02')
   })
 
-  it('allows disabling official welding method compatibility in save checks', () => {
+  it('cannot disable official welding method compatibility in SP-02', () => {
     const activeStamp = stampRecord('ABC1', false, 'РАД')
     const row = {
       [officialStampField]: 'ABC1',
@@ -309,10 +313,10 @@ describe('welder stamp select options', () => {
           officialWeldingMethod: false,
         },
       }),
-    ).toBeNull()
+    ).toContain('СП-02')
   })
 
-  it('allows disabling official NAKS date compatibility in save checks', () => {
+  it('cannot disable official NAKS date compatibility in SP-02', () => {
     const activeStamp = stampRecord('ABC1', false, 'РАД')
     const row = {
       [officialStampField]: 'ABC1',
@@ -330,10 +334,10 @@ describe('welder stamp select options', () => {
           officialNaksDate: false,
         },
       }),
-    ).toBeNull()
+    ).toContain('СП-02')
   })
 
-  it('allows disabling official diameter compatibility in save checks', () => {
+  it('cannot disable official diameter compatibility in SP-02', () => {
     const activeStamp = stampRecord('ABC1', false, 'РАД')
     const row = {
       [officialStampField]: 'ABC1',
@@ -351,7 +355,7 @@ describe('welder stamp select options', () => {
           officialDiameter: false,
         },
       }),
-    ).toBeNull()
+    ).toContain('СП-02')
   })
 
   it('allows a non-angular joint when NAKS covers either joint diameter', () => {
@@ -482,7 +486,7 @@ describe('welder stamp select options', () => {
       value: 'ARCH1',
       disabled: true,
     })
-    expect(getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp])).toContain('ЗВ-02')
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp])).toContain('ЗВ-01')
   })
 
   it('allows several official welders to cover a combined welding method as a team', () => {
@@ -1207,7 +1211,7 @@ describe('welder stamp select options', () => {
     expect(getOfficialStampCompatibilitySaveBlockReason(row, [stamp])).toBeNull()
   })
 
-  it('allows disabling official material group compatibility in save checks', () => {
+  it('cannot disable official material group compatibility in SP-02', () => {
     const blockedStamp = withPermitGroups(stampRecord('BBBB', false, 'РАД'), 'M02')
     const row = {
       stamp1K: 'BBBB',
@@ -1226,7 +1230,7 @@ describe('welder stamp select options', () => {
           officialMaterialGroup: false,
         },
       }),
-    ).toBeNull()
+    ).toContain('СП-02')
   })
 
   it('keeps material group compatibility strict even when welders cover combined methods as a team', () => {
@@ -1293,7 +1297,7 @@ describe('welder stamp select options', () => {
     expect(blockReason).toContain('ни на одну из толщин 14, 16')
   })
 
-  it('allows disabling official thickness compatibility in save checks', () => {
+  it('cannot disable official thickness compatibility in SP-02', () => {
     const activeStamp = {
       ...stampRecord('AAAA', false, 'РАД'),
       naksPermits: stampRecord('AAAA', false, 'РАД').naksPermits.map((permit) => ({ ...permit, thicknessFrom: '2', thicknessTo: '8' })),
@@ -1317,7 +1321,7 @@ describe('welder stamp select options', () => {
           officialThickness: false,
         },
       }),
-    ).toBeNull()
+    ).toContain('СП-02')
   })
 
   it('requires a matching DLS when DLS checking is enabled', () => {
@@ -1490,7 +1494,7 @@ describe('welder stamp select options', () => {
     ).toBeNull()
   })
 
-  it('does not check DLS material group when material group save check is disabled', () => {
+  it('keeps DLS material group mandatory when DLS applies despite legacy material toggle', () => {
     const activeStamp = {
       ...stampRecord('AAAA', false, 'РАД'),
       dlsPermits: [
@@ -1536,7 +1540,7 @@ describe('welder stamp select options', () => {
           officialMaterialGroup: false,
         },
       }),
-    ).toBeNull()
+    ).toContain('СП-02')
   })
 
   it('does not use archived DLS permits when the weld date does not fit the archived permit', () => {

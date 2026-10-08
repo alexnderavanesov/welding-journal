@@ -51,7 +51,7 @@ try {
     const row: WeldRow = {
       id: 0, projectTitle: PROJECT, subtitleCode: SUBTITLE, line: 'Л2', joint: 'F901', lineProgramId: program.id,
       weldDate: '2026-09-01', category: 'II', groupName: 'Б(а)', weldControlPercent: 0, pvkControlPercent: 0,
-      isometry: 'DEMO-ISO-TO', sheet: 1, revisionNumber: 0, officiality: 'действующий', revisionActuality: 'актуальная',
+      isometry: 'DEMO-ISO-TO', sheet: 1, revisionNumber: 0, officiality: 'действующий', revisionActuality: null,
       connectionType: 'С17', materialGroup: 'М01', material1: '20', material2: '20', element1: 'Труба', element2: 'Труба',
       d1: 108, d2: 108, t1: 4, t2: 4, weldingMethod: 'РД', weldingElectrodes: 'УОНИ-13/55',
       stamp1K: STAMP, stamp1Z: STAMP, stamp1O: STAMP, stamp1KFact: STAMP, stamp1ZFact: STAMP, stamp1OFact: STAMP,

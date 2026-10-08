@@ -36,9 +36,9 @@ describe('LnkResultDialog', () => {
   it('does not bypass ZV and keeps per-row choices in the draft across correction/remount', () => {
     const props = createDialogProps()
     props.draft.layeredControlRowIds = new Set([1])
-    const { unmount } = render(<LnkResultDialog {...props} saveBlockReason="ЗВ-15 · Дата контроля раньше сварки." isSaveDisabled />)
+    const { unmount } = render(<LnkResultDialog {...props} saveBlockReason="СП-04 · Дата контроля раньше сварки." isSaveDisabled />)
     expect(screen.getByRole('checkbox', { name: 'Послойный контроль: L-1 · F1' })).toBeChecked()
-    expect(screen.getByText(/Сохранение заблокировано: ЗВ-15/)).toBeVisible()
+    expect(screen.getByText(/Сохранение заблокировано: СП-04/)).toBeVisible()
     expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить результат' }))
     expect(props.onSave).not.toHaveBeenCalled()

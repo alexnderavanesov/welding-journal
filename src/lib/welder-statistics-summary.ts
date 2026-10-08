@@ -1,4 +1,5 @@
 import { parseDateLikeToIso } from '@/lib/date-format'
+import { getStatisticalMaterialGroup } from '@/lib/weld-material-groups'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { parseJointChainName } from '@/lib/joint-chain'
 import type { StatisticsUnit } from '@/lib/statistics-summary'
@@ -322,7 +323,7 @@ function addWelderDetail(row: WelderStatisticsDraftRow, sourceRow: WeldRow, valu
     row.dailyMap.set(weldDate, current)
   }
 
-  const materialGroup = displayValue(sourceRow.materialGroup)
+  const materialGroup = displayValue(getStatisticalMaterialGroup(sourceRow.materialGroup))
   const group = row.materialGroupMap.get(materialGroup) ?? {
     key: materialGroup,
     total: 0,

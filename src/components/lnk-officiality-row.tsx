@@ -3,7 +3,8 @@ import { Check } from 'lucide-react'
 
 import { ManagerRowJointHeading } from '@/components/manager-row-joint-heading'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { getJointStatusBadgeClass, getJointStatusLabel } from '@/lib/lnk-status'
+import { getJointStatusBadgeClass, getJointStatusLabel, hasRejectedLnkResult } from '@/lib/lnk-status'
+import { isUnofficialJoint } from '@/lib/joint-display'
 
 export type LnkOfficialityRowProps = {
   row: WeldRow
@@ -17,7 +18,7 @@ function LnkOfficialityRowComponent({ row, selected, onToggle }: LnkOfficialityR
       type="button"
       aria-pressed={selected}
       onClick={() => onToggle(row.id)}
-      className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors ${
+      className={`grid w-full grid-cols-[16px_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-3 text-left transition-colors sm:grid-cols-[16px_minmax(0,1fr)_auto] ${
         selected ? 'bg-sky-50 ring-1 ring-inset ring-sky-200' : 'bg-white hover:bg-slate-50'
       }`}
     >
@@ -35,8 +36,13 @@ function LnkOfficialityRowComponent({ row, selected, onToggle }: LnkOfficialityR
           metaClassName="mt-1 block text-xs text-slate-500"
           metaElement="span"
         />
+        {isUnofficialJoint(row) && !hasRejectedLnkResult(row) ? (
+          <span className="mt-2 block text-xs leading-5 text-amber-800">
+            Неофициальный стык без негодного результата. Проверьте историю и официальность.
+          </span>
+        ) : null}
       </span>
-      <span className={`shrink-0 rounded border px-2 py-1 text-xs font-semibold ${getJointStatusBadgeClass(row)}`}>
+      <span className={`col-start-2 justify-self-start rounded border px-2 py-1 text-xs font-semibold sm:col-start-3 sm:row-start-1 ${getJointStatusBadgeClass(row)}`}>
         {getJointStatusLabel(row)}
       </span>
     </button>

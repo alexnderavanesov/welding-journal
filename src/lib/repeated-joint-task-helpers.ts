@@ -13,7 +13,7 @@ import {
   parseRepeatedJointName,
 } from '@/lib/joint-chain'
 import { isUnofficialJoint } from '@/lib/joint-display'
-import { isLnkRepairForbiddenByOfficialRepairLimit } from '@/lib/lnk-result-rules'
+import { isOfficialLnkRepairLimitReached } from '@/lib/lnk-result-policy'
 import { compareJointChainRows, getRepeatedJointIdentity } from '@/lib/repeated-joint-row-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getRejectedDuplicateControls } from '@/lib/duplicate-control-utils'
@@ -51,6 +51,9 @@ export function isUnusedRepeatedJointDraft(row: WeldInput) {
 }
 
 export function getPrimaryRejectedLnkResult(row: WeldInput) {
+  // Historical fact resolver, also used by chain counters and existing coil
+  // relations. Do not normalize invalid legacy cuts into repairs or hide them.
+  // New actions must first pass getLnkResultRuleIssues for the complete source.
   const cut = LNK_METHODS.find((method) => String(row[method.resultKey] ?? '').trim().toLowerCase() === 'вырез')
   if (cut) return { method: cut, result: 'вырез' as const }
   const preHeatTreatmentCut = getRejectedPreHeatTreatmentControls(row)
@@ -118,7 +121,7 @@ export function getExpectedRepeatedJointSuffix(
   result: 'ремонт' | 'вырез',
   settings: SystemIndexSettings = loadSystemIndexSettings(),
 ): 'R' | 'W' {
-  return result === 'ремонт' && !isLnkRepairForbiddenByOfficialRepairLimit(sourceRow, settings) ? 'R' : 'W'
+  return result === 'ремонт' && !isOfficialLnkRepairLimitReached(sourceRow, settings) ? 'R' : 'W'
 }
 
 export function getOfficialRejectedJointChainRows(

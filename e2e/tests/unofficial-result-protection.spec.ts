@@ -32,7 +32,9 @@ test('негодный неофициальный: запрет годного �
   await page.goto('/lnk')
   let manager = await openManager(page)
   await expect(manager.getByRole('button', { name: 'годен', exact: true }).last()).toBeDisabled()
-  await expect(manager.getByText(/Сначала верните стыку официальность/)).toBeVisible()
+  await expect(manager.getByText(/Сначала верните стыку официальность/).first()).toBeVisible()
+  await expect(manager.getByRole('button', { name: 'Удалить результат', exact: true })).toBeDisabled()
+  await expect(manager.getByText(/последний негодный результат/)).toBeVisible()
   expect(writes).toHaveLength(0)
   await manager.getByRole('button', { name: 'Закрыть', exact: true }).click()
   expect(await stored(id)).toMatchObject({ officiality: 'неофициальный', uzk_result: 'ремонт', vik_result: 'годен' })
@@ -69,6 +71,65 @@ test('негодный неофициальный: запрет годного �
   expect(errors).toEqual([])
 })
 
+test('удаление последнего брака: возврат официальности, отмена удаления и серверный запрет старому клиенту', async ({ page }) => {
+  const id = await seed(), writes: Request[] = [], errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('request', request => { if (request.url().includes('/_serverFn/') && /^updateWeldJoints?_/.test(rpcName(request.url()))) writes.push(request) })
+  await page.goto('/lnk')
+  const restore = async () => {
+    await page.locator('header').getByRole('button', { name: 'Официальность', exact: true }).click()
+    const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Официальность стыков', exact: true }) })
+    await dialog.getByPlaceholder('Проект, шифр, линия, спул или стык').fill(joint)
+    await dialog.getByRole('button').filter({ hasText: `${lineName} · ${joint}` }).click()
+    await dialog.getByRole('button', { name: /^Официальный/ }).click()
+    await dialog.getByRole('button', { name: 'Сохранить официальность', exact: true }).click()
+    await expect(dialog).toBeHidden()
+  }
+  await restore()
+  const manager = await openManager(page)
+  const remove = manager.getByRole('button', { name: 'Удалить результат', exact: true })
+  await expect(remove).toBeEnabled()
+  await remove.click()
+  const confirm = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Удалить результат ЛНК', exact: true }) })
+  await confirm.getByRole('button', { name: 'Отмена', exact: true }).click()
+  expect((await stored(id)).uzk_result).toBe('ремонт')
+  expect(writes).toHaveLength(0)
+  const before = await stored(id)
+  await remove.click()
+  await confirm.getByRole('button', { name: 'Удалить', exact: true }).click()
+  await expect.poll(async () => (await stored(id)).uzk_result).not.toBe('ремонт')
+  expect(writes).toHaveLength(1)
+  await withE2eDatabase(db => db.query(`update weld_joints set officiality='неофициальный',uzk_result='ремонт',
+    uzk_conclusion='UG-UZK-C',uzk_conclusion_date='2026-09-03',final_status='не годен' where id=$1`, [id]))
+  const current = await stored(id), request = writes[0], body = request.postData()!, headers = await request.allHeaders()
+  delete headers['content-length']
+  expect(body).toContain(`"${before.version}"`)
+  const response = await page.request.post(request.url(), { headers, data: body.replaceAll(`"${before.version}"`, `"${current.version}"`) })
+  expect(await response.text()).toContain('последний негодный результат')
+  expect(await stored(id)).toEqual(current)
+  expect(errors).toEqual([])
+})
+
+test('старый неофициальный стык: последний негодный дубль не удаляется; предупреждение без потери данных', async ({ page }) => {
+  const id = await seed(), errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await withE2eDatabase(async db => {
+    await db.query(`update weld_joints set uzk_result='годен' where id=$1`, [id])
+    await db.query(`insert into duplicate_controls(weld_joint_id,method,result,control_date,conclusion,conclusion_date)
+      values ($1,'УЗК','ремонт','2026-09-04','UG-DUP','2026-09-04')`, [id])
+  })
+  await page.goto('/lnk')
+  await page.locator('header').getByRole('button', { name: 'Дубль контроль', exact: true }).click()
+  const registry = page.getByRole('dialog')
+  await registry.getByRole('button', { name: /Внесенные дубли/ }).click()
+  await registry.getByRole('button', { name: 'Удалить', exact: true }).click()
+  const confirm = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Удалить дубль-контроль', exact: true }) })
+  await confirm.getByRole('button', { name: 'Удалить', exact: true }).click()
+  await expect(registry.getByRole('alert')).toContainText('последний негодный результат')
+  expect(await withE2eDatabase(async db => (await db.query('select count(*)::int n from duplicate_controls where weld_joint_id=$1', [id])).rows[0].n)).toBe(1)
+  expect(errors).toEqual([])
+})
+
 test('дубль-контроль не позволяет внести любой результат неофициальному стыку', async ({ page }) => {
   const id = await seed()
   await page.goto('/lnk')
@@ -78,9 +139,35 @@ test('дубль-контроль не позволяет внести любо�
   await expect(dialog.getByText('Найдено: 1 · Выбрано: 0', { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: 'Выбрать найденные', exact: true }).click()
   await dialog.getByRole('button', { name: 'УЗК', exact: true }).click()
-  for (const result of ['годен', 'ремонт', 'вырез']) await expect(dialog.getByRole('option', { name: result, exact: true })).toHaveJSProperty('disabled', true)
+  for (const result of ['годен', 'ремонт', 'вырез']) {
+    await expect(dialog.getByRole('group', { name: 'Результат', exact: true }).getByRole('button', { name: result, exact: true })).toBeDisabled()
+  }
   await expect(dialog.getByRole('button', { name: 'Добавить дубль', exact: true })).toBeDisabled()
   await expect(dialog.getByText(/Сначала верните стыку официальность/)).toBeVisible()
   expect(await withE2eDatabase(async db => (await db.query('select count(*)::int as n from duplicate_controls where weld_joint_id=$1', [id])).rows[0].n)).toBe(0)
   expect((await stored(id)).uzk_result).toBe('ремонт')
+})
+
+test('НК до ТО: предупреждение и запрет удаления последнего негодного результата', async ({ page }) => {
+  const id = await seed(), errors: string[] = [], writes: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('request', request => { if (request.url().includes('/_serverFn/') && rpcName(request.url()).startsWith('correctPreHeatTreatment')) writes.push(request.url()) })
+  await withE2eDatabase(async db => {
+    await db.query(`update weld_joints set uzk_result=null,uzk_request=null,uzk_request_date=null,
+      uzk_conclusion=null,uzk_conclusion_date=null,psto_required='да' where id=$1`, [id])
+    await db.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,request_name,request_date,result,conclusion_name,conclusion_date)
+      values ($1,'УЗК','UG-PRE-UZK','2026-09-02','ремонт','UG-PRE-UZK-C','2026-09-03')`, [id])
+  })
+  await page.goto('/lnk')
+  await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
+  await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
+  await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
+  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование результатов ЛНК до ТО', exact: true }) })
+  await dialog.getByPlaceholder('Стык, линия, заявка или заключение').fill(joint)
+  await dialog.getByRole('button').filter({ hasText: 'UG-PRE-UZK-C' }).click()
+  await expect(dialog.getByRole('button', { name: 'Удалить результат', exact: true })).toBeDisabled()
+  await expect(dialog.getByText(/последний негодный результат/)).toBeVisible()
+  expect(writes).toEqual([])
+  expect(await withE2eDatabase(async db => (await db.query('select result from pre_heat_treatment_controls where weld_joint_id=$1', [id])).rows[0].result)).toBe('ремонт')
+  expect(errors).toEqual([])
 })

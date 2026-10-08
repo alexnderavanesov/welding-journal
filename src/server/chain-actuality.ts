@@ -54,7 +54,7 @@ async function readContext(tx: Tx, input: ChainActualityInput) {
     const state = states.get(id)!
     return state.physicalRootId == null || !idSet.has(state.physicalRootId) ||
       state.kind === 'repair' && (state.sourceRowId == null || !idSet.has(state.sourceRowId))
-  })) reason = 'Сохранённые связи цепочки неполны или ведут в другую линию. Сначала исправьте целостность по СП-04; актуальность не изменена.'
+  })) reason = 'Сохранённые связи цепочки неполны или ведут в другую линию. Сначала исправьте целостность по СП-09; актуальность не изменена.'
   const changes = group.rows.filter(row => isRevisionNotActual(row.revisionActuality) === input.active)
   const token = hashJsonRecordTuple([
     input, group.rows.map(row => [scopeById.get(row.id), states.get(row.id)]), settings, linked,

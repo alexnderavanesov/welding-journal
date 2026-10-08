@@ -53,14 +53,14 @@ describe('dispatcher task index payload', () => {
   it('stores exact row counts for task filter options', () => {
     const serialized = serializeDispatcherTaskIndexPayload([], [], {
       taskFilterOptions: [
-        { value: 'ДЗ-18', count: 42 },
-        { value: 'СП-01', count: 7 },
+        { value: 'СП-02', count: 42 },
+        { value: 'СП-06', count: 7 },
       ],
     })
 
     expect(parseDispatcherTaskIndexPayload(serialized).taskFilterOptions).toEqual([
-      { value: 'ДЗ-18', count: 42 },
-      { value: 'СП-01', count: 7 },
+      { value: 'СП-02', count: 42 },
+      { value: 'СП-06', count: 7 },
     ])
   })
 

@@ -20,12 +20,14 @@ describe('dispatcher background settings', () => {
       'line-control-presence': false,
       'welder-stamp-expiry': false,
       'welder-dls-expiry': false,
+      'chain-duplicate': false,
     }
     const background = buildDisabledDispatcherSettings(current)
 
-    expect(background['check-welder-stamp']).toBe(true)
-    expect(background['check-joint-core-data']).toBe(true)
-    expect(background['line-control-presence']).toBe(true)
+    expect(background['check-welder-stamp']).toBe(false)
+    expect(background['check-joint-core-data']).toBe(false)
+    expect(background['line-control-presence']).toBe(false)
+    expect(background['chain-duplicate']).toBe(true)
     expect(background['percentage-new-welder']).toBe(false)
     expect(background['welder-stamp-expiry']).toBe(false)
     expect(background['welder-dls-expiry']).toBe(false)
@@ -71,8 +73,8 @@ describe('dispatcher background settings', () => {
     }
 
     const codes = getEnabledDispatcherTaskCodes(current)
-    expect(codes).not.toContain('ДЗ-18')
-    expect(codes).not.toContain('ДЗ-31')
-    expect(codes).toContain('ДЗ-20')
+    expect(codes).toContain('СП-02')
+    expect(codes).toContain('СП-03')
+    expect(codes).toContain('СП-04')
   })
 })

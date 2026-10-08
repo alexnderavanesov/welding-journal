@@ -9,7 +9,7 @@ describe('ResultDialogFooter', () => {
     const onFixDate = vi.fn()
     const onFixWeld = vi.fn()
     const onOpenDocuments = vi.fn()
-    const reason = 'ЗВ-15 · Дата контроля раньше даты сварки. '.repeat(20)
+    const reason = 'СП-04 · Дата контроля раньше даты сварки. '.repeat(20)
     render(<ResultDialogFooter
       saveBlockReason={reason}
       saveBlockReasonVariant="danger"
@@ -48,7 +48,8 @@ describe('ResultDialogFooter', () => {
     const onSave = vi.fn()
     render(<ResultDialogFooter saveBlockReason={null} isSaveDisabled={false} onSave={onSave} onClose={vi.fn()} />)
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Сохранение результата' }).childElementCount).toBe(1)
+    expect(screen.getByRole('group', { name: 'Сохранение результата' }).childElementCount).toBe(2)
+    expect(screen.getByText('Можно сохранить выбранные результаты.')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить результат' }))
     expect(onSave).toHaveBeenCalledOnce()
   })

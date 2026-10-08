@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import pg from 'pg'
 import { eq, inArray, sql } from 'drizzle-orm'
+import type { RepeatedJointTask } from '../src/lib/dispatcher-types'
 
 const url = new URL(process.env.DATABASE_URL ?? '')
 assert.equal(url.hostname, '127.0.0.1')
@@ -84,9 +85,9 @@ try {
     }
     await dirty.markDispatcherTaskIndexDirty(db)
     await dispatcher.ensureDispatcherTaskIndexFresh()
-    assert((await db.select().from(dispatcherRowTasks).where(eq(dispatcherRowTasks.weldJointId, root.id))).some(task => task.code === 'СП-04'))
+    assert((await db.select().from(dispatcherRowTasks).where(eq(dispatcherRowTasks.weldJointId, root.id))).some(task => task.code === 'СП-09'))
     const [beforeVirtual] = await read.attachDispatcherTaskCodesToPage([{ id: root.id }]) as { id: number; dispatcherTasks: string }[]
-    assert(beforeVirtual.dispatcherTasks.includes('СП-04'))
+    assert(beforeVirtual.dispatcherTasks.includes('СП-09'))
     // Preview neither changes physics nor creates an audit event.
     pg.Client.prototype.query = function (this: unknown, ...args: unknown[]) { queries++; return (originalQuery as (...args: unknown[]) => unknown).apply(this, args) } as typeof originalQuery
     queries = 0
@@ -127,9 +128,9 @@ try {
     assert.equal((await state(root.id)).replacedByCoil, false)
     await dirty.markDispatcherTaskIndexDirty(db)
     await dispatcher.ensureDispatcherTaskIndexFresh()
-    assert(!(await db.select().from(dispatcherRowTasks).where(eq(dispatcherRowTasks.weldJointId, root.id))).some(task => task.code === 'СП-04'))
+    assert(!(await db.select().from(dispatcherRowTasks).where(eq(dispatcherRowTasks.weldJointId, root.id))).some(task => task.code === 'СП-09'))
     const [virtual] = await read.attachDispatcherTaskCodesToPage([{ id: root.id }]) as { id: number; dispatcherTasks: string }[]
-    assert(!virtual.dispatcherTasks.includes('СП-04'))
+    assert(!virtual.dispatcherTasks.includes('СП-09'))
   }
   assert.equal(counts[0], counts[1], 'Preview SQL must not grow with line size')
   assert(counts[0] <= 20, `Unexpected preview query fan-out: ${counts}`)
@@ -147,13 +148,15 @@ try {
   await db.transaction(tx => chain.syncProgramChainStates(tx, [...new Map([earlyRoot, source, ...earlyCoils].map(row => [row.id, row])).values()], new Map()))
   const { getEarlyCoilDecisionKey, EARLY_COIL_DECISION_KIND } = await import('../src/lib/early-coil-decision')
   const decisionKey = getEarlyCoilDecisionKey(source.id)
-  await db.insert(schema.dispatcherAcceptedWarnings).values({ key: decisionKey, weldJointId: source.id, kind: EARLY_COIL_DECISION_KIND, code: 'ДЗ-09', title: 'Ошибочное досрочное решение', context: decisionKey })
+  await db.insert(schema.dispatcherAcceptedWarnings).values({ key: decisionKey, weldJointId: source.id, kind: EARLY_COIL_DECISION_KIND, code: 'СП-09', title: 'Ошибочное досрочное решение', context: decisionKey })
   assert((await earlyPreview(source.id)).reason?.includes('дату сварки'))
   await db.update(weldJoints).set({ weldDate: null, updatedAt: sql`now() + interval '1 second'` }).where(inArray(weldJoints.id, earlyCoils.map(row => row.id)))
   const { revokeEarlyCoilDecisionInTransaction } = await import('../src/server/early-coil-workflow')
   await assert.rejects(db.transaction(tx => revokeEarlyCoilDecisionInTransaction(tx, decisionKey)), /содержит данные, историю, изменения или документы/)
   const earlyCheck = await earlyPreview(source.id)
   assert.equal(earlyCheck.reason, null)
+  assert.equal(earlyCheck.cancellationMode, 'correction')
+  assert.equal(earlyCheck.decisionJoint, source.joint)
   await db.update(weldJoints).set({ vikRequest: 'Ошибочная заявка' }).where(eq(weldJoints.id, earlyCoils[0].id))
   await assert.rejects(earlyCancel(source.id, earlyCheck.token), /изменились/)
   assert((await earlyPreview(source.id)).reason?.includes('документы'))
@@ -161,17 +164,32 @@ try {
   await db.update(weldJoints).set({ vikRequestDate: '2026-09-03', tvmtResult: 'не годен' }).where(eq(weldJoints.id, earlyCoils[0].id))
   assert((await earlyPreview(source.id)).reason?.includes('документы'), 'Full locked fields, not just the compact calculation projection, must be checked')
   await db.update(weldJoints).set({ vikRequestDate: null, tvmtResult: null }).where(eq(weldJoints.id, earlyCoils[0].id))
+  // Legacy names can still find rows after their ID links are lost. Never delete
+  // a different set than the operator saw; the decision and sides must survive.
+  const sideIds = earlyCoils.map(row => row.id)
+  const sideStates = await db.select().from(weldJointProgramStates).where(inArray(weldJointProgramStates.weldJointId, sideIds))
+  await db.delete(weldJointProgramStates).where(inArray(weldJointProgramStates.weldJointId, sideIds))
+  const unlinked = await earlyPreview(source.id)
+  assert.equal(unlinked.targetJoints.length, 0)
+  await assert.rejects(earlyCancel(source.id, unlinked.token), /изменились|содержит данные, историю, изменения или документы/)
+  assert.equal((await db.select().from(weldJoints).where(inArray(weldJoints.id, sideIds))).length, 2)
+  assert.equal((await db.select().from(schema.dispatcherAcceptedWarnings).where(eq(schema.dispatcherAcceptedWarnings.key, decisionKey))).length, 1)
+  await db.insert(weldJointProgramStates).values(sideStates)
   const cleared = await earlyPreview(source.id)
   const cancellations = await Promise.all([earlyCancel(source.id, cleared.token), earlyCancel(source.id, cleared.token)])
   assert.deepEqual(cancellations.map(result => result.alreadyApplied).sort(), [false, true])
+  assert(cancellations.every(result => result.restorationRootId === earlyRoot.id), 'Both initial and idempotent responses must lead to the physical root restoration step')
   assert((await state(earlyRoot.id)).replacedByCoil)
   assert.equal((await db.select().from(weldJoints).where(inArray(weldJoints.id, earlyCoils.map(row => row.id)))).length, 0)
   assert((await preview(earlyRoot.id)).reason?.includes('годный финал'))
   await dirty.markDispatcherTaskIndexDirty(db)
   await dispatcher.ensureDispatcherTaskIndexFresh()
   const earlyTasks = await db.select().from(dispatcherRowTasks).where(inArray(dispatcherRowTasks.weldJointId, [earlyRoot.id, source.id]))
-  assert(earlyTasks.some(task => task.code === 'СП-04'))
-  assert(earlyTasks.some(task => task.code === 'ДЗ-07'), 'Ordinary continuation returns after early cancellation')
+  assert(earlyTasks.some(task => task.code === 'СП-09'))
+  const earlyPages = await db.select().from(schema.dispatcherTaskPages)
+    .where(eq(schema.dispatcherTaskPages.scopeKey, dispatcher.getDispatcherScopeKey(source)))
+  const earlyCards = earlyPages.flatMap(page => JSON.parse(page.tasks) as RepeatedJointTask[])
+  assert(earlyCards.some(task => task.kind === 'create' && task.row.id === source.id), 'Ordinary continuation returns after early cancellation')
   await db.update(weldJoints).set({ uzkResult: 'годен' }).where(eq(weldJoints.id, source.id))
   const corrected = await preview(earlyRoot.id)
   assert.equal(corrected.reason, null)

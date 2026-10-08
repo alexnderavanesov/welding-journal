@@ -39,7 +39,6 @@ export type DispatcherTaskCardHandlers = {
   onAcceptPercentageLineTask: (task: PercentageLineControlTask) => void
   onEditPercentageLineTaskStamp: (task: PercentageLineControlTask) => void
   onSuspendPercentageLineWelder: (task: PercentageLineControlTask) => void
-  onSkipPercentageLineWelderSuspension: (task: PercentageLineControlTask) => void
   onRunTaskAction: (task: Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>, action: DispatcherTaskActionSpec) => void
   canRunDispatcherMutation: boolean
   canCreateEarlyCoil: boolean

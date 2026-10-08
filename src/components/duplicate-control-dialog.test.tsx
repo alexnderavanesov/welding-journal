@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DuplicateControlDialog } from '@/components/duplicate-control-dialog'
 import { createEmptyDuplicateControlDraft, DUPLICATE_CONTROL_METHOD_ERROR, type DuplicateControlDraft } from '@/lib/duplicate-control-types'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { applyRemoteControlProcessSettings } from '@/lib/control-process-settings'
 
 class IntersectionObserverStub implements IntersectionObserver {
   readonly root = null
@@ -19,15 +20,46 @@ class IntersectionObserverStub implements IntersectionObserver {
 }
 
 describe('DuplicateControlDialog', () => {
+  it('allows duplicate PVK repair with own-PVK good-only enabled, but never a cut', () => {
+    applyRemoteControlProcessSettings({ pvkGoodOnly: true })
+    const row = { id: 1, joint: 'F1', d1: 57 } as WeldRow
+    render(<DuplicateControlDialog
+      draft={{ ...createEmptyDuplicateControlDraft(), rowIds: new Set([1]), methods: new Set(['ПВК']), result: 'ремонт' }}
+      filteredRows={[row]} selectedRows={[row]} controls={[]} saveBlockReason={null} isSaving={false}
+      onClose={vi.fn()} onSave={vi.fn()} onDelete={vi.fn()} onEdit={vi.fn()} onDraftChange={vi.fn()}
+      onToggleRow={vi.fn()} onSetVisibleRowsSelected={vi.fn()} onToggleMethod={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'ремонт' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Добавить дубль' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'вырез' })).toBeDisabled()
+  })
+  it('intersects selected methods and joints, shows every restriction and preserves the draft', () => {
+    const rows = [{ id: 1, joint: 'F1', d1: 57 }, { id: 2, joint: 'F2R2', d1: 159 }] as WeldRow[]
+    const props = { draft: { ...createEmptyDuplicateControlDraft(), rowIds: new Set([1, 2]), methods: new Set(['ВИК', 'РК'] as const), result: 'ремонт' as const },
+      filteredRows: rows, selectedRows: rows, controls: [], saveBlockReason: null, isSaving: false,
+      onClose: vi.fn(), onSave: vi.fn(), onDelete: vi.fn(), onEdit: vi.fn(), onDraftChange: vi.fn(),
+      onToggleRow: vi.fn(), onSetVisibleRowsSelected: vi.fn(), onToggleMethod: vi.fn() }
+    const { rerender } = render(<DuplicateControlDialog {...props} />)
+    expect(screen.getByRole('button', { name: 'ремонт' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.focus(screen.getByRole('group', { name: 'ремонт' }))
+    expect(screen.getByRole('tooltip')).toHaveTextContent('меньше 89 мм')
+    expect(screen.getByRole('tooltip')).toHaveTextContent('два ремонта')
+    expect(screen.getByRole('button', { name: 'вырез' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Добавить дубль' })).toBeDisabled()
+    expect(props.onDraftChange).not.toHaveBeenCalled()
+    rerender(<DuplicateControlDialog {...props} selectedRows={[rows[0]!]} draft={{ ...props.draft, methods: new Set(['ВИК']) }} />)
+    expect(screen.getByRole('button', { name: 'ремонт' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Добавить дубль' })).toBeEnabled()
+    expect(props.onDraftChange).not.toHaveBeenCalled()
+  })
   it.each(['ВИК', 'РК', 'УЗК', 'ПВК'] as const)('blocks %s on a mixed official/unofficial selection and enables it after restoring officiality', method => {
-    const rows = [{ id: 1, joint: 'F1' }, { id: 2, joint: 'F2', officiality: 'неофициальный' }] as WeldRow[]
+    const rows = [{ id: 1, joint: 'F1', d1: 89 }, { id: 2, joint: 'F2', d1: 89, officiality: 'неофициальный' }] as WeldRow[]
     const onSave = vi.fn()
     const props = { draft: { ...createEmptyDuplicateControlDraft(), rowIds: new Set([1, 2]), methods: new Set([method]), result: 'ремонт' as const },
       filteredRows: rows, selectedRows: rows, controls: [], saveBlockReason: null, isSaving: false,
       onClose: vi.fn(), onSave, onDelete: vi.fn(), onEdit: vi.fn(), onDraftChange: vi.fn(),
       onToggleRow: vi.fn(), onSetVisibleRowsSelected: vi.fn(), onToggleMethod: vi.fn() }
     const { rerender } = render(<DuplicateControlDialog {...props} />)
-    for (const result of ['годен', 'ремонт', 'вырез']) expect(screen.getByRole('option', { name: result })).toBeDisabled()
+    for (const result of ['годен', 'ремонт', 'вырез']) expect(screen.getByRole('button', { name: result })).toBeDisabled()
     expect(screen.getByText(/Дубль-контроль недоступен для неофициального стыка/)).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Добавить дубль' }))
     expect(onSave).not.toHaveBeenCalled()
@@ -55,9 +87,9 @@ describe('DuplicateControlDialog', () => {
       onClose={vi.fn()} onSave={vi.fn()} onDelete={vi.fn()} onEdit={vi.fn()} onDraftChange={vi.fn()}
       onToggleRow={vi.fn()} onSetVisibleRowsSelected={vi.fn()} onToggleMethod={vi.fn()} />)
     expect(screen.getAllByText('У17').length).toBeGreaterThan(0)
-    expect(screen.getByRole('option', { name: 'годен' })).toBeDisabled()
-    expect(screen.getByRole('option', { name: 'ремонт' })).toBeDisabled()
-    expect(screen.getByRole('option', { name: 'вырез' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'годен' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'ремонт' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'вырез' })).toBeDisabled()
     expect(screen.getByText(/Любой дубль ВИК\/РК\/УЗК\/ПВК недоступен/)).toBeVisible()
     expect(screen.getByRole('button', { name: 'Добавить дубль' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'ТВМТ' })).not.toBeInTheDocument()
@@ -78,6 +110,7 @@ describe('DuplicateControlDialog', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
   beforeEach(() => {
+    window.localStorage.clear()
     vi.stubGlobal('IntersectionObserver', IntersectionObserverStub)
   })
 

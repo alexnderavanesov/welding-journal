@@ -65,21 +65,23 @@ export function LnkOfficialityDialog({
     >
       <DialogHeader title="Официальность стыков" subtitle={`Выбрано: ${draft.rowIds.size}`} onClose={onClose} />
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 overflow-hidden px-6 py-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-        <LnkOfficialitySettings
-          officiality={draft.officiality}
-          selectedRows={selectedRows}
-          counters={counters}
-          onOfficialityChange={(officiality) => onDraftChange((current) => ({ ...current, officiality }))}
-        />
+      <div data-officiality-workspace className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5 lg:grid lg:grid-cols-[300px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden">
+        <section aria-label="Параметры официальности" className="shrink-0 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
+          <LnkOfficialitySettings
+            officiality={draft.officiality}
+            selectedRows={selectedRows}
+            counters={counters}
+            onOfficialityChange={(officiality) => onDraftChange((current) => ({ ...current, officiality }))}
+          />
+        </section>
 
-        <section className="flex min-h-0 flex-col">
+        <section aria-label="Стыки для изменения официальности" className="flex h-[560px] min-h-0 min-w-0 shrink-0 flex-col lg:h-auto">
           <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
             <div>
               <h3 className="text-sm font-semibold text-slate-900">Стыки</h3>
               <p className="text-xs text-muted-foreground">Поиск по проекту, шифру, линии, спулу или номеру стыка.</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={() => onSetVisibleRowsSelected(true)} disabled={filteredRows.length === 0}>
                 Выбрать найденные
               </Button>
@@ -114,13 +116,13 @@ export function LnkOfficialityDialog({
             ) : (
               <DialogVirtualizedRows
                 items={rowsPagination.pageItems}
-                estimateRowHeight={62}
+                estimateRowHeight={96}
                 getItemKey={(row) => row.id}
                 renderItem={(row) => (
                   <LnkOfficialityRow row={row} selected={draft.rowIds.has(row.id)} onToggle={stableOnToggleRow} />
                 )}
                 footer={(
-                  <div className="p-3">
+                  <div className="shrink-0 p-3">
                     <PaginationBar
                       totalCount={rowsPagination.totalCount}
                       firstItemNumber={rowsPagination.firstItemNumber}
@@ -138,11 +140,11 @@ export function LnkOfficialityDialog({
         </section>
       </div>
 
-      <div className="flex items-center justify-between gap-4 border-t border-slate-200/80 px-6 py-4">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-t border-slate-200/80 bg-white px-6 py-4">
         <div className="text-sm text-slate-500">
           {saveBlockReason ? saveBlockReason : `Будет обновлено стыков: ${selectedRows.length}`}
         </div>
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" onClick={onClose}>
             Отмена
           </Button>
@@ -197,7 +199,7 @@ function LnkOfficialityPreviewDialog({
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-slate-200">
             <DialogVirtualizedRows
               items={rowsPagination.pageItems}
-              estimateRowHeight={64}
+              estimateRowHeight={96}
               getItemKey={(row) => row.id}
               renderItem={(row) => (
                 <div className="flex items-start justify-between gap-3 bg-white px-4 py-3">

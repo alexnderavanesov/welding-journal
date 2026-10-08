@@ -40,7 +40,6 @@ export function createDispatcherRuleFixtures(): DispatcherRuleFixture[] {
       { joint: 'S1', weldDate: '2026-07-03', rkResult: 'ремонт' },
       { joint: 'S1R1', weldDate: '2026-07-02' },
     ], [2]],
-    ['check-repair-diameter', [{ d1: 57, d2: 57, rkResult: 'ремонт' }]],
     ['check-welder-stamp', [{ stamp1K: 'UNKNOWN' }]],
     ['check-incomplete-stamps', [{ stamp1KFact: null }]],
     ['check-lnk-request-date-order', [{ vikRequest: 'ВИК-1', vikRequestDate: '2026-06-30' }]],

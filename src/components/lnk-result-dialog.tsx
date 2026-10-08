@@ -10,6 +10,7 @@ import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
 import { LnkResultConclusionsPanel } from '@/components/lnk-result-conclusions-panel'
 import { LnkResultRow } from '@/components/lnk-result-row'
+import { getLnkSelectionResultRestrictionReason } from '@/components/lnk-result-selection-restrictions'
 import { LnkResultSettings } from '@/components/lnk-result-settings'
 import { RequestRowsPanel } from '@/components/request-rows-panel'
 import { ResultDialogFooter } from '@/components/result-dialog-footer'
@@ -23,7 +24,8 @@ import {
 } from '@/lib/dialog-context-menu-items'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getEffectiveLnkResultDraftValue, hasNonEmptyLnkResultDraftRows } from '@/lib/lnk-result-draft'
-import { getLnkRepairForbiddenReason, isLnkRepairForbidden } from '@/lib/lnk-result-rules'
+import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
+import { useSystemIndexSettings } from '@/lib/system-index-settings'
 import { LNK_METHODS, LNK_RESULT_OPTIONS } from '@/lib/report-config'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import type { RequestNamingState } from '@/lib/request-naming-state'
@@ -124,6 +126,7 @@ export function LnkResultDialog({
   onSetLayeredControl,
 }: LnkResultDialogProps) {
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
+  const systemIndexSettings = useSystemIndexSettings()
   const controlDateInputRef = useRef<HTMLInputElement>(null)
   const [initiallySelectedIds] = useState(() => new Set(draft.rowIds))
   const [rowsViewMode, setRowsViewMode] = useState<SelectedRowsViewMode>('all')
@@ -163,7 +166,7 @@ export function LnkResultDialog({
   const selectedRequest = createRequestDocumentIdentity(draft.requestName, draft.requestDate)
   const canOpenConclusions = Boolean(draft.methodKey && systemDocumentCreationPlan)
   const conclusionCount = systemDocumentCreationPlan?.groups.length ?? 0
-  const hasNonEmptyRows = hasNonEmptyLnkResultDraftRows(selectedRows, draft, saveCheckSettings)
+  const hasNonEmptyRows = hasNonEmptyLnkResultDraftRows(selectedRows, draft)
   const selectedRowsViewToggle = (
     <SelectedRowsViewToggle
       mode={rowsViewMode}
@@ -212,13 +215,13 @@ export function LnkResultDialog({
         : undefined,
       resultAssignment: {
         values: LNK_RESULT_OPTIONS,
-        getDisabledReason: (value, rows) => {
-          if (draft.methodKey === 'pvkRequest' && ['ремонт', 'вырез'].includes(value) &&
-            rows.some((row) => row.layeredControlAssigned || draft.layeredControlRowIds.has(row.id))) return 'Выбран послойный контроль.'
-          if (!saveCheckSettings.lnkResultRepairRules || value !== 'ремонт') return null
-          const forbiddenRow = rows.find(isLnkRepairForbidden)
-          return forbiddenRow ? getLnkRepairForbiddenReason(forbiddenRow) : null
-        },
+        getDisabledReason: (value, rows) => getLnkSelectionResultRestrictionReason(
+          rows, [getLnkMethodByRequestKey(draft.methodKey)?.code ?? ''], value, {
+            systemIndexSettings,
+            pvkGoodOnly: controlProcessSettings.pvkGoodOnly,
+            layeredControlRowIds: draft.layeredControlRowIds,
+          },
+        ) ?? null,
         onAssign: (rows, value) => onSetRowsResult(rows.map((item) => item.id), value),
       },
       onSetSelectedRows,
@@ -352,7 +355,6 @@ export function LnkResultDialog({
                   selected={draft.rowIds.has(row.id)}
                   rowResult={getEffectiveLnkResultDraftValue(row.id, draft)}
                   layeredControlSelected={draft.layeredControlRowIds.has(row.id)}
-                  saveCheckSettings={saveCheckSettings}
                   onToggleRow={stableOnToggleRow}
                   onSetRowResult={stableOnSetRowResult}
                   onSetLayeredControl={stableOnSetLayeredControl}

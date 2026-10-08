@@ -30,7 +30,7 @@ test('компактная завершённая линия: все стыки,
   // Search is debounced; the full suite has other lines on the initial page.
   await expect(card).toHaveCount(1)
   await expect(card).toHaveAttribute('data-program-finished','true')
-  await expect(card.getByText('✓ Линия завершена')).toBeVisible()
+  await expect(card.getByRole('img', { name: 'Линия завершена' })).toBeVisible()
   await expect.poll(() => card.getByTestId('line-card-metrics').getByRole('progressbar').evaluateAll(bars => {
     const [common, pvk] = bars.map(bar => bar.getBoundingClientRect())
     return Math.abs(common.y - pvk.y) < 1 && Math.abs(common.width - pvk.width) < 1 && common.width <= 153
@@ -431,8 +431,8 @@ test('плашки не увеличивают строку, НК до ТО пе
   expect(errors).toEqual([])
 })
 
-test('пометка завершения справа от процента не увеличивает высоту заголовка линии', async ({ page }) => {
-  const prefix = 'DENSE-HEIGHT-', done = prefix + 'DONE', wait = prefix + 'WAIT'
+test('галочка завершения в правом верхнем углу сохраняет место для названия и высоту заголовка линии', async ({ page }) => {
+  const prefix = 'DENSE-HEIGHT-4861/2020-ПГ-2-', done = prefix + 'DONE', wait = prefix + 'WAIT'
   await seed(done, 4)
   const waitId = await seed(wait, 4)
   await withE2eDatabase(db => db.query('update weld_joints set rk_result=null where line_program_id=$1', [waitId]))
@@ -454,15 +454,24 @@ test('пометка завершения справа от процента н�
       await expect(page.locator('[data-app-sidebar]')).toHaveCSS('width', '64px')
     }
     await expect.poll(() => completed.getByTestId('line-program-header').evaluate(element => {
-      const name = element.querySelector('[data-testid="line-name"]')!
-      const percent = name.nextElementSibling!.getBoundingClientRect()
+      const header = element.getBoundingClientRect()
       const status = element.querySelector('[data-testid="program-finished-label"]')!.getBoundingClientRect()
-      const description = element.querySelector('[data-testid="line-description"]')!.getBoundingClientRect()
-      return status.left > percent.right && Math.abs(status.y + status.height / 2 - percent.y - percent.height / 2) < 1 && description.top > status.bottom
+      const settings = element.querySelector('[aria-label="Настроить"]')!.getBoundingClientRect()
+      return header.right - status.right <= 16 && status.top - header.top <= 12 && status.bottom <= settings.top
     })).toBe(true)
+    await expect.poll(() => cards.getByTestId('line-name').evaluateAll(names => {
+      // Compare available space, not the different natural widths of DONE and WAIT.
+      const widths = names.map(name => {
+        const row = name.parentElement!, siblings = [...row.children].filter(child => child !== name)
+        return row.clientWidth - siblings.reduce((total, child) => total + child.getBoundingClientRect().width, 0) - parseFloat(getComputedStyle(row).columnGap) * siblings.length
+      })
+      return Math.abs(widths[0] - widths[1])
+    })).toBeLessThan(1)
     await expect.poll(async () => Math.abs((await completed.getByTestId('line-program-header').boundingBox())!.height - (await incomplete.getByTestId('line-program-header').boundingBox())!.height)).toBeLessThan(1)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await expect(completed.getByTestId('program-finished-label')).toBeVisible()
+    await expect(completed.getByRole('img', { name: 'Линия завершена' })).toHaveAttribute('title', 'Линия завершена')
+    await expect(completed.getByTestId('program-finished-label')).toHaveText('')
     await page.screenshot({ path: `outputs/line-program-equal-headers-${width}.png`, fullPage: true })
   }
   await completed.getByRole('button', { name: `Расчёт линии ${done}`, exact: true }).click()

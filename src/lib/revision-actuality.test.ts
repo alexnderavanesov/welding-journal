@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { isRevisionNotActual } from '@/lib/revision-actuality'
 
 describe('revision actuality', () => {
-  it.each([undefined, null, '', 'актуален', 'Актуален'])(
+  it.each([undefined, null, '', 'актуален', 'Актуален', 'актуальная', ' АКТУАЛЬНАЯ '])(
     'treats %s as an actual row',
     (value) => {
       expect(isRevisionNotActual(value)).toBe(false)

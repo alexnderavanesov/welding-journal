@@ -12,7 +12,8 @@ import {
   refreshDispatcherTaskSnapshot,
   type DispatcherTaskSnapshotResult,
 } from '@/server/dispatcher-task-snapshot'
-import { isSystemDispatcherWarningTask } from '@/lib/dispatcher-types'
+import { isSystemDispatcherWarningTask, type DispatcherTask } from '@/lib/dispatcher-types'
+import { isMandatoryDispatcherTask } from '@/lib/dispatcher-settings'
 import { invalidateWeldPageQueries } from '@/lib/weld-page-refresh'
 import { getDispatcherTaskBatch } from '@/server/dispatcher-task-pages'
 import { getBusinessDateIso } from '@/lib/business-date'
@@ -197,6 +198,8 @@ export function filterDismissedDispatcherTasks<Task extends { key: string; kind?
   dismissedTaskKeys: ReadonlySet<string>,
 ) {
   return (tasks ?? []).filter((task) =>
-    isSystemDispatcherWarningTask(task) || !dismissedTaskKeys.has(task.key),
+    isSystemDispatcherWarningTask(task) ||
+    (task.kind != null && isMandatoryDispatcherTask(task as unknown as DispatcherTask)) ||
+    !dismissedTaskKeys.has(task.key),
   )
 }

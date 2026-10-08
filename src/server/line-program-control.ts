@@ -74,7 +74,7 @@ export async function changeProgramInTransaction(tx: SystemDocumentSequenceTrans
       await lockWeldLineMemberships(tx, [line])
       const [currentLine] = await tx.select().from(linePrograms).where(eq(linePrograms.id, data.lineId)).for('update')
       if (!currentLine || currentLine.updatedAt.toISOString() !== data.lineVersion) throw new Error('Программа линии изменилась. Обновите расчёт.')
-      if (currentLine.configurationIssue || getLineProgramConfigurationIssue(currentLine) || currentLine.weldControlPercent == null || currentLine.pvkControlPercent == null) throw new Error('Сначала настройте программу линии (СП-02).')
+      if (currentLine.configurationIssue || getLineProgramConfigurationIssue(currentLine) || currentLine.weldControlPercent == null || currentLine.pvkControlPercent == null) throw new Error('Сначала настройте программу линии (СП-01).')
       const ids = data.targets.map((target) => target.id)
       const storedRows = await lockInteractiveWeldRows(tx, ids)
       assertExpectedInteractiveWeldVersions(ids, data.targets, storedRows)

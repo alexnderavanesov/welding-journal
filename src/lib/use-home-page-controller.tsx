@@ -148,7 +148,7 @@ import {
 	getWorkflowRootCauseDestination,
 	type WorkflowRootCauseDestination,
 } from '@/lib/workflow-root-cause-navigation'
-import { getLnkRepairResultSaveReason, isLnkRepairForbidden } from '@/lib/lnk-result-rules'
+import { getLnkResultRestrictionReason, formatLnkResultRuleReason } from '@/lib/lnk-result-policy'
 import { isFinalLnkResultValue } from '@/lib/lnk-status'
 import { filterWeldRowsByColumns } from '@/lib/weld-table-filtering'
 import { splitReportQuickSearch } from '@/lib/report-quick-search'
@@ -219,7 +219,7 @@ import {
 import { useOtherSettings } from '@/lib/other-settings'
 import { useControlProcessSettings } from '@/lib/control-process-settings'
 import { getLnkVisibleFieldSections } from '@/lib/lnk-visible-field-layout'
-import { formatSaveCheckBlockReason, useSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
+import { useSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import { useSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-index-settings'
 import { useWeldJournalMutations } from '@/lib/use-weld-journal-mutations'
 import {
@@ -323,7 +323,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const pstoController = useHomePstoController()
   const { pstoResultRegistrySearch, setPstoResultRegistrySearch, pstoResultRegistryLimit, setPstoResultRegistryLimit, pstoWorkflowRequestSearch, setPstoWorkflowRequestSearch, pstoRepeatCandidateIds, setPstoRepeatCandidateIds, tvmtCandidateIds, setTvmtCandidateIds, pstoRepeatCandidateSearch, setPstoRepeatCandidateSearch, tvmtCandidateSearch, setTvmtCandidateSearch, pstoRepeatCandidateRequest, setPstoRepeatCandidateRequest, tvmtCandidateRequest, setTvmtCandidateRequest, handlePstoRepeatCandidateRequestChange, handleTvmtCandidateRequestChange, closePstoResultManager, openAllPstoHistory } = pstoController
   const weldEditorController = useHomeJournalController()
-  const { coilRestorationRootId, setCoilRestorationRootId, coilCorrectionReturnId, setCoilCorrectionReturnId, chainActuality, setChainActuality, isImportDialogOpen, setIsImportDialogOpen } = weldEditorController
+  const { coilCorrectionTarget, setCoilCorrectionTarget, coilCorrectionReturnTarget, setCoilCorrectionReturnTarget, chainActuality, setChainActuality, isImportDialogOpen, setIsImportDialogOpen } = weldEditorController
   const {
     isLnkWorkflowMenuOpen,
     setIsLnkWorkflowMenuOpen,
@@ -2632,7 +2632,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onEditPercentageLineTaskStamp: (task) => runProtectedEdit('редактирование клейма стыка', () => editPercentageLineTaskStamp(task)),
     onSuspendPercentageLineWelder: (task) =>
       runProtectedEdit('добавление отстранения сварщика', () => openWelderSuspensionFromPercentageLineTask(task)),
-    onSkipPercentageLineWelderSuspension: skipWelderSuspensionFromPercentageLineTask,
     onRunTaskAction: (task, actionId) => {
       void runDispatcherTaskAction(task.row, task, actionId)
     },
@@ -4144,25 +4143,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setMessage(`Открыто добавление отстранения для клейма ${task.stamp}. Проверь дату и сохрани запись.`)
   }
 
-  async function skipWelderSuspensionFromPercentageLineTask(task: PercentageLineControlTask) {
-    if (task.issue !== 'suspend-welder') return
-    const confirmed = await confirmAction({
-      title: 'Не отстранять сварщика',
-      itemName: `${task.stamp} · ${task.line}`,
-      description:
-        'Диспетчер скроет текущее предупреждение об отстранении сварщика. Используй это только если решение не отстранять уже принято и его не нужно фиксировать в истории отстранений.',
-      warning:
-        'Это не удаляет стык, заявку или результат. Если по этому клейму появятся новые первичные стыки с негодным РК/УЗК или изменится расчёт, предупреждение возникнет снова. Брак R/W, ВИК и ПВК не увеличивает этот счётчик.',
-      confirmLabel: 'Не отстранять',
-      tone: 'warning',
-    })
-    if (!confirmed) return
-    if (!(await requireEditPassword('принятие исключения диспетчера'))) return
-    await acceptDispatcherTaskWarning(task)
-    dismissRepeatedJointTask(task)
-    setMessage(`Предупреждение об отстранении клейма ${task.stamp} скрыто`)
-  }
-
   async function runDispatcherTaskAction(
     _selectedRow: WeldRow,
     task: RepeatedJointTask,
@@ -4173,8 +4153,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       setChainActuality({ rowId: task.row.id, active: actionId === 'set-chain-active' })
       return
     }
-    if (actionId === 'restore-coil' && task.kind === 'check' && task.systemWarningCode === 'СП-04') {
-      setCoilRestorationRootId(task.row.id)
+    if (actionId === 'restore-coil' && task.kind === 'check' && task.systemWarningCode === 'СП-09') {
+      setCoilCorrectionTarget({ rootId: task.row.id })
       return
     }
     if (actionId === 'open-root-cause' && typeof action !== 'string' && action.rootCauseAction) {
@@ -4222,15 +4202,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       )
       return
     }
-    if (actionId === 'skip-suspension' && task.kind === 'percentage-line-control') {
-      await skipWelderSuspensionFromPercentageLineTask(task)
-      return
-    }
     if (actionId === 'open-line-program' && task.kind === 'line-consistency') {
       percentageLineNavigationRequestIdRef.current += 1
       setPercentageLineNavigationRequest({ id: percentageLineNavigationRequestIdRef.current, action: 'assign-missing-controls',
         projectTitle: task.projectTitle, subtitleCode: task.subtitleCode, line: task.line, stamp: '',
-        jointId: task.systemWarningCode === 'СП-03' ? task.row.id : undefined })
+        jointId: task.systemWarningCode === 'СП-08' ? task.row.id : undefined })
       captureReportContext('percentageLines'); setChainRecord(null); setActiveReport('percentageLines')
       return
     }
@@ -4518,7 +4494,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onOpenReport: (row, report) => openRowsInReport([row], report),
     onOpenLineInDispatcher: openLineInDispatcher,
     onEditRow: openWeldEditorFromJointPicture,
-    onOpenCoilCorrection: row => setCoilRestorationRootId(row.id),
+    onOpenCoilCorrection: row => setCoilCorrectionTarget({ rootId: row.id }),
     onChangeChainActuality: (row, active) => setChainActuality({ rowId: row.id, active }),
     onRunNextAction: (row, action) => runJointNextAction(row, action, { runDispatcherAction: true }),
     onRunDispatcherTaskAction: runDispatcherTaskAction,
@@ -5237,7 +5213,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       onMethodChange: changeLnkResultMethod,
       onControlDateChange: (controlDate) => setLnkResultDraft((current) => ({ ...current, controlDate })),
       onDefaultResultChange: (result) => {
-        if (saveCheckSettings.lnkResultRepairRules && result === 'ремонт' && selectedLnkResultRows.some(isLnkRepairForbidden)) return
+        if (selectedLnkResultRows.some(row => selectedLnkResultMethods.some(method =>
+          getLnkResultRestrictionReason(row, method.code, result, {
+            systemIndexSettings, pvkGoodOnly: controlProcessSettings.pvkGoodOnly,
+            layeredControlSelected: lnkResultDraft.layeredControlRowIds.has(row.id),
+          })))) return
         if (['ремонт', 'вырез'].includes(result) && lnkResultDraft.methodKey !== 'tvmtRequest' && selectedLnkResultRows.some((row) =>
           row.layeredControlAssigned || (lnkResultDraft.methodKey === 'pvkRequest' && lnkResultDraft.layeredControlRowIds.has(row.id)))) return
         setLnkResultDraft((current) => ({
@@ -5377,20 +5357,22 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
 
   return {
     activeReport,
-    coilCorrectionReturnProps: coilCorrectionReturnId == null ? null : {
-      onReturn: () => setCoilRestorationRootId(coilCorrectionReturnId), onDismiss: () => setCoilCorrectionReturnId(null),
+    onCancelEarlyCoil: (sourceId: number) => setCoilCorrectionTarget({ rootId: sourceId, earlyDecision: true }),
+    coilCorrectionReturnProps: coilCorrectionReturnTarget == null ? null : {
+      onReturn: () => setCoilCorrectionTarget(coilCorrectionReturnTarget), onDismiss: () => setCoilCorrectionReturnTarget(null),
     },
-    coilRestorationDialogProps: coilRestorationRootId == null ? null : { rootId: coilRestorationRootId, onClose: () => setCoilRestorationRootId(null), onSaved: setMessage,
-      onRestored: () => setCoilCorrectionReturnId(null),
-      onOpenReport: (rows: WeldRow[], report: 'weldingJournal' | 'lnk' | 'heatTreatment') => {
-        setCoilCorrectionReturnId(coilRestorationRootId)
+    coilRestorationDialogProps: coilCorrectionTarget == null ? null : { ...coilCorrectionTarget, onClose: () => setCoilCorrectionTarget(null), onSaved: setMessage,
+      onRestored: () => setCoilCorrectionReturnTarget(null),
+      onCancellationSaved: (rootId: number | null) => setCoilCorrectionReturnTarget(rootId == null ? null : { rootId }),
+      onOpenReport: (rows: WeldRow[], report: 'weldingJournal' | 'lnk' | 'heatTreatment', target = coilCorrectionTarget) => {
+        setCoilCorrectionReturnTarget(target)
         setIsDispatcherWorkspaceOpen(false)
-        openRowsInReport(rows, report)
+        openReportRowIds(rows.map(row => row.id), report)
       } },
     chainActualityDialogProps: chainActuality == null ? null : { ...chainActuality, onClose: () => setChainActuality(null), onSaved: setMessage },
     activeTitle,
     reportPreviewProps,
-    freezeReportBackground: isReportModalOpen || coilRestorationRootId !== null || chainActuality !== null || Boolean(documentGenerationRequest) || Boolean(reportPreviewProps),
+    freezeReportBackground: isReportModalOpen || coilCorrectionTarget !== null || chainActuality !== null || Boolean(documentGenerationRequest) || Boolean(reportPreviewProps),
     navCollapsed,
     registerMinWidth,
     stickyLeft,
@@ -5516,16 +5498,10 @@ function getDuplicateControlSaveBlockReason({
   if (draft.id && (selectedRows.length !== 1 || draft.methods.size !== 1)) {
     return 'При редактировании должна быть выбрана одна запись дубль-контроля.'
   }
-  if (String(draft.result).trim().toLowerCase() === 'ремонт') {
-    const methodCodes = [...draft.methods].map((method) => `${method} (дубль)`).join(', ')
-    for (const row of selectedRows) {
-      const reason = getLnkRepairResultSaveReason(
-        row,
-        methodCodes,
-        saveCheckSettings,
-        systemIndexSettings,
-      )
-      if (reason) return formatSaveCheckBlockReason('lnkResultRepairRules', reason)
+  for (const row of selectedRows) {
+    for (const method of draft.methods) {
+      const reason = getLnkResultRestrictionReason(row, method, draft.result, { systemIndexSettings })
+      if (reason) return formatLnkResultRuleReason(reason)
     }
   }
   return null

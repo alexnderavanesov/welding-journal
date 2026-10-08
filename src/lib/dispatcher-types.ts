@@ -102,7 +102,7 @@ export type RepeatedJointCheckTask = {
   reason?: string
   details?: string
   rootCauseActions?: WorkflowRootCauseAction[]
-  systemWarningCode?: 'СП-01' | 'СП-04'
+  systemWarningCode?: import('./system-rule-catalog').SystemRuleCode
   coilRestorationRootId?: number
   actualityRowIds?: number[]
 }
@@ -124,7 +124,7 @@ export type LineConsistencyTask = {
   projectTitle: string
   subtitleCode: string
   fieldKey: 'weldControlPercent' | 'pvkControlPercent' | 'groupName' | 'category' | 'controlPresence' | 'pstoPresence'
-  systemWarningCode?: 'СП-02' | 'СП-03'
+  systemWarningCode?: import('./system-rule-catalog').SystemRuleCode
   fieldLabel: string
   title: string
   values: string[]
@@ -178,9 +178,8 @@ export type DispatcherTask = RepeatedJointTask | WelderStampExpiryTask
 
 export function isSystemDispatcherWarningTask(
   task: { kind?: string; systemWarningCode?: string },
-): task is (RepeatedJointCheckTask & { systemWarningCode: 'СП-01' | 'СП-04' }) | (LineConsistencyTask & { systemWarningCode: 'СП-02' | 'СП-03' }) {
-  return (task.kind === 'check' && (task.systemWarningCode === 'СП-01' || task.systemWarningCode === 'СП-04')) ||
-    (task.kind === 'line-consistency' && (task.systemWarningCode === 'СП-02' || task.systemWarningCode === 'СП-03'))
+): task is (RepeatedJointCheckTask | LineConsistencyTask) & { systemWarningCode: import('./system-rule-catalog').SystemRuleCode } {
+  return (task.kind === 'check' || task.kind === 'line-consistency') && /^СП-(0[1-9]|1[0-2])$/.test(task.systemWarningCode ?? '')
 }
 
 export type RepeatedJointTaskGroup = {

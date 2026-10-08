@@ -21,9 +21,11 @@ const SettingsPage = lazy(() => import('@/components/settings-page').then((modul
 const UserGuidePage = lazy(() => import('@/components/user-guide-page').then((module) => ({ default: module.UserGuidePage })))
 
 type ReportMainContentProps = {
+  onCancelEarlyCoil?: (sourceId: number) => void
   activeReport: ActiveReport
   welderStamps: WelderStampRecord[]
   welderStampsRegistryProps: WelderStampsRegistryProps
+  welderStampsHeader?: ReactNode
   weldTableProps: WeldTableProps
   onOpenPercentageLineStampRows?: (filter: PercentageLineStampFilter) => void
   onOpenWeldRowIds?: (rowIds: number[], message?: string) => void
@@ -51,9 +53,11 @@ type ReportMainContentProps = {
 }
 
 export function ReportMainContent({
+  onCancelEarlyCoil,
   activeReport,
   welderStamps,
   welderStampsRegistryProps,
+  welderStampsHeader,
   weldTableProps,
   onOpenPercentageLineStampRows,
   onOpenReportRowIds,
@@ -90,7 +94,7 @@ export function ReportMainContent({
   if (activeReport === 'welderStamps') {
     return (
       <Suspense fallback={<ReportSectionFallback label="Загружаем клейма" />}>
-        <WelderStampsRegistry {...welderStampsRegistryProps} />
+        <WelderStampsRegistry {...welderStampsRegistryProps} header={welderStampsHeader} taskPanels={reportTaskPanels} />
       </Suspense>
     )
   }
@@ -114,7 +118,7 @@ export function ReportMainContent({
   if (activeReport === 'settings') {
     return (
       <Suspense fallback={<ReportSectionFallback label="Загружаем настройки" />}>
-        <SettingsPage onOpenReportRowIds={onOpenReportRowIds} />
+        <SettingsPage onOpenReportRowIds={onOpenReportRowIds} onCancelEarlyCoil={onCancelEarlyCoil} />
       </Suspense>
     )
   }

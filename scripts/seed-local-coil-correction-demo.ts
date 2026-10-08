@@ -42,13 +42,18 @@ try {
       const date = (value: number) => `2026-09-${String(value).padStart(2, '0')}`
       const row: WeldRow = { id: 0, projectTitle: PROJECT, subtitleCode: SUBTITLE, line: program.line, lineProgramId: program.id, joint,
         category: 'II', groupName: 'Б(а)', weldControlPercent: 0, pvkControlPercent: 0,
-        isometry: 'DEMO-ISO-COIL', sheet: 1, revisionNumber: 0, officiality: 'действующий', revisionActuality: 'актуальная',
+        isometry: 'DEMO-ISO-COIL', sheet: 1, revisionNumber: 0, officiality: 'действующий', revisionActuality: null,
         connectionType: 'С17', materialGroup: 'М01', material1: '20', material2: '20', element1: 'Труба', element2: 'Труба',
         d1: 108, d2: 108, t1: 4, t2: 4, weldingMethod: 'РД', weldingElectrodes: 'УОНИ-13/55', weldDate: date(day),
         stamp1K: STAMP, stamp1Z: STAMP, stamp1O: STAMP, stamp1KFact: STAMP, stamp1ZFact: STAMP, stamp1OFact: STAMP,
         hasVik: 'да', vikControlBasis: 'Проект', vikRequest: `ДЕМО-ВИК-заявка-${joint}`, vikRequestDate: date(day),
-        ...(!side ? { vikResult: index >= 2 ? 'вырез' : 'ремонт', vikConclusion: `ДЕМО-ВИК-заключение-${joint}`, vikConclusionDate: date(day + 1), vikDefectDescription: 'Демонстрационный дефект' } : {}),
-        weldingJournalNote: 'Учебный пример: катушка внесена ошибочно, физической врезки не было. Откройте «Картину стыка F902» → «Исправить ошибочную катушку». У сторон есть заявки ВИК; затем удалите стороны и исправьте ошибочный ВИК F902R2W1 на годен по условию примера. Последний шаг — отдельное подтверждение восстановления.',
+        ...(!side ? {
+          vikResult: 'годен', vikConclusion: `ДЕМО-ВИК-заключение-${joint}`, vikConclusionDate: date(day + 1),
+          hasUzk: 'да', uzkControlBasis: 'Проект', uzkRequest: `ДЕМО-УЗК-заявка-${joint}`, uzkRequestDate: date(day),
+          uzkResult: index >= 2 ? 'вырез' : 'ремонт', uzkConclusion: `ДЕМО-УЗК-заключение-${joint}`,
+          uzkConclusionDate: date(day + 1), uzkDefectDescription: 'Демонстрационный дефект',
+        } : {}),
+        weldingJournalNote: 'Учебный пример: катушка внесена ошибочно, физической врезки не было. Откройте «Картину стыка F902» → «Исправить ошибочную катушку». У сторон есть заявки ВИК; затем удалите стороны и исправьте ошибочный УЗК F902R2W1 на годен по условию примера. Последний шаг — отдельное подтверждение восстановления.',
       }
       const context = await validation.loadServerWeldValidationContext(tx, [row])
       assert.equal(getWeldFormSaveBlockReason(row, {}, context.saveCheckSettings, { allowSystemJointName: true }), null)

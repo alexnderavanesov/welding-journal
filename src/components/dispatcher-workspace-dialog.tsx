@@ -176,16 +176,16 @@ export function DispatcherWorkspaceDialog({
           </Button>
         </div>
         <select
-          aria-label="Тип ДЗ"
+          aria-label="Правило диспетчера"
           className="mx-4 my-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm lg:hidden"
           value={selectedCode ?? ''}
           onChange={(event) => chooseCode(event.target.value || null)}
         >
-          <option value="">Все ДЗ</option>
+          <option value="">Все задачи</option>
           {codeOptions.map((option) => <option key={option.code} value={option.code}>{option.code} · {option.label}</option>)}
         </select>
         <div className="flex min-h-0 flex-1">
-          <aside className="hidden w-[304px] shrink-0 overflow-y-auto border-r border-slate-200 bg-[#f8fcfe] p-3 xl:w-[328px] lg:block" aria-label="Типы ДЗ">
+          <aside className="hidden w-[304px] shrink-0 overflow-y-auto border-r border-slate-200 bg-[#f8fcfe] p-3 xl:w-[328px] lg:block" aria-label="Правила диспетчера">
             <div className="rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm">
               <button type="button" onClick={() => chooseCode(null)} aria-pressed={selectedCode === null}
                 className={`flex w-full items-center justify-between gap-2 rounded-lg border-l-[3px] px-3 py-3 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${selectedCode === null ? 'border-sky-500 bg-sky-50 text-sky-900' : 'border-transparent text-slate-700 hover:bg-slate-50'}`}>
@@ -302,7 +302,7 @@ export function DispatcherWorkspaceDialog({
               </section>
             ) : (!searchOnServer || (!isRefreshing && !searchQuery.isPending && !searchQuery.isError)) ? (
               <div className="rounded-md border border-slate-200 bg-white p-6 text-sm text-slate-600">
-                {hasMoreTasks && !searchOnServer ? 'В загруженной части задачи не найдены. Загрузите следующую порцию или воспользуйтесь поиском.' : 'Задачи не найдены. Измените запрос или тип ДЗ.'}
+                {hasMoreTasks && !searchOnServer ? 'В загруженной части задачи не найдены. Загрузите следующую порцию или воспользуйтесь поиском.' : 'Задачи не найдены. Измените запрос или выбранное правило.'}
                 {taskBatchError ? (
                   <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-red-700" role="alert">
                     {taskBatchError}

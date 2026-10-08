@@ -26,9 +26,9 @@ export function ResultDialogFooter({
   const showDangerReason = Boolean(saveBlockReason && saveBlockReasonVariant === 'danger')
 
   return (
-    <div role="group" aria-label="Сохранение результата" className="shrink-0 border-t border-slate-200/80 bg-white px-5 py-3">
-      {saveBlockReason ? (
-        <div className="mb-3 max-h-[min(24vh,10rem)] overflow-y-auto overscroll-contain text-sm text-slate-500">
+    <div role="group" aria-label="Сохранение результата" className="grid h-44 shrink-0 grid-rows-[minmax(0,1fr)_auto] items-center gap-3 border-t border-slate-200/80 bg-slate-50/80 px-5 py-3 xl:h-24 xl:grid-cols-[minmax(0,1fr)_auto] xl:grid-rows-1">
+      <div className="max-h-full min-h-0 self-center overflow-y-auto overscroll-contain text-sm text-slate-500">
+        {saveBlockReason ? (
           <BlockedActionHint
             reason={showDangerReason ? `Сохранение заблокировано: ${saveBlockReason}` : saveBlockReason}
             actionLabel={blockReasonActionLabel}
@@ -36,9 +36,11 @@ export function ResultDialogFooter({
             actions={blockReasonActions}
             tone={showDangerReason ? 'danger' : 'warning'}
           />
-        </div>
-      ) : null}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+        ) : !isSaveDisabled ? (
+          <p className="flex items-center gap-2 py-2 text-xs text-slate-500"><Check className="h-4 w-4 text-emerald-600" />Можно сохранить выбранные результаты.</p>
+        ) : null}
+      </div>
+      <div className="flex items-center justify-end gap-3">
         <div className="ml-auto flex shrink-0 justify-end gap-2">
           <Button variant="outline" onClick={onClose}>
             Отмена
@@ -50,7 +52,7 @@ export function ResultDialogFooter({
               className={
                 isSaveDisabled
                   ? 'pointer-events-none border border-slate-200 bg-slate-100 text-slate-400 shadow-none opacity-100'
-                  : ''
+                  : 'border border-transparent'
               }
             >
               <Check className="mr-2 h-4 w-4" />

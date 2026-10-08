@@ -129,7 +129,7 @@ describe('DispatcherTaskPanel', () => {
     )
 
     expect(screen.getAllByText('1 задача')).toHaveLength(1)
-    expect(screen.queryByText('ДЗ-27')).not.toBeInTheDocument()
+    expect(screen.queryByText('СП-01')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Открыть диспетчер' }))
     expect(onWorkspaceOpenChange).toHaveBeenCalledWith(true)
     const toggle = screen.getByRole('button', { name: 'Развернуть' })
@@ -146,7 +146,7 @@ describe('DispatcherTaskPanel', () => {
       width: '100%',
       maxWidth: 'calc(100vw - 24px)',
     })
-    const codeSummary = screen.getByText('ДЗ-27').closest('summary')
+    const codeSummary = screen.getByText('СП-01').closest('summary')
     expect(codeSummary).toHaveTextContent('1 задача')
     expect(codeSummary).toHaveTextContent('1 объект')
     expect(screen.queryByText('330-ATM-16-000')).not.toBeInTheDocument()
@@ -166,7 +166,7 @@ describe('DispatcherTaskPanel', () => {
     expect(screen.queryByText('330-ATM-16-000')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
-    expect(screen.getByText('ДЗ-27')).toBeInTheDocument()
+    expect(screen.getByText('СП-01')).toBeInTheDocument()
   })
 
   it('shows the exact total without exposing technical pages', () => {
@@ -236,14 +236,15 @@ describe('DispatcherTaskPanel', () => {
 
     const dialog = screen.getByRole('dialog', { name: 'Диспетчер задач' })
     expect(dialog).toHaveClass('max-w-[1480px]')
-    const codeOption = within(within(dialog).getByLabelText('Типы ДЗ')).getByRole('button', { name: /ДЗ-27/ })
-    expect(codeOption).toHaveTextContent('Проверить назначение контроля линии')
+    const codeOption = within(within(dialog).getByLabelText('Правила диспетчера')).getByRole('button', { name: /СП-01/ })
+    expect(within(dialog).getByRole('combobox', { name: 'Правило диспетчера' })).toHaveTextContent('Все задачи')
+    expect(codeOption).toHaveTextContent('Программа контроля линии')
     expect(codeOption).toHaveTextContent('1')
     expect(within(dialog).getByRole('heading', { name: 'Все задачи' })).toBeInTheDocument()
     const queue = within(dialog).getByLabelText('Очередь задач диспетчера')
     expect(within(queue).getByText('Стык или линия')).toBeInTheDocument()
     expect(within(queue).getByText('Задача, причина и действия')).toBeInTheDocument()
-    expect(within(queue).getByText('ДЗ-27')).toBeInTheDocument()
+    expect(within(queue).getByText('СП-01')).toBeInTheDocument()
     expect(within(dialog).queryByLabelText('Подробности задачи диспетчера')).not.toBeInTheDocument()
     expect(within(queue).getByText('Назначения контроля различаются.')).toBeInTheDocument()
     expect(within(queue).getByRole('button', { name: 'Показать' })).toBeInTheDocument()
@@ -278,9 +279,9 @@ describe('DispatcherTaskPanel', () => {
     fireEvent.blur(searchInput, { relatedTarget: codeOption })
     expect(searchForm).toHaveAttribute('data-expanded', 'false')
     fireEvent.click(codeOption)
-    expect(within(dialog).getByRole('heading', { name: 'ДЗ-27 · Проверить назначение контроля линии' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('heading', { name: 'СП-01 · Программа контроля линии' })).toBeInTheDocument()
     const selectedQueue = within(dialog).getByLabelText('Очередь задач диспетчера')
-    expect(within(selectedQueue).getByText('ДЗ-27')).toBeInTheDocument()
+    expect(within(selectedQueue).getByText('СП-01')).toBeInTheDocument()
     expect(selectedQueue.querySelector('[data-dispatcher-workspace-task-details]')).toHaveTextContent('Назначения контроля различаются.')
     fireEvent.click(within(selectedQueue).getByRole('button', { name: 'Показать' }))
     expect(onShowTask).toHaveBeenCalledWith(task)
@@ -454,15 +455,15 @@ describe('DispatcherTaskPanel', () => {
     )
 
     expect(screen.getByRole('button', { name: 'Развернуть' })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByText('ДЗ-27')).not.toBeInTheDocument()
+    expect(screen.queryByText('СП-01')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
     rerender(<ReportTaskPanels {...props} repeatedJointTasks={[task]} />)
     expect(screen.getByRole('button', { name: 'Свернуть' })).toBeInTheDocument()
-    expect(screen.getByText('ДЗ-27')).toBeInTheDocument()
+    expect(screen.getByText('СП-01')).toBeInTheDocument()
     rerender(<ReportTaskPanels {...props} activeReport={activeReport === 'lnk' ? 'weldingJournal' : 'lnk'} />)
 
     expect(screen.getByRole('button', { name: 'Развернуть' })).toBeInTheDocument()
-    expect(screen.queryByText('ДЗ-27')).not.toBeInTheDocument()
+    expect(screen.queryByText('СП-01')).not.toBeInTheDocument()
   })
 
   it('returns an expanded DZ to its first ten objects after the whole dispatcher is collapsed', () => {
@@ -495,7 +496,7 @@ describe('DispatcherTaskPanel', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
-    const details = screen.getByText('ДЗ-27').closest('details')
+    const details = screen.getByText('СП-01').closest('details')
     if (details) {
       details.open = true
       fireEvent(details, new Event('toggle'))
@@ -509,7 +510,7 @@ describe('DispatcherTaskPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Свернуть' }))
     fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
 
-    const reopened = screen.getByText('ДЗ-27').closest('details')
+    const reopened = screen.getByText('СП-01').closest('details')
     if (reopened) {
       reopened.open = true
       fireEvent(reopened, new Event('toggle'))
@@ -550,9 +551,9 @@ describe('DispatcherTaskPanel', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
-    expect(screen.getByText('ДЗ-02')).toBeInTheDocument()
-    expect(screen.getByText('ДЗ-04')).toBeInTheDocument()
-    expect(screen.getByText('ДЗ-27')).toBeInTheDocument()
+    expect(screen.getByText('СП-01')).toBeInTheDocument()
+    expect(screen.getByText('СП-01')).toBeInTheDocument()
+    expect(screen.getByText('СП-01')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'По объектам' })).not.toBeInTheDocument()
   })
 
@@ -574,7 +575,7 @@ describe('DispatcherTaskPanel', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
-    const details = screen.getByText('ДЗ-02').closest('details')
+    const details = screen.getByText('СП-01').closest('details')
     if (details) {
       details.open = true
       fireEvent(details, new Event('toggle'))
@@ -617,17 +618,17 @@ describe('DispatcherTaskPanel', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
-    expect(screen.getByText('ДЗ-02')).toBeInTheDocument()
+    expect(screen.getByText('СП-01')).toBeInTheDocument()
     expect(screen.getAllByText('2 задачи')).toHaveLength(2)
     expect(screen.getByText('2 объекта')).toBeInTheDocument()
     expect(screen.getByText('лишних 6')).toBeInTheDocument()
     expect(screen.queryByText('330-ATM-16-000 · ABC1')).not.toBeInTheDocument()
 
-    const codeGroupSummary = screen.getByText('ДЗ-02').closest('summary')
+    const codeGroupSummary = screen.getByText('СП-01').closest('summary')
     expect(codeGroupSummary?.firstElementChild).toHaveClass('w-full')
     expect(codeGroupSummary?.firstElementChild).not.toHaveClass('mx-auto', 'max-w-[1600px]')
 
-    const details = screen.getByText('ДЗ-02').closest('details')
+    const details = screen.getByText('СП-01').closest('details')
     expect(details).not.toBeNull()
     if (details) {
       details.open = true
@@ -661,7 +662,7 @@ describe('DispatcherTaskPanel', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
-    const details = screen.getByText('ДЗ-02').closest('details')
+    const details = screen.getByText('СП-01').closest('details')
     expect(details).not.toBeNull()
     if (details) {
       details.open = true
@@ -737,7 +738,7 @@ describe('DispatcherTaskPanel', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Развернуть' }))
-    expect(screen.getByText('ДЗ-27')).toBeInTheDocument()
+    expect(screen.getByText('СП-01')).toBeInTheDocument()
     expect(screen.queryByText('330-ATM-16-000')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'По объектам' })).not.toBeInTheDocument()
   })
@@ -1160,7 +1161,6 @@ function createHandlers(onShowTask: DispatcherTaskCardHandlers['onShowTask']): D
     onAcceptPercentageLineTask: vi.fn(),
     onEditPercentageLineTaskStamp: vi.fn(),
     onSuspendPercentageLineWelder: vi.fn(),
-    onSkipPercentageLineWelderSuspension: vi.fn(),
     onRunTaskAction: vi.fn(),
     canRunDispatcherMutation: true,
     canCreateEarlyCoil: true,

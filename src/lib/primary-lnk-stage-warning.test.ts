@@ -26,7 +26,7 @@ describe('SP-01 with the pre-TO stage disabled', () => {
     const original = structuredClone(row)
     const tasks = buildPrimaryLnkStageDebtSystemWarnings([row], disabled)
     expect(tasks).toHaveLength(1)
-    expect(tasks[0].systemWarningCode).toBe('СП-01')
+    expect(tasks[0].systemWarningCode).toBe('СП-06')
     expect(tasks[0].details).toContain(text)
     expect(tasks[0].details).not.toContain('до ТО')
     expect(tasks[0].rootCauseActions).toHaveLength(1)

@@ -96,6 +96,17 @@ describe('AcceptedWarningsSettingsPanel', () => {
     expect(runProtectedSettingsChange).toHaveBeenCalledTimes(1)
     expect(mocks.requireDeletePassword).not.toHaveBeenCalled()
   })
+
+  it('offers one early decision button and only opens the read-only cancellation check', async () => {
+    mocks.list.mockResolvedValue({ items: [{ ...warning, key: 'early-coil:42', kind: 'early-coil' }], total: 1, overallTotal: 1 })
+    const onCancelEarlyCoil = vi.fn()
+    renderPanel(undefined, onCancelEarlyCoil)
+    fireEvent.click(await screen.findByRole('button', { name: 'Отменить решение' }))
+    expect(screen.queryByRole('button', { name: 'Исправить ошибочное решение' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Отменить' })).not.toBeInTheDocument()
+    expect(onCancelEarlyCoil).toHaveBeenCalledWith(42)
+    expect(mocks.revoke).not.toHaveBeenCalled()
+  })
 })
 
 function renderPanel(
@@ -103,6 +114,7 @@ function renderPanel(
     await action()
     return true
   },
+  onCancelEarlyCoil?: (sourceId: number) => void,
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -110,7 +122,7 @@ function renderPanel(
   return render(
     <QueryClientProvider client={queryClient}>
       <ConfirmActionProvider>
-        <AcceptedWarningsSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
+        <AcceptedWarningsSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} onCancelEarlyCoil={onCancelEarlyCoil} />
       </ConfirmActionProvider>
     </QueryClientProvider>,
   )

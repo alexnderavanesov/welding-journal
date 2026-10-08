@@ -96,7 +96,7 @@ export function buildProgramRepairTasks(rows: readonly WeldRow[], approved: Read
     if (!missing.length) return []
     return [{ kind: 'line-consistency', key: `program-repair:${row.id}:${missing.map(item => item.method).join(',')}`,
       row, line: String(row.line ?? ''), projectTitle: String(row.projectTitle ?? ''), subtitleCode: String(row.subtitleCode ?? ''),
-      fieldKey: 'controlPresence', systemWarningCode: 'СП-03', fieldLabel: 'Обязательные методы ремонта',
+      fieldKey: 'controlPresence', systemWarningCode: 'СП-08', fieldLabel: 'Обязательные методы ремонта',
       title: 'Назначить обязательный контроль ремонта', values: missing.map(item => item.method),
       details: `${missing.map(item => item.reason).join('. ')}. Откройте назначения этого стыка в программе линии.` }]
   })

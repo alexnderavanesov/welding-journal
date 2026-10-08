@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CoilRestorationDialog } from './coil-restoration-dialog'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
@@ -15,7 +14,6 @@ import {
 } from '@/lib/dispatcher-accepted-warning-query'
 import { parseEarlyCoilDecisionKey } from '@/lib/early-coil-decision'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
-import { useSecurityGuard } from '@/lib/security-context'
 import {
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
   invalidateWeldPageQueries,
@@ -28,6 +26,7 @@ import {
 
 type AcceptedWarningsSettingsPanelProps = {
   runProtectedSettingsChange: (action: () => void | Promise<void>) => Promise<boolean>
+  onCancelEarlyCoil?: (sourceId: number) => void
 }
 
 const CATEGORY_OPTIONS: Array<{ value: DispatcherAcceptedWarningCategory; label: string }> = [
@@ -52,9 +51,9 @@ const SORT_OPTIONS: Array<{ value: DispatcherAcceptedWarningSort; label: string 
 
 export function AcceptedWarningsSettingsPanel({
   runProtectedSettingsChange,
+  onCancelEarlyCoil,
 }: AcceptedWarningsSettingsPanelProps) {
   const [searchDraft, setSearchDraft] = useState('')
-  const [earlyCorrectionSourceId, setEarlyCorrectionSourceId] = useState<number | null>(null)
   const [category, setCategory] = useState<DispatcherAcceptedWarningCategory>('all')
   const [period, setPeriod] = useState<DispatcherAcceptedWarningPeriod>('all')
   const [sort, setSort] = useState<DispatcherAcceptedWarningSort>('newest')
@@ -64,7 +63,6 @@ export function AcceptedWarningsSettingsPanel({
   const search = useDebouncedValue(searchDraft.trim(), 250)
   const searchIsSettled = search === searchDraft.trim()
   const confirmAction = useConfirmAction()
-  const { requireDeletePassword } = useSecurityGuard()
   const queryClient = useQueryClient()
   const request = useMemo(() => ({
     search,
@@ -84,11 +82,9 @@ export function AcceptedWarningsSettingsPanel({
   })
   const revokeAcceptedWarningMutation = useMutation({
     mutationFn: (key: string) => revokeDispatcherAcceptedWarning({ data: { key } }),
-    onSuccess: async (result, key) => {
+    onSuccess: async () => {
       setMessage({
-        text: parseEarlyCoilDecisionKey(key)
-          ? `Решение о досрочной катушке отменено${result.deletedRowIds.length > 0 ? `; удалено пустых стыков: ${result.deletedRowIds.length}` : ''}.`
-          : 'Принятое исключение отменено.',
+        text: 'Принятое исключение отменено.',
         tone: 'success',
       })
       await Promise.all([
@@ -130,27 +126,17 @@ export function AcceptedWarningsSettingsPanel({
   }
 
   const revokeAcceptedWarning = async (key: string, label: string) => {
-    const isEarlyCoilDecision = Boolean(parseEarlyCoilDecisionKey(key))
     const confirmed = await confirmAction({
-      title: isEarlyCoilDecision ? 'Отменить досрочную врезку катушки' : 'Отменить принятое исключение',
+      title: 'Отменить принятое исключение',
       itemName: label,
-      description: isEarlyCoilDecision
-        ? 'Система удалит созданные стыки катушки только если они остались полностью пустыми и нетронутыми. После отмены диспетчер снова предложит обычный следующий ремонт или вырез.'
-        : 'Если нарушение все еще существует, после пересчета оно снова появится в диспетчере.',
-      warning: isEarlyCoilDecision
-        ? 'Если у стыков катушки уже появились изменения, сварка, контроль, документы или продолжение цепочки, отмена будет заблокирована без удаления данных.'
-        : undefined,
-      confirmLabel: isEarlyCoilDecision ? 'Отменить решение' : 'Отменить исключение',
+      description: 'Если нарушение все еще существует, после пересчета оно снова появится в диспетчере.',
+      confirmLabel: 'Отменить исключение',
       tone: 'warning',
     })
     if (!confirmed) return
     setMessage(null)
     try {
       await runProtectedSettingsChange(async () => {
-        if (
-          isEarlyCoilDecision &&
-          !(await requireDeletePassword('отмену досрочной врезки катушки'))
-        ) return
         await revokeAcceptedWarningMutation.mutateAsync(key)
       })
     } catch {
@@ -160,10 +146,6 @@ export function AcceptedWarningsSettingsPanel({
 
   return (
     <div className="space-y-4">
-      {earlyCorrectionSourceId != null ? <CoilRestorationDialog rootId={earlyCorrectionSourceId} earlyDecision onClose={() => setEarlyCorrectionSourceId(null)} onSaved={text => {
-        setMessage({ text, tone: 'success' })
-        void queryClient.invalidateQueries({ queryKey: DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY, refetchType: 'active' })
-      }} /> : null}
       <div className="flex flex-col gap-3 rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -179,7 +161,8 @@ export function AcceptedWarningsSettingsPanel({
             ) : null}
           </div>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-            Здесь хранятся ситуации, которые пользователь осознанно разрешил кнопкой «Принять», и решения о досрочной врезке катушки.
+            Здесь хранятся подтвержденные подсказки, согласования контроля и решения о досрочной катушке.
+            Принятое исключение не отключает обязательные СП. Предусмотренные процессом согласования продолжают действовать в своих условиях.
           </p>
         </div>
         <button
@@ -327,10 +310,12 @@ export function AcceptedWarningsSettingsPanel({
               const label = warning.title || categoryLabel
               const contextParts = getAcceptedWarningContextParts(warning)
               const isRevoking = revokeAcceptedWarningMutation.isPending && revokeAcceptedWarningMutation.variables === warning.key
+              const earlyDecision = parseEarlyCoilDecisionKey(warning.key)
               return (
                 <div key={warning.key} className="flex flex-wrap items-center gap-3 px-4 py-3">
                   <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">
                     {warning.code || categoryLabel}
+                    {warning.code && warning.numberingVersion !== 2 ? <span className="ml-1 text-xs font-normal text-slate-500">(прежняя нумерация)</span> : null}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="break-words text-sm font-semibold text-slate-900">{label}</div>
@@ -350,14 +335,12 @@ export function AcceptedWarningsSettingsPanel({
                   <button
                     type="button"
                     className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-                    onClick={() => void revokeAcceptedWarning(warning.key, warning.context || label)}
-                    disabled={revokeAcceptedWarningMutation.isPending}
+                    onClick={() => earlyDecision ? onCancelEarlyCoil?.(earlyDecision.sourceRowId) : void revokeAcceptedWarning(warning.key, warning.context || label)}
+                    disabled={revokeAcceptedWarningMutation.isPending || Boolean(earlyDecision && !onCancelEarlyCoil)}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
-                    {isRevoking ? 'Отменяем...' : 'Отменить'}
+                    {isRevoking ? 'Отменяем...' : earlyDecision ? 'Отменить решение' : 'Отменить'}
                   </button>
-                  {parseEarlyCoilDecisionKey(warning.key) ? <button type="button" className="rounded border px-2.5 py-1.5 text-xs" disabled={revokeAcceptedWarningMutation.isPending}
-                    onClick={() => setEarlyCorrectionSourceId(parseEarlyCoilDecisionKey(warning.key)!.sourceRowId)}>Исправить ошибочное решение</button> : null}
                 </div>
               )
             })}

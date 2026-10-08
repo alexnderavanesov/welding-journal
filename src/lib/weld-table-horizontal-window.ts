@@ -16,6 +16,27 @@ export type WeldTableFieldSpan = {
   sticky: boolean
 }
 
+export type WeldTableHorizontalRange = { start: number; end: number; viewportWidth: number }
+
+/** Keep the rendered window until the viewport approaches its buffer edge.
+ * Small scrolls/reversals must not mount and unmount a column in every row. */
+export function getWeldTableHorizontalRange({
+  current, viewportStart, viewportEnd, contentEnd, overscan,
+}: {
+  current: WeldTableHorizontalRange | null
+  viewportStart: number
+  viewportEnd: number
+  contentEnd: number
+  overscan: number
+}): WeldTableHorizontalRange {
+  const viewportWidth = viewportEnd - viewportStart
+  const guard = overscan / 4
+  if (current && Math.abs(current.viewportWidth - viewportWidth) < 1
+    && (current.start === 0 || viewportStart - guard >= current.start)
+    && (current.end >= contentEnd || viewportEnd + guard <= current.end)) return current
+  return { start: Math.max(0, viewportStart - overscan), end: Math.min(contentEnd, viewportEnd + overscan), viewportWidth }
+}
+
 export type WeldTableRenderColumn =
   | {
       kind: 'field'

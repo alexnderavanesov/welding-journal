@@ -1,7 +1,10 @@
+import { WorkflowResultOptionPicker } from '@/components/workflow-result-option-picker'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getLnkResultRemovalBlockReason } from '@/lib/lnk-chronology-checks'
-import { getLnkRepairForbiddenReason, isLnkRepairForbidden } from '@/lib/lnk-result-rules'
-import { getLnkResultBadgeClass } from '@/lib/report-badges'
+import { getLnkResultRestrictionReasons } from '@/lib/lnk-result-policy'
+import { useControlProcessSettings } from '@/lib/control-process-settings'
+import { useSystemIndexSettings } from '@/lib/system-index-settings'
+import { getSystemRuleSettingsHref } from '@/lib/system-rule-catalog'
 import { LNK_METHODS, LNK_RESULT_OPTIONS } from '@/lib/report-config'
 import { useSaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
@@ -31,37 +34,29 @@ export function LnkResultManagerActions({
   onClearResult,
 }: LnkResultManagerActionsProps) {
   const saveCheckSettings = useSaveCheckSettings()
+  const processSettings = useControlProcessSettings()
+  const systemIndexSettings = useSystemIndexSettings()
   const removalBlockReason = getLnkResultRemovalBlockReason(row, method.requestKey, saveCheckSettings)
   const officialityReason = getUnofficialLnkGoodResultReason(row, 'годен', currentResult, method.code)
   return (
     <div className="flex content-start flex-col items-end gap-1.5">
       <div className="flex flex-wrap justify-end gap-1.5">
-        <span className="w-full text-right text-xs font-medium text-slate-500">Изменить на:</span>
-        {LNK_RESULT_OPTIONS.map((option) => {
-          const disabledByRepairRule = saveCheckSettings.lnkResultRepairRules && option === 'ремонт' && isLnkRepairForbidden(row)
-          const blockReason = getUnofficialLnkGoodResultReason(row, option, currentResult, method.code) ||
-            (disabledByRepairRule ? getLnkRepairForbiddenReason(row) : null)
-          return (
-            <button
-              key={option}
-              type="button"
-              onClick={() => {
-                if (!blockReason) onReplaceResult(row, method.requestKey, option)
-              }}
-              disabled={Boolean(blockReason) || isResultCorrectionPending || isResultReplacementPending}
-              title={blockReason ?? undefined}
-              className={`rounded border px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                blockReason
-                  ? 'border-slate-200 bg-slate-50 text-slate-400'
-                  : (pendingResult || currentResult) === option
-                    ? getLnkResultBadgeClass(option)
-                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {option}
-            </button>
-          )
-        })}
+        <WorkflowResultOptionPicker
+          label="Изменить на:"
+          compact
+          value={pendingResult || currentResult}
+          options={LNK_RESULT_OPTIONS}
+          restrictionHelpHref={getSystemRuleSettingsHref('СП-07')}
+          getDisabledReason={(option) => [
+            ...getLnkResultRestrictionReasons(row, method.code, option, {
+              systemIndexSettings,
+              pvkGoodOnly: processSettings.pvkGoodOnly,
+            }),
+            getUnofficialLnkGoodResultReason(row, option, currentResult, method.code),
+            isResultCorrectionPending || isResultReplacementPending ? 'Дождитесь сохранения изменений.' : undefined,
+          ].filter(Boolean).join('\n') || undefined}
+          onChange={(option) => onReplaceResult(row, method.requestKey, option)}
+        />
         <button
           type="button"
           onClick={() => {
@@ -74,7 +69,7 @@ export function LnkResultManagerActions({
           Удалить результат
         </button>
       </div>
-      {officialityReason ? <p className="max-w-sm text-right text-xs leading-5 text-amber-700">{officialityReason}</p> : null}
+      {officialityReason && !removalBlockReason ? <p className="max-w-sm text-right text-xs leading-5 text-amber-700">{officialityReason}</p> : null}
       {removalBlockReason ? (
         <p className="max-w-sm text-right text-xs leading-5 text-amber-700">{removalBlockReason}</p>
       ) : null}

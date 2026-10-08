@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { WeldDraft } from '@/lib/dispatcher-types'
-import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
+import { DEFAULT_SAVE_CHECK_SETTINGS, normalizeSaveCheckSettings } from '@/lib/save-check-settings'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 import {
@@ -25,7 +25,7 @@ describe('getWeldFormSaveBlockReason', () => {
     expect(getWeldFormSaveBlockReason({ ...initialValue, ...excluded, hasUzk: 'да' }, initialValue)).toContain('официального актуального')
   })
 
-  it('requires a material group when the weld date is filled', () => {
+  it('allows a missing material group for SP-03 backfill', () => {
     const draft = {
       id: 1,
       joint: 'S1',
@@ -35,9 +35,7 @@ describe('getWeldFormSaveBlockReason', () => {
       weldingMethod: 'РД',
     } as WeldInput
 
-    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-29 · Укажите группу материалов: при заполненной дате сварки это поле обязательно.',
-    )
+    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
   })
 
   it('allows a missing material group when the dedicated check is disabled', () => {
@@ -56,7 +54,7 @@ describe('getWeldFormSaveBlockReason', () => {
     })).toBeNull()
   })
 
-  it('requires a connection type when the weld date is filled', () => {
+  it('allows a missing connection type for SP-03 backfill', () => {
     const draft = {
       id: 1,
       joint: 'S1',
@@ -66,9 +64,7 @@ describe('getWeldFormSaveBlockReason', () => {
       weldingMethod: 'РД',
     } as WeldInput
 
-    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-30 · Укажите тип соединения: при заполненной дате сварки это поле обязательно.',
-    )
+    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
   })
 
   it('allows a missing connection type when the dedicated check is disabled', () => {
@@ -87,7 +83,7 @@ describe('getWeldFormSaveBlockReason', () => {
     })).toBeNull()
   })
 
-  it('requires a welding method when the weld date is filled', () => {
+  it('allows a missing welding method for SP-03 backfill', () => {
     const draft = {
       id: 1,
       joint: 'S1',
@@ -97,9 +93,7 @@ describe('getWeldFormSaveBlockReason', () => {
       weldingMethod: '',
     } as WeldInput
 
-    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-31 · Укажите способ сварки: при заполненной дате сварки это поле обязательно.',
-    )
+    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
   })
 
   it('allows a missing welding method when the dedicated check is disabled', () => {
@@ -130,7 +124,7 @@ describe('getWeldFormSaveBlockReason', () => {
     const draft = { id: 1, joint: 'S1', hasVik: null, vikRequest: 'Заявка-001', vikResult: 'годен' } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-27 · ВИК: выберите «отменен» либо очистите/удалите результат НК в отчете ЛНК.',
+      'СП-12 · ВИК: выберите «отменен» либо очистите/удалите результат НК в отчете ЛНК.',
     )
   })
 
@@ -172,7 +166,7 @@ describe('getWeldFormSaveBlockReason', () => {
     expect(getWeldFormSaveBlockReason({ ...cycle, pstoRequired: null }, initialValue)).toBeNull()
   })
 
-  it('allows disabling control history protection in dangerous form checks', () => {
+  it('does not disable control history through a legacy toggle', () => {
     const draft = { id: 1, joint: 'S1', hasVik: null, vikRequest: 'Заявка-001', vikResult: 'годен' } as WeldInput
 
     expect(
@@ -180,7 +174,7 @@ describe('getWeldFormSaveBlockReason', () => {
         ...DEFAULT_SAVE_CHECK_SETTINGS,
         controlHistoryProtection: false,
       }),
-    ).toBeNull()
+    ).toContain('СП-12')
   })
 
   it('allows cancelled LNK availability with existing method report history', () => {
@@ -284,7 +278,7 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-16 · Стык S1: дата заявки РК (08.07.2026) раньше даты сварки (10.07.2026).',
+      'СП-04 · Стык S1: дата заявки РК (08.07.2026) раньше даты сварки (10.07.2026).',
     )
   })
 
@@ -305,7 +299,7 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-16 · Стык S1: дата заявки РК (06.07.2026) раньше даты сварки (07.07.2026).',
+      'СП-04 · Стык S1: дата заявки РК (06.07.2026) раньше даты сварки (07.07.2026).',
     )
   })
 
@@ -345,7 +339,7 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-24 · Стык S1: дата заявки ПСТО (08.07.2026) раньше даты сварки (10.07.2026).',
+      'СП-04 · Стык S1: дата заявки ПСТО (08.07.2026) раньше даты сварки (10.07.2026).',
     )
   })
 
@@ -366,7 +360,7 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-24 · Стык S1: дата заявки ПСТО (06.07.2026) раньше даты сварки (07.07.2026).',
+      'СП-04 · Стык S1: дата заявки ПСТО (06.07.2026) раньше даты сварки (07.07.2026).',
     )
   })
 
@@ -418,7 +412,7 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-24 · Стык S1: дата заявки ПСТО (06.07.2026) раньше даты сварки (07.07.2026).',
+      'СП-04 · Стык S1: дата заявки ПСТО (06.07.2026) раньше даты сварки (07.07.2026).',
     )
   })
 
@@ -444,7 +438,7 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-20 · результат РК - «ремонт» нельзя сохранить при минимальном диаметре 55 мм. Для диаметра меньше 89 мм выберите «вырез» или исправьте D1/D2.',
+      'СП-07 · РК: Ремонт по РК недоступен при диаметре меньше 89 мм. Минимальный диаметр стыка: 55 мм.',
     )
   })
 
@@ -465,11 +459,11 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-20 · результат РК - «ремонт» нельзя сохранить при минимальном диаметре 55 мм. Для диаметра меньше 89 мм выберите «вырез» или исправьте D1/D2.',
+      'СП-07 · РК: Ремонт по РК недоступен при диаметре меньше 89 мм. Минимальный диаметр стыка: 55 мм.',
     )
   })
 
-  it('allows disabling LNK repair rules for D1/D2 edits in the weld form', () => {
+  it('cannot disable mandatory result rules for D1/D2 edits in the weld form', () => {
     const initialValue = {
       id: 1,
       joint: 'S1',
@@ -485,14 +479,11 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(
-      getWeldFormSaveBlockReason(draft, initialValue, {
-        ...DEFAULT_SAVE_CHECK_SETTINGS,
-        lnkResultRepairRules: false,
-      }),
-    ).toBeNull()
+      getWeldFormSaveBlockReason(draft, initialValue, normalizeSaveCheckSettings({ lnkResultRepairRules: false })),
+    ).toContain('СП-07')
   })
 
-  it('shows ZV-20 immediately for old rows that already have forbidden repair by diameter', () => {
+  it('shows SP-05 immediately for old rows that already have forbidden repair by diameter', () => {
     const initialValue = {
       id: 1,
       joint: 'S1',
@@ -507,7 +498,7 @@ describe('getWeldFormSaveBlockReason', () => {
     } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'ЗВ-20 · результат РК - «ремонт» нельзя сохранить при минимальном диаметре 55 мм. Для диаметра меньше 89 мм выберите «вырез» или исправьте D1/D2.',
+      'СП-07 · РК: Ремонт по РК недоступен при диаметре меньше 89 мм. Минимальный диаметр стыка: 55 мм.',
     )
   })
 
@@ -527,7 +518,7 @@ describe('getWeldFormSaveBlockReason', () => {
     const malformedInitial = { id: 2, joint: 'F1R', responsible: '' } as WeldDraft
     const draft = { ...malformedInitial, responsible: 'Иванов' } as WeldInput
 
-    expect(getWeldFormSaveBlockReason(draft, malformedInitial)).toContain('ЗВ-26')
+    expect(getWeldFormSaveBlockReason(draft, malformedInitial)).toContain('ЗВ-02')
   })
 
   it('keeps an existing indexed base editable after the setting is disabled', () => {
@@ -540,7 +531,7 @@ describe('getWeldFormSaveBlockReason', () => {
   it('allows a new indexed base only when the project setting is enabled', () => {
     const draft = { joint: 'SB43' } as WeldInput
 
-    expect(getWeldFormSaveBlockReason(draft, {} as WeldDraft)).toContain('ЗВ-26')
+    expect(getWeldFormSaveBlockReason(draft, {} as WeldDraft)).toContain('ЗВ-02')
     expect(getWeldFormSaveBlockReason(draft, {} as WeldDraft, DEFAULT_SAVE_CHECK_SETTINGS, {
       systemIndexSettings: {
         ...DEFAULT_SYSTEM_INDEX_SETTINGS,
@@ -588,11 +579,11 @@ describe('getWeldFormSaveBlockReason', () => {
       weldDateNotFuture: true,
     }
 
-    expect(getWeldFormSaveBlockReason(malformedDraft, initialValue, settings)).toBe('ЗВ-11 · дата сварки: укажите дату в формате ДД.ММ.ГГГГ или ДД.ММ.ГГ.')
-    expect(getWeldFormSaveBlockReason(futureDraft, initialValue, settings)).toBe('ЗВ-12 · дата сварки не может быть позже сегодняшней.')
+    expect(getWeldFormSaveBlockReason(malformedDraft, initialValue, settings)).toBe('дата сварки: укажите дату в формате ДД.ММ.ГГГГ или ДД.ММ.ГГ.')
+    expect(getWeldFormSaveBlockReason(futureDraft, initialValue, settings)).toBe('СП-04 · дата сварки не может быть позже сегодняшней.')
   })
 
-  it('allows a valid future date when only the future-date rule is disabled', () => {
+  it('does not disable the ban on future factual weld dates', () => {
     const draft = {
       id: 1,
       joint: 'S1',
@@ -608,7 +599,7 @@ describe('getWeldFormSaveBlockReason', () => {
         dateFormat: false,
         weldDateNotFuture: false,
       }),
-    ).toBeNull()
+    ).toContain('СП-04')
   })
 
   it('does not let a legacy stamp issue block an unrelated field edit in the form', () => {
@@ -621,21 +612,21 @@ describe('getWeldFormSaveBlockReason', () => {
     })).toBeNull()
   })
 
-  it('rechecks the official stamp when a related field changes and respects a disabled registry check', () => {
+  it('rechecks the official stamp despite the old registry toggle', () => {
     const initialValue = { id: 1, joint: 'S1', stamp1K: 'OLD' } as WeldDraft
     const draft = { ...initialValue, stamp1K: 'NEW' } as WeldInput
 
     expect(getWeldStampSaveBlockReason(draft, { stamp1K: [] }, {
       initialValue,
       saveCheckSettings: DEFAULT_SAVE_CHECK_SETTINGS,
-    })).toContain('ЗВ-01')
+    })).toContain('СП-02')
     expect(getWeldStampSaveBlockReason(draft, { stamp1K: [] }, {
       initialValue,
       saveCheckSettings: {
         ...DEFAULT_SAVE_CHECK_SETTINGS,
         officialRegistry: false,
       },
-    })).toBeNull()
+    })).toContain('СП-02')
   })
 
   it('keeps archive and DLS option failures on their own save-check codes', () => {
@@ -643,13 +634,13 @@ describe('getWeldFormSaveBlockReason', () => {
 
     expect(getWeldStampSaveBlockReason(draft, {
       stamp1K: [{ value: 'ABC1', disabled: true, reason: 'клеймо в архиве, дата архивации не указана' }],
-    })).toContain('ЗВ-02')
+    })).toContain('ЗВ-01')
     expect(getWeldStampSaveBlockReason(draft, {
       stamp1K: [{ value: 'ABC1', disabled: true, reason: 'нет ДЛС на способ сварки РД' }],
-    })).toContain('ЗВ-09')
+    })).toContain('СП-02')
   })
 
-  it('allows disabling system joint rename protection in dangerous form checks', () => {
+  it('does not disable system joint rename protection', () => {
     const draft = { id: 1, joint: 'F2' } as WeldInput
     const repeatedInitialValue = { id: 1, joint: 'F1R1' } as WeldDraft
 
@@ -659,7 +650,7 @@ describe('getWeldFormSaveBlockReason', () => {
         ...DEFAULT_SAVE_CHECK_SETTINGS,
         systemJointRenameProtection: false,
       }),
-    ).toBeNull()
+    ).toContain('СП-09')
   })
 
 

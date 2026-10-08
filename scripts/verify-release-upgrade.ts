@@ -139,7 +139,7 @@ try {
   assert.deepEqual((await client.query("select category,group_name,weld_control_percent,pvk_control_percent from line_programs where line='CHAIN'")).rows[0],
     { category: 'II', group_name: 'A', weld_control_percent: '10.000', pvk_control_percent: '10.000' })
   const conflict = (await client.query("select category,weld_control_percent,configuration_issue from line_programs where line='CONFLICT'")).rows[0]
-  assert.equal(conflict.category, null); assert.equal(conflict.weld_control_percent, null); assert.match(conflict.configuration_issue, /СП-02/)
+  assert.equal(conflict.category, null); assert.equal(conflict.weld_control_percent, null); assert.match(conflict.configuration_issue, /СП-01/)
   const transitioned = await savedFacts()
   for (const table of ['pre_heat_treatment_controls', 'psto_repeat_cycles', 'duplicate_controls', 'document_templates']) {
     assert.deepEqual(transitioned.related[table], before.related[table], table)

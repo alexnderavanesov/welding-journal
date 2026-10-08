@@ -78,6 +78,14 @@ export async function refreshLoadedWeldPageQuery(
 }
 
 export async function refreshActiveLoadedWeldPages(queryClient: QueryClient): Promise<void> {
+  // A dispatcher refresh can reconcile the mutation before its deferred timer
+  // fires. Replace that older request, but never cancel a later invalidation
+  // scheduled while this refresh is in flight.
+  const scheduled = scheduledActiveRefreshes.get(queryClient)
+  if (scheduled !== undefined) {
+    clearTimeout(scheduled)
+    scheduledActiveRefreshes.delete(queryClient)
+  }
   const activeQueries = queryClient.getQueryCache().findAll({
     queryKey: WELD_JOINT_PAGES_QUERY_KEY,
     type: 'active',

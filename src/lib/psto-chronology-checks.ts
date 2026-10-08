@@ -2,10 +2,12 @@ import { normalizeControlResultText } from '@/lib/report-value-utils'
 import { formatDisplayDate, getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import {
   DEFAULT_SAVE_CHECK_SETTINGS,
+  normalizeSaveCheckSettings,
   formatSaveCheckBlockReason,
   type SaveCheckSettings,
 } from '@/lib/save-check-settings'
 import type { WeldInput } from '@/lib/weld-fields'
+import { getPstoChronologyRuleCode } from './chronology-rule-code'
 import { buildPstoCycleTimeline, type PstoCycleSnapshot, type PstoRepeatCycleRecord } from '@/lib/psto-cycle'
 import { normalizeTvmtResult } from '@/lib/tvmt-cycle'
 
@@ -58,15 +60,7 @@ export function getPstoChronologyIssues(
   settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
   options: PstoChronologyOptions = {},
 ): PstoChronologyIssue[] {
-  if (
-    !settings.pstoResultRequestDateOrder &&
-    !settings.pstoResultDateAfterWeldDate &&
-    !options.includeInvalidDateIssues &&
-    !options.includeResultBeforeWeldIssue &&
-    !options.includeRequestIntegrityIssues &&
-    !options.includeInvalidRepeatTriggerIssue
-  ) return []
-
+  settings = normalizeSaveCheckSettings(settings)
   const issues: PstoChronologyIssue[] = []
   for (const row of rows) {
     const weldDate = parseDateLikeToIso(row.weldDate)
@@ -390,10 +384,7 @@ export function getPstoChronologyIssueIdentity(issue: PstoChronologyIssue) {
 }
 
 function formatPstoChronologyIssueSaveBlockReason(issue: PstoChronologyIssue) {
-  const settingId = issue.kind === 'weld-after-result'
-    ? 'pstoResultDateAfterWeldDate'
-    : 'pstoResultRequestDateOrder'
-  return formatSaveCheckBlockReason(settingId, issue.message)
+  return issue.kind.endsWith('-invalid') ? issue.message : `${getPstoChronologyRuleCode(issue.kind)} · ${issue.message}`
 }
 
 function hasFinalPstoResult(value: unknown) {

@@ -53,6 +53,7 @@ export function useWelderStampRegistryState({ enabled = true, setMessage }: Weld
     createEmptyWelderStampSuspensionDraft(),
   )
   const registryRevisionRef = useRef('')
+  const registrySavePendingRef = useRef(false)
 
   const applyRegistrySnapshot = (snapshot: WelderStampRegistrySnapshot) => {
     const normalizedStamps = normalizeWelderStampRecordsForRegistry(snapshot.stamps)
@@ -163,17 +164,26 @@ export function useWelderStampRegistryState({ enabled = true, setMessage }: Weld
     welderStampSuspensionsMutation.mutate(nextRecords)
   }
 
-  function saveWelderStampRecord() {
+  async function saveWelderStampRecord() {
+    if (registrySavePendingRef.current) return false
     const preparedSave = prepareWelderStampSave(welderStamps, welderStampDraft, editingWelderStampId)
     if (!preparedSave.ok) {
       setMessage(preparedSave.message)
       return false
     }
 
-    persistWelderStampRecords(preparedSave.nextRecords)
-    setMessage(preparedSave.message)
-    resetWelderStampForm()
-    return true
+    registrySavePendingRef.current = true
+    try {
+      await welderStampsMutation.mutateAsync(preparedSave.nextRecords)
+      setMessage(preparedSave.message)
+      resetWelderStampForm()
+      return true
+    } catch {
+      // onError refreshes the registry and reports the cause; keep the user's draft.
+      return false
+    } finally {
+      registrySavePendingRef.current = false
+    }
   }
 
   function editWelderStampRecord(record: WelderStampRecord) {

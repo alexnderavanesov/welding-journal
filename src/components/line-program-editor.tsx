@@ -123,7 +123,7 @@ export function LineProgramEditor({ value, onClose, onSaved }: {
         </section>
         <div className="flex items-start gap-2 text-xs leading-5 text-slate-500">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-          <p>Пустое значение — «не настроено», а не 0%. До заполнения требований линия отмечается СП-02.</p>
+          <p>Пустое значение — «не настроено», а не 0%. До заполнения требований линия отмечается СП-01.</p>
         </div>
         {mutation.error ? <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{mutation.error.message}</p> : null}
       </div>

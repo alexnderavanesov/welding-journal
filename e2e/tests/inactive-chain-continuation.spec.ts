@@ -224,7 +224,7 @@ test('официальность туда и обратно: отмена, дв�
   await expect(page.getByTestId('program-finished-label')).toBeVisible()
   await page.goto('/journal')
   const picture = await openPicture(page, source.id)
-  await expect(picture.getByText('СП-04', { exact: false })).toHaveCount(0)
+  await expect(picture.getByText('СП-09', { exact: false })).toHaveCount(0)
   expect(calls.filter(name => name.startsWith('applyLnkOfficialityChange_'))).toHaveLength(2)
   expect(calls.filter(name => name.startsWith('previewLnkOfficialityChange_'))).toHaveLength(4)
   expect(errors).toEqual([])
@@ -265,7 +265,7 @@ test('перестройка официальности не обходит по
     .toEqual({ officiality: 'действующий', replaced_by_coil: true })
 })
 
-for (const recovery of ['вернуть ремонт', 'исключить источник'] as const) test(`ДЗ-13 актуальности: отмена безопасна, путь «${recovery}» снимает задачу без потери истории`, async ({ page }) => {
+for (const recovery of ['вернуть ремонт', 'исключить источник'] as const) test(`СП-09 актуальности: отмена безопасна, путь «${recovery}» снимает задачу без потери истории`, async ({ page }) => {
   const [source, repair] = await seed(true), errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await withE2eDatabase(db => db.query(`update weld_joints set officiality='действующий',revision_actuality='не актуален',uzk_result='годен',final_status='годен' where id=$1`, [repair.id]))
@@ -275,11 +275,11 @@ for (const recovery of ['вернуть ремонт', 'исключить ис�
   for (const cancel of [true, false]) {
     await page.goto('/journal')
     const picture = await openPicture(page, source.id)
-    await expect(picture.getByText('ДЗ-13 · Проверить актуальность цепочки', { exact: true })).toBeVisible()
+    await expect(picture.getByText('СП-09 · Проверить актуальность цепочки', { exact: true })).toBeVisible()
     await picture.getByRole('tab', { name: /^Требует действия/ }).click()
     const actions = picture.getByRole('region', { name: 'Требует действия', exact: true })
     if (active) {
-      await actions.getByRole('button', { name: 'Другие действия ДЗ-13', exact: true }).click()
+      await actions.getByRole('button', { name: 'Другие действия СП-09', exact: true }).click()
       await page.getByRole('menuitem', { name: title, exact: true }).click()
     } else await actions.getByRole('button', { name: title, exact: true }).click()
     const editor = page.getByRole('dialog', { name: title, exact: true })
@@ -292,7 +292,7 @@ for (const recovery of ['вернуть ремонт', 'исключить ис�
   }
   await page.goto('/journal')
   let picture = await openPicture(page, source.id)
-  await expect(picture.getByText('ДЗ-13 · Проверить актуальность цепочки', { exact: true })).toHaveCount(0)
+  await expect(picture.getByText('СП-09 · Проверить актуальность цепочки', { exact: true })).toHaveCount(0)
   expect((await state()).every(row => (row.revision_actuality !== 'не актуален') === active)).toBe(true)
   // Fully active groups are intentionally quiet. Exclusion starts with the
   // ordinary IZМ field; a mixed group then exposes both resolution choices.

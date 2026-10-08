@@ -36,7 +36,7 @@ async function openDuplicate(page: Page) {
   await expect(dialog.getByText('Найдено: 2 · Выбрано: 0', { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: 'Выбрать найденные', exact: true }).click()
   for (const method of ['ВИК', 'РК', 'УЗК', 'ПВК']) await dialog.getByRole('button', { name: method, exact: true }).click()
-  await dialog.getByRole('combobox', { name: 'Результат', exact: true }).selectOption('годен')
+  await dialog.getByRole('group', { name: 'Результат', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
   await dialog.getByRole('textbox', { name: 'Дата контроля', exact: true }).fill('03.09.2026')
   await dialog.getByRole('textbox', { name: 'Заключение', exact: true }).fill('DO-DUP')
   await dialog.getByRole('textbox', { name: 'Дата заключения', exact: true }).fill('03.09.2026')
@@ -121,7 +121,10 @@ test('старый клиент не сохраняет смешанную гр�
   const history = () => withE2eDatabase(async db => (await db.query('select * from duplicate_controls where weld_joint_id = any($1::int[]) order by id', [ids])).rows)
   const originalHistory = await history()
   for (const result of ['годен', 'ремонт', 'вырез']) {
-    expect(await (await replay(page, request, request.postData()!.replaceAll('годен', result))).text()).toContain('Дубль-контроль недоступен для неофициального стыка')
+    // A VIK cut on the first (official) row is already prohibited by СП-07;
+    // the other results reach the unofficial-row guard. Both reject the batch.
+    expect(await (await replay(page, request, request.postData()!.replaceAll('годен', result))).text())
+      .toContain(result === 'вырез' ? 'СП-07' : 'Дубль-контроль недоступен для неофициального стыка')
     expect(await stored()).toEqual(before)
   }
   await page.reload()

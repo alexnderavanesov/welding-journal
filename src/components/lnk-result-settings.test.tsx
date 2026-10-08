@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LnkResultSettings } from '@/components/lnk-result-settings'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -10,6 +10,31 @@ import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 const selectedRows = [{ id: 1, joint: 'F16A' }] as WeldRow[]
 
 describe('LnkResultSettings', () => {
+  beforeEach(() => window.localStorage.clear())
+
+  it('collects all selected-row restrictions and releases repair when only an eligible joint remains', () => {
+    const rows = [{ id: 1, joint: 'F1', d1: 57 }, { id: 2, joint: 'F2R2', d1: 89 }, { id: 3, joint: 'F3', d1: 89 }] as WeldRow[]
+    const props = {
+      draft: { ...createDefaultLnkResultDraft(), methodKey: 'rkRequest' as const, rowIds: new Set([1, 2, 3]), result: '' },
+      selectedMethods: [...LNK_METHODS], selectedRows: rows, requestKey: '', requestOptions: [],
+      saveCheckSettings: DEFAULT_SAVE_CHECK_SETTINGS, onMethodChange: vi.fn(), onControlDateChange: vi.fn(),
+      onDefaultResultChange: vi.fn(), onRequestChange: vi.fn(),
+    }
+    const { rerender } = render(<LnkResultSettings {...props} />)
+    expect(screen.getByRole('button', { name: 'ремонт' })).toBeDisabled()
+    fireEvent.focus(screen.getByRole('group', { name: 'ремонт' }))
+    expect(screen.getByRole('tooltip')).toHaveTextContent('меньше 89 мм')
+    expect(screen.getByRole('tooltip')).toHaveTextContent('два ремонта')
+    fireEvent.click(screen.getByRole('button', { name: 'ремонт' }))
+    expect(props.onDefaultResultChange).not.toHaveBeenCalled()
+    rerender(<LnkResultSettings {...props} selectedRows={[rows[2]!]} />)
+    expect(screen.getByRole('button', { name: 'ремонт' })).toBeEnabled()
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+    expect(props.onDefaultResultChange).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'ремонт' }))
+    expect(props.onDefaultResultChange).toHaveBeenCalledExactlyOnceWith('ремонт')
+  })
+
   it('keeps only the compact method, date and common-result controls', () => {
     render(
       <LnkResultSettings

@@ -29,7 +29,6 @@ export type SaveCheckSettingId =
   | 'lnkResultVikDateBeforeOther'
   | 'lnkResultVikRequiredBeforeOther'
   | 'lnkResultConclusionRequired'
-  | 'lnkResultRepairRules'
   | 'pstoResultDateRequired'
   | 'pstoResultDateFormat'
   | 'pstoResultDateAfterWeldDate'
@@ -41,10 +40,24 @@ export type SaveCheckSettingId =
 
 export type SaveCheckSettings = Record<SaveCheckSettingId, boolean>
 
+export const OPTIONAL_SAVE_CHECK_SETTING_IDS: ReadonlySet<SaveCheckSettingId> = new Set(['officialArchive', 'manualJointName'])
+
+// These legacy policy fields now mean "block an incomplete save", not whether
+// completeness is checked. SP-03/SP-11 always audit incomplete stored records.
+const COMPLETENESS_SAVE_SETTING_IDS: ReadonlySet<SaveCheckSettingId> = new Set([
+  'requiredRootStampWithWeldDate', 'requiredMaterialGroupWithWeldDate',
+  'requiredConnectionTypeWithWeldDate', 'requiredWeldingMethodWithWeldDate',
+  'lnkResultControlDateRequired', 'lnkResultConclusionRequired',
+  'pstoResultDateRequired', 'pstoResultDiagramRequired',
+])
+
 export const REQUIRED_SAVE_CHECK_SETTING_IDS: ReadonlySet<SaveCheckSettingId> = new Set([
-  'dateFormat',
-  'lnkResultControlDateFormat',
-  'pstoResultDateFormat',
+  'officialRegistry', 'officialNaksDate', 'officialSuspension', 'officialWeldingMethod',
+  'officialMaterialGroup', 'officialDiameter', 'officialThickness', 'dateFormat',
+  'weldDateNotFuture', 'lnkResultControlDateFormat', 'lnkResultDateAfterWeldDate',
+  'lnkResultRequestDateOrder', 'lnkResultVikDateBeforeOther', 'lnkResultVikRequiredBeforeOther',
+  'pstoResultDateFormat', 'pstoResultDateAfterWeldDate', 'pstoResultRequestDateOrder',
+  'controlHistoryProtection', 'systemJointRenameProtection',
 ])
 
 export function isRequiredSaveCheckSetting(id: SaveCheckSettingId) {
@@ -66,281 +79,36 @@ export type SaveCheckSettingGroup = {
 }
 
 export const SAVE_CHECK_SETTING_CODES: Record<SaveCheckSettingId, string> = {
-  officialRegistry: 'ЗВ-01',
-  officialArchive: 'ЗВ-02',
-  officialNaksDate: 'ЗВ-03',
-  officialSuspension: 'ЗВ-04',
-  officialWeldingMethod: 'ЗВ-05',
-  officialMaterialGroup: 'ЗВ-06',
-  officialDiameter: 'ЗВ-07',
-  officialThickness: 'ЗВ-08',
-  officialDls: 'ЗВ-09',
-  requiredRootStampWithWeldDate: 'ЗВ-10',
-  requiredMaterialGroupWithWeldDate: 'ЗВ-29',
-  requiredConnectionTypeWithWeldDate: 'ЗВ-30',
-  requiredWeldingMethodWithWeldDate: 'ЗВ-31',
-  dateFormat: 'ЗВ-11',
-  weldDateNotFuture: 'ЗВ-12',
-  lnkResultControlDateRequired: 'ЗВ-13',
-  lnkResultControlDateFormat: 'ЗВ-14',
-  lnkResultDateAfterWeldDate: 'ЗВ-15',
-  lnkResultRequestDateOrder: 'ЗВ-16',
-  lnkResultVikDateBeforeOther: 'ЗВ-17',
-  lnkResultVikRequiredBeforeOther: 'ЗВ-18',
-  lnkResultConclusionRequired: 'ЗВ-19',
-  lnkResultRepairRules: 'ЗВ-20',
-  pstoResultDateRequired: 'ЗВ-21',
-  pstoResultDateFormat: 'ЗВ-22',
-  pstoResultDateAfterWeldDate: 'ЗВ-23',
-  pstoResultRequestDateOrder: 'ЗВ-24',
-  pstoResultDiagramRequired: 'ЗВ-25',
-  manualJointName: 'ЗВ-26',
-  controlHistoryProtection: 'ЗВ-27',
-  systemJointRenameProtection: 'ЗВ-28',
+  officialRegistry: 'СП-02', officialArchive: 'ЗВ-01', officialNaksDate: 'СП-02',
+  officialSuspension: 'СП-02', officialWeldingMethod: 'СП-02', officialMaterialGroup: 'СП-02',
+  officialDiameter: 'СП-02', officialThickness: 'СП-02', officialDls: 'СП-02',
+  requiredRootStampWithWeldDate: 'СП-03', requiredMaterialGroupWithWeldDate: 'СП-03',
+  requiredConnectionTypeWithWeldDate: 'СП-03', requiredWeldingMethodWithWeldDate: 'СП-03',
+  dateFormat: '', weldDateNotFuture: 'СП-04', lnkResultControlDateRequired: 'СП-11',
+  lnkResultControlDateFormat: '', lnkResultDateAfterWeldDate: 'СП-04',
+  lnkResultRequestDateOrder: 'СП-04', lnkResultVikDateBeforeOther: 'СП-05',
+  lnkResultVikRequiredBeforeOther: 'СП-05', lnkResultConclusionRequired: 'СП-11',
+  pstoResultDateRequired: 'СП-11', pstoResultDateFormat: '',
+  pstoResultDateAfterWeldDate: 'СП-04', pstoResultRequestDateOrder: 'СП-04',
+  pstoResultDiagramRequired: 'СП-11', manualJointName: 'ЗВ-02',
+  controlHistoryProtection: 'СП-12', systemJointRenameProtection: 'СП-09',
 }
 
-const SAVE_CHECK_REASON_CODE_PATTERN = /^ЗВ-\d+\s·\s/
+const SAVE_CHECK_REASON_CODE_PATTERN = /^(?:ЗВ|СП)-\d+\s·\s/
 
-const OFFICIAL_STAMP_SAVE_CHECK_ITEMS: SaveCheckSettingItem[] = [
-  {
-    id: 'officialRegistry',
-    label: 'Реестр клейм',
-    description: 'Официальное клеймо должно быть заведено в справочнике клейм.',
-    example: 'Если в Корень_1 указано ABC1, но ABC1 нет в справочнике, стык нельзя сохранить.',
-  },
-  {
-    id: 'officialArchive',
-    label: 'Архив клейм',
-    description: 'Запрещает использовать архивное клеймо после даты его архивации. Исторический стык до этой даты разрешается и проходит остальные проверки допуска.',
-    example: 'Если клеймо архивировано 01.08, стык от 31.07 можно сохранить при действующих на эту дату НАКС/ДЛС, а стык от 02.08 будет заблокирован.',
-  },
-  {
-    id: 'officialNaksDate',
-    label: 'Срок НАКС',
-    description: 'Дата сварки должна попадать в срок действия НАКС.',
-    example: 'Если дата сварки позже срока НАКС, сохранение будет заблокировано.',
-  },
-  {
-    id: 'officialSuspension',
-    label: 'Отстранения',
-    description: 'Дата сварки не должна попадать в период отстранения сварщика.',
-    example: 'Если сварщик отстранен с 10.07 по 20.07, стык от 15.07 сохранить нельзя.',
-  },
-  {
-    id: 'officialWeldingMethod',
-    label: 'Способ сварки',
-    description: 'Официальные клейма должны покрывать выбранный способ сварки.',
-    example: 'РАД+РД может быть закрыт командой сварщиков, если вместе они покрывают оба способа.',
-  },
-  {
-    id: 'officialMaterialGroup',
-    label: 'Группа материалов',
-    description: 'Каждое официальное клеймо должно иметь допуск на группу материалов стыка.',
-    example: 'Если стык M01, то каждый официальный сварщик в стыке должен иметь M01.',
-  },
-  {
-    id: 'officialDiameter',
-    label: 'Допуск по диаметру D1/D2',
-    description: 'Для обычного стыка допуск должен покрывать хотя бы один из D1/D2. У соединения «У…» проверяется диаметр меньшего элемента; при равных диаметрах проверяется общее значение D.',
-    example: 'Для C18 с D1 = 57 и D2 = 108 достаточно допуска на D57 или D108. Для У17 с D1 = 530 и D2 = 25 проверяется только D25.',
-  },
-  {
-    id: 'officialThickness',
-    label: 'Допуск по толщине T1/T2',
-    description: 'Для обычного стыка допуск должен покрывать хотя бы одну из T1/T2. У соединения «У…» проверяется T того же меньшего элемента; при равных диаметрах проверяется Tmin.',
-    example: 'Для C17 с T1 = 14 и T2 = 16 достаточно допуска на T14 или T16. Для У17 с D1/T1 = 530/30 и D2/T2 = 25/3 проверяется D25/T3; при D1 = D2 проверяется минимальная из T1/T2.',
-  },
-  {
-    id: 'officialDls',
-    label: 'Требовать подходящий ДЛС',
-    description: 'Каждое официальное клеймо должно иметь действующие ДЛС нужного способа и группы. Для обычного стыка совокупность его ДЛС должна покрывать хотя бы один из D1/D2 и хотя бы одну из T1/T2.',
-    example: 'D может покрыть один ДЛС, а T — другой ДЛС того же клейма, способа и группы. Между разными сварщиками диапазоны не складываются; для «У…» сохраняется проверка связанной пары меньшего элемента.',
-  },
-]
-
-const FORM_SAVE_CHECK_ITEMS: SaveCheckSettingItem[] = [
-  {
-    id: 'requiredRootStampWithWeldDate',
-    label: 'Корень при дате сварки',
-    description: 'Если указана дата сварки, должен быть заполнен хотя бы Корень_1.',
-    example: 'Дата сварки стоит, а Корень_1 пустой: система попросит указать корневое клеймо.',
-  },
-  {
-    id: 'requiredMaterialGroupWithWeldDate',
-    label: 'Группа материалов при дате сварки',
-    description: 'Если указана дата сварки, должна быть заполнена группа материалов.',
-    example: 'Дата сварки стоит, а группа материалов пустая: система попросит выбрать группу материалов.',
-  },
-  {
-    id: 'requiredConnectionTypeWithWeldDate',
-    label: 'Тип соединения при дате сварки',
-    description: 'Если указана дата сварки, должен быть заполнен тип соединения.',
-    example: 'Дата сварки стоит, а тип соединения пустой: система попросит выбрать тип соединения.',
-  },
-  {
-    id: 'requiredWeldingMethodWithWeldDate',
-    label: 'Способ сварки при дате сварки',
-    description: 'Если указана дата сварки, должен быть заполнен способ сварки.',
-    example: 'Дата сварки стоит, а способ сварки пустой: система попросит выбрать способ сварки.',
-  },
-  {
-    id: 'dateFormat',
-    label: 'Формат дат',
-    description: 'Обязательная проверка: все заполненные даты должны быть реальными календарными датами.',
-    example: '31.02.2026 или текст вместо даты не дадут сохранить стык.',
-  },
-  {
-    id: 'weldDateNotFuture',
-    label: 'Дата сварки не в будущем',
-    description: 'Дата сварки не может быть позже сегодняшней даты.',
-    example: 'Сегодня 17.07.2026, дата сварки 20.07.2026: сохранение будет заблокировано.',
-  },
-]
-
-const LNK_RESULT_SAVE_CHECK_ITEMS: SaveCheckSettingItem[] = [
-  {
-    id: 'lnkResultControlDateRequired',
-    label: 'Дата контроля обязательна',
-    description: 'Если в ЛНК вводится фактический результат, должна быть указана дата контроля.',
-    example: 'По РК выбран результат “годен”, но дата контроля пустая: система попросит заполнить дату.',
-  },
-  {
-    id: 'lnkResultControlDateFormat',
-    label: 'Формат даты контроля',
-    description: 'Обязательная проверка: заполненная дата контроля должна быть реальной календарной датой.',
-    example: '31.02.2026 или произвольный текст в дате контроля будут заблокированы.',
-  },
-  {
-    id: 'lnkResultDateAfterWeldDate',
-    label: 'Дата контроля не раньше сварки',
-    description: 'Дата контроля ЛНК не должна быть раньше даты сварки выбранного стыка.',
-    example: 'Стык сварен 03.07.2026, а дата РК 01.07.2026: сохранение результата будет заблокировано.',
-  },
-  {
-    id: 'lnkResultRequestDateOrder',
-    label: 'Даты сварки, заявки и заключения',
-    description: 'Проверяет порядок дат: дата сварки должна быть не позже даты заявки, а дата заявки не позже даты заключения.',
-    example: 'Стык сварен 01.07, заявка РК от 08.07, а заключение РК от 05.07: сохранить такое заключение нельзя.',
-  },
-  {
-    id: 'lnkResultVikDateBeforeOther',
-    label: 'ВИК раньше остальных НК',
-    description: 'Дата заключения ВИК должна быть не позже даты заключения другого вида ЛНК. Отключение этой дополнительной проверки не отменяет обязательную последовательность собственного НК: ВИК → назначенный ПВК → РК/УЗК.',
-    example: 'ВИК от 10.07, а РК от 09.07: система попросит исправить даты, потому что сначала выполняется ВИК.',
-  },
-  {
-    id: 'lnkResultVikRequiredBeforeOther',
-    label: 'ВИК обязателен перед другими НК',
-    description: 'Проверяет наличие ВИК перед другим НК. Для новых собственных результатов РК/УЗК/ПВК годный ВИК обязателен независимо от этой галочки; старые противоречивые факты автоматически не удаляются.',
-    example: 'Пользователь пытается сохранить РК “годен”, но ВИК по стыку еще не заполнен: сохранение будет заблокировано.',
-  },
-  {
-    id: 'lnkResultConclusionRequired',
-    label: 'Заключение обязательно',
-    description: 'Если вводится фактический результат ЛНК, должно быть указано наименование заключения.',
-    example: 'Результат ВИК “годен” без номера/имени заключения сохранить нельзя.',
-  },
-  {
-    id: 'lnkResultRepairRules',
-    label: 'Правила ремонта',
-    description: 'Не дает выбрать или оставить результат “ремонт”, если по стыку ремонт недоступен. Существующее нарушение показывается сразу при открытии карточки стыка.',
-    example: 'Для диаметра до 89 мм ремонт недоступен: нужно выбрать другой результат ЛНК или исправить D1/D2 до сохранения любых изменений карточки.',
-  },
-]
-
-const PSTO_RESULT_SAVE_CHECK_ITEMS: SaveCheckSettingItem[] = [
-  {
-    id: 'pstoResultDateRequired',
-    label: 'Дата ПСТО обязательна',
-    description: 'Если вводится результат ПСТО, должна быть указана дата ПСТО.',
-    example: 'Выбран результат “проведено”, но дата ПСТО пустая: система попросит заполнить дату.',
-  },
-  {
-    id: 'pstoResultDateFormat',
-    label: 'Формат даты ПСТО',
-    description: 'Обязательная проверка: заполненная дата ПСТО должна быть реальной календарной датой.',
-    example: '31.02.2026 или произвольный текст в дате ПСТО будут заблокированы.',
-  },
-  {
-    id: 'pstoResultDateAfterWeldDate',
-    label: 'Дата ПСТО не раньше сварки',
-    description: 'Дата результата ПСТО не должна быть раньше даты сварки выбранного стыка.',
-    example: 'Стык сварен 04.07.2026, а ПСТО указано 01.07.2026: результат сохранить нельзя.',
-  },
-  {
-    id: 'pstoResultRequestDateOrder',
-    label: 'Порядок дат цикла ПСТО/ТВМТ',
-    description: 'Проверяет порядок дат основного и повторных циклов: сварка -> заявка ПСТО -> ПСТО -> заявка ТВМТ -> ТВМТ -> следующий цикл.',
-    example: 'Заявка ПСТО от 08.07, а результат от 05.07, или ТВМТ датирована раньше ПСТО: сохранить такой цикл нельзя.',
-  },
-  {
-    id: 'pstoResultDiagramRequired',
-    label: 'Диаграмма обязательна',
-    description: 'Если вводится результат ПСТО, должно быть указано имя или номер диаграммы термообработки.',
-    example: 'Результат ПСТО “проведено” без диаграммы сохранить нельзя.',
-  },
-]
-
-const DANGEROUS_FORM_SAVE_CHECK_ITEMS: SaveCheckSettingItem[] = [
-  {
-    id: 'manualJointName',
-    label: 'Имя обычного стыка',
-    description: 'Проверяет имя стыка при создании, импорте и следующем сохранении старой записи: оно должно начинаться с настроенной базовой буквы и не должно вручную имитировать системный ремонт, вырез или катушку.',
-    example: 'S13 и F5A допустимы. FB01 и SB43 допустимы, когда включен буквенный индекс перед номером. F1R1, F1W1 и F1Y1 создает только система через диспетчер/цепочку.',
-  },
-  {
-    id: 'controlHistoryProtection',
-    label: 'Защита истории ЛНК/ПСТО',
-    description: 'Не дает снять назначение контроля через “пусто”, если по стыку уже есть результат, дата или заключение.',
-    example: 'В РК есть заключение и результат, а пользователь меняет назначение РК на пусто: система попросит выбрать “отменен” или очистить результат в отчете.',
-  },
-  {
-    id: 'systemJointRenameProtection',
-    label: 'Имена R/W/Y/S/F',
-    description: 'Запрещает вручную переименовывать стыки с системными индексами ремонта, выреза, катушки, официальности и неофициальности.',
-    example: 'F1R1 нельзя вручную превратить в F1W1. Если заказчик ведет свою нумерацию и цепочки не нужны, эту защиту можно отключить осознанно.',
-  },
-]
-
-export const SAVE_CHECK_SETTING_GROUPS: SaveCheckSettingGroup[] = [
-  {
-    id: 'official-stamps',
-    title: 'Официальные клейма в форме стыка',
-    description:
-      'Проверяются только официальные поля клейм: Корень_1, Заполнение_1, Облицовка_1 и второй комплект. Фактические клейма этими правилами не блокируются.',
-    items: OFFICIAL_STAMP_SAVE_CHECK_ITEMS,
-  },
-  {
-    id: 'weld-form',
-    title: 'Неопасные проверки формы стыка',
-    description:
-      'Это рабочие проверки ввода: даты, корневое клеймо и группа материалов при заполненной сварке. Они не меняют цепочки, заявки, результаты и системную логику.',
-    items: FORM_SAVE_CHECK_ITEMS,
-  },
-  {
-    id: 'lnk-result-form',
-    title: 'Результаты ЛНК',
-    description:
-      'Эти проверки работают при вводе и редактировании результатов ЛНК. Отключаемые правила можно ослабить, но формат заполненной даты остается обязательным; диспетчер независимо проверяет уже сохраненные данные.',
-    items: LNK_RESULT_SAVE_CHECK_ITEMS,
-  },
-  {
-    id: 'psto-result-form',
-    title: 'Результаты ПСТО',
-    description:
-      'Эти проверки работают при создании заявки ПСТО и вводе результата ПСТО. Отключаемые правила можно ослабить, но формат заполненной даты остается обязательным; диспетчер независимо проверяет уже сохраненные данные.',
-    items: PSTO_RESULT_SAVE_CHECK_ITEMS,
-  },
-  {
-    id: 'dangerous-weld-form',
-    title: 'Опасные проверки формы стыка',
-    description:
-      'Эти проверки защищают ручное имя стыка, историю контроля и системную логику имен стыков. Отключайте их только для проектов, где заказчик сам ведет нумерацию, контроль и связанные документы, а система используется почти как один сварочный журнал.',
-    items: DANGEROUS_FORM_SAVE_CHECK_ITEMS,
-  },
-]
-
-export const SAVE_CHECK_SETTING_ITEMS: SaveCheckSettingItem[] = SAVE_CHECK_SETTING_GROUPS.flatMap((group) => group.items)
+export const SAVE_CHECK_SETTING_GROUPS: SaveCheckSettingGroup[] = [{
+  id: 'optional-input', title: 'Защиты ввода',
+  description: 'Организационные ограничения. Их отключение не отменяет обязательные системные правила.',
+  items: [
+    { id: 'officialArchive', label: 'Использование архивного клейма',
+      description: 'Организационный запрет использования клейма после архивации. При отключении допуски и отстранения по СП-02 всё равно проверяются на дату сварки.',
+      example: 'Архивное клеймо с недействующим на дату сварки НАКС нельзя использовать даже при выключенной ЗВ-01.' },
+    { id: 'manualJointName', label: 'Формат имени обычного стыка',
+      description: 'Проверяет соответствие обычного имени настроенному шаблону. Отключение позволяет нумерацию заказчика, но не отменяет защиту реальных системных связей по СП-09.',
+      example: 'ЗВ-02 можно выключить для нумерации заказчика. Ремонт и катушка по-прежнему создаются предусмотренным процессом.' },
+  ],
+}]
+export const SAVE_CHECK_SETTING_ITEMS: SaveCheckSettingItem[] = SAVE_CHECK_SETTING_GROUPS.flatMap(group => group.items)
 
 export const DEFAULT_SAVE_CHECK_SETTINGS: SaveCheckSettings = {
   officialRegistry: true,
@@ -352,25 +120,24 @@ export const DEFAULT_SAVE_CHECK_SETTINGS: SaveCheckSettings = {
   officialDiameter: true,
   officialThickness: true,
   officialDls: false,
-  requiredRootStampWithWeldDate: true,
-  requiredMaterialGroupWithWeldDate: true,
-  requiredConnectionTypeWithWeldDate: true,
-  requiredWeldingMethodWithWeldDate: true,
+  requiredRootStampWithWeldDate: false,
+  requiredMaterialGroupWithWeldDate: false,
+  requiredConnectionTypeWithWeldDate: false,
+  requiredWeldingMethodWithWeldDate: false,
   dateFormat: true,
   weldDateNotFuture: true,
-  lnkResultControlDateRequired: true,
+  lnkResultControlDateRequired: false,
   lnkResultControlDateFormat: true,
   lnkResultDateAfterWeldDate: true,
   lnkResultRequestDateOrder: true,
   lnkResultVikDateBeforeOther: true,
   lnkResultVikRequiredBeforeOther: true,
-  lnkResultConclusionRequired: true,
-  lnkResultRepairRules: true,
-  pstoResultDateRequired: true,
+  lnkResultConclusionRequired: false,
+  pstoResultDateRequired: false,
   pstoResultDateFormat: true,
   pstoResultDateAfterWeldDate: true,
   pstoResultRequestDateOrder: true,
-  pstoResultDiagramRequired: true,
+  pstoResultDiagramRequired: false,
   manualJointName: true,
   controlHistoryProtection: true,
   systemJointRenameProtection: true,
@@ -425,6 +192,7 @@ export function normalizeSaveCheckSettings(
     Object.entries(DEFAULT_SAVE_CHECK_SETTINGS).map(([id, defaultValue]) => {
       const key = id as SaveCheckSettingId
       if (isRequiredSaveCheckSetting(key)) return [key, true]
+      if (COMPLETENESS_SAVE_SETTING_IDS.has(key)) return [key, false]
       const fallback = key === 'officialDls'
         ? options.officialDlsFallback ?? loadOtherSettings().requireDlsForOfficialStamps
         : defaultValue
@@ -440,5 +208,6 @@ export function getSaveCheckSettingCode(id: SaveCheckSettingId) {
 export function formatSaveCheckBlockReason(id: SaveCheckSettingId, message: string) {
   if (!message) return message
   if (SAVE_CHECK_REASON_CODE_PATTERN.test(message)) return message
-  return `${getSaveCheckSettingCode(id)} · ${message}`
+  const code = getSaveCheckSettingCode(id)
+  return code ? `${code} · ${message}` : message
 }

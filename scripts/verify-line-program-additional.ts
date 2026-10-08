@@ -58,7 +58,9 @@ try {
       .filter(task => task.kind === 'percentage-line-control' && task.stamp === 'ADDITIONAL-SQL')
     assert.equal(tasks.filter(task => task.issue === 'missing').length, phase === 0 ? 2 : 0)
     assert.equal(tasks.filter(task => task.issue === 'excess').length, phase === 2 ? 2 : 0)
-    for (const [code, expected] of [['ДЗ-04', phase === 0], ['ДЗ-02', phase === 2]] as const) {
+    // Missing and excess now share SP-01; their distinct task families are
+    // asserted above, while the row code represents either condition.
+    for (const [code, expected] of [['СП-01', phase === 0 || phase === 2]] as const) {
       assert.equal(persisted.some(row => row.code === code), expected, code + ': stored index')
       assert.equal(visible.some(row => row.dispatcherTasks.split(', ').includes(code)), expected, code + ': virtual field')
     }
@@ -70,8 +72,8 @@ try {
   await dispatcher.ensureDispatcherTaskIndexFresh()
   const duplicateIndex = await db.select().from(dispatcherRowTasks).where(inArray(dispatcherRowTasks.weldJointId, ids))
   const duplicateVisible = await read.attachDispatcherTaskCodesToPage(ids.map(id => ({ id }))) as Array<{ id: number; dispatcherTasks: string }>
-  assert(duplicateIndex.some(row => row.code === 'ДЗ-27'), 'completed cancelled RK: stored duplicate task')
-  assert(duplicateVisible.some(row => row.dispatcherTasks.split(', ').includes('ДЗ-27')), 'completed cancelled RK: virtual duplicate task')
+  assert(duplicateIndex.some(row => row.code === 'СП-01'), 'completed cancelled RK: stored duplicate task')
+  assert(duplicateVisible.some(row => row.dispatcherTasks.split(', ').includes('СП-01')), 'completed cancelled RK: virtual duplicate task')
   // Full-line planning includes an unwelded joint, even before an official stamp exists.
   await db.update(weldJoints).set({ weldControlPercent: 100, hasUzk: null }).where(inArray(weldJoints.id, ids))
   const [planned] = await db.insert(weldJoints).values({
@@ -83,8 +85,8 @@ try {
   await dispatcher.ensureDispatcherTaskIndexFresh()
   const plannedIndex = await db.select().from(dispatcherRowTasks).where(inArray(dispatcherRowTasks.weldJointId, [planned.id]))
   const plannedVisible = await read.attachDispatcherTaskCodesToPage([{ id: planned.id }]) as Array<{ id: number; dispatcherTasks: string }>
-  assert(plannedIndex.some(row => row.code === 'ДЗ-27'), 'unwelded full-line assignment: stored duplicate task')
-  assert(plannedVisible[0].dispatcherTasks.split(', ').includes('ДЗ-27'), 'unwelded full-line assignment: virtual duplicate task')
+  assert(plannedIndex.some(row => row.code === 'СП-01'), 'unwelded full-line assignment: stored duplicate task')
+  assert(plannedVisible[0].dispatcherTasks.split(', ').includes('СП-01'), 'unwelded full-line assignment: virtual duplicate task')
   console.log(JSON.stringify({ phases: snapshots.length, lineReadQueries: 6, persistedAndVirtual: true, cancelledResultDuplicate: true, unweldedFullLineDuplicate: true }))
 } finally {
   prototype.query = originalQuery

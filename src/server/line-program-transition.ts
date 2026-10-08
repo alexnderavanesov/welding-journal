@@ -51,8 +51,8 @@ export async function transitionLinePrograms(tx: SystemDocumentSequenceTransacti
     group by lower(btrim(coalesce(project_title, ''))), lower(btrim(coalesce(subtitle_code, ''))), lower(btrim(line)))
     insert into line_programs (project_title, subtitle_code, line, category, group_name, weld_control_percent, pvk_control_percent, configuration_issue)
     select project_title, subtitle_code, line, category, group_name, percent, percent,
-      case when conflict then 'СП-02: противоречивые исходные требования. Настройте программу линии.'
-        when category is null or group_name is null or percent is null then 'СП-02: неполные исходные требования. Настройте программу линии.' end
+      case when conflict then 'СП-01: противоречивые исходные требования. Настройте программу линии.'
+        when category is null or group_name is null or percent is null then 'СП-01: неполные исходные требования. Настройте программу линии.' end
     from grouped on conflict do nothing`)
   await tx.execute(sql`update weld_joints w set line_program_id = p.id, category = p.category, group_name = p.group_name,
     weld_control_percent = p.weld_control_percent, pvk_control_percent = p.pvk_control_percent, has_vik = 'да', updated_at = now()

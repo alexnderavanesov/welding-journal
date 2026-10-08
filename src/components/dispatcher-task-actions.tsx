@@ -38,7 +38,6 @@ export type RepeatedJointTaskActionsProps = {
   onAcceptPercentageLineTask: (task: PercentageLineControlTask) => void
   onEditPercentageLineTaskStamp: (task: PercentageLineControlTask) => void
   onSuspendPercentageLineWelder: (task: PercentageLineControlTask) => void
-  onSkipPercentageLineWelderSuspension: (task: PercentageLineControlTask) => void
   onRunTaskAction: (
     task: Exclude<DispatcherTask, { kind: 'welder-stamp-expiry' }>,
     action: DispatcherTaskActionSpec,
@@ -66,7 +65,6 @@ export function RepeatedJointTaskActions({
   onAcceptPercentageLineTask,
   onEditPercentageLineTaskStamp,
   onSuspendPercentageLineWelder,
-  onSkipPercentageLineWelderSuspension,
   onRunTaskAction,
   canRunDispatcherMutation,
   canCreateEarlyCoil,
@@ -142,12 +140,7 @@ export function RepeatedJointTaskActions({
             },
           ]} />
       ) : task.kind === 'percentage-line-control' && task.issue === 'excess' ? (
-        <WorkspaceOrMenuActions workspace={workspace} items={[
-            {
-              label: 'Принять',
-              onClick: () => onAcceptPercentageLineTask(task),
-            },
-          ]} />
+        <ModeledDispatcherActions task={task} actions={getDispatcherTaskActionSpecs(task)} onRunTaskAction={onRunTaskAction} onShowTask={onShowTask} workspace={workspace} />
       ) : task.kind === 'percentage-line-control' && task.issue === 'new-welder' ? (
         <WorkspaceOrMenuActions workspace={workspace} items={[
             {
@@ -164,10 +157,6 @@ export function RepeatedJointTaskActions({
             {
               label: 'Отстранить',
               onClick: () => onSuspendPercentageLineWelder(task),
-            },
-            {
-              label: 'Не отстранять',
-              onClick: () => onSkipPercentageLineWelderSuspension(task),
             },
           ]} />
       ) : task.kind === 'percentage-line-control' && task.issue === 'missing' ? (

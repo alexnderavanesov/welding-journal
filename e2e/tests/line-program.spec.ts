@@ -40,7 +40,7 @@ test('реестр создаёт линию до стыков, хранит д�
   await expect(editor).toHaveCount(0)
   await program.getByLabel('Поиск программы линий').fill('PRECREATED')
   await expect(program.getByTestId('line-program-card')).toHaveCount(1)
-  await expect(program.getByTestId('line-program-card')).toContainText('СП-02: не настроены категория, группа, базовый процент, процент ПВК.')
+  await expect(program.getByTestId('line-program-card')).toContainText('СП-01: не настроены категория, группа, базовый процент, процент ПВК.')
   await program.getByTestId('line-program-card').filter({ has: page.getByRole('button', { name: /PRECREATED/ }) }).getByRole('button', { name: 'Настроить', exact: true }).click()
   await editor.getByLabel('Категория', { exact: true }).fill('II')
   await editor.getByLabel('Группа', { exact: true }).fill('A')

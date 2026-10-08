@@ -19,7 +19,7 @@ test('дубли только ВИК/РК/УЗК/ПВК: массовое сох
   await dialog.getByRole('button', { name: 'Выбрать найденные' }).click()
   await expect(dialog.getByText('Найдено: 2 · Выбрано: 2', { exact: true })).toBeVisible()
   for (const method of ['ВИК', 'РК', 'УЗК', 'ПВК']) await dialog.getByRole('button', { name: method, exact: true }).click()
-  await dialog.getByRole('combobox', { name: 'Результат', exact: true }).selectOption('годен')
+  await dialog.getByRole('group', { name: 'Результат', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
   await dialog.getByRole('textbox', { name: 'Дата контроля', exact: true }).fill('02.08.2026')
   await dialog.getByRole('textbox', { name: 'Заключение', exact: true }).fill('E2E-DUP-NK')
   await dialog.getByRole('textbox', { name: 'Дата заключения', exact: true }).fill('03.08.2026')
@@ -39,6 +39,29 @@ test('дубли только ВИК/РК/УЗК/ПВК: массовое сох
     const response = await page.request.post(request.url(), { headers, data: body.replaceAll('ВИК', method) })
     expect(await response.text()).toContain('Для дубль-контроля доступны только ВИК, РК, УЗК и ПВК')
     expect(await stored()).toEqual(before)
+  }
+  const cutResponse = await page.request.post(request.url(), { headers, data: body.replaceAll('годен', 'вырез') })
+  expect(await cutResponse.text()).toContain('СП-07')
+  expect(await stored()).toEqual(before)
+
+  const previousProcessSetting = await withE2eDatabase(async db =>
+    (await db.query("select value from app_settings where key='control-processes'")).rows[0]?.value as string | undefined)
+  try {
+    await withE2eDatabase(db => db.query(`insert into app_settings(key,value) values ('control-processes',$1)
+      on conflict(key) do update set value=excluded.value`, [JSON.stringify({
+      ...(previousProcessSetting ? JSON.parse(previousProcessSetting) : {}), pvkGoodOnly: true,
+    })]))
+    const pvkResponse = await page.request.post(request.url(), { headers, data: body.replaceAll('годен', 'ремонт') })
+    // The optional good-only setting governs our PVK, not customer duplicates.
+    expect(await pvkResponse.text()).not.toContain('ПВК — только годен')
+    const after = await stored()
+    expect(after).toHaveLength(16)
+    expect(after.slice(0, 8)).toEqual(before)
+    expect(after.slice(8).every(record => record.result === 'ремонт')).toBe(true)
+  } finally {
+    await withE2eDatabase(db => previousProcessSetting === undefined
+      ? db.query("delete from app_settings where key='control-processes'")
+      : db.query("update app_settings set value=$1 where key='control-processes'", [previousProcessSetting]))
   }
   expect(errors).toEqual([])
 })

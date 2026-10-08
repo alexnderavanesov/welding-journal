@@ -71,7 +71,7 @@ export function buildLineConsistencyTasks(rows: WeldRow[], accepted: ReadonlySet
         projectTitle,
         subtitleCode,
         fieldKey: field.key,
-        systemWarningCode: 'СП-02',
+        systemWarningCode: 'СП-01',
         fieldLabel: field.label,
         title: field.title,
         values,

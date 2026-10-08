@@ -600,7 +600,6 @@ function makeSaveCheckSettings() {
     lnkResultVikDateBeforeOther: true,
     lnkResultVikRequiredBeforeOther: true,
     lnkResultConclusionRequired: true,
-    lnkResultRepairRules: true,
     pstoResultDateRequired: true,
     pstoResultDateFormat: true,
     pstoResultDateAfterWeldDate: true,

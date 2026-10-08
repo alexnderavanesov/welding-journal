@@ -12,6 +12,9 @@ import { getPstoLineIdentityKey } from '@/lib/psto-line-assignment'
 import type { WeldInput } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import { getWeldFormSaveBlockReason } from '@/lib/weld-form-save-reasons'
+import { buildDispatcherTaskCodeIndexRows, buildMergedDispatcherTaskCodes } from '@/lib/dispatcher-task-row-codes'
+import { parseDispatcherTaskIndexPayload, serializeDispatcherTaskIndexPayload } from '@/lib/dispatcher-task-index-payload'
 import { validateServerWeldRecords, type ServerWeldValidationContext } from '@/server/weld-save-validation'
 
 const base: WeldInput = {
@@ -22,16 +25,44 @@ const base: WeldInput = {
 }
 
 describe('every stored-data ZV / DZ pair', () => {
+  it.each([false, true])('permits factual-only welding, indexes SP-03 and validates later official backfill (import=%s)', importMode => {
+    const { context } = fixture('officialNaksDate')
+    const record = { ...base, stamp1K: null, stamp1Z: null, stamp1O: null }
+    const before = structuredClone(record)
+    expect(getWeldFormSaveBlockReason(record, {}, context.saveCheckSettings)).toBeNull()
+    expect(() => validateServerWeldRecords({ records: [record], previousRows: new Map(), context, importMode })).not.toThrow()
+    expect(record).toEqual(before)
+    const tasks = buildVisibleDispatcherTasks({ rows: [record as WeldRow],
+      welderStamps: context.welderStamps, welderStampSuspensions: [],
+      acceptedDispatcherWarningKeys: new Set(), dismissedRepeatedJointTaskKeys: new Set(),
+      dispatcherSettings: DEFAULT_DISPATCHER_SETTINGS, dispatcherReminderSettings: DEFAULT_DISPATCHER_REMINDER_SETTINGS,
+    }).repeatedJointTasks
+    const stored = parseDispatcherTaskIndexPayload(serializeDispatcherTaskIndexPayload(tasks)).tasks
+    const index = buildDispatcherTaskCodeIndexRows(stored, [record as WeldRow])
+    expect(index).toContainEqual({ rowId: 1, taskKey: 'code:СП-03', code: 'СП-03' })
+    expect(buildMergedDispatcherTaskCodes(index, []).allByRowId.get(1)).toContain('СП-03')
+    const backfill = { ...record, stamp1K: 'A1', stamp1Z: 'A1', stamp1O: 'A1' }
+    const save = () => validateServerWeldRecords({ records: [backfill], previousRows: new Map([[1, record as WeldJoint]]), context, importMode })
+    expect(save).toThrow('СП-02') // Permit expired before the actual welding date.
+    context.welderStamps[0].naksPermits[0].validTo = '2026-07-02'
+    expect(save).not.toThrow() // It need not be valid today for historical welding.
+  })
+
   it.each(SAVE_CHECK_DISPATCHER_LINKS)('%s blocks a new violation on the server and %s finds the stored violation', (saveCheck, dispatcherSetting) => {
     const { previous, record, context } = fixture(saveCheck)
-    expect(() => validateServerWeldRecords({ records: [record], previousRows: previous ? new Map([[1, previous as WeldJoint]]) : new Map(), context })).toThrow(saveCheck === 'controlHistoryProtection' ? 'нельзя снять назначение через «Пусто»' : SAVE_CHECK_SETTING_CODES[saveCheck])
+    const save = () => validateServerWeldRecords({ records: [record], previousRows: previous ? new Map([[1, previous as WeldJoint]]) : new Map(), context })
+    const completeness = ['requiredRootStampWithWeldDate', 'requiredMaterialGroupWithWeldDate', 'requiredConnectionTypeWithWeldDate', 'requiredWeldingMethodWithWeldDate', 'lnkResultControlDateRequired', 'lnkResultConclusionRequired', 'pstoResultDateRequired', 'pstoResultDiagramRequired'].includes(saveCheck)
+    if (completeness) expect(save).not.toThrow()
+    else expect(save).toThrow(saveCheck === 'controlHistoryProtection' ? 'нельзя снять назначение через «Пусто»' : SAVE_CHECK_SETTING_CODES[saveCheck] || 'формате')
     const result = buildVisibleDispatcherTasks({
       rows: [record as WeldRow], welderStamps: context.welderStamps, welderStampSuspensions: context.welderStampSuspensions,
       acceptedDispatcherWarningKeys: new Set(), dismissedRepeatedJointTaskKeys: new Set(),
       dispatcherSettings: DEFAULT_DISPATCHER_SETTINGS, dispatcherReminderSettings: DEFAULT_DISPATCHER_REMINDER_SETTINGS,
       dataListSettings: context.dataListSettings,
+      saveCheckSettings: context.saveCheckSettings,
     })
-    expect(result.repeatedJointTasks.map(getDispatcherTaskCode)).toContain(DISPATCHER_SETTING_CODES[dispatcherSetting])
+    const code = saveCheck === 'dateFormat' || saveCheck === 'weldDateNotFuture' ? 'СП-04' : DISPATCHER_SETTING_CODES[dispatcherSetting]
+    expect(result.repeatedJointTasks.map(getDispatcherTaskCode)).toContain(code)
   })
 })
 
@@ -64,7 +95,6 @@ function fixture(setting: SaveCheckSettingId) {
     if (setting === 'lnkResultDateAfterWeldDate') record.vikConclusionDate = '2026-06-30'
     if (setting === 'lnkResultRequestDateOrder') record.vikConclusionDate = '2026-07-01'
     if (setting === 'lnkResultConclusionRequired') record.vikConclusion = null
-    if (setting === 'lnkResultRepairRules') Object.assign(record, { vikResult: 'ремонт', d1: 57, d2: 57 })
     if (setting === 'lnkResultVikDateBeforeOther' || setting === 'lnkResultVikRequiredBeforeOther') {
       Object.assign(previous, { hasRk: 'да', rkRequest: 'РК-1', rkRequestDate: '2026-07-02' })
       record = { ...previous, rkResult: 'годен', rkConclusionDate: '2026-07-03', rkConclusion: 'РК заключение' }

@@ -1,5 +1,6 @@
 import { normalizeControlResultText } from '@/lib/report-value-utils'
-import type { WeldDraft } from '@/lib/dispatcher-types'
+import { getWeldMaterialGroupsError } from '@/lib/weld-material-groups'
+import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 import { getControlAssignmentRemovalReason, getControlAssignmentCancellations } from './control-assignment-history'
 import { getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import {
@@ -8,9 +9,10 @@ import {
   validateJointNameStructure,
   validateManualJointName,
 } from '@/lib/joint-name'
-import { findFirstLnkRepairRuleIssue } from '@/lib/lnk-result-rules'
+import { getLnkResultRuleIssues } from '@/lib/lnk-result-policy'
 import {
   DEFAULT_SAVE_CHECK_SETTINGS,
+  normalizeSaveCheckSettings,
   formatSaveCheckBlockReason,
   type SaveCheckSettingId,
   type SaveCheckSettings,
@@ -47,6 +49,8 @@ import { getExcludedControlAssignmentIssues } from './control-assignment-eligibi
 import { getUnofficialLnkResultIssues } from './unofficial-lnk-result-guard'
 
 type WeldFormSaveBlockOptions = {
+  /** Import has already collected these issues and must continue checking other fields. */
+  historyIssuesCollected?: boolean
   allowSystemJointName?: boolean
   allowPrimaryLnkStageDebt?: boolean
   systemIndexSettings?: SystemIndexSettings
@@ -60,6 +64,7 @@ export function getWeldFormSaveBlockReason(
 ) {
   return getUnofficialLnkResultIssues(draft, initialValue)[0]?.message ||
     getExcludedControlAssignmentIssues(draft, initialValue)[0]?.message || getControlAssignmentRemovalReason(draft, initialValue) ||
+    getLnkResultRuleIssues(draft, options.systemIndexSettings).map(issue => issue.message).join('\n') ||
     getWeldFormFieldSaveBlockReason(draft, initialValue, saveCheckSettings, options)
 }
 
@@ -70,6 +75,9 @@ export function getWeldFormFieldSaveBlockReason(
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
   options: WeldFormSaveBlockOptions = {},
 ) {
+  saveCheckSettings = normalizeSaveCheckSettings(saveCheckSettings)
+  const materialShapeReason = getWeldMaterialGroupsError(draft.materialGroup)
+  if (materialShapeReason) return materialShapeReason
   const dateReason = getWeldFormDateSaveBlockReason(draft, saveCheckSettings)
   if (dateReason) return dateReason
 
@@ -94,7 +102,7 @@ export function getWeldFormFieldSaveBlockReason(
     }
   }
 
-  const reportHistoryReason = saveCheckSettings.controlHistoryProtection
+  const reportHistoryReason = !options.historyIssuesCollected
     ? getNewControlAvailabilityReportHistoryReason(draft, initialValue)
     : null
   if (reportHistoryReason) return formatSaveCheckBlockReason('controlHistoryProtection', reportHistoryReason)
@@ -113,11 +121,6 @@ export function getWeldFormFieldSaveBlockReason(
     if (documentChronologyReason) return documentChronologyReason
   }
 
-  if (saveCheckSettings.lnkResultRepairRules) {
-    const repairReason = findFirstLnkRepairRuleIssue([draft], saveCheckSettings, options.systemIndexSettings)
-    if (repairReason) return formatSaveCheckBlockReason('lnkResultRepairRules', repairReason)
-  }
-
   const currentJoint = normalizeJointName(draft.joint)
   const initialJoint = normalizeJointName(initialValue.joint)
   const systemIndexSettings = options.systemIndexSettings ?? loadSystemIndexSettings()
@@ -127,11 +130,16 @@ export function getWeldFormFieldSaveBlockReason(
   if (jointStructureReason) return formatSaveCheckBlockReason('manualJointName', jointStructureReason)
   if (initialValue.id && currentJoint === initialJoint) return null
 
+  if (!options.allowSystemJointName && hasReservedJointSystemPart(draft.joint, systemIndexSettings)) {
+    return formatSaveCheckBlockReason('systemJointRenameProtection', `Индексы ${getSystemIndexSummaryText(systemIndexSettings)} зарезервированы системой для повторных стыков и катушек. Создайте продолжение через диспетчер или цепочку.`)
+  }
+
   if (
     !options.allowSystemJointName &&
     saveCheckSettings.systemJointRenameProtection &&
     initialValue.id &&
-    hasReservedJointSystemPart(initialValue.joint, systemIndexSettings)
+    (hasReservedJointSystemPart(initialValue.joint, systemIndexSettings) ||
+      ['repair', 'coil'].includes((initialValue as Partial<WeldRow>).programChainState?.kind ?? ''))
   ) {
     return formatSaveCheckBlockReason('systemJointRenameProtection', `стык с системными индексами ${getSystemIndexSummaryText(systemIndexSettings)} нельзя переименовывать вручную. Используйте подсказки диспетчера задач.`)
   }
@@ -334,6 +342,7 @@ export function getWeldStampSaveBlockReason(
   } = {},
 ) {
   if (!stampSelectOptions) return null
+  config = { ...config, saveCheckSettings: normalizeSaveCheckSettings(config.saveCheckSettings) }
   if (config.initialValue && !shouldValidateOfficialStampCompatibilityForSave(draft, config.initialValue)) {
     return null
   }

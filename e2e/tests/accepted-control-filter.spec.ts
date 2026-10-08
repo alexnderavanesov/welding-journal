@@ -24,8 +24,9 @@ test('Согласования контроля не смешиваются с �
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url()).split('_')[0]) })
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/settings')
-  await page.getByRole('button', { name: 'Принятые исключения', exact: true }).click()
-  const panel = page.locator('#settings-panel-acceptedWarnings')
+  await page.getByRole('button', { name: 'Правила и проверки', exact: true }).click()
+  await page.getByRole('tab', { name: 'Принятые исключения', exact: true }).click()
+  const panel = page.locator('#rules-accepted-exceptions')
   await expect(panel.getByText('Всего: 3', { exact: true })).toBeVisible()
   const beforeFilter = calls.length
   await panel.getByRole('button', { name: 'Согласования контроля', exact: true }).click()

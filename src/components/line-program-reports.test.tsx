@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { LineProgramReports } from './line-program-reports'
+import { createRef } from 'react'
+import { LineProgramReports, type LineProgramReportsHandle } from './line-program-reports'
 import type { PrintableReport } from '@/lib/printable-report'
 
 const mocks = vi.hoisted(() => ({ report: vi.fn() }))
@@ -87,4 +88,22 @@ it('keeps the preview open when printing fails and permits retry', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Печать / Сохранить PDF' }))
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   expect(mocks.report).toHaveBeenCalledOnce()
+})
+
+it('retries the captured context-menu scope after props change and restores its trigger focus', async () => {
+  const ref = createRef<LineProgramReportsHandle>()
+  const renderReports = (ids: number[]) => <><button>Клеймо A</button><LineProgramReports ref={ref} ids={ids} context="Текущий список" disabled={false} /></>
+  const view = render(renderReports([1, 2]))
+  const trigger = screen.getByRole('button', { name: 'Клеймо A' })
+  trigger.focus()
+  mocks.report.mockRejectedValueOnce(new Error('Нет соединения')).mockResolvedValueOnce(report)
+  const request = { ids: [1], mode: 'stamps' as const, stamp: 'A', context: 'Линия L1 · клеймо A' }
+  act(() => ref.current!.open(request))
+  await screen.findByRole('alert')
+  view.rerender(renderReports([3]))
+  fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+  await screen.findByTitle('Сводка по линиям')
+  expect(mocks.report.mock.calls.map(([args]) => args)).toEqual([{ data: request }, { data: request }])
+  fireEvent.keyDown(document, { key: 'Escape' })
+  await waitFor(() => expect(trigger).toHaveFocus())
 })

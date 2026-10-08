@@ -17,7 +17,7 @@ import {
   replaceScopedDispatcherTaskIndexRows,
 } from '@/server/dispatcher-task-index'
 import { DISPATCHER_TASK_INDEX_STAGE_BATCH_SIZE } from '@/server/dispatcher-task-index-staging'
-import { buildPrimaryLnkStageDebtSystemWarnings } from '@/lib/repeated-joint-check-tasks'
+import { buildLnkResultRuleCheckTasks, buildPrimaryLnkStageDebtSystemWarnings } from '@/lib/repeated-joint-check-tasks'
 import { buildDispatcherTaskCodeIndexRows } from '@/lib/dispatcher-task-row-codes'
 import { mergeDispatcherTaskCodesIntoRows } from '@/server/weld-read'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -26,6 +26,25 @@ import { buildProgramIntegrityTasks } from '@/lib/coil-restoration'
 import { getDispatcherTaskActionSpecs } from '@/lib/dispatcher-task-actions-model'
 
 describe('prepareDispatcherReportRows', () => {
+  it('persists SP-05 in the virtual field and keeps LNK navigation after page compaction', () => {
+    const rows: WeldRow[] = [
+      { id: 1, joint: 'F1', vikResult: 'вырез', rkResult: 'вырез' },
+      { id: 2, joint: 'F2', vikResult: 'ремонт', d1: 57 },
+      { id: 3, joint: 'F3', preHeatTreatmentLnkEnabled: false,
+        preHeatTreatmentControls: [{ id: 30, weldJointId: 3, method: 'ПВК', result: 'вырез' }] },
+    ]
+    const tasks = buildLnkResultRuleCheckTasks(rows)
+    const index = buildDispatcherTaskCodeIndexRows(tasks, rows)
+    expect(index).toEqual([
+      { rowId: 1, taskKey: 'code:СП-07', code: 'СП-07' },
+      { rowId: 3, taskKey: 'code:СП-07', code: 'СП-07' },
+    ])
+    expect(mergeDispatcherTaskCodesIntoRows(rows, index, []).map(row => row.dispatcherTasks))
+      .toEqual(['СП-07', '', 'СП-07'])
+    const compact = compactDispatcherTasksForTransport(tasks)
+    expect(compact.map(task => getDispatcherTaskActionSpecs(task)[0]?.id)).toEqual(['open-lnk', 'open-lnk'])
+    expect(compact[1]).toMatchObject({ systemWarningCode: 'СП-07', details: expect.stringContaining('ПВК до ТО') })
+  })
   it('preserves coil restoration action through persisted compact task pages', () => {
     const row: WeldRow = { id: 1, joint: 'S1', line: 'L', programChainState: { weldJointId: 1, kind: 'primary', physicalRootId: 1,
       sourceRowId: null, coilParentId: null, coilSide: null, replacedByCoil: true, replacementCoilIds: [2, 3] } }
@@ -39,34 +58,34 @@ describe('prepareDispatcherReportRows', () => {
     const rows = [requestOnly, result]
     const tasks = buildPrimaryLnkStageDebtSystemWarnings(rows, { ...DEFAULT_CONTROL_PROCESS_SETTINGS, preHeatTreatmentLnkEnabled })
     const index = buildDispatcherTaskCodeIndexRows(tasks, rows)
-    expect(index).toEqual([{ rowId: 2, taskKey: 'code:СП-01', code: 'СП-01' }])
+    expect(index).toEqual([{ rowId: 2, taskKey: 'code:СП-06', code: 'СП-06' }])
     expect(mergeDispatcherTaskCodesIntoRows(rows, index, []).map(({ id, dispatcherTasks }) => ({ id, dispatcherTasks }))).toEqual([
-      { id: 1, dispatcherTasks: '' }, { id: 2, dispatcherTasks: 'СП-01' },
+      { id: 1, dispatcherTasks: '' }, { id: 2, dispatcherTasks: 'СП-06' },
     ])
   })
   it('gives a new day or calculation version a new task-page revision even without weld mutations', () => {
     expect(getDispatcherTaskPublicationRevision({ sourceRevision: 7, computedRevision: 7 })).toBe(8)
     expect(getDispatcherTaskPublicationRevision({ sourceRevision: 9, computedRevision: 7 })).toBe(9)
   })
-  it('replaces a large scoped task index with bounded database requests', async () => {
+  it('replaces 200,000 SP-05 row codes with bounded database requests', async () => {
     const execute = vi.fn().mockResolvedValue(undefined)
     const where = vi.fn().mockResolvedValue(undefined)
     const deleteRows = vi.fn(() => ({ where }))
-    const rowCount = DISPATCHER_TASK_INDEX_STAGE_BATCH_SIZE * 2 + 7
+    const rowCount = 200_000
 
     await replaceScopedDispatcherTaskIndexRows(
       { delete: deleteRows, execute } as never,
       Array.from({ length: rowCount }, (_, index) => index + 1),
       Array.from({ length: rowCount }, (_, index) => ({
         rowId: index + 1,
-        taskKey: `code:ДЗ-${index % 17}`,
-        code: `ДЗ-${index % 17}`,
+        taskKey: 'code:СП-07',
+        code: 'СП-07',
       })),
     )
 
     expect(deleteRows).toHaveBeenCalledTimes(1)
     expect(where).toHaveBeenCalledTimes(1)
-    expect(execute).toHaveBeenCalledTimes(5)
+    expect(execute).toHaveBeenCalledTimes(2 + Math.ceil(rowCount / DISPATCHER_TASK_INDEX_STAGE_BATCH_SIZE))
   })
 
   it('adds disjoint task counts but uses an exact union count for overlapping codes', () => {

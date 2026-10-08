@@ -47,7 +47,7 @@ const fixtures: Fixture[] = Array.from({ length: 50 }, (_, offset) => {
     joint: `F${n}`, weldDate: `2026-09-0${offset % 5 + 1}`, category: group === 9 ? null : group === 5 || group === 6 ? 'I' : 'II',
     groupName: 'Б(а)', weldControlPercent: percentages[group][0], pvkControlPercent: percentages[group][1],
     isometry: `DEMO-ISO-${String(group + 1).padStart(2, '0')}`, sheet: 1, revisionNumber: 0,
-    spool: `SPL-${String(Math.ceil(n / 3)).padStart(2, '0')}`, officiality: 'действующий', revisionActuality: 'актуальная',
+    spool: `SPL-${String(Math.ceil(n / 3)).padStart(2, '0')}`, officiality: 'действующий', revisionActuality: null,
     weldingMethod: n % 2 ? 'РД' : 'РАД', connectionType: group === 8 || n % 5 === 0 ? 'У19' : 'С17',
     materialGroup: withPsto ? 'М05' : n % 3 === 0 ? 'М11' : 'М01',
     d1: diameter, d2: diameter, t1: thickness, t2: thickness, wdi: Number((diameter / 25.4).toFixed(3)),
@@ -118,7 +118,7 @@ lnk(11, 'rk', 'годен'); lnk(11, 'uzk', 'годен'); note(11, 'ДЗ-27: д
 lnk(12, 'rk', 'годен'); f(12).row.hasRk = 'дополнительный'; note(12, 'дополнительный РК выполнен, закрывает норму и не предлагается к снятию как обычное лишнее назначение')
 Object.assign(f(13).row, { stamp2K: 'D503', stamp2Z: 'D503', stamp2O: 'D503', stamp2KFact: 'D503', stamp2ZFact: 'D503', stamp2OFact: 'D503' }); note(13, 'стык двух клейм, общий контроль ещё не назначен')
 lnk(14, 'rk', 'годен'); f(14).duplicates.push({ method: 'РК', result: 'ремонт', controlDate: '2026-09-19', conclusionDate: '2026-09-19', conclusion: 'Дубль РК DEMO-14' }); note(14, 'основной РК годен, дубль негоден: контроль дубля и ремонт')
-lnk(15, 'vik', 'вырез'); note(15, 'негодный ВИК, требуется вырез и новый стык')
+lnk(15, 'vik', 'ремонт'); note(15, 'негодный ВИК, требуется ремонт и повторный стык')
 note(16, 'ПСТО назначена; НК до ТО ещё не начат'); pre(17, 'vik'); note(17, 'ожидание результата ВИК до ТО')
 pre(18, 'vik', 'годен'); note(18, 'ВИК до ТО завершён, можно создавать заявку ПСТО')
 psto(19, 'request'); note(19, 'заявка ПСТО создана, обработка ожидается')
@@ -134,7 +134,7 @@ lnk(27, 'rk', 'ремонт'); note(27, '100%: негодный РК и зада
 lnk(28, 'uzk', 'вырез'); note(28, '100%: негодный УЗК и задача выреза')
 lnk(29, 'pvk', 'годен'); lnk(29, 'rk'); note(29, 'ВИК и ПВК годны, ожидается результат РК')
 f(30).row.hasRk = 'да'; lnk(30, 'vik'); note(30, '100%: основная заявка ВИК, РК назначен')
-lnk(31, 'vik', 'годен'); note(31, 'СП-01: основной ВИК уже выполнен, но НК до ТО/ПСТО/ТВМТ ещё не пройдены')
+lnk(31, 'vik', 'годен'); note(31, 'СП-06: основной ВИК уже выполнен, но НК до ТО/ПСТО/ТВМТ ещё не пройдены')
 f(32).row.hasRk = 'да'; f(32).row.hasPvk = 'да'; psto(32, 'request'); note(32, '100%: все назначенные методы до ТО выполнены, ожидается ПСТО')
 f(33).row.hasUzk = 'да'; f(33).row.hasPvk = 'да'; psto(33, 'tvmt-bad'); note(33, '100%: негодная ТВМТ, основные методы ещё не начаты')
 psto(34, 'tvmt-good'); lnk(34, 'vik', 'ремонт'); note(34, 'негодный основной ВИК после завершённой ПСТО')
@@ -151,7 +151,7 @@ lnk(44, 'vik', 'годен'); lnk(44, 'rk', 'годен'); f(44).duplicates.push
 lnk(45, 'vik', 'годен'); lnk(45, 'pvk', 'годен'); f(45).row.hasPvk = 'отменен'; note(45, 'ПВК отменён после выполнения: собственный факт остаётся в охвате')
 for (let n = 46; n <= 50; n++) {
   Object.assign(f(n).row, { pstoRequired: 'отменен', pstoCancellationDate: '2026-09-14', pstoControlBasis: 'Решение DEMO-ПСТО-10 от 14.09.2026' })
-  lnk(n, 'vik', 'годен'); note(n, 'СП-02: у линии намеренно не заполнена категория; ПСТО отменена до начала работ')
+  lnk(n, 'vik', 'годен'); note(n, 'СП-01: у линии намеренно не заполнена категория; ПСТО отменена до начала работ')
 }
 lnk(46, 'rk', 'годен'); lnk(47, 'uzk'); f(48).row.hasPvk = 'дополнительный'; lnk(49, 'pvk', 'годен')
 Object.assign(f(50).row, { testTypes: 'ГИ', testContour: 'DEMO-КОНТУР-10', testDate: '2026-09-20' })
@@ -228,7 +228,7 @@ try {
     })
     const counts: Record<string, number> = {}
     for (const task of tasks) { const code = getDispatcherTaskCode(task); counts[code] = (counts[code] ?? 0) + 1 }
-    for (const code of ['СП-01', 'СП-02', 'ДЗ-04', 'ДЗ-05', 'ДЗ-06', 'ДЗ-07', 'ДЗ-27']) assert(counts[code] > 0, `Missing intended scenario ${code}`)
+    for (const code of ['СП-06', 'СП-01', 'СП-01', 'СП-01', 'СП-02', 'СП-09', 'СП-01']) assert(counts[code] > 0, `Missing intended scenario ${code}`)
     const unexpected = tasks.filter((task) => getDispatcherTaskCode(task).startsWith('ЗВ-'))
     assert.deepEqual(unexpected.map((task) => ({ code: getDispatcherTaskCode(task), task })), [], 'Fixture must not introduce save-blocking errors')
     const afterOld = (await tx.select().from(weldJoints)).filter((r) => before.some((old) => old.id === r.id))

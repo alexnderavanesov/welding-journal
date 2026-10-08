@@ -39,6 +39,84 @@ const buildReportReplaceDataPreview: typeof buildReportReplaceDataPreviewImpl = 
   })
 
 describe('existing rows report import preview', () => {
+  it.each(['massFill', 'replaceData'] as const)('preserves ordered material pairs in the existing Excel column (%s)', async mode => {
+    const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
+      activeReport: 'weldingJournal',
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Группа материалов'], [[7, 'F1', 'М05+М01']]),
+      rows: [{ id: 7, joint: 'F1', materialGroup: mode === 'massFill' ? null : 'М01' } as WeldRow],
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords[0]).toMatchObject({ id: 7, materialGroup: 'М05 + М01' })
+  })
+
+  it('highlights a third material group and an invalid connection together', async () => {
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file: buildWeldingJournalImportFile({ joint: 'S1', connectionType: 'У18', materialGroup: 'М01 + М05 + М11' }),
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0].message).toContain('не более двух')
+    expect(preview.errors[0].message).toContain('Тип соединения')
+    expect(preview.errors[0].fieldKeys).toEqual(expect.arrayContaining(['connectionType', 'materialGroup']))
+  })
+
+  it.each(['massFill', 'replaceData'] as const)('does not bypass the protected actuality column in %s', async mode => {
+    const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
+      activeReport: 'weldingJournal',
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', FIELD_BY_KEY.get('revisionActuality')!.label, FIELD_BY_KEY.get('isometry')!.label], [[7, 'F1', ' АКТУАЛЬНАЯ ', 'ISO-2']]),
+      rows: [{ id: 7, joint: 'F1', revisionActuality: 'не актуален' } as WeldRow],
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toHaveLength(1)
+    expect(preview.validRecords[0]).toEqual({ id: 7, isometry: 'ISO-2' })
+  })
+  it.each(['massFill', 'replaceData'] as const)('allows factual-only welding in %s without copying stamps to official fields', async mode => {
+    const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
+      activeReport: 'weldingJournal',
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Дата сварки'], [[7, 'F1', '01.09.2026']]),
+      rows: [{ id: 7, joint: 'F1', stamp1KFact: 'FCT1', stamp1ZFact: 'FCT1', stamp1OFact: 'FCT1' } as WeldRow],
+      weldFormStampSelectOptions: Object.fromEntries(['stamp1KFact', 'stamp1ZFact', 'stamp1OFact'].map(key => [key, [{ value: 'FCT1' }]])),
+      welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toHaveLength(1)
+    expect(preview.validRecords[0].stamp1K).toBeFalsy()
+    expect(preview.validRecords[0].stamp1Z).toBeFalsy()
+    expect(preview.validRecords[0].stamp1O).toBeFalsy()
+  })
+
+  it.each(['massFill', 'replaceData'] as const)('collects SP-05 and an independent name error on the final merged %s row', async mode => {
+    const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
+      activeReport: 'weldingJournal',
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', FIELD_BY_KEY.get('d1')!.label], [[7, 'FВ013', 57]]),
+      rows: [{ id: 7, joint: 'FВ013', d1: null, d2: 159, hasVik: 'да', vikResult: 'вырез', hasRk: 'да', rkResult: 'ремонт' } as WeldRow],
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('ЗВ-02')
+    expect(preview.errors[0]?.message).toContain('СП-07')
+    expect(preview.errors[0]?.message).toContain('По ВИК')
+    expect(preview.errors[0]?.message).toContain('57 мм')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['joint', 'vikResult', 'rkResult', 'd1', 'd2']))
+  })
+
+  it('allows a D57 surface repair but rejects an impossible stored cut during an unrelated import', async () => {
+    const run = (vikResult: string) => buildReportMassFillPreview({
+      activeReport: 'weldingJournal',
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', FIELD_BY_KEY.get('isometry')!.label], [[7, 'F1', 'ISO-2']]),
+      rows: [{ id: 7, joint: 'F1', d1: 57, hasVik: 'да', vikResult } as WeldRow],
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect((await run('ремонт')).errors).toEqual([])
+    const invalid = await run('вырез')
+    expect(invalid.validRecords).toEqual([])
+    expect(invalid.errors[0]?.message).toContain('СП-07')
+    expect(invalid.errors[0]?.fieldKeys).toContain('vikResult')
+  })
+
   it.each(['massFill', 'replaceData'] as const)('reports all excluded assignment edits together with a bad joint name in %s', async mode => {
     const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
       activeReport: 'weldingJournal',
@@ -48,7 +126,7 @@ describe('existing rows report import preview', () => {
     })
     expect(preview.validRecords).toEqual([])
     expect(preview.errors[0]?.message).toContain('официального актуального')
-    expect(preview.errors[0]?.message).toContain('ЗВ-26')
+    expect(preview.errors[0]?.message).toContain('ЗВ-02')
     expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['hasRk', 'hasUzk', 'joint']))
   })
   it('reports removal of two mandatory repair methods together with an independent invalid joint', async () => {
@@ -62,7 +140,7 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords).toEqual([])
     expect(preview.errors[0]?.message).toContain('РК обязателен')
     expect(preview.errors[0]?.message).toContain('УЗК обязателен')
-    expect(preview.errors[0]?.message).toContain('ЗВ-26')
+    expect(preview.errors[0]?.message).toContain('ЗВ-02')
     expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['hasRk', 'hasUzk', 'joint']))
   })
   it('checks new T assignments in new-row import too', async () => {
@@ -105,7 +183,7 @@ describe('existing rows report import preview', () => {
     })
     expect(preview.validRecords).toEqual([])
     expect(preview.errors[0]?.message).toContain('РК не назначается на Т-стыки')
-    expect(preview.errors[0]?.message).toContain('ЗВ-26')
+    expect(preview.errors[0]?.message).toContain('ЗВ-02')
     expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['hasRk', 'joint']))
   })
 
@@ -141,7 +219,7 @@ describe('existing rows report import preview', () => {
     })
     expect(preview.validRecords).toEqual([])
     expect(preview.errors[0]?.message).toContain('нельзя снять назначение через «Пусто»')
-    expect(preview.errors[0]?.message).toContain('ЗВ-26')
+    expect(preview.errors[0]?.message).toContain('ЗВ-02')
     expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['hasRk', 'joint']))
   })
   it('reports assignment-history protection together with independent import field errors', async () => {
@@ -345,7 +423,7 @@ describe('existing rows report import preview', () => {
     })).rejects.toThrow('не более 500 строк')
   })
 
-  it('checks ZВ-30 for a new imported row after all Excel values are assembled', async () => {
+  it('allows a new incomplete imported row', async () => {
     saveSaveCheckSettings({
       ...DEFAULT_SAVE_CHECK_SETTINGS,
       requiredRootStampWithWeldDate: false,
@@ -367,9 +445,8 @@ describe('existing rows report import preview', () => {
       welderStampSuspensions: [],
     })
 
-    expect(preview.validRecords).toEqual([])
-    expect(preview.errors[0]?.message).toContain('ЗВ-30')
-    expect(preview.errors[0]?.message).toContain('тип соединения')
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toHaveLength(1)
   })
 
   it('reports independent date and registry errors from one new row together', async () => {
@@ -396,7 +473,7 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords).toEqual([])
     expect(preview.errors).toHaveLength(1)
     expect(preview.errors[0]?.message).toContain('Поле "Дата сварки"')
-    expect(preview.errors[0]?.message).toContain('ЗВ-01')
+    expect(preview.errors[0]?.message).toContain('СП-02')
     expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['weldDate', 'stamp1K']))
   })
 
@@ -490,7 +567,7 @@ describe('existing rows report import preview', () => {
   it.each([
     ['mass fill', buildReportMassFillPreview],
     ['replace data', buildReportReplaceDataPreview],
-  ])('checks ZВ-29 against the final stored row when %s imports only the weld date', async (_, buildPreview) => {
+  ])('allows missing welding data when %s imports only the weld date', async (_, buildPreview) => {
     saveSaveCheckSettings({
       ...DEFAULT_SAVE_CHECK_SETTINGS,
       requiredRootStampWithWeldDate: false,
@@ -510,15 +587,14 @@ describe('existing rows report import preview', () => {
       welderStampSuspensions: [],
     })
 
-    expect(preview.validRecords).toEqual([])
-    expect(preview.errors[0]?.message).toContain('ЗВ-29')
-    expect(preview.errors[0]?.message).toContain('группу материалов')
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toHaveLength(1)
   })
 
   it.each([
     ['mass fill', buildReportMassFillPreview],
     ['replace data', buildReportReplaceDataPreview],
-  ])('checks ZВ-30 against the final stored row when %s imports only the weld date', async (_, buildPreview) => {
+  ])('allows missing welding data when %s imports only the weld date', async (_, buildPreview) => {
     saveSaveCheckSettings({
       ...DEFAULT_SAVE_CHECK_SETTINGS,
       requiredRootStampWithWeldDate: false,
@@ -538,15 +614,14 @@ describe('existing rows report import preview', () => {
       welderStampSuspensions: [],
     })
 
-    expect(preview.validRecords).toEqual([])
-    expect(preview.errors[0]?.message).toContain('ЗВ-30')
-    expect(preview.errors[0]?.message).toContain('тип соединения')
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toHaveLength(1)
   })
 
   it.each([
     ['mass fill', buildReportMassFillPreview],
     ['replace data', buildReportReplaceDataPreview],
-  ])('checks ZВ-31 against the final stored row when %s imports only the weld date', async (_, buildPreview) => {
+  ])('allows missing welding data when %s imports only the weld date', async (_, buildPreview) => {
     saveSaveCheckSettings({
       ...DEFAULT_SAVE_CHECK_SETTINGS,
       requiredRootStampWithWeldDate: false,
@@ -567,12 +642,11 @@ describe('existing rows report import preview', () => {
       welderStampSuspensions: [],
     })
 
-    expect(preview.validRecords).toEqual([])
-    expect(preview.errors[0]?.message).toContain('ЗВ-31')
-    expect(preview.errors[0]?.message).toContain('способ сварки')
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toHaveLength(1)
   })
 
-  it('reports all missing core weld fields for one imported row at once', async () => {
+  it('allows an incomplete imported row for mandatory SP-03 backfill', async () => {
     saveSaveCheckSettings({
       ...DEFAULT_SAVE_CHECK_SETTINGS,
       requiredRootStampWithWeldDate: false,
@@ -593,32 +667,26 @@ describe('existing rows report import preview', () => {
       welderStampSuspensions: [],
     })
 
-    expect(preview.errors[0]?.message).toContain('ЗВ-29')
-    expect(preview.errors[0]?.message).toContain('ЗВ-30')
-    expect(preview.errors[0]?.message).toContain('ЗВ-31')
-    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining([
-      'materialGroup',
-      'connectionType',
-      'weldingMethod',
-    ]))
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toHaveLength(1)
   })
 
   it.each([
-    ['ЗВ-10', 'mass fill', buildReportMassFillPreview, {
+    ['СП-03', 'mass fill', buildReportMassFillPreview, {
       requiredMaterialGroupWithWeldDate: false,
       requiredConnectionTypeWithWeldDate: false,
     }],
-    ['ЗВ-10', 'replace data', buildReportReplaceDataPreview, {
+    ['СП-03', 'replace data', buildReportReplaceDataPreview, {
       requiredMaterialGroupWithWeldDate: false,
       requiredConnectionTypeWithWeldDate: false,
     }],
-    ['ЗВ-12', 'mass fill', buildReportMassFillPreview, {
+    ['СП-04', 'mass fill', buildReportMassFillPreview, {
       requiredRootStampWithWeldDate: false,
       requiredMaterialGroupWithWeldDate: false,
       requiredConnectionTypeWithWeldDate: false,
       requiredWeldingMethodWithWeldDate: false,
     }],
-    ['ЗВ-12', 'replace data', buildReportReplaceDataPreview, {
+    ['СП-04', 'replace data', buildReportReplaceDataPreview, {
       requiredRootStampWithWeldDate: false,
       requiredMaterialGroupWithWeldDate: false,
       requiredConnectionTypeWithWeldDate: false,
@@ -634,7 +702,7 @@ describe('existing rows report import preview', () => {
       ...DEFAULT_SAVE_CHECK_SETTINGS,
       ...disabledChecks,
     })
-    const weldDate = expectedCode === 'ЗВ-12' ? '01.01.2999' : '01.07.2026'
+    const weldDate = expectedCode === 'СП-04' ? '01.01.2999' : '01.07.2026'
     const file = buildWorkbookFile(
       [MASS_FILL_ROW_ID_HEADER, 'Стык', 'Дата сварки'],
       [[7, 'F1', weldDate]],
@@ -649,8 +717,13 @@ describe('existing rows report import preview', () => {
       welderStampSuspensions: [],
     })
 
-    expect(preview.validRecords).toEqual([])
-    expect(preview.errors[0]?.message).toContain(expectedCode)
+    if (expectedCode === 'СП-03') {
+      expect(preview.errors).toEqual([])
+      expect(preview.validRecords).toEqual([{ id: 7, weldDate: '2026-07-01' }])
+    } else {
+      expect(preview.validRecords).toEqual([])
+      expect(preview.errors[0]?.message).toContain(expectedCode)
+    }
   })
 
   it('keeps officiality out of mass fill update payloads', async () => {
@@ -888,7 +961,7 @@ describe('existing rows report import preview', () => {
     expect(preview.errors[0]?.message).toContain('дата заявки ПСТО')
   })
 
-  it('respects disabled PSTO request chronology check during replace data preview', async () => {
+  it('ignores obsolete disabled PSTO chronology setting during replace data preview', async () => {
     saveDataListSettings({
       ...DEFAULT_DATA_LIST_SETTINGS,
       connectionTypes: ['С17'],
@@ -926,8 +999,8 @@ describe('existing rows report import preview', () => {
       welderStampSuspensions: [],
     })
 
-    expect(preview.errors).toEqual([])
-    expect(preview.validRecords).toEqual([{ id: 7, weldDate: '2026-07-10' }])
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('СП-04')
   })
 
   it('blocks a line move with primary PSTO history and reports another row error together', async () => {
@@ -1159,7 +1232,7 @@ describe('existing rows report import preview', () => {
 
     expect(preview.validRecords).toEqual([])
     expect(preview.errors).toHaveLength(1)
-    expect(preview.errors[0]?.message).toContain('ЗВ-26')
+    expect(preview.errors[0]?.message).toContain('ЗВ-02')
     expect(preview.errors[0]?.message).toContain('кириллические символы')
     expect(preview.errors[0]?.message).toContain('Исправьте номер в карточке стыка')
     expect(preview.errors[0]?.fieldKeys).toEqual(['joint'])
@@ -1277,7 +1350,7 @@ describe('existing rows report import preview', () => {
     })
 
     expect(preview.validRecords).toEqual([])
-    expect(preview.errors[0]?.message).toContain('ЗВ-27')
+    expect(preview.errors[0]?.message).toContain('СП-12')
     expect(preview.errors[0]?.message).toContain('РК')
     expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining([
       'hasRk',
@@ -1343,7 +1416,7 @@ describe('existing rows report import preview', () => {
 
     expect(preview.validRecords).toEqual([])
     expect(preview.errors).toHaveLength(1)
-    expect(preview.errors[0]?.message).toContain('ЗВ-26')
+    expect(preview.errors[0]?.message).toContain('ЗВ-02')
     expect(preview.errors[0]?.message).toContain('Поле "Тип соединения"')
     expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['joint', 'connectionType']))
   })
@@ -1550,7 +1623,7 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords).toHaveLength(1)
   })
 
-  it('requires a material group with a weld date during import preview', async () => {
+  it('allows backfilling the material group after importing the weld date', async () => {
     saveSaveCheckSettings({
       ...DEFAULT_SAVE_CHECK_SETTINGS,
       requiredRootStampWithWeldDate: false,
@@ -1564,9 +1637,8 @@ describe('existing rows report import preview', () => {
       welderStampSuspensions: [],
     })
 
-    expect(preview.errors).toHaveLength(1)
-    expect(preview.errors[0]?.message).toContain('при заполненной дате сварки это поле обязательно')
-    expect(preview.validRecords).toEqual([])
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toHaveLength(1)
   })
 
   it('uses save-check DLS settings during import preview', async () => {

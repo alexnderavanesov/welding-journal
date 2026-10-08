@@ -5,6 +5,24 @@ import type { StoredDocumentTemplate } from '@/lib/document-template-storage'
 import { createCurrentGeneratedDocumentBlob } from '@/lib/welding-journal-document'
 
 describe('layered control document preview', () => {
+  it('preserves material side order in both the base journal and the configured print template', async () => {
+    const rows = ['М05 + М01', 'М01 + М05', 'М01'].map((materialGroup, index) => ({ id: index + 1, joint: `F${index + 1}`, materialGroup }))
+    const template: StoredDocumentTemplate = {
+      ...createLayeredTemplate('layeredVikEdges', { resultField: 'vikResult', conclusionDateField: 'vikConclusionDate', conclusionField: 'vikConclusion', requestField: 'vikRequest' }),
+      id: 'weldingJournal',
+      constructorConfig: { version: 1, sheetName: 'Шаблон', repeatRow: 1, bindings: [{ cell: 'A1', mode: 'row', field: 'materialGroup' }] },
+    }
+    for (const currentTemplate of [null, template]) {
+      const blob = await createCurrentGeneratedDocumentBlob({ type: 'weldingJournal', rows, welderStamps: [], template: currentTemplate })
+      const workbook = XLSX.read(await blob.arrayBuffer(), { type: 'array' })
+      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      const values = currentTemplate
+        ? XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 }).map(row => row[0])
+        : XLSX.utils.sheet_to_json<Record<string, string>>(sheet).map(row => row['Группа материалов'])
+      expect(values).toEqual(['М05 + М01', 'М01 + М05', 'М01'])
+    }
+  })
+
   it('uses the existing missing-template error instead of generating a fallback workbook', async () => {
     await expect(createCurrentGeneratedDocumentBlob({
       type: 'layeredVikEdges',

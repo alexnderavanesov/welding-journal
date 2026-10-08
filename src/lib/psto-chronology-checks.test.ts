@@ -26,7 +26,7 @@ describe('psto chronology checks', () => {
     )
   })
 
-  it('does not block PSTO chronology when the save check is disabled', () => {
+  it('blocks contradictory PSTO chronology despite the old toggle', () => {
     const rows = [
       {
         id: 1,
@@ -42,7 +42,7 @@ describe('psto chronology checks', () => {
         ...DEFAULT_SAVE_CHECK_SETTINGS,
         pstoResultRequestDateOrder: false,
       }),
-    ).toEqual([])
+    ).toContainEqual(expect.objectContaining({ kind: 'weld-after-request' }))
   })
 
   it('enforces ZV-23 independently when ZV-24 is disabled', () => {
@@ -63,10 +63,10 @@ describe('psto chronology checks', () => {
     expect(getPstoChronologyIssues(rows, settings)).toContainEqual(expect.objectContaining({
       kind: 'weld-after-result',
     }))
-    expect(findFirstPstoChronologySaveBlockReason(rows, settings)).toContain('ЗВ-23')
+    expect(findFirstPstoChronologySaveBlockReason(rows, settings)).toContain('СП-04')
   })
 
-  it('does not apply ZV-24 request ordering when only ZV-23 is enabled', () => {
+  it('always applies PSTO request ordering', () => {
     const rows = [{
       id: 1,
       joint: 'F1',
@@ -80,7 +80,7 @@ describe('psto chronology checks', () => {
     expect(getPstoChronologyIssues(rows, {
       ...DEFAULT_SAVE_CHECK_SETTINGS,
       pstoResultRequestDateOrder: false,
-    })).toEqual([])
+    })).toContainEqual(expect.objectContaining({ kind: 'weld-after-request' }))
   })
 
   it('shows every independent PSTO chronology problem in dispatcher diagnostics', () => {

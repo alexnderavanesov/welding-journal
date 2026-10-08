@@ -65,7 +65,7 @@ function buildDispatcherTaskIndexRowsWithMode(
 }
 
 export function isDispatcherTaskRelatedToRow(task: RepeatedJointTask, row: WeldRow) {
-  if (task.kind === 'line-consistency' && task.systemWarningCode === 'СП-03') return task.row.id === row.id
+  if (task.kind === 'line-consistency' && task.systemWarningCode === 'СП-08') return task.row.id === row.id
   if (task.kind === 'line-consistency' || task.kind === 'percentage-line-control') {
     return hasSameLineIdentity(task, row)
   }
@@ -86,7 +86,7 @@ export function getDispatcherTasksForRow(tasks: readonly RepeatedJointTask[], ro
 }
 
 export function isDispatcherTaskDirectlyRelatedToJoint(task: RepeatedJointTask, row: WeldRow) {
-  if (task.kind === 'line-consistency' && task.systemWarningCode === 'СП-03') return task.row.id === row.id
+  if (task.kind === 'line-consistency' && task.systemWarningCode === 'СП-08') return task.row.id === row.id
   if (task.kind === 'line-consistency' || task.kind === 'percentage-line-control') return false
   return isDispatcherTaskRelatedToRow(task, row)
 }
@@ -213,7 +213,7 @@ function getDispatcherTaskTargetRowIds(
   rows: DispatcherTaskTargetRows,
 ) {
   if (task.kind === 'check' && task.reason === CHAIN_ACTUALITY_REASON) return task.actualityRowIds ?? [task.sourceRow.id, task.row.id]
-  if (task.kind === 'line-consistency' && task.systemWarningCode === 'СП-03') return [task.row.id]
+  if (task.kind === 'line-consistency' && task.systemWarningCode === 'СП-08') return [task.row.id]
   if (task.kind === 'line-consistency' || task.kind === 'percentage-line-control') {
     return rows.byLine.get(getLineIdentityKey(task)) ?? []
   }

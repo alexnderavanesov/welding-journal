@@ -118,7 +118,7 @@ test('creates, navigates, revokes and safely protects an early coil', async ({ p
   })
 
   await page.goto('/journal')
-  const repeatedJointGroup = await openDispatcherObjectGroup(page, SOURCE_JOINT, 'ДЗ-07')
+  const repeatedJointGroup = await openDispatcherObjectGroup(page, SOURCE_JOINT, 'СП-09')
   await expect(repeatedJointGroup.getByText(`Создать ${EXPECTED_REPAIR}`, { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Катушка досрочно', exact: true }).click()
   await confirmEarlyCoil(page)
@@ -132,9 +132,10 @@ test('creates, navigates, revokes and safely protects an early coil', async ({ p
   await assertDirectCoilDeletionIsBlocked(page)
   await assertDirectCoilPairDeletionIsBlocked(page)
   await markFirstCoilJointAsEdited()
+  await withE2eDatabase(db => db.query("update weld_joints set weld_date='2026-09-03' where project_title=$1 and joint=$2", [PROJECT, COIL_JOINTS[0]]))
   await openAcceptedDecisions(page)
   await revokeEarlyCoil(page, true)
-  await expect(page.getByText(/Нельзя отменить решение: стык S951Y1 уже содержит данные/)).toBeVisible()
+  await expect(page.getByRole('alert').filter({ hasText: /дату сварки у S951Y1/ })).toBeVisible()
   await expect.poll(loadEarlyCoilState).toEqual({
     accepted: true,
     expectedRepairExists: false,
@@ -144,7 +145,7 @@ test('creates, navigates, revokes and safely protects an early coil', async ({ p
   await removeCoilJointsOutOfBand([COIL_JOINTS[1]])
   await openAcceptedDecisions(page)
   await revokeEarlyCoil(page, true)
-  await expect(page.getByText(/Нельзя отменить решение: пара стыков катушки .* неполна/)).toBeVisible()
+  await expect(page.getByText(/Пара катушки неполна или содержит дубли/)).toBeVisible()
   await expect.poll(loadEarlyCoilState).toEqual({
     accepted: true,
     expectedRepairExists: false,
@@ -166,17 +167,18 @@ test('creates, navigates, revokes and safely protects an early coil', async ({ p
     coilJoints: [...COIL_JOINTS],
   })
 
-  // The new explicit correction is a separate exit for an edited draft. Closing
-  // the check does not revoke the decision, and passwords alone do not confirm it.
+  // The same entry also handles edited but cleared drafts. Closing the check
+  // does not revoke the decision, and passwords alone do not confirm it.
   await markFirstCoilJointAsEdited()
   await openAcceptedDecisions(page)
-  await page.getByRole('button', { name: 'Исправить ошибочное решение', exact: true }).click()
-  const correction = page.getByRole('dialog', { name: 'Отменить ошибочное досрочное решение', exact: true })
+  await page.getByRole('button', { name: 'Отменить решение', exact: true }).click()
+  const correction = page.getByRole('dialog', { name: 'Отмена решения о досрочной катушке', exact: true })
   await expect(correction.getByLabel('ФИО подтвердившего')).toHaveCount(0)
-  await correction.getByRole('button', { name: 'Отмена', exact: true }).click()
+  await expect(correction.getByText(/Стороны ранее редактировали/)).toBeVisible()
+  await correction.getByRole('button', { name: 'Закрыть', exact: true }).click()
   expect((await loadEarlyCoilState()).accepted).toBe(true)
-  await page.getByRole('button', { name: 'Исправить ошибочное решение', exact: true }).click()
-  const confirm = correction.getByRole('button', { name: 'Отменить решение и удалить очищенные стороны', exact: true })
+  await page.getByRole('button', { name: 'Отменить решение', exact: true }).click()
+  const confirm = correction.getByRole('button', { name: 'Подтвердить отмену', exact: true })
   await expect(confirm).toBeDisabled()
   await correction.getByRole('checkbox').check()
   await confirm.click()
@@ -189,14 +191,14 @@ test('creates, navigates, revokes and safely protects an early coil', async ({ p
   await expect(correction).toBeHidden()
   await expect.poll(loadEarlyCoilState).toEqual({ accepted: false, expectedRepairExists: false, coilJoints: [] })
   await page.goto('/journal')
-  const recovered = await openDispatcherObjectGroup(page, SOURCE_JOINT, 'ДЗ-07')
+  const recovered = await openDispatcherObjectGroup(page, SOURCE_JOINT, 'СП-09')
   await expect(recovered.getByText(`Создать ${EXPECTED_REPAIR}`, { exact: true })).toBeVisible()
 })
 
 test('opens the selected rejected joint in LNK officiality and changes it only after save', async ({ page }) => {
   const sourceRowId = await seedUnofficialityChoice()
 
-  const taskGroup = await openDispatcherObjectGroup(page, UNOFFICIALITY_JOINT, 'ДЗ-07')
+  const taskGroup = await openDispatcherObjectGroup(page, UNOFFICIALITY_JOINT, 'СП-09')
   const target = taskGroup.getByText(UNOFFICIALITY_EXPECTED_REPAIR, { exact: true })
   const taskCard = target.locator('xpath=ancestor::div[contains(@class,"grid")][1]')
   await taskCard
@@ -408,7 +410,7 @@ test('blocks predecessor deletion and keeps recovery after deleting a tail or au
     `Цепочка продолжена стыком ${RECOVERY_CHAIN[1]}`,
     { exact: true },
   )).toHaveCount(0)
-  let taskGroup = await openDispatcherObjectGroup(page, RECOVERY_CHAIN[0], 'ДЗ-07')
+  let taskGroup = await openDispatcherObjectGroup(page, RECOVERY_CHAIN[0], 'СП-09')
   await expectDispatcherCreateAction(taskGroup, RECOVERY_CHAIN[1])
   await expect(taskGroup.getByText('S961R2W1', { exact: true })).toHaveCount(0)
 
@@ -417,13 +419,13 @@ test('blocks predecessor deletion and keeps recovery after deleting a tail or au
     .toEqual([RECOVERY_CHAIN[1]])
 
   await deleteJournalRows(page, [{ id: rowIds.get(AUTOMATIC_COIL_JOINTS[0])!, joint: AUTOMATIC_COIL_JOINTS[0] }])
-  const automaticIntegrityGroup = await openDispatcherObjectGroup(page, AUTOMATIC_COIL_CHAIN[0], 'ДЗ-13')
+  const automaticIntegrityGroup = await openDispatcherObjectGroup(page, AUTOMATIC_COIL_CHAIN[0], 'СП-09')
   const automaticCoilSourceRow = page.locator(
     `tr[data-weld-row-id="${rowIds.get(AUTOMATIC_COIL_CHAIN[3])}"]`,
   )
   await expect(automaticCoilSourceRow.getByText('Цепочка продолжена катушкой', { exact: true })).toHaveCount(0)
   await expect(automaticIntegrityGroup.getByText('Проверить целостность цепочки', { exact: true })).toBeVisible()
-  taskGroup = await openDispatcherObjectGroup(page, AUTOMATIC_COIL_CHAIN[0], 'ДЗ-09')
+  taskGroup = await openDispatcherObjectGroup(page, AUTOMATIC_COIL_CHAIN[0], 'СП-09')
   await expectDispatcherCoilAction(taskGroup, [AUTOMATIC_COIL_JOINTS[0]])
   await clickDispatcherAction(taskGroup, `катушка ${AUTOMATIC_COIL_JOINTS[0]}`, 'Катушка')
   await expect.poll(() => loadExistingJoints(RECOVERY_PROJECT, RECOVERY_LINE, [AUTOMATIC_COIL_JOINTS[0]]))
@@ -448,7 +450,7 @@ test('blocks predecessor deletion and keeps recovery after deleting a tail or au
     'select replaced_by_coil from weld_joint_program_states where weld_joint_id=$1',
     [rowIds.get(AUTOMATIC_COIL_CHAIN[0])],
   )).rows[0]?.replaced_by_coil)).toBe(false)
-  taskGroup = await openDispatcherObjectGroup(page, AUTOMATIC_COIL_CHAIN[0], 'ДЗ-09')
+  taskGroup = await openDispatcherObjectGroup(page, AUTOMATIC_COIL_CHAIN[0], 'СП-09')
   await expectDispatcherCoilAction(taskGroup, [...AUTOMATIC_COIL_JOINTS])
   await expect(taskGroup.getByText('S971W4', { exact: true })).toHaveCount(0)
   await clickDispatcherAction(
@@ -548,16 +550,23 @@ async function confirmEarlyCoil(page: Page) {
 
 async function openAcceptedDecisions(page: Page) {
   await page.goto('/settings')
-  await page.getByRole('button', { name: 'Принятые исключения', exact: true }).click()
+  await page.getByRole('button', { name: 'Правила и проверки', exact: true }).click()
+  await page.getByRole('tab', { name: 'Принятые исключения', exact: true }).click()
   await expect(page.getByText(`Досрочная врезка катушки ${COIL_JOINTS.join(' + ')}`)).toBeVisible()
 }
 
 async function revokeEarlyCoil(page: Page, authenticate = false) {
   const decisionTitle = page.getByText(`Досрочная врезка катушки ${COIL_JOINTS.join(' + ')}`, { exact: true })
-  const decisionRow = decisionTitle.locator('xpath=ancestor::div[contains(@class,"flex")][.//button[normalize-space()="Отменить"]][1]')
-  await decisionRow.getByRole('button', { name: 'Отменить', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Отменить досрочную врезку катушки' })).toBeVisible()
-  await page.getByRole('button', { name: 'Отменить решение', exact: true }).click()
+  const decisionRow = decisionTitle.locator('xpath=ancestor::div[contains(@class,"flex")][.//button[normalize-space()="Отменить решение"]][1]')
+  await decisionRow.getByRole('button', { name: 'Отменить решение', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Отмена решения о досрочной катушке', exact: true })
+  await expect(dialog.getByRole('region', { name: 'Последствия отмены решения' })).toBeVisible()
+  if (!await dialog.getByRole('checkbox').count()) {
+    await expect(dialog.getByRole('button', { name: 'Подтвердить отмену' })).toBeDisabled()
+    return
+  }
+  await dialog.getByRole('checkbox').check()
+  await dialog.getByRole('button', { name: 'Подтвердить отмену', exact: true }).click()
   if (authenticate) {
     await expect(page.getByRole('heading', { name: 'Изменение настроек', exact: true })).toBeVisible()
     await page.getByLabel('Пароль', { exact: true }).fill(SETTINGS_PASSWORD)
@@ -1075,8 +1084,8 @@ async function assertDirectCoilPairDeletionIsBlocked(page: Page) {
 }
 
 async function recreateCoilFromDispatcher(page: Page, targets: string[]) {
-  const taskGroup = await openDispatcherObjectGroup(page, SOURCE_JOINT, 'ДЗ-09')
-  await expect(taskGroup).toContainText(`Создать ${targets.join(' + ')}`)
+  const taskGroup = await openDispatcherObjectGroup(page, SOURCE_JOINT, 'СП-09')
+  await expectDispatcherCoilAction(taskGroup, targets)
   await taskGroup.getByRole('button', { name: 'Катушка', exact: true }).click()
 }
 
@@ -1134,6 +1143,14 @@ async function seedDeletionRecoveryChains() {
           'да', 'проект', null, null, null, null, null, 'ожидает сварку', now(), now(), now())
       returning id, joint
     `, [RECOVERY_PROJECT, RECOVERY_LINE])
+    // The recovery scenario needs valid rejected chains: cuts come from UZK,
+    // and the third official failure is a cut rather than a third repair.
+    await client.query(`update weld_joints set
+      has_uzk='да', uzk_control_basis='проект', uzk_request=vik_request,
+      uzk_request_date=vik_request_date, uzk_result='вырез',
+      uzk_conclusion=vik_conclusion, uzk_conclusion_date=vik_conclusion_date,
+      vik_result='годен'
+      where id=any($1::int[]) and (vik_result='вырез' or joint='S961R2')`, [result.rows.map(row => row.id)])
     await client.query(`
       insert into dispatcher_task_index_state
         (id, source_revision, computed_revision, full_rebuild, updated_at)

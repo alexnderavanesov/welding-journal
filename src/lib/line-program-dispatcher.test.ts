@@ -25,11 +25,11 @@ describe('line-program rules through dispatcher persistence and virtual fields',
     const rows = [source, row(2, { joint: 'F1R1', hasPvk: 'да', hasRk: 'да' }), row(3)]
     const tasks = buildProgramRepairTasks(rows, new Set([programApprovalKey(source, 'common', true)]))
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-03')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-08')
     expect(isDispatcherTaskEnabled(tasks[0], Object.fromEntries(Object.keys(DEFAULT_DISPATCHER_SETTINGS).map(key => [key, false])) as typeof DEFAULT_DISPATCHER_SETTINGS)).toBe(true)
     const result = indexed(tasks, rows)
-    expect(result.storedIndex).toEqual([{ rowId: 2, taskKey: 'code:СП-03', code: 'СП-03' }])
-    expect([...result.virtual]).toEqual([[2, 'СП-03']])
+    expect(result.storedIndex).toEqual([{ rowId: 2, taskKey: 'code:СП-08', code: 'СП-08' }])
+    expect([...result.virtual]).toEqual([[2, 'СП-08']])
     rows[1].hasUzk = 'да'
     expect(buildProgramRepairTasks(rows, new Set([programApprovalKey(source, 'common', true)]))).toEqual([])
   })
@@ -39,7 +39,7 @@ describe('line-program rules through dispatcher persistence and virtual fields',
     const tasks = (values: WeldRow[], keys = accepted) => buildVisibleDispatcherTasks({ rows: values, acceptedDispatcherWarningKeys: keys,
       dismissedRepeatedJointTaskKeys: new Set(), dispatcherSettings: DEFAULT_DISPATCHER_SETTINGS,
       dispatcherReminderSettings: DEFAULT_DISPATCHER_REMINDER_SETTINGS, welderStamps: [], welderStampSuspensions: [],
-    }).repeatedJointTasks.filter(task => getDispatcherTaskCode(task) === 'ДЗ-27')
+    }).repeatedJointTasks.filter(task => task.kind === 'line-consistency' && task.fieldKey === 'controlPresence')
     expect(tasks(rows, new Set())).toHaveLength(1)
     expect(tasks(rows)).toEqual([])
     expect(indexed(tasks(rows), rows).virtual.size).toBe(0)
@@ -55,34 +55,34 @@ describe('line-program rules through dispatcher persistence and virtual fields',
     const rows = [row(1, { pvkControlPercent: null })]
     const tasks = buildLineConsistencyTasks(rows)
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-02')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-01')
     expect(isDispatcherTaskEnabled(tasks[0], Object.fromEntries(Object.keys(DEFAULT_DISPATCHER_SETTINGS).map((key) => [key, false])) as typeof DEFAULT_DISPATCHER_SETTINGS)).toBe(true)
     const result = indexed(tasks, rows)
-    expect(result.storedIndex).toContainEqual({ rowId: 1, taskKey: 'code:СП-02', code: 'СП-02' })
-    expect(result.virtual.get(1)).toBe('СП-02')
+    expect(result.storedIndex).toContainEqual({ rowId: 1, taskKey: 'code:СП-01', code: 'СП-01' })
+    expect(result.virtual.get(1)).toBe('СП-01')
     expect(buildLineConsistencyTasks([row(1, { weldControlPercent: 0, pvkControlPercent: 0 })])).toEqual([])
   })
   it('indexes DZ-27 for two mandatory alternatives, never for mandatory plus additional', () => {
     const rows = [row(1, { weldControlPercent: 100, hasRk: 'да', hasUzk: 'да' })]
     const tasks = buildLineConsistencyTasks(rows)
-    expect(tasks.map(getDispatcherTaskCode)).toEqual(['ДЗ-27'])
-    expect(indexed(tasks, rows).virtual.get(1)).toBe('ДЗ-27')
+    expect(tasks.map(getDispatcherTaskCode)).toEqual(['СП-01'])
+    expect(indexed(tasks, rows).virtual.get(1)).toBe('СП-01')
     expect(buildLineConsistencyTasks([{ ...rows[0], hasUzk: 'дополнительный' }])).toEqual([])
   })
   it('agrees with planned full-line control before welding in the saved index and virtual field', () => {
     const rows = [row(1, { weldControlPercent: 100, weldDate: null, stamp1K: null, hasRk: 'да', hasUzk: 'да' })]
     expect(calculateLineProgram(rows, 100, 10)[0].common.excessAssignments).toHaveLength(1)
     const tasks = buildLineConsistencyTasks(rows)
-    expect(tasks.map(getDispatcherTaskCode)).toEqual(['ДЗ-27'])
-    expect(indexed(tasks, rows).virtual.get(1)).toBe('ДЗ-27')
+    expect(tasks.map(getDispatcherTaskCode)).toEqual(['СП-01'])
+    expect(indexed(tasks, rows).virtual.get(1)).toBe('СП-01')
     expect(buildLineConsistencyTasks([{ ...rows[0], weldControlPercent: 30 }])).toEqual([])
     expect(buildLineConsistencyTasks([{ ...rows[0], hasUzk: 'дополнительный' }])).toEqual([])
   })
   it('keeps conflicting metadata mandatory and does not calculate a seemingly confirmed demand', () => {
     const rows = [row(1), row(2, { category: 'I' })]
     const tasks = buildLineConsistencyTasks(rows)
-    expect(tasks.map(getDispatcherTaskCode)).toEqual(['СП-02'])
-    expect(indexed(tasks, rows).virtual.get(2)).toBe('СП-02')
+    expect(tasks.map(getDispatcherTaskCode)).toEqual(['СП-01'])
+    expect(indexed(tasks, rows).virtual.get(2)).toBe('СП-01')
     expect(buildPercentageLineControlTasks(rows)).toEqual([])
     expect(buildPercentageLineControlTasks([row(1, { category: null })])).toEqual([])
   })

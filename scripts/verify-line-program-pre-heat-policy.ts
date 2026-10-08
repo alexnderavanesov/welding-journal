@@ -55,13 +55,14 @@ try {
     await dispatcher.ensureDispatcherTaskIndexFresh()
     const persisted = await db.select().from(dispatcherRowTasks).where(inArray(dispatcherRowTasks.weldJointId, ids))
     const visible = await read.attachDispatcherTaskCodesToPage(ids.map((id) => ({ id }))) as Array<{ id: number; dispatcherTasks: string }>
-    for (const code of ['ДЗ-05', 'ДЗ-06']) {
-      assert.equal(persisted.some((row) => row.code === code), false, `${code}: PVK failure never escalates RK/UZK`)
-      assert.equal(visible.some((row) => row.dispatcherTasks.split(', ').includes(code)), false, `${code}: PVK failure never escalates RK/UZK`)
+    for (const code of ['СП-01', 'СП-02']) {
+      // These codes also cover ordinary assignment debts and qualifications.
+      assert.equal(visible.some((row) => row.dispatcherTasks.split(', ').includes(code)), persisted.some((row) => row.code === code), `${code}: persisted and virtual agree`)
     }
     const pages = await db.select().from(dispatcherTaskPages)
     const tasks = pages.flatMap((page) => JSON.parse(page.tasks) as PercentageLineControlTask[])
       .filter((task) => task.kind === 'percentage-line-control' && task.stamp === 'POLICY-SQL')
+    assert(!tasks.some(task => task.fullControlRequired === true || task.issue === 'suspend-welder'), 'PVK failure never escalates RK/UZK or suspension')
     assert(tasks.some((task) => task.issue === 'missing' && task.demandKind !== 'pvk' && task.requiredControls === 8))
     assert.deepEqual(await db.select().from(preHeatTreatmentControls).where(inArray(preHeatTreatmentControls.weldJointId, ids)), beforeHistory)
   }

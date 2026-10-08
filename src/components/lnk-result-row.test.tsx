@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { LnkResultRow } from '@/components/lnk-result-row'
 import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '@/lib/control-process-settings'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
 const renderJointHeading = vi.fn()
 
@@ -23,7 +22,7 @@ describe('LnkResultRow', () => {
   it('updates only its own draft mark without toggling joint selection or changing the saved mark', () => {
     const row = { id: 9, line: 'L1', joint: 'F9', connectionType: 'У19', hasPvk: 'да', pvkRequest: 'ПВК-9', pvkRequestDate: '2026-08-26' } as WeldRow
     const props = { row, requestName: '', requestDate: '', methodKey: 'pvkRequest' as const, selected: true,
-      rowResult: 'годен', saveCheckSettings: DEFAULT_SAVE_CHECK_SETTINGS, controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
+      rowResult: 'годен', controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
       onToggleRow: vi.fn(), onSetRowResult: vi.fn(), onSetLayeredControl: vi.fn(), onOpenContextMenu: vi.fn() }
     const { rerender } = render(<LnkResultRow {...props} />)
     const checkbox = screen.getByRole('checkbox', { name: 'Послойный контроль: L1 · F9' })
@@ -59,7 +58,6 @@ describe('LnkResultRow', () => {
       methodKey: 'vikRequest' as const,
       selected: false,
       rowResult: '',
-      saveCheckSettings: DEFAULT_SAVE_CHECK_SETTINGS,
       controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
       onToggleRow: vi.fn(),
       onSetRowResult: vi.fn(),
@@ -96,7 +94,6 @@ describe('LnkResultRow', () => {
       requestDate: '',
       methodKey: 'vikRequest' as const,
       rowResult: '',
-      saveCheckSettings: DEFAULT_SAVE_CHECK_SETTINGS,
       controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
       onToggleRow: vi.fn(),
       onSetRowResult: vi.fn(),
@@ -131,7 +128,6 @@ describe('LnkResultRow', () => {
         methodKey="vikRequest"
         selected={false}
         rowResult=""
-        saveCheckSettings={DEFAULT_SAVE_CHECK_SETTINGS}
         controlProcessSettings={DEFAULT_CONTROL_PROCESS_SETTINGS}
         onToggleRow={vi.fn()}
         onSetRowResult={vi.fn()}

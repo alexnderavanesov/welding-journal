@@ -24,15 +24,15 @@ function makePercentageTask(issue: PercentageLineControlTask['issue']): Percenta
 }
 
 describe('canAcceptDispatcherTask', () => {
-  it.each(['excess', 'new-welder', 'rejected-rows', 'suspend-welder'] as const)(
+  it.each(['new-welder', 'rejected-rows'] as const)(
     'allows the percentage-line action exposed by the interface: %s',
     (issue) => {
       expect(canAcceptDispatcherTask(makePercentageTask(issue))).toBe(true)
     },
   )
 
-  it('rejects the percentage-line task without an accept action', () => {
-    expect(canAcceptDispatcherTask(makePercentageTask('missing'))).toBe(false)
+  it.each(['missing', 'excess', 'suspend-welder'] as const)('cannot accept a mandatory SP task: %s', issue => {
+    expect(canAcceptDispatcherTask(makePercentageTask(issue))).toBe(false)
   })
 
   it('rejects all other dispatcher task kinds', () => {

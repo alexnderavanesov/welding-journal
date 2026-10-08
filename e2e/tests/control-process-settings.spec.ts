@@ -59,10 +59,8 @@ test('shows the protected process tab before locking and keeps RK exposures ther
     'Заявки и заключения',
     'Данные',
     'Системные индексы',
-    'Диспетчер задач и напоминаний',
-    'Принятые исключения',
-    'Проверки при сохранении',
-    'Прочее',
+    'Правила и проверки',
+    'Расчет дюймов',
     'Процессы контроля',
     'Блокировка',
   ])
@@ -75,7 +73,7 @@ test('shows the protected process tab before locking and keeps RK exposures ther
   await expect(page.getByRole('heading', { name: 'Параметры РК', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Экспозиции по диаметрам', exact: true })).toBeVisible()
 
-  await page.getByRole('button', { name: 'Прочее', exact: true }).click()
+  await page.getByRole('button', { name: 'Расчет дюймов', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Экспозиции по диаметрам', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Процессы контроля', exact: true }).click()
 

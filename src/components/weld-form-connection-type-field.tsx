@@ -3,7 +3,7 @@ import { Select } from '@/components/ui/select'
 import { type DataListSettings, useDataListSettings } from '@/lib/data-list-settings'
 
 type WeldFormDataListFieldProps = {
-  listKey: Extract<keyof DataListSettings, 'connectionTypes' | 'materialGroups'>
+  listKey: Extract<keyof DataListSettings, 'connectionTypes'>
   value?: string | null
   inputRef?: Ref<HTMLSelectElement>
   onChange: (value: string | null) => void
@@ -18,6 +18,8 @@ export function WeldFormDataListField({ listKey, value, inputRef, onChange }: We
   return (
     <Select
       ref={inputRef}
+      aria-label="Тип соединения"
+      className="h-12"
       value={currentValue}
       disabled={options.length === 0 && !hasCurrentValueOutsideList}
       onChange={(event) => onChange(event.target.value || null)}
@@ -35,8 +37,4 @@ export function WeldFormDataListField({ listKey, value, inputRef, onChange }: We
 
 export function WeldFormConnectionTypeField(props: Omit<WeldFormDataListFieldProps, 'listKey'>) {
   return <WeldFormDataListField {...props} listKey="connectionTypes" />
-}
-
-export function WeldFormMaterialGroupField(props: Omit<WeldFormDataListFieldProps, 'listKey'>) {
-  return <WeldFormDataListField {...props} listKey="materialGroups" />
 }

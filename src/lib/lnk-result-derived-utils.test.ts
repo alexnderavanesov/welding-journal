@@ -106,7 +106,7 @@ describe('getLnkResultSaveBlockReason', () => {
     ).toContain('Дата контроля РК (01.07.2026) не может быть раньше даты сварки (03.07.2026)')
   })
 
-  it('allows LNK control date before weld date when the check is disabled', () => {
+  it('blocks LNK before welding even with the legacy check disabled', () => {
     expect(
       getLnkResultSaveBlockReason({
         draft: baseDraft,
@@ -120,7 +120,7 @@ describe('getLnkResultSaveBlockReason', () => {
         },
         selectedRows: [{ ...baseRow, vikConclusionDate: '2026-07-01' }],
       }),
-    ).toBe('')
+    ).toContain('СП-04')
   })
 
   it('allows empty control date and conclusion when these LNK checks are disabled', () => {
@@ -187,7 +187,7 @@ describe('getLnkResultSaveBlockReason', () => {
     ).toBe('')
   })
 
-  it('keeps repair result for forbidden diameter when repair rules are disabled', () => {
+  it('keeps a forbidden repair visible but blocks saving even with the legacy rule disabled', () => {
     const repairDraft = { ...baseDraft, result: 'ремонт', controlDate: '2026-07-04' }
     const repairRow = { ...baseRow, d1: '57', d2: '57' } as WeldRow
     const settings = {
@@ -195,7 +195,7 @@ describe('getLnkResultSaveBlockReason', () => {
       lnkResultRepairRules: false,
     }
 
-    expect(buildLnkResultDraftById([repairRow], repairDraft, settings)).toEqual({ 1: 'ремонт' })
+    expect(buildLnkResultDraftById([repairRow], repairDraft)).toEqual({ 1: 'ремонт' })
     expect(
       getLnkResultSaveBlockReason({
         draft: repairDraft,
@@ -204,7 +204,7 @@ describe('getLnkResultSaveBlockReason', () => {
         saveCheckSettings: settings,
         selectedRows: [repairRow],
       }),
-    ).toBe('')
+    ).toMatch(/СП-07.*меньше 89 мм/)
   })
 
   it('blocks saving non-VIK result while VIK result is missing', () => {
@@ -439,15 +439,20 @@ describe('getLnkResultSaveBlockReason', () => {
     })
     expect(rejected.vikDefectDescription).toBeNull()
 
-    const cut = buildLnkResultCorrectionRow({
+    expect(() => buildLnkResultCorrectionRow({
       record: { ...rejected, vikDefectDescription: 'Трещина 12 мм' },
       methodKey: 'vikRequest',
       result: 'вырез',
+    })).toThrow(/СП-07.*вырез/)
+    const sameResult = buildLnkResultCorrectionRow({
+      record: { ...rejected, vikDefectDescription: 'Трещина 12 мм' },
+      methodKey: 'vikRequest',
+      result: 'ремонт',
     })
-    expect(cut.vikDefectDescription).toBe('Трещина 12 мм')
+    expect(sameResult.vikDefectDescription).toBe('Трещина 12 мм')
 
     const cleared = buildLnkResultCorrectionRow({
-      record: cut,
+      record: sameResult,
       methodKey: 'vikRequest',
       result: null,
     })

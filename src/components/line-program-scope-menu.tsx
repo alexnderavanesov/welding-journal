@@ -1,8 +1,9 @@
 import { useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
-import { Calculator, ChevronDown, ChevronUp, ClipboardList, List, Settings2 } from 'lucide-react'
+import { Calculator, ChevronDown, ChevronUp, ClipboardList, List, Printer, Settings2 } from 'lucide-react'
 import { ContextActionMenu, type ContextActionMenuState } from './context-action-menu'
 import type { LineProgramRecord } from '@/lib/line-program'
 import type { ProgramSelection } from '@/lib/line-program-workspace'
+import type { ProgramReportRequest } from '@/lib/line-program-report'
 import { PROGRAM_SECTION_METRICS, type ProgramSectionMetric } from '@/lib/line-program-section-summary'
 
 export type ProgramScopeCommand = { action: 'assignments' | 'calculation'; selection: ProgramSelection; jointId?: number; explain?: boolean }
@@ -15,7 +16,7 @@ export type ProgramScopeMenuOptions = {
 type SectionFilter = 'all' | 'missing' | 'excess' | 'reduction' | 'approved' | 'additional' | 'configuration'
 
 /** One menu for the whole page; opening it does not fetch or expand anything. */
-export function useProgramScopeMenu() {
+export function useProgramScopeMenu(onReport: (request: ProgramReportRequest) => void) {
   const [menu, setMenu] = useState<ContextActionMenuState>(null)
   const trigger = useRef<HTMLElement | null>(null)
   const close = () => { setMenu(null); if (trigger.current?.isConnected) trigger.current.focus({ preventScroll: true }) }
@@ -37,12 +38,18 @@ export function useProgramScopeMenu() {
     const kind = metric?.dataset.programKind
     const calculationScope: ProgramSelection = slice ? { ...scope, slice, kind: kind === 'common' || kind === 'pvk' ? kind : undefined } : scope
     const issue = line.configurationIssue || (line.weldControlPercent == null || line.pvkControlPercent == null ? 'Сначала настройте требования контроля линии.' : undefined)
+    const context = [line.projectTitle, line.subtitleCode, `Линия ${line.line}`].filter(Boolean).join(' · ')
     show(event, {
       heading: scope.stamp ? `Клеймо ${scope.stamp}` : scope.unassigned ? 'Клеймо не назначено' : `Линия ${line.line}`,
       description: [scope.stamp || scope.unassigned ? line.line : 'Все стыки линии', line.projectTitle, line.subtitleCode].filter(Boolean).join(' · '),
       items: [
         { id: 'assignments', label: 'Назначения', icon: ClipboardList, disabled: !!issue, title: issue, onSelect: onAssignments },
         { id: 'calculation', label: 'Расчёт', icon: Calculator, disabled: !!issue || !!scope.unassigned, title: issue || (scope.unassigned ? 'Без клейма нет отдельной расчётной группы.' : undefined), onSelect: () => onCalculation(calculationScope, !!slice) },
+        { id: 'reports', label: 'Показать', icon: Printer, onSelect: () => {}, children: [
+          ...(scope.stamp && !issue ? [{ id: 'stamp-report', label: 'Сводка по этому клейму', description: `Клеймо ${scope.stamp} · эта линия`, onSelect: () => onReport({ ids: [line.id], mode: 'stamps', stamp: scope.stamp, context: `${context} · клеймо ${scope.stamp}` }) }] : []),
+          { id: 'line-report', label: 'Сводка по этой линии', onSelect: () => onReport({ ids: [line.id], mode: 'lines', context }) },
+          ...(!issue ? [{ id: 'line-stamps-report', label: 'Сводка по клеймам линии', onSelect: () => onReport({ ids: [line.id], mode: 'stamps', context }) }] : []),
+        ] },
         { id: 'joints', label: 'Показать стыки', icon: List, disabled: !!issue, title: issue, onSelect: () => {}, children: ([
           ['all', 'Все стыки'], ['missing', 'К назначению'], ['excess', 'Лишние'], ['reduction', 'Кандидаты на снятие'],
         ] as const).map(([slice, label]) => ({ id: slice, label, disabled: !!issue, title: issue, onSelect: () => onSelect({ ...scope, kind: undefined, slice }) })) },
@@ -52,13 +59,17 @@ export function useProgramScopeMenu() {
       ],
     })
   }
-  const openSection = (event: ProgramScopeMenuEvent, options: { description: string; onSelect: (filter: SectionFilter) => void; onCalculation?: (metric: ProgramSectionMetric) => void }) => {
+  const openSection = (event: ProgramScopeMenuEvent, options: { description: string; onSelect: (filter: SectionFilter) => void; onCalculation?: (metric: ProgramSectionMetric) => void; report?: { ids: number[]; context: string } }) => {
     // Portalled dialogs and document links keep their own context, not section-wide filters.
     if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return
     const element = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-section-metric], [data-program-slice]') : null
     const metric = element?.dataset.sectionMetric ?? element?.dataset.programSlice
     const selected = metric && Object.hasOwn(PROGRAM_SECTION_METRICS, metric) ? metric as ProgramSectionMetric : 'common'
     show(event, { heading: 'Программа линий', description: options.description, items: [
+      ...(options.report ? [{ id: 'reports', label: 'Показать', icon: Printer, onSelect: () => {}, children: [
+        { id: 'lines-report', label: 'Сводка по линиям', onSelect: () => onReport({ ...options.report!, mode: 'lines' }) },
+        { id: 'stamps-report', label: 'Сводка по клеймам', onSelect: () => onReport({ ...options.report!, mode: 'stamps' }) },
+      ] }] : []),
       ...(options.onCalculation ? [{ id: 'calculation', label: 'Расчёт', icon: Calculator, onSelect: () => options.onCalculation!(selected) }, { type: 'separator' as const, id: 'filters' }] : []),
       ...([
       ['all', 'Все линии раздела'], ['missing', 'К назначению'], ['excess', 'Лишний контроль'],

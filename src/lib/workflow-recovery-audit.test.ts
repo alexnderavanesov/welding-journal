@@ -26,11 +26,11 @@ describe('recovery paths with every dispatcher rule enabled', () => {
     ['delete one coil side', () => freeze([root, ...coils]).filter(row => row.id !== 3)],
   ] as const)('%s leaves structural debt in tasks, stored codes and next step', (_name, fixture) => {
     const rows = fixture(), tasks = visible(rows)
-    const structural = tasks.filter(task => getDispatcherTaskCode(task) === 'СП-04')
+    const structural = tasks.filter(task => getDispatcherTaskCode(task) === 'СП-09')
     expect(structural.length).toBeGreaterThan(0)
     const codes = buildMergedDispatcherTaskCodes(buildDispatcherTaskCodeIndexRows(tasks, rows), []).allByRowId
     for (const task of structural) {
-      expect(codes.get(task.row.id)).toContain('СП-04')
+      expect(codes.get(task.row.id)).toContain('СП-09')
       expect(buildJointNextActions(task.row, tasks)[0]).toMatchObject({ kind: 'dispatcherTask' })
       expect(buildJointNextActions(task.row, tasks)[0].taskActionId).toBeTruthy()
     }
@@ -51,7 +51,7 @@ describe('recovery paths with every dispatcher rule enabled', () => {
   })
   it('does not let an accepted/dismissed key hide the physical restoration task', () => {
     const rows = freeze([root, ...coils]).filter(row => row.id === 1)
-    expect(visible(rows, new Set(['program-integrity:1'])).some(task => getDispatcherTaskCode(task) === 'СП-04')).toBe(true)
+    expect(visible(rows, new Set(['program-integrity:1'])).some(task => getDispatcherTaskCode(task) === 'СП-09')).toBe(true)
   })
   it('offers direct work for planned or awaiting-control rows; absence of an error task is not a dead end', () => {
     const planned = { ...root, weldDate: null, uzkResult: null }

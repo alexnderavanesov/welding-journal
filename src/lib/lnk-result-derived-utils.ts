@@ -1,5 +1,6 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { buildLayeredControlAssignment } from '@/lib/layered-control-rules'
+import { getLnkResultRestrictionReason, formatLnkResultRuleReason } from '@/lib/lnk-result-policy'
 import { getDateInputValidationReason } from '@/lib/date-format'
 import { normalizeDateLikeForStorage } from '@/lib/date-format'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
@@ -10,7 +11,7 @@ import {
   getEffectiveLnkResultDraftValueForRow,
   hasNonEmptyLnkResultDraftRows,
 } from '@/lib/lnk-result-draft'
-import { DEFAULT_SAVE_CHECK_SETTINGS, formatSaveCheckBlockReason, type SaveCheckSettings } from '@/lib/save-check-settings'
+import { DEFAULT_SAVE_CHECK_SETTINGS, formatSaveCheckBlockReason, normalizeSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import { getLnkMethodByRequestKey, isFinalLnkResultValue } from '@/lib/lnk-status'
 import {
   canSelectLnkResultRow,
@@ -26,7 +27,7 @@ import {
 } from '@/lib/request-document-identity'
 import type { SystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 import { getLnkChronologyRootCauseActions } from '@/lib/workflow-root-cause-actions'
-import type { ControlProcessSettings } from '@/lib/control-process-settings'
+import { loadControlProcessSettings, type ControlProcessSettings } from '@/lib/control-process-settings'
 import type { LnkChronologyIssueKind } from '@/lib/lnk-chronology-checks'
 
 const PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS = new Set<LnkChronologyIssueKind>(['post-before-psto-cycle'])
@@ -163,14 +164,24 @@ export function getLnkResultSaveBlockReason({
   controlProcessSettings?: ControlProcessSettings
 }) {
   if (isSaving) return 'Результат сохраняется, дождитесь завершения.'
+  saveCheckSettings = normalizeSaveCheckSettings(saveCheckSettings)
   if (!draft.methodKey) return 'Выберите метод контроля.'
   if (selectedRows.length === 0) return 'Отметьте один или несколько стыков галочкой.'
-  const hasNonEmptyRows = hasNonEmptyLnkResultDraftRows(selectedRows, draft, saveCheckSettings)
-  if (!areLnkResultDraftRowsReady(selectedRows, draft, saveCheckSettings)) return 'Укажите результат для каждого выбранного стыка.'
+  const hasNonEmptyRows = hasNonEmptyLnkResultDraftRows(selectedRows, draft)
+  if (!areLnkResultDraftRowsReady(selectedRows, draft)) return 'Укажите результат для каждого выбранного стыка.'
+  const method = getLnkMethodByRequestKey(draft.methodKey)
+  const pvkGoodOnly = (controlProcessSettings ?? loadControlProcessSettings()).pvkGoodOnly
+  const restrictions = method ? [...new Set(selectedRows.flatMap((row) => {
+    const reason = getLnkResultRestrictionReason(row, method.code, getEffectiveLnkResultDraftValueForRow(row, draft), {
+      pvkGoodOnly, layeredControlSelected: draft.layeredControlRowIds.has(row.id),
+    })
+    return reason ? [reason] : []
+  }))] : []
+  if (restrictions.length) return formatLnkResultRuleReason(restrictions.join('\n'))
   if (draft.methodKey === 'pvkRequest') {
     for (const row of selectedRows) {
       if (!draft.layeredControlRowIds.has(row.id) && !row.layeredControlAssigned) continue
-      const pvkResult = getEffectiveLnkResultDraftValueForRow(row, draft, saveCheckSettings)
+      const pvkResult = getEffectiveLnkResultDraftValueForRow(row, draft)
       if (!row.layeredControlAssigned && !isFinalLnkResultValue(pvkResult)) return `Стык ${row.joint || row.id}: для послойного контроля нужен основной результат ПВК.`
       try { buildLayeredControlAssignment({ ...row, pvkResult }, true) }
       catch (error) { return `Стык ${row.joint || row.id}: ${(error as Error).message}` }
@@ -185,7 +196,7 @@ export function getLnkResultSaveBlockReason({
   }
 
   const dateIssue = saveCheckSettings.lnkResultDateAfterWeldDate && hasNonEmptyRows
-    ? findFirstLnkResultDateBeforeWeldDateIssue(selectedRows, draft, saveCheckSettings)
+    ? findFirstLnkResultDateBeforeWeldDateIssue(selectedRows, draft)
     : null
   if (dateIssue) return formatSaveCheckBlockReason('lnkResultDateAfterWeldDate', dateIssue)
 
@@ -267,7 +278,7 @@ function findFirstLnkResultVikBeforeOtherDraftIssue(
   const method = getLnkMethodByRequestKey(draft.methodKey)
   if (!method || method.code === 'ВИК') return ''
   const row = selectedRows.find((candidate) => {
-    const result = getEffectiveLnkResultDraftValueForRow(candidate, draft, saveCheckSettings)
+    const result = getEffectiveLnkResultDraftValueForRow(candidate, draft)
     return isFinalLnkResultValue(result) && !isFinalLnkResultValue(candidate.vikResult)
   })
   if (!row) return ''

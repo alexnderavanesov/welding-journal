@@ -9,6 +9,11 @@ import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { SystemDocumentDateEditor } from '@/components/system-document-date-editor'
 import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
+import { WorkflowResultOptionPicker } from '@/components/workflow-result-option-picker'
+import { getLnkResultRestrictionReasons } from '@/lib/lnk-result-policy'
+import { useControlProcessSettings } from '@/lib/control-process-settings'
+import { useSystemIndexSettings } from '@/lib/system-index-settings'
+import { getSystemRuleSettingsHref } from '@/lib/system-rule-catalog'
 import { RequestManagerEmptyState } from '@/components/request-manager-panels'
 import { BufferedFilterInput } from '@/components/result-filters'
 import { Button } from '@/components/ui/button'
@@ -181,6 +186,16 @@ export function PreHeatTreatmentResultManagerDialog({
   )
   const [requestDraft, setRequestDraft] = useState(() => createRequestDraft(selectedEntry?.control))
   const [resultDraft, setResultDraft] = useState(() => createResultDraft(selectedEntry?.control))
+  const processSettings = useControlProcessSettings()
+  const systemIndexSettings = useSystemIndexSettings()
+  const getDisabledResultReason = (result: string) => selectedEntry ? [
+    ...getLnkResultRestrictionReasons(selectedEntry.row, selectedEntry.methodCode, result, {
+      systemIndexSettings, pvkGoodOnly: processSettings.pvkGoodOnly,
+    }),
+    readOnly ? 'НК до ТО выключен в настройках проекта. История доступна только для просмотра.' : undefined,
+    isPending ? 'Дождитесь сохранения изменений.' : undefined,
+  ].filter(Boolean).join('\n') || undefined : undefined
+  const resultRestrictionReason = getDisabledResultReason(resultDraft.result)
 
   useEffect(() => {
     if (initialRelationId && entries.some((entry) => entry.control.id === initialRelationId)) {
@@ -699,16 +714,14 @@ export function PreHeatTreatmentResultManagerDialog({
                   <div className={`mt-4 grid gap-3 ${selectedDocumentReference
                     ? 'md:grid-cols-[180px_minmax(260px,1fr)]'
                     : 'md:grid-cols-[180px_180px_minmax(260px,1fr)]'}`}>
-                    <label className="space-y-1.5 text-xs font-medium text-slate-600">
-                      <span>Результат</span>
-                      <Select
+                    <WorkflowResultOptionPicker
+                        compact
                         value={resultDraft.result}
-                        disabled={isPending || readOnly}
-                        onChange={(event) => setResultDraft((current) => ({ ...current, result: event.target.value }))}
-                      >
-                        {PRE_HEAT_TREATMENT_RESULT_OPTIONS.map((result) => <option key={result}>{result}</option>)}
-                      </Select>
-                    </label>
+                        options={PRE_HEAT_TREATMENT_RESULT_OPTIONS}
+                        restrictionHelpHref={getSystemRuleSettingsHref('СП-07')}
+                        getDisabledReason={getDisabledResultReason}
+                        onChange={(result) => setResultDraft((current) => ({ ...current, result }))}
+                    />
                     {!selectedDocumentReference ? (
                       <label className="space-y-1.5 text-xs font-medium text-slate-600">
                         <span>Дата контроля</span>
@@ -731,6 +744,11 @@ export function PreHeatTreatmentResultManagerDialog({
                     </label>
                   </div>
                   <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
+                    {resultDeleteReason && !readOnly ? (
+                      <p className="w-full rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                        {resultDeleteReason}
+                      </p>
+                    ) : null}
                     <p className="max-w-2xl text-xs leading-5 text-slate-500">
                       Дата остается между датой заявки и ПСТО. Для остальных методов ВИК до ТО должен быть уже годен.
                     </p>
@@ -752,7 +770,7 @@ export function PreHeatTreatmentResultManagerDialog({
                           isPending ||
                           readOnly ||
                           !hasResultChanges ||
-                          !resultDraft.result ||
+                          !resultDraft.result || Boolean(resultRestrictionReason) ||
                           (saveCheckSettings.lnkResultControlDateRequired && !resultDraft.date) ||
                           (saveCheckSettings.lnkResultConclusionRequired && !resultDraft.name)
                         }

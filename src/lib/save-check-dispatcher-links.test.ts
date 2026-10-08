@@ -12,17 +12,22 @@ import {
 } from '@/lib/save-check-dispatcher-links'
 
 describe('save check and dispatcher links', () => {
-  it('keeps 30 DZ settings; line metadata now belongs to mandatory SP-02', () => {
-    expect(Object.keys(DEFAULT_DISPATCHER_SETTINGS)).toHaveLength(30)
+  it('keeps 29 DZ settings after repair results move to mandatory SP-05', () => {
+    expect(Object.keys(DEFAULT_DISPATCHER_SETTINGS)).toHaveLength(29)
     expect(Object.values(DISPATCHER_SETTING_CODES)).not.toContain('ДЗ-16')
+    expect(Object.values(DISPATCHER_SETTING_CODES)).not.toContain('ДЗ-17')
     expect(Object.values(DISPATCHER_SETTING_CODES)).not.toEqual(expect.arrayContaining(['ДЗ-24', 'ДЗ-25', 'ДЗ-26']))
+  })
+
+  it('removes the ZV-20/DZ-17 pair without replacing other links', () => {
+    expect(SAVE_CHECK_DISPATCHER_LINKS.map(([saveCheckId]) => saveCheckId)).not.toContain('lnkResultRepairRules')
+    expect(SAVE_CHECK_DISPATCHER_LINKS.map(([, dispatcherId]) => dispatcherId)).not.toContain('check-repair-diameter')
   })
 
   it('maps official stamp protections to DЗ-18 in both directions', () => {
     expect(getDispatcherSettingIdsForSaveCheck('officialDls')).toEqual(['check-welder-stamp'])
     expect(getSaveCheckSettingIdsForDispatcher('check-welder-stamp')).toEqual([
       'officialRegistry',
-      'officialArchive',
       'officialNaksDate',
       'officialSuspension',
       'officialWeldingMethod',
@@ -50,7 +55,6 @@ describe('save check and dispatcher links', () => {
       'requiredWeldingMethodWithWeldDate',
       'dateFormat',
       'weldDateNotFuture',
-      'manualJointName',
     ])
     expect(getSaveCheckSettingIdsForDispatcher('check-lnk-result-completeness')).toEqual([
       'lnkResultControlDateRequired',
@@ -81,6 +85,6 @@ describe('save check and dispatcher links', () => {
     const unlinked = Object.keys(SAVE_CHECK_SETTING_CODES)
       .filter((id) => getDispatcherSettingIdsForSaveCheck(id as keyof typeof SAVE_CHECK_SETTING_CODES).length === 0)
 
-    expect(unlinked).toEqual(['systemJointRenameProtection'])
+    expect(unlinked).toEqual(['officialArchive', 'manualJointName', 'systemJointRenameProtection'])
   })
 })

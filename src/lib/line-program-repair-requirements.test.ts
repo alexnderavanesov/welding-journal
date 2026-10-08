@@ -49,7 +49,7 @@ describe('mandatory repair controls, independent of percentage credit', () => {
     const rows = [source, row(2, 'F1R1', { hasPvk: 'да' }), row(3, 'F1R2', { hasPvk: 'да' })]
     const approved = new Set([programApprovalKey(source, 'common', true)])
     expect(buildProgramRepairTasks(rows, approved).map(task => [task.systemWarningCode, task.row.id, task.values])).toEqual([
-      ['СП-03', 2, ['РК', 'УЗК']], ['СП-03', 3, ['РК', 'УЗК']],
+      ['СП-08', 2, ['РК', 'УЗК']], ['СП-08', 3, ['РК', 'УЗК']],
     ])
     const repair = attachProgramRepairRequirements(rows, approved)[1]
     expect(getProgramAssignmentError(repair, { РК: 'да' })).toBe('')

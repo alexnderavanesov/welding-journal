@@ -219,7 +219,7 @@ describe('filterWeldRowsByColumns', () => {
 
   it('filters virtual dispatcher task codes without changing stored weld data', () => {
     const rows = [
-      row({ id: 1, joint: 'S1', dispatcherTasks: 'ДЗ-18, ДЗ-24' }),
+      row({ id: 1, joint: 'S1', dispatcherTasks: 'СП-02, ДЗ-24' }),
       row({ id: 2, joint: 'S2', dispatcherTasks: 'ДЗ-24' }),
       row({ id: 3, joint: 'S3', dispatcherTasks: '' }),
     ]
@@ -236,7 +236,7 @@ describe('filterWeldRowsByColumns', () => {
     ).toEqual(['S3'])
     expect(
       filterWeldRowsByColumns(rows, {
-        [DISPATCHER_TASKS_FIELD_KEY]: buildWeldColumnValueFilter(['ДЗ-18']),
+        [DISPATCHER_TASKS_FIELD_KEY]: buildWeldColumnValueFilter(['СП-02']),
       }).map((candidate) => candidate.joint),
     ).toEqual(['S1'])
   })

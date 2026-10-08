@@ -1789,7 +1789,7 @@ function GeneratedDocumentsPanel({
                 {visibleColumnKeySet.has('updatedAt') ? (
                   <span className="text-xs leading-4 text-slate-500">{formatGeneratedDocumentDate(documentRecord.updatedAt)}</span>
                 ) : null}
-                <div className="sticky right-0 z-10 flex items-center justify-end gap-1 border-l border-[#dce7ed] bg-white/95 pl-3 shadow-[-12px_0_16px_-16px_rgba(15,23,42,0.55)] backdrop-blur-sm">
+                <div data-document-row-actions className="sticky right-0 z-10 flex items-center justify-end gap-1 border-l border-[#dce7ed] bg-inherit pl-3 shadow-[-12px_0_16px_-16px_rgba(15,23,42,0.55)]">
                   <DocumentHistoryActionButton
                     title="Показать стыки документа в сварочном журнале"
                     tone="emerald"
@@ -2429,7 +2429,7 @@ function SystemDocumentsPanel({
                   {visibleColumnKeySet.has('date') ? (
                     <span className="text-xs text-slate-600">{formatDate(documentRecord.date) || '-'}</span>
                   ) : null}
-                  <div className="sticky right-0 z-10 flex items-center justify-end gap-1 border-l border-[#dce7ed] bg-white/95 pl-3 shadow-[-12px_0_16px_-16px_rgba(15,23,42,0.55)] backdrop-blur-sm">
+                  <div data-document-row-actions className="sticky right-0 z-10 flex items-center justify-end gap-1 border-l border-[#dce7ed] bg-inherit pl-3 shadow-[-12px_0_16px_-16px_rgba(15,23,42,0.55)]">
                     <DocumentHistoryActionButton
                       title={`Показать стыки документа в отчете ${getSystemDocumentTargetReport(documentRecord) === 'lnk' ? 'ЛНК' : 'ПСТО'}`}
                       tone="emerald"

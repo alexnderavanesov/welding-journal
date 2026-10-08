@@ -24,12 +24,11 @@ describe('buildDispatcherTaskCodeGroups', () => {
 
     const result = buildDispatcherTaskCodeGroups(groups)
 
-    expect(result.map((group) => group.code)).toEqual(['ДЗ-02', 'ДЗ-04', 'ДЗ-27'])
+    expect(result.map((group) => group.code)).toEqual(['СП-01'])
     expect(result.flatMap((group) => group.tasks)).toHaveLength(3)
     expect(result.every((group) => group.objectGroups.length === 1)).toBe(true)
-    expect(result[0].objectGroups[0].tasks).toEqual([excessTask])
-    expect(result[1].objectGroups[0].tasks).toEqual([missingTask])
-    expect(result[2].objectGroups[0].tasks).toEqual([lineTask])
+    expect(result[0].objectGroups[0].tasks).toEqual([lineTask, missingTask, excessTask])
+    expect(result[0].metric).toBeNull()
   })
 
   it('aggregates the meaningful percentage-line count for repeated codes', () => {
@@ -45,8 +44,8 @@ describe('buildDispatcherTaskCodeGroups', () => {
 
     const [result] = buildDispatcherTaskCodeGroups(groups)
 
-    expect(result.code).toBe('ДЗ-02')
-    expect(result.label).toBe('Лишний контроль')
+    expect(result.code).toBe('СП-01')
+    expect(result.label).toBe('Программа контроля линии')
     expect(result.tasks).toHaveLength(2)
     expect(result.objectGroups).toHaveLength(2)
     expect(result.metric).toBe('лишних 7')
@@ -62,7 +61,7 @@ describe('buildDispatcherTaskCodeGroups', () => {
     }]
 
     expect(buildDispatcherTaskCodeGroups(groups).map((group) => group.code))
-      .toEqual(['СП-01', 'ДЗ-27'])
+      .toEqual(['СП-01', 'СП-06'])
   })
 })
 
@@ -78,7 +77,7 @@ function createSystemWarningTask(): RepeatedJointCheckTask {
     baseJoint: 'F18',
     suffix: 'R',
     reason: 'Нарушена последовательность контроля.',
-    systemWarningCode: 'СП-01',
+    systemWarningCode: 'СП-06',
   }
 }
 

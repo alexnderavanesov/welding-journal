@@ -3,22 +3,26 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CoilRestorationDialog, CoilRestorationHistory } from './coil-restoration-dialog'
 
-const mocks = vi.hoisted(() => ({ preview: vi.fn(), restore: vi.fn(), history: vi.fn(), password: vi.fn(), invalidate: vi.fn() }))
-vi.mock('@/server/coil-restoration', () => ({ previewCoilRestoration: mocks.preview, previewEarlyCoilCorrection: mocks.preview,
-  restoreErroneousCoil: mocks.restore, cancelErroneousEarlyCoil: mocks.restore, getCoilRestorationHistory: mocks.history }))
+const mocks = vi.hoisted(() => ({ preview: vi.fn(), earlyPreview: vi.fn(), restore: vi.fn(), earlyCancel: vi.fn(), history: vi.fn(), password: vi.fn(), invalidate: vi.fn() }))
+vi.mock('@/server/coil-restoration', () => ({ previewCoilRestoration: mocks.preview, previewEarlyCoilCorrection: mocks.earlyPreview,
+  restoreErroneousCoil: mocks.restore, cancelErroneousEarlyCoil: mocks.earlyCancel, getCoilRestorationHistory: mocks.history }))
 vi.mock('@/lib/security-context', () => ({ useSecurityGuard: () => ({ requireEditPassword: mocks.password,
   requireDeletePassword: mocks.password, requireSettingsChangePassword: mocks.password }) }))
 vi.mock('@/lib/weld-query-utils', () => ({ scheduleWeldDataRefresh: mocks.invalidate }))
-const preview = { rootId: 1, token: 'a'.repeat(64), joint: 'S1', line: 'L', reason: null, chain: [{ id: 1, joint: 'S1' }], cancelledEarlyDecisions: 0,
+const preview = { operation: 'restore', rootId: 1, token: 'a'.repeat(64), joint: 'S1', line: 'L', reason: null, chain: [{ id: 1, joint: 'S1' }], cancelledEarlyDecisions: 0,
   before: { joints: 23, calculationJoints: 23, common: { required: 2 } }, after: { joints: 24, calculationJoints: 24 }, stampChanges: [] }
+const earlyPreview = { ...preview, operation: 'cancel-early', decisionJoint: 'S1R1', targetJoints: ['S1Y1', 'S1Y2'], cancellationMode: 'untouched',
+  checklist: { sourceRows: [], replacementRows: [], historyRows: [], weldedRows: [], earlySources: [], replacedByCoil: false } }
 function mount(rootId = 1, earlyDecision = false) {
-  const props = { rootId, earlyDecision, onClose: vi.fn(), onSaved: vi.fn(), onOpenReport: vi.fn(), onRestored: vi.fn() }
+  const props = { rootId, earlyDecision, onClose: vi.fn(), onSaved: vi.fn(), onOpenReport: vi.fn(), onRestored: vi.fn(), onCancellationSaved: vi.fn() }
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(<QueryClientProvider client={client}><CoilRestorationDialog {...props} /></QueryClientProvider>)
   return { ...props, client }
 }
 beforeEach(() => {
-  vi.clearAllMocks(); mocks.preview.mockResolvedValue(preview); mocks.restore.mockResolvedValue({ alreadyApplied: false }); mocks.password.mockResolvedValue(true); mocks.history.mockResolvedValue([])
+  vi.resetAllMocks(); mocks.preview.mockResolvedValue(preview); mocks.earlyPreview.mockResolvedValue(earlyPreview)
+  mocks.restore.mockResolvedValue({ alreadyApplied: false }); mocks.earlyCancel.mockResolvedValue({ alreadyApplied: false, restorationRootId: null })
+  mocks.password.mockResolvedValue(true); mocks.history.mockResolvedValue([])
 })
 describe('explicit coil restoration UI', () => {
   const source = { id: 1, joint: 'S1', line: 'L', projectTitle: 'P', subtitleCode: 'C' }
@@ -31,7 +35,7 @@ describe('explicit coil restoration UI', () => {
     expect(screen.getByText('Связанные записи: S1, S1Y1')).toBeVisible()
     expect(screen.getByText('2. Ошибочная катушка — осталось записей: 1')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Открыть НК сторон' }))
-    expect(props.onOpenReport).toHaveBeenCalledWith([side], 'lnk')
+    expect(props.onOpenReport).toHaveBeenCalledWith([side], 'lnk', { rootId: 1, earlyDecision: false })
     expect(props.onClose).toHaveBeenCalledOnce()
     expect(mocks.restore).not.toHaveBeenCalled()
   })
@@ -51,7 +55,7 @@ describe('explicit coil restoration UI', () => {
     mocks.preview.mockResolvedValue({ ...preview, reason: 'Сохранились стороны катушки', checklist: { ...checklist, earlySources: [source] } })
     const props = mount()
     fireEvent.click(await screen.findByRole('button', { name: 'Проверить отмену досрочного решения · S1' }))
-    await screen.findByRole('heading', { name: 'Отменить ошибочное досрочное решение' })
+    await screen.findByRole('heading', { name: 'Отмена решения о досрочной катушке' })
     fireEvent.keyDown(window, { key: 'Escape' })
     await screen.findByRole('heading', { name: 'Отменить ошибочно внесённую катушку' })
     expect(props.onClose).not.toHaveBeenCalled()
@@ -86,9 +90,10 @@ describe('explicit coil restoration UI', () => {
     props.client.setQueryData(['coil-restoration-history', 1], [])
     await screen.findByText('23 → 24')
     fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: 'Отменить решение и удалить очищенные стороны' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить отмену' }))
     await waitFor(() => expect(props.onClose).toHaveBeenCalledOnce())
-    expect(mocks.restore).toHaveBeenCalledWith({ data: { rootId: 2, token: preview.token, confirmedNotInstalled: true } })
+    expect(mocks.earlyCancel).toHaveBeenCalledWith({ data: { rootId: 2, token: preview.token, confirmedNotInstalled: true } })
+    expect(props.onCancellationSaved).toHaveBeenCalledWith(null)
     expect(props.onRestored).not.toHaveBeenCalled()
     expect(props.client.getQueryState(['coil-restoration-history', 1])?.isInvalidated).toBe(false)
     expect(mocks.history).toHaveBeenCalledOnce()
@@ -100,7 +105,7 @@ describe('explicit coil restoration UI', () => {
     fireEvent.focus(window); window.dispatchEvent(new Event('online'))
     expect(mocks.preview).toHaveBeenCalledOnce()
     expect(mocks.history).toHaveBeenCalledOnce()
-    if (mode === 'cancel') fireEvent.click(screen.getByRole('button', { name: 'Отмена' }))
+    if (mode === 'cancel') fireEvent.click(screen.getByRole('button', { name: 'Закрыть' }))
     else fireEvent.keyDown(window, { key: 'Escape' })
     expect(props.onClose).toHaveBeenCalledOnce()
     expect(mocks.restore).not.toHaveBeenCalled()
@@ -146,5 +151,81 @@ describe('explicit coil restoration UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Повторить проверку' }))
     await waitFor(() => expect(mocks.preview).toHaveBeenCalledTimes(2))
     expect(mocks.restore).toHaveBeenCalledOnce()
+  })
+
+  it.each(['untouched', 'correction'])('uses the same confirmation for %s sides without automatic cleanup', async cancellationMode => {
+    mocks.earlyPreview.mockResolvedValue({ ...earlyPreview, cancellationMode })
+    mount(2, true)
+    await screen.findByRole('region', { name: 'Последствия отмены решения' })
+    expect(screen.getByText(/Будут удалены записи сторон: S1Y1, S1Y2/)).toBeVisible()
+    expect(screen.getByText(cancellationMode === 'untouched' ? /Стороны пустые и нетронутые/ : /Стороны ранее редактировали/)).toBeVisible()
+    const save = screen.getByRole('button', { name: 'Подтвердить отмену' })
+    expect(save).toBeDisabled()
+    fireEvent.focus(window); window.dispatchEvent(new Event('online'))
+    expect(mocks.earlyPreview).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(save)
+    await waitFor(() => expect(mocks.earlyCancel).toHaveBeenCalledOnce())
+    expect(mocks.password).toHaveBeenCalledTimes(2)
+    expect(mocks.restore).not.toHaveBeenCalled()
+  })
+
+  it('shows early blockers with report navigation and preserves the cancellation step on return', async () => {
+    mocks.earlyPreview.mockResolvedValue({ ...earlyPreview, reason: 'Сначала очистите ошибочные данные', checklist })
+    const props = mount(2, true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Открыть НК сторон' }))
+    expect(props.onOpenReport).toHaveBeenCalledWith([side], 'lnk', { rootId: 2, earlyDecision: true })
+    expect(screen.getByRole('button', { name: 'Подтвердить отмену' })).toBeDisabled()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(screen.queryByText(/3. Исходная цепочка/)).not.toBeInTheDocument()
+    expect(mocks.earlyCancel).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])('keeps restoration as a second separately confirmed step (retry=%s)', async alreadyApplied => {
+    mocks.earlyPreview.mockResolvedValue({ ...earlyPreview, checklist: { ...earlyPreview.checklist, replacedByCoil: true } })
+    mocks.earlyCancel.mockResolvedValue({ alreadyApplied, restorationRootId: 1 })
+    const props = mount(2, true)
+    await screen.findByText('23 → 24')
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить отмену' }))
+    await screen.findByText(/Решение отменено. Исходное соединение ещё не восстановлено/)
+    await screen.findByText('23 → 24')
+    expect(props.onClose).not.toHaveBeenCalled()
+    expect(props.onCancellationSaved).toHaveBeenCalledWith(1)
+    expect(mocks.preview).toHaveBeenCalledOnce()
+    expect(mocks.preview).toHaveBeenCalledWith({ data: { rootId: 1 } })
+    expect(mocks.restore).not.toHaveBeenCalled()
+    expect(screen.getByRole('checkbox')).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Восстановить исходное соединение' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: 'Восстановить исходное соединение' }))
+    await waitFor(() => expect(props.onRestored).toHaveBeenCalledOnce())
+    expect(mocks.restore).toHaveBeenCalledWith({ data: { rootId: 1, token: preview.token, confirmedNotInstalled: true } })
+  })
+
+  it('closing a blocked second step preserves the saved cancellation and never restores the root', async () => {
+    mocks.earlyCancel.mockResolvedValue({ alreadyApplied: false, restorationRootId: 1 })
+    mocks.preview.mockResolvedValue({ ...preview, reason: 'Нужен годный финал', checklist: { ...checklist, replacementRows: [] } })
+    const props = mount(2, true)
+    await screen.findByText('23 → 24')
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить отмену' }))
+    await screen.findByText('Нужен годный финал')
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть НК исходной цепочки' }))
+    expect(props.onOpenReport).toHaveBeenCalledWith([source], 'lnk', { rootId: 1, earlyDecision: false })
+    expect(mocks.earlyCancel).toHaveBeenCalledOnce()
+    expect(mocks.restore).not.toHaveBeenCalled()
+  })
+
+  it.each([1, 2])('does not cancel when password step %s is declined', async step => {
+    mocks.password.mockResolvedValueOnce(step === 2).mockResolvedValueOnce(false)
+    const props = mount(2, true)
+    await screen.findByText('23 → 24')
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить отмену' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Подтвердить отмену' })).toBeEnabled())
+    expect(mocks.password).toHaveBeenCalledTimes(step)
+    expect(mocks.earlyCancel).not.toHaveBeenCalled()
+    expect(props.onClose).not.toHaveBeenCalled()
   })
 })

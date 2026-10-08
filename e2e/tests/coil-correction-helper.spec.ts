@@ -7,7 +7,7 @@ import { rpcName } from '../rpc'
 import { clearLnkRequestPosition, deleteWeldJoints } from '@/server/weld-mutations'
 
 const project = 'Демо — исправление ошибочной катушки'
-test('обычное удаление сторон с заявками: отмена, обе стороны, сохранённая цепочка и видимая СП-04', async ({ page }) => {
+test('обычное удаление сторон с заявками: отмена, обе стороны, сохранённая цепочка и видимая СП-09', async ({ page }) => {
   const { stdout } = await promisify(execFile)(process.execPath, ['--import', 'tsx', 'scripts/seed-local-coil-correction-demo.ts', '--seed-test'], {
     env: { ...process.env, DATABASE_URL: E2E_DATABASE_URL, WELDING_ENV_LOADED: '1' }, timeout: 30_000,
   })
@@ -45,7 +45,7 @@ test('обычное удаление сторон с заявками: отме
     expect(persisted.events).toEqual([])
     await page.getByLabel('Диспетчер задач', { exact: true }).getByRole('button', { name: 'Открыть диспетчер' }).click()
     const dispatcher = page.getByRole('dialog', { name: 'Диспетчер задач', exact: true })
-    await dispatcher.getByRole('textbox', { name: 'Поиск задач диспетчера' }).fill('СП-04')
+    await dispatcher.getByRole('textbox', { name: 'Поиск задач диспетчера' }).fill('СП-09')
     await dispatcher.getByRole('button', { name: 'Найти', exact: true }).click()
     await dispatcher.getByRole('button', { name: 'Проверить отмену ошибочной катушки', exact: true }).click()
     const helper = page.getByRole('dialog', { name: 'Отменить ошибочно внесённую катушку', exact: true })
@@ -119,7 +119,7 @@ test('помощник: переходы, удаление сторон, исп�
     await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
     await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
     const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование результатов ЛНК', exact: true }) })
-    await manager.getByLabel('Вид контроля в реестре').selectOption('vikRequest')
+    await manager.getByLabel('Вид контроля в реестре').selectOption('uzkRequest')
     await manager.getByRole('button', { name: /Л-КАТ · F902R2W1/ }).click()
     await manager.getByRole('button', { name: 'годен', exact: true }).last().click()
     await manager.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
@@ -128,7 +128,7 @@ test('помощник: переходы, удаление сторон, исп�
     await openHelper()
     await expect(helper.getByText('3. Исходная цепочка — готова к подтверждению')).toBeVisible()
     await expect(helper.getByText('Физические соединения:', { exact: false })).toContainText('0 → 1')
-    await helper.getByRole('button', { name: 'Отмена', exact: true }).click()
+    await helper.getByRole('button', { name: 'Закрыть', exact: true }).click()
     expect(await loadRoot()).toBe(true)
     await openHelper()
     await helper.getByRole('checkbox').check()

@@ -36,7 +36,7 @@ describe('JointDispatcherTasksPanel', () => {
     const onRunAction = vi.fn()
     render(<JointDispatcherTasksPanel row={current} tasks={[task]} onRunAction={onRunAction} />)
 
-    expect(screen.getByText('ДЗ-32')).toBeInTheDocument()
+    expect(screen.getByText('СП-11')).toBeInTheDocument()
     expect(screen.getByText('Этот стык')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Исправить в ЛНК' }))
 
@@ -52,7 +52,7 @@ describe('JointDispatcherTasksPanel', () => {
     const task = checkTask(current)
     render(<JointDispatcherTasksPanel row={current} tasks={[task]} onRunAction={vi.fn()} />)
 
-    const rowButton = screen.getByRole('button', { name: 'Показать описание ДЗ-32' })
+    const rowButton = screen.getByRole('button', { name: 'Показать описание СП-11' })
     const toggleIndicator = rowButton.querySelector('[data-joint-task-toggle-indicator]')
     expect(rowButton).toHaveAttribute('aria-expanded', 'false')
     expect(toggleIndicator).toHaveAttribute('data-expanded', 'false')
@@ -60,7 +60,7 @@ describe('JointDispatcherTasksPanel', () => {
     fireEvent.click(rowButton)
 
     expect(screen.getByText('Не заполнена дата заключения.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Скрыть описание ДЗ-32' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Скрыть описание СП-11' })).toHaveAttribute(
       'aria-expanded',
       'true',
     )
@@ -79,7 +79,7 @@ describe('JointDispatcherTasksPanel', () => {
       />,
     )
 
-    const highlightedRow = screen.getByText('ДЗ-32').closest('[data-highlighted="true"]')
+    const highlightedRow = screen.getByText('СП-11').closest('[data-highlighted="true"]')
     expect(highlightedRow).toHaveClass('bg-sky-50')
     expect(highlightedRow).not.toHaveClass(
       'shadow-[inset_2px_0_0_0_rgb(56_189_248_/_0.72)]',
@@ -117,7 +117,7 @@ describe('JointDispatcherTasksPanel', () => {
       <JointDispatcherTasksPanel row={current} tasks={[task]} onRunAction={vi.fn()} />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Другие действия ДЗ-32' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Другие действия СП-11' }))
 
     const menu = screen.getByRole('menu')
     expect(menu).toHaveClass('fixed')
@@ -136,7 +136,7 @@ describe('JointDispatcherTasksPanel', () => {
       ...checkTask(current),
       key: 'sp-01:1',
       reason: 'Нарушена последовательность контроля.',
-      systemWarningCode: 'СП-01',
+      systemWarningCode: 'СП-06',
       rootCauseActions: [{
         key: 'complete-stage:1:beforeHeatTreatment:ВИК:request',
         label: 'Создать заявку НК до ТО',
@@ -162,10 +162,10 @@ describe('JointDispatcherTasksPanel', () => {
       />,
     )
 
-    expect(screen.getByText('СП · 1')).toBeInTheDocument()
-    expect(screen.getByText('ДЗ · 1')).toBeInTheDocument()
-    expect(screen.getAllByText(/^(СП-01|ДЗ-32)$/).map((item) => item.textContent))
-      .toEqual(['СП-01', 'ДЗ-32'])
+    expect(screen.getByText('СП · 2')).toBeInTheDocument()
+    expect(screen.queryByText('ДЗ · 1')).not.toBeInTheDocument()
+    expect(screen.getAllByText(/^(СП-06|СП-11)$/).map((item) => item.textContent))
+      .toEqual(['СП-06', 'СП-11'])
 
     fireEvent.click(screen.getByRole('button', { name: 'Создать заявку НК до ТО' }))
     expect(onRunAction).toHaveBeenCalledWith(current, systemWarning, expect.objectContaining({
@@ -193,13 +193,13 @@ describe('JointDispatcherTasksPanel', () => {
       <JointDispatcherTasksPanel
         row={current}
         tasks={[task]}
-        fallbackCodes="ДЗ-30"
+        fallbackCodes="СП-10"
         onRunAction={vi.fn()}
       />,
     )
 
     expect(screen.getByText('По этому стыку нет активных СП или ДЗ.')).toBeInTheDocument()
-    expect(screen.queryByText('ДЗ-30')).not.toBeInTheDocument()
+    expect(screen.queryByText('СП-10')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Открыть программу ПСТО' })).not.toBeInTheDocument()
   })
 
@@ -211,14 +211,14 @@ describe('JointDispatcherTasksPanel', () => {
       <JointDispatcherTasksPanel
         row={current}
         tasks={[task]}
-        fallbackCodes="ДЗ-32, ДЗ-18"
+        fallbackCodes="СП-11, СП-02"
         onRunAction={vi.fn()}
       />,
     )
 
-    expect(screen.getByText('ДЗ · 2')).toBeInTheDocument()
-    expect(screen.getByText('ДЗ-32')).toBeInTheDocument()
-    expect(screen.getByText('ДЗ-18')).toBeInTheDocument()
+    expect(screen.getByText('СП · 2')).toBeInTheDocument()
+    expect(screen.getByText('СП-11')).toBeInTheDocument()
+    expect(screen.getByText('СП-02')).toBeInTheDocument()
   })
 
   it('does not present persisted line-scoped codes as joint tasks while the snapshot is unavailable', () => {
@@ -226,15 +226,15 @@ describe('JointDispatcherTasksPanel', () => {
       <JointDispatcherTasksPanel
         row={row()}
         tasks={[]}
-        fallbackCodes="ДЗ-01, СП-02, ДЗ-18"
+        fallbackCodes="ДЗ-01, СП-01, СП-02"
         onRunAction={vi.fn()}
       />,
     )
 
-    expect(screen.getByText('ДЗ-18')).toBeInTheDocument()
+    expect(screen.getByText('СП-02')).toBeInTheDocument()
     expect(screen.queryByText('ДЗ-01')).not.toBeInTheDocument()
-    expect(screen.queryByText('СП-02')).not.toBeInTheDocument()
-    expect(screen.getByText('ДЗ · 1')).toBeInTheDocument()
+    expect(screen.queryByText('СП-01')).not.toBeInTheDocument()
+    expect(screen.getByText('СП · 1')).toBeInTheDocument()
   })
 
   it('shows every joint task in the dedicated action view', () => {
@@ -246,7 +246,7 @@ describe('JointDispatcherTasksPanel', () => {
 
     render(<JointDispatcherTasksPanel row={current} tasks={tasks} onRunAction={vi.fn()} />)
 
-    expect(screen.getAllByText('ДЗ-32')).toHaveLength(4)
+    expect(screen.getAllByText('СП-11')).toHaveLength(4)
   })
 
   it('opens the dedicated action view from the compact summary', () => {
@@ -261,7 +261,7 @@ describe('JointDispatcherTasksPanel', () => {
       />,
     )
 
-    expect(screen.getByText('ДЗ: 1')).toBeInTheDocument()
+    expect(screen.getByText('СП: 1')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Открыть задачи по стыку: 1' }))
     expect(onOpen).toHaveBeenCalledOnce()
   })

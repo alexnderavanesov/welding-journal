@@ -59,6 +59,10 @@ export function parseCell(field: WeldField, value: unknown) {
   if (field.kind === 'date') return parseDate(value)
   if (field.key === 'lnkDefectDescription') return multilineTextToNull(value)
   if (field.key === 'officiality') return parseJointOfficiality(value)
+  if (field.key === 'revisionActuality') {
+    const normalized = emptyToNull(value)
+    return normalized && ['актуальная', 'актуален'].includes(normalized.toLocaleLowerCase('ru')) ? null : normalized
+  }
   if (field.key === 'finalStatus') return parseFinalStatus(value)
   if (field.key === 'pstoResult') return parsePstoResultStatus(value)
   if (field.key === 'tvmtResult') return parseTvmtResultStatus(value)

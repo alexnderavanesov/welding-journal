@@ -3,6 +3,17 @@
 @tailwind utilities;
 
 @layer components {
+  .stamp-check-rules-container {
+    container: stamp-check-rules / inline-size;
+  }
+
+  /* Use the cell's available space, including when the sidebar or zoom changes. */
+  @container stamp-check-rules (min-width: 36rem) {
+    .stamp-check-rules-layout {
+      grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);
+    }
+  }
+
   .program-line-card {
     position: relative;
     isolation: isolate;

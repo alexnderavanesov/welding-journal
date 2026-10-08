@@ -21,6 +21,14 @@ describe('existing rejected stage package', () => {
     expect(preview(row)).toMatchObject({ disabledReason: null, source: { result: 'ремонт', conclusionName: 'Брак' } })
     expect(row.preHeatTreatmentControls).toEqual([control])
   })
+  it('blocks an impossible VIK cut from being moved into another stage', () => {
+    const invalidControl = { ...control, result: 'вырез' }
+    const preview = buildPositionPreview({ row: { ...row, preHeatTreatmentControls: [invalidControl] }, control: invalidControl,
+      position: { rowId: 1, methodCode: 'ВИК' }, sourceStage: 'beforeHeatTreatment',
+      processSettings: DEFAULT_CONTROL_PROCESS_SETTINGS })
+    expect(preview.disabledReason).toContain('СП-07')
+    expect(invalidControl.result).toBe('вырез')
+  })
   it('still checks the target and other remaining rejected pre-TO methods', () => {
     expect(preview({ ...row, vikResult: 'годен' }).disabledReason).toContain('уже заполнен')
     expect(preview({ ...row, hasUzk: 'да', preHeatTreatmentControls: [control,

@@ -119,6 +119,80 @@ test('сводки всех страниц текущего отбора, отд
   expect(errors).toEqual([])
 })
 
+test('ПКМ: печатная сводка выбранного клейма, всей линии и её клейм без лишних загрузок', async ({ page }) => {
+  const name = 'FOLLOW-SCOPED', id = await seed(name, 3)
+  await seed('FOLLOW-OUTSIDE', 2)
+  await withE2eDatabase(db => db.query("update weld_joints set stamp_1_k=case when joint='F1' then 'FOLLOW-K' else 'SECOND-K' end, stamp_2_k=case when joint='F1' then 'SECOND-K' else null end where line_program_id=$1", [id]))
+  const calls: string[] = [], errors: string[] = []
+  page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/line-program')
+  await page.getByLabel('Поиск программы линий').fill(name)
+  const card = page.getByTestId('line-program-card')
+  await expect(card).toHaveCount(1)
+  const lineButton = card.getByRole('button', { name: `Расчёт линии ${name}`, exact: true })
+  await lineButton.click()
+  const stamp = card.getByRole('button', { name: 'Клеймо FOLLOW-K', exact: true })
+  const preview = page.getByRole('dialog', { name: 'Предпросмотр отчёта' })
+  const report = preview.frameLocator('iframe')
+  const reportCalls = () => calls.filter(call => call.startsWith('getLineProgramReport_')).length
+  for (const [label, rows, physical] of [
+    ['Сводка по этому клейму', 1, '1'], ['Сводка по этой линии', 1, '3'], ['Сводка по клеймам линии', 2, '3'],
+  ] as const) {
+    const before = reportCalls()
+    await stamp.click({ button: 'right' })
+    await page.getByTestId('context-action-menu').getByRole('button', { name: 'Показать', exact: true }).click()
+    expect(reportCalls()).toBe(before)
+    await expect(stamp).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.getByRole('menu').getByRole('button', { name: /^Сводка/ })).toHaveCount(3)
+    if (before === 0) {
+      await expect(page.getByRole('menu', { name: 'Показать', exact: true })).toHaveCSS('opacity', '1')
+      await page.screenshot({ path: 'outputs/program-context-report-menu.png' })
+    }
+    await page.getByRole('menu').getByRole('button', { name: label, exact: true }).click()
+    await expect(report.locator('tbody tr')).toHaveCount(rows)
+    await expect(report.locator('.metric').filter({ hasText: 'Физических стыков' }).locator('.metric-value')).toHaveText(physical)
+    await expect(report.locator('tbody')).not.toContainText('FOLLOW-OUTSIDE')
+    if (label === 'Сводка по этому клейму') {
+      await expect(report.locator('tbody')).toContainText('FOLLOW-K')
+      await expect(report.locator('tbody')).not.toContainText('SECOND-K')
+      await report.locator('body').evaluate(el => { el.ownerDocument.defaultView!.print = () => { el.dataset.printed = 'true' } })
+      await preview.getByRole('button', { name: 'Печать / Сохранить PDF' }).click()
+      await expect(report.locator('body')).toHaveAttribute('data-printed', 'true')
+      await page.screenshot({ path: 'outputs/program-context-stamp-report.png' })
+    }
+    await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
+    expect(reportCalls()).toBe(before + 1)
+    await report.locator('body').press('Escape')
+    await expect(preview).toHaveCount(0)
+    await expect(stamp).toBeFocused()
+  }
+  await lineButton.focus()
+  await lineButton.press('Shift+F10')
+  await page.getByTestId('context-action-menu').getByRole('button', { name: 'Показать', exact: true }).click()
+  await expect(page.getByRole('menu').getByRole('button', { name: /^Сводка/ })).toHaveCount(2)
+  await page.getByRole('menu').getByRole('button', { name: 'Сводка по этой линии', exact: true }).click()
+  await expect(report.locator('tbody tr')).toHaveCount(1)
+  await preview.getByRole('button', { name: 'Закрыть предпросмотр' }).click()
+  await expect(lineButton).toBeFocused()
+  await expect(lineButton).toHaveAttribute('aria-expanded', 'true')
+  // The saved scope changed elsewhere. A stale menu must not fall back to a whole-line report.
+  await withE2eDatabase(db => db.query("update weld_joints set stamp_1_k='SECOND-K' where line_program_id=$1", [id]))
+  await stamp.click({ button: 'right' })
+  await page.getByTestId('context-action-menu').getByRole('button', { name: 'Показать', exact: true }).click()
+  await page.getByRole('menu').getByRole('button', { name: 'Сводка по этому клейму', exact: true }).click()
+  await expect(preview.getByRole('alert')).toContainText('Клеймо больше не входит в расчёт этой линии')
+  await expect(preview.locator('iframe')).toHaveCount(0)
+  await preview.getByRole('button', { name: 'Повторить' }).click()
+  await expect(preview.getByRole('alert')).toContainText('Клеймо больше не входит в расчёт этой линии')
+  await preview.getByRole('button', { name: 'Закрыть предпросмотр' }).click()
+  expect(reportCalls()).toBe(6)
+  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(1)
+  expect(calls.filter(call => call.startsWith('getLineProgramCalculation_'))).toHaveLength(1)
+  expect(calls.filter(call => call.startsWith('getLineProgramJointPage_'))).toHaveLength(0)
+  expect(errors).toEqual([])
+})
+
 test('брак одного стыка заменяет только его ожидания на нет потребности, не меняя назначения и историю', async ({ page }) => {
   const name = 'FOLLOW-NO-NEED', id = await seed(name, 20)
   await withE2eDatabase(db => db.query(`update weld_joints set vik_result='годен',

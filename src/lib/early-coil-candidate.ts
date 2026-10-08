@@ -1,6 +1,7 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getCoilJointNames, parseRepeatedJointName } from '@/lib/joint-chain'
 import { isUnofficialJoint } from '@/lib/joint-display'
+import { getLnkResultRuleIssues } from '@/lib/lnk-result-policy'
 import {
   findMatchingJointRows,
   getExpectedRepeatedJointName,
@@ -46,6 +47,9 @@ export function evaluateEarlyCoilCandidate(
   if (options.earlyCoilDecisionSourceRowIds?.has(sourceRow.id)) {
     return blocked('Решение о досрочной врезке катушки уже принято.')
   }
+
+  const resultIssues = getLnkResultRuleIssues(sourceRow, settings)
+  if (resultIssues.length) return blocked(resultIssues.map(issue => issue.message).join('\n'))
 
   const rejection = getPrimaryRejectedLnkResult(sourceRow)
   if (!rejection) {

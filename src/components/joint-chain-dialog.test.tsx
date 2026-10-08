@@ -461,7 +461,7 @@ describe('JointChainDialog', () => {
     })
 
     expect(screen.getByRole('tab', { name: /Требует действия.*1/ })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByText('ДЗ-32').closest('[data-highlighted="true"]')).toBeInTheDocument()
+    expect(screen.getByText('СП-11').closest('[data-highlighted="true"]')).toBeInTheDocument()
   })
 
   it('opens a line task in the line picture and reveals the highlighted row', () => {

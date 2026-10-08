@@ -1,12 +1,13 @@
 import type { WeldInput } from '@/lib/weld-fields'
+import { getUnofficialLastRejectionRemovalReason } from './unofficial-lnk-result-guard'
+import { getLnkChronologyRuleCode } from './chronology-rule-code'
 import { formatDisplayDate, getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import { LNK_METHODS } from '@/lib/report-config'
 import { getLnkMethodByRequestKey, isFinalLnkResultValue } from '@/lib/lnk-status'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import {
   DEFAULT_SAVE_CHECK_SETTINGS,
-  formatSaveCheckBlockReason,
-  type SaveCheckSettingId,
+  normalizeSaveCheckSettings,
   type SaveCheckSettings,
 } from '@/lib/save-check-settings'
 import {
@@ -81,6 +82,7 @@ export function getLnkChronologyIssues(
   settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
   options: LnkChronologyOptions = {},
 ): LnkChronologyIssue[] {
+  settings = normalizeSaveCheckSettings(settings)
   const issues: LnkChronologyIssue[] = []
   for (const row of rows) {
     const rowIssues = getRowRequestDateOrderIssues(row, settings, options)
@@ -400,7 +402,10 @@ export function getLnkResultRemovalBlockReason(
   settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 ) {
   const method = getLnkMethodByRequestKey(methodKey)
-  if (!method || !['ВИК', 'ПВК'].includes(method.code)) return ''
+  if (!method) return ''
+  const officialityReason = getUnofficialLastRejectionRemovalReason({ ...row, [method.resultKey]: null }, row)
+  if (officialityReason) return officialityReason
+  if (!['ВИК', 'ПВК'].includes(method.code)) return ''
 
   const dependentMethods = LNK_METHODS.filter(candidate => method.code === 'ВИК' ? candidate.code !== 'ВИК' : candidate.code === 'РК' || candidate.code === 'УЗК')
     .filter((candidate) => hasFinalLnkResult(row, candidate))
@@ -410,16 +415,8 @@ export function getLnkResultRemovalBlockReason(
   return `Результат ${method.code} нельзя удалить, пока сохранены результаты следующих видов НК: ${dependentMethods.join(', ')}. Сначала удалите их результаты.`
 }
 
-function getLnkChronologyIssueSaveCheckSettingId(issue: LnkChronologyIssue): SaveCheckSettingId {
-  if (issue.reason === LNK_VIK_DATE_ORDER_REASON) return 'lnkResultVikDateBeforeOther'
-  if (issue.reason === LNK_VIK_REQUIRED_REASON) return 'lnkResultVikRequiredBeforeOther'
-  if (issue.kind === 'weld-after-conclusion') return 'lnkResultDateAfterWeldDate'
-  return 'lnkResultRequestDateOrder'
-}
-
 function formatLnkChronologyIssueSaveBlockReason(issue: LnkChronologyIssue) {
-  if (issue.kind === 'method-order' || issue.kind === 'multiple-rejections') return issue.message
-  return formatSaveCheckBlockReason(getLnkChronologyIssueSaveCheckSettingId(issue), issue.message)
+  return issue.kind.endsWith('-invalid') ? issue.message : `${getLnkChronologyRuleCode(issue.kind)} · ${issue.message}`
 }
 
 export function getLnkChronologyIssueIdentity(issue: LnkChronologyIssue) {

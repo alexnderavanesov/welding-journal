@@ -12,8 +12,8 @@ test('демонстрационные примеры соответствуют
   const result = JSON.parse(stdout)
   expect(result.applied).toBe(false)
   expect(result.summary.created).toBe(50)
-  expect(result.summary.tasks['ДЗ-05']).toBeGreaterThan(0)
-  expect(result.summary.tasks['ДЗ-06']).toBeGreaterThan(0)
+  expect(result.summary.tasks['СП-01']).toBeGreaterThan(0)
+  expect(result.summary.tasks['СП-02']).toBeGreaterThan(0)
   expect(await counts()).toEqual(before)
 })
 

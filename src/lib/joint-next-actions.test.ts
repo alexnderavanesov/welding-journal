@@ -120,7 +120,7 @@ describe('joint next actions', () => {
 
     expect(buildJointNextActions(source, [task])[0]).toMatchObject({
       kind: 'dispatcherTask',
-      title: 'ДЗ-20 · Проверить документы и даты ЛНК',
+      title: 'СП-04 · Проверить документы и даты ЛНК',
       taskKey: task.key,
       taskActionId: 'open-root-cause',
       taskAction: {
@@ -512,7 +512,7 @@ describe('joint next actions', () => {
       kind: 'primaryLnkRequest',
       title: 'Создать заявку основного НК',
       methodCode: 'РК',
-      description: expect.stringContaining('СП-01: предыдущие этапы пропущены'),
+      description: expect.stringContaining('СП-06: предыдущие этапы пропущены'),
     })
   })
 
@@ -530,7 +530,7 @@ describe('joint next actions', () => {
     expect(buildJointNextActions(primaryCompletedEarly, [], PERMISSIVE_CONTROL_PROCESS_SETTINGS)[0]).toMatchObject({
       kind: 'complete',
       title: 'Результаты основного НК внесены',
-      description: expect.stringContaining('СП-01 остаётся'),
+      description: expect.stringContaining('СП-06 остаётся'),
       tone: 'warning',
     })
   })

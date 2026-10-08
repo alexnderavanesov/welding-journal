@@ -10,7 +10,7 @@ test.beforeEach(async () => {
       select
         $1 || item::text,
         case when item = 52 then 'early-coil' else 'percentage-line-control' end,
-        case when item = 52 then 'ДЗ-09' else 'ДЗ-02' end,
+        case when item = 52 then 'СП-09' else 'СП-01' end,
         'E2E принятое исключение ' || item::text,
         'Проект: E2E · Шифр: 100 · Линия: L-' || item::text || ' · Клеймо: A' || item::text,
         timestamptz '2026-08-01 00:00:00+00' + item * interval '1 hour'
@@ -27,9 +27,10 @@ test.afterEach(async () => {
 
 test('searches, filters and paginates accepted exceptions without overflowing the settings panel', async ({ page }) => {
   await page.goto('/settings')
-  await page.getByRole('button', { name: 'Принятые исключения', exact: true }).click()
+  await page.getByRole('button', { name: 'Правила и проверки', exact: true }).click()
+  await page.getByRole('tab', { name: 'Принятые исключения', exact: true }).click()
 
-  const panel = page.locator('#settings-panel-acceptedWarnings')
+  const panel = page.locator('#rules-accepted-exceptions')
   await expect(panel.getByText('Всего: 52', { exact: true })).toBeVisible()
   await expect(panel.getByText('1-50', { exact: true })).toBeVisible()
   await expect(panel.getByText('из 52 исключений', { exact: true })).toBeVisible()

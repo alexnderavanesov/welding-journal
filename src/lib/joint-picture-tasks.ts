@@ -1,24 +1,22 @@
+import { isMandatoryDispatcherTask } from '@/lib/dispatcher-settings'
 import { DISPATCHER_SETTING_CODES, getDispatcherTaskCode } from '@/lib/dispatcher-settings'
 import {
   getDispatcherTasksForJointPicture,
   getDispatcherTasksForLinePicture,
 } from '@/lib/dispatcher-task-row-codes'
 import {
-  isSystemDispatcherWarningTask,
   type RepeatedJointTask,
   type WeldRow,
 } from '@/lib/dispatcher-types'
 
 const LINE_SCOPED_TASK_CODES = new Set([
-  'СП-02',
+  'СП-01',
   DISPATCHER_SETTING_CODES['percentage-new-welder'],
   DISPATCHER_SETTING_CODES['percentage-excess'],
   DISPATCHER_SETTING_CODES['percentage-rejected-rows'],
   DISPATCHER_SETTING_CODES['percentage-missing'],
   DISPATCHER_SETTING_CODES['percentage-full-control'],
-  DISPATCHER_SETTING_CODES['percentage-suspend-welder'],
   DISPATCHER_SETTING_CODES['line-control-presence'],
-  DISPATCHER_SETTING_CODES['line-psto-presence'],
 ])
 
 type BuildJointPictureTaskCollectionOptions = {
@@ -45,9 +43,9 @@ export function buildJointPictureTaskCollection({
       !hiddenTaskCodes.has(code) &&
       !relatedTaskCodes.has(code),
   )
-  const systemWarningCount = relatedTasks.filter(isSystemDispatcherWarningTask).length +
+  const systemWarningCount = relatedTasks.filter(isMandatoryDispatcherTask).length +
     codes.filter((code) => code.startsWith('СП-')).length
-  const dispatcherTaskCount = relatedTasks.length - relatedTasks.filter(isSystemDispatcherWarningTask).length +
+  const dispatcherTaskCount = relatedTasks.length - relatedTasks.filter(isMandatoryDispatcherTask).length +
     codes.filter((code) => !code.startsWith('СП-')).length
 
   return {
@@ -60,7 +58,7 @@ export function buildJointPictureTaskCollection({
 }
 
 function compareTasks(left: RepeatedJointTask, right: RepeatedJointTask) {
-  const systemWarningOrder = Number(isSystemDispatcherWarningTask(right)) - Number(isSystemDispatcherWarningTask(left))
+  const systemWarningOrder = Number(isMandatoryDispatcherTask(right)) - Number(isMandatoryDispatcherTask(left))
   return (
     systemWarningOrder ||
     getDispatcherTaskCode(left).localeCompare(getDispatcherTaskCode(right), 'ru', { numeric: true }) ||

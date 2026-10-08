@@ -4,12 +4,30 @@ import { calculateLineProgram } from '@/lib/line-program-calculation'
 import { getProgramRemovalHints } from '@/lib/line-program-excess'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 
-const mocks = vi.hoisted(() => ({ load: vi.fn() }))
+const mocks = vi.hoisted(() => ({ load: vi.fn(), names: vi.fn(async () => new Map()) }))
 vi.mock('./line-program', () => ({ loadLineProgramCalculations: mocks.load, toLineProgramRecord: (value: unknown) => value }))
-vi.mock('./line-program-welder-names', () => ({ loadLineProgramWelderNames: async () => new Map() }))
+vi.mock('./line-program-welder-names', () => ({ loadLineProgramWelderNames: mocks.names }))
 vi.mock('@/lib/line-program-excess', async original => {
   const module = await original<typeof import('@/lib/line-program-excess')>()
   return { ...module, getProgramRemovalHints: vi.fn(module.getProgramRemovalHints) }
+})
+
+it.each([2, 1000])('loads one line calculation and one name batch for a stamp summary of %i joints', async count => {
+  vi.clearAllMocks()
+  const line = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', category: 'II', groupName: 'A',
+    weldControlPercent: 10, pvkControlPercent: 0, configurationIssue: null, version: '1' }
+  const rows = Array.from({ length: count }, (_, i) => ({ id: i + 1, joint: `F${i + 1}`, connectionType: 'С17', weldDate: '2026-09-01', stamp1K: i ? 'B' : 'A' }))
+  mocks.load.mockResolvedValue({ accepted: new Set(), systemIndexSettings: DEFAULT_SYSTEM_INDEX_SETTINGS,
+    calculations: [{ line, rows, calculations: calculateLineProgram(rows, 10, 0) }] })
+  const select = vi.fn(() => ({ from: () => ({ where: () => ({ orderBy: async () => [line] }) }) }))
+  const tx = { select }
+  const report = await loadLineProgramReport(tx as never, { ids: [1], mode: 'stamps', stamp: 'a', context: '' })
+  expect(report.tables![0].rows).toHaveLength(1)
+  expect(report.tables![0].rows[0].slice(3, 8)).toEqual(['A', 1, '0 / 1', '0 / 0', 1])
+  expect(select).toHaveBeenCalledOnce()
+  expect(mocks.load).toHaveBeenCalledExactlyOnceWith(tx, [line])
+  expect(mocks.names).toHaveBeenCalledExactlyOnceWith(tx, ['A'])
+  expect(getProgramRemovalHints).toHaveBeenCalledOnce()
 })
 
 it.each(['lines', 'stamps'] as const)('calculates removable assignments only once per configured line for %s', async mode => {

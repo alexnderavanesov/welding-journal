@@ -4,11 +4,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { WelderStampWeldTypeSelector } from '@/components/welder-stamp-weld-type-selector'
 import { useDataListSettings } from '@/lib/data-list-settings'
-import { splitWelderStampMaterialGroups, splitWelderStampWeldTypes } from '@/lib/welder-stamp-format'
 import {
   createEmptyDlsPermit,
   createEmptyNaksPermit,
   createWelderStampPermitId,
+  splitPermitValues,
 } from '@/lib/welder-stamp-permits'
 import {
   getWelderNameByNaks,
@@ -297,7 +297,7 @@ export function WelderStampsCreatePanel({
               </div>
               <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
                 Клеймо будет доступно для исторических стыков с датой сварки не позже этой даты. Для более поздних стыков сработает
-                защита ЗВ-02, а сохраненное нарушение покажет диспетчер как ДЗ-18.
+                включенная ЗВ-01. Допуски на дату сварки независимо от архива проверяет обязательная СП-02.
               </p>
             </div>
             <label className="w-full shrink-0 space-y-1.5 text-sm font-medium text-slate-700 sm:w-56">
@@ -576,8 +576,15 @@ function PermitFields<T extends WelderStampNaksPermit | WelderStampDlsPermit>({
   materialGroups: readonly string[]
   onChange: (patch: Partial<T>) => void
 }) {
-  const selectedWeldTypes = splitWelderStampWeldTypes(permit.weldType, weldingTypes)
-  const selectedMaterialGroups = splitWelderStampMaterialGroups(permit.materialGroups, materialGroups)
+  // Settings describe available new choices, not a whitelist for existing permits.
+  const selectedWeldTypes = splitPermitValues(permit.weldType)
+  const selectedMaterialGroups = splitPermitValues(permit.materialGroups)
+  const weldTypeOptions = Array.from(new Set([...weldingTypes, ...selectedWeldTypes]))
+  const materialGroupOptions = Array.from(new Set([...materialGroups, ...selectedMaterialGroups]))
+  const unlistedValues = [
+    ...selectedWeldTypes.filter(value => !weldingTypes.includes(value)),
+    ...selectedMaterialGroups.filter(value => !materialGroups.includes(value)),
+  ]
 
   function toggleWeldType(type: string) {
     const nextTypes = selectedWeldTypes.includes(type)
@@ -597,17 +604,23 @@ function PermitFields<T extends WelderStampNaksPermit | WelderStampDlsPermit>({
     <>
       <div className="space-y-1.5 text-sm font-medium text-slate-700 md:col-span-2">
         <span>Способ сварки</span>
-        <WelderStampWeldTypeSelector options={weldingTypes} selectedWeldTypes={selectedWeldTypes} onToggleWeldType={toggleWeldType} />
+        <WelderStampWeldTypeSelector options={weldTypeOptions} selectedWeldTypes={selectedWeldTypes} onToggleWeldType={toggleWeldType} />
       </div>
       <div className="space-y-1.5 text-sm font-medium text-slate-700 md:col-span-2">
         <span>Группа материалов</span>
         <WelderStampWeldTypeSelector
-          options={materialGroups}
+          options={materialGroupOptions}
           selectedWeldTypes={selectedMaterialGroups}
           onToggleWeldType={toggleMaterialGroup}
           emptyText="Добавьте группы в Настройки → Данные"
         />
       </div>
+      {unlistedValues.length > 0 ? (
+        <p className="text-xs text-amber-800 md:col-span-2 xl:col-span-4">
+          В допуске есть значения вне текущего справочника: {unlistedValues.join(', ')}. Они сохраняются без замены.
+          {' '}Проверьте написание по документу; латинские и кириллические буквы не подменяются автоматически.
+        </p>
+      ) : null}
       <RangeField
         label="Диаметр"
         from={permit.diameterFrom}

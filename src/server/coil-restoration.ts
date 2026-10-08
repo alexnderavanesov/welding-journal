@@ -19,7 +19,7 @@ import { loadLineProgramRows, loadProgramSystemIndexSettings, toLineProgramRecor
 import { loadProgramApprovals } from './program-approval-lifecycle'
 import { getDispatcherDirtyScopes, markDispatcherTaskIndexDirty } from './dispatcher-task-index-dirty'
 import { lockAcceptedWarningWrites } from './accepted-warning-objects'
-import { isClearedErroneousCoilRow } from '@/lib/early-coil-candidate'
+import { isClearedErroneousCoilRow, isSafeEarlyCoilReplacementRow } from '@/lib/early-coil-candidate'
 import { revokeEarlyCoilDecisionInTransaction } from './early-coil-workflow'
 import { loadControlProcessSettingsFromTransaction } from './control-process-settings'
 import { attachHeatTreatmentControlRelations } from './heat-treatment-control-relations'
@@ -105,7 +105,7 @@ async function readContext(tx: Tx, id: number) {
       const sourceId = parseEarlyCoilDecisionKey(item.key)?.sourceRowId
       return sourceId == null ? [] : [sourceId]
     }))
-  return { root, early, states, live, rows, program, approved, settings, preview: { rootId: id, joint: String(root.joint ?? id), line: String(root.line ?? ''), reason, token,
+  return { root, early, states, live, rows, program, approved, settings, preview: { operation: 'restore' as const, rootId: id, joint: String(root.joint ?? id), line: String(root.line ?? ''), reason, token,
     checklist,
     chain: branch.map(row => ({ id: row.id, joint: String(row.joint ?? row.id) })),
     before, after, stampChanges, cancelledEarlyDecisions: early.length } }
@@ -148,7 +148,9 @@ async function readEarlyCorrection(tx: Tx, sourceId: number) {
   const remaining = context.rows.filter(row => !targetIds.has(row.id))
   const after = summarizeLineProgram(remaining, context.program, context.approved, undefined, context.settings)
   const token = hashJsonRecordTuple(['cancel-early', sourceId, context.preview.token, links])
+  const cancellationMode = targets.every(row => isSafeEarlyCoilReplacementRow(row, documented)) ? 'untouched' as const : 'correction' as const
   return { context, sourceId, targets, preview: { ...context.preview, operation: 'cancel-early' as const, reason, token, after, stampChanges: [],
+    cancellationMode, decisionJoint: String(liveById.get(sourceId)?.joint ?? sourceId),
     cancelledEarlyDecisions: 1, targetJoints: targets.map(row => String(row.joint ?? row.id)) } }
 }
 
@@ -164,14 +166,23 @@ export async function cancelErroneousEarlyCoilInTransaction(tx: Tx, input: CoilR
   // Serialize retries on the same source before looking up the immutable event.
   await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${'early-coil-correction:' + id}, 0))`)
   const [prior] = await tx.select().from(coilRestorationEvents).where(eq(coilRestorationEvents.token, input.token))
-  if (prior && JSON.parse(prior.snapshot).earlySourceId === id) return { alreadyApplied: true }
+  if (prior) {
+    const snapshot = JSON.parse(prior.snapshot)
+    if (snapshot.earlySourceId === id) return { alreadyApplied: true,
+      restorationRootId: snapshot.checklist?.replacedByCoil ? prior.sourceWeldJointId : null }
+  }
   const { context, preview, targets } = await readEarlyCorrection(tx, id)
   if (preview.token !== input.token) throw new Error(changedMessage)
   if (preview.reason) throw new Error(preview.reason)
-  await revokeEarlyCoilDecisionInTransaction(tx, getEarlyCoilDecisionKey(id), { allowEditedClearedRows: true })
+  const revoked = await revokeEarlyCoilDecisionInTransaction(tx, getEarlyCoilDecisionKey(id),
+    preview.cancellationMode === 'correction' ? { allowEditedClearedRows: true } : undefined)
+  // Legacy name-based cancellation must never remove a record that was absent
+  // from the ID-linked preview the operator confirmed. Roll back the whole step.
+  const targetIds = new Set(targets.map(row => row.id))
+  if (revoked.deletedRowIds.length !== targetIds.size || revoked.deletedRowIds.some(id => !targetIds.has(id))) throw new Error(changedMessage)
   await tx.insert(coilRestorationEvents).values({ token: input.token, sourceWeldJointId: context.root.id, confirmedBy: actor,
     snapshot: JSON.stringify({ ...preview, earlySourceId: id, removedRows: targets, cancelledDecision: context.early.find(item => item.key === getEarlyCoilDecisionKey(id)), statement: 'Ошибочное досрочное решение отменено; физическое восстановление не подтверждалось' }) })
-  return { alreadyApplied: false }
+  return { alreadyApplied: false, restorationRootId: preview.checklist.replacedByCoil ? context.root.id : null }
 }
 
 export const previewEarlyCoilCorrection = createServerFn({ method: 'POST' }).validator((data: { rootId: number }) => data).handler(async ({ data }) => {

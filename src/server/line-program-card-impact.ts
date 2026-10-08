@@ -23,7 +23,7 @@ export const getWeldLineProgramImpact = createServerFn({ method: 'POST' })
       if (!joint?.lineProgramId) throw new Error('У стыка нет настроенной программы линии.')
       const [stored] = await db.select().from(linePrograms).where(eq(linePrograms.id, joint.lineProgramId)).limit(1)
       if (!stored) throw new Error('Программа линии больше не существует.')
-      const line = { ...stored, version: stored.updatedAt.toISOString(), configurationIssue: stored.configurationIssue ?? getLineProgramConfigurationIssue(stored) }
+      const line = { ...stored, version: stored.updatedAt.toISOString(), configurationIssue: getLineProgramConfigurationIssue(stored) }
       const rows = await loadLineProgramRows(db, line)
       const accepted = new Set((await loadProgramApprovals(db, rows.map(row => row.id))).map(row => row.key))
       return calculateProgramCardImpact(attachProgramRepairRequirements(rows, accepted, await loadProgramSystemIndexSettings(db)), data, line, accepted)

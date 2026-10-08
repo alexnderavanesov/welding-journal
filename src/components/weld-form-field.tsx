@@ -3,7 +3,9 @@ import { isTConnectionType } from '@/lib/connection-type'
 import { memo, useEffect, useMemo, useState, type Dispatch, type KeyboardEvent, type MutableRefObject, type SetStateAction } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { WeldFormConnectionTypeField, WeldFormMaterialGroupField } from '@/components/weld-form-connection-type-field'
+import { WeldFormConnectionTypeField } from '@/components/weld-form-connection-type-field'
+import { WeldFormMaterialGroupField } from '@/components/weld-form-material-group-field'
+import { WeldFormMaterialGroupHelp } from '@/components/weld-form-material-group-help'
 import { WeldFormTestTypesField, WeldFormWeldingMethodField } from '@/components/weld-form-welding-method-field'
 import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
@@ -67,7 +69,11 @@ function WeldFormFieldComponent({
   hideLabel = false,
   controlPickerLayout = 'grid',
 }: WeldFormFieldProps) {
-  const label = hideLabel ? null : <span className="text-[13px] font-medium leading-none text-slate-700">{getFormFieldLabel(field)}</span>
+  const label = hideLabel ? null : ['weldingMethod', 'connectionType', 'materialGroup'].includes(field.key)
+    ? <div className="flex h-5 items-center gap-1.5 text-[13px] font-medium text-slate-700">
+      {getFormFieldLabel(field)}{field.key === 'materialGroup' ? <WeldFormMaterialGroupHelp /> : null}
+    </div>
+    : <span className="text-[13px] font-medium leading-none text-slate-700">{getFormFieldLabel(field)}</span>
   if (field.key === 'hasRk' && isTConnectionType(draft.connectionType)) return <div className="space-y-1.5 text-sm">{label}<Input readOnly aria-label={field.label} value={String(draft.hasRk ?? '')} title="РК не назначается на Т-стыки; исторические сведения не изменяются автоматически." /></div>
   const readOnlyReason = getReadOnlyReason(field.key, draft)
   if (readOnlyReason) {
@@ -81,6 +87,7 @@ function WeldFormFieldComponent({
       {label}
       {stampSelectOptions?.[field.key] ? (
         <Select
+          aria-label={field.label}
           ref={(element) => {
             fieldRefs.current[field.key] = element
           }}

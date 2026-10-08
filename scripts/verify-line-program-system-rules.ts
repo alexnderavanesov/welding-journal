@@ -50,10 +50,10 @@ try {
   await db.insert(dispatcherAcceptedWarnings).values({ key: programApprovalKey(root, 'common', true), kind: 'line-program-control', weldJointId: root.id })
   await refresh()
   const tasks = await db.select().from(dispatcherRowTasks).where(inArray(dispatcherRowTasks.weldJointId, ids))
-  assert.deepEqual([...new Set(tasks.filter(task => task.code === 'СП-03').map(task => task.weldJointId))], [repair.id])
+  assert.deepEqual([...new Set(tasks.filter(task => task.code === 'СП-08').map(task => task.weldJointId))], [repair.id])
   const virtual = await read.attachDispatcherTaskCodesToPage([{ id: root.id }, { id: repair.id }]) as { id: number; dispatcherTasks: string }[]
-  assert(!virtual[0].dispatcherTasks.includes('СП-03'))
-  assert(virtual[1].dispatcherTasks.includes('СП-03'))
+  assert(!virtual[0].dispatcherTasks.includes('СП-08'))
+  assert(virtual[1].dispatcherTasks.includes('СП-08'))
   assert.equal((await db.select().from(weldJoints).where(eq(weldJoints.id, repair.id)))[0].hasUzk, null)
   // Exclusion suppresses the active task in both persisted and virtual consumers.
   // Restoring only one of two flags is insufficient; restoring both revives debt.
@@ -68,13 +68,18 @@ try {
     await db.update(weldJoints).set(flags).where(eq(weldJoints.id, repair.id))
     await refresh()
     const stored = await db.select().from(dispatcherRowTasks).where(eq(dispatcherRowTasks.weldJointId, repair.id))
-    assert.equal(stored.some(task => task.code === 'СП-03'), expected)
+    assert.equal(stored.some(task => task.code === 'СП-08'), expected)
     const [visible] = await read.attachDispatcherTaskCodesToPage([{ id: repair.id }]) as { id: number; dispatcherTasks: string }[]
-    assert.equal(visible.dispatcherTasks.includes('СП-03'), expected)
+    assert.equal(visible.dispatcherTasks.includes('СП-08'), expected)
   }
   await db.update(weldJoints).set({ hasUzk: 'да' }).where(eq(weldJoints.id, repair.id))
   await refresh()
-  assert.equal((await db.select().from(dispatcherRowTasks).where(eq(dispatcherRowTasks.weldJointId, repair.id))).filter(task => task.code === 'СП-03' || task.code === 'ДЗ-27').length, 0)
+  assert.equal((await db.select().from(dispatcherRowTasks).where(eq(dispatcherRowTasks.weldJointId, repair.id))).filter(task => task.code === 'СП-08').length, 0)
+  // SP-01 also includes genuine line-program debts; check the former duplicate
+  // assignment family specifically instead of requiring the whole code to vanish.
+  const scopedPages = await db.select().from(schema.dispatcherTaskPages).where(eq(schema.dispatcherTaskPages.scopeKey, dispatcher.getDispatcherScopeKey(identity)))
+  assert(!scopedPages.flatMap(page => JSON.parse(page.tasks) as Array<{ kind: string; fieldKey?: string }>)
+    .some(task => task.kind === 'line-consistency' && task.fieldKey === 'controlPresence'))
 
   const coils = await db.transaction(async tx => {
     const rows = await tx.insert(weldJoints).values([1, 2].map(side => ({ ...identity, joint: `F1Y${side}`,

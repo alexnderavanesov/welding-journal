@@ -2,11 +2,12 @@ import {
   isAnyDispatcherSettingEnabled,
   isDispatcherSettingEnabled,
   isDispatcherTaskEnabled,
+  isMandatoryDispatcherTask,
   type DispatcherReminderSettings,
   type DispatcherSettingId,
   type DispatcherSettings,
 } from '@/lib/dispatcher-settings'
-import { isSystemDispatcherWarningTask, type DispatcherTask, type WeldRow } from '@/lib/dispatcher-types'
+import type { DispatcherTask, WeldRow } from '@/lib/dispatcher-types'
 import {
   buildRepeatedJointTasks,
 } from '@/lib/repeated-joint-tasks'
@@ -16,6 +17,7 @@ import type { DataListSettings } from '@/lib/data-list-settings'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
 import { getEarlyCoilDecisionSourceRowIds } from '@/lib/early-coil-decision'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
+import type { SaveCheckSettings } from './save-check-settings'
 
 const PERCENTAGE_LINE_DISPATCHER_SETTING_IDS = [
   'percentage-missing',
@@ -39,6 +41,7 @@ export type BuildVisibleDispatcherTasksInput = {
   dataListSettings?: DataListSettings
   systemIndexSettings?: SystemIndexSettings
   controlProcessSettings?: ControlProcessSettings
+  saveCheckSettings?: SaveCheckSettings
   earlyCoilDecisionSourceRowIds?: Set<number>
   includeRepeatedJointTasks?: boolean
   includeWelderStampExpiryTasks?: boolean
@@ -55,6 +58,7 @@ export function buildVisibleDispatcherTasks({
   dataListSettings,
   systemIndexSettings,
   controlProcessSettings,
+  saveCheckSettings,
   earlyCoilDecisionSourceRowIds: preparedEarlyCoilIds,
   includeRepeatedJointTasks = true,
   includeWelderStampExpiryTasks = true,
@@ -71,6 +75,7 @@ export function buildVisibleDispatcherTasks({
         acceptedProgramControlKeys: acceptedDispatcherWarningKeys,
         systemIndexSettings,
         controlProcessSettings,
+        saveCheckSettings,
         includeControlHistoryChecks: isDispatcherSettingEnabled('check-control-history', dispatcherSettings),
         includeIncompleteStampChecks: isDispatcherSettingEnabled('check-incomplete-stamps', dispatcherSettings),
         includeJointCoreDataChecks: isDispatcherSettingEnabled('check-joint-core-data', dispatcherSettings),
@@ -80,7 +85,7 @@ export function buildVisibleDispatcherTasks({
         includePstoResultCompletenessChecks: isDispatcherSettingEnabled('check-psto-result-completeness', dispatcherSettings),
         includeWelderStampCompatibilityChecks: isDispatcherSettingEnabled('check-welder-stamp', dispatcherSettings),
       }).filter(
-        (task) => isSystemDispatcherWarningTask(task) ||
+        (task) => isMandatoryDispatcherTask(task) ||
           (!isHidden(task.key) && isDispatcherTaskEnabled(task, dispatcherSettings)),
       )
     : []

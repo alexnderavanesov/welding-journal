@@ -1,10 +1,43 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { PreHeatTreatmentResultManagerDialog } from '@/components/pre-heat-treatment-result-manager-dialog'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 describe('PreHeatTreatmentResultManagerDialog', () => {
+  it('shows the officiality warning next to the disabled result deletion', () => {
+    const row = { id: 7, joint: 'F7', officiality: 'неофициальный',
+      preHeatTreatmentControls: [{ id: 11, weldJointId: 7, method: 'УЗК', result: 'ремонт',
+        requestName: 'З-11', conclusionDate: '2026-08-05', conclusionName: 'К-11' }] } as WeldRow
+    const onDeleteResult = vi.fn()
+    render(<PreHeatTreatmentResultManagerDialog rows={[row]} registryMode="result" isPending={false}
+      onClose={vi.fn()} onOpenWorkflow={vi.fn()} onCorrect={vi.fn()} onDeleteRequest={vi.fn()} onDeleteResult={onDeleteResult}
+      onOpenDocument={vi.fn()} onOpenJournalRows={vi.fn()} onCopyDocumentName={vi.fn()} canOpenDocument={() => true} />)
+    expect(screen.getByRole('button', { name: 'Удалить результат' })).toBeDisabled()
+    expect(screen.getByText(/последний негодный результат/)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить результат' }))
+    expect(onDeleteResult).not.toHaveBeenCalled()
+  })
+  it('explains forbidden historical results without replacing them automatically', () => {
+    const row = { id: 7, rowVersion: '107', joint: 'F7R2', d1: 57,
+      preHeatTreatmentControls: [{ id: 11, weldJointId: 7, method: 'РК', result: 'ремонт',
+        conclusionDate: '2026-08-05', conclusionName: 'РК-11' }] } as WeldRow
+    const onCorrect = vi.fn()
+    render(<PreHeatTreatmentResultManagerDialog rows={[row]} registryMode="result" isPending={false}
+      onClose={vi.fn()} onOpenWorkflow={vi.fn()} onCorrect={onCorrect} onDeleteRequest={vi.fn()} onDeleteResult={vi.fn()}
+      onOpenDocument={vi.fn()} onOpenJournalRows={vi.fn()} onCopyDocumentName={vi.fn()} canOpenDocument={() => true} />)
+    const picker = within(screen.getByRole('group', { name: 'Результат' }))
+    expect(picker.getByRole('button', { name: 'ремонт' })).toBeDisabled()
+    expect(picker.getByRole('button', { name: 'ремонт' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.focus(screen.getByRole('group', { name: 'ремонт' }))
+    expect(screen.getByRole('tooltip')).toHaveTextContent('меньше 89 мм')
+    expect(screen.getByRole('tooltip')).toHaveTextContent('два ремонта')
+    expect(screen.getByRole('link', { name: 'Подробнее о правиле СП-07' })).toHaveAttribute('href', '/settings#system-rule-lnk-results')
+    expect(onCorrect).not.toHaveBeenCalled()
+    fireEvent.click(picker.getByRole('button', { name: 'годен' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить результат' }))
+    expect(onCorrect).toHaveBeenCalledWith(expect.objectContaining({ relationId: 11, result: 'годен' }))
+  })
   it('shows a request without a result and allows correcting or deleting the request stage', () => {
     const onCorrect = vi.fn()
     const onDeleteRequest = vi.fn()

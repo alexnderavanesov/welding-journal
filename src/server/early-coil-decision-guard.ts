@@ -243,7 +243,7 @@ function buildGuardError(source: WeldJoint | undefined, reason: string) {
   const joint = String(source?.joint ?? '').trim() || 'без номера'
   return new Error(
     `Стык ${joint} является основанием принятого решения о досрочной катушке: ${reason}. ` +
-    'Сначала отмените решение в «Настройки -> Принятые исключения».',
+    'Сначала отмените решение в «Настройки → Правила и проверки → Принятые исключения».',
   )
 }
 
@@ -252,7 +252,7 @@ function buildTargetGuardError(target: WeldInput, source: WeldInput, reason: str
   const sourceJoint = String(source.joint ?? '').trim() || 'без номера'
   return new Error(
     `Стык ${targetJoint} создан принятым решением о досрочной катушке от ${sourceJoint}: ${reason}. ` +
-    'Сначала отмените решение в «Настройки -> Принятые исключения».',
+    'Сначала отмените решение в «Настройки → Правила и проверки → Принятые исключения».',
   )
 }
 

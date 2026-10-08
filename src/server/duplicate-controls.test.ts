@@ -4,7 +4,7 @@ import { PgDialect } from 'drizzle-orm/pg-core'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
-  assertDuplicateControlRepairAllowed,
+  assertDuplicateControlResultAllowed,
   assertDuplicateControlSaveBatchLimit,
   assertDuplicateControlSelectionLimit,
   assertDuplicateControlVersion,
@@ -18,7 +18,6 @@ import {
   refreshWeldedFinalStatusesAfterDuplicateControlChange,
   splitDuplicateControlInsertBatches,
 } from '@/server/duplicate-controls'
-import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 import type { WeldInput } from '@/lib/weld-fields'
 import {
@@ -28,9 +27,9 @@ import {
 } from '@/lib/duplicate-control-types'
 
 describe('duplicate-control supported methods', () => {
-  it.each(['годен', 'ремонт', 'вырез'] as const)('forbids any %s duplicate on an unofficial joint even with repair checks disabled', result => {
+  it.each(['годен', 'ремонт', 'вырез'] as const)('forbids any %s duplicate on an unofficial joint', result => {
     for (const method of ['ВИК', 'РК', 'УЗК', 'ПВК'] as const) {
-      expect(() => assertDuplicateControlRepairAllowed({ joint: 'S1', officiality: 'неофициальный', d1: 108 }, { method, result }, { ...DEFAULT_SAVE_CHECK_SETTINGS, lnkResultRepairRules: false }, DEFAULT_SYSTEM_INDEX_SETTINGS))
+      expect(() => assertDuplicateControlResultAllowed({ joint: 'S1', officiality: 'неофициальный', d1: 108 }, { method, result }, DEFAULT_SYSTEM_INDEX_SETTINGS))
         .toThrow('Дубль-контроль недоступен для неофициального стыка')
     }
   })
@@ -236,28 +235,46 @@ describe('duplicate-control batch writes', () => {
   })
 })
 
-describe('duplicate-control repair rules', () => {
+describe('duplicate-control mandatory result rules', () => {
   const smallDiameterRow = {
     joint: 'F1',
     d1: 57,
     d2: 57,
   } as WeldInput
 
-  it('enforces ZV-20 for a duplicate-control repair', () => {
-    expect(() => assertDuplicateControlRepairAllowed(
+  it('enforces SP-07 for an RK duplicate-control repair', () => {
+    expect(() => assertDuplicateControlResultAllowed(
       smallDiameterRow,
-      { method: 'ВИК', result: 'ремонт' },
-      DEFAULT_SAVE_CHECK_SETTINGS,
+      { method: 'РК', result: 'ремонт' },
       DEFAULT_SYSTEM_INDEX_SETTINGS,
-    )).toThrow(/ЗВ-20.*ВИК \(дубль\)/)
+    )).toThrow(/СП-07.*РК/)
   })
 
-  it('allows the same legacy value when ZV-20 is disabled', () => {
-    expect(() => assertDuplicateControlRepairAllowed(
+  it('allows a surface repair on D57', () => {
+    expect(() => assertDuplicateControlResultAllowed(
       smallDiameterRow,
       { method: 'ВИК', result: 'ремонт' },
-      { ...DEFAULT_SAVE_CHECK_SETTINGS, lnkResultRepairRules: false },
       DEFAULT_SYSTEM_INDEX_SETTINGS,
     )).not.toThrow()
+  })
+
+  it('does not extend the own-PVK good-only setting to customer duplicates', () => {
+    const check = (result: 'годен' | 'ремонт', pvkGoodOnly: boolean) => assertDuplicateControlResultAllowed(
+      smallDiameterRow, { method: 'ПВК', result },
+      DEFAULT_SYSTEM_INDEX_SETTINGS, pvkGoodOnly,
+    )
+    expect(() => check('ремонт', false)).not.toThrow()
+    // The agreed setting applies only to our main/pre-TO PVK, not duplicates.
+    expect(() => check('ремонт', true)).not.toThrow()
+    expect(() => check('годен', true)).not.toThrow()
+  })
+
+  it.each(['ВИК', 'ПВК'] as const)('rejects %s cut and third repair', method => {
+    expect(() => assertDuplicateControlResultAllowed(smallDiameterRow,
+      { method, result: 'вырез' },
+      DEFAULT_SYSTEM_INDEX_SETTINGS)).toThrow('СП-07')
+    expect(() => assertDuplicateControlResultAllowed({ ...smallDiameterRow, joint: 'F1R2' },
+      { method, result: 'ремонт' },
+      DEFAULT_SYSTEM_INDEX_SETTINGS)).toThrow('Третий ремонт')
   })
 })

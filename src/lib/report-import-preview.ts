@@ -14,7 +14,7 @@ import {
 } from '@/lib/weld-import-readers'
 import { readFirstSheetRows } from '@/lib/weld-import-sheet-reader'
 import { withOfficialJoint } from '@/lib/report-control-state'
-import { assertNoLnkRepairRuleIssues } from '@/lib/lnk-result-rules'
+import { getLnkResultRuleIssues } from '@/lib/lnk-result-policy'
 import { collectImportedWeldRecordPreparationErrors } from '@/lib/weld-journal-mutation-updates'
 import { getArchivedOfficialStampValuesForRecord } from '@/lib/welder-stamp-compatibility'
 import {
@@ -315,14 +315,13 @@ async function buildExistingRowsImportPreview({
       })
     }
     // History issues have already been collected above; continue checking the other fields.
-    const formBlockReason = getWeldFormFieldSaveBlockReason(candidate, existingRow, {
-      ...saveCheckSettings, controlHistoryProtection: false,
-    }, {
+    const formBlockReason = getWeldFormFieldSaveBlockReason(candidate, existingRow, saveCheckSettings, {
+      historyIssuesCollected: true,
       systemIndexSettings,
     })
     if (formBlockReason) {
       validationMessages.push(
-        formBlockReason.includes('ЗВ-26')
+        formBlockReason.includes('ЗВ-02')
           ? `${formBlockReason} Исправьте номер в карточке стыка: серое поле “Стык” не изменяется импортом.`
           : formBlockReason,
       )
@@ -359,7 +358,7 @@ async function buildExistingRowsImportPreview({
     const preparation = collectImportedWeldRecordPreparationErrors({
       records: [candidateForPrepare],
       skipManualJointNameValidation: true,
-      skipLnkRepairRuleValidation: true,
+      skipLnkResultRuleValidation: true,
       allowedArchivedOfficialStamps: getArchivedOfficialStampValuesForRecord(existingRow, welderStamps),
       weldFormStampSelectOptions,
       welderStamps,
@@ -376,23 +375,12 @@ async function buildExistingRowsImportPreview({
         fallbackFieldKeys: changedFieldKeys,
       }).forEach((fieldKey) => validationFieldKeys.add(fieldKey))
     }
-    let repairRuleError = false
-    if (hasChangedLnkRepairRuleInputs(candidate, existingRow)) {
-      try {
-        assertNoLnkRepairRuleIssues([prepared], loadSaveCheckSettings())
-      } catch (error) {
-        repairRuleError = true
-        const message = getImportErrorMessage(error)
-        validationMessages.push(message)
-        getImportErrorFieldKeys({
-          message,
-          record: candidate,
-          activeReport,
-          fallbackFieldKeys: changedFieldKeys,
-        }).forEach((fieldKey) => validationFieldKeys.add(fieldKey))
-      }
+    const resultIssues = getLnkResultRuleIssues(prepared, systemIndexSettings)
+    for (const issue of resultIssues) {
+      validationMessages.push(issue.message)
+      issue.fieldKeys.forEach(fieldKey => validationFieldKeys.add(fieldKey))
     }
-    if (preparation.errors.length === 0 && !repairRuleError) {
+    if (preparation.errors.length === 0 && resultIssues.length === 0) {
       preparedUpdates = { id: existingRow.id }
       changedKeys.forEach((key) => {
         const field = FIELD_BY_KEY.get(key as WeldFieldKey)
@@ -509,14 +497,6 @@ function prepareCandidateForExistingRowsValidation(candidate: ReportImportRecord
   return { ...candidate, wdi: null }
 }
 
-function hasChangedLnkRepairRuleInputs(candidate: ReportImportRecord, existingRow: WeldRow) {
-  return (
-    normalizePreviewValue(candidate.d1) !== normalizePreviewValue(existingRow.d1) ||
-    normalizePreviewValue(candidate.d2) !== normalizePreviewValue(existingRow.d2) ||
-    LNK_METHODS.some((method) => normalizePreviewValue(candidate[method.resultKey]) !== normalizePreviewValue(existingRow[method.resultKey]))
-  )
-}
-
 function isExistingRowsFieldLocked(mode: 'massFill' | 'replaceData', activeReport: ImportableReport, field: WeldField, existingRow: WeldRow) {
   if (isExistingRowsImportLockedField(field)) return true
   if (mode === 'replaceData') return isSystemImportField(activeReport, field, existingRow)
@@ -627,6 +607,7 @@ function validateReportImportRecords(
     const preparation = collectImportedWeldRecordPreparationErrors({
       records: [candidate],
       skipManualJointNameValidation: true,
+      skipLnkResultRuleValidation: true,
       weldFormStampSelectOptions,
       welderStamps,
       welderStampSuspensions,
@@ -641,7 +622,12 @@ function validateReportImportRecords(
         fallbackFieldKeys: getRecordFallbackErrorFieldKeys(record, activeReport),
       }).forEach((fieldKey) => validationFieldKeys.add(fieldKey))
     }
-    if (preparation.errors.length === 0) {
+    const resultIssues = getLnkResultRuleIssues(preparation.records[0], systemIndexSettings)
+    for (const issue of resultIssues) {
+      validationMessages.push(issue.message)
+      issue.fieldKeys.forEach(fieldKey => validationFieldKeys.add(fieldKey))
+    }
+    if (preparation.errors.length === 0 && resultIssues.length === 0) {
       preparedRecord = { ...preparation.records[0], id: record.id }
     }
 

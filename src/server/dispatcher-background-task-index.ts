@@ -178,7 +178,9 @@ export async function refreshDispatcherBackgroundTaskIndex(
           dispatcherSettings: buildDisabledDispatcherSettings,
           includeWelderStampExpiryTasks: false,
           taskSnapshotLimit: 0,
-          onTaskIndexRows: taskIndexWriter.append,
+          // Mandatory rules belong only to the active index, regardless of
+          // obsolete stored switches or the optional background configuration.
+          onTaskIndexRows: rows => taskIndexWriter.append(rows.filter(row => row.code.startsWith('ДЗ-'))),
         })
         await taskIndexWriter.flush()
       }

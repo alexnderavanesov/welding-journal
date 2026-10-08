@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { assertNoLnkRepairRuleIssues, getRowsWithChangedLnkRepairRuleInputs } from './lnk-result-rules'
-import { DEFAULT_SAVE_CHECK_SETTINGS } from './save-check-settings'
+import { assertNoLnkResultRuleIssues } from './lnk-result-policy'
+import { normalizeSaveCheckSettings } from './save-check-settings'
+import { getWeldFormSaveBlockReason } from './weld-form-save-reasons'
 import { prepareImportedWeldRecords } from './weld-journal-mutation-updates'
 import type { WeldRow } from './dispatcher-types'
 
@@ -13,7 +14,7 @@ describe('LNK repair rule in imports', () => {
         welderStamps: [],
         welderStampSuspensions: [],
       }),
-    ).toThrow(/ЗВ-20.*ремонт/)
+    ).toThrow(/СП-07.*Ремонт/)
   })
 
   it('checks existing row imports when D1 or D2 makes an existing repair forbidden', () => {
@@ -24,13 +25,10 @@ describe('LNK repair rule in imports', () => {
       { ...currentRows[0], d1: 57, d2: 57 } as WeldRow,
     ]
 
-    const rowsToCheck = getRowsWithChangedLnkRepairRuleInputs(updatedRows, currentRows)
-
-    expect(rowsToCheck).toHaveLength(1)
-    expect(() => assertNoLnkRepairRuleIssues(rowsToCheck, DEFAULT_SAVE_CHECK_SETTINGS)).toThrow('D1/D2')
+    expect(() => assertNoLnkResultRuleIssues(updatedRows)).toThrow('57 мм')
   })
 
-  it('does not check old repair rows during unrelated existing row updates', () => {
+  it('checks the final stored facts even during unrelated existing row updates', () => {
     const currentRows = [
       { id: 1, joint: 'F1', d1: 57, d2: 57, rkResult: 'ремонт', responsible: 'old', finalStatus: 'не годен' } as WeldRow,
     ]
@@ -38,15 +36,11 @@ describe('LNK repair rule in imports', () => {
       { ...currentRows[0], responsible: 'new' } as WeldRow,
     ]
 
-    expect(getRowsWithChangedLnkRepairRuleInputs(updatedRows, currentRows)).toHaveLength(0)
+    expect(() => assertNoLnkResultRuleIssues(updatedRows)).toThrow('СП-07')
   })
 
-  it('respects the disabled repair rule setting', () => {
-    expect(() =>
-      assertNoLnkRepairRuleIssues(
-        [{ joint: 'F1', d1: 57, d2: 57, rkResult: 'ремонт' }],
-        { ...DEFAULT_SAVE_CHECK_SETTINGS, lnkResultRepairRules: false },
-      ),
-    ).not.toThrow()
+  it('does not allow an old disabled repair setting to bypass SP-05', () => {
+    expect(getWeldFormSaveBlockReason({ joint: 'F1', d1: 57, d2: 57, rkResult: 'ремонт' }, {},
+      normalizeSaveCheckSettings({ lnkResultRepairRules: false }))).toContain('СП-07')
   })
 })

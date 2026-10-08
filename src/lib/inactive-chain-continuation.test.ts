@@ -38,11 +38,11 @@ describe('inactive rejected branch: history is retained, continuation is not req
     const source = row(1), repair = row(2, { joint: 'S1R1', revisionActuality: 'не актуален', uzkResult })
     const tasks = buildRepeatedJointTasks([source, repair]).filter(task => task.kind === 'check' && task.reason === 'проверить актуальность цепочки')
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-13')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-09')
     expect(buildDispatcherTaskCodeIndexRows(tasks, [source, repair]).map(entry => entry.rowId)).toEqual([1, 2])
     const actions = getDispatcherTaskActionSpecs(tasks[0])
     expect(actions.map(action => action.id)).toEqual(['set-chain-inactive', 'set-chain-active'])
-    expect(buildJointNextActions(source, tasks)[0]).toMatchObject({ title: 'ДЗ-13 · Проверить актуальность цепочки', kind: 'dispatcherTask' })
+    expect(buildJointNextActions(source, tasks)[0]).toMatchObject({ title: 'СП-09 · Проверить актуальность цепочки', kind: 'dispatcherTask' })
     for (const resolved of [[source, { ...repair, revisionActuality: null }], [{ ...source, revisionActuality: 'не актуален' }, repair]]) {
       expect(buildRepeatedJointTasks(resolved).some(task => task.kind === 'check' && task.reason === 'проверить актуальность цепочки')).toBe(false)
     }
@@ -120,7 +120,7 @@ describe('inactive rejected branch: history is retained, continuation is not req
     const source = row(1, { joint: 'S1R1', revisionActuality: 'не актуален' })
     const tasks = buildRepeatedJointTasks([source])
     // The physical integrity warning remains the priority action in the picture.
-    const check = tasks.find(task => task.kind === 'check' && task.systemWarningCode === 'СП-04')!
+    const check = tasks.find(task => task.kind === 'check' && task.systemWarningCode === 'СП-09')!
     expect(check).toBeDefined()
     expect(buildJointNextActions(source, tasks)).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'dispatcherTask', taskKey: check.key }),

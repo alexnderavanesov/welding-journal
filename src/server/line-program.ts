@@ -62,7 +62,7 @@ const LINE_PROGRAM_CALCULATION_COLUMNS = {
 export function toLineProgramRecord(row: LineProgram): LineProgramRecord {
   return { id: row.id, projectTitle: row.projectTitle, subtitleCode: row.subtitleCode, line: row.line,
     category: row.category, groupName: row.groupName, weldControlPercent: row.weldControlPercent,
-    pvkControlPercent: row.pvkControlPercent, configurationIssue: row.configurationIssue ?? getLineProgramConfigurationIssue(row),
+    pvkControlPercent: row.pvkControlPercent, configurationIssue: getLineProgramConfigurationIssue(row),
     version: row.updatedAt.toISOString() }
 }
 export async function loadLineProgramRows(db: Pick<SystemDocumentSequenceTransaction, 'select'>, line: LineProgramIdentity) {
@@ -165,7 +165,7 @@ export const getLineProgramCalculation = createServerFn({ method: 'GET' })
     return requireDb().transaction(async (tx) => {
     const [line] = await tx.select().from(linePrograms).where(eq(linePrograms.id, data.id)).limit(1)
     if (!line) throw new Error('Линия больше не существует.')
-    const issue = line.configurationIssue ?? getLineProgramConfigurationIssue(line)
+    const issue = getLineProgramConfigurationIssue(line)
     if (issue || line.weldControlPercent == null || line.pvkControlPercent == null) return { line: toLineProgramRecord(line), stamps: [], stampRows: [], unassigned: null, summary: null, issue }
     const loadedRows = await loadLineProgramRows(tx, line)
     const settings = await loadProgramSystemIndexSettings(tx)

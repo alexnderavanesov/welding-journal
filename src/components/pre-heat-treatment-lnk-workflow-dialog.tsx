@@ -16,6 +16,11 @@ import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { LnkRequestMethods } from '@/components/lnk-request-methods'
 import { LnkRequestModeToolbar } from '@/components/lnk-request-mode-toolbar'
 import { LnkResultControlBar } from '@/components/lnk-result-control-bar'
+import { getLnkSelectionResultRestrictionReason } from '@/components/lnk-result-selection-restrictions'
+import { WorkflowResultOptionPicker } from '@/components/workflow-result-option-picker'
+import { useControlProcessSettings } from '@/lib/control-process-settings'
+import { useSystemIndexSettings } from '@/lib/system-index-settings'
+import { getSystemRuleSettingsHref } from '@/lib/system-rule-catalog'
 import {
   PreHeatTreatmentLnkWorkflowRow,
   type PreHeatTreatmentLnkWorkflowRowMode,
@@ -173,6 +178,8 @@ export function PreHeatTreatmentLnkWorkflowDialog({
   const queryClient = useQueryClient()
   const settings = useRequestConclusionSettings()
   const saveCheckSettings = useSaveCheckSettings()
+  const processSettings = useControlProcessSettings()
+  const systemIndexSettings = useSystemIndexSettings()
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const dateInputRef = useRef<HTMLInputElement>(null)
   const appliedInitialSelectionRef = useRef('')
@@ -574,13 +581,6 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     const allowedIds = new Set(availableRows.map((row) => row.id))
     const next = new Set(rowIds.filter((rowId) => allowedIds.has(rowId)))
     setSelectedIds(next)
-    if (mode === 'result' && defaultResult) {
-      setRowResults((current) => {
-        const updated = { ...current }
-        next.forEach((rowId) => { if (!updated[rowId]) updated[rowId] = defaultResult })
-        return updated
-      })
-    }
   })
   const toggleRow = useStableEventCallback((rowId: number) => {
     const row = rows.find((candidate) => candidate.id === rowId)
@@ -591,14 +591,16 @@ export function PreHeatTreatmentLnkWorkflowDialog({
       else next.add(rowId)
       return next
     })
-    if (mode === 'result' && defaultResult) {
-      setRowResults((current) => current[rowId] ? current : { ...current, [rowId]: defaultResult })
-    }
   })
+  const getDisabledResultReason = (result: string, targetRows: readonly WeldRow[] = selectedRows) => getLnkSelectionResultRestrictionReason(
+    targetRows, [resultMethod], result, { systemIndexSettings, pvkGoodOnly: processSettings.pvkGoodOnly },
+  )
   const setRowsResult = useStableEventCallback((rowIds: number[], result: string) => {
+    const targetIds = new Set(rowIds.filter((id) => selectedIds.has(id)))
+    if (!resultMethod || getDisabledResultReason(result, rows.filter((row) => targetIds.has(row.id)))) return
     setRowResults((current) => {
       const next = { ...current }
-      rowIds.forEach((rowId) => { next[rowId] = result })
+      targetIds.forEach((rowId) => { next[rowId] = result })
       return next
     })
   })
@@ -630,7 +632,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
       resultAssignment: mode === 'result'
         ? {
             values: PRE_HEAT_TREATMENT_RESULT_OPTIONS,
-            getDisabledReason: () => null,
+            getDisabledReason: (value, targetRows) => getDisabledResultReason(value, targetRows) ?? null,
             onAssign: (targetRows, value) => setRowsResult(targetRows.map((item) => item.id), value),
           }
         : undefined,
@@ -675,6 +677,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     didApplyInitialResultSelectionRef.current = true
   }
   const changeDefaultResult = (result: string) => {
+    if (getDisabledResultReason(result)) return
     setDefaultResult(result)
     if (result) setRowsResult([...selectedIds], result)
   }
@@ -783,19 +786,21 @@ export function PreHeatTreatmentLnkWorkflowDialog({
             </label>
           )}
           resultControl={(
-            <label className="block space-y-1.5 text-sm">
-              <span className="text-[13px] font-medium leading-none text-slate-700">Результат для всех выбранных</span>
-              <Select
-                aria-label="Результат для всех выбранных"
+            <div className="space-y-1.5 text-sm">
+              <WorkflowResultOptionPicker
+                label="Результат для всех выбранных"
+                compact
+                reserveHelpSpace
+                restrictionHelpLabel="Правило СП-07"
+                helperText={!displayedDefaultResult || displayedDefaultResult === LNK_CUSTOM_RESULT_VALUE ? displayedDefaultResult ? 'Разные результаты' : 'Выберите результат' : undefined}
                 value={displayedDefaultResult}
-                onChange={(event) => changeDefaultResult(event.target.value)}
-                className="h-9 bg-white"
-              >
-                <option value="">Выберите результат</option>
-                <option value={LNK_CUSTOM_RESULT_VALUE} disabled>Разные результаты</option>
-                {PRE_HEAT_TREATMENT_RESULT_OPTIONS.map((result) => <option key={result} value={result}>{result}</option>)}
-              </Select>
-            </label>
+                options={PRE_HEAT_TREATMENT_RESULT_OPTIONS}
+                restrictionHelpHref={resultMethod && selectedRows.length ? getSystemRuleSettingsHref('СП-07') : undefined}
+                getDisabledReason={(result) => getDisabledResultReason(result) ||
+                  (!resultMethod ? 'Выберите метод контроля.' : selectedRows.length === 0 ? 'Выберите стыки.' : undefined)}
+                onChange={changeDefaultResult}
+              />
+            </div>
           )}
           requestControl={(
             <label className="block min-w-0 space-y-1.5 text-sm">
@@ -898,7 +903,6 @@ export function PreHeatTreatmentLnkWorkflowDialog({
                   selected={selectedIds.has(row.id)}
                   disabledReason={getRowBlockReason(row) ?? ''}
                   rowResult={rowResults[row.id] ?? ''}
-                  saveCheckSettings={saveCheckSettings}
                   onToggle={toggleRow}
                   onResultChange={(rowId, result) => setRowsResult([rowId], result)}
                   onOpenContextMenu={openRowContextMenu}

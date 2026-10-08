@@ -421,7 +421,7 @@ async function insertEarlyCoilDecisions(
       key: getEarlyCoilDecisionKey(decision.sourceRowId),
       weldJointId: decision.sourceRowId,
       kind: EARLY_COIL_DECISION_KIND,
-      code: 'ДЗ-09',
+      code: 'v2:СП-09',
       title: `Досрочная врезка катушки ${decision.targetJoints.join(' + ')}`,
       context: buildEarlyCoilDecisionContext(source, decision.sourceJoint, decision.targetJoints),
     }

@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
+import { getLnkResultRestrictionReason } from '@/lib/lnk-result-policy'
 import {
   buildLnkResultDraftById,
   getEffectiveLnkResultDraftValue,
@@ -71,9 +71,11 @@ export function useLnkResultSaveActions({
       const targetIds = new Set(rowIds.filter((rowId) => current.rowIds.has(rowId)))
       if (targetIds.size === 0) return current
       const targetRows = lnkRows.filter((candidate) => targetIds.has(candidate.id))
-      if (saveCheckSettings.lnkResultRepairRules && result === 'ремонт' && targetRows.some(isLnkRepairForbidden)) return current
-      if (['ремонт', 'вырез'].includes(result) && current.methodKey !== 'tvmtRequest' && targetRows.some((row) =>
-        row.layeredControlAssigned || (current.methodKey === 'pvkRequest' && current.layeredControlRowIds.has(row.id)))) return current
+      const method = getLnkMethodByRequestKey(current.methodKey)
+      if (!method || targetRows.some((row) => getLnkResultRestrictionReason(row, method.code, result, {
+        pvkGoodOnly: controlProcessSettings.pvkGoodOnly,
+        layeredControlSelected: current.layeredControlRowIds.has(row.id),
+      }))) return current
       const baseline = current.result && current.result !== LNK_CUSTOM_RESULT_VALUE ? current.result : ''
       const rowResults: Record<number, string> = {}
       for (const id of current.rowIds) {
@@ -112,7 +114,7 @@ export function useLnkResultSaveActions({
       setMessage('Выберите один или несколько стыков')
       return
     }
-    const resultById = buildLnkResultDraftById(selectedRows, draft, saveCheckSettings)
+    const resultById = buildLnkResultDraftById(selectedRows, draft)
     const resultValues = Object.values(resultById)
     if (resultValues.some((result) => !isValidLnkResultDraftValue(result))) {
       setMessage('Укажите результат для каждого выбранного стыка')
@@ -124,6 +126,18 @@ export function useLnkResultSaveActions({
       return
     }
     const method = getLnkMethodByRequestKey(draft.methodKey)
+    if (!method) return
+    const restrictionReasons = [...new Set(selectedRows.flatMap((row) => {
+      const reason = getLnkResultRestrictionReason(row, method.code, resultById[row.id], {
+        pvkGoodOnly: controlProcessSettings.pvkGoodOnly,
+        layeredControlSelected: draft.layeredControlRowIds.has(row.id),
+      })
+      return reason ? [reason] : []
+    }))]
+    if (restrictionReasons.length) {
+      setMessage(restrictionReasons.join('\n'))
+      return
+    }
     const layeredRows = method?.code === 'ПВК'
       ? selectedRows.filter((row) => draft.layeredControlRowIds.has(row.id) && !row.layeredControlAssigned)
       : []
@@ -166,7 +180,7 @@ export function useLnkResultSaveActions({
           title: 'Продолжить основной НК раньше?',
           itemName: `Стыков: ${warningRows.length} · Метод: ${method.code}`,
           description: 'Предыдущие этапы контроля еще не завершены. Результаты и заключения будут оформлены в основном этапе ЛНК.',
-          warning: 'В диспетчере появится системное предупреждение СП-01 до завершения НК до ТО, ПСТО и ТВМТ.',
+          warning: 'В диспетчере появится системное предупреждение СП-06 до завершения НК до ТО, ПСТО и ТВМТ.',
           confirmLabel: 'Продолжить',
           tone: 'warning',
         })

@@ -4,7 +4,7 @@ import { getDispatcherTaskCode, getDispatcherTaskTypeLabel } from '@/lib/dispatc
 import { getRepeatedJointTaskTitle } from '@/lib/dispatcher-text'
 import {
   buildControlHistoryCheckTasks,
-  buildForbiddenRepairByDiameterCheckTasks,
+  buildLnkResultRuleCheckTasks,
   buildIncompleteWelderStampGroupTasks,
   buildJointCoreDataCheckTasks,
   buildLnkChronologyCheckTasks,
@@ -31,7 +31,7 @@ describe('dispatcher data quality tasks', () => {
     ])
 
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-20')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-04')
     expect(tasks[0].details).toContain('раньше даты сварки')
     expect(tasks.map(getDispatcherTaskCode)).not.toContain('ДЗ-16')
   })
@@ -52,8 +52,8 @@ describe('dispatcher data quality tasks', () => {
     expect(buildLnkChronologyCheckTasks([legacyPrimary])).toEqual([])
     const pendingWarnings = buildPrimaryLnkStageDebtSystemWarnings([legacyPrimary])
     expect(pendingWarnings).toHaveLength(1)
-    expect(getDispatcherTaskCode(pendingWarnings[0])).toBe('СП-01')
-    expect(getDispatcherTaskTypeLabel(pendingWarnings[0])).toBe('Предыдущие этапы пропущены')
+    expect(getDispatcherTaskCode(pendingWarnings[0])).toBe('СП-06')
+    expect(getDispatcherTaskTypeLabel(pendingWarnings[0])).toBe('Последовательность этапов')
     expect(getRepeatedJointTaskTitle(pendingWarnings[0]).type).toBe('Предыдущие этапы пропущены')
     expect(pendingWarnings[0].details).toContain('уже внесены данные результата основного НК по методам ВИК')
     expect(pendingWarnings[0].details).toContain('Подтвердите этапы после получения фактических данных')
@@ -117,8 +117,8 @@ describe('dispatcher data quality tasks', () => {
       vikResult: 'годен',
     })
 
-    expect(buildLnkChronologyCheckTasks([incomplete]).map(getDispatcherTaskCode)).toEqual(['ДЗ-20'])
-    expect(buildPrimaryLnkStageDebtSystemWarnings([incomplete]).map(getDispatcherTaskCode)).toEqual(['СП-01'])
+    expect(buildLnkChronologyCheckTasks([incomplete]).map(getDispatcherTaskCode)).toEqual(['СП-04'])
+    expect(buildPrimaryLnkStageDebtSystemWarnings([incomplete]).map(getDispatcherTaskCode)).toEqual(['СП-06'])
   })
 
   it('aggregates methods into one SP-01 and advances its contextual action', () => {
@@ -246,7 +246,7 @@ describe('dispatcher data quality tasks', () => {
       vikConclusionDate: '2026-08-09',
     })])
 
-    expect(getDispatcherTaskCode(task)).toBe('ДЗ-20')
+    expect(getDispatcherTaskCode(task)).toBe('СП-04')
     expect(task.rootCauseActions?.map((action) => action.label)).toEqual([
       'Исправить дату заключения ВИК',
       'Исправить дату ПСТО',
@@ -274,7 +274,7 @@ describe('dispatcher data quality tasks', () => {
     ])
 
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-23')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-04')
     expect(tasks[0].details).toContain('раньше даты сварки')
   })
 
@@ -300,32 +300,32 @@ describe('dispatcher data quality tasks', () => {
     ])
 
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-23')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-10')
     expect(tasks[0].details).toContain('без негодной ТВМТ предыдущего цикла')
   })
 
-  it('combines a future weld date, missing required weld fields and invalid joint structure in one DЗ-31 task', () => {
+  it('separates SP-04 chronology from SP-03 incompleteness without auditing an optional name format', () => {
     const tasks = buildJointCoreDataCheckTasks([
       row({ joint: 'X1', weldDate: '2999-01-01', materialGroup: '', connectionType: '', weldingMethod: '' }),
     ])
 
-    expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-31')
+    expect(tasks).toHaveLength(2)
+    expect(tasks.map(getDispatcherTaskCode)).toEqual(['СП-04', 'СП-03'])
     expect(tasks[0].details).toContain('позже сегодняшней даты')
-    expect(tasks[0].details).toContain(
+    expect(tasks[1].details).toContain(
       'при заполненной дате сварки не указаны группа материалов, тип соединения и способ сварки',
     )
-    expect(tasks[0].details).toContain('Стык должен начинаться')
+    expect(tasks.map(task => task.details).join(' ')).not.toContain('Стык должен начинаться')
     expect(tasks[0].details).not.toContain('. при заполненной')
   })
 
   it('reports invalid general weld dates together through DЗ-31', () => {
     const tasks = buildJointCoreDataCheckTasks([
       row({ testDate: '31.02.2026', piDate: '2023-12-31' }),
-    ])
+    ]).filter(task => task.systemWarningCode === 'СП-04')
 
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-31')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-04')
     expect(tasks[0].details).toContain('Дата ГИ: укажите дату')
     expect(tasks[0].details).toContain('Дата ПИ не может быть раньше 01.01.2024')
   })
@@ -339,10 +339,10 @@ describe('dispatcher data quality tasks', () => {
     ])
 
     expect(lnkTasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(lnkTasks[0])).toBe('ДЗ-20')
+    expect(getDispatcherTaskCode(lnkTasks[0])).toBe('СП-04')
     expect(lnkTasks[0].details).toContain('укажите дату в формате')
     expect(pstoTasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(pstoTasks[0])).toBe('ДЗ-23')
+    expect(getDispatcherTaskCode(pstoTasks[0])).toBe('СП-04')
     expect(pstoTasks[0].details).toContain('укажите дату в формате')
   })
 
@@ -358,7 +358,7 @@ describe('dispatcher data quality tasks', () => {
     ])
 
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-31')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-03')
     expect(tasks[0].details).toContain('при заполненной дате сварки не указан способ сварки')
   })
 
@@ -375,7 +375,7 @@ describe('dispatcher data quality tasks', () => {
     ])
 
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-32')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-11')
     expect(tasks[0].details).toContain('ВИК: не заполнены дата контроля и заключение')
     expect(tasks[0].details).toContain('РК: не заполнено заключение')
   })
@@ -386,7 +386,7 @@ describe('dispatcher data quality tasks', () => {
     ])
 
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-32')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-11')
     expect(tasks[0].details).toContain('ВИК: не заполнены дата контроля и заключение')
   })
 
@@ -396,7 +396,7 @@ describe('dispatcher data quality tasks', () => {
     ])
 
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-33')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-11')
     expect(tasks[0].details).toContain('дата ПСТО и диаграмма термообработки')
   })
 
@@ -411,7 +411,7 @@ describe('dispatcher data quality tasks', () => {
     ])
 
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-33')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-11')
     expect(tasks[0].details).toContain('основной цикл ПСТО: не заполнено диаграмма термообработки')
   })
 
@@ -444,7 +444,7 @@ describe('dispatcher data quality tasks', () => {
     ])
 
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-33')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-11')
     expect(tasks[0].details).toContain('повторный цикл #2 ПСТО')
     expect(tasks[0].details).toContain('повторный цикл #2 ТВМТ')
   })
@@ -476,7 +476,7 @@ describe('dispatcher data quality tasks', () => {
     ])
 
     expect(tasks).toHaveLength(1)
-    expect(tasks.map(getDispatcherTaskCode)).toEqual(['ДЗ-34'])
+    expect(tasks.map(getDispatcherTaskCode)).toEqual(['СП-12'])
     expect(tasks.map((task) => task.row.id)).toEqual([1])
     expect(tasks[0].details).toContain('РК')
   })
@@ -487,7 +487,7 @@ describe('dispatcher data quality tasks', () => {
     ])
 
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-34')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-12')
     expect(tasks[0].details).toContain('РК')
   })
 
@@ -497,7 +497,7 @@ describe('dispatcher data quality tasks', () => {
     ], [])
 
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-18')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-02')
     expect(tasks[0].details).toContain('ABC1')
   })
 
@@ -517,22 +517,22 @@ describe('dispatcher data quality tasks', () => {
     ])
 
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-19')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-03')
     expect(tasks[0].details).toContain('группа клейма_1 пустая')
   })
 
-  it('checks the official repair limit through DЗ-17', () => {
-    const tasks = buildForbiddenRepairByDiameterCheckTasks([
+  it('checks the official repair limit through SP-05', () => {
+    const tasks = buildLnkResultRuleCheckTasks([
       row({ joint: 'F1R2', d1: 159, d2: 159, rkResult: 'ремонт' }),
     ])
 
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-17')
-    expect(tasks[0].details).toContain('после двух уже выполненных официальных ремонтов')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-07')
+    expect(tasks[0].details).toContain('два ремонта')
   })
 
-  it('checks a pre-TO repair against the same official repair limit through DЗ-17', () => {
-    const tasks = buildForbiddenRepairByDiameterCheckTasks([
+  it('checks a pre-TO repair against the same official repair limit through SP-05', () => {
+    const tasks = buildLnkResultRuleCheckTasks([
       row({
         joint: 'F1R2',
         d1: 159,
@@ -549,12 +549,12 @@ describe('dispatcher data quality tasks', () => {
     ])
 
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-17')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-07')
     expect(tasks[0].details).toContain('РК до ТО')
   })
 
-  it('checks a duplicate-control repair against the same diameter rule through DЗ-17', () => {
-    const tasks = buildForbiddenRepairByDiameterCheckTasks([
+  it('checks a duplicate-control repair against the same diameter rule through SP-05', () => {
+    const tasks = buildLnkResultRuleCheckTasks([
       row({
         joint: 'F2',
         d1: 57,
@@ -572,7 +572,7 @@ describe('dispatcher data quality tasks', () => {
     ])
 
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-17')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-07')
     expect(tasks[0].details).toContain('РК (дубль)')
   })
 })

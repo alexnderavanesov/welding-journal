@@ -26,7 +26,7 @@ export function captureRebuiltProgramChainStates(rows: readonly WeldRow[], setti
     const previousRootId = row.programChainState?.physicalRootId
     if (previousRootId != null && oldStates.get(previousRootId)?.replacedByCoil &&
       states.get(row.id)!.physicalRootId !== previousRootId) {
-      throw new Error('Сначала завершите проверку ошибочной катушки и отдельно подтвердите восстановление исходного соединения по СП-04. Изменение официальности не отменяет физическую замену катушкой.')
+      throw new Error('Сначала завершите проверку ошибочной катушки и отдельно подтвердите восстановление исходного соединения по СП-09. Изменение официальности не отменяет физическую замену катушкой.')
     }
     if (!row.programChainState?.replacedByCoil) continue
     Object.assign(states.get(row.id)!, {

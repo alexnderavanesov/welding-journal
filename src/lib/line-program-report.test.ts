@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildLineProgramReport } from './line-program-report'
+import { buildLineProgramReport, validateProgramReportRequest } from './line-program-report'
 import { buildLineProgramDisplay } from './line-program-display'
 import { calculateLineProgram } from './line-program-calculation'
 import { summarizeLineProgram } from './line-program-overview'
@@ -15,7 +15,7 @@ describe('program printed summaries', () => {
     const item = data()[0]
     item.overview.integrityIssues = 1
     const report = buildLineProgramReport([item], mode, '')
-    expect(report.tables?.[0].rows.every(row => String(row.at(-1)).includes('СП-04'))).toBe(true)
+    expect(report.tables?.[0].rows.every(row => String(row.at(-1)).includes('СП-09'))).toBe(true)
   })
   it('does not count a shared joint twice or merge different line quotas', () => {
     const report = buildLineProgramReport(data(), 'stamps', 'Все страницы')
@@ -29,11 +29,42 @@ describe('program printed summaries', () => {
     expect(report.tables?.[0].rows[0][5]).toBe('2 / 2')
     const html = buildPrintableReportHtml(report)
     expect(html).toContain('&lt;L1&gt;'); expect(html).not.toContain('<L1>')
-    const item = data()[0]; item.line = { ...line, configurationIssue: 'СП-02' }
-    expect(buildLineProgramReport([item], 'lines', '').tables?.[0].rows[0].at(-1)).toBe('СП-02')
+    const item = data()[0]; item.line = { ...line, configurationIssue: 'СП-01' }
+    expect(buildLineProgramReport([item], 'lines', '').tables?.[0].rows[0].at(-1)).toBe('СП-01')
   })
   it('handles an empty filter without printing unrelated lines', () => {
     const report = buildLineProgramReport([], 'stamps', 'Нет совпадений')
     expect(report.tables).toEqual([]); expect(report.metrics?.[1].value).toBe('0')
+  })
+  it.each([30, 100])('limits both rows and totals to one stamp without recalculating its %i%% line quota', percent => {
+    const pvkPercent = percent === 100 ? 10 : 0
+    const program = { ...line, weldControlPercent: percent, pvkControlPercent: pvkPercent }
+    const joints = [
+      { ...rows[0], hasRk: null },
+      { ...rows[0], id: 2, joint: 'F2', stamp1K: 'B', stamp2K: null, hasRk: null },
+      { ...rows[0], id: 3, joint: 'F3', stamp1K: null, stamp2K: null, weldDate: null, hasRk: null },
+    ]
+    const item = { line: program, overview: summarizeLineProgram(joints, program), stamps: buildLineProgramDisplay(joints, calculateLineProgram(joints, percent, pvkPercent), percent, pvkPercent).stampRows }
+    const report = buildLineProgramReport([item], 'stamps', 'Выбранное клеймо', ' a ')
+    expect(report.tables![0].rows).toHaveLength(1)
+    expect(report.tables![0].rows[0].slice(3, 8)).toEqual(['A', 1, '0 / 1', pvkPercent ? '0 / 1' : '0 / 0', pvkPercent ? 2 : 1])
+    expect(report.metrics!.find(metric => metric.label === 'Физических стыков')!.value).toBe('1')
+    expect(report.metrics!.find(metric => metric.label === 'РК - УЗК к назначению')!.value).toBe('1')
+    expect(report.meta![1].value).toContain('Клеймо A · линия <L1>')
+    expect(report.tables![0].subtitle).toContain('Норма взята из полного расчёта линии')
+    expect(item.stamps).toHaveLength(2)
+    expect(buildLineProgramReport([item], 'lines', '').metrics![1].value).toBe('3')
+  })
+  it('does not silently print a different scope when a stamp disappears or lines are ambiguous', () => {
+    expect(() => buildLineProgramReport(data(), 'stamps', '', 'REMOVED')).toThrow('Клеймо больше не входит')
+    expect(() => buildLineProgramReport([...data(), ...data()], 'stamps', '', 'A')).toThrow('Клеймо больше не входит')
+  })
+  it('validates a single-line stamp request without accepting empty stamps or the wrong report type', () => {
+    expect(validateProgramReportRequest({ ids: [1, 1], mode: 'stamps', context: 'Отбор', stamp: ' A ' })).toEqual({ ids: [1], mode: 'stamps', context: 'Отбор', stamp: 'A' })
+    for (const request of [
+      { ids: [1, 2], mode: 'stamps', stamp: 'A' }, { ids: [], mode: 'stamps', stamp: 'A' },
+      { ids: [1], mode: 'lines', stamp: 'A' }, { ids: [1], mode: 'stamps', stamp: ' ' },
+      { ids: [1], mode: 'stamps', stamp: null },
+    ]) expect(() => validateProgramReportRequest({ ...request, context: '' } as never)).toThrow('Для сводки по клейму')
   })
 })

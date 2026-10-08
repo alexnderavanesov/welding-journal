@@ -7,6 +7,15 @@ import {
 } from '@/lib/early-coil-candidate'
 
 describe('evaluateEarlyCoilCandidate', () => {
+  it.each(['vikResult', 'pvkResult'] as const)('does not turn an invalid historical %s cut into an early coil', field => {
+    const source = row({ joint: 'S1', [field]: 'вырез', rkResult: 'вырез' })
+    const before = structuredClone(source)
+    const evaluation = evaluateEarlyCoilCandidate([source], source)
+    expect(evaluation.candidate).toBeNull()
+    expect(evaluation.reason).toContain('СП-07')
+    expect(source).toEqual(before)
+  })
+
   it('allows an early coil directly after the first rejected joint', () => {
     const source = row({ id: 1, joint: 'F51', rkResult: 'ремонт' })
 

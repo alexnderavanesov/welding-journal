@@ -2,7 +2,7 @@ import type { RepeatedJointRenameChange, WeldRow } from './dispatcher-types'
 import { getJointChainConsistencyKey } from './joint-chain-keys'
 import { normalizeJointChainPart } from './joint-chain'
 import { isUnofficialJoint } from './joint-display'
-import { findFirstLnkRepairRuleIssue } from './lnk-result-rules'
+import { getLnkResultRuleIssues } from './lnk-result-policy'
 import { getExpectedRepeatedJointName, getPrimaryRejectedLnkResult } from './repeated-joint-task-helpers'
 import type { SystemIndexSettings } from './system-index-settings'
 
@@ -27,9 +27,9 @@ export function buildOfficialityRestorationRenames(
   const projectedRows: WeldRow[] = []
   for (const restored of restoredRows) {
     let group = (groups.get(key(restored)) ?? []).filter(row => !isUnofficialJoint(row))
-    if (group.length === 0) continue
     let previous: WeldRow = { ...restored, officiality: null }
     projectedRows.push(previous)
+    if (group.length === 0) continue
     const visited = new Set<number>([restored.id])
     while (group.length > 0) {
       const officials = group.filter(row => !isUnofficialJoint(row))
@@ -57,7 +57,7 @@ export function buildOfficialityRestorationRenames(
   }
   // Restoring an earlier repair can move a later "ремонт" beyond R2. Reject
   // that plan; converting its following row to W must not hide the violation.
-  const issue = findFirstLnkRepairRuleIssue(projectedRows, undefined, settings)
+  const issue = projectedRows.flatMap(row => getLnkResultRuleIssues(row, settings)).map(issue => issue.message).join('\n')
   if (issue) throw new Error(`Обратная перестройка невозможна: ${issue} Ничего не сохранено.`)
   return changes
 }

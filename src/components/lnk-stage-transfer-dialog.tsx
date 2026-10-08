@@ -347,8 +347,8 @@ function TransferReview({
         <div>
           <p className="font-semibold">
             {preview.resultingSystemWarningCount > 0
-              ? `После переноса СП-01 будет у ${preview.resultingSystemWarningCount} стыков`
-              : 'После переноса по выбранным стыкам СП-01 не будет'}
+              ? `После переноса СП-06 будет у ${preview.resultingSystemWarningCount} стыков`
+              : 'После переноса по выбранным стыкам СП-06 не будет'}
           </p>
           <p className="mt-1 leading-5">
             Операция атомарная: при конфликте или изменении данных ни один выбранный комплект не будет перенесён.

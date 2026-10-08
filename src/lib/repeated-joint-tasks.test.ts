@@ -4,7 +4,6 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { buildRepeatedJointTasks } from '@/lib/repeated-joint-tasks'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 import type { WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
-import { REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON } from '@/lib/report-config'
 
 describe('buildRepeatedJointTasks', () => {
   it('creates one official same-name target task for multiple unofficial rejected source rows', () => {
@@ -81,9 +80,9 @@ describe('buildRepeatedJointTasks', () => {
 
   it('keeps the next repeated joint create task when a premature coil needs integrity check', () => {
     const rows = [
-      row({ id: 1, joint: 'S2', pvkResult: 'вырез' }),
-      row({ id: 2, joint: 'S2W1', pvkResult: 'вырез' }),
-      row({ id: 3, joint: 'S2W2', pvkResult: 'вырез' }),
+      row({ id: 1, joint: 'S2', rkResult: 'вырез' }),
+      row({ id: 2, joint: 'S2W1', rkResult: 'вырез' }),
+      row({ id: 3, joint: 'S2W2', rkResult: 'вырез' }),
       row({ id: 4, joint: 'S2Y1', pvkResult: '' }),
     ]
 
@@ -274,7 +273,7 @@ describe('buildRepeatedJointTasks', () => {
         method: 'ВИК',
         requestName: 'Заявка ВИК до ТО',
         requestDate: '2026-07-01',
-        result: 'вырез',
+        result: 'ремонт',
         conclusionDate: '2026-07-01',
         conclusionName: 'Заключение ВИК до ТО',
       }],
@@ -310,12 +309,8 @@ describe('buildRepeatedJointTasks', () => {
   })
 
   it('keeps the existing automatic coil threshold unchanged', () => {
-    const rows = [
-      row({ id: 1, joint: 'S30', hasVik: 'да', vikRequest: 'ЗВК-1', vikRequestDate: '2026-07-01', vikResult: 'вырез', vikConclusionDate: '2026-07-01', vikConclusion: 'ВИК-1' }),
-      row({ id: 2, joint: 'S30W1', hasVik: 'да', vikRequest: 'ЗВК-2', vikRequestDate: '2026-07-01', vikResult: 'вырез', vikConclusionDate: '2026-07-01', vikConclusion: 'ВИК-2' }),
-      row({ id: 3, joint: 'S30W2', hasVik: 'да', vikRequest: 'ЗВК-3', vikRequestDate: '2026-07-01', vikResult: 'вырез', vikConclusionDate: '2026-07-01', vikConclusion: 'ВИК-3' }),
-      row({ id: 4, joint: 'S30W3', hasVik: 'да', vikRequest: 'ЗВК-4', vikRequestDate: '2026-07-01', vikResult: 'вырез', vikConclusionDate: '2026-07-01', vikConclusion: 'ВИК-4' }),
-    ]
+    const rows = ['S30', 'S30W1', 'S30W2', 'S30W3'].map((joint, index) =>
+      row({ id: index + 1, joint, rkResult: 'вырез' }))
 
     expect(buildRepeatedJointTasks(rows)).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -658,7 +653,7 @@ describe('buildRepeatedJointTasks', () => {
     expect(tasks).toEqual(expect.arrayContaining([
       expect.objectContaining({
         kind: 'check',
-        reason: REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON,
+        systemWarningCode: 'СП-07',
         row: expect.objectContaining({ id: 3 }),
       }),
     ]))
@@ -745,7 +740,7 @@ describe('buildRepeatedJointTasks', () => {
     ))).toEqual([])
   })
 
-  it('keeps safe recovery creates visible beside a repair-limit warning', () => {
+  it('keeps safe recovery creates but blocks an invalid result beside SP-05', () => {
     const tasks = buildRepeatedJointTasks([
       row({ id: 1, joint: 'S1', rkResult: 'ремонт' }),
       row({ id: 3, joint: 'S1R2', rkResult: 'ремонт' }),
@@ -754,12 +749,12 @@ describe('buildRepeatedJointTasks', () => {
     expect(tasks).toEqual(expect.arrayContaining([
       expect.objectContaining({
         kind: 'check',
-        reason: REPAIR_FORBIDDEN_BY_REPAIR_LIMIT_REASON,
+        systemWarningCode: 'СП-07',
         row: expect.objectContaining({ id: 3 }),
       }),
       expect.objectContaining({ kind: 'create', row: expect.objectContaining({ id: 1 }), targetJoint: 'S1R1' }),
-      expect.objectContaining({ kind: 'create', row: expect.objectContaining({ id: 3 }), targetJoint: 'S1R2W1' }),
     ]))
+    expect(tasks.some((task) => task.kind === 'create' && task.row.id === 3)).toBe(false)
   })
 
   it('adds a dispatcher task when a percentage line stamp lacks RK/UZK coverage', () => {

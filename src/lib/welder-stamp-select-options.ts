@@ -5,6 +5,8 @@ import {
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { StampSelectOption } from '@/lib/weld-form-utils'
 import { formatDisplayDate } from '@/lib/date-format'
+import { splitWeldMaterialGroups } from '@/lib/weld-material-groups'
+import { getDissimilarStampCompatibilityAssessment } from '@/lib/welder-stamp-compatibility-issues'
 import {
   formatWelderStampSuspensionBlockReason,
   getSuspensionOverlapForStamp,
@@ -16,6 +18,7 @@ import {
   formatOfficialStampDiameterList,
   getLatestWelderStampArchiveDate,
   getOfficialStampJointDimensionRequirements,
+  getOfficialStampMaterialScopes,
   getUnsupportedPermitDiameters,
   getUnsupportedPermitThicknesses,
   getWelderStampArchiveCompatibility,
@@ -26,7 +29,7 @@ import {
   parseOfficialStampWeldingMethods,
   type OfficialStampJointDimensionRequirements,
 } from '@/lib/welder-stamp-compatibility-utils'
-import { loadSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
+import { loadSaveCheckSettings, normalizeSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import {
   getAllWelderStampDlsPermits,
   getAllWelderStampNaksPermits,
@@ -43,7 +46,7 @@ export function buildWeldFormStampSelectOptions(
   suspensions: readonly WelderStampSuspensionRecord[] = [],
   options: { saveCheckSettings?: SaveCheckSettings } = {},
 ): Partial<Record<WeldFieldKey, readonly StampSelectOption[]>> {
-  const saveCheckSettings = options.saveCheckSettings ?? loadSaveCheckSettings()
+  const saveCheckSettings = normalizeSaveCheckSettings(options.saveCheckSettings ?? loadSaveCheckSettings())
   const activeRecords = records.filter((record) => !record.archived)
   const allowedArchivedStampValues = getExistingArchivedOfficialStampValues(
     [
@@ -56,7 +59,7 @@ export function buildWeldFormStampSelectOptions(
     ? getHistoricalArchivedOfficialStampValues(records, draft.weldDate)
     : []
   const officialOptions = uniqueStampValues([
-    ...activeRecords.map((record) => record.naksStamp),
+    ...(saveCheckSettings.officialArchive ? activeRecords : records).map((record) => record.naksStamp),
     ...allowedArchivedStampValues,
     ...historicalArchivedStampValues,
   ]).map((value) => {
@@ -174,6 +177,20 @@ function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, acti
   if (stampRecords.length === 0) return saveCheckSettings.officialRegistry ? hardReason('нет в активном реестре') : null
 
   const methods = parseOfficialStampWeldingMethods(draft.weldingMethod)
+  if (splitWeldMaterialGroups(draft.materialGroup).length === 2) {
+    const assessment = getDissimilarStampCompatibilityAssessment({ fieldKey: 'stamp1K', stamp, records: stampRecords }, methods, draft, saveCheckSettings)
+    const reasons = assessment.compatibleMethods.size === 0
+      ? [...assessment.methodIssues.values()].map(issue => issue.message)
+      : assessment.rangeIssue ? [assessment.rangeIssue.message] : []
+    if (reasons.length) return hardReason(reasons.join(' '))
+    if (!getWeldDateOrderValue(draft.weldDate)) {
+      for (const scope of getOfficialStampMaterialScopes(draft)) {
+        const waiting = getCombinedMethodArchivedDateReason(stampRecords, [...assessment.compatibleMethods], scope.group, scope.dimensions, saveCheckSettings.officialDls, saveCheckSettings)
+        if (waiting) return { ...waiting, reason: `${scope.label}. ${waiting.reason}` }
+      }
+    }
+    return null
+  }
   const materialGroup = parseOfficialStampMaterialGroup(draft.materialGroup)
   const dimensions = getOfficialStampJointDimensionRequirements(draft)
   const weldDateValue = getWeldDateOrderValue(draft.weldDate)
@@ -182,6 +199,7 @@ function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, acti
     methods.length === 0 &&
     dimensions.diameters.length === 0 &&
     dimensions.thicknesses.length === 0 &&
+    !weldDateValue &&
     !materialGroup &&
     !requireDls
   ) return null
@@ -193,6 +211,9 @@ function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, acti
       saveCheckSettings.officialMaterialGroup ? materialGroup : '',
       saveCheckSettings.officialNaksDate ? weldDateValue : 0,
     )
+    if (weldDateValue && permits.length === 0) {
+      return getNaksArchiveAwareReason(stampRecords, weldDateValue, 'нет подходящего допуска НАКС на дату сварки')
+    }
     if (saveCheckSettings.officialMaterialGroup && materialGroup && permits.length === 0) {
       return getNaksArchiveAwareReason(stampRecords, saveCheckSettings.officialNaksDate ? weldDateValue : 0, `не подходит по группе материалов ${materialGroup}`)
     }

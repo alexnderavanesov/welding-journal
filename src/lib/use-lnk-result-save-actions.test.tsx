@@ -97,12 +97,12 @@ describe('useLnkResultSaveActions', () => {
     expect(result.current.draft.layeredControlRowIds).toEqual(new Set([1]))
     act(() => result.current.setLnkResultForRows([1], 'вырез'))
     expect(result.current.draft.result).toBe('годен')
-    act(() => result.current.setLnkResultForRows([2], 'вырез'))
+    act(() => result.current.setLnkResultForRows([2], 'ремонт'))
     await act(async () => result.current.handleAddLnkResult())
     expect(confirmAction).toHaveBeenCalledOnce()
     expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({ itemName: 'Новых назначений: 1' }))
     expect(mutate).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ records: mixedRows, layeredControlRowIds: [1] }))
-    expect(mutate.mock.calls[0]![0].resultById).toEqual({ 1: 'годен', 2: 'вырез', 3: 'годен', 4: 'годен' })
+    expect(mutate.mock.calls[0]![0].resultById).toEqual({ 1: 'годен', 2: 'ремонт', 3: 'годен', 4: 'годен' })
     expect(mutate.mock.calls[0]![0].records[3]?.layeredControlAssigned).toBe(true)
   })
 
@@ -146,12 +146,38 @@ describe('useLnkResultSaveActions', () => {
 
   it('does not assign repair when any context row violates the repair rule', () => {
     const forbiddenRows = [rows[0], { ...rows[1], d1: 57, d2: 57 }] as WeldRow[]
-    const initialDraft = createDraft()
+    const initialDraft = { ...createDraft(), methodKey: 'rkRequest' as const }
     const { result } = renderHook(() => useHarness(initialDraft, forbiddenRows))
 
     act(() => result.current.setLnkResultForRows([1, 2], 'ремонт'))
 
     expect(result.current.draft).toEqual(initialDraft)
+  })
+
+  it.each(['vikRequest', 'pvkRequest'] as const)('accepts a small-diameter repair but rejects cutout for %s without rewriting the draft', (methodKey) => {
+    const smallRows = rows.map((row) => ({ ...row, d1: 57 }))
+    const { result } = renderHook(() => useHarness({ ...createDraft(), methodKey }, smallRows))
+    act(() => result.current.setLnkResultForRows([1, 2], 'ремонт'))
+    expect(result.current.draft.rowResults).toEqual({ 1: 'ремонт', 2: 'ремонт' })
+    const before = result.current.draft
+    act(() => result.current.setLnkResultForRows([1, 2], 'вырез'))
+    expect(result.current.draft).toBe(before)
+  })
+
+  it('preserves and blocks an already stored forbidden draft instead of replacing it on save', async () => {
+    const mutate = vi.fn<LnkResultMutate>()
+    const draft = { ...createDraft(), result: 'вырез' }
+    const { result } = renderHook(() => useHarness(draft, rows, { mutate }))
+    await act(async () => result.current.handleAddLnkResult())
+    expect(result.current.draft).toBe(draft)
+    expect(mutate).not.toHaveBeenCalled()
+  })
+
+  it('blocks new PVK repairs when pvkGoodOnly is enabled', () => {
+    const draft = { ...createDraft(), methodKey: 'pvkRequest' as const }
+    const { result } = renderHook(() => useHarness(draft, rows, { controlProcessSettings: { ...DEFAULT_CONTROL_PROCESS_SETTINGS, pvkGoodOnly: true } }))
+    act(() => result.current.setLnkResultForRows([1, 2], 'ремонт'))
+    expect(result.current.draft).toBe(draft)
   })
 
   it('clears an early primary result without asking to confirm chronology debt', async () => {

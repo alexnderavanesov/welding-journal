@@ -18,7 +18,7 @@ test.afterEach(async () => {
   })
 })
 
-test('ремонт катушки наследует её УЗК, но не РК и ПВК вырезанного соединения; ложного СП-03 нет', async ({ page }) => {
+test('ремонт катушки наследует её УЗК, но не РК и ПВК вырезанного соединения; ложного СП-08 нет', async ({ page }) => {
   const ids = await withE2eDatabase(async db => {
     dispatcher = (await db.query(`select value,updated_at from app_settings where key='dispatcher'`)).rows[0]
     dataList = (await db.query(`select value,updated_at from app_settings where key='data-list'`)).rows[0]
@@ -61,6 +61,6 @@ test('ремонт катушки наследует её УЗК, но не РК
   await page.waitForLoadState('networkidle')
   await expect.poll(() => withE2eDatabase(async db => (await db.query('select computed_revision=source_revision as fresh from dispatcher_task_index_state where id=1')).rows[0]?.fresh)).toBe(true)
   const tasks = await withE2eDatabase(async db => (await db.query('select tasks from dispatcher_task_pages')).rows.flatMap(row => JSON.parse(row.tasks)))
-  expect(tasks.filter(task => task.row?.id === created.id && task.systemWarningCode === 'СП-03')).toEqual([])
+  expect(tasks.filter(task => task.row?.id === created.id && task.systemWarningCode === 'СП-08')).toEqual([])
   expect(errors).toEqual([])
 })

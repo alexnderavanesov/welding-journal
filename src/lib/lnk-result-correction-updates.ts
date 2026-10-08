@@ -1,10 +1,9 @@
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import { withTouchedLnkFinalStatus } from '@/lib/lnk-field-updates'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
-import {
-  assertLnkRepairAllowed,
-  assertValidLnkResultValue,
-} from '@/lib/lnk-result-draft'
+import { assertValidLnkResultValue } from '@/lib/lnk-result-draft'
+import { assertLnkResultAllowed } from '@/lib/lnk-result-policy'
+import { loadControlProcessSettings } from '@/lib/control-process-settings'
 import { formatCustomDocumentName } from '@/lib/report-request-naming'
 import { hasText } from '@/lib/report-value-utils'
 import { loadSaveCheckSettings } from '@/lib/save-check-settings'
@@ -14,7 +13,7 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { RowWithId } from '@/lib/lnk-report-mutation-types'
 import type { RkExposureTableSettings } from '@/lib/other-settings'
 import { transitionLnkDefectDescription } from '@/lib/lnk-defect-description'
-import { assertUnofficialLnkGoodResultAllowed } from './unofficial-lnk-result-guard'
+import { assertUnofficialLnkGoodResultAllowed, assertUnofficialLastRejectionRetained } from './unofficial-lnk-result-guard'
 
 export function buildLnkResultCorrectionRow({
   record,
@@ -35,7 +34,7 @@ export function buildLnkResultCorrectionRow({
   if (!method) throw new Error('Выберите метод контроля')
   if (result) assertValidLnkResultValue(result)
   assertUnofficialLnkGoodResultAllowed(record, result, record[method.resultKey], method.code)
-  assertLnkRepairAllowed(record, result, saveCheckSettings)
+  assertLnkResultAllowed(record, method.code, result, { pvkGoodOnly: loadControlProcessSettings().pvkGoodOnly })
   const exposureRecord = method.code === 'РК'
     ? applyRkExposureResultTransition(record, result, rkExposureTable)
     : record
@@ -58,6 +57,7 @@ export function buildLnkResultCorrectionRow({
         }),
   } as RowWithId
   const nextRecord = withTouchedLnkFinalStatus(proposedRecord)
+  assertUnofficialLastRejectionRetained(nextRecord, record)
   assertNoNewLnkChronologyIssues([nextRecord], [record], saveCheckSettings)
   return nextRecord
 }
@@ -74,13 +74,14 @@ export function buildLnkResultReplacementRows({
     ? loadOtherSettings().rkExposureTable
     : suppliedRkExposureTable
   const updatedById = new Map<number, RowWithId>()
+  const { pvkGoodOnly } = loadControlProcessSettings()
   for (const { record, methodKey, result } of updates) {
     const method = getLnkMethodByRequestKey(methodKey)
     if (!method) throw new Error('Выберите метод контроля')
     assertValidLnkResultValue(result)
     assertUnofficialLnkGoodResultAllowed(record, result, record[method.resultKey], method.code)
-    assertLnkRepairAllowed(record, result, saveCheckSettings)
     const currentRecord = updatedById.get(record.id) ?? record
+    assertLnkResultAllowed(currentRecord, method.code, result, { pvkGoodOnly })
     const exposureRecord = method.code === 'РК'
       ? applyRkExposureResultTransition(currentRecord, result, rkExposureTable)
       : currentRecord
@@ -102,6 +103,8 @@ export function buildLnkResultReplacementRows({
     } as RowWithId)
   }
   const proposedRecords = [...updatedById.values()].map((record) => withTouchedLnkFinalStatus(record))
+  const previousById = new Map(updates.map(({ record }) => [record.id, record]))
+  for (const record of proposedRecords) assertUnofficialLastRejectionRetained(record, previousById.get(record.id)!)
   assertNoNewLnkChronologyIssues(
     proposedRecords,
     [...new Map(updates.map(({ record }) => [record.id, record])).values()],

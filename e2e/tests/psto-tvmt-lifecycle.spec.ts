@@ -74,7 +74,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await runNextAction(page, 'Внести результат НК до ТО')
   await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК до ТО' })).toBeVisible()
   await fillDate(page, 'Дата контроля', '2026-08-03')
-  await page.getByRole('dialog').getByRole('button', { name: 'годен', exact: true }).click()
+  await page.getByRole('dialog').getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
   await page.getByRole('button', { name: 'Сохранить результат до ТО' }).click()
   await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК до ТО' })).toBeHidden()
   await expectDatabaseRow('pre_heat_treatment_controls', {
@@ -153,7 +153,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК' })).toBeVisible()
   await chooseOptionByLabel(page, 'Метод контроля', 'ВИК')
   await fillDate(page, 'Дата контроля', '2026-08-13')
-  await page.getByRole('dialog').getByRole('button', { name: 'ремонт', exact: true }).click()
+  await page.getByRole('dialog').getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'ремонт', exact: true }).click()
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
   await expectWeld({
     vik_result: 'ремонт',
@@ -164,8 +164,10 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
 
   await openHeaderMenuItem(page, 'Результат', 'Все результаты ЛНК')
   await expect(page.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeVisible()
+  await page.getByRole('dialog').getByLabel('Вид контроля в реестре', { exact: true }).selectOption('vikRequest')
+  await page.getByRole('dialog').getByPlaceholder('Стык, линия, заявка или заключение').fill('E2E-L1')
   await page.getByRole('button', { name: new RegExp(`E2E-L1 · ${JOINT}`) }).click()
-  await page.getByRole('dialog').getByRole('button', { name: 'годен', exact: true }).last().click()
+  await page.getByRole('dialog').getByRole('group', { name: 'Изменить на:', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
   await page.getByRole('button', { name: 'Сохранить изменения' }).click()
   await expect(page.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeHidden()
   await expectWeld({
@@ -383,7 +385,7 @@ test('позднее назначение ПСТО сохраняет факти
 
   await runNextAction(page, 'Внести результат НК до ТО', LATE_ASSIGNMENT_JOINT)
   await fillDate(page, 'Дата контроля', '2026-08-01')
-  await page.getByRole('dialog').getByRole('button', { name: 'годен', exact: true }).click()
+  await page.getByRole('dialog').getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
   await page.getByRole('button', { name: 'Сохранить результат до ТО' }).click()
 
   await runNextAction(page, 'Создать заявку ПСТО', LATE_ASSIGNMENT_JOINT)
@@ -424,8 +426,8 @@ test('позднее назначение ПСТО сохраняет факти
     .getByText(LATE_ASSIGNMENT_JOINT, { exact: true })
     .first()
     .locator('xpath=ancestor::tr')
-  await expect(completedRow.getByText(/ДЗ-19/)).toBeVisible()
-  await expect(completedRow.getByText('ДЗ-20', { exact: false })).toHaveCount(0)
+  await expect(completedRow.getByText(/СП-03/)).toBeVisible()
+  await expect(completedRow.getByText('СП-04', { exact: false })).toHaveCount(0)
   await expect(completedRow.getByText('Создать заявку основного НК', { exact: true })).toHaveCount(0)
 })
 
@@ -524,7 +526,7 @@ test('этап НК одинаково меняется из ПСТО, доку�
 
   await runNextAction(page, 'Внести результат основного НК', STAGE_SYNC_JOINT)
   await fillDate(page, 'Дата контроля', '2026-08-21')
-  await page.getByRole('dialog').getByRole('button', { name: 'годен', exact: true }).click()
+  await page.getByRole('dialog').getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
   await page.getByRole('button', { name: 'Сохранить результат', exact: true }).click()
 
   const titles = await loadVikDocumentTitles(STAGE_SYNC_JOINT, true)
@@ -895,8 +897,8 @@ async function completeStageTransfer(
   await expect(dialog.getByText('Вместе с выбранными позициями', { exact: true })).toBeVisible()
   await expect(dialog.getByText(
     resultingSystemWarningCount > 0
-      ? `После переноса СП-01 будет у ${resultingSystemWarningCount} стыков`
-      : 'После переноса по выбранным стыкам СП-01 не будет',
+      ? `После переноса СП-06 будет у ${resultingSystemWarningCount} стыков`
+      : 'После переноса по выбранным стыкам СП-06 не будет',
     { exact: true },
   )).toBeVisible()
   await dialog.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
@@ -1107,7 +1109,7 @@ async function expectRepeatedJointCreateTask(page: Page, sourceJoint: string, ta
   await expect(panel).toBeVisible()
   const expand = panel.getByRole('button', { name: 'Развернуть', exact: true })
   if (await expand.isVisible()) await expand.click()
-  const codeGroup = page.locator('details').filter({ hasText: 'ДЗ-07' }).first()
+  const codeGroup = page.locator('details').filter({ hasText: 'СП-09' }).first()
   await expect(codeGroup).toBeVisible({ timeout: 15_000 })
   await openDetails(codeGroup)
   const objectGroup = codeGroup.locator('details[data-dispatcher-hierarchy-level="1"]').filter({
@@ -1132,7 +1134,7 @@ async function expectRepeatedJointCreateTaskToDisappear(page: Page, targetJoint:
       select count(*)::text as count
       from dispatcher_row_tasks as tasks
       join weld_joints as joints on joints.id = tasks.weld_joint_id
-      where joints.project_title = 'E2E проект' and joints.joint = $1 and tasks.code = 'ДЗ-07'
+      where joints.project_title = 'E2E проект' and joints.joint = $1 and tasks.code = 'СП-09'
     `, [JOINT])
     return Number(result.rows[0]?.count ?? -1)
   }), { timeout: 15_000 }).toBe(0)

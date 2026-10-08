@@ -17,6 +17,7 @@ import { PrintableReportPreview } from '@/components/printable-report-preview'
 import { Button } from './ui/button'
 
 type HomePageViewProps = {
+  onCancelEarlyCoil?: (sourceId: number) => void
   coilRestorationDialogProps?: ComponentProps<typeof CoilRestorationDialog> | null
   coilCorrectionReturnProps?: { onReturn: () => void; onDismiss: () => void } | null
   chainActualityDialogProps?: ComponentProps<typeof ChainActualityDialog> | null
@@ -64,6 +65,7 @@ type HomePageViewProps = {
 }
 
 export function HomePageView({
+  onCancelEarlyCoil,
   coilRestorationDialogProps,
   coilCorrectionReturnProps,
   chainActualityDialogProps,
@@ -110,6 +112,7 @@ export function HomePageView({
   rootCauseNavigationProps,
 }: HomePageViewProps) {
   const reportBackgroundProps = useFrozenValue<ReportBackgroundProps>({
+    onCancelEarlyCoil,
     activeReport,
     activeTitle,
     registerMinWidth,
@@ -167,8 +170,8 @@ export function HomePageView({
         />
       ) : null}
 
-      <ReportNotificationToast {...reportNotificationToastProps} />
-      {coilRestorationDialogProps ? <Suspense fallback={null}><CoilRestorationDialog key={coilRestorationDialogProps.rootId} {...coilRestorationDialogProps} /></Suspense> : null}
+      {!coilRestorationDialogProps ? <ReportNotificationToast {...reportNotificationToastProps} /> : null}
+      {coilRestorationDialogProps ? <Suspense fallback={null}><CoilRestorationDialog key={`${coilRestorationDialogProps.rootId}:${Boolean(coilRestorationDialogProps.earlyDecision)}`} {...coilRestorationDialogProps} /></Suspense> : null}
       {chainActualityDialogProps ? <Suspense fallback={null}><ChainActualityDialog key={`${chainActualityDialogProps.rowId}:${chainActualityDialogProps.active}`} {...chainActualityDialogProps} /></Suspense> : null}
       {reportPreviewProps ? <PrintableReportPreview {...reportPreviewProps} /> : null}
 
@@ -201,6 +204,7 @@ export function HomePageView({
 type ReportBackgroundProps = Pick<
   HomePageViewProps,
   | 'activeReport'
+  | 'onCancelEarlyCoil'
   | 'activeTitle'
   | 'registerMinWidth'
   | 'stickyLeft'
@@ -226,6 +230,7 @@ type ReportBackgroundProps = Pick<
 const MemoizedReportBackground = memo(ReportBackground)
 
 function ReportBackground({
+  onCancelEarlyCoil,
   activeReport,
   activeTitle,
   registerMinWidth,
@@ -259,8 +264,7 @@ function ReportBackground({
     activeReport === 'heatTreatment' ||
     activeReport === 'lnk'
   const reportTaskPanels = !isStandaloneReport ? <ReportTaskPanels {...reportTaskPanelsProps} /> : null
-  return (
-    <>
+  const reportHeader = (
       <ReportPageHeader
         title={activeTitle}
         stickyLeft={stickyLeft}
@@ -272,13 +276,19 @@ function ReportBackground({
           <ReportHeaderActions {...reportHeaderActionsProps} />
         ) : null}
       </ReportPageHeader>
+  )
 
-      {!isWeldTableReport ? reportTaskPanels : null}
+  return (
+    <>
+      {activeReport !== 'welderStamps' ? reportHeader : null}
+      {!isWeldTableReport && activeReport !== 'welderStamps' ? reportTaskPanels : null}
 
       <ReportMainContent
+        onCancelEarlyCoil={onCancelEarlyCoil}
         activeReport={activeReport}
         welderStamps={welderStamps}
         welderStampsRegistryProps={welderStampsRegistryProps}
+        welderStampsHeader={activeReport === 'welderStamps' ? reportHeader : undefined}
         weldTableProps={weldTableProps}
         onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
         onOpenReportRowIds={onOpenReportRowIds}
@@ -291,7 +301,7 @@ function ReportBackground({
         onDocumentsPageTypeChange={onDocumentsPageTypeChange}
         documentNavigationRequest={documentNavigationRequest}
         onDocumentNavigationRequestHandled={onDocumentNavigationRequestHandled}
-        reportTaskPanels={isWeldTableReport ? reportTaskPanels : null}
+        reportTaskPanels={isWeldTableReport || activeReport === 'welderStamps' ? reportTaskPanels : null}
       />
     </>
   )

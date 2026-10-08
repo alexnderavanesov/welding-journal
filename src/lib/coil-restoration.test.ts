@@ -18,6 +18,14 @@ const states = [...captureProgramChainStates([root, repair, coil1, coil2]).value
 const check = (live: WeldRow[], history = states) => getCoilRestorationBlockReason(live.find(row => row.id === 1)!, live, history, new Set(), settings)
 
 describe('explicit correction of a mistakenly recorded physical coil', () => {
+  it.each(['vikResult', 'pvkResult'] as const)('blocks restoration justified by a legacy invalid %s cut', field => {
+    const source = { ...root, [field]: 'вырез' }
+    const goodFinal = { ...repair, joint: 'S1W1' }
+    const history = [...captureProgramChainStates([source, goodFinal, coil1, coil2]).values()]
+    expect(check([source, goodFinal], history)).toContain('СП-07')
+    expect(history.find(state => state.weldJointId === source.id)?.replacedByCoil).toBe(true)
+  })
+
   it('allows a corrected original or a single good mandatory-control repair, without resurrecting automatically', () => {
     expect(check([root])).toBeNull()
     expect(check([{ ...root, uzkResult: 'ремонт' }, repair])).toBeNull()
@@ -79,12 +87,12 @@ describe('explicit correction of a mistakenly recorded physical coil', () => {
     const savedRoot = { ...root, programChainState: states[0] }
     const tasks = buildProgramIntegrityTasks([savedRoot])
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-04')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-09')
     expect(isDispatcherTaskEnabled(tasks[0], Object.fromEntries(Object.keys(DEFAULT_DISPATCHER_SETTINGS).map(key => [key, false])) as typeof DEFAULT_DISPATCHER_SETTINGS)).toBe(true)
     expect(getDispatcherTaskActionSpecs(tasks[0])[0].id).toBe('restore-coil')
     const saved = parseDispatcherTaskIndexPayload(serializeDispatcherTaskIndexPayload(tasks)).tasks
     const index = buildDispatcherTaskCodeIndexRows(saved, [savedRoot])
-    expect([...buildMergedDispatcherTaskCodes(index, []).allByRowId]).toEqual([[1, 'СП-04']])
+    expect([...buildMergedDispatcherTaskCodes(index, []).allByRowId]).toEqual([[1, 'СП-09']])
     expect(buildJointNextActions(savedRoot, tasks).some(action => action.kind === 'complete')).toBe(false)
     expect(buildJointNextActions(savedRoot, tasks)[0].taskActionId).toBe('restore-coil')
   })

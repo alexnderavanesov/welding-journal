@@ -82,6 +82,8 @@ test('статистика: план 9 из 11, затем 11 → 9 → 10, фи
     await page.goto('/lnk')
     await page.getByLabel('Диспетчер задач', { exact: true }).getByRole('button', { name: 'Открыть диспетчер' }).click()
     const workspace = page.getByRole('dialog', { name: 'Диспетчер задач', exact: true })
+    await workspace.getByRole('complementary', { name: 'Правила диспетчера' })
+      .getByRole('button', { name: /^СП-09 / }).click()
     await workspace.getByRole('textbox', { name: 'Поиск задач диспетчера' }).fill(line)
     await workspace.getByRole('button', { name: 'Найти', exact: true }).click()
     await workspace.getByRole('button', { name: 'Проверить отмену ошибочной катушки', exact: true }).click()

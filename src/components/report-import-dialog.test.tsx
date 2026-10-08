@@ -35,13 +35,13 @@ describe('ReportImportDialog save result', () => {
 
   it('keeps the preview open and shows a server rejection', async () => {
     const onClose = vi.fn()
-    const onImportRecords = vi.fn().mockRejectedValue(new Error('Импорт остановлен: строка 2. ЗВ-26.'))
+    const onImportRecords = vi.fn().mockRejectedValue(new Error('Импорт остановлен: строка 2. ЗВ-02.'))
     renderDialog({ onClose, onImportRecords })
 
     await uploadPreviewFile()
     fireEvent.click(screen.getByRole('button', { name: 'Импортировать 1 строк' }))
 
-    expect(await screen.findByText('Сохранение не выполнено. Импорт остановлен: строка 2. ЗВ-26.')).toBeInTheDocument()
+    expect(await screen.findByText('Сохранение не выполнено. Импорт остановлен: строка 2. ЗВ-02.')).toBeInTheDocument()
     expect(screen.getByText('Предпросмотр')).toBeInTheDocument()
     expect(onClose).not.toHaveBeenCalled()
   })

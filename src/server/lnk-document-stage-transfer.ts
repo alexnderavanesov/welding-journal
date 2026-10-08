@@ -1,5 +1,8 @@
 import { createServerFn } from '@tanstack/react-start'
 import { getLayeredControlSaveError } from '@/lib/layered-control-rules'
+import { getLnkResultRuleIssues } from '@/lib/lnk-result-policy'
+import { loadSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-index-settings'
+import { loadProgramSystemIndexSettings } from '@/server/line-program'
 import { getUnofficialLnkGoodResultReason } from '@/lib/unofficial-lnk-result-guard'
 import { asc, eq, sql } from 'drizzle-orm'
 
@@ -199,6 +202,7 @@ async function loadTransferContext(
   processSettings: ControlProcessSettings,
   lock = false,
 ): Promise<TransferContext> {
+  const systemIndexSettings = await loadProgramSystemIndexSettings(tx)
   const [document] = await tx
     .select()
     .from(generatedDocuments)
@@ -318,6 +322,7 @@ async function loadTransferContext(
       control,
       sourceStage,
       processSettings,
+      systemIndexSettings,
     })
   })
   const positionPreviewsByKey = new Map(
@@ -353,6 +358,8 @@ async function loadTransferContext(
     for (const row of simulatedRows) {
       const error = getLayeredControlSaveError(row, previousById.get(row.id))
       if (error) throw new Error(error)
+      const resultIssues = getLnkResultRuleIssues(row, systemIndexSettings)
+      if (resultIssues.length) throw new Error(resultIssues.map(issue => issue.message).join('\n'))
     }
   }
   if (positions.length > 0 && reference.positions !== undefined) {
@@ -404,12 +411,14 @@ export function buildPositionPreview({
   control,
   sourceStage,
   processSettings,
+  systemIndexSettings = loadSystemIndexSettings(),
 }: {
   row: WeldRow
   position: LnkStageTransferPosition
   control?: PreHeatTreatmentControlRecord
   sourceStage: 'primary' | 'beforeHeatTreatment'
   processSettings: ControlProcessSettings
+  systemIndexSettings?: SystemIndexSettings
 }): LnkStageTransferPositionPreview {
   const method = ALL_LNK_FIELD_METHODS.find((candidate) => candidate.code === position.methodCode)!
   let disabledReason = getUnofficialLnkGoodResultReason(row,
@@ -444,7 +453,8 @@ export function buildPositionPreview({
 
   if (!disabledReason) {
     const simulated = simulateStageTransfer({ rows: [row], positions: [position], controls: control ? [control] : [], sourceStage })[0]!
-    disabledReason = getLayeredControlSaveError(simulated, row)
+    disabledReason = getLayeredControlSaveError(simulated, row) ||
+      getLnkResultRuleIssues(simulated, systemIndexSettings).map(issue => issue.message).join('\n') || null
   }
   return {
     ...position,

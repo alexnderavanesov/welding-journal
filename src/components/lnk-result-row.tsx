@@ -8,7 +8,6 @@ import { LnkResultRowRequestBadges } from '@/components/lnk-result-row-request-b
 import { LnkResultRowResultPicker } from '@/components/lnk-result-row-result-picker'
 import { RequestRowJointHeading } from '@/components/request-row-joint-heading'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { isLnkRepairForbidden } from '@/lib/lnk-result-rules'
 import {
   formatLnkResultSummaryItems,
   getLnkMethodByRequestKey,
@@ -19,7 +18,6 @@ import {
 } from '@/lib/report-modal-rows'
 import { getInactiveLnkRequestBadgeClass, getLnkResultBadgeClass } from '@/lib/report-badges'
 import { LNK_RESULT_OPTIONS } from '@/lib/report-config'
-import type { SaveCheckSettings } from '@/lib/save-check-settings'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { getPrimaryLnkStageAccess } from '@/lib/lnk-control-stage'
@@ -34,7 +32,6 @@ type LnkResultRowProps = {
   rowResult: string
   layeredControlSelected?: boolean
   onSetLayeredControl?: (rowId: number, assigned: boolean) => void
-  saveCheckSettings: SaveCheckSettings
   onToggleRow: (rowId: number) => void
   onSetRowResult: (rowId: number, result: string) => void
   onOpenContextMenu: (event: MouseEvent<HTMLElement>, row: WeldRow) => void
@@ -47,10 +44,9 @@ function LnkResultRowComponent({
   requestDate,
   methodKey,
   selected: selectedById,
-  rowResult: draftRowResult,
+  rowResult,
   layeredControlSelected = false,
   onSetLayeredControl,
-  saveCheckSettings,
   onToggleRow,
   onSetRowResult,
   onOpenContextMenu,
@@ -69,9 +65,6 @@ function LnkResultRowComponent({
   )
   const selected = selectedById && !disabled
   const rowRequestNames = getLnkRowRequestNames(row)
-  const rowResult = saveCheckSettings.lnkResultRepairRules && draftRowResult === 'ремонт' && isLnkRepairForbidden(row)
-    ? ''
-    : draftRowResult
   const hasSavedFinalResult = Boolean(
     method && LNK_RESULT_OPTIONS.includes(String(row[method.resultKey] ?? '').trim().toLowerCase() as never),
   )
@@ -139,14 +132,13 @@ function LnkResultRowComponent({
           rowRequestNames={rowRequestNames}
         />
       </span>
-      <span className="min-w-0">
+      <span className="min-h-[68px] min-w-0">
         {selected ? (
           <LnkResultRowResultPicker
-            methodCode={method?.code}
+            methodCode={method?.code ?? ''}
             row={row}
             rowResult={rowResult}
             layeredControlSelected={showLayeredControl && layeredChecked}
-            saveCheckSettings={saveCheckSettings}
             compact
             onSetRowResult={onSetRowResult}
           />
@@ -165,7 +157,7 @@ function LnkResultRowComponent({
                     : 'Нет заявки на этот метод.'}
           </span>
         ) : (
-          <span aria-hidden="true" className="block h-11" />
+          <span aria-hidden="true" className="block h-[68px]" />
         )}
       </span>
       <DialogRowMenuButton
@@ -204,7 +196,6 @@ export const LnkResultRow = memo(LnkResultRowComponent, (previous, next) => {
     previous.layeredControlSelected !== next.layeredControlSelected ||
     previous.onSetLayeredControl !== next.onSetLayeredControl ||
     previous.selected !== next.selected ||
-    previous.saveCheckSettings !== next.saveCheckSettings ||
     previous.onOpenContextMenu !== next.onOpenContextMenu
   ) return false
   if (next.selected && previous.rowResult !== next.rowResult) return false

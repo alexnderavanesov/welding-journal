@@ -24,7 +24,7 @@ const OFFICIALITY_OPTIONS = [
   {
     value: 'unofficial' as const,
     title: 'Неофициальный',
-    description: 'Помечает стык как неофициальный для будущих правил и фильтров.',
+    description: 'Доступно только для стыков с результатом «ремонт» или «вырез». Результаты контроля сохраняются.',
     className: 'border-slate-300 bg-slate-100 text-slate-800',
   },
 ]

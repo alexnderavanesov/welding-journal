@@ -85,9 +85,9 @@ try {
       await dirty.markDispatcherTaskIndexDirty(db, { scopes: dirty.getDispatcherDirtyScopes(first, new Map()) })
       await dispatcher.ensureDispatcherTaskIndexFresh()
       const tasks = await db.select().from(dispatcherRowTasks).where(inArray(dispatcherRowTasks.weldJointId, ids.slice(0, 3)))
-      assert.deepEqual(tasks.filter(row => row.code === 'ДЗ-13').map(row => row.weldJointId).sort((a, b) => a - b), ids.slice(0, 3))
+      assert.deepEqual(tasks.filter(row => row.code === 'СП-09').map(row => row.weldJointId).sort((a, b) => a - b), ids.slice(0, 3))
       const virtual = await read.attachDispatcherTaskCodesToPage(ids.slice(0, 3).map(id => ({ id }))) as { id: number; dispatcherTasks: string }[]
-      assert(virtual.every(row => row.dispatcherTasks.includes('ДЗ-13')))
+      assert(virtual.every(row => row.dispatcherTasks.includes('СП-09')))
       await save(await preview(root, false))
       await dispatcher.ensureDispatcherTaskIndexFresh()
       const resolved = await read.attachDispatcherTaskCodesToPage(ids.slice(0, 3).map(id => ({ id }))) as { id: number; dispatcherTasks: string }[]
@@ -95,7 +95,7 @@ try {
       assert(!remaining.some(row => row.taskKey.startsWith('chain-actuality:')), 'The actuality task must disappear from every member')
       // This deliberately incomplete coil history can retain another ДЗ-13.
       // Resolving actuality must not hide independent integrity warnings.
-      for (const row of resolved) assert.equal(row.dispatcherTasks.includes('ДЗ-13'), remaining.some(task => task.weldJointId === row.id && task.code === 'ДЗ-13'))
+      for (const row of resolved) assert.equal(row.dispatcherTasks.includes('СП-09'), remaining.some(task => task.weldJointId === row.id && task.code === 'СП-09'))
       // Final uniform state is still reversible, without a task as entry point.
       await save(await preview(root, true))
       // Clamp a vanished/out-of-range page: confirmation still shows the actual

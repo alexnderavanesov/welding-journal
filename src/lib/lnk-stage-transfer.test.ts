@@ -271,7 +271,7 @@ describe('LNK stage transfer', () => {
       expect.objectContaining({ kind: 'post-before-psto-cycle' }),
     )
     expect(buildPrimaryLnkStageDebtSystemWarnings([pendingNext!])).toContainEqual(
-      expect.objectContaining({ systemWarningCode: 'СП-01' }),
+      expect.objectContaining({ systemWarningCode: 'СП-06' }),
     )
     expect(findBlockingLnkStageTransferChronologyIssue({
       previousRows: [{ ...pendingCycleRow, preHeatTreatmentControls: [pendingControl] }],

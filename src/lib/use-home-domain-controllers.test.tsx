@@ -29,14 +29,14 @@ describe('home page domain controllers', () => {
     act(() => {
       result.current.lnk.setLnkResultRegistrySearch('F901')
       result.current.lnk.setPreHeatTreatmentCandidateIds([1, 2, 3])
-      result.current.journal.setCoilRestorationRootId(7)
+      result.current.journal.setCoilCorrectionTarget({ rootId: 7, earlyDecision: true })
       result.current.journal.setIsImportDialogOpen(true)
     })
     expect(result.current.lnk.lnkResultRegistrySearch).toBe('F901')
     expect(result.current.lnk.preHeatTreatmentCandidateIds).toEqual([1, 2, 3])
     expect(result.current.psto.pstoResultRegistrySearch).toBe('')
     expect(result.current.psto.pstoResultDraft).toBe(pstoDraft)
-    expect(result.current.journal.coilRestorationRootId).toBe(7)
+    expect(result.current.journal.coilCorrectionTarget).toEqual({ rootId: 7, earlyDecision: true })
     expect(result.current.journal.isImportDialogOpen).toBe(true)
   })
 

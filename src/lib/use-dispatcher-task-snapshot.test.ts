@@ -37,7 +37,7 @@ describe('dispatcher task snapshot visibility', () => {
   it('hides cards locally without changing the complete server task snapshot', () => {
     const snapshotTasks = [
       { key: 'task-visible', code: 'ДЗ-01' },
-      { key: 'task-hidden', code: 'ДЗ-18' },
+      { key: 'task-hidden', code: 'СП-02' },
     ]
 
     expect(filterDismissedDispatcherTasks(snapshotTasks, new Set(['task-hidden']))).toEqual([
@@ -45,7 +45,7 @@ describe('dispatcher task snapshot visibility', () => {
     ])
     expect(snapshotTasks).toEqual([
       { key: 'task-visible', code: 'ДЗ-01' },
-      { key: 'task-hidden', code: 'ДЗ-18' },
+      { key: 'task-hidden', code: 'СП-02' },
     ])
   })
 
@@ -53,7 +53,7 @@ describe('dispatcher task snapshot visibility', () => {
     const warning = {
       kind: 'check',
       key: 'sp-01:1',
-      systemWarningCode: 'СП-01',
+      systemWarningCode: 'СП-06',
     }
 
     expect(filterDismissedDispatcherTasks([warning], new Set([warning.key]))).toEqual([warning])

@@ -220,7 +220,7 @@ describe('getLnkChronologyIssues', () => {
     )
   })
 
-  it('disables optional checks but preserves the mandatory VIK prerequisite', () => {
+  it('enforces chronology and VIK despite every old toggle being off', () => {
     const issues = getLnkChronologyIssues(
       [
         {
@@ -240,7 +240,11 @@ describe('getLnkChronologyIssues', () => {
       },
     )
 
-    expect(issues).toEqual([expect.objectContaining({ kind: 'method-order', methodCode: 'РК' })])
+    expect(issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'weld-after-conclusion', methodCode: 'РК' }),
+      expect.objectContaining({ kind: 'request-after-conclusion', methodCode: 'РК' }),
+      expect.objectContaining({ kind: 'vik-missing-before-other', methodCode: 'РК' }),
+    ]))
   })
 
   it('enforces ZV-15 independently when ZV-16 is disabled', () => {
@@ -262,10 +266,10 @@ describe('getLnkChronologyIssues', () => {
       kind: 'weld-after-conclusion',
       methodCode: 'РК',
     }))
-    expect(findFirstLnkChronologySaveBlockReason(rows, settings)).toContain('ЗВ-15')
+    expect(findFirstLnkChronologySaveBlockReason(rows, settings)).toContain('СП-04')
   })
 
-  it('does not apply ZV-16 request ordering when only ZV-15 is enabled', () => {
+  it('keeps request ordering mandatory despite the old toggle', () => {
     const issues = getLnkChronologyIssues([{
       joint: 'F4',
       vikResult: 'годен',
@@ -280,7 +284,7 @@ describe('getLnkChronologyIssues', () => {
       lnkResultVikRequiredBeforeOther: false,
     })
 
-    expect(issues).toEqual([])
+    expect(issues).toContainEqual(expect.objectContaining({ kind: 'weld-after-request' }))
   })
 
   it('enforces ZV-15 for pre-TO LNK independently from ZV-16', () => {

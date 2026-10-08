@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Request } from '@playwright/test'
 
 import { withE2eDatabase } from '../database'
 import { rpcName } from '../rpc'
@@ -18,7 +18,12 @@ test.afterEach(async () => {
 test('special LNK output previews in a modal and contains rows beyond the candidate limit', async ({ page }) => {
   test.setTimeout(120_000)
   const calls: string[] = []
-  page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
+  const pending = new Set<Request>()
+  page.on('request', request => {
+    if (request.url().includes('/_serverFn/')) { calls.push(rpcName(request.url())); pending.add(request) }
+  })
+  page.on('requestfinished', request => pending.delete(request))
+  page.on('requestfailed', request => pending.delete(request))
   await withE2eDatabase(async (client) => {
     await client.query(`
       insert into weld_joints (
@@ -38,6 +43,10 @@ test('special LNK output previews in a modal and contains rows beyond the candid
   })
 
   await page.goto('/lnk')
+  // The fixture invalidates the dispatcher; its one initial refresh can also
+  // refresh the report. Settle that load before measuring preview-only traffic.
+  await expect(page.getByLabel('Диспетчер задач', { exact: true })).toContainText('Изменения выполняются только после подтверждения.')
+  await expect.poll(() => pending.size).toBe(0)
   await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
 
   await page.getByRole('button', { name: 'Ожидание заявки', exact: true }).click()
@@ -131,8 +140,13 @@ for (const [path, options] of [
 ] as const) {
   test(`all Show options preview and print in the app: ${path}`, async ({ page }) => {
     const errors: string[] = [], calls: string[] = []
+    const pending = new Set<Request>()
     page.on('pageerror', error => errors.push(error.message))
-    page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
+    page.on('request', request => {
+      if (request.url().includes('/_serverFn/')) { calls.push(rpcName(request.url())); pending.add(request) }
+    })
+    page.on('requestfinished', request => pending.delete(request))
+    page.on('requestfailed', request => pending.delete(request))
     // Exercise full printing even when this file runs without earlier suites'
     // records. Other output modes also cover short and empty reports.
     await withE2eDatabase(async client => {
@@ -145,6 +159,11 @@ for (const [path, options] of [
       await invalidateDerivedIndexes(client)
     })
     await page.goto(path)
+    // Fixture invalidation starts a dispatcher refresh and then a report refresh.
+    // Trace showed that final report request occurring before the focus event,
+    // inside the print-only measurement. Wait for initial data, not a fixed delay.
+    await expect(page.getByLabel('Диспетчер задач', { exact: true })).toContainText('Изменения выполняются только после подтверждения.')
+    await expect.poll(() => pending.size).toBe(0)
     await captureFullReportPrint(page)
     const show = page.locator('header').getByRole('button', { name: 'Показать', exact: true })
     for (const option of options) {

@@ -30,6 +30,26 @@ const baseDls: WelderStampDlsPermit = {
 }
 
 describe('DLS cumulative NAKS coverage', () => {
+  it('requires every method/material combination for a multi-group DLS', () => {
+    const dls = { ...baseDls, weldType: 'РАД, РД', materialGroups: 'М01, М05, М11' }
+    const complete = { ...baseNaks, weldType: 'РАД, РД', materialGroups: 'М11, М01, М05' }
+    expect(validateDlsPermit(dls, 0, [complete])).toBe('')
+    for (const materialGroups of ['М01', 'М05', 'М11']) {
+      const remaining = ['М01', 'М05', 'М11'].filter(group => group !== materialGroups).join(', ')
+      expect(validateDlsPermit(dls, 0, [{ ...complete, materialGroups: remaining }])).toContain(materialGroups)
+    }
+    expect(validateDlsPermit(dls, 0, [{ ...complete, weldType: 'РАД' }])).toContain('РД')
+    expect(validateDlsPermit(dls, 0, [{ ...complete, materialGroups: 'M01, М05, М11' }])).toContain('М01')
+  })
+
+  it('respects decimal boundaries, open ends and a real gap instead of adding interval widths', () => {
+    const dls = { ...baseDls, diameterFrom: '10.5', diameterTo: '', thicknessFrom: '1.5', thicknessTo: '3.5' }
+    const first = { ...baseNaks, diameterFrom: '10.5', diameterTo: '57.5', thicknessFrom: '1.5', thicknessTo: '3.5' }
+    const next = { ...baseNaks, id: 'next', diameterFrom: '57.5', diameterTo: '' }
+    expect(validateDlsPermit(dls, 0, [first, next])).toBe('')
+    expect(validateDlsPermit(dls, 0, [first, { ...next, diameterFrom: '57.6' }])).toContain('диаметра')
+    expect(validateDlsPermit(dls, 0, [first, { ...next, diameterTo: '9999' }])).toContain('диаметра')
+  })
   it('covers D and T independently with different NAKS permits of the same method and group', () => {
     const permits = [
       {

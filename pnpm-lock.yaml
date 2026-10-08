@@ -112,6 +112,9 @@ overrides:
   js-yaml@>=4.0.0 <4.3.2: 4.3.2
   nanoid@>=3.0.0 <3.3.17: 3.3.17
   postcss@<=8.5.22: 8.5.26
+  seroval@<=1.6.2: 1.6.3
+  source-map-js@>=1.0.0 <1.2.2: 1.2.2
+  postcss-selector-parser@<7.1.6: 7.1.6
 
 importers:
 
@@ -2139,8 +2142,8 @@ packages:
     peerDependencies:
       postcss: 8.5.26
 
-  postcss-selector-parser@6.1.4:
-    resolution: {integrity: sha512-bIoJLOmjCO1S9XdY/DcnR5hJxvrDir1PbGChrzXG3vw0/FOliy/fA3dmdhQ441kah4gKv+TwckGzex6wNS5cnQ==}
+  postcss-selector-parser@7.1.6:
+    resolution: {integrity: sha512-7qASPzhKF2l2KLboRZux8CCTRMdGiV08vWmyKzPz22qZ7ZjQBOeY7rNzNoCLSUiftJ7HUq0GERHmxw/t0dCdMw==}
     engines: {node: '>=4'}
 
   postcss-value-parser@4.2.0:
@@ -2251,17 +2254,17 @@ packages:
     resolution: {integrity: sha512-TfxuUjlbBESzUOWdTkTKqvSmav0ABym+itetDXLK6mDz8SmrpdI30aF8RTXE8Bvq+tH/1yIDkvy3W0lfQb1ipQ==}
     engines: {node: '>=10'}
     peerDependencies:
-      seroval: ^1.0
+      seroval: 1.6.3
 
-  seroval@1.6.2:
-    resolution: {integrity: sha512-mPT+SD2TrlB6wvte1KkYOYUkubaTbd6pZ/6Kk3C9nxzrHmCZyhxOO7XGAeL7f+yLKZglzGtM9odUVvg/EhO+vQ==}
+  seroval@1.6.3:
+    resolution: {integrity: sha512-5PwLbVPpT4DEki1hYVSSsoxWY6xCNMVucAVLK/CH0mXSDfp/I4KaAex72q80GNt5hpn7CCMGdSpIg4YGqH/wXQ==}
     engines: {node: '>=10'}
 
   siginfo@2.0.0:
     resolution: {integrity: sha512-ybx0WO1/8bSBLEWXZvEd7gMW3Sn3JFlW3TvX1nREbDLRNQNaeNN8WK0meBwPdAaOI7TtRRRJn/Es1zhrrCHu7g==}
 
-  source-map-js@1.2.1:
-    resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
+  source-map-js@1.2.2:
+    resolution: {integrity: sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==}
     engines: {node: '>=0.10.0'}
 
   source-map-support@0.5.21:
@@ -3235,8 +3238,8 @@ snapshots:
     dependencies:
       '@tanstack/history': 1.162.1
       cookie-es: 3.1.1
-      seroval: 1.6.2
-      seroval-plugins: 1.6.2(seroval@1.6.2)
+      seroval: 1.6.3
+      seroval-plugins: 1.6.2(seroval@1.6.3)
 
   '@tanstack/router-generator@1.167.27(supports-color@7.2.0)':
     dependencies:
@@ -3286,7 +3289,7 @@ snapshots:
       '@tanstack/router-core': 1.171.21
       '@tanstack/start-fn-stubs': 1.162.0
       '@tanstack/start-storage-context': 1.167.23
-      seroval: 1.6.2
+      seroval: 1.6.3
 
   '@tanstack/start-fn-stubs@1.162.0': {}
 
@@ -3304,7 +3307,7 @@ snapshots:
       lightningcss: 1.32.0
       pathe: 2.0.3
       picomatch: 4.0.4
-      seroval: 1.6.2
+      seroval: 1.6.3
       source-map: 0.7.6
       srvx: 0.11.16
       tinyglobby: 0.2.17
@@ -3329,7 +3332,7 @@ snapshots:
       '@tanstack/start-storage-context': 1.167.23
       fetchdts: 0.1.7
       h3-v2: h3@2.0.1-rc.20(crossws@0.4.10(srvx@0.11.16))
-      seroval: 1.6.2
+      seroval: 1.6.3
     transitivePeerDependencies:
       - crossws
 
@@ -3561,7 +3564,7 @@ snapshots:
   css-tree@3.2.1:
     dependencies:
       mdn-data: 2.27.1
-      source-map-js: 1.2.1
+      source-map-js: 1.2.2
 
   css.escape@1.5.1: {}
 
@@ -4170,9 +4173,9 @@ snapshots:
   postcss-nested@6.2.0(postcss@8.5.26):
     dependencies:
       postcss: 8.5.26
-      postcss-selector-parser: 6.1.4
+      postcss-selector-parser: 7.1.6
 
-  postcss-selector-parser@6.1.4:
+  postcss-selector-parser@7.1.6:
     dependencies:
       cssesc: 3.0.0
       util-deprecate: 1.0.2
@@ -4183,7 +4186,7 @@ snapshots:
     dependencies:
       nanoid: 3.3.18
       picocolors: 1.1.1
-      source-map-js: 1.2.1
+      source-map-js: 1.2.2
 
   postgres-array@2.0.0: {}
 
@@ -4278,15 +4281,15 @@ snapshots:
 
   semver@6.3.1: {}
 
-  seroval-plugins@1.6.2(seroval@1.6.2):
+  seroval-plugins@1.6.2(seroval@1.6.3):
     dependencies:
-      seroval: 1.6.2
+      seroval: 1.6.3
 
-  seroval@1.6.2: {}
+  seroval@1.6.3: {}
 
   siginfo@2.0.0: {}
 
-  source-map-js@1.2.1: {}
+  source-map-js@1.2.2: {}
 
   source-map-support@0.5.21:
     dependencies:
@@ -4353,7 +4356,7 @@ snapshots:
       postcss-js: 4.1.0(postcss@8.5.26)
       postcss-load-config: 6.0.1(jiti@1.21.7)(postcss@8.5.26)(tsx@4.22.4)(yaml@2.9.0)
       postcss-nested: 6.2.0(postcss@8.5.26)
-      postcss-selector-parser: 6.1.4
+      postcss-selector-parser: 7.1.6
       resolve: 1.22.12
       sucrase: 3.35.1
     transitivePeerDependencies:

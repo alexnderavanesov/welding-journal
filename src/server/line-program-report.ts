@@ -2,7 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { asc } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { linePrograms } from '@/db/schema'
-import { buildLineProgramReport, type ProgramReportLine } from '@/lib/line-program-report'
+import { buildLineProgramReport, validateProgramReportRequest, type ProgramReportLine, type ProgramReportRequest } from '@/lib/line-program-report'
 import { buildLineProgramDisplay } from '@/lib/line-program-display'
 import { getProgramRemovalHints, projectProgramExcess } from '@/lib/line-program-excess'
 import { summarizeLineProgram } from '@/lib/line-program-overview'
@@ -12,12 +12,8 @@ import { buildNumberArrayMatch } from './weld-request-utils'
 import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
 import { loadLineProgramWelderNames } from './line-program-welder-names'
 
-export type ProgramReportRequest = { ids: number[]; mode: 'lines' | 'stamps'; context: string }
 export const getLineProgramReport = createServerFn({ method: 'POST' })
-  .validator((input: ProgramReportRequest) => {
-    if (!Array.isArray(input.ids) || input.ids.length > 200_000 || input.ids.some(id => !Number.isSafeInteger(id) || id <= 0) || !['lines', 'stamps'].includes(input.mode)) throw new Error('Некорректный список линий для сводки.')
-    return { ...input, ids: [...new Set(input.ids)], context: String(input.context ?? '').slice(0, 500) }
-  })
+  .validator(validateProgramReportRequest)
   .handler(async ({ data }) => {
     await assertSecurityScope('entry')
     return requireDb().transaction(tx => loadLineProgramReport(tx, data), { isolationLevel: 'repeatable read', accessMode: 'read only' })
@@ -36,9 +32,11 @@ export async function loadLineProgramReport(tx: Pick<SystemDocumentSequenceTrans
         ? buildLineProgramDisplay(rows, projectProgramExcess(line.id, rows, calculations, accepted), line.weldControlPercent!, line.pvkControlPercent!, removalHints).stampRows : [],
     }
   })
+  // Keep the full line calculation above: selecting a stamp must not change its quota.
+  if (data.stamp !== undefined) for (const item of result) item.stamps = item.stamps.filter(stamp => stamp.stamp.trim().toLocaleLowerCase('ru') === data.stamp!.trim().toLocaleLowerCase('ru'))
   if (data.mode === 'stamps') {
     const names = await loadLineProgramWelderNames(tx, [...new Set(result.flatMap(item => item.stamps.map(stamp => stamp.stamp)))])
     for (const item of result) for (const stamp of item.stamps) stamp.welderName = names.get(stamp.stamp.trim().toUpperCase()) ?? ''
   }
-  return buildLineProgramReport(result, data.mode, data.context)
+  return buildLineProgramReport(result, data.mode, data.context, data.stamp)
 }

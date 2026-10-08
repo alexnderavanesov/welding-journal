@@ -708,7 +708,7 @@ export async function getWeldDataUsageSummary(): Promise<WeldDataUsageSummary> {
       .from(weldJoints),
     listMultiValueUsage(weldJoints.weldingMethod, '[+,;]+'),
     listSingleValueUsage(weldJoints.connectionType),
-    listSingleValueUsage(weldJoints.materialGroup),
+    listMultiValueUsage(weldJoints.materialGroup, '[+]'),
     listMultiValueUsage(weldJoints.testTypes, '[,;+]+'),
   ])
 
@@ -1967,7 +1967,7 @@ export function buildWeldDataUsageSummaryFromRows(
     leadingLetterIndexedRowsCount: rows.filter((row) => /^[A-Z][A-Z]\d/i.test(String(row.joint ?? '').replace(/\s+/g, ''))).length,
     weldingTypes: Array.from(countMultiValueUsage(rows.map((row) => row.weldingMethod), /[+,;]+/)),
     connectionTypes: Array.from(countSingleValueUsage(rows.map((row) => row.connectionType))),
-    materialGroups: Array.from(countSingleValueUsage(rows.map((row) => row.materialGroup))),
+    materialGroups: Array.from(countMultiValueUsage(rows.map((row) => row.materialGroup), /\+/)),
     testTypes: Array.from(countMultiValueUsage(rows.map((row) => row.testTypes), /[,;+]+/)),
   }
 }

@@ -17,7 +17,7 @@ test('годный ремонт и две годные стороны катуш
         ids.push(row.id); allIds.push(row.id)
       }
       if (mode === 'COIL') {
-        await db.query(`insert into dispatcher_accepted_warnings(key,weld_joint_id,kind,code,title,context) values ($1,$2,'early-coil','ДЗ-09','Досрочная катушка','E2E')`, [`early-coil:${ids[1]}`, ids[1]])
+        await db.query(`insert into dispatcher_accepted_warnings(key,weld_joint_id,kind,code,title,context) values ($1,$2,'early-coil','СП-09','Досрочная катушка','E2E')`, [`early-coil:${ids[1]}`, ids[1]])
         await db.query(`insert into weld_joint_program_states(weld_joint_id,kind,physical_root_id,replaced_by_coil,replacement_coil_ids) values ($1,'primary',$1,true,$2)`, [ids[0], ids.slice(2)])
         for (const [side, id] of ids.slice(2).entries()) await db.query(`insert into weld_joint_program_states(weld_joint_id,kind,physical_root_id,source_row_id,coil_parent_id,coil_side) values ($1,'coil',$1,$2,$3,$4)`, [id, ids[1], ids[0], side + 1])
       }
@@ -29,7 +29,7 @@ test('годный ремонт и две годные стороны катуш
     for (const fixture of fixtures) {
       await page.goto('/line-program')
       await page.getByLabel('Поиск программы линий').fill(fixture.name)
-      const line = page.getByRole('button', { name: `Расчёт линии ${fixture.name}`, exact: true })
+      const line = page.getByTestId('line-program-card').filter({ has: page.getByRole('button', { name: `Расчёт линии ${fixture.name}`, exact: true }) })
       await expect(line.getByTestId('program-finished-label')).toBeVisible()
       if (fixture.name.endsWith('REPAIR')) {
         await withE2eDatabase(db => db.query(`update weld_joints set officiality='неофициальный' where id=$1`, [fixture.ids[1]]))

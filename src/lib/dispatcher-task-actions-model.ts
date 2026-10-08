@@ -25,7 +25,6 @@ export type DispatcherTaskActionId =
   | 'set-chain-inactive'
   | 'set-chain-active'
   | 'show-task'
-  | 'skip-suspension'
   | 'suspend-welder'
   | 'toggle-officiality'
 
@@ -50,14 +49,19 @@ export function getDispatcherTaskActionSpecs(
     action('set-chain-inactive', 'Сделать цепочку неактуальной', 'primary'),
     action('set-chain-active', 'Вернуть актуальность цепочке'),
   ]
-  if (task.kind === 'check' && task.systemWarningCode === 'СП-04') return [
+  if (task.kind === 'check' && task.systemWarningCode === 'СП-09' && task.coilRestorationRootId != null) return [
     ...(task.coilRestorationRootId === task.row.id ? [action('restore-coil', 'Проверить отмену ошибочной катушки', 'primary')] : []),
     action('edit-weld', 'Открыть стык'),
+  ]
+  if (task.kind === 'check' && task.systemWarningCode === 'СП-07') return [
+    action('open-lnk', 'Исправить результат в ЛНК', 'primary'),
+    action('edit-weld', 'Проверить данные стыка'),
+    action('show-task', 'Показать в отчете'),
   ]
   if (task.kind === 'line-consistency' && task.fieldKey !== 'pstoPresence') {
     return [action('open-line-program', 'Открыть программу линии', 'primary'), action('show-task', 'Показать стыки')]
   }
-  if (isSystemDispatcherWarningTask(task)) {
+  if (isSystemDispatcherWarningTask(task) && task.systemWarningCode === 'СП-06') {
     return (task.kind === 'check' ? task.rootCauseActions ?? [] : []).map((rootCauseAction) => ({
       id: 'open-root-cause' as const,
       key: rootCauseAction.key,
@@ -123,13 +127,11 @@ export function getDispatcherTaskActionSpecs(
     if (task.issue === 'suspend-welder') {
       return [
         action('suspend-welder', 'Оформить отстранение', 'primary'),
-        action('skip-suspension', 'Не отстранять'),
         action('show-task', 'Показать стыки'),
       ]
     }
     return [
       action('show-task', 'Показать лишние назначения', 'primary'),
-      action('accept-warning', 'Принять исключение'),
     ]
   }
 
@@ -186,7 +188,6 @@ export function getDispatcherTaskActionSpecs(
     ]
   }
   if (
-    settingId === 'check-repair-diameter' ||
     settingId === 'check-incomplete-stamps' ||
     settingId === 'check-joint-core-data' ||
     settingId === 'chain-date-order'

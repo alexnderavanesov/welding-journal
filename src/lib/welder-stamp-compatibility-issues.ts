@@ -1,5 +1,6 @@
 import { formatDisplayDate } from '@/lib/date-format'
-import { loadSaveCheckSettings } from '@/lib/save-check-settings'
+import { splitWeldMaterialGroups } from '@/lib/weld-material-groups'
+import { loadSaveCheckSettings, normalizeSaveCheckSettings } from '@/lib/save-check-settings'
 import {
   OFFICIAL_WELDER_STAMP_FIELD_KEYS as officialWelderStampFieldKeys,
 } from '@/lib/report-config'
@@ -15,6 +16,7 @@ import {
   formatOfficialStampDiameterList,
   getLatestWelderStampArchiveDate,
   getOfficialStampJointDimensionRequirements,
+  getOfficialStampMaterialScopes,
   getUnsupportedPermitDiameters,
   getUnsupportedPermitThicknesses,
   getWelderStampArchiveCompatibility,
@@ -53,7 +55,7 @@ export function getOfficialStampCompatibilityIssues(
   welderStampRecords: WelderStampRecord[],
   options: OfficialStampCompatibilityOptions = {},
 ) {
-  const saveCheckSettings = options.saveCheckSettings ?? loadSaveCheckSettings()
+  const saveCheckSettings = normalizeSaveCheckSettings(options.saveCheckSettings ?? loadSaveCheckSettings())
   const methods = parseOfficialStampWeldingMethods(record.weldingMethod, options.weldingTypes)
   const materialGroup = parseOfficialStampMaterialGroup(record.materialGroup, options.materialGroups)
   const dimensions = getOfficialStampJointDimensionRequirements(record)
@@ -103,23 +105,37 @@ export function getOfficialStampCompatibilityIssues(
       : null
     if (archiveIssue) issues.push(archiveIssue)
 
-    if (saveCheckSettings.officialWeldingMethod && methods.length === 0) {
-      issues.push({
-        fieldKey,
-        stamp,
-        method: '',
-        reason: 'missing-weld-type',
-        message: `Для клейма ${stamp} нужно указать способ сварки.`,
-      })
-      continue
-    }
-
+    // An unknown welding method is incomplete data (SP-03), not a known
+    // qualification mismatch. Check the facts that are already available.
     entries.push({ fieldKey, stamp, records: stampRecords })
   }
 
   const uniqueEntries = getUniqueOfficialStampEntries(entries)
   const useCombinedMethodRanges = methods.length > 1
   const useTeamWeldingMethodCoverage = saveCheckSettings.officialWeldingMethod && uniqueEntries.length > 1 && useCombinedMethodRanges
+
+  if (splitWeldMaterialGroups(record.materialGroup).length === 2) {
+    const assessments = uniqueEntries.map(entry => ({ entry, assessment: getDissimilarStampCompatibilityAssessment(entry, methods, record, saveCheckSettings) }))
+    for (const { assessment } of assessments) {
+      if (useTeamWeldingMethodCoverage) {
+        if (assessment.compatibleMethods.size === 0) issues.push(...assessment.methodIssues.values())
+        else if (assessment.rangeIssue) issues.push(assessment.rangeIssue)
+      } else {
+        for (const method of methods.length ? methods : ['']) {
+          const issue = assessment.methodIssues.get(method)
+          if (issue) issues.push(issue)
+        }
+        if (assessment.rangeIssue) issues.push(assessment.rangeIssue)
+      }
+    }
+    if (useTeamWeldingMethodCoverage) for (const method of methods) {
+      if (assessments.some(({ assessment }) => assessment.compatibleMethods.has(method))) continue
+      const firstEntry = uniqueEntries[0]
+      issues.push({ fieldKey: firstEntry.fieldKey, stamp: firstEntry.stamp, method, reason: 'team-weld-type',
+        message: `Команда официальных клейм не покрывает способ ${method} для обеих групп материалов ${materialGroup}. ${assessments.map(({ assessment }) => assessment.methodIssues.get(method)?.message).filter(Boolean).join(' ')}` })
+    }
+    return issues
+  }
 
   if (useTeamWeldingMethodCoverage) {
     issues.push(
@@ -267,6 +283,45 @@ type CombinedStampCompatibilityAssessment = {
   compatibleMethods: Set<string>
   methodIssues: Map<string, OfficialStampCompatibilityIssue>
   rangeIssue: OfficialStampCompatibilityIssue | null
+}
+
+/** Shared by the picker, save/import validation and dispatcher. Each method
+ * must cover BOTH materials before its permits may contribute to D/T coverage. */
+export function getDissimilarStampCompatibilityAssessment(
+  entry: OfficialStampCompatibilityEntry,
+  methods: string[],
+  record: WeldInput,
+  saveCheckSettings: ReturnType<typeof loadSaveCheckSettings>,
+): CombinedStampCompatibilityAssessment {
+  const scopes = getOfficialStampMaterialScopes(record)
+  const weldDateValue = getWeldDateOrderValue(record.weldDate)
+  const compatibleMethods = new Set<string>()
+  const methodIssues = new Map<string, OfficialStampCompatibilityIssue>()
+  const describe = (issue: OfficialStampCompatibilityIssue, scope: typeof scopes[number]) => {
+    let extra = ''
+    if (issue.reason === 'material-group') {
+      const otherMethods = [...new Set(getNaksPermitEntries(entry.records, weldDateValue)
+        .filter(({ permit }) => splitPermitValues(permit.materialGroups).includes(scope.group))
+        .flatMap(({ permit }) => splitPermitValues(permit.weldType)))].filter(method => method !== issue.method)
+      if (otherMethods.length) extra = ` НАКС на ${scope.group} указан для других способов: ${otherMethods.join(', ')}; он не заменяет допуск ${issue.method}.`
+    }
+    return { ...issue, message: `${issue.message} ${scope.label}.${extra}` }
+  }
+  for (const method of methods.length ? methods : ['']) {
+    const errors = scopes.flatMap(scope => {
+      const issue = getStampMethodCompatibilityIssue(entry, method, scope.group, emptyOfficialStampDimensions(), weldDateValue, record.weldDate, saveCheckSettings.officialDls, saveCheckSettings)
+      return issue ? [describe(issue, scope)] : []
+    })
+    if (errors.length) methodIssues.set(method, { ...errors[0], message: errors.map(issue => issue.message).join(' ') })
+    else compatibleMethods.add(method)
+  }
+  const rangeIssues = compatibleMethods.size === 0 ? [] : scopes.flatMap(scope => {
+    const issue = methods.length > 1
+      ? getCombinedStampRangeIssue(entry, [...compatibleMethods], compatibleMethods, scope.group, scope.dimensions, weldDateValue, record.weldDate, saveCheckSettings.officialDls, saveCheckSettings)
+      : getStampMethodCompatibilityIssue(entry, methods[0] ?? '', scope.group, scope.dimensions, weldDateValue, record.weldDate, saveCheckSettings.officialDls, saveCheckSettings)
+    return issue ? [describe(issue, scope)] : []
+  })
+  return { compatibleMethods, methodIssues, rangeIssue: rangeIssues.length ? { ...rangeIssues[0], message: rangeIssues.map(issue => issue.message).join(' ') } : null }
 }
 
 function getCombinedStampCompatibilityAssessment(
@@ -505,7 +560,7 @@ function getStampMethodCompatibilityIssue(
     return null
   }
 
-  const methodPermits = saveCheckSettings.officialWeldingMethod
+  const methodPermits = saveCheckSettings.officialWeldingMethod && method
     ? naksPermits.filter(({ permit }) => splitPermitValues(permit.weldType).includes(method))
     : naksPermits
   if (saveCheckSettings.officialWeldingMethod && methodPermits.length === 0) {

@@ -10,7 +10,8 @@ import { compactLineProgramDemand, summarizeLineProgram } from '@/lib/line-progr
 import type { PercentageLineNavigationRequest } from '@/lib/percentage-line-navigation'
 import { explainLineProgram } from '@/lib/line-program-explanation'
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), calculate: vi.fn(), explanation: vi.fn(), rows: vi.fn(), find: vi.fn(), save: vi.fn(), assign: vi.fn(), preview: vi.fn(), confirm: vi.fn() }))
+const mocks = vi.hoisted(() => ({ list: vi.fn(), calculate: vi.fn(), explanation: vi.fn(), rows: vi.fn(), find: vi.fn(), save: vi.fn(), assign: vi.fn(), preview: vi.fn(), confirm: vi.fn(), report: vi.fn() }))
+vi.mock('@/server/line-program-report', () => ({ getLineProgramReport: mocks.report }))
 vi.mock('@/server/line-program', () => ({ getLineProgramSection: mocks.list, getLineProgramCalculation: mocks.calculate, getLineProgramExplanation: mocks.explanation, getLineProgramJointPage: mocks.rows, findLineProgram: mocks.find, saveLineProgram: mocks.save }))
 vi.mock('@/server/line-program-control', () => ({ applyLineProgramControl: mocks.assign, previewLineProgramControl: mocks.preview }))
 vi.mock('@/lib/security-context', () => ({ useSecurityGuard: () => ({ requireEditPassword: async () => true }) }))
@@ -23,6 +24,7 @@ let client: QueryClient
 beforeEach(() => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   vi.clearAllMocks()
+  mocks.report.mockResolvedValue({ title: 'Печатная сводка' })
   mocks.confirm.mockResolvedValue(true)
   mocks.explanation.mockImplementation(async ({ data }) => explainLineProgram([sample], 30, 10, data))
   mocks.list.mockResolvedValue({ rows: [{ ...line, overview: summarizeLineProgram([sample], line) }], total: 1, issues: 0 })
@@ -129,7 +131,7 @@ describe('section calculation from compact line summaries', () => {
   it.each(['lines', 'joints', 'stamps', 'common', 'pvk', 'missing', 'excess', 'reduction', 'configuration'])('retains the upper metric context: %s', async metric => {
     const item = program(1, 2)
     item.overview.reducible = 2
-    mocks.list.mockResolvedValue({ rows: [item, { ...program(2, 0), configurationIssue: 'СП-02' }] })
+    mocks.list.mockResolvedValue({ rows: [item, { ...program(2, 0), configurationIssue: 'СП-01' }] })
     mount()
     const totals = await screen.findByLabelText('Итоги раздела')
     const trigger = totals.querySelector<HTMLElement>(`[data-section-metric="${metric}"]`)!
@@ -306,6 +308,50 @@ describe('line and stamp context menu', () => {
     mocks.calculate.mockResolvedValue({ line: program, issue: null, stamps: [], ...buildLineProgramDisplay(rows, calculateLineProgram(rows, percent, 10), percent, 10) })
     mocks.rows.mockResolvedValue({ rows, approvedKeys: [] })
   }
+  it.each([30, 100])('prints the selected stamp or its line on demand without opening joint lists (%i%%)', async percent => {
+    fixture([sample, { ...sample, id: 2, stamp1K: 'OTHER', joint: 'F2' }], percent); mount()
+    fireEvent.click(await screen.findByRole('button', { name: 'Расчёт линии LP-1' }))
+    const stamp = await screen.findByRole('button', { name: 'Клеймо STAMP' })
+    for (const [label, mode, selected] of [
+      ['Сводка по этому клейму', 'stamps', 'STAMP'], ['Сводка по этой линии', 'lines', undefined], ['Сводка по клеймам линии', 'stamps', undefined],
+    ] as const) {
+      const before = mocks.report.mock.calls.length
+      fireEvent.click(openMenu(stamp).getByRole('button', { name: 'Показать' }))
+      expect(mocks.report).toHaveBeenCalledTimes(before)
+      fireEvent.click(within(screen.getByRole('menu', { name: 'Показать' })).getByRole('button', { name: label }))
+      await screen.findByTitle('Печатная сводка')
+      expect(mocks.report).toHaveBeenCalledTimes(before + 1)
+      expect(mocks.report).toHaveBeenLastCalledWith({ data: { ids: [1], mode, context: `P · S · Линия LP-1${selected ? ' · клеймо STAMP' : ''}`, ...(selected ? { stamp: selected } : {}) } })
+      fireEvent.keyDown(document, { key: 'Escape' })
+      await waitFor(() => expect(stamp).toHaveFocus())
+      expect(stamp).toHaveAttribute('aria-expanded', 'false')
+    }
+    expect(mocks.rows).not.toHaveBeenCalled()
+    expect(mocks.calculate).toHaveBeenCalledOnce()
+    expect(mocks.list).toHaveBeenCalledOnce()
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
+  it('offers line summaries but no imaginary stamp summary for the unassigned group', async () => {
+    fixture([{ ...sample, stamp1K: null, weldDate: null }]); mount()
+    fireEvent.click(await screen.findByRole('button', { name: 'Расчёт линии LP-1' }))
+    fireEvent.click(openMenu(await screen.findByTestId('line-program-unassigned')).getByRole('button', { name: 'Показать' }))
+    const menu = within(screen.getByRole('menu', { name: 'Показать' }))
+    expect(menu.queryByRole('button', { name: 'Сводка по этому клейму' })).not.toBeInTheDocument()
+    expect(menu.getByRole('button', { name: 'Сводка по этой линии' })).toBeVisible()
+    expect(menu.getByRole('button', { name: 'Сводка по клеймам линии' })).toBeVisible()
+    expect(mocks.report).not.toHaveBeenCalled()
+    expect(mocks.rows).not.toHaveBeenCalled()
+  })
+  it('prints only the current section filter from its background menu', async () => {
+    mocks.list.mockResolvedValue({ rows: [line, { ...line, id: 2, line: 'LP-SETUP', configurationIssue: 'СП-01' }] }); mount()
+    fireEvent.click(openMenu(await screen.findByLabelText('Итоги раздела')).getByRole('button', { name: 'Нужна настройка' }))
+    fireEvent.click(openMenu(screen.getByTestId('line-program')).getByRole('button', { name: 'Показать' }))
+    fireEvent.click(within(screen.getByRole('menu', { name: 'Показать' })).getByRole('button', { name: 'Сводка по линиям' }))
+    await screen.findByTitle('Печатная сводка')
+    expect(mocks.report).toHaveBeenCalledExactlyOnceWith({ data: { ids: [2], mode: 'lines', context: 'Все линии · Нужна настройка программы линии' } })
+    expect(mocks.calculate).not.toHaveBeenCalled()
+    expect(mocks.rows).not.toHaveBeenCalled()
+  })
   it.each(['assigned', 'missing', 'excess', 'reduction', 'results', 'covered'] as const)('opens calculation from the exact stamp metric: %s', async slice => {
     const rows = [sample, { ...sample, id: 2, hasRk: 'да' }, { ...sample, id: 3, hasRk: 'да' }]
     const raw = calculateLineProgram(rows, 30, 10)
@@ -386,7 +432,7 @@ describe('line and stamp context menu', () => {
     expect(mocks.calculate).toHaveBeenCalledOnce()
   })
   it('uses the existing configuration filter from the section context menu', async () => {
-    mocks.list.mockResolvedValue({ rows: [line, { ...line, id: 2, line: 'LP-SETUP', configurationIssue: 'СП-02: не настроен ПВК' }] })
+    mocks.list.mockResolvedValue({ rows: [line, { ...line, id: 2, line: 'LP-SETUP', configurationIssue: 'СП-01: не настроен ПВК' }] })
     mount()
     fireEvent.click(openMenu(await screen.findByLabelText('Итоги раздела')).getByRole('button', { name: 'Нужна настройка' }))
     expect(screen.getAllByTestId('line-program-card')).toHaveLength(1)
@@ -460,7 +506,7 @@ describe('line and stamp context menu', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Расчёт линии LP-1' }))
     const stamp = await screen.findByRole('button', { name: 'Клеймо STAMP' })
     fireEvent.click(openMenu(stamp.closest('tr')!).getByRole('button', { name: 'Показать стыки' }))
-    fireEvent.click(within(screen.getByRole('menu')).getByRole('button', { name: label }))
+    fireEvent.click(within(screen.getByRole('menu', { name: 'Показать стыки' })).getByRole('button', { name: label }))
     await waitFor(() => expect(mocks.rows).toHaveBeenCalledOnce())
     const workspace = screen.getByTestId('stamp-joints-container')
     expect(workspace).toHaveAttribute('data-stamp', 'STAMP')
@@ -490,10 +536,10 @@ describe('line and stamp context menu', () => {
     expect(within(editor).queryByLabelText('Выбрать F1')).not.toBeInTheDocument()
   })
   it('disables unconfigured actions and uses the existing settings entry point', async () => {
-    mocks.list.mockResolvedValue({ rows: [{ ...line, configurationIssue: 'СП-02: не настроен ПВК', pvkControlPercent: null }] }); mount()
+    mocks.list.mockResolvedValue({ rows: [{ ...line, configurationIssue: 'СП-01: не настроен ПВК', pvkControlPercent: null }] }); mount()
     const menu = openMenu(await screen.findByTestId('line-program-header'))
     for (const label of ['Назначения', 'Расчёт', 'Показать стыки']) expect(menu.getByRole('button', { name: label })).toBeDisabled()
-    expect(menu.getByRole('button', { name: 'Назначения' })).toHaveAttribute('title', 'СП-02: не настроен ПВК')
+    expect(menu.getByRole('button', { name: 'Назначения' })).toHaveAttribute('title', 'СП-01: не настроен ПВК')
     fireEvent.click(menu.getByRole('button', { name: 'Настроить линию' }))
     expect(await screen.findByLabelText('Базовый % контроля')).toHaveValue(30)
     expect(mocks.calculate).not.toHaveBeenCalled()
@@ -992,7 +1038,7 @@ describe('unified line workspace', () => {
   })
 
   it('lets configuration and other summary cards grow together when their labels wrap', async () => {
-    mocks.list.mockResolvedValue({ rows: [line, { ...line, id: 2, line: 'LP-SETUP', configurationIssue: 'СП-02: не настроен ПВК' }] })
+    mocks.list.mockResolvedValue({ rows: [line, { ...line, id: 2, line: 'LP-SETUP', configurationIssue: 'СП-01: не настроен ПВК' }] })
     mount()
     const issue = await screen.findByRole('button', { name: /Нужна настройка: 1/ })
     expect(issue).toHaveClass('min-h-20')
@@ -1172,7 +1218,7 @@ describe('unified line workspace', () => {
     expect(mocks.rows).toHaveBeenCalledOnce()
   })
   it('does not calculate or mount assignments with a missing PVK requirement on a 100% line', async () => {
-    const incomplete = { ...line, weldControlPercent: 100, pvkControlPercent: null, configurationIssue: 'СП-02: не настроен ПВК' }
+    const incomplete = { ...line, weldControlPercent: 100, pvkControlPercent: null, configurationIssue: 'СП-01: не настроен ПВК' }
     mocks.list.mockResolvedValue({ rows: [{ ...incomplete, overview: summarizeLineProgram([sample], incomplete) }] })
     mocks.calculate.mockResolvedValue({ line: incomplete, issue: incomplete.configurationIssue, stamps: [] })
     mount()
@@ -1430,7 +1476,7 @@ describe('compact program editor and explicit PVK exception', () => {
   })
 
   it('does not silently fill a legacy unknown PVK, and Escape cancels without saving', async () => {
-    mocks.list.mockResolvedValue({ rows: [{ ...line, pvkControlPercent: null, configurationIssue: 'СП-02' }], total: 1, issues: 1 })
+    mocks.list.mockResolvedValue({ rows: [{ ...line, pvkControlPercent: null, configurationIssue: 'СП-01' }], total: 1, issues: 1 })
     render(<QueryClientProvider client={client}><LineProgramPage /></QueryClientProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'Настроить' }))
     const dialog = within(screen.getByRole('dialog'))

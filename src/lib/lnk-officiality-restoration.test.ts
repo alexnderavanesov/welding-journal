@@ -3,6 +3,13 @@ import type { WeldRow } from './dispatcher-types'
 import { buildOfficialityRestorationRenames } from './lnk-officiality-restoration'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS } from './system-index-settings'
 
+it.each(['vikResult', 'pvkResult'] as const)('rejects an invalid %s restoration preview even without an official namesake', field => {
+  const row: WeldRow = { id: 1, joint: 'S2', officiality: 'неофициальный', [field]: 'вырез' }
+  expect(() => buildOfficialityRestorationRenames([row], [row], DEFAULT_SYSTEM_INDEX_SETTINGS)).toThrow('СП-07')
+  expect(row.officiality).toBe('неофициальный')
+  expect(row[field]).toBe('вырез')
+})
+
 it.each([24, 1024, 200_000])('indexes %i context rows once instead of scanning the journal for each restored chain', count => {
   let reads = 0
   const rows: WeldRow[] = Array.from({ length: count }, (_, index) => ({ id: index + 1, projectTitle: 'P', subtitleCode: 'U', line: 'L',

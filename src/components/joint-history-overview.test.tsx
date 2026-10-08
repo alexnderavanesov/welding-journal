@@ -222,7 +222,7 @@ describe('JointHistoryOverview', () => {
 
     expect(screen.getByText('Внести результат основного НК')).toBeInTheDocument()
     expect(screen.getByText('Требует действия')).toBeInTheDocument()
-    expect(screen.getByText('ДЗ: 1')).toBeInTheDocument()
+    expect(screen.getByText('СП: 1')).toBeInTheDocument()
     expect(screen.queryByText('Дозаполнить результат ЛНК')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Открыть задачи по стыку: 1' }))
     expect(onOpenTasks).toHaveBeenCalledOnce()

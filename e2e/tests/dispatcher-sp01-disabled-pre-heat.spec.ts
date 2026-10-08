@@ -9,7 +9,7 @@ import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-
 import { attachDispatcherTaskCodesToPage } from '@/server/weld-read'
 import { withE2eDatabase } from '../database'
 
-for (const report of ['/psto', '/lnk']) test(`СП-01 при выключенном НК до ТО из ${report}: индекс, переход к ТВМТ и закрытие предупреждения`, async ({ page }) => {
+for (const report of ['/psto', '/lnk']) test(`СП-06 при выключенном НК до ТО из ${report}: индекс, переход к ТВМТ и закрытие предупреждения`, async ({ page }) => {
   test.setTimeout(120_000)
   let previousSetting: { value: string; updated_at: Date } | undefined
   let settingsChanged = false
@@ -61,7 +61,7 @@ for (const report of ['/psto', '/lnk']) test(`СП-01 при выключенн�
     const search = dialog.getByRole('textbox', { name: 'Поиск задач диспетчера' })
     await search.fill('F702')
     await search.press('Enter')
-    const warning = dialog.locator('[data-dispatcher-workspace-task-row]').filter({ hasText: 'СП-01' })
+    const warning = dialog.locator('[data-dispatcher-workspace-task-row]').filter({ hasText: 'СП-06' })
     await expect(warning).toHaveCount(1)
     await expect(warning).toContainText('ожидает ТВМТ')
     await expect(warning).not.toContainText('до ТО')
@@ -74,7 +74,7 @@ for (const report of ['/psto', '/lnk']) test(`СП-01 при выключенн�
     await page.getByRole('button', { name: 'Сохранить результат', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Внесение результатов ТВМТ' })).toBeHidden()
     await expect.poll(() => withE2eDatabase(async (client) =>
-      (await client.query("select code from dispatcher_row_tasks where weld_joint_id = $1 and code = 'СП-01'", [ids[1]])).rows,
+      (await client.query("select code from dispatcher_row_tasks where weld_joint_id = $1 and code = 'СП-06'", [ids[1]])).rows,
     )).toEqual([])
     await expectWarningIds(ids, [ids[0]])
 
@@ -151,9 +151,9 @@ async function readStoredState(id: number) {
 
 async function expectWarningIds(ids: number[], expected: number[]) {
   const indexed = await withE2eDatabase(async (client) => (await client.query<{ weld_joint_id: number }>(
-    "select weld_joint_id from dispatcher_row_tasks where weld_joint_id = any($1::int[]) and code = 'СП-01' order by weld_joint_id", [ids],
+    "select weld_joint_id from dispatcher_row_tasks where weld_joint_id = any($1::int[]) and code = 'СП-06' order by weld_joint_id", [ids],
   )).rows.map(({ weld_joint_id }) => weld_joint_id))
   expect(indexed).toEqual(expected)
   const visible = await attachDispatcherTaskCodesToPage(ids.map((id) => ({ id }))) as Array<{ id: number; dispatcherTasks: string }>
-  expect(visible.filter((row) => row.dispatcherTasks.split(', ').includes('СП-01')).map(({ id }) => id)).toEqual(expected)
+  expect(visible.filter((row) => row.dispatcherTasks.split(', ').includes('СП-06')).map(({ id }) => id)).toEqual(expected)
 }

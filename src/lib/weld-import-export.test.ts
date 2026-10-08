@@ -22,6 +22,24 @@ import {
 } from './report-config'
 import { getAvailableWeldTableSections } from './weld-table-sections'
 
+describe('imported revision actuality', () => {
+  it.each(['актуальная', ' АКТУАЛЬНАЯ ', 'актуален', '', null])('normalizes %s to the canonical empty active value', value => {
+    expect(parseImportCell(FIELD_BY_KEY.get('revisionActuality')!, value)).toBeNull()
+  })
+  it('preserves the inactive mark', () => {
+    expect(parseImportCell(FIELD_BY_KEY.get('revisionActuality')!, 'не актуален')).toBe('не актуален')
+  })
+  it('normalizes Excel rows and server-bound input without changing inactive records', () => {
+    const imported = parseWorksheetRows([
+      ['Стык', FIELD_BY_KEY.get('revisionActuality')!.label],
+      ['F1', 'АКТУАЛЬНАЯ'], ['F2', 'не актуален'],
+    ], [])
+    expect(imported.records.map(row => row.revisionActuality)).toEqual([null, 'не актуален'])
+    expect(normalizeWeldInput({ joint: 'F1', revisionActuality: 'актуальная' }).revisionActuality).toBeNull()
+    expect(normalizeWeldInput({ joint: 'F2', revisionActuality: 'не актуален' }).revisionActuality).toBe('не актуален')
+  })
+})
+
 const label = (key: string) => {
   const field = FIELD_BY_KEY.get(key as never)
   if (!field) throw new Error(`Missing test field: ${key}`)

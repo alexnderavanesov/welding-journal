@@ -1,3 +1,4 @@
+import { isMandatoryDispatcherTask } from '@/lib/dispatcher-settings'
 import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, ChevronDown, ChevronRight, MoreHorizontal, ShieldAlert } from 'lucide-react'
 
@@ -12,7 +13,6 @@ import { getDispatcherTaskCode } from '@/lib/dispatcher-settings'
 import { getRepeatedJointTaskDetails, getRepeatedJointTaskTitle } from '@/lib/dispatcher-text'
 import { buildJointPictureTaskCollection } from '@/lib/joint-picture-tasks'
 import {
-  isSystemDispatcherWarningTask,
   type RepeatedJointTask,
   type WeldRow,
 } from '@/lib/dispatcher-types'
@@ -238,7 +238,7 @@ export function JointDispatcherTaskItem({
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className={cn(
                   'rounded border px-1.5 py-0.5 text-xs font-semibold',
-                  isSystemDispatcherWarningTask(task)
+                  isMandatoryDispatcherTask(task)
                     ? 'border-amber-200 bg-amber-50 text-amber-800'
                     : 'border-violet-200 bg-violet-50 text-violet-700',
                 )}>

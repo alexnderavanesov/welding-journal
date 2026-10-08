@@ -78,6 +78,12 @@ async function seedRenameChain() {
           'second-note', 'годен', now(), now(), now())
       returning id, joint
     `, [PROJECT, LINE])
+    // The changed cut belongs to UZK: VIK can never justify a W continuation.
+    // Keep both conclusions to verify that renaming does not rewrite documents.
+    await client.query(`update weld_joints set has_uzk='да', uzk_control_basis='проект',
+      uzk_request=vik_request, uzk_request_date=vik_request_date, uzk_result=vik_result,
+      uzk_conclusion=vik_conclusion, uzk_conclusion_date=vik_conclusion_date, vik_result='годен'
+      where project_title=$1 and line=$2`, [PROJECT, LINE])
     await client.query(`
       insert into dispatcher_task_index_state
         (id, source_revision, computed_revision, full_rebuild, updated_at)

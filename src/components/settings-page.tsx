@@ -28,6 +28,8 @@ import {
 import { DialogHeader } from '@/components/dialog-header'
 import { buttonVariants } from '@/components/ui/button'
 import { AcceptedWarningsSettingsPanel } from '@/components/accepted-warnings-settings-panel'
+import { RuleSettingsTabs, RuleConnections } from '@/components/rule-settings-navigation'
+import { RULE_SETTINGS_TABS, getRuleSettingsTarget, getRuleSettingsTab, type RuleSettingsTab } from '@/lib/rule-settings-navigation'
 import { DocumentTemplateLoadBoundary } from '@/components/document-template-load-boundary'
 import { DocumentTemplateBuilder } from '@/components/document-template-builder'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
@@ -100,6 +102,7 @@ import {
   DISPATCHER_SETTING_ACTION_HELP,
   DISPATCHER_SETTING_HELP,
   DISPATCHER_SETTING_GROUPS,
+  OPTIONAL_DISPATCHER_SETTING_IDS,
   MIN_DISPATCHER_REMINDER_DAYS,
   getDispatcherSettingCode,
   getDispatcherSettingTaskTypeLabel,
@@ -143,7 +146,7 @@ import {
   type WdiConnectionCalculationRule,
 } from '@/lib/other-settings'
 import {
-  DEFAULT_DATA_LIST_SETTINGS,
+  isSystemDataListOption,
   getDataListOptionInputError,
   normalizeDataListOption,
   saveDataListSettings,
@@ -160,9 +163,10 @@ import {
 } from '@/lib/save-check-settings'
 import { SAVE_CHECK_SETTING_HELP } from '@/lib/save-check-settings-help'
 import {
-  getDispatcherSettingIdsForSaveCheck,
-  getSaveCheckSettingIdsForDispatcher,
-} from '@/lib/save-check-dispatcher-links'
+  SYSTEM_RULE_CATALOG,
+  LNK_RESULT_POLICY_GUIDE_ROWS,
+  getSystemRuleTargetId,
+} from '@/lib/system-rule-catalog'
 import {
   DEFAULT_SECURITY_SETTINGS,
   SERVER_SECURITY_PASSWORD_PLACEHOLDER,
@@ -225,28 +229,16 @@ const SETTINGS_TABS = [
     searchKeywords: 'S F R W Y ремонт вырез катушка приставка буквенные индексы',
   },
   {
-    id: 'dispatcher',
-    label: 'Диспетчер задач и напоминаний',
-    icon: Bell,
-    searchKeywords: 'ДЗ задачи уведомления предупреждения фоновой пересчет',
-  },
-  {
-    id: 'acceptedWarnings',
-    label: 'Принятые исключения',
-    icon: CheckCircle2,
-    searchKeywords: 'принятые отклонения решения процентные линии досрочные катушки отменить поиск',
-  },
-  {
-    id: 'saveChecks',
-    label: 'Проверки при сохранении',
+    id: 'rules',
+    label: 'Правила и проверки',
     icon: ShieldCheck,
-    searchKeywords: 'ЗВ валидация блокировка сохранения допуски НАКС ДЛС диаметр толщина',
+    searchKeywords: 'СП ЗВ ДЗ системные правила защиты ввода диспетчер напоминания принятые исключения фоновой пересчет',
   },
   {
     id: 'other',
-    label: 'Прочее',
+    label: 'Расчет дюймов',
     icon: SlidersHorizontal,
-    searchKeywords: 'WDI ВДИ D T диаметр толщина таблица дюйм-диаметров пересчет',
+    searchKeywords: 'WDI ВДИ D T диаметр толщина таблица дюйм-диаметров пересчет Прочее',
   },
   {
     id: 'processes',
@@ -279,11 +271,7 @@ type PendingDocumentTemplateReplacement = {
   parsedTemplate: TemplateUploadInfo & { fileData: ArrayBuffer }
   analysis: DocumentTemplateReplacementAnalysis
 }
-const DANGEROUS_SAVE_CHECK_SETTING_IDS = new Set<SaveCheckSettingId>([
-  'manualJointName',
-  'controlHistoryProtection',
-  'systemJointRenameProtection',
-])
+const DANGEROUS_SAVE_CHECK_SETTING_IDS = new Set<SaveCheckSettingId>(['manualJointName'])
 const EMPTY_WELD_DATA_USAGE: WeldDataUsageSummary = {
   rowsCount: 0,
   leadingLetterIndexedRowsCount: 0,
@@ -304,7 +292,7 @@ function buildSettingsSearchEntries(): SettingsSearchEntry[] {
   }))
   const dispatcher = DISPATCHER_SETTING_GROUPS.flatMap((group) => group.items.map((item) => ({
     id: `dispatcher:${item.id}`,
-    tabId: 'dispatcher' as const,
+    tabId: 'rules' as const,
     title: `${getDispatcherSettingCode(item.id)} · ${item.label}`,
     description: `${group.title}. ${item.description}`,
     targetId: `dispatcher-setting-${item.id}`,
@@ -312,29 +300,52 @@ function buildSettingsSearchEntries(): SettingsSearchEntry[] {
   })))
   const saveChecks = SAVE_CHECK_SETTING_GROUPS.flatMap((group) => group.items.map((item) => ({
     id: `save-check:${item.id}`,
-    tabId: 'saveChecks' as const,
+    tabId: 'rules' as const,
     title: `${getSaveCheckSettingCode(item.id)} · ${item.label}`,
     description: `${group.title}. ${item.description}`,
     targetId: `save-check-setting-${item.id}`,
     searchText: `${getSaveCheckSettingCode(item.id)} ${item.label} ${item.description} ${group.title}`,
   })))
-  return [...sections, ...dispatcher, ...saveChecks]
+  const systemRules: SettingsSearchEntry[] = SYSTEM_RULE_CATALOG.map((rule) => ({
+    id: `system-rule:${rule.code}`,
+    tabId: 'rules',
+    title: `${rule.code} · ${rule.title}`,
+    description: rule.condition,
+    targetId: getSystemRuleTargetId(rule.code),
+    searchText: `${rule.code} ${rule.code.replace('-', '')} ${rule.title} ${rule.condition} ${rule.correction} ${rule.examples.join(' ')} ${rule.aliases.join(' ')}`,
+  }))
+  const extra: SettingsSearchEntry[] = [
+    { id: 'accepted-exceptions', tabId: 'rules', title: 'Принятые исключения', description: 'Реестр принятых решений и согласований.', targetId: 'rules-accepted-exceptions', searchText: 'Принятые исключения согласования контроль досрочные катушки' },
+    { id: 'dispatcher-background', tabId: 'rules', title: 'Параметры диспетчера', description: 'Фоновый расчет кодов.', targetId: 'rules-dispatcher-background', searchText: 'Параметры диспетчера фоновой пересчет обновление' },
+    { id: 'dls-requirement', tabId: 'rules', title: 'Требовать ДЛС для официальных клейм', description: 'Применимость требования ДЛС в дополнение к НАКС.', targetId: 'rules-dls-requirement', searchText: 'ДЛС допуск требовать параметры СП-02' },
+  ]
+  return [...sections, ...dispatcher, ...saveChecks, ...systemRules, ...extra]
+}
+
+function getInitialRuleTarget() {
+  return typeof window === 'undefined' ? undefined : getRuleSettingsTarget(window.location.hash)
 }
 
 export function SettingsPage({
   onOpenReportRowIds,
+  onCancelEarlyCoil,
 }: {
+  onCancelEarlyCoil?: (sourceId: number) => void
   onOpenReportRowIds?: (
     rowIds: number[],
     targetReport: 'weldingJournal' | 'lnk' | 'heatTreatment',
     message?: string,
   ) => void
 } = {}) {
-  const [activeTab, setActiveTab] = useState<SettingsTabId>('templates')
+  const [activeTab, setActiveTab] = useState<SettingsTabId>(() => getInitialRuleTarget() ? 'rules' : 'templates')
+  const [ruleTab, setRuleTab] = useState<RuleSettingsTab>(() => getRuleSettingsTab(getInitialRuleTarget()) ?? 'system')
+  const [visitedRuleTabs, setVisitedRuleTabs] = useState<Set<RuleSettingsTab>>(() => new Set([getRuleSettingsTab(getInitialRuleTarget()) ?? 'system']))
   const [dirtyTabs, setDirtyTabs] = useState<Set<SettingsTabId>>(() => new Set())
   const [pendingNavigation, setPendingNavigation] = useState<{ tabId: SettingsTabId; targetId?: string } | null>(null)
   const [settingsSearch, setSettingsSearch] = useState('')
-  const [pendingScrollTarget, setPendingScrollTarget] = useState<string | null>(null)
+  const [pendingScrollTarget, setPendingScrollTarget] = useState<string | null>(() => {
+    return getInitialRuleTarget() ?? null
+  })
   const settingsSearchEntries = useMemo(buildSettingsSearchEntries, [])
   const normalizedSettingsSearch = settingsSearch.trim().toLocaleLowerCase('ru-RU')
   const matchingSettingsEntries = normalizedSettingsSearch
@@ -370,15 +381,29 @@ export function SettingsPage({
   const handleRequestsDirtyChange = useCallback((dirty: boolean) => updateTabDirty('requests', dirty), [updateTabDirty])
   const handleOtherDirtyChange = useCallback((dirty: boolean) => updateTabDirty('other', dirty), [updateTabDirty])
 
-  const navigateToSettings = (tabId: SettingsTabId, targetId?: string) => {
+  const navigateToSettings = useCallback((tabId: SettingsTabId, targetId?: string) => {
     if (tabId !== activeTab && dirtyTabs.has(activeTab)) {
       setPendingNavigation({ tabId, targetId })
       return
     }
     setActiveTab(tabId)
+    const subtab = getRuleSettingsTab(targetId)
+    if (tabId === 'rules' && subtab) {
+      setRuleTab(subtab)
+      setVisitedRuleTabs(current => new Set([...current, subtab]))
+    }
     setPendingScrollTarget(targetId ?? null)
     setSettingsSearch('')
-  }
+  }, [activeTab, dirtyTabs])
+
+  useEffect(() => {
+    const openRule = () => {
+      const target = getRuleSettingsTarget(window.location.hash)
+      if (target) navigateToSettings('rules', target)
+    }
+    window.addEventListener('hashchange', openRule)
+    return () => window.removeEventListener('hashchange', openRule)
+  }, [navigateToSettings])
 
   useEffect(() => {
     if (!pendingScrollTarget) return
@@ -386,7 +411,7 @@ export function SettingsPage({
       const target = document.getElementById(pendingScrollTarget)
       target?.scrollIntoView({
         behavior: 'smooth',
-        block: pendingScrollTarget.startsWith('settings-panel-') ? 'start' : 'center',
+        block: 'start',
       })
       target?.animate?.(
         [{ outline: '2px solid rgba(14, 165, 233, 0)' }, { outline: '2px solid rgba(14, 165, 233, 0.65)' }, { outline: '2px solid rgba(14, 165, 233, 0)' }],
@@ -409,15 +434,15 @@ export function SettingsPage({
 
   return (
     <div className="space-y-5">
-      <section className="overflow-hidden rounded-md border border-slate-200 bg-slate-50">
-        <div className="bg-white px-4 py-3 sm:px-5">
+      <section className="rounded-xl border border-slate-200 bg-white">
+        <div data-settings-navigation className="sticky top-0 z-30 rounded-t-xl border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur-sm sm:px-5">
           <div className="relative mb-2.5 max-w-xl">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="search"
               value={settingsSearch}
               onChange={(event) => setSettingsSearch(event.target.value)}
-              placeholder="Найти настройку, код ЗВ/ДЗ или описание"
+              placeholder="Найти настройку, код ЗВ/ДЗ/СП или описание"
               className="h-10 w-full rounded-md border border-slate-200 bg-slate-50 pl-9 pr-9 text-sm text-slate-900 outline-none focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
               aria-label="Поиск по настройкам"
             />
@@ -459,6 +484,7 @@ export function SettingsPage({
               )
             })}
           </div>
+          {activeTab === 'rules' ? <RuleSettingsTabs value={ruleTab} onChange={tab => navigateToSettings('rules', `rules-${tab}`)} /> : null}
         </div>
 
         {pendingNavigation ? (
@@ -472,6 +498,11 @@ export function SettingsPage({
                   const next = pendingNavigation
                   setPendingNavigation(null)
                   setActiveTab(next.tabId)
+                  const subtab = getRuleSettingsTab(next.targetId)
+                  if (subtab) {
+                    setRuleTab(subtab)
+                    setVisitedRuleTabs(current => new Set([...current, subtab]))
+                  }
                   setPendingScrollTarget(next.targetId ?? null)
                   setSettingsSearch('')
                 }}
@@ -483,7 +514,7 @@ export function SettingsPage({
           </div>
         ) : null}
 
-        <div id={`settings-panel-${activeTab}`} className="border-t border-slate-200 bg-slate-50 p-5">
+        <div id={`settings-panel-${activeTab}`} className="scroll-mt-48 rounded-b-xl bg-slate-50/50 p-4 sm:p-5">
           {activeTab === 'templates' ? (
             <DocumentTemplatesSettings runProtectedSettingsChange={runProtectedSettingsChange} />
           ) : activeTab === 'data' && weldDataUsageQuery.isPending ? (
@@ -510,18 +541,15 @@ export function SettingsPage({
                 onDirtyChange={handleIndexesDirtyChange}
               />
             )
-          ) : activeTab === 'dispatcher' ? (
-            <DispatcherSettingsPanel
-              runProtectedSettingsChange={runProtectedSettingsChange}
-              focusTargetId={pendingScrollTarget}
-            />
-          ) : activeTab === 'acceptedWarnings' ? (
-            <AcceptedWarningsSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} />
-          ) : activeTab === 'saveChecks' ? (
-            <SaveChecksSettingsPanel
-              runProtectedSettingsChange={runProtectedSettingsChange}
-              focusTargetId={pendingScrollTarget}
-            />
+          ) : activeTab === 'rules' ? (
+            RULE_SETTINGS_TABS.map(tab => <div key={tab.id} id={`rules-${tab.id}`} role="tabpanel" aria-labelledby={`rules-tab-${tab.id}`} hidden={ruleTab !== tab.id} className="scroll-mt-48">
+              {visitedRuleTabs.has(tab.id) ? tab.id === 'system' ? <SystemRulesSettingsPanel focusTargetId={pendingScrollTarget} onNavigate={target => navigateToSettings('rules', target)} />
+                : tab.id === 'input' ? <SaveChecksSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} focusTargetId={pendingScrollTarget} onNavigate={target => navigateToSettings('rules', target)} />
+                : tab.id === 'tasks' ? <DispatcherSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} focusTargetId={pendingScrollTarget} onNavigate={target => navigateToSettings('rules', target)} />
+                : tab.id === 'exceptions' ? <div id="rules-accepted-exceptions" className="scroll-mt-48"><AcceptedWarningsSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} onCancelEarlyCoil={onCancelEarlyCoil} /></div>
+                : <div className="space-y-4"><DlsRequirementSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} /><div id="rules-dispatcher-background" className="scroll-mt-48"><DispatcherSettingsPanel backgroundOnly runProtectedSettingsChange={runProtectedSettingsChange} focusTargetId={pendingScrollTarget} onNavigate={target => navigateToSettings('rules', target)} /></div></div>
+                : null}
+            </div>)
           ) : activeTab === 'other' ? (
             <OtherSettingsPanel runProtectedSettingsChange={runProtectedSettingsChange} onDirtyChange={handleOtherDirtyChange} />
           ) : activeTab === 'processes' ? (
@@ -534,6 +562,74 @@ export function SettingsPage({
           )}
         </div>
       </section>
+    </div>
+  )
+}
+
+function DlsRequirementSettingsPanel({ runProtectedSettingsChange }: { runProtectedSettingsChange: ProtectedSettingsChange }) {
+  const settings = useSaveCheckSettings()
+  return <section id="rules-dls-requirement" className="scroll-mt-48 rounded-lg border border-slate-200 bg-white p-4">
+    <label className="flex cursor-pointer items-start gap-3">
+      <input type="checkbox" className="mt-1 h-4 w-4 rounded border-slate-300" checked={settings.officialDls}
+        aria-label="Требовать ДЛС для официальных клейм"
+        onChange={event => { const enabled = event.currentTarget.checked; void runProtectedSettingsChange(() => saveSaveCheckSettings({ ...settings, officialDls: enabled })) }} />
+      <span><span className="block text-sm font-semibold text-slate-900">Требовать ДЛС для официальных клейм</span>
+        <span className="mt-1 block text-sm text-slate-600">При включении СП-02 проверяет и НАКС, и ДЛС на дату сварки. При выключении ДЛС не требуется; НАКС, материалы, способы, размеры и отстранения по-прежнему проверяются.</span>
+        <span className="mt-2 block text-xs text-slate-500">Общее требование журнала. Переключение не изменяет стыки и допуски; задачи СП-02 пересчитываются. Напоминание о сроке ДЛС настраивается отдельно в ДЗ-05.</span>
+      </span>
+    </label>
+  </section>
+}
+
+function SystemRulesSettingsPanel({ focusTargetId, onNavigate }: { focusTargetId: string | null; onNavigate: (target: string) => void }) {
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(focusTargetId ? [focusTargetId] : []))
+  useEffect(() => { if (focusTargetId) setExpanded(current => new Set([...current, focusTargetId])) }, [focusTargetId])
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3 px-1 py-1">
+        <div><h3 className="text-base font-semibold text-slate-900">Системные правила</h3>
+          <p className="mt-1 text-sm text-slate-500">Обязательны для всех операций. Раскройте правило, чтобы увидеть условия, примеры и связи.</p>
+        </div>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600"><LockKeyhole className="h-3 w-3" />Всегда действуют</span>
+      </div>
+      <div className="divide-y divide-slate-200 overflow-clip rounded-lg border border-slate-200 bg-white">
+      {SYSTEM_RULE_CATALOG.map((rule) => (
+        <article key={rule.code} id={getSystemRuleTargetId(rule.code)} tabIndex={-1} className="scroll-mt-48 px-4 py-3 outline-none">
+          <button type="button" className="flex w-full items-center justify-between gap-3 text-left" aria-expanded={expanded.has(getSystemRuleTargetId(rule.code))} aria-controls={`${getSystemRuleTargetId(rule.code)}-details`} onClick={() => setExpanded(current => { const next = new Set(current); const id = getSystemRuleTargetId(rule.code); if (next.has(id)) next.delete(id); else next.add(id); return next })}>
+            <h4 aria-label={`${rule.code} · ${rule.title}`} className="flex min-w-0 items-center gap-3 text-sm font-medium text-slate-900"><span className="shrink-0 rounded bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-600">{rule.code}</span><span><span className="sr-only"> · </span>{rule.title}</span></h4>
+            <ChevronDown className={`h-4 w-4 shrink-0 ${expanded.has(getSystemRuleTargetId(rule.code)) ? 'rotate-180' : ''}`} />
+          </button>
+          {!expanded.has(getSystemRuleTargetId(rule.code)) ? <p className="mt-1.5 line-clamp-1 text-xs leading-5 text-slate-500">{rule.condition}</p> : null}
+          {expanded.has(getSystemRuleTargetId(rule.code)) ? <div id={`${getSystemRuleTargetId(rule.code)}-details`}><dl className="mt-3 space-y-3 text-sm leading-6">
+            {[
+              ['Условие', rule.condition],
+              ['Что делает система', rule.effect],
+              ['Как исправить', rule.correction],
+            ].map(([label, description]) => (
+              <div key={label}>
+                <dt className="font-semibold text-slate-700">{label}</dt>
+                <dd className="text-slate-600">{description}</dd>
+              </div>
+            ))}
+            <div>
+              <dt className="font-semibold text-slate-700">Примеры</dt>
+              <dd><ul className="list-disc space-y-1 pl-5 text-slate-600">{rule.examples.map((example) => <li key={example}>{example}</li>)}</ul></dd>
+            </div>
+          </dl>
+          {rule.code === 'СП-07' ? (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <caption className="mb-2 text-left font-semibold text-slate-700">Допустимые результаты по СП-07</caption>
+                <thead><tr>{['Метод', 'Условие', 'Результаты'].map((label) => <th key={label} scope="col" className="border-b p-2">{label}</th>)}</tr></thead>
+                <tbody>{LNK_RESULT_POLICY_GUIDE_ROWS.map((row, index) => <tr key={index}>{row.map((cell, column) => <td key={column} className="border-b p-2 text-slate-600">{cell}</td>)}</tr>)}</tbody>
+              </table>
+            </div>
+          ) : null}</div> : null}
+          <RuleConnections code={rule.code} expanded={expanded.has(getSystemRuleTargetId(rule.code))} onNavigate={onNavigate} />
+        </article>
+      ))}
+      </div>
+      <p className="px-1 text-xs leading-5 text-slate-500">Корректность календарной даты и граница 01.01.2024 проверяются системой без отдельного кода.</p>
     </div>
   )
 }
@@ -1107,10 +1203,10 @@ function OtherSettingsPanel({
       <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
         <div className="flex items-center gap-2">
           <SlidersHorizontal className="h-5 w-5 text-slate-500" />
-          <h3 className="text-base font-semibold text-slate-900">Прочее</h3>
+          <h3 className="text-base font-semibold text-slate-900">Расчет дюймов</h3>
         </div>
         <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-          Дополнительные параметры рабочих форм, системных расчетов и связанных операций с данными журнала.
+          Режим расчета WDI, таблица дюйм-диаметров, выбор диаметра и толщины и пересчет сохраненных стыков.
         </p>
       </div>
 
@@ -1502,7 +1598,7 @@ function ControlProcessesSettingsPanel({
             description="Позволяет вручную внести результаты основного НК до завершения предыдущих этапов. Заявки можно подавать заранее в обоих режимах, начиная с даты сварки."
             detail={settings.preHeatTreatmentLnkEnabled
               ? settings.allowPrimaryLnkBeforePreviousStagesComplete
-                ? 'Система предупредит перед сохранением и создаст обязательное СП-01 до восстановления последовательности. Реальные противоречия дат и негодный НК до ТО по-прежнему блокируют действие.'
+                ? 'Система предупредит перед сохранением и создаст обязательное СП-06 до восстановления последовательности. Реальные противоречия дат и негодный НК до ТО по-прежнему блокируют действие.'
                 : 'Строгий режим: результаты основного НК доступны после завершения обязательных предыдущих этапов. Ранняя заявка не считается выполненным контролем.'
               : 'Недоступно, пока процесс «НК до ТО» выключен.'}
             checked={settings.preHeatTreatmentLnkEnabled && settings.allowPrimaryLnkBeforePreviousStagesComplete}
@@ -1678,14 +1774,14 @@ function getControlProcessSettingConfirmation(
           title: 'Разрешить основной НК раньше',
           itemName: 'Нестрогая последовательность оформления',
           description: 'В результатах основного ЛНК можно будет вручную выбрать стык до завершения НК до ТО, ПСТО или ТВМТ. На доступность ранних заявок этот режим не влияет.',
-          warning: 'Автоматические годные результаты и документы не создаются. До восстановления последовательности по стыку будет показываться обязательное СП-01.',
+          warning: 'Автоматические годные результаты и документы не создаются. До восстановления последовательности по стыку будет показываться обязательное СП-06.',
           confirmLabel: 'Разрешить',
         }
       : {
           title: 'Вернуть строгую последовательность',
           itemName: 'Основной НК только после предыдущих этапов',
           description: 'Новые ранние результаты основного ЛНК снова будут заблокированы. Заявки по-прежнему можно подавать заранее, начиная с даты сварки.',
-          warning: 'Уже существующие нарушения останутся видны как СП-01 до фактического завершения предыдущих этапов.',
+          warning: 'Уже существующие нарушения останутся видны как СП-06 до фактического завершения предыдущих этапов.',
           confirmLabel: 'Вернуть строгий режим',
         }
   }
@@ -2031,8 +2127,8 @@ function DataSettingsPanel({
 
   async function removeListValue(config: DataListConfig, value: string) {
     const values = settings[config.key]
-    if (config.minOptions && values.length <= config.minOptions) {
-      setMessage(config.minOptionsMessage)
+    if (isSystemDataListOption(config.key, value)) {
+      setMessage(`${value} — системное значение. Удалить его нельзя.`)
       return
     }
     const usageCount = usageCountsByKey[config.key].get(value) ?? 0
@@ -2050,35 +2146,9 @@ function DataSettingsPanel({
     if (saved) setMessage(`Значение ${value} удалено из списка.`)
   }
 
-  async function resetListValues(config: DataListConfig) {
-    const defaultList = DEFAULT_DATA_LIST_SETTINGS[config.key]
-    const defaultValues = new Set(defaultList)
-    const values = settings[config.key]
-    const usageCounts = usageCountsByKey[config.key]
-    const blockedValues = values.filter((value) => !defaultValues.has(value) && (usageCounts.get(value) ?? 0) > 0)
-    if (blockedValues.length > 0) {
-      setMessage(
-        `Нельзя ${config.resetBlockedAction}: в стыках используются значения ${blockedValues
-          .map((value) => `${value} (${usageCounts.get(value)})`)
-          .join(', ')}.`,
-      )
-      return
-    }
-
-    const saved = await runProtectedSettingsChange(() => {
-      saveDataListSettings({
-        ...settings,
-        [config.key]: defaultList,
-      })
-    })
-    if (saved) {
-      setDrafts((current) => ({ ...current, [config.key]: '' }))
-      setMessage(config.resetSuccessMessage)
-    }
-  }
-
   function renderListValue(config: DataListConfig, value: string) {
     const usageCount = usageCountsByKey[config.key].get(value) ?? 0
+    const system = isSystemDataListOption(config.key, value)
     return (
       <span
         key={value}
@@ -2086,13 +2156,15 @@ function DataSettingsPanel({
           usageCount > 0 ? 'border-sky-100 bg-sky-50 text-sky-900' : 'border-slate-200 bg-slate-50 text-slate-800'
         }`}
       >
-        {value}
+        <span>{value}</span>
         {usageCount > 0 ? (
           <span className="rounded border border-sky-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-500">
             стыков: {usageCount}
           </span>
         ) : null}
-        <button
+        {system ? <span className="inline-flex items-center gap-1 text-xs font-normal text-slate-500" title="Системное значение используется в правилах. Удалить его нельзя.">
+          <LockKeyhole className="h-3.5 w-3.5" aria-hidden="true" />Системное
+        </span> : <button
           type="button"
           onClick={() => removeListValue(config, value)}
           className={`rounded border bg-white px-1.5 py-0.5 text-xs font-semibold transition-colors ${
@@ -2104,7 +2176,7 @@ function DataSettingsPanel({
           title={usageCount > 0 ? `Нельзя удалить: используется в стыках (${usageCount})` : `Удалить ${value}`}
         >
           ×
-        </button>
+        </button>}
       </span>
     )
   }
@@ -2117,8 +2189,8 @@ function DataSettingsPanel({
           <h3 className="text-base font-semibold text-slate-900">Данные</h3>
         </div>
         <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-          Здесь настраиваются выпадающие списки, которые используются в рабочих формах и импорте. Значения нельзя удалить или убрать
-          сбросом, если они уже используются хотя бы в одном стыке.
+          Здесь настраиваются выпадающие списки для рабочих форм и импорта. Системные значения отмечены замком и не удаляются.
+          Дополнительные значения можно добавлять и удалять, пока они не используются в стыках.
         </p>
       </div>
 
@@ -2127,20 +2199,13 @@ function DataSettingsPanel({
         const hasRestrictedAlphabet = config.key !== 'testTypes'
 
         return (
-          <div key={config.key} className="rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
+          <section key={config.key} aria-labelledby={`data-list-${config.key}-title`} className="rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
             <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-start md:justify-between">
               <div>
-                <div className="text-base font-semibold text-slate-900">{config.title}</div>
+                <h4 id={`data-list-${config.key}-title`} className="text-base font-semibold text-slate-900">{config.title}</h4>
                 <p className="mt-1 max-w-3xl text-sm leading-5 text-slate-500">{config.description}</p>
                 <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-500">{config.protectionHint}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => resetListValues(config)}
-                className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                {config.resetButtonLabel}
-              </button>
             </div>
 
             <div className="space-y-4 p-4">
@@ -2152,10 +2217,12 @@ function DataSettingsPanel({
                 </div>
               )}
 
-              <div className="grid gap-3 md:grid-cols-[minmax(220px,360px)_auto] md:items-end md:justify-start">
-                <label className="space-y-1.5 text-sm font-semibold text-slate-700">
-                  <span>Новое значение</span>
+              <div className="space-y-1.5">
+                <label htmlFor={`data-list-${config.key}-input`} className="block text-sm font-semibold text-slate-700">Новое значение</label>
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,360px)_auto] sm:items-start sm:justify-start">
                   <input
+                    id={`data-list-${config.key}-input`}
+                    aria-describedby={inputError || hasRestrictedAlphabet ? `data-list-${config.key}-hint` : undefined}
                     type="text"
                     value={drafts[config.key]}
                     onChange={(event) => {
@@ -2176,26 +2243,24 @@ function DataSettingsPanel({
                         : 'border-slate-300 focus:border-sky-400 focus:ring-sky-100'
                     }`}
                   />
-                  {inputError ? (
-                    <span className="block text-xs font-normal leading-5 text-rose-600">{inputError}</span>
-                  ) : hasRestrictedAlphabet ? (
-                    <span className="block text-xs font-normal leading-5 text-slate-500">
-                      Разрешены кириллические буквы, цифры и пробелы.
-                    </span>
-                  ) : null}
-                </label>
-                <button
-                  type="button"
-                  onClick={() => addListValue(config)}
-                  disabled={Boolean(inputError)}
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                >
-                  <Plus className="h-4 w-4" />
-                  Добавить
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => addListValue(config)}
+                    disabled={Boolean(inputError)}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Добавить
+                  </button>
+                </div>
+                {inputError ? (
+                  <p id={`data-list-${config.key}-hint`} className="text-xs leading-5 text-rose-600">{inputError}</p>
+                ) : hasRestrictedAlphabet ? (
+                  <p id={`data-list-${config.key}-hint`} className="text-xs leading-5 text-slate-500">Разрешены кириллические буквы, цифры и пробелы.</p>
+                ) : null}
               </div>
             </div>
-          </div>
+          </section>
         )
       })}
 
@@ -2213,12 +2278,7 @@ type DataListConfig = {
   protectionHint: string
   placeholder: string
   emptyListText: string
-  resetButtonLabel: string
-  resetBlockedAction: string
-  resetSuccessMessage: string
   usedValueText: string
-  minOptions?: number
-  minOptionsMessage: string
 }
 
 const DATA_LIST_CONFIGS: DataListConfig[] = [
@@ -2228,14 +2288,9 @@ const DATA_LIST_CONFIGS: DataListConfig[] = [
     description:
       'Пользователь сможет выбрать только значения из этого списка. Список применяется в сварочном журнале, карточках клейм и проверке импорта.',
     protectionHint: 'Уже созданные записи не переименовываются автоматически, но при новом вводе будет применяться актуальный список.',
-    placeholder: 'Например: РД',
-    emptyListText: 'Список пуст. Добавьте хотя бы один способ сварки.',
-    resetButtonLabel: 'Вернуть РД/РАД',
-    resetBlockedAction: 'вернуть список к РД/РАД',
-    resetSuccessMessage: 'Список “Способ сварки” возвращен к значениям по умолчанию.',
+    placeholder: 'Например: МП',
+    emptyListText: '',
     usedValueText: 'этот способ сварки',
-    minOptions: 1,
-    minOptionsMessage: 'В списке “Способ сварки” должно остаться хотя бы одно значение.',
   },
   {
     key: 'connectionTypes',
@@ -2244,26 +2299,18 @@ const DATA_LIST_CONFIGS: DataListConfig[] = [
       'Пользователь выбирает одно значение из этого списка в меню создания и редактирования стыка. Это одиночный выбор, не набор галочек.',
     protectionHint: 'Если тип соединения уже используется в стыках, удалить его из настроек нельзя.',
     placeholder: 'Например: СТ',
-    emptyListText: 'Список пока пуст. После добавления значений поле “Тип соединения” станет выпадающим списком в форме стыка.',
-    resetButtonLabel: 'Очистить список',
-    resetBlockedAction: 'очистить список “Тип соединения”',
-    resetSuccessMessage: 'Список “Тип соединения” очищен.',
+    emptyListText: '',
     usedValueText: 'этот тип соединения',
-    minOptionsMessage: '',
   },
   {
     key: 'materialGroups',
     title: 'Группа материалов',
     description:
-      'Пользователь выбирает одно значение из этого списка в меню создания и редактирования стыка. Поле находится в разделе “Сварка” после “Тип соединения”.',
+      'В стыке можно выбрать одну группу для обеих сторон или две разные: первая относится к D1/T1, вторая — к D2/T2. Поле находится в разделе “Сварка” после “Тип соединения”.',
     protectionHint: 'Если группа материалов уже используется в стыках, удалить ее из настроек нельзя.',
-    placeholder: 'Например: М01',
-    emptyListText: 'Список пока пуст. После добавления значений поле “Группа материалов” станет выпадающим списком в форме стыка.',
-    resetButtonLabel: 'Очистить список',
-    resetBlockedAction: 'очистить список “Группа материалов”',
-    resetSuccessMessage: 'Список “Группа материалов” очищен.',
+    placeholder: 'Например: М02',
+    emptyListText: '',
     usedValueText: 'эта группа материалов',
-    minOptionsMessage: '',
   },
   {
     key: 'testTypes',
@@ -2273,11 +2320,7 @@ const DATA_LIST_CONFIGS: DataListConfig[] = [
     protectionHint: 'Если вид испытаний уже используется хотя бы в одном стыке, удалить его из настроек нельзя.',
     placeholder: 'Например: ГИ',
     emptyListText: 'Список пуст. Добавьте виды испытаний, которые используются на проекте.',
-    resetButtonLabel: 'Вернуть ГИ/ПИ',
-    resetBlockedAction: 'вернуть список к ГИ/ПИ',
-    resetSuccessMessage: 'Список “Вид испытаний” возвращен к значениям по умолчанию.',
     usedValueText: 'этот вид испытаний',
-    minOptionsMessage: '',
   },
 ]
 
@@ -4179,21 +4222,27 @@ function RequestNamingModeButton({
 function DispatcherSettingsPanel({
   runProtectedSettingsChange,
   focusTargetId,
+  backgroundOnly = false,
+  onNavigate,
 }: {
   runProtectedSettingsChange: ProtectedSettingsChange
   focusTargetId: string | null
+  backgroundOnly?: boolean
+  onNavigate: (target: string) => void
 }) {
   const settings = useDispatcherSettings()
   const reminderSettings = useDispatcherReminderSettings()
   const backgroundSettings = useDispatcherBackgroundSettings()
-  const disabledCount = Object.values(settings).filter((enabled) => !enabled).length
-  const totalCount = Object.values(settings).length
+  const disabledCount = OPTIONAL_DISPATCHER_SETTING_IDS.filter(id => !settings[id]).length
+  const totalCount = OPTIONAL_DISPATCHER_SETTING_IDS.length
   const queryClient = useQueryClient()
   const backgroundStatusQuery = useQuery({
     queryKey: DISPATCHER_BACKGROUND_STATUS_QUERY_KEY,
     queryFn: () => getDispatcherBackgroundStatus(),
-    enabled: DISPATCHER_BACKGROUND_REFRESH_ENABLED && backgroundSettings.enabled,
+    enabled: backgroundOnly && DISPATCHER_BACKGROUND_REFRESH_ENABLED && backgroundSettings.enabled,
     staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
   const refreshBackgroundMutation = useMutation({
     mutationFn: () => refreshDispatcherBackgroundNow(),
@@ -4214,14 +4263,6 @@ function DispatcherSettingsPanel({
     return runProtectedSettingsChange(() => saveDispatcherReminderSettings({ ...reminderSettings, [id]: value }))
   }
 
-  const updateGroup = (group: DispatcherSettingGroup, enabled: boolean) => {
-    const nextSettings = { ...settings }
-    group.items.forEach((item) => {
-      nextSettings[item.id] = enabled
-    })
-    runProtectedSettingsChange(() => saveDispatcherSettings(nextSettings))
-  }
-
   const updateBackgroundSetting = (enabled: boolean) => {
     runProtectedSettingsChange(() => saveDispatcherBackgroundSettings({ enabled }))
   }
@@ -4234,16 +4275,16 @@ function DispatcherSettingsPanel({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
+      {!backgroundOnly ? <>
+      <div className="px-1 py-1">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <Bell className="h-5 w-5 text-slate-500" />
-              <h3 className="text-base font-semibold text-slate-900">Настраиваемые задачи диспетчера (ДЗ)</h3>
+              <h3 className="text-base font-semibold text-slate-900">Задачи диспетчера</h3>
             </div>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-              Отключение скрывает выбранный тип ДЗ из диспетчера и панели напоминаний. Системные предупреждения (СП), которые требуют
-              восстановить обязательную последовательность процесса, не отключаются и исчезают автоматически после исправления данных.
+              Отключение скрывает выбранный тип ДЗ из диспетчера и панели напоминаний. Системные правила (СП) не отключаются;
+              их задачи исчезают автоматически после исправления данных.
             </p>
             <div className="mt-2 text-xs font-semibold text-slate-500">
               Активно: {totalCount - disabledCount} из {totalCount}
@@ -4280,13 +4321,14 @@ function DispatcherSettingsPanel({
             reminderSettings={reminderSettings}
             focusTargetId={focusTargetId}
             onItemChange={updateSetting}
-            onGroupChange={(enabled) => updateGroup(group, enabled)}
             onReminderDaysChange={updateReminderDays}
+            onNavigate={onNavigate}
           />
         ))}
       </div>
 
-      <section className="rounded-md border border-sky-200 bg-sky-50/60 p-4 shadow-sm shadow-slate-200/40">
+      </> : null}
+      {backgroundOnly ? <section className="rounded-md border border-sky-200 bg-sky-50/60 p-4 shadow-sm shadow-slate-200/40">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <label className={`flex min-w-0 items-start gap-3 ${DISPATCHER_BACKGROUND_REFRESH_ENABLED ? 'cursor-pointer' : 'cursor-default'}`}>
             <input
@@ -4352,7 +4394,7 @@ function DispatcherSettingsPanel({
             Не удалось обновить коды. Проверьте соединение и повторите попытку.
           </div>
         ) : null}
-      </section>
+      </section> : null}
 
     </div>
   )
@@ -4371,25 +4413,23 @@ function DispatcherSettingsGroupCard({
   reminderSettings,
   focusTargetId,
   onItemChange,
-  onGroupChange,
   onReminderDaysChange,
+  onNavigate,
 }: {
   group: DispatcherSettingGroup
   settings: DispatcherSettings
   reminderSettings: DispatcherReminderSettings
   focusTargetId: string | null
   onItemChange: (id: DispatcherSettingId, enabled: boolean) => void
-  onGroupChange: (enabled: boolean) => void
   onReminderDaysChange: (id: DispatcherReminderSettingId, value: number) => Promise<boolean>
+  onNavigate: (target: string) => void
 }) {
-  const enabledCount = group.items.filter((item) => settings[item.id]).length
-  const allEnabled = enabledCount === group.items.length
-  const [collapsed, setCollapsed] = useState(false)
   const [expandedItemIds, setExpandedItemIds] = useState<Set<DispatcherSettingId>>(() => new Set())
 
   useEffect(() => {
-    if (group.items.some((item) => focusTargetId === `dispatcher-setting-${item.id}`)) {
-      setCollapsed(false)
+    const item = group.items.find((item) => focusTargetId === `dispatcher-setting-${item.id}`)
+    if (item) {
+      setExpandedItemIds(current => new Set([...current, item.id]))
     }
   }, [focusTargetId, group.items])
 
@@ -4403,43 +4443,16 @@ function DispatcherSettingsGroupCard({
   }
 
   return (
-    <div className="rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
-      <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-3 hover:bg-slate-50">
-        <button
-          type="button"
-          className="flex min-w-0 flex-1 items-start justify-between gap-4 text-left"
-          onClick={() => setCollapsed((current) => !current)}
-          aria-expanded={!collapsed}
-        >
-          <span className="min-w-0">
-            <span className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-semibold text-slate-900">{group.title}</span>
-              <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-500">
-                {enabledCount}/{group.items.length}
-              </span>
-            </span>
-            <span className="mt-1 block text-xs leading-5 text-slate-500">{group.description}</span>
-          </span>
-          <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-slate-500 transition ${collapsed ? '' : 'rotate-180'}`} />
-        </button>
-        <button
-          type="button"
-          className="shrink-0 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-          onClick={() => onGroupChange(!allEnabled)}
-        >
-          {allEnabled ? 'Отключить все' : 'Включить все'}
-        </button>
-      </div>
-      {!collapsed ? <div className="divide-y divide-slate-100">
+    <div className="rounded-lg border border-slate-200 bg-white">
+      <div className="divide-y divide-slate-100">
         {group.items.map((item) => {
           const enabled = settings[item.id]
           const expanded = expandedItemIds.has(item.id)
           const help = DISPATCHER_SETTING_HELP[item.id]
           const actionHelp = DISPATCHER_SETTING_ACTION_HELP[item.id]
           const isReminder = isDispatcherReminderSettingId(item.id)
-          const linkedSaveCheckIds = getSaveCheckSettingIdsForDispatcher(item.id)
           return (
-            <div id={`dispatcher-setting-${item.id}`} key={item.id} className={`scroll-mt-24 px-4 py-3 transition-colors ${expanded ? 'bg-slate-50/80' : 'hover:bg-slate-50/60'}`}>
+            <div id={`dispatcher-setting-${item.id}`} key={item.id} className={`scroll-mt-48 px-4 py-3 transition-colors ${expanded ? 'bg-slate-50/80' : 'hover:bg-slate-50/60'}`}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                 <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3">
                   <input
@@ -4455,17 +4468,12 @@ function DispatcherSettingsGroupCard({
                         {getDispatcherSettingCode(item.id)}
                       </span>
                     </span>
-                    <span className={`mt-1 block text-sm leading-5 ${enabled ? 'text-slate-600' : 'text-slate-400'}`}>{item.description}</span>
+                    <span className={`mt-1 block text-xs leading-5 ${enabled ? 'text-slate-600' : 'text-slate-400'}`}>{item.description}</span>
                     <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                       <span className={`inline-flex items-center gap-1.5 font-semibold ${enabled ? 'text-emerald-700' : 'text-slate-400'}`}>
                         <span className={`h-1.5 w-1.5 rounded-full ${enabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
                         {enabled ? 'Включена' : 'Выключена'}
                       </span>
-                      {linkedSaveCheckIds.length > 0 ? (
-                        <span className={enabled ? 'text-violet-700' : 'text-slate-400'}>
-                          Связанные проверки: {formatLinkedSaveCheckCodes(linkedSaveCheckIds)}
-                        </span>
-                      ) : null}
                     </span>
                   </span>
                 </label>
@@ -4526,17 +4534,16 @@ function DispatcherSettingsGroupCard({
                     <dt className="font-semibold text-slate-800">Если выключить</dt>
                     <dd>
                       Этот тип задач перестанет показываться в диспетчере и счетчике. Данные журнала и принятые исключения не изменятся.
-                      {linkedSaveCheckIds.length > 0
-                        ? ` Связанные проверки ${formatLinkedSaveCheckCodes(linkedSaveCheckIds)} продолжат независимо блокировать некорректное сохранение, пока они включены.`
-                        : ''}
+                      {' '}Связанные системные правила продолжают действовать независимо от этой настройки.
                     </dd>
                   </div>
                 </dl>
               ) : null}
+              <RuleConnections code={getDispatcherSettingCode(item.id)} expanded={expanded} onNavigate={onNavigate} />
             </div>
           )
         })}
-      </div> : null}
+      </div>
     </div>
   )
 }
@@ -4587,39 +4594,37 @@ function DispatcherReminderDaysInput({
 function SaveChecksSettingsPanel({
   runProtectedSettingsChange,
   focusTargetId,
+  onNavigate,
 }: {
   runProtectedSettingsChange: ProtectedSettingsChange
   focusTargetId: string | null
+  onNavigate: (target: string) => void
 }) {
   const settings = useSaveCheckSettings()
   const confirmAction = useConfirmAction()
-  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set())
   const [expandedItemIds, setExpandedItemIds] = useState<Set<SaveCheckSettingId>>(() => new Set())
-  const enabledCount = Object.values(settings).filter(Boolean).length
-  const totalCount = Object.values(settings).length
+  const visibleIds = SAVE_CHECK_SETTING_GROUPS.flatMap(group => group.items.map(item => item.id))
+  const enabledCount = visibleIds.filter(id => settings[id]).length
+  const totalCount = visibleIds.length
 
   useEffect(() => {
     const focusedGroup = SAVE_CHECK_SETTING_GROUPS.find((group) =>
       group.items.some((item) => focusTargetId === `save-check-setting-${item.id}`),
     )
     if (!focusedGroup) return
-    setCollapsedGroupIds((current) => {
-      if (!current.has(focusedGroup.id)) return current
-      const next = new Set(current)
-      next.delete(focusedGroup.id)
-      return next
-    })
+    const focusedItem = focusedGroup.items.find(item => focusTargetId === `save-check-setting-${item.id}`)
+    if (focusedItem) setExpandedItemIds(current => new Set([...current, focusedItem.id]))
   }, [focusTargetId])
 
   async function confirmDangerousSaveChecksChange(enabled: boolean) {
     return confirmAction({
       title: 'Вы уверены?',
-      itemName: enabled ? 'Включить опасные проверки формы стыка' : 'Отключить опасные проверки формы стыка',
+      itemName: enabled ? 'Включить шаблон имени обычного стыка' : 'Отключить шаблон имени обычного стыка',
       description:
-        'Эти проверки защищают ручное имя обычного стыка, историю контроля и системные имена стыков. Их отключают только в проектах, где заказчик сам ведет нумерацию, контроль и документы, а система используется почти как сварочный журнал.',
+        'Настройка определяет формат имени обычного стыка. Защита реальных системных цепочек и истории остается обязательной.',
       warning: enabled
         ? 'После включения система снова начнет блокировать нарушения этих правил при сохранении формы стыка.'
-        : 'После отключения пользователь сможет сохранить данные, которые раньше считались опасными для ручной нумерации, цепочек или истории ЛНК/ПСТО.',
+        : 'Можно использовать нумерацию заказчика. СП-09 и СП-12 продолжают действовать.',
       confirmLabel: enabled ? 'Да, включить' : 'Да, отключить',
       cancelLabel: 'Отмена',
       tone: 'danger',
@@ -4645,37 +4650,9 @@ function SaveChecksSettingsPanel({
 
     await runProtectedSettingsChange(() =>
       saveSaveCheckSettings(Object.fromEntries(
-        Object.keys(settings).map((id) => [id, isRequiredSaveCheckSetting(id as SaveCheckSettingId) || enabled]),
+        Object.keys(settings).map((id) => [id, visibleIds.includes(id as SaveCheckSettingId) ? enabled : settings[id as SaveCheckSettingId]]),
       ) as SaveCheckSettings),
     )
-  }
-
-  async function updateGroupSettings(groupItems: { id: SaveCheckSettingId }[], enabled: boolean) {
-    const groupIds = groupItems.map((item) => item.id)
-    const changesDangerousCheck = groupIds.some((id) => DANGEROUS_SAVE_CHECK_SETTING_IDS.has(id) && settings[id] !== enabled)
-    if (changesDangerousCheck) {
-      const confirmed = await confirmDangerousSaveChecksChange(enabled)
-      if (!confirmed) return
-    }
-
-    await runProtectedSettingsChange(() => {
-      saveSaveCheckSettings({
-        ...settings,
-        ...Object.fromEntries(groupIds.map((id) => [id, isRequiredSaveCheckSetting(id) || enabled])),
-      } as SaveCheckSettings)
-    })
-  }
-
-  function toggleGroup(groupId: string) {
-    setCollapsedGroupIds((current) => {
-      const next = new Set(current)
-      if (next.has(groupId)) {
-        next.delete(groupId)
-      } else {
-        next.add(groupId)
-      }
-      return next
-    })
   }
 
   function toggleDetails(id: SaveCheckSettingId) {
@@ -4689,17 +4666,15 @@ function SaveChecksSettingsPanel({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-md border border-slate-300 bg-slate-100/80 p-4 shadow-sm shadow-slate-200/60">
+      <div className="px-1 py-1">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-slate-500" />
-              <h3 className="text-base font-semibold text-slate-900">Проверки при сохранении</h3>
+              <h3 className="text-base font-semibold text-slate-900">Защиты ввода</h3>
             </div>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-              Эти правила блокируют некорректное сохранение в форме стыка, результатах ЛНК/ПСТО и соответствующих массовых операциях. Импорт,
-              замена и массовое заполнение проверяют итоговую запись после объединения новых и сохраненных данных. Диспетчер настраивается
-              отдельно и независимо проверяет уже существующие строки. Проверки формата дат обязательны и не отключаются.
+              Отключаемые организационные ограничения. Их отключение не отменяет СП и не разрешает недопустимые даты,
+              результаты, допуски или разрушение истории. Формы и импорт проверяют итоговую запись с сохраненными данными.
             </p>
             <div className="mt-2 text-xs font-semibold text-slate-500">
               Включено: {enabledCount} из {totalCount}
@@ -4729,68 +4704,19 @@ function SaveChecksSettingsPanel({
       </div>
 
       {SAVE_CHECK_SETTING_GROUPS.map((group) => {
-        const collapsed = collapsedGroupIds.has(group.id)
-        const groupEnabledCount = group.items.filter((item) => settings[item.id]).length
-        const configurableGroupItems = group.items.filter((item) => !isRequiredSaveCheckSetting(item.id))
-        const isGroupFullyEnabled = groupEnabledCount === group.items.length
-        const isGroupFullyDisabled = configurableGroupItems.every((item) => !settings[item.id])
-
         return (
-          <section key={group.id} className="rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
-            <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 hover:bg-slate-50 lg:flex-row lg:items-start lg:justify-between">
-              <button
-                type="button"
-                className="flex min-w-0 flex-1 items-start justify-between gap-4 text-left"
-                onClick={() => toggleGroup(group.id)}
-                aria-expanded={!collapsed}
-              >
-                <span className="min-w-0">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold text-slate-900">{group.title}</span>
-                    <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-500">
-                      {groupEnabledCount}/{group.items.length}
-                    </span>
-                  </span>
-                  <span className="mt-1 block text-xs leading-5 text-slate-500">{group.description}</span>
-                </span>
-                <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-slate-500 transition ${collapsed ? '' : 'rotate-180'}`} />
-              </button>
-              <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
-                <button
-                  type="button"
-                  disabled={isGroupFullyEnabled}
-                  className="inline-flex items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
-                  onClick={() => {
-                    void updateGroupSettings(group.items, true)
-                  }}
-                >
-                  Включить раздел
-                </button>
-                <button
-                  type="button"
-                  disabled={isGroupFullyDisabled}
-                  className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
-                  onClick={() => {
-                    void updateGroupSettings(group.items, false)
-                  }}
-                >
-                  Отключить раздел
-                </button>
-              </div>
-            </div>
-            {!collapsed ? (
+          <section key={group.id} className="rounded-lg border border-slate-200 bg-white">
               <div className="divide-y divide-slate-100">
                 {group.items.map((item) => {
                   const enabled = settings[item.id]
                   const required = isRequiredSaveCheckSetting(item.id)
                   const expanded = expandedItemIds.has(item.id)
                   const help = SAVE_CHECK_SETTING_HELP[item.id]
-                  const linkedDispatcherIds = getDispatcherSettingIdsForSaveCheck(item.id)
                   return (
                     <div
                       id={`save-check-setting-${item.id}`}
                       key={item.id}
-                      className={`scroll-mt-24 px-4 py-3 transition-colors ${expanded ? 'bg-slate-50/80' : 'hover:bg-slate-50/60'}`}
+                      className={`scroll-mt-48 px-4 py-3 transition-colors ${expanded ? 'bg-slate-50/80' : 'hover:bg-slate-50/60'}`}
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                         <label className={`flex min-w-0 flex-1 items-start gap-3 ${required ? 'cursor-default' : 'cursor-pointer'}`}>
@@ -4815,17 +4741,12 @@ function SaveChecksSettingsPanel({
                                 </span>
                               ) : null}
                             </span>
-                            <span className={`mt-1 block text-sm leading-5 ${enabled ? 'text-slate-600' : 'text-slate-400'}`}>{item.description}</span>
+                            <span className={`mt-1 block text-xs leading-5 ${enabled ? 'text-slate-600' : 'text-slate-400'}`}>{item.description}</span>
                             <span className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                               <span className={`inline-flex items-center gap-1.5 font-semibold ${enabled ? 'text-emerald-700' : 'text-slate-400'}`}>
                                 <span className={`h-1.5 w-1.5 rounded-full ${enabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
                                 {required ? 'Всегда включена' : enabled ? 'Включена' : 'Выключена'}
                               </span>
-                              {linkedDispatcherIds.length > 0 ? (
-                                <span className={enabled ? 'text-violet-700' : 'text-slate-400'}>
-                                  Связанные задачи: {linkedDispatcherIds.map(getDispatcherSettingCode).join(', ')}
-                                </span>
-                              ) : null}
                             </span>
                           </span>
                         </label>
@@ -4859,32 +4780,19 @@ function SaveChecksSettingsPanel({
                               {required
                                 ? 'База хранит это поле как календарную дату. Произвольный текст нельзя сохранить надежно, поэтому правило действует для формы, импорта и всех специальных операций.'
                                 : <>Эта причина перестанет блокировать сохранение в тех операциях, где применяется ЗВ.
-                                  {linkedDispatcherIds.length > 0
-                                    ? ` Связанные задачи ${linkedDispatcherIds.map(getDispatcherSettingCode).join(', ')} продолжат независимо проверять уже сохраненные данные, пока они включены в диспетчере.`
-                                    : ' Автоматические системные расчеты и остальные включенные проверки продолжат работать.'}</>}
+                                  {' '}Связанные системные правила продолжают действовать независимо от этой настройки.</>}
                             </dd>
                           </div>
                         </dl>
                       ) : null}
+                      <RuleConnections code={getSaveCheckSettingCode(item.id)} expanded={expanded} onNavigate={onNavigate} />
                     </div>
                   )
                 })}
               </div>
-            ) : null}
           </section>
         )
       })}
     </div>
   )
-}
-
-function formatLinkedSaveCheckCodes(ids: SaveCheckSettingId[]) {
-  const codes = ids.map(getSaveCheckSettingCode)
-  if (codes.length === 0) return ''
-  const numbers = codes.map((code) => Number(code.match(/\d+/)?.[0] ?? Number.NaN))
-  const isContinuous = numbers.every((value, index) => index === 0 || value === numbers[index - 1] + 1)
-  if (codes.length > 2 && isContinuous) {
-    return `${codes[0]}…${codes.at(-1)}`
-  }
-  return codes.join(', ')
 }

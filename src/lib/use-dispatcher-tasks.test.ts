@@ -16,7 +16,7 @@ describe('buildVisibleDispatcherTasks', () => {
     expect(enabledTasks.repeatedJointTasks[0]).toMatchObject({
       kind: 'line-consistency',
       fieldKey: 'weldControlPercent',
-      systemWarningCode: 'СП-02',
+      systemWarningCode: 'СП-01',
     })
 
     const disabledTasks = buildTasks({
@@ -62,7 +62,7 @@ describe('buildVisibleDispatcherTasks', () => {
       dismissedRepeatedJointTaskKeys: new Set([warning!.key]),
     })
     expect(guarded.repeatedJointTasks).toContainEqual(
-      expect.objectContaining({ key: warning!.key, systemWarningCode: 'СП-01' }),
+      expect.objectContaining({ key: warning!.key, systemWarningCode: 'СП-06' }),
     )
   })
 
@@ -81,7 +81,7 @@ describe('buildVisibleDispatcherTasks', () => {
       },
     })
 
-    expect(tasks.repeatedJointTasks.some(isSystemDispatcherWarningTask)).toBe(false)
+    expect(tasks.repeatedJointTasks.some(task => task.kind === 'check' && task.systemWarningCode === 'СП-06')).toBe(false)
   })
 
   it('builds compact row id index for table highlighting', () => {
@@ -108,7 +108,7 @@ describe('buildVisibleDispatcherTasks', () => {
     )
 
     expect(tasks.repeatedJointTasks.filter(task => task.kind === 'rename')).toHaveLength(1)
-    expect(getDispatcherTaskRowIds(tasks.repeatedJointTasks)).toEqual(new Set([2, 3]))
+    expect(getDispatcherTaskRowIds(tasks.repeatedJointTasks.filter(task => task.kind === 'rename'))).toEqual(new Set([2, 3]))
   })
 
   it('can skip repeated row tasks when a page only needs reminder tasks', () => {
@@ -155,10 +155,10 @@ describe('buildVisibleDispatcherTasks', () => {
       },
     )
 
-    expect(disabledTasks.repeatedJointTasks).toEqual([])
+    expect(disabledTasks.repeatedJointTasks).toEqual(enabledTasks.repeatedJointTasks)
   })
 
-  it('controls the complete stamp audit only with the dispatcher setting', () => {
+  it('keeps the qualification audit mandatory regardless of the former setting', () => {
     const rows = [
       row({
         id: 1,
@@ -174,8 +174,8 @@ describe('buildVisibleDispatcherTasks', () => {
     }
 
     const enabled = buildTasks(dispatcherSettings, { rows, welderStamps })
-    expect(enabled.repeatedJointTasks).toHaveLength(1)
-    expect(enabled.repeatedJointTasks[0]).toMatchObject({ reason: 'проверить клеймо' })
+    expect(enabled.repeatedJointTasks.filter(task => task.kind === 'check' && task.reason === 'проверить клеймо')).toHaveLength(1)
+    expect(enabled.repeatedJointTasks.filter(task => task.kind === 'check' && task.reason === 'проверить клеймо')[0]).toMatchObject({ reason: 'проверить клеймо' })
 
     const disabled = buildTasks(
       {
@@ -184,7 +184,7 @@ describe('buildVisibleDispatcherTasks', () => {
       },
       { rows, welderStamps },
     )
-    expect(disabled.repeatedJointTasks).toEqual([])
+    expect(disabled.repeatedJointTasks.filter(task => task.kind === 'check' && task.reason === 'проверить клеймо')).toEqual(enabled.repeatedJointTasks.filter(task => task.kind === 'check' && task.reason === 'проверить клеймо'))
   })
 
   it('keeps Latin and Cyrillic material group codes distinct in DZ-18', () => {
@@ -207,8 +207,8 @@ describe('buildVisibleDispatcherTasks', () => {
       },
     )
 
-    expect(tasks.repeatedJointTasks).toHaveLength(1)
-    expect(tasks.repeatedJointTasks[0]).toMatchObject({
+    expect(tasks.repeatedJointTasks.filter(task => task.kind === 'check' && task.reason === 'проверить клеймо')).toHaveLength(1)
+    expect(tasks.repeatedJointTasks.filter(task => task.kind === 'check' && task.reason === 'проверить клеймо')[0]).toMatchObject({
       reason: 'проверить клеймо',
       details: expect.stringContaining('группу материалов M01'),
     })
@@ -234,7 +234,7 @@ describe('buildVisibleDispatcherTasks', () => {
       },
     )
 
-    expect(tasks.repeatedJointTasks).toEqual([])
+    expect(tasks.repeatedJointTasks.filter(task => task.kind === 'check' && task.reason === 'проверить клеймо')).toEqual([])
   })
 
   it('does not create DZ-18 only because the stamp card was archived after the weld date', () => {
@@ -264,7 +264,7 @@ describe('buildVisibleDispatcherTasks', () => {
       },
     )
 
-    expect(tasks.repeatedJointTasks).toEqual([])
+    expect(tasks.repeatedJointTasks.filter(task => task.kind === 'check' && task.reason === 'проверить клеймо')).toEqual([])
   })
 
   it('keeps real permit errors visible after the stamp card is archived', () => {
@@ -308,12 +308,12 @@ describe('buildVisibleDispatcherTasks', () => {
       },
     )
 
-    expect(tasks.repeatedJointTasks).toEqual([
+    expect(tasks.repeatedJointTasks.filter(task => task.kind === 'check' && task.reason === 'проверить клеймо')).toEqual([
       expect.objectContaining({
         details: expect.stringContaining('не имеет допуска на диаметр 57'),
       }),
     ])
-    expect(tasks.repeatedJointTasks[0]).not.toEqual(
+    expect(tasks.repeatedJointTasks.filter(task => task.kind === 'check' && task.reason === 'проверить клеймо')[0]).not.toEqual(
       expect.objectContaining({
         details: expect.stringContaining('находится в архиве'),
       }),
@@ -375,7 +375,7 @@ describe('buildVisibleDispatcherTasks', () => {
       },
     )
 
-    expect(tasks.repeatedJointTasks).toEqual([])
+    expect(tasks.repeatedJointTasks.filter(task => task.kind === 'check' && task.reason === 'проверить клеймо')).toEqual([])
   })
 
   it('does not create DZ-18 when one stamp own RAD and RD ranges cover D and T separately', () => {
@@ -436,7 +436,7 @@ describe('buildVisibleDispatcherTasks', () => {
       },
     )
 
-    expect(tasks.repeatedJointTasks).toEqual([])
+    expect(tasks.repeatedJointTasks.filter(task => task.kind === 'check' && task.reason === 'проверить клеймо')).toEqual([])
   })
 
   it('does not create DZ-18 for the larger base pipe of an angular connection', () => {
@@ -481,7 +481,7 @@ describe('buildVisibleDispatcherTasks', () => {
       },
     )
 
-    expect(tasks.repeatedJointTasks).toEqual([])
+    expect(tasks.repeatedJointTasks.filter(task => task.kind === 'check' && task.reason === 'проверить клеймо')).toEqual([])
   })
 
   it('does not create DZ-18 when Tmin is covered for equal angular diameters', () => {
@@ -526,7 +526,7 @@ describe('buildVisibleDispatcherTasks', () => {
       },
     )
 
-    expect(tasks.repeatedJointTasks).toEqual([])
+    expect(tasks.repeatedJointTasks.filter(task => task.kind === 'check' && task.reason === 'проверить клеймо')).toEqual([])
   })
 
   it('does not create DZ-18 when either diameter and either thickness are covered', () => {
@@ -571,7 +571,7 @@ describe('buildVisibleDispatcherTasks', () => {
       },
     )
 
-    expect(tasks.repeatedJointTasks).toEqual([])
+    expect(tasks.repeatedJointTasks.filter(task => task.kind === 'check' && task.reason === 'проверить клеймо')).toEqual([])
   })
 })
 

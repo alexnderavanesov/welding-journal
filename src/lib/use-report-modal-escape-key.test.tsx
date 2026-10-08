@@ -53,6 +53,7 @@ describe('useReportModalEscapeKey', () => {
     setContextActionMenuOpen(false)
     document.querySelectorAll('[data-confirm-action-dialog="true"]').forEach((node) => node.remove())
     document.querySelectorAll('[data-modal-dialog="true"]').forEach((node) => node.remove())
+    document.querySelectorAll('[data-workflow-result-tooltip="true"]').forEach((node) => node.remove())
   })
 
   it('closes the RK exposure editor on Escape', () => {
@@ -89,6 +90,19 @@ describe('useReportModalEscapeKey', () => {
     pressEscape()
 
     expect(onCloseRkExposureModal).not.toHaveBeenCalled()
+  })
+
+  it('leaves the first Escape for a result-restriction tooltip', () => {
+    const onCloseRkExposureModal = vi.fn()
+    const tooltip = document.createElement('span')
+    tooltip.dataset.workflowResultTooltip = 'true'
+    document.body.append(tooltip)
+    renderHook(() => useReportModalEscapeKey(createOptions({ onCloseRkExposureModal })))
+    pressEscape()
+    expect(onCloseRkExposureModal).not.toHaveBeenCalled()
+    tooltip.remove()
+    pressEscape()
+    expect(onCloseRkExposureModal).toHaveBeenCalledOnce()
   })
 
   it('leaves the first Escape for a context menu opened above the editor', () => {

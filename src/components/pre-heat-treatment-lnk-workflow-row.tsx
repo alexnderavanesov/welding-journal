@@ -10,7 +10,6 @@ import {
   PRE_HEAT_TREATMENT_LNK_METHODS,
   type PreHeatTreatmentLnkMethodCode,
 } from '@/lib/lnk-control-stage'
-import type { SaveCheckSettings } from '@/lib/save-check-settings'
 
 export type PreHeatTreatmentLnkWorkflowRowMode = 'request' | 'result'
 
@@ -22,7 +21,6 @@ type PreHeatTreatmentLnkWorkflowRowProps = {
   selected: boolean
   disabledReason: string
   rowResult: string
-  saveCheckSettings: SaveCheckSettings
   onToggle: (rowId: number) => void
   onResultChange: (rowId: number, result: string) => void
   onOpenContextMenu: (event: MouseEvent<HTMLElement>, row: WeldRow) => void
@@ -36,7 +34,6 @@ function PreHeatTreatmentLnkWorkflowRowComponent({
   selected,
   disabledReason,
   rowResult,
-  saveCheckSettings,
   onToggle,
   onResultChange,
   onOpenContextMenu,
@@ -167,7 +164,6 @@ function PreHeatTreatmentLnkWorkflowRowComponent({
             methodCode={resultMethod}
             row={row}
             rowResult={rowResult}
-            saveCheckSettings={saveCheckSettings}
             compact
             onSetRowResult={onResultChange}
           />
@@ -197,7 +193,6 @@ export const PreHeatTreatmentLnkWorkflowRow = memo(
     previous.selected === next.selected &&
     previous.disabledReason === next.disabledReason &&
     previous.rowResult === next.rowResult &&
-    previous.saveCheckSettings === next.saveCheckSettings &&
     previous.onToggle === next.onToggle &&
     previous.onResultChange === next.onResultChange &&
     previous.onOpenContextMenu === next.onOpenContextMenu

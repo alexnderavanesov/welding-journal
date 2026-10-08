@@ -15,6 +15,12 @@ import {
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
 describe('pre-heat-treatment control updates', () => {
+  it('warns before deleting the last rejected pre-TO result and allows deletion after restoration', () => {
+    const current = control({ result: 'ремонт' })
+    const row = makeRow({ officiality: 'неофициальный', preHeatTreatmentControls: [current], pstoDate: null, pstoResult: null })
+    expect(getPreHeatTreatmentResultRemovalBlockReason(row, current)).toContain('последний негодный результат')
+    expect(getPreHeatTreatmentResultRemovalBlockReason({ ...row, officiality: null }, current)).toBe('')
+  })
   it('requires separate officiality restoration for both entry and correction of a good pre-TO result', () => {
     const current = control({ result: 'ремонт' })
     const row = makeRow({ officiality: 'неофициальный', preHeatTreatmentControls: [current], pstoDate: null, pstoResult: null })
@@ -194,12 +200,12 @@ describe('pre-heat-treatment control updates', () => {
       row,
       methodCode: 'ВИК',
       controlDate: '2026-08-05',
-      result: 'вырез',
+      result: 'ремонт',
       conclusionName: 'ЗНК-ВИК-1',
       defectDescription: 'Трещина',
     })).toEqual(expect.objectContaining({
       method: 'ВИК',
-      result: 'вырез',
+      result: 'ремонт',
       conclusionDate: '2026-08-05',
       conclusionName: 'ЗНК-ВИК-1',
       defectDescription: null,
@@ -274,15 +280,16 @@ describe('pre-heat-treatment control updates', () => {
   })
 
   it('preserves a manual defect between rejected pre-TO results and replaces it for a good result', () => {
-    const current = control({ result: 'ремонт', defectDescription: 'Несплошность 8 мм' })
-    const row = makeRow({ pstoDate: null, preHeatTreatmentControls: [current] })
+    // Surface methods cannot switch to a cut: use an actual volumetric method.
+    const current = control({ id: 3, method: 'УЗК', result: 'ремонт', defectDescription: 'Несплошность 8 мм' })
+    const row = makeRow({ pstoDate: null, preHeatTreatmentControls: [control(), control({ id: 2, method: 'ПВК' }), current] })
 
     const cut = buildPreHeatTreatmentResultCorrectionWrite({
       row,
       control: current,
       controlDate: '2026-08-06',
       result: 'вырез',
-      conclusionName: 'ЗНК-ВИК-вырез',
+      conclusionName: 'ЗНК-УЗК-вырез',
     })
     expect(cut.defectDescription).toBe('Несплошность 8 мм')
 
@@ -291,7 +298,7 @@ describe('pre-heat-treatment control updates', () => {
       control: cut as typeof current,
       controlDate: '2026-08-06',
       result: 'годен',
-      conclusionName: 'ЗНК-ВИК-годен',
+      conclusionName: 'ЗНК-УЗК-годен',
     })
     expect(good.defectDescription).toBe('ДНО')
   })
@@ -333,9 +340,23 @@ describe('pre-heat-treatment control updates', () => {
       row: makeRow({ pstoRequest: 'Заявка ПСТО', preHeatTreatmentControls: [current] }),
       control: current,
       controlDate: '2026-08-06',
-      result: 'вырез',
+      result: 'ремонт',
       conclusionName: 'ЗНК-ВИК-исправлено',
     })).toThrow('последующие этапы ПСТО/ТВМТ')
+  })
+
+  it.each(['ВИК', 'ПВК'])('enforces SP-05 on %s pre-TO create and correction', method => {
+    const current = control({ id: 3, method, result: 'ожидает НК', conclusionDate: null, conclusionName: null })
+    const row = makeRow({ d1: 57, pstoDate: null,
+      preHeatTreatmentControls: [...(method === 'ПВК' ? [control()] : []), current] })
+    expect(() => buildPreHeatTreatmentResultWrite({ row, methodCode: method, result: 'вырез',
+      controlDate: '2026-08-05', conclusionName: 'ЗНК-1' })).toThrow('СП-07')
+    expect(() => buildPreHeatTreatmentResultCorrectionWrite({ row, control: current, result: 'вырез',
+      controlDate: '2026-08-05', conclusionName: 'ЗНК-1' })).toThrow('СП-07')
+    expect(buildPreHeatTreatmentResultWrite({ row, methodCode: method, result: 'ремонт',
+      controlDate: '2026-08-05', conclusionName: 'ЗНК-1' }).result).toBe('ремонт')
+    expect(() => buildPreHeatTreatmentResultWrite({ row: { ...row, joint: 'F1R2' }, methodCode: method,
+      result: 'ремонт', controlDate: '2026-08-05', conclusionName: 'ЗНК-1' })).toThrow('Третий ремонт')
   })
 
   it('does not remove a pre-TO result from the middle of the chronology', () => {

@@ -5,7 +5,6 @@ type SaveCheckDispatcherLink = readonly [SaveCheckSettingId, DispatcherSettingId
 
 export const SAVE_CHECK_DISPATCHER_LINKS = [
   ['officialRegistry', 'check-welder-stamp'],
-  ['officialArchive', 'check-welder-stamp'],
   ['officialNaksDate', 'check-welder-stamp'],
   ['officialSuspension', 'check-welder-stamp'],
   ['officialWeldingMethod', 'check-welder-stamp'],
@@ -26,13 +25,11 @@ export const SAVE_CHECK_DISPATCHER_LINKS = [
   ['lnkResultVikDateBeforeOther', 'check-lnk-vik-date-order'],
   ['lnkResultVikRequiredBeforeOther', 'check-lnk-vik-required'],
   ['lnkResultConclusionRequired', 'check-lnk-result-completeness'],
-  ['lnkResultRepairRules', 'check-repair-diameter'],
   ['pstoResultDateRequired', 'check-psto-result-completeness'],
   ['pstoResultDateFormat', 'check-psto-request-date-order'],
   ['pstoResultDateAfterWeldDate', 'check-psto-request-date-order'],
   ['pstoResultRequestDateOrder', 'check-psto-request-date-order'],
   ['pstoResultDiagramRequired', 'check-psto-result-completeness'],
-  ['manualJointName', 'check-joint-core-data'],
   ['controlHistoryProtection', 'check-control-history'],
 ] as const satisfies readonly SaveCheckDispatcherLink[]
 

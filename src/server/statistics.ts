@@ -139,7 +139,7 @@ export const getStatisticsServerResult = createServerFn({ method: 'POST' })
   .handler(async ({ data }): Promise<StatisticsServerResult> => {
     await assertSecurityScope('entry')
     return getOrComputeDerivedCalculation(
-      buildDerivedCalculationCacheKey('statistics:v31', data),
+      buildDerivedCalculationCacheKey('statistics:v32', data),
       () => computeStatisticsServerResult(data),
     )
   })

@@ -9,6 +9,7 @@ import { buildProgramRepairTasks } from './line-program-repair-requirements'
 import { normalizeJointChainPart, parseJointChainName, parseRepeatedJointName } from './joint-chain'
 import { loadSystemIndexSettings, type SystemIndexSettings } from './system-index-settings'
 import { buildChainActualityCheckTasks } from './chain-actuality-check'
+import { getLnkResultRuleIssues } from './lnk-result-policy'
 
 export function buildProgramIntegrityTasks(rows: readonly WeldRow[], settings: SystemIndexSettings = loadSystemIndexSettings()): RepeatedJointCheckTask[] {
   const topology = buildLineProgramTopology(rows, false, settings)
@@ -21,7 +22,7 @@ export function buildProgramIntegrityTasks(rows: readonly WeldRow[], settings: S
     const details = messages.get(row.id)
     return details ? [{ kind: 'check' as const, key: `program-integrity:${row.id}`, row, sourceRow: row,
       sourceJoint: String(row.joint ?? ''), targetJoint: '', baseJoint: parseRepeatedJointName(String(row.joint ?? ''), settings).base,
-      suffix: 'R' as const, systemWarningCode: 'СП-04' as const,
+      suffix: 'R' as const, systemWarningCode: 'СП-09' as const,
       ...(row.programChainState?.replacedByCoil ? { coilRestorationRootId: row.id } : {}),
       reason: 'проверить физическую цепочку', details: details.join(' ') }] : []
   })
@@ -39,6 +40,8 @@ export function getCoilRestorationBlockReason(root: WeldRow, live: readonly Weld
   if (!sides.has(1) || !sides.has(2)) return 'Недостаточно сохранённых связей обеих сторон катушки. Подтвердить отсутствие продолжений нельзя; требуется восстановление достоверной истории.'
   const byId = new Map(states.map(state => [state.weldJointId, state]))
   const branch = live.map(row => ({ ...row, finalStatus: calculateFinalStatus(row), programChainState: byId.get(row.id) }))
+  const resultIssues = branch.flatMap(row => getLnkResultRuleIssues(row, settings))
+  if (resultIssues.length) return resultIssues.map(issue => issue.message).join('\n')
   const branchIds = new Set(branch.map(row => row.id))
   const rootName = parseJointChainName(String(root.joint ?? ''), settings)
   if (lineRows.some(row => {
@@ -51,7 +54,7 @@ export function getCoilRestorationBlockReason(root: WeldRow, live: readonly Weld
     return 'Сохранились стороны катушки или их продолжения, в том числе перенесённые или неофициальные. Сначала исправьте историю этих записей.'
   }
   if (branch.some(row => programJointIdentity(row, '') !== programJointIdentity(root, ''))) return 'Часть цепочки перенесена на другую линию. Сначала восстановите целостность цепочки.'
-  if (buildChainActualityCheckTasks(branch, settings).length) return 'Сначала согласуйте актуальность исходного соединения и всей его R/W-истории по ДЗ-13. Обе команды доступны в «Картине стыка».'
+  if (buildChainActualityCheckTasks(branch, settings).length) return 'СП-09 · Сначала согласуйте актуальность исходного соединения и всей его R/W-истории. Обе команды доступны в «Картине стыка».'
   const branchById = new Map(branch.map(row => [row.id, row]))
   // Keep every ID-connected row even after a rename moves it out of the name
   // group. Names may add ambiguity checks, never remove saved chain evidence.

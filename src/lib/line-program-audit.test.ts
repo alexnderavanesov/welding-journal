@@ -34,11 +34,11 @@ describe('independent precommit counterexamples from the agreed plan', () => {
     expect(buildProgramRepairRequirements([root, repair]).get(2)?.map(item => item.method)).toEqual(['ВИК', 'УЗК'])
     const restored = { ...repair, officiality: null, revisionActuality: null }
     const restoredTasks = buildProgramRepairTasks([root, restored], new Set())
-    expect(restoredTasks.map(task => [task.row.id, task.systemWarningCode, task.values])).toEqual([[2, 'СП-03', ['УЗК']]])
+    expect(restoredTasks.map(task => [task.row.id, task.systemWarningCode, task.values])).toEqual([[2, 'СП-08', ['УЗК']]])
     const saved = parseDispatcherTaskIndexPayload(serializeDispatcherTaskIndexPayload(restoredTasks)).tasks
     const indexed = buildDispatcherTaskCodeIndexRows(saved, [root, restored])
-    expect(indexed).toEqual([{ rowId: 2, taskKey: 'code:СП-03', code: 'СП-03' }])
-    expect([...buildMergedDispatcherTaskCodes(indexed, []).allByRowId]).toEqual([[2, 'СП-03']])
+    expect(indexed).toEqual([{ rowId: 2, taskKey: 'code:СП-08', code: 'СП-08' }])
+    expect([...buildMergedDispatcherTaskCodes(indexed, []).allByRowId]).toEqual([[2, 'СП-08']])
     expect(buildProgramRepairTasks([root, { ...restored, hasUzk: 'да' }], new Set())).toEqual([])
   })
 
@@ -74,8 +74,8 @@ describe('independent precommit counterexamples from the agreed plan', () => {
     const saved = parseDispatcherTaskIndexPayload(serializeDispatcherTaskIndexPayload(tasks)).tasks
     expect(saved).toEqual(tasks)
     const indexed = buildDispatcherTaskCodeIndexRows(saved, rows)
-    expect(indexed).toEqual([1, 2].map(rowId => ({ rowId, taskKey: 'code:ДЗ-02', code: 'ДЗ-02' })))
-    expect([...buildMergedDispatcherTaskCodes(indexed, []).allByRowId]).toEqual([[1, 'ДЗ-02'], [2, 'ДЗ-02']])
+    expect(indexed).toEqual([1, 2].map(rowId => ({ rowId, taskKey: 'code:СП-01', code: 'СП-01' })))
+    expect([...buildMergedDispatcherTaskCodes(indexed, []).allByRowId]).toEqual([[1, 'СП-01'], [2, 'СП-01']])
   })
 
   it('reports incomplete physical history after both sides of a completed coil have been deleted', () => {

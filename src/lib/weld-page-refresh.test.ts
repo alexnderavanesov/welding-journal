@@ -2,6 +2,7 @@ import { type InfiniteData, QueryClient, QueryObserver } from '@tanstack/react-q
 import { describe, expect, it, vi } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldPageRequest, WeldPageResult, WeldReportKind } from '@/server/weld-contracts'
+import * as weldReadApi from '@/server/weld-read-api'
 import {
   invalidateWeldPageQueries,
   isWeldPageRefreshRequired,
@@ -10,6 +11,90 @@ import {
 } from '@/lib/weld-page-refresh'
 
 describe('consolidated weld page refresh', () => {
+  it('retains cached data and the reconciliation flag after failure, allowing an explicit retry without polling', async () => {
+    vi.useFakeTimers()
+    const queryClient = createQueryClient()
+    const queryKey = createQueryKey()
+    const cached = createInfiniteData(1, 100)
+    queryClient.setQueryData(queryKey, cached)
+    const observer = new QueryObserver(queryClient, { queryKey, staleTime: Infinity })
+    const unsubscribe = observer.subscribe(() => undefined)
+    const fetchPage = vi.spyOn(weldReadApi, 'listWeldingJournalPage')
+      .mockRejectedValueOnce(new Error('Network unavailable'))
+      .mockResolvedValue(createResult(1, 99, 99, 100))
+    try {
+      await invalidateWeldPageQueries(queryClient, { deferActiveRefresh: true })
+      await invalidateWeldPageQueries(queryClient)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(fetchPage).toHaveBeenCalledTimes(1)
+      expect(queryClient.getQueryData(queryKey)).toEqual(cached)
+      expect(isWeldPageRefreshRequired(queryClient, queryKey)).toBe(true)
+      await invalidateWeldPageQueries(queryClient)
+      expect(fetchPage).toHaveBeenCalledTimes(2)
+      expect(queryClient.getQueryData<InfiniteData<WeldPageResult>>(queryKey)?.pages[0].total).toBe(99)
+      expect(isWeldPageRefreshRequired(queryClient, queryKey)).toBe(false)
+    } finally {
+      unsubscribe()
+      queryClient.clear()
+      fetchPage.mockRestore()
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+  })
+
+  it('replaces a scheduled refresh with an immediate dispatcher refresh without a later duplicate', async () => {
+    vi.useFakeTimers()
+    const queryClient = createQueryClient()
+    const queryKey = createQueryKey()
+    queryClient.setQueryData(queryKey, createInfiniteData(1, 100))
+    const observer = new QueryObserver(queryClient, { queryKey, staleTime: Infinity })
+    const unsubscribe = observer.subscribe(() => undefined)
+    const fetchPage = vi.spyOn(weldReadApi, 'listWeldingJournalPage').mockResolvedValue(createResult(1, 100, 100, 100))
+    try {
+      await invalidateWeldPageQueries(queryClient, { deferActiveRefresh: true })
+      await invalidateWeldPageQueries(queryClient)
+      expect(fetchPage).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(fetchPage).toHaveBeenCalledTimes(1)
+      expect(isWeldPageRefreshRequired(queryClient, queryKey)).toBe(false)
+    } finally {
+      unsubscribe()
+      queryClient.clear()
+      fetchPage.mockRestore()
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps a newly scheduled mutation refresh while the immediate refresh is in flight', async () => {
+    vi.useFakeTimers()
+    const queryClient = createQueryClient()
+    const queryKey = createQueryKey()
+    queryClient.setQueryData(queryKey, createInfiniteData(1, 100))
+    const observer = new QueryObserver(queryClient, { queryKey, staleTime: Infinity })
+    const unsubscribe = observer.subscribe(() => undefined)
+    const first = createDeferred<WeldPageResult>()
+    const fetchPage = vi.spyOn(weldReadApi, 'listWeldingJournalPage')
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValue(createResult(1, 99, 99, 100))
+    try {
+      await invalidateWeldPageQueries(queryClient, { deferActiveRefresh: true })
+      const immediate = invalidateWeldPageQueries(queryClient)
+      await invalidateWeldPageQueries(queryClient, { deferActiveRefresh: true })
+      first.resolve(createResult(1, 100, 100, 100))
+      await immediate
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(fetchPage).toHaveBeenCalledTimes(2)
+      expect(queryClient.getQueryData<InfiniteData<WeldPageResult>>(queryKey)?.pages[0].total).toBe(99)
+    } finally {
+      unsubscribe()
+      queryClient.clear()
+      fetchPage.mockRestore()
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+  })
+
   it('refreshes three loaded 100-row pages with one 300-row request', async () => {
     const queryClient = createQueryClient()
     const queryKey = createQueryKey()
