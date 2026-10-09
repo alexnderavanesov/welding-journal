@@ -7,6 +7,14 @@ import { buildWeldBatchUpdatePayload, toDbInsert, WELD_BATCH_UPDATE_SET } from '
 import { getPrimaryPstoCyclePersistenceValues } from '@/server/psto-cycle-state'
 
 describe('weld persistence', () => {
+  it.each(['ТК  №12', 'ТК\u00a0№12'])('keeps exact TK identifier %s in individual and batch saves', technologyCardNumber => {
+    const previous = { id: 1, joint: 'F1', technologyCardNumber } as WeldJoint
+    const record = { ...previous, note: 'Несвязанная правка' } as WeldRow
+    expect(toDbInsert(record).technologyCardNumber).toBe(technologyCardNumber)
+    expect(buildWeldBatchUpdatePayload(record, new Map([[1, previous]]), new Date('2026-10-09T00:00:00Z')))
+      .toMatchObject({ technologyCardNumber })
+  })
+
   it.each(LNK_METHODS)('preserves incomplete $code request history on an unrelated save', (method) => {
     const previous = {
       id: 1,

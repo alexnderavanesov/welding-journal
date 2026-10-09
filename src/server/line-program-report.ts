@@ -6,7 +6,7 @@ import { buildLineProgramReport, validateProgramReportRequest, type ProgramRepor
 import { buildLineProgramDisplay } from '@/lib/line-program-display'
 import { getProgramRemovalHints, projectProgramExcess } from '@/lib/line-program-excess'
 import { summarizeLineProgram } from '@/lib/line-program-overview'
-import { loadLineProgramCalculations, toLineProgramRecord } from './line-program'
+import { mapLineProgramCalculations, toLineProgramRecord } from './line-program'
 import { assertSecurityScope } from './security-functions'
 import { buildNumberArrayMatch } from './weld-request-utils'
 import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
@@ -22,8 +22,7 @@ export const getLineProgramReport = createServerFn({ method: 'POST' })
 export async function loadLineProgramReport(tx: Pick<SystemDocumentSequenceTransaction, 'select'>, data: ProgramReportRequest) {
   const lines = data.ids.length ? await tx.select().from(linePrograms).where(buildNumberArrayMatch(linePrograms.id, data.ids)).orderBy(asc(linePrograms.projectTitle), asc(linePrograms.subtitleCode), asc(linePrograms.line), asc(linePrograms.id)) : []
   if (lines.length !== data.ids.length) throw new Error('Часть линий удалена. Обновите программу и сформируйте сводку заново.')
-  const { calculations, accepted, systemIndexSettings } = await loadLineProgramCalculations(tx, lines.map(toLineProgramRecord))
-  const result: ProgramReportLine[] = calculations.map(({ line, rows, calculations }) => {
+  const result: ProgramReportLine[] = await mapLineProgramCalculations(tx, lines.map(toLineProgramRecord), ({ line, rows, calculations }, { accepted, systemIndexSettings }) => {
     const configured = !line.configurationIssue && line.weldControlPercent != null && line.pvkControlPercent != null
     const removalHints = configured ? getProgramRemovalHints(line.id, rows, calculations, accepted) : undefined
     return { line,

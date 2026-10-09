@@ -11,6 +11,7 @@ import {
   type WeldSort,
 } from '@/server/weld-read-api'
 import type { WeldPageRequest } from '@/server/weld-contracts'
+import { splitReportQuickSearch } from '@/lib/report-quick-search'
 
 export const WELD_JOINT_PAGES_QUERY_KEY = ['weld-joint-pages'] as const
 
@@ -184,6 +185,7 @@ async function runLoadedPageRefresh({
     page: 1,
     pageSize: refreshPageSize,
     columnFilters: parsedKey.columnFilters,
+    ...(parsedKey.search ? { search: parsedKey.search } : {}),
     ...(parsedKey.sort ? { sort: parsedKey.sort } : {}),
   })
 
@@ -197,6 +199,7 @@ async function runLoadedPageRefresh({
         page,
         pageSize: refreshPageSize,
         columnFilters: parsedKey.columnFilters,
+        ...(parsedKey.search ? { search: parsedKey.search } : {}),
         ...(parsedKey.sort ? { sort: parsedKey.sort } : {}),
       })
       rows.push(...result.rows)
@@ -239,6 +242,7 @@ function getRefreshPageSize(loadedRowLimit: number): WeldPageSize {
 type ParsedWeldPageQueryKey = {
   report: WeldReportKind
   columnFilters: Record<string, string>
+  search: string
   pageSize: WeldPageSize
   sort?: WeldSort
 }
@@ -255,7 +259,7 @@ function parseWeldPageQueryKey(queryKey: QueryKey): ParsedWeldPageQueryKey | nul
   if (sort !== null && sort !== undefined && !isWeldSort(sort)) return null
   return {
     report,
-    columnFilters: columnFilters as Record<string, string>,
+    ...splitReportQuickSearch(columnFilters as Record<string, string>),
     pageSize: pageSize as WeldPageSize,
     ...(sort ? { sort } : {}),
   }

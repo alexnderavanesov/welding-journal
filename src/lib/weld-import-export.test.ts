@@ -47,6 +47,13 @@ const label = (key: string) => {
 }
 
 describe('weld import/export', () => {
+  it.each(['ТК №12', 'Техкарта №2', 'Старая карта 2004/А', 'ТК  №12', 'ТК\u00a0№12'])('preserves the full historical TK name %s through import/export', technologyCardNumber => {
+    const source = { joint: 'F1', technologyCardNumber }
+    const matrix = recordsToExportMatrix([source])
+    expect(matrix[1][matrix[0].indexOf('Номер технологической карты')]).toBe(technologyCardNumber)
+    expect(parseWorksheetRows([['Стык', 'Номер технологической карты'], ['F1', technologyCardNumber]], []).records[0].technologyCardNumber).toBe(technologyCardNumber)
+    expect(normalizeWeldInput(source).technologyCardNumber).toBe(technologyCardNumber)
+  })
   it('validates manual joint names without system suffixes', () => {
     expect(validateManualJointName('S13')).toBeNull()
     expect(validateManualJointName('F5A')).toBeNull()

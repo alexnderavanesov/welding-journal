@@ -11,6 +11,20 @@ import {
 } from '@/lib/weld-page-refresh'
 
 describe('consolidated weld page refresh', () => {
+  it.each(['weldingJournal', 'lnk', 'heatTreatment'] as const)('preserves quick search on every refreshed page of %s', async report => {
+    const queryClient = createQueryClient()
+    const queryKey = createQueryKey(report, { search: ' F001 ', line: 'L1' })
+    queryClient.setQueryData(queryKey, createInfiniteData(12, 1200))
+    const fetchPage = vi.fn(async (_report: WeldReportKind, data: WeldPageRequest) =>
+      createResult(data.page!, data.page === 1 ? 1000 : 200, 1200, data.pageSize))
+    try {
+      await refreshLoadedWeldPageQuery(queryClient, queryKey, { fetchPage })
+      expect(fetchPage.mock.calls).toEqual([1, 2].map(page => [report, {
+        page, pageSize: 1000, search: 'F001', columnFilters: { line: 'L1' },
+      }]))
+    } finally { queryClient.clear() }
+  })
+
   it('retains cached data and the reconciliation flag after failure, allowing an explicit retry without polling', async () => {
     vi.useFakeTimers()
     const queryClient = createQueryClient()

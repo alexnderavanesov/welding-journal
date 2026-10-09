@@ -1,5 +1,6 @@
 import { createLnkDialogNavigation } from '@/lib/lnk-dialog-navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { getDispatcherTaskSettingId } from '@/lib/dispatcher-settings'
 import { useQueryClient } from '@tanstack/react-query'
 import { type PreHeatTreatmentRegistryFilters } from '@/lib/pre-heat-treatment-registry'
 import { PRE_HEAT_TREATMENT_REGISTRY_PAGE_SIZE } from '@/server/weld-contracts'
@@ -315,6 +316,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     [controlProcessSettings.preHeatTreatmentLnkEnabled],
   )
   const [isDispatcherWorkspaceOpen, setIsDispatcherWorkspaceOpen] = useState(false)
+  const [areWelderTasksVisible, setAreWelderTasksVisible] = useState(true)
   const [percentageLineNavigationRequest, setPercentageLineNavigationRequest] =
     useState<PercentageLineNavigationRequest | null>(null)
   const percentageLineNavigationRequestIdRef = useRef(0)
@@ -1115,6 +1117,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     isRemoteFinalStatusContextReady
   const dispatcherTaskSnapshot = useDispatcherTaskSnapshot({
     dismissedRepeatedJointTaskKeys,
+    workspaceOpen: isDispatcherWorkspaceOpen,
+    activityEnabled: isServerPagedTab || (activeReport === 'welderStamps' && areWelderTasksVisible) || Boolean(chainRecord),
     enabled: isServerPagedTab || activeReport === 'welderStamps' || Boolean(chainRecord),
   })
   const tableDuplicateKeys = isServerPagedTab && dispatcherTaskSnapshot.data
@@ -4276,7 +4280,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         setChainRecord(null)
         setColumnFilters(buildExactJointFilters(currentRow))
         setActiveReport('weldingJournal')
-        setEditing({ record: currentRow })
+        setEditing({ record: currentRow, focusField: getDispatcherTaskSettingId(task) === 'check-technology-card' ? 'technologyCardNumber' : undefined })
       })
       return
     }
@@ -5391,7 +5395,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         : '',
     documentGenerationFinalStatusContext: remoteFinalStatusContext,
     welderStamps,
-    welderStampsRegistryProps,
+    welderStampsRegistryProps: { ...welderStampsRegistryProps, onTasksVisibilityChange: setAreWelderTasksVisible },
     weldTableProps,
     onOpenPercentageLineStampRows: openPercentageLineStampRows,
     onOpenReportRowIds: openReportRowIds,

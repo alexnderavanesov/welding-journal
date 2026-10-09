@@ -3,6 +3,8 @@ import { withE2eDatabase } from '../database'
 import { rpcName } from '../rpc'
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '../../src/lib/request-conclusion-settings'
 import { buildCurrentSystemDocumentName } from '../../src/lib/system-document-types'
+import { sampleLocalAuditResources } from '../audit-resources'
+import { auditSqlCount } from '../audit-sql'
 
 // Opt-in isolated load audit: AUDIT_REBUILD_ROWS=200 or 200000. e2e/run.ts
 // owns a fresh disposable localhost database and drops it after the run.
@@ -129,7 +131,7 @@ test.afterEach(async ({}, info) => {
   console.log(JSON.stringify({ failedLoadFactsChecked: true, completedPackets, documentCounts: counts }))
 })
 
-test('load audit: all four document kinds over real HTTP preserve first and repeat cycles', async ({ page }, info) => {
+test('load audit: all four document kinds over real HTTP preserve first and repeat cycles', async ({ page, browser }, info) => {
   test.skip(!count, 'Opt-in load run; requires a fresh disposable database')
   test.setTimeout(1_200_000)
   expect([200, 200_000]).toContain(count)
@@ -138,77 +140,92 @@ test('load audit: all four document kinds over real HTTP preserve first and repe
   const errors: string[] = [], calls: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
-  await page.goto('/settings')
-  await page.getByRole('button', { name: 'Заявки и заключения', exact: true }).click()
-  const responsePromise = page.waitForResponse(response => response.url().includes('/_serverFn/') && rpcName(response.url()).startsWith('previewSystemDocumentRebuild_'), { timeout: 240_000 })
-  const started = Date.now()
-  await page.getByRole('button', { name: 'Пересобрать системные документы по текущим правилам', exact: true }).click()
-  const response = await responsePromise
-  expect(response.ok()).toBe(true)
-  // Large responses can be evicted from Chromium's inspector body cache.
-  // Network sizes do not retain/copy the payload and still measure real HTTP.
-  const previewTransferBytes = (await response.request().sizes()).responseBodySize
-  // Durable payload bound for the fixed 200k fixture; timing is diagnostic only.
-  if (count === 200_000) expect(previewTransferBytes).toBeLessThan(20_000_000)
-  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Пересборка системных документов', exact: true }) })
-  await expect(dialog.getByRole('button', { name: 'Применить пересборку', exact: true })).toBeEnabled({ timeout: 240_000 })
-  console.log(JSON.stringify({ phase: 'four-kind preview + browser', count, milliseconds: Date.now() - started, previewTransferBytes }))
-  const before = initialFacts
-  expect(before.rows.n).toBe(count)
-  expect(before.cycles.n).toBe(count / 2)
-  expect(before.historicalFirstCycles.n).toBe(count / 2)
-  const types = definitions.map(definition => `system:${definition.storage}`).sort()
-  expect(before.positions.map(({ type, n }) => ({ type, n }))).toEqual(types.map(type => ({ type, n: count })))
-  expect(await sourcedDocumentCounts()).toEqual(types.map(type => ({ type, n: count / 200 })))
-  // Cold document-index initialization may materialize separately retained first
-  // cycles. Compare the apply transaction with its actual pre-apply checkpoint,
-  // not the state before that distinct initialization workflow.
-  initialMutation = await mutationFingerprint()
-  applyAttempted = true
-  const applying = Date.now()
-  let previews = 1, applies = 0
-  while (await dialog.isVisible()) {
-    const apply = dialog.getByRole('button', { name: 'Применить пересборку', exact: true })
-    await expect(dialog.getByText('Область пересборки', { exact: true })).toBeVisible({ timeout: 240_000 })
-    if (await apply.isEnabled()) {
-      const packetStarted = Date.now()
-      await apply.click()
-      applies += 1
-      let outcome = 'pending'
-      await expect.poll(async () => {
-        if (!await dialog.isVisible() || await dialog.getByRole('status').isVisible()) outcome = 'saved'
-        else if (await dialog.locator('.text-rose-700').isVisible()) outcome = await dialog.locator('.text-rose-700').innerText()
-        return outcome
-      }, { timeout: 240_000 }).not.toBe('pending')
-      expect(outcome).toBe('saved')
-      completedPackets += 1
-      console.log(JSON.stringify({ phase: 'packet saved', packet: applies, milliseconds: Date.now() - packetStarted }))
-      if (packetSample && completedPackets >= packetSample) break
+  const stopSampling = await sampleLocalAuditResources(browser)
+  try {
+    await page.goto('/settings')
+    await page.getByRole('button', { name: 'Заявки и заключения', exact: true }).click()
+    await page.waitForLoadState('networkidle')
+    const sqlBeforePreview = await auditSqlCount()
+    const responsePromise = page.waitForResponse(response => response.url().includes('/_serverFn/') && rpcName(response.url()).startsWith('previewSystemDocumentRebuild_'), { timeout: 240_000 })
+    const started = Date.now()
+    await page.getByRole('button', { name: 'Пересобрать системные документы по текущим правилам', exact: true }).click()
+    const response = await responsePromise
+    expect(response.ok()).toBe(true)
+    // Large responses can be evicted from Chromium's inspector body cache.
+    // Network sizes do not retain/copy the payload and still measure real HTTP.
+    const previewTransferBytes = (await response.request().sizes()).responseBodySize
+    // Durable payload bound for the fixed 200k fixture; timing is diagnostic only.
+    if (count === 200_000) expect(previewTransferBytes).toBeLessThan(20_000_000)
+    const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Пересборка системных документов', exact: true }) })
+    await expect(dialog.getByRole('button', { name: 'Применить пересборку', exact: true })).toBeEnabled({ timeout: 240_000 })
+    const previewMilliseconds = Date.now() - started
+    const sqlAfterPreview = await auditSqlCount()
+    if (sqlAfterPreview !== undefined && sqlBeforePreview !== undefined) expect(sqlAfterPreview - sqlBeforePreview).toBeLessThan(500)
+    console.log(JSON.stringify({ phase: 'four-kind preview + browser', count, milliseconds: previewMilliseconds, previewTransferBytes }))
+    const before = initialFacts
+    expect(before.rows.n).toBe(count)
+    expect(before.cycles.n).toBe(count / 2)
+    expect(before.historicalFirstCycles.n).toBe(count / 2)
+    const types = definitions.map(definition => `system:${definition.storage}`).sort()
+    expect(before.positions.map(({ type, n }) => ({ type, n }))).toEqual(types.map(type => ({ type, n: count })))
+    expect(await sourcedDocumentCounts()).toEqual(types.map(type => ({ type, n: count / 200 })))
+    // Cold document-index initialization may materialize separately retained first
+    // cycles. Compare the apply transaction with its actual pre-apply checkpoint,
+    // not the state before that distinct initialization workflow.
+    initialMutation = await mutationFingerprint()
+    applyAttempted = true
+    const applying = Date.now()
+    let previews = 1, applies = 0
+    while (await dialog.isVisible()) {
+      const apply = dialog.getByRole('button', { name: 'Применить пересборку', exact: true })
+      await expect(dialog.getByText('Область пересборки', { exact: true })).toBeVisible({ timeout: 240_000 })
+      if (await apply.isEnabled()) {
+        const packetStarted = Date.now()
+        await apply.click()
+        applies += 1
+        let outcome = 'pending'
+        await expect.poll(async () => {
+          if (!await dialog.isVisible() || await dialog.getByRole('status').isVisible()) outcome = 'saved'
+          else if (await dialog.locator('.text-rose-700').isVisible()) outcome = await dialog.locator('.text-rose-700').innerText()
+          return outcome
+        }, { timeout: 240_000 }).not.toBe('pending')
+        expect(outcome).toBe('saved')
+        completedPackets += 1
+        console.log(JSON.stringify({ phase: 'packet saved', packet: applies, milliseconds: Date.now() - packetStarted }))
+        if (packetSample && completedPackets >= packetSample) break
+      }
+      if (!await dialog.isVisible()) break
+      const next = dialog.getByRole('button', { name: 'Следующий пакет', exact: true })
+      if (!await next.count()) break
+      const nextPreview = page.waitForResponse(response => rpcName(response.url()).startsWith('previewSystemDocumentRebuild_'), { timeout: 240_000 })
+      await next.click()
+      previews += 1
+      await nextPreview
     }
-    if (!await dialog.isVisible()) break
-    const next = dialog.getByRole('button', { name: 'Следующий пакет', exact: true })
-    if (!await next.count()) break
-    const nextPreview = page.waitForResponse(response => rpcName(response.url()).startsWith('previewSystemDocumentRebuild_'), { timeout: 240_000 })
-    await next.click()
-    previews += 1
-    await nextPreview
+    console.log(JSON.stringify({ phase: 'four-kind apply + browser', count, milliseconds: Date.now() - applying }))
+    const sqlAfterApply = await auditSqlCount()
+    if (sqlAfterApply !== undefined && sqlAfterPreview !== undefined) expect(sqlAfterApply - sqlAfterPreview).toBeLessThan(300 * (previews + applies))
+    console.log(JSON.stringify({ phase: 'four-kind SQL bounds', sqlBeforePreview, sqlAfterPreview, sqlAfterApply, previews, applies }))
+    expect(await facts()).toEqual(before)
+    const documentCounts = await sourcedDocumentCounts()
+    if (packetSample) {
+      expect(completedPackets).toBe(packetSample)
+      for (const row of documentCounts) { expect(row.n).toBeGreaterThanOrEqual(count / 200); expect(row.n).toBeLessThanOrEqual(count / 100) }
+      expect(documentCounts.reduce((sum, row) => sum + row.n, 0)).toBeGreaterThan(4 * count / 200)
+      console.log(JSON.stringify({ sampleOnly: true, completedPackets, documentCounts }))
+    } else {
+      expect(documentCounts).toEqual(types.map(type => ({ type, n: count / 100 })))
+      // Each retained first-cycle document contains 100000 positions: refuse it
+      // visibly and leave its facts intact, while completing all normal packets.
+      if (count === 200_000) await expect(dialog.getByRole('alert')).toContainText('Не пересобраны из-за объёма: 4')
+    }
+    expect(calls.filter(name => name.startsWith('previewSystemDocumentRebuild_'))).toHaveLength(previews)
+    expect(calls.filter(name => name.startsWith('applySystemDocumentRebuild_'))).toHaveLength(applies)
+    expect(errors).toEqual([])
+    await page.screenshot({ path: info.outputPath('four-kind-rebuild-completed.png') })
+  } finally {
+    const resources = await stopSampling()
+    console.log(JSON.stringify({ workflow: 'four-kind rebuild sampled resources', ...resources }))
+    expect(resources.errors).toEqual([])
   }
-  console.log(JSON.stringify({ phase: 'four-kind apply + browser', count, milliseconds: Date.now() - applying }))
-  expect(await facts()).toEqual(before)
-  const documentCounts = await sourcedDocumentCounts()
-  if (packetSample) {
-    expect(completedPackets).toBe(packetSample)
-    for (const row of documentCounts) { expect(row.n).toBeGreaterThanOrEqual(count / 200); expect(row.n).toBeLessThanOrEqual(count / 100) }
-    expect(documentCounts.reduce((sum, row) => sum + row.n, 0)).toBeGreaterThan(4 * count / 200)
-    console.log(JSON.stringify({ sampleOnly: true, completedPackets, documentCounts }))
-  } else {
-    expect(documentCounts).toEqual(types.map(type => ({ type, n: count / 100 })))
-    // Each retained first-cycle document contains 100000 positions: refuse it
-    // visibly and leave its facts intact, while completing all normal packets.
-    if (count === 200_000) await expect(dialog.getByRole('alert')).toContainText('Не пересобраны из-за объёма: 4')
-  }
-  expect(calls.filter(name => name.startsWith('previewSystemDocumentRebuild_'))).toHaveLength(previews)
-  expect(calls.filter(name => name.startsWith('applySystemDocumentRebuild_'))).toHaveLength(applies)
-  expect(errors).toEqual([])
-  await page.screenshot({ path: info.outputPath('four-kind-rebuild-completed.png') })
 })

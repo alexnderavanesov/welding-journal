@@ -1,6 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import { packProgramRows } from '@/lib/line-program-row-payload'
-import { and, asc, eq, exists, ilike, or, sql } from 'drizzle-orm'
+import { and, asc, count, eq, exists, ilike, or, sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { appSettings, duplicateControls, preHeatTreatmentControls, pstoRepeatCycles, dispatcherAcceptedWarnings, linePrograms, weldJoints, type LineProgram } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -33,6 +33,7 @@ import { attachProgramRepairRequirements } from '@/lib/line-program-repair-requi
 import { attachProgramChainStates } from './line-program-chain-state'
 import { normalizeSystemIndexSettings } from '@/lib/system-index-settings'
 import { explainLineProgram, PROGRAM_EXPLANATION_LISTS, type ProgramExplanationList } from '@/lib/line-program-explanation'
+import { partitionLineProgramBatches } from './line-program-batches'
 export { lineProgramWeldWhere } from '@/server/line-program-rename'
 
 // Full journal records are fetched only for one opened line or locked mutation targets.
@@ -75,20 +76,55 @@ export async function loadProgramSystemIndexSettings(db: Pick<SystemDocumentSequ
   try { value = stored ? JSON.parse(stored.value) : undefined } catch { value = undefined }
   return normalizeSystemIndexSettings(value)
 }
-/** One batch for the visible registry page, not one set of queries for every card. */
+/** Compact complete-line batches before reading the next working set. */
 export async function loadLineProgramOverviews(db: Pick<SystemDocumentSequenceTransaction, 'select'>, programs: LineProgramRecord[]) {
-  const { calculations, accepted, systemIndexSettings } = await loadLineProgramCalculations(db, programs)
-  return calculations.map(({ line, rows, calculations }) => ({ ...line, searchStamps: [...new Set(rows.flatMap(getLineProgramOfficialStamps))], overview: summarizeLineProgram(rows, line, accepted, calculations, systemIndexSettings) }))
+  return mapLineProgramCalculations(db, programs, ({ line, rows, calculations }, { accepted, systemIndexSettings }) => ({
+    ...line, searchStamps: [...new Set(rows.flatMap(getLineProgramOfficialStamps))],
+    overview: summarizeLineProgram(rows, line, accepted, calculations, systemIndexSettings),
+  }))
 }
 
-/** Shared batched source for the registry and explicit printed reports. */
-export async function loadLineProgramCalculations(db: Pick<SystemDocumentSequenceTransaction, 'select'>, programs: LineProgramRecord[]) {
-  if (!programs.length) return { calculations: [], accepted: new Set<string>() }
-  const rows = await db.select(LINE_PROGRAM_CALCULATION_COLUMNS).from(weldJoints)
-    .innerJoin(linePrograms, sql`lower(btrim(coalesce(${weldJoints.projectTitle}, ''))) = lower(btrim(${linePrograms.projectTitle})) and lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))) = lower(btrim(${linePrograms.subtitleCode})) and lower(btrim(coalesce(${weldJoints.line}, ''))) = lower(btrim(${linePrograms.line}))`)
-    .where(buildNumberArrayMatch(linePrograms.id, programs.map(line => line.id)))
-  const attached = await attachCalculationRelations(rows as WeldRow[], db)
+const programCalculationJoin = sql`lower(btrim(coalesce(${weldJoints.projectTitle}, ''))) = lower(btrim(${linePrograms.projectTitle})) and lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))) = lower(btrim(${linePrograms.subtitleCode})) and lower(btrim(coalesce(${weldJoints.line}, ''))) = lower(btrim(${linePrograms.line}))`
+type ProgramCalculationBatch = Awaited<ReturnType<typeof loadLineProgramCalculationBatch>>
+
+/** Shared bounded source for registry and printed reports. The caller projects
+ * full calculations to compact output before the next SQL batch is materialized.
+ * Callers use one repeatable-read snapshot for counts, facts and settings. */
+export async function mapLineProgramCalculations<T>(
+  db: Pick<SystemDocumentSequenceTransaction, 'select'>,
+  programs: LineProgramRecord[],
+  project: (item: ProgramCalculationBatch['calculations'][number], context: Pick<ProgramCalculationBatch, 'accepted' | 'systemIndexSettings'>) => T,
+): Promise<T[]> {
+  if (!programs.length) return []
+  const counts = programs.length > 1 ? await db.select({ id: linePrograms.id, joints: count(weldJoints.id) })
+    .from(weldJoints).innerJoin(linePrograms, programCalculationJoin)
+    .where(buildNumberArrayMatch(linePrograms.id, programs.map(line => line.id))).groupBy(linePrograms.id) : []
+  const batches = partitionLineProgramBatches(programs, new Map(counts.map(row => [row.id, row.joints])))
   const systemIndexSettings = await loadProgramSystemIndexSettings(db)
+  const [stored] = await db.select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, PROJECT_SETTING_KEYS.controlProcesses))
+  let value: unknown
+  try { value = stored ? JSON.parse(stored.value) : undefined } catch { value = undefined }
+  const controlProcessSettings = normalizeControlProcessSettings(value)
+  // Keep the per-batch rows out of this loop's async frame: only projections
+  // survive while PostgreSQL parses/hydrates the next result set.
+  const projectBatch = async (batch: LineProgramRecord[]) => {
+    const loaded = await loadLineProgramCalculationBatch(db, batch, systemIndexSettings, controlProcessSettings)
+    return loaded.calculations.map(item => project(item, loaded))
+  }
+  const result: T[] = []
+  for (const batch of batches) for (const item of await projectBatch(batch)) result.push(item)
+  return result
+}
+
+async function loadLineProgramCalculationBatch(
+  db: Pick<SystemDocumentSequenceTransaction, 'select'>, programs: LineProgramRecord[],
+  systemIndexSettings: Awaited<ReturnType<typeof loadProgramSystemIndexSettings>>,
+  controlProcessSettings: ReturnType<typeof normalizeControlProcessSettings>,
+) {
+  const rows = await db.select(LINE_PROGRAM_CALCULATION_COLUMNS).from(weldJoints)
+    .innerJoin(linePrograms, programCalculationJoin)
+    .where(buildNumberArrayMatch(linePrograms.id, programs.map(line => line.id)))
+  const attached = await attachCalculationRelations(rows as WeldRow[], db, controlProcessSettings)
   const accepted = new Set((await loadProgramApprovals(db, attached.map(row => row.id), { includeEarlyCoil: true })).map(item => item.key))
   const groups = new Map<string, WeldRow[]>()
   for (const row of attached) {
@@ -103,17 +139,13 @@ export async function loadLineProgramCalculations(db: Pick<SystemDocumentSequenc
 }
 
 /** Summary removal hints need request/conclusion presence, loaded in batches, never per joint. */
-async function attachCalculationRelations(rows: WeldRow[], db: Pick<SystemDocumentSequenceTransaction, 'select'>) {
+async function attachCalculationRelations(rows: WeldRow[], db: Pick<SystemDocumentSequenceTransaction, 'select'>, settings: ReturnType<typeof normalizeControlProcessSettings>) {
   if (!rows.length) return rows
   await attachProgramChainStates(rows, db)
   const ids = rows.map(row => row.id)
   const pre = await db.select({ id: preHeatTreatmentControls.id, weldJointId: preHeatTreatmentControls.weldJointId, method: preHeatTreatmentControls.method, result: preHeatTreatmentControls.result, requestName: preHeatTreatmentControls.requestName, requestDate: preHeatTreatmentControls.requestDate, conclusionName: preHeatTreatmentControls.conclusionName, conclusionDate: preHeatTreatmentControls.conclusionDate }).from(preHeatTreatmentControls).where(buildNumberArrayMatch(preHeatTreatmentControls.weldJointId, ids))
   const duplicates = await db.select({ id: duplicateControls.id, weldJointId: duplicateControls.weldJointId, method: duplicateControls.method, result: duplicateControls.result, conclusion: duplicateControls.conclusion, conclusionDate: duplicateControls.conclusionDate, controlDate: duplicateControls.controlDate }).from(duplicateControls).where(buildNumberArrayMatch(duplicateControls.weldJointId, ids))
   const repeats = await db.select().from(pstoRepeatCycles).where(buildNumberArrayMatch(pstoRepeatCycles.weldJointId, ids))
-  const [stored] = await db.select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, PROJECT_SETTING_KEYS.controlProcesses))
-  let value: unknown
-  try { value = stored ? JSON.parse(stored.value) : undefined } catch { value = undefined }
-  const settings = normalizeControlProcessSettings(value)
   const byId = new Map(rows.map(row => { row.preHeatTreatmentLnkEnabled = settings.preHeatTreatmentLnkEnabled; return [row.id, row] as const }))
   for (const control of pre) { const row = byId.get(control.weldJointId); if (row) (row.preHeatTreatmentControls ??= []).push(control) }
   for (const control of duplicates) { const row = byId.get(control.weldJointId); if (row) (row.duplicateControls ??= []).push({ ...control, method: control.method as 'ВИК' | 'РК' | 'УЗК' | 'ПВК', result: control.result as 'годен' | 'ремонт' | 'вырез', conclusion: control.conclusion ?? '', conclusionDate: control.conclusionDate ?? '', controlDate: control.controlDate ?? '' }) }

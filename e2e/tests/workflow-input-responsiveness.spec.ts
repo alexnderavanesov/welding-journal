@@ -97,7 +97,8 @@ for (const kind of ['LNK', 'PSTO'] as const) test(`${kind}: набор, выбо
     window.dispatchEvent(new Event('online'))
     await new Promise(resolve => setTimeout(resolve, 400))
   })
-  expect(calls.slice(idleStart)).toEqual([])
+  await expect.poll(() => pending.size).toBe(0)
+  expect(calls.slice(idleStart)).toEqual(['getDispatcherTaskVersion'])
   const measurements = await page.evaluate(() => (window as unknown as {
     workflowInputSamples: Array<{ event: string; ms: number }>
   }).workflowInputSamples)

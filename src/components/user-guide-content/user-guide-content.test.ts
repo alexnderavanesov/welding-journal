@@ -6,10 +6,25 @@ import { REFERENCE_GUIDE_SECTIONS as REFERENCE_GUIDE_SECTIONS_3 } from '@/compon
 import { WORK_GUIDE_SECTIONS } from '@/components/user-guide-content/work-sections'
 
 describe('user guide content', () => {
+  it('explains explicit TK replacement/rename, partial completion and event-only dispatcher freshness', () => {
+    const cards = JSON.stringify(REFERENCE_GUIDE_SECTIONS_2.find(section => section.id === 'stamps'))
+    for (const text of ['по 50 ТК на странице', 'Проверить и назначить ТК', 'весь журнал и все проекты', 'в том числе ручных',
+      'Название действительно записывается в стык', 'эта порция целиком не сохраняется', 'отдельного журнала этих операций нет', 'ранее скачанный файл сам не изменится']) expect(cards).toContain(text)
+    const dispatcher = JSON.stringify(WORK_GUIDE_SECTIONS)
+    for (const text of ['небольшую служебную версию данных', 'Постоянного опроса нет', 'Черновик открытой формы не заменяется', 'всех СП и ДЗ']) expect(dispatcher).toContain(text)
+  })
+  it('explains compact TK controls, the two-method limit and explicit historical assignment', () => {
+    const content = JSON.stringify(REFERENCE_GUIDE_SECTIONS_2.find(section => section.id === 'stamps'))
+    expect(content).toContain('один или два способа сварки')
+    expect(content).toContain('«Все карты», «Действующие», «Архивные»')
+    expect(content).toContain('значок справки для подробной причины')
+    expect(content).toContain('для ручного выбора')
+    expect(content).toContain('новая подходящая карта не назначается в фоне')
+  })
   it('explains the read-only stamp check tab and preserved registry state', () => {
     const stamps = REFERENCE_GUIDE_SECTIONS_2.find(section => section.id === 'stamps')!
     const content = JSON.stringify(stamps)
-    expect(content).toContain('Вкладки «Клейма» и «Параметры проверки»')
+    expect(content).toContain('Вкладки «Клейма», «Технологические карты» и «Параметры проверки»')
     expect(content).toContain('таблица из 12 вариантов')
     expect(content).toContain('сохраняются поиск, фильтры и раскрытая карточка')
     expect(content).toContain('не меняет настройки или допуски')
@@ -48,7 +63,7 @@ describe('user guide content', () => {
     expect(content).toContain('старые выключенные ЗВ-20/ДЗ-17 правило не отключают')
     expect(content).not.toContain('Отключать только если по проекту действует отдельное решение')
     expect(JSON.stringify(REFERENCE_GUIDE_SECTIONS_2)).toContain('даже если в Excel изменен только диаметр')
-    expect(JSON.stringify(WORK_GUIDE_SECTIONS)).toContain('Все правила перенумерованы: 12 обязательных СП, 2 отключаемые ЗВ и 5 отключаемых ДЗ')
+    expect(JSON.stringify(WORK_GUIDE_SECTIONS)).toContain('Все правила перенумерованы: 12 обязательных СП, 2 отключаемые ЗВ и 6 отключаемых ДЗ')
   })
   it('explains the release waiting page and avoids automatic retry of a save', () => {
     const content = JSON.stringify(WORK_GUIDE_SECTIONS)

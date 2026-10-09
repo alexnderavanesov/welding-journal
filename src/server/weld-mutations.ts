@@ -26,6 +26,8 @@ import { isSameRequestDocument } from '@/lib/request-document-identity'
 import { isSystemDocumentNameForRows } from '@/lib/system-document-types'
 import { getSystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import { type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
+import { prepareTechnologyCardWeldWrites } from '@/server/technology-card-weld-write'
+import { markTechnologyCardsUsed } from '@/server/technology-card-registry'
 import { assertUniqueWeldMutationTargets, splitWeldImportInsertBatches } from '@/lib/weld-import-limits'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
@@ -208,6 +210,7 @@ export async function createWeldJoint({ data }: { data: WeldPayload }) {
       previousRows: new Map(),
       context: validationContext,
     })
+    await prepareTechnologyCardWeldWrites(tx, [record], new Map())
     const [created] = await tx
       .insert(weldJoints)
       .values({ ...toDbInsert(record, true), layeredControlAssigned: record.layeredControlAssigned === true })
@@ -411,6 +414,7 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       record.preHeatTreatmentControls = savedPreHeatTreatmentControls
       record.finalStatus = calculateFinalStatus(record)
     }
+    await prepareTechnologyCardWeldWrites(tx, [record], previousRows)
     const insertData = toDbInsert(record)
     const timestampUpdates = getProfileTimestampUpdates(record, previousRows.get(id), new Date())
     const [updated] = await tx
@@ -1102,6 +1106,7 @@ export async function deleteLockedWeldRowsInTransaction(
   const ids = previousRows.map((row) => row.id)
   const previousRowsById = new Map(previousRows.map((row) => [row.id, row]))
 
+  await markTechnologyCardsUsed(tx, previousRows)
   await assertEarlyCoilDecisionRowsCanBeDeleted(tx, previousRows)
   await assertJointChainRowsCanBeDeleted(tx, previousRows)
   await removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction({
@@ -1163,6 +1168,7 @@ export async function insertWeldJointsInBatches(
 ) {
   const inserted: WeldJoint[] = []
   await prepareLineProgramWeldRecords(tx, records)
+  await prepareTechnologyCardWeldWrites(tx, records, new Map())
   for (const batch of splitWeldImportInsertBatches(records)) {
     const rows = await tx
       .insert(weldJoints)

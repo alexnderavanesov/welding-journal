@@ -1,0 +1,2 @@
+ALTER TABLE "technology_cards" DROP CONSTRAINT "technology_cards_methods_required";--> statement-breakpoint
+ALTER TABLE "technology_cards" ADD CONSTRAINT "technology_cards_methods_required" CHECK (cardinality("technology_cards"."welding_methods") between 1 and 2 and array_position("technology_cards"."welding_methods", null) is null and array_position("technology_cards"."welding_methods", '') is null);

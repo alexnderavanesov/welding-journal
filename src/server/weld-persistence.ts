@@ -35,6 +35,7 @@ type SystemDocumentSequenceTransaction
 } from '@/server/system-document-sequences'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { prepareLineProgramWeldRecords } from '@/server/line-program-registry'
+import { prepareTechnologyCardWeldWrites } from '@/server/technology-card-weld-write'
 import { deleteChangedProgramApprovals } from './program-approval-lifecycle'
 import { sql,type SQL } from 'drizzle-orm'
 
@@ -173,6 +174,7 @@ export async function updateWeldJointsInBatches(
 ) {
   if (records.length === 0) return []
   await prepareLineProgramWeldRecords(tx, records, previousRows)
+  await prepareTechnologyCardWeldWrites(tx, records, previousRows)
   const now = new Date()
   const payloads = records.map((record) => buildWeldBatchUpdatePayload(record, previousRows, now))
   const ids = records.map((record) => Number(record.id))

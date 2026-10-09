@@ -309,6 +309,27 @@
       "when": 1790858612301,
       "tag": "0043_unknown_slapstick",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1791479856653,
+      "tag": "0044_spotty_wraith",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1791480043762,
+      "tag": "0045_wakeful_hiroim",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1791484958658,
+      "tag": "0046_gigantic_sentinel",
+      "breakpoints": true
     }
   ]
 }

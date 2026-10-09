@@ -75,7 +75,12 @@ test('special LNK output previews in a modal and contains rows beyond the candid
   expect(download.suggestedFilename()).toBe('lnk-waiting-request.xlsx')
   expect(await download.failure()).toBeNull()
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
-  expect(calls.length).toBe(loadedCalls)
+  await page.waitForLoadState('networkidle')
+  // Printing returns focus to the app. Only the compact dispatcher version
+  // probe is allowed; unchanged data must not reload reports/tasks or recalculate.
+  const printCalls = calls.slice(loadedCalls)
+  expect(printCalls.every(name => name.startsWith('getDispatcherTaskVersion'))).toBe(true)
+  expect(printCalls.length).toBeLessThanOrEqual(3) // two prints and one explicit return
   await preview.getByRole('button', { name: 'Закрыть предпросмотр' }).click()
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('E2E-OUTPUT-501')
   await expect(page.getByText('E2E-OUTPUT-501', { exact: true })).toBeVisible()
@@ -191,12 +196,16 @@ for (const [path, options] of [
       } else {
         await expect(frame.locator('body')).toHaveAttribute('data-printed', 'yes')
       }
-      // The preview itself has no RPCs, timers or focus-triggered refreshes.
+      // The preview itself stays local. Returning focus may only probe the
+      // dispatcher version, never reload unchanged reports or task snapshots.
       await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
       await frame.locator('body').press('Escape')
       await expect(modal).toHaveCount(0)
       await expect(show).toBeFocused()
-      expect(calls.length).toBe(before)
+      await page.waitForLoadState('networkidle')
+      const printCalls = calls.slice(before)
+      expect(printCalls.every(name => name.startsWith('getDispatcherTaskVersion'))).toBe(true)
+      expect(printCalls.length).toBeLessThanOrEqual(2) // print and explicit return
     }
     expect(errors).toEqual([])
   })

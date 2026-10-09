@@ -6,6 +6,7 @@ import { Select } from '@/components/ui/select'
 import { WeldFormConnectionTypeField } from '@/components/weld-form-connection-type-field'
 import { WeldFormMaterialGroupField } from '@/components/weld-form-material-group-field'
 import { WeldFormMaterialGroupHelp } from '@/components/weld-form-material-group-help'
+import { WeldFormTechnologyCardField } from '@/components/weld-form-technology-card-field'
 import { WeldFormTestTypesField, WeldFormWeldingMethodField } from '@/components/weld-form-welding-method-field'
 import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
@@ -85,7 +86,7 @@ function WeldFormFieldComponent({
   return (
     <div className="space-y-1.5 text-sm">
       {label}
-      {stampSelectOptions?.[field.key] ? (
+      {field.key === 'technologyCardNumber' ? <WeldFormTechnologyCardField draft={draft} setDraft={setDraft} fieldRefs={fieldRefs} /> : stampSelectOptions?.[field.key] ? (
         <Select
           aria-label={field.label}
           ref={(element) => {

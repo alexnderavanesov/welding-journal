@@ -17,7 +17,7 @@ const env = { ...process.env, DATABASE_URL: url, DATABASE_URL_REMOTE_FOR_MIGRATI
 const admin = new pg.Client({ connectionString: 'postgresql://welding:welding@127.0.0.1:5432/postgres' })
 const db = new pg.Client({ connectionString: url })
 const jointCount = process.argv.includes('--scale') ? 200_000 : 200
-let owned = false, connected = false, fixture: string | undefined, server: ChildProcess | undefined
+let ownedOid: number | undefined, connected = false, fixture: string | undefined, server: ChildProcess | undefined
 let serverLog = ''
 
 function command(args: string[], cwd = root, succeeds = true) {
@@ -32,7 +32,9 @@ function command(args: string[], cwd = root, succeeds = true) {
 await admin.connect()
 try {
   assert.equal((await admin.query('select 1 from pg_database where datname=$1', [database])).rowCount, 0, 'Refuse existing test DB')
-  await admin.query('create database welding_tracker_test_deploy_first_20261004'); owned = true
+  await admin.query('create database welding_tracker_test_deploy_first_20261004')
+  ownedOid = (await admin.query('select oid from pg_database where datname=$1', [database])).rows[0]?.oid
+  assert(ownedOid, 'Cannot verify ownership of the new disposable database')
   await db.connect(); connected = true
   assert.equal((await db.query('select current_database() as name')).rows[0].name, database)
   assert.equal(Number((await db.query("select count(*) from information_schema.tables where table_schema='public'")).rows[0].count), 0)
@@ -76,7 +78,7 @@ try {
 
   const failed = command(['db:release-local'], root, false)
   assert.match(failed.stderr, /Неоднозначные принятые исключения/)
-  assert.equal((await db.query('select count(*)::int as n from drizzle.__drizzle_migrations')).rows[0].n, 44)
+  assert.equal((await db.query('select count(*)::int as n from drizzle.__drizzle_migrations')).rows[0].n, journal.entries.length)
   assert.equal((await db.query('select count(*)::int as n from line_programs')).rows[0].n, 0)
   assert.equal((await db.query('select count(*)::int as n from line_program_transition_backups')).rows[0].n, 0)
   assert.equal((await db.query("select count(*)::int as n from weld_joints where has_vik='нет'")).rows[0].n, jointCount)
@@ -111,7 +113,13 @@ try {
 } finally {
   if (server && server.exitCode === null) { const ended = once(server, 'exit'); server.kill('SIGTERM'); await ended }
   if (connected) await db.end()
-  if (owned) await admin.query('drop database welding_tracker_test_deploy_first_20261004 with (force)')
+  if (ownedOid !== undefined) {
+    const current = (await admin.query('select oid from pg_database where datname=$1', [database])).rows[0]
+    if (current) {
+      assert.equal(current.oid, ownedOid, 'Refuse cleanup of a database replaced by another run')
+      await admin.query('drop database welding_tracker_test_deploy_first_20261004 with (force)')
+    }
+  }
   await admin.end()
   if (fixture) { assert(fixture.startsWith(join(root, 'node_modules/.cache/deploy-first-'))); rmSync(fixture, { recursive: true }) }
 }

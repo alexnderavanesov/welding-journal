@@ -10,7 +10,7 @@ test.afterEach(async () => {
   await withE2eDatabase(db => db.query('delete from welder_stamps where naks_stamp=$1', [stamp]))
 })
 
-test('единая вкладка: 12 СП, 2 ЗВ, 5 ДЗ и прежняя ссылка на правило ремонта', async ({ page }) => {
+test('единая вкладка: 12 СП, 2 ЗВ, 6 ДЗ и прежняя ссылка на правило ремонта', async ({ page }) => {
   await page.goto('/settings#system-rule-sp-05')
   await expect(page.getByRole('button', { name: 'Правила и проверки', exact: true })).toBeVisible()
   await expect(page.getByRole('article')).toHaveCount(12)
@@ -20,7 +20,7 @@ test('единая вкладка: 12 СП, 2 ЗВ, 5 ДЗ и прежняя с�
   await page.getByRole('tab', { name: 'Защиты ввода', exact: true }).click()
   await expect(page.locator('[id^="save-check-setting-"] input[type="checkbox"]')).toHaveCount(2)
   await page.getByRole('tab', { name: 'Задачи диспетчера', exact: true }).click()
-  await expect(page.locator('[id^="dispatcher-setting-"] input[type="checkbox"]')).toHaveCount(5)
+  await expect(page.locator('[id^="dispatcher-setting-"] input[type="checkbox"]')).toHaveCount(6)
   await page.getByRole('button', { name: 'Расчет дюймов', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Расчет дюймов', exact: true })).toBeVisible()
 })
@@ -36,7 +36,7 @@ test('требование ДЛС доступно в параметрах, со
     // this controlled input. setChecked asserts synchronously after the click.
     await toggle.click()
     await expect(toggle).toBeChecked({ checked: !initial })
-    const stored = () => withE2eDatabase(async db => JSON.parse((await db.query('select value from app_settings where key=$1', [key])).rows[0].value))
+    const stored = () => withE2eDatabase(async db => JSON.parse((await db.query('select value from app_settings where key=$1', [key])).rows[0]?.value ?? 'null'))
     await expect.poll(stored).toMatchObject({ officialDls: !initial, officialRegistry: true, officialNaksDate: true, officialMaterialGroup: true })
     await page.reload()
     await expect(toggle).toBeChecked({ checked: !initial })

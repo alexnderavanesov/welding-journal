@@ -6,11 +6,15 @@ import pg from 'pg'
 import { serializeDispatcherTaskIndexPayload } from '../../src/lib/dispatcher-task-index-payload'
 import type { RepeatedJointTask } from '../../src/lib/dispatcher-types'
 import { lockWeldJointWritesForDispatcherReplacement } from '../../src/server/dispatcher-task-index'
-import { DISPATCHER_INDEX_LOCK_ID } from '../../src/server/dispatcher-task-index-constants'
+import { DISPATCHER_INDEX_LOCK_ID, DISPATCHER_REFRESH_LOCK_ID } from '../../src/server/dispatcher-task-index-constants'
 import { E2E_DATABASE_URL, withE2eDatabase } from '../database'
 
-test.afterEach(async () => {
+test.afterEach(async ({ page }) => {
+  await page.close()
   await withE2eDatabase(async (client) => {
+    await client.query('begin')
+    await client.query('select pg_advisory_xact_lock($1)', [DISPATCHER_REFRESH_LOCK_ID])
+    await client.query('select pg_advisory_xact_lock($1)', [DISPATCHER_INDEX_LOCK_ID])
     await client.query('delete from dispatcher_task_pages')
     await client.query(`
       update dispatcher_task_index_state
@@ -20,6 +24,7 @@ test.afterEach(async () => {
           updated_at = now()
       where id = 1
     `)
+    await client.query('commit')
   })
 })
 

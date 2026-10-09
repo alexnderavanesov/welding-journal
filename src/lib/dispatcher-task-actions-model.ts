@@ -162,6 +162,9 @@ export function getDispatcherTaskActionSpecs(
   }
 
   const settingId = getDispatcherTaskSettingId(task)
+  if (settingId === 'check-technology-card') {
+    return [action('edit-weld', 'Проверить ТК', 'primary'), action('show-task', 'Показать в отчете')]
+  }
   if (
     settingId === 'check-lnk-request-date-order' ||
     settingId === 'check-lnk-vik-date-order' ||

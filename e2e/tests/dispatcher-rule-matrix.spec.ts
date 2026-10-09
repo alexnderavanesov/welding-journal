@@ -9,6 +9,6 @@ test('все ДЗ: реальные правила → сервер → PostgreS
   })
   expect(stderr).toBe('')
   const result = JSON.parse(stdout.trim())
-  expect(result).toMatchObject({ settings: 29, persistedRuleChains: 27, reminderRules: 2, mandatoryProgramRule: true, mandatoryResultRules: 2, virtualFieldStatementsPerPage: 1, removedFactsCleared: true, actualityRestoresContinuations: true, actualityMismatchBothRecoveryPaths: true })
+  expect(result).toMatchObject({ settings: 30, persistedRuleChains: 28, reminderRules: 2, mandatoryProgramRule: true, mandatoryResultRules: 2, virtualFieldStatementsPerPage: 1, removedFactsCleared: true, actualityRestoresContinuations: true, actualityMismatchBothRecoveryPaths: true })
   console.log('Dispatcher PostgreSQL matrix:', result)
 })

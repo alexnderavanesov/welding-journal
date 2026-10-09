@@ -349,6 +349,8 @@ export type WeldInput = Partial<Record<Exclude<WeldFieldKey, 'id'>, WeldFieldVal
   pvkControlPercent?: number | null
   layeredControlAssigned?: boolean
   layeredControlRequest?: { assigned: true; confirmPvk: boolean }
+  /** Transient explicit registry choice, never a form field or imported DB fact. */
+  technologyCardSelection?: { id: number; revision: number }
   /** Read-only validation context; not an editable/storage field. Rebuilt on save. */
   programRepairRequirements?: import('./line-program-repair-requirements').RepairControlRequirement[]
 }

@@ -31,7 +31,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: useProductionBuild ? 'pnpm start' : `pnpm exec vite dev --host 127.0.0.1 --port ${E2E_PORT}`,
+    command: useProductionBuild
+      ? process.env.AUDIT_SQL_COUNTS === '1' ? 'node e2e/audit-server.mjs' : 'pnpm start'
+      : `pnpm exec vite dev --host 127.0.0.1 --port ${E2E_PORT}`,
     url: `${E2E_BASE_URL}/lnk`,
     reuseExistingServer: false,
     timeout: 120_000,

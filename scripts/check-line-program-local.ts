@@ -104,7 +104,7 @@ if (process.argv.includes('--scale')) {
         const beforeOverview = queryCount
         const overview = await loadLineProgramOverviews(tx, programs)
         const overviewQueries = queryCount - beforeOverview
-        assert.equal(overviewQueries, 8, 'Overview batches chain identity, settings and decisions across all lines, never per card')
+        assert.equal(overviewQueries, 8 + Number(programs.length > 1), 'One compact sizing query plus batched facts, identity, settings and decisions; never per card')
         assert.equal(overview.length, Math.min(30, count / 200))
         for (const item of overview) {
           assert.equal(item.overview.joints, 200)

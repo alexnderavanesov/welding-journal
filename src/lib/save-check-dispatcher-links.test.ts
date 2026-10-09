@@ -12,8 +12,9 @@ import {
 } from '@/lib/save-check-dispatcher-links'
 
 describe('save check and dispatcher links', () => {
-  it('keeps 29 DZ settings after repair results move to mandatory SP-05', () => {
-    expect(Object.keys(DEFAULT_DISPATCHER_SETTINGS)).toHaveLength(29)
+  it('adds the technology-card reminder without restoring obsolete guards', () => {
+    expect(Object.keys(DEFAULT_DISPATCHER_SETTINGS)).toHaveLength(30)
+    expect(DISPATCHER_SETTING_CODES['check-technology-card']).toBe('ДЗ-06')
     expect(Object.values(DISPATCHER_SETTING_CODES)).not.toContain('ДЗ-16')
     expect(Object.values(DISPATCHER_SETTING_CODES)).not.toContain('ДЗ-17')
     expect(Object.values(DISPATCHER_SETTING_CODES)).not.toEqual(expect.arrayContaining(['ДЗ-24', 'ДЗ-25', 'ДЗ-26']))

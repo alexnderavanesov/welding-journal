@@ -1,5 +1,5 @@
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { BookOpen, Plus, Stamp } from 'lucide-react'
+import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { BookOpen, FileText, Plus, Stamp } from 'lucide-react'
 import { WelderStampCheckParameters } from '@/components/welder-stamp-check-parameters'
 import { DialogHeader } from '@/components/dialog-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
@@ -17,6 +17,7 @@ import {
 import type { WelderStampFilters, WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 
 export type WelderStampsRegistryProps = {
+  onTasksVisibilityChange?: (visible: boolean) => void
   records: WelderStampRecord[]
   allRecords: WelderStampRecord[]
   suspensionRecords: WelderStampSuspensionRecord[]
@@ -61,11 +62,17 @@ const WELDER_STAMP_STATUS_OPTIONS: Array<{
 
 const REGISTRY_TABS = [
   { id: 'registry', label: 'Клейма', Icon: Stamp },
+  { id: 'technologyCards', label: 'Технологические карты', Icon: FileText },
   { id: 'checks', label: 'Параметры проверки', Icon: BookOpen },
 ] as const
 
-export function WelderStampsRegistry({ header, taskPanels, ...props }: WelderStampsRegistryProps & { header?: ReactNode; taskPanels?: ReactNode }) {
+const TechnologyCardsRegistry = lazy(() => import('@/components/technology-cards-registry').then(module => ({ default: module.TechnologyCardsRegistry })))
+
+export function WelderStampsRegistry({ header, taskPanels, onTasksVisibilityChange, ...props }: WelderStampsRegistryProps & { header?: ReactNode; taskPanels?: ReactNode }) {
   const [activeTab, setActiveTab] = useState<typeof REGISTRY_TABS[number]['id']>('registry')
+  const [cardsOpened, setCardsOpened] = useState(false)
+  useEffect(() => { onTasksVisibilityChange?.(activeTab === 'registry') }, [activeTab, onTasksVisibilityChange])
+  useEffect(() => { if (activeTab === 'technologyCards') setCardsOpened(true) }, [activeTab])
   useEffect(() => {
     if ((props.suspensionEditorOpenSignal ?? 0) > 0) setActiveTab('registry')
   }, [props.suspensionEditorOpenSignal])
@@ -74,7 +81,7 @@ export function WelderStampsRegistry({ header, taskPanels, ...props }: WelderSta
     <div className="min-w-0 space-y-4">
       <div role="tablist" aria-label="Разделы клейм" className="sticky top-0 z-40 flex h-14 gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm shadow-slate-100">
         {REGISTRY_TABS.map(({ id, label, Icon }, index) => (
-          <button key={id} id={`stamp-tab-${id}`} type="button" role="tab" aria-selected={activeTab === id}
+          <button key={id} id={`stamp-tab-${id}`} type="button" role="tab" aria-label={label} aria-selected={activeTab === id}
             aria-controls={`stamp-panel-${id}`} tabIndex={activeTab === id ? 0 : -1}
             onClick={() => setActiveTab(id)}
             onKeyDown={event => {
@@ -86,8 +93,8 @@ export function WelderStampsRegistry({ header, taskPanels, ...props }: WelderSta
               setActiveTab(REGISTRY_TABS[next].id)
               document.getElementById(`stamp-tab-${REGISTRY_TABS[next].id}`)?.focus({ preventScroll: true })
             }}
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 sm:gap-2 sm:px-3 sm:text-sm ${activeTab === id ? 'bg-sky-50 text-sky-900' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>
-            <Icon aria-hidden="true" className="h-4 w-4" />{label}
+            className={`inline-flex min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-1 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 sm:flex-none sm:gap-2 sm:px-3 sm:text-sm ${activeTab === id ? 'bg-sky-50 text-sky-900' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>
+            <Icon aria-hidden="true" className="hidden h-4 w-4 shrink-0 sm:block" /><span className="min-w-0 break-words leading-4">{id === 'technologyCards' ? <><span className="sm:hidden">Техкарты</span><span className="hidden sm:inline">{label}</span></> : label}</span>
           </button>
         ))}
       </div>
@@ -99,6 +106,9 @@ export function WelderStampsRegistry({ header, taskPanels, ...props }: WelderSta
           {taskPanels}
           <MemoizedWelderStampsRegistryContent {...props} />
         </div>
+      </div>
+      <div id="stamp-panel-technologyCards" role="tabpanel" aria-labelledby="stamp-tab-technologyCards" hidden={activeTab !== 'technologyCards'}>
+        {cardsOpened && <Suspense fallback={<p className="text-sm text-slate-500">Загрузка ТК…</p>}><TechnologyCardsRegistry active={activeTab === 'technologyCards'} /></Suspense>}
       </div>
       <div id="stamp-panel-checks" role="tabpanel" aria-labelledby="stamp-tab-checks" hidden={activeTab !== 'checks'}>
         <div className="space-y-4">

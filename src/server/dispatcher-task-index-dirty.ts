@@ -1,5 +1,6 @@
 import { sql, type SQL } from 'drizzle-orm'
 import { requireDb } from '@/db'
+import { FULL_REBUILD_GENERATION_KIND } from './dispatcher-refresh-catchup'
 import {
   DISPATCHER_INDEX_LOCK_ID,
   DISPATCHER_INDEX_STATE_ID,
@@ -59,13 +60,16 @@ export async function markDispatcherTaskIndexDirty(
       insert into "dispatcher_task_index_state"
         ("id", "source_revision", "computed_revision", "repeated_tasks", "welder_stamp_expiry_tasks", "duplicate_keys", "dirty_scopes", "full_rebuild", "updated_at")
       select
-        ${DISPATCHER_INDEX_STATE_ID}, 1, -1, '[]', '[]', '[]', ${serializedScopes}, ${fullRebuild}, now()
+        ${DISPATCHER_INDEX_STATE_ID}, 1, -1, '[]', '[]', '[]',
+        case when ${fullRebuild} then jsonb_build_array(jsonb_build_object('kind', ${FULL_REBUILD_GENERATION_KIND}::text, 'revision', 1))::text
+          else ${serializedScopes} end, ${fullRebuild}, now()
       from "dispatcher_lock"
       on conflict ("id") do update
       set
         "source_revision" = "dispatcher_task_index_state"."source_revision" + 1,
         "dirty_scopes" = case
-          when "dispatcher_task_index_state"."full_rebuild" or ${fullRebuild} then '[]'
+          when ${fullRebuild} then jsonb_build_array(jsonb_build_object('kind', ${FULL_REBUILD_GENERATION_KIND}::text,
+            'revision', "dispatcher_task_index_state"."source_revision" + 1))::text
           else (
             select coalesce(jsonb_agg(distinct scope), '[]'::jsonb)::text
             from jsonb_array_elements(

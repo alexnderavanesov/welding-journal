@@ -1,6 +1,7 @@
 // This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
 
 import { requireDb } from '@/db'
+import { markTechnologyCardsUsed } from '@/server/technology-card-registry'
 import { assertJointChainRowsCanBeDeleted } from './joint-chain-deletion'
 import { prepareLineProgramWeldRecords } from '@/server/line-program-registry'
 import {
@@ -306,6 +307,7 @@ export async function replaceWeldJoints({
     const updated = await updateWeldJointsInBatches(tx, records, previousRows)
 
     if (data.deleteIds.length > 0) {
+      await markTechnologyCardsUsed(tx, deletedRows)
       await removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction({
         tx,
         weldJointIds: data.deleteIds,

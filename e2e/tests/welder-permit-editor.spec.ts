@@ -152,8 +152,10 @@ test('реальный ввод НАКС/ДЛС: 1/2/3 группы, спосо�
   await page.waitForLoadState('networkidle')
   const beforeIdle = [...calls]
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
-  await page.waitForTimeout(500)
-  expect(calls).toEqual(beforeIdle)
+  await expect.poll(() => calls.length).toBe(beforeIdle.length + 1)
+  await page.waitForLoadState('networkidle')
+  expect(calls.slice(beforeIdle.length)).toHaveLength(1)
+  expect(calls.at(-1)).toMatch(/^getDispatcherTaskVersion/)
   expect(calls.filter(name => name.startsWith('saveWelderStampRecords'))).toHaveLength(6)
   expect(errors).toEqual([])
 })

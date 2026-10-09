@@ -2,6 +2,8 @@ import { and, asc, desc, eq, inArray, or, sql, type SQLWrapper } from 'drizzle-o
 import { requireDb } from '@/db'
 import {
   appSettings,
+  technologyCards,
+  technologyCardNames,
   dispatcherAcceptedWarnings,
   dispatcherBackgroundRowTasks,
   dispatcherBackgroundTaskIndexState,
@@ -25,6 +27,8 @@ import {
   type DispatcherSettings,
 } from '@/lib/dispatcher-settings'
 import { buildVisibleDispatcherTasks } from '@/lib/dispatcher-task-builder'
+import { createTechnologyCardReview } from '@/lib/technology-card-review'
+import { toTechnologyCardRecord } from '@/server/technology-card-registry'
 import {
   buildDispatcherTaskCodeIndexRows,
   compareDispatcherTaskCodes,
@@ -86,6 +90,9 @@ import {
 } from '@/server/dispatcher-task-index-staging'
 import { persistCalculatedFinalStatuses } from '@/server/final-status-persistence'
 import { loadScopedAcceptedWarningKeys } from './accepted-warning-scope'
+import { getDispatcherScopeKey, visitDispatcherWeldRows } from './dispatcher-weld-rows'
+import { getFullRebuildCatchUpScopes } from './dispatcher-refresh-catchup'
+export { getDispatcherScopeKey } from './dispatcher-weld-rows'
 
 export { getFinalStatusPersistenceChanges } from '@/server/final-status-persistence'
 
@@ -343,19 +350,19 @@ async function rebuildFullDispatcherTaskIndex(
     .where(eq(dispatcherTaskIndexState.id, DISPATCHER_INDEX_STATE_ID))
     .limit(1)
   if (!lockedState) throw new Error('Не удалось получить состояние расчета диспетчера.')
-  if (
-    lockedState.sourceRevision !== refreshState.sourceRevision ||
-    isDispatcherTaskIndexFresh(lockedState)
-  ) {
-    return lockedState
-  }
+  if (isDispatcherTaskIndexFresh(lockedState)) return lockedState
+  const changedScopes = getFullRebuildCatchUpScopes(refreshState, lockedState)
+  if (!changedScopes) return lockedState
+  const catchUpScopes = await loadBoundedCatchUpScopes(tx, changedScopes)
+  if (!catchUpScopes) return lockedState
 
   await tx.delete(dispatcherRowTasks)
   const taskIndexStage = getDispatcherTaskIndexStageTable('active')
   await tx.execute(sql`
     insert into ${dispatcherRowTasks} ("weld_joint_id", "task_key", "code")
-    select "weld_joint_id", "task_key", "code"
-    from ${taskIndexStage}
+    select stage."weld_joint_id", stage."task_key", stage."code"
+    from ${taskIndexStage} as stage
+    inner join ${weldJoints} on ${weldJoints.id} = stage."weld_joint_id"
     on conflict do nothing
   `)
   await tx.delete(dispatcherTaskPages)
@@ -387,14 +394,14 @@ async function rebuildFullDispatcherTaskIndex(
       }),
       welderStampExpiryTasks: JSON.stringify(tasks.welderStampExpiryTasks),
       duplicateKeys: JSON.stringify(duplicateKeys),
-      dirtyScopes: '[]',
+      dirtyScopes: JSON.stringify(catchUpScopes),
       fullRebuild: false,
       computedAt,
       updatedAt: computedAt,
     })
     .where(and(
       eq(dispatcherTaskIndexState.id, DISPATCHER_INDEX_STATE_ID),
-      eq(dispatcherTaskIndexState.sourceRevision, refreshState.sourceRevision),
+      eq(dispatcherTaskIndexState.sourceRevision, lockedState.sourceRevision),
     ))
     .returning()
   if (!updatedState) throw new Error('Состояние расчета диспетчера изменилось во время сохранения индекса.')
@@ -412,7 +419,42 @@ async function rebuildFullDispatcherTaskIndex(
       })
       .where(eq(dispatcherBackgroundTaskIndexState.id, DISPATCHER_BACKGROUND_INDEX_STATE_ID))
   }
+  // All writer locks are still held. Replace changed complete lines before
+  // committing the staged full result; no client can see an intermediate index.
+  if (catchUpScopes.length) {
+    await tx.execute(sql`drop table ${taskIndexStage}, ${taskPageStage}`)
+    return rebuildScopedDispatcherTaskIndex(tx, updatedState, catchUpScopes)
+  }
   return updatedState
+}
+
+async function loadBoundedCatchUpScopes(tx: DispatcherIndexTransaction, scopes: DispatcherDirtyScope[]) {
+  if (!scopes.length) return []
+  // Status context also includes whitespace-equivalent same-name repairs.
+  // PostgreSQL \s depends on its locale and does not include NBSP. Use the
+  // exact ECMAScript whitespace set used by normalizeJointChainPart instead.
+  const whitespace = '\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'
+  const where = or(...scopes.map(scope => and(
+    ...(['projectTitle', 'subtitleCode', 'line'] as const).map(key =>
+      sql`lower(translate(coalesce(${weldJoints[key]}, ''), ${whitespace}, '')) = ${scope[key].replace(/\s+/g, '').toLocaleLowerCase('ru-RU')}`),
+  )))!
+  const current = await tx.select({ projectTitle: weldJoints.projectTitle, subtitleCode: weldJoints.subtitleCode,
+    line: weldJoints.line, joints: sql<number>`count(*)::int`,
+  }).from(weldJoints).where(where).groupBy(weldJoints.projectTitle, weldJoints.subtitleCode, weldJoints.line).limit(MAX_SCOPED_REBUILD_SCOPES + 1)
+  if (current.length > MAX_SCOPED_REBUILD_SCOPES || current.reduce((sum, scope) => sum + scope.joints, 0) > 5_000) return null
+  // The established scoped loader trims ASCII spaces in SQL. Unusual legacy
+  // edge whitespace needs a full retry, not an incomplete scoped publication.
+  if (current.some(scope => (['projectTitle', 'subtitleCode', 'line'] as const).some(key => {
+    const value = scope[key] ?? ''
+    return value.replace(/^ +| +$/g, '') !== value.trim()
+  }))) return null
+  // Retain empty/deleted old scopes too, so their obsolete task pages disappear.
+  const unique = new Map(scopes.map(scope => [getDispatcherScopeKey(scope), scope]))
+  for (const scope of current) {
+    const value = { projectTitle: scope.projectTitle ?? '', subtitleCode: scope.subtitleCode ?? '', line: scope.line ?? '' }
+    unique.set(getDispatcherScopeKey(value), value)
+  }
+  return unique.size <= MAX_SCOPED_REBUILD_SCOPES ? [...unique.values()] : null
 }
 
 export async function calculateFullDispatcherTasks(
@@ -428,37 +470,27 @@ export async function calculateFullDispatcherTasks(
 ) {
   // One transaction uses one PostgreSQL client. Sequential reads keep the
   // snapshot consistent and avoid concurrent client.query calls.
-  const rows = await tx
-    .select()
-    .from(weldJoints)
-    .orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
-  options.onProgress?.('weld-rows-loaded')
   const stampRows = await tx.select().from(welderStamps).orderBy(asc(welderStamps.id))
   const suspensionRows = await tx
     .select()
     .from(welderStampSuspensions)
     .orderBy(asc(welderStampSuspensions.id))
-  const duplicateRows = await tx
-    .select()
-    .from(duplicateControls)
-    .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id))
   const acceptedWarnings = await tx
     .select({ key: dispatcherAcceptedWarnings.key })
     .from(dispatcherAcceptedWarnings)
   const settingsRows = await tx.select().from(appSettings)
   options.onProgress?.('supporting-rows-loaded')
-  const sourceRows = rows.map((row) => ({ id: row.id, finalStatus: row.finalStatus }))
-  const preparedRows = prepareReportRowsInPlace(
-    await attachHeatTreatmentControlRelationsInPlace(rows, tx, getControlProcessSettings(settingsRows)),
-    duplicateRows.map(toDuplicateControlRecord),
-  )
-  options.onProgress?.('report-rows-prepared')
+  const technologyCardReview = await loadTechnologyCardReview(tx, settingsRows)
+  // Publication needs only old/new status, never the wide source records.
+  const sourceRows: Array<Pick<WeldRow, 'id' | 'finalStatus'>> = []
+  const preparedRows: Array<Pick<WeldRow, 'id' | 'finalStatus'>> = []
   const currentDispatcherSettings = getDispatcherSettings(settingsRows)
   const acceptedDispatcherWarningKeys = new Set(acceptedWarnings.map((row) => row.key))
   const earlyCoilDecisionSourceRowIds = getEarlyCoilDecisionSourceRowIds(acceptedDispatcherWarningKeys)
   const systemIndexSettings = getSystemIndexSettings(settingsRows)
   const dispatcherSettings = options.dispatcherSettings?.(currentDispatcherSettings) ?? currentDispatcherSettings
   const dispatcherTaskInput = {
+    technologyCardReview,
     acceptedDispatcherWarningKeys,
     earlyCoilDecisionSourceRowIds,
     dismissedRepeatedJointTaskKeys: new Set<string>(),
@@ -479,35 +511,47 @@ export async function calculateFullDispatcherTasks(
   const repeatedJointTasks: RepeatedJointTask[] = []
   let repeatedJointTaskCount = 0
   const taskSnapshotLimit = Math.max(0, options.taskSnapshotLimit ?? DISPATCHER_TASK_SNAPSHOT_LIMIT)
-  const rowScopes = groupDispatcherRowsByScope(preparedRows)
-  for (const scopeRows of rowScopes) {
-    const scopeKey = getDispatcherScopeKey(scopeRows[0]!)
-    for (const continuation of buildJointChainContinuations(scopeRows, chainContinuationOptions)) {
-      chainContinuations.push(continuation)
-    }
-    const scopeTasks = buildVisibleDispatcherTasks({
-      ...dispatcherTaskInput,
-      rows: scopeRows,
-      includeWelderStampExpiryTasks: false,
-    }).repeatedJointTasks
-    repeatedJointTaskCount += scopeTasks.length
-    if (options.onTaskIndexRows) {
-      await options.onTaskIndexRows(buildDispatcherTaskCodeIndexRows(scopeTasks, scopeRows))
-    }
-    if (options.onTaskPageRows) {
-      for (let index = 0; index < scopeTasks.length; index += 1_000) {
-        await options.onTaskPageRows(scopeKey, compactDispatcherTasksForTransport(
-          scopeTasks.slice(index, index + 1_000),
+  await visitDispatcherWeldRows(tx, async (rows, scopeKeys) => {
+    for (const row of rows) if (scopeKeys.has(getDispatcherScopeKey(row))) sourceRows.push({ id: row.id, finalStatus: row.finalStatus })
+    const duplicateRows = await tx.select().from(duplicateControls)
+      .where(buildNumberArrayMatch(duplicateControls.weldJointId, rows.map(row => row.id)))
+      .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id))
+    const prepared = prepareReportRowsInPlace(
+      await attachHeatTreatmentControlRelationsInPlace(rows, tx, getControlProcessSettings(settingsRows)),
+      duplicateRows.map(toDuplicateControlRecord),
+    )
+    for (const row of prepared) if (scopeKeys.has(getDispatcherScopeKey(row))) preparedRows.push({ id: row.id, finalStatus: row.finalStatus })
+    for (const scopeRows of groupDispatcherRowsByScope(prepared)) {
+      const scopeKey = getDispatcherScopeKey(scopeRows[0]!)
+      if (!scopeKeys.has(scopeKey)) continue
+      for (const continuation of buildJointChainContinuations(scopeRows, chainContinuationOptions)) {
+        chainContinuations.push(continuation)
+      }
+      const scopeTasks = buildVisibleDispatcherTasks({
+        ...dispatcherTaskInput,
+        rows: scopeRows,
+        includeWelderStampExpiryTasks: false,
+      }).repeatedJointTasks
+      repeatedJointTaskCount += scopeTasks.length
+      if (options.onTaskIndexRows) {
+        await options.onTaskIndexRows(buildDispatcherTaskCodeIndexRows(scopeTasks, scopeRows))
+      }
+      if (options.onTaskPageRows) {
+        for (let index = 0; index < scopeTasks.length; index += 1_000) {
+          await options.onTaskPageRows(scopeKey, compactDispatcherTasksForTransport(
+            scopeTasks.slice(index, index + 1_000),
+          ))
+        }
+      }
+      const remainingSnapshotSize = taskSnapshotLimit - repeatedJointTasks.length
+      if (remainingSnapshotSize > 0) {
+        repeatedJointTasks.push(...compactDispatcherTasksForTransport(
+          scopeTasks.slice(0, remainingSnapshotSize),
         ))
       }
     }
-    const remainingSnapshotSize = taskSnapshotLimit - repeatedJointTasks.length
-    if (remainingSnapshotSize > 0) {
-      repeatedJointTasks.push(...compactDispatcherTasksForTransport(
-        scopeTasks.slice(0, remainingSnapshotSize),
-      ))
-    }
-  }
+    options.onProgress?.('weld-batch-calculated')
+  })
   options.onProgress?.('chain-continuations-built')
   const welderStampExpiryTasks = options.includeWelderStampExpiryTasks === false
     ? []
@@ -539,14 +583,6 @@ export function groupDispatcherRowsByScope(rows: WeldRow[]) {
   return [...rowsByScope.entries()]
     .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
     .map(([, scopeRows]) => scopeRows)
-}
-
-export function getDispatcherScopeKey(scope: { projectTitle?: unknown; subtitleCode?: unknown; line?: unknown }) {
-  return encodeIdentityKey([
-    normalizeScopeText(scope.projectTitle),
-    normalizeScopeText(scope.subtitleCode),
-    normalizeScopeText(scope.line),
-  ])
 }
 
 export async function lockWeldJointWritesForDispatcherReplacement(
@@ -595,6 +631,7 @@ async function rebuildScopedDispatcherTaskIndex(
   const acceptedWarnings = await loadScopedAcceptedWarningKeys(tx, rows)
   const settingsRows = await tx.select().from(appSettings)
   const preparedRows = await prepareDispatcherReportRows(tx, rows, duplicateRows)
+  const technologyCardReview = await loadTechnologyCardReview(tx, settingsRows)
   const finalStatusChangeCount = await persistCalculatedFinalStatuses(tx, rows, preparedRows)
   if (finalStatusChangeCount > 0) await invalidateDerivedCalculationCache(tx)
   const acceptedDispatcherWarningKeys = new Set(acceptedWarnings.map((row) => row.key))
@@ -604,6 +641,7 @@ async function rebuildScopedDispatcherTaskIndex(
     systemIndexSettings,
   }
   const dispatcherTaskInput = {
+    technologyCardReview,
     acceptedDispatcherWarningKeys,
     earlyCoilDecisionSourceRowIds: chainContinuationOptions.earlyCoilDecisionSourceRowIds,
     dismissedRepeatedJointTaskKeys: new Set<string>(),
@@ -969,6 +1007,14 @@ function getDispatcherReminderSettings(rows: AppSetting[]) {
   return normalizeDispatcherReminderSettings(
     getStoredSetting(rows, PROJECT_SETTING_KEYS.dispatcherReminders) ?? DEFAULT_DISPATCHER_REMINDER_SETTINGS,
   )
+}
+
+async function loadTechnologyCardReview(tx: DispatcherIndexTransaction, settings: AppSetting[]) {
+  // Two bounded registry reads per calculation, never per line/joint. Registry
+  // writes invalidate the source revision; publication rejects stale snapshots.
+  const cards = await tx.select().from(technologyCards)
+  const names = await tx.select({ name: technologyCardNames.name, cardId: technologyCardNames.technologyCardId }).from(technologyCardNames)
+  return createTechnologyCardReview({ cards: cards.map(toTechnologyCardRecord), names }, getDataListSettings(settings))
 }
 
 function getDataListSettings(rows: AppSetting[]) {

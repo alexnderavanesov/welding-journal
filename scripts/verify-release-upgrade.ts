@@ -16,7 +16,7 @@ const client = new pg.Client({ connectionString: url })
 process.env.DATABASE_URL = url
 process.env.WELDING_ENV_LOADED = '1'
 const count = process.argv.includes('--scale') ? 200_000 : 200
-let owned = false, connected = false, fixture: string | undefined, pool: pg.Pool | undefined
+let ownedOid: number | undefined, connected = false, fixture: string | undefined, pool: pg.Pool | undefined
 const journal = JSON.parse(readFileSync(join(root, 'drizzle/meta/_journal.json'), 'utf8')) as {
   entries: { idx: number; tag: string; when: number }[]
 }
@@ -50,7 +50,8 @@ await admin.connect()
 try {
   assert.equal((await admin.query('select 1 from pg_database where datname=$1', [database])).rowCount, 0, 'Refuse existing database')
   await admin.query('create database welding_tracker_line_program_test_release_20261003')
-  owned = true
+  ownedOid = (await admin.query('select oid from pg_database where datname=$1', [database])).rows[0].oid
+  assert(ownedOid, 'Cannot verify ownership of the new database')
   await client.connect(); connected = true
   assert.equal((await client.query('select current_database() as name')).rows[0].name, database)
   assert.equal(Number((await client.query("select count(*) from information_schema.tables where table_schema='public'")).rows[0].count), 0)
@@ -61,7 +62,29 @@ try {
   for (const name of ['package.json', 'tsconfig.json', 'drizzle.config.ts']) copyFileSync(join(root, name), join(fixture, name))
   mkdirSync(join(fixture, 'drizzle/meta'), { recursive: true })
   for (const entry of journal.entries) copyFileSync(join(root, 'drizzle', `${entry.tag}.sql`), join(fixture, 'drizzle', `${entry.tag}.sql`))
-  if (process.argv.includes('--transition-regression')) {
+  if (process.argv.includes('--technology-cards')) {
+    selectFixtureVersion(43)
+    migrate(fixture)
+    await client.query(`insert into weld_joints(project_title,line,joint,weld_date,technology_card_number)
+      select 'TK-UPGRADE','L1','F'||n,'2026-10-01',case when n%2=0 then '  ТК до реестра  ' else null end
+      from generate_series(1,$1::int) n`, [count])
+    const before = await savedFacts()
+    migrate(root)
+    assert.equal((await client.query('select count(*)::int as n from drizzle.__drizzle_migrations')).rows[0].n, journal.entries.length)
+    assert.deepEqual(await savedFacts(), before, 'TK migrations must preserve all legacy weld text and timestamps')
+    const [{ requireDb }, registry] = await Promise.all([import('../src/db/index'), import('../src/server/technology-card-registry')])
+    const db = requireDb(); pool = (db as unknown as { $client: pg.Pool }).$client
+    const parameters = { name: 'ТК до реестра', weldingMethods: ['РАД'], connectionType: 'С17', materialGroups: ['М01'], diameterFrom: 1, diameterTo: 1000, thicknessFrom: 1, thicknessTo: 100, psto: 'any' }
+    const card = await db.transaction(tx => registry.createTechnologyCardInTransaction(tx, parameters))
+    const renamed = await db.transaction(tx => registry.updateTechnologyCardInTransaction(tx, { id: card.id, expectedRevision: card.revision, card: { ...parameters, name: 'ТК после обновления' } }))
+    await assert.rejects(db.transaction(tx => registry.deleteTechnologyCardInTransaction(tx, { id: renamed.id, expectedRevision: renamed.revision, confirmed: true })), /уже использована/)
+    const names = await db.transaction(tx => registry.resolveTechnologyCardNames(tx, [parameters.name, renamed.name]))
+    assert.equal(names.get(parameters.name)?.id, card.id)
+    assert.equal(names.get(renamed.name)?.id, card.id)
+    migrate(root)
+    assert.deepEqual(await savedFacts(), before, 'Registry creation, rename and repeated migration must not rewrite old welds')
+    console.log(JSON.stringify({ passed: true, baseline: '0043', target: journal.entries.at(-1)!.tag, joints: count, legacyNamesPreserved: true, legacyUseProtected: true, migrationIdempotent: true }))
+  } else if (process.argv.includes('--transition-regression')) {
     selectFixtureVersion(43)
     migrate(fixture)
     const regression = spawnSync(process.execPath, ['--import', 'tsx', 'scripts/check-line-program-local.ts', '--scale'], {
@@ -118,7 +141,7 @@ try {
   const newFields = ['line_program_id', 'pvk_control_percent', 'layered_control_assigned']
   assert.deepEqual(await savedFacts(newFields), before, 'Schema upgrade must preserve every old fact, timestamp and document link')
   assert.deepEqual((await client.query('select replacement_coil_ids from weld_joint_program_states where weld_joint_id=3')).rows[0].replacement_coil_ids, [])
-  assert.equal((await client.query('select count(*)::int as n from drizzle.__drizzle_migrations')).rows[0].n, 44)
+  assert.equal((await client.query('select count(*)::int as n from drizzle.__drizzle_migrations')).rows[0].n, journal.entries.length)
   const migrated = await savedFacts()
   migrate(root)
   assert.deepEqual(await savedFacts(), migrated, 'Repeated migration must not rewrite facts or dates')
@@ -195,14 +218,20 @@ try {
   assert(afterTopology.issues.some(issue => issue.rowId === 3 && issue.code === 'missing-replacement'))
   assert.equal((await client.query('select count(*)::int as n from weld_joint_program_states where weld_joint_id in (4,5)')).rows[0].n, 2, '0042 preserves deleted coil identity')
   assert.equal((await client.query('select replaced_by_coil from weld_joint_program_states where weld_joint_id=3')).rows[0].replaced_by_coil, true)
-  console.log(JSON.stringify({ passed: true, baseline: '0037', intermediate: '0041', target: '0043', joints: count + 7,
+  console.log(JSON.stringify({ passed: true, baseline: '0037', intermediate: '0041', target: journal.entries.at(-1)!.tag, joints: count + 7,
     factsAndDocumentsPreserved: true, migrationIdempotent: true, transitionRecoveryAndConflict: true, explicitWarningBackfill: true,
     physicalCounts: [3, 1], mandatoryExplicitCoilRestoration: true }))
   }
 } finally {
   if (pool) await pool.end()
   if (connected) await client.end()
-  if (owned) await admin.query('drop database welding_tracker_line_program_test_release_20261003 with (force)')
+  if (ownedOid !== undefined) {
+    const current = (await admin.query('select oid from pg_database where datname=$1', [database])).rows[0]
+    if (current) {
+      assert.equal(current.oid, ownedOid, 'Refuse to remove a database replaced by another run')
+      await admin.query('drop database welding_tracker_line_program_test_release_20261003 with (force)')
+    }
+  }
   await admin.end()
   if (fixture) {
     assert(resolve(fixture).startsWith(join(root, 'node_modules/.cache/release-upgrade-')))

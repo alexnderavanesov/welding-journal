@@ -18,6 +18,8 @@ import type { SystemIndexSettings } from '@/lib/system-index-settings'
 import { getEarlyCoilDecisionSourceRowIds } from '@/lib/early-coil-decision'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import type { SaveCheckSettings } from './save-check-settings'
+import type { createTechnologyCardReview } from '@/lib/technology-card-review'
+import { buildTechnologyCardTasks } from '@/lib/technology-card-tasks'
 
 const PERCENTAGE_LINE_DISPATCHER_SETTING_IDS = [
   'percentage-missing',
@@ -42,6 +44,7 @@ export type BuildVisibleDispatcherTasksInput = {
   systemIndexSettings?: SystemIndexSettings
   controlProcessSettings?: ControlProcessSettings
   saveCheckSettings?: SaveCheckSettings
+  technologyCardReview?: ReturnType<typeof createTechnologyCardReview>
   earlyCoilDecisionSourceRowIds?: Set<number>
   includeRepeatedJointTasks?: boolean
   includeWelderStampExpiryTasks?: boolean
@@ -59,6 +62,7 @@ export function buildVisibleDispatcherTasks({
   systemIndexSettings,
   controlProcessSettings,
   saveCheckSettings,
+  technologyCardReview,
   earlyCoilDecisionSourceRowIds: preparedEarlyCoilIds,
   includeRepeatedJointTasks = true,
   includeWelderStampExpiryTasks = true,
@@ -69,7 +73,7 @@ export function buildVisibleDispatcherTasks({
   const isHidden = (key: string) => dismissedRepeatedJointTaskKeys.has(key) || acceptedDispatcherWarningKeys.has(key)
   const earlyCoilDecisionSourceRowIds = preparedEarlyCoilIds ?? getEarlyCoilDecisionSourceRowIds(acceptedDispatcherWarningKeys)
   const repeatedJointTasks = includeRepeatedJointTasks
-    ? buildRepeatedJointTasks(rows, welderStamps, welderStampSuspensions, {
+    ? [...buildRepeatedJointTasks(rows, welderStamps, welderStampSuspensions, {
         dataListSettings,
         earlyCoilDecisionSourceRowIds,
         acceptedProgramControlKeys: acceptedDispatcherWarningKeys,
@@ -84,7 +88,8 @@ export function buildVisibleDispatcherTasks({
         includePercentageLineControlTasks: isAnyDispatcherSettingEnabled(PERCENTAGE_LINE_DISPATCHER_SETTING_IDS, dispatcherSettings),
         includePstoResultCompletenessChecks: isDispatcherSettingEnabled('check-psto-result-completeness', dispatcherSettings),
         includeWelderStampCompatibilityChecks: isDispatcherSettingEnabled('check-welder-stamp', dispatcherSettings),
-      }).filter(
+      }), ...(technologyCardReview && isDispatcherSettingEnabled('check-technology-card', dispatcherSettings)
+        ? buildTechnologyCardTasks(rows, technologyCardReview) : [])].filter(
         (task) => isMandatoryDispatcherTask(task) ||
           (!isHidden(task.key) && isDispatcherTaskEnabled(task, dispatcherSettings)),
       )

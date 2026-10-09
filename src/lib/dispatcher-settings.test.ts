@@ -51,7 +51,7 @@ describe('dispatcher settings', () => {
     expect(Object.keys(DISPATCHER_SETTING_TASK_TYPE_LABELS).sort()).toEqual(settingIds)
     expect(Object.keys(DISPATCHER_SETTING_HELP).sort()).toEqual(settingIds)
     expect(Object.keys(DISPATCHER_SETTING_ACTION_HELP).sort()).toEqual(settingIds)
-    expect(groupedIds.map(id => DISPATCHER_SETTING_CODES[id])).toEqual(['ДЗ-01', 'ДЗ-02', 'ДЗ-03', 'ДЗ-04', 'ДЗ-05'])
+    expect(groupedIds.map(id => DISPATCHER_SETTING_CODES[id])).toEqual(['ДЗ-01', 'ДЗ-02', 'ДЗ-03', 'ДЗ-04', 'ДЗ-05', 'ДЗ-06'])
   })
 
   it('maps every dispatcher task family to its own setting and code', () => {

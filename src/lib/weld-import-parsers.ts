@@ -7,6 +7,7 @@ import {
   normalizeResultStatus,
 } from './weld-fields'
 import { normalizeDateLikeForStorage, parseDateLikeToIso } from './date-format'
+import { normalizeTechnologyCardName } from './technology-card-name'
 import {
   isControlAdditionalValue,
   isControlCancelledValue,
@@ -54,6 +55,7 @@ export function parseDate(value: unknown) {
 }
 
 export function parseCell(field: WeldField, value: unknown) {
+  if (field.key === 'technologyCardNumber') return normalizeTechnologyCardName(value == null ? '' : String(value)) || null
   if (field.kind === 'boolean') return parseBoolean(value)
   if (field.kind === 'number') return parseNumber(value)
   if (field.kind === 'date') return parseDate(value)

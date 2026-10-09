@@ -1,12 +1,15 @@
 import type { DispatcherSettingId } from '@/lib/dispatcher-settings'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import { createTechnologyCardReview } from '@/lib/technology-card-review'
+import { DEFAULT_DATA_LIST_SETTINGS } from '@/lib/data-list-settings'
 
 export type DispatcherRuleFixture = {
   settingId: DispatcherSettingId
   rows: WeldRow[]
   expectedRowIds: number[]
   welderStamps: WelderStampRecord[]
+  technologyCardReview?: ReturnType<typeof createTechnologyCardReview>
 }
 
 /** Stored facts, not hand-built tasks: both the unit matrix and PostgreSQL
@@ -57,6 +60,7 @@ export function createDispatcherRuleFixtures(): DispatcherRuleFixture[] {
     ['check-lnk-result-completeness', [{ vikResult: 'годен', vikConclusionDate: null, vikConclusion: null }]],
     ['check-psto-result-completeness', [{ pstoRequired: 'да', pstoResult: 'проведено', pstoDate: null }]],
     ['check-control-history', [{ hasRk: null, rkResult: 'годен' }]],
+    ['check-technology-card', [{ technologyCardNumber: 'Старая неизвестная ТК' }]],
   ]
   return cases.map(([settingId, values, expected], caseIndex) => {
     const offset = (caseIndex + 1) * 100
@@ -74,6 +78,7 @@ export function createDispatcherRuleFixtures(): DispatcherRuleFixture[] {
     }))
     return {
       settingId, rows,
+      technologyCardReview: settingId === 'check-technology-card' ? createTechnologyCardReview({ cards: [], names: [] }, DEFAULT_DATA_LIST_SETTINGS) : undefined,
       expectedRowIds: expected ? expected.map((id) => offset + id) : rows.map(({ id }) => id),
       welderStamps: settingId === 'welder-stamp-expiry' || settingId === 'welder-dls-expiry'
         ? [expiryStamp(offset, settingId)] : [],

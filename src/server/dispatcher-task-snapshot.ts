@@ -8,6 +8,14 @@ import { assertSecurityScope } from '@/server/security-functions'
 
 export type DispatcherTaskSnapshotRequest = Record<string, never>
 
+export const getDispatcherTaskVersion = createServerFn({ method: 'GET' })
+  .handler(async () => {
+    await assertSecurityScope('entry')
+    const { requireDb } = await import('@/db')
+    const { readDispatcherTaskVersion } = await import('@/server/dispatcher-task-version')
+    return readDispatcherTaskVersion(requireDb())
+  })
+
 export type DispatcherTaskSnapshotResult = {
   duplicateKeys: string[]
   repeatedJointTasks: RepeatedJointTask[]

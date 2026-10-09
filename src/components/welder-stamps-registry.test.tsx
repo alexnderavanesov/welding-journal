@@ -7,6 +7,7 @@ import { createEmptyWelderStampFilters } from '@/lib/welder-stamp-filters'
 import { createEmptyNaksPermit } from '@/lib/welder-stamp-permits'
 
 afterEach(cleanup)
+vi.mock('./technology-cards-registry', () => ({ TechnologyCardsRegistry: () => <p>Реестр ТК</p> }))
 
 function props(): WelderStampsRegistryProps {
   const record = { ...createEmptyWelderStampDraft(), id: 1, naksStamp: 'ABCD', welderName: 'Тестовый сварщик' }
@@ -114,7 +115,8 @@ describe('welder registry tabs', () => {
     render(<WelderStampsRegistry {...props()} />)
     const registry = screen.getByRole('tab', { name: 'Клейма' })
     const checks = screen.getByRole('tab', { name: 'Параметры проверки' })
-    for (const [tab, key, target] of [[registry, 'ArrowRight', checks], [checks, 'ArrowRight', registry], [registry, 'End', checks], [checks, 'Home', registry], [registry, 'ArrowLeft', checks]] as const) {
+    const cards = screen.getByRole('tab', { name: 'Технологические карты' })
+    for (const [tab, key, target] of [[registry, 'ArrowRight', cards], [cards, 'ArrowRight', checks], [checks, 'ArrowRight', registry], [registry, 'End', checks], [checks, 'Home', registry], [registry, 'ArrowLeft', checks]] as const) {
       fireEvent.keyDown(tab, { key })
       expect(target).toHaveFocus()
       expect(target).toHaveAttribute('aria-selected', 'true')

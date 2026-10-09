@@ -108,7 +108,7 @@ describe('settings system rule catalog', () => {
     expect(mocks.settingsPassword).toHaveBeenCalledTimes(3)
   })
 
-  it('opens twelve mandatory rules and seven optional guards without data requests', async () => {
+  it('opens twelve mandatory rules and eight optional guards/reminders without data requests', async () => {
     const client = mount()
     const rules = screen.getAllByRole('article')
     expect(rules).toHaveLength(12)
@@ -121,7 +121,7 @@ describe('settings system rule catalog', () => {
     expect(screen.queryByRole('article')).not.toBeInTheDocument()
     expect(within(screen.getByRole('tabpanel')).getAllByRole('checkbox')).toHaveLength(2)
     fireEvent.click(screen.getByRole('tab', { name: 'Задачи диспетчера' }))
-    expect(document.querySelectorAll('[id^="dispatcher-setting-"] input[type="checkbox"]')).toHaveLength(5)
+    expect(document.querySelectorAll('[id^="dispatcher-setting-"] input[type="checkbox"]')).toHaveLength(6)
     await act(async () => {
       focusManager.setFocused(false)
       focusManager.setFocused(true)

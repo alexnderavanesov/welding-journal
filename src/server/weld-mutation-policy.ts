@@ -146,5 +146,6 @@ export function restrictWeldMutationRecord(
   if (record.weldChainLineMovePlan) {
     restricted.weldChainLineMovePlan = record.weldChainLineMovePlan
   }
+  if (scope === 'welding' && record.technologyCardSelection) restricted.technologyCardSelection = record.technologyCardSelection
   return restricted
 }

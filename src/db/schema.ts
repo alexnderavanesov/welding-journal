@@ -3,6 +3,49 @@ import { boolean, check, date, index, integer, numeric, pgTable, primaryKey, ser
 
 const numericNumber = (name: string) => numeric(name, { precision: 12, scale: 3, mode: 'number' })
 
+// Journal-wide registry. The existing weld text remains the document designation;
+// creating a registry entry must never assign or rewrite a joint automatically.
+export const technologyCards = pgTable('technology_cards', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  weldingMethods: text('welding_methods').array().notNull(),
+  connectionType: text('connection_type').notNull(),
+  materialGroups: text('material_groups').array().notNull(),
+  diameterFrom: numericNumber('diameter_from').notNull(),
+  diameterTo: numericNumber('diameter_to').notNull(),
+  thicknessFrom: numericNumber('thickness_from').notNull(),
+  thicknessTo: numericNumber('thickness_to').notNull(),
+  psto: text('psto').$type<'required' | 'not-required' | 'any'>().notNull(),
+  archived: boolean('archived').default(false).notNull(),
+  revision: integer('revision').default(1).notNull(),
+  firstUsedAt: timestamp('first_used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, table => [
+  uniqueIndex('technology_cards_name_idx').on(table.name),
+  check('technology_cards_name_required', sql`${table.name} = btrim(${table.name}) and ${table.name} <> ''`),
+  check('technology_cards_methods_required', sql`cardinality(${table.weldingMethods}) between 1 and 2 and array_position(${table.weldingMethods}, null) is null and array_position(${table.weldingMethods}, '') is null`),
+  check('technology_cards_connection_required', sql`btrim(${table.connectionType}) <> '' and upper(left(btrim(${table.connectionType}), 1)) <> 'Т'`),
+  check('technology_cards_groups_count', sql`cardinality(${table.materialGroups}) between 1 and 2 and array_position(${table.materialGroups}, null) is null and array_position(${table.materialGroups}, '') is null and (cardinality(${table.materialGroups}) = 1 or ${table.materialGroups}[1] <> ${table.materialGroups}[2])`),
+  check('technology_cards_diameter_range', sql`${table.diameterFrom} > 0 and ${table.diameterTo} >= ${table.diameterFrom}`),
+  check('technology_cards_thickness_range', sql`${table.thicknessFrom} > 0 and ${table.thicknessTo} >= ${table.thicknessFrom}`),
+  check('technology_cards_psto_value', sql`${table.psto} in ('required', 'not-required', 'any')`),
+  check('technology_cards_revision_positive', sql`${table.revision} > 0`),
+])
+
+export type TechnologyCard = typeof technologyCards.$inferSelect
+
+// Exact historical designations keep old text-only joints attached to the same
+// card after a rename. They cannot silently become another card's identifier.
+export const technologyCardNames = pgTable('technology_card_names', {
+  name: text('name').primaryKey(),
+  technologyCardId: integer('technology_card_id').notNull().references(() => technologyCards.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, table => [
+  index('technology_card_names_card_idx').on(table.technologyCardId),
+  check('technology_card_names_name_required', sql`${table.name} = btrim(${table.name}) and ${table.name} <> ''`),
+])
+
 export const linePrograms = pgTable('line_programs', {
   id: serial('id').primaryKey(),
   projectTitle: text('project_title').notNull().default(''),
@@ -196,6 +239,7 @@ export const weldJoints = pgTable(
     index('weld_joints_line_idx').on(table.line),
     index('weld_joints_line_program_idx').on(table.lineProgramId),
     index('weld_joints_joint_idx').on(table.joint),
+    index('weld_joints_technology_card_name_idx').on(sql`btrim(${table.technologyCardNumber})`),
     index('weld_joints_final_status_idx').on(table.finalStatus),
     index('weld_joints_psto_required_idx').on(table.pstoRequired),
     index('weld_joints_line_joint_idx').on(table.line, table.joint),

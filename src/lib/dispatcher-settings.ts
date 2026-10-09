@@ -11,6 +11,7 @@ import {
 import { PSTO_REQUEST_DATE_ORDER_REASON } from '@/lib/psto-chronology-checks'
 import {
   CONTROL_HISTORY_REASON,
+  TECHNOLOGY_CARD_REASON,
   JOINT_CORE_DATA_REASON,
   LNK_RESULT_COMPLETENESS_REASON,
   PSTO_RESULT_COMPLETENESS_REASON,
@@ -55,6 +56,7 @@ export type DispatcherSettingId =
   | 'check-lnk-result-completeness'
   | 'check-psto-result-completeness'
   | 'check-control-history'
+  | 'check-technology-card'
 
 export type DispatcherSettings = Record<DispatcherSettingId, boolean>
 
@@ -81,6 +83,7 @@ export type DispatcherSettingActionHelp = {
 }
 
 export const DISPATCHER_SETTING_CODES: Record<DispatcherSettingId, string> = {
+  'check-technology-card': 'ДЗ-06',
   'percentage-new-welder': 'ДЗ-01',
   'percentage-excess': 'СП-01',
   'percentage-rejected-rows': 'ДЗ-02',
@@ -113,6 +116,7 @@ export const DISPATCHER_SETTING_CODES: Record<DispatcherSettingId, string> = {
 }
 
 export const DISPATCHER_SETTING_TASK_TYPE_LABELS: Record<DispatcherSettingId, string> = {
+  'check-technology-card': 'Проверить технологическую карту',
   'percentage-new-welder': 'Новый сварщик на процентной линии',
   'percentage-excess': 'Лишний контроль',
   'percentage-rejected-rows': 'Проверить официальность',
@@ -145,6 +149,7 @@ export const DISPATCHER_SETTING_TASK_TYPE_LABELS: Record<DispatcherSettingId, st
 }
 
 export const OPTIONAL_DISPATCHER_SETTING_IDS: readonly DispatcherSettingId[] = [
+  'check-technology-card',
   'percentage-new-welder', 'percentage-rejected-rows', 'chain-duplicate', 'welder-stamp-expiry', 'welder-dls-expiry',
 ]
 export const DISPATCHER_SETTING_GROUPS: DispatcherSettingGroup[] = [{
@@ -176,10 +181,19 @@ export const DISPATCHER_SETTING_GROUPS: DispatcherSettingGroup[] = [{
       label: 'Срок действия ДЛС',
       description: 'Показывать напоминания в разделе «Клейма» о подходящем или истекшем сроке действия ДЛС. Количество дней до окончания настраивается рядом.',
     },
+    {
+      id: 'check-technology-card',
+      label: 'Проверить технологическую карту',
+      description: 'Показывать ДЗ-06 для заваренных стыков без ТК или с неизвестной/неподходящей ТК. Отключение не отменяет автоматический подбор при первом заполнении даты сварки.',
+    },
   ],
 }]
 
 export const DISPATCHER_SETTING_HELP: Record<DispatcherSettingId, { meaning: string; example: string }> = {
+  'check-technology-card': {
+    meaning: 'Проверяет ТК заваренного стыка по способам сварки, типу соединения, группам материалов, минимальным диаметру и толщине двух сторон и назначению ПСТО. Старые названия остаются связаны с переименованной картой; архив не отменяет прежнее назначение.',
+    example: 'ТК пуста и подходят две карты: выберите одну при редактировании стыка. Если параметры заполненной карты не подходят, ДЗ-06 перечислит причины, но не заблокирует сохранение.',
+  },
   'percentage-new-welder': {
     meaning: 'Следит, что на процентной линии появилось новое официальное клеймо, а значит процентный расчет начинается отдельно для этого сварщика.',
     example: 'На линии 10% раньше варил A1, а затем появился B2. Диспетчер попросит проверить, действительно ли B2 официально участвует в этой линии.',
@@ -319,6 +333,11 @@ const ACTION_REMINDER_DETAILS: DispatcherSettingActionHelp = {
 }
 
 export const DISPATCHER_SETTING_ACTION_HELP: Record<DispatcherSettingId, DispatcherSettingActionHelp[]> = {
+  'check-technology-card': [
+    { label: 'Проверить ТК', description: 'Открывает редактирование стыка: блок «Сварочный материал и ТК» содержит название и выбор подходящих карт.' },
+    ACTION_SHOW,
+    ACTION_DESCRIPTION,
+  ],
   'percentage-new-welder': [
     {
       label: 'Действия -> Исправить клеймо',
@@ -664,6 +683,7 @@ function getPercentageLineSettingId(task: Extract<DispatcherTask, { kind: 'perce
 }
 
 function getCheckTaskSettingId(reason?: string): DispatcherSettingId {
+  if (reason === TECHNOLOGY_CARD_REASON) return 'check-technology-card'
   if (reason === 'проверить даты сварки') return 'chain-date-order'
   if (reason === 'проверить клеймо') return 'check-welder-stamp'
   if (isIncompleteWeldStampGroupReason(reason)) return 'check-incomplete-stamps'

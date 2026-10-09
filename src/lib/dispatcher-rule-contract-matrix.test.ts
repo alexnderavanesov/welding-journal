@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   CONTROL_HISTORY_REASON,
+  TECHNOLOGY_CARD_REASON,
   JOINT_CORE_DATA_REASON,
   LNK_RESULT_COMPLETENESS_REASON,
   PSTO_RESULT_COMPLETENESS_REASON,
@@ -43,6 +44,7 @@ const rows = [
 ]
 
 const contracts: DispatcherRuleContract[] = [
+  rowContract('check-technology-card', checkTask(TECHNOLOGY_CARD_REASON), [1]),
   percentageContract('percentage-new-welder', 'new-welder'),
   percentageContract('percentage-excess', 'excess'),
   percentageContract('percentage-rejected-rows', 'rejected-rows'),

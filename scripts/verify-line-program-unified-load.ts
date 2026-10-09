@@ -52,10 +52,10 @@ try {
     assert(result.every(line => line.overview.common?.required === 20 && line.overview.pvk?.required === 20))
     results.push({ lines: count, joints: count * 200, queries: statements, milliseconds: Math.round(performance.now() - start), responseBytes: Buffer.byteLength(JSON.stringify(result)) })
   }
-  assert.equal(results[0].queries, results[1].queries, 'No per-line/per-row query fan-out')
-  // Joints + stable identities + three history tables + process settings +
-  // system indexes + approvals: eight batched reads, independent of line count.
-  assert(results[1].queries <= 8)
+  // Preserve complete 200-row lines, but release each 10k-row working set.
+  // 20 sequential batches, never 1000 per-line or 200k per-row requests.
+  assert.equal(results[0].queries, 8)
+  assert.equal(results[1].queries, 3 + 6 * 20)
   // Exercise the historical-candidate predicate on actual PostgreSQL rows, not
   // just generated SQL. These are this disposable benchmark's own fixtures.
   await client.query(`update weld_joints set vik_result='годен', pvk_result='годен (отменен)',

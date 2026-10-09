@@ -10,6 +10,7 @@ import {
 import type { RepeatedJointTask } from '@/lib/dispatcher-types'
 import { getBusinessDateIso } from '@/lib/business-date'
 import { DISPATCHER_TASK_REFRESH_QUERY_KEY } from '@/lib/weld-query-utils'
+import { DISPATCHER_TASK_CALCULATION_VERSION } from '@/lib/dispatcher-task-index-payload'
 
 vi.mock('@/lib/business-date', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/business-date')>(),
@@ -20,6 +21,7 @@ const serverMocks = vi.hoisted(() => ({
   getDispatcherTaskSnapshot: vi.fn(),
   refreshDispatcherTaskSnapshot: vi.fn(),
   getDispatcherTaskBatch: vi.fn(),
+  getDispatcherTaskVersion: vi.fn(),
 }))
 
 vi.mock('@/server/dispatcher-task-snapshot', () => serverMocks)
@@ -32,6 +34,39 @@ describe('dispatcher task snapshot visibility', () => {
     serverMocks.getDispatcherTaskSnapshot.mockResolvedValue(snapshot(false))
     serverMocks.refreshDispatcherTaskSnapshot.mockResolvedValue(snapshot(true))
     serverMocks.getDispatcherTaskBatch.mockResolvedValue([])
+    serverMocks.getDispatcherTaskVersion.mockResolvedValue({ sourceRevision: 7, computedRevision: 7, computedAt: snapshot(true).computedAt,
+      businessDate: '2026-09-23', computedForBusinessDate: '2026-09-23', calculationVersion: DISPATCHER_TASK_CALCULATION_VERSION })
+  })
+
+  it('shares one pending POST across own-save revisions instead of occupying browser connections', async () => {
+    let finish!: (value: ReturnType<typeof snapshot>) => void
+    serverMocks.refreshDispatcherTaskSnapshot.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const { result, queryClient } = mountActivitySnapshot()
+    await waitFor(() => expect(serverMocks.refreshDispatcherTaskSnapshot).toHaveBeenCalledOnce())
+    for (let revision = 8; revision <= 15; revision++) {
+      await act(async () => { queryClient.setQueryData(['dispatcher-task-snapshot'], snapshot(false, revision)) })
+      await waitFor(() => expect(result.current.data?.sourceRevision).toBe(revision))
+    }
+    expect(serverMocks.refreshDispatcherTaskSnapshot).toHaveBeenCalledOnce()
+    await act(async () => { finish(snapshot(true, 15)) })
+    await waitFor(() => expect(result.current.data?.computedRevision).toBe(15))
+  })
+
+  it('makes one sequential catch-up when the shared response predates an already known save', async () => {
+    let finish!: (value: ReturnType<typeof snapshot>) => void
+    serverMocks.refreshDispatcherTaskSnapshot
+      .mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+      .mockResolvedValue(snapshot(true, 10))
+    const { result, queryClient } = mountActivitySnapshot()
+    await waitFor(() => expect(serverMocks.refreshDispatcherTaskSnapshot).toHaveBeenCalledOnce())
+    for (const revision of [8, 9, 10]) {
+      await act(async () => { queryClient.setQueryData(['dispatcher-task-snapshot'], snapshot(false, revision)) })
+      await waitFor(() => expect(result.current.data?.sourceRevision).toBe(revision))
+    }
+    expect(serverMocks.refreshDispatcherTaskSnapshot).toHaveBeenCalledOnce()
+    await act(async () => { finish(snapshot(true, 7)) })
+    await waitFor(() => expect(result.current.data?.computedRevision).toBe(10))
+    expect(serverMocks.refreshDispatcherTaskSnapshot).toHaveBeenCalledTimes(2)
   })
 
   it('hides cards locally without changing the complete server task snapshot', () => {
@@ -47,6 +82,117 @@ describe('dispatcher task snapshot visibility', () => {
       { key: 'task-visible', code: 'ДЗ-01' },
       { key: 'task-hidden', code: 'СП-02' },
     ])
+  })
+
+  it('uses only one tiny version request on an unchanged open/focus burst', async () => {
+    serverMocks.getDispatcherTaskSnapshot.mockResolvedValue(snapshot(true))
+    const { result, rerender } = mountActivitySnapshot()
+    await waitFor(() => expect(result.current.data?.isFresh).toBe(true))
+    rerender({ open: true }); window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange'))
+    await waitFor(() => expect(serverMocks.getDispatcherTaskVersion).toHaveBeenCalledOnce())
+    expect(serverMocks.getDispatcherTaskSnapshot).toHaveBeenCalledOnce()
+    expect(serverMocks.refreshDispatcherTaskSnapshot).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])('updates all task types after another client changed data (already computed: %s)', async computed => {
+    serverMocks.getDispatcherTaskSnapshot.mockResolvedValueOnce(snapshot(true, 7)).mockResolvedValue(snapshot(computed, 8))
+    serverMocks.getDispatcherTaskVersion.mockResolvedValue({ sourceRevision: 8, computedRevision: computed ? 8 : 7, computedAt: snapshot(true).computedAt,
+      businessDate: '2026-09-23', computedForBusinessDate: '2026-09-23', calculationVersion: DISPATCHER_TASK_CALCULATION_VERSION })
+    serverMocks.refreshDispatcherTaskSnapshot.mockResolvedValue(snapshot(true, 8))
+    const { result, rerender } = mountActivitySnapshot()
+    await waitFor(() => expect(result.current.data?.sourceRevision).toBe(7))
+    rerender({ open: true })
+    await waitFor(() => expect(result.current.data?.computedRevision).toBe(8))
+    expect(serverMocks.getDispatcherTaskVersion).toHaveBeenCalledOnce()
+    expect(serverMocks.getDispatcherTaskSnapshot).toHaveBeenCalledTimes(2)
+    expect(serverMocks.refreshDispatcherTaskSnapshot).toHaveBeenCalledTimes(computed ? 0 : 1)
+  })
+
+  it('rechecks at a business-date boundary with no source mutations', async () => {
+    // Midnight invalidates freshness, not the monotonically stored revisions.
+    serverMocks.getDispatcherTaskSnapshot.mockResolvedValueOnce(snapshot(true))
+      .mockResolvedValue({ ...snapshot(true), isFresh: false })
+    serverMocks.getDispatcherTaskVersion.mockResolvedValue({ sourceRevision: 7, computedRevision: 7, computedAt: snapshot(true).computedAt,
+      businessDate: '2026-09-23', computedForBusinessDate: '2026-09-22', calculationVersion: DISPATCHER_TASK_CALCULATION_VERSION })
+    const { result, rerender } = mountActivitySnapshot()
+    await waitFor(() => expect(result.current.data?.isFresh).toBe(true))
+    rerender({ open: true })
+    await waitFor(() => expect(serverMocks.refreshDispatcherTaskSnapshot).toHaveBeenCalledOnce())
+    expect(serverMocks.getDispatcherTaskSnapshot).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows a probe failure with explicit retry, without dropping cached tasks or a retry loop', async () => {
+    serverMocks.getDispatcherTaskSnapshot.mockResolvedValue(snapshot(true))
+    serverMocks.getDispatcherTaskVersion.mockRejectedValue(new Error('Нет связи'))
+    const { result, rerender } = mountActivitySnapshot()
+    await waitFor(() => expect(result.current.data?.isFresh).toBe(true))
+    rerender({ open: true })
+    await waitFor(() => expect(result.current.taskBatchError?.message).toBe('Нет связи'))
+    expect(result.current.data?.sourceRevision).toBe(7)
+    await act(async () => { await result.current.retryTaskBatch() })
+    expect(result.current.taskBatchError).toBeNull()
+    expect(serverMocks.getDispatcherTaskVersion).toHaveBeenCalledOnce()
+  })
+
+  it('ignores a late probe older than an own-save snapshot', async () => {
+    let resolve!: (value: unknown) => void
+    serverMocks.getDispatcherTaskVersion.mockImplementation(() => new Promise(done => { resolve = done }))
+    serverMocks.getDispatcherTaskSnapshot.mockResolvedValue(snapshot(true))
+    const { result, rerender, queryClient } = mountActivitySnapshot()
+    await waitFor(() => expect(result.current.data?.isFresh).toBe(true))
+    rerender({ open: true })
+    await waitFor(() => expect(serverMocks.getDispatcherTaskVersion).toHaveBeenCalledOnce())
+    await act(async () => {
+      queryClient.setQueryData(['dispatcher-task-snapshot'], snapshot(true, 9))
+      resolve({ sourceRevision: 8, computedRevision: 7 })
+    })
+    await waitFor(() => expect(result.current.data?.sourceRevision).toBe(9))
+    expect(serverMocks.getDispatcherTaskSnapshot).toHaveBeenCalledOnce()
+  })
+
+  it('bounds refreshes when other users keep saving, then allows an explicit retry', async () => {
+    serverMocks.getDispatcherTaskSnapshot.mockResolvedValueOnce(snapshot(false, 7)).mockResolvedValue(snapshot(false, 9))
+    serverMocks.refreshDispatcherTaskSnapshot
+      .mockResolvedValueOnce(snapshot(false, 8))
+      .mockResolvedValueOnce(snapshot(false, 9))
+      .mockResolvedValue(snapshot(true, 10))
+    const { result } = mountActivitySnapshot()
+    await waitFor(() => expect(result.current.taskBatchError?.message).toContain('продолжают изменяться'))
+    expect(serverMocks.refreshDispatcherTaskSnapshot).toHaveBeenCalledTimes(2)
+    await act(async () => { await result.current.retryTaskBatch() })
+    await waitFor(() => expect(result.current.data?.computedRevision).toBe(10))
+    expect(serverMocks.refreshDispatcherTaskSnapshot).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not replace an already published snapshot with a late stale response of the same source revision', async () => {
+    let resolve!: (value: unknown) => void
+    serverMocks.getDispatcherTaskSnapshot.mockResolvedValue(snapshot(false, 7))
+    serverMocks.refreshDispatcherTaskSnapshot.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    const { result, queryClient } = mountActivitySnapshot()
+    await waitFor(() => expect(serverMocks.refreshDispatcherTaskSnapshot).toHaveBeenCalledOnce())
+    await act(async () => { queryClient.setQueryData(['dispatcher-task-snapshot'], snapshot(true, 7)); resolve(snapshot(false, 7)) })
+    await waitFor(() => expect(result.current.data?.isFresh).toBe(true))
+    expect(result.current.data?.computedRevision).toBe(7)
+    expect(result.current.taskBatchError).toBeNull()
+  })
+
+  it.each(['revision', 'business-date'] as const)('does not downgrade a newer %s publication when an older GET finishes later', async kind => {
+    let resolve!: (value: ReturnType<typeof snapshot>) => void
+    serverMocks.getDispatcherTaskSnapshot.mockResolvedValueOnce(snapshot(true, 7))
+      .mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    const { result, queryClient } = mountActivitySnapshot()
+    await waitFor(() => expect(result.current.data?.computedRevision).toBe(7))
+    let pending!: ReturnType<typeof result.current.refreshTasks>
+    act(() => { pending = result.current.refreshTasks() })
+    await waitFor(() => expect(serverMocks.getDispatcherTaskSnapshot).toHaveBeenCalledTimes(2))
+    const newer = kind === 'revision' ? snapshot(true, 9) : { ...snapshot(true, 8), computedAt: '2026-09-23T10:00:00.000Z' }
+    await act(async () => {
+      queryClient.setQueryData(['dispatcher-task-snapshot'], newer)
+      resolve(snapshot(true, 8))
+      await pending
+    })
+    await waitFor(() => expect(result.current.data).toEqual(newer))
+    expect(serverMocks.refreshDispatcherTaskSnapshot).not.toHaveBeenCalled()
   })
 
   it('does not hide an obligatory system warning', () => {
@@ -322,6 +468,12 @@ describe('dispatcher task snapshot visibility', () => {
     expect(serverMocks.getDispatcherTaskBatch).toHaveBeenCalledOnce()
   })
 })
+
+function mountActivitySnapshot() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: queryClient }, children)
+  return { ...renderHook(({ open }) => useDispatcherTaskSnapshot({ dismissedRepeatedJointTaskKeys: new Set(), workspaceOpen: open }), { wrapper, initialProps: { open: false } }), queryClient }
+}
 
 function snapshot(isFresh: boolean, sourceRevision = 7) {
   return {

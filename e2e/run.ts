@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process'
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { dropE2eDatabase } from './database'
 import prepareE2eDatabase from './global-setup'
@@ -7,6 +10,9 @@ let exitCode = 1
 
 try {
   await prepareE2eDatabase()
+  if (process.env.AUDIT_SQL_COUNTS === '1') {
+    process.env.AUDIT_SQL_COUNTS_FILE = join(await mkdtemp(join(tmpdir(), 'welding-e2e-sql-')), 'counts.json')
+  }
   exitCode = await runPlaywright(process.argv.slice(2))
 } finally {
   await dropE2eDatabase()
