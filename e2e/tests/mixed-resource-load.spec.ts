@@ -293,10 +293,19 @@ test('200k, five browser clients, mixed reads/writes/import/documents under hard
     console.log(JSON.stringify({ phase: 'mixed quiet/focus', quietMilliseconds: 6500, focusSql: (await auditSqlCount())! - quietSql!, focusCalls: telemetry.map((client, i) => client.calls.slice(beforeQuiet[i])) }))
     await pages[1].screenshot({ path: info.outputPath('mixed-final-program.png') })
   } finally {
-    for (const client of telemetry) console.log(JSON.stringify({ phase: 'mixed client', ...await client.summary() }))
+    for (const client of telemetry) {
+      console.log(JSON.stringify({ phase: 'mixed client', ...await client.summary() }))
+    }
     const resources = await stopSampling?.()
     console.log(JSON.stringify({ phase: 'mixed resources', ...resources }))
     await Promise.all(contexts.map(context => context.close()))
+    // Assert after releasing observers and browsers, including on failure.
+    // Same 200k/five-client fixture previously sent snapshots up to 5.24 MB.
+    for (const client of telemetry) {
+      for (const call of client.calls.filter(call => /^(get|refresh)DispatcherTaskSnapshot/.test(call.name))) {
+        expect(call.bytes).toBeLessThan(1_000_000)
+      }
+    }
     if (untouchedBaseline) {
       expect(await preservedFacts()).toEqual(untouchedBaseline)
       console.log(JSON.stringify({ phase: 'untouched facts preserved', ...untouchedBaseline }))

@@ -5,6 +5,7 @@ import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '../../src/lib/request-concl
 import { buildCurrentSystemDocumentName } from '../../src/lib/system-document-types'
 import { sampleLocalAuditResources } from '../audit-resources'
 import { auditSqlCount } from '../audit-sql'
+import { sampleMixedResources } from '../mixed-resource-telemetry'
 
 // Opt-in isolated load audit: AUDIT_REBUILD_ROWS=200 or 200000. e2e/run.ts
 // owns a fresh disposable localhost database and drops it after the run.
@@ -140,7 +141,8 @@ test('load audit: all four document kinds over real HTTP preserve first and repe
   const errors: string[] = [], calls: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
-  const stopSampling = await sampleLocalAuditResources(browser)
+  const resourceLimited = process.env.AUDIT_REBUILD_RESOURCE === '1'
+  const stopSampling = await (resourceLimited ? sampleMixedResources(browser) : sampleLocalAuditResources(browser))
   try {
     await page.goto('/settings')
     await page.getByRole('button', { name: 'Заявки и заключения', exact: true }).click()
@@ -225,7 +227,14 @@ test('load audit: all four document kinds over real HTTP preserve first and repe
     await page.screenshot({ path: info.outputPath('four-kind-rebuild-completed.png') })
   } finally {
     const resources = await stopSampling()
-    console.log(JSON.stringify({ workflow: 'four-kind rebuild sampled resources', ...resources }))
+    console.log(JSON.stringify({ workflow: 'four-kind rebuild sampled resources', resourceLimited, ...resources }))
     expect(resources.errors).toEqual([])
+    if ('lastCgroup' in resources) {
+      expect(resources.postmortem).toBe(false)
+      expect(resources.lastCgroup['memory.max']).toBe('2147483648')
+      expect(Number(resources.lastCgroup['memory.peak'])).toBeLessThan(2 * 1024 ** 3)
+      expect(resources.lastCgroup['memory.events']).toMatch(/oom 0\n/)
+      expect(resources.lastCgroup['memory.events']).toMatch(/oom_kill 0\n/)
+    }
   }
 })

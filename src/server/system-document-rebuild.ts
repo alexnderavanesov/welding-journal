@@ -55,6 +55,7 @@ import {
 import { assertSecurityScope } from '@/server/security-functions'
 import { getDispatcherDirtyScopes, markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
+import { loadRebuildWeldFacts } from '@/server/system-document-rebuild-facts'
 
 type RebuildPreviewRequest = {
   templateIds?: SystemDocumentTemplateId[]
@@ -224,23 +225,20 @@ export const loadRebuildSnapshot = createServerOnlyFn(async (
   // objects). Keep all original facts for freshness; never truncate the scope.
   const rowsById = new Map<number, WeldRow>()
   const rowRevisions = new Map<number, string>()
-  let rowRevisionKeys: string[] | undefined
   const orderedRowIds = [...rowIds].sort((a, b) => a - b)
   await assertRebuildFactBudget(tx, orderedRowIds)
   for (let offset = 0; offset < orderedRowIds.length; offset += 5000) {
-    const batch = await tx.select().from(weldJoints)
-      .where(buildNumberArrayMatch(weldJoints.id, orderedRowIds.slice(offset, offset + 5000)))
+    const batch = await loadRebuildWeldFacts(tx, orderedRowIds.slice(offset, offset + 5000))
     // Hash in these same batches instead of blocking the event loop for an
     // uninterrupted traversal of every wide record after the complete read.
-    if (!rowRevisionKeys && batch.length) rowRevisionKeys = Object.keys(batch[0]).filter(key => key !== 'dispatcherTasks').sort()
-    for (const row of batch) {
-      rowRevisions.set(row.id, hashValue(Object.fromEntries(rowRevisionKeys!.map(key => [key, row[key as keyof typeof row]]))))
+    for (const { row, revision } of batch) {
+      rowRevisions.set(row.id, revision)
       // Full facts (including null vs empty) have already entered the revision.
       // Naming/index consumers read optional WeldRow fields; absent and null
       // both mean no value. Retain EVERY populated field, not a fragile allowlist,
       // but don't keep ~150 mostly-null driver properties for every joint.
       // Names-only persistence below explicitly writes absent fields as SQL null.
-      rowsById.set(row.id, Object.fromEntries(Object.entries(row).filter(([, value]) => value != null)) as unknown as WeldRow)
+      rowsById.set(row.id, row)
     }
   }
   const sources: SystemDocumentRebuildSource[] = documents.map((document) => ({

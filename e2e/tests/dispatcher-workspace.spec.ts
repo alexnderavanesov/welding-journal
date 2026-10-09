@@ -8,6 +8,7 @@ import type { RepeatedJointTask } from '../../src/lib/dispatcher-types'
 import { lockWeldJointWritesForDispatcherReplacement } from '../../src/server/dispatcher-task-index'
 import { DISPATCHER_INDEX_LOCK_ID, DISPATCHER_REFRESH_LOCK_ID } from '../../src/server/dispatcher-task-index-constants'
 import { E2E_DATABASE_URL, withE2eDatabase } from '../database'
+import { rpcName } from '../rpc'
 
 test.afterEach(async ({ page }) => {
   await page.close()
@@ -28,11 +29,13 @@ test.afterEach(async ({ page }) => {
   })
 })
 
-test('рабочее окно находит задачу № 5001 без технической пагинации', async ({ page }) => {
+for (const compression of [true, false]) test(`рабочее окно находит задачу № 5001 без технической пагинации (сжатие: ${compression})`, async ({ page }) => {
   test.setTimeout(120_000)
   await seedTaskPages()
-
+  if (!compression) await page.addInitScript(() => { Object.defineProperty(window, 'DecompressionStream', { value: undefined }) })
+  const snapshotResponse = page.waitForResponse(response => rpcName(response.url()).startsWith('getDispatcherTaskSnapshot_'))
   await page.goto('/lnk')
+  expect((await (await snapshotResponse).text()).includes('gzip-base64-v1')).toBe(compression)
   const panel = page.getByLabel('Диспетчер задач', { exact: true })
   await expect(panel).toContainText('5001 задача')
   await expect(page.getByLabel('Страницы задач диспетчера')).toHaveCount(0)

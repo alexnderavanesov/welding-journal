@@ -9,8 +9,11 @@ export async function captureFullReportPrint(page: Page) {
       const target = frame.contentWindow!
       target.print = () => {
         const rows = frame.contentDocument!.querySelectorAll('tbody tr')
+        const logicalColumns = [...rows].map(row => [...row.querySelectorAll('td')].reduce((sum, cell) => sum + cell.colSpan, 0))
         document.body.dataset.fullPrint = JSON.stringify({ rows: rows.length,
-          lastRow: rows[rows.length - 1]?.textContent, columns: frame.contentDocument!.querySelectorAll('thead th').length })
+          lastRow: rows[rows.length - 1]?.textContent, columns: frame.contentDocument!.querySelectorAll('thead th').length,
+          minColumns: Math.min(...logicalColumns), maxColumns: Math.max(...logicalColumns),
+          cellNodes: frame.contentDocument!.querySelectorAll('tbody td').length })
         target.dispatchEvent(new Event('afterprint'))
       }
     }, true)

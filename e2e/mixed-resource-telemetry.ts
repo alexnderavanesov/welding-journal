@@ -69,6 +69,10 @@ export function observeMixedClient(context: BrowserContext, role: string) {
       p95Milliseconds: sorted[Math.max(0, Math.ceil(sorted.length * .95) - 1)] ?? 0,
       maxMilliseconds: sorted.at(-1) ?? 0,
       byName: Object.fromEntries([...new Set(calls.map(call => call.name))].map(name => [name, calls.filter(call => call.name === name).length])),
+      transferByName: Object.fromEntries([...new Set(calls.map(call => call.name))].map(name => {
+        const matching = calls.filter(call => call.name === name)
+        return [name, { bytes: matching.reduce((sum, call) => sum + call.bytes, 0), maxBytes: Math.max(...matching.map(call => call.bytes)) }]
+      })),
       pending: [...pending.keys()].map(request => rpcName(request.url())), errors, expectedFailures, abandonedOnNavigation }
   } }
 }

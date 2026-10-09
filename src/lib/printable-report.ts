@@ -36,7 +36,7 @@ export type PrintableReport = {
   emptyMessage?: string
 }
 
-export function buildPrintableReportHtml(report: PrintableReport, options: { embedded?: boolean } = {}) {
+export function buildPrintableReportHtml(report: PrintableReport, options: { embedded?: boolean; compactPrint?: boolean } = {}) {
   const generatedAt = new Intl.DateTimeFormat('ru-RU', {
     dateStyle: 'short',
     timeStyle: 'short',
@@ -46,7 +46,7 @@ export function buildPrintableReportHtml(report: PrintableReport, options: { emb
   const meta = renderMeta(report.meta ?? [], generatedAt)
   const metrics = renderMetrics(report.metrics ?? [])
   const charts = (report.charts ?? []).map(renderChart).join('')
-  const tables = (report.tables ?? []).map(renderTable).join('')
+  const tables = (report.tables ?? []).map(table => renderTable(table, options.compactPrint === true)).join('')
   const hasContent = Boolean(metrics || charts || tables)
   const empty = hasContent
     ? ''
@@ -136,6 +136,10 @@ export function buildPrintableReportHtml(report: PrintableReport, options: { emb
     }
     table { width: 100%; border-collapse: collapse; table-layout: auto; font-size: 12px; line-height: 1.4; }
     .wide-table { min-width: var(--table-min-width); }
+    .compact-print { table-layout: fixed; }
+    .empty-cell-run { position: relative; }
+    .empty-cell-run svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .empty-cell-run path { fill: none; stroke: #e6ebf0; stroke-width: 1; vector-effect: non-scaling-stroke; }
     thead { display: table-header-group; }
     th {
       padding: 7px 8px; border-right: 1px solid #d4dee7; border-bottom: 2px solid #c5d4df;
@@ -244,25 +248,46 @@ function renderChart(chart: PrintableReportChart) {
   </section>`
 }
 
-function renderTable(table: PrintableReportTable) {
+function renderTable(table: PrintableReportTable, compactPrint: boolean) {
+  // Only the off-screen full-print frame uses fixed-width sparse cells. The
+  // interactive preview and all populated values keep their existing markup.
+  const compact = compactPrint && table.columns.length > 8
   const header = table.columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('')
   const rows = table.rows
     .map((row, index) => {
       const kind = table.rowKinds?.[index]
       const rowClass = kind ? ` class="table-row-${kind}"` : ''
-      return `<tr${rowClass}>${row.map((cell) => `<td>${escapeHtml(String(cell))}</td>`).join('')}</tr>`
+      return `<tr${rowClass}>${renderTableCells(row, compact)}</tr>`
     })
     .join('')
   return `<section class="section">
     ${table.title ? `<h2 class="section-title">${escapeHtml(table.title)}</h2>` : ''}
     ${table.subtitle ? `<p class="section-subtitle">${escapeHtml(table.subtitle)}</p>` : ''}
     <div class="table-wrap">
-      <table${table.columns.length > 8 ? ` class="wide-table" style="--table-min-width:${table.columns.length * 90}px"` : ''}>
+      <table${table.columns.length > 8 ? ` class="wide-table${compact ? ' compact-print' : ''}" style="--table-min-width:${table.columns.length * 90}px"` : ''}>
         <thead><tr>${header}</tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
   </section>`
+}
+
+function renderTableCells(row: Array<string | number>, compact: boolean) {
+  const cells: string[] = []
+  for (let index = 0; index < row.length; index++) {
+    let end = index + 1
+    if (compact && row[index] === '') while (end < row.length && row[end] === '') end++
+    const span = end - index
+    if (span >= 3) {
+      // Empty cells carry no text. One spanning cell plus vector grid lines
+      // preserves their columns/borders without thousands of empty layout boxes.
+      // SVG strokes print even when the browser disables background graphics.
+      const lines = Array.from({ length: span - 1 }, (_, i) => `M${i + 1} 0V1`).join('')
+      cells.push(`<td colspan="${span}" class="empty-cell-run"><svg aria-hidden="true" viewBox="0 0 ${span} 1" preserveAspectRatio="none"><path d="${lines}"/></svg></td>`)
+      index = end - 1
+    } else cells.push(`<td>${escapeHtml(String(row[index]))}</td>`)
+  }
+  return cells.join('')
 }
 
 function formatNumber(value: number) {

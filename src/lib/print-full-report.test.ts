@@ -15,6 +15,7 @@ it('prints every row and releases the document after print/cancel', () => {
   expect(done).toHaveBeenCalledTimes(1)
   expect(error).not.toHaveBeenCalled()
   expect(frame.isConnected).toBe(false)
+  expect(frame.hasAttribute('srcdoc')).toBe(false)
 })
 it('disposes failed and cancelled preparations; late load cannot print', () => {
   const done = vi.fn(), error = vi.fn()
@@ -22,6 +23,8 @@ it('disposes failed and cancelled preparations; late load cannot print', () => {
   const frame = document.querySelector('iframe')!, target = frame.contentWindow!
   const print = vi.spyOn(target, 'print').mockImplementation(() => {})
   dispose()
+  dispose()
+  expect(frame.hasAttribute('srcdoc')).toBe(false)
   frame.dispatchEvent(new Event('load'))
   expect(print).not.toHaveBeenCalled()
   expect(done).not.toHaveBeenCalled()

@@ -20,6 +20,7 @@ import { getDispatcherTaskBatch } from '@/server/dispatcher-task-pages'
 import { getBusinessDateIso } from '@/lib/business-date'
 import { DISPATCHER_TASK_CALCULATION_VERSION } from '@/lib/dispatcher-task-index-payload'
 import { useDispatcherActivityCheck } from '@/lib/use-dispatcher-activity-check'
+import { decodeDispatcherSnapshot, dispatcherSnapshotRequest } from '@/lib/dispatcher-snapshot-transport'
 
 type UseDispatcherTaskSnapshotInput = {
   dismissedRepeatedJointTaskKeys: Set<string>
@@ -37,7 +38,7 @@ const pendingRefreshes = new WeakMap<QueryClient, Promise<DispatcherTaskSnapshot
 function requestSharedRefresh(client: QueryClient) {
   const existing = pendingRefreshes.get(client)
   if (existing) return existing
-  const pending = refreshDispatcherTaskSnapshot({ data: {} }).finally(() => {
+  const pending = refreshDispatcherTaskSnapshot({ data: dispatcherSnapshotRequest() }).then(decodeDispatcherSnapshot).finally(() => {
     if (pendingRefreshes.get(client) === pending) pendingRefreshes.delete(client)
   })
   pendingRefreshes.set(client, pending)
@@ -79,7 +80,7 @@ export function useDispatcherTaskSnapshot({
     queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
     enabled,
     queryFn: async () => {
-      const snapshot = await getDispatcherTaskSnapshot({ data: {} })
+      const snapshot = await decodeDispatcherSnapshot(await getDispatcherTaskSnapshot({ data: dispatcherSnapshotRequest() }))
       // A real GET (opening, own-save invalidation or explicit retry) starts a
       // new refresh opportunity. Publishing a POST result below does not.
       unpublishedRefreshes.current = 0

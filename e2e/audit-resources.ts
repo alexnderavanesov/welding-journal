@@ -21,6 +21,8 @@ export async function sampleLocalAuditResources(browser: Browser) {
   let serverPeakKiB = 0, browserPeakKiB = 0, samples = 0
   let connectionsPeak = 0, activePeak = 0, blockedPeak = 0, parallelWorkersPeak = 0, transactionAgePeakSeconds = 0
   const errors: string[] = []
+  let phaseServerPeakKiB = 0, phaseBrowserPeakKiB = 0
+  const phases: Array<{ name: string; serverPeakMiB: number; browserProcessSumPeakMiB: number }> = []
   const sample = async () => {
     const { processInfo } = await session.send('SystemInfo.getProcessInfo')
     const browserIds = new Set(processInfo.map(process => process.id))
@@ -34,6 +36,8 @@ export async function sampleLocalAuditResources(browser: Browser) {
     }
     serverPeakKiB = Math.max(serverPeakKiB, serverKiB)
     browserPeakKiB = Math.max(browserPeakKiB, browserKiB)
+    phaseServerPeakKiB = Math.max(phaseServerPeakKiB, serverKiB)
+    phaseBrowserPeakKiB = Math.max(phaseBrowserPeakKiB, browserKiB)
     const { rows: [database] } = await observer.query(`select count(*) filter(where backend_type='client backend')::int as connections,
       count(*) filter(where state='active' and backend_type='client backend')::int as active,
       count(*) filter(where backend_type='parallel worker')::int as parallel_workers,
@@ -51,7 +55,7 @@ export async function sampleLocalAuditResources(browser: Browser) {
   const timer = setInterval(() => {
     if (!pending) pending = sample().catch(error => { errors.push(String(error)) }).finally(() => { pending = undefined })
   }, 500)
-  return async () => {
+  const stop = async () => {
     clearInterval(timer)
     await pending
     await sample().catch(error => { errors.push(String(error)) })
@@ -59,6 +63,13 @@ export async function sampleLocalAuditResources(browser: Browser) {
     await observer.end()
     return { sampleIntervalMs: 500, samples, serverPeakMiB: Math.round(serverPeakKiB / 1024),
       browserProcessSumPeakMiB: Math.round(browserPeakKiB / 1024), connectionsPeak, activePeak,
-      blockedPeak, parallelWorkersPeak, transactionAgePeakSeconds: Math.round(transactionAgePeakSeconds * 100) / 100, errors }
+      blockedPeak, parallelWorkersPeak, transactionAgePeakSeconds: Math.round(transactionAgePeakSeconds * 100) / 100, phases, errors }
   }
+  return Object.assign(stop, { checkpoint: async (name: string) => {
+    await pending
+    await sample()
+    phases.push({ name, serverPeakMiB: Math.round(phaseServerPeakKiB / 1024),
+      browserProcessSumPeakMiB: Math.round(phaseBrowserPeakKiB / 1024) })
+    phaseServerPeakKiB = 0; phaseBrowserPeakKiB = 0
+  } })
 }

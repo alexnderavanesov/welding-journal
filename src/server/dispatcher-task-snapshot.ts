@@ -1,12 +1,11 @@
 import { createServerFn } from '@tanstack/react-start'
-import type {
-  RepeatedJointTask,
-  WelderStampExpiryTask,
-} from '@/lib/dispatcher-types'
+import type { DispatcherTaskSnapshotResult } from '@/lib/dispatcher-snapshot-transport'
+import { encodeDispatcherSnapshot } from '@/server/dispatcher-snapshot-transport'
+export type { DispatcherTaskSnapshotResult } from '@/lib/dispatcher-snapshot-transport'
 import { getDispatcherTaskIndexSnapshot } from '@/server/dispatcher-task-index'
 import { assertSecurityScope } from '@/server/security-functions'
 
-export type DispatcherTaskSnapshotRequest = Record<string, never>
+export type DispatcherTaskSnapshotRequest = { transport?: 'gzip-v1' }
 
 export const getDispatcherTaskVersion = createServerFn({ method: 'GET' })
   .handler(async () => {
@@ -16,35 +15,23 @@ export const getDispatcherTaskVersion = createServerFn({ method: 'GET' })
     return readDispatcherTaskVersion(requireDb())
   })
 
-export type DispatcherTaskSnapshotResult = {
-  duplicateKeys: string[]
-  repeatedJointTasks: RepeatedJointTask[]
-  taskFilterOptions: Array<{ value: string; count: number; label: string }>
-  welderStampExpiryTasks: WelderStampExpiryTask[]
-  repeatedJointTaskCount: number
-  repeatedJointTaskPageCount: number
-  repeatedJointTasksTruncated: boolean
-  sourceRevision: number
-  computedRevision: number
-  isFresh: boolean
-  computedAt: string
-}
-
 export const getDispatcherTaskSnapshot = createServerFn({ method: 'GET' })
   .validator((data: DispatcherTaskSnapshotRequest | undefined) => data ?? {})
-  .handler(async (): Promise<DispatcherTaskSnapshotResult> => {
+  .handler(async ({ data }) => {
     await assertSecurityScope('entry')
     // The client starts exactly one revision-keyed POST refresh after reading
     // a stale snapshot. Avoid starting a second unobserved refresh from GET.
     const snapshot = await getDispatcherTaskIndexSnapshot({ scheduleRefresh: false })
-    return toSnapshotResult(snapshot)
+    const result = toSnapshotResult(snapshot)
+    return data.transport === 'gzip-v1' ? encodeDispatcherSnapshot(result) : result
   })
 
 export const refreshDispatcherTaskSnapshot = createServerFn({ method: 'POST' })
   .validator((data: DispatcherTaskSnapshotRequest | undefined) => data ?? {})
-  .handler(async (): Promise<DispatcherTaskSnapshotResult> => {
+  .handler(async ({ data }) => {
     await assertSecurityScope('entry')
-    return toSnapshotResult(await getDispatcherTaskIndexSnapshot({ ensureFresh: true }))
+    const result = toSnapshotResult(await getDispatcherTaskIndexSnapshot({ ensureFresh: true }))
+    return data.transport === 'gzip-v1' ? encodeDispatcherSnapshot(result) : result
   })
 
 function toSnapshotResult(

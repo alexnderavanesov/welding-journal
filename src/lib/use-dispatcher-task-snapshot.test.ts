@@ -94,6 +94,36 @@ describe('dispatcher task snapshot visibility', () => {
     expect(serverMocks.refreshDispatcherTaskSnapshot).not.toHaveBeenCalled()
   })
 
+  it('retains the displayed snapshot when compressed transport fails, without automatic request loops', async () => {
+    serverMocks.getDispatcherTaskSnapshot.mockResolvedValueOnce(snapshot(true, 7))
+      .mockResolvedValueOnce({ encoding: 'gzip-base64-v1', summary: '%not-base64%', taskChunks: [] })
+      .mockResolvedValue(snapshot(true, 8))
+    const { result } = mountActivitySnapshot()
+    await waitFor(() => expect(result.current.data?.computedRevision).toBe(7))
+    await act(async () => { await expect(result.current.refreshTasks()).rejects.toThrow() })
+    expect(result.current.data?.computedRevision).toBe(7)
+    expect(serverMocks.getDispatcherTaskSnapshot).toHaveBeenCalledTimes(2)
+    expect(serverMocks.refreshDispatcherTaskSnapshot).not.toHaveBeenCalled()
+    await act(async () => { await result.current.refreshTasks() })
+    await waitFor(() => expect(result.current.data?.computedRevision).toBe(8))
+    expect(serverMocks.getDispatcherTaskSnapshot).toHaveBeenCalledTimes(3)
+  })
+
+  it('retains stale tasks after a corrupt POST and releases the shared request for explicit retry', async () => {
+    serverMocks.refreshDispatcherTaskSnapshot
+      .mockResolvedValueOnce({ encoding: 'gzip-base64-v1', summary: '%not-base64%', taskChunks: [] })
+      .mockResolvedValue(snapshot(true, 7))
+    const { result } = mountActivitySnapshot()
+    await waitFor(() => expect(result.current.error).toBeInstanceOf(Error))
+    expect(result.current.data).toEqual(snapshot(false, 7))
+    expect(serverMocks.refreshDispatcherTaskSnapshot).toHaveBeenCalledOnce()
+    await act(async () => { await result.current.refreshTasks() })
+    await waitFor(() => expect(result.current.data?.isFresh).toBe(true))
+    expect(result.current.error).toBeNull()
+    expect(serverMocks.refreshDispatcherTaskSnapshot).toHaveBeenCalledTimes(2)
+    expect(serverMocks.getDispatcherTaskSnapshot).toHaveBeenCalledTimes(2)
+  })
+
   it.each([false, true])('updates all task types after another client changed data (already computed: %s)', async computed => {
     serverMocks.getDispatcherTaskSnapshot.mockResolvedValueOnce(snapshot(true, 7)).mockResolvedValue(snapshot(computed, 8))
     serverMocks.getDispatcherTaskVersion.mockResolvedValue({ sourceRevision: 8, computedRevision: computed ? 8 : 7, computedAt: snapshot(true).computedAt,

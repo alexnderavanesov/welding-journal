@@ -989,13 +989,7 @@ export async function syncSystemDocumentsForWeldChangesInTransaction(
   await syncLayeredControlDocumentsForWeldChangesInTransaction(tx, currentRows, previousRows)
 
   const changes = SYSTEM_DOCUMENT_INDEX_LOCK_ORDER.flatMap((type) => {
-    const previousReferences = collectSystemDocumentReferences([...previousRows.values()], type)
-    const currentReferences = collectSystemDocumentReferences(currentRows, type)
-    if (!hasSystemDocumentImpact({ currentRows, previousRows, type })) return []
-    const affectedReferences = uniqueSystemDocumentReferences([
-      ...previousReferences,
-      ...currentReferences,
-    ])
+    const { previousReferences, affectedReferences } = collectSystemDocumentChangeReferences(currentRows, previousRows, type, options)
     return affectedReferences.length > 0
       ? [{ type, previousReferences, affectedReferences }]
       : []
@@ -1300,6 +1294,39 @@ async function insertGeneratedDocumentAssignments(
     from unnest(${sql.param(rowIds)}::integer[]) as source(weld_joint_id)
     on conflict do nothing
   `)
+}
+
+export function collectSystemDocumentChangeReferences(
+  currentRows: Array<Partial<WeldRow> & Pick<WeldRow, 'id'>>,
+  previousRows: ReadonlyMap<number, Partial<WeldRow> & Pick<WeldRow, 'id'>>,
+  type: SystemDocumentType,
+  options: { documentNamesOnly?: boolean } = {},
+) {
+  if (options.documentNamesOnly) {
+    // Renaming a repeat cycle also touches its parent weld's service timestamp.
+    // An unchanged primary document on that weld may contain the entire
+    // journal. Do not reread it just because another row's primary name changed.
+    // Use the same complete impact signature, not a name-only approximation:
+    // additions/removals, dates and summary metadata still enter both scopes.
+    const currentIds = new Set(currentRows.map(row => row.id))
+    const changedPrevious = new Map<number, Partial<WeldRow> & Pick<WeldRow, 'id'>>()
+    currentRows = currentRows.filter(row => {
+      const previous = previousRows.get(row.id)
+      const before = getSystemDocumentImpactSignatures(previous ? [previous] : [], type)
+      const after = getSystemDocumentImpactSignatures([row], type)
+      if (before.length === after.length && before.every((value, index) => value === after[index])) return false
+      if (previous) changedPrevious.set(row.id, previous)
+      return true
+    })
+    for (const [id, previous] of previousRows) if (!currentIds.has(id)) changedPrevious.set(id, previous)
+    previousRows = changedPrevious
+  } else if (!hasSystemDocumentImpact({ currentRows, previousRows, type })) {
+    return { previousReferences: [], affectedReferences: [] }
+  }
+  const previousReferences = collectSystemDocumentReferences([...previousRows.values()], type)
+  return { previousReferences, affectedReferences: uniqueSystemDocumentReferences([
+    ...previousReferences, ...collectSystemDocumentReferences(currentRows, type),
+  ]) }
 }
 
 function hasSystemDocumentImpact({

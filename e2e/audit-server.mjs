@@ -28,7 +28,7 @@ const file = process.env.AUDIT_SQL_COUNTS_FILE
 assert(resourceContainer ? file === '/audit-counts/counts.json'
   : file?.startsWith(join(tmpdir(), 'welding-e2e-sql-')) && file.endsWith('/counts.json'))
 const counts = { statements: 0, operations: {} }
-const resources = resourceContainer ? { heapLimitBytes: getHeapStatistics().heap_size_limit,
+const resources = resourceContainer || process.env.AUDIT_MEMORY === '1' ? { heapLimitBytes: getHeapStatistics().heap_size_limit,
   node: process.version, rssPeakBytes: 0, heapUsedPeakBytes: 0, cgroup: {}, samples: [], reads: {} } : undefined
 // Diagnostic only: sample allocation stacks without a full, stop-the-world heap
 // snapshot. Acceptance runs leave this off and keep the original resource cap.
@@ -96,9 +96,10 @@ const flush = () => {
     const memory = process.memoryUsage()
     resources.rssPeakBytes = Math.max(resources.rssPeakBytes, memory.rss)
     resources.heapUsedPeakBytes = Math.max(resources.heapUsedPeakBytes, memory.heapUsed)
-    resources.cgroup = Object.fromEntries(['memory.peak', 'memory.events', 'cpu.stat', 'cpu.max', 'memory.max', 'memory.swap.max']
+    if (resourceContainer) resources.cgroup = Object.fromEntries(['memory.peak', 'memory.events', 'cpu.stat', 'cpu.max', 'memory.max', 'memory.swap.max']
       .map(name => [name, readFileSync('/sys/fs/cgroup/' + name, 'utf8').trim()]))
-    resources.samples.push({ uptimeSeconds: Math.round(process.uptime() * 10) / 10, rss: memory.rss, heapUsed: memory.heapUsed })
+    resources.externalPeakBytes = Math.max(resources.externalPeakBytes ?? 0, memory.external)
+    resources.samples.push({ uptimeSeconds: Math.round(process.uptime() * 10) / 10, rss: memory.rss, heapUsed: memory.heapUsed, external: memory.external })
     if (resources.samples.length > 120) resources.samples.shift()
   }
   writeFileSync(file + '.tmp', JSON.stringify({ ...counts, ...(resources ? { resources } : {}) }))

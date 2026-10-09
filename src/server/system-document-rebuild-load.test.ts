@@ -3,13 +3,16 @@ import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-se
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { SystemDocumentSummary } from '@/lib/system-document-types'
 import { loadRebuildSnapshot, loadRebuildLockTargets, assertRebuildLocksCoverSnapshot } from './system-document-rebuild'
-import { generatedDocuments, pstoRepeatCycles } from '@/db/schema'
+import { generatedDocuments, pstoRepeatCycles, weldJoints } from '@/db/schema'
 import { PgDialect } from 'drizzle-orm/pg-core'
-import type { SQL } from 'drizzle-orm'
+import { getTableColumns, type SQL } from 'drizzle-orm'
 import { REBUILD_DOCUMENT_LIMIT, REBUILD_POSITION_LIMIT, type RebuildBatch } from '@/lib/system-document-rebuild-batch'
 
 const batch: RebuildBatch = { cursor: { afterId: 0, throughId: 200_000 }, nextCursor: null, documentIds: [1], blocked: [],
   documentLimit: REBUILD_DOCUMENT_LIMIT, positionLimit: REBUILD_POSITION_LIMIT }
+const columns = getTableColumns(weldJoints)
+const factRecords = (rows: object[]) => rows.map(row => ({ facts: Object.fromEntries(Object.entries(row)
+  .filter(([key]) => key in columns).map(([key, value]) => [columns[key as keyof typeof columns].name, value])) }))
 vi.mock('@/server/system-document-rebuild-batch', () => ({
   assertRebuildFactBudget: vi.fn(async () => {}), loadRebuildOccupiedNumbers: vi.fn(async () => new Map()),
 }))
@@ -92,7 +95,7 @@ it.each([24, REBUILD_DOCUMENT_LIMIT])('loads a complete bounded packet of %i doc
     date: '2026-09-01', rowIds: [row.id], rowCount: 1, updatedAt: '' })) as SystemDocumentSummary[]
   state.load.mockImplementation(async (_tx, type) => type === 'pstoRequest' ? documents : [])
   const selectRows = selectedRows(rows)
-  const select = vi.fn(() => ({ from: () => ({ where: selectRows }) }))
+  const select = vi.fn(() => ({ from: () => ({ where: async (where: SQL) => factRecords(await selectRows(where)) }) }))
   const result = await loadRebuildSnapshot({ select } as never, batch)
   expect(result.sources).toHaveLength(count)
   expect(result.sources.at(-1)?.rows[0].id).toBe(count)
@@ -114,7 +117,7 @@ it.each([24, 60_000])('loads %i permitted cycle positions with batched reads, no
   state.load.mockImplementation(async (_tx, type) => type === 'pstoRequest' ? [document] : [])
   const selectRows = selectedRows(rows), selectCycles = selectedRows(cycles)
   const select = vi.fn(() => ({ from: (table: unknown) => ({ where:
-    table === generatedDocuments ? async () => [{ id: 1, sourceMetadata: metadata }] : table === pstoRepeatCycles ? selectCycles : selectRows }) }))
+    table === generatedDocuments ? async () => [{ id: 1, sourceMetadata: metadata }] : table === pstoRepeatCycles ? selectCycles : async (where: SQL) => factRecords(await selectRows(where)) }) }))
   const result = await loadRebuildSnapshot({ select } as never, batch)
   expect(select).toHaveBeenCalledTimes(1 + 2 * Math.ceil(count / 5000))
   expect(result.sources[0].cyclePositions).toHaveLength(count)
@@ -138,7 +141,7 @@ it('bounds revision serialization by one record, while retaining every row and c
     rowIds: rows.map(row => row.id), rowCount: rows.length, updatedAt: '' }
   state.load.mockImplementation(async (_tx, type) => type === 'pstoRequest' ? [document] : [])
   const select = vi.fn(() => ({ from: (table: unknown) => ({ where: async () =>
-    table === generatedDocuments ? [{ id: 1, sourceMetadata: metadata }] : table === pstoRepeatCycles ? cycles : rows }) }))
+    table === generatedDocuments ? [{ id: 1, sourceMetadata: metadata }] : table === pstoRepeatCycles ? cycles : factRecords(rows) }) }))
   const stringify = JSON.stringify
   let largest = 0
   const spy = vi.spyOn(JSON, 'stringify').mockImplementation((...args: Parameters<typeof JSON.stringify>) => {
@@ -167,7 +170,7 @@ it('still hashes facts in later batches when all IDs from the first batch have d
     documentId: 1, type, title: 'P', date: '2026-09-01',
     rowIds: Array.from({ length: 5001 }, (_, index) => index + 1), rowCount: 5001, updatedAt: '',
   }] : [])
-  const select = vi.fn(() => ({ from: () => ({ where: selectedRows([row]) }) }))
+  const select = vi.fn(() => ({ from: () => ({ where: async (where: SQL) => factRecords(await selectedRows([row])(where)) }) }))
   const revision = async () => (await loadRebuildSnapshot({ select } as never, batch)).preview.scopeRevisions.pstoRequest
   const original = await revision()
   row.pstoNote = 'Changed fact'
@@ -181,7 +184,7 @@ it('retains populated facts but not wide empty columns, hashing nulls before com
   state.load.mockImplementation(async (_tx, type) => type === 'pstoRequest' ? [{
     documentId: 1, type, title: 'P', date: '2026-09-01', rowIds: [1], rowCount: 1, updatedAt: '',
   }] : [])
-  const select = vi.fn(() => ({ from: () => ({ where: selectedRows([row]) }) }))
+  const select = vi.fn(() => ({ from: () => ({ where: async (where: SQL) => factRecords(await selectedRows([row])(where)) }) }))
   const original = await loadRebuildSnapshot({ select } as never, batch)
   expect(original.sources[0].rows[0]).toEqual({ id: 1, joint: 'S1', pstoRequest: 'P', wdi: 0, officiality: '' })
   expect(row.pstoNote).toBeNull() // Never mutate the driver's/source record.

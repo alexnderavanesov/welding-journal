@@ -2,6 +2,31 @@ import { describe, expect, it } from 'vitest'
 import { buildPrintableReportHtml } from '@/lib/printable-report'
 
 describe('printable report', () => {
+  it('compacts only runs of genuinely empty print cells, preserving every column, value and row kind', () => {
+    const columns = Array.from({ length: 111 }, (_, i) => `Column ${i}`)
+    const rows = Array.from({ length: 120 }, (_, i) => columns.map((_, column) => column === 0 ? `S${i}` : column === 55 ? 0 : column === 110 ? '<last>\nстрока' : ''))
+    const report = { title: 'Wide', tables: [{ title: '', columns, rows, rowKinds: rows.map(() => 'detail' as const) }] }
+    const ordinary = new DOMParser().parseFromString(buildPrintableReportHtml(report), 'text/html')
+    const compact = new DOMParser().parseFromString(buildPrintableReportHtml(report, { compactPrint: true }), 'text/html')
+    expect(ordinary.querySelectorAll('td')).toHaveLength(120 * 111)
+    expect(compact.querySelectorAll('td').length).toBeLessThan(120 * 10)
+    expect(compact.querySelectorAll('thead th')).toHaveLength(111)
+    const expanded = [...compact.querySelectorAll('tbody tr')].map(row => [...row.querySelectorAll('td')]
+      .flatMap(cell => cell.colSpan > 1 ? Array(cell.colSpan).fill('') : [cell.textContent]))
+    expect(expanded).toEqual(rows.map(row => row.map(String)))
+    expect(compact.querySelectorAll('.table-row-detail')).toHaveLength(120)
+    expect(compact.querySelector('last')).toBeNull()
+  })
+
+  it('keeps whitespace, zero and non-empty placeholders as real print cells', () => {
+    const values = ['', '', '', ' ', 0, '—', '', '', 'end']
+    const doc = new DOMParser().parseFromString(buildPrintableReportHtml({ title: 'Edges',
+      tables: [{ title: '', columns: values.map(String), rows: [values] }] }, { compactPrint: true }), 'text/html')
+    const cells = [...doc.querySelectorAll('tbody td')]
+    expect(cells.map(cell => cell.textContent)).toEqual(['', ' ', '0', '—', '', '', 'end'])
+    expect(cells[0].getAttribute('colspan')).toBe('3')
+  })
+
   it('omits standalone controls in the embedded preview while retaining escaped content and print layout', () => {
     const html = buildPrintableReportHtml({ title: '<Сводка>', tables: [{ title: 'Линии', columns: ['Линия'], rows: [['<L1>']] }] }, { embedded: true })
     expect(html).not.toContain('<div class="toolbar">')
