@@ -277,7 +277,12 @@ function WelderStampsRegistryContent({
         })}
       </div>
 
-      <div className="min-w-0 overflow-hidden rounded-md border border-slate-200">
+      <div
+        role="region"
+        aria-label="Таблица клейм — горизонтальная прокрутка"
+        tabIndex={0}
+        className="min-w-0 overflow-x-auto rounded-md border border-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500"
+      >
         <WelderStampsRecordsTable
           records={visibleRecords}
           emptyMessage={hasSearchOrRangeFilters || statusFilter !== 'all' ? 'По выбранным фильтрам клейма не найдены.' : 'Пока нет добавленных клейм.'}

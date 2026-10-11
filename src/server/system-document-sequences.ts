@@ -217,6 +217,7 @@ export async function reserveSystemDocumentNames(
   rawInputs: readonly SystemDocumentNameReservationInput[],
   options: {
     countersAlreadyLocked?: boolean
+    rejectChangedProvisionalNames?: boolean
     occupiedNumbersBySequence?: ReadonlyMap<SystemDocumentTemplateId, ReadonlySet<number>>
   } = {},
 ) {
@@ -273,6 +274,9 @@ export async function reserveSystemDocumentNames(
     }
     if (occupiedNumbers.has(number) || occupiedNames.has(systemDocumentNameKey(request.date, name))) {
       throw new Error('Не удалось назначить уникальный порядковый номер системного документа.')
+    }
+    if (options.rejectChangedProvisionalNames && name !== request.provisionalName) {
+      throw new Error('Показанный системный номер или шаблон имени изменился. При создании откройте «…» рядом с разделением → «Обновить номера и имена»; при изменении готовых документов нажмите «Проверить изменения». Проверьте новые названия перед сохранением.')
     }
     occupiedNames.add(systemDocumentNameKey(request.date, name))
     occupiedNumbers.add(number)

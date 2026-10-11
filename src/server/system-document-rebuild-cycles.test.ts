@@ -2,12 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-settings'
-import { buildSystemDocumentRebuildDocuments, type SystemDocumentRebuildSource } from '@/lib/system-document-rebuild'
 import { buildSystemDocumentSummaries } from '@/lib/system-document-types'
-import { indexRebuildCyclePositions, planRebuildCycleGroup } from './system-document-rebuild-cycles'
-import { assertNoRebuildIdentityCollisions, getDocumentIdentityKey, persistRebuildDocumentNames } from './system-document-rebuild'
+import { buildDocumentOperationGroups, getDocumentOperationPositions, type DocumentOperationSource } from '@/lib/system-document-operation'
+import { persistRebuildDocumentNames } from './system-document-rebuild'
 
-function source(): SystemDocumentRebuildSource {
+function source(): DocumentOperationSource {
   const rows = [1, 2].map(id => ({ id, joint: `S${id}`, line: `L${id}`, projectTitle: 'P', subtitleCode: 'C',
     pstoRequest: 'ЗПСТО-24.08.2026-005', pstoRequestDate: '2026-08-24',
     pstoDate: '2026-08-25', heatTreatmentDiagram: 'Diagram-1', pstoResult: 'выполнено',
@@ -25,34 +24,17 @@ function source(): SystemDocumentRebuildSource {
   }
 }
 
-describe('rebuilding exact PSTO/TVMT cycle positions', () => {
-  it('does not merge a rebuilt cycle group into an existing legacy first-cycle document with the same name/date', () => {
-    const input = source()
-    const legacy = { ...input, document: { ...input.document, documentId: 8, sourceKind: undefined, title: 'Occupied' } }
-    expect(() => assertNoRebuildIdentityCollisions([input, legacy], new Map([
-      [7, [getDocumentIdentityKey(input.document, 'Occupied')]],
-    ]))).toThrow('одинаковые названия')
-  })
-  it('includes mixed first/repeat cycles and splits by line, never by cycle number', () => {
-    const input = source()
-    const build = (mode: 'line' | 'none') => buildSystemDocumentRebuildDocuments({ sources: [input],
-      settings: { ...REQUEST_CONCLUSION_DEFAULT_SETTINGS,
-        splitModes: { ...REQUEST_CONCLUSION_DEFAULT_SETTINGS.splitModes, pstoRequest: mode } }, nextNumbers: { pstoRequest: 6 } })
-    const preview = build('line')
-    expect(preview.checkedDocumentCount).toBe(1)
-    expect(preview.documents[0].groups.map(group => [group.rowIds, group.cycleSequences])).toEqual([[[1], [2]], [[2], [1]]])
-    expect(preview.documents[0].groups.map(group => group.joints)).toEqual([['S1 (циклы: 2)'], ['S2 (циклы: 1)']])
-    expect(build('none').documents[0].groups).toHaveLength(1)
-    expect(build('none').documents[0].groups[0].cycleSequences).toEqual([1, 2])
-    const custom = structuredClone(input)
-    custom.document.title = 'Ручное имя'
-    const customPreview = buildSystemDocumentRebuildDocuments({ sources: [custom], settings: {
-      ...REQUEST_CONCLUSION_DEFAULT_SETTINGS, splitModes: { ...REQUEST_CONCLUSION_DEFAULT_SETTINGS.splitModes, pstoRequest: 'line' },
-    }, nextNumbers: {} }).documents[0]
-    expect(customPreview).toMatchObject({ requiresCustomNameDecision: true, willChangeAutomatically: false })
+describe('current document operation exact PSTO/TVMT positions', () => {
+  it('splits mixed first/repeat cycles by line without changing facts or requiring matching cycle numbers', () => {
+    const input = source(), before = structuredClone(input)
+    const build = (mode: 'line' | 'none') => buildDocumentOperationGroups({ sources: [input], settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS,
+      request: { documentIds: [7], action: 'split', mode, merge: false }, nextNumbers: { pstoRequest: 6 } })
+    expect(build('line').map(group => group.positions.map(p => [p.row.id, p.cycle]))).toEqual([[[1, 2]], [[2, 1]]])
+    expect(build('none')[0].positions.map(p => p.cycle)).toEqual([2, 1])
+    expect(input).toEqual(before)
   })
 
-  it.each(['pstoRequest', 'pstoConclusion', 'tvmtRequest', 'tvmtConclusion'] as const)('renames only %s on the exact cycle', field => {
+  it.each(['pstoRequest', 'pstoConclusion', 'tvmtRequest', 'tvmtConclusion'] as const)('identifies only the selected %s field in each exact cycle', field => {
     const input = source(), name = 'Common', date = '2026-08-24'
     const dateField = ({ pstoRequest: 'pstoRequestDate', pstoConclusion: 'pstoDate', tvmtRequest: 'tvmtRequestDate', tvmtConclusion: 'tvmtConclusionDate' } as const)[field]
     const nameField = field === 'pstoConclusion' ? 'heatTreatmentDiagram' : field
@@ -61,41 +43,30 @@ describe('rebuilding exact PSTO/TVMT cycle positions', () => {
       ...(field.startsWith('tvmt') ? { methodCode: 'ТВМТ' } : {}) }
     input.rows[1] = { ...input.rows[1], [nameField]: name, [dateField]: date }
     input.cyclePositions![0].cycle = { ...input.cyclePositions![0].cycle!, [nameField]: name, [dateField]: date }
-    const before = structuredClone(input), nextCycles = new Map()
-    const planned = planRebuildCycleGroup({ source: input, rows: input.rows,
-      positionsByRow: indexRebuildCyclePositions(input), nextName: 'New', nextCyclesById: nextCycles })
+    const before = structuredClone(input), positions = getDocumentOperationPositions(input)
+    expect(positions.map(p => [p.row.id, p.relationId, p.cycle, p.field])).toEqual([[1, 101, 2, nameField], [2, 2, 1, nameField]])
     expect(input).toEqual(before)
-    expect(planned.primaryRows).toEqual([{ ...before.rows[1], [nameField]: 'New' }])
-    expect([...nextCycles.values()]).toEqual([{ ...before.cyclePositions![0].cycle, [nameField]: 'New' }])
-    expect(planned.document.sourcePositions).toEqual(before.cyclePositions!.map(item => item.position))
-    expect(planned.document.summary.cycleSequences).toEqual([1, 2])
   })
 
-  it.each([101, 1])('preserves distinct cycles even with colliding weld/repeat ID %i, and legacy repeat documents', relationId => {
+  it.each([101, 1])('preserves distinct cycles with colliding weld/repeat ID %i, including legacy repeat sources', relationId => {
     const input = source()
-    input.cyclePositions![0].position.relationId = relationId
-    input.cyclePositions![0].cycle!.id = relationId
-    input.rows = [input.rows[0]]
+    input.cyclePositions![0].position.relationId = relationId; input.cyclePositions![0].cycle!.id = relationId
+    input.rows = [input.rows[0]]; input.document.rowIds = [1]; input.document.rowCount = 1
     input.cyclePositions![1] = { position: { kind: 'pstoCycle', weldJointId: 1, relationId: 1, sequence: 1 } }
-    const cycles = new Map()
-    const plan = planRebuildCycleGroup({ source: input, rows: input.rows, positionsByRow: indexRebuildCyclePositions(input),
-      nextName: 'Renamed', nextCyclesById: cycles })
-    expect(plan.document.sourcePositions).toHaveLength(2)
-    expect(plan.document.summary.rowIds).toEqual([1])
+    const positions = getDocumentOperationPositions(input)
+    expect(positions).toHaveLength(2); expect(new Set(positions.map(p => p.key)).size).toBe(2)
     input.document.sourceKind = 'pstoRepeat'
     input.cyclePositions = [{ ...input.cyclePositions![0], position: { ...input.cyclePositions![0].position, kind: 'pstoRepeat' } }]
-    expect(planRebuildCycleGroup({ source: input, rows: input.rows, positionsByRow: indexRebuildCyclePositions(input),
-      nextName: 'Again', nextCyclesById: new Map() }).document.sourcePositions[0].kind).toBe('pstoRepeat')
+    expect(getDocumentOperationPositions(input)[0].sourcePosition?.kind).toBe('pstoRepeat')
   })
 
-  it.each(['missing', 'wrong-weld', 'wrong-sequence', 'wrong-name'] as const)('rejects stale or inconsistent %s positions', kind => {
+  it.each(['missing', 'wrong-weld', 'wrong-sequence', 'wrong-name'] as const)('rejects stale %s positions in the active operation', kind => {
     const input = source(), item = input.cyclePositions![0]
     if (kind === 'missing') item.cycle = undefined
     if (kind === 'wrong-weld') item.cycle!.weldJointId = 2
     if (kind === 'wrong-sequence') item.cycle!.sequence = 3
     if (kind === 'wrong-name') item.cycle!.pstoRequest = 'Different'
-    expect(() => planRebuildCycleGroup({ source: input, rows: input.rows, positionsByRow: indexRebuildCyclePositions(input),
-      nextName: 'New', nextCyclesById: new Map() })).toThrow('Обновите предварительный просмотр')
+    expect(() => getDocumentOperationPositions(input)).toThrow('Проверить изменения')
   })
 
   it.each([2, 2001])('writes %i positions in batches, never updating factual fields', async count => {

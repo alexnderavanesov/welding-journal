@@ -30,6 +30,7 @@ import {
 splitWeldImportInsertBatches
 } from '@/lib/weld-import-limits'
 import { calculateFinalStatus } from '@/lib/weld-status'
+import { LNK_METHODS } from '@/lib/lnk-report-config'
 import {
 type SystemDocumentSequenceTransaction
 } from '@/server/system-document-sequences'
@@ -87,8 +88,39 @@ export function prepareWeldInputForPersistence(input: WeldInput) {
   return normalized
 }
 
-export function toDbInsert(input: WeldInput, isCreate = false): NewWeldJoint {
+const PRIMARY_LNK_PACKAGE_FIELD_KEYS = [
+  ...LNK_METHODS.flatMap(method => [
+    method.requestKey, method.requestDateKey, method.resultKey,
+    method.conclusionDateKey, method.conclusionKey, method.defectDescriptionKey,
+  ]),
+  'rkExposureConfirmedDiameter',
+] as const satisfies readonly WeldFieldKey[]
+
+const PRIMARY_PSTO_HISTORY_FIELD_KEYS = [
+  'pstoRequest', 'pstoRequestDate', 'pstoDate', 'heatTreatmentDiagram', 'pstoResult', 'pstoNote',
+  'tvmtRequest', 'tvmtRequestDate', 'tvmtResult', 'tvmtConclusionDate', 'tvmtConclusion',
+] as const satisfies readonly WeldFieldKey[]
+
+type ControlHistoryPersistenceOptions = {
+  preserveRecordedControlHistory?: boolean
+}
+
+export function toDbInsert(
+  input: WeldInput,
+  isCreate = false,
+  options: ControlHistoryPersistenceOptions = {},
+): NewWeldJoint {
   const normalized = prepareWeldInputForPersistence(input)
+  if (options.preserveRecordedControlHistory) {
+    // Internal opt-in after contextual validation. A line move with unchanged
+    // stages must preserve facts just as a validated stage correction does.
+    // Assignments and editable welding fields still normalize as usual.
+    Object.assign(normalized, Object.fromEntries(
+      [...PRIMARY_LNK_PACKAGE_FIELD_KEYS, ...PRIMARY_PSTO_HISTORY_FIELD_KEYS]
+        .map(key => [key, input[key] ?? null]),
+    ))
+    normalized.finalStatus = calculateFinalStatus({ ...input, ...normalized })
+  }
   const data: Record<string, unknown> = {}
 
   for (const field of WELD_FIELDS) {
@@ -171,12 +203,15 @@ export async function updateWeldJointsInBatches(
   tx: SystemDocumentSequenceTransaction,
   records: readonly WeldInput[],
   previousRows: ReadonlyMap<number, WeldJoint>,
+  options: { preserveRecordedControlHistoryRowIds?: ReadonlySet<number> } = {},
 ) {
   if (records.length === 0) return []
   await prepareLineProgramWeldRecords(tx, records, previousRows)
   await prepareTechnologyCardWeldWrites(tx, records, previousRows)
   const now = new Date()
-  const payloads = records.map((record) => buildWeldBatchUpdatePayload(record, previousRows, now))
+  const payloads = records.map((record) => buildWeldBatchUpdatePayload(record, previousRows, now, {
+    preserveRecordedControlHistory: options.preserveRecordedControlHistoryRowIds?.has(Number(record.id)),
+  }))
   const ids = records.map((record) => Number(record.id))
   const lockedRows = await tx
     .select({ id: weldJoints.id })
@@ -217,6 +252,7 @@ export function buildWeldBatchUpdatePayload(
   record: WeldInput,
   previousRows: ReadonlyMap<number, WeldJoint>,
   now: Date,
+  options: ControlHistoryPersistenceOptions = {},
 ) {
   const id = Number(record.id)
   const previous = previousRows.get(id)
@@ -224,7 +260,7 @@ export function buildWeldBatchUpdatePayload(
   const timestampUpdates = getProfileTimestampUpdates(record, previous, now)
   const values: Record<string, unknown> = {
     id,
-    ...toDbInsert(record),
+    ...toDbInsert(record, false, options),
     weldingUpdatedAt: timestampUpdates.weldingUpdatedAt ?? previous.weldingUpdatedAt,
     pstoCreatedAt: timestampUpdates.pstoCreatedAt ?? previous.pstoCreatedAt,
     pstoUpdatedAt: timestampUpdates.pstoUpdatedAt ?? previous.pstoUpdatedAt,

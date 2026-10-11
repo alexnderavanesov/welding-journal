@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { normalizeRebuildCursor, selectRebuildBatch, REBUILD_POSITION_LIMIT } from './system-document-rebuild-batch'
+import { selectRebuildBatch, REBUILD_POSITION_LIMIT } from './system-document-rebuild-batch'
 
 const entry = (documentId: number, positionCount = 1) => ({ documentId, title: `D${documentId}`, positionCount, metadataBytes: 100 })
 it.each([100, 200, 300])('takes at most %i whole documents and continues by stable ID', limit => {
@@ -23,7 +23,4 @@ it('also caps metadata independently of record count', () => {
   const batch = selectRebuildBatch([1, 2].map(id => ({ ...entry(id), metadataBytes: 5 * 1024 * 1024 })), { afterId: 0, throughId: 2 })
   expect(batch.documentIds).toEqual([1])
   expect(batch.nextCursor?.afterId).toBe(1)
-})
-it.each([{ afterId: -1, throughId: 2 }, { afterId: 3, throughId: 2 }, { afterId: 0.5, throughId: 2 }])('rejects malformed cursors %j', cursor => {
-  expect(() => normalizeRebuildCursor(cursor)).toThrow('Некорректная область')
 })

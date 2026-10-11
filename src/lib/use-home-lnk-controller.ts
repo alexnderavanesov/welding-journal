@@ -6,7 +6,6 @@ import { LNK_METHODS } from '@/lib/report-config'
 import { type WeldFieldKey } from '@/lib/weld-fields'
 import { type RequestDocumentIdentity } from '@/lib/request-document-identity'
 import { WORKFLOW_REGISTRY_PAGE_SIZE } from '@/server/weld-contracts'
-import { type SystemDocumentReference } from '@/lib/system-document-types'
 
 import { startTransition, useCallback, useEffect, useState } from 'react'
 import { createEmptyDuplicateControlDraft, type DuplicateControlDraft } from '@/lib/duplicate-control-types'
@@ -47,10 +46,6 @@ export function useHomeLnkController() {
 
   const [isDuplicateControlRegistryOpen, setIsDuplicateControlRegistryOpen] = useState(false)
   const [isSelectingDuplicateControlRows, setIsSelectingDuplicateControlRows] = useState(false)
-  const [lnkStageTransferReference, setLnkStageTransferReference] = useState<
-    (SystemDocumentReference & { documentId: number }) | null
-  >(null)
-  const [isLnkStageTransferPending, setIsLnkStageTransferPending] = useState(false)
   const [lnkWorkflowRequestSearch, setLnkWorkflowRequestSearch] = useState('')
   const [lnkResultRegistrySearch, setLnkResultRegistrySearch] = useState('')
   const [lnkResultRegistryFilter, setLnkResultRegistryFilter] =
@@ -152,10 +147,6 @@ export function useHomeLnkController() {
     setIsDuplicateControlRegistryOpen,
     isSelectingDuplicateControlRows,
     setIsSelectingDuplicateControlRows,
-    lnkStageTransferReference,
-    setLnkStageTransferReference,
-    isLnkStageTransferPending,
-    setIsLnkStageTransferPending,
     lnkWorkflowRequestSearch,
     setLnkWorkflowRequestSearch,
     lnkResultRegistrySearch,

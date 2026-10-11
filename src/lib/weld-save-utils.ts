@@ -84,6 +84,7 @@ export async function updateWeldRowsOrThrow<T extends RowWithId>(
     mutationScope?: WeldMutationScope
     systemDocumentSequence?: SystemDocumentSequenceUpdate
     systemDocumentSequences?: SystemDocumentSequenceUpdate[]
+    documentGrouping?: DocumentGroupingCommand
     requireFullyAssignedPstoLines?: boolean
     layeredControl?: { rowIds: number[]; confirmPvk: boolean }
   } = {},
@@ -95,6 +96,7 @@ export async function updateWeldRowsOrThrow<T extends RowWithId>(
       mutationScope: options.mutationScope,
       systemDocumentSequence: options.systemDocumentSequence,
       systemDocumentSequences: options.systemDocumentSequences,
+      documentGrouping: options.documentGrouping,
       requireFullyAssignedPstoLines: options.requireFullyAssignedPstoLines,
       layeredControl: options.layeredControl,
     },
@@ -161,3 +163,4 @@ export function getExpectedWeldRowVersions(records: readonly RowWithId[]): WeldR
 function getExpectedWeldRowVersion(record: Pick<Partial<WeldRow>, 'rowVersion'>) {
   return String(record.rowVersion ?? '').trim()
 }
+import type { DocumentGroupingCommand } from '@/lib/document-grouping-command'

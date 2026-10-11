@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { ArrowLeftRight, CalendarClock, FileSpreadsheet, Plus, Search, Trash2 } from 'lucide-react'
+import { CalendarClock, FileSpreadsheet, Plus, Search, Trash2 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
@@ -29,7 +29,7 @@ import {
   type PreHeatTreatmentControlRecord,
   type PreHeatTreatmentLnkMethodCode,
 } from '@/lib/lnk-control-stage'
-import { buildManagerContextMenu, isNativeContextMenuTarget } from '@/lib/manager-context-menu-items'
+import { buildManagerContextMenu } from '@/lib/manager-context-menu-items'
 import {
   getPreHeatTreatmentRequestRemovalBlockReason,
   getPreHeatTreatmentResultRemovalBlockReason,
@@ -87,7 +87,6 @@ export type PreHeatTreatmentResultManagerDialogProps = {
   onDeleteRequest: (row: WeldRow, control: PreHeatTreatmentControlRecord) => void
   onDeleteResult: (row: WeldRow, control: PreHeatTreatmentControlRecord) => void
   onOpenDocument: (row: WeldRow, fieldKey: WeldFieldKey) => void
-  onChangeControlStage?: (reference: SystemDocumentReference & { documentId: number }) => void
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
   onOpenPstoHistory?: (row: WeldRow) => void
   onCopyDocumentName: (documentName: string) => void
@@ -114,7 +113,6 @@ export function PreHeatTreatmentResultManagerDialog({
   onDeleteRequest,
   onDeleteResult,
   onOpenDocument,
-  onChangeControlStage,
   onOpenJournalRows,
   onOpenPstoHistory,
   onCopyDocumentName,
@@ -213,7 +211,9 @@ export function PreHeatTreatmentResultManagerDialog({
   }, [selectedEntry?.control.id, selectedEntry?.control.updatedAt])
 
   const openContextMenu = (event: MouseEvent<HTMLElement>, entry: PreResultEntry) => {
-    if (isNativeContextMenuTarget(event.target)) return
+    // The whole registry row is a button, not an embedded native control.
+    if (event.target instanceof Element &&
+      event.target.closest('input, textarea, select, button, [contenteditable="true"]') !== event.currentTarget) return
     setSelectedRelationId(entry.control.id)
     const point = getDialogMenuPoint(event)
     const managesResult = registryMode === 'result'
@@ -222,9 +222,7 @@ export function PreHeatTreatmentResultManagerDialog({
       managesResult ? 'conclusionName' : 'requestName',
     )
     const documentName = text(managesResult ? entry.control.conclusionName : entry.control.requestName)
-    const transferReference = documentField
-      ? getSystemDocumentReferenceForField(entry.row, documentField)
-      : null
+
     const deleteReason = readOnly
       ? 'НК до ТО выключен в настройках проекта. История доступна только для просмотра.'
       : managesResult
@@ -256,20 +254,6 @@ export function PreHeatTreatmentResultManagerDialog({
             }))
           },
         },
-        ...(onChangeControlStage ? [{
-          id: 'change-control-stage',
-          label: 'Изменить этап контроля',
-          icon: ArrowLeftRight,
-          disabled: !transferReference?.documentId || isPending || readOnly,
-          onSelect: () => {
-            if (transferReference?.documentId) {
-              onChangeControlStage({
-                ...transferReference,
-                documentId: transferReference.documentId,
-              })
-            }
-          },
-        }] : []),
       ],
       dangerActions: [{
         id: managesResult ? 'delete-pre-result' : 'delete-pre-request',
@@ -580,24 +564,6 @@ export function PreHeatTreatmentResultManagerDialog({
                         Открыть документ
                       </Button>
                     )}
-                    {onChangeControlStage ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={!selectedDocumentReference?.documentId || isPending || readOnly}
-                        onClick={() => {
-                          if (selectedDocumentReference?.documentId) {
-                            onChangeControlStage({
-                              ...selectedDocumentReference,
-                              documentId: selectedDocumentReference.documentId,
-                            })
-                          }
-                        }}
-                      >
-                        <ArrowLeftRight className="mr-2 h-4 w-4" />
-                        Изменить этап
-                      </Button>
-                    ) : null}
                   </div>
                 </div>
               </section>

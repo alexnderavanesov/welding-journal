@@ -1,8 +1,10 @@
+import { lockDocumentGroupingPreference, rememberDocumentGrouping, validatePrimaryCreationGrouping, primaryCreationReferences } from '@/server/document-grouping-preferences'
+import { assertNewDocumentNamesAvailable, prepareDocumentCreationIndex } from '@/server/document-name-conflicts'
 // This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
 import { requireDb } from '@/db'
 import { assertJointChainRowsCanBeDeleted } from './joint-chain-deletion'
 import { deleteChangedProgramApprovals } from './program-approval-lifecycle'
-import { generatedDocuments, generatedDocumentWeldJoints, preHeatTreatmentControls, weldJoints, type WeldJoint } from '@/db/schema'
+import { generatedDocuments, generatedDocumentWeldJoints, weldJoints, type WeldJoint } from '@/db/schema'
 import { normalizeDateLikeForStorage } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { assertExistingRowsImportPayload } from '@/lib/existing-row-import-validation'
@@ -29,7 +31,6 @@ import { type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import { prepareTechnologyCardWeldWrites } from '@/server/technology-card-weld-write'
 import { markTechnologyCardsUsed } from '@/server/technology-card-registry'
 import { assertUniqueWeldMutationTargets, splitWeldImportInsertBatches } from '@/lib/weld-import-limits'
-import { calculateFinalStatus } from '@/lib/weld-status'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
 import { getLnkResultRuleIssues } from '@/lib/lnk-result-policy'
 import { loadControlProcessSettingsFromTransaction } from '@/server/control-process-settings'
@@ -37,7 +38,6 @@ import { assertJointChainIdentityChangesUseDedicatedMove } from '@/server/joint-
 import { attachDuplicateControlRelations } from '@/server/duplicate-control-relations'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 import { getDispatcherDirtyScopes, markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
-import { syncPreHeatTreatmentDocumentsInTransaction } from '@/server/pre-heat-treatment-system-documents'
 import { assertPstoWorkflowLinesFullyAssigned } from '@/server/psto-workflow-line-guard'
 import { assertSecurityScope } from '@/server/security-functions'
 import { removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction, syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
@@ -56,7 +56,8 @@ import { prepareLineProgramWeldRecords } from '@/server/line-program-registry'
 import { buildLayeredControlAssignment } from '@/lib/layered-control-rules'
 import { persistLayeredControlFlags } from '@/server/line-program-control'
 
-import { assertChainLineMoveLnkStageTransfersAllowed, preparePstoLineMoveRecordInTransaction, applyPstoLineMoveCleanupInTransaction, buildWeldLineIdentityWhere } from '@/server/weld-line-move-stage'
+import { preparePstoLineMoveRecordInTransaction, buildWeldLineIdentityWhere, removeTransferredPreControlsInTransaction } from '@/server/weld-line-move-stage'
+import { normalizeSubmittedWeldLineIdentity } from '@/lib/psto-line-assignment'
 
 // This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
 
@@ -334,7 +335,7 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
 
   return db.transaction(async (tx) => {
     const mutationScope = data.mutationScope ?? 'welding'
-    const scopedData = restrictWeldMutationRecord(data, mutationScope)
+    const scopedData = normalizeSubmittedWeldLineIdentity(restrictWeldMutationRecord(data, mutationScope))
     const [identitySnapshot] = await tx
       .select({
         id: weldJoints.id,
@@ -385,37 +386,23 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
     await prepareLineProgramWeldRecords(tx, [record], previousRows)
     if (data.layeredControlRequest?.assigned === true) record = buildLayeredControlAssignment(record, data.layeredControlRequest.confirmPvk === true)
     const validationPreviousRows = new Map([[id, preparedMove.validationPrevious]])
-    const pendingPreHeatTreatmentControls = preparedMove.pendingPreHeatTreatmentControls
-    const requiresLifecycleCleanup = preparedMove.requiresLifecycleCleanup
+    const preservesLifecycleHistory = preparedMove.preservesLifecycleHistory
 
     await assertEarlyCoilDecisionSourcesRemainValid(tx, [record], previousRows)
     prepareServerWeldRecords({
       records: [record],
       previousRows: validationPreviousRows,
       context: validationContext,
-      allowPstoLineLifecycleMove: requiresLifecycleCleanup,
+      allowPstoLineLifecycleMove: preservesLifecycleHistory,
     })
-    assertChainLineMoveLnkStageTransfersAllowed([record], previousRows, new Map(
-      data.pstoLineMoveDisposition ? [[id, data.pstoLineMoveDisposition]] : [],
-    ))
     validateServerWeldRecords({
       records: [record],
       previousRows: validationPreviousRows,
       context: validationContext,
       allowSystemJointNames,
     })
-    await applyPstoLineMoveCleanupInTransaction(tx, [preparedMove.cleanup])
-    let savedPreHeatTreatmentControls: typeof preHeatTreatmentControls.$inferSelect[] = []
-    if (pendingPreHeatTreatmentControls.length > 0) {
-      savedPreHeatTreatmentControls = await tx
-        .insert(preHeatTreatmentControls)
-        .values(pendingPreHeatTreatmentControls)
-        .returning()
-      record.preHeatTreatmentControls = savedPreHeatTreatmentControls
-      record.finalStatus = calculateFinalStatus(record)
-    }
     await prepareTechnologyCardWeldWrites(tx, [record], previousRows)
-    const insertData = toDbInsert(record)
+    const insertData = toDbInsert(record, false, { preserveRecordedControlHistory: preparedMove.preserveRecordedControlHistory })
     const timestampUpdates = getProfileTimestampUpdates(record, previousRows.get(id), new Date())
     const [updated] = await tx
       .update(weldJoints)
@@ -432,18 +419,15 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       await persistLayeredControlFlags(tx, [id], true)
       updated.layeredControlAssigned = true
     }
+    await removeTransferredPreControlsInTransaction(tx, preparedMove.transferredPreControlIds)
     await syncSystemDocumentsForWeldChangesInTransaction(tx, [updated], previousRows)
-    if (savedPreHeatTreatmentControls.length > 0) {
-      await syncPreHeatTreatmentDocumentsInTransaction(
-        tx,
-        [{ ...updated, preHeatTreatmentControls: savedPreHeatTreatmentControls } as WeldRow],
-        savedPreHeatTreatmentControls,
-      )
-    }
     await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes([record], previousRows) })
-    return savedPreHeatTreatmentControls.length > 0
-      ? { ...updated, preHeatTreatmentControls: savedPreHeatTreatmentControls }
-      : updated
+    return {
+      ...updated,
+      preHeatTreatmentControls: record.preHeatTreatmentControls ?? [],
+      pstoRepeatCycles: record.pstoRepeatCycles ?? [],
+      duplicateControls: record.duplicateControls ?? [],
+    }
   })
 }
 
@@ -613,10 +597,12 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
     if (data.records.some((record) => !record.id)) throw new Error('Не передан id одной из записей')
     assertUniqueWeldMutationTargets(data.records)
     const db = requireDb()
+    await prepareDocumentCreationIndex(data.documentGrouping)
     return db.transaction(async (tx) => {
       const mutationScope = data.mutationScope ?? 'welding'
       await lockSubmittedRequestDocuments(tx, data.records, mutationScope)
       await loadControlProcessSettingsFromTransaction(tx)
+      const documentGrouping = await lockDocumentGroupingPreference(tx, data.documentGrouping)
       let records = data.records
       const systemDocumentSequences = [
         ...(data.systemDocumentSequence ? [data.systemDocumentSequence] : []),
@@ -640,6 +626,7 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
       const systemDocumentReservations = await reserveSystemDocumentNames(
         tx,
         systemDocumentReservationInputs,
+        { rejectChangedProvisionalNames: Boolean(documentGrouping) },
       )
       records = applyReservedSystemDocumentNames(data.records, systemDocumentReservations)
       const identityRows = await loadWeldLineIdentityRows(
@@ -715,11 +702,14 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
         context: validationContext,
         importMode,
       })
+      const createdDocuments = validatePrimaryCreationGrouping(documentGrouping, records, previousRows)
+      if (documentGrouping && createdDocuments) await assertNewDocumentNamesAvailable(tx, primaryCreationReferences(documentGrouping, records, previousRows))
       const updated = await updateWeldJointsInBatches(tx, records, previousRows)
       await persistLayeredControlFlags(tx, [...layeredIds], true)
       for (const row of updated) if (layeredIds.has(row.id)) row.layeredControlAssigned = true
       await syncSystemDocumentsForWeldChangesInTransaction(tx, updated, previousRows)
       await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes(records, previousRows) })
+      if (createdDocuments) await rememberDocumentGrouping(tx, documentGrouping)
       return updated
     })
 }

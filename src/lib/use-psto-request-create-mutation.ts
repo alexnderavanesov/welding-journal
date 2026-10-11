@@ -7,6 +7,7 @@ import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RowWithId, UsePstoReportMutationsOptions } from '@/lib/psto-report-mutation-types'
 import type { SystemDocumentCreationGroup } from '@/lib/system-document-creation-plan'
+import { getCreationGroupingCommand } from '@/lib/document-grouping-command'
 
 export function usePstoRequestCreateMutation({
   setMessage,
@@ -52,6 +53,7 @@ export function usePstoRequestCreateMutation({
         'Не удалось сохранить часть записей',
         {
           mutationScope: 'psto',
+          documentGrouping: getCreationGroupingCommand(groups),
           requireFullyAssignedPstoLines: true,
           systemDocumentSequences: groups
             .filter((group) => group.useSystemName)

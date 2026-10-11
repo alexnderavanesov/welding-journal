@@ -57,6 +57,7 @@ export function buildWeldingDynamicsJointTypeTable(
     ],
     rows,
     rowKinds,
+    numericColumns: Array.from({ length: jointTypes.length + 4 }, (_, index) => index + 1),
   }
 }
 

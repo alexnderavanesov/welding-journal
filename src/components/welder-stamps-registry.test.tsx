@@ -23,6 +23,23 @@ function props(): WelderStampsRegistryProps {
 }
 
 describe('welder registry tabs', () => {
+  it('keeps the empty message outside the wide table so narrow screens do not hide it', () => {
+    render(<WelderStampsRegistry {...props()} records={[]} allRecords={[]} />)
+    const region = screen.getByRole('region', { name: 'Таблица клейм — горизонтальная прокрутка' })
+    expect(within(region).getByText('Пока нет добавленных клейм.')).toBeVisible()
+    expect(within(region).queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('keeps the records in a keyboard-accessible scroll region with readable column widths', () => {
+    render(<WelderStampsRegistry {...props()} />)
+    const region = screen.getByRole('region', { name: 'Таблица клейм — горизонтальная прокрутка' })
+    expect(region).toHaveAttribute('tabindex', '0')
+    expect(region).toHaveClass('overflow-x-auto', 'min-w-0')
+    expect(within(region).getByRole('table')).toHaveClass('min-w-[1120px]')
+    fireEvent.click(within(region).getByText('ABCD'))
+    expect(within(region).getByRole('heading', { name: 'Тестовый сварщик' })).toBeVisible()
+  })
+
   it('locks the draft and closing while saving, then retains the editor on failure', async () => {
     const handlers = props()
     let resolve!: (saved: boolean) => void

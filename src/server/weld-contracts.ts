@@ -387,6 +387,7 @@ export type WeldPayload = WeldDraft & {
 }
 
 export type WeldBatchUpdateData = {
+  documentGrouping?: DocumentGroupingCommand
   records: WeldPayload[]
   expectedVersions: WeldRowVersionTarget[]
   mutationScope?: WeldMutationScope
@@ -425,3 +426,4 @@ export type SystemDocumentDateChangeData = {
   nextDate: string
   expectedVersions: WeldRowVersionTarget[]
 }
+import type { DocumentGroupingCommand } from '@/lib/document-grouping-command'

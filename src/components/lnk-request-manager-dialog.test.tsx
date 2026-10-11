@@ -215,8 +215,7 @@ describe('LnkRequestManagerDialog', () => {
 
   it('loads a newly selected request before opening its context actions', async () => {
     const rkMethod = LNK_METHODS.find((method) => method.code === 'РК')!
-    const onChangeControlStage = vi.fn()
-    const { onChangeRequest, rerenderDialog } = renderDialog({ onChangeControlStage })
+    const { onChangeRequest, rerenderDialog } = renderDialog()
 
     fireEvent.contextMenu(screen.getByRole('button', { name: /Заявка-002/ }))
 
@@ -241,18 +240,8 @@ describe('LnkRequestManagerDialog', () => {
       requestNameDraft: fixedRequest.name,
     })
 
-    const transferButton = await screen.findByRole('button', {
-      name: 'Изменить этап контроля',
-    })
-    fireEvent.scroll(document)
-    expect(screen.getByRole('button', { name: 'Изменить этап контроля' })).toBeVisible()
-    expect(transferButton).toBeEnabled()
-    fireEvent.click(transferButton)
-    expect(onChangeControlStage).toHaveBeenCalledWith({
-      documentId: 77,
-      type: 'lnkRequest',
-      title: fixedRequest.name,
-      date: fixedRequest.date,
-    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Открыть заявку' })).toBeVisible())
+    expect(screen.queryByRole('button', { name: /Изменить этап/ })).not.toBeInTheDocument()
+
   })
 })

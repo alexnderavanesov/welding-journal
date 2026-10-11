@@ -9,6 +9,7 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RowWithId, UseLnkReportMutationsOptions } from '@/lib/lnk-report-mutation-types'
 import type { SystemDocumentCreationGroup } from '@/lib/system-document-creation-plan'
+import { getCreationGroupingCommand } from '@/lib/document-grouping-command'
 
 export function useLnkRequestCreateMutation({
   controlProcessSettings,
@@ -68,6 +69,7 @@ export function useLnkRequestCreateMutation({
         'Не удалось сохранить часть записей',
         {
           mutationScope: 'lnk',
+          documentGrouping: getCreationGroupingCommand(groups),
           systemDocumentSequences: groups
             .filter((group) => group.useSystemName)
             .map((group) => ({

@@ -4,7 +4,7 @@ import { getDispatcherTaskSettingId } from '@/lib/dispatcher-settings'
 import { useQueryClient } from '@tanstack/react-query'
 import { type PreHeatTreatmentRegistryFilters } from '@/lib/pre-heat-treatment-registry'
 import { PRE_HEAT_TREATMENT_REGISTRY_PAGE_SIZE } from '@/server/weld-contracts'
-import { ArrowLeftRight, BadgeCheck, ClipboardCheck, ExternalLink, FileSpreadsheet, FilePlus2, FileText, GitBranch, ListFilter, Pencil, Trash2 } from 'lucide-react'
+import { BadgeCheck, ClipboardCheck, ExternalLink, FileSpreadsheet, FilePlus2, FileText, GitBranch, ListFilter, Pencil, Trash2 } from 'lucide-react'
 import type { DispatcherTask, PercentageLineControlTask, RepeatedJointTask, WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import type { ActiveReport } from '@/lib/home-state'
@@ -188,7 +188,6 @@ import { buildPstoCycleHistoryContextMenuItem } from '@/lib/psto-report-context-
 import {
 	getPreHeatTreatmentControl,
 	getPreHeatTreatmentControls,
-	isPreHeatTreatmentLnkMethodCode,
 	PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE, type PreHeatTreatmentControlRecord,
 	type PreHeatTreatmentLnkMethodCode
 } from '@/lib/lnk-control-stage'
@@ -321,7 +320,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     useState<PercentageLineNavigationRequest | null>(null)
   const percentageLineNavigationRequestIdRef = useRef(0)
   const lnkController = useHomeLnkController()
-  const { isDuplicateControlRegistryOpen, setIsDuplicateControlRegistryOpen, isSelectingDuplicateControlRows, setIsSelectingDuplicateControlRows, lnkStageTransferReference, setLnkStageTransferReference, isLnkStageTransferPending, setIsLnkStageTransferPending, lnkWorkflowRequestSearch, setLnkWorkflowRequestSearch, lnkResultRegistrySearch, setLnkResultRegistrySearch, lnkResultRegistryFilter, setLnkResultRegistryFilter, lnkResultRegistryLimit, setLnkResultRegistryLimit, preRegistry, setPreRegistry, preHeatTreatmentCandidateSearch, setPreHeatTreatmentCandidateSearch, preHeatTreatmentCandidateIds, setPreHeatTreatmentCandidateIds, preHeatTreatmentCandidateFilter, setPreHeatTreatmentCandidateFilter, handlePreHeatTreatmentCandidateFilterChange } = lnkController
+  const { isDuplicateControlRegistryOpen, setIsDuplicateControlRegistryOpen, isSelectingDuplicateControlRows, setIsSelectingDuplicateControlRows, lnkWorkflowRequestSearch, setLnkWorkflowRequestSearch, lnkResultRegistrySearch, setLnkResultRegistrySearch, lnkResultRegistryFilter, setLnkResultRegistryFilter, lnkResultRegistryLimit, setLnkResultRegistryLimit, preRegistry, setPreRegistry, preHeatTreatmentCandidateSearch, setPreHeatTreatmentCandidateSearch, preHeatTreatmentCandidateIds, setPreHeatTreatmentCandidateIds, preHeatTreatmentCandidateFilter, setPreHeatTreatmentCandidateFilter, handlePreHeatTreatmentCandidateFilterChange } = lnkController
   const pstoController = useHomePstoController()
   const { pstoResultRegistrySearch, setPstoResultRegistrySearch, pstoResultRegistryLimit, setPstoResultRegistryLimit, pstoWorkflowRequestSearch, setPstoWorkflowRequestSearch, pstoRepeatCandidateIds, setPstoRepeatCandidateIds, tvmtCandidateIds, setTvmtCandidateIds, pstoRepeatCandidateSearch, setPstoRepeatCandidateSearch, tvmtCandidateSearch, setTvmtCandidateSearch, pstoRepeatCandidateRequest, setPstoRepeatCandidateRequest, tvmtCandidateRequest, setTvmtCandidateRequest, handlePstoRepeatCandidateRequestChange, handleTvmtCandidateRequestChange, closePstoResultManager, openAllPstoHistory } = pstoController
   const weldEditorController = useHomeJournalController()
@@ -741,7 +740,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       isLnkResultManagerOpen,
       isLnkOfficialityModalOpen,
       isDuplicateControlModalOpen,
-    }) || Boolean(tvmtWorkflowMode) || Boolean(pstoRepeatWorkflowMode) || Boolean(preHeatTreatmentLnkWorkflowMode) || isPreHeatTreatmentResultManagerOpen || Boolean(lnkStageTransferReference)
+    }) || Boolean(tvmtWorkflowMode) || Boolean(pstoRepeatWorkflowMode) || Boolean(preHeatTreatmentLnkWorkflowMode) || isPreHeatTreatmentResultManagerOpen
   const isPstoDataModalOpen =
     isPstoRequestModalOpen ||
     isPstoRequestManagerOpen ||
@@ -761,8 +760,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     if (activeReport !== 'heatTreatment' && isPstoLineProgramOpen) setIsPstoLineProgramOpen(false)
     if (activeReport !== 'lnk' && preHeatTreatmentLnkWorkflowMode) setPreHeatTreatmentLnkWorkflowMode(null)
     if (activeReport !== 'lnk' && isPreHeatTreatmentResultManagerOpen) setIsPreHeatTreatmentResultManagerOpen(false)
-    if (activeReport !== 'lnk' && lnkStageTransferReference) setLnkStageTransferReference(null)
-  }, [activeReport, isPreHeatTreatmentResultManagerOpen, isPstoLineProgramOpen, lnkStageTransferReference, preHeatTreatmentLnkWorkflowMode, pstoRepeatWorkflowMode, tvmtWorkflowMode])
+  }, [activeReport, isPreHeatTreatmentResultManagerOpen, isPstoLineProgramOpen, preHeatTreatmentLnkWorkflowMode, pstoRepeatWorkflowMode, tvmtWorkflowMode])
 
   useEffect(() => {
     if (!preHeatTreatmentLnkWorkflowMode) {
@@ -2573,7 +2571,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     isPstoResultManagerOpen,
     isLnkRequestManagerOpen,
     isLnkResultManagerOpen,
-    isLnkStageTransferOpen: Boolean(lnkStageTransferReference),
     isPreHeatTreatmentWorkflowOpen: Boolean(preHeatTreatmentLnkWorkflowMode),
     isPreHeatTreatmentResultManagerOpen,
     isTvmtWorkflowOpen: Boolean(tvmtWorkflowMode),
@@ -2597,14 +2594,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       !lnkResultCorrectionMutation.isPending &&
       !lnkResultReplacementMutation.isPending &&
       !lnkConclusionCorrectionMutation.isPending,
-    canCloseLnkStageTransfer: !isLnkStageTransferPending,
     canClosePreHeatTreatmentResultManager: !preHeatTreatmentResultCorrectionMutation.isPending,
     canCloseRkExposureModal: !rkExposureMutation.isPending,
     onClosePstoRequestManager: () => setIsPstoRequestManagerOpen(false),
     onClosePstoResultManager: closePstoResultManager,
     onCloseLnkRequestManager: () => setIsLnkRequestManagerOpen(false),
     onCloseLnkResultManager: closeLnkResultManager,
-    onCloseLnkStageTransfer: () => setLnkStageTransferReference(null),
     onClosePreHeatTreatmentWorkflow: () => setPreHeatTreatmentLnkWorkflowMode(null),
     onClosePreHeatTreatmentResultManager: () => setIsPreHeatTreatmentResultManagerOpen(false),
     onCloseTvmtWorkflow: () => setTvmtWorkflowMode(null),
@@ -2897,9 +2892,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     const systemDocumentReference = fieldKey
       ? getSystemDocumentReferenceForField(row, fieldKey)
       : null
-    const lnkStageTransferReferences = activeReport === 'lnk' && !isGroupAction
-      ? getLnkStageTransferReferences(row, fieldKey)
-      : []
 
     if (documentNavigationReference) {
       items.push(
@@ -3313,37 +3305,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
             },
           },
           {
-            id: 'lnk-change-control-stage',
-            label: 'Изменить этап контроля',
-            icon: ArrowLeftRight,
-            disabled:
-              !controlProcessSettings.preHeatTreatmentLnkEnabled ||
-              isGroupAction ||
-              lnkStageTransferReferences.length === 0,
-            title: !controlProcessSettings.preHeatTreatmentLnkEnabled
-              ? 'Процесс «НК до ТО» выключен в настройках проекта'
-              : isGroupAction
-                ? 'Этап изменяется для одного исходного документа за операцию'
-                : lnkStageTransferReferences.length === 0
-                  ? 'У стыка нет подходящей заявки или заключения ЛНК'
-                  : undefined,
-            onSelect: () => {
-              if (lnkStageTransferReferences.length === 1) {
-                setLnkStageTransferReference(lnkStageTransferReferences[0]!)
-              }
-            },
-            ...(lnkStageTransferReferences.length > 1
-              ? {
-                  children: lnkStageTransferReferences.map((reference) => ({
-                    id: `lnk-change-control-stage:${reference.documentId}`,
-                    label: formatLnkStageTransferReference(reference),
-                    icon: ArrowLeftRight,
-                    onSelect: () => setLnkStageTransferReference(reference),
-                  })),
-                }
-              : {}),
-          },
-          {
             id: 'lnk-officiality',
             label: 'Официальность',
             icon: BadgeCheck,
@@ -3693,6 +3654,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       openAllPstoHistory()
     },
     pstoRequestPending: pstoRequestMutation.isPending,
+    pstoAvailability: pstoWorkflowSummaryQuery.data !== undefined ? 'ready' : pstoWorkflowSummaryQuery.isError ? 'error' : 'loading',
     onAddPstoResult: () => openPstoRepeatWorkflow('result'),
     pstoResultDisabled:
       pstoWorkflowSummaryQuery.isLoading || !hasAvailablePstoWorkflowResultRows,
@@ -3726,6 +3688,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onExtendLnkRequest: () => openExtendLnkRequestModal(),
     onOpenLnkRequestRegistry: () => openLnkRequestRegistry(),
     lnkRequestPending: lnkRequestMutation.isPending,
+    lnkAvailability: lnkWorkflowSummaryQuery.data !== undefined ? 'ready' : lnkWorkflowSummaryQuery.isError ? 'error' : 'loading',
     onAddLnkResult: openAddLnkWorkflowResultFromHeader,
     lnkResultDisabled:
       lnkResultMutation.isPending ||
@@ -5012,9 +4975,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         )
       },
       onOpenDocument: openReportDocument,
-      onChangeControlStage: controlProcessSettings.preHeatTreatmentLnkEnabled
-        ? setLnkStageTransferReference
-        : undefined,
       onOpenJournalRows: openModalRowsInWeldingJournal,
       onOpenPstoHistory: openPstoHistoryFromDialog,
       onCopyDocumentName: copyManagerDocumentName,
@@ -5080,9 +5040,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         filterSelectedRowsInCurrentReport([row])
       },
       onOpenDocument: openReportDocument,
-      onChangeControlStage: controlProcessSettings.preHeatTreatmentLnkEnabled
-        ? setLnkStageTransferReference
-        : undefined,
       onOpenJournalRows: openModalRowsInWeldingJournal,
       onOpenPstoHistory: openPstoHistoryFromDialog,
       onCopyDocumentName: copyManagerDocumentName,
@@ -5327,9 +5284,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           onDeleteRequest: deletePreHeatTreatmentRequest,
           onDeleteResult: deletePreHeatTreatmentResult,
           onOpenDocument: openReportDocument,
-          onChangeControlStage: controlProcessSettings.preHeatTreatmentLnkEnabled
-            ? setLnkStageTransferReference
-            : undefined,
           onOpenJournalRows: openModalRowsInWeldingJournal,
           onOpenPstoHistory: openPstoHistoryFromDialog,
           onCopyDocumentName: copyManagerDocumentName,
@@ -5342,20 +5296,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           onDocumentDateSaved: returnFromWorkflowRootCause,
           onMessage: setMessage,
       }
-      : null,
-    stageTransfer: lnkStageTransferReference
-      ? {
-          reference: lnkStageTransferReference,
-          onClose: () => setLnkStageTransferReference(null),
-          onPendingChange: setIsLnkStageTransferPending,
-          onTransferred: async (result) => {
-            scheduleWeldDataRefresh(queryClient, { upsertRows: result.rows })
-            const targetLabel = result.preview.targetStage === 'beforeHeatTreatment' ? 'До ТО' : 'Основной'
-            setMessage(
-              `Перенесено комплектов: ${result.preview.positionCount}. Новый этап: «${targetLabel}».`,
-            )
-          },
-        }
       : null,
   })
 
@@ -5436,49 +5376,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         }
       : null,
   }
-}
-
-function getLnkStageTransferReferences(
-  row: WeldRow,
-  fieldKey?: WeldFieldKey,
-): Array<SystemDocumentReference & { documentId: number }> {
-  const exactReference = fieldKey
-    ? getSystemDocumentReferenceForField(row, fieldKey)
-    : null
-  if (isLnkStageTransferReference(exactReference)) return [exactReference]
-
-  const fieldKeys = [
-    ...LNK_METHODS.flatMap((method) => isPreHeatTreatmentLnkMethodCode(method.code)
-      ? [method.requestKey, method.conclusionKey]
-      : []),
-    ...PRE_HEAT_TREATMENT_REPORT_FIELD_KEYS,
-  ]
-  const byDocumentId = new Map<number, SystemDocumentReference & { documentId: number }>()
-  for (const candidateFieldKey of fieldKeys) {
-    const reference = getSystemDocumentReferenceForField(row, candidateFieldKey)
-    if (isLnkStageTransferReference(reference)) {
-      byDocumentId.set(reference.documentId, reference)
-    }
-  }
-  return [...byDocumentId.values()].sort((left, right) => {
-    if (left.type !== right.type) return left.type === 'lnkRequest' ? -1 : 1
-    return left.title.localeCompare(right.title, 'ru')
-  })
-}
-
-function isLnkStageTransferReference(
-  reference: SystemDocumentReference | null,
-): reference is SystemDocumentReference & { documentId: number } {
-  if (!reference?.documentId || reference.documentId <= 0) return false
-  if (reference.type !== 'lnkRequest' && reference.type !== 'lnkConclusion') return false
-  if (reference.sourceKind && reference.sourceKind !== 'beforeHeatTreatment') return false
-  return !reference.methodCode || isPreHeatTreatmentLnkMethodCode(reference.methodCode)
-}
-
-function formatLnkStageTransferReference(reference: SystemDocumentReference) {
-  const documentLabel = reference.type === 'lnkRequest' ? 'Заявка' : 'Заключение'
-  const stageLabel = reference.sourceKind === 'beforeHeatTreatment' ? 'До ТО' : 'Основной'
-  return `${documentLabel} · ${stageLabel} · ${reference.title}`
 }
 
 function getDuplicateControlSaveBlockReason({

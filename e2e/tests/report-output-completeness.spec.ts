@@ -3,6 +3,7 @@ import { expect, test, type Request } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { rpcName } from '../rpc'
 import { captureFullReportPrint } from '../report-print-capture'
+import { captureReportExcel } from '../report-excel-capture'
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => { window.open = () => { throw new Error('Unexpected popup') } })
@@ -225,3 +226,78 @@ test('statistics PDF uses the same preview and does not open another tab', async
   await expect(trigger).toBeFocused()
   expect(errors).toEqual([])
 })
+
+test('every statistics tab downloads styled Excel with the same badges and no new report requests', async ({ page }) => {
+  const calls: string[] = [], errors: string[] = []
+  const pending = new Set<Request>()
+  page.on('request', request => { if (request.url().includes('/_serverFn/')) { calls.push(rpcName(request.url())); pending.add(request) } })
+  page.on('requestfinished', request => pending.delete(request))
+  page.on('requestfailed', request => pending.delete(request))
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/statistics')
+  for (const [index, tab] of ['Общая', 'ЛНК', 'ПСТО', 'Сварщики', 'Полинейная сводка'].entries()) {
+    await page.getByRole('main').getByRole('button', { name: tab, exact: true }).click()
+    await expect.poll(() => pending.size).toBe(0)
+    const before = calls.length
+    await page.getByRole('button', { name: 'Отчет PDF', exact: true }).click()
+    const modal = page.getByRole('dialog', { name: 'Предпросмотр отчёта' })
+    await expect(modal.frameLocator('iframe').locator('.metric').first()).toBeVisible()
+    const book = await captureReportExcel(page, modal, `outputs/print-limit-statistics-${index}.xlsx`)
+    expect(book.SheetNames.length).toBeGreaterThan(1)
+    await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
+    await expect.poll(() => pending.size).toBe(0)
+    expect(calls.slice(before)).toEqual([])
+    await modal.getByRole('button', { name: 'Закрыть предпросмотр' }).click()
+  }
+  expect(errors).toEqual([])
+})
+
+for (const path of ['/journal', '/lnk', '/psto']) {
+  test(`1001 rows: print refused, keyboard safe, full Excel available: ${path}`, async ({ page }) => {
+    test.setTimeout(120_000)
+    await withE2eDatabase(async db => {
+      await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,officiality,
+        revision_actuality,connection_type,has_vik,psto_required,lnk_created_at,psto_created_at)
+        select 'E2E-OUTPUT','LIMIT','LIMIT','PRINT-LIMIT-'||lpad(n::text,4,'0'),'2026-09-01','действующий',
+          'актуальная','С17','да','да',now(),now() from generate_series(1,1001) n`)
+      await invalidateDerivedIndexes(db)
+    })
+    const calls: string[] = []
+    const pendingRequests = new Set<Request>()
+    let lastRpc = 0
+    page.on('request', request => { if (request.url().includes('/_serverFn/')) { calls.push(rpcName(request.url())); pendingRequests.add(request); lastRpc = Date.now() } })
+    const finished = (request: Request) => { if (pendingRequests.delete(request)) lastRpc = Date.now() }
+    page.on('requestfinished', finished)
+    page.on('requestfailed', finished)
+    const settle = () => expect.poll(() => pendingRequests.size === 0 && Date.now() - lastRpc >= 500).toBe(true)
+    await page.goto(path)
+    await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('PRINT-LIMIT-')
+    await expect(page.getByText('PRINT-LIMIT-0001', { exact: true })).toBeVisible()
+    await settle()
+    await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
+    await page.getByRole('button', { name: 'Текущая версия', exact: true }).click()
+    const modal = page.getByRole('dialog', { name: 'Предпросмотр отчёта' })
+    await expect(modal.frameLocator('iframe').locator('tbody tr')).toHaveCount(100)
+    await expect(modal.getByRole('status')).toContainText('В отчёте 1001 строк')
+    await expect(modal.getByRole('button', { name: 'Печать / Сохранить PDF' })).toBeDisabled()
+    await settle()
+    const before = calls.length
+    await page.keyboard.press('Control+p')
+    await modal.frameLocator('iframe').locator('body').press('Meta+p')
+    await expect(page.locator('iframe[title="Полный отчёт для печати"]')).toHaveCount(0)
+    await modal.getByRole('button', { name: 'Далее', exact: true }).click()
+    await expect(modal.getByRole('button', { name: 'Печать / Сохранить PDF' })).toBeDisabled()
+    const pending = page.waitForEvent('download')
+    await modal.getByRole('button', { name: 'Скачать Excel' }).click()
+    const downloaded = await pending
+    expect(await downloaded.failure()).toBeNull()
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expect(modal.getByRole('status')).toBeVisible()
+    await expect(modal.getByRole('button', { name: 'Скачать Excel' })).toBeVisible()
+    await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
+    await settle()
+    expect(calls.slice(before).every(name => name.startsWith('getDispatcherTaskVersion'))).toBe(true)
+    expect(calls.length - before).toBeLessThanOrEqual(1)
+    await modal.getByRole('button', { name: 'Закрыть предпросмотр' }).click()
+  })
+}

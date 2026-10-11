@@ -62,7 +62,35 @@ try {
   for (const name of ['package.json', 'tsconfig.json', 'drizzle.config.ts']) copyFileSync(join(root, name), join(fixture, name))
   mkdirSync(join(fixture, 'drizzle/meta'), { recursive: true })
   for (const entry of journal.entries) copyFileSync(join(root, 'drizzle', `${entry.tag}.sql`), join(fixture, 'drizzle', `${entry.tag}.sql`))
-  if (process.argv.includes('--technology-cards')) {
+  if (process.argv.includes('--document-operations')) {
+    selectFixtureVersion(46)
+    migrate(fixture)
+    assert.equal((await client.query("select to_regclass('document_operation_receipts') as name")).rows[0].name, null)
+    await client.query(`insert into weld_joints(project_title,line,joint,weld_date,vik_request,vik_conclusion,vik_result)
+      select 'DOCUMENT-UPGRADE','L1','F'||n,'2026-10-01','Точная заявка','Точное заключение','годен'
+      from generate_series(1,$1::int) n`, [count])
+    await client.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,result,request_name,request_date,conclusion_name,conclusion_date)
+      values (1,'ВИК','годен','НК до ТО: заявка','2026-10-01','НК до ТО: заключение','2026-10-01')`)
+    await client.query(`insert into psto_repeat_cycles(weld_joint_id,sequence,psto_request,psto_date,psto_result)
+      values (1,2,'Повторная ПСТО','2026-10-02','выполнено')`)
+    await client.query(`insert into generated_documents(type,title,file_name,mime_type,row_count)
+      values ('custom','Исторический документ','history.xlsx','application/x-test',1)`)
+    await client.query('insert into generated_document_weld_joints(document_id,weld_joint_id) values (1,1)')
+    const before = await savedFacts()
+    migrate(root)
+    assert.deepEqual(await savedFacts(), before, '0047 must not change facts, documents, stages, links or timestamps')
+    assert.equal((await client.query('select count(*)::int as n from document_operation_receipts')).rows[0].n, 0)
+    await client.query(`insert into document_operation_receipts(id,request_hash,result)
+      values ('upgrade-retry','exact-request-hash','{"completed":true,"processedDocumentIds":[1]}')`)
+    const receipt = (await client.query('select * from document_operation_receipts')).rows
+    await assert.rejects(client.query(`insert into document_operation_receipts(id,request_hash,result)
+      values ('upgrade-retry','another-request','{}')`), /duplicate key/)
+    migrate(root)
+    assert.deepEqual(await savedFacts(), before)
+    assert.deepEqual((await client.query('select * from document_operation_receipts')).rows, receipt, 'Repeated migrations preserve retry receipts exactly')
+    console.log(JSON.stringify({ passed: true, baseline: '0046', target: journal.entries.at(-1)!.tag, joints: count,
+      factsAndDocumentsPreserved: true, migrationIdempotent: true, receiptPreserved: true, duplicateReceiptRejected: true }))
+  } else if (process.argv.includes('--technology-cards')) {
     selectFixtureVersion(43)
     migrate(fixture)
     await client.query(`insert into weld_joints(project_title,line,joint,weld_date,technology_card_number)

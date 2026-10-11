@@ -48,6 +48,7 @@ export function useEscapeToClearReportFilters({
     function handleKeyDown(event: KeyboardEvent) {
       if (
         event.key !== 'Escape' ||
+        !['weldingJournal', 'lnk', 'heatTreatment'].includes(activeReport) ||
         event.defaultPrevented ||
         editingOpen ||
         isReportModalOpen ||

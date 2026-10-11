@@ -1,7 +1,6 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
-import { rpcName } from '../rpc'
 
 const project = 'E2E unofficial stage transfer', line = 'UNOFF-STAGE', title = 'UNOFF-STAGE-UZK'
 let settings: { value: string; updated_at: Date } | undefined
@@ -47,27 +46,6 @@ async function seed() {
   })
 }
 
-async function openTransfer(page: Page) {
-  await page.goto('/documents')
-  await page.getByRole('button', { name: 'Заключения ЛНК', exact: true }).click()
-  await page.getByText(title, { exact: true }).first()
-    .locator('xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " grid ")][1]').click({ button: 'right' })
-  await page.getByTestId('context-action-menu').getByRole('button', { name: 'Изменить этап контроля', exact: true }).click()
-  return page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Изменить этап контроля', exact: true }) })
-}
-
-async function restoreOfficiality(page: Page) {
-  await page.goto('/lnk')
-  await page.locator('header').getByRole('button', { name: 'Официальность', exact: true }).click()
-  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Официальность стыков', exact: true }) })
-  await dialog.getByPlaceholder('Проект, шифр, линия, спул или стык').fill(line)
-  await expect(dialog.getByText('Найдено: 1 · Выбрано: 0', { exact: true })).toBeVisible()
-  await dialog.getByRole('button', { name: 'Выбрать найденные', exact: true }).click()
-  await dialog.getByRole('button', { name: /^Официальный/ }).click()
-  await dialog.getByRole('button', { name: 'Сохранить официальность', exact: true }).click()
-  await expect(dialog).toBeHidden()
-}
-
 async function snapshot(id: number) {
   return withE2eDatabase(async db => ({
     row: (await db.query('select uzk_result,uzk_request,uzk_request_date,uzk_conclusion,uzk_conclusion_date,rk_result,pvk_result from weld_joints where id=$1', [id])).rows[0],
@@ -76,90 +54,52 @@ async function snapshot(id: number) {
   }))
 }
 
-test('годное заключение в обе стороны: запрет, старое окно, сохранность документов и повтор после возврата официальности', async ({ page }) => {
-  const id = await seed(), errors: string[] = []
-  page.on('pageerror', error => errors.push(error.message))
-  for (const target of ['До ТО', 'Основной']) {
-    let dialog = await openTransfer(page)
-    await expect(dialog.getByText(/Сначала верните стыку официальность/)).toBeVisible()
-    await expect(dialog.getByRole('button', { name: 'Проверить перенос', exact: true })).toBeDisabled()
-    await page.keyboard.press('Escape')
-    await expect(dialog).toBeHidden()
-    await restoreOfficiality(page)
-    dialog = await openTransfer(page)
-    await expect(dialog.getByText(target, { exact: true })).toBeVisible()
-    await dialog.getByRole('button', { name: 'Проверить перенос', exact: true }).click()
-    await expect(dialog.getByRole('button', { name: 'Подтвердить перенос', exact: true })).toBeEnabled()
-    // A second operator changes officiality after preview. The write must
-    // revalidate the business rule, not rely on the earlier selected positions.
-    await withE2eDatabase(db => db.query(`update weld_joints set officiality='неофициальный' where id=$1`, [id]))
-    const before = await snapshot(id)
-    const response = page.waitForResponse(response => response.url().includes('/_serverFn/') && rpcName(response.url()).startsWith('transferLnkDocumentStage_'))
-    await dialog.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
-    expect(await (await response).text()).toContain('Сначала верните стыку официальность')
-    await expect(dialog.getByText(/Сначала верните стыку официальность/)).toBeVisible()
-    expect(await snapshot(id)).toEqual(before)
-    await page.keyboard.press('Escape')
-    await restoreOfficiality(page)
-    dialog = await openTransfer(page)
-    await dialog.getByRole('button', { name: 'Проверить перенос', exact: true }).click()
-    await dialog.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
-    await expect(dialog).toBeHidden()
-    const after = await snapshot(id)
-    if (target === 'До ТО') {
-      expect(after.row.uzk_conclusion).toBeNull()
-      expect(after.controls.find(control => control.method === 'УЗК')).toMatchObject({ result: 'годен', conclusion_name: title })
-    } else {
-      expect(after.row).toMatchObject({ uzk_result: 'годен', uzk_conclusion: title, uzk_request: 'STAGE-UZK-R' })
-      expect(after.controls.some(control => control.method === 'УЗК')).toBe(false)
-    }
-    expect(after.row.rk_result).toBe('ремонт')
-    expect(after.row.pvk_result).toBe('годен')
-    expect(after.documents.some(document => document.title === title)).toBe(true)
-    // The independent rejected RK still makes unofficiality a valid state.
-    await withE2eDatabase(db => db.query(`update weld_joints set officiality='неофициальный' where id=$1`, [id]))
-  }
-  expect(errors).toEqual([])
-})
 
-test('сохранённое негодное до ТО переносится в пустой основной этап без изменения результата', async ({ page }) => {
-  const id = await seed(), errors: string[] = []
-  page.on('pageerror', error => errors.push(error.message))
-  await withE2eDatabase(async db => {
-    await db.query(`update weld_joints set officiality='действующий',psto_required='нет',rk_result='годен',
-      uzk_result=null,uzk_request=null,uzk_request_date=null,uzk_conclusion=null,uzk_conclusion_date=null where id=$1`, [id])
-    // §12 of the agreed system plan permits only one own rejection per record,
-    // across stages. Keep the good prerequisites and make UZK the only failure.
-    const control = (await db.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,request_name,request_date,result,conclusion_name,conclusion_date,defect_description)
-      values ($1,'УЗК','STAGE-UZK-R','2026-09-02','ремонт',$2,'2026-09-03','Исторический дефект') returning id`, [id, title])).rows[0]
-    await db.query(`update generated_documents set source_metadata=$1 where title=$2`, [JSON.stringify({
-      methodCode: 'УЗК', methodCodes: ['УЗК'], sourceKind: 'beforeHeatTreatment', positionCount: 1,
-      sourcePositions: [{ kind: 'beforeHeatTreatment', weldJointId: id, relationId: control.id, methodCode: 'УЗК' }],
-      projects: [project], lines: [line],
-    }), title])
+for (const officiality of ['действующий', 'неофициальный']) {
+  test(`смены этапа нет в документах и реестрах обоих этапов: ${officiality}`, async ({ page }) => {
+    const id = await seed(), errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    await withE2eDatabase(db => db.query('update weld_joints set officiality=$1 where id=$2', [officiality, id]))
+    await page.goto('/documents')
+    await page.getByRole('button', { name: 'Заключения ЛНК', exact: true }).click()
+    const document = page.getByText(title, { exact: true }).first()
+    await expect(document).toBeVisible()
+    const before = await snapshot(id)
+    await document.locator('xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " grid ")][1]').click({ button: 'right' })
+    await expect(page.getByTestId('context-action-menu')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Изменить этап контроля', exact: true })).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await page.goto('/lnk')
+    await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('F781')
+    await page.getByRole('button', { name: 'Выбрать стык F781', exact: true }).click()
+    await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
+    await page.getByRole('button', { name: 'Редактировать выбранные', exact: true }).click()
+    let dialog = page.getByRole('dialog')
+    await dialog.getByPlaceholder('Стык, линия, заявка или заключение').fill(line)
+    await expect(dialog.getByText('STAGE-VIK-C', { exact: true }).first()).toBeVisible()
+    await dialog.getByText('STAGE-VIK-C', { exact: true }).first().click({ button: 'right' })
+    await expect(page.getByTestId('context-action-menu')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Изменить этап контроля', exact: true })).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await dialog.getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
+    dialog = page.getByRole('dialog')
+    await dialog.getByPlaceholder('Стык, линия, заявка или заключение').fill(line)
+    await expect(dialog.getByText('STAGE-PRE-VIK-C', { exact: true }).first()).toBeVisible()
+    await dialog.getByText('STAGE-PRE-VIK-C', { exact: true }).first().click({ button: 'right' })
+    await expect(page.getByTestId('context-action-menu')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Изменить этап контроля', exact: true })).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Escape')
+    await page.locator('header').getByRole('button', { name: 'Заявка', exact: true }).click()
+    await page.getByRole('button', { name: 'Все заявки ЛНК', exact: true }).click()
+    dialog = page.getByRole('dialog')
+    // Viewing a different stage remains available; it is not a data transfer.
+    await expect(dialog.getByRole('group', { name: 'Этап контроля ЛНК' })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Изменить этап контроля', exact: true })).toHaveCount(0)
+    const after = await snapshot(id)
+    expect(after.row).toEqual(before.row)
+    expect(after.controls).toEqual(before.controls)
+    expect(after.documents.some(document => document.title === title)).toBe(true)
+    expect(errors).toEqual([])
   })
-  let dialog = await openTransfer(page)
-  const before = await snapshot(id)
-  expect(before.row.rk_result).toBe('годен')
-  expect(before.controls.map(control => [control.method, control.result])).toEqual([
-    ['ВИК', 'годен'], ['ПВК', 'годен'], ['УЗК', 'ремонт'],
-  ])
-  await expect(dialog.getByRole('button', { name: 'Проверить перенос', exact: true })).toBeEnabled()
-  await page.keyboard.press('Escape')
-  expect(await snapshot(id)).toEqual(before)
-  dialog = await openTransfer(page)
-  await dialog.getByRole('button', { name: 'Проверить перенос', exact: true }).click()
-  await expect(dialog.getByText('ремонт', { exact: true }).first()).toBeVisible()
-  await dialog.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
-  await expect(dialog).toBeHidden()
-  const after = await snapshot(id)
-  expect(after.row).toMatchObject({ uzk_result: 'ремонт', uzk_request: 'STAGE-UZK-R', uzk_conclusion: title })
-  expect(after.controls).toEqual(before.controls.filter(control => control.method !== 'УЗК'))
-  expect(after.documents.find(document => document.title === title)).toBeDefined()
-  expect(after.row.rk_result).toBe(before.row.rk_result)
-  await withE2eDatabase(async db => {
-    const row = (await db.query(`select uzk_defect_description,final_status from weld_joints where id=$1`, [id])).rows[0]
-    expect(row).toEqual({ uzk_defect_description: 'Исторический дефект', final_status: 'не годен' })
-  })
-  expect(errors).toEqual([])
-})
+}

@@ -189,7 +189,7 @@ function getPreviewRowHeight(row: XLSXTypes.RowInfo | undefined) {
   return Math.min(Math.max(Math.round(height), 20), 180)
 }
 
-function getPreviewCellStyle(style: unknown): DocumentTemplatePreviewCellStyle {
+export function getPreviewCellStyle(style: unknown): DocumentTemplatePreviewCellStyle {
   if (!isObjectRecord(style)) return {}
 
   const font = isObjectRecord(style.font) ? style.font : {}
@@ -218,9 +218,9 @@ function getPreviewCellStyle(style: unknown): DocumentTemplatePreviewCellStyle {
   }
 }
 
-function getPreviewWorkbookXmlStyles(fileData: ArrayBuffer, sheetIndex: number) {
+export function getPreviewWorkbookXmlStyles(fileData: ArrayBuffer, sheetIndex: number, container?: CfbContainer, includeDefaultStyle = false) {
   try {
-    const cfb = XLSX.CFB.read(new Uint8Array(fileData), { type: 'array' }) as CfbContainer
+    const cfb = container ?? XLSX.CFB.read(new Uint8Array(fileData), { type: 'array' }) as CfbContainer
     const stylesXml = readCfbText(cfb, 'xl/styles.xml')
     const sheetXml = readCfbText(cfb, getWorksheetPath(cfb, sheetIndex))
     if (!stylesXml || !sheetXml) return new Map<string, DocumentTemplatePreviewCellStyle>()
@@ -232,12 +232,14 @@ function getPreviewWorkbookXmlStyles(fileData: ArrayBuffer, sheetIndex: number) 
       parsePreviewCellFormat(xf, fonts, fills, borders),
     )
     const styleIds = extractCellStyleMap(sheetXml)
-    return new Map(
+    const result = new Map(
       Array.from(styleIds.entries()).map(([cell, styleId]) => [
         cell,
         cellFormats[Number(styleId)] ?? {},
       ]),
     )
+    if (includeDefaultStyle) result.set('default', cellFormats[0] ?? {})
+    return result
   } catch {
     return new Map<string, DocumentTemplatePreviewCellStyle>()
   }

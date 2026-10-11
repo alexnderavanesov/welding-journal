@@ -1,10 +1,11 @@
 import type { PrintableReport } from './printable-report'
+import { getReportRowCount } from './report-print-policy'
 
 export const REPORT_PREVIEW_PAGE_SIZE = 100
 
 /** Slice across tables, retaining their headings and row styles. Never mutate the full report. */
 export function getPrintableReportPage(report: PrintableReport, requestedPage: number) {
-  const total = (report.tables ?? []).reduce((count, table) => count + table.rows.length, 0)
+  const total = getReportRowCount(report)
   const pageCount = Math.max(1, Math.ceil(total / REPORT_PREVIEW_PAGE_SIZE))
   const page = Math.min(Math.max(0, Math.floor(requestedPage) || 0), pageCount - 1)
   const start = page * REPORT_PREVIEW_PAGE_SIZE

@@ -1,3 +1,7 @@
+import { assertCreationGrouping, normalizeDocumentGroupingCommand, type DocumentGroupingCommand } from '@/lib/document-grouping-command'
+import { getSystemDocumentSplitSettingId } from '@/lib/system-document-splitting'
+import { lockDocumentGroupingPreference, rememberDocumentGrouping } from '@/server/document-grouping-preferences'
+import { assertNewDocumentNamesAvailable, prepareDocumentCreationIndex } from '@/server/document-name-conflicts'
 import { createServerFn } from '@tanstack/react-start'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { and, asc, eq, sql, type SQL } from 'drizzle-orm'
@@ -91,6 +95,7 @@ export type PreHeatTreatmentLnkResultEntry = PreHeatTreatmentLnkPosition & {
 }
 
 export type PreHeatTreatmentLnkWorkflowPayload = {
+  documentGrouping?: DocumentGroupingCommand
   action: PreHeatTreatmentLnkWorkflowAction
   date: string
   groups: PreHeatTreatmentLnkWorkflowGroup[]
@@ -99,6 +104,7 @@ export type PreHeatTreatmentLnkWorkflowPayload = {
 }
 
 type NormalizedPayload = {
+  documentGrouping?: DocumentGroupingCommand
   action: PreHeatTreatmentLnkWorkflowAction
   date: string
   groups: Array<PreHeatTreatmentLnkWorkflowGroup & { useSystemName: boolean }>
@@ -111,9 +117,16 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
   .handler(async ({ data }) => {
     await assertSecurityScope('edit')
     const db = requireDb()
+    await prepareDocumentCreationIndex(data.documentGrouping)
     return db.transaction(async (tx) => {
       const processSettings = await assertPreHeatTreatmentLnkEnabled(tx)
       const workflowSettings = await loadWeldWorkflowSettingsFromTransaction(tx)
+      const documentGrouping = await lockDocumentGroupingPreference(tx, data.documentGrouping)
+      const groupingIds = new Set(data.groups.map(group => getSystemDocumentSplitSettingId({
+        type: data.action === 'request' ? 'lnkRequest' : 'lnkConclusion',
+        methodCode: data.action === 'result' ? group.positions[0]?.methodCode : undefined,
+      })))
+      if (documentGrouping && (groupingIds.size !== 1 || !groupingIds.has(documentGrouping.settingId))) throw new Error('Вариант разделения не соответствует виду документа.')
       const rowIds = [...new Set(data.groups.flatMap((group) =>
         group.positions.map((position) => position.rowId),
       ))]
@@ -161,6 +174,7 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
         tx,
       )
       const rowsById = new Map(rows.map((row) => [row.id, row]))
+      if (documentGrouping) assertCreationGrouping(data.groups.map(group => ({ name: group.name, rows: [...new Set(group.positions.map(position => position.rowId))].map(id => rowsById.get(id)!) })), documentGrouping.mode)
       const resultByPosition = new Map(data.results.map((entry) => [positionKey(entry), entry]))
       const rkExposureTable = data.action === 'result'
         ? workflowSettings.otherSettings.rkExposureTable
@@ -178,7 +192,7 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
       const reservations = await reserveSystemDocumentNames(
         tx,
         systemNameGroups,
-        { countersAlreadyLocked: true },
+        { countersAlreadyLocked: true, rejectChangedProvisionalNames: Boolean(documentGrouping) },
       )
       const systemNameByGroupIndex = new Map(
         systemNameGroups.map((group, index) => [group.index, reservations[index]!.name]),
@@ -187,6 +201,10 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
         ...group,
         name: systemNameByGroupIndex.get(index) ?? group.name,
       }))
+      if (documentGrouping) await assertNewDocumentNamesAvailable(tx, resolvedGroups.filter(group => group.name).map(group => ({
+        type: data.action === 'request' ? 'lnkRequest' : 'lnkConclusion', title: group.name, date: data.date,
+        sourceKind: 'beforeHeatTreatment', ...(data.action === 'result' ? { methodCode: group.positions[0]?.methodCode } : {}),
+      })))
       const writes = resolvedGroups.flatMap((group) => buildGroupWrites({
         action: data.action,
         date: data.date,
@@ -222,6 +240,7 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
         controls: savedControls,
       })
       const touchedRows = await touchLnkRows(tx, rows, savedControls)
+      if (resolvedGroups.some(group => group.name)) await rememberDocumentGrouping(tx, documentGrouping)
       await markDispatcherTaskIndexDirty(tx, {
         scopes: getDispatcherDirtyScopes(touchedRows, new Map()),
       })
@@ -572,7 +591,7 @@ function normalizePayload(value: PreHeatTreatmentLnkWorkflowPayload): Normalized
     id: Number(entry?.id),
     version: String(entry?.version ?? '').trim(),
   }))
-  return { action, date, groups, results, expectedVersions }
+  return { action, date, groups, results, expectedVersions, documentGrouping: normalizeDocumentGroupingCommand(value.documentGrouping) }
 }
 
 function normalizePositions(value: unknown): PreHeatTreatmentLnkPosition[] {

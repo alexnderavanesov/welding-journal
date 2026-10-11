@@ -1,3 +1,4 @@
+import type { WorkflowAvailability } from '@/components/workflow-action-menu-item'
 import { HeatTreatmentHeaderActions, LnkHeaderActions, WeldingJournalHeaderActions } from '@/components/report-header-action-groups'
 import type { ActiveReport } from '@/lib/home-state'
 import { Button } from '@/components/ui/button'
@@ -28,6 +29,7 @@ export type ReportHeaderActionsProps = {
   onEditSelectedPstoRequest: () => void
   editSelectedPstoRequestDisabled: boolean
   onOpenPstoRequestRegistry: () => void
+  pstoAvailability?: WorkflowAvailability
   pstoRequestPending: boolean
   onAddPstoResult: () => void
   pstoResultDisabled: boolean
@@ -49,6 +51,7 @@ export type ReportHeaderActionsProps = {
   onCreateLnkRequest: () => void
   onExtendLnkRequest: () => void
   onOpenLnkRequestRegistry: () => void
+  lnkAvailability?: WorkflowAvailability
   lnkRequestPending: boolean
   onAddLnkResult: () => void
   lnkResultDisabled: boolean
@@ -96,6 +99,7 @@ export function ReportHeaderActions({
   editSelectedPstoRequestDisabled,
   onOpenPstoRequestRegistry,
   pstoRequestPending,
+  pstoAvailability,
   onAddPstoResult,
   pstoResultDisabled,
   onEditSelectedPstoResults,
@@ -117,6 +121,7 @@ export function ReportHeaderActions({
   onExtendLnkRequest,
   onOpenLnkRequestRegistry,
   lnkRequestPending,
+  lnkAvailability,
   onAddLnkResult,
   lnkResultDisabled,
   onEditSelectedLnkResults,
@@ -147,6 +152,7 @@ export function ReportHeaderActions({
           editSelectedRequestDisabled={editSelectedPstoRequestDisabled}
           onOpenRequestRegistry={onOpenPstoRequestRegistry}
           requestPending={pstoRequestPending}
+          availability={pstoAvailability}
           onAddResult={onAddPstoResult}
           resultDisabled={pstoResultDisabled}
           onEditSelectedResults={onEditSelectedPstoResults}
@@ -172,6 +178,7 @@ export function ReportHeaderActions({
           onExtendRequest={onExtendLnkRequest}
           onOpenRequestRegistry={onOpenLnkRequestRegistry}
           requestPending={lnkRequestPending}
+          availability={lnkAvailability}
           onAddResult={onAddLnkResult}
           resultDisabled={lnkResultDisabled}
           onEditSelectedResults={onEditSelectedLnkResults}

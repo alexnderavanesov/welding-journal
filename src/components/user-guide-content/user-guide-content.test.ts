@@ -6,6 +6,21 @@ import { REFERENCE_GUIDE_SECTIONS as REFERENCE_GUIDE_SECTIONS_3 } from '@/compon
 import { WORK_GUIDE_SECTIONS } from '@/components/user-guide-content/work-sections'
 
 describe('user guide content', () => {
+  it('explains PSTO captions inside the picture sections without hiding historical documents', () => {
+    const content = JSON.stringify(REFERENCE_GUIDE_SECTIONS_2)
+    for (const text of ['ПСТО не предусмотрено', 'ПСТО отменено', 'НК до ТО отключён в настройках',
+      'без отдельного блока сверху', 'Подписи не скрывают документы и историю']) expect(content).toContain(text)
+  })
+  it('teaches only the two contextual corrections and preserves dependency-protected cancellation', () => {
+    const content = JSON.stringify([WORK_GUIDE_SECTIONS, REFERENCE_GUIDE_SECTIONS_1, REFERENCE_GUIDE_SECTIONS_2, REFERENCE_GUIDE_SECTIONS_3])
+    for (const removed of ['Изменить этап контроля', 'перенести комплект в «До ТО»', 'перенос годного комплекта', 'выберите судьбу связанных комплектов']) expect(content).not.toContain(removed)
+    expect(content).not.toContain('Смены этапа у уже внесённого НК нет')
+    expect(content).toContain('Весь основной НК → до ТО')
+    expect(content).toContain('Весь НК до ТО → основной')
+    expect(content).toContain('Основной этап должен быть пустым')
+    expect(content).toContain('результат НК до ТО нельзя удалить, пока на него опирается заявка ПСТО')
+  })
+
   it('explains explicit TK replacement/rename, partial completion and event-only dispatcher freshness', () => {
     const cards = JSON.stringify(REFERENCE_GUIDE_SECTIONS_2.find(section => section.id === 'stamps'))
     for (const text of ['по 50 ТК на странице', 'Проверить и назначить ТК', 'весь журнал и все проекты', 'в том числе ручных',

@@ -12,10 +12,8 @@ import {
   type PreHeatTreatmentLnkMethodCode,
 } from '@/lib/lnk-control-stage'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
-import { getPstoTvmtWorkflowState } from '@/lib/tvmt-cycle'
 import { isPreHeatTreatmentStageEnabled } from '@/lib/pre-heat-treatment-policy'
-import { getUnofficialLnkGoodResultReason } from './unofficial-lnk-result-guard'
-import { buildPreHeatTreatmentToPrimaryTransfer, hasPrimaryLnkStageTrace } from './lnk-stage-transfer'
+import { emptyToNull } from '@/lib/weld-import-parsers'
 
 export type PstoLineIdentity = {
   projectTitle: string
@@ -29,11 +27,12 @@ type PstoLineIdentityInput = {
   line?: unknown
 }
 
-export type PstoLineRemovalDisposition = 'keepPrimary' | 'promoteBeforeHeatTreatment'
-export type PstoLineActivationDisposition = 'keepPrimary' | 'movePrimaryToBeforeHeatTreatment'
-export type PstoWeldLineMoveDisposition =
-  | PstoLineRemovalDisposition
-  | 'movePrimaryToBeforeHeatTreatment'
+// Correction is contextual and explicit; keeping recorded stages is always the default.
+export type PstoWeldLineMoveDisposition = 'keepPrimary' | 'movePreHeatTreatmentToPrimary'
+export type PstoLineActivationDecision = {
+  rowId: number
+  disposition: 'keepPrimary' | 'movePrimaryToPreHeatTreatment'
+}
 export type PstoWeldLineMoveDecision = {
   rowId: number
   disposition: PstoWeldLineMoveDisposition
@@ -45,12 +44,6 @@ export type WeldChainLineMovePlan = {
 }
 export type PstoLineAssignmentAction = 'assign' | 'remove' | 'cancel' | 'reactivate'
 export type PstoLineAssignmentState = 'assigned' | 'cancelled' | 'unassigned' | 'mixed'
-
-export type PstoLineActivationDecision = {
-  rowId: number
-  disposition: PstoLineActivationDisposition
-  methodCodes: PreHeatTreatmentLnkMethodCode[]
-}
 
 export type PstoLineAssignmentSummary = PstoLineIdentity & {
   key: string
@@ -85,22 +78,20 @@ export type PstoLineRemovalPreviewRow = {
   joint: string
   spool: string
   preMethods: PreHeatTreatmentLnkMethodCode[]
-  promotablePreMethods: PreHeatTreatmentLnkMethodCode[]
+  completedPreMethods: PreHeatTreatmentLnkMethodCode[]
   pendingPreMethods: PreHeatTreatmentLnkMethodCode[]
   primaryMethods: PreHeatTreatmentLnkMethodCode[]
   pstoRequest: string
   pstoResult: string
   repeatCycleCount: number
   preservesPerformedHistory: boolean
-  blocksActivation: boolean
-  activationTransferBlockedMethods: PreHeatTreatmentLnkMethodCode[]
-  activationTransferBlockedReason?: string | null
-  promotionBlockedReason?: string | null
+  stageCorrection?: {
+    targetStage: 'primary' | 'beforeHeatTreatment'
+    disabledReason: string | null
+  }
 }
 
-export type PstoWeldLineMovePreviewRow = PstoLineRemovalPreviewRow & {
-  requiresDisposition: boolean
-}
+export type PstoWeldLineMovePreviewRow = PstoLineRemovalPreviewRow
 
 export type PstoLineRemovalPreview = {
   identity: PstoLineIdentity
@@ -168,6 +159,24 @@ export function normalizePstoLineIdentity(value: PstoLineIdentityInput): PstoLin
   }
 }
 
+/** Target identities must match the values that persistence will actually store. */
+export function normalizePstoLineMoveTargetIdentity(value: PstoLineIdentityInput): PstoLineIdentity {
+  return normalizePstoLineIdentity({
+    projectTitle: emptyToNull(value.projectTitle),
+    subtitleCode: emptyToNull(value.subtitleCode),
+    line: emptyToNull(value.line),
+  })
+}
+
+export function normalizeSubmittedWeldLineIdentity<T extends WeldInput>(record: T): T {
+  const normalized = normalizePstoLineMoveTargetIdentity(record)
+  const next = { ...record }
+  for (const key of ['projectTitle', 'subtitleCode', 'line'] as const) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) next[key] = normalized[key] || null
+  }
+  return next
+}
+
 export function getPstoLineIdentityKey(value: PstoLineIdentityInput) {
   const identity = normalizePstoLineIdentity(value)
   return JSON.stringify([
@@ -202,17 +211,14 @@ export function buildPstoAssignedKeepPrimaryValidationRow(row: WeldRow): WeldRow
 export function buildPstoMovedToUnassignedLineRow({
   row,
   controls,
-  disposition,
 }: {
   row: WeldRow
   controls: readonly PreHeatTreatmentControlRecord[]
-  disposition: PstoLineRemovalDisposition
 }): WeldRow {
   const next = buildPstoMovedToCancelledLineRow({
     row,
     controls,
-    disposition,
-    cancellationDate: '',
+      cancellationDate: '',
     cancellationBasis: '',
   })
   return {
@@ -226,22 +232,19 @@ export function buildPstoMovedToUnassignedLineRow({
 /** Official cancellation changes the decision only; every stage stays in its original place. */
 export function buildPstoCancelledRow({ row, cancellationDate, cancellationBasis }: {
   row: WeldRow; cancellationDate: string; cancellationBasis: string
-  controls?: readonly PreHeatTreatmentControlRecord[]; disposition?: PstoLineRemovalDisposition
 }): WeldRow {
   return { ...row, pstoRequired: 'отменен', pstoCancellationDate: cancellationDate, pstoControlBasis: cancellationBasis || null }
 }
 
-/** Explicit line-move stage resolution is a separate operation, not ordinary cancellation. */
+/** Default move baseline preserves every stage; explicit corrections are validated separately. */
 export function buildPstoMovedToCancelledLineRow({
   row,
   controls,
-  disposition,
   cancellationDate,
   cancellationBasis,
 }: {
   row: WeldRow
   controls: readonly PreHeatTreatmentControlRecord[]
-  disposition: PstoLineRemovalDisposition
   cancellationDate: string
   cancellationBasis: string
 }): WeldRow {
@@ -252,40 +255,7 @@ export function buildPstoMovedToCancelledLineRow({
     pstoControlBasis: cancellationBasis || null,
     preHeatTreatmentControls: [...controls],
   } as WeldRow
-  if (disposition !== 'promoteBeforeHeatTreatment') return next
-  const reason = getPstoLineMovePromotionBlockReason(next)
-  if (reason) throw new Error(reason)
-  const [transferred] = buildPreHeatTreatmentToPrimaryTransfer({ rows: [next], controls: [...controls] })
-  return { ...transferred!, preHeatTreatmentControls: [] }
-}
-
-/** A line move never overwrites an existing method or discards request-only controls. */
-export function getPstoLineMovePromotionBlockReason(row: WeldRow): string | null {
-  if (hasPerformedPstoHistory(row)) return 'ПСТО уже выполнено: сохраните исходные этапы и историю контроля.'
-  const controls = row.preHeatTreatmentControls ?? []
-  if (!controls.length) return 'Нет комплекта НК до ТО для переноса.'
-  const officiality = getPstoStageTransferOfficialityBlockReason(row, 'primary')
-  if (officiality) return officiality
-  for (const control of controls) {
-    const method = normalizeText(control.method).toLocaleUpperCase('ru-RU')
-    if (!isPreHeatTreatmentLnkMethodCode(method)) return `Неизвестный метод НК до ТО: ${method}. Сначала исправьте историю.`
-    if (hasPrimaryLnkStageTrace(row, method)) return `Основной комплект ${method} уже заполнен. Сначала отдельно исправьте документы или сохраните этапы без изменений.`
-  }
-  return null
-}
-
-/** The line-move/line-activation choices obey the same stage-transfer rule as
- * document management, even when the destination primary set is empty. */
-export function getPstoStageTransferOfficialityBlockReason(row: WeldRow, target: 'primary' | 'beforeHeatTreatment') {
-  const facts = target === 'primary'
-    ? (row.preHeatTreatmentControls ?? []).filter(hasCompletedPreHeatTreatmentResult)
-      .map(control => ({ result: control.result, method: String(control.method) }))
-    : LNK_METHODS.map(method => ({ result: row[method.resultKey], method: `${method.code} до ТО` }))
-  for (const fact of facts) {
-    const reason = getUnofficialLnkGoodResultReason(row, fact.result, null, fact.method)
-    if (reason) return reason
-  }
-  return null
+  return next
 }
 
 export function hasPerformedPstoHistory(row: WeldInput) {
@@ -380,38 +350,12 @@ export function getPrimaryStagedMethodCodes(row: WeldRow) {
   }).sort(comparePreMethods)
 }
 
-export function requiresPrimaryStageResolutionForAssignedPstoLine(row: WeldRow) {
+export function hasPrimaryLnkHistoryBeforePstoAssignment(row: WeldRow) {
   return (
     isPreHeatTreatmentStageEnabled(row) &&
     !isControlEnabledValue(row.pstoRequired) &&
     !hasPstoWorkflowStageData(row) &&
     getPrimaryStagedMethodCodes(row).length > 0
-  )
-}
-
-export function blocksPstoLineActivation(row: WeldRow) {
-  if (!isPreHeatTreatmentStageEnabled(row)) return false
-  if (isControlEnabledValue(row.pstoRequired)) return false
-  if (getPrimaryStagedMethodCodes(row).length === 0) return false
-  const reactivatedRow = {
-    ...row,
-    pstoRequired: 'да',
-    pstoCancellationDate: null,
-    pstoControlBasis: null,
-  } as WeldRow
-  return getPstoTvmtWorkflowState(reactivatedRow) !== 'complete'
-}
-
-export function getPstoLineActivationBlockReason(rows: readonly WeldRow[]) {
-  const blockedRows = rows.filter(blocksPstoLineActivation)
-  if (blockedRows.length === 0) return ''
-  const visibleJoints = blockedRows.slice(0, 8).map((row) => normalizeText(row.joint) || `ID ${row.id}`)
-  const hiddenCount = blockedRows.length - visibleJoints.length
-  const jointList = `${visibleJoints.join(', ')}${hiddenCount > 0 ? ` и еще ${hiddenCount}` : ''}`
-  return (
-    `У стыков ${jointList} уже есть основной комплект ЛНК. ` +
-    'Выберите: сохранить его как фактический контроль после ТО и позднее оформить отдельный НК до ТО ' +
-    'либо перенести комплект в «НК до ТО», если он был записан не на тот этап.'
   )
 }
 

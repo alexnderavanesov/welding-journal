@@ -2142,7 +2142,7 @@ export type SystemDocumentMetadata = Pick<
   sourcePositions: SystemDocumentSourcePosition[]
 }
 
-function serializeSystemDocumentSummary(
+export function serializeSystemDocumentSummary(
   summary: SystemDocumentSummary,
   sourcePositions: SystemDocumentSourcePosition[] = [],
 ) {

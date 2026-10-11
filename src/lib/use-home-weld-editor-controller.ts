@@ -143,7 +143,7 @@ export function useHomeWeldEditorController() {
     }
     if (state.status === 'error') return `Не удалось проверить перенос стыка: ${state.error}`
     if (state.status === 'required' && !state.decisions) {
-      return 'Перед сохранением выберите, как обработать связанные документы и результаты.'
+      return 'Перед сохранением подтвердите перенос линии и проверьте выбор этапа НК для каждого стыка.'
     }
     return null
   }, [editingRowId, editingSourceLineIdentityKey, pstoLineMoveDraftState])
@@ -175,15 +175,15 @@ export function useHomeWeldEditorController() {
     if (!state.decisions) {
       return {
         status: 'required' as const,
-        message: 'До сохранения карточки нужно решить, как обработать связанные документы и результаты.',
-        actionLabel: 'Выбрать',
+        message: 'До сохранения карточки подтвердите перенос линии. По умолчанию этапы НК сохраняются; допустимый перенос комплекта выбирается в окне подтверждения.',
+        actionLabel: 'Проверить перенос',
         onAction: openPstoLineMoveDraftDecision,
       }
     }
     return {
       status: 'resolved' as const,
       message: getPstoLineMoveDraftDecisionSummary(state.preview, state.decisions),
-      actionLabel: 'Изменить',
+      actionLabel: 'Посмотреть',
       onAction: openPstoLineMoveDraftDecision,
     }
   }, [editingRowId, openPstoLineMoveDraftDecision, pstoLineMoveDraftState])
@@ -237,29 +237,12 @@ export function useHomeWeldEditorController() {
   }
 }
 
-function getPstoLineMoveDraftDecisionSummary(
-  preview: PstoWeldLineMovePreview,
-  decisions: PstoWeldLineMoveDecision[],
-) {
-  if (preview.isChainMove) {
-    const decisionCount = preview.rows.filter((row) => row.requiresDisposition).length
-    return `Подтвержден перенос всей цепочки ${preview.rootJoint}: записей ${preview.rows.length}` +
-      `${decisionCount > 0 ? `, решений по ПСТО и НК до ТО: ${decisionCount}` : ''}.`
-  }
-  const disposition = decisions.find((decision) => decision.rowId === preview.row.rowId)?.disposition ?? 'keepPrimary'
-  const primaryMethods = preview.row.primaryMethods.join(', ') || 'ВИК/РК/УЗК/ПВК'
-  if (disposition === 'movePrimaryToBeforeHeatTreatment') {
-    return `Выбрано: при сохранении основной комплект ${primaryMethods} будет перенесен в «До ТО».`
-  }
-  if (disposition === 'promoteBeforeHeatTreatment') {
-    const methods = preview.row.preMethods.join(', ') || 'НК до ТО'
-    return `Выбрано: при сохранении весь комплект ${methods}, включая заявки и результаты, перейдёт в основной этап.`
-  }
-  if (preview.targetState === 'assigned') {
-    return `Выбрано: основной комплект ${primaryMethods} останется без изменений; отдельный НК до ТО можно оформить позже.`
-  }
-  if (preview.row.preservesPerformedHistory) {
-    return 'Выбрано: при сохранении выполненная история ПСТО, ТВМТ и НК останется доступной.'
-  }
-  return 'Выбрано: изменится только линия; все этапы, заявки, результаты и заключения сохранятся. НК до ТО останется видимой историей.'
+function getPstoLineMoveDraftDecisionSummary(preview: PstoWeldLineMovePreview, decisions: PstoWeldLineMoveDecision[]) {
+  const transferCount = decisions.filter(decision => decision.disposition === 'movePreHeatTreatmentToPrimary').length
+  const prefix = preview.isChainMove
+    ? `Подтверждён перенос всей цепочки ${preview.rootJoint}: записей ${preview.rows.length}.`
+    : 'Подтверждён перенос линии.'
+  return transferCount > 0
+    ? `${prefix} Стыков: весь НК до ТО → основной — ${transferCount}; сохранить этапы — ${preview.rows.length - transferCount}. Даты и названия документов сохранятся.`
+    : `${prefix} Все заявки, результаты, заключения и циклы сохранятся на своих этапах.`
 }

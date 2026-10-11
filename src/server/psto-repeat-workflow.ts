@@ -1,3 +1,6 @@
+import { assertCreationGrouping, normalizeDocumentGroupingCommand, type DocumentGroupingCommand } from '@/lib/document-grouping-command'
+import { lockDocumentGroupingPreference, rememberDocumentGrouping } from '@/server/document-grouping-preferences'
+import { assertNewDocumentNamesAvailable, prepareDocumentCreationIndex } from '@/server/document-name-conflicts'
 import { createServerFn } from '@tanstack/react-start'
 import { eq } from 'drizzle-orm'
 
@@ -92,6 +95,7 @@ export type PstoRepeatWorkflowGroup = {
 }
 
 export type PstoRepeatWorkflowPayload = {
+  documentGrouping?: DocumentGroupingCommand
   action: PstoRepeatWorkflowAction
   date: string
   groups: PstoRepeatWorkflowGroup[]
@@ -104,9 +108,14 @@ export const savePstoRepeatWorkflow = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     await assertSecurityScope('edit')
     const db = requireDb()
+    await prepareDocumentCreationIndex(data.documentGrouping)
     return db.transaction(async (tx) => {
       await loadControlProcessSettingsFromTransaction(tx)
       const { saveCheckSettings } = await loadWeldWorkflowSettingsFromTransaction(tx)
+      const documentGrouping = await lockDocumentGroupingPreference(tx, data.documentGrouping)
+      if (documentGrouping && documentGrouping.settingId !== ({ pstoRequest: 'pstoRequest', pstoResult: 'pstoConclusion', tvmtRequest: 'tvmtRequest', tvmtResult: 'tvmtConclusion' } as const)[data.action]) {
+        throw new Error('Вариант разделения не соответствует виду документа.')
+      }
       const rowIds = [...new Set(data.groups.flatMap((group) => group.rowIds))]
       const sequenceRequests = data.groups.map((group) => (
         group.useSystemName
@@ -141,6 +150,7 @@ export const savePstoRepeatWorkflow = createServerFn({ method: 'POST' })
         tx,
       )
       const rowsById = new Map(rows.map((row) => [row.id, row]))
+      if (documentGrouping) assertCreationGrouping(data.groups.map(group => ({ name: group.name, rows: group.rowIds.map(id => rowsById.get(id)!) })), documentGrouping.mode)
       const resultByRowId = new Map(data.results.map((entry) => [entry.rowId, entry.result]))
       const systemNameGroups = data.groups.flatMap((group, index) => {
         const request = sequenceRequests[index]
@@ -151,7 +161,7 @@ export const savePstoRepeatWorkflow = createServerFn({ method: 'POST' })
       const reservations = await reserveSystemDocumentNames(
         tx,
         systemNameGroups,
-        { countersAlreadyLocked: true },
+        { countersAlreadyLocked: true, rejectChangedProvisionalNames: Boolean(documentGrouping) },
       )
       const systemNameByGroupIndex = new Map(
         systemNameGroups.map((group, index) => [group.index, reservations[index]!.name]),
@@ -160,6 +170,10 @@ export const savePstoRepeatWorkflow = createServerFn({ method: 'POST' })
         ...group,
         name: systemNameByGroupIndex.get(index) ?? group.name,
       }))
+      if (documentGrouping) await assertNewDocumentNamesAvailable(tx, resolvedGroups.filter(group => group.name).map(group => ({
+        type: data.action === 'pstoRequest' ? 'pstoRequest' : data.action === 'pstoResult' ? 'pstoConclusion' : data.action === 'tvmtRequest' ? 'lnkRequest' : 'lnkConclusion',
+        title: group.name, date: data.date, sourceKind: 'pstoCycle', ...(data.action.startsWith('tvmt') ? { methodCode: 'ТВМТ' } : {}),
+      })))
 
       const writes = resolvedGroups.flatMap((group) =>
         group.rowIds.map((rowId) => buildWorkflowWrite({
@@ -185,6 +199,7 @@ export const savePstoRepeatWorkflow = createServerFn({ method: 'POST' })
         tx,
       )
       await syncPstoCycleDocuments(tx, data.action, resolvedGroups, updatedRows)
+      if (resolvedGroups.some(group => group.name)) await rememberDocumentGrouping(tx, documentGrouping)
       await markDispatcherTaskIndexDirty(tx, {
         scopes: getDispatcherDirtyScopes(updatedRows, new Map()),
       })
@@ -465,7 +480,7 @@ export function normalizePstoTvmtAndRemoveLaterCyclesPayload(
 
 export function normalizePstoCycleWorkflowPayload(
   value: PstoRepeatWorkflowPayload,
-): Required<PstoRepeatWorkflowPayload> {
+): Required<Omit<PstoRepeatWorkflowPayload, 'documentGrouping'>> & Pick<PstoRepeatWorkflowPayload, 'documentGrouping'> {
   const action = value?.action
   if (!['pstoRequest', 'pstoResult', 'tvmtRequest', 'tvmtResult'].includes(action)) {
     throw new Error('Неизвестное действие повторного цикла ПСТО/ТВМТ.')
@@ -510,7 +525,7 @@ export function normalizePstoCycleWorkflowPayload(
     id: Number(entry?.id),
     version: String(entry?.version ?? '').trim(),
   }))
-  return { action, date, groups, results, expectedVersions }
+  return { action, date, groups, results, expectedVersions, documentGrouping: normalizeDocumentGroupingCommand(value.documentGrouping) }
 }
 
 export function buildWorkflowWrite({

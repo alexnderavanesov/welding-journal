@@ -68,6 +68,7 @@ import {
 import { type PrintableReport } from '@/lib/printable-report'
 import { useReportPreview } from '@/lib/use-report-preview'
 import { PrintableReportPreview } from '@/components/printable-report-preview'
+import { downloadPrintableReport } from '@/lib/download-printable-report'
 import { buildWeldingDynamicsJointTypeTable } from '@/lib/statistics-welding-dynamics-report'
 import { cn } from '@/lib/utils'
 import { useStatisticsServerQuery } from '@/lib/use-statistics-server-query'
@@ -506,7 +507,7 @@ function StatisticsReports({
               variant="outline"
               size="sm"
               className="h-9 gap-2 rounded-md border-sky-200 bg-white text-sky-800 hover:bg-sky-50"
-              onClick={() => { void openPreview(async () => ({ report: printableReport })) }}
+              onClick={() => { void openPreview(async () => ({ report: printableReport, onDownloadExcel: () => downloadPrintableReport(printableReport) })) }}
               title="Предпросмотр и печать отчёта"
             >
               <Download className="h-4 w-4" />
@@ -3433,6 +3434,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
           ? [{
               title: 'Группы материалов за период',
               columns: ['Группа материалов', unitLabel, 'Доля'],
+              numericColumns: [1, 2],
               rows: dynamics.materialGroups.map((group) => [
                 group.label,
                 formatStatisticValue(group.value, unit),
@@ -3443,6 +3445,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
         {
           title: 'Состояние стыков',
           columns: ['Состояние', unitLabel, 'Доля'],
+          numericColumns: [1, 2],
           rows: statusRows.map(([label, value]) => [
             label,
             formatStatisticValue(value, unit),
@@ -3452,6 +3455,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
         {
           title: 'Текущий остаток вне выбранного периода',
           columns: ['Состояние', unitLabel],
+          numericColumns: [1],
           rows: [
             ['Всего в остатке', formatStatisticValue(summary.backlogTotal, unit)],
             ['Ожидает сварку', formatStatisticValue(summary.backlogWaitingWeld, unit)],
@@ -3505,6 +3509,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
         {
           title: 'Лаборатория по видам контроля',
           columns: ['Вид', 'Заявлено', 'Требуется', 'Заявлено, %', 'Закрыто', 'Заявок', 'Всего результатов', 'Без заявки', 'Ожидает заключение', 'Годен', 'Не годен', 'Закрытие'],
+          numericColumns: [1, 2, 3, 4, 5, 6, 11],
           rows: lnkMethods.map((method) => [
             method.code,
             String(method.createdRequests),
@@ -3523,6 +3528,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
         {
           title: 'Состояние стыков за период',
           columns: ['Состояние', unitLabel],
+          numericColumns: [1],
           rows: [
             ['Годен', formatStatisticValue(summary.good, unit)],
             ['Не годен', formatStatisticValue(summary.rejected, unit)],
@@ -3584,6 +3590,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
         {
           title: 'ПСТО по этапам',
           columns: ['Требуется', 'Заявлено', 'Заявлено, %', 'Заявок', 'Закрыто', 'Всего заключений', 'Без заявки', 'Ожидает ПСТО', 'Проведено', 'Закрытие'],
+          numericColumns: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
           rows: [[
             String(method.requiredRequests),
             String(method.createdRequests),
@@ -3600,6 +3607,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
         {
           title: 'ТВМТ последнего цикла',
           columns: ['Требуется', 'Заявлено', 'Заявлено, %', 'Заявок', 'Закрыто', 'Без заявки', 'Ожидает ТВМТ', 'Годен', 'Не годен', 'Закрытие'],
+          numericColumns: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
           rows: [[
             String(tvmtMethod.requiredRequests),
             String(tvmtMethod.createdRequests),
@@ -3616,6 +3624,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
         {
           title: 'Состояние стыков за период',
           columns: ['Состояние', unitLabel],
+          numericColumns: [1],
           rows: [
             ['Годен', formatStatisticValue(summary.good, unit)],
             ['Не годен', formatStatisticValue(summary.rejected, unit)],
@@ -3682,6 +3691,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
         {
           title: 'Отчет по сварщикам',
           columns: ['Клеймо', 'ФИО', 'Всего', 'Годен', 'Ожидает заявку', 'Ожидает НК', 'Не годен', '% брака', 'Группы материалов'],
+          numericColumns: [2, 3, 4, 5, 6, 7],
           rows: welderSummary.rows.map((row) => [
             row.stamp,
             row.welderName || '—',
@@ -3735,6 +3745,7 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
         {
           title: 'Линии',
           columns: ['Проект', 'Шифр', 'Линия', 'Группа трубопровода', 'Категория трубопровода', 'Контроль, %', 'Всего', 'Выполнено', 'Остаток'],
+          numericColumns: [5, 6, 7, 8],
           rows: lineSummary.rows.map((row) => [
             row.projectTitle,
             row.subtitleCode,

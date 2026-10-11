@@ -1,3 +1,4 @@
+import { openDocumentOperation, confirmDocumentOperation } from '../document-operation-ui'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { rpcName } from '../rpc'
@@ -144,87 +145,75 @@ test('load audit: all four document kinds over real HTTP preserve first and repe
   const resourceLimited = process.env.AUDIT_REBUILD_RESOURCE === '1'
   const stopSampling = await (resourceLimited ? sampleMixedResources(browser) : sampleLocalAuditResources(browser))
   try {
-    await page.goto('/settings')
-    await page.getByRole('button', { name: 'Заявки и заключения', exact: true }).click()
-    await page.waitForLoadState('networkidle')
-    const sqlBeforePreview = await auditSqlCount()
-    const responsePromise = page.waitForResponse(response => response.url().includes('/_serverFn/') && rpcName(response.url()).startsWith('previewSystemDocumentRebuild_'), { timeout: 240_000 })
-    const started = Date.now()
-    await page.getByRole('button', { name: 'Пересобрать системные документы по текущим правилам', exact: true }).click()
-    const response = await responsePromise
-    expect(response.ok()).toBe(true)
-    // Large responses can be evicted from Chromium's inspector body cache.
-    // Network sizes do not retain/copy the payload and still measure real HTTP.
-    const previewTransferBytes = (await response.request().sizes()).responseBodySize
-    // Durable payload bound for the fixed 200k fixture; timing is diagnostic only.
-    if (count === 200_000) expect(previewTransferBytes).toBeLessThan(20_000_000)
-    const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Пересборка системных документов', exact: true }) })
-    await expect(dialog.getByRole('button', { name: 'Применить пересборку', exact: true })).toBeEnabled({ timeout: 240_000 })
-    const previewMilliseconds = Date.now() - started
-    const sqlAfterPreview = await auditSqlCount()
-    if (sqlAfterPreview !== undefined && sqlBeforePreview !== undefined) expect(sqlAfterPreview - sqlBeforePreview).toBeLessThan(500)
-    console.log(JSON.stringify({ phase: 'four-kind preview + browser', count, milliseconds: previewMilliseconds, previewTransferBytes }))
-    const before = initialFacts
-    expect(before.rows.n).toBe(count)
-    expect(before.cycles.n).toBe(count / 2)
-    expect(before.historicalFirstCycles.n).toBe(count / 2)
-    const types = definitions.map(definition => `system:${definition.storage}`).sort()
-    expect(before.positions.map(({ type, n }) => ({ type, n }))).toEqual(types.map(type => ({ type, n: count })))
-    expect(await sourcedDocumentCounts()).toEqual(types.map(type => ({ type, n: count / 200 })))
-    // Cold document-index initialization may materialize separately retained first
-    // cycles. Compare the apply transaction with its actual pre-apply checkpoint,
-    // not the state before that distinct initialization workflow.
-    initialMutation = await mutationFingerprint()
-    applyAttempted = true
-    const applying = Date.now()
+    const kinds = ['Заявка ПСТО', 'Заключение ПСТО', 'Заявка ТВМТ', 'Заключение ТВМТ']
+    const names = definitions.map(definition => Array.from({ length: count / 200 }, (_, i) => buildCurrentSystemDocumentName({ ...definition, title: '' }, [], REQUEST_CONCLUSION_DEFAULT_SETTINGS, i + 1)))
+    const types = definitions.map(definition => 'system:' + definition.storage).sort()
+    expect(initialFacts.rows.n).toBe(count)
+    expect(initialFacts.cycles.n).toBe(count / 2)
+    expect(initialFacts.positions.map(({ type, n }) => ({ type, n }))).toEqual(types.map(type => ({ type, n: count })))
+    // One explicit document on the full journal must remain bounded, too.
+    const smallStarted = Date.now()
+    const smallSql = await auditSqlCount()
+    // The history sorts names lexically: 999 precedes 1000 on the first page.
+    const smallName = names[0].length > 1 ? names[0].at(-2)! : names[0][0]
+    let dialog = await openDocumentOperation(page, [smallName], kinds[0], 'split', 240_000)
+    await expect(dialog.getByText(/Выбрано в пакете: 1 → Получится: 2/)).toBeVisible()
+    const smallSqlAfter = await auditSqlCount()
+    const checkpoint = await mutationFingerprint()
+    await dialog.getByRole('button', { name: 'Отмена', exact: true }).click()
+    expect(await mutationFingerprint()).toEqual(checkpoint)
+    console.log(JSON.stringify({ phase: 'small selection on full journal', count, milliseconds: Date.now() - smallStarted, sql: smallSqlAfter === undefined || smallSql === undefined ? undefined : smallSqlAfter - smallSql }))
+    initialMutation = checkpoint
     let previews = 1, applies = 0
-    while (await dialog.isVisible()) {
-      const apply = dialog.getByRole('button', { name: 'Применить пересборку', exact: true })
-      await expect(dialog.getByText('Область пересборки', { exact: true })).toBeVisible({ timeout: 240_000 })
-      if (await apply.isEnabled()) {
+    const sqlBefore = await auditSqlCount(), started = Date.now()
+    const responseBytes: number[] = []
+    const pendingSizes: Promise<void>[] = []
+    page.on('response', response => {
+      if (rpcName(response.url()).startsWith('previewDocumentOperation_')) pendingSizes.push(response.finished().then(async () => { responseBytes.push((await response.request().sizes()).responseBodySize) }))
+    })
+    for (const [index, definition] of definitions.entries()) {
+      if (packetSample && completedPackets >= packetSample) break
+      dialog = await openDocumentOperation(page, names[index], kinds[index], 'split', 240_000)
+      previews++
+      let packet = 1
+      while (true) {
+        await expect(dialog.getByRole('button', { name: 'Подтвердить и применить' })).toBeEnabled({ timeout: 240_000 })
         const packetStarted = Date.now()
-        await apply.click()
-        applies += 1
-        let outcome = 'pending'
-        await expect.poll(async () => {
-          if (!await dialog.isVisible() || await dialog.getByRole('status').isVisible()) outcome = 'saved'
-          else if (await dialog.locator('.text-rose-700').isVisible()) outcome = await dialog.locator('.text-rose-700').innerText()
-          return outcome
-        }, { timeout: 240_000 }).not.toBe('pending')
-        expect(outcome).toBe('saved')
-        completedPackets += 1
-        console.log(JSON.stringify({ phase: 'packet saved', packet: applies, milliseconds: Date.now() - packetStarted }))
+        applyAttempted = true
+        await confirmDocumentOperation(dialog, packet, 240_000)
+        applies++; completedPackets++
+        console.log(JSON.stringify({ phase: 'selected packet saved', kind: definition.storage, packet, milliseconds: Date.now() - packetStarted }))
         if (packetSample && completedPackets >= packetSample) break
+        const next = dialog.getByRole('button', { name: 'Просмотреть следующий пакет', exact: true })
+        if (!await next.count()) break
+        await next.click(); previews++; packet++
       }
-      if (!await dialog.isVisible()) break
-      const next = dialog.getByRole('button', { name: 'Следующий пакет', exact: true })
-      if (!await next.count()) break
-      const nextPreview = page.waitForResponse(response => rpcName(response.url()).startsWith('previewSystemDocumentRebuild_'), { timeout: 240_000 })
-      await next.click()
-      previews += 1
-      await nextPreview
+      await dialog.getByRole('button', { name: 'Остановиться / закрыть' }).click()
     }
-    console.log(JSON.stringify({ phase: 'four-kind apply + browser', count, milliseconds: Date.now() - applying }))
-    const sqlAfterApply = await auditSqlCount()
-    if (sqlAfterApply !== undefined && sqlAfterPreview !== undefined) expect(sqlAfterApply - sqlAfterPreview).toBeLessThan(300 * (previews + applies))
-    console.log(JSON.stringify({ phase: 'four-kind SQL bounds', sqlBeforePreview, sqlAfterPreview, sqlAfterApply, previews, applies }))
-    expect(await facts()).toEqual(before)
+    await Promise.all(pendingSizes)
+    expect(responseBytes.every(bytes => bytes < 8 * 1024 * 1024)).toBe(true)
+    const sqlAfter = await auditSqlCount()
+    if (sqlBefore !== undefined && sqlAfter !== undefined) expect(sqlAfter - sqlBefore).toBeLessThan(300 * (previews + applies))
+    console.log(JSON.stringify({ phase: 'four-kind selected operations', count, milliseconds: Date.now() - started, previews, applies, maxPreviewBytes: Math.max(...responseBytes), sqlBefore, sqlAfter }))
+    expect(await facts()).toEqual(initialFacts)
     const documentCounts = await sourcedDocumentCounts()
     if (packetSample) {
       expect(completedPackets).toBe(packetSample)
       for (const row of documentCounts) { expect(row.n).toBeGreaterThanOrEqual(count / 200); expect(row.n).toBeLessThanOrEqual(count / 100) }
-      expect(documentCounts.reduce((sum, row) => sum + row.n, 0)).toBeGreaterThan(4 * count / 200)
-      console.log(JSON.stringify({ sampleOnly: true, completedPackets, documentCounts }))
-    } else {
-      expect(documentCounts).toEqual(types.map(type => ({ type, n: count / 100 })))
-      // Each retained first-cycle document contains 100000 positions: refuse it
-      // visibly and leave its facts intact, while completing all normal packets.
-      if (count === 200_000) await expect(dialog.getByRole('alert')).toContainText('Не пересобраны из-за объёма: 4')
+    } else expect(documentCounts).toEqual(types.map(type => ({ type, n: count / 100 })))
+    // Separately test indivisible historical documents; they were never silently
+    // included in the explicit current-cycle selection above.
+    if (count === 200_000) {
+      const historical = await withE2eDatabase(async db => (await db.query("select id from generated_documents where title=any($1::text[]) and row_count=100000", [['Первичная заявка ПСТО', 'Первичная диаграмма', 'Первичная заявка ТВМТ', 'Первичное заключение ТВМТ']])).rows.map(row => row.id))
+      expect(historical).toHaveLength(4)
+      const { planOperationBatches } = await import('../../src/server/document-operation-service')
+      const plan = await planOperationBatches({ documentIds: historical, merge: false })
+      expect(plan.batches).toHaveLength(0); expect(plan.blocked).toHaveLength(4)
     }
-    expect(calls.filter(name => name.startsWith('previewSystemDocumentRebuild_'))).toHaveLength(previews)
-    expect(calls.filter(name => name.startsWith('applySystemDocumentRebuild_'))).toHaveLength(applies)
+    expect(calls.filter(name => name.startsWith('previewDocumentOperation_'))).toHaveLength(previews)
+    expect(calls.filter(name => name.startsWith('applyDocumentOperation_'))).toHaveLength(applies)
     expect(errors).toEqual([])
-    await page.screenshot({ path: info.outputPath('four-kind-rebuild-completed.png') })
+    await page.screenshot({ path: info.outputPath('four-kind-selected-completed.png') })
   } finally {
     const resources = await stopSampling()
     console.log(JSON.stringify({ workflow: 'four-kind rebuild sampled resources', resourceLimited, ...resources }))

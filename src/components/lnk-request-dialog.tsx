@@ -15,6 +15,7 @@ import { RequestDocumentCombobox } from '@/components/request-document-combobox'
 import { RequestRowsPanel } from '@/components/request-rows-panel'
 import { SelectedRowsViewToggle, type SelectedRowsViewMode } from '@/components/selected-rows-view-toggle'
 import { SystemDocumentNamesPanel } from '@/components/system-document-names-panel'
+import { SystemDocumentSplitControl } from '@/components/system-document-split-control'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getDateInputValidationReason } from '@/lib/date-format'
@@ -230,17 +231,22 @@ export function LnkRequestDialog({
   const allFilteredRowsSelected = isEveryFilteredLnkRequestRowSelected(selectedIds, filteredReadyRows)
   const requestName = submitMode === 'create' ? getRequestNameFromNaming(requestNaming, nextRequestName) : ''
   const creationPlan = useMemo(() => {
-    const eligibleRowIds = new Set(buildLnkRequestDraftRows({
+    const draftRows = buildLnkRequestDraftRows({
       records: selectedRows,
       methodKeys: selectedMethodKeys,
       requestName: '__system-document-group-preview__',
       requestDate,
       controlProcessSettings,
-    }).map((row) => row.id))
+    })
+    const draftsById = new Map(draftRows.map(row => [row.id, row]))
     return buildSystemDocumentCreationPlan({
       type: 'lnkRequest',
       date: requestDate,
-      rows: selectedRows.filter((row) => eligibleRowIds.has(row.id)),
+      rows: selectedRows.filter((row) => draftsById.has(row.id)),
+      positionDetails: row => selectedMethodKeys.flatMap(key => {
+        const method = LNK_METHODS.find(method => method.requestKey === key)
+        return method && draftsById.get(row.id)?.[key] === '__system-document-group-preview__' ? [{ method: method.code, stage: 'Основной контроль' }] : []
+      }),
       naming: requestNaming,
       settings: requestConclusionSettings,
       nextNumber: nextRequestNumber,
@@ -386,6 +392,7 @@ export function LnkRequestDialog({
         <DocumentWorkspaceTabs
           activeTab={workspaceTab}
           ariaLabel="Разделы заявки ЛНК"
+          controls={<SystemDocumentSplitControl plan={selectedMethodKeys.length ? creationPlan : null} naming={requestNaming} onChange={onRequestNamingChange} disabled={isPending} />}
           documentsLabel="Заявки и имена"
           documentsCount={creationPlan.groups.length}
           documentsHaveError={Boolean(creationPlan.error)}

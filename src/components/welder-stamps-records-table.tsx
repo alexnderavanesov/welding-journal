@@ -28,8 +28,11 @@ export function WelderStampsRecordsTable({
   onRestorePermit,
   onDelete,
 }: WelderStampsRecordsTableProps) {
+  if (records.length === 0) {
+    return <p className="px-4 py-10 text-center text-sm text-slate-500">{emptyMessage}</p>
+  }
   return (
-    <table className="w-full table-fixed border-collapse text-sm">
+    <table className="w-full min-w-[1120px] table-fixed border-collapse text-sm">
       <thead className="bg-slate-100 text-center text-slate-700">
         <tr>
           <th className="w-[13%] border-r border-white px-3 py-3 font-semibold">Клеймо НАКС</th>
@@ -43,29 +46,21 @@ export function WelderStampsRecordsTable({
         </tr>
       </thead>
       <tbody>
-        {records.length === 0 ? (
-          <tr>
-            <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
-              {emptyMessage}
-            </td>
-          </tr>
-        ) : (
-          records.map((record) => (
-            <WelderStampsRecordRow
-              key={record.id}
-              record={record}
-              editingId={editingId}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              onEdit={onEdit}
-              onArchive={onArchive}
-              onRestore={onRestore}
-              onArchivePermit={onArchivePermit}
-              onRestorePermit={onRestorePermit}
-              onDelete={onDelete}
-            />
-          ))
-        )}
+        {records.map((record) => (
+          <WelderStampsRecordRow
+            key={record.id}
+            record={record}
+            editingId={editingId}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            onEdit={onEdit}
+            onArchive={onArchive}
+            onRestore={onRestore}
+            onArchivePermit={onArchivePermit}
+            onRestorePermit={onRestorePermit}
+            onDelete={onDelete}
+          />
+        ))}
       </tbody>
     </table>
   )

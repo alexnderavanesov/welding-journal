@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
+import { eq } from 'drizzle-orm'
+import { requireDb } from '../../src/db'
+import { weldJoints } from '../../src/db/schema'
+import { syncSystemDocumentsForWeldChangesInTransaction } from '../../src/server/system-document-index'
+import { cleanupLineProgramProjects } from '../line-program-fixtures'
 
 const project = 'E2E document officiality layout'
 
@@ -18,13 +23,16 @@ test.beforeEach(async () => {
       await db.query('insert into generated_document_weld_joints(document_id,weld_joint_id) values ($1,$2)', [doc.rows[0].id, row.id])
     }
   })
+  // SQL fixture insertion bypasses the save workflow; index it explicitly even
+  // when another scenario has already initialized the document registry.
+  await requireDb().transaction(async tx => {
+    const rows = await tx.select().from(weldJoints).where(eq(weldJoints.projectTitle, project))
+    await syncSystemDocumentsForWeldChangesInTransaction(tx, rows, new Map())
+  })
 })
 
 test.afterEach(async () => {
-  await withE2eDatabase(async db => {
-    await db.query('delete from generated_documents where title like $1', ['UI-JSR-%'])
-    await db.query('delete from weld_joints where project_title=$1', [project])
-  })
+  await cleanupLineProgramProjects([project])
 })
 
 test('меню столбцов поверх кнопок; закрепленные действия принимают фон строки', async ({ page }) => {

@@ -12,6 +12,7 @@ import { RequestManagerButton } from '@/components/request-manager-button'
 import { RequestRowsPanel } from '@/components/request-rows-panel'
 import { SelectedRowsViewToggle, type SelectedRowsViewMode } from '@/components/selected-rows-view-toggle'
 import { SystemDocumentNamesPanel } from '@/components/system-document-names-panel'
+import { SystemDocumentSplitControl } from '@/components/system-document-split-control'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getDateInputValidationReason } from '@/lib/date-format'
@@ -240,6 +241,7 @@ export function PstoRequestDialog({
       <DocumentWorkspaceTabs
         activeTab={workspaceTab}
         ariaLabel="Разделы заявки ПСТО"
+        controls={<SystemDocumentSplitControl plan={creationPlan} naming={requestNaming} onChange={onRequestNamingChange} disabled={isPending} />}
         documentsLabel="Заявки и имена"
         documentsCount={creationPlan.groups.length}
         documentsHaveError={Boolean(creationPlan.error)}

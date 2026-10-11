@@ -465,7 +465,7 @@ test('blocks predecessor deletion and keeps recovery after deleting a tail or au
   )).toEqual([...AUTOMATIC_COIL_JOINTS])
 })
 
-test('moves an accepted coil chain through its base and preserves each row workflow', async ({ page }) => {
+test('moves an accepted coil chain through its base and preserves each row workflow', async ({ page }, info) => {
   test.setTimeout(120_000)
   const sourceRowId = await seedChainLineMoveCase()
 
@@ -509,15 +509,22 @@ test('moves an accepted coil chain through its base and preserves each row workf
     has: page.getByRole('heading', { name: `Перенос цепочки ${MOVE_SOURCE_JOINT}` }),
   })
   await expect(moveDialog).toBeVisible()
-  await expect(moveDialog.getByText(MOVE_COIL_JOINTS.join(', '), { exact: false })).toBeVisible()
-  const firstCoilDecision = moveDialog
-    .getByText(MOVE_COIL_JOINTS[0], { exact: true })
-    .locator('xpath=ancestor::div[contains(@class,"border-b")][1]')
-  for (const keep of await moveDialog.getByRole('button', { name: /^Изменить только линию/ }).all()) await keep.click()
-  await firstCoilDecision.getByRole('button', { name: /Перенести НК «До ТО»/ }).click()
+  await moveDialog.screenshot({ path: info.outputPath('preserve-stages-line-move.png') })
+  await page.setViewportSize({ width: 430, height: 900 })
+  for (const name of ['Вернуться к форме', 'Подтвердить перенос цепочки']) {
+    const button = moveDialog.getByRole('button', { name, exact: true })
+    await expect(button).toBeInViewport()
+    const box = (await button.boundingBox())!
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(430)
+  }
+  await moveDialog.screenshot({ path: info.outputPath('preserve-stages-line-move-mobile.png') })
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  for (const joint of MOVE_COIL_JOINTS) await expect(moveDialog.getByText(joint, { exact: true })).toBeVisible()
+  await expect(moveDialog.getByRole('button', { name: /Перенести НК/ })).toHaveCount(0)
   await moveDialog.getByRole('button', { name: 'Подтвердить перенос цепочки', exact: true }).click()
 
-  await expect(editor.getByText(/Подтвержден перенос всей цепочки S981: записей 3/)).toBeVisible()
+  await expect(editor.getByText(/Подтверждён перенос всей цепочки S981: записей 3/)).toBeVisible()
   const saveChainMove = editor.getByRole('button', { name: 'Сохранить', exact: true })
   await expect(saveChainMove).toBeEnabled()
   await saveChainMove.click()
@@ -526,7 +533,8 @@ test('moves an accepted coil chain through its base and preserves each row workf
 
   await expect.poll(loadChainLineMoveState).toEqual({
     acceptedDecisionContextHasTargetLine: true,
-    completedPreControlCount: 0,
+    completedPreControlCount: 1,
+    preControl: { request_name: 'Заявка ВИК до ТО S981Y1', result: 'годен', conclusion_name: 'Заключение ВИК до ТО S981Y1' },
     movedJoints: [MOVE_SOURCE_JOINT, ...MOVE_COIL_JOINTS],
     sourceHistory: {
       pstoResult: 'проведено',
@@ -535,9 +543,10 @@ test('moves an accepted coil chain through its base and preserves each row workf
     },
     sourceLineJoints: [],
     targetLineJoints: [MOVE_SOURCE_JOINT, ...MOVE_COIL_JOINTS, MOVE_TARGET_ANCHOR],
-    promotedControl: {
-      conclusion: 'Заключение ВИК до ТО S981Y1',
-      result: 'годен',
+    // A waiting label is derived availability, not a copied pre-TO result.
+    primaryControl: {
+      conclusion: null,
+      result: 'ожидает заявку',
     },
   })
 })
@@ -936,9 +945,9 @@ async function loadChainLineMoveState() {
       order by joint
     `, [MOVE_PROJECT])
     const source = rows.rows.find((row) => row.joint === MOVE_SOURCE_JOINT)
-    const promoted = rows.rows.find((row) => row.joint === MOVE_COIL_JOINTS[0])
-    const preControls = await client.query<{ count: number }>(`
-      select count(*)::int as count
+    const primary = rows.rows.find((row) => row.joint === MOVE_COIL_JOINTS[0])
+    const preControls = await client.query<{ request_name: string; result: string; conclusion_name: string }>(`
+      select control.request_name, control.result, control.conclusion_name
       from pre_heat_treatment_controls control
       inner join weld_joints weld on weld.id = control.weld_joint_id
       where weld.project_title = $1 and weld.joint = $2
@@ -954,7 +963,8 @@ async function loadChainLineMoveState() {
       .map((row) => row.joint)
     return {
       acceptedDecisionContextHasTargetLine: String(warning.rows[0]?.context ?? '').includes(`Линия: ${MOVE_TARGET_LINE}`),
-      completedPreControlCount: Number(preControls.rows[0]?.count ?? 0),
+      completedPreControlCount: preControls.rows.length,
+      preControl: preControls.rows[0],
       movedJoints,
       sourceHistory: {
         pstoResult: source?.psto_result ?? null,
@@ -963,9 +973,9 @@ async function loadChainLineMoveState() {
       },
       sourceLineJoints: rows.rows.filter((row) => row.line === MOVE_SOURCE_LINE).map((row) => row.joint),
       targetLineJoints: rows.rows.filter((row) => row.line === MOVE_TARGET_LINE).map((row) => row.joint),
-      promotedControl: {
-        conclusion: promoted?.vik_conclusion ?? null,
-        result: promoted?.vik_result ?? null,
+      primaryControl: {
+        conclusion: primary?.vik_conclusion ?? null,
+        result: primary?.vik_result ?? null,
       },
     }
   })

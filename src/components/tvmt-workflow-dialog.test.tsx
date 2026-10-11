@@ -1,10 +1,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { TvmtWorkflowDialog } from '@/components/tvmt-workflow-dialog'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY } from '@/lib/system-document-sequence-storage'
+
+import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-settings'
+vi.mock('@/server/document-grouping-preferences', () => ({ getDocumentGroupingDefaults: vi.fn(async () => REQUEST_CONCLUSION_DEFAULT_SETTINGS) }))
+vi.mock('@/server/system-document-sequences', () => ({ getSystemDocumentSequences: vi.fn(async () => ({ tvmtRequest: 10, tvmtConclusion: 20 })) }))
 
 function makeRow(overrides: Partial<WeldRow> = {}): WeldRow {
   return {
@@ -22,7 +26,7 @@ function makeRow(overrides: Partial<WeldRow> = {}): WeldRow {
   } as WeldRow
 }
 
-function renderDialog(
+async function renderDialog(
   mode: 'request' | 'result',
   rowOrRows: WeldRow | WeldRow[],
   initialSelectedIds?: ReadonlySet<number>,
@@ -53,7 +57,8 @@ function renderDialog(
       />
     </QueryClientProvider>
   )
-  const view = render(renderTree())
+  let view!: ReturnType<typeof render>
+  await act(async () => { view = render(renderTree()) })
   return {
     ...view,
     rerenderWithRows: (rows: WeldRow[]) => {
@@ -63,13 +68,13 @@ function renderDialog(
   }
 }
 
-describe('TvmtWorkflowDialog', () => {
-  it.each(['request', 'result'] as const)('shows connection type in TVMT %s metadata', (mode) => {
-    renderDialog(mode, makeRow({ connectionType: 'С17', tvmtRequest: 'ТВМТ-1', tvmtRequestDate: '2026-08-29' }))
+describe('TvmtWorkflowDialog', async () => {
+  it.each(['request', 'result'] as const)('shows connection type in TVMT %s metadata', async (mode) => {
+    await renderDialog(mode, makeRow({ connectionType: 'С17', tvmtRequest: 'ТВМТ-1', tvmtRequestDate: '2026-08-29' }))
     expect(screen.getByText('С17').parentElement).toHaveTextContent('Тип: С17')
   })
-  it('preselects a joint for a TVMT request only after completed PSTO', () => {
-    renderDialog('request', makeRow())
+  it('preselects a joint for a TVMT request only after completed PSTO', async () => {
+    await renderDialog('request', makeRow())
 
     expect(screen.getByRole('heading', { name: 'Заявка ТВМТ' })).toBeInTheDocument()
     expect(screen.queryByText('Циклы')).not.toBeInTheDocument()
@@ -78,9 +83,9 @@ describe('TvmtWorkflowDialog', () => {
     expect(screen.getByRole('button', { name: 'Создать заявку' })).toBeEnabled()
   })
 
-  it('offers both exact date corrections and keeps the current TVMT draft in place', () => {
+  it('offers both exact date corrections and keeps the current TVMT draft in place', async () => {
     const onRunRootCauseAction = vi.fn()
-    renderDialog('request', makeRow(), undefined, vi.fn(), onRunRootCauseAction)
+    await renderDialog('request', makeRow(), undefined, vi.fn(), onRunRootCauseAction)
     const dateInput = screen.getByLabelText('Дата заявки')
 
     fireEvent.change(dateInput, { target: { value: '2026-08-27' } })
@@ -103,7 +108,7 @@ describe('TvmtWorkflowDialog', () => {
   })
 
   it('restores the selected TVMT row when report data loads after the dialog opens', async () => {
-    const view = renderDialog('request', [], new Set([1]))
+    const view = await renderDialog('request', [], new Set([1]))
 
     expect(screen.getByText('Найдено: 0 · Доступно: 0')).toBeInTheDocument()
     view.rerenderWithRows([makeRow()])
@@ -118,7 +123,7 @@ describe('TvmtWorkflowDialog', () => {
       tvmtRequestDate: '2026-08-29',
       tvmtResult: 'ожидает НК',
     })
-    const view = renderDialog('result', [], new Set([waitingResult.id]))
+    const view = await renderDialog('result', [], new Set([waitingResult.id]))
 
     expect(screen.getByRole('combobox', { name: 'Заявка ТВМТ' })).toHaveValue('')
     view.rerenderWithRows([waitingResult])
@@ -136,7 +141,7 @@ describe('TvmtWorkflowDialog', () => {
       tvmtRequestDate: '2026-08-29',
       tvmtResult: 'ожидает НК',
     })
-    const view = renderDialog('result', [], new Set([waitingResult.id]))
+    const view = await renderDialog('result', [], new Set([waitingResult.id]))
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Результат для выбранных' }), {
       target: { value: 'не годен' },
@@ -148,8 +153,8 @@ describe('TvmtWorkflowDialog', () => {
     expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeEnabled()
   })
 
-  it('opens result entry for the exact TVMT request and keeps the row result explicit', () => {
-    renderDialog('result', makeRow({
+  it('opens result entry for the exact TVMT request and keeps the row result explicit', async () => {
+    await renderDialog('result', makeRow({
       tvmtRequest: 'Заявка-ТВМТ-001',
       tvmtRequestDate: '2026-08-28',
       tvmtResult: 'ожидает НК',
@@ -169,15 +174,15 @@ describe('TvmtWorkflowDialog', () => {
     expect(screen.getByRole('button', { name: 'Все результаты' })).toBeEnabled()
   })
 
-  it('does not allow a TVMT request before PSTO is completed', () => {
-    renderDialog('request', makeRow({ pstoResult: 'ожидает ПСТО', pstoDate: null }))
+  it('does not allow a TVMT request before PSTO is completed', async () => {
+    await renderDialog('request', makeRow({ pstoResult: 'ожидает ПСТО', pstoDate: null }))
 
     expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Создать заявку' })).toBeDisabled()
   })
 
-  it('shows the missing pre-TO step when PSTO cannot start yet', () => {
-    renderDialog('request', makeRow({
+  it('shows the missing pre-TO step when PSTO cannot start yet', async () => {
+    await renderDialog('request', makeRow({
       hasVik: 'да',
       pstoRequest: null,
       pstoRequestDate: null,
@@ -190,8 +195,8 @@ describe('TvmtWorkflowDialog', () => {
     expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeDisabled()
   })
 
-  it('uses the current repeat PSTO cycle without exposing duplicate controls as a stage', () => {
-    renderDialog('request', makeRow({
+  it('uses the current repeat PSTO cycle without exposing duplicate controls as a stage', async () => {
+    await renderDialog('request', makeRow({
       tvmtResult: 'не годен',
       tvmtConclusionDate: '2026-08-29',
       pstoRepeatCycles: [{
@@ -221,8 +226,8 @@ describe('TvmtWorkflowDialog', () => {
     expect(screen.queryByText(/дубл/i)).not.toBeInTheDocument()
   })
 
-  it('keeps TVMT positions from different PSTO cycles in one request document', () => {
-    renderDialog('request', [
+  it('keeps TVMT positions from different PSTO cycles in one request document', async () => {
+    await renderDialog('request', [
       makeRow(),
       makeRow({
         id: 2,
@@ -246,7 +251,7 @@ describe('TvmtWorkflowDialog', () => {
   })
 
   it('bulk-selects only TVMT rows from the current search result', async () => {
-    renderDialog('request', [
+    await renderDialog('request', [
       makeRow({ id: 1, line: 'AUDIT-LINE-10', joint: 'F1' }),
       makeRow({ id: 2, line: 'OTHER-LINE', joint: 'F2' }),
     ], new Set())

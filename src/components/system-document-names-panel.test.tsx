@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 
 import { SystemDocumentNamesPanel } from '@/components/system-document-names-panel'
@@ -30,6 +31,38 @@ function createPstoPlan(naming: RequestNamingState) {
 }
 
 describe('SystemDocumentNamesPanel', () => {
+  it('shows a mixed naming mode after editing only one system-named group', () => {
+    const initial = { mode: 'system' as const, customName: '' }
+    const initialPlan = createPstoPlan(initial)
+    const first = initialPlan.groups[0]
+    const naming: RequestNamingState = { ...initial, groupModes: { [first.key]: 'custom' },
+      customGroupNames: { [first.key]: 'Ручная диаграмма' }, customGroupMembers: { [first.key]: first.membership! } }
+    render(<SystemDocumentNamesPanel plan={createPstoPlan(naming)} naming={naming}
+      documentNameLabel="Название" documentNamePlaceholder="Название" emptyMessage="Пусто" onNamingChange={vi.fn()} />)
+    const modes = within(screen.getByRole('group', { name: 'Название' }))
+    expect(modes.getByRole('button', { name: 'Системное' })).toHaveAttribute('aria-pressed', 'false')
+    expect(modes.getByRole('button', { name: 'Пользовательское' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByText('Смешанные названия')).toBeInTheDocument()
+  })
+  it('reuses the same composition page after closing and reopening it', async () => {
+    const naming = { mode: 'system' as const, customName: '' }
+    const queryClient = new QueryClient()
+    render(<QueryClientProvider client={queryClient}><SystemDocumentNamesPanel
+      plan={createPstoPlan(naming)} naming={naming} documentNameLabel="Название"
+      documentNamePlaceholder="Название" emptyMessage="Пусто" onNamingChange={vi.fn()}
+    /></QueryClientProvider>)
+    const open = () => fireEvent.click(screen.getAllByRole('button', { name: 'Состав — 1 позиций' })[0])
+    open()
+    await waitFor(() => expect(queryClient.getQueryCache().getAll()[0]?.state.status).toBe('success'))
+    const query = queryClient.getQueryCache().getAll()[0]
+    const updatedAt = query.state.dataUpdatedAt
+    fireEvent.click(screen.getByRole('button', { name: '← Назад' }))
+    open()
+    await waitFor(() => expect(screen.getByRole('complementary')).toHaveTextContent('F5'))
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(1)
+    expect(query.state.dataUpdatedAt).toBe(updatedAt)
+    expect(query.state.fetchStatus).toBe('idle')
+  })
   it('uses PSTO labels while showing every calculated diagram name', () => {
     const naming = { mode: 'system' as const, customName: '' }
     const plan = createPstoPlan(naming)
@@ -47,10 +80,10 @@ describe('SystemDocumentNamesPanel', () => {
     )
 
     expect(screen.getByText('Наименование диаграммы')).toBeInTheDocument()
-    expect(screen.getByText(plan.groups[0].name)).toBeInTheDocument()
-    expect(screen.getByText(plan.groups[1].name)).toBeInTheDocument()
+    expect(screen.getByDisplayValue(plan.groups[0].name)).toBeInTheDocument()
+    expect(screen.getByDisplayValue(plan.groups[1].name)).toBeInTheDocument()
 
-    const groupsList = screen.getByText(plan.groups[0].name).closest('.overflow-y-auto')
+    const groupsList = screen.getByDisplayValue(plan.groups[0].name).closest('.overflow-y-auto')
     expect(groupsList).toHaveClass('min-h-0', 'flex-1', 'overflow-y-auto')
     expect(groupsList?.parentElement).toHaveClass('min-h-0', 'flex-1', 'overflow-hidden')
     expect(container.firstElementChild).toHaveClass('min-h-0', 'flex-1')
@@ -82,6 +115,8 @@ describe('SystemDocumentNamesPanel', () => {
       customGroupNames: {
         [plan.groups[0].key]: 'Диаграмма подрядчика',
       },
+      groupModes: { [plan.groups[0].key]: 'custom' },
+      customGroupMembers: { [plan.groups[0].key]: plan.groups[0].membership },
     })
   })
 

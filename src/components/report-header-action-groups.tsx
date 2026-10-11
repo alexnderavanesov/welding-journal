@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import { ChevronDown, ClipboardCheck, CopyCheck, FilePlus2, Gauge, ListChecks, ListFilter, Pencil, Plus, ShieldCheck, Upload } from 'lucide-react'
 import { ReportShowMenu } from '@/components/report-show-menu'
 import { Button } from '@/components/ui/button'
-import { WorkflowActionMenuItem } from '@/components/workflow-action-menu-item'
+import { WorkflowActionMenuItem, type WorkflowAvailability } from '@/components/workflow-action-menu-item'
 
 const REPORT_WORKFLOW_BUTTON_CLASS =
   'border-sky-100 bg-sky-50 text-sky-700 hover:border-sky-200 hover:bg-sky-100 hover:text-sky-800'
@@ -109,6 +109,7 @@ type HeatTreatmentHeaderActionsProps = {
   onOpenCurrentReport: () => void
   onOpenWaitingRequestReport: () => void
   onOpenResultsReport: () => void
+  availability?: WorkflowAvailability
   onWorkflowMenuOpenChange?: (open: boolean) => void
 }
 
@@ -136,6 +137,7 @@ export function HeatTreatmentHeaderActions({
   onOpenCurrentReport,
   onOpenWaitingRequestReport,
   onOpenResultsReport,
+  availability = 'ready',
   onWorkflowMenuOpenChange = () => undefined,
 }: HeatTreatmentHeaderActionsProps) {
   const workflowMenuRootRef = useRef<HTMLDivElement | null>(null)
@@ -227,13 +229,15 @@ export function HeatTreatmentHeaderActions({
           <ChevronDown className="ml-2 h-4 w-4" />
         </Button>
         {isRequestMenuOpen ? (
-          <div className="absolute left-0 z-50 mt-2 w-80 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
+          <div data-workflow-menu className="absolute left-0 top-full z-50 mt-2 w-80 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
             <WorkflowActionMenuItem
               label="Новая заявка"
               icon={Plus}
               onClick={() => runRequestAction(onCreateRequest)}
               disabled={createRequestDisabled}
-              disabledReason="Нет стыков, ожидающих заявку ПСТО. Откройте историю стыка, чтобы увидеть следующий обязательный этап."
+              disabledReason="Нет стыков, готовых к ПСТО. Следующий этап — в истории стыка."
+              description="Создать заявку для стыков, готовых к ПСТО."
+              availability={availability}
             />
             <WorkflowActionMenuItem
               label="Редактировать выбранную"
@@ -241,6 +245,7 @@ export function HeatTreatmentHeaderActions({
               onClick={() => runRequestAction(onEditSelectedRequest)}
               disabled={editSelectedRequestDisabled}
               disabledReason="Выберите в таблице стык с созданной заявкой ПСТО."
+              description="Изменить заявку отмеченного в таблице стыка."
             />
             <div className="my-1 border-t border-slate-100" />
             <WorkflowActionMenuItem
@@ -263,13 +268,15 @@ export function HeatTreatmentHeaderActions({
           <ChevronDown className="ml-2 h-4 w-4" />
         </Button>
         {isResultMenuOpen ? (
-          <div className="absolute left-0 z-50 mt-2 w-80 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
+          <div data-workflow-menu className="absolute left-0 top-full z-50 mt-2 w-80 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
             <WorkflowActionMenuItem
               label="Внести результаты"
               icon={Plus}
               onClick={() => runResultAction(onAddResult)}
               disabled={resultDisabled}
               disabledReason="Нет заявок ПСТО, ожидающих результата. Сначала создайте заявку ПСТО."
+              description="Внести результаты по ожидающим заявкам ПСТО."
+              availability={availability}
             />
             <WorkflowActionMenuItem
               label="Редактировать выбранные"
@@ -277,6 +284,7 @@ export function HeatTreatmentHeaderActions({
               onClick={() => runResultAction(onEditSelectedResults)}
               disabled={editSelectedResultsDisabled}
               disabledReason="Выберите в таблице стык с уже внесенным результатом ПСТО."
+              description="Открыть результаты отмеченных в таблице стыков."
             />
             <div className="my-1 border-t border-slate-100" />
             <WorkflowActionMenuItem
@@ -286,6 +294,8 @@ export function HeatTreatmentHeaderActions({
               onClick={() => runResultAction(onOpenResultRegistry)}
               disabled={resultRegistryDisabled}
               disabledReason="История пока пуста: ни один цикл ПСТО еще не начат."
+              description="Посмотреть заявки, результаты и циклы ПСТО/ТВМТ."
+              availability={availability}
             />
           </div>
         ) : null}
@@ -302,7 +312,7 @@ export function HeatTreatmentHeaderActions({
           <ChevronDown className="ml-2 h-4 w-4" />
         </Button>
         {isTvmtMenuOpen ? (
-          <div className="absolute left-0 z-50 mt-2 w-80 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
+          <div data-workflow-menu className="absolute left-0 top-full z-50 mt-2 w-80 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
             <WorkflowActionMenuItem
               label="Новая заявка ТВМТ"
               icon={FilePlus2}
@@ -310,6 +320,8 @@ export function HeatTreatmentHeaderActions({
               onClick={() => runTvmtAction(onCreateTvmtRequest)}
               disabled={createTvmtRequestDisabled}
               disabledReason="Нет стыков с проведенной ПСТО, ожидающих заявку ТВМТ."
+              description="Создать заявку ТВМТ после проведённой ПСТО."
+              availability={availability}
             />
             <WorkflowActionMenuItem
               label="Внести результаты ТВМТ"
@@ -318,6 +330,8 @@ export function HeatTreatmentHeaderActions({
               onClick={() => runTvmtAction(onAddTvmtResult)}
               disabled={addTvmtResultDisabled}
               disabledReason="Нет заявок ТВМТ, ожидающих результата. Сначала создайте заявку ТВМТ."
+              description="Внести результаты по ожидающим заявкам ТВМТ."
+              availability={availability}
             />
           </div>
         ) : null}
@@ -358,6 +372,7 @@ type LnkHeaderActionsProps = {
   onOpenToRequestReport: () => void
   onOpenWaitingNkReport: () => void
   onOpenConclusionsReport: () => void
+  availability?: WorkflowAvailability
   onWorkflowMenuOpenChange?: (open: boolean) => void
 }
 
@@ -382,6 +397,7 @@ export function LnkHeaderActions({
   onOpenToRequestReport,
   onOpenWaitingNkReport,
   onOpenConclusionsReport,
+  availability = 'ready',
   onWorkflowMenuOpenChange = () => undefined,
 }: LnkHeaderActionsProps) {
   const workflowMenuRootRef = useRef<HTMLDivElement | null>(null)
@@ -441,7 +457,7 @@ export function LnkHeaderActions({
           <ChevronDown className="ml-2 h-4 w-4" />
         </Button>
         {isRequestMenuOpen ? (
-          <div className="absolute left-0 z-50 mt-2 w-80 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
+          <div data-workflow-menu className="absolute left-0 top-full z-50 mt-2 w-80 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
             <WorkflowActionMenuItem
               label="Новая заявка"
               icon={Plus}
@@ -473,13 +489,15 @@ export function LnkHeaderActions({
           <ChevronDown className="ml-2 h-4 w-4" />
         </Button>
         {isResultMenuOpen ? (
-          <div className="absolute left-0 z-50 mt-2 w-80 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
+          <div data-workflow-menu className="absolute left-0 top-full z-50 mt-2 w-80 rounded-md border border-slate-200 bg-white p-1 shadow-lg shadow-slate-950/10">
             <WorkflowActionMenuItem
               label="Внести результаты"
               icon={Plus}
               onClick={() => runResultAction(onAddResult)}
               disabled={resultDisabled}
-              disabledReason="Нет заявок ЛНК, ожидающих результата. Сначала создайте заявку нужного этапа."
+              disabledReason="Нет ожидающих заявок ЛНК. Создайте заявку нужного этапа."
+              description="Внести результаты по заявкам выбранного этапа НК."
+              availability={availability}
             />
             <WorkflowActionMenuItem
               label="Редактировать выбранные"
@@ -487,6 +505,7 @@ export function LnkHeaderActions({
               onClick={() => runResultAction(onEditSelectedResults)}
               disabled={editSelectedResultsDisabled}
               disabledReason="Выберите в таблице стык с внесенным результатом ЛНК."
+              description="Открыть результаты отмеченных в таблице стыков."
             />
             <div className="my-1 border-t border-slate-100" />
             <WorkflowActionMenuItem
@@ -496,6 +515,8 @@ export function LnkHeaderActions({
               onClick={() => runResultAction(onOpenResultRegistry)}
               disabled={resultRegistryDisabled}
               disabledReason="Внесенных результатов ЛНК пока нет."
+              description="Посмотреть внесённые результаты и заключения ЛНК."
+              availability={availability}
             />
           </div>
         ) : null}
@@ -551,13 +572,14 @@ function useDismissWorkflowMenus({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       event.preventDefault()
+      event.stopImmediatePropagation()
       onDismiss()
     }
     document.addEventListener('pointerdown', handlePointerDown)
-    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keydown', handleKeyDown, true)
     return () => {
       document.removeEventListener('pointerdown', handlePointerDown)
-      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keydown', handleKeyDown, true)
     }
   }, [onDismiss, open, rootRef])
 }

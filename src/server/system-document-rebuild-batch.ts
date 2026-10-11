@@ -1,8 +1,8 @@
 import { sql } from 'drizzle-orm'
-import { generatedDocuments, generatedDocumentWeldJoints, weldJoints, pstoRepeatCycles } from '@/db/schema'
+import { generatedDocuments, weldJoints, pstoRepeatCycles, preHeatTreatmentControls } from '@/db/schema'
 import { SYSTEM_DOCUMENT_TEMPLATE_PROFILES, getSystemDocumentTemplateId, type SystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import { getSystemDocumentNumber, type SystemDocumentReference } from '@/lib/system-document-types'
-import { REBUILD_DOCUMENT_LIMIT, REBUILD_FACT_BYTES_LIMIT, selectRebuildBatch, type RebuildCursor, type RebuildCatalogSize } from '@/lib/system-document-rebuild-batch'
+import { REBUILD_FACT_BYTES_LIMIT } from '@/lib/system-document-rebuild-batch'
 import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
 import { buildNumberArrayMatch } from './weld-request-utils'
@@ -11,52 +11,11 @@ const storageTypes = SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map(profile => `system:${
 const metadata = sql`coalesce(${generatedDocuments.sourceMetadata}, '{}')::jsonb`
 const systemScope = sql`${generatedDocuments.type} = any(${sql.param(storageTypes)}::text[])`
 
-export async function loadRebuildBatch(tx: SystemDocumentSequenceTransaction, requested?: RebuildCursor) {
-  const cursor = requested ?? { afterId: 0, throughId: Number((await tx.execute(sql`
-    select coalesce(max(${generatedDocuments.id}), 0) as id from ${generatedDocuments} where ${systemScope}
-  `)).rows[0]?.id ?? 0) }
-  // A cursor never includes newly generated documents from earlier batches.
-  // Catalog size checks run in PostgreSQL before returning metadata/positions.
-  const rows = await tx.execute(sql`
-    select ${generatedDocuments.id} as "documentId", ${generatedDocuments.title} as title,
-      greatest(${generatedDocuments.rowCount}, coalesce(jsonb_array_length(${metadata}->'sourcePositions'), 0),
-        (select count(*) from ${generatedDocumentWeldJoints} where ${generatedDocumentWeldJoints.documentId} = ${generatedDocuments.id}))::integer as "positionCount",
-      (coalesce(octet_length(${generatedDocuments.sourceMetadata}), 0) + octet_length(${generatedDocuments.title}) + octet_length(${generatedDocuments.fileName})) as "metadataBytes"
-    from ${generatedDocuments}
-    where ${systemScope} and ${generatedDocuments.id} > ${cursor.afterId} and ${generatedDocuments.id} <= ${cursor.throughId}
-      and coalesce(${metadata}->>'sourceKind', '') <> 'beforeHeatTreatment'
-    order by ${generatedDocuments.id} limit ${REBUILD_DOCUMENT_LIMIT + 1}
-  `)
-  // First reject/limit by the cheap catalog. Only these bounded candidates can
-  // need a fact-size probe; the probe returns numbers, not the underlying data.
-  const sizes = rows.rows as RebuildCatalogSize[]
-  const preliminary = selectRebuildBatch(sizes, cursor)
-  if (preliminary.documentIds.length) {
-    const factSizes = await tx.execute(sql`
-      select d.id as "documentId",
-        coalesce((select sum(octet_length(jsonb_strip_nulls(to_jsonb(w))::text)) from ${generatedDocumentWeldJoints} a
-          join ${weldJoints} w on w.id = a.weld_joint_id where a.document_id = d.id), 0) +
-        coalesce((select sum(octet_length(jsonb_strip_nulls(to_jsonb(c))::text)) from
-          jsonb_array_elements(coalesce(d.source_metadata::jsonb->'sourcePositions', '[]'::jsonb)) p
-          join ${pstoRepeatCycles} c on c.id = (p->>'relationId')::integer
-          where p->>'kind' = 'pstoRepeat' or (p->>'sequence')::integer >= 2), 0) as bytes
-      from ${generatedDocuments} d where ${buildNumberArrayMatch(sql`d.id`, preliminary.documentIds)}
-    `)
-    const byId = new Map(factSizes.rows.map(row => [Number(row.documentId), Number(row.bytes)]))
-    for (const entry of sizes) entry.factBytes = byId.get(entry.documentId)
-  }
-  // Do not admit unprobed candidates when an oversized one was skipped.
-  const lastProbed = Math.max(cursor.afterId, ...preliminary.documentIds, ...preliminary.blocked.map(item => item.documentId))
-  const finalSizes = sizes.filter(entry => entry.documentId <= lastProbed)
-  const batch = selectRebuildBatch(finalSizes, cursor)
-  if (!batch.nextCursor && preliminary.nextCursor) batch.nextCursor = preliminary.nextCursor
-  return batch
-}
-
 /** Stream global identity/number information only, never global weld facts or positions. */
-export async function* readRebuildIdentities(tx: SystemDocumentSequenceTransaction) {
+export async function* readRebuildIdentities(tx: SystemDocumentSequenceTransaction, templateIds?: readonly SystemDocumentTemplateId[]) {
+  const scope = templateIds ? sql`${generatedDocuments.type} = any(${sql.param(templateIds.map(id => `system:${id}`))}::text[])` : systemScope
   let afterId = 0
-  const throughId = Number((await tx.execute(sql`select coalesce(max(${generatedDocuments.id}), 0) as id from ${generatedDocuments} where ${systemScope}`)).rows[0]?.id ?? 0)
+  const throughId = Number((await tx.execute(sql`select coalesce(max(${generatedDocuments.id}), 0) as id from ${generatedDocuments} where ${scope}`)).rows[0]?.id ?? 0)
   while (true) {
     const result = await tx.execute(sql`
       select ${generatedDocuments.id} as "documentId", ${generatedDocuments.type} as "storageType",
@@ -65,7 +24,7 @@ export async function* readRebuildIdentities(tx: SystemDocumentSequenceTransacti
         coalesce(${metadata}->'projects', '[]'::jsonb) as projects,
         coalesce(${metadata}->'subtitleCodes', '[]'::jsonb) as "subtitleCodes",
         coalesce(${metadata}->'lines', '[]'::jsonb) as lines
-      from ${generatedDocuments} where ${systemScope} and ${generatedDocuments.id} > ${afterId} and ${generatedDocuments.id} <= ${throughId}
+      from ${generatedDocuments} where ${scope} and ${generatedDocuments.id} > ${afterId} and ${generatedDocuments.id} <= ${throughId}
       order by ${generatedDocuments.id} limit 1000
     `)
     for (const raw of result.rows) {
@@ -78,9 +37,9 @@ export async function* readRebuildIdentities(tx: SystemDocumentSequenceTransacti
   }
 }
 
-export async function loadRebuildOccupiedNumbers(tx: SystemDocumentSequenceTransaction, settings: RequestConclusionSettings) {
+export async function loadRebuildOccupiedNumbers(tx: SystemDocumentSequenceTransaction, settings: RequestConclusionSettings, templateIds?: readonly SystemDocumentTemplateId[]) {
   const result = new Map<SystemDocumentTemplateId, Set<number>>()
-  for await (const document of readRebuildIdentities(tx)) {
+  for await (const document of readRebuildIdentities(tx, templateIds)) {
     const number = Number(getSystemDocumentNumber(document, settings))
     if (!Number.isInteger(number) || number <= 0) continue
     const templateId = getSystemDocumentTemplateId(document)
@@ -92,14 +51,16 @@ export async function loadRebuildOccupiedNumbers(tx: SystemDocumentSequenceTrans
 }
 
 /** Protect against unusually wide notes/legacy facts before materializing them in Node. */
-export async function assertRebuildFactBudget(tx: SystemDocumentSequenceTransaction, rowIds: number[], cycleIds: number[] = []) {
+export async function assertRebuildFactBudget(tx: SystemDocumentSequenceTransaction, rowIds: number[], cycleIds: number[] = [], controlIds: number[] = []) {
   const result = await tx.execute(sql`
     select coalesce((select sum(octet_length(jsonb_strip_nulls(to_jsonb(w))::text)) from ${weldJoints} w
       where ${buildNumberArrayMatch(sql`w.id`, rowIds)}), 0) +
       coalesce((select sum(octet_length(jsonb_strip_nulls(to_jsonb(c))::text)) from ${pstoRepeatCycles} c
-      where ${buildNumberArrayMatch(sql`c.id`, cycleIds)}), 0) as bytes
+      where ${buildNumberArrayMatch(sql`c.id`, cycleIds)}), 0) +
+      coalesce((select sum(octet_length(to_jsonb(c)::text)) from ${preHeatTreatmentControls} c
+      where ${buildNumberArrayMatch(sql`c.id`, controlIds)}), 0) as bytes
   `)
   if (Number(result.rows[0]?.bytes ?? 0) > REBUILD_FACT_BYTES_LIMIT) {
-    throw new Error('Объём фактов этого пакета превышает безопасные 64 МиБ. Документы не изменены и не обрезаны. Требуется уменьшить область пересборки; обратитесь к администратору.')
+    throw new Error('Объём фактов этого пакета превышает безопасные 64 МиБ. Документы не изменены и не обрезаны. Уменьшите выбор документов.')
   }
 }

@@ -12,11 +12,11 @@ describe('UserGuidePage', () => {
       'Прежние ЗВ20/ЗВ-20 и ДЗ17/ДЗ-17 также ведут к СП-07',
     )
   })
-  it('explains explicit line move decisions and visible retained pre-TO history', () => {
+  it('explains preserved stages during a line move', () => {
     render(<UserGuidePage />)
-    fireEvent.change(screen.getByRole('textbox', { name: 'Поиск по руководству' }), { target: { value: 'Смена линии: выбрать судьбу НК' } })
-    expect(screen.getByText('Смена линии: выбрать судьбу НК до сохранения')).toBeInTheDocument()
-    expect(screen.getByText(/окно не выбирает решение за вас/)).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Поиск по руководству' }), { target: { value: 'Смена линии сохраняет этапы контроля' } })
+    expect(screen.getByText('Смена линии сохраняет этапы контроля')).toBeInTheDocument()
+    expect(screen.getByText(/При смене линии НК до ТО остаётся НК до ТО/)).toBeInTheDocument()
     expect(screen.queryByText(/Заявка повторного цикла без фактической ПСТО удаляется/)).not.toBeInTheDocument()
   })
   it('opens with concise workflows and loads the full reference on demand', async () => {
@@ -72,7 +72,7 @@ describe('UserGuidePage', () => {
     render(<UserGuidePage />)
     fireEvent.click(screen.getByRole('link', { name: /ЛНК: заявки и результаты/ }))
     expect(screen.getByText(/Послойный контроль назначается явно на официальном актуальном/)).toBeInTheDocument()
-    expect(screen.getByText(/перенос годного комплекта через «Изменить этап контроля» в любую сторону также требует сначала вернуть официальность/)).toBeInTheDocument()
+    expect(screen.queryByText(/«Изменить этап контроля»/)).not.toBeInTheDocument()
     expect(screen.queryByText(/После сохранения даты сварки У-стыка система без заявки автоматически/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Все правила' }))
     expect((await screen.findAllByText(/После явного назначения послойного контроля/)).length).toBeGreaterThan(0)

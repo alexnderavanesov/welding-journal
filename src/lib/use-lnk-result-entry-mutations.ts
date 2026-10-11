@@ -12,6 +12,7 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RowWithId, UseLnkReportMutationsOptions } from '@/lib/lnk-report-mutation-types'
 import type { SystemDocumentCreationGroup } from '@/lib/system-document-creation-plan'
+import { getCreationGroupingCommand } from '@/lib/document-grouping-command'
 
 export function useLnkResultEntryMutations({
   controlProcessSettings,
@@ -82,6 +83,7 @@ export function useLnkResultEntryMutations({
         'Не удалось сохранить часть записей',
         {
           mutationScope: 'lnk',
+          documentGrouping: getCreationGroupingCommand(groups),
           layeredControl: layeredControlRowIds?.length && method?.code === 'ПВК' ? { rowIds: layeredControlRowIds, confirmPvk: true } : undefined,
           systemDocumentSequences: method
             ? groups.filter((group) => group.useSystemName).map((group) => ({

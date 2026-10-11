@@ -5,6 +5,7 @@ import type { PrintableReport } from '@/lib/printable-report'
 import type { ProgramReportRequest } from '@/lib/line-program-report'
 import { ReportShowMenu } from './report-show-menu'
 import { PrintableReportPreview } from './printable-report-preview'
+import { downloadPrintableReport } from '@/lib/download-printable-report'
 
 export type LineProgramReportsHandle = { open: (request: ProgramReportRequest) => void }
 export const LineProgramReports = forwardRef<LineProgramReportsHandle, { ids: number[]; context: string; disabled: boolean; children?: ReactNode }>(function LineProgramReports({ ids, context, disabled, children }, ref) {
@@ -55,5 +56,5 @@ export const LineProgramReports = forwardRef<LineProgramReportsHandle, { ids: nu
         { label: 'Сводка по клеймам', onClick: () => { void open({ ids, mode: 'stamps', context }) } },
       ]} />
   </div>{children}</div>
-  return <>{host ? createPortal(control, host) : control}{previewOpen ? <PrintableReportPreview report={report} busy={busy} error={error} onClose={close} onRetry={() => { if (selection.current) void open(selection.current, true) }} /> : null}</>
+  return <>{host ? createPortal(control, host) : control}{previewOpen ? <PrintableReportPreview report={report} busy={busy} error={error} onClose={close} onRetry={() => { if (selection.current) void open(selection.current, true) }} onDownloadExcel={report ? () => downloadPrintableReport(report) : undefined} /> : null}</>
 })

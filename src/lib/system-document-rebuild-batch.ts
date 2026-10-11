@@ -16,14 +16,6 @@ export type RebuildBatch = {
 }
 export type RebuildCatalogSize = { documentId: number; title: string; positionCount: number; metadataBytes: number; factBytes?: number }
 
-export function normalizeRebuildCursor(value: unknown): RebuildCursor | undefined {
-  if (value == null) return undefined
-  const cursor = value as Partial<RebuildCursor>
-  if (!Number.isSafeInteger(cursor.afterId) || !Number.isSafeInteger(cursor.throughId) ||
-    cursor.afterId! < 0 || cursor.throughId! < cursor.afterId!) throw new Error('Некорректная область пакета. Откройте пересборку заново.')
-  return { afterId: cursor.afterId!, throughId: cursor.throughId! }
-}
-
 export function selectRebuildBatch(entries: RebuildCatalogSize[], cursor: RebuildCursor, limit = REBUILD_DOCUMENT_LIMIT): RebuildBatch {
   const batch: RebuildBatch = { cursor, nextCursor: null, documentIds: [], blocked: [], documentLimit: limit, positionLimit: REBUILD_POSITION_LIMIT }
   let positions = 0, bytes = 0, facts = 0, lastId = cursor.afterId, checked = 0

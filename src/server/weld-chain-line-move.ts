@@ -1,9 +1,8 @@
 // This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
 import { requireDb } from '@/db'
-import { preHeatTreatmentControls, weldJoints, type WeldJoint } from '@/db/schema'
+import { weldJoints, type WeldJoint } from '@/db/schema'
 import { isControlEnabledValue } from '@/lib/control-availability-values'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { type LnkStageTransferControlWrite } from '@/lib/lnk-stage-transfer'
 import {
   getPstoLineIdentityKey,
   normalizePstoLineIdentity,
@@ -11,11 +10,9 @@ import {
 } from '@/lib/psto-line-assignment'
 import { normalizeJointChainPart, parseJointChainName } from '@/lib/joint-chain'
 import { getJointChainRows } from '@/lib/repeated-joint-row-utils'
-import { calculateFinalStatus } from '@/lib/weld-status'
 import { loadControlProcessSettingsFromTransaction } from '@/server/control-process-settings'
 import { normalizeWeldChainLineMovePlan } from '@/server/joint-chain-line-move-guard'
 import { getDispatcherDirtyScopes, markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
-import { syncPreHeatTreatmentDocumentsInTransaction } from '@/server/pre-heat-treatment-system-documents'
 import { assertSecurityScope } from '@/server/security-functions'
 import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
 import { type WeldPayload } from '@/server/weld-contracts'
@@ -38,12 +35,11 @@ import {
 } from '@/server/early-coil-decision-guard'
 
 import {
-  assertChainLineMoveLnkStageTransfersAllowed,
   preparePstoLineMoveRecordInTransaction,
-  applyPstoLineMoveCleanupInTransaction,
   buildWeldLineIdentityWhere,
-  type PstoLineMoveCleanupPlan,
+  removeTransferredPreControlsInTransaction,
 } from '@/server/weld-line-move-stage'
+import { normalizeSubmittedWeldLineIdentity } from '@/lib/psto-line-assignment'
 
 export async function moveWeldJointChain({ data }: { data: WeldPayload }) {
   return moveWeldJointChainRecord(data)
@@ -66,7 +62,7 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
       .limit(1)
     if (!sourceSnapshot) throw new Error('Базовый стык для переноса больше не существует.')
 
-    const scopedData = restrictWeldMutationRecord(data, data.mutationScope ?? 'welding')
+    const scopedData = normalizeSubmittedWeldLineIdentity(restrictWeldMutationRecord(data, data.mutationScope ?? 'welding'))
     const [draftSnapshot] = mergeWeldRecordsWithPrevious(
       [scopedData],
       new Map([[sourceSnapshot.id, sourceSnapshot]]),
@@ -181,9 +177,8 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
     })
 
     const validationPreviousRows = new Map<number, WeldJoint>()
-    const pendingPreHeatTreatmentControls: LnkStageTransferControlWrite[] = []
-    const cleanupPlans: PstoLineMoveCleanupPlan[] = []
-    let requiresLifecycleCleanup = false
+    const transferredPreControlIds: number[] = []
+    let preservesLifecycleHistory = false
     for (let index = 0; index < records.length; index += 1) {
       const record = records[index]!
       const previousStored = previousRows.get(Number(record.id))!
@@ -197,9 +192,8 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
       })
       records[index] = prepared.record
       validationPreviousRows.set(Number(record.id), prepared.validationPrevious)
-      pendingPreHeatTreatmentControls.push(...prepared.pendingPreHeatTreatmentControls)
-      cleanupPlans.push(prepared.cleanup)
-      requiresLifecycleCleanup ||= prepared.requiresLifecycleCleanup
+      preservesLifecycleHistory ||= prepared.preservesLifecycleHistory
+      transferredPreControlIds.push(...prepared.transferredPreControlIds)
     }
 
     const allowedLineMoveRowIds = new Set(records.map((record) => Number(record.id)))
@@ -210,48 +204,19 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
       records,
       previousRows: validationPreviousRows,
       context: validationContext,
-      allowPstoLineLifecycleMove: requiresLifecycleCleanup,
+      allowPstoLineLifecycleMove: preservesLifecycleHistory,
     })
-    assertChainLineMoveLnkStageTransfersAllowed(records, previousRows, decisions)
     validateServerWeldRecords({
       records,
       previousRows: validationPreviousRows,
       context: validationContext,
       allowSystemJointNames: true,
     })
-    await applyPstoLineMoveCleanupInTransaction(tx, cleanupPlans)
-
-    const savedPreHeatTreatmentControls = pendingPreHeatTreatmentControls.length > 0
-      ? await tx
-          .insert(preHeatTreatmentControls)
-          .values(pendingPreHeatTreatmentControls)
-          .returning()
-      : []
-    const savedControlsByRowId = new Map<number, typeof savedPreHeatTreatmentControls>()
-    for (const control of savedPreHeatTreatmentControls) {
-      const controls = savedControlsByRowId.get(control.weldJointId) ?? []
-      controls.push(control)
-      savedControlsByRowId.set(control.weldJointId, controls)
-    }
-    for (const record of records) {
-      const savedControls = savedControlsByRowId.get(Number(record.id))
-      if (!savedControls) continue
-      record.preHeatTreatmentControls = savedControls
-      record.finalStatus = calculateFinalStatus(record)
-    }
-
-    const updatedRows = await updateWeldJointsInBatches(tx, records, previousRows)
+    const updatedRows = await updateWeldJointsInBatches(tx, records, previousRows, {
+      preserveRecordedControlHistoryRowIds: allowedLineMoveRowIds,
+    })
+    await removeTransferredPreControlsInTransaction(tx, transferredPreControlIds)
     await syncSystemDocumentsForWeldChangesInTransaction(tx, updatedRows, previousRows)
-    if (savedPreHeatTreatmentControls.length > 0) {
-      await syncPreHeatTreatmentDocumentsInTransaction(
-        tx,
-        updatedRows.map((row) => ({
-          ...row,
-          preHeatTreatmentControls: savedControlsByRowId.get(row.id) ?? [],
-        })) as WeldRow[],
-        savedPreHeatTreatmentControls,
-      )
-    }
     await refreshEarlyCoilDecisionContextsInTransaction(
       tx,
       updatedRows,
@@ -294,8 +259,7 @@ function normalizeChainLineMoveDecisions(
 ) {
   const allowedDispositions = new Set<PstoWeldLineMoveDisposition>([
     'keepPrimary',
-    'movePrimaryToBeforeHeatTreatment',
-    'promoteBeforeHeatTreatment',
+    'movePreHeatTreatmentToPrimary',
   ])
   const result = new Map<number, PstoWeldLineMoveDisposition>()
   for (const decision of decisions) {
@@ -305,7 +269,7 @@ function normalizeChainLineMoveDecisions(
     }
     if (result.has(rowId)) throw new Error(`Для стыка #${rowId} передано несколько решений переноса.`)
     if (!allowedDispositions.has(decision.disposition)) {
-      throw new Error(`Для стыка #${rowId} передано неизвестное решение переноса.`)
+      throw new Error(`Для стыка #${rowId} смена этапа НК больше не поддерживается. Обновите окно переноса линии.`)
     }
     result.set(rowId, decision.disposition)
   }

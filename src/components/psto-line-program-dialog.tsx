@@ -18,14 +18,13 @@ import {
 import { DialogHeader } from '@/components/dialog-header'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { PstoStageCorrectionChoice } from '@/components/psto-weld-line-move-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatDateInputValue } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   type PstoLineAssignmentSummary,
-  type PstoLineActivationDecision,
-  type PstoLineActivationDisposition,
   type PstoLineAssignmentFilter,
   type PstoLineIdentity,
   type PstoLineRemovalPreview,
@@ -72,8 +71,7 @@ export function PstoLineProgramDialog({
   const [view, setView] = useState<PstoLineProgramView>({ type: 'list' })
   const [cancellationDate, setCancellationDate] = useState(() => formatDateInputValue(new Date()))
   const [cancellationBasis, setCancellationBasis] = useState('')
-  const [activationDispositions, setActivationDispositions] =
-    useState<Record<number, PstoLineActivationDisposition>>({})
+  const [transferRowIds, setTransferRowIds] = useState<Set<number>>(() => new Set())
   const linesQuery = useQuery({
     queryKey: [...PSTO_LINE_ASSIGNMENTS_QUERY_KEY, { search: debouncedSearch, filter, page, pageSize }],
     queryFn: async () => {
@@ -115,7 +113,7 @@ export function PstoLineProgramDialog({
       setView({ type: 'list' })
       setCancellationDate(formatDateInputValue(new Date()))
       setCancellationBasis('')
-      setActivationDispositions({})
+      setTransferRowIds(new Set())
       previewMutation.reset()
     },
     onError: (error) => onSaved([], (error as Error).message),
@@ -131,7 +129,7 @@ export function PstoLineProgramDialog({
     setView({ type: 'list' })
     setCancellationDate(formatDateInputValue(new Date()))
     setCancellationBasis('')
-    setActivationDispositions({})
+    setTransferRowIds(new Set())
     previewMutation.reset()
     saveMutation.reset()
   }, [open])
@@ -152,18 +150,18 @@ export function PstoLineProgramDialog({
     setView({ type: 'list' })
     setCancellationDate(formatDateInputValue(new Date()))
     setCancellationBasis('')
-    setActivationDispositions({})
+    setTransferRowIds(new Set())
     previewMutation.reset()
     saveMutation.reset()
   }
   const openAssign = (line: PstoLineAssignmentSummary) => {
-    setActivationDispositions({})
+    setTransferRowIds(new Set())
     previewMutation.reset()
     setView({ type: 'assign', line })
     previewMutation.mutate(toIdentity(line))
   }
   const openReactivate = (line: PstoLineAssignmentSummary) => {
-    setActivationDispositions({})
+    setTransferRowIds(new Set())
     previewMutation.reset()
     setView({ type: 'reactivate', line })
     previewMutation.mutate(toIdentity(line))
@@ -178,28 +176,23 @@ export function PstoLineProgramDialog({
     if (
       (view.type !== 'assign' && view.type !== 'reactivate') ||
       saveMutation.isPending ||
+      previewMutation.isPending || previewMutation.isError ||
       !previewMutation.data
     ) return
     const reactivating = view.type === 'reactivate'
-    const blockedRows = previewMutation.data.rows.filter((row) => row.blocksActivation)
-    if (blockedRows.some((row) => {
-      const disposition = activationDispositions[row.rowId]
-      return !disposition || (
-        disposition === 'movePrimaryToBeforeHeatTreatment' &&
-        (row.activationTransferBlockedMethods.length > 0 || row.activationTransferBlockedReason)
-      )
-    })) return
-    const activationDecisions: PstoLineActivationDecision[] = blockedRows.map((row) => ({
-      rowId: row.rowId,
-      disposition: activationDispositions[row.rowId]!,
-      methodCodes: row.primaryMethods,
-    }))
+    const activationDecisions = previewMutation.data.rows
+      .filter(row => row.stageCorrection?.targetStage === 'beforeHeatTreatment')
+      .map(row => ({
+        rowId: row.rowId,
+        disposition: transferRowIds.has(row.rowId) && !row.stageCorrection?.disabledReason
+          ? 'movePrimaryToPreHeatTreatment' as const : 'keepPrimary' as const,
+      }))
     onRunProtectedEdit(reactivating ? 'возобновление программы ПСТО' : 'назначение ПСТО на всю линию', async () => {
       await saveMutation.mutateAsync({
         identity: toIdentity(view.line),
         action: reactivating ? 'reactivate' : 'assign',
         expectedVersions: previewMutation.data.expectedVersions,
-        activationDecisions,
+        ...(activationDecisions.length > 0 ? { activationDecisions } : {}),
       })
     })
   }
@@ -282,12 +275,17 @@ export function PstoLineProgramDialog({
           preview={previewMutation.data ?? null}
           previewLoading={previewMutation.isPending}
           previewError={(previewMutation.error as Error | null)?.message ?? ''}
-          activationDispositions={activationDispositions}
           pending={saveMutation.isPending}
           error={(saveMutation.error as Error | null)?.message ?? ''}
-          onActivationDispositionsChange={setActivationDispositions}
+          transferRowIds={transferRowIds}
+          onTransferChange={(rowId, move) => setTransferRowIds(current => {
+            const next = new Set(current)
+            if (move) next.add(rowId)
+            else next.delete(rowId)
+            return next
+          })}
           onRetry={() => {
-            setActivationDispositions({})
+            setTransferRowIds(new Set())
             previewMutation.mutate(toIdentity(view.line))
           }}
           onCancel={goBack}
@@ -559,238 +557,76 @@ function LineAssignmentStatus({ line }: { line: PstoLineAssignmentSummary }) {
 }
 
 function AssignmentView({
-  line,
-  reactivating,
-  preview,
-  previewLoading,
-  previewError,
-  activationDispositions,
-  pending,
-  error,
-  onActivationDispositionsChange,
-  onRetry,
-  onCancel,
-  onSubmit,
+  line, reactivating, preview, previewLoading, previewError, pending, error, onRetry, onCancel, onSubmit,
+  transferRowIds, onTransferChange,
 }: {
   line: PstoLineAssignmentSummary
   reactivating: boolean
   preview: PstoLineRemovalPreview | null
   previewLoading: boolean
   previewError: string
-  activationDispositions: Record<number, PstoLineActivationDisposition>
   pending: boolean
   error: string
-  onActivationDispositionsChange: (value: Record<number, PstoLineActivationDisposition>) => void
+  transferRowIds: ReadonlySet<number>
+  onTransferChange: (rowId: number, move: boolean) => void
   onRetry: () => void
   onCancel: () => void
   onSubmit: () => void
 }) {
-  const blockedRows = preview?.rows.filter((row) => row.blocksActivation) ?? []
-  const selectedDecisionCount = blockedRows.filter(
-    (row) => Boolean(activationDispositions[row.rowId]),
-  ).length
-  const hasInvalidTransfer = blockedRows.some(
-    (row) => activationDispositions[row.rowId] === 'movePrimaryToBeforeHeatTreatment' &&
-      (row.activationTransferBlockedMethods.length > 0 || Boolean(row.activationTransferBlockedReason)),
-  )
-  const submitDisabled = (
-    pending ||
-    previewLoading ||
-    !preview ||
-    Boolean(previewError) ||
-    selectedDecisionCount < blockedRows.length ||
-    hasInvalidTransfer
-  )
-  const setAllActivationDispositions = (mode: 'keepPrimary' | 'moveAvailable') => {
-    const next: Record<number, PstoLineActivationDisposition> = {}
-    for (const row of blockedRows) {
-      next[row.rowId] = mode === 'keepPrimary' || row.activationTransferBlockedMethods.length > 0 || row.activationTransferBlockedReason
-        ? 'keepPrimary'
-        : 'movePrimaryToBeforeHeatTreatment'
-    }
-    onActivationDispositionsChange(next)
-  }
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col bg-slate-50">
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-        <div className="mx-auto max-w-4xl space-y-4">
-          <section className="rounded-md border border-slate-200 bg-white">
-            <div className="grid gap-px bg-slate-200 sm:grid-cols-3">
-              <SummaryCell label="Стыков на линии" value={line.rowCount} />
-              <SummaryCell label="Сейчас с ПСТО" value={line.assignedCount} />
-              <SummaryCell label="Будет с ПСТО" value={line.rowCount} tone="sky" />
-            </div>
-          </section>
-          <div className="flex items-start gap-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-950">
-            <ListChecks className="mt-1 h-4 w-4 shrink-0 text-sky-600" />
-            <p>
-              {reactivating
-                ? `ПСТО снова будет назначена всем ${line.rowCount} стыкам линии. Выполненная история сохранится, а дата и основание отмены очистятся. Для необработанных стыков полный цикл начнется заново.`
-                : `Назначение «ПСТО: да» будет установлено всем ${line.rowCount} стыкам линии. Перед сохранением система проверит уже созданный основной НК.`}
-            </p>
+  const submitDisabled = pending || previewLoading || !preview || Boolean(previewError)
+  const correctionRows = (preview?.rows ?? []).filter(row => row.stageCorrection?.targetStage === 'beforeHeatTreatment')
+  const pagination = usePagePagination({ items: correctionRows, defaultPageSize: 25, resetKeys: [preview] })
+  const transferCount = correctionRows.filter(row => transferRowIds.has(row.rowId) && !row.stageCorrection?.disabledReason).length
+  return <div className="flex min-h-0 flex-1 flex-col bg-slate-50">
+    <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+      <div className="mx-auto max-w-4xl space-y-4">
+        <section className="grid gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 sm:grid-cols-3">
+          <SummaryCell label="Стыков на линии" value={line.rowCount} />
+          <SummaryCell label="Сейчас с ПСТО" value={line.assignedCount} />
+          <SummaryCell label="Будет с ПСТО" value={line.rowCount} tone="sky" />
+        </section>
+        <div className="flex items-start gap-3 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-950">
+          <ListChecks aria-hidden="true" className="mt-1 h-4 w-4 shrink-0 text-sky-600" />
+          <div>
+            <p className="font-semibold">{reactivating ? 'Возобновление ПСТО' : 'Назначение ПСТО всей линии'}</p>
+            <p>Назначение охватит всю линию. Стыков: {line.rowCount}.</p>
+            <p>По умолчанию уже внесённый НК остаётся на своём этапе. Для стыков с основным НК ниже можно выбрать перенос всего комплекта в НК до ТО.</p>
+            <p className="mt-1">Основной НК не заменяет НК до ТО. Требования к новым работам проверяются по настройкам проекта.</p>
+            {reactivating ? <p className="mt-1">Дата и основание отмены очистятся. Сохранённые работы учитываются, повторно вводить их не нужно.</p> : null}
           </div>
-          {previewLoading ? (
-            <div className="flex min-h-32 items-center justify-center rounded-md border border-slate-200 bg-white text-sm text-slate-500">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Проверяю основной НК и этап «До ТО»...
-            </div>
-          ) : previewError ? (
-            <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-              <p className="font-semibold">Не удалось проверить линию</p>
-              <p className="mt-1">{previewError}</p>
-              <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Повторить проверку
-              </Button>
-            </div>
-          ) : blockedRows.length > 0 ? (
-            <section className="overflow-hidden rounded-md border border-amber-300 bg-white">
-              <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
-                  <div>
-                    <p className="font-semibold">Выберите судьбу основного НК для каждого стыка</p>
-                    <p className="mt-1 leading-5">
-                      Комплект каждого стыка переносится целиком. Для фактического контроля после ТО оставьте его основным
-                      и позднее оформите отдельный НК до ТО.
-                    </p>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 bg-white text-xs"
-                        onClick={() => setAllActivationDispositions('keepPrimary')}
-                      >
-                        Все оставить основными
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 bg-white text-xs"
-                        onClick={() => setAllActivationDispositions('moveAvailable')}
-                        title="Стыки с уже заполненным НК до ТО останутся на основном этапе"
-                      >
-                        Доступные перенести в «До ТО»
-                      </Button>
-                      <span className="ml-auto text-xs font-medium tabular-nums text-amber-800">
-                        Выбрано: {selectedDecisionCount} из {blockedRows.length}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="max-h-80 divide-y divide-slate-100 overflow-y-auto">
-                {blockedRows.map((row) => {
-                  const jointLabel = row.joint || `#${row.rowId}`
-                  return (
-                    <div
-                      key={row.rowId}
-                      className="grid gap-3 px-4 py-3 text-sm md:grid-cols-[minmax(130px,0.55fr)_minmax(220px,1fr)_minmax(300px,1.25fr)] md:items-center"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-slate-800">{jointLabel}</p>
-                        <p className="mt-0.5 truncate text-xs text-slate-500">Спул: {row.spool || '—'}</p>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs text-slate-600">Основной НК: <MethodList methods={row.primaryMethods} /></p>
-                        {row.activationTransferBlockedMethods.length > 0 ? (
-                          <p className="mt-1 text-xs leading-5 text-amber-700">
-                            В «НК до ТО» уже заполнено: {row.activationTransferBlockedMethods.join(', ')}.
-                            Для этого стыка доступно только сохранение основного комплекта.
-                          </p>
-                        ) : null}
-                        {row.activationTransferBlockedReason ? <p className="mt-1 text-xs leading-5 text-amber-700">{row.activationTransferBlockedReason}</p> : null}
-                      </div>
-                      <ActivationDispositionSelector
-                        jointLabel={jointLabel}
-                        selected={activationDispositions[row.rowId]}
-                        transferDisabled={row.activationTransferBlockedMethods.length > 0 || Boolean(row.activationTransferBlockedReason)}
-                        onChange={(disposition) => onActivationDispositionsChange({
-                          ...activationDispositions,
-                          [row.rowId]: disposition,
-                        })}
-                      />
-                    </div>
-                  )
-                })}
-              </div>
-              <div className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-600">
-                Выбор сам по себе ничего не сохраняет. ПСТО по-прежнему назначается всей линии только после нажатия итоговой кнопки.
-              </div>
-            </section>
-          ) : preview ? (
-            <div className="flex items-start gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-              <p>Конфликтов с основным НК нет. Назначение можно сохранить.</p>
-            </div>
-          ) : null}
-          {error ? <p className="text-sm font-medium text-rose-700">{error}</p> : null}
         </div>
-      </div>
-      <div className="flex justify-end gap-2 border-t border-slate-200 bg-white px-5 py-4">
-        <Button variant="outline" onClick={onCancel} disabled={pending}>Отмена</Button>
-        <Button onClick={onSubmit} disabled={submitDisabled}>
-          {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
-          {reactivating ? 'Возобновить ПСТО' : 'Назначить ПСТО'}
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function ActivationDispositionSelector({
-  jointLabel,
-  selected,
-  transferDisabled,
-  onChange,
-}: {
-  jointLabel: string
-  selected: PstoLineActivationDisposition | undefined
-  transferDisabled: boolean
-  onChange: (value: PstoLineActivationDisposition) => void
-}) {
-  return (
-    <div className="min-w-0">
-      <p className="mb-1.5 text-[11px] font-semibold uppercase text-slate-500">Судьба комплекта</p>
-      <div
-        role="group"
-        aria-label={`Судьба основного НК для стыка ${jointLabel}`}
-        className="grid min-h-10 grid-cols-2 gap-1 rounded-md border border-slate-200 bg-slate-100 p-1"
-      >
-        <button
-          type="button"
-          aria-label={`Оставить основной НК для стыка ${jointLabel}`}
-          aria-pressed={selected === 'keepPrimary'}
-          onClick={() => onChange('keepPrimary')}
-          className={`rounded px-2 py-1.5 text-xs font-semibold transition-colors ${
-            selected === 'keepPrimary'
-              ? 'bg-white text-sky-800 shadow-sm ring-1 ring-sky-200'
-              : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'
-          }`}
-        >
-          Оставить основным
-        </button>
-        <button
-          type="button"
-          aria-label={`Перенести основной НК стыка ${jointLabel} в «До ТО»`}
-          aria-pressed={selected === 'movePrimaryToBeforeHeatTreatment'}
-          disabled={transferDisabled}
-          title={transferDisabled ? 'Этап «До ТО» уже содержит данные этого вида НК' : undefined}
-          onClick={() => onChange('movePrimaryToBeforeHeatTreatment')}
-          className={`rounded px-2 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:text-slate-300 ${
-            selected === 'movePrimaryToBeforeHeatTreatment'
-              ? 'bg-white text-sky-800 shadow-sm ring-1 ring-sky-200'
-              : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'
-          }`}
-        >
-          В «До ТО»
-        </button>
+        {previewLoading ? <p role="status" className="flex items-center gap-2 rounded-lg bg-white p-4 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Проверяем актуальный состав линии…</p>
+          : previewError ? <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><p>{previewError}</p><Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>Повторить проверку</Button></div>
+          : preview ? <>
+            <p role="status" className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><CheckCircle2 className="h-4 w-4 shrink-0" />Проверено стыков: {preview.rowCount}. Перенести в НК до ТО: {transferCount} · сохранить этапы: {preview.rowCount - transferCount}.</p>
+            {correctionRows.length > 0 ? <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+              <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                <h3 className="text-sm font-semibold text-slate-900">Что сделать с основным НК</h3>
+                <p className="mt-1 text-xs leading-5 text-slate-600">Выбор для каждого стыка. Переносится весь комплект: все методы, заявки, результаты и заключения вместе, с исходными датами и названиями. НК до ТО должен быть пустым; проверяются хронология и зависимости заявки ПСТО. Причина запрета показана у варианта переноса.</p>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {pagination.pageItems.map(row => <div key={row.rowId} className="px-4 py-3">
+                  <p className="text-sm font-semibold text-slate-900">{row.joint || `#${row.rowId}`}</p>
+                  <p className="mt-1 text-xs text-slate-500">Спул: {row.spool || '—'} · Основной НК: <MethodList methods={row.primaryMethods} /></p>
+                  <PstoStageCorrectionChoice row={row} moveSelected={transferRowIds.has(row.rowId) && !row.stageCorrection?.disabledReason} disabled={pending} onChange={move => onTransferChange(row.rowId, move)} />
+                </div>)}
+              </div>
+              <DialogRowPagination totalCount={pagination.totalCount} firstItemNumber={pagination.firstItemNumber} lastItemNumber={pagination.lastItemNumber}
+                page={pagination.page} pageCount={pagination.pageCount} pageSize={pagination.pageSize}
+                onPreviousPage={pagination.goToPreviousPage} onNextPage={pagination.goToNextPage} onPageSizeChange={pagination.setPageSize} />
+            </section> : null}
+          </> : null}
+        {error ? <p role="alert" className="text-sm font-medium text-rose-700">{error}</p> : null}
       </div>
     </div>
-  )
+    <div className="flex justify-end gap-2 border-t border-slate-200 bg-white px-5 py-4">
+      <Button variant="outline" onClick={onCancel} disabled={pending}>Отмена</Button>
+      <Button onClick={onSubmit} disabled={submitDisabled}>
+        {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+        {reactivating ? 'Возобновить ПСТО' : 'Назначить ПСТО'}
+      </Button>
+    </div>
+  </div>
 }
 
 function RemovalView({
@@ -907,7 +743,7 @@ function RemovalView({
                     </div>
                     <div className="min-w-0 space-y-1 pr-4 text-xs text-slate-600">
                       <p>Основной НК: <MethodList methods={row.primaryMethods} /></p>
-                      <p>НК до ТО: <MethodList methods={row.promotablePreMethods} /></p>
+                      <p>НК до ТО: <MethodList methods={row.completedPreMethods} /></p>
                       {row.pendingPreMethods.length > 0 ? (
                         <p className="text-amber-700">Без результата: <MethodList methods={row.pendingPreMethods} /></p>
                       ) : null}

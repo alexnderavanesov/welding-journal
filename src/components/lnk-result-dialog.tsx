@@ -9,6 +9,7 @@ import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
 import { LnkResultConclusionsPanel } from '@/components/lnk-result-conclusions-panel'
+import { SystemDocumentSplitControl } from '@/components/system-document-split-control'
 import { LnkResultRow } from '@/components/lnk-result-row'
 import { getLnkSelectionResultRestrictionReason } from '@/components/lnk-result-selection-restrictions'
 import { LnkResultSettings } from '@/components/lnk-result-settings'
@@ -294,6 +295,7 @@ export function LnkResultDialog({
       <DocumentWorkspaceTabs
         activeTab={workspaceTab}
         ariaLabel="Разделы результата ЛНК"
+        controls={<SystemDocumentSplitControl plan={systemDocumentCreationPlan} naming={draft.conclusionNaming} onChange={onConclusionNamingChange} />}
         documentsLabel="Заключения и имена"
         documentsCount={conclusionCount}
         documentsDisabled={!canOpenConclusions}

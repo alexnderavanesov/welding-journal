@@ -69,6 +69,8 @@ try {
     await client.query(`insert into technology_card_names(name,technology_card_id)
       values ('ТК прежнее название',1),('Техкарта после переименования',1)`)
     await client.query("update weld_joints set technology_card_number='ТК прежнее название' where id=1")
+    await client.query(`insert into document_operation_receipts(id,request_hash,result)
+      values ('synthetic-restored-operation','synthetic-request-hash','{"processedDocumentIds":[1],"completed":true}')`)
   })
   const before = await fingerprint(names[0])
   const out = openSync(dump, 'wx')

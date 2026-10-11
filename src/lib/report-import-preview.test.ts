@@ -361,7 +361,7 @@ describe('existing rows report import preview', () => {
 
     expect(preview.validRecords).toEqual([])
     expect(preview.errors).toHaveLength(1)
-    expect(preview.errors[0]?.message).toContain('сохранить основной комплект')
+    expect(preview.errors[0]?.message).toContain('с сохранением всех этапов контроля')
     expect(preview.errors[0]?.message).toContain('Удаление ошибочных документов выполняется отдельно')
     expect(preview.errors[0]?.message).not.toContain('или удалить')
     expect(preview.errors[0]?.message).toContain('Поле "Тип соединения"')

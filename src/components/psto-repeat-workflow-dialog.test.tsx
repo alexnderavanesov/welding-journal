@@ -1,10 +1,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { PstoRepeatWorkflowDialog } from '@/components/psto-repeat-workflow-dialog'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY } from '@/lib/system-document-sequence-storage'
+
+import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-settings'
+vi.mock('@/server/document-grouping-preferences', () => ({ getDocumentGroupingDefaults: vi.fn(async () => REQUEST_CONCLUSION_DEFAULT_SETTINGS) }))
+vi.mock('@/server/system-document-sequences', () => ({ getSystemDocumentSequences: vi.fn(async () => ({ pstoRequest: 5, pstoConclusion: 7 })) }))
 
 function makeFailedTvmtRow(overrides: Partial<WeldRow> = {}): WeldRow {
   return {
@@ -27,7 +31,7 @@ function makeFailedTvmtRow(overrides: Partial<WeldRow> = {}): WeldRow {
   } as WeldRow
 }
 
-function renderDialog(
+async function renderDialog(
   mode: 'request' | 'result',
   rowOrRows: WeldRow | WeldRow[],
   initialSelectedIds?: ReadonlySet<number>,
@@ -56,7 +60,8 @@ function renderDialog(
       />
     </QueryClientProvider>
   )
-  const view = render(renderTree())
+  let view!: ReturnType<typeof render>
+  await act(async () => { view = render(renderTree()) })
   return {
     ...view,
     rerenderWithInitialSelectedIds: (selectedIds: ReadonlySet<number>) => {
@@ -70,9 +75,9 @@ function renderDialog(
   }
 }
 
-describe('PstoRepeatWorkflowDialog', () => {
-  it('offers the next cycle only after failed TVMT', () => {
-    renderDialog('request', makeFailedTvmtRow())
+describe('PstoRepeatWorkflowDialog', async () => {
+  it('offers the next cycle only after failed TVMT', async () => {
+    await renderDialog('request', makeFailedTvmtRow())
 
     expect(screen.getByRole('heading', { name: 'Заявка ПСТО' })).toBeInTheDocument()
     const cycleBadge = screen.getByText('Цикл 2')
@@ -83,9 +88,9 @@ describe('PstoRepeatWorkflowDialog', () => {
     expect(screen.getByRole('button', { name: 'Создать заявку' })).toBeEnabled()
   })
 
-  it('focuses the repeat draft date and routes the previous-cycle alternative precisely', () => {
+  it('focuses the repeat draft date and routes the previous-cycle alternative precisely', async () => {
     const onRunRootCauseAction = vi.fn()
-    renderDialog('request', makeFailedTvmtRow(), undefined, vi.fn(), onRunRootCauseAction)
+    await renderDialog('request', makeFailedTvmtRow(), undefined, vi.fn(), onRunRootCauseAction)
     const dateInput = screen.getByLabelText('Дата заявки')
 
     fireEvent.change(dateInput, { target: { value: '2026-08-21' } })
@@ -107,8 +112,8 @@ describe('PstoRepeatWorkflowDialog', () => {
     }))
   })
 
-  it('opens result entry for the current repeat request', () => {
-    renderDialog('result', makeFailedTvmtRow({
+  it('opens result entry for the current repeat request', async () => {
+    await renderDialog('result', makeFailedTvmtRow({
       pstoRepeatCycles: [{
         id: 9,
         weldJointId: 1,
@@ -142,7 +147,7 @@ describe('PstoRepeatWorkflowDialog', () => {
       makeWaitingResultRow(1, 'F1', 'Заявка ПСТО-A'),
       makeWaitingResultRow(2, 'F2', 'Заявка ПСТО-B'),
     ]
-    const view = renderDialog('result', rows, new Set())
+    const view = await renderDialog('result', rows, new Set())
 
     expect(screen.getByRole('combobox', { name: 'Заявка ПСТО' })).toHaveValue('')
     view.rerenderWithInitialSelectedIds(new Set([2]))
@@ -155,7 +160,7 @@ describe('PstoRepeatWorkflowDialog', () => {
   })
 
   it('restores the selected PSTO row when report data loads after the dialog opens', async () => {
-    const view = renderDialog('request', [], new Set([1]))
+    const view = await renderDialog('request', [], new Set([1]))
 
     expect(screen.getByText('Найдено: 0 · Доступно: 0')).toBeInTheDocument()
     view.rerenderWithRows([makeFailedTvmtRow()])
@@ -176,7 +181,7 @@ describe('PstoRepeatWorkflowDialog', () => {
       tvmtConclusionDate: null,
       tvmtConclusion: null,
     })
-    const view = renderDialog('result', [], new Set([waitingResult.id]))
+    const view = await renderDialog('result', [], new Set([waitingResult.id]))
 
     expect(screen.getByRole('combobox', { name: 'Заявка ПСТО' })).toHaveValue('')
     view.rerenderWithRows([waitingResult])
@@ -188,8 +193,8 @@ describe('PstoRepeatWorkflowDialog', () => {
     expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeEnabled()
   })
 
-  it('does not treat duplicates as a reason for a repeat PSTO cycle', () => {
-    renderDialog('request', makeFailedTvmtRow({
+  it('does not treat duplicates as a reason for a repeat PSTO cycle', async () => {
+    await renderDialog('request', makeFailedTvmtRow({
       tvmtResult: 'годен',
       duplicateControls: [{
         id: 2,
@@ -206,8 +211,8 @@ describe('PstoRepeatWorkflowDialog', () => {
     expect(screen.queryByText(/дубл/i)).not.toBeInTheDocument()
   })
 
-  it('shows the actual prerequisite instead of a failed TVMT badge for unavailable rows', () => {
-    renderDialog('request', makeFailedTvmtRow({
+  it('shows the actual prerequisite instead of a failed TVMT badge for unavailable rows', async () => {
+    await renderDialog('request', makeFailedTvmtRow({
       pstoRequest: null,
       pstoRequestDate: null,
       pstoDate: null,
@@ -226,8 +231,8 @@ describe('PstoRepeatWorkflowDialog', () => {
     expect(screen.queryByText('Цикл 2')).not.toBeInTheDocument()
   })
 
-  it('keeps primary and repeat-cycle positions in one PSTO request document', () => {
-    renderDialog('request', [
+  it('keeps primary and repeat-cycle positions in one PSTO request document', async () => {
+    await renderDialog('request', [
       makeFailedTvmtRow(),
       makeFailedTvmtRow({
         id: 2,
@@ -250,7 +255,7 @@ describe('PstoRepeatWorkflowDialog', () => {
   })
 
   it('bulk-selects only PSTO rows from the current search result', async () => {
-    renderDialog('request', [
+    await renderDialog('request', [
       makeFailedTvmtRow({ id: 1, line: 'AUDIT-LINE-10', joint: 'F1' }),
       makeFailedTvmtRow({ id: 2, line: 'OTHER-LINE', joint: 'F2' }),
     ], new Set())

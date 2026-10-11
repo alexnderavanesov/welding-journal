@@ -5,6 +5,50 @@ import { PrintableReportPreview } from './printable-report-preview'
 beforeEach(() => vi.spyOn(window, 'scrollTo').mockImplementation(() => {}))
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
+it.each([1001, 10000])('blocks button and keyboard printing of %i rows without preparing a full document', count => {
+  const report = { title: 'Large', tables: [{ title: '', columns: ['Joint'], rows: Array.from({ length: count }, (_, i) => [`S${i}`]) }] }
+  const props = { busy: false, error: '', onClose: vi.fn(), onRetry: vi.fn(), onDownloadExcel: vi.fn() }
+  render(<PrintableReportPreview {...props} report={report} />)
+  const frame = screen.getByTitle('Large') as HTMLIFrameElement
+  fireEvent.load(frame)
+  const print = vi.spyOn(frame.contentWindow!, 'print').mockImplementation(() => {})
+  expect(screen.getByRole('button', { name: 'Печать / Сохранить PDF' })).toBeDisabled()
+  expect(screen.getByRole('status')).toHaveTextContent(`В отчёте ${count} строк`)
+  expect(screen.getByRole('button', { name: 'Скачать Excel' })).toBeEnabled()
+  expect(screen.queryByText(/Excel и печать\/PDF — весь отчёт/)).not.toBeInTheDocument()
+  for (const doc of [document, frame.contentDocument!]) {
+    for (const key of ['ctrlKey', 'metaKey']) {
+      const event = new KeyboardEvent('keydown', { key: 'p', [key]: true, bubbles: true, cancelable: true })
+      doc.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(true)
+    }
+  }
+  fireEvent.click(screen.getByRole('button', { name: 'Далее' }))
+  fireEvent.load(frame)
+  expect(screen.getByRole('button', { name: 'Печать / Сохранить PDF' })).toBeDisabled()
+  expect(screen.queryByTitle('Полный отчёт для печати')).not.toBeInTheDocument()
+  expect(print).not.toHaveBeenCalled()
+})
+
+it('recalculates the boundary on report replacement and prints all 1000 allowed rows', () => {
+  const props = { busy: false, error: '', onClose: vi.fn(), onRetry: vi.fn() }
+  const large = { title: 'Boundary', tables: [{ title: '', columns: ['Joint'], rows: Array.from({ length: 1001 }, (_, i) => [`S${i}`]) }] }
+  const { rerender } = render(<PrintableReportPreview {...props} report={large} />)
+  fireEvent.load(screen.getByTitle('Boundary'))
+  expect(screen.getByRole('button', { name: 'Печать / Сохранить PDF' })).toBeDisabled()
+  rerender(<PrintableReportPreview {...props} report={{ ...large, tables: [{ ...large.tables[0], rows: large.tables[0].rows.slice(0, 1000) }] }} />)
+  fireEvent.load(screen.getByTitle('Boundary'))
+  expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  const print = screen.getByRole('button', { name: 'Печать / Сохранить PDF' })
+  expect(print).toBeEnabled()
+  fireEvent.click(print)
+  const full = screen.getByTitle('Полный отчёт для печати') as HTMLIFrameElement
+  expect(full.srcdoc).toContain('>S999<')
+  expect(full.srcdoc).not.toContain('>S1000<')
+  rerender(<PrintableReportPreview {...props} report={large} />)
+  expect(full.isConnected).toBe(false)
+})
+
 it('keeps Excel errors in the modal, allows retry and prevents double downloads', async () => {
   let resolve!: () => void
   const download = vi.fn().mockRejectedValueOnce(new Error('Failure')).mockImplementationOnce(() => new Promise<void>(done => { resolve = done }))

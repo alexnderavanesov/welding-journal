@@ -545,6 +545,15 @@ export const appSettings = pgTable('app_settings', {
 export type AppSetting = typeof appSettings.$inferSelect
 export type NewAppSetting = typeof appSettings.$inferInsert
 
+// Durable acknowledgement for explicitly confirmed document operations. Kept
+// in their transaction so a lost HTTP response is distinguishable from rollback.
+export const documentOperationReceipts = pgTable('document_operation_receipts', {
+  id: text('id').primaryKey(),
+  requestHash: text('request_hash').notNull(),
+  result: text('result').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
 export const documentTemplates = pgTable('document_templates', {
   id: text('id').primaryKey(),
   blobKey: text('blob_key').notNull(),

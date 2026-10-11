@@ -17,15 +17,35 @@ import {
   replaceScopedDispatcherTaskIndexRows,
 } from '@/server/dispatcher-task-index'
 import { DISPATCHER_TASK_INDEX_STAGE_BATCH_SIZE } from '@/server/dispatcher-task-index-staging'
-import { buildLnkResultRuleCheckTasks, buildPrimaryLnkStageDebtSystemWarnings } from '@/lib/repeated-joint-check-tasks'
+import { buildLnkResultCompletenessCheckTasks, buildLnkResultRuleCheckTasks, buildPrimaryLnkStageDebtSystemWarnings } from '@/lib/repeated-joint-check-tasks'
 import { buildDispatcherTaskCodeIndexRows } from '@/lib/dispatcher-task-row-codes'
 import { mergeDispatcherTaskCodesIntoRows } from '@/server/weld-read'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '@/lib/control-process-settings'
 import { buildProgramIntegrityTasks } from '@/lib/coil-restoration'
 import { getDispatcherTaskActionSpecs } from '@/lib/dispatcher-task-actions-model'
+import { getDispatcherTaskCode } from '@/lib/dispatcher-settings'
 
 describe('prepareDispatcherReportRows', () => {
+  it.each(['годен (отменен)', 'годен · назначение отменено'])('keeps historical pre-TO completion debt in the row index and virtual field: %s', result => {
+    const rows: WeldRow[] = [
+      { id: 1, joint: 'F1', line: 'L', preHeatTreatmentLnkEnabled: true, preHeatTreatmentControls: [
+        { id: 10, weldJointId: 1, method: 'ВИК', result, conclusionName: null, conclusionDate: '2026-09-01' },
+      ] },
+      { id: 2, joint: 'F2', line: 'L', preHeatTreatmentLnkEnabled: true, preHeatTreatmentControls: [
+        { id: 20, weldJointId: 2, method: 'ВИК', result: 'ожидает НК' },
+      ] },
+    ]
+    const tasks = buildLnkResultCompletenessCheckTasks(rows)
+    const index = buildDispatcherTaskCodeIndexRows(tasks, rows)
+    expect(index).toEqual([{ rowId: 1, taskKey: 'code:СП-11', code: 'СП-11' }])
+    expect(mergeDispatcherTaskCodesIntoRows(rows, index, []).map(row => row.dispatcherTasks)).toEqual(['СП-11', ''])
+    const compact = compactDispatcherTasksForTransport(tasks)
+    expect(compact).toHaveLength(1)
+    expect(getDispatcherTaskCode(compact[0]!)).toBe('СП-11')
+    expect(compact[0]).toMatchObject({ details: expect.stringContaining('ВИК до ТО: не заполнено заключение') })
+  })
+
   it('persists SP-05 in the virtual field and keeps LNK navigation after page compaction', () => {
     const rows: WeldRow[] = [
       { id: 1, joint: 'F1', vikResult: 'вырез', rkResult: 'вырез' },

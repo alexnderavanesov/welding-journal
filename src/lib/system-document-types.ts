@@ -600,7 +600,7 @@ function finalizeSystemDocumentSummary(group: MutableSystemDocumentSummary): Sys
     id: getSystemDocumentId(group),
     documentId: group.documentId ?? 0,
     label: getSystemDocumentLabel(group),
-    fileName: `${sanitizeFileName(group.title)}.xlsx`,
+    fileName: getSystemDocumentFileName(group.title),
     methodCodes: sortValues(group.methodCodes),
     rowCount: group.rowIds.size,
     positionCount: group.positionKeys.size,
@@ -649,3 +649,5 @@ function normalizeTimestamp(value: unknown) {
 function sanitizeFileName(value: string) {
   return value.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim() || 'Документ'
 }
+
+export function getSystemDocumentFileName(title: string) { return `${sanitizeFileName(title)}.xlsx` }

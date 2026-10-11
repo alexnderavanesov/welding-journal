@@ -2,6 +2,14 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { prepareFullReportPrint } from './print-full-report'
 
 afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks() })
+it('rejects oversized reports before generating HTML or creating any iframe', () => {
+  const done = vi.fn(), error = vi.fn(), create = vi.spyOn(document, 'createElement')
+  const dispose = prepareFullReportPrint({ title: 'Large', tables: [{ title: '', columns: ['A'], rows: Array.from({ length: 1001 }, () => ['A']) }] }, done, error)
+  expect(error).toHaveBeenCalledWith(expect.stringContaining('1001 строк'))
+  expect(create).not.toHaveBeenCalled()
+  expect(done).not.toHaveBeenCalled()
+  dispose()
+})
 it('prints every row and releases the document after print/cancel', () => {
   const done = vi.fn(), error = vi.fn()
   prepareFullReportPrint({ title: 'Full', tables: [{ title: '', columns: ['Joint'], rows: [['S1'], ['S2']] }] }, done, error)

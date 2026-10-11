@@ -114,6 +114,11 @@ async function saveAppSettingToDb({ key, value, expectedUpdatedAt }: AppSettingP
     assertAppSettingVersion(current?.updatedAt.toISOString() ?? null, expectedUpdatedAt)
     const nextUpdatedAt = current ? getNextTimestampVersion(current.updatedAt) : new Date()
     let preparedValue = value
+    if (normalizedKey === PROJECT_SETTING_KEYS.requestConclusion) {
+      const { normalizeRequestConclusionSettings } = await import('@/lib/request-conclusion-settings')
+      const previous = normalizeRequestConclusionSettings(current ? parseStoredSetting(current.value) : undefined)
+      preparedValue = prepareAppSettingValue({ ...normalizeRequestConclusionSettings(value), splitModes: previous.splitModes })
+    }
     if (normalizedKey === PROJECT_SETTING_KEYS.dataList) {
       const { normalizeDataListSettings } = await import('@/lib/data-list-settings')
       preparedValue = prepareAppSettingValue(normalizeDataListSettings(value))

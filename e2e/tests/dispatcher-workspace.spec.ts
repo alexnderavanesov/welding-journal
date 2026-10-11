@@ -90,7 +90,11 @@ test('повтор поиска получает новую версию пос�
   await page.goto('/lnk')
   const panel = page.getByLabel('Диспетчер задач', { exact: true })
   await expect(panel).toContainText('5001 задача')
+  // Finish the open-time version probe before simulating the other user.
+  // Otherwise it legitimately refreshes the search while we click Retry.
+  const openingVersion = page.waitForResponse(response => rpcName(response.url()).startsWith('getDispatcherTaskVersion_'))
   await panel.getByRole('button', { name: 'Открыть диспетчер' }).click()
+  await (await openingVersion).finished()
   const dialog = page.getByRole('dialog', { name: 'Диспетчер задач' })
   await withE2eDatabase(async (client) => {
     await client.query(`

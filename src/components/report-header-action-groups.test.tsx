@@ -48,6 +48,20 @@ function renderActions(onWorkflowMenuOpenChange = vi.fn()) {
 }
 
 describe('LnkHeaderActions', () => {
+  it('closes with Escape before page-level selection or filter handlers', () => {
+    const clearPage = vi.fn()
+    window.addEventListener('keydown', clearPage)
+    try {
+      renderActions()
+      fireEvent.click(screen.getByRole('button', { name: 'Результат' }))
+      fireEvent.keyDown(window, { key: 'Escape' })
+      expect(screen.queryByRole('button', { name: 'Внести результаты' })).not.toBeInTheDocument()
+      expect(clearPage).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: 'Результат' }))
+      expect(screen.getByRole('button', { name: 'Внести результаты' })).toBeInTheDocument()
+    } finally { window.removeEventListener('keydown', clearPage) }
+  })
+
   it('uses one visual treatment for every primary workflow button', () => {
     renderActions()
 

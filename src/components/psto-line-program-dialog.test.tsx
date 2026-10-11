@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { PstoLineProgramDialog } from '@/components/psto-line-program-dialog'
@@ -64,30 +64,26 @@ const removalPreview: PstoLineRemovalPreview = {
       joint: 'F1',
       spool: 'S1',
       preMethods: ['ВИК'],
-      promotablePreMethods: ['ВИК'],
+      completedPreMethods: ['ВИК'],
       pendingPreMethods: [],
       primaryMethods: ['ВИК'],
       pstoRequest: 'ПСТО-1',
       pstoResult: '',
       repeatCycleCount: 0,
       preservesPerformedHistory: false,
-      blocksActivation: false,
-      activationTransferBlockedMethods: [],
     },
     {
       rowId: 2,
       joint: 'F2',
       spool: 'S1',
       preMethods: ['РК'],
-      promotablePreMethods: [],
+      completedPreMethods: [],
       pendingPreMethods: ['РК'],
       primaryMethods: [],
       pstoRequest: 'ПСТО-2',
       pstoResult: '',
       repeatCycleCount: 0,
       preservesPerformedHistory: false,
-      blocksActivation: false,
-      activationTransferBlockedMethods: [],
     },
   ],
 }
@@ -113,20 +109,21 @@ const cleanAssignmentPreview: PstoLineRemovalPreview = {
 
 const activationConflictPreview: PstoLineRemovalPreview = {
   ...cleanAssignmentPreview,
+  rowCount: 1,
+  expectedVersions: [{ id: 11, version: '111' }],
   rows: [{
     rowId: 11,
     joint: 'F11',
     spool: 'S11',
     preMethods: [],
-    promotablePreMethods: [],
+    completedPreMethods: [],
     pendingPreMethods: [],
     primaryMethods: ['ВИК', 'РК'],
     pstoRequest: '',
     pstoResult: '',
     repeatCycleCount: 0,
     preservesPerformedHistory: false,
-    blocksActivation: true,
-    activationTransferBlockedMethods: [],
+    stageCorrection: { targetStage: 'beforeHeatTreatment', disabledReason: null },
   }],
 }
 
@@ -185,7 +182,7 @@ describe('PstoLineProgramDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Назначить' }))
 
     expect(screen.getByRole('heading', { name: 'Назначение ПСТО' })).toBeInTheDocument()
-    expect(screen.getByText(/4 стыкам линии/)).toBeInTheDocument()
+    expect(screen.getByText('Назначение охватит всю линию. Стыков: 4.')).toBeInTheDocument()
     const submit = screen.getByRole('button', { name: 'Назначить ПСТО' })
     await waitFor(() => expect(submit).toBeEnabled())
     fireEvent.click(submit)
@@ -209,205 +206,120 @@ describe('PstoLineProgramDialog', () => {
     expect(screen.getByText('2 из 2')).toBeInTheDocument()
   })
 
-  it('requires an explicit decision and can preserve the primary LNK during late PSTO assignment', async () => {
-    vi.mocked(getPstoLineRemovalPreview).mockResolvedValue(activationConflictPreview)
-    const { onRunProtectedEdit } = renderDialog()
-    await screen.findByText('L-100')
-
-    fireEvent.click(screen.getByRole('button', { name: 'Назначить' }))
-
-    expect(await screen.findByText('F11')).toBeInTheDocument()
-    const submit = screen.getByRole('button', { name: 'Назначить ПСТО' })
-    expect(submit).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Оставить основной НК для стыка F11' }))
-    expect(submit).toBeEnabled()
-    fireEvent.click(submit)
-
-    await waitFor(() => expect(onRunProtectedEdit).toHaveBeenCalledOnce())
-    await waitFor(() => expect(savePstoLineAssignment).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        action: 'assign',
-        expectedVersions: activationConflictPreview.expectedVersions,
-        activationDecisions: [{
-          rowId: 11,
-          disposition: 'keepPrimary',
-          methodCodes: ['ВИК', 'РК'],
-        }],
-      }),
-    }))
-  })
-
-  it('still allows an explicit transfer when the primary LNK was assigned to the wrong stage', async () => {
-    vi.mocked(getPstoLineRemovalPreview).mockResolvedValue(activationConflictPreview)
-    renderDialog()
-    await screen.findByText('L-100')
-
-    fireEvent.click(screen.getByRole('button', { name: 'Назначить' }))
-    await screen.findByText('F11')
-    const submit = screen.getByRole('button', { name: 'Назначить ПСТО' })
-    fireEvent.click(screen.getByRole('button', { name: 'Перенести основной НК стыка F11 в «До ТО»' }))
-    expect(submit).toBeEnabled()
-    fireEvent.click(submit)
-
-    await waitFor(() => expect(savePstoLineAssignment).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        activationDecisions: [{
-          rowId: 11,
-          disposition: 'movePrimaryToBeforeHeatTreatment',
-          methodCodes: ['ВИК', 'РК'],
-        }],
-      }),
-    }))
-  })
-
-  it('allows preserving primary LNK when the target pre-TO method is already occupied', async () => {
+  it.each([false, true])('keeps the main package by default, including when transfer is blocked (%s)', async occupied => {
     vi.mocked(getPstoLineRemovalPreview).mockResolvedValue({
       ...activationConflictPreview,
       rows: [{
-        ...activationConflictPreview.rows[0]!,
-        preMethods: ['ВИК'],
-        activationTransferBlockedMethods: ['ВИК'],
+        ...activationConflictPreview.rows[0]!, preMethods: occupied ? ['ВИК'] : [],
+        stageCorrection: { targetStage: 'beforeHeatTreatment', disabledReason: occupied ? 'НК до ТО уже заполнен.' : null },
       }],
     })
     renderDialog()
-    await screen.findByText('L-100')
-
-    fireEvent.click(screen.getByRole('button', { name: 'Назначить' }))
-
-    expect(await screen.findByText(/В «НК до ТО» уже заполнено: ВИК/)).toBeInTheDocument()
-    expect(screen.getByText(/Для этого стыка доступно только сохранение основного комплекта/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Перенести основной НК стыка F11 в «До ТО»' })).toBeDisabled()
-    const submit = screen.getByRole('button', { name: 'Назначить ПСТО' })
-    expect(submit).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Оставить основной НК для стыка F11' }))
-    expect(submit).toBeEnabled()
+      await screen.findByText('L-100')
+      fireEvent.click(screen.getByRole('button', { name: 'Назначить' }))
+      await screen.findByText(/Проверено стыков:/)
+      expect(screen.getByRole('radio', { name: 'Оставить основной НК' })).toBeChecked()
+      const transfer = screen.getByRole('radio', { name: 'Весь основной НК → до ТО' })
+      if (occupied) {
+        expect(transfer).toBeDisabled()
+        expect(transfer).toHaveAccessibleDescription('Перенос недоступен: НК до ТО уже заполнен.')
+      } else expect(transfer).toBeEnabled()
+      const submit = screen.getByRole('button', { name: 'Назначить ПСТО' })
+      expect(submit).toBeEnabled()
+      fireEvent.click(submit)
+      await waitFor(() => expect(savePstoLineAssignment).toHaveBeenCalledOnce())
+      expect(vi.mocked(savePstoLineAssignment).mock.calls[0]![0].data).toEqual({
+        identity: { projectTitle: unassignedLine.projectTitle, subtitleCode: unassignedLine.subtitleCode, line: unassignedLine.line },
+        action: 'assign', expectedVersions: activationConflictPreview.expectedVersions,
+        activationDecisions: [{ rowId: 11, disposition: 'keepPrimary' }],
+      })
   })
 
-  it('bulk activation preserves an unofficial good primary set instead of moving it to pre-TO', async () => {
-    vi.mocked(getPstoLineRemovalPreview).mockResolvedValue({
-      ...activationConflictPreview,
-      rows: [{ ...activationConflictPreview.rows[0]!, activationTransferBlockedReason: 'Сначала верните стыку официальность' }],
-    })
-    renderDialog()
-    await screen.findByText('L-100')
-    fireEvent.click(screen.getByRole('button', { name: 'Назначить' }))
-    expect(await screen.findByText('Сначала верните стыку официальность')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Перенести основной НК стыка F11 в «До ТО»' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Доступные перенести в «До ТО»' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Назначить ПСТО' }))
-    await waitFor(() => expect(savePstoLineAssignment).toHaveBeenCalledWith({ data: expect.objectContaining({
-      activationDecisions: [{ rowId: 11, disposition: 'keepPrimary', methodCodes: ['ВИК', 'РК'] }],
-    }) }))
-  })
-
-  it('accepts a separate primary LNK decision for every joint and isolates occupied pre-TO stages', async () => {
-    vi.mocked(getPstoLineRemovalPreview).mockResolvedValue({
-      ...activationConflictPreview,
-      rows: [
-        activationConflictPreview.rows[0]!,
-        {
-          ...activationConflictPreview.rows[0]!,
-          rowId: 12,
-          joint: 'F12',
-          primaryMethods: ['ПВК'],
-        },
-        {
-          ...activationConflictPreview.rows[0]!,
-          rowId: 13,
-          joint: 'F13',
-          preMethods: ['ВИК'],
-          primaryMethods: ['ВИК'],
-          activationTransferBlockedMethods: ['ВИК'],
-        },
-      ],
-    })
-    renderDialog()
-    await screen.findByText('L-100')
-
-    fireEvent.click(screen.getByRole('button', { name: 'Назначить' }))
-
-    expect(await screen.findByText('F13')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Перенести основной НК стыка F11 в «До ТО»' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Перенести основной НК стыка F13 в «До ТО»' })).toBeDisabled()
-    const submit = screen.getByRole('button', { name: 'Назначить ПСТО' })
-    expect(submit).toBeDisabled()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Доступные перенести в «До ТО»' }))
-    expect(screen.getByRole('button', { name: 'Перенести основной НК стыка F11 в «До ТО»' }))
-      .toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Перенести основной НК стыка F12 в «До ТО»' }))
-      .toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Оставить основной НК для стыка F13' }))
-      .toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText('Выбрано: 3 из 3')).toBeInTheDocument()
-    expect(submit).toBeEnabled()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Оставить основной НК для стыка F12' }))
-
-    expect(submit).toBeEnabled()
-    fireEvent.click(submit)
-
-    await waitFor(() => expect(savePstoLineAssignment).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        action: 'assign',
-        activationDecisions: [
-          {
-            rowId: 11,
-            disposition: 'movePrimaryToBeforeHeatTreatment',
-            methodCodes: ['ВИК', 'РК'],
-          },
-          {
-            rowId: 12,
-            disposition: 'keepPrimary',
-            methodCodes: ['ПВК'],
-          },
-          {
-            rowId: 13,
-            disposition: 'keepPrimary',
-            methodCodes: ['ВИК'],
-          },
-        ],
-      }),
-    }))
-  })
-
-  it('uses the same guarded preservation when a cancelled PSTO line is reactivated', async () => {
-    const cancelledLine: PstoLineAssignmentSummary = {
-      ...unassignedLine,
-      key: 'line-c',
-      line: 'L-300',
-      rowCount: 1,
-      cancelledCount: 1,
-      historyRowCount: 1,
-    }
+  it('reactivates with the main package kept by default', async () => {
+    const cancelledLine = { ...unassignedLine, key: 'line-c', line: 'L-300', rowCount: 1, cancelledCount: 1, historyRowCount: 1 }
     vi.mocked(listPstoLineAssignmentPage).mockResolvedValue(linePage([cancelledLine]))
-    vi.mocked(getPstoLineRemovalPreview).mockResolvedValue({
-      ...activationConflictPreview,
-      identity: {
-        projectTitle: cancelledLine.projectTitle,
-        subtitleCode: cancelledLine.subtitleCode,
-        line: cancelledLine.line,
-      },
-      rowCount: 1,
-    })
+    vi.mocked(getPstoLineRemovalPreview).mockResolvedValue(activationConflictPreview)
     renderDialog()
     await screen.findByText('L-300')
-
     fireEvent.click(screen.getByRole('button', { name: 'Возобновить' }))
-    expect(await screen.findByRole('heading', { name: 'Возобновление ПСТО' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Оставить основной НК для стыка F11' }))
+    await screen.findByText(/Проверено стыков:/)
+    expect(screen.getByRole('radio', { name: 'Оставить основной НК' })).toBeChecked()
     fireEvent.click(screen.getByRole('button', { name: 'Возобновить ПСТО' }))
+    await waitFor(() => expect(savePstoLineAssignment).toHaveBeenCalledOnce())
+    expect(vi.mocked(savePstoLineAssignment).mock.calls[0]![0].data).toMatchObject({ action: 'reactivate' })
+    expect(vi.mocked(savePstoLineAssignment).mock.calls[0]![0].data).toHaveProperty('activationDecisions', [{ rowId: 11, disposition: 'keepPrimary' }])
+  })
 
-    await waitFor(() => expect(savePstoLineAssignment).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        action: 'reactivate',
-        activationDecisions: [{
-          rowId: 11,
-          disposition: 'keepPrimary',
-          methodCodes: ['ВИК', 'РК'],
-        }],
-      }),
-    }))
+  it.each(['assign', 'reactivate'] as const)('selects whole packages per weld across pages for %s, without extra preview requests', async action => {
+    const rows = Array.from({ length: 27 }, (_, index) => ({ ...activationConflictPreview.rows[0]!, rowId: index + 11, joint: `F${index + 11}` }))
+    // A row without correction metadata (e.g. already assigned on a partial line) is not offered a choice.
+    const preview = { ...activationConflictPreview, rowCount: 28, rows: [...rows, { ...rows[0]!, rowId: 99, joint: 'F99', stageCorrection: undefined }] }
+    vi.mocked(getPstoLineRemovalPreview).mockResolvedValue(preview)
+    vi.mocked(listPstoLineAssignmentPage).mockResolvedValue(linePage([{
+      ...unassignedLine, rowCount: 28, assignedCount: action === 'assign' ? 1 : 0, cancelledCount: action === 'reactivate' ? 28 : 0,
+    }]))
+    renderDialog()
+    fireEvent.click(await screen.findByRole('button', { name: action === 'assign' ? 'На всю линию' : 'Возобновить' }))
+    const first = within(await screen.findByRole('group', { name: 'Этап НК для стыка F11' }))
+    fireEvent.click(first.getByRole('radio', { name: 'Весь основной НК → до ТО' }))
+    expect(first.getByRole('radio', { name: 'Весь основной НК → до ТО' })).toBeChecked()
+    expect(screen.getAllByRole('group')).toHaveLength(25)
+    fireEvent.click(screen.getByRole('button', { name: 'Следующая страница стыков' }))
+    fireEvent.click(within(screen.getByRole('group', { name: 'Этап НК для стыка F37' })).getByRole('radio', { name: 'Весь основной НК → до ТО' }))
+    expect(screen.queryByText('F99')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Перенести в НК до ТО: 2 · сохранить этапы: 26')
+    fireEvent.click(screen.getByRole('button', { name: 'Предыдущая страница стыков' }))
+    expect(screen.getAllByRole('radio', { name: 'Весь основной НК → до ТО' })[0]).toBeChecked()
+    expect(getPstoLineRemovalPreview).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: action === 'assign' ? 'Назначить ПСТО' : 'Возобновить ПСТО' }))
+    await waitFor(() => expect(savePstoLineAssignment).toHaveBeenCalledOnce())
+    expect(vi.mocked(savePstoLineAssignment).mock.calls[0]![0].data).toMatchObject({
+      action,
+      activationDecisions: rows.map(row => ({ rowId: row.rowId, disposition: [11, 37].includes(row.rowId) ? 'movePrimaryToPreHeatTreatment' : 'keepPrimary' })),
+    })
+  })
+
+  it('cancels a draft and restores default preservation when reopened', async () => {
+    vi.mocked(getPstoLineRemovalPreview).mockResolvedValue(activationConflictPreview)
+    renderDialog()
+    fireEvent.click(await screen.findByRole('button', { name: 'Назначить' }))
+    fireEvent.click(await screen.findByRole('radio', { name: 'Весь основной НК → до ТО' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Отмена' }))
+    expect(savePstoLineAssignment).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Назначить' }))
+    expect(await screen.findByRole('radio', { name: 'Оставить основной НК' })).toBeChecked()
+  })
+
+  it('does not consume Escape or submit a selected correction; the outer dialog still owns Escape', async () => {
+    vi.mocked(getPstoLineRemovalPreview).mockResolvedValue(activationConflictPreview)
+    renderDialog()
+    fireEvent.click(await screen.findByRole('button', { name: 'Назначить' }))
+    const transfer = await screen.findByRole('radio', { name: 'Весь основной НК → до ТО' })
+    fireEvent.click(transfer)
+    transfer.focus()
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    const outerHandler = vi.fn()
+    window.addEventListener('keydown', outerHandler, { once: true })
+    fireEvent(transfer, escape)
+    expect(outerHandler).toHaveBeenCalledOnce()
+    expect(escape.defaultPrevented).toBe(false)
+    expect(savePstoLineAssignment).not.toHaveBeenCalled()
+  })
+
+  it('offers no correction for rows without metadata or with the other target stage', async () => {
+    vi.mocked(getPstoLineRemovalPreview).mockResolvedValue({
+      ...activationConflictPreview,
+      rows: [{ ...activationConflictPreview.rows[0]!, stageCorrection: undefined }, {
+        ...activationConflictPreview.rows[0]!, rowId: 12, stageCorrection: { targetStage: 'primary', disabledReason: null },
+      }],
+    })
+    renderDialog()
+    fireEvent.click(await screen.findByRole('button', { name: 'Назначить' }))
+    await screen.findByText(/Проверено стыков:/)
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Назначить ПСТО' }))
+    await waitFor(() => expect(savePstoLineAssignment).toHaveBeenCalledOnce())
+    expect(vi.mocked(savePstoLineAssignment).mock.calls[0]![0].data).not.toHaveProperty('activationDecisions')
   })
 
   it('blocks stale removal when history appeared and offers explicit official cancellation without deleting documents', async () => {
@@ -437,6 +349,7 @@ describe('PstoLineProgramDialog', () => {
     vi.mocked(getPstoLineRemovalPreview).mockResolvedValue({
       ...cleanAssignmentPreview, identity: removalPreview.identity,
       assignedCount: 2, rowCount: 2,
+      rows: activationConflictPreview.rows,
     })
     renderDialog()
     await screen.findByText('L-200')
@@ -446,14 +359,19 @@ describe('PstoLineProgramDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Перейти к удалению назначения' }))
     expect(await screen.findByRole('heading', { name: 'Удаление назначения ПСТО' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Удалить назначение' })).toBeEnabled()
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Удалить назначение' }))
     await waitFor(() => expect(savePstoLineAssignment).toHaveBeenCalledWith({
       data: expect.objectContaining({ action: 'remove' }),
     }))
     expect(getPstoLineRemovalPreview).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(savePstoLineAssignment).mock.calls[0]![0].data).not.toHaveProperty('activationDecisions')
   })
 
   it('preserves all stages during official cancellation without asking to choose or discard a set', async () => {
+    vi.mocked(getPstoLineRemovalPreview).mockResolvedValue({
+      ...removalPreview, rows: [{ ...activationConflictPreview.rows[0]!, stageCorrection: { targetStage: 'primary', disabledReason: null } }],
+    })
     const { onRunProtectedDelete } = renderDialog()
     await screen.findByText('L-200')
 
@@ -464,10 +382,12 @@ describe('PstoLineProgramDialog', () => {
     expect(screen.queryByText(/Без решения:/)).not.toBeInTheDocument()
     expect(screen.queryByText(/будут удалены/)).not.toBeInTheDocument()
     expect(screen.getByText(/Отмена не удаляет историю/)).toBeInTheDocument()
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Отменить ПСТО на линии' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Отменить ПСТО на линии' }))
 
     await waitFor(() => expect(onRunProtectedDelete).toHaveBeenCalledOnce())
+    expect(vi.mocked(savePstoLineAssignment).mock.calls[0]![0].data).not.toHaveProperty('activationDecisions')
   })
 
   it('explains that cancellation finishes a started physical cycle without opening another repeat', async () => {
@@ -475,7 +395,7 @@ describe('PstoLineProgramDialog', () => {
       ...removalPreview,
       rows: [{
         ...removalPreview.rows[0]!,
-        promotablePreMethods: [],
+        completedPreMethods: [],
         pendingPreMethods: [],
         preservesPerformedHistory: true,
       }],

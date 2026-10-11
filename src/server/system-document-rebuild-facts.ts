@@ -30,5 +30,7 @@ export async function loadRebuildWeldFacts(tx: SystemDocumentSequenceTransaction
   if (ids.length > 5000) throw new Error('Слишком большой пакет фактов пересборки.')
   const records = await tx.select({ facts: sql<Record<string, unknown>>`jsonb_strip_nulls(to_jsonb(${weldJoints}))` })
     .from(weldJoints).where(buildNumberArrayMatch(weldJoints.id, ids))
-  return records.map(({ facts }) => decodeRebuildWeldFact(facts))
+  // A query without ORDER BY can change physical order after another packet or
+  // a different query plan. Freshness hashes must reflect facts, not that order.
+  return records.map(({ facts }) => decodeRebuildWeldFact(facts)).sort((a, b) => a.row.id - b.row.id)
 }

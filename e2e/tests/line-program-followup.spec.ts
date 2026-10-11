@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
+import { captureReportExcel } from '../report-excel-capture'
 
 const project = 'E2E program followup'
 test.afterEach(() => cleanupLineProgramProjects([project]))
@@ -88,6 +89,8 @@ test('сводки всех страниц текущего отбора, отд
   await expect(report.getByRole('heading', { name: 'Программа линий — сводка по линиям', exact: true })).toBeVisible()
   await expect(report.locator('tbody tr')).toHaveCount(32)
   await expect(report.getByText('FOLLOW-REPORT-32', { exact: true })).toBeVisible()
+  const workbook = await captureReportExcel(page, preview, 'outputs/print-limit-line-summary.xlsx')
+  expect(JSON.stringify(workbook.Sheets['Линии'])).toContain('FOLLOW-REPORT-32')
   await page.emulateMedia({ media: 'print' })
   await expect(report.locator('.toolbar')).toHaveCount(0)
   expect(await report.locator('thead').evaluate(el => getComputedStyle(el).display)).toBe('table-header-group')
@@ -114,6 +117,7 @@ test('сводки всех страниц текущего отбора, отд
   await expect(stamps.locator('tbody tr')).toHaveCount(2)
   await expect(stamps.locator('.metric').filter({ hasText: 'Физических стыков' }).locator('.metric-value')).toHaveText('2')
   await expect(stamps.locator('tbody')).toContainText('SECOND-K')
+  await captureReportExcel(page, preview, 'outputs/print-limit-stamp-summary.xlsx')
   await preview.getByRole('button', { name: 'Закрыть предпросмотр' }).click()
   expect(calls.filter(name => name.startsWith('getLineProgramReport_'))).toHaveLength(2)
   expect(errors).toEqual([])

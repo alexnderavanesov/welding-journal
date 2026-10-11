@@ -18,8 +18,7 @@ const CHAIN_IDENTITY_FIELDS = ['projectTitle', 'subtitleCode', 'line', 'joint'] 
 const MAX_CHAIN_LINE_MOVE_ROWS = 1_000
 const CHAIN_LINE_MOVE_DISPOSITIONS = new Set<PstoWeldLineMoveDisposition>([
   'keepPrimary',
-  'movePrimaryToBeforeHeatTreatment',
-  'promoteBeforeHeatTreatment',
+  'movePreHeatTreatmentToPrimary',
 ])
 
 export function normalizeWeldChainLineMovePlan(value: unknown): WeldChainLineMovePlan | null {

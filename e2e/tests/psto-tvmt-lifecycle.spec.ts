@@ -64,6 +64,8 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await runNextAction(page, 'Создать заявку НК до ТО')
   await expect(page.getByRole('heading', { name: 'Заявка ЛНК до ТО' })).toBeVisible()
   await fillDate(page, 'Дата заявки', '2026-08-02')
+  await expect(page.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeInViewport()
+  await expect(page.getByRole('status').filter({ hasText: 'Будет создано: 1' })).toBeVisible()
   await page.getByRole('button', { name: 'Создать заявку до ТО' }).click()
   await expect(page.getByRole('heading', { name: 'Заявка ЛНК до ТО' })).toBeHidden()
   await expectDatabaseRow('pre_heat_treatment_controls', {
@@ -75,6 +77,8 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК до ТО' })).toBeVisible()
   await fillDate(page, 'Дата контроля', '2026-08-03')
   await page.getByRole('dialog').getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeInViewport()
+  await expect(page.getByRole('status').filter({ hasText: 'Будет создано: 1' })).toBeVisible()
   await page.getByRole('button', { name: 'Сохранить результат до ТО' }).click()
   await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК до ТО' })).toBeHidden()
   await expectDatabaseRow('pre_heat_treatment_controls', {
@@ -87,6 +91,8 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await expect(page).toHaveURL(/\/psto$/)
   await expect(page.getByRole('heading', { name: 'Заявка ПСТО' })).toBeVisible()
   await fillDate(page, 'Дата заявки', '2026-08-04')
+  await expect(page.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeInViewport()
+  await expect(page.getByRole('status').filter({ hasText: 'Будет создано: 1' })).toBeVisible()
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Заявка ПСТО' })).toBeHidden()
   await expectWeld({
@@ -98,6 +104,8 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await runNextAction(page, 'Внести результат ПСТО · цикл 1')
   await expect(page.getByRole('heading', { name: 'Внесение результатов ПСТО' })).toBeVisible()
   await fillDate(page, 'Дата ПСТО', '2026-08-05')
+  await expect(page.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeInViewport()
+  await expect(page.getByRole('status').filter({ hasText: 'Будет создано: 1' })).toBeVisible()
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
   await expect(page.getByRole('heading', { name: 'Внесение результатов ПСТО' })).toBeHidden()
   await expectWeld({ psto_date: '2026-08-05', psto_result: 'проведено' })
@@ -105,6 +113,8 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await runNextAction(page, 'Создать заявку ТВМТ · цикл 1')
   await expect(page.getByRole('heading', { name: 'Заявка ТВМТ' })).toBeVisible()
   await fillDate(page, 'Дата заявки', '2026-08-06')
+  await expect(page.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeInViewport()
+  await expect(page.getByRole('status').filter({ hasText: 'Будет создано: 1' })).toBeVisible()
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Заявка ТВМТ' })).toBeHidden()
   await expectWeld({ tvmt_request_date: '2026-08-06', tvmt_result: 'ожидает НК' })
@@ -113,6 +123,8 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await expect(page.getByRole('heading', { name: 'Внесение результатов ТВМТ' })).toBeVisible()
   await fillDate(page, 'Дата ТВМТ', '2026-08-07')
   await chooseOptionByLabel(page, 'Результат для выбранных', 'не годен')
+  await expect(page.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeInViewport()
+  await expect(page.getByRole('status').filter({ hasText: 'Будет создано: 1' })).toBeVisible()
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
   await expect(page.getByRole('heading', { name: 'Внесение результатов ТВМТ' })).toBeHidden()
   await expectWeld({ tvmt_result: 'не годен', tvmt_conclusion_date: '2026-08-07' })
@@ -120,6 +132,8 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await runNextAction(page, 'Создать заявку повторной ПСТО · цикл 2')
   await expect(page.getByRole('heading', { name: 'Заявка ПСТО' })).toBeVisible()
   await fillDate(page, 'Дата заявки', '2026-08-08')
+  await expect(page.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeInViewport()
+  await expect(page.getByRole('status').filter({ hasText: 'Будет создано: 1' })).toBeVisible()
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Заявка ПСТО' })).toBeHidden()
   await expectRepeatCycle({ sequence: 2, psto_request_date: '2026-08-08' })
@@ -127,18 +141,24 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await runNextAction(page, 'Внести результат ПСТО · цикл 2')
   await expect(page.getByRole('heading', { name: 'Внесение результатов ПСТО' })).toBeVisible()
   await fillDate(page, 'Дата ПСТО', '2026-08-09')
+  await expect(page.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeInViewport()
+  await expect(page.getByRole('status').filter({ hasText: 'Будет создано: 1' })).toBeVisible()
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
   await expect(page.getByRole('heading', { name: 'Внесение результатов ПСТО' })).toBeHidden()
   await expectRepeatCycle({ sequence: 2, psto_date: '2026-08-09', psto_result: 'проведено' })
 
   await runNextAction(page, 'Создать заявку ТВМТ · цикл 2')
   await fillDate(page, 'Дата заявки', '2026-08-10')
+  await expect(page.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeInViewport()
+  await expect(page.getByRole('status').filter({ hasText: 'Будет создано: 1' })).toBeVisible()
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
   await expectRepeatCycle({ sequence: 2, tvmt_request_date: '2026-08-10' })
 
   await runNextAction(page, 'Внести результат ТВМТ · цикл 2')
   await fillDate(page, 'Дата ТВМТ', '2026-08-11')
   await chooseOptionByLabel(page, 'Результат для выбранных', 'годен')
+  await expect(page.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeInViewport()
+  await expect(page.getByRole('status').filter({ hasText: 'Будет создано: 1' })).toBeVisible()
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
   await expectRepeatCycle({ sequence: 2, tvmt_result: 'годен', tvmt_conclusion_date: '2026-08-11' })
 
@@ -146,6 +166,8 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await expect(page).toHaveURL(/\/lnk$/)
   await expect(page.getByRole('heading', { name: 'Заявка ЛНК' })).toBeVisible()
   await fillDate(page, 'Дата заявки', '2026-08-12')
+  await expect(page.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeInViewport()
+  await expect(page.getByRole('status').filter({ hasText: 'Будет создано: 1' })).toBeVisible()
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
   await expectWeld({ vik_request_date: '2026-08-12', vik_result: 'ожидает НК' })
 
@@ -154,6 +176,8 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await chooseOptionByLabel(page, 'Метод контроля', 'ВИК')
   await fillDate(page, 'Дата контроля', '2026-08-13')
   await page.getByRole('dialog').getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'ремонт', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeInViewport()
+  await expect(page.getByRole('status').filter({ hasText: 'Будет создано: 1' })).toBeVisible()
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
   await expectWeld({
     vik_result: 'ремонт',
@@ -348,12 +372,9 @@ test('позднее назначение ПСТО сохраняет факти
   await page.getByRole('button', { name: 'Назначить', exact: true }).click()
 
   await expect(page.getByRole('heading', { name: 'Назначение ПСТО' })).toBeVisible()
-  await expect(page.getByText(LATE_ASSIGNMENT_JOINT, { exact: true })).toBeVisible()
+  await expect(page.getByText(/Проверено стыков:/)).toBeVisible()
   const submit = page.getByRole('button', { name: 'Назначить ПСТО', exact: true })
-  await expect(submit).toBeDisabled()
-  await page.getByRole('button', {
-    name: `Оставить основной НК для стыка ${LATE_ASSIGNMENT_JOINT}`,
-  }).click()
+  await expect(page.getByRole('button', { name: /Оставить основной|Перенести основной/ })).toHaveCount(0)
   await expect(submit).toBeEnabled()
   await submit.click()
 
@@ -440,12 +461,9 @@ test('возобновление отмененной линии также мо
   await page.getByRole('button', { name: 'Возобновить', exact: true }).click()
 
   await expect(page.getByRole('heading', { name: 'Возобновление ПСТО' })).toBeVisible()
-  await expect(page.getByRole('dialog').getByText(REACTIVATED_JOINT, { exact: true })).toBeVisible()
+  await expect(page.getByText(/Проверено стыков:/)).toBeVisible()
   const submit = page.getByRole('button', { name: 'Возобновить ПСТО', exact: true })
-  await expect(submit).toBeDisabled()
-  await page.getByRole('button', {
-    name: `Оставить основной НК для стыка ${REACTIVATED_JOINT}`,
-  }).click()
+  await expect(page.getByRole('button', { name: /Оставить основной|Перенести основной/ })).toHaveCount(0)
   await submit.click()
 
   await expectDatabaseWeld(REACTIVATED_JOINT, {
@@ -484,10 +502,9 @@ test('карточка стыка переносит основной НК на 
   await lineInput.fill('E2E-L6')
   await lineInput.press('Tab')
 
-  await expect(page.getByRole('heading', { name: 'Перенос стыка на линию с ПСТО' })).toBeVisible()
-  await page.getByRole('button', { name: /Сохранить существующий основной НК/ }).click()
-  await page.getByRole('button', { name: 'Применить решение', exact: true }).click()
-  await expect(page.getByText(/отдельный НК до ТО можно оформить позже/)).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Перенос стыка на другую линию' })).toBeVisible()
+  await page.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
+  await expect(editor.getByText(/Все заявки, результаты, заключения и циклы сохранятся/)).toBeVisible()
   await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
   await expect(editor).toBeHidden()
 
@@ -513,91 +530,32 @@ test('карточка стыка переносит основной НК на 
   await expect(createPstoRequest).toHaveAttribute('title', /НК до ТО: ВИК/)
 })
 
-test('этап НК одинаково меняется из ПСТО, документов, ЛНК и карточки стыка', async ({ page }) => {
-  test.setTimeout(300_000)
-  controlProcessSettingsSnapshot = await enablePrimaryLnkBeforePreviousStages()
+test('НК до ТО сохраняет этап и документы при смене линии, назначении, отмене и возобновлении ПСТО', async ({ page }, info) => {
+  test.setTimeout(180_000)
   await seedStageSynchronizationLines()
   await showOnlyStageSynchronizationFields(page)
-
-  await page.goto('/lnk')
-  await runNextAction(page, 'Создать заявку основного НК', STAGE_SYNC_JOINT)
-  await fillDate(page, 'Дата заявки', '2026-08-20')
-  await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
-
-  await runNextAction(page, 'Внести результат основного НК', STAGE_SYNC_JOINT)
-  await fillDate(page, 'Дата контроля', '2026-08-21')
-  await page.getByRole('dialog').getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
-  await page.getByRole('button', { name: 'Сохранить результат', exact: true }).click()
-
-  const titles = await loadVikDocumentTitles(STAGE_SYNC_JOINT, true)
-  await expectVikStageEverywhere(page, {
-    joint: STAGE_SYNC_JOINT,
-    line: STAGE_SYNC_SOURCE_LINE,
-    stage: 'primary',
-    titles,
-    pstoRequired: null,
-    completed: true,
-  })
-
   await openPstoLineProgram(page, STAGE_SYNC_SOURCE_LINE)
   await page.getByRole('button', { name: 'Назначить', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Назначение ПСТО' })).toBeVisible()
-  await page.getByRole('button', { name: `Перенести основной НК стыка ${STAGE_SYNC_JOINT} в «До ТО»` }).click()
+  await expect(page.getByRole('button', { name: /Перенести основной/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Назначить ПСТО', exact: true })).toBeEnabled()
+  await page.getByRole('dialog').screenshot({ path: info.outputPath('assignment-preserves-stages.png') })
   await page.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
   await closePstoLineProgram(page)
-  await expectVikStageEverywhere(page, {
-    joint: STAGE_SYNC_JOINT,
-    line: STAGE_SYNC_SOURCE_LINE,
-    stage: 'beforeHeatTreatment',
-    titles,
-    completed: true,
-  })
-
+  await openReport(page, 'ЛНК', '/lnk')
+  await runNextAction(page, 'Создать заявку НК до ТО', STAGE_SYNC_JOINT)
+  await fillDate(page, 'Дата заявки', '2026-08-20')
+  await page.getByRole('button', { name: 'Создать заявку до ТО', exact: true }).click()
+  await runNextAction(page, 'Внести результат НК до ТО', STAGE_SYNC_JOINT)
+  await fillDate(page, 'Дата контроля', '2026-08-21')
+  await page.getByRole('dialog').getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
+  await page.getByRole('button', { name: 'Сохранить результат до ТО', exact: true }).click()
+  const titles = await loadVikDocumentTitles(STAGE_SYNC_JOINT, true)
+  await expectVikStageEverywhere(page, { joint: STAGE_SYNC_JOINT, line: STAGE_SYNC_SOURCE_LINE, stage: 'beforeHeatTreatment', titles, completed: true })
   const documentRow = await openLnkDocumentRow(page, titles.request, 'request')
   await documentRow.click({ button: 'right' })
-  await page.getByRole('button', { name: 'Изменить этап контроля', exact: true })
-    .filter({ hasText: 'Изменить этап контроля' })
-    .click()
-  await completeStageTransfer(page, 'Основной', 1)
-  await expect(page.getByText('Перенесено комплектов: 1. Новый этап: «Основной».')).toBeVisible()
-  await expectVikStageEverywhere(page, {
-    joint: STAGE_SYNC_JOINT,
-    line: STAGE_SYNC_SOURCE_LINE,
-    stage: 'primary',
-    titles,
-    completed: true,
-  })
-
-  await openReport(page, 'ЛНК', '/lnk')
-  await openHeaderMenuItem(page, 'Заявка', 'Все заявки ЛНК')
-  const requestManager = page.getByRole('dialog').filter({
-    has: page.getByRole('heading', { name: 'Редактирование заявок ЛНК' }),
-  })
-  await expect(requestManager).toBeVisible()
-  const requestCard = requestManager
-    .getByText(titles.request, { exact: true })
-    .locator('xpath=ancestor::button')
-  await expect(requestCard).toBeVisible()
-  await requestCard.click({ button: 'right' })
   await expect(page.getByTestId('context-action-menu')).toBeVisible()
-  // A scroll queued before the delayed request data arrived must not dismiss
-  // the freshly opened actions when the list's position has not changed.
-  await requestCard.evaluate((card) => {
-    card.closest('.overflow-auto')?.dispatchEvent(new Event('scroll'))
-    document.dispatchEvent(new Event('scroll'))
-  })
-  await page.getByRole('button', { name: 'Изменить этап контроля', exact: true })
-    .filter({ hasText: 'Изменить этап контроля' })
-    .click()
-  await completeStageTransfer(page, 'До ТО')
-  await expectVikStageEverywhere(page, {
-    joint: STAGE_SYNC_JOINT,
-    line: STAGE_SYNC_SOURCE_LINE,
-    stage: 'beforeHeatTreatment',
-    titles,
-    completed: true,
-  })
-
+  await expect(page.getByRole('button', { name: /Изменить этап/ })).toHaveCount(0)
+  await page.keyboard.press('Escape')
   // A plain line correction must retain both generated documents and expose
   // the old stage in the journal, document registry and joint picture.
   await moveStageSyncKeepingHistory(page, STAGE_SYNC_TARGET_LINE, true)
@@ -617,61 +575,12 @@ test('этап НК одинаково меняется из ПСТО, доку�
   await expectVikStageEverywhere(page, { joint: STAGE_SYNC_JOINT, line: STAGE_SYNC_SOURCE_LINE,
     stage: 'beforeHeatTreatment', titles, completed: true })
 
-  await openReport(page, 'ЛНК', '/lnk')
-  const preHeatTreatmentRow = page
-    .getByRole('button', { name: `Выбрать стык ${STAGE_SYNC_JOINT}`, exact: true })
-    .locator('xpath=ancestor::tr')
-  await preHeatTreatmentRow.getByRole('button', { name: STAGE_SYNC_JOINT, exact: true })
-    .click({ button: 'right' })
-  await page.getByRole('button', { name: 'Дополнительно', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Изменить этап контроля', exact: true }))
-    .toBeEnabled()
-  await page.keyboard.press('Escape')
 
-  await openReport(page, 'Сварочный журнал', '/journal')
-  const sourceRow = page
-    .getByRole('button', { name: `Выбрать стык ${STAGE_SYNC_JOINT}`, exact: true })
-    .locator('xpath=ancestor::tr')
-  await expect(sourceRow).toBeVisible()
-  await sourceRow.getByRole('button', { name: 'Редактировать', exact: true }).click()
-  const editor = page.getByRole('dialog').filter({
-    has: page.getByRole('heading', { name: 'Редактирование стыка' }),
-  })
-  const lineInput = editor.getByText('Линия', { exact: true }).locator('..').getByRole('textbox')
-  await lineInput.fill(STAGE_SYNC_TARGET_LINE)
-  await lineInput.press('Tab')
-  await expect(page.getByRole('heading', { name: 'Перенос стыка на линию без ПСТО' })).toBeVisible()
-  await expect(page.getByText('До ТО: ВИК', { exact: false })).toBeVisible()
-  const promotePreControl = page.getByRole('button', { name: /^Перенести НК «До ТО»/ })
-  await expect(promotePreControl).toBeVisible()
-  await promotePreControl.click()
-  await page.getByRole('button', { name: 'Применить решение', exact: true }).click()
-  await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
-  await expect(editor).toBeHidden()
-  await expectVikStageEverywhere(page, {
-    joint: STAGE_SYNC_JOINT,
-    line: STAGE_SYNC_TARGET_LINE,
-    stage: 'primary',
-    titles,
-    pstoRequired: null,
-    completed: true,
-  })
-
+  await moveStageSyncKeepingHistory(page, STAGE_SYNC_TARGET_LINE)
   await openPstoLineProgram(page, STAGE_SYNC_TARGET_LINE)
   await page.getByRole('button', { name: 'Назначить', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Назначение ПСТО' })).toBeVisible()
-  await page.getByRole('button', { name: `Перенести основной НК стыка ${STAGE_SYNC_JOINT} в «До ТО»` }).click()
   await page.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
   await closePstoLineProgram(page)
-  await expectDatabaseWeld('F9', { psto_required: 'да' })
-  await expectVikStageEverywhere(page, {
-    joint: STAGE_SYNC_JOINT,
-    line: STAGE_SYNC_TARGET_LINE,
-    stage: 'beforeHeatTreatment',
-    titles,
-    completed: true,
-  })
-
   await openPstoLineProgram(page, STAGE_SYNC_TARGET_LINE)
   await page.getByRole('button', { name: 'Отменить ПСТО', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Отмена ПСТО' })).toBeVisible()
@@ -760,7 +669,7 @@ test('не назначает ПСТО по устаревшему состав�
     }
   })
 
-  await expect(page.getByRole('status')).toContainText('Открытые данные устарели')
+  await expect(page.getByRole('status').filter({ hasText: 'Открытые данные устарели' })).toBeVisible()
   await expect.poll(async () => withE2eDatabase(async (client) => {
     const result = await client.query(`
       select joint, psto_required
@@ -794,16 +703,16 @@ async function moveStageSyncKeepingHistory(page: Page, targetLine: string, cance
     const input = editor.getByText('Линия', { exact: true }).locator('..').getByRole('textbox')
     await input.fill(targetLine)
     await input.press('Tab')
-    const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Перенос стыка на линию без ПСТО', exact: true }) })
+    const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Перенос стыка на другую линию', exact: true }) })
     await expect(dialog).toBeVisible()
-    await expect(dialog.getByRole('button', { name: 'Применить решение', exact: true })).toBeDisabled()
+    await expect(dialog.getByRole('button', { name: 'Подтвердить перенос', exact: true })).toBeEnabled()
+    await expect(dialog.getByRole('button', { name: /Перенести.*НК|Оставить основной/ })).toHaveCount(0)
     if (cancelFirst) {
       await dialog.getByRole('button', { name: 'Вернуться к форме', exact: true }).click()
       await editor.getByRole('button', { name: 'Отмена', exact: true }).click()
       expect(calls.filter(name => name.startsWith('updateWeldJoint_'))).toHaveLength(0)
     } else {
-      await dialog.getByRole('button', { name: /^Изменить только линию/ }).click()
-      await dialog.getByRole('button', { name: 'Применить решение', exact: true }).click()
+      await dialog.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
       await expect(dialog).toBeHidden()
       await expect(editor.getByRole('button', { name: 'Сохранить', exact: true })).toBeEnabled()
       await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
@@ -881,28 +790,6 @@ async function openLnkDocumentRow(page: Page, title: string, type: 'request' | '
   )
   await expect(row).toBeVisible()
   return row
-}
-
-async function completeStageTransfer(
-  page: Page,
-  targetStage: 'До ТО' | 'Основной',
-  resultingSystemWarningCount = 0,
-) {
-  const dialog = page.getByRole('dialog').filter({
-    has: page.getByRole('heading', { name: 'Изменить этап контроля' }),
-  })
-  await expect(dialog).toBeVisible()
-  await expect(dialog.getByText(targetStage, { exact: true })).toBeVisible()
-  await dialog.getByRole('button', { name: 'Проверить перенос', exact: true }).click()
-  await expect(dialog.getByText('Вместе с выбранными позициями', { exact: true })).toBeVisible()
-  await expect(dialog.getByText(
-    resultingSystemWarningCount > 0
-      ? `После переноса СП-06 будет у ${resultingSystemWarningCount} стыков`
-      : 'После переноса по выбранным стыкам СП-06 не будет',
-    { exact: true },
-  )).toBeVisible()
-  await dialog.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
-  await expect(dialog).toBeHidden()
 }
 
 async function expectVikStageEverywhere(page: Page, {
@@ -1442,28 +1329,6 @@ async function seedStageSynchronizationLines() {
   })
 }
 
-async function enablePrimaryLnkBeforePreviousStages(): Promise<ControlProcessSettingsSnapshot | null> {
-  return withE2eDatabase(async (client) => {
-    const previous = await client.query<{ value: string; updated_at: Date }>(`
-      select value, updated_at
-      from app_settings
-      where key = $1
-    `, [CONTROL_PROCESS_SETTINGS_KEY])
-    await client.query(`
-      insert into app_settings (key, value, updated_at)
-      values ($1, $2, now())
-      on conflict (key) do update set value = excluded.value, updated_at = now()
-    `, [CONTROL_PROCESS_SETTINGS_KEY, JSON.stringify({
-      pvkGoodOnly: false,
-      preHeatTreatmentLnkEnabled: true,
-      allowPrimaryLnkBeforePreviousStagesComplete: true,
-    })])
-    const snapshot = previous.rows[0]
-    return snapshot
-      ? { value: snapshot.value, updatedAt: snapshot.updated_at }
-      : null
-  })
-}
 
 async function restoreControlProcessSettings(snapshot: ControlProcessSettingsSnapshot | null) {
   await withE2eDatabase(async (client) => {

@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 export type DocumentWorkspaceTab = 'joints' | 'documents'
 
 type DocumentWorkspaceTabsProps = {
@@ -8,6 +10,7 @@ type DocumentWorkspaceTabsProps = {
   documentsDisabled?: boolean
   documentsHaveError?: boolean
   onChange: (tab: DocumentWorkspaceTab) => void
+  controls?: ReactNode
 }
 
 export function DocumentWorkspaceTabs({
@@ -18,13 +21,13 @@ export function DocumentWorkspaceTabs({
   documentsDisabled = false,
   documentsHaveError = false,
   onChange,
+  controls,
 }: DocumentWorkspaceTabsProps) {
   return (
     <div
-      className="flex shrink-0 items-end gap-1 border-b border-slate-200 bg-white px-5 pt-1"
-      role="tablist"
-      aria-label={ariaLabel}
+      className="flex shrink-0 flex-wrap items-end gap-1 border-b border-slate-200 bg-white px-5 pt-1"
     >
+      <div role="tablist" aria-label={ariaLabel} className="flex items-end gap-1">
       <button
         type="button"
         role="tab"
@@ -51,7 +54,7 @@ export function DocumentWorkspaceTabs({
         } disabled:cursor-not-allowed disabled:text-slate-300`}
       >
         {documentsLabel}
-        <span className={`rounded px-1.5 py-0.5 text-[11px] ${
+        <span className={`inline-flex min-w-6 justify-center rounded px-1.5 py-0.5 text-[11px] tabular-nums ${
           documentsHaveError
             ? 'bg-rose-100 text-rose-700'
             : activeTab === 'documents'
@@ -61,6 +64,8 @@ export function DocumentWorkspaceTabs({
           {documentsCount}
         </span>
       </button>
+      </div>
+      {controls}
     </div>
   )
 }

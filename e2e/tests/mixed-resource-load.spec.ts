@@ -7,6 +7,7 @@ import { rpcName } from '../rpc'
 import { getReportImportTemplateFields } from '../../src/lib/report-import-template'
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '../../src/lib/request-conclusion-settings'
 import { buildCurrentSystemDocumentName } from '../../src/lib/system-document-types'
+import { confirmDocumentOperation, openDocumentOperation } from '../document-operation-ui'
 
 const project = 'E2E mixed resources 200k'
 const writerJoint = 'F001001'
@@ -225,16 +226,14 @@ test('200k, five browser clients, mixed reads/writes/import/documents under hard
       run(4, async round => {
         const page = pages[4]
         if (round === 0) {
-          await page.getByRole('button', { name: 'Заявки и заключения', exact: true }).click()
-          const open = () => page.getByRole('button', { name: 'Пересобрать системные документы по текущим правилам', exact: true }).click()
-          const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Пересборка системных документов', exact: true }) })
-          await open()
-          await expect(dialog.getByRole('button', { name: 'Применить пересборку', exact: true })).toBeEnabled()
+          const names = await withE2eDatabase(async db => (await db.query('select distinct vik_request as name from weld_joints where project_title=$1 and vik_request is not null order by name', [project])).rows.map(row => row.name as string))
+          const dialog = await openDocumentOperation(page, names, 'Заявка ЛНК')
+          await expect(dialog.getByRole('button', { name: 'Подтвердить и применить', exact: true })).toBeEnabled()
           await dialog.getByRole('button', { name: 'Отмена', exact: true }).click()
           expect(await withE2eDatabase(async db => (await db.query('select count(distinct vik_request)::int n from weld_joints where project_title=$1', [project])).rows[0].n)).toBe(200)
-          await open()
-          await dialog.getByRole('button', { name: 'Применить пересборку', exact: true }).click()
-          await expect(dialog).toBeHidden()
+          await openDocumentOperation(page, names, 'Заявка ЛНК')
+          await confirmDocumentOperation(dialog, 1, 90_000)
+          await dialog.getByRole('button', { name: 'Остановиться / закрыть', exact: true }).click()
           expect(await withE2eDatabase(async db => (await db.query('select count(distinct vik_request)::int n from weld_joints where project_title=$1', [project])).rows[0].n)).toBe(400)
         }
         await page.goto('/welder-stamps')

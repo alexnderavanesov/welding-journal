@@ -1,7 +1,14 @@
 import { buildPrintableReportHtml, type PrintableReport } from './printable-report'
+import { getReportPrintRestriction } from './report-print-policy'
 
 /** The large printable DOM exists only after an explicit print request. */
-export function prepareFullReportPrint(report: PrintableReport, onReady: () => void, onError: () => void) {
+export function prepareFullReportPrint(report: PrintableReport, onReady: () => void, onError: (message?: string) => void) {
+  const restriction = getReportPrintRestriction(report)
+  if (restriction) { onError(restriction); return () => {} }
+  return prepareHtmlDocumentPrint(() => buildPrintableReportHtml(report, { embedded: true, compactPrint: true }), onReady, onError)
+}
+
+export function prepareHtmlDocumentPrint(buildHtml: () => string, onReady: () => void, onError: (message?: string) => void) {
   let frame: HTMLIFrameElement | null = document.createElement('iframe')
   frame.title = 'Полный отчёт для печати'
   frame.setAttribute('aria-hidden', 'true')
@@ -29,7 +36,7 @@ export function prepareFullReportPrint(report: PrintableReport, onReady: () => v
     catch { dispose(); onError() }
   }
   try {
-    frame.srcdoc = buildPrintableReportHtml(report, { embedded: true, compactPrint: true })
+    frame.srcdoc = buildHtml()
     document.body.appendChild(frame)
   } catch { dispose(); onError() }
   return dispose

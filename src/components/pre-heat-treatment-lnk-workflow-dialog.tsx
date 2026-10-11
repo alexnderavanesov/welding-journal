@@ -32,6 +32,8 @@ import { RequestRowsPanel } from '@/components/request-rows-panel'
 import { ResultDialogHeader } from '@/components/result-dialog-header'
 import { SelectedRowsViewToggle, type SelectedRowsViewMode } from '@/components/selected-rows-view-toggle'
 import { SystemDocumentNamesPanel } from '@/components/system-document-names-panel'
+import { SystemDocumentSplitControl } from '@/components/system-document-split-control'
+import { getCreationGroupingCommand } from '@/lib/document-grouping-command'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -395,8 +397,9 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     naming,
     settings,
     nextNumber,
+    positionDetails: row => (mode === 'request' ? getAvailableRequestMethods(row, selectedMethods) : resultMethod ? [resultMethod] : []).map(method => ({ method, stage: 'До ТО', source: mode === 'result' ? getPreHeatTreatmentControl(row, method)?.requestName ?? '' : undefined })),
     allowAllNamesEmpty: mode === 'result' && !saveCheckSettings.lnkResultConclusionRequired,
-  }), [date, mode, naming, nextNumber, resultMethod, saveCheckSettings.lnkResultConclusionRequired, selectedRows, settings])
+  }), [date, mode, naming, nextNumber, resultMethod, saveCheckSettings.lnkResultConclusionRequired, selectedRows, selectedMethods, settings])
   const effectiveDate = mode === 'request' && requestSubmitMode === 'extend'
     ? selectedExistingRequest?.date ?? ''
     : date
@@ -505,6 +508,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
         action: mode,
         date: effectiveDate,
         groups: workflowGroups,
+        documentGrouping: mode === 'request' && requestSubmitMode === 'extend' ? undefined : getCreationGroupingCommand(creationPlan.groups),
         expectedVersions: selectedRows.map((row) => ({
           id: row.id,
           version: String(row.rowVersion ?? '').trim(),
@@ -820,6 +824,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
         <DocumentWorkspaceTabs
           activeTab={workspaceTab}
           ariaLabel={mode === 'request' ? 'Разделы заявки ЛНК до ТО' : 'Разделы результата ЛНК до ТО'}
+          controls={<SystemDocumentSplitControl plan={(mode === 'request' ? selectedMethods.size > 0 : Boolean(resultMethod)) ? creationPlan : null} naming={naming} onChange={setNaming} disabled={mutation.isPending} />}
           documentsLabel={mode === 'request' ? 'Заявки и имена' : 'Заключения и имена'}
           documentsCount={workflowGroups.length}
           documentsHaveError={Boolean(creationPlanError)}

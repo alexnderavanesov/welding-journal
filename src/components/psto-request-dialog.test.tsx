@@ -1,14 +1,17 @@
 import { useState } from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { PstoRequestDialog } from '@/components/psto-request-dialog'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { defaultRequestNamingState } from '@/lib/request-naming-state'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
+import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-settings'
+
+vi.mock('@/server/document-grouping-preferences', () => ({ getDocumentGroupingDefaults: vi.fn(async () => REQUEST_CONCLUSION_DEFAULT_SETTINGS) }))
 
 describe('PstoRequestDialog', () => {
-  it('keeps the joint list and request names in separate full-width tabs', () => {
+  it('keeps the joint list and request names in separate full-width tabs', async () => {
     const row = {
       id: 1,
       projectTitle: 'Проект А',
@@ -58,6 +61,7 @@ describe('PstoRequestDialog', () => {
     }
 
     render(<StatefulPstoRequestDialog />)
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Разделение документов' })).toBeEnabled())
 
     expect(screen.getByRole('tab', { name: 'Стыки' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: /Заявки и имена/ })).toHaveTextContent('1')
@@ -75,10 +79,12 @@ describe('PstoRequestDialog', () => {
     })
     fireEvent.blur(screen.getByRole('textbox', { name: /Название заявки/ }))
 
-    expect(onRequestNamingChange).toHaveBeenLastCalledWith({
-      ...defaultRequestNamingState,
+    expect(onRequestNamingChange).toHaveBeenLastCalledWith(expect.objectContaining({
       mode: 'custom',
       customName: 'Заявка подрядчика',
-    })
+      groupingDefaultsState: 'ready',
+      groupModes: { none: 'custom' },
+      customGroupNames: { none: 'Заявка подрядчика' },
+    }))
   })
 })

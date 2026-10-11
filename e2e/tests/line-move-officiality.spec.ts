@@ -45,21 +45,21 @@ async function openMove(page: Page, id: number, existingStages = false) {
   await line.fill(targetLine)
   await line.press('Tab')
   await checked
-  if (!existingStages) await expect(page.getByRole('heading', { name: 'Перенос стыка на линию без ПСТО', exact: true })).toBeVisible()
+  if (!existingStages) await expect(page.getByRole('heading', { name: 'Перенос стыка на другую линию', exact: true })).toBeVisible()
   return editor
 }
 
-test('перенос линии не обходит официальность: UI, старый клиент, отсутствие частичного переноса и исправление через официальность', async ({ page }) => {
+test('старый клиент не может перенести этап; смена линии сохраняет официальность и весь НК до ТО', async ({ page }) => {
   const id = await seed(), errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   const state = () => withE2eDatabase(async db => (await db.query(`select w.line,w.officiality,w.vik_result,w.vik_conclusion,
     c.id as control_id,c.result,c.conclusion_name from weld_joints w
     left join pre_heat_treatment_controls c on c.weld_joint_id=w.id where w.id=$1`, [id])).rows)
   const before = await state()
+  expect(before[0].vik_result).toBeNull()
   let editor = await openMove(page, id)
   const promotionButton = page.getByRole('button', { name: /^Перенести НК «До ТО»/ })
-  const promotionWasDisabled = await promotionButton.isDisabled()
-  const promotionExplanation = await promotionButton.innerText()
+  await expect(promotionButton).toHaveCount(0)
   // Simulate the old dialog's valid wire request, with a fresh version. This
   // must reach the business guard rather than rely on a disabled button.
   let changedRequest = false
@@ -72,30 +72,21 @@ test('перенос линии не обходит официальность: 
       await route.continue({ postData: body.replaceAll('keepPrimary', 'promoteBeforeHeatTreatment') })
     } else await route.continue()
   })
-  await page.getByRole('button', { name: /^Изменить только линию/ }).click()
-  await page.getByRole('button', { name: 'Применить решение', exact: true }).click()
+  await page.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
   const response = page.waitForResponse(response => isSave(response.url()))
   await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
-  expect(await (await response).text()).toContain('Сначала верните стыку официальность')
-  expect(promotionWasDisabled).toBe(true)
-  expect(promotionExplanation).toContain('Сначала верните стыку официальность')
+  expect(await (await response).text()).toContain('Смена этапа НК больше не поддерживается')
   await expect(editor).toBeVisible()
   expect(await state()).toEqual(before)
 
-  await page.goto('/lnk')
-  await page.getByRole('button', { name: 'Официальность', exact: true }).click()
-  const officiality = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Официальность стыков', exact: true }) })
-  await officiality.getByPlaceholder('Проект, шифр, линия, спул или стык').fill(joint)
-  await officiality.getByRole('button').filter({ hasText: `${sourceLine} · ${joint}` }).click()
-  await officiality.getByRole('button', { name: /^Официальный/ }).click()
-  await officiality.getByRole('button', { name: 'Сохранить официальность', exact: true }).click()
-  await expect(officiality).toBeHidden()
+  // Retry from a fresh dialog without the forged command; preserve officiality as well as facts.
   editor = await openMove(page, id)
-  await page.getByRole('button', { name: /^Перенести НК «До ТО»/ }).click()
-  await page.getByRole('button', { name: 'Применить решение', exact: true }).click()
+  await page.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
   await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
   await expect(editor).toBeHidden()
-  expect(await state()).toEqual([{ line: targetLine, officiality: null, vik_result: 'годен', vik_conclusion: 'MO-PRE-C', control_id: null, result: null, conclusion_name: null }])
+  // KEEP preserves stored control facts verbatim, including an empty result.
+  // A derived waiting label must not be written as a new primary control fact.
+  expect(await state()).toEqual(before.map(row => ({ ...row, line: targetLine })))
   expect(errors).toEqual([])
 })
 
@@ -107,9 +98,8 @@ test('сохранённый брак до ТО после смены линии
     await db.query("update pre_heat_treatment_controls set result='ремонт' where weld_joint_id=$1", [id])
   })
   const editor = await openMove(page, id)
-  await expect(page.getByRole('button', { name: 'Применить решение', exact: true })).toBeDisabled()
-  await page.getByRole('button', { name: /^Изменить только линию/ }).click()
-  await page.getByRole('button', { name: 'Применить решение', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Подтвердить перенос', exact: true })).toBeEnabled()
+  await page.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
   await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
   await expect(editor).toBeHidden()
   expect(await withE2eDatabase(async db => (await db.query(`select w.line,w.final_status,c.result,c.conclusion_name

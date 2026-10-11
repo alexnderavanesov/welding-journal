@@ -2,87 +2,59 @@ import { describe, expect, it } from 'vitest'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
-  assertPstoLineActivationTransferAllowed,
   normalizePstoLineAssignmentPayload,
   persistPstoLineAssignmentRows,
 } from '@/server/psto-line-assignment'
 
 describe('PSTO line assignment payload', () => {
-  it('uses the same chronology barrier when activation moves LNK into pre-TO', () => {
-    const previous = {
-      id: 1,
-      joint: 'F1',
-      weldDate: '2026-08-01',
-      vikRequest: 'Заявка ВИК',
-      vikRequestDate: '2023-12-31',
-    } as WeldRow
-    const next = {
-      ...previous,
-      pstoRequired: 'да',
-      vikRequest: null,
-      vikRequestDate: null,
-      preHeatTreatmentControls: [{
-        id: -1,
-        weldJointId: 1,
-        method: 'ВИК',
-        requestName: 'Заявка ВИК',
-        requestDate: '2023-12-31',
-      }],
-    } as WeldRow
-
-    expect(() => assertPstoLineActivationTransferAllowed([previous], [next]))
-      .toThrow(/Назначение ПСТО невозможно.*01\.01\.2024/)
-
-    expect(() => assertPstoLineActivationTransferAllowed(
-      [{ ...previous, vikRequestDate: '2026-08-02' }],
-      [{
-        ...next,
-        preHeatTreatmentControls: [{
-          ...next.preHeatTreatmentControls![0]!,
-          requestDate: '2026-08-02',
-        }],
-      }],
-    )).not.toThrow()
-  })
-
-  it('normalizes the full line identity and activation decisions, ignoring obsolete removal decisions', () => {
+  it('normalizes assignment identity without any stage decision', () => {
     expect(normalizePstoLineAssignmentPayload({
       identity: { projectTitle: ' Проект ', subtitleCode: ' 400 ', line: ' L-1 ' },
-      action: 'remove',
-      expectedVersions: [{ id: 1, version: ' 101 ' }],
-      activationDecisions: [
-        {
-          rowId: 3,
-          disposition: 'movePrimaryToBeforeHeatTreatment',
-          methodCodes: [' вик ', 'РК', 'ВИК', 'ТВМТ'] as never,
-        },
-        {
-          rowId: 4,
-          disposition: 'keepPrimary',
-          methodCodes: ['ПВК'],
-        },
-      ],
-      ...{ decisions: [
-        { rowId: 1, disposition: 'keepPrimary' },
-        { rowId: 2, disposition: 'promoteBeforeHeatTreatment' },
-        { rowId: -1, disposition: 'keepPrimary' },
-      ] },
+      action: 'assign', expectedVersions: [{ id: 1, version: ' 101 ' }],
     })).toEqual({
       identity: { projectTitle: 'Проект', subtitleCode: '400', line: 'L-1' },
-      action: 'remove',
-      expectedVersions: [{ id: 1, version: '101' }],
-      cancellationDate: '',
-      cancellationBasis: '',
-      activationDecisions: [{
-        rowId: 3,
-        disposition: 'movePrimaryToBeforeHeatTreatment',
-        methodCodes: ['ВИК', 'РК'],
-      }, {
-        rowId: 4,
-        disposition: 'keepPrimary',
-        methodCodes: ['ПВК'],
-      }],
+      action: 'assign', expectedVersions: [{ id: 1, version: '101' }],
+      cancellationDate: '', cancellationBasis: '',
+      activationDecisions: [],
     })
+  })
+
+  it('accepts only explicit whole-package activation decisions and never on cancellation', () => {
+    const payload = {
+      identity: { projectTitle: 'P', subtitleCode: 'S', line: 'L' },
+      action: 'assign' as const, expectedVersions: [],
+      activationDecisions: [{ rowId: 1, disposition: 'movePrimaryToPreHeatTreatment' as const }],
+    }
+    expect(normalizePstoLineAssignmentPayload(payload).activationDecisions).toEqual(payload.activationDecisions)
+    expect(() => normalizePstoLineAssignmentPayload({ ...payload, action: 'cancel', cancellationDate: '2026-08-10' })).toThrow('этапы НК сохраняются')
+    expect(() => normalizePstoLineAssignmentPayload({ ...payload, activationDecisions: [...payload.activationDecisions, ...payload.activationDecisions] })).toThrow('повторный')
+    expect(() => normalizePstoLineAssignmentPayload({ ...payload, activationDecisions: [{ rowId: 1, disposition: 'movePrimaryToPreHeatTreatment', ...{ methodCodes: ['ВИК'] } }] })).toThrow('целый комплект')
+  })
+
+  it('only explicitly corrected rows write main control fields, in bounded batches', async () => {
+    const writes: Array<{ ids: number[]; set: Record<string, unknown> }> = []
+    const tx = { insert: () => ({ values: (rows: Array<Record<string, unknown>>) => ({
+      onConflictDoUpdate: ({ set }: { set: Record<string, unknown> }) => {
+        writes.push({ ids: rows.map(row => Number(row.id)), set })
+        return { returning: async () => rows }
+      },
+    }) }) }
+    const rows = Array.from({ length: 201 }, (_, index) => ({ id: index + 1, joint: `F${index + 1}`, pstoRequired: 'да' })) as WeldRow[]
+    const corrected = new Set(rows.slice(0, 101).map(row => row.id))
+    await persistPstoLineAssignmentRows(tx as never, rows, new Date(), corrected)
+    expect(writes.map(write => write.ids.length)).toEqual([100, 100, 1])
+    for (const write of writes) {
+      if (corrected.has(write.ids[0]!)) expect(write.set).toHaveProperty('vikRequest')
+      else expect(write.set).not.toHaveProperty('vikRequest')
+    }
+  })
+
+  it.each(['assign', 'reactivate'] as const)('rejects obsolete transfer instructions on %s instead of silently changing their meaning', action => {
+    expect(() => normalizePstoLineAssignmentPayload({
+      identity: { projectTitle: 'Проект', subtitleCode: '400', line: 'L-1' },
+      action, expectedVersions: [],
+      ...{ activationDecisions: [{ rowId: 1, disposition: 'movePrimaryToBeforeHeatTreatment', methodCodes: ['ВИК'] }] as never },
+    })).toThrow('Смена этапа НК больше не поддерживается')
   })
 
   it('rejects an empty line and an unknown action', () => {
@@ -99,6 +71,22 @@ describe('PSTO line assignment payload', () => {
     })).toThrow('Неизвестное действие')
   })
 
+  it('keeps large line writes bounded to batches of 100 without control relation writes', async () => {
+    const batches: number[] = []
+    const tx = { insert: () => ({ values: (rows: Array<Record<string, unknown>>) => {
+      batches.push(rows.length)
+      return { onConflictDoUpdate: () => ({ returning: async () => rows }) }
+    } }) }
+    const rows = Array.from({ length: 501 }, (_, index) => ({
+      id: index + 1, joint: `F${index + 1}`, pstoRequired: 'да',
+      preHeatTreatmentControls: [{ id: index + 1000, weldJointId: index + 1 }],
+    })) as WeldRow[]
+    const saved = await persistPstoLineAssignmentRows(tx as never, rows)
+    expect(batches).toEqual([100, 100, 100, 100, 100, 1])
+    expect(saved).toHaveLength(501)
+    expect(saved.every((row, index) => row.preHeatTreatmentControls === rows[index].preHeatTreatmentControls)).toBe(true)
+  })
+
   it('persists a whole line with one batch write instead of one query per weld', async () => {
     let insertCalls = 0
     const tx = {
@@ -106,9 +94,13 @@ describe('PSTO line assignment payload', () => {
         insertCalls += 1
         return {
           values: (values: Array<Record<string, unknown>>) => ({
-            onConflictDoUpdate: () => ({
-              returning: async () => values,
-            }),
+            onConflictDoUpdate: ({ set }: { set: Record<string, unknown> }) => {
+              for (const key of ['vikRequest', 'vikResult', 'rkConclusion', 'pstoRequest', 'pstoResult', 'tvmtResult', 'lnkUpdatedAt']) {
+                expect(set).not.toHaveProperty(key)
+                expect(values[0]).not.toHaveProperty(key)
+              }
+              return { returning: async () => values }
+            },
           }),
         }
       },
@@ -132,7 +124,6 @@ describe('PSTO line assignment payload', () => {
       tx as never,
       rows,
       new Date('2026-09-04T10:00:00.000Z'),
-      new Set([1]),
     )
 
     expect(insertCalls).toBe(1)

@@ -274,8 +274,7 @@ export function buildLnkResultCompletenessCheckTasks(
       return missing.length > 0 ? [{ code: method.code, missing }] : []
     })
     methodIssues.push(...(isPreHeatTreatmentStageEnabled(row) ? getPreHeatTreatmentControls(row) : []).flatMap((control) => {
-      const result = String(control.result ?? '').trim().toLowerCase()
-      if (result !== 'годен' && result !== 'ремонт' && result !== 'вырез') return []
+      if (!isFinalLnkResultValue(control.result)) return []
       const missing: string[] = []
       if (!hasText(control.conclusionDate)) missing.push('дата контроля')
       if (!hasText(control.conclusionName)) missing.push('заключение')

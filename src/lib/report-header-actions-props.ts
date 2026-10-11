@@ -1,3 +1,4 @@
+import type { WorkflowAvailability } from '@/components/workflow-action-menu-item'
 import type { ReportHeaderActionsProps } from '@/components/report-header-actions'
 import type { ActiveReport } from '@/lib/home-state'
 
@@ -27,6 +28,7 @@ type CreateReportHeaderActionsPropsOptions = {
   onEditSelectedPstoRequest: () => void
   editSelectedPstoRequestDisabled: boolean
   onOpenPstoRequestRegistry: () => void
+  pstoAvailability?: WorkflowAvailability
   pstoRequestPending: boolean
   onAddPstoResult: () => void
   pstoResultDisabled: boolean
@@ -48,6 +50,7 @@ type CreateReportHeaderActionsPropsOptions = {
   onCreateLnkRequest: () => void
   onExtendLnkRequest: () => void
   onOpenLnkRequestRegistry: () => void
+  lnkAvailability?: WorkflowAvailability
   lnkRequestPending: boolean
   onAddLnkResult: () => void
   lnkResultDisabled: boolean
@@ -95,6 +98,7 @@ export function createReportHeaderActionsProps({
   editSelectedPstoRequestDisabled,
   onOpenPstoRequestRegistry,
   pstoRequestPending,
+  pstoAvailability,
   onAddPstoResult,
   pstoResultDisabled,
   onEditSelectedPstoResults,
@@ -116,6 +120,7 @@ export function createReportHeaderActionsProps({
   onExtendLnkRequest,
   onOpenLnkRequestRegistry,
   lnkRequestPending,
+  lnkAvailability,
   onAddLnkResult,
   lnkResultDisabled,
   onEditSelectedLnkResults,
@@ -161,6 +166,7 @@ export function createReportHeaderActionsProps({
     editSelectedPstoRequestDisabled,
     onOpenPstoRequestRegistry,
     pstoRequestPending,
+    pstoAvailability,
     onAddPstoResult,
     pstoResultDisabled,
     onEditSelectedPstoResults,
@@ -182,6 +188,7 @@ export function createReportHeaderActionsProps({
     onExtendLnkRequest,
     onOpenLnkRequestRegistry,
     lnkRequestPending,
+    lnkAvailability,
     onAddLnkResult,
     lnkResultDisabled,
     onEditSelectedLnkResults,

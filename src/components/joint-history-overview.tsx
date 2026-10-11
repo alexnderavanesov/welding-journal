@@ -9,11 +9,18 @@ import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { formatDisplayDate } from '@/lib/date-format'
 import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import { buildJointNextActions, type JointNextAction } from '@/lib/joint-next-actions'
+import {
+  getJointPreHeatTreatmentLabel,
+  getJointPstoAssignmentLabel,
+  getJointPstoCycleLabel,
+  getJointPstoStartLabel,
+  hasJointPstoCycleHistory,
+} from '@/lib/joint-history-stage-labels'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { getPreHeatTreatmentControls, getPreHeatTreatmentHistoryNote } from '@/lib/lnk-control-stage'
-import { getLnkDisplayValue, isPstoNoNeed } from '@/lib/lnk-status'
+import { getLnkDisplayValue } from '@/lib/lnk-status'
 import { PRE_HEAT_TREATMENT_REPORT_FIELDS } from '@/lib/pre-heat-treatment-report-fields'
-import { buildPstoCycleTimeline, getRetainedPstoRequestNote, getRetainedPstoCycleLabel, type PstoCycleSnapshot } from '@/lib/psto-cycle'
+import { buildPstoCycleTimeline, getRetainedPstoRequestNote, type PstoCycleSnapshot } from '@/lib/psto-cycle'
 import {
   buildPrimaryPstoSystemDocumentRow,
   buildPstoRepeatSystemDocumentRow,
@@ -45,9 +52,19 @@ export function JointHistoryOverview({
   onRunNextAction,
   onOpenTasks,
 }: JointHistoryOverviewProps) {
-  const preControls = getPreHeatTreatmentControls(row)
-  const cycles = buildPstoCycleTimeline(row, row.pstoRepeatCycles ?? [])
+  const displayRow = controlProcessSettings
+    ? { ...row, preHeatTreatmentLnkEnabled: controlProcessSettings.preHeatTreatmentLnkEnabled }
+    : row
+  const preControls = getPreHeatTreatmentControls(displayRow)
+  // The picture keeps partial raw history too. The operational timeline hides
+  // a cancelled primary cycle with only a note or an unrecognized old result.
+  // Assignment-only waiting is represented by the section caption below.
+  const cycles = buildPstoCycleTimeline({ ...row, pstoRequired: null }, row.pstoRepeatCycles ?? [])
+    .filter(cycle => cycle.source === 'repeat' || hasJointPstoCycleHistory(cycle))
   const pstoCancelled = isControlCancelledValue(row.pstoRequired)
+  const preLabel = getJointPreHeatTreatmentLabel(displayRow)
+  const pstoLabel = getJointPstoAssignmentLabel(displayRow)
+    ?? (cycles.length === 0 ? getJointPstoStartLabel(displayRow) : null)
   const nextActions = buildJointNextActions(row, dispatcherTasks, controlProcessSettings).slice(0, 1)
   const mainControls = LNK_METHODS.filter((method) => [
     row[method.enabledKey],
@@ -105,13 +122,14 @@ export function JointHistoryOverview({
           />
         </HistorySection>
 
-        <HistorySection title="НК до ТО" empty={preControls.length === 0}>
-          {getPreHeatTreatmentHistoryNote(row) ? <p className="mb-2 text-xs leading-5 text-amber-800">{getPreHeatTreatmentHistoryNote(row)}</p> : null}
+        <HistorySection title="НК до ТО">
+          {preLabel ? <HistoryCaption value={preLabel} /> : null}
+          {getPreHeatTreatmentHistoryNote(displayRow) ? <p className="mb-2 text-xs leading-5 text-amber-800">{getPreHeatTreatmentHistoryNote(displayRow)}</p> : null}
           {preControls.map((control) => {
             const requestField = getPreFieldKey(control.method, 'requestName')
             const resultField = getPreFieldKey(control.method, 'result')
             const conclusionField = getPreFieldKey(control.method, 'conclusionName')
-            const result = resultField ? getLnkDisplayValue(row, resultField) : control.result
+            const result = resultField ? getLnkDisplayValue(displayRow, resultField) : control.result
             return (
               <HistoryLine
                 key={control.id}
@@ -128,17 +146,18 @@ export function JointHistoryOverview({
           })}
         </HistorySection>
 
-        <HistorySection title="ПСТО и ТВМТ" empty={!pstoCancelled && cycles.length === 0}>
+        <HistorySection title="ПСТО и ТВМТ">
+          {!pstoCancelled && pstoLabel ? <HistoryCaption value={pstoLabel} /> : null}
           {getRetainedPstoRequestNote(row) ? <p className="mb-2 text-xs leading-5 text-amber-800">{getRetainedPstoRequestNote(row)}</p> : null}
           {pstoCancelled ? (
             <HistoryLine
               label="Линия ПСТО"
               date={row.pstoCancellationDate}
-              value="отменена"
+              value="ПСТО отменено"
             />
           ) : null}
           {cycles.map((cycle) => (
-            <PstoCycleLine key={cycle.sequence} row={row} cycle={cycle} onOpenDocument={onOpenDocument} />
+            <PstoCycleLine key={cycle.sequence} row={row} cycle={cycle} value={getJointPstoCycleLabel(displayRow, cycle)} onOpenDocument={onOpenDocument} />
           ))}
         </HistorySection>
 
@@ -246,10 +265,12 @@ function getNextActionIconClass(tone: JointNextAction['tone']) {
 function PstoCycleLine({
   row,
   cycle,
+  value,
   onOpenDocument,
 }: {
   row: WeldRow
   cycle: PstoCycleSnapshot
+  value: string
   onOpenDocument: JointHistoryOverviewProps['onOpenDocument']
 }) {
   const repeat = cycle.source === 'repeat'
@@ -258,21 +279,11 @@ function PstoCycleLine({
   const documentRow = repeat
     ? buildPstoRepeatSystemDocumentRow(row, repeat)
     : buildPrimaryPstoSystemDocumentRow(row)
-  const workflowValue = getRetainedPstoCycleLabel(row, cycle) ?? (isPstoNoNeed(row, cycle.pstoResult)
-    ? 'нет потребности'
-    : text(cycle.tvmtResult)
-    ? `ТВМТ: ${text(cycle.tvmtResult)}`
-    : text(cycle.pstoResult)
-      ? `ПСТО: ${text(cycle.pstoResult)} · ТВМТ ожидается`
-      : text(cycle.pstoRequest)
-        ? 'ожидает ПСТО'
-        : 'ожидает заявку ПСТО')
-
   return (
     <HistoryLine
       label={`Цикл ${cycle.sequence}`}
       date={cycle.tvmtConclusionDate || cycle.pstoDate || cycle.pstoRequestDate}
-      value={workflowValue}
+      value={value}
       secondary={text(cycle.pstoNote) || undefined}
       documents={[
         createDocument(cycle.pstoRequest, 'pstoRequest', documentRow),
@@ -283,6 +294,10 @@ function PstoCycleLine({
       onOpenDocument={onOpenDocument}
     />
   )
+}
+
+function HistoryCaption({ value }: { value: string }) {
+  return <p className="py-2 text-sm leading-5 text-slate-600">{value}</p>
 }
 
 function HistorySection({

@@ -9,7 +9,6 @@ type LnkOfficialityDialogProps = NonNullable<ReportLnkDialogsProps['officialityD
 type DuplicateControlDialogProps = NonNullable<ReportLnkDialogsProps['duplicateControlDialogProps']>
 type PreHeatTreatmentWorkflowDialogProps = NonNullable<ReportLnkDialogsProps['preHeatTreatmentWorkflowDialogProps']>
 type PreHeatTreatmentResultManagerDialogProps = NonNullable<ReportLnkDialogsProps['preHeatTreatmentResultManagerDialogProps']>
-type LnkStageTransferDialogProps = NonNullable<ReportLnkDialogsProps['stageTransferDialogProps']>
 
 type CreateReportLnkDialogsPropsOptions = {
   requestModalOpen: boolean
@@ -33,7 +32,6 @@ type CreateReportLnkDialogsPropsOptions = {
 
   preHeatTreatmentWorkflow: PreHeatTreatmentWorkflowDialogProps | null
   preHeatTreatmentResultManager: PreHeatTreatmentResultManagerDialogProps | null
-  stageTransfer: LnkStageTransferDialogProps | null
 }
 
 export function createReportLnkDialogsProps({
@@ -52,7 +50,6 @@ export function createReportLnkDialogsProps({
   selectableResultRows,
   preHeatTreatmentWorkflow,
   preHeatTreatmentResultManager,
-  stageTransfer,
 }: CreateReportLnkDialogsPropsOptions): ReportLnkDialogsProps {
   return {
     requestDialogProps: requestModalOpen ? request : null,
@@ -68,6 +65,5 @@ export function createReportLnkDialogsProps({
       : null,
     preHeatTreatmentWorkflowDialogProps: preHeatTreatmentWorkflow,
     preHeatTreatmentResultManagerDialogProps: preHeatTreatmentResultManager,
-    stageTransferDialogProps: stageTransfer,
   }
 }

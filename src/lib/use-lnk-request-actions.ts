@@ -4,7 +4,7 @@ import { createDefaultLnkRequestDraft } from '@/lib/report-draft-state'
 import { getRequestNameFromNaming } from '@/lib/report-naming'
 import { countLnkRequestTargets } from '@/lib/report-modal-rows'
 import { toggleNumberSetValue, toggleNumberSetValues } from '@/lib/report-ui-state'
-import { getAvailableLnkRequestMethods } from '@/lib/lnk-status'
+import { getAvailableLnkRequestMethods, getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import {
   analyzeLnkRequestExtensionTargets,
   type LnkRequestExtensionOption,
@@ -52,17 +52,22 @@ export function useLnkRequestActions({
       return
     }
 
-    const eligibleRowIds = new Set(buildLnkRequestDraftRows({
+    const draftRows = buildLnkRequestDraftRows({
       records: selectedRows,
       methodKeys,
       requestName: '__system-document-group-preview__',
       requestDate: draft.requestDate,
       controlProcessSettings,
-    }).map((row) => row.id))
+    })
+    const draftsById = new Map(draftRows.map(row => [row.id, row]))
     const creationPlan = buildSystemDocumentCreationPlan({
       type: 'lnkRequest',
       date: draft.requestDate,
-      rows: selectedRows.filter((row) => eligibleRowIds.has(row.id)),
+      rows: selectedRows.filter((row) => draftsById.has(row.id)),
+      positionDetails: row => methodKeys.flatMap(key => {
+        const method = getLnkMethodByRequestKey(key)
+        return method && draftsById.get(row.id)?.[key] === '__system-document-group-preview__' ? [{ method: method.code, stage: 'Основной контроль' }] : []
+      }),
       naming,
       settings: requestConclusionSettings,
       nextNumber: nextRequestNumber,

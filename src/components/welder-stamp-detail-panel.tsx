@@ -267,7 +267,7 @@ function PermitInlineValue({ label, value, archived = false }: { label: string; 
   return (
     <span className="inline-flex min-w-0 items-baseline gap-1.5">
       <span className="shrink-0 font-semibold text-slate-400">{label}:</span>
-      <span className={`break-words ${archived ? 'text-slate-500' : 'text-slate-700'}`}>{value || '-'}</span>
+      <span className={`min-w-0 break-words ${archived ? 'text-slate-500' : 'text-slate-700'}`}>{value || '-'}</span>
     </span>
   )
 }

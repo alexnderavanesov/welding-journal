@@ -959,10 +959,10 @@ describe('validateServerWeldRecords', () => {
       previousRows: new Map([[previous.id, previous]]),
       context: assignedTargetContext,
       importMode: true,
-    })).toThrow(/сохранить основной комплект.*Удаление ошибочных документов выполняется отдельно/)
+    })).toThrow(/с сохранением всех этапов контроля.*Удаление ошибочных документов выполняется отдельно/)
   })
 
-  it('does not let a line-inherited exemption bypass the stage decision during import', () => {
+  it('does not let a line-inherited exemption bypass the dedicated line move during import', () => {
     const previous = {
       id: 354,
       projectTitle: 'Проект',
@@ -994,7 +994,7 @@ describe('validateServerWeldRecords', () => {
         }]]),
       },
       importMode: true,
-    })).toThrow('выберите')
+    })).toThrow('через карточку стыка с сохранением всех этапов контроля')
   })
 
   it('allows an explicitly confirmed keep-primary move while preserving its existing stage debt', () => {

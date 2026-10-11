@@ -15,6 +15,8 @@ import { ResultDialogHeader } from '@/components/result-dialog-header'
 import { RequestRowsPanel } from '@/components/request-rows-panel'
 import { SelectedRowsViewToggle, type SelectedRowsViewMode } from '@/components/selected-rows-view-toggle'
 import { SystemDocumentNamesPanel } from '@/components/system-document-names-panel'
+import { SystemDocumentSplitControl } from '@/components/system-document-split-control'
+import { getCreationGroupingCommand } from '@/lib/document-grouping-command'
 import { TvmtWorkflowRow, type TvmtWorkflowRowMode } from '@/components/tvmt-workflow-row'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -235,6 +237,7 @@ export function TvmtWorkflowDialog({
     naming,
     settings,
     nextNumber,
+    positionDetails: row => [{ method: 'ТВМТ', stage: 'Цикл ПСТО', cycle: getCurrentPstoCycle(row)?.sequence ?? 1, source: mode === 'result' ? getCurrentPstoCycle(row)?.tvmtRequest : undefined }],
   }), [date, mode, naming, nextNumber, selectedRows, settings])
   const dateReason = getDateInputValidationReason(
     date,
@@ -289,6 +292,7 @@ export function TvmtWorkflowDialog({
           name: group.name,
           useSystemName: group.useSystemName,
         })),
+        documentGrouping: getCreationGroupingCommand(creationPlan.groups),
         expectedVersions: selectedRows.map((row) => ({
           id: row.id,
           version: String(row.rowVersion ?? '').trim(),
@@ -515,6 +519,7 @@ export function TvmtWorkflowDialog({
       <DocumentWorkspaceTabs
         activeTab={workspaceTab}
         ariaLabel={mode === 'request' ? 'Разделы заявки ТВМТ' : 'Разделы результата ТВМТ'}
+        controls={<SystemDocumentSplitControl plan={creationPlan} naming={naming} onChange={setNaming} disabled={mutation.isPending} />}
         documentsLabel={mode === 'request' ? 'Заявки и имена' : 'Заключения и имена'}
         documentsCount={creationPlan.groups.length}
         documentsHaveError={Boolean(creationPlan.error)}

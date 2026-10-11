@@ -33,7 +33,6 @@ import { RULE_SETTINGS_TABS, getRuleSettingsTarget, getRuleSettingsTab, type Rul
 import { DocumentTemplateLoadBoundary } from '@/components/document-template-load-boundary'
 import { DocumentTemplateBuilder } from '@/components/document-template-builder'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
-import { SystemDocumentRebuildDialog } from '@/components/system-document-rebuild-dialog'
 import {
   RkExposureTableEditorDialog,
   WdiTableEditorDialog,
@@ -92,11 +91,6 @@ import {
   type RequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
 import type { RequestNamingState } from '@/lib/request-naming-state'
-import {
-  SYSTEM_DOCUMENT_SPLIT_MODE_OPTIONS,
-  type SystemDocumentSplitMode,
-  type SystemDocumentSplitSettingId,
-} from '@/lib/system-document-splitting'
 import {
   DEFAULT_DISPATCHER_SETTINGS,
   DISPATCHER_SETTING_ACTION_HELP,
@@ -3665,44 +3659,6 @@ const REQUEST_NAMING_CARD_GROUPS: Array<{
   },
 ]
 
-const SYSTEM_DOCUMENT_SPLIT_SECTIONS: Array<{
-  title: string
-  description: string
-  items: Array<{
-    id: SystemDocumentSplitSettingId
-    title: string
-    description: string
-  }>
-}> = [
-  {
-    title: 'ЛНК',
-    description: 'Заявка на контроль и отдельные формы заключений по видам НК.',
-    items: [
-      { id: 'lnkRequest', title: 'Заявка ЛНК', description: 'Одна настройка для новой заявки независимо от выбранных видов контроля.' },
-      { id: 'lnkConclusionVik', title: 'Заключение ВИК', description: 'Применяется при внесении результата ВИК.' },
-      { id: 'lnkConclusionRk', title: 'Заключение РК', description: 'Применяется при внесении результата РК.' },
-      { id: 'lnkConclusionUzk', title: 'Заключение УЗК', description: 'Применяется при внесении результата УЗК.' },
-      { id: 'lnkConclusionPvk', title: 'Заключение ПВК', description: 'Применяется при внесении результата ПВК.' },
-    ],
-  },
-  {
-    title: 'ПСТО',
-    description: 'Заявки на термообработку и итоговые диаграммы/заключения.',
-    items: [
-      { id: 'pstoRequest', title: 'Заявка ПСТО', description: 'Применяется при создании новой заявки ПСТО.' },
-      { id: 'pstoConclusion', title: 'Заключение ПСТО', description: 'Применяется при внесении результата и диаграммы ПСТО.' },
-    ],
-  },
-  {
-    title: 'ТВМТ',
-    description: 'Заявки и заключения твердометрии в цикле термообработки.',
-    items: [
-      { id: 'tvmtRequest', title: 'Заявка ТВМТ', description: 'Применяется при создании заявки ТВМТ.' },
-      { id: 'tvmtConclusion', title: 'Заключение ТВМТ', description: 'Применяется при внесении результата ТВМТ.' },
-    ],
-  },
-]
-
 type RequestNamingPatternDraftPart = RequestNamingPatternPart & { id: string }
 
 let requestNamingPatternPartCounter = 0
@@ -3723,8 +3679,6 @@ function RequestConclusionSettingsPanel({
 }) {
   const settings = useRequestConclusionSettings()
   const [dirtyKinds, setDirtyKinds] = useState<Set<RequestConclusionNamingKind>>(() => new Set())
-  const [isSystemDocumentRebuildOpen, setIsSystemDocumentRebuildOpen] = useState(false)
-  const [systemDocumentRebuildMessage, setSystemDocumentRebuildMessage] = useState('')
 
   useEffect(() => {
     onDirtyChange(dirtyKinds.size > 0)
@@ -3753,18 +3707,7 @@ function RequestConclusionSettingsPanel({
     }))
   }
 
-  const resetSettings = () => runProtectedSettingsChange(() => saveRequestConclusionSettings(REQUEST_CONCLUSION_DEFAULT_SETTINGS))
-
-  const updateSplitMode = (
-    id: SystemDocumentSplitSettingId,
-    mode: SystemDocumentSplitMode,
-  ) => runProtectedSettingsChange(() => saveRequestConclusionSettings({
-    ...settings,
-    splitModes: {
-      ...settings.splitModes,
-      [id]: mode,
-    },
-  }))
+  const resetSettings = () => runProtectedSettingsChange(() => saveRequestConclusionSettings({ ...REQUEST_CONCLUSION_DEFAULT_SETTINGS, splitModes: settings.splitModes }))
 
   return (
     <div className="space-y-6">
@@ -3776,7 +3719,7 @@ function RequestConclusionSettingsPanel({
               <h3 className="text-base font-semibold text-slate-900">Заявки и заключения</h3>
             </div>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-              Настройте разделение, стартовый режим имени и шаблон системного наименования. Новые правила применяются
+              Настройте стартовый режим имени и шаблон системного наименования. Новые правила применяются
               только к следующим документам; существующая история не изменяется автоматически.
             </p>
           </div>
@@ -3790,80 +3733,7 @@ function RequestConclusionSettingsPanel({
         </div>
       </div>
 
-      <section className="overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm shadow-slate-200/60">
-        <div className="flex items-start gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
-          <Layers3 className="mt-0.5 h-5 w-5 shrink-0 text-sky-600" />
-          <div>
-            <h4 className="text-sm font-semibold text-slate-900">Разделение системных документов</h4>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              «По шифру» учитывает проект и шифр, а «По линии» — проект, шифр и линию. Стыки с неполными
-              данными показываются предупреждением и блокируют сохранение, пока необходимые поля не заполнены.
-            </p>
-          </div>
-        </div>
-
-        <div className="divide-y divide-slate-200">
-          {SYSTEM_DOCUMENT_SPLIT_SECTIONS.map((section) => (
-            <div key={section.title} className="px-4 py-4">
-              <div className="mb-3">
-                <h5 className="text-sm font-semibold text-slate-800">{section.title}</h5>
-                <p className="mt-0.5 text-xs text-slate-500">{section.description}</p>
-              </div>
-              <div className="divide-y divide-slate-100 border-y border-slate-100">
-                {section.items.map((item) => {
-                  const selectedOption = SYSTEM_DOCUMENT_SPLIT_MODE_OPTIONS.find(
-                    (option) => option.id === settings.splitModes[item.id],
-                  )
-                  return (
-                    <div key={item.id} className="grid gap-3 py-3 lg:grid-cols-[minmax(240px,1fr)_minmax(220px,320px)] lg:items-center">
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-slate-800">{item.title}</div>
-                        <div className="mt-0.5 text-xs leading-5 text-slate-500">{item.description}</div>
-                      </div>
-                      <label className="block min-w-0">
-                        <span className="sr-only">Разделение: {item.title}</span>
-                        <select
-                          value={settings.splitModes[item.id]}
-                          onChange={(event) => updateSplitMode(item.id, event.target.value as SystemDocumentSplitMode)}
-                          className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
-                        >
-                          {SYSTEM_DOCUMENT_SPLIT_MODE_OPTIONS.map((option) => (
-                            <option key={option.id} value={option.id}>{option.label}</option>
-                          ))}
-                        </select>
-                        <span className="mt-1 block text-xs leading-4 text-slate-400">{selectedOption?.description}</span>
-                      </label>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="max-w-3xl">
-            <div className="text-sm font-semibold text-slate-800">Существующая история</div>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              Сохранение правила не меняет старые документы. Предварительный просмотр покажет затрагиваемые
-              виды, документы, стыки, будущие группы и возможный пересчет системных имен.
-            </p>
-            {systemDocumentRebuildMessage ? (
-              <p className="mt-2 text-xs font-semibold text-emerald-700">{systemDocumentRebuildMessage}</p>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setSystemDocumentRebuildMessage('')
-              setIsSystemDocumentRebuildOpen(true)
-            }}
-            className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-amber-300 bg-white px-3 text-sm font-semibold text-amber-900 hover:bg-amber-50"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Пересобрать системные документы по текущим правилам
-          </button>
-        </div>
-      </section>
+      <p className="rounded-md border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">Разделение выбирается в верхней панели при создании документа. Последний успешно применённый вариант запоминается для всех пользователей. Существующие документы можно разделить или переименовать в разделе «Документы»; сброс правил имён не меняет запомненное разделение.</p>
 
       <section aria-labelledby="request-naming-settings-title" className="space-y-6">
         <div className="border-b border-slate-300 pb-3">
@@ -3900,12 +3770,6 @@ function RequestConclusionSettingsPanel({
         ))}
       </section>
 
-      <SystemDocumentRebuildDialog
-        open={isSystemDocumentRebuildOpen}
-        runProtectedSettingsChange={runProtectedSettingsChange}
-        onClose={() => setIsSystemDocumentRebuildOpen(false)}
-        onApplied={setSystemDocumentRebuildMessage}
-      />
     </div>
   )
 }

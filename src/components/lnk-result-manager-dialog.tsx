@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { ArrowLeftRight, CalendarClock, CheckSquare2, ClipboardCheck, FileSpreadsheet, Layers3, ListFilter, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { CalendarClock, CheckSquare2, ClipboardCheck, FileSpreadsheet, Layers3, ListFilter, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import { DialogHeader } from '@/components/dialog-header'
@@ -72,7 +72,6 @@ export type LnkResultManagerDialogProps = {
   onOpenAddResult: () => void
   onOpenRows: (row: WeldRow) => void
   onOpenDocument: (row: WeldRow, fieldKey: WeldFieldKey) => void
-  onChangeControlStage?: (reference: SystemDocumentReference & { documentId: number }) => void
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
   onOpenPstoHistory?: (row: WeldRow) => void
   onCopyDocumentName: (documentName: string) => void
@@ -120,7 +119,6 @@ export function LnkResultManagerDialog({
   onOpenAddResult,
   onOpenRows,
   onOpenDocument,
-  onChangeControlStage,
   onOpenJournalRows,
   onOpenPstoHistory,
   onCopyDocumentName,
@@ -258,7 +256,6 @@ export function LnkResultManagerDialog({
       : !canOpenDocument(method.conclusionKey)
         ? 'Сначала загрузите шаблон этого заключения в настройках документов'
         : null
-    const transferReference = getSystemDocumentReferenceForField(row, method.conclusionKey)
 
     setSelectedEntryKey(changeKey)
     contextMenuRef.current?.open(buildManagerContextMenu({
@@ -313,20 +310,6 @@ export function LnkResultManagerDialog({
             : undefined,
           onSelect: () => onRenameConclusion(row, method.requestKey, conclusionDraft),
         },
-        ...(onChangeControlStage ? [{
-          id: 'change-control-stage',
-          label: 'Изменить этап контроля',
-          icon: ArrowLeftRight,
-          disabled: !transferReference?.documentId || actionPending,
-          onSelect: () => {
-            if (transferReference?.documentId) {
-              onChangeControlStage({
-                ...transferReference,
-                documentId: transferReference.documentId,
-              })
-            }
-          },
-        }] : []),
       ],
       dangerActions: [{
         id: 'delete-result',
@@ -522,23 +505,6 @@ export function LnkResultManagerDialog({
                       <FileSpreadsheet className="mr-2 h-4 w-4" />
                       Открыть документ
                     </Button>
-                    {onChangeControlStage ? (
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          if (selectedDocumentReference?.documentId) {
-                            onChangeControlStage({
-                              ...selectedDocumentReference,
-                              documentId: selectedDocumentReference.documentId,
-                            })
-                          }
-                        }}
-                        disabled={!selectedDocumentReference?.documentId || isResultCorrectionPending || isResultReplacementPending || isLayeredControlRemovalPending}
-                      >
-                        <ArrowLeftRight className="mr-2 h-4 w-4" />
-                        Изменить этап
-                      </Button>
-                    ) : null}
                   </div>
                 </div>
 

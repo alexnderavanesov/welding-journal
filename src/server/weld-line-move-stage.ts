@@ -1,30 +1,27 @@
 import { preHeatTreatmentControls, weldJoints, type WeldJoint } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
-  buildPrimaryToPreHeatTreatmentTransfer,
-  findBlockingLnkStageTransferChronologyIssue,
-  type LnkStageTransferControlWrite,
-} from '@/lib/lnk-stage-transfer'
-import {
   assertPstoCancellationDateAfterHistory,
   buildPstoAssignedKeepPrimaryValidationRow,
   buildPstoMovedToCancelledLineRow,
   buildPstoMovedToUnassignedLineRow,
-  getPrimaryStagedMethodCodes,
   getPstoLineIdentityKey,
   hasPerformedPstoHistory,
   normalizePstoLineIdentity,
-  requiresPrimaryStageResolutionForAssignedPstoLine,
+  normalizePstoLineMoveTargetIdentity,
+  hasPrimaryLnkHistoryBeforePstoAssignment,
   type PstoWeldLineMoveDisposition,
 } from '@/lib/psto-line-assignment'
 import { calculateFinalStatus } from '@/lib/weld-status'
+import { buildPstoContextualStageCorrection } from '@/lib/psto-contextual-stage-correction'
 import { loadControlProcessSettingsFromTransaction } from '@/server/control-process-settings'
-import { removeSourcedSystemDocumentPositionsInTransaction } from '@/server/system-document-index'
 import { type SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
 import { hasPstoLifecycleHistory, loadServerWeldValidationContext } from '@/server/weld-save-validation'
-import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { and, sql } from 'drizzle-orm'
 import { normalizePstoLineIdentityPart } from '@/lib/psto-line-assignment'
+import { removeSourcedSystemDocumentPositionsInTransaction } from '@/server/system-document-index'
+import { buildNumberArrayMatch } from '@/server/weld-request-utils'
+import { WELDING_PROFILE_FIELD_KEYS } from '@/server/weld-mutation-policy'
 
 export function buildWeldLineIdentityWhere(identity: ReturnType<typeof normalizePstoLineIdentity>) {
   return and(
@@ -34,34 +31,7 @@ export function buildWeldLineIdentityWhere(identity: ReturnType<typeof normalize
   )
 }
 
-export function assertChainLineMoveLnkStageTransfersAllowed(
-  records: WeldRow[],
-  previousRows: ReadonlyMap<number, WeldJoint>,
-  decisions: ReadonlyMap<number, PstoWeldLineMoveDisposition>,
-) {
-  for (const record of records) {
-    const disposition = decisions.get(record.id)
-    const targetStage = disposition === 'movePrimaryToBeforeHeatTreatment'
-      ? 'beforeHeatTreatment'
-      : disposition === 'promoteBeforeHeatTreatment'
-        ? 'primary'
-        : null
-    if (!targetStage) continue
-    const previous = previousRows.get(record.id)
-    if (!previous) continue
-    const issue = findBlockingLnkStageTransferChronologyIssue({
-      previousRows: [previous as unknown as WeldRow],
-      nextRows: [record],
-      targetStage,
-    })
-    if (issue) {
-      throw new Error(`Перенос цепочки невозможен: смена этапа ЛНК нарушает данные. ${issue.message}`)
-    }
-  }
-}
-
 export async function preparePstoLineMoveRecordInTransaction({
-  tx,
   record: inputRecord,
   previousStored,
   validationContext,
@@ -75,15 +45,9 @@ export async function preparePstoLineMoveRecordInTransaction({
   processSettings: Awaited<ReturnType<typeof loadControlProcessSettingsFromTransaction>>
   disposition?: PstoWeldLineMoveDisposition
 }) {
-  const id = previousStored.id
   const previous = previousStored as unknown as WeldRow
-  let record = inputRecord
+  let record: WeldRow = { ...inputRecord, ...normalizePstoLineMoveTargetIdentity(inputRecord) }
   let validationPrevious = previousStored
-  let pendingPreHeatTreatmentControls: LnkStageTransferControlWrite[] = []
-  const cleanup: PstoLineMoveCleanupPlan = {
-    preHeatTreatmentControlIds: [],
-    preHeatTreatmentWeldJointId: null,
-  }
   const targetIdentity = normalizePstoLineIdentity(record)
   const targetLineState = targetIdentity.line
     ? validationContext.pstoLineAssignments.get(getPstoLineIdentityKey(targetIdentity))
@@ -99,70 +63,32 @@ export async function preparePstoLineMoveRecordInTransaction({
     targetLineState.cancelledCount === targetLineState.rowCount,
   )
   const identityChanged = getPstoLineIdentityKey(previous) !== getPstoLineIdentityKey(targetIdentity)
-  if (
-    disposition === 'movePrimaryToBeforeHeatTreatment' &&
-    !targetLineAssigned
-  ) {
-    throw new Error('Назначение ПСТО целевой линии изменилось. Вернитесь к форме и проверьте линию еще раз.')
+  if (disposition !== undefined && disposition !== 'keepPrimary' && disposition !== 'movePreHeatTreatmentToPrimary') {
+    throw new Error('Смена этапа НК больше не поддерживается. Обновите окно: при смене линии все этапы сохраняются.')
   }
-  const requiresPrimaryStageResolution = (
+  const actuallyChanged = getPstoLineIdentityKey(normalizePstoLineMoveTargetIdentity(previous)) !== getPstoLineIdentityKey(targetIdentity)
+  if (disposition === 'movePreHeatTreatmentToPrimary' && (
+    !actuallyChanged || targetLineAssigned || !targetIdentity.projectTitle || !targetIdentity.subtitleCode || !targetIdentity.line
+  )) {
+    throw new Error('Исправление НК до ТО доступно только при переносе стыка на другую линию без ПСТО. Проверьте целевую линию.')
+  }
+  const preservesPrimaryHistory = (
     processSettings.preHeatTreatmentLnkEnabled &&
     identityChanged &&
     targetLineAssigned &&
-    requiresPrimaryStageResolutionForAssignedPstoLine(previous)
+    hasPrimaryLnkHistoryBeforePstoAssignment(previous)
   )
-  const requiresLifecycleCleanup = identityChanged && !targetLineAssigned && hasPstoLifecycleHistory(previousStored)
+  const preservesLifecycleHistory = identityChanged && !targetLineAssigned && hasPstoLifecycleHistory(previousStored)
 
-  if (requiresPrimaryStageResolution) {
-    if (
-      disposition !== 'keepPrimary' &&
-      disposition !== 'movePrimaryToBeforeHeatTreatment'
-    ) {
-      throw new Error(
-        `Стык ${String(previous.joint ?? '').trim() || `#${id}`}: выберите, сохранить основной комплект, ` +
-        'или перенести его в «До ТО». Удаление документов выполняется отдельно.',
-      )
-    }
-    const positions = getPrimaryStagedMethodCodes(previous).map((methodCode) => ({
-      rowId: id,
-      methodCode,
-    }))
-    const moveRow = {
-      ...record,
-      duplicateControls: previous.duplicateControls ?? [],
-      preHeatTreatmentControls: previous.preHeatTreatmentControls ?? [],
-      pstoRepeatCycles: previous.pstoRepeatCycles ?? [],
-    } as WeldRow
-
-    if (disposition === 'keepPrimary') {
-      record = moveRow
-      validationPrevious = buildPstoAssignedKeepPrimaryValidationRow(previous) as unknown as WeldJoint
-    } else if (disposition === 'movePrimaryToBeforeHeatTreatment') {
-      const transfer = buildPrimaryToPreHeatTreatmentTransfer({
-        rows: [moveRow],
-        positions,
-      })
-      pendingPreHeatTreatmentControls = transfer.controls
-      record = {
-        ...transfer.rows[0]!,
-        preHeatTreatmentControls: transfer.controls.map((control, index) => ({
-          ...control,
-          id: -(id * 10_000 + index + 1),
-        })),
-      }
-    }
+  if (preservesPrimaryHistory) {
+    // Existing main control stays historical; new work still uses the normal stage prerequisites.
+    validationPrevious = buildPstoAssignedKeepPrimaryValidationRow(previous) as unknown as WeldJoint
   }
 
-  if (requiresLifecycleCleanup) {
-    if (disposition !== 'keepPrimary' && disposition !== 'promoteBeforeHeatTreatment') {
-      throw new Error(
-        `Стык ${String(previous.joint ?? '').trim() || `#${id}`}: выберите перенос НК до ТО в основной ` +
-        'либо сохранение всех этапов и истории при смене линии.',
-      )
-    }
+  if (preservesLifecycleHistory) {
     const controls = previous.preHeatTreatmentControls ?? []
     const preservesPerformedHistory = hasPerformedPstoHistory(previous)
-    if (targetLineCancelled && preservesPerformedHistory) {
+    if (targetLineCancelled && (preservesPerformedHistory || disposition === 'movePreHeatTreatmentToPrimary')) {
       assertPstoCancellationDateAfterHistory(
         [previous],
         String(targetLineState?.cancellationDate ?? '').trim(),
@@ -174,71 +100,61 @@ export async function preparePstoLineMoveRecordInTransaction({
       preHeatTreatmentControls: controls,
       pstoRepeatCycles: previous.pstoRepeatCycles ?? [],
     } as WeldRow
-    const cleanedRecord = targetLineCancelled
+    const preservedRecord = targetLineCancelled
       ? buildPstoMovedToCancelledLineRow({
           row: moveRow,
           controls,
-          disposition,
           cancellationDate: targetLineState?.cancellationDate ?? '',
           cancellationBasis: targetLineState?.cancellationBasis ?? '',
         })
-      : buildPstoMovedToUnassignedLineRow({ row: moveRow, controls, disposition })
-    cleanedRecord.finalStatus = calculateFinalStatus(cleanedRecord)
-    record = cleanedRecord
+      : buildPstoMovedToUnassignedLineRow({ row: moveRow, controls })
+    preservedRecord.finalStatus = calculateFinalStatus(preservedRecord)
+    record = preservedRecord
+
+    if (disposition === 'movePreHeatTreatmentToPrimary') {
+      try {
+        record = buildPstoContextualStageCorrection(record, 'primary', processSettings, validationContext.systemIndexSettings)
+      } catch (error) {
+        throw new Error(`Стык ${record.joint || `#${record.id}`}: ${error instanceof Error ? error.message : String(error)}`)
+      }
+      // Strict chronology above checks the actual draft, including a changed weld date.
+      record.finalStatus = calculateFinalStatus(record)
+    }
 
     validationPrevious = {
-      ...cleanedRecord,
+      ...record,
+      // Only stage/assignment changes form the validation baseline. Keep original
+      // editable values so a simultaneous weld-date, stamp or officiality edit
+      // cannot be mistaken for unchanged history and bypass ordinary validation.
+      ...Object.fromEntries(WELDING_PROFILE_FIELD_KEYS.map(key => [key, previous[key]])),
+      officiality: previous.officiality,
       projectTitle: previous.projectTitle,
       subtitleCode: previous.subtitleCode,
       line: previous.line,
     } as unknown as WeldJoint
-
-    if (disposition === 'promoteBeforeHeatTreatment' && controls.length > 0) {
-      cleanup.preHeatTreatmentControlIds = controls.map((control) => control.id)
-      cleanup.preHeatTreatmentWeldJointId = id
-    }
+  }
+  if (disposition === 'movePreHeatTreatmentToPrimary' && !preservesLifecycleHistory) {
+    throw new Error('Комплект НК до ТО больше не найден. Обновите окно переноса.')
   }
 
   return {
     record,
     validationPrevious,
-    pendingPreHeatTreatmentControls,
-    requiresLifecycleCleanup,
-    cleanup,
+    preservesLifecycleHistory,
+    preserveRecordedControlHistory: actuallyChanged,
+    transferredPreControlIds: disposition === 'movePreHeatTreatmentToPrimary'
+      ? (previous.preHeatTreatmentControls ?? []).map(control => control.id)
+      : [],
   }
 }
 
-export type PstoLineMoveCleanupPlan = {
-  preHeatTreatmentControlIds: number[]
-  preHeatTreatmentWeldJointId: number | null
-}
-
-export async function applyPstoLineMoveCleanupInTransaction(
+/** Call once per transaction, after validating every weld, never once per chain row. */
+export async function removeTransferredPreControlsInTransaction(
   tx: SystemDocumentSequenceTransaction,
-  plans: readonly PstoLineMoveCleanupPlan[],
+  controlIds: readonly number[],
 ) {
-  const preHeatTreatmentControlIds = [...new Set(
-    plans.flatMap((plan) => plan.preHeatTreatmentControlIds),
-  )]
-  const preHeatTreatmentWeldJointIds = [...new Set(
-    plans.flatMap((plan) => plan.preHeatTreatmentWeldJointId === null
-      ? []
-      : [plan.preHeatTreatmentWeldJointId]),
-  )]
-  if (preHeatTreatmentControlIds.length > 0) {
-    await removeSourcedSystemDocumentPositionsInTransaction({
-      tx,
-      sourceKind: 'beforeHeatTreatment',
-      relationIds: preHeatTreatmentControlIds,
-    })
-  }
-  if (preHeatTreatmentWeldJointIds.length > 0) {
-    await tx
-      .delete(preHeatTreatmentControls)
-      .where(buildNumberArrayMatch(
-        preHeatTreatmentControls.weldJointId,
-        preHeatTreatmentWeldJointIds,
-      ))
-  }
-
+  const ids = [...new Set(controlIds)]
+  if (ids.length === 0) return
+  await removeSourcedSystemDocumentPositionsInTransaction({ tx, sourceKind: 'beforeHeatTreatment', relationIds: ids })
+  await tx.delete(preHeatTreatmentControls).where(buildNumberArrayMatch(preHeatTreatmentControls.id, ids))
 }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { JointHistoryOverview } from '@/components/joint-history-overview'
@@ -125,7 +125,7 @@ describe('JointHistoryOverview', () => {
       />,
     )
 
-    const status = screen.getByText('ПСТО: проведено · ТВМТ ожидается')
+    const status = screen.getByText('ПСТО: проведено · Ожидает заявку ТВМТ')
     expect(status.className).toContain('bg-amber-50')
     expect(status.className).not.toContain('bg-emerald-50')
   })
@@ -342,7 +342,7 @@ describe('JointHistoryOverview', () => {
 
     expect(screen.getByText('Работа по стыку завершена')).toBeInTheDocument()
     expect(screen.getByText('Линия ПСТО')).toBeInTheDocument()
-    expect(screen.getByText('отменена')).toBeInTheDocument()
+    expect(screen.getAllByText('ПСТО отменено')).toHaveLength(2)
     expect(screen.queryByText('Цикл 1')).not.toBeInTheDocument()
     expect(screen.queryByText(/ПСТО: ожидает заявку/)).not.toBeInTheDocument()
   })
@@ -391,8 +391,65 @@ describe('JointHistoryOverview', () => {
     expect(screen.getByText('НК до ТО не годен')).toBeInTheDocument()
     expect(screen.getByText('Основной этап НК')).toBeInTheDocument()
     expect(screen.queryByText('Основной НК')).not.toBeInTheDocument()
-    expect(screen.getAllByText('нет потребности')).toHaveLength(4)
+    expect(screen.getAllByText('нет потребности')).toHaveLength(3)
+    expect(screen.getByText('ПСТО не требуется: НК до ТО имеет негодный результат')).toBeInTheDocument()
     expect(screen.queryByText(/ожидает заявку ПСТО/)).not.toBeInTheDocument()
     expect(screen.queryByText('Цикл ПСТО пока заблокирован')).not.toBeInTheDocument()
+  })
+
+  it.each([null, 'отменен'])('keeps captions inside the sections and preserves old document links (%s)', pstoRequired => {
+    const row = { id: 81, joint: 'F81', weldDate: '2026-09-01', pstoRequired,
+      preHeatTreatmentControls: [{ id: 81, weldJointId: 81, method: 'ВИК', requestName: 'Старая заявка ВИК', conclusionName: 'Старое заключение ВИК', result: 'годен' }],
+      pstoRequest: 'Старая заявка ПСТО',
+    } as WeldRow
+    const onOpenDocument = vi.fn()
+    render(<JointHistoryOverview row={row} onOpenDocument={onOpenDocument} onOpenReport={vi.fn()}
+      onShowInReport={vi.fn()} onEditRow={vi.fn()} onRunNextAction={vi.fn()} onOpenTasks={vi.fn()} />)
+    const label = pstoRequired ? 'ПСТО отменено' : 'ПСТО не предусмотрено'
+    expect(screen.getAllByText(label)).toHaveLength(2)
+    for (const title of ['НК до ТО', 'ПСТО и ТВМТ']) {
+      const section = screen.getByRole('heading', { name: title }).closest('section')!
+      expect(within(section).getByText(label)).toBeInTheDocument()
+      expect(within(section).queryByText('Нет данных')).not.toBeInTheDocument()
+    }
+    for (const name of ['Старая заявка ВИК', 'Старое заключение ВИК', 'Старая заявка ПСТО']) {
+      fireEvent.click(screen.getByRole('button', { name }))
+    }
+    expect(onOpenDocument).toHaveBeenCalledTimes(3)
+    expect(onOpenDocument).toHaveBeenLastCalledWith(expect.objectContaining({ id: 81, pstoRequest: 'Старая заявка ПСТО' }), 'pstoRequest')
+  })
+
+  it('updates the empty captions and settings without adding anything above the two sections', () => {
+    const props = { onOpenDocument: vi.fn(), onOpenReport: vi.fn(), onShowInReport: vi.fn(), onEditRow: vi.fn(), onRunNextAction: vi.fn(), onOpenTasks: vi.fn() }
+    const row = { id: 82, joint: 'F82', pstoRequired: 'да', hasVik: 'да' } as WeldRow
+    const { rerender } = render(<JointHistoryOverview {...props} row={row} />)
+    const pre = () => within(screen.getByRole('heading', { name: 'НК до ТО' }).closest('section')!)
+    const psto = () => within(screen.getByRole('heading', { name: 'ПСТО и ТВМТ' }).closest('section')!)
+    expect(pre().getByText('Ожидает сварку')).toBeInTheDocument()
+    expect(psto().getByText('Ожидает сварку')).toBeInTheDocument()
+    expect(psto().queryByText('Цикл 1')).not.toBeInTheDocument()
+    rerender(<JointHistoryOverview {...props} row={{ ...row, weldDate: '2026-09-01' }} />)
+    expect(pre().getByText('Ожидает заявку НК до ТО')).toBeInTheDocument()
+    expect(psto().getByText('Ожидает НК до ТО')).toBeInTheDocument()
+    rerender(<JointHistoryOverview {...props} row={{ ...row, weldDate: '2026-09-01' }}
+      controlProcessSettings={{ preHeatTreatmentLnkEnabled: false, allowPrimaryLnkBeforePreviousStagesComplete: false }} />)
+    expect(pre().getByText('НК до ТО отключён в настройках')).toBeInTheDocument()
+    expect(psto().getByText('Ожидает заявку ПСТО')).toBeInTheDocument()
+    rerender(<JointHistoryOverview {...props} row={{ ...row, pstoRequired: null, pstoResult: 'ожидает заявку' }} />)
+    expect(pre().getByText('ПСТО не предусмотрено')).toBeInTheDocument()
+    expect(psto().getByText('ПСТО не предусмотрено')).toBeInTheDocument()
+    expect(psto().queryByText('Цикл 1')).not.toBeInTheDocument()
+  })
+
+  it('does not hide partial old result text or a note after cancellation without other cycle documents', () => {
+    const row = { id: 83, joint: 'F83', pstoRequired: 'отменен',
+      pstoResult: 'Старое значение результата', pstoNote: 'Сохранённое пояснение',
+    } as WeldRow
+    render(<JointHistoryOverview row={row} onOpenDocument={vi.fn()} onOpenReport={vi.fn()}
+      onShowInReport={vi.fn()} onEditRow={vi.fn()} onRunNextAction={vi.fn()} onOpenTasks={vi.fn()} />)
+    const section = within(screen.getByRole('heading', { name: 'ПСТО и ТВМТ' }).closest('section')!)
+    expect(section.getByText('ПСТО отменено')).toBeInTheDocument()
+    expect(section.getByText('ПСТО: Старое значение результата')).toBeInTheDocument()
+    expect(section.getByText('Сохранённое пояснение')).toBeInTheDocument()
   })
 })

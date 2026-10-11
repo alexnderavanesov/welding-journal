@@ -5,6 +5,20 @@ import { PreHeatTreatmentResultManagerDialog } from '@/components/pre-heat-treat
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 describe('PreHeatTreatmentResultManagerDialog', () => {
+  it.each(['request', 'result'] as const)('opens the %s row menu without offering a stage transfer', registryMode => {
+    const row = { id: 7, joint: 'F7', line: 'L7',
+      preHeatTreatmentControls: [{ id: 11, weldJointId: 7, method: 'ВИК',
+        requestName: 'З-11', requestDate: '2026-08-04', result: 'годен',
+        conclusionDate: '2026-08-05', conclusionName: 'К-11' }] } as WeldRow
+    render(<PreHeatTreatmentResultManagerDialog rows={[row]} registryMode={registryMode} isPending={false}
+      onClose={vi.fn()} onOpenWorkflow={vi.fn()} onCorrect={vi.fn()} onDeleteRequest={vi.fn()} onDeleteResult={vi.fn()}
+      onOpenDocument={vi.fn()} onOpenJournalRows={vi.fn()} onCopyDocumentName={vi.fn()} canOpenDocument={() => true} />)
+    fireEvent.contextMenu(within(screen.getByRole('complementary')).getByText(registryMode === 'request' ? 'З-11' : 'К-11'))
+    const menu = screen.getByTestId('context-action-menu')
+    expect(within(menu).getByRole('button', { name: registryMode === 'request' ? 'Изменить дату заявки' : 'Изменить дату заключения' })).toBeVisible()
+    expect(within(menu).queryByRole('button', { name: /Изменить этап/ })).not.toBeInTheDocument()
+  })
+
   it('shows the officiality warning next to the disabled result deletion', () => {
     const row = { id: 7, joint: 'F7', officiality: 'неофициальный',
       preHeatTreatmentControls: [{ id: 11, weldJointId: 7, method: 'УЗК', result: 'ремонт',

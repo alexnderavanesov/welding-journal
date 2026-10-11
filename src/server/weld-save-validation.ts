@@ -62,7 +62,7 @@ import {
   hasPstoLifecycleData,
   normalizePstoLineIdentity,
   normalizePstoLineIdentityPart,
-  requiresPrimaryStageResolutionForAssignedPstoLine,
+  hasPrimaryLnkHistoryBeforePstoAssignment,
 } from '@/lib/psto-line-assignment'
 import {
   isControlEnabledValue,
@@ -344,13 +344,13 @@ function applyPstoLineAssignments({
       targetAssigned &&
       previous &&
       context.controlProcessSettings.preHeatTreatmentLnkEnabled &&
-      requiresPrimaryStageResolutionForAssignedPstoLine(previous as unknown as WeldRow)
+      hasPrimaryLnkHistoryBeforePstoAssignment(previous as unknown as WeldRow)
     ) {
       throw buildPstoLineAssignmentError({
         record,
         index,
         importMode,
-        details: 'стык переносится на линию с ПСТО, но у него уже есть основной комплект ВИК/РК/УЗК/ПВК. Выполните перенос через карточку стыка и выберите: сохранить основной комплект и позднее оформить отдельный НК до ТО либо перенести комплект в «До ТО». Удаление ошибочных документов выполняется отдельно.',
+        details: 'стык переносится на линию с ПСТО, но у него уже есть основной комплект ВИК/РК/УЗК/ПВК. Выполните перенос через карточку стыка с сохранением всех этапов контроля. Основной НК не заменяет НК до ТО. Удаление ошибочных документов выполняется отдельно.',
       })
     }
     if (
@@ -365,7 +365,7 @@ function applyPstoLineAssignments({
         importMode,
         details: targetCancelled
           ? 'стык переносится на отмененную линию ПСТО, но у него уже есть документы ПСТО/ТВМТ, повторные циклы или НК до ТО. Выполните перенос через карточку стыка.'
-          : 'стык переносится на линию без ПСТО, но у него уже есть документы ПСТО/ТВМТ, повторные циклы или НК до ТО. Сначала нужно выбрать судьбу этих данных в профильном процессе.',
+          : 'стык переносится на линию без ПСТО, но у него уже есть документы ПСТО/ТВМТ, повторные циклы или НК до ТО. Выполните перенос через карточку стыка с сохранением всех этапов и истории.',
       })
     }
 

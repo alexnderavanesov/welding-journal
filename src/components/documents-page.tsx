@@ -2,6 +2,7 @@ import {
   type CSSProperties,
   type ReactNode,
   type SetStateAction,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -15,7 +16,6 @@ import {
   CheckCircle2,
   ChevronDown,
   Download,
-  ExternalLink,
   FilePenLine,
   FileSpreadsheet,
   FileText,
@@ -23,9 +23,9 @@ import {
   ListFilter,
   Maximize2,
   Minimize2,
+  Merge,
   Minus,
   Archive,
-  ArrowLeftRight,
   PanelLeftClose,
   PanelLeftOpen,
   Rows3,
@@ -36,9 +36,10 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
-import { ContextActionMenu, type ContextActionMenuState } from '@/components/context-action-menu'
+import { ContextActionMenu, type ContextActionMenuItem, type ContextActionMenuState } from '@/components/context-action-menu'
+import type { DocumentOperationRequest } from '@/lib/system-document-operation'
 import { DocumentHistoryColumnChooser } from '@/components/document-history-column-chooser'
-import { LnkStageTransferDialog } from '@/components/lnk-stage-transfer-dialog'
+import { HistoryDocumentPreview, type HistoryDocumentPreviewRequest } from '@/components/history-document-preview'
 import { PaginationBar } from '@/components/pagination-bar'
 import { ReportNotificationToast } from '@/components/report-notification-toast'
 import { Button } from '@/components/ui/button'
@@ -65,7 +66,6 @@ import {
   loadGeneratedDocumentHistory,
   loadGeneratedDocumentHistoryFilterOptions,
   loadGeneratedDocumentRows,
-  openGeneratedDocument,
   type StoredGeneratedDocument,
 } from '@/lib/generated-document-storage'
 import {
@@ -100,8 +100,7 @@ import {
   loadSystemDocumentHistory,
   loadSystemDocumentHistoryFilterOptions,
   loadSystemDocumentRows,
-  openSystemDocument,
-  renameSystemDocumentToCurrentName,
+  createSystemDocumentPreviewRecord,
 } from '@/lib/system-document-storage'
 import {
   getSystemDocumentTargetReport,
@@ -118,6 +117,7 @@ import {
   type SystemDocumentTemplateId,
 } from '@/lib/system-document-template-types'
 import { useSystemDocumentTemplateAvailability } from '@/lib/use-system-document-template-availability'
+import { DocumentOperationDialog } from '@/components/document-operation-dialog'
 import {
   SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
 } from '@/lib/system-document-sequence-storage'
@@ -152,8 +152,6 @@ import {
   useDocumentHistorySessionState,
   useDocumentHistorySessionValue,
 } from '@/lib/use-document-history-session-state'
-import { isPreHeatTreatmentLnkMethodCode } from '@/lib/lnk-control-stage'
-import { useControlProcessSettings } from '@/lib/control-process-settings'
 import {
   getScopedSystemDocumentHistoryFilterOptions,
   getScopedSystemDocumentMethodValues,
@@ -164,6 +162,7 @@ import {
   type SystemDocumentMethodScope,
 } from '@/lib/system-document-stage'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
+import { useDocumentEscapeKey } from '@/lib/use-document-escape-key'
 
 type DocumentsPageProps = {
   welderStamps: WelderStampRecord[]
@@ -412,6 +411,7 @@ export function DocumentsPage({
   onOpenJointHistory,
 }: DocumentsPageProps) {
   const queryClient = useQueryClient()
+  const [historyActionsContainer, setHistoryActionsContainer] = useState<HTMLDivElement | null>(null)
   const { requireDocumentGenerationPassword } = useSecurityGuard()
   const initialRange = useMemo(() => getCurrentMonthRange(), [])
   const [periodFrom, setPeriodFrom] = useState(initialRange.from)
@@ -461,6 +461,11 @@ export function DocumentsPage({
   const isSystemDocument = Boolean(activeSystemDocumentOption)
   const isLayeredDocumentView = Boolean(activeLayeredDocumentView)
   const isManualGeneratedDocumentView = !isSystemDocument && !isLayeredDocumentView
+  useDocumentEscapeKey({
+    enabled: isManualGeneratedDocumentView && activeWorkspaceTab === 'generation' && !isGenerating && !isPreviewFullscreen,
+    hasFilters: Boolean(selectedProjects.length || selectedSubtitles.length || selectedLines.length),
+    onClearFilters: () => { setSelectedProjects([]); setSelectedSubtitles([]); setSelectedLines([]) },
+  })
   const availableHistoryColumns = useMemo(
     () => {
       if (activeLayeredDocumentView) return [...LAYERED_GENERATED_DOCUMENT_HISTORY_COLUMNS]
@@ -784,9 +789,10 @@ export function DocumentsPage({
   }
 
   return (
-    <div className="w-full min-w-0 space-y-5 overflow-x-hidden">
-      <div className="min-w-0 rounded-md border border-[#cfdee6] bg-[#f4f8fa] p-3">
-        <div className="flex flex-wrap items-start gap-3">
+    <div className="w-full min-w-0 space-y-5">
+      <div data-documents-navigation className="sticky top-0 z-30 space-y-2 rounded-xl border border-[#cfdee6] bg-[#f4f8fa]/95 p-3 shadow-sm backdrop-blur-sm">
+      <div className="min-w-0">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-2">
             <DocumentTypeGroupLabel>Общие</DocumentTypeGroupLabel>
             {DOCUMENT_TYPE_OPTIONS.map((option) => {
@@ -877,11 +883,14 @@ export function DocumentsPage({
             ))}
           </div>
           {isSystemDocument || isLayeredDocumentView || activeWorkspaceTab === 'history' ? (
-            <DocumentHistoryColumnChooser
-              columns={availableHistoryColumns}
-              visibleColumnKeys={visibleHistoryColumnKeys}
-              onChange={changeVisibleHistoryColumns}
-            />
+            <div className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2 lg:flex-col lg:items-end">
+              <DocumentHistoryColumnChooser
+                columns={availableHistoryColumns}
+                visibleColumnKeys={visibleHistoryColumnKeys}
+                onChange={changeVisibleHistoryColumns}
+              />
+              {isSystemDocument ? <div ref={setHistoryActionsContainer} /> : null}
+            </div>
           ) : null}
         </div>
       </div>
@@ -922,6 +931,8 @@ export function DocumentsPage({
           </button>
         </div>
       ) : null}
+
+      </div>
 
       {isManualGeneratedDocumentView && activeWorkspaceTab === 'generation' ? (
       <section className="min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white">
@@ -1223,6 +1234,7 @@ export function DocumentsPage({
         isSystemDocument ? (
           <SystemDocumentsPanel
             key={activeDocumentType}
+            actionsContainer={historyActionsContainer}
             documentLabel={activeSystemDocumentOption!.label}
             documentType={activeSystemDocumentOption!.documentType}
             methodScope={activeSystemDocumentOption!.methodScope}
@@ -1254,14 +1266,8 @@ export function DocumentsPage({
                 queryClient,
                 savedRows ? { upsertRows: savedRows } : undefined,
               )
-              await Promise.all([
-                queryClient.invalidateQueries({
-                  queryKey: [...GENERATED_DOCUMENT_HISTORY_QUERY_KEY, 'system-document-history'],
-                }),
-                queryClient.invalidateQueries({
-                  queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
-                }),
-              ])
+              // The shared refresh already invalidates active document history.
+              await queryClient.invalidateQueries({ queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY })
             }}
           />
         ) : activeLayeredDocumentView ? (
@@ -1409,6 +1415,8 @@ function GeneratedDocumentsPanel({
     navigationRequest?.documentId ?? null,
   )
   const [openingRowsDocumentId, setOpeningRowsDocumentId] = useState<number | null>(null)
+  const [previewRequest, setPreviewRequest] = useState<HistoryDocumentPreviewRequest | null>(null)
+  const closePreview = useCallback(() => setPreviewRequest(null), [])
   const [openRowsError, setOpenRowsError] = useState<string | null>(null)
   const [isDownloadingArchive, setIsDownloadingArchive] = useState(false)
   const confirmAction = useConfirmAction()
@@ -1417,7 +1425,7 @@ function GeneratedDocumentsPanel({
     [visibleColumns],
   )
   const historyGridLayout = useMemo(
-    () => getDocumentHistoryGridLayout({ columns: visibleColumns, actionsWidth: 204 }),
+    () => getDocumentHistoryGridLayout({ columns: visibleColumns, actionsWidth: 172 }),
     [visibleColumns],
   )
 
@@ -1472,6 +1480,12 @@ function GeneratedDocumentsPanel({
   ).length
   const allPageSelected = visibleDocuments.length > 0 && selectedPageCount === visibleDocuments.length
   const hasActiveFilters = hasDocumentHistoryFilters(columnFilters)
+  useDocumentEscapeKey({
+    selectedCount: selectedDocumentIds.size,
+    hasFilters: hasActiveFilters || navigationDocumentId !== null,
+    onClearSelection: () => setSelectedDocumentIds(new Set()),
+    onClearFilters: () => { setNavigationDocumentId(null); setColumnFilters({}); setVisibleLimit(pageSize) },
+  })
   const historyError = historyQuery.error
     ? getDocumentActionErrorMessage(historyQuery.error, 'Не удалось загрузить историю документов.')
     : null
@@ -1566,7 +1580,7 @@ function GeneratedDocumentsPanel({
     }
   }
   const openDocumentRecord = async (documentRecord: StoredGeneratedDocument) => {
-    await openGeneratedDocument(documentRecord, () => createDocumentBlob(documentRecord))
+    setPreviewRequest({ title: documentRecord.title, fileName: documentRecord.fileName, createBlob: () => createDocumentBlob(documentRecord) })
   }
   const downloadDocumentRecord = async (documentRecord: StoredGeneratedDocument) => {
     await downloadGeneratedDocument(documentRecord, () => createDocumentBlob(documentRecord))
@@ -1733,7 +1747,7 @@ function GeneratedDocumentsPanel({
                       }] : []),
                       ...(onRepeat ? [{ id: 'repeat-document', label: 'Повторить с параметрами', icon: SlidersHorizontal, onSelect: () => onRepeat(documentRecord) }] : []),
                       { type: 'separator', id: 'open-separator' },
-                      { id: 'open-document', label: 'Открыть Excel', icon: ExternalLink, onSelect: () => openDocumentRecord(documentRecord) },
+                      { id: 'open-document', label: 'Предпросмотр', icon: FileText, onSelect: () => openDocumentRecord(documentRecord) },
                       { id: 'download-document', label: 'Скачать Excel', icon: Download, onSelect: () => downloadDocumentRecord(documentRecord) },
                       ...(allowDelete ? [
                         { type: 'separator' as const, id: 'delete-separator' },
@@ -1752,7 +1766,7 @@ function GeneratedDocumentsPanel({
                   type="button"
                   className="group min-w-0 text-left"
                   onClick={() => void openDocumentRecord(documentRecord)}
-                  title="Сформировать актуальную версию и открыть Excel"
+                  title="Предпросмотр актуального документа"
                 >
                   <span className="flex min-w-0 items-start gap-2.5">
                     <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[#c9dce5] bg-[#f4fafc] text-[#14779a] transition-colors group-hover:border-[#9fc4d2] group-hover:bg-[#e9f5f8]">
@@ -1809,9 +1823,6 @@ function GeneratedDocumentsPanel({
                       <SlidersHorizontal className="h-4 w-4" />
                     </DocumentHistoryActionButton>
                   ) : null}
-                  <DocumentHistoryActionButton title="Открыть Excel" tone="sky" onClick={() => void openDocumentRecord(documentRecord)}>
-                    <ExternalLink className="h-4 w-4" />
-                  </DocumentHistoryActionButton>
                   <DocumentHistoryActionButton title="Скачать Excel" onClick={() => void downloadDocumentRecord(documentRecord)}>
                     <Download className="h-4 w-4" />
                   </DocumentHistoryActionButton>
@@ -1843,12 +1854,14 @@ function GeneratedDocumentsPanel({
           {selectedDocuments.length > 0 ? ` · выбрано: ${selectedDocuments.length}` : ''}
         </div>
       </div>
+      {previewRequest ? <HistoryDocumentPreview request={previewRequest} onClose={closePreview} /> : null}
       <ContextActionMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
     </section>
   )
 }
 
 function SystemDocumentsPanel({
+  actionsContainer,
   documentLabel,
   documentType,
   methodScope,
@@ -1860,6 +1873,7 @@ function SystemDocumentsPanel({
   onOpenJointHistory,
   onRenamed,
 }: {
+  actionsContainer: HTMLDivElement | null
   documentLabel: string
   documentType: SystemDocumentType
   methodScope: SystemDocumentMethodScope
@@ -1872,8 +1886,6 @@ function SystemDocumentsPanel({
   onRenamed: (savedRows?: WeldRow[]) => Promise<void>
 }) {
   const { requireEditPassword } = useSecurityGuard()
-  const controlProcessSettings = useControlProcessSettings()
-  const confirmAction = useConfirmAction()
   const historyStorageKey = `system:${documentType}:${methodScope}`
   const [columnFilters, setColumnFilters] = useStoredDocumentHistoryFilters(
     historyStorageKey,
@@ -1892,9 +1904,10 @@ function SystemDocumentsPanel({
     DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE,
   )
   const [actionError, setActionError] = useState<string | null>(null)
+  const [previewRequest, setPreviewRequest] = useState<HistoryDocumentPreviewRequest | null>(null)
+  const closePreview = useCallback(() => setPreviewRequest(null), [])
   const [actionNotice, setActionNotice] = useState<string | null>(null)
-  const [renamingDocumentId, setRenamingDocumentId] = useState<string | null>(null)
-  const [stageTransferDocument, setStageTransferDocument] = useState<SystemDocumentSummary | null>(null)
+  const [documentOperation, setDocumentOperation] = useState<{ action: DocumentOperationRequest['action']; documents: SystemDocumentSummary[] } | null>(null)
   const [isDownloadingArchive, setIsDownloadingArchive] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
   const [navigationTarget, setNavigationTarget] = useState(() => navigationRequest
@@ -1914,7 +1927,7 @@ function SystemDocumentsPanel({
     [visibleColumns],
   )
   const historyGridLayout = useMemo(
-    () => getDocumentHistoryGridLayout({ columns: visibleColumns, actionsWidth: 184 }),
+    () => getDocumentHistoryGridLayout({ columns: visibleColumns, actionsWidth: 152 }),
     [visibleColumns],
   )
   const navigationDocumentIdentity = navigationTarget?.identity ?? null
@@ -2017,6 +2030,12 @@ function SystemDocumentsPanel({
   const hasActiveHistoryScope = hasActiveFilters || (
     documentType === 'lnkConclusion' && lnkConclusionTemplateFilter !== 'all'
   )
+  useDocumentEscapeKey({
+    selectedCount: selectedDocumentIds.size,
+    hasFilters: hasActiveHistoryScope || navigationTarget !== null,
+    onClearSelection: () => setSelectedDocumentIds(new Set()),
+    onClearFilters: () => { setNavigationTarget(null); setColumnFilters({}); setLnkConclusionTemplateFilter('all'); setVisibleLimit(pageSize) },
+  })
   const historyError = historyQuery.error
     ? getDocumentActionErrorMessage(historyQuery.error, 'Не удалось загрузить системные документы.')
     : null
@@ -2057,42 +2076,26 @@ function SystemDocumentsPanel({
     }
   }
 
-  const renameDocumentRecord = async (documentRecord: SystemDocumentSummary) => {
-    if (
-      !(await requireEditPassword(
-        `переименование документа «${documentRecord.title}» по текущему системному правилу`,
-      ))
-    ) {
-      return
-    }
-    const confirmed = await confirmAction({
-      title: 'Привести к системному имени',
-      itemName: documentRecord.title,
-      description:
-        'Название будет заново собрано по текущему правилу из настроек. Дата, состав стыков, виды контроля и результаты документа не изменятся.',
-      warning:
-        'Если документ раньше имел системное имя, его номер сохранится. Для пользовательского имени система выделит следующий номер этого типа документа.',
-      confirmLabel: 'Переименовать',
-      tone: 'warning',
-    })
-    if (!confirmed) return
-
-    setRenamingDocumentId(documentRecord.id)
-    await runAction(async () => {
-      const result = await renameSystemDocumentToCurrentName(documentRecord)
-      if (result.changed) await onRenamed()
-      setActionNotice(
-        result.changed
-          ? `Документ переименован: «${result.previousName}» → «${result.nextName}».`
-          : 'Название документа уже соответствует текущему системному правилу.',
-      )
-    })
-    setRenamingDocumentId(null)
+  const openDocumentOperation = async (action: DocumentOperationRequest['action'], documents: SystemDocumentSummary[]) => {
+    if (!documents.length || action === 'merge' && documents.length < 2 || !(await requireEditPassword(action === 'split' ? 'изменение разделения выбранных документов' : action === 'merge' ? 'объединение выбранных документов' : 'переименование выбранных документов'))) return
+    setDocumentOperation({ action, documents: [...documents] })
   }
 
-  const openDocumentRecord = (documentRecord: SystemDocumentSummary) => runAction(() =>
-    openSystemDocument({ reference: documentRecord, summary: documentRecord, welderStamps }),
-  )
+  const documentOperationItems = (selection: SystemDocumentSummary[], suffix = ''): ContextActionMenuItem[] => [
+    { id: 'merge-documents', label: `Объединить${suffix}`, icon: Merge, disabled: selection.length < 2,
+      description: selection.length < 2 ? 'Отметьте минимум два документа. Несовместимые документы объединить нельзя.' : 'Все выбранные документы → один. Сначала проверка совместимости, состава и имени.', onSelect: () => openDocumentOperation('merge', selection) },
+    { id: 'split-documents', label: `Изменить разделение${suffix}`, icon: Rows3, disabled: !selection.length,
+      description: !selection.length ? 'Отметьте документы галочками в списке.' : 'Распределить позиции по проектам, шифрам, линиям или стыкам.', onSelect: () => openDocumentOperation('split', selection) },
+    { id: 'rename-document', label: `Переименовать${suffix}`, icon: FilePenLine, disabled: !selection.length,
+      description: !selection.length ? 'Отметьте документы галочками в списке.' : 'Изменить названия, сохранив состав каждого документа.', onSelect: () => openDocumentOperation('rename', selection) },
+  ]
+
+  const openDocumentRecord = (documentRecord: SystemDocumentSummary) => {
+    setPreviewRequest({
+      ...createSystemDocumentPreviewRecord(documentRecord),
+      createBlob: () => createCurrentSystemDocumentBlob({ reference: documentRecord, summary: documentRecord, welderStamps }),
+    })
+  }
   const downloadDocumentRecord = (documentRecord: SystemDocumentSummary) => runAction(() =>
     downloadSystemDocument({ reference: documentRecord, summary: documentRecord, welderStamps }),
   )
@@ -2150,6 +2153,18 @@ function SystemDocumentsPanel({
 
   return (
     <section className="min-w-0 overflow-hidden rounded-md border border-[#cbdde6] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      {actionsContainer ? createPortal(
+              <button type="button" aria-label={`Действия с документами, выбрано: ${selectedDocuments.length}`} aria-haspopup="menu" aria-expanded={contextMenu?.heading === 'Действия с документами'}
+                className={`inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm font-semibold normal-case transition-colors ${selectedDocuments.length ? 'border-sky-200 bg-white text-sky-800 shadow-sm hover:bg-sky-50' : 'border-[#cbdde6] bg-white text-[#31566a] shadow-sm hover:border-[#79aebe] hover:bg-[#edf7fa]'}`}
+                onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); setContextMenu({ x: rect.right - Math.min(320, window.innerWidth - 16), y: rect.bottom + 4, anchorElement: event.currentTarget,
+                  heading: 'Действия с документами', description: selectedDocuments.length ? `Выбрано: ${selectedDocuments.length} · только отмеченные документы` : 'Сначала отметьте нужные документы в списке.',
+                  items: [...documentOperationItems(selectedDocuments), { type: 'separator', id: 'archive-separator' },
+                    { id: 'download-selected-archive', label: isDownloadingArchive ? 'Готовим архив…' : 'Скачать выбранные архивом', icon: Archive, disabled: !downloadableSelectedDocuments.length || isDownloadingArchive,
+                      description: `Доступен Excel: ${downloadableSelectedDocuments.length} из ${selectedDocuments.length}. Для скачивания нужен шаблон.`, onSelect: () => downloadSelectedArchive() }],
+                }) }}>
+                Действия{selectedDocuments.length > 0 ? <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] tabular-nums">{selectedDocuments.length}</span> : null}<ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
+              </button>
+      , actionsContainer) : null}
       {hasActiveFilters ? (
         <div className="flex flex-wrap items-center justify-end gap-2 border-b border-[#d8e5eb] bg-[#f6fafc] px-4 py-2.5">
           <button
@@ -2296,20 +2311,7 @@ function SystemDocumentsPanel({
               />
             ))}
             <div className="sticky right-0 z-10 flex justify-end border-l border-[#cfdee6] bg-[#eaf2f6] pl-3 shadow-[-12px_0_16px_-16px_rgba(15,23,42,0.55)]">
-              {selectedDocuments.length > 0 ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-7 gap-1.5 px-2 text-[11px] normal-case"
-                  disabled={downloadableSelectedDocuments.length === 0 || isDownloadingArchive}
-                  onClick={() => void downloadSelectedArchive()}
-                >
-                  <Archive className="h-3.5 w-3.5" />
-                  {isDownloadingArchive
-                    ? 'Готовим'
-                    : `Архив (${downloadableSelectedDocuments.length}/${selectedDocuments.length})`}
-                </Button>
-              ) : <span>Действия</span>}
+              <span>Просмотр</span>
             </div>
           </div>
           <div className="divide-y divide-[#dce7ed]" style={{ minWidth: historyGridLayout.minWidth }}>
@@ -2317,12 +2319,6 @@ function SystemDocumentsPanel({
               const templateAvailable = hasTemplateForDocument(documentRecord)
               const isSelected = selectedDocumentIds.has(documentRecord.id)
               const isBulkSelectionContext = isSelected && selectedDocuments.length > 1
-              const canTransferStage = canShowSystemDocumentStageTransfer({
-                documentRecord,
-                processEnabled: controlProcessSettings.preHeatTreatmentLnkEnabled,
-                isBulkSelectionContext,
-              })
-              const canRenameDocument = !documentRecord.sourceKind
               const methodCodes = getSystemDocumentMethodCodes(documentRecord)
               return (
                 <div
@@ -2364,16 +2360,9 @@ function SystemDocumentsPanel({
                           icon: GitBranch,
                           onSelect: () => runAction(() => onOpenJointHistory(documentRecord)),
                         }] : []),
-                        ...(canTransferStage ? [{
-                          id: 'transfer-document-stage',
-                          label: 'Изменить этап контроля',
-                          icon: ArrowLeftRight,
-                          disabled: stageTransferDocument?.id === documentRecord.id,
-                          onSelect: () => setStageTransferDocument(documentRecord),
-                        }] : []),
-                        { id: 'rename-document', label: 'Переименовать по текущему правилу', icon: FilePenLine, disabled: !canRenameDocument || renamingDocumentId === documentRecord.id, onSelect: () => renameDocumentRecord(documentRecord) },
+                        ...documentOperationItems(isSelected ? selectedDocuments : [documentRecord], isSelected ? ` (${selectedDocuments.length})` : ''),
                         { type: 'separator', id: 'open-separator' },
-                        { id: 'open-document', label: 'Открыть Excel', icon: ExternalLink, disabled: !templateAvailable, onSelect: () => openDocumentRecord(documentRecord) },
+                        { id: 'open-document', label: 'Предпросмотр', icon: FileText, disabled: !templateAvailable, onSelect: () => openDocumentRecord(documentRecord) },
                         { id: 'download-document', label: 'Скачать Excel', icon: Download, disabled: !templateAvailable, onSelect: () => downloadDocumentRecord(documentRecord) },
                       ],
                     })
@@ -2389,7 +2378,7 @@ function SystemDocumentsPanel({
                     className="group min-w-0 text-left disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={!templateAvailable}
                     onClick={() => void openDocumentRecord(documentRecord)}
-                    title={templateAvailable ? 'Сформировать актуальную версию и открыть Excel' : 'Для этого вида документа шаблон еще не загружен'}
+                    title={templateAvailable ? 'Предпросмотр актуального документа' : 'Для этого вида документа шаблон еще не загружен'}
                   >
                     <span className="flex min-w-0 items-start gap-2.5">
                       <span className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors ${
@@ -2442,28 +2431,6 @@ function SystemDocumentsPanel({
                         onClick={() => void runAction(() => onOpenJointHistory(documentRecord))}
                       ><GitBranch className="h-4 w-4" /></DocumentHistoryActionButton>
                     ) : null}
-                    {canTransferStage ? (
-                      <DocumentHistoryActionButton
-                        title="Изменить этап контроля"
-                        tone="amber"
-                        disabled={stageTransferDocument?.id === documentRecord.id}
-                        onClick={() => setStageTransferDocument(documentRecord)}
-                      ><ArrowLeftRight className="h-4 w-4" /></DocumentHistoryActionButton>
-                    ) : null}
-                    <DocumentHistoryActionButton
-                      title={canRenameDocument
-                        ? 'Переименовать по текущему системному правилу'
-                        : 'Документ отдельного этапа переименовывается в профильном процессе'}
-                      tone="violet"
-                      disabled={!canRenameDocument || renamingDocumentId === documentRecord.id}
-                      onClick={() => void renameDocumentRecord(documentRecord)}
-                    ><FilePenLine className="h-4 w-4" /></DocumentHistoryActionButton>
-                    <DocumentHistoryActionButton
-                      title={templateAvailable ? 'Открыть актуальный Excel' : 'Для этого вида документа шаблон еще не загружен'}
-                      tone="sky"
-                      disabled={!templateAvailable}
-                      onClick={() => void openDocumentRecord(documentRecord)}
-                    ><ExternalLink className="h-4 w-4" /></DocumentHistoryActionButton>
                     <DocumentHistoryActionButton
                       title={templateAvailable ? 'Скачать актуальный Excel' : 'Для этого вида документа шаблон еще не загружен'}
                       disabled={!templateAvailable}
@@ -2492,20 +2459,9 @@ function SystemDocumentsPanel({
           {selectedDocuments.length > 0 ? ` · выбрано: ${selectedDocuments.length}` : ''}
         </div>
       </div>
-      <ContextActionMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
-      {stageTransferDocument ? (
-        <LnkStageTransferDialog
-          reference={stageTransferDocument}
-          onClose={() => setStageTransferDocument(null)}
-          onTransferred={async (result) => {
-            await onRenamed(result.rows)
-            const targetLabel = result.preview.targetStage === 'beforeHeatTreatment' ? 'До ТО' : 'Основной'
-            setActionNotice(
-              `Перенесено комплектов: ${result.preview.positionCount}. Новый этап: «${targetLabel}».`,
-            )
-          }}
-        />
-      ) : null}
+      <ContextActionMenu menu={contextMenu} autoFocus={contextMenu?.heading === 'Действия с документами'} onClose={() => setContextMenu(null)} />
+      {documentOperation ? <DocumentOperationDialog documents={documentOperation.documents} action={documentOperation.action} onClose={() => setDocumentOperation(null)} onApplied={() => onRenamed()} /> : null}
+      {previewRequest ? <HistoryDocumentPreview request={previewRequest} onClose={closePreview} /> : null}
     </section>
   )
 }
@@ -2521,28 +2477,6 @@ function formatGeneratedDocumentDate(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
-}
-
-function canTransferSystemDocumentStage(documentRecord: SystemDocumentSummary) {
-  if (
-    !documentRecord.type.startsWith('lnk') ||
-    documentRecord.sourceKind === 'pstoRepeat' ||
-    documentRecord.sourceKind === 'pstoCycle'
-  ) return false
-  const methods = getSystemDocumentMethodCodes(documentRecord)
-  return methods.length > 0 && methods.every(isPreHeatTreatmentLnkMethodCode)
-}
-
-export function canShowSystemDocumentStageTransfer({
-  documentRecord,
-  processEnabled,
-  isBulkSelectionContext,
-}: {
-  documentRecord: SystemDocumentSummary
-  processEnabled: boolean
-  isBulkSelectionContext: boolean
-}) {
-  return processEnabled && !isBulkSelectionContext && canTransferSystemDocumentStage(documentRecord)
 }
 
 function DocumentDimensionCell({ values }: { values: string[] }) {
@@ -3198,7 +3132,12 @@ function DocumentMultiFilter({
   }
 
   return (
-    <details className="group rounded-md border border-slate-200 bg-slate-50">
+    <details className="group rounded-md border border-slate-200 bg-slate-50" onKeyDown={event => {
+      if (event.key !== 'Escape' || !event.currentTarget.open || isModalDialogOpen()) return
+      event.preventDefault(); event.stopPropagation()
+      event.currentTarget.open = false
+      event.currentTarget.querySelector('summary')?.focus()
+    }}>
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 marker:hidden">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">

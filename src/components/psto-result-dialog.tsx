@@ -13,6 +13,7 @@ import { ResultDialogFooter } from '@/components/result-dialog-footer'
 import { ResultDialogHeader } from '@/components/result-dialog-header'
 import { SelectedRowsViewToggle, type SelectedRowsViewMode } from '@/components/selected-rows-view-toggle'
 import { SystemDocumentNamesPanel } from '@/components/system-document-names-panel'
+import { SystemDocumentSplitControl } from '@/components/system-document-split-control'
 import { Button } from '@/components/ui/button'
 import {
   buildDialogRowContextMenu,
@@ -201,6 +202,7 @@ export function PstoResultDialog({
       <DocumentWorkspaceTabs
         activeTab={workspaceTab}
         ariaLabel="Разделы результата ПСТО"
+        controls={<SystemDocumentSplitControl plan={systemDocumentCreationPlan} naming={draft.diagramNaming} onChange={diagramNaming => onDraftChange(current => ({ ...current, diagramNaming }))} />}
         documentsLabel="Диаграммы и имена"
         documentsCount={diagramCount}
         documentsHaveError={Boolean(systemDocumentCreationPlan.error)}

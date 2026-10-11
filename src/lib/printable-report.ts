@@ -24,6 +24,8 @@ export type PrintableReportTable = {
   columns: string[]
   rows: Array<Array<string | number>>
   rowKinds?: Array<'total' | 'group' | 'detail'>
+  /** Columns containing formatted numbers/percentages; identifiers remain text in Excel. */
+  numericColumns?: number[]
 }
 
 export type PrintableReport = {

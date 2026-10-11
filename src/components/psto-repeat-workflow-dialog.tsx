@@ -19,6 +19,8 @@ import { RequestRowsPanel } from '@/components/request-rows-panel'
 import { RequestDocumentCombobox } from '@/components/request-document-combobox'
 import { SelectedRowsViewToggle, type SelectedRowsViewMode } from '@/components/selected-rows-view-toggle'
 import { SystemDocumentNamesPanel } from '@/components/system-document-names-panel'
+import { SystemDocumentSplitControl } from '@/components/system-document-split-control'
+import { getCreationGroupingCommand } from '@/lib/document-grouping-command'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatDateInputValue, getDateInputValidationReason } from '@/lib/date-format'
@@ -214,6 +216,7 @@ export function PstoRepeatWorkflowDialog({
     rows: selectedRows,
     naming,
     settings,
+    positionDetails: row => [{ method: 'ПСТО', stage: 'Цикл ПСТО', cycle: getPstoWorkflowCycleSequence(row, mode === 'request' ? 'pstoRequest' : 'pstoResult'), source: mode === 'result' ? getCurrentPstoCycle(row)?.pstoRequest : undefined }],
     nextNumber: mode === 'request' ? sequences?.pstoRequest : sequences?.pstoConclusion,
     allowAllNamesEmpty: mode === 'result' && !saveCheckSettings.pstoResultDiagramRequired,
   }), [date, mode, naming, saveCheckSettings.pstoResultDiagramRequired, selectedRows, sequences, settings])
@@ -267,6 +270,7 @@ export function PstoRepeatWorkflowDialog({
         name: group.name,
         useSystemName: group.useSystemName,
       })),
+      documentGrouping: getCreationGroupingCommand(creationPlan.groups),
       expectedVersions: selectedRows.map((row) => ({
         id: row.id,
         version: String(row.rowVersion ?? '').trim(),
@@ -424,6 +428,7 @@ export function PstoRepeatWorkflowDialog({
       <DocumentWorkspaceTabs
         activeTab={workspaceTab}
         ariaLabel="Разделы ПСТО"
+        controls={<SystemDocumentSplitControl plan={creationPlan} naming={naming} onChange={setNaming} disabled={mutation.isPending} />}
         documentsLabel={mode === 'request' ? 'Заявки и имена' : 'Диаграммы и имена'}
         documentsCount={creationPlan.groups.length}
         documentsHaveError={Boolean(creationPlan.error)}

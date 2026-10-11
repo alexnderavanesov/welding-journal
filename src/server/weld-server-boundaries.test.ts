@@ -143,15 +143,21 @@ describe('weld server module boundaries', () => {
       .toBeLessThan(modules.lnkOfficiality.indexOf('updateWeldJointsInBatches(tx'))
   })
 
-  it('uses the shared LNK chronology barrier in every line move that changes a stage', () => {
-    const pstoLineAssignment = read('psto-line-assignment.ts')
-
-    expect(pstoLineAssignment).toContain('assertPstoLineActivationTransferAllowed(rows, previewRows)')
-    expect(pstoLineAssignment).not.toContain('assertPstoLineCancellationPromotionAllowed')
-    expect(modules.chainMove).toContain('assertChainLineMoveLnkStageTransfersAllowed(records, previousRows, decisions)')
-    expect(modules.mutations).toContain('assertChainLineMoveLnkStageTransfersAllowed([record], previousRows, new Map(')
-    expect(pstoLineAssignment).toContain('findBlockingLnkStageTransferChronologyIssue')
-    expect(modules.lineMoveStage).toContain('findBlockingLnkStageTransferChronologyIssue')
+  it('uses only guarded contextual stage correction, not the removed general stage-transfer helpers', () => {
+    const assignment = read('psto-line-assignment.ts')
+    for (const source of [read('psto-line-assignment.ts'), modules.chainMove, modules.mutations, modules.lineMoveStage]) {
+      expect(source).not.toMatch(/buildPrimaryToPreHeatTreatmentTransfer|buildPreHeatTreatmentToPrimaryTransfer/)
+    }
+    expect(assignment).toContain("buildPstoContextualStageCorrection(next, 'beforeHeatTreatment'")
+    expect(assignment.indexOf('assertExpectedInteractiveWeldVersions(')).toBeLessThan(assignment.indexOf('buildPstoContextualStageCorrection(next'))
+    expect(modules.lineMoveStage).toContain("buildPstoContextualStageCorrection(record, 'primary'")
+    expect(modules.lineMoveStage).toContain('!actuallyChanged || targetLineAssigned')
+    for (const source of [modules.chainMove, modules.mutations]) {
+      expect(source).toContain('preparePstoLineMoveRecordInTransaction({')
+      expect(source.indexOf('validateServerWeldRecords(')).toBeLessThan(source.indexOf('await removeTransferredPreControlsInTransaction('))
+    }
+    expect(modules.mutations).toContain('preserveRecordedControlHistory: preparedMove.preserveRecordedControlHistory')
+    expect(modules.chainMove).toContain('preserveRecordedControlHistoryRowIds: allowedLineMoveRowIds')
   })
 
   it('keeps the chain move atomic and behind the edit/row-version guards', () => {
@@ -160,7 +166,7 @@ describe('weld server module boundaries', () => {
     expect(modules.chainMove).toContain("await assertSecurityScope('edit')")
     expect(modules.chainMove.match(/\.transaction\(/g)).toHaveLength(1)
     expect(modules.chainMove.indexOf('lockWeldLineMemberships(tx')).toBeLessThan(modules.chainMove.indexOf(".for('update')"))
-    expect(modules.chainMove.indexOf('assertExpectedInteractiveWeldVersions(')).toBeLessThan(modules.chainMove.indexOf('applyPstoLineMoveCleanupInTransaction(tx'))
+    expect(modules.chainMove.indexOf('assertExpectedInteractiveWeldVersions(')).toBeLessThan(modules.chainMove.indexOf('updateWeldJointsInBatches(tx'))
     expect(modules.chainMove.indexOf('validateServerWeldRecords(')).toBeLessThan(modules.chainMove.indexOf('updateWeldJointsInBatches(tx'))
     expect(modules.chainMove).toContain('scopes: getDispatcherDirtyScopes(records, previousRows)')
   })

@@ -8,6 +8,19 @@ import {
 } from '@/server/joint-chain-line-move-guard'
 
 describe('normalizeWeldChainLineMovePlan', () => {
+  it('accepts per-weld contextual correction without restoring the old general transfers', () => {
+    const plan = {
+      expectedRowIds: [1, 2], expectedVersions: [{ id: 1, version: '101' }, { id: 2, version: '102' }],
+      decisions: [{ rowId: 1, disposition: 'keepPrimary' }, { rowId: 2, disposition: 'movePreHeatTreatmentToPrimary' }],
+    }
+    expect(normalizeWeldChainLineMovePlan(plan)).toEqual(plan)
+  })
+  it.each(['promoteBeforeHeatTreatment', 'movePrimaryToBeforeHeatTreatment'])('rejects obsolete stage change %s even in a valid chain plan', disposition => {
+    expect(normalizeWeldChainLineMovePlan({
+      expectedRowIds: [1], expectedVersions: [{ id: 1, version: '101' }],
+      decisions: [{ rowId: 1, disposition }],
+    })).toBeNull()
+  })
   it('normalizes a bounded plan received from the client', () => {
     expect(normalizeWeldChainLineMovePlan({
       expectedRowIds: ['1', 2],

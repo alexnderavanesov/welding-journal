@@ -1,11 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { PreHeatTreatmentLnkWorkflowDialog } from '@/components/pre-heat-treatment-lnk-workflow-dialog'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { PreHeatTreatmentLnkMethodCode } from '@/lib/lnk-control-stage'
 import { SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY } from '@/lib/system-document-sequence-storage'
+
+import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-settings'
+vi.mock('@/server/document-grouping-preferences', () => ({ getDocumentGroupingDefaults: vi.fn(async () => REQUEST_CONCLUSION_DEFAULT_SETTINGS) }))
+vi.mock('@/server/system-document-sequences', () => ({ getSystemDocumentSequences: vi.fn(async () => ({ lnkRequest: 10, lnkConclusionVik: 20, lnkConclusionRk: 30 })) }))
 
 function makeRow(overrides: Partial<WeldRow> = {}): WeldRow {
   return {
@@ -25,7 +29,7 @@ function makeRow(overrides: Partial<WeldRow> = {}): WeldRow {
   } as WeldRow
 }
 
-function renderDialogRows(
+async function renderDialogRows(
   mode: 'request' | 'result',
   initialRows: WeldRow[],
   initialSelectedIds = new Set(initialRows.map((row) => row.id)),
@@ -64,7 +68,8 @@ function renderDialogRows(
       />
     </QueryClientProvider>
   )
-  const view = render(renderTree())
+  let view!: ReturnType<typeof render>
+  await act(async () => { view = render(renderTree()) })
   return {
     ...view,
     rerenderWithRows: (nextRows: WeldRow[]) => {
@@ -74,14 +79,14 @@ function renderDialogRows(
   }
 }
 
-function renderDialog(mode: 'request' | 'result', row: WeldRow) {
-  renderDialogRows(mode, [row])
+async function renderDialog(mode: 'request' | 'result', row: WeldRow) {
+  await renderDialogRows(mode, [row])
 }
 
-describe('PreHeatTreatmentLnkWorkflowDialog', () => {
+describe('PreHeatTreatmentLnkWorkflowDialog', async () => {
   it('applies the same selected-row matrix before heat treatment with hover and focus reasons', async () => {
     const request = { requestName: 'РК-до-ТО', requestDate: '2026-08-20', result: 'ожидает НК' }
-    renderDialogRows('result', [
+    await renderDialogRows('result', [
       makeRow({ id: 1, joint: 'F1', d1: 57, preHeatTreatmentControls: [
         { id: 11, weldJointId: 1, method: 'ВИК', result: 'годен' },
         { id: 1, weldJointId: 1, method: 'РК', ...request },
@@ -105,8 +110,8 @@ describe('PreHeatTreatmentLnkWorkflowDialog', () => {
     fireEvent.mouseEnter(screen.getAllByRole('group', { name: 'ремонт' })[1]!)
     expect(screen.getByRole('tooltip')).toHaveTextContent('меньше 89 мм')
   })
-  it('preselects only assigned request methods and keeps duplicate controls outside the workflow', () => {
-    renderDialog('request', makeRow({
+  it('preselects only assigned request methods and keeps duplicate controls outside the workflow', async () => {
+    await renderDialog('request', makeRow({
       duplicateControls: [{
         id: 8,
         weldJointId: 1,
@@ -130,7 +135,7 @@ describe('PreHeatTreatmentLnkWorkflowDialog', () => {
   })
 
   it('restores the exact pre-TO method and row when report data loads after the dialog opens', async () => {
-    const view = renderDialogRows('request', [], new Set([1]), 'РК')
+    const view = await renderDialogRows('request', [], new Set([1]), 'РК')
 
     expect(screen.getByText('Найдено: 0 · Доступно: 0')).toBeInTheDocument()
     view.rerenderWithRows([makeRow()])
@@ -142,7 +147,7 @@ describe('PreHeatTreatmentLnkWorkflowDialog', () => {
   })
 
   it('opens the requested VIK position for a result without offering a shared pre/post stage switch', async () => {
-    renderDialog('result', makeRow({
+    await renderDialog('result', makeRow({
       preHeatTreatmentControls: [{
         id: 1,
         weldJointId: 1,
@@ -201,23 +206,23 @@ describe('PreHeatTreatmentLnkWorkflowDialog', () => {
       }],
     })
 
-    renderDialogRows('result', [otherRow, selectedRow], new Set([selectedRow.id]))
+    await renderDialogRows('result', [otherRow, selectedRow], new Set([selectedRow.id]))
 
     expect(screen.getByRole('combobox', { name: 'Метод контроля' })).toHaveValue('РК')
     expect(await screen.findByRole('checkbox', { name: /F904/ })).toBeChecked()
     expect(screen.queryByRole('checkbox', { name: /S13/ })).not.toBeInTheDocument()
   })
 
-  it('does not allow a pre-heat-treatment request on a line without PSTO', () => {
-    renderDialog('request', makeRow({ pstoRequired: '', pstoDate: null }))
+  it('does not allow a pre-heat-treatment request on a line without PSTO', async () => {
+    await renderDialog('request', makeRow({ pstoRequired: '', pstoDate: null }))
 
     expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Создать заявку до ТО' })).toBeDisabled()
   })
 
-  it('keeps the draft local and routes the alternative exact correction for a pre-TO conflict', () => {
+  it('keeps the draft local and routes the alternative exact correction for a pre-TO conflict', async () => {
     const onRunRootCauseAction = vi.fn()
-    renderDialogRows('request', [makeRow({ pstoDate: '2026-09-10' })], new Set([1]), 'ВИК', { onRunRootCauseAction })
+    await renderDialogRows('request', [makeRow({ pstoDate: '2026-09-10' })], new Set([1]), 'ВИК', { onRunRootCauseAction })
     const dateInput = screen.getByLabelText('Дата заявки')
 
     fireEvent.change(dateInput, { target: { value: '2026-09-11' } })
@@ -241,8 +246,8 @@ describe('PreHeatTreatmentLnkWorkflowDialog', () => {
     }))
   })
 
-  it('labels the footer as adding positions when an existing request is selected', () => {
-    renderDialog('request', makeRow({
+  it('labels the footer as adding positions when an existing request is selected', async () => {
+    await renderDialog('request', makeRow({
       preHeatTreatmentControls: [{
         id: 1,
         weldJointId: 1,
@@ -259,10 +264,10 @@ describe('PreHeatTreatmentLnkWorkflowDialog', () => {
     expect(screen.queryByRole('button', { name: 'Создать заявку до ТО' })).not.toBeInTheDocument()
   })
 
-  it('keeps the stage switch available while adding positions to an existing pre-TO request', () => {
+  it('keeps the stage switch available while adding positions to an existing pre-TO request', async () => {
     const onStageChange = vi.fn()
     const row = makeRow()
-    renderDialogRows('request', [row], new Set([row.id]), undefined, {
+    await renderDialogRows('request', [row], new Set([row.id]), undefined, {
       initialRequestSubmitMode: 'extend',
       onStageChange,
     })
@@ -273,7 +278,7 @@ describe('PreHeatTreatmentLnkWorkflowDialog', () => {
   })
 
   it('bulk-selects only available rows from the current search result', async () => {
-    renderDialogRows('request', [
+    await renderDialogRows('request', [
       makeRow({ id: 1, line: 'AUDIT-LINE-10', joint: 'F1' }),
       makeRow({ id: 2, line: 'OTHER-LINE', joint: 'F2' }),
     ], new Set())
@@ -292,8 +297,8 @@ describe('PreHeatTreatmentLnkWorkflowDialog', () => {
     expect(screen.getByRole('checkbox', { name: /F2/ })).not.toBeChecked()
   })
 
-  it('explains that a request must be created before adding a pre-heat-treatment result', () => {
-    renderDialog('result', makeRow())
+  it('explains that a request must be created before adding a pre-heat-treatment result', async () => {
+    await renderDialog('result', makeRow())
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Метод контроля' }), {
       target: { value: 'ВИК' },
@@ -305,8 +310,8 @@ describe('PreHeatTreatmentLnkWorkflowDialog', () => {
     expect(screen.getByRole('button', { name: 'Сохранить результат до ТО' })).toBeDisabled()
   })
 
-  it('uses the same bulk-action prompt as the primary result dialog before a method is selected', () => {
-    renderDialogRows('result', [makeRow()], new Set())
+  it('uses the same bulk-action prompt as the primary result dialog before a method is selected', async () => {
+    await renderDialogRows('result', [makeRow()], new Set())
 
     expect(screen.getByRole('button', { name: 'Выберите метод' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Выбрать все доступные' })).not.toBeInTheDocument()
@@ -318,7 +323,7 @@ describe('PreHeatTreatmentLnkWorkflowDialog', () => {
       requestDate: '2026-08-20',
       result: 'ожидает НК',
     }
-    renderDialogRows('result', [
+    await renderDialogRows('result', [
       makeRow({
         id: 1,
         joint: 'F1',

@@ -1,0 +1,178 @@
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { DocumentOperationDialog } from './document-operation-dialog'
+import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-settings'
+import type { SystemDocumentSummary } from '@/lib/system-document-types'
+
+const rpc = vi.hoisted(() => ({ preview: vi.fn(), apply: vi.fn(), batches: vi.fn(), result: vi.fn(), composition: vi.fn(), defaults: vi.fn() }))
+vi.mock('@/server/document-operations', () => ({ previewDocumentOperation: rpc.preview, applyDocumentOperation: rpc.apply, planDocumentOperationBatches: rpc.batches, getDocumentOperationResult: rpc.result, getDocumentOperationComposition: rpc.composition }))
+vi.mock('@/server/document-grouping-preferences', () => ({ getDocumentGroupingDefaults: rpc.defaults }))
+const documents = [1, 2].map(documentId => ({ documentId, type: 'pstoRequest', title: `Старое${documentId}`, date: '2026-10-09' })) as SystemDocumentSummary[]
+function preview(id = 1, count = 1) { return { fingerprint: `f${id}`, previewHash: `h${id}`, selectedCount: 1, rowCount: count, positionCount: count, sources: [{ id, title: `Старое${id}` }], groups: Array.from({ length: count }, (_, i) => ({ key: `${id}:${i}`, membership: `m${i}`, sourceIds: [id], label: `Группа ${i + 1}`, name: `Новое ${i + 1}`, namingMode: 'system', rowCount: 1, positionCount: 1, error: '', unchanged: false })) } }
+beforeEach(() => {
+  Object.values(rpc).forEach(mock => mock.mockReset())
+  rpc.defaults.mockResolvedValue(REQUEST_CONCLUSION_DEFAULT_SETTINGS)
+  rpc.batches.mockResolvedValue({ batches: [[1], [2]], blocked: [], selectedCount: 2 })
+  rpc.preview.mockResolvedValue(preview()); rpc.result.mockResolvedValue(null)
+})
+function mount(action: 'split' | 'rename' | 'merge' = 'split') {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }), onClose = vi.fn(), onApplied = vi.fn(async () => {})
+  render(<QueryClientProvider client={client}><DocumentOperationDialog documents={documents} action={action} onClose={onClose} onApplied={onApplied} /></QueryClientProvider>)
+  return { client, onClose, onApplied }
+}
+it('never automatically applies the next packet and preserves the successful partial result', async () => {
+  rpc.preview.mockResolvedValueOnce(preview(1)).mockResolvedValueOnce(preview(2))
+  rpc.apply.mockResolvedValueOnce({ changedDocumentCount: 1, resultingDocumentCount: 1, affectedRowCount: 1 }).mockRejectedValueOnce(new Error('Failed query: update weld_joints'))
+  const { onApplied, client } = mount()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Подтвердить и применить' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: 'Подтвердить и применить' }))
+  await waitFor(() => expect(onApplied).toHaveBeenCalledTimes(1))
+  expect(rpc.preview).toHaveBeenCalledTimes(1); expect(rpc.apply).toHaveBeenCalledTimes(1)
+  fireEvent.click(screen.getByRole('button', { name: 'Просмотреть следующий пакет' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Подтвердить и применить' })).toBeEnabled())
+  expect(rpc.preview.mock.calls[1][0].data.documentIds).toEqual([2])
+  fireEvent.click(screen.getByRole('button', { name: 'Подтвердить и применить' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось подтвердить сохранение пакета')
+  expect(screen.getByRole('alert')).not.toHaveTextContent('update weld_joints')
+  expect(screen.getByRole('status')).toHaveTextContent('Сохранено пакетов: 1')
+  expect(onApplied).toHaveBeenCalledTimes(1); client.clear()
+})
+it('does not dismiss or resubmit while saving and verifies a lost response by receipt', async () => {
+  let fail!: (reason: Error) => void
+  rpc.apply.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject }))
+  rpc.result.mockResolvedValue({ changedDocumentCount: 1, resultingDocumentCount: 1, affectedRowCount: 1 })
+  const { onApplied, onClose, client } = mount()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Подтвердить и применить' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: 'Подтвердить и применить' }))
+  for (const name of ['Закрыть', 'Отмена', 'Сохраняем…']) expect(screen.getByRole('button', { name })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: 'Закрыть' })); fireEvent.keyDown(window, { key: 'Escape' }); expect(onClose).not.toHaveBeenCalled()
+  await act(async () => fail(new Error('connection lost')))
+  await waitFor(() => expect(onApplied).toHaveBeenCalledTimes(1))
+  expect(rpc.apply).toHaveBeenCalledTimes(1)
+  expect(rpc.result.mock.calls[0][0].data.operationId).toBe(rpc.apply.mock.calls[0][0].data.operationId)
+  client.clear()
+})
+it('does not send a request per name keystroke; requires a fresh preview before confirmation', async () => {
+  const { client } = mount()
+  const input = await screen.findByRole('textbox', { name: 'Название: Группа 1' })
+  fireEvent.change(input, { target: { value: 'Ручное' } }); fireEvent.blur(input)
+  expect(rpc.preview).toHaveBeenCalledTimes(1)
+  expect(screen.getByRole('button', { name: 'Подтвердить и применить' })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: 'Проверить изменения' }))
+  await waitFor(() => expect(rpc.preview).toHaveBeenCalledTimes(2))
+  expect(rpc.preview.mock.calls[1][0].data.names['1:0']).toEqual({ mode: 'custom', name: 'Ручное', membership: 'm0' })
+  expect(rpc.apply).not.toHaveBeenCalled(); client.clear()
+})
+it('renders only 50 of 60000 future groups and can reach later groups', async () => {
+  rpc.preview.mockResolvedValue(preview(1, 60_000))
+  const { client } = mount()
+  await screen.findByRole('textbox', { name: 'Название: Группа 1' })
+  expect(screen.getAllByRole('textbox', { name: /^Название:/ })).toHaveLength(50)
+  fireEvent.click(screen.getByRole('button', { name: 'Следующие →' })); fireEvent.click(screen.getByRole('button', { name: 'Следующие →' }))
+  expect(screen.getByRole('textbox', { name: 'Название: Группа 101' })).toBeInTheDocument()
+  expect(screen.getAllByRole('textbox', { name: /^Название:/ })).toHaveLength(50); client.clear()
+})
+it('loads composition only on demand and reuses the same snapshot page', async () => {
+  rpc.composition.mockResolvedValue({ items: [{ joint: 'С1', project: 'П', subtitle: 'Ш', line: 'Л', method: 'ПСТО', stage: 'Цикл ПСТО', cycle: 2, source: 'Источник' }], page: 0, total: 1, totalPositions: 1 })
+  const { client } = mount()
+  await screen.findByRole('textbox', { name: 'Название: Группа 1' })
+  expect(rpc.composition).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Посмотреть состав: 1' }))
+  await screen.findByText('С1')
+  const panel = screen.getByRole('complementary', { name: 'Состав будущего документа' })
+  expect(panel.closest('article')).toContainElement(screen.getByRole('textbox', { name: 'Название: Группа 1' }))
+  expect(screen.getByRole('button', { name: 'Посмотреть состав: 1' })).toHaveAttribute('aria-expanded', 'true')
+  fireEvent.click(screen.getByRole('button', { name: 'Свернуть состав' }))
+  expect(screen.getByRole('button', { name: 'Посмотреть состав: 1' })).toHaveFocus()
+  fireEvent.click(screen.getByRole('button', { name: 'Посмотреть состав: 1' }))
+  await screen.findByText('С1'); expect(rpc.composition).toHaveBeenCalledTimes(1); client.clear()
+})
+
+it('opens standalone merge as one whole result regardless of the remembered split mode', async () => {
+  rpc.defaults.mockResolvedValue({ ...REQUEST_CONCLUSION_DEFAULT_SETTINGS, splitModes: { ...REQUEST_CONCLUSION_DEFAULT_SETTINGS.splitModes, pstoRequest: 'joint' } })
+  rpc.batches.mockResolvedValue({ batches: [[1, 2]], blocked: [] })
+  rpc.preview.mockResolvedValue({ ...preview(), selectedCount: 2 })
+  rpc.apply.mockResolvedValue({ changedDocumentCount: 2, resultingDocumentCount: 1, affectedRowCount: 2 })
+  const { client, onApplied } = mount('merge')
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Подтвердить и применить' })).toBeEnabled())
+  expect(screen.getByRole('dialog', { name: 'Объединить документы' })).toBeInTheDocument()
+  expect(screen.queryByRole('combobox', { name: 'Разделение выбранных документов' })).not.toBeInTheDocument()
+  expect(rpc.preview.mock.calls[0][0].data).toMatchObject({ documentIds: [1, 2], action: 'merge', merge: true, mode: 'none' })
+  expect(rpc.apply).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Подтвердить и применить' }))
+  await waitFor(() => expect(onApplied).toHaveBeenCalledOnce())
+  expect(rpc.apply.mock.calls[0][0].data).toMatchObject({ documentIds: [1, 2], action: 'merge', merge: true, mode: 'none' }); client.clear()
+})
+
+it('refuses a partial batch for standalone merge rather than silently omitting a document', async () => {
+  const { client } = mount('merge')
+  expect(await screen.findByRole('alert')).toHaveTextContent('Частичное объединение не выполняется')
+  expect(rpc.preview).not.toHaveBeenCalled(); expect(rpc.apply).not.toHaveBeenCalled()
+  expect(screen.getByRole('button', { name: 'Подтвердить и применить' })).toBeDisabled(); client.clear()
+})
+
+it('marks edited names as unverified and keeps composition accessible without recalculation', async () => {
+  const result = preview(); result.groups[0].unchanged = true
+  rpc.preview.mockResolvedValue(result)
+  rpc.composition.mockResolvedValue({ items: [], page: 0, total: 0, totalPositions: 1 })
+  const { client } = mount()
+  const input = await screen.findByRole('textbox', { name: 'Название: Группа 1' })
+  expect(screen.getByText('Без изменений')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Системные', pressed: true })).toHaveClass('border-sky-600')
+  fireEvent.change(input, { target: { value: 'Моё новое имя' } }); fireEvent.blur(input)
+  expect(screen.queryByText('Без изменений')).not.toBeInTheDocument()
+  expect(screen.getByText('Не проверен')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Пользовательские', pressed: true })).toHaveClass('border-sky-600')
+  fireEvent.click(screen.getByRole('button', { name: 'Посмотреть состав: 1' }))
+  expect(await screen.findByRole('heading', { name: 'Моё новое имя' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Свернуть состав' }))
+  expect(input).toHaveValue('Моё новое имя')
+  expect(rpc.preview).toHaveBeenCalledTimes(1)
+  expect(rpc.composition).toHaveBeenCalledTimes(1)
+  expect(rpc.apply).not.toHaveBeenCalled(); client.clear()
+})
+
+it('does not present the old group count or editable names as the result of changed grouping', async () => {
+  const { client } = mount()
+  await screen.findByRole('textbox', { name: 'Название: Группа 1' })
+  fireEvent.change(screen.getByRole('combobox', { name: 'Разделение выбранных документов' }), { target: { value: 'line' } })
+  expect(screen.getByText('Количество документов — после проверки')).toBeInTheDocument()
+  expect(screen.queryByText(/Получится:/)).not.toBeInTheDocument()
+  expect(screen.getByRole('textbox', { name: 'Название: Группа 1' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Посмотреть состав: 1' })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: 'Зачем проверять изменения' }))
+  expect(screen.getByRole('tooltip')).toHaveTextContent('Проверка ничего не сохраняет')
+  expect(rpc.preview).toHaveBeenCalledTimes(1); client.clear()
+})
+
+it('explains merge with an example and the agreed stage/cycle boundaries without making requests', async () => {
+  const { client } = mount()
+  await screen.findByRole('textbox', { name: 'Название: Группа 1' })
+  fireEvent.click(screen.getByRole('button', { name: 'Что значит объединить документы' }))
+  expect(screen.getByRole('tooltip')).toHaveTextContent('получится 4 документа')
+  expect(screen.getByRole('tooltip')).toHaveTextContent('НК до ТО и основной НК')
+  expect(screen.getByRole('tooltip')).toHaveTextContent('разные циклы одного стыка')
+  expect(rpc.preview).toHaveBeenCalledTimes(1); expect(rpc.apply).not.toHaveBeenCalled(); client.clear()
+})
+
+it.each(['split', 'rename', 'merge'] as const)('closes %s with Escape without applying the draft', async action => {
+  const { onClose, client } = mount(action)
+  await waitFor(() => expect(rpc.batches).toHaveBeenCalled())
+  fireEvent.keyDown(window, { key: 'Escape' })
+  expect(onClose).toHaveBeenCalledOnce()
+  expect(rpc.apply).not.toHaveBeenCalled()
+  client.clear()
+})
+
+it('lets Escape dismiss help first, then the operation dialog', async () => {
+  const { onClose, client } = mount()
+  await screen.findByRole('textbox', { name: 'Название: Группа 1' })
+  fireEvent.click(screen.getByRole('button', { name: 'Зачем проверять изменения' }))
+  fireEvent.keyDown(window, { key: 'Escape' })
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  expect(onClose).not.toHaveBeenCalled()
+  fireEvent.keyDown(window, { key: 'Escape' })
+  expect(onClose).toHaveBeenCalledOnce()
+  client.clear()
+})

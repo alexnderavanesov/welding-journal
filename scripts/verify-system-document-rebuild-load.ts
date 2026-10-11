@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import pg from 'pg'
-import { asc, sql } from 'drizzle-orm'
+import { randomUUID } from 'node:crypto'
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '../src/lib/request-conclusion-settings'
 import { buildCurrentSystemDocumentName } from '../src/lib/system-document-types'
-import type { RebuildCursor } from '../src/lib/system-document-rebuild-batch'
+import type { DocumentOperationRequest } from '../src/lib/system-document-operation'
 
 // Run only after e2e/global-setup, in its disposable local database. The caller
 // owns dropping that database; no production or working database is accepted.
@@ -11,13 +11,9 @@ const url = new URL(process.env.DATABASE_URL ?? '')
 assert.equal(url.hostname, '127.0.0.1')
 assert.equal(url.pathname, '/welding_tracker_e2e')
 assert.equal(process.env.WELDING_ENV_LOADED, '1')
-const [{ requireDb }, { weldJoints, pstoRepeatCycles }, rebuild, indexes, locks, sequences, { buildNumberArrayMatch }] = await Promise.all([
-  import('../src/db/index'), import('../src/db/schema'), import('../src/server/system-document-rebuild'),
-  import('../src/server/system-document-index'), import('../src/server/control-process-settings-lock'),
-  import('../src/server/system-document-sequences'), import('../src/server/weld-request-utils'),
+const [{ requireDb }, operations, indexes] = await Promise.all([
+  import('../src/db/index'), import('../src/server/document-operation-service'), import('../src/server/system-document-index'),
 ])
-const { lockLayeredControlDocumentsForWeldChange } = await import('../src/server/layered-control-documents')
-const { loadRebuildBatch, assertRebuildFactBudget } = await import('../src/server/system-document-rebuild-batch')
 const db = requireDb(), client = new pg.Client({ connectionString: url.toString() })
 await client.connect()
 const project = 'E2E rebuild load', original = pg.Client.prototype.query
@@ -90,6 +86,12 @@ async function seed(count: number) {
   // initialization flag from the first size must not leave raw fixture facts
   // without their historical document.
   await db.transaction(tx => indexes.rebuildSystemDocumentIndexInTransaction(tx, 'pstoConclusion'))
+  // This disposable fixture grows from 200 to 200000 rows in one burst. Do not
+  // let checksum joins inherit the first sample's statistics while waiting for
+  // autovacuum; keep preparation outside the measured application operations.
+  for (const table of ['weld_joints', 'psto_repeat_cycles', 'generated_documents', 'generated_document_weld_joints', 'line_programs']) {
+    await client.query(`analyze ${table}`)
+  }
 }
 
 async function facts() {
@@ -107,31 +109,16 @@ async function facts() {
   return { welds, cycles, positions, keptDocument }
 }
 
-// Same locking/load/apply order as the RPC; authentication, index warming and
-// HTTP serialization are outside this measurement. The transaction is real.
-async function apply(preview: Awaited<ReturnType<typeof rebuild.loadRebuildSnapshot>>['preview'], rollback = false) {
-  return db.transaction(async tx => {
-    await locks.lockAllControlProcessSettings(tx)
-    await tx.execute(sql`select pg_advisory_xact_lock_shared(hashtext('request-conclusion'))`)
-    await sequences.lockSystemDocumentNumberCounter(tx, 'pstoConclusion')
-    const batch = await loadRebuildBatch(tx, preview.batch!.cursor)
-    const { rowIds: ids, cycleIds } = await rebuild.loadRebuildLockTargets(tx, ['pstoConclusion'], batch.documentIds)
-    await assertRebuildFactBudget(tx, ids, cycleIds)
-    await tx.select({ id: weldJoints.id }).from(weldJoints).where(buildNumberArrayMatch(weldJoints.id, ids)).orderBy(asc(weldJoints.id)).for('update')
-    await tx.select({ id: pstoRepeatCycles.id }).from(pstoRepeatCycles).where(buildNumberArrayMatch(pstoRepeatCycles.id, cycleIds)).orderBy(asc(pstoRepeatCycles.id)).for('update')
-    await lockLayeredControlDocumentsForWeldChange(tx)
-    await indexes.lockSystemDocumentIndexes(tx)
-    const lockedBatch = await loadRebuildBatch(tx, preview.batch!.cursor)
-    assert.deepEqual(lockedBatch, batch)
-    const snapshot = await rebuild.loadRebuildSnapshot(tx, lockedBatch)
-    rebuild.assertRebuildLocksCoverSnapshot(snapshot.sources, ['pstoConclusion'], ids, cycleIds)
-    assert.equal(snapshot.preview.fingerprint, preview.fingerprint)
-    assert.equal(snapshot.preview.scopeRevisions.pstoConclusion, preview.scopeRevisions.pstoConclusion)
-    const result = await rebuild.applyRebuildPlan({ tx, snapshot, templateIds: ['pstoConclusion'], decisions:
-      snapshot.preview.documents.filter(document => document.requiresCustomNameDecision).map(document => ({ documentId: document.documentId, action: 'keep' as const })) })
-    if (rollback) throw new Error('BENCHMARK_ROLLBACK')
-    return result
-  })
+// Exercise the production operation core and its actual lock/receipt protocol.
+// HTTP serialization is covered separately by the UI load scenario.
+async function apply(input: DocumentOperationRequest, preview: Awaited<ReturnType<typeof operations.previewOperation>>, rollback = false) {
+  const payload = { ...input, fingerprint: preview.fingerprint, previewHash: preview.previewHash, operationId: randomUUID() }
+  if (rollback) {
+    await client.query(`create function benchmark_document_rollback() returns trigger language plpgsql as $$ begin raise exception 'BENCHMARK_ROLLBACK'; end $$`)
+    await client.query('create trigger benchmark_document_rollback before insert on document_operation_receipts for each row execute function benchmark_document_rollback()')
+  }
+  try { return await operations.applyOperation(payload) }
+  finally { if (rollback) { await client.query('drop trigger benchmark_document_rollback on document_operation_receipts'); await client.query('drop function benchmark_document_rollback()') } }
 }
 
 async function cleanup() {
@@ -150,41 +137,37 @@ try {
     assert.equal(before.positions.count, count)
     assert.equal(before.keptDocument.length, 1)
     assert.equal(before.keptDocument[0].row_count, count / 2)
-    // Match the real preview response: do not retain its full server-side
-    // source rows throughout the subsequent save measurement.
-    let cursor: RebuildCursor | undefined
+    const selected = (await client.query(`select id from generated_documents where type='system:pstoConclusion' and period_from='2026-09-05' and source_metadata::jsonb->>'sourceKind'='pstoCycle' order by id`)).rows.map(row => row.id as number)
+    const plan = await operations.planOperationBatches({ documentIds: selected, merge: false })
+    assert.equal(plan.blocked.length, 0)
     let totalRebuilt = 0, totalAffected = 0, totalResulting = 0
-    do {
-      const preview = await measure('preview', () => db.transaction(async tx =>
-        (await rebuild.loadRebuildSnapshot(tx, await loadRebuildBatch(tx, cursor))).preview))
-      const selectedRows = new Set(preview.result.documents.flatMap(document => document.groups.flatMap(group => group.rowIds))).size
+    for (const [index, documentIds] of plan.batches.entries()) {
+      const input: DocumentOperationRequest = { documentIds, action: 'split', mode: 'line', merge: false }
+      const preview = await measure('preview', () => operations.previewOperation(input))
+      const selectedRows = preview.result.rowCount
       const factReadBatches = Math.ceil(selectedRows / 5000) + Math.ceil(selectedRows / 2 / 5000)
-      assert.ok(preview.queries <= 30 + factReadBatches + Math.ceil(count / 200 / 1000),
-        'Full facts are bounded by the packet; only compact global identities are paged')
+      assert.ok(preview.queries <= 40 + factReadBatches + Math.ceil(count / 200 / 1000), 'Reads grow by bounded batches, not positions')
       console.log(JSON.stringify({ ...preview, result: undefined, joints: count, previewBytes: Buffer.byteLength(JSON.stringify(preview.result)) }))
-      if (count === 200 && !cursor) {
-        await assert.rejects(apply(preview.result, true), /BENCHMARK_ROLLBACK/)
+      if (count === 200 && index === 0) {
+        await assert.rejects(apply(input, preview.result, true))
         assert.deepEqual(await facts(), before)
       }
-      const applied = await measure('apply', () => apply(preview.result))
+      const applied = await measure('apply', () => apply(input, preview.result))
       totalAffected += applied.result.affectedRowCount
-      totalRebuilt += applied.result.rebuiltDocumentCount
+      totalRebuilt += applied.result.changedDocumentCount
       totalResulting += applied.result.resultingDocumentCount
-      assert.ok(applied.queries <= 120 + factReadBatches + 3 * Math.ceil(selectedRows / 5000) +
-        Math.ceil(selectedRows / 1000) + Math.ceil(selectedRows / 2000) + Math.ceil(selectedRows / 100 / 100),
-        'Apply queries grow with bounded write batches, not individual positions')
+      assert.ok(applied.queries <= 160 + factReadBatches + 3 * Math.ceil(selectedRows / 5000) + Math.ceil(selectedRows / 1000) + Math.ceil(selectedRows / 2000), 'Writes grow by bounded batches, not positions')
       console.log(JSON.stringify({ ...applied, joints: count }))
-      cursor = preview.result.batch?.nextCursor ?? undefined
-    } while (cursor)
+    }
     assert.equal(totalAffected, count)
     assert.equal(totalRebuilt, count / 200)
     assert.equal(totalResulting, count / 100)
     assert.deepEqual(await facts(), before, 'Names may change; facts and exact cycle positions must not')
-    do {
-      const next = await db.transaction(async tx => rebuild.loadRebuildSnapshot(tx, await loadRebuildBatch(tx, cursor)))
-      assert.equal(next.preview.documents.filter(document => document.templateId === 'pstoConclusion' && document.willChangeAutomatically).length, 0)
-      cursor = next.preview.batch?.nextCursor ?? undefined
-    } while (cursor)
+    // Stable retained IDs now name their first split group; no further split.
+    for (const documentIds of plan.batches) {
+      const next = await operations.previewOperation({ documentIds, action: 'split', mode: 'line', merge: false })
+      assert.ok(next.groups.every(group => group.unchanged))
+    }
     await cleanup()
   }
 } finally {

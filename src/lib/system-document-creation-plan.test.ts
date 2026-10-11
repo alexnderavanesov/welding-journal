@@ -10,6 +10,33 @@ const rows = [
 ] as WeldRow[]
 
 describe('system document creation plan', () => {
+  it('requires review of manual names after regrouping instead of silently replacing or carrying them', () => {
+    const base = { type: 'pstoRequest' as const, date: '2026-08-24', rows, settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS, nextNumber: 12 }
+    const original = buildSystemDocumentCreationPlan({ ...base, naming: { mode: 'system', customName: '' } }).groups[0]
+    const manual = { mode: 'system' as const, customName: 'Ручное', groupModes: { [original.key]: 'custom' as const }, customGroupNames: { [original.key]: 'Ручное' }, customGroupMembers: { [original.key]: original.membership! } }
+    const split = buildSystemDocumentCreationPlan({ ...base, naming: { ...manual, splitModes: { pstoRequest: 'joint' } } })
+    expect(split.groups.map(group => [group.useSystemName, group.name])).toEqual([[false, ''], [false, '']])
+    const changed = buildSystemDocumentCreationPlan({ ...base, rows: rows.slice(0, 1), naming: { ...manual, splitModes: { pstoRequest: 'joint' } } })
+    expect(changed.groups[0].name).toBe('')
+    const explicit = buildSystemDocumentCreationPlan({ ...base, naming: { ...manual, groupModes: {}, splitModes: { pstoRequest: 'joint' } } })
+    expect(explicit.groups.every(group => group.useSystemName)).toBe(true)
+  })
+
+  it('retains a manual name across grouping keys if its exact composition stays the same', () => {
+    const base = { type: 'pstoRequest' as const, date: '2026-08-24', rows: rows.slice(0, 1), settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS, nextNumber: 12 }
+    const original = buildSystemDocumentCreationPlan({ ...base, naming: { mode: 'system', customName: '' } }).groups[0]
+    const naming = { mode: 'custom' as const, customName: 'Ручное', customGroupNames: { [original.key]: 'Ручное' }, customGroupMembers: { [original.key]: original.membership! }, splitModes: { pstoRequest: 'joint' as const } }
+    expect(buildSystemDocumentCreationPlan({ ...base, naming }).groups[0].name).toBe('Ручное')
+  })
+
+  it('reserves preview numbers only for the system-named part of a mixed list', () => {
+    const base = { type: 'pstoRequest' as const, date: '2026-08-24', rows, settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS, nextNumber: 12 }
+    const naming = { mode: 'system' as const, customName: '', splitModes: { pstoRequest: 'joint' as const } }
+    const first = buildSystemDocumentCreationPlan({ ...base, naming }).groups[0]
+    const plan = buildSystemDocumentCreationPlan({ ...base, naming: { ...naming, groupModes: { [first.key]: 'custom' }, customGroupNames: { [first.key]: 'Ручное' } } })
+    expect(plan.groups[0].name).toBe('Ручное')
+    expect(plan.groups[1].name).toMatch(/012$/)
+  })
   it('preserves one document when splitting is disabled', () => {
     const plan = buildSystemDocumentCreationPlan({
       type: 'lnkRequest',

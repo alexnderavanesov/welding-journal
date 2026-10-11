@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import {
   CalendarClock,
-  ArrowLeftRight,
   FileSpreadsheet,
   ListFilter,
   LoaderCircle,
@@ -79,7 +78,6 @@ export type LnkRequestManagerDialogProps = {
   onAddPositions: (request: LnkRequestExtensionOption) => void
   onOpenRows: () => void
   onOpenDocument: (row: WeldRow, fieldKey: LnkRequestMethod['requestKey']) => void
-  onChangeControlStage?: (reference: SystemDocumentReference & { documentId: number }) => void
   onOpenJournalRows: (rows: readonly WeldRow[], sourceLabel: string) => void
   onOpenPstoHistory?: (row: WeldRow) => void
   onCopyDocumentName: (documentName: string) => void
@@ -115,7 +113,6 @@ export function LnkRequestManagerDialog({
   onAddPositions,
   onOpenRows,
   onOpenDocument,
-  onChangeControlStage,
   onOpenJournalRows,
   onOpenPstoHistory,
   onCopyDocumentName,
@@ -233,9 +230,6 @@ export function LnkRequestManagerDialog({
       : !canOpenDocument(context.method.requestKey)
         ? 'Для этого вида контроля нет доступного шаблона заявки'
         : null
-    const transferReference = context.row && context.method
-      ? getSystemDocumentReferenceForField(context.row, context.method.requestKey)
-      : null
 
     contextMenuRef.current?.open(buildManagerContextMenu({
       ...point,
@@ -275,20 +269,6 @@ export function LnkRequestManagerDialog({
             setShowRequestSettings(true)
           },
         },
-        ...(onChangeControlStage ? [{
-          id: 'change-control-stage',
-          label: 'Изменить этап контроля',
-          icon: ArrowLeftRight,
-          disabled: !transferReference?.documentId || isManagerPending || isCorrectionPending,
-          onSelect: () => {
-            if (transferReference?.documentId) {
-              onChangeControlStage({
-                ...transferReference,
-                documentId: transferReference.documentId,
-              })
-            }
-          },
-        }] : []),
       ],
       dangerActions: [{
         id: 'delete-request',
@@ -539,23 +519,6 @@ export function LnkRequestManagerDialog({
                       <FileSpreadsheet className="mr-2 h-4 w-4" />
                       Открыть документ
                     </Button>
-                    {onChangeControlStage ? (
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          if (selectedDocumentReference?.documentId) {
-                            onChangeControlStage({
-                              ...selectedDocumentReference,
-                              documentId: selectedDocumentReference.documentId,
-                            })
-                          }
-                        }}
-                        disabled={!selectedDocumentReference?.documentId || isManagerPending || isCorrectionPending}
-                      >
-                        <ArrowLeftRight className="mr-2 h-4 w-4" />
-                        Изменить этап
-                      </Button>
-                    ) : null}
                     <Button
                       variant="outline"
                       size="icon"

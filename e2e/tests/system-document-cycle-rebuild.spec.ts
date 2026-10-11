@@ -1,4 +1,8 @@
-import { expect, test, type Page } from '@playwright/test'
+import { randomUUID } from 'node:crypto'
+import { previewOperation, applyOperation, getOperationResult } from '../../src/server/document-operation-service'
+import type { DocumentOperationRequest } from '../../src/lib/system-document-operation'
+import { openDocumentOperation, confirmDocumentOperation } from '../document-operation-ui'
+import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
@@ -80,346 +84,230 @@ async function snapshot() {
   }))
 }
 
-async function openRebuild(page: Page, navigate = true) {
-  if (navigate) await page.goto('/settings')
-  else await page.getByRole('button', { name: 'Настройки', exact: true }).click()
-  await page.getByRole('button', { name: 'Заявки и заключения', exact: true }).click()
-  await page.getByRole('button', { name: 'Пересобрать системные документы по текущим правилам', exact: true }).click()
-  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Пересборка системных документов', exact: true }) })
-  await expect(dialog.getByText('Область пересборки', { exact: true })).toBeVisible()
-  return dialog
+function request(documentIds: number[], mode: 'line' | 'none' = 'line', merge = false): DocumentOperationRequest { return { documentIds, action: 'split', mode, merge } }
+async function prepare(input: DocumentOperationRequest) {
+  const preview = await previewOperation(input)
+  return { ...input, fingerprint: preview.fingerprint, previewHash: preview.previewHash, operationId: randomUUID() }
 }
-
 function facts(record: Record<string, unknown>) {
   const names = new Set(definitions.map(item => item.field))
   return Object.fromEntries(Object.entries(record).filter(([key]) => !names.has(key) && !['updated_at', 'lnk_updated_at', 'psto_updated_at'].includes(key)))
 }
 
-test('all four mixed-cycle documents: cancel, stale preview, retry, preserved facts and exact positions', async ({ page }, info) => {
-  const seedData = await seed(), errors: string[] = [], requests: string[] = []
+
+
+test('all four mixed-cycle kinds through UI: split, standalone merge, cancel, stale preview and exact preserved positions', async ({ page }, info) => {
+  const data = await seed(), errors: string[] = [], calls: string[] = []
   page.on('pageerror', error => errors.push(error.message))
-  page.on('request', request => { if (request.url().includes('/_serverFn/')) requests.push(rpcName(request.url()).split('_')[0]) })
-  let dialog = await openRebuild(page)
-  await expect(dialog.getByText(/S1 \(циклы: 2\)/).first()).toBeVisible()
-  await expect(dialog.getByText(/S2 \(циклы: 1\)/).first()).toBeVisible()
-  const beforeCancel = await snapshot()
-  await dialog.getByRole('button', { name: 'Отмена', exact: true }).click()
-  expect(await snapshot()).toEqual(beforeCancel)
-  expect(requests.filter(name => name === 'previewSystemDocumentRebuild')).toHaveLength(1)
-  expect(requests.filter(name => name === 'applySystemDocumentRebuild')).toHaveLength(0)
-  dialog = await openRebuild(page)
-  await withE2eDatabase(db => db.query(`update psto_repeat_cycles set psto_note='Changed by second operator' where id=$1`, [seedData.cycleId]))
-  const beforeStale = await snapshot()
-  await dialog.getByRole('button', { name: 'Применить пересборку', exact: true }).click()
-  await expect(dialog.getByText(/Системные документы или стыки изменились/)).toBeVisible()
-  expect(await snapshot()).toEqual(beforeStale)
-  await dialog.getByRole('button', { name: 'Обновить предпросмотр', exact: true }).click()
-  await expect(dialog.getByRole('button', { name: 'Применить пересборку', exact: true })).toBeEnabled()
-  await page.screenshot({ path: info.outputPath('cycle-rebuild-preview.png'), fullPage: true })
-  const before = await snapshot()
-  await dialog.getByRole('button', { name: 'Применить пересборку', exact: true }).click()
-  await expect(dialog).toBeHidden()
-  const after = await snapshot()
-  expect(after.rows.map(facts)).toEqual(before.rows.map(facts))
-  expect(after.cycles.map(facts)).toEqual(before.cycles.map(facts))
-  for (const definition of definitions) expect(after.rows[0][definition.field]).toEqual(before.rows[0][definition.field])
-  const cycleDocuments = after.documents.filter(doc => JSON.parse(doc.source_metadata || '{}').sourceKind === 'pstoCycle')
-  expect(cycleDocuments).toHaveLength(8)
-  for (const definition of definitions) {
-    const pair = cycleDocuments.filter(doc => doc.type === `system:${definition.storage}`)
+  page.on('request', req => { if (req.url().includes('/_serverFn/')) calls.push(rpcName(req.url()).split('_')[0]) })
+  const kinds = ['Заявка ПСТО', 'Заключение ПСТО', 'Заявка ТВМТ', 'Заключение ТВМТ']
+  for (let i = 0; i < definitions.length; i++) {
+    let dialog = await openDocumentOperation(page, [data.documents[i].title], kinds[i])
+    await expect(dialog.getByText(/Выбрано в пакете: 1 → Получится: 2/)).toBeVisible()
+    await dialog.getByRole('button', { name: 'Посмотреть состав: 1' }).first().click()
+    const panel = dialog.getByRole('complementary', { name: 'Состав будущего документа' })
+    await expect(panel.locator('tbody tr')).toHaveCount(1)
+    await expect(panel.locator('tbody')).toContainText('S1')
+    await expect(panel.locator('tbody tr')).toContainText('Цикл 2')
+    await panel.getByRole('button', { name: 'Свернуть состав' }).click()
+    if (i === 0) {
+      const beforeCancel = await snapshot()
+      await dialog.getByRole('button', { name: 'Отмена', exact: true }).click()
+      expect(await snapshot()).toEqual(beforeCancel)
+      expect(calls.filter(name => name === 'applyDocumentOperation')).toHaveLength(0)
+      dialog = await openDocumentOperation(page, [data.documents[i].title], kinds[i])
+      await withE2eDatabase(db => db.query('update psto_repeat_cycles set psto_note=$1 where id=$2', ['Changed by second operator', data.cycleId]))
+      const beforeStale = await snapshot()
+      await dialog.getByRole('button', { name: 'Подтвердить и применить' }).click()
+      await expect(dialog.getByRole('alert')).toContainText('Нажмите «Проверить изменения»')
+      expect(await snapshot()).toEqual(beforeStale)
+      await dialog.getByRole('button', { name: 'Проверить результат' }).click()
+      await dialog.getByRole('button', { name: 'Проверить изменения' }).click()
+      await expect(dialog.getByRole('button', { name: 'Подтвердить и применить' })).toBeEnabled()
+      await dialog.screenshot({ path: info.outputPath('cycle-split-preview.png') })
+    }
+    const before = await snapshot()
+    await confirmDocumentOperation(dialog)
+    const after = await snapshot()
+    expect(after.rows.map(facts)).toEqual(before.rows.map(facts))
+    expect(after.cycles.map(facts)).toEqual(before.cycles.map(facts))
+    for (const definition of definitions) expect(after.rows[0][definition.field]).toEqual(before.rows[0][definition.field])
+    const pair = after.documents.filter(doc => doc.type === 'system:' + definitions[i].storage && JSON.parse(doc.source_metadata || '{}').sourceKind === 'pstoCycle')
     expect(pair).toHaveLength(2)
-    expect(new Set(pair.map(doc => doc.title)).size).toBe(2)
-    expect(pair.map(doc => JSON.parse(doc.source_metadata).sourcePositions).flat().map(({ weldJointId, relationId, sequence }) =>
-      [weldJointId, relationId, sequence]).sort()).toEqual([[seedData.ids[0], seedData.cycleId, 2], [seedData.ids[1], seedData.ids[1], 1]].sort())
-    expect(pair.map(doc => doc.title)).toContain(after.cycles[0][definition.field])
-    expect(pair.map(doc => doc.title)).toContain(after.rows[1][definition.field])
+    expect(pair.map(doc => doc.id)).toContain(data.documents[i].id)
+    expect(pair.flatMap(doc => JSON.parse(doc.source_metadata).sourcePositions).map(({ weldJointId, relationId, sequence }) => [weldJointId, relationId, sequence]).sort()).toEqual([[data.ids[0], data.cycleId, 2], [data.ids[1], data.ids[1], 1]].sort())
+    await dialog.getByRole('button', { name: 'Остановиться / закрыть' }).click()
+
+    // Explicit merge must reunite different welds' cycles, not confuse their sequence numbers.
+    dialog = await openDocumentOperation(page, pair.map(doc => doc.title), kinds[i], 'merge')
+    await expect(dialog.getByText('Выбрано в пакете: 2 → Получится: 1')).toBeVisible()
+    await confirmDocumentOperation(dialog)
+    const mergedState = await snapshot()
+    expect(mergedState.rows.map(facts)).toEqual(after.rows.map(facts))
+    expect(mergedState.cycles.map(facts)).toEqual(after.cycles.map(facts))
+    const merged = mergedState.documents.filter(doc => doc.type === 'system:' + definitions[i].storage && JSON.parse(doc.source_metadata || '{}').sourceKind === 'pstoCycle')
+    expect(merged).toHaveLength(1)
+    expect(JSON.parse(merged[0].source_metadata).sourcePositions).toEqual(expect.arrayContaining(pair.flatMap(doc => JSON.parse(doc.source_metadata).sourcePositions)))
+    expect(JSON.parse(merged[0].source_metadata).sourcePositions).toHaveLength(2)
+    expect(mergedState.cycles[0][definitions[i].field]).toBe(merged[0].title)
+    expect(mergedState.rows[1][definitions[i].field]).toBe(merged[0].title)
+    expect(mergedState.rows[0][definitions[i].field]).toBe(after.rows[0][definitions[i].field])
+    await dialog.getByRole('button', { name: 'Остановиться / закрыть' }).click()
   }
+  expect(calls.filter(name => name === 'applyDocumentOperation')).toHaveLength(9)
   expect(errors).toEqual([])
 })
 
-test('pending rebuild cannot be dismissed as if it were cancelled', async ({ page }, info) => {
-  await seed()
-  const dialog = await openRebuild(page)
+test('pending operation cannot be dismissed as cancellation', async ({ page }) => {
+  const data = await seed(), dialog = await openDocumentOperation(page, [data.documents[0].title])
   let release!: () => void, received!: () => void
-  const gate = new Promise<void>(resolve => { release = resolve })
-  const responseReady = new Promise<void>(resolve => { received = resolve })
-  let writes = 0
+  const gate = new Promise<void>(resolve => { release = resolve }), ready = new Promise<void>(resolve => { received = resolve })
   await page.route('**/_serverFn/**', async route => {
-    if (!rpcName(route.request().url()).startsWith('applySystemDocumentRebuild_')) return route.continue()
-    writes++
-    // Real local save, held response: closing a modal cannot undo this commit.
-    const response = await route.fetch()
-    received()
-    await gate
-    await route.fulfill({ response })
+    if (!rpcName(route.request().url()).startsWith('applyDocumentOperation_')) return route.continue()
+    const response = await route.fetch(); received(); await gate; await route.fulfill({ response })
   })
-  await dialog.getByRole('button', { name: 'Применить пересборку', exact: true }).click()
-  await responseReady
+  await dialog.getByRole('button', { name: 'Подтвердить и применить' }).click()
+  await ready
   try {
     await expect(dialog.getByRole('button', { name: 'Закрыть', exact: true })).toBeDisabled()
     await expect(dialog.getByRole('button', { name: 'Отмена', exact: true })).toBeDisabled()
-    await expect(dialog.getByRole('button', { name: 'Применяю...', exact: true })).toBeDisabled()
-    await dialog.screenshot({ path: info.outputPath('rebuild-pending.png') })
-    expect(writes).toBe(1)
+    await expect(dialog.getByRole('button', { name: 'Сохраняем…', exact: true })).toBeDisabled()
   } finally { release() }
-  await expect(dialog).toBeHidden()
-  await expect(page.getByText('Пересобрано документов: 4 · затронуто стыков: 2', { exact: true })).toBeVisible()
+  await expect(dialog.getByRole('status')).toContainText('Сохранено пакетов: 1')
 })
 
-test('custom cycle documents stay unchanged until explicit manual split', async ({ page }) => {
-  const data = await seed(true)
-  const dialog = await openRebuild(page)
-  await expect(dialog.getByRole('button', { name: 'Применить пересборку', exact: true })).toBeDisabled()
+test('custom cycle names need explicit names for changed membership; other kinds stay untouched', async ({ page }) => {
+  const data = await seed(true), dialog = await openDocumentOperation(page, [data.documents[0].title])
+  await expect(dialog.getByRole('button', { name: 'Подтвердить и применить' })).toBeDisabled()
   const before = await snapshot()
-  const customSection = dialog.locator('section').filter({ has: page.getByRole('heading', { name: 'Пользовательские названия', exact: true }) })
-  const document = customSection.getByText(data.documents[0].title, { exact: true }).locator('xpath=../..').locator('..')
-  await document.getByRole('button', { name: 'Пересобрать вручную', exact: true }).click()
-  await expect(dialog.getByRole('button', { name: 'Применить пересборку', exact: true })).toBeDisabled()
-  await document.getByRole('textbox').nth(0).fill('Ручная заявка Л1')
-  await document.getByRole('textbox').nth(1).fill('Ручная заявка Л2')
-  await dialog.getByRole('button', { name: 'Применить пересборку', exact: true }).click()
-  await expect(dialog).toBeHidden()
+  const inputs = dialog.getByRole('textbox', { name: /^Название:/ })
+  await inputs.nth(0).fill('Ручная заявка Л1'); await inputs.nth(1).fill('Ручная заявка Л2'); await inputs.nth(1).blur()
+  await dialog.getByRole('button', { name: 'Проверить изменения' }).click()
+  await confirmDocumentOperation(dialog)
   const after = await snapshot()
-  for (const original of before.documents.filter(doc => data.documents.slice(1).some(item => item.id === doc.id))) {
-    // Metadata timestamps may refresh, but names and position membership do not.
-    expect(after.documents.find(doc => doc.id === original.id)?.title).toBe(original.title)
-  }
+  for (const original of before.documents.filter(doc => data.documents.slice(1).some(item => item.id === doc.id))) expect(after.documents.find(doc => doc.id === original.id)?.title).toBe(original.title)
   expect(after.cycles[0].psto_request).toBe('Ручная заявка Л1')
   expect(after.rows[1].psto_request).toBe('Ручная заявка Л2')
 })
 
-test('a manual name colliding with an existing first-cycle document rolls back every group', async ({ page }) => {
+test('manual collision with unselected legacy first cycle is refused, including direct apply', async () => {
   const data = await seed(true)
   await withE2eDatabase(async db => {
-    // Another selected kind reserves a new system number before the conflict
-    // is detected; its counter and every document must roll back as well.
-    const automaticName = buildCurrentSystemDocumentName({ ...definitions[1], title: '' }, [], REQUEST_CONCLUSION_DEFAULT_SETTINGS, 900)
-    await db.query('update psto_repeat_cycles set heat_treatment_diagram=$1 where id=$2', [automaticName, data.cycleId])
-    await db.query('update weld_joints set heat_treatment_diagram=$1 where id=$2', [automaticName, data.ids[1]])
-    await db.query('update generated_documents set title=$1 where id=$2', [automaticName, data.documents[1].id])
-    const id = (await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,has_vik,psto_required,psto_request,psto_request_date)
-      values ($1,'CYCLE','CYCLE-L3','S3','2026-09-01','да','да','Occupied','2026-09-04') returning id`, [project])).rows[0].id
-    const doc = (await db.query(`insert into generated_documents(type,title,file_name,mime_type,period_from,period_to,row_count,source_metadata)
-      values ('system:pstoRequest','Occupied','occupied.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','2026-09-04','2026-09-04',1,$1) returning id`,
-      [JSON.stringify({ positionCount: 1, projects: [project], lines: ['CYCLE-L3'], methodCodes: [] })])).rows[0].id
-    await db.query(`insert into generated_document_weld_joints(document_id,weld_joint_id) values ($1,$2)`, [doc, id])
+    const id = (await db.query("insert into weld_joints(project_title,subtitle_code,line,joint,psto_request,psto_request_date) values ($1,'CYCLE','L3','S3','Occupied','2026-09-04') returning id", [project])).rows[0].id
+    const doc = (await db.query("insert into generated_documents(type,title,file_name,mime_type,period_from,period_to,row_count,source_metadata) values ('system:pstoRequest','Occupied','occupied.xlsx','application/xlsx','2026-09-04','2026-09-04',1,'{}') returning id")).rows[0].id
+    await db.query('insert into generated_document_weld_joints(document_id,weld_joint_id) values ($1,$2)', [doc, id])
   })
-  const dialog = await openRebuild(page)
-  const customSection = dialog.locator('section').filter({ has: page.getByRole('heading', { name: 'Пользовательские названия', exact: true }) })
-  const document = customSection.getByText(data.documents[0].title, { exact: true }).locator('xpath=../..').locator('..')
-  await document.getByRole('button', { name: 'Пересобрать вручную', exact: true }).click()
-  await document.getByRole('textbox').nth(0).fill('Non-conflicting repeat')
-  await document.getByRole('textbox').nth(1).fill('Occupied')
+  const input = request(data.documents.map(d => d.id)), preview = await previewOperation(input)
+  const names = Object.fromEntries(preview.groups.map((g, i) => [g.key, { mode: 'custom' as const, name: i === 0 ? 'Occupied' : 'Independent ' + i, membership: g.membership }]))
+  const conflict = await previewOperation({ ...input, names })
+  expect(conflict.groups[0].error).toContain('вне выбора')
   const before = await snapshot()
-  await dialog.getByRole('button', { name: 'Применить пересборку', exact: true }).click()
-  await expect(dialog.getByText(/одинаковые названия документов/)).toBeVisible()
+  await expect(applyOperation({ ...input, names, fingerprint: conflict.fingerprint, previewHash: conflict.previewHash, operationId: randomUUID() })).rejects.toThrow('вне выбора')
   expect(await snapshot()).toEqual(before)
-  await document.getByRole('textbox').nth(1).fill('Non-conflicting first')
-  await dialog.getByRole('button', { name: 'Применить пересборку', exact: true }).click()
-  await expect(dialog).toBeHidden()
-  const after = await snapshot()
-  expect(after.rows.find(row => row.joint === 'S3')?.psto_request).toBe('Occupied')
-  expect(after.cycles[0].psto_request).toBe('Non-conflicting repeat')
-  expect(after.rows.find(row => row.joint === 'S2')?.psto_request).toBe('Non-conflicting first')
 })
 
-test('returning to recently opened history shows rebuilt names with one refresh and no inactive refetch', async ({ page }) => {
-  const data = await seed(true), requests: string[] = []
-  page.on('request', request => {
-    if (request.url().includes('/_serverFn/') && rpcName(request.url()).startsWith('listSystemDocumentHistory_')) requests.push(request.url())
-  })
-  await page.goto('/documents')
-  await page.getByRole('button', { name: 'Заявка ПСТО', exact: true }).click()
-  await expect(page.getByText(data.documents[0].title, { exact: true })).toBeVisible()
-  const count = requests.length
-  const dialog = await openRebuild(page, false)
-  const customSection = dialog.locator('section').filter({ has: page.getByRole('heading', { name: 'Пользовательские названия', exact: true }) })
-  const document = customSection.getByText(data.documents[0].title, { exact: true }).locator('xpath=../..').locator('..')
-  await document.getByRole('button', { name: 'Пересобрать вручную', exact: true }).click()
-  await document.getByRole('textbox').nth(0).fill('Cached history L1')
-  await document.getByRole('textbox').nth(1).fill('Cached history L2')
-  await dialog.getByRole('button', { name: 'Применить пересборку', exact: true }).click()
-  await expect(dialog).toBeHidden()
-  expect(requests).toHaveLength(count)
-  await page.getByRole('navigation', { name: 'Разделы программы' }).getByRole('button', { name: 'Документы', exact: true }).click()
-  await page.getByRole('button', { name: 'Заявка ПСТО', exact: true }).click()
+test('active history refresh is coalesced and reopening does not restore stale names', async ({ page }) => {
+  const data = await seed(true), calls: string[] = []
+  page.on('request', req => { if (req.url().includes('/_serverFn/')) calls.push(rpcName(req.url()).split('_')[0]) })
+  const dialog = await openDocumentOperation(page, [data.documents[0].title])
+  const before = calls.filter(n => n === 'listSystemDocumentHistory').length
+  const inputs = dialog.getByRole('textbox', { name: /^Название:/ })
+  await inputs.nth(0).fill('Cached history L1'); await inputs.nth(1).fill('Cached history L2'); await inputs.nth(1).blur()
+  await dialog.getByRole('button', { name: 'Проверить изменения' }).click()
+  await confirmDocumentOperation(dialog)
+  await dialog.getByRole('button', { name: 'Остановиться / закрыть' }).click()
   await expect(page.getByText('Cached history L1', { exact: true })).toBeVisible()
   await expect(page.getByText('Cached history L2', { exact: true })).toBeVisible()
-  await expect(page.getByText(data.documents[0].title, { exact: true })).toHaveCount(0)
-  expect(requests).toHaveLength(count + 1)
+  expect(calls.filter(n => n === 'listSystemDocumentHistory')).toHaveLength(before + 1)
+  expect(calls.filter(n => n === 'getDocumentOperationComposition')).toHaveLength(0)
 })
 
-test('a concurrently saved naming rule cannot mix old and new names within one rebuild', async ({ page }) => {
-  await seed()
-  const dialog = await openRebuild(page)
-  const before = await snapshot()
+test('concurrent naming template change rejects stale preview, while another split preference does not rewrite a draft', async () => {
+  const data = await seed(), input = request([data.documents[0].id]), prepared = await prepare(input)
   await withE2eDatabase(async db => {
-    await db.query('begin')
-    let committed = false
-    try {
-      await db.query(`select pg_advisory_xact_lock(hashtext('request-conclusion'))`)
-      const pid = (await db.query('select pg_backend_pid() as pid')).rows[0].pid
-      await dialog.getByRole('button', { name: 'Применить пересборку', exact: true }).click()
-      await expect.poll(() => withE2eDatabase(async observer => (await observer.query(
-        `select count(*)::int as count from pg_stat_activity where datname=current_database() and $1=any(pg_blocking_pids(pid))`, [pid],
-      )).rows[0].count)).toBe(1)
-      const value = JSON.parse((await db.query(`select value from app_settings where key='request-conclusion'`)).rows[0].value)
-      value.splitModes.pstoRequest = 'none'
-      await db.query(`update app_settings set value=$1,updated_at=now() where key='request-conclusion'`, [JSON.stringify(value)])
-      await db.query('commit')
-      committed = true
-    } finally {
-      if (!committed) await db.query('rollback')
-    }
+    const row = (await db.query("select value from app_settings where key='request-conclusion'")).rows[0]
+    const value = JSON.parse(row.value); value.pstoRequest.systemPattern = 'Changed-{{номер}}'
+    await db.query("update app_settings set value=$1,updated_at=now() where key='request-conclusion'", [JSON.stringify(value)])
   })
-  await expect(dialog.getByText(/Настройки разделения изменились/)).toBeVisible()
+  const before = await snapshot()
+  await expect(applyOperation(prepared)).rejects.toThrow('Нажмите «Проверить изменения»')
   expect(await snapshot()).toEqual(before)
+  const fresh = await prepare(input)
+  await withE2eDatabase(async db => {
+    const value = JSON.parse((await db.query("select value from app_settings where key='request-conclusion'")).rows[0].value)
+    value.splitModes.pstoRequest = 'none'; value.splitModes.tvmtRequest = 'joint'
+    await db.query("update app_settings set value=$1,updated_at=now() where key='request-conclusion'", [JSON.stringify(value)])
+  })
+  expect((await applyOperation(fresh)).resultingDocumentCount).toBe(2)
+  await withE2eDatabase(async db => {
+    const value = JSON.parse((await db.query("select value from app_settings where key='request-conclusion'")).rows[0].value)
+    expect(value.splitModes.pstoRequest).toBe('line'); expect(value.splitModes.tvmtRequest).toBe('joint')
+  })
 })
 
-test('rebuild refreshes persisted dispatcher repair links without a full unrelated rebuild', async ({ page }) => {
+test('names update persisted dispatcher links with one scoped invalidation', async () => {
   const data = await seed()
-  // A stored chronology issue needs a link to the exact current document.
-  // Renaming must not leave that correction pointing at the vanished name.
-  await withE2eDatabase(db => db.query(`update weld_joints set weld_date='2026-09-07' where id=$1`, [data.ids[1]]))
-  await markDispatcherTaskIndexDirty()
-  await ensureDispatcherTaskIndexFresh()
-  const readActions = () => withE2eDatabase(async db => (await db.query('select tasks from dispatcher_task_pages'))
-    .rows.flatMap(row => JSON.parse(row.tasks)).filter(task => task.row?.id === data.ids[1])
-    .flatMap(task => task.rootCauseActions ?? []).map(action => action.target.documentName).filter(Boolean))
+  await withE2eDatabase(db => db.query("update weld_joints set weld_date='2026-09-07' where id=$1", [data.ids[1]]))
+  await markDispatcherTaskIndexDirty(); await ensureDispatcherTaskIndexFresh()
+  const readActions = () => withE2eDatabase(async db => (await db.query('select tasks from dispatcher_task_pages')).rows.flatMap(row => JSON.parse(row.tasks)).filter(task => task.row?.id === data.ids[1]).flatMap(task => task.rootCauseActions ?? []).map(action => action.target.documentName).filter(Boolean))
   expect(await readActions()).toContain(data.documents[0].title)
   const before = await withE2eDatabase(async db => (await db.query('select source_revision from dispatcher_task_index_state where id=1')).rows[0])
-  const dialog = await openRebuild(page)
-  await dialog.getByRole('button', { name: 'Применить пересборку', exact: true }).click()
-  await expect(dialog).toBeHidden()
-  const currentName = (await snapshot()).rows.find(row => row.id === data.ids[1])!.psto_request
-  expect(currentName).not.toBe(data.documents[0].title)
+  await applyOperation(await prepare(request(data.documents.map(d => d.id))))
+  const current = (await snapshot()).rows.find(row => row.id === data.ids[1])!.psto_request
   const dirty = await withE2eDatabase(async db => (await db.query('select full_rebuild,dirty_scopes from dispatcher_task_index_state where id=1')).rows[0])
-  expect(dirty.full_rebuild).toBe(false)
-  expect(JSON.parse(dirty.dirty_scopes)).toEqual(expect.arrayContaining(data.ids.map((_id, index) => ({
-    projectTitle: project, subtitleCode: 'CYCLE', line: `CYCLE-L${index + 1}`,
-  }))))
-  expect(JSON.parse(dirty.dirty_scopes)).toHaveLength(2)
+  expect(dirty.full_rebuild).toBe(false); expect(JSON.parse(dirty.dirty_scopes)).toHaveLength(2)
   await ensureDispatcherTaskIndexFresh()
-  expect(await readActions()).toContain(currentName)
-  expect(await readActions()).not.toContain(data.documents[0].title)
-  const state = await withE2eDatabase(async db => (await db.query('select source_revision,computed_revision,full_rebuild from dispatcher_task_index_state where id=1')).rows[0])
-  expect(state.source_revision).toBe(before.source_revision + 1)
-  expect(state.computed_revision).toBe(state.source_revision)
-  expect(state.full_rebuild).toBe(false)
+  expect(await readActions()).toContain(current); expect(await readActions()).not.toContain(data.documents[0].title)
+  const after = await withE2eDatabase(async db => (await db.query('select source_revision,computed_revision from dispatcher_task_index_state where id=1')).rows[0])
+  expect(after.source_revision).toBe(before.source_revision + 1); expect(after.computed_revision).toBe(after.source_revision)
 })
 
-test('pending rebuild permits reading; concurrent edit and second rebuild wait then reject their stale snapshots', async ({ page, context }) => {
-  const data = await seed()
-  const first = await openRebuild(page)
-  const secondPage = await context.newPage()
-  const second = await openRebuild(secondPage)
-  const reader = await context.newPage()
+test('concurrent stale edit and document operation wait, then reject; unrelated readers see committed state', async () => {
+  const data = await seed(), input = request(data.documents.map(d => d.id)), first = await prepare(input), second = await prepare(input)
   const before = await snapshot()
-  const version = await withE2eDatabase(async db => (await db.query(
-    'select xmin::text as version from weld_joints where id=$1', [data.ids[1]],
-  )).rows[0].version as string)
-  let edit: Promise<string> | undefined
+  const version = await withE2eDatabase(async db => (await db.query('select xmin::text as version from weld_joints where id=$1', [data.ids[1]])).rows[0].version)
+  let save!: ReturnType<typeof applyOperation>, stale!: Promise<string>, edit!: Promise<string>
   await withE2eDatabase(async gate => {
     await gate.query('begin')
     try {
-      // Stop a real rebuild AFTER it has updated weld names but before its
-      // document replacements commit. No application-only test hooks.
       await gate.query('select id from generated_documents where id=$1 for update', [data.documents[0].id])
-      const gatePid = (await gate.query('select pg_backend_pid() as pid')).rows[0].pid
-      await first.getByRole('button', { name: 'Применить пересборку', exact: true }).click()
-      const waiting = () => withE2eDatabase(async db => (await db.query(
-        'select pid,query from pg_stat_activity where datname=current_database() and $1=any(pg_blocking_pids(pid))', [gatePid],
-      )).rows)
+      const pid = (await gate.query('select pg_backend_pid() as pid')).rows[0].pid
+      save = applyOperation(first)
+      const waiting = () => withE2eDatabase(async db => (await db.query('select pid from pg_stat_activity where datname=current_database() and $1=any(pg_blocking_pids(pid))', [pid])).rows)
       await expect.poll(async () => (await waiting()).length).toBe(1)
-      const [rebuild] = await waiting()
-      expect(rebuild.query).toContain('delete from "generated_documents"')
-      const reportResponse = reader.waitForResponse(response => response.url().includes('/_serverFn/') &&
-        rpcName(response.url()).startsWith('listWeldingJournalPage_'))
-      await reader.goto('/journal')
-      expect((await reportResponse).ok()).toBe(true)
-      await expect(reader.locator('table tbody tr').first()).toBeVisible()
+      const [operation] = await waiting()
       expect(await snapshot()).toEqual(before)
-      edit = updateWeldJoint({ data: { id: data.ids[1], expectedVersion: version,
-        weldingJournalNote: 'Must not overwrite rebuilt documents',
-      } }).then(() => 'unexpected success', error => String(error.message))
-      await second.getByRole('button', { name: 'Применить пересборку', exact: true }).click()
-      await expect.poll(() => withE2eDatabase(async db => (await db.query(
-        'select count(*)::int as n from pg_stat_activity where datname=current_database() and $1=any(pg_blocking_pids(pid))', [rebuild.pid],
-      )).rows[0].n)).toBe(2)
-      await expect(first.getByRole('button', { name: 'Отмена', exact: true })).toBeDisabled()
+      edit = updateWeldJoint({ data: { id: data.ids[1], expectedVersion: version, weldingJournalNote: 'Must not overwrite' } }).then(() => 'unexpected', error => error.message)
+      stale = applyOperation(second).then(() => 'unexpected', error => error.message)
+      await expect.poll(() => withE2eDatabase(async db => (await db.query('select count(*)::int as n from pg_stat_activity where datname=current_database() and $1=any(pg_blocking_pids(pid))', [operation.pid])).rows[0].n)).toBe(2)
     } finally { await gate.query('rollback') }
   })
-  await expect(first).toBeHidden()
-  expect(await edit).toContain('уже изменен другим пользователем')
-  await expect(second.getByText(/Системные документы или стыки изменились/)).toBeVisible()
-  const after = await snapshot()
-  expect(after.rows.map(facts)).toEqual(before.rows.map(facts))
-  expect(after.cycles.map(facts)).toEqual(before.cycles.map(facts))
-  expect(after.documents.filter(doc => JSON.parse(doc.source_metadata || '{}').sourceKind === 'pstoCycle')).toHaveLength(8)
-  await second.getByRole('button', { name: 'Обновить предпросмотр', exact: true }).click()
-  await expect(second.getByRole('button', { name: 'Применить пересборку', exact: true })).toBeDisabled()
-  await expect(second.getByRole('button', { name: 'Отмена', exact: true })).toBeEnabled()
-  await second.getByRole('button', { name: 'Отмена', exact: true }).click()
-  await secondPage.close()
-  await reader.close()
+  expect((await save).changedDocumentCount).toBe(4)
+  expect(await edit).toContain('уже изменен другим пользователем'); expect(await stale).toContain('Нажмите «Проверить изменения»')
+  expect((await snapshot()).rows.map(facts)).toEqual(before.rows.map(facts))
 })
 
-test('late database failure rolls back names, cycles, deleted documents and reserved numbers; same preview can retry', async ({ page }) => {
-  await seed()
-  const dialog = await openRebuild(page)
-  const before = await snapshot()
-  await withE2eDatabase(db => db.query(`alter table generated_documents add constraint e2e_rebuild_late_failure
-    check (not (row_count=1 and source_metadata like '%E2E cycle document rebuild%'))`))
-  try {
-    await dialog.getByRole('button', { name: 'Применить пересборку', exact: true }).click()
-    await expect(dialog.getByRole('button', { name: 'Применить пересборку', exact: true })).toBeEnabled()
-    await expect(dialog.locator('.text-rose-700')).toBeVisible()
-    expect(await snapshot()).toEqual(before)
-  } finally {
-    await withE2eDatabase(db => db.query('alter table generated_documents drop constraint e2e_rebuild_late_failure'))
-  }
-  await dialog.getByRole('button', { name: 'Применить пересборку', exact: true }).click()
-  await expect(dialog).toBeHidden()
+test('late failure rolls back all four kinds, exact cycles, links and counters; same operation retries once', async () => {
+  const data = await seed(), prepared = await prepare(request(data.documents.map(d => d.id))), before = await snapshot()
+  await withE2eDatabase(db => db.query(`alter table generated_documents add constraint e2e_rebuild_late_failure check (not (row_count=1 and source_metadata like '%E2E cycle document rebuild%'))`))
+  try { await expect(applyOperation(prepared)).rejects.toThrow(); expect(await snapshot()).toEqual(before) }
+  finally { await withE2eDatabase(db => db.query('alter table generated_documents drop constraint e2e_rebuild_late_failure')) }
+  const result = await applyOperation(prepared)
+  expect(result).toEqual({ changedDocumentCount: 4, resultingDocumentCount: 8, affectedRowCount: 2 })
+  expect(await applyOperation(prepared)).toEqual(result)
+  expect(await getOperationResult(prepared.operationId)).toEqual(result)
   const after = await snapshot()
-  expect(after.rows.map(facts)).toEqual(before.rows.map(facts))
-  expect(after.cycles.map(facts)).toEqual(before.cycles.map(facts))
-  expect(after.documents.filter(doc => JSON.parse(doc.source_metadata || '{}').sourceKind === 'pstoCycle')).toHaveLength(8)
+  expect(after.rows.map(facts)).toEqual(before.rows.map(facts)); expect(after.cycles.map(facts)).toEqual(before.cycles.map(facts))
 })
 
-test('lost successful rebuild response: stale retry cannot duplicate documents or numbering; refresh recovers', async ({ page }) => {
-  await seed()
-  const errors: string[] = [], calls: string[] = []
-  page.on('pageerror', error => errors.push(error.message))
-  page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
-  const dialog = await openRebuild(page)
+test('lost HTTP response is recovered from the committed receipt without another mutation', async ({ page }) => {
+  const data = await seed(), dialog = await openDocumentOperation(page, [data.documents[0].title]), calls: string[] = []
+  page.on('request', req => { if (req.url().includes('/_serverFn/')) calls.push(rpcName(req.url()).split('_')[0]) })
+  await page.route(url => rpcName(url.toString()).startsWith('applyDocumentOperation_'), async route => { const response = await route.fetch(); expect(response.ok()).toBe(true); await route.abort('timedout') }, { times: 1 })
   const before = await snapshot()
-  // The server commits normally, but the client never receives that successful
-  // reply. A network timeout is not evidence that a mutation was rolled back.
-  await page.route(url => rpcName(url.toString()).startsWith('applySystemDocumentRebuild_'), async route => {
-    const response = await route.fetch()
-    expect(response.ok()).toBe(true)
-    await route.abort('timedout')
-  }, { times: 1 })
-  await dialog.getByRole('button', { name: 'Применить пересборку', exact: true }).click()
-  await expect(dialog.locator('.text-rose-700')).toBeVisible()
-  await expect(dialog.getByRole('button', { name: 'Отмена', exact: true })).toBeEnabled()
-  const committed = await snapshot()
-  expect(committed.rows.map(facts)).toEqual(before.rows.map(facts))
-  expect(committed.cycles.map(facts)).toEqual(before.cycles.map(facts))
-  expect(committed.documents.filter(doc => JSON.parse(doc.source_metadata || '{}').sourceKind === 'pstoCycle')).toHaveLength(8)
-  await dialog.getByRole('button', { name: 'Применить пересборку', exact: true }).click()
-  await expect(dialog.getByText(/Системные документы или стыки изменились/)).toBeVisible()
-  expect(await snapshot()).toEqual(committed)
-  const refreshed = page.waitForResponse(response => rpcName(response.url()).startsWith('previewSystemDocumentRebuild_'))
-  await dialog.getByRole('button', { name: 'Обновить предпросмотр', exact: true }).click()
-  expect((await refreshed).ok()).toBe(true)
-  await expect(dialog.getByRole('button', { name: 'Обновить предпросмотр', exact: true })).toBeEnabled()
-  await expect(dialog.getByText('В выбранной области пока нет документов для пересборки.', { exact: true })).toBeVisible()
-  await expect(dialog.getByRole('button', { name: 'Применить пересборку', exact: true })).toBeDisabled()
-  await expect(dialog.getByRole('button', { name: 'Отмена', exact: true })).toBeEnabled()
-  await dialog.getByRole('button', { name: 'Отмена', exact: true }).click()
-  await expect(dialog).toBeHidden()
-  expect(calls.filter(name => name.startsWith('previewSystemDocumentRebuild_'))).toHaveLength(2)
-  expect(calls.filter(name => name.startsWith('applySystemDocumentRebuild_'))).toHaveLength(2)
-  expect(errors).toEqual([])
+  await confirmDocumentOperation(dialog)
+  expect(calls.filter(n => n === 'applyDocumentOperation')).toHaveLength(1)
+  expect(calls.filter(n => n === 'getDocumentOperationResult')).toHaveLength(1)
+  expect((await snapshot()).rows.map(facts)).toEqual(before.rows.map(facts))
+  await expect(dialog.getByRole('button', { name: 'Подтвердить и применить' })).toBeDisabled()
 })

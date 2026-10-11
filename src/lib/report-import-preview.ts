@@ -53,7 +53,7 @@ import {
   getPstoLineIdentityKey,
   hasPstoLifecycleData,
   normalizePstoLineIdentity,
-  requiresPrimaryStageResolutionForAssignedPstoLine,
+  hasPrimaryLnkHistoryBeforePstoAssignment,
 } from '@/lib/psto-line-assignment'
 import { isControlEnabledValue } from '@/lib/control-availability-values'
 
@@ -458,12 +458,12 @@ function getImportPstoLineMoveBlockReason(
     targetRows.length > 0 && targetAssignedCount === targetRows.length
   )
   if (targetAssigned) {
-    return requiresPrimaryStageResolutionForAssignedPstoLine(existingRow)
-      ? 'Стык переносится на линию с ПСТО, но у него уже есть основной комплект ВИК/РК/УЗК/ПВК. Выполните перенос через карточку стыка и выберите: сохранить основной комплект и позднее оформить отдельный НК до ТО либо перенести комплект в «До ТО». Удаление ошибочных документов выполняется отдельно.'
+    return hasPrimaryLnkHistoryBeforePstoAssignment(existingRow)
+      ? 'Стык переносится на линию с ПСТО, но у него уже есть основной комплект ВИК/РК/УЗК/ПВК. Выполните перенос через карточку стыка с сохранением всех этапов контроля. Основной НК не заменяет НК до ТО. Удаление ошибочных документов выполняется отдельно.'
       : ''
   }
   if (!hasPstoLifecycleData(existingRow)) return ''
-  return 'Стык переносится на линию без подтвержденного ПСТО, но у него уже есть документы ПСТО/ТВМТ, повторные циклы или НК до ТО. Выполните перенос через карточку стыка и выберите, какой комплект НК сохранить.'
+  return 'Стык переносится на линию без подтвержденного ПСТО, но у него уже есть документы ПСТО/ТВМТ, повторные циклы или НК до ТО. Выполните перенос через карточку стыка с сохранением всех этапов и истории.'
 }
 
 function isExpectedRowVersionCurrent(expectedVersion: string, currentVersion: string | undefined) {

@@ -18,6 +18,7 @@ describe('buildWeldingDynamicsJointTypeTable', () => {
 
     expect(buildWeldingDynamicsJointTypeTable(dynamics, 'all', 'wdi')).toEqual({
       title: 'Проекты и группы материалов за период',
+      numericColumns: [1, 2, 3, 4, 5, 6],
       subtitle: 'Иерархия: проект → группа материалов; повторные стыки относятся к типу базового стыка цепочки.',
       columns: ['Проект / группа материалов', 'S · база', 'F · поле', 'Всего', 'Сварщики', 'На сварщика в смену', 'Доля'],
       rows: [

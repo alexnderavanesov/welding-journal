@@ -39,9 +39,9 @@ describe('LnkResultConclusionsPanel', () => {
     render(<LnkResultConclusionsPanel plan={plan} naming={naming} onNamingChange={vi.fn()} />)
 
     expect(screen.getByText('Проект: Проект А · Шифр: 500 · Линия: L-10')).toBeInTheDocument()
-    expect(screen.getByText(plan.groups[0].name)).toBeInTheDocument()
-    expect(screen.getByText(plan.groups[1].name)).toBeInTheDocument()
-    expect(screen.getByText(/Будет создано:/)).toHaveTextContent('Будет создано: 2')
+    expect(screen.getByDisplayValue(plan.groups[0].name)).toBeInTheDocument()
+    expect(screen.getByDisplayValue(plan.groups[1].name)).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /Состав — 1 позиций/ })).toHaveLength(2)
   })
 
   it('switches to arbitrary custom names without discarding saved drafts', () => {
@@ -55,7 +55,7 @@ describe('LnkResultConclusionsPanel', () => {
     render(<LnkResultConclusionsPanel plan={createPlan(naming)} naming={naming} onNamingChange={onNamingChange} />)
     fireEvent.click(screen.getByRole('button', { name: 'Пользовательское' }))
 
-    expect(onNamingChange).toHaveBeenCalledWith({ ...naming, mode: 'custom' })
+    expect(onNamingChange).toHaveBeenCalledWith({ ...naming, mode: 'custom', groupModes: {} })
   })
 
   it('fills successive groups from names pasted on separate lines', () => {
@@ -74,6 +74,8 @@ describe('LnkResultConclusionsPanel', () => {
         [plan.groups[0].key]: 'Первое заключение',
         [plan.groups[1].key]: 'Второе заключение',
       },
+      groupModes: Object.fromEntries(plan.groups.map(group => [group.key, 'custom'])),
+      customGroupMembers: Object.fromEntries(plan.groups.map(group => [group.key, group.membership])),
     })
   })
 
