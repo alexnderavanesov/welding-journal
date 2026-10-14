@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { CheckSquare2, MoreHorizontal, X } from 'lucide-react'
 
 import { ContextActionMenu, type ContextActionMenuItem, type ContextActionMenuState } from '@/components/context-action-menu'
@@ -41,6 +41,8 @@ const DEFAULT_SORT_CHANGE = () => undefined
 
 export type WeldTableProps = {
   rows: WeldRow[]
+  rowsReady?: boolean
+  queryIdentity?: string
   actionRows?: WeldRow[]
   duplicateRows?: WeldRow[]
   duplicateKeyOverrides?: ReadonlySet<string>
@@ -50,7 +52,9 @@ export type WeldTableProps = {
   manualFilterOptionsReport?: WeldReportKind
   manualFilterOptions?: Record<string, WeldColumnFilterOption[]>
   manualPagination?: {
-    totalCount: number
+    totalCount: number | undefined
+    summaryStatus?: 'pending' | 'ready' | 'error'
+    rowsLoading?: boolean
     firstItemNumber: number
     lastItemNumber: number
     pageSize: number
@@ -106,6 +110,8 @@ export type WeldTableProps = {
 
 export function WeldTable({
   rows,
+  rowsReady = true,
+  queryIdentity = '',
   actionRows,
   duplicateRows,
   duplicateKeyOverrides,
@@ -156,6 +162,9 @@ export function WeldTable({
   reportTaskPanels,
 }: WeldTableProps) {
   const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
+  const [contextMenuScope, setContextMenuScope] = useState('')
+  const selectionScope = `${queryIdentity}:${[...selectedRowIds].sort((a, b) => a - b).join(',')}`
+  useEffect(() => { setContextMenu(null) }, [selectionScope, rowsReady])
   const tableRef = useRef<HTMLTableElement>(null)
   const stableOnColumnFiltersChange = useStableEventCallback(onColumnFiltersChange)
   const stableOnSortChange = useStableEventCallback(onSortChange)
@@ -183,8 +192,8 @@ export function WeldTable({
     [stableIsCellEditable],
   )
   const stableRowSelectable = useCallback(
-    (row: WeldRow) => stableIsRowSelectable(row) ?? true,
-    [stableIsRowSelectable],
+    (row: WeldRow) => rowsReady && (stableIsRowSelectable(row) ?? true),
+    [stableIsRowSelectable, rowsReady],
   )
   const stableRowActions = useMemo<ReportRowActions | undefined>(
     () =>
@@ -224,6 +233,8 @@ export function WeldTable({
       manualPagination
         ? {
             totalCount: manualPagination.totalCount,
+            summaryStatus: manualPagination.summaryStatus,
+            rowsLoading: manualPagination.rowsLoading,
             firstItemNumber: manualPagination.firstItemNumber,
             lastItemNumber: manualPagination.lastItemNumber,
             pageSize: manualPagination.pageSize,
@@ -349,6 +360,7 @@ export function WeldTable({
       .filter((row): row is WeldRow => Boolean(row)),
     [mergedActionRowsById, rowsById, selectedRowIds],
   )
+  const selectionReady = rowsReady && selectedRows.length === selectedRowIds.size
   const {
     bodyRef,
     bottomSpacerHeight,
@@ -361,6 +373,7 @@ export function WeldTable({
   })
   const openRowContextMenu = useCallback(
     (event: MouseEvent, row: WeldRow) => {
+      if (!rowsReady || (selectedRowIds.has(row.id) && !selectionReady)) return
       const actionRow = getActionRow(row)
       const contextRows = selectedRowIds.has(row.id) && selectedRows.length > 1 ? selectedRows : [actionRow]
       const cell = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-weld-field-key]')
@@ -372,11 +385,13 @@ export function WeldTable({
       if (!items?.length) return
       event.preventDefault()
       const identity = getWeldContextMenuIdentity(actionRow, contextRows)
+      setContextMenuScope(selectionScope)
       setContextMenu({ x: event.clientX, y: event.clientY, anchorRowId: row.id, anchorElement: event.currentTarget, ...identity, items })
     },
-    [getActionRow, selectedRowIds, selectedRows, stableGetContextMenuItems],
+    [getActionRow, selectedRowIds, selectedRows, stableGetContextMenuItems, rowsReady, selectionReady, selectionScope],
   )
   const openSelectedRowsContextMenu = useCallback((event: MouseEvent<HTMLButtonElement>) => {
+    if (!selectionReady) return
     const firstRow = selectedRows[0]
     if (!firstRow) return
     const items = stableGetContextMenuItems(firstRow, selectedRows)?.filter((item, index, list) => {
@@ -385,6 +400,7 @@ export function WeldTable({
     })
     if (!items?.length) return
     const rect = event.currentTarget.getBoundingClientRect()
+    setContextMenuScope(selectionScope)
     setContextMenu({
       x: rect.left,
       y: rect.bottom + 4,
@@ -393,7 +409,7 @@ export function WeldTable({
       ...getWeldContextMenuIdentity(firstRow, selectedRows),
       items,
     })
-  }, [selectedRows, stableGetContextMenuItems])
+  }, [selectedRows, stableGetContextMenuItems, selectionReady, selectionScope])
   const clearSelectedRows = useCallback(() => {
     stableOnSelectedRowIdsChange(new Set())
   }, [stableOnSelectedRowIdsChange])
@@ -460,7 +476,7 @@ export function WeldTable({
         </div>
       ) : null}
       <div data-report-table-frame className="space-y-3" style={{ width: fullTableMinWidth }}>
-        {selectable && selectedRows.length > 0 ? (
+        {selectable && selectedRowIds.size > 0 ? (
           <div
             className="fixed bottom-2 z-[35] flex h-11 items-center justify-between gap-3 rounded-md border border-slate-200 bg-white/95 px-3 shadow-lg shadow-slate-900/10 backdrop-blur"
             style={{
@@ -471,14 +487,17 @@ export function WeldTable({
           >
             <div className="flex min-w-0 items-center gap-2">
               <CheckSquare2 className="h-4 w-4 shrink-0 text-sky-700" />
-              <span className="shrink-0 text-sm font-semibold text-slate-900">Выбрано: {selectedRows.length}</span>
-              <span className="hidden truncate text-xs text-slate-500 md:block">Групповые действия применяются ко всем выбранным строкам.</span>
+              <span className="shrink-0 text-sm font-semibold text-slate-900">Выбрано: {selectedRowIds.size}</span>
+              <span className="hidden truncate text-xs text-slate-500 md:block">{selectionReady
+                ? 'Групповые действия применяются ко всем выбранным строкам.'
+                : 'Действия недоступны, пока не загружены все выбранные строки.'}</span>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
               {getContextMenuItems ? (
                 <button
                   type="button"
                   onClick={openSelectedRowsContextMenu}
+                  disabled={!selectionReady}
                   className="inline-flex h-8 items-center gap-1.5 rounded border border-sky-200 bg-white px-2.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
                 >
                   <MoreHorizontal className="h-4 w-4" />
@@ -543,8 +562,8 @@ export function WeldTable({
               allVisibleRowsSelected={allVisibleRowsSelected}
               someVisibleRowsSelected={someVisibleRowsSelected}
               selectableVisibleRowsCount={selectableVisibleRows.length}
-              selectedRowsCount={selectedRows.length}
-              onSetVisibleRowsSelected={setVisibleRowsSelected}
+              selectedRowsCount={selectedRowIds.size}
+              onSetVisibleRowsSelected={(selected) => { if (rowsReady) setVisibleRowsSelected(selected) }}
               hasChainAction={hasChainAction}
               hasColumnFilters={hasColumnFilters}
               onResetColumnFilters={() => stableOnColumnFiltersChange({})}
@@ -567,7 +586,7 @@ export function WeldTable({
               onColumnFiltersChange={stableOnColumnFiltersChange}
               visibleFieldKeys={visibleFieldKeys}
             />
-            <tbody ref={bodyRef}>
+            <tbody ref={bodyRef} inert={!rowsReady} aria-busy={!rowsReady}>
               <TableVirtualSpacer colSpan={fullTableColumnSpan} height={topSpacerHeight} />
               <WeldTableBodyRows
                 rows={visibleRows}
@@ -622,6 +641,8 @@ export function WeldTable({
         >
           <PaginationBar
             totalCount={pagination.totalCount}
+            summaryStatus={manualPagination?.summaryStatus}
+            rowsLoading={manualPagination?.rowsLoading}
             firstItemNumber={pagination.firstItemNumber}
             lastItemNumber={pagination.lastItemNumber}
             pageSize={pagination.pageSize}
@@ -630,10 +651,10 @@ export function WeldTable({
             onPageSizeChange={pagination.setPageSize}
           />
         </div>
-        {selectable && selectedRows.length > 0 ? (
+        {selectable && selectedRowIds.size > 0 ? (
           <div className="h-12" data-selection-panel-clearance aria-hidden="true" />
         ) : null}
-        <ContextActionMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
+        <ContextActionMenu menu={rowsReady && contextMenuScope === selectionScope ? contextMenu : null} onClose={() => setContextMenu(null)} />
       </div>
     </div>
   )

@@ -10,6 +10,7 @@ const exec = promisify(execFile)
 export function observeMixedClient(context: BrowserContext, role: string) {
   const calls: Array<{ name: string; milliseconds: number; bytes: number; status: number }> = []
   const errors: string[] = [], expectedFailures: string[] = [], pending = new Map<Request, number>()
+  const injectedNetworkFailures = new WeakSet<Request>()
   const navigationReads = new Map<Page, Set<Request>>()
   const abandonedOnNavigation: string[] = []
   const sizes: Promise<void>[] = []
@@ -43,9 +44,10 @@ export function observeMixedClient(context: BrowserContext, role: string) {
   context.on('requestfailed', request => {
     if (!pending.delete(request)) return
     const failure = `${rpcName(request.url())}: ${request.failure()?.errorText}`
-    // One deliberate pre-submit network failure, plus cancellation of obsolete
-    // read requests on navigation. Failed writes are never broadly ignored.
-    if (role === 'writer' && rpcName(request.url()).startsWith('updateWeldJoint') && expectedFailures.length === 0) expectedFailures.push(failure)
+    // Only the exact request explicitly marked by the fault injector is exempt.
+    // Earlier cancelled reads must neither consume that exemption nor cause a
+    // genuine first write failure to be silently accepted.
+    if (injectedNetworkFailures.delete(request) && request.failure()?.errorText === 'net::ERR_FAILED') expectedFailures.push(failure)
     else if (request.failure()?.errorText === 'net::ERR_ABORTED' && request.method() === 'GET') expectedFailures.push(failure)
     else errors.push(failure)
   })
@@ -61,7 +63,12 @@ export function observeMixedClient(context: BrowserContext, role: string) {
       if (entry.status >= 400) errors.push(`${entry.name}: HTTP ${entry.status}`)
     })().catch(error => { errors.push(String(error)) }))
   })
-  return { calls, errors, expectedFailures, pending, async summary() {
+  return { calls, errors, expectedFailures, pending,
+    expectInjectedNetworkFailure(request: Request) {
+      if (!pending.has(request)) throw new Error('Fault injection must mark the exact active request')
+      injectedNetworkFailures.add(request)
+    },
+    async summary() {
     await Promise.all(sizes)
     const sorted = calls.map(call => call.milliseconds).sort((a, b) => a - b)
     return { role, rpc: calls.length, rpcStarted, peakInFlight, bytes: calls.reduce((total, call) => total + call.bytes, 0),

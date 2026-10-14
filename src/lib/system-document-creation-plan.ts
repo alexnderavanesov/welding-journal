@@ -16,8 +16,11 @@ import {
   type SystemDocumentSplitMode,
 } from '@/lib/system-document-splitting'
 import type { SystemDocumentType } from '@/lib/system-document-types'
+import { getDraftSpecialists, getSpecialistDocumentProfile, type SpecialistSelection } from './document-specialists'
 
 export type SystemDocumentCreationGroup = {
+  specialists?: SpecialistSelection
+  specialistDefaults?: SpecialistSelection
   key: string
   label: string
   rowIds: number[]
@@ -36,6 +39,8 @@ export type SystemDocumentCreationPosition = { rowId: number; method: string; st
 
 export type SystemDocumentCreationPlan = {
   type: SystemDocumentType
+  date?: string
+  sourceKind?: 'beforeHeatTreatment'
   methodCode?: string
   mode: SystemDocumentSplitMode
   groups: SystemDocumentCreationGroup[]
@@ -51,24 +56,24 @@ export type SystemDocumentCreationPartition = {
 
 export function buildSystemDocumentCreationPlan({
   type,
+  sourceKind,
   methodCode,
   date,
   rows,
   naming,
   settings,
   nextNumber,
-  allowAllNamesEmpty = false,
   partitionBy,
   positionDetails,
 }: {
   type: SystemDocumentType
+  sourceKind?: 'beforeHeatTreatment'
   methodCode?: string
   date: string
   rows: WeldRow[]
   naming: RequestNamingState
   settings: RequestConclusionSettings
   nextNumber?: number
-  allowAllNamesEmpty?: boolean
   partitionBy?: (row: WeldRow) => SystemDocumentCreationPartition
   positionDetails?: (row: WeldRow) => Array<Omit<SystemDocumentCreationPosition, 'rowId'>>
 }): SystemDocumentCreationPlan {
@@ -102,6 +107,7 @@ export function buildSystemDocumentCreationPlan({
     rows: group.rows,
     name: buildGroupName({
       type,
+      sourceKind,
       methodCode,
       date,
       group,
@@ -120,19 +126,22 @@ export function buildSystemDocumentCreationPlan({
     splitSettingId: settingId,
     positions,
     membership,
+    ...(getSpecialistDocumentProfile(type, methodCode) ? { specialists: getDraftSpecialists(naming.specialists, membership), specialistDefaults: naming.specialists?.common } : {}),
     requiresNameReview: !useSystemName && group.rowIds.some(id => manualRows.has(id)) && !manualMembers.has(membership),
     }
   })
   return {
     type,
+    date,
+    sourceKind,
     ...(methodCode ? { methodCode } : {}),
     mode,
     groups,
-    documentCount: allowAllNamesEmpty && groups.every(group => !group.name.trim() && !group.requiresNameReview) ? 0 : groups.length,
+    documentCount: groups.length,
     missingSummary: getSystemDocumentSplitMissingSummary(splitGroups),
     error: naming.groupingDefaultsState === 'loading' ? 'Загружаем актуальные правила документов…'
       : naming.groupingDefaultsState === 'error' ? 'Не удалось загрузить правила документов. Повторите загрузку рядом с разделением.'
-      : getCreationPlanError(groups, allowAllNamesEmpty),
+      : getCreationPlanError(groups),
   }
 }
 
@@ -165,6 +174,7 @@ function partitionSystemDocumentSplitGroups(
 
 function buildGroupName({
   type,
+  sourceKind,
   methodCode,
   date,
   group,
@@ -178,6 +188,7 @@ function buildGroupName({
   matchingManualName,
 }: {
   type: SystemDocumentType
+  sourceKind?: 'beforeHeatTreatment'
   methodCode?: string
   date: string
   group: SystemDocumentSplitGroup<WeldRow>
@@ -207,11 +218,19 @@ function buildGroupName({
         date: date ? new Date(`${date}T00:00:00`) : new Date(),
         ...(methodCode ? { methodCode } : {}),
       }
+  const pattern = settings[getRequestConclusionNamingKind({ type, methodCode, sourceKind })].systemPattern
+  const preview = naming.systemGroupNames?.[group.key]
+  if (preview?.signature === systemNamePreviewSignature({ type, sourceKind, methodCode, date }, { membership, rows: group.rows }, pattern)) return preview.name
   return buildSystemNameWithNumber(
-    settings[getRequestConclusionNamingKind({ type, methodCode })].systemPattern,
+    pattern,
     addRowsToNamingPatternContext(baseContext, group.rows),
     Math.max(1, Math.floor(nextNumber ?? 1)) + groupIndex,
   )
+}
+
+export function systemNamePreviewSignature(plan: Pick<SystemDocumentCreationPlan, 'type' | 'sourceKind' | 'methodCode' | 'date'>, group: { membership?: string; rows: WeldRow[] }, pattern: string) {
+  const context = addRowsToNamingPatternContext({ date: new Date(0) }, group.rows)
+  return JSON.stringify([plan.type, plan.sourceKind, plan.methodCode, plan.date, pattern, group.membership, context.projectTitle, context.subtitleCode, context.line])
 }
 
 function creationSource(row: WeldRow, type: SystemDocumentType, method: string): string | undefined {
@@ -223,14 +242,12 @@ function creationSource(row: WeldRow, type: SystemDocumentType, method: string):
 
 function getCreationPlanError(
   groups: SystemDocumentCreationGroup[],
-  allowAllNamesEmpty: boolean,
 ) {
   if (groups.length === 0) return ''
   if (groups.some((group) => group.isMissingValueFallback)) {
     return 'Заполните поля, необходимые для выбранного разделения.'
   }
   if (groups.some(group => group.requiresNameReview && !group.name.trim())) return 'Состав изменился. Проверьте названия новых групп перед сохранением.'
-  if (allowAllNamesEmpty && groups.every((group) => !group.name.trim())) return ''
   if (groups.some((group) => !group.name.trim())) {
     return 'Укажите название для каждого создаваемого документа.'
   }

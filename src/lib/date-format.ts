@@ -4,6 +4,12 @@ export const MIN_ALLOWED_DATE_ISO = '2024-01-01'
 export const MIN_ALLOWED_DATE_DISPLAY = '01.01.2024'
 export const DATE_INPUT_FORMAT_HINT = 'ДД.ММ.ГГГГ или ДД.ММ.ГГ'
 
+// Calendar parsing is deterministic for text, unlike validation against today.
+// Keep a small bounded set for repeated dates across large reports. Mutable Date
+// objects bypass it, and malformed long input is never retained.
+const parsedTextDates = new Map<string, string | null>()
+const MAX_PARSED_TEXT_DATES = 256
+
 export function formatDisplayDate(value: unknown) {
   const text = String(value ?? '').trim()
   const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/)
@@ -29,6 +35,17 @@ export function parseDateLikeToIso(value: unknown) {
   const text = String(value ?? '').trim()
   if (!text || text === '-') return null
 
+  const cached = parsedTextDates.get(text)
+  if (cached !== undefined) return cached
+  const parsed = parseTextDate(text)
+  if (text.length <= 32) {
+    if (parsedTextDates.size >= MAX_PARSED_TEXT_DATES) parsedTextDates.delete(parsedTextDates.keys().next().value!)
+    parsedTextDates.set(text, parsed)
+  }
+  return parsed
+}
+
+function parseTextDate(text: string) {
   const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/)
   if (isoMatch) return buildIsoDate(Number(isoMatch[1]), Number(isoMatch[2]), Number(isoMatch[3]))
 
@@ -53,13 +70,14 @@ export function getDateInputValidationReason(
   value: unknown,
   label = 'Дата',
   options: {
+    required?: boolean
     disallowFuture?: boolean
     minDateIso?: string
     minDateDisplay?: string
   } = {},
 ) {
   const text = String(value ?? '').trim()
-  if (!text || text === '-') return ''
+  if (!text || text === '-') return options.required ? `Укажите ${label.replace(/^Дата/i, 'дату')}.` : ''
 
   const isoDate = parseDateLikeToIso(text)
   const minDateIso = options.minDateIso ?? MIN_ALLOWED_DATE_ISO

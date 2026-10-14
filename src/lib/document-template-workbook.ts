@@ -51,7 +51,10 @@ import {
   XLSX,
 } from '@/lib/document-template-xlsx'
 
+import { SPECIALIST_TEMPLATE_FIELDS, getSpecialistTemplateValue, isSpecialistTemplateField } from './document-specialists'
+
 const TEMPLATE_FIELD_ALIASES = new Map<string, keyof WeldInput | TemplateSystemField>([
+  ...SPECIALIST_TEMPLATE_FIELDS.map(field => [normalizeTemplateFieldName(field.label), field.key] as [string, TemplateSystemField]),
   [normalizeTemplateFieldName('№'), '__index'],
   [normalizeTemplateFieldName('№ п/п'), '__index'],
   [normalizeTemplateFieldName('N'), '__index'],
@@ -817,6 +820,7 @@ function getTemplateFieldValueByKey(
   groupIndex?: number,
 ) {
   if (mappedKey === '__index') return recordIndex + 1
+  if (isSpecialistTemplateField(mappedKey)) return getSpecialistTemplateValue(mappedKey, context.systemDocument?.specialists, context.systemDocument?.type ?? '', context.systemDocument?.methodCode) ?? ''
   if (mappedKey === '__groupIndex') return (groupIndex ?? recordIndex) + 1
   if (mappedKey === '__welderName') return getWelderNamesForOfficialStamps(record, context.welderStamps ?? [])
   if (mappedKey === '__systemDocumentTitle') return context.systemDocument?.title ?? ''

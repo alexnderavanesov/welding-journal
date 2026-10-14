@@ -1,5 +1,5 @@
-import { type InfiniteData, useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type InfiniteData, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { splitReportQuickSearch } from '@/lib/report-quick-search'
 import {
@@ -10,6 +10,11 @@ import {
   isWeldPageRefreshRequired,
   refreshLoadedWeldPageQuery,
   WELD_JOINT_PAGES_QUERY_KEY,
+  WELD_REPORT_SUMMARY_QUERY_KEY,
+  invalidateWeldReportSummaries,
+  getWeldPageRefreshRevision,
+  getWeldPageRefreshFailure,
+  subscribeWeldPageRefresh,
 } from '@/lib/weld-page-refresh'
 import {
   WELD_PAGE_ALL_SIZE,
@@ -17,6 +22,7 @@ import {
   listHeatTreatmentReportPage,
   listLnkReportPage,
   listWeldingJournalPage,
+  getWeldReportSummary,
   type WeldPageResult,
   type WeldReportKind,
   type WeldPageSize,
@@ -55,6 +61,11 @@ export function useWeldPageQuery({
   sort = null,
 }: UseWeldPageQueryOptions) {
   const queryClient = useQueryClient()
+  useSyncExternalStore(
+    useCallback((listener: () => void) => subscribeWeldPageRefresh(queryClient, listener), [queryClient]),
+    useCallback(() => getWeldPageRefreshRevision(queryClient), [queryClient]),
+    () => 0,
+  )
   const [pageSizeByReport, setPageSizeByReport] = useState<PageSizeByReport>(readPageSizeByReport)
   const pageSize = pageSizeByReport[report] ?? 100
   const setPageSize = useCallback((nextPageSize: number) => {
@@ -64,48 +75,62 @@ export function useWeldPageQuery({
       return next
     })
   }, [report])
-  const [refreshError, setRefreshError] = useState<Error | null>(null)
+  const [refreshError, setRefreshError] = useState<{ identity: string; error: Error } | null>(null)
   const refreshErrorAtRef = useRef(0)
   const normalizedColumnFilters = useMemo(() => normalizeColumnFiltersForQuery(columnFilters), [columnFilters])
-  const queryColumnFilters = useDebouncedValue(normalizedColumnFilters, 180)
-  const queryFilters = useMemo(
-    () => splitReportQuickSearch(queryColumnFilters),
-    [queryColumnFilters],
-  )
   const serverPageSize = toServerPageSize(pageSize)
-  const queryKey = useMemo(
+  const requestedKey = useMemo(
     () => sort
-      ? [...WELD_JOINT_PAGES_QUERY_KEY, report, queryColumnFilters, serverPageSize, sort] as const
-      : [...WELD_JOINT_PAGES_QUERY_KEY, report, queryColumnFilters, serverPageSize] as const,
-    [queryColumnFilters, report, serverPageSize, sort],
+      ? [...WELD_JOINT_PAGES_QUERY_KEY, report, normalizedColumnFilters, serverPageSize, sort] as const
+      : [...WELD_JOINT_PAGES_QUERY_KEY, report, normalizedColumnFilters, serverPageSize] as const,
+    [normalizedColumnFilters, report, serverPageSize, sort],
   )
-  const queryIdentity = useMemo(() => JSON.stringify(queryKey), [queryKey])
+  // Debounce the whole request, by value: never combine a new report/sort with old filters.
+  const requestedIdentity = JSON.stringify(requestedKey)
+  const queryIdentity = useDebouncedValue(requestedIdentity, 180)
+  const queryKey = useMemo(() => JSON.parse(queryIdentity) as typeof requestedKey, [queryIdentity])
+  const [, queryReport, queryColumnFilters, queryPageSize, querySort] = queryKey
+  const queryFilters = useMemo(() => splitReportQuickSearch(queryColumnFilters), [queryColumnFilters])
+  const conditionsCurrent = requestedIdentity === queryIdentity
+  const requestEnabled = enabled && conditionsCurrent
+  const latestIdentityRef = useRef(requestedIdentity)
+  const latestEnabledRef = useRef(enabled)
+  const refreshGenerationRef = useRef(0)
+  if (latestIdentityRef.current !== requestedIdentity || latestEnabledRef.current !== enabled) {
+    latestIdentityRef.current = requestedIdentity
+    latestEnabledRef.current = enabled
+    refreshGenerationRef.current++
+  }
+  const activeQueryIdentityRef = useRef<string | null>(null)
+  const pendingActivationRefreshRef = useRef<string | null>(null)
 
   useEffect(() => {
     setRefreshError(null)
     refreshErrorAtRef.current = 0
-  }, [queryIdentity])
+  }, [enabled, requestedIdentity])
+  useEffect(() => () => { refreshGenerationRef.current++ }, [])
 
   const query = useInfiniteQuery({
     queryKey,
-    enabled,
+    enabled: requestEnabled,
     initialPageParam: 1,
-    queryFn: ({ pageParam }) => {
+    queryFn: ({ pageParam, signal }) => {
       const data = {
         page: Number(pageParam) || 1,
-        pageSize: serverPageSize,
+        pageSize: queryPageSize,
+        includeTotals: false,
         columnFilters: queryFilters.columnFilters,
         ...(queryFilters.search ? { search: queryFilters.search } : {}),
-        ...(sort ? { sort } : {}),
+        ...(querySort ? { sort: querySort } : {}),
       }
-      if (report === 'lnk') return listLnkReportPage({ data })
-      if (report === 'heatTreatment') return listHeatTreatmentReportPage({ data })
-      return listWeldingJournalPage({ data })
+      if (queryReport === 'lnk') return listLnkReportPage({ data, signal })
+      if (queryReport === 'heatTreatment') return listHeatTreatmentReportPage({ data, signal })
+      return listWeldingJournalPage({ data, signal })
     },
-    // Keep the table geometry stable during filtering. Never show rows from
-    // another report while that report's first page is still loading.
+    // Display-only while conditions change. rowsReady disables every row action;
+    // preserving the body keeps the filter anchor, focus and scroll geometry stable.
     placeholderData: (previousData, previousQuery) =>
-      previousQuery?.queryKey[1] === report ? previousData : undefined,
+      previousQuery?.queryKey[1] === queryReport ? previousData : undefined,
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: 15 * 60_000,
     retry: false,
@@ -118,36 +143,72 @@ export function useWeldPageQuery({
     },
   })
 
-  const rows = useMemo(() => query.data?.pages.flatMap((page) => page.rows) ?? [], [query.data])
-  const totalCount = query.data?.pages[0]?.total ?? 0
-  const acceptedWdiTotal = query.data?.pages[0]?.acceptedWdiTotal ?? 0
-  const availableRequestCount = query.data?.pages[0]?.availableRequestCount
-  const hasMore = Boolean(query.hasNextPage)
+  const rowsReady = requestEnabled && query.data !== undefined && !query.isPlaceholderData
+  const sharedRefreshFailure = getWeldPageRefreshFailure(queryClient, queryKey)
+  const rowsError = conditionsCurrent ? sharedRefreshFailure?.error ??
+    (refreshError?.identity === queryIdentity ? refreshError.error : query.error) : null
+  const rows = useMemo(() => enabled && queryReport === report
+    ? query.data?.pages.flatMap((page) => page.rows) ?? [] : [], [enabled, query.data, queryReport, report])
+  const needsReconciliation = query.isStale || isWeldPageRefreshRequired(queryClient, queryKey) ||
+    (activeQueryIdentityRef.current !== queryIdentity &&
+      shouldRefreshWeldPageOnActivation(query.dataUpdatedAt, false))
+  const summaryKey = useMemo(
+    () => [...WELD_REPORT_SUMMARY_QUERY_KEY, queryReport, queryColumnFilters] as const,
+    [queryReport, queryColumnFilters],
+  )
+  const summaryEnabled = rowsReady && !needsReconciliation && (!query.isFetching || query.isFetchingNextPage)
+  const summary = useQuery({
+    queryKey: summaryKey,
+    enabled: summaryEnabled,
+    queryFn: ({ signal }) => getWeldReportSummary({ data: {
+      report: queryReport,
+      columnFilters: queryFilters.columnFilters,
+      ...(queryFilters.search ? { search: queryFilters.search } : {}),
+    }, signal }),
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: 15 * 60_000,
+    retry: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  })
+  const summaryData = rowsReady && !needsReconciliation && !summary.isFetching && !summary.isStale && !summary.error
+    ? summary.data : undefined
+  const summaryError = rowsReady && !needsReconciliation && !summary.isFetching ? summary.error : null
+  const summaryStatus = rowsError || summaryError ? 'error' as const : summaryData ? 'ready' as const : 'pending' as const
+  const hasMore = rowsReady && Boolean(query.hasNextPage)
   const { fetchNextPage, hasNextPage, isFetchingNextPage, refetch: refetchFirstPage } = query
   const refresh = useCallback(async (force = false) => {
+    if (!requestEnabled || !latestEnabledRef.current || latestIdentityRef.current !== queryIdentity) return false
+    const generation = ++refreshGenerationRef.current
+    invalidateWeldReportSummaries(queryClient, summaryKey)
+    let refreshingCachedRows = false
     try {
       const cachedData = queryClient.getQueryData<InfiniteData<WeldPageResult>>(queryKey)
+      refreshingCachedRows = Boolean(cachedData?.pages.length)
       const refreshed = cachedData?.pages.length
         ? await refreshLoadedWeldPageQuery(queryClient, queryKey, { force })
         : await refetchFirstPage().then((result) => {
             if (result.error) throw result.error
             return true
           })
-      setRefreshError(null)
-      refreshErrorAtRef.current = 0
+      if (generation === refreshGenerationRef.current && latestIdentityRef.current === queryIdentity) {
+        setRefreshError(null)
+        refreshErrorAtRef.current = 0
+      }
       return refreshed
     } catch (error) {
-      setRefreshError(error instanceof Error ? error : new Error(String(error)))
-      refreshErrorAtRef.current = Date.now()
+      if (!refreshingCachedRows && generation === refreshGenerationRef.current && latestIdentityRef.current === queryIdentity) {
+        setRefreshError({ identity: queryIdentity, error: error instanceof Error ? error : new Error(String(error)) })
+        refreshErrorAtRef.current = Date.now()
+      }
       return false
     }
-  }, [queryClient, queryKey, refetchFirstPage])
-  const activeQueryIdentityRef = useRef<string | null>(null)
-  const pendingActivationRefreshRef = useRef<string | null>(null)
+  }, [requestEnabled, queryClient, queryIdentity, queryKey, refetchFirstPage, summaryKey])
 
   useEffect(() => {
-    const becameActive = enabled && activeQueryIdentityRef.current !== queryIdentity
-    if (!enabled) {
+    const becameActive = requestEnabled && activeQueryIdentityRef.current !== queryIdentity
+    if (!requestEnabled) {
       activeQueryIdentityRef.current = null
       pendingActivationRefreshRef.current = null
       return
@@ -158,20 +219,28 @@ export function useWeldPageQuery({
     pendingActivationRefreshRef.current = null
     const state = queryClient.getQueryState(queryKey)
     if (!state) return
-    const refreshRequired = isWeldPageRefreshRequired(queryClient, queryKey)
+    const refreshRequired = isWeldPageRefreshRequired(queryClient, queryKey) || state.isInvalidated
     if (shouldRefreshWeldPageOnActivation(state.dataUpdatedAt, refreshRequired)) {
       void refresh(refreshRequired)
     }
-  }, [enabled, query.data, query.isFetching, query.isPlaceholderData, queryClient, queryIdentity, queryKey, refresh])
+  }, [requestEnabled, query.data, query.isFetching, query.isPlaceholderData, queryClient, queryIdentity, queryKey, refresh])
 
   useEffect(() => {
-    if (!enabled) return
+    // Some existing callers invalidate the page key directly (program approvals).
+    // Reconcile once; the shared marker also prevents retries looping after failure.
+    if (rowsReady && query.isStale && !query.isFetching && !isWeldPageRefreshRequired(queryClient, queryKey)) {
+      void refresh(true)
+    }
+  }, [rowsReady, query.isStale, query.isFetching, queryClient, queryKey, refresh])
+
+  useEffect(() => {
+    if (!requestEnabled) return
     const refreshOldData = () => {
       const state = queryClient.getQueryState(queryKey)
       if (!state) return
       if (shouldRefetchQueryOnWindowFocus(
         state.dataUpdatedAt,
-        Math.max(state.errorUpdatedAt, refreshErrorAtRef.current),
+        Math.max(state.errorUpdatedAt, refreshErrorAtRef.current, getWeldPageRefreshFailure(queryClient, queryKey)?.updatedAt ?? 0),
       )) {
         void refresh(false)
       }
@@ -187,25 +256,34 @@ export function useWeldPageQuery({
       window.removeEventListener('online', refreshOldData)
       document.removeEventListener('visibilitychange', refreshVisibleData)
     }
-  }, [enabled, queryClient, queryKey, refresh])
+  }, [requestEnabled, queryClient, queryKey, refresh])
 
   const loadMore = useCallback(() => {
-    if (!hasNextPage || isFetchingNextPage || query.isPlaceholderData) return
+    if (!rowsReady || !latestEnabledRef.current || latestIdentityRef.current !== queryIdentity || !hasNextPage || isFetchingNextPage || query.isFetching || needsReconciliation) return
     void fetchNextPage()
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage, query.isPlaceholderData])
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, query.isFetching, needsReconciliation, queryIdentity, rowsReady])
+
+  const retrySummary = useCallback(() => {
+    if (summaryEnabled && latestEnabledRef.current && latestIdentityRef.current === queryIdentity) void summary.refetch()
+  }, [queryIdentity, summaryEnabled, summary.refetch])
 
   return {
     rows,
-    totalCount,
-    acceptedWdiTotal,
-    availableRequestCount,
-    firstItemNumber: totalCount === 0 ? 0 : 1,
+    totalCount: summaryData?.total,
+    acceptedWdiTotal: summaryData?.acceptedWdiTotal,
+    availableRequestCount: summaryData?.availableRequestCount,
+    summaryStatus,
+    summaryError,
+    retrySummary,
+    rowsReady,
+    requestedIdentity,
+    firstItemNumber: rows.length === 0 ? 0 : 1,
     lastItemNumber: rows.length,
     pageSize,
     hasMore,
-    isFetching: query.isFetching,
-    isLoading: query.isLoading || query.isPlaceholderData,
-    error: refreshError ?? query.error,
+    isFetching: requestEnabled && query.isFetching,
+    isLoading: enabled && (!conditionsCurrent || query.isLoading || query.isPlaceholderData),
+    error: rowsError,
     loadMore,
     setPageSize,
     refetch: refresh,

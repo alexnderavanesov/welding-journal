@@ -113,8 +113,15 @@ for (const kind of ['LNK', 'PSTO'] as const) test(`${kind}: набор, выбо
   expect(p95).toBeLessThan(250)
   await dialog.getByRole('button', { name: 'Отмена', exact: true }).click()
   await expect(dialog).toBeHidden()
+  const reopenStart = calls.length
   await open()
   await expect(dialog.getByPlaceholder('Проект, шифр, линия, спул или стык')).toBeVisible()
+  if (kind === 'LNK') {
+    // The journal has only its first page, but the workflow selection contains
+    // 500 IDs. Reopening must keep all of them and fetch them in one batch.
+    await expect(dialog.getByRole('button', { name: 'Выбрано: 500', exact: true })).toBeEnabled()
+    expect(calls.slice(reopenStart).filter(name => name === 'listWeldJointRowsByIds')).toHaveLength(1)
+  }
   await dialog.getByRole('button', { name: 'Отмена', exact: true }).click()
   expect(errors).toEqual([])
 })

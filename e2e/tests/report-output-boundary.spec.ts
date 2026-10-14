@@ -144,6 +144,10 @@ test('1000 строк: разрешённая широкая печать цел
     await page.goto('/journal')
     await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('ALLOWED-PRINT-')
     await expect(page.getByText('ALLOWED-PRINT-F0001', { exact: true })).toBeVisible()
+    // This same row is present before filtering. Its visibility alone can be
+    // the inert placeholder; wait for the actual current rows, not the totals.
+    await expect(page.getByText('ALLOWED-PRINT-F0001', { exact: true })
+      .locator('xpath=ancestor::tbody')).toHaveAttribute('aria-busy', 'false')
     const started = Date.now()
     await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
     await page.getByRole('button', { name: 'Текущая версия', exact: true }).click()

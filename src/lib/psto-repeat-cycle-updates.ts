@@ -1,4 +1,5 @@
 import { formatDisplayDate, getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
+import { assertDocumentRequisites } from '@/lib/document-requisites'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { getRejectedPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
@@ -64,11 +65,9 @@ export function buildRepeatPstoResultCycle({
   saveCheckSettings?: SaveCheckSettings
 }): PstoRepeatCycleWrite {
   const cycle = requireCurrentRepeatCycle(row, 'waiting-psto')
-  const date = normalizeOptionalPstoResultDate(pstoDate, saveCheckSettings)
+  assertDocumentRequisites({ name: diagramName, date: pstoDate, nameLabel: 'наименование диаграммы повторной ПСТО', dateLabel: 'Дата повторной ПСТО' })
+  const date = parseDateLikeToIso(pstoDate)!
   const name = diagramName.trim()
-  if (saveCheckSettings.pstoResultDiagramRequired && !name) {
-    throw new Error('Укажите наименование диаграммы повторной ПСТО.')
-  }
   if (
     date &&
     saveCheckSettings.pstoResultDateAfterWeldDate &&
@@ -135,11 +134,11 @@ export function buildRepeatTvmtResultCycle({
   saveCheckSettings?: SaveCheckSettings
 }): PstoRepeatCycleWrite {
   const cycle = requireCurrentRepeatCycle(row, 'waiting-tvmt')
-  const date = requireDate(controlDate, 'Укажите дату ТВМТ.', 'Дата ТВМТ')
+  assertDocumentRequisites({ name: conclusionName, date: controlDate, nameLabel: 'наименование заключения ТВМТ', dateLabel: 'Дата ТВМТ' })
+  const date = parseDateLikeToIso(controlDate)!
   const normalizedResult = normalizeTvmtResult(result)
   if (!normalizedResult) throw new Error('Выберите результат ТВМТ.')
   const name = conclusionName.trim()
-  if (!name) throw new Error('Укажите наименование заключения ТВМТ.')
   if (saveCheckSettings.pstoResultRequestDateOrder) {
     assertNotBefore(
       date,
@@ -201,21 +200,6 @@ function requireDate(value: string, message: string, label: string) {
   const reason = getDateInputValidationReason(date, label)
   if (reason) throw new Error(reason)
   return date
-}
-
-function normalizeOptionalPstoResultDate(value: string, settings: SaveCheckSettings) {
-  const rawDate = String(value ?? '').trim()
-  if (!rawDate) {
-    if (settings.pstoResultDateRequired) throw new Error('Укажите дату повторной ПСТО.')
-    return ''
-  }
-  const parsedDate = parseDateLikeToIso(rawDate)
-  if (!parsedDate) {
-    throw new Error('Укажите корректную дату повторной ПСТО.')
-  }
-  const reason = getDateInputValidationReason(parsedDate, 'Дата повторной ПСТО')
-  if (reason) throw new Error(reason)
-  return parsedDate
 }
 
 function assertNotBefore(date: string, minimum: unknown, message: string) {

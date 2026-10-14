@@ -4,6 +4,7 @@ import { promisify } from 'node:util'
 import { E2E_DATABASE_URL, withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
+import { confirmLnkResultChanges } from '../lnk-result-confirmation'
 import { clearLnkRequestPosition, deleteWeldJoints } from '@/server/weld-mutations'
 
 const project = 'Демо — исправление ошибочной катушки'
@@ -123,6 +124,7 @@ test('помощник: переходы, удаление сторон, исп�
     await manager.getByRole('button', { name: /Л-КАТ · F902R2W1/ }).click()
     await manager.getByRole('button', { name: 'годен', exact: true }).last().click()
     await manager.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
+    await confirmLnkResultChanges(page)
     await expect(manager).toBeHidden()
     expect(await loadRoot()).toBe(true)
     await openHelper()

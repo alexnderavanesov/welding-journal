@@ -6,12 +6,17 @@ export type ReportSummaryBarProps = {
   activeReport: ActiveReport
   left: number
   isLoading: boolean
-  weldingRowCount: number
+  summaryStatus?: 'pending' | 'ready' | 'error'
+  summaryError?: string
+  onRetrySummary?: () => void
+  rowsError?: string
+  onRetryRows?: () => void
+  weldingRowCount: number | undefined
   acceptedWdiTotalText: string
-  heatTreatmentRowCount: number
+  heatTreatmentRowCount: number | undefined
   selectedHeatTreatmentRowCount: number
-  lnkRowCount: number
-  availableLnkRequestRowCount: number
+  lnkRowCount: number | undefined
+  availableLnkRequestRowCount: number | undefined
   activeWelderStampCount: number
   archivedWelderStampCount: number
   filteredWelderStampCount: number
@@ -24,6 +29,11 @@ export function ReportSummaryBar({
   activeReport,
   left,
   isLoading,
+  summaryStatus,
+  summaryError,
+  onRetrySummary,
+  rowsError,
+  onRetryRows,
   weldingRowCount,
   acceptedWdiTotalText,
   heatTreatmentRowCount,
@@ -37,9 +47,10 @@ export function ReportSummaryBar({
   onQuickSearchChange,
   embedded = false,
 }: ReportSummaryBarProps) {
-  const summaryText = getReportSummaryText({
+  const summaryText = rowsError ? 'Не удалось обновить строки' : getReportSummaryText({
     activeReport,
     isLoading,
+    summaryStatus,
     weldingRowCount,
     acceptedWdiTotalText,
     heatTreatmentRowCount,
@@ -58,7 +69,12 @@ export function ReportSummaryBar({
         : 'sticky isolate z-20 flex h-8 min-h-8 items-center overflow-hidden bg-[#f4f7f9] text-sm leading-5 text-muted-foreground'}
       style={embedded ? undefined : { left, width: `calc(100vw - ${left + 24}px)` }}
     >
-      <span className="block min-w-0 flex-1 truncate leading-5">{summaryText}</span>
+      <span className="block min-w-0 flex-1 truncate leading-5" title={rowsError ?? (summaryStatus === 'error' ? summaryError : undefined)}>{summaryText}</span>
+      {rowsError && onRetryRows ? (
+        <button type="button" onClick={onRetryRows} className="ml-2 shrink-0 text-xs text-sky-700 underline">Повторить загрузку строк</button>
+      ) : !rowsError && summaryStatus === 'error' && onRetrySummary ? (
+        <button type="button" onClick={onRetrySummary} className="ml-2 shrink-0 text-xs text-sky-700 underline">Повторить подсчёт</button>
+      ) : null}
       {onQuickSearchChange ? (
         <label className="relative ml-3 block w-[min(18rem,48vw)] shrink-0">
           <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />

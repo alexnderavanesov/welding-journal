@@ -190,6 +190,7 @@ export function useHomeWeldEditorController() {
 
   const getPstoLineMoveSaveData = useCallback((draft: WeldInput & { id?: number | null }): {
     pstoLineMoveDisposition?: PstoWeldLineMoveDisposition
+    specialistTransferConfirmation?: string
     weldChainLineMovePlan?: WeldChainLineMovePlan
   } | null => {
     const targetIdentityKey = getPstoLineIdentityKey(draft)
@@ -209,7 +210,7 @@ export function useHomeWeldEditorController() {
       }
     }
     const sourceDecision = state.decisions.find((decision) => decision.rowId === state.rowId)
-    return sourceDecision ? { pstoLineMoveDisposition: sourceDecision.disposition } : null
+    return sourceDecision ? { pstoLineMoveDisposition: sourceDecision.disposition, specialistTransferConfirmation: sourceDecision.specialistTransferConfirmation } : null
   }, [])
 
   const confirmPstoLineMove = useCallback((decisions: PstoWeldLineMoveDecision[]) => {
@@ -238,11 +239,12 @@ export function useHomeWeldEditorController() {
 }
 
 function getPstoLineMoveDraftDecisionSummary(preview: PstoWeldLineMovePreview, decisions: PstoWeldLineMoveDecision[]) {
-  const transferCount = decisions.filter(decision => decision.disposition === 'movePreHeatTreatmentToPrimary').length
+  const transferCount = decisions.filter(decision => decision.disposition !== 'keepPrimary').length
+  const direction = preview.targetState === 'assigned' ? 'основной НК → до ТО' : 'НК до ТО → основной'
   const prefix = preview.isChainMove
     ? `Подтверждён перенос всей цепочки ${preview.rootJoint}: записей ${preview.rows.length}.`
     : 'Подтверждён перенос линии.'
   return transferCount > 0
-    ? `${prefix} Стыков: весь НК до ТО → основной — ${transferCount}; сохранить этапы — ${preview.rows.length - transferCount}. Даты и названия документов сохранятся.`
+    ? `${prefix} Стыков: весь ${direction} — ${transferCount}; сохранить этапы — ${preview.rows.length - transferCount}. Даты и названия документов сохранятся.`
     : `${prefix} Все заявки, результаты, заключения и циклы сохранятся на своих этапах.`
 }

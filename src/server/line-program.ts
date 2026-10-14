@@ -1,8 +1,8 @@
 import { createServerFn } from '@tanstack/react-start'
 import { packProgramRows } from '@/lib/line-program-row-payload'
-import { and, asc, count, eq, exists, ilike, or, sql } from 'drizzle-orm'
+import { and, asc, count, eq, ilike, or, sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
-import { appSettings, duplicateControls, preHeatTreatmentControls, pstoRepeatCycles, dispatcherAcceptedWarnings, linePrograms, weldJoints, type LineProgram } from '@/db/schema'
+import { appSettings, derivedCalculationState, duplicateControls, preHeatTreatmentControls, pstoRepeatCycles, dispatcherAcceptedWarnings, linePrograms, weldJoints, type LineProgram } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { calculateLineProgram, getLineProgramOfficialStamps } from '@/lib/line-program-calculation'
 import { compactLineProgramDemand, summarizeLineProgram, isProgramControlComplete } from '@/lib/line-program-overview'
@@ -34,6 +34,9 @@ import { attachProgramChainStates } from './line-program-chain-state'
 import { normalizeSystemIndexSettings } from '@/lib/system-index-settings'
 import { explainLineProgram, PROGRAM_EXPLANATION_LISTS, type ProgramExplanationList } from '@/lib/line-program-explanation'
 import { partitionLineProgramBatches } from './line-program-batches'
+import { getOrComputeDerivedCalculation } from './derived-calculation-cache'
+import { readLineProgramOverviewCache, writeLineProgramOverviewCache, type CachedLineProgramOverview } from './line-program-overview-cache'
+import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
 export { lineProgramWeldWhere } from '@/server/line-program-rename'
 
 // Full journal records are fetched only for one opened line or locked mutation targets.
@@ -165,18 +168,110 @@ export const findLineProgram = createServerFn({ method: 'GET' })
 
 /** Compact section summary, cached separately from line details. No full journal payload or per-line RPC. */
 export const getLineProgramSection = createServerFn({ method: 'GET' })
-  .validator((data: LineProgramListRequest) => ({ tab: data?.tab ?? 'lines', search: String(data?.search ?? '').trim().slice(0, 200) }))
+  .validator(normalizeProgramSectionRequest)
   .handler(async ({ data }) => {
     await assertSecurityScope('entry')
-    return requireDb().transaction(async db => {
-      const search = `%${data.search.replace(/[\\%_]/g, '\\$&')}%`
-      const where = and(data.tab !== 'lines' ? sql`${linePrograms.configurationIssue} is null` : undefined,
-        data.tab === 'full' ? eq(linePrograms.weldControlPercent, 100) : data.tab === 'percentage' ? sql`${linePrograms.weldControlPercent} < 100` : undefined,
-        data.search ? or(ilike(linePrograms.projectTitle, search), ilike(linePrograms.subtitleCode, search), ilike(linePrograms.line, search), exists(db.select({ id: weldJoints.id }).from(weldJoints).where(and(eq(weldJoints.lineProgramId, linePrograms.id), or(...OFFICIAL_WELDER_STAMP_FIELD_KEYS.map(key => ilike(weldJoints[key], search))))))) : undefined)
-      const lines = await db.select().from(linePrograms).where(where).orderBy(asc(linePrograms.projectTitle), asc(linePrograms.subtitleCode), asc(linePrograms.line), asc(linePrograms.id))
-      return { rows: await loadLineProgramOverviews(db, lines.map(toLineProgramRecord)) }
-    }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
+    return loadLineProgramSection(data)
   })
+
+export function normalizeProgramSectionRequest(data: LineProgramListRequest) {
+  if (data?.tab != null && !['lines', 'full', 'percentage'].includes(data.tab)) throw new Error('Неизвестная вкладка программы линий.')
+  return { tab: data?.tab ?? 'lines', search: String(data?.search ?? '').trim().slice(0, 200).toLocaleLowerCase('ru') }
+}
+
+export const getLineProgramPage = createServerFn({ method: 'GET' })
+  .validator((data: LineProgramListRequest) => {
+    const page = data?.page ?? 0
+    if (!Number.isSafeInteger(page) || page < 0) throw new Error('Некорректная страница программы линий.')
+    return { ...normalizeProgramSectionRequest(data), page }
+  })
+  .handler(async ({ data }) => {
+    await assertSecurityScope('entry')
+    return loadLineProgramPage(data)
+  })
+
+type ProgramSectionRequest = ReturnType<typeof normalizeProgramSectionRequest>
+
+/** Search selects line identities, never the weld rows used in their calculation.
+ * Match the same normalized identity as the complete-line loader (including
+ * legacy joints without lineProgramId). Literal LIKE characters stay literal.
+ */
+async function findSectionLines(db: Pick<SystemDocumentSequenceTransaction, 'select'>, data: ProgramSectionRequest) {
+  const search = `%${data.search.replace(/[\\%_]/g, '\\$&')}%`
+  const stampLines = sql`(lower(btrim(${linePrograms.projectTitle})), lower(btrim(${linePrograms.subtitleCode})), lower(btrim(${linePrograms.line}))) in (
+    select lower(btrim(coalesce(${weldJoints.projectTitle}, ''))), lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))), lower(btrim(coalesce(${weldJoints.line}, '')))
+    from ${weldJoints} where ${or(...OFFICIAL_WELDER_STAMP_FIELD_KEYS.map(key => ilike(weldJoints[key], search)))})`
+  const where = data.search ? or(ilike(linePrograms.projectTitle, search), ilike(linePrograms.subtitleCode, search), ilike(linePrograms.line, search), stampLines) : undefined
+  // Registry metadata is small; resolving configuration here preserves the same
+  // distinction between unconfigured and genuinely zero-percent lines as the UI.
+  const lines = await db.select().from(linePrograms).where(where)
+    .orderBy(asc(linePrograms.projectTitle), asc(linePrograms.subtitleCode), asc(linePrograms.line), asc(linePrograms.id))
+  return lines.map(toLineProgramRecord).filter(line => data.tab === 'lines' || !line.configurationIssue &&
+    (data.tab === 'full' ? line.weldControlPercent === 100 : line.weldControlPercent != null && line.weldControlPercent < 100))
+}
+
+export async function loadLineProgramPage(data: ProgramSectionRequest & { page: number }) {
+  return getOrComputeDerivedCalculation(buildDerivedCalculationCacheKey('line-program-page:v2', data),
+    async () => {
+      const { cacheEntries, ...result } = await requireDb().transaction(async db => {
+        const revision = await readProgramSnapshotRevision(db)
+        const lines = await findSectionLines(db, data)
+        const page = Math.min(data.page, Math.max(0, Math.ceil(lines.length / 30) - 1))
+        const loaded = await loadCachedLineProgramOverviews(db, lines.slice(page * 30, (page + 1) * 30), revision)
+        return { ...loaded, total: lines.length, page, revision }
+      }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
+      await writeLineProgramOverviewCache(result.revision, cacheEntries)
+      return result
+    })
+}
+
+export async function loadLineProgramSection(data: ProgramSectionRequest) {
+  // Shared across users until a fact, program, approval or setting changes.
+  // The calculation retains one repeatable-read snapshot; mutations never use
+  // this display cache for validation or for deciding the affected records.
+  return getOrComputeDerivedCalculation(
+    buildDerivedCalculationCacheKey('line-program-section:v3', data),
+    async () => {
+      const { cacheEntries, ...result } = await requireDb().transaction(async db => {
+        const revision = await readProgramSnapshotRevision(db)
+        const loaded = await loadCachedLineProgramOverviews(db, await findSectionLines(db, data), revision)
+        return { ...loaded, revision }
+      }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
+      await writeLineProgramOverviewCache(result.revision, cacheEntries)
+      return result
+    },
+  )
+}
+
+/** Readonly display path only. Save/approve and exported reports deliberately
+ * keep using the uncached complete-line calculation for their own snapshot. */
+async function loadCachedLineProgramOverviews(
+  db: Pick<SystemDocumentSequenceTransaction, 'select'>, lines: LineProgramRecord[], revision: number,
+) {
+  const cached = await readLineProgramOverviewCache(db, revision, lines)
+  const computed = await loadLineProgramOverviews(db, lines.filter(line => !cached.has(line.id)))
+  const byId = new Map(computed.map(line => [line.id, line]))
+  const cacheEntries: CachedLineProgramOverview[] = computed.map(line => ({
+    identityKey: getLineProgramIdentityKey(line), lineId: line.id, version: line.version,
+    overviewPayload: { overview: line.overview, searchStamps: line.searchStamps },
+  }))
+  const rows = lines.map(line => {
+    const hit = cached.get(line.id)
+    if (hit) return { ...line, overview: hit.overviewPayload.overview, searchStamps: hit.overviewPayload.searchStamps }
+    const value = byId.get(line.id)
+    if (!value) throw new Error('Не удалось рассчитать выбранную линию. Повторите загрузку.')
+    return value
+  })
+  return { rows, cacheEntries }
+}
+
+// Read inside the same repeatable-read transaction as the facts, not from the
+// earlier cache lookup. A late full summary must not replace a newer page.
+async function readProgramSnapshotRevision(db: Pick<SystemDocumentSequenceTransaction, 'select'>) {
+  const [state] = await db.select({ revision: derivedCalculationState.sourceRevision }).from(derivedCalculationState).where(eq(derivedCalculationState.id, 1))
+  if (!state) throw new Error('Не удалось определить версию расчёта. Повторите загрузку.')
+  return state.revision
+}
 
 /** One preview request, batched identities; never initializes or changes a program. */
 export const getLineProgramsForImport = createServerFn({ method: 'POST' })

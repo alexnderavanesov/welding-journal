@@ -28,7 +28,7 @@ export function useLnkResultModalState() {
   const [managedLnkResultOrderIds, setManagedLnkResultOrderIds] = useState<number[] | null>(null)
   const [managedLnkResultTargetKey, setManagedLnkResultTargetKey] = useState('')
   const [managedLnkResultChangeHint, setManagedLnkResultChangeHint] = useState<ManagedLnkResultChangeHintState>(null)
-  const [managedLnkPendingResultChanges, setManagedLnkPendingResultChanges] = useState<Record<string, string>>({})
+  const [managedLnkPendingResultChanges, setManagedLnkPendingResultChanges] = useState<Record<string, string | null>>({})
   const [preservedLnkOrderIds, setPreservedLnkOrderIds] = useState<number[] | null>(null)
 
   return {

@@ -6,8 +6,10 @@ import * as weldReadApi from '@/server/weld-read-api'
 import {
   invalidateWeldPageQueries,
   isWeldPageRefreshRequired,
+  getWeldPageRefreshFailure,
   refreshLoadedWeldPageQuery,
   WELD_JOINT_PAGES_QUERY_KEY,
+  WELD_REPORT_SUMMARY_QUERY_KEY,
 } from '@/lib/weld-page-refresh'
 
 describe('consolidated weld page refresh', () => {
@@ -20,7 +22,7 @@ describe('consolidated weld page refresh', () => {
     try {
       await refreshLoadedWeldPageQuery(queryClient, queryKey, { fetchPage })
       expect(fetchPage.mock.calls).toEqual([1, 2].map(page => [report, {
-        page, pageSize: 1000, search: 'F001', columnFilters: { line: 'L1' },
+        page, pageSize: 1000, includeTotals: false, search: 'F001', columnFilters: { line: 'L1' },
       }]))
     } finally { queryClient.clear() }
   })
@@ -123,6 +125,7 @@ describe('consolidated weld page refresh', () => {
     expect(fetchPage).toHaveBeenCalledWith('weldingJournal', {
       page: 1,
       pageSize: 300,
+      includeTotals: false,
       columnFilters: {},
     })
     const refreshed = queryClient.getQueryData<InfiniteData<WeldPageResult>>(queryKey)
@@ -150,7 +153,7 @@ describe('consolidated weld page refresh', () => {
     expect(refreshed?.pages.at(-1)?.hasMore).toBe(true)
   })
 
-  it('preserves the cached total when a refresh response omits it', async () => {
+  it('does not carry an old total into a rows-only refresh', async () => {
     const queryClient = createQueryClient()
     const queryKey = createQueryKey()
     queryClient.setQueryData(queryKey, createInfiniteData(3, 706))
@@ -163,7 +166,7 @@ describe('consolidated weld page refresh', () => {
     await refreshLoadedWeldPageQuery(queryClient, queryKey, { fetchPage })
 
     const refreshed = queryClient.getQueryData<InfiniteData<WeldPageResult>>(queryKey)
-    expect(refreshed?.pages.map((page) => page.total)).toEqual([706, 706, 706])
+    expect(refreshed?.pages.map((page) => page.total)).toEqual([undefined, undefined, undefined])
     expect(refreshed?.pages.at(-1)?.hasMore).toBe(true)
   })
 
@@ -249,7 +252,7 @@ describe('consolidated weld page refresh', () => {
     ).toBe(100)
   })
 
-  it('marks an inactive cached report for a consolidated refresh without invalidating React Query', async () => {
+  it('marks inactive rows for consolidated refresh and invalidates counts without refetching', async () => {
     const queryClient = createQueryClient()
     const queryKey = createQueryKey()
     queryClient.setQueryData(queryKey, createInfiniteData(3, 500))
@@ -257,7 +260,8 @@ describe('consolidated weld page refresh', () => {
 
     await invalidateWeldPageQueries(queryClient)
 
-    expect(invalidateSpy).not.toHaveBeenCalled()
+    expect(invalidateSpy).toHaveBeenCalledExactlyOnceWith({ queryKey: WELD_REPORT_SUMMARY_QUERY_KEY, refetchType: 'none' })
+    expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(false)
     expect(isWeldPageRefreshRequired(queryClient, queryKey)).toBe(true)
     await refreshLoadedWeldPageQuery(queryClient, queryKey, {
       fetchPage: async (_report, request) => createResult(1, 300, 500, request.pageSize),
@@ -286,6 +290,82 @@ describe('consolidated weld page refresh', () => {
     unsubscribe()
     vi.clearAllTimers()
     vi.useRealTimers()
+  })
+  it('retains the final 100 rows as loadable after refreshing a 700-row window from an 800-row result', async () => {
+    const client = createQueryClient(), key = createQueryKey()
+    client.setQueryData(key, createInfiniteData(7, 700))
+    const fetchPage = vi.fn(async (_report: WeldReportKind, request: WeldPageRequest) => {
+      const result = createResult(1, 800, 800, request.pageSize)
+      delete result.total
+      return result
+    })
+    await refreshLoadedWeldPageQuery(client, key, { fetchPage })
+    const result = client.getQueryData<InfiniteData<WeldPageResult>>(key)!
+    expect(fetchPage).toHaveBeenCalledExactlyOnceWith('weldingJournal', {
+      page: 1, pageSize: 1000, includeTotals: false, columnFilters: {},
+    })
+    expect(result.pages.flatMap((page) => page.rows)).toHaveLength(700)
+    expect(result.pages.at(-1)).toMatchObject({ page: 7, hasMore: true })
+    expect(result.pages[0].total).toBeUndefined()
+  })
+
+  it('uses the last batch hasMore when a multi-batch refresh reaches the end without totals', async () => {
+    const client = createQueryClient(), key = createQueryKey()
+    client.setQueryData(key, createInfiniteData(15, 1500))
+    const fetchPage = vi.fn(async (_report: WeldReportKind, request: WeldPageRequest) => {
+      const result = createResult(request.page!, request.page === 1 ? 1000 : 200, 1200, request.pageSize)
+      delete result.total
+      return result
+    })
+    await refreshLoadedWeldPageQuery(client, key, { fetchPage })
+    const result = client.getQueryData<InfiniteData<WeldPageResult>>(key)!
+    expect(fetchPage).toHaveBeenCalledTimes(2)
+    expect(result.pages).toHaveLength(12)
+    expect(result.pages.at(-1)?.hasMore).toBe(false)
+    expect(result.pages[0].total).toBeUndefined()
+  })
+
+  it('does not publish a refresh invalidated again while its response is pending', async () => {
+    const client = createQueryClient(), key = createQueryKey()
+    client.setQueryData(key, createInfiniteData(1, 100))
+    const pending = createDeferred<WeldPageResult>()
+    const refreshing = refreshLoadedWeldPageQuery(client, key, { fetchPage: () => pending.promise })
+    await invalidateWeldPageQueries(client)
+    pending.resolve(createResult(1, 1, 1, 100))
+    expect(await refreshing).toBe(false)
+    expect(client.getQueryData<InfiniteData<WeldPageResult>>(key)?.pages[0].rows).toHaveLength(100)
+    expect(isWeldPageRefreshRequired(client, key)).toBe(true)
+  })
+
+  it.each(['success', 'failure'] as const)('does not let an older failure replace a newer refresh %s', async (outcome) => {
+    const client = createQueryClient(), key = createQueryKey()
+    client.setQueryData(key, createInfiniteData(1, 100))
+    const pending = createDeferred<WeldPageResult>()
+    const oldRefresh = refreshLoadedWeldPageQuery(client, key, { fetchPage: () => pending.promise })
+    const oldRejected = expect(oldRefresh).rejects.toThrow('Old refresh')
+    const newRefresh = refreshLoadedWeldPageQuery(client, key, { force: true, fetchPage: async () => {
+      if (outcome === 'failure') throw new Error('Current refresh')
+      return createResult(1, 99, 99, 100)
+    } })
+    if (outcome === 'failure') await expect(newRefresh).rejects.toThrow('Current refresh')
+    else expect(await newRefresh).toBe(true)
+    pending.reject(new Error('Old refresh'))
+    await oldRejected
+    expect(getWeldPageRefreshFailure(client, key)?.error.message).toBe(outcome === 'failure' ? 'Current refresh' : undefined)
+    expect(isWeldPageRefreshRequired(client, key)).toBe(outcome === 'failure')
+  })
+
+  it('does not publish a failure from an invalidated refresh generation', async () => {
+    const client = createQueryClient(), key = createQueryKey()
+    client.setQueryData(key, createInfiniteData(1, 100))
+    const pending = createDeferred<WeldPageResult>()
+    const refresh = refreshLoadedWeldPageQuery(client, key, { fetchPage: () => pending.promise })
+    const rejected = expect(refresh).rejects.toThrow('Outdated refresh')
+    await invalidateWeldPageQueries(client)
+    pending.reject(new Error('Outdated refresh'))
+    await rejected
+    expect(getWeldPageRefreshFailure(client, key)).toBeNull()
+    expect(isWeldPageRefreshRequired(client, key)).toBe(true)
   })
 })
 
@@ -340,8 +420,10 @@ function createRows(firstId: number, count: number): WeldRow[] {
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((resolvePromise) => {
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise
+    reject = rejectPromise
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }

@@ -49,6 +49,7 @@ import {
   isLayeredControlDocumentType,
 } from '@/lib/generated-document-types'
 import { isSystemDocumentTemplateId } from '@/lib/system-document-template-types'
+import { getSpecialistTemplateFields } from '@/lib/document-specialists'
 import { WELD_FIELDS, isVirtualWeldField, type WeldInput } from '@/lib/weld-fields'
 import { STAMP_NAME_TEMPLATE_FIELDS } from '@/lib/welder-stamp-names'
 import { CONTROL_BASIS_SUMMARY_FIELD_KEY } from '@/lib/control-assignment-basis'
@@ -528,7 +529,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
   )
   const fieldGroups = useMemo(() => {
     const fieldOptions = (supportsCurrentDocumentFields
-      ? [...SYSTEM_DOCUMENT_FIELDS, ...BASE_FIELD_OPTIONS]
+      ? [...getSpecialistTemplateFields(template.id).map(field => ({ key: field.key, label: field.label, group: 'Специалисты документа', kind: 'text' as const })), ...SYSTEM_DOCUMENT_FIELDS, ...BASE_FIELD_OPTIONS]
       : BASE_FIELD_OPTIONS
     ).filter((field) => field.key !== '__groupIndex' || draft.repeatMode === 'groups')
     const groups = new Map<string, TemplateFieldOption[]>()
@@ -538,7 +539,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
       groups.set(field.group, values)
     }
     return Array.from(groups.entries())
-  }, [draft.repeatMode, supportsCurrentDocumentFields])
+  }, [draft.repeatMode, supportsCurrentDocumentFields, template.id])
   const availableTemplateFields = useMemo(
     () => new Set<DocumentTemplateFieldKey>([
       ...fieldGroups.flatMap(([, fields]) => fields.map((field) => field.key)),

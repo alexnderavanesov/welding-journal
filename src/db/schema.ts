@@ -1,5 +1,22 @@
 import { sql } from 'drizzle-orm'
-import { boolean, check, date, index, integer, numeric, pgTable, primaryKey, serial, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
+import { boolean, check, date, index, integer, jsonb, numeric, pgTable, primaryKey, serial, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
+import type { DocumentSpecialists, SpecialistKind, SpecialistMethod } from '@/lib/document-specialists'
+
+export const specialists = pgTable('specialists', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  kind: text('kind').$type<SpecialistKind>().notNull(),
+  certificate: text('certificate').notNull(),
+  methods: text('methods').array().$type<SpecialistMethod[]>().notNull(),
+  revision: integer('revision').default(1).notNull(),
+  archived: boolean('archived').default(false).notNull(),
+}, table => [
+  index('specialists_name_idx').on(table.name, table.id),
+  index('specialists_archive_name_idx').on(table.archived, table.name, table.id),
+  check('specialists_kind_check', sql`${table.kind} in ('inspector', 'thermist')`),
+  check('specialists_name_check', sql`btrim(${table.name}) <> ''`),
+  check('specialists_certificate_check', sql`btrim(${table.certificate}) <> ''`),
+])
 
 const numericNumber = (name: string) => numeric(name, { precision: 12, scale: 3, mode: 'number' })
 
@@ -584,6 +601,8 @@ export const generatedDocuments = pgTable(
     wdiTotal: numericNumber('wdi_total'),
     documentNumber: integer('document_number'),
     sourceMetadata: text('source_metadata'),
+    specialists: jsonb('specialists').$type<DocumentSpecialists>(),
+    specialistsRevision: integer('specialists_revision').default(0).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

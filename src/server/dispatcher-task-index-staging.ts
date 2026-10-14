@@ -37,23 +37,16 @@ export function createDispatcherTaskIndexStageWriter(
 
   const writeChunk = async (chunk: DispatcherTaskIndexRow[]) => {
     if (chunk.length === 0) return
-    const payload = JSON.stringify(chunk.map((row) => ({
-      weldJointId: row.rowId,
-      taskKey: row.taskKey,
-      code: row.code,
-    })))
     const stage = getDispatcherTaskIndexStageTable(name)
     await executor.execute(sql`
       insert into ${stage} ("weld_joint_id", "task_key", "code")
       select
-        "rows"."weldJointId",
-        "rows"."taskKey",
-        "rows"."code"
-      from jsonb_to_recordset(${payload}::jsonb) as "rows"(
-        "weldJointId" integer,
-        "taskKey" text,
-        "code" text
-      )
+        source.weld_joint_id, source.task_key, source.code
+      from unnest(
+        ${sql.param(chunk.map(row => row.rowId))}::integer[],
+        ${sql.param(chunk.map(row => row.taskKey))}::text[],
+        ${sql.param(chunk.map(row => row.code))}::text[]
+      ) as source(weld_joint_id, task_key, code)
     `)
     insertedRowCount += chunk.length
     insertRequestCount += 1

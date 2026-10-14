@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { getDocumentRequisiteErrors } from '@/lib/document-requisites'
 import { ArrowRight, CalendarClock, FileSpreadsheet, Search, Trash2 } from 'lucide-react'
 
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
@@ -512,14 +513,10 @@ function CycleStageEditor({
     draft.name !== stageData.name ||
     draft.result !== stageData.result
   )
-  const draftComplete = stage === 'pstoResult'
-    ? Boolean(
-        (!saveCheckSettings.pstoResultDateRequired || draft.date) &&
-        (!saveCheckSettings.pstoResultDiagramRequired || draft.name),
-      )
-    : Boolean(draft.date && draft.name && (stage !== 'tvmtResult' || draft.result))
-  const saveBlockReason = hasChanges && draftComplete
-    ? getPstoCycleStageSaveBlockReason(row, cycle, stage, draft, saveCheckSettings)
+  const requisiteErrors = getDocumentRequisiteErrors({ name: draft.name, date: draft.date, nameLabel: 'наименование документа', dateLabel: 'Дата документа' })
+  const draftComplete = requisiteErrors.length === 0 && (stage !== 'tvmtResult' || Boolean(draft.result))
+  const saveBlockReason = hasChanges
+    ? requisiteErrors.join('\n') || getPstoCycleStageSaveBlockReason(row, cycle, stage, draft, saveCheckSettings)
     : ''
   const blockingLaterCycleSequence = getBlockingLaterCycleSequence(
     row,
@@ -570,8 +567,9 @@ function CycleStageEditor({
           <label className="min-w-0 space-y-1.5 text-xs font-medium text-slate-600">
             <span>Дата</span>
             <Input
-              className="min-w-0"
+              className="min-w-0 aria-invalid:border-rose-400"
               type="date"
+              aria-invalid={!draft.date}
               value={draft.date}
               autoFocus={rootCauseFocus === 'date'}
               disabled={isPending}
@@ -582,7 +580,8 @@ function CycleStageEditor({
         <label className={`min-w-0 space-y-1.5 text-xs font-medium text-slate-600 ${stage === 'tvmtResult' ? 'sm:col-span-2' : ''}`}>
           <span>{getNameLabel(stage)}</span>
           <Input
-            className="min-w-0"
+            className="min-w-0 aria-invalid:border-rose-400"
+            aria-invalid={!draft.name.trim()}
             value={draft.name}
             autoFocus={rootCauseFocus === 'name'}
             disabled={isPending}

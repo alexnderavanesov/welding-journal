@@ -26,7 +26,6 @@ type PstoResultDerivedStateParams = {
   nextPstoDiagramName: string
   nextPstoConclusionNumber?: number
   requestConclusionSettings: RequestConclusionSettings
-  isPstoResultSaving: boolean
   saveCheckSettings: SaveCheckSettings
 }
 
@@ -40,7 +39,6 @@ export function usePstoResultDerivedState({
   nextPstoDiagramName,
   nextPstoConclusionNumber,
   requestConclusionSettings,
-  isPstoResultSaving,
   saveCheckSettings,
 }: PstoResultDerivedStateParams) {
   const pstoResultAvailableRequestOptions = useMemo(
@@ -85,14 +83,12 @@ export function usePstoResultDerivedState({
       naming: pstoResultDraft.diagramNaming,
       settings: requestConclusionSettings,
       nextNumber: nextPstoConclusionNumber,
-      allowAllNamesEmpty: !saveCheckSettings.pstoResultDiagramRequired,
     }),
   [
     nextPstoConclusionNumber,
     pstoResultDraft.diagramNaming,
     pstoResultDraft.pstoDate,
     requestConclusionSettings,
-    saveCheckSettings.pstoResultDiagramRequired,
     selectedPstoResultRows,
   ])
 
@@ -100,13 +96,12 @@ export function usePstoResultDerivedState({
     () =>
       getPstoResultSaveBlockReason({
         draft: pstoResultDraft,
-        isSaving: isPstoResultSaving,
         nextDiagramName: nextPstoDiagramName,
         saveCheckSettings,
         selectedRows: selectedPstoResultRows,
         systemDocumentCreationPlan,
       }),
-    [isPstoResultSaving, nextPstoDiagramName, pstoResultDraft, saveCheckSettings, selectedPstoResultRows, systemDocumentCreationPlan],
+    [nextPstoDiagramName, pstoResultDraft, saveCheckSettings, selectedPstoResultRows, systemDocumentCreationPlan],
   )
 
   const managedPstoResultRows = useMemo(

@@ -14,19 +14,17 @@ import { ALL_LNK_FIELD_METHODS as LNK_METHODS } from '@/lib/lnk-report-config'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import {
   REQUEST_CONCLUSION_DEFAULT_SETTINGS,
-  addRowsToNamingPatternContext,
-  buildSystemNameWithNumber,
-  getPstoConclusionDateParts,
   getRequestConclusionNamingKind,
+  getSystemDocumentRecognitionPatternGroups,
   hasSystemDocumentNumberField,
   normalizeRequestConclusionSettings,
-  type NamingPatternContext,
   type RequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
 import {
   SYSTEM_DOCUMENT_TYPES,
   buildSystemDocumentSummaries,
   getSystemDocumentNumber,
+  getSystemDocumentNamingContext,
   isSystemDocumentType,
   type SystemDocumentType,
 } from '@/lib/system-document-types'
@@ -42,8 +40,11 @@ import {
 } from '@/lib/system-document-virtual-row'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { assertSecurityScope } from '@/server/security-functions'
+import { getSystemDocumentSequenceId, getSequenceTemplateId, legacySystemDocumentCounterKey, sequenceIdForStage, supportsDocumentNumberStages, systemDocumentCounterKey, SYSTEM_DOCUMENT_SEQUENCE_IDS, type DocumentNumberStage, type SystemDocumentSequenceId } from '@/lib/system-document-sequence-id'
+import { findAvailableSystemDocumentName, systemDocumentNameKey } from '@/lib/system-document-name-allocation'
 
 export type SystemDocumentSequenceUpdate = {
+  sourceKind?: 'beforeHeatTreatment'
   type: SystemDocumentType
   date: string
   methodCode?: string
@@ -71,36 +72,61 @@ export const getSystemDocumentSequences = createServerFn({ method: 'GET' }).hand
   const db = requireDb()
   return readAndInitializeSystemDocumentSequenceNumbers(
     db,
-    SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map((profile) => profile.id),
+    SYSTEM_DOCUMENT_SEQUENCE_IDS,
   )
 })
 
+/** Explicit preview refresh: uses the reservation rules, but never consumes a number. */
+export const previewSystemDocumentNames = createServerFn({ method: 'POST' })
+  .validator((data: SystemDocumentNameReservationInput[]) => {
+    if (!Array.isArray(data) || data.length > 1000 || JSON.stringify(data).length > 8 * 1024 * 1024) throw new Error('Слишком большой набор имён для предпросмотра.')
+    return data.map(input => ({ request: normalizeSystemDocumentSequenceUpdate(input.request), rows: (input.rows ?? []).map(row => ({
+      projectTitle: String(row.projectTitle ?? ''), subtitleCode: String(row.subtitleCode ?? ''), line: String(row.line ?? ''),
+    } as WeldRow)) }))
+  })
+  .handler(async ({ data }) => {
+    await assertSecurityScope('entry')
+    return requireDb().transaction(async tx => {
+      const settings = await readRequestConclusionSettings(tx)
+      const names = await reserveSystemDocumentNames(tx, data, { previewOnly: true })
+      return names.map(item => ({ name: item.name, pattern: settings[getRequestConclusionNamingKind(item.request)].systemPattern }))
+    }, { isolationLevel: 'repeatable read' })
+  })
+
 export const getSystemDocumentSequence = createServerFn({ method: 'GET' })
-  .validator((data: { type: SystemDocumentTemplateId }) => ({
+  .validator((data: { type: SystemDocumentTemplateId; stage?: DocumentNumberStage }) => ({
     type: requireSystemDocumentTemplateId(data?.type),
+    stage: requireDocumentNumberStage(data?.stage),
   }))
   .handler(async ({ data }) => {
     await assertSecurityScope('entry')
     const db = requireDb()
-    const sequences = await readAndInitializeSystemDocumentSequenceNumbers(db, [data.type])
+    const id = sequenceIdForStage(data.type, data.stage)
+    const ids = supportsDocumentNumberStages(data.type) ? [data.type, sequenceIdForStage(data.type, 'beforeHeatTreatment')] : [id]
+    const sequences = await readAndInitializeSystemDocumentSequenceNumbers(db, ids)
     return {
       type: data.type,
-      nextNumber: sequences[data.type],
+      nextNumber: sequences[id],
+      beforeHeatTreatmentNextNumber: supportsDocumentNumberStages(data.type) ? sequences[sequenceIdForStage(data.type, 'beforeHeatTreatment')] : null,
     }
   })
 
 export const resetSystemDocumentSequence = createServerFn({ method: 'POST' })
-  .validator((data: { type: SystemDocumentTemplateId }) => ({
+  .validator((data: { type: SystemDocumentTemplateId; stage?: DocumentNumberStage }) => ({
     type: requireSystemDocumentTemplateId(data?.type),
+    stage: requireDocumentNumberStage(data?.stage),
   }))
   .handler(async ({ data }) => {
     await assertSecurityScope('settings')
     const db = requireDb()
+    const id = sequenceIdForStage(data.type, data.stage)
     await db.transaction(async (tx) => {
-      await lockSystemDocumentNumberCounter(tx, data.type)
-      await writeSystemDocumentNextNumber(tx, data.type, 1)
+      await lockSystemDocumentNumberCounter(tx, id)
+      // Seed both stages before resetting either of them.
+      await initializeSystemDocumentSequences(tx, [id])
+      await writeSystemDocumentNextNumber(tx, id, 1)
     })
-    return { type: data.type, nextNumber: 1 }
+    return { type: data.type, stage: data.stage, nextNumber: 1 }
   })
 
 export function normalizeSystemDocumentSequenceUpdate(
@@ -111,6 +137,8 @@ export function normalizeSystemDocumentSequenceUpdate(
   const methodCode = String(value?.methodCode ?? '').trim()
   const fieldKeys = Array.from(new Set(value?.fieldKeys ?? []))
   const provisionalName = String(value?.provisionalName ?? '').trim()
+  if (value.sourceKind !== undefined && value.sourceKind !== 'beforeHeatTreatment') throw new Error('Неизвестный этап счётчика документа.')
+  if (value.sourceKind === 'beforeHeatTreatment') getSystemDocumentSequenceId({ type, methodCode, sourceKind: value.sourceKind })
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     throw new Error('Не указана дата системного документа.')
   }
@@ -143,6 +171,7 @@ export function normalizeSystemDocumentSequenceUpdate(
     date,
     fieldKeys,
     provisionalName,
+    ...(value.sourceKind ? { sourceKind: value.sourceKind } : {}),
     ...(methodCode ? { methodCode } : {}),
   }
 }
@@ -217,8 +246,10 @@ export async function reserveSystemDocumentNames(
   rawInputs: readonly SystemDocumentNameReservationInput[],
   options: {
     countersAlreadyLocked?: boolean
+    previewOnly?: boolean
     rejectChangedProvisionalNames?: boolean
-    occupiedNumbersBySequence?: ReadonlyMap<SystemDocumentTemplateId, ReadonlySet<number>>
+    occupiedNumbersBySequence?: ReadonlyMap<SystemDocumentSequenceId, ReadonlySet<number>>
+    occupiedNamesByTemplate?: ReadonlyMap<SystemDocumentTemplateId, ReadonlySet<string>>
   } = {},
 ) {
   if (rawInputs.length === 0) return []
@@ -226,23 +257,28 @@ export async function reserveSystemDocumentNames(
     request: normalizeSystemDocumentSequenceUpdate(input.request),
     rows: input.rows ?? [],
   }))
-  const sequenceIds = [...new Set(inputs.map(({ request }) => getSystemDocumentTemplateId(request)))].sort()
+  const sequenceIds = [...new Set(inputs.map(({ request }) => getSystemDocumentSequenceId(request)))].sort()
   if (!options.countersAlreadyLocked) {
     for (const sequenceId of sequenceIds) {
       await lockSystemDocumentNumberCounter(tx, sequenceId)
     }
   }
   const settings = await readRequestConclusionSettings(tx)
-  const nextNumberBySequence = new Map<SystemDocumentTemplateId, number>()
+  const stagedIds = sequenceIds.filter(id => supportsDocumentNumberStages(getSequenceTemplateId(id)))
+  const stagedNumbers = options.previewOnly
+    ? await readSystemDocumentNextNumbers(tx, sequenceIds)
+    : stagedIds.length ? await initializeSystemDocumentSequences(tx, stagedIds) : null
+  const nextNumberBySequence = new Map<SystemDocumentSequenceId, number>()
   for (const sequenceId of sequenceIds) {
-    nextNumberBySequence.set(sequenceId, await readSystemDocumentNextNumber(tx, sequenceId))
+    nextNumberBySequence.set(sequenceId, stagedNumbers?.[sequenceId] ?? await readSystemDocumentNextNumber(tx, sequenceId))
   }
-  const occupiedNamesBySequence = await loadExistingSystemDocumentNameKeys(
+  const existingNames = options.occupiedNamesByTemplate ?? await loadExistingSystemDocumentNameKeys(
     tx,
     inputs.map(({ request }) => request),
   )
-  const occupiedNumbersBySequence = new Map(
-    [...(options.occupiedNumbersBySequence ?? new Map())].map(([sequenceId, numbers]) => [
+  const occupiedNamesBySequence = new Map([...existingNames].map(([id, names]) => [id, new Set(names)]))
+  const occupiedNumbersBySequence = new Map<SystemDocumentSequenceId, Set<number>>(
+    [...(options.occupiedNumbersBySequence ?? [])].map(([sequenceId, numbers]) => [
       sequenceId,
       new Set(numbers),
     ]),
@@ -250,33 +286,20 @@ export async function reserveSystemDocumentNames(
   const reservations: Array<ReservedSystemDocumentName & { number: number }> = []
 
   for (const { request, rows } of inputs) {
-    const sequenceId = getSystemDocumentTemplateId(request)
+    const sequenceId = getSystemDocumentSequenceId(request)
     const pattern = settings[getRequestConclusionNamingKind(request)].systemPattern
-    if (!hasSystemDocumentNumberField(pattern)) {
-      throw new Error(
-        'В системном имени обязательно поле «Порядковый номер». Добавьте его в настройках заявок и заключений.',
-      )
-    }
-    const context = createNamingContext(request, rows)
-    const occupiedNames = occupiedNamesBySequence.get(sequenceId) ?? new Set<string>()
+    const context = getSystemDocumentNamingContext(request, rows)
+    const templateId = getSequenceTemplateId(sequenceId)
+    const occupiedNames = occupiedNamesBySequence.get(templateId) ?? new Set<string>()
     const occupiedNumbers = occupiedNumbersBySequence.get(sequenceId) ?? new Set<number>()
-    occupiedNamesBySequence.set(sequenceId, occupiedNames)
+    occupiedNamesBySequence.set(templateId, occupiedNames)
     occupiedNumbersBySequence.set(sequenceId, occupiedNumbers)
-    let number = nextNumberBySequence.get(sequenceId) ?? 1
-    let name = buildSystemNameWithNumber(pattern, context, number)
-
-    while (
-      number < 1_000_000 &&
-      (occupiedNumbers.has(number) || occupiedNames.has(systemDocumentNameKey(request.date, name)))
-    ) {
-      number += 1
-      name = buildSystemNameWithNumber(pattern, context, number)
-    }
-    if (occupiedNumbers.has(number) || occupiedNames.has(systemDocumentNameKey(request.date, name))) {
-      throw new Error('Не удалось назначить уникальный порядковый номер системного документа.')
-    }
+    const { name, number } = findAvailableSystemDocumentName({
+      pattern, context, date: request.date, nextNumber: nextNumberBySequence.get(sequenceId) ?? 1,
+      occupiedNames, occupiedNumbers,
+    })
     if (options.rejectChangedProvisionalNames && name !== request.provisionalName) {
-      throw new Error('Показанный системный номер или шаблон имени изменился. При создании откройте «…» рядом с разделением → «Обновить номера и имена»; при изменении готовых документов нажмите «Проверить изменения». Проверьте новые названия перед сохранением.')
+      throw new Error('Показанное системное имя уже занято либо номер или правило имени изменились. При создании откройте «…» рядом с разделением → «Обновить номера и имена»; при изменении готовых документов нажмите «Проверить изменения». Проверьте новые названия перед сохранением.')
     }
     occupiedNames.add(systemDocumentNameKey(request.date, name))
     occupiedNumbers.add(number)
@@ -284,7 +307,7 @@ export async function reserveSystemDocumentNames(
     reservations.push({ name, number, request })
   }
 
-  for (const sequenceId of sequenceIds) {
+  for (const sequenceId of options.previewOnly ? [] : sequenceIds) {
     await writeSystemDocumentNextNumber(tx, sequenceId, nextNumberBySequence.get(sequenceId) ?? 1)
   }
   return reservations
@@ -296,12 +319,13 @@ type SystemDocumentNameSource = {
   name: SQLWrapper
   date: SQLWrapper
   methodCode?: string
+  sourceKind?: 'beforeHeatTreatment'
   predicate?: SQL
 }
 
 export async function loadExistingSystemDocumentNameKeys(
   db: Pick<SystemDocumentSequenceTransaction, 'execute'>,
-  requests: readonly SystemDocumentSequenceUpdate[],
+  requests: readonly Pick<SystemDocumentSequenceUpdate, 'type' | 'date' | 'methodCode'>[],
 ) {
   const datesBySequence = new Map<SystemDocumentTemplateId, Set<string>>()
   for (const request of requests) {
@@ -369,6 +393,7 @@ function getSystemDocumentNameSources(sequenceId: SystemDocumentTemplateId): Sys
         id: preHeatTreatmentControls.id,
         name: preHeatTreatmentControls.requestName,
         date: preHeatTreatmentControls.requestDate,
+        sourceKind: 'beforeHeatTreatment',
       },
     ]
   }
@@ -433,18 +458,15 @@ function getSystemDocumentNameSources(sequenceId: SystemDocumentTemplateId): Sys
         name: preHeatTreatmentControls.conclusionName,
         date: preHeatTreatmentControls.conclusionDate,
         methodCode: method.code,
+        sourceKind: 'beforeHeatTreatment' as const,
         predicate: sql`${preHeatTreatmentControls.method} = ${method.code}`,
       },
     ])
 }
 
-function systemDocumentNameKey(date: string, name: string) {
-  return `${date}\u0000${name}`
-}
-
 export async function readSystemDocumentNextNumber(
   db: Pick<SystemDocumentSequenceTransaction, 'select' | 'execute'>,
-  sequenceId: SystemDocumentTemplateId,
+  sequenceId: SystemDocumentSequenceId,
 ) {
   const [setting] = await db
     .select({ value: appSettings.value })
@@ -453,18 +475,17 @@ export async function readSystemDocumentNextNumber(
     .limit(1)
   const stored = parsePositiveIntegerSetting(setting?.value)
   if (stored) return stored
-  const initial = await readInitialSequenceNumbers(db, [sequenceId])
-  return initial[sequenceId]
+  return (await readSystemDocumentNextNumbers(db, [sequenceId]))[sequenceId]
 }
 
-export async function readSystemDocumentNextNumbers<SequenceId extends SystemDocumentTemplateId>(
+export async function readSystemDocumentNextNumbers<SequenceId extends SystemDocumentSequenceId>(
   db: Pick<Db, 'select' | 'execute'>,
   sequenceIds: readonly SequenceId[],
 ): Promise<Record<SequenceId, number>> {
   const requestedIds = [...new Set(sequenceIds)].sort()
   const stored = await readStoredSequenceNumbers(db)
   const missingIds = requestedIds.filter((sequenceId) => stored[sequenceId] == null)
-  const initial = missingIds.length > 0 ? await readInitialSequenceNumbers(db, missingIds) : null
+  const initial = missingIds.length > 0 ? await readSequenceSeeds(db, missingIds) : null
   return Object.fromEntries(requestedIds.map((sequenceId) => [
     sequenceId,
     stored[sequenceId] ?? initial?.[sequenceId] ?? 1,
@@ -472,27 +493,25 @@ export async function readSystemDocumentNextNumbers<SequenceId extends SystemDoc
 }
 
 async function readStoredSequenceNumbers(db: Pick<Db, 'select'>) {
-  const keys = SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map((profile) =>
-    systemDocumentCounterKey(profile.id),
-  )
+  const keys = SYSTEM_DOCUMENT_SEQUENCE_IDS.map(systemDocumentCounterKey)
   const settings = await db
     .select({ key: appSettings.key, value: appSettings.value })
     .from(appSettings)
     .where(inArray(appSettings.key, keys))
   const values = new Map(settings.map((setting) => [setting.key, parsePositiveIntegerSetting(setting.value)]))
   return Object.fromEntries(
-    SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map((profile) => [
-      profile.id,
-      values.get(systemDocumentCounterKey(profile.id)) ?? null,
+    SYSTEM_DOCUMENT_SEQUENCE_IDS.map((id) => [
+      id,
+      values.get(systemDocumentCounterKey(id)) ?? null,
     ]),
-  ) as Record<SystemDocumentTemplateId, number | null>
+  ) as Record<SystemDocumentSequenceId, number | null>
 }
 
-async function readAndInitializeSystemDocumentSequenceNumbers<SequenceId extends SystemDocumentTemplateId>(
+async function readAndInitializeSystemDocumentSequenceNumbers<SequenceId extends SystemDocumentSequenceId>(
   db: Db,
   sequenceIds: readonly SequenceId[],
 ): Promise<Record<SequenceId, number>> {
-  const requestedIds = Array.from(new Set(sequenceIds)).sort()
+  const requestedIds = expandStageSequenceIds(sequenceIds)
   const stored = await readStoredSequenceNumbers(db)
   const missingIds = requestedIds.filter((sequenceId) => stored[sequenceId] === null)
   if (missingIds.length === 0) {
@@ -502,22 +521,39 @@ async function readAndInitializeSystemDocumentSequenceNumbers<SequenceId extends
   }
 
   return db.transaction(async (tx) => {
-    for (const sequenceId of missingIds) await lockSystemDocumentNumberCounter(tx, sequenceId)
-    const currentStored = await readStoredSequenceNumbers(tx)
-    const currentMissingIds = requestedIds.filter((sequenceId) => currentStored[sequenceId] === null)
-    const initial = currentMissingIds.length > 0
-      ? await readInitialSequenceNumbers(tx, currentMissingIds)
-      : null
-    for (const sequenceId of currentMissingIds) {
-      await writeSystemDocumentNextNumber(tx, sequenceId, initial?.[sequenceId] ?? 1)
-    }
-    return Object.fromEntries(
-      requestedIds.map((sequenceId) => [
-        sequenceId,
-        currentStored[sequenceId] ?? initial?.[sequenceId] ?? 1,
-      ]),
-    ) as Record<SequenceId, number>
+    for (const base of [...new Set(missingIds.map(getSequenceTemplateId))].sort()) await lockSystemDocumentNumberCounter(tx, base)
+    return await initializeSystemDocumentSequences(tx, requestedIds) as Record<SequenceId, number>
   })
+}
+
+function expandStageSequenceIds(ids: readonly SystemDocumentSequenceId[]): SystemDocumentSequenceId[] {
+  return [...new Set(ids.flatMap(id => {
+    const base = getSequenceTemplateId(id)
+    return supportsDocumentNumberStages(base) ? [base, sequenceIdForStage(base, 'beforeHeatTreatment')] : [id]
+  }))].sort()
+}
+
+async function readSequenceSeeds(db: Pick<Db, 'select' | 'execute'>, ids: readonly SystemDocumentSequenceId[]) {
+  const bases = [...new Set(ids.map(getSequenceTemplateId))]
+  const legacy = await db.select({ key: appSettings.key, value: appSettings.value }).from(appSettings)
+    .where(inArray(appSettings.key, bases.map(legacySystemDocumentCounterKey)))
+  const values = new Map(legacy.map(row => [row.key, parsePositiveIntegerSetting(row.value)]))
+  const missing = bases.filter(id => !values.get(legacySystemDocumentCounterKey(id)))
+  const initial = missing.length ? await readInitialSequenceNumbers(db, missing) : null
+  return Object.fromEntries(ids.map(id => {
+    const base = getSequenceTemplateId(id)
+    return [id, values.get(legacySystemDocumentCounterKey(base)) ?? initial?.[base] ?? 1]
+  })) as Record<SystemDocumentSequenceId, number>
+}
+
+/** Caller holds the common per-type counter lock. Both stages get the same seed atomically. */
+async function initializeSystemDocumentSequences(tx: SystemDocumentSequenceTransaction, ids: readonly SystemDocumentSequenceId[]) {
+  const requested = expandStageSequenceIds(ids)
+  const stored = await readStoredSequenceNumbers(tx)
+  const missing = requested.filter(id => stored[id] == null)
+  const initial = missing.length ? await readSequenceSeeds(tx, missing) : null
+  for (const id of missing) await writeSystemDocumentNextNumber(tx, id, initial![id])
+  return Object.fromEntries(requested.map(id => [id, stored[id] ?? initial?.[id] ?? 1])) as Record<SystemDocumentSequenceId, number>
 }
 
 export async function readInitialSequenceNumbers(
@@ -552,9 +588,9 @@ export function buildInitialSystemDocumentSequenceQuery(
   for (const sequenceId of [...new Set(sequenceIds)]) {
     for (const source of getSystemDocumentNameSources(sequenceId)) {
       sourceKey += 1
-      const patterns = getSystemDocumentNumberPatterns(settings, sequenceId, source.methodCode)
+      const patterns = getSystemDocumentNumberPatternGroups(settings, sequenceId, source.methodCode, source.sourceKind)
       const entries = entriesByTable.get(source.table) ?? []
-      for (const pattern of patterns) {
+      for (const [priority, group] of patterns.entries()) for (const pattern of group) {
         entries.push(sql`(
           ${source.id}::bigint,
           ${sourceKey}::integer,
@@ -562,12 +598,17 @@ export function buildInitialSystemDocumentSequenceQuery(
           ${sequenceId}::text,
           ${buildSystemDocumentNumberRegex(pattern, source.date, source.methodCode)},
           ${getSystemDocumentPatternLiteralPrefix(pattern)}::text,
+          ${priority}::integer,
           (${source.predicate ?? sql`true`})::boolean
         )`)
       }
       if (entries.length > 0) entriesByTable.set(source.table, entries)
     }
   }
+  const matchedNumber = sql`case
+    when char_length(("matched"."parts")[1]) <= 16
+      and (("matched"."parts")[1])::numeric between 1 and 9007199254740991
+    then (("matched"."parts")[1])::numeric else null end`
   const tableQueries = [...entriesByTable].map(([table, entries]) => sql`
     select
       "source_numbers"."sequenceId",
@@ -577,13 +618,9 @@ export function buildInitialSystemDocumentSequenceQuery(
         "sources"."sequenceId",
         "sources"."sourceId",
         "sources"."sourceKey",
-        min(
-          case
-            when char_length(("matched"."parts")[1]) <= 16
-              and (("matched"."parts")[1])::numeric between 1 and 9007199254740991
-            then (("matched"."parts")[1])::numeric
-            else null
-          end
+        coalesce(
+          min(${matchedNumber}) filter (where "sources"."patternPriority" = 0),
+          min(${matchedNumber})
         ) as "documentNumber"
       from ${table}
       cross join lateral (values ${sql.join(entries, sql`, `)}) as "sources"(
@@ -593,6 +630,7 @@ export function buildInitialSystemDocumentSequenceQuery(
         "sequenceId",
         "pattern",
         "literalPrefix",
+        "patternPriority",
         "eligible"
       )
       cross join lateral regexp_match(
@@ -614,23 +652,19 @@ export function buildInitialSystemDocumentSequenceQuery(
   `
 }
 
-function getSystemDocumentNumberPatterns(
+function getSystemDocumentNumberPatternGroups(
   settings: RequestConclusionSettings,
   sequenceId: SystemDocumentTemplateId,
   methodCode?: string,
+  sourceKind?: 'beforeHeatTreatment',
 ) {
   const type = sequenceId === 'pstoRequest' || sequenceId === 'pstoConclusion'
     ? sequenceId
     : sequenceId === 'lnkRequest' || sequenceId === 'tvmtRequest'
       ? 'lnkRequest'
       : 'lnkConclusion'
-  const namingKind = getRequestConclusionNamingKind({ type, methodCode })
-  const namingSettings = settings[namingKind]
-  return [...new Set([
-    namingSettings.systemPattern,
-    ...(namingSettings.systemPatternHistory ?? []),
-    REQUEST_CONCLUSION_DEFAULT_SETTINGS[namingKind].systemPattern,
-  ])].filter(hasSystemDocumentNumberField)
+  const namingKind = getRequestConclusionNamingKind({ type, methodCode, sourceKind })
+  return getSystemDocumentRecognitionPatternGroups(settings, namingKind).map(group => group.filter(hasSystemDocumentNumberField))
 }
 
 function buildSystemDocumentNumberRegex(
@@ -702,16 +736,16 @@ export async function readRequestConclusionSettings(
 
 export async function lockSystemDocumentNumberCounter(
   tx: Pick<SystemDocumentSequenceTransaction, 'execute'>,
-  sequenceId: SystemDocumentTemplateId,
+  sequenceId: SystemDocumentSequenceId,
 ) {
   await tx.execute(
-    sql`select pg_advisory_xact_lock(hashtext(${systemDocumentCounterKey(sequenceId)}))`,
+    sql`select pg_advisory_xact_lock(hashtext(${legacySystemDocumentCounterKey(getSequenceTemplateId(sequenceId))}))`,
   )
 }
 
 async function writeSystemDocumentNextNumber(
   tx: Pick<SystemDocumentSequenceTransaction, 'insert'>,
-  sequenceId: SystemDocumentTemplateId,
+  sequenceId: SystemDocumentSequenceId,
   nextNumber: number,
 ) {
   const value = JSON.stringify(Math.max(1, Math.floor(nextNumber)))
@@ -724,21 +758,10 @@ async function writeSystemDocumentNextNumber(
     })
 }
 
-function createNamingContext(
-  request: SystemDocumentSequenceUpdate,
-  rows: Array<Partial<Pick<WeldRow, 'projectTitle' | 'subtitleCode' | 'line'>>>,
-): NamingPatternContext {
-  if (request.type === 'pstoConclusion') {
-    return addRowsToNamingPatternContext(getPstoConclusionDateParts(request.date), rows)
-  }
-  return addRowsToNamingPatternContext({
-    date: new Date(`${request.date}T00:00:00`),
-    ...(request.methodCode ? { methodCode: request.methodCode } : {}),
-  }, rows)
-}
-
-function systemDocumentCounterKey(sequenceId: SystemDocumentTemplateId) {
-  return `system-document-next-number:${sequenceId}`
+function requireDocumentNumberStage(value: unknown): DocumentNumberStage {
+  if (value === undefined || value === 'main') return 'main'
+  if (value === 'beforeHeatTreatment') return value
+  throw new Error('Неизвестный этап счётчика документа.')
 }
 
 function parsePositiveIntegerSetting(value: string | undefined) {

@@ -35,6 +35,22 @@ const context: ServerWeldValidationContext = {
 }
 
 describe('validateServerWeldRecords', () => {
+  it.each([false, true])('allows partial other-method backfill only with a retained stored rejection (import=%s)', importMode => {
+    const previous = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1', officiality: 'неофициальный', weldDate: '2026-09-01',
+      hasVik: 'да', vikResult: 'ожидает НК', vikRequest: 'ВИК-1', vikRequestDate: '2026-09-01',
+      hasUzk: 'да', uzkResult: 'ремонт', uzkRequest: 'УЗК-1', uzkRequestDate: '2026-09-01', uzkConclusion: 'УЗК-К', uzkConclusionDate: '2026-09-02' } as WeldJoint
+    const previousRows = new Map([[1, previous]])
+    const checksOff = Object.fromEntries(Object.keys(DEFAULT_SAVE_CHECK_SETTINGS).map(key => [key, false])) as typeof DEFAULT_SAVE_CHECK_SETTINGS
+    const patch = { id: 1, vikResult: 'годен', vikConclusion: 'ВИК-К', vikConclusionDate: '2026-09-02' }
+    const validate = (extra: WeldInput = {}) => validateServerWeldRecords({
+      records: mergeWeldRecordsWithPrevious([{ ...patch, ...extra }], previousRows), previousRows,
+      context: { ...context, saveCheckSettings: checksOff }, importMode,
+    })
+    expect(() => validate()).not.toThrow()
+    expect(() => validate({ uzkResult: 'годен' })).toThrow('Сначала верните стыку официальность')
+    expect(() => validate({ uzkResult: null, uzkConclusion: null, uzkConclusionDate: null })).toThrow('Сначала верните стыку официальность')
+    expect(previous.uzkResult).toBe('ремонт')
+  })
   it.each([false, true])('blocks a partial removal of the last unofficial rejection with checks disabled (import=%s)', importMode => {
     const previous = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1', officiality: 'неофициальный', hasUzk: 'да', uzkResult: 'ремонт' } as WeldJoint
     const previousRows = new Map([[1, previous]])
@@ -178,7 +194,7 @@ describe('validateServerWeldRecords', () => {
     } as unknown as WeldInput, previous)).toBe('')
   })
 
-  it('does not block unrelated edits or one-field repair of legacy incomplete TVMT data', () => {
+  it('allows unrelated legacy TVMT edits but requires both facts when correcting the result', () => {
     const previous = {
       id: 71,
       joint: 'F71',
@@ -194,7 +210,7 @@ describe('validateServerWeldRecords', () => {
     expect(getSystemDocumentIntegrityReason({
       ...previous,
       tvmtConclusion: 'Заключение ТВМТ',
-    } as unknown as WeldInput, previous)).toBe('')
+    } as unknown as WeldInput, previous)).toContain('дату ТВМТ')
   })
 
   it('audits a legacy official-stamp issue without blocking an unrelated edit', () => {
@@ -1488,7 +1504,7 @@ describe('validateServerWeldRecords', () => {
     })).toThrow(/СП-07.*РК до ТО/)
   })
 
-  it('allows incomplete LNK requisites but rejects an invalid date', () => {
+  it('rejects incomplete LNK requisites and invalid dates', () => {
     const previous = {
       id: 21,
       joint: 'F21',
@@ -1502,7 +1518,7 @@ describe('validateServerWeldRecords', () => {
       records: [{ ...previous, vikResult: 'годен' } as unknown as WeldInput],
       previousRows: new Map([[previous.id, previous]]),
       context,
-    })).not.toThrow()
+    })).toThrow(/дату контроля[\s\S]*наименование заключения/)
 
     expect(() => validateServerWeldRecords({
       records: [{
@@ -1524,7 +1540,7 @@ describe('validateServerWeldRecords', () => {
       } as unknown as WeldInput],
       previousRows: new Map([[previous.id, previous]]),
       context,
-    })).not.toThrow()
+    })).toThrow('наименование заключения')
   })
 
   it('does not let the general ZВ-11 override disabled LNK result checks', () => {
@@ -1629,7 +1645,7 @@ describe('validateServerWeldRecords', () => {
     })).toThrow('СП-04')
   })
 
-  it('allows incomplete PSTO requisites for subsequent SP-11 backfill', () => {
+  it('rejects new incomplete PSTO requisites instead of creating SP-11 debt', () => {
     const previous = {
       id: 23,
       projectTitle: 'Проект',
@@ -1653,7 +1669,7 @@ describe('validateServerWeldRecords', () => {
       records: [{ ...previous, pstoResult: 'проведено' } as unknown as WeldInput],
       previousRows: new Map([[previous.id, previous]]),
       context: pstoContext,
-    })).not.toThrow()
+    })).toThrow(/дату ПСТО[\s\S]*наименование диаграммы/)
 
     expect(() => validateServerWeldRecords({
       records: [{
@@ -1664,7 +1680,7 @@ describe('validateServerWeldRecords', () => {
       } as unknown as WeldInput],
       previousRows: new Map([[previous.id, previous]]),
       context: pstoContext,
-    })).not.toThrow()
+    })).toThrow('наименование диаграммы')
   })
 
   it('keeps ZВ-23 and ZВ-24 independent at the server boundary', () => {

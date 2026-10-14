@@ -21,6 +21,18 @@ function mount(action: 'split' | 'rename' | 'merge' = 'split') {
   render(<QueryClientProvider client={client}><DocumentOperationDialog documents={documents} action={action} onClose={onClose} onApplied={onApplied} /></QueryClientProvider>)
   return { client, onClose, onApplied }
 }
+it('shows the conflicting-specialists warning before confirmation and sends explicit acknowledgement', async () => {
+  const result = preview()
+  rpc.preview.mockResolvedValue({ ...result, groups: result.groups.map(group => ({ ...group, specialistsCleared: true })) })
+  rpc.apply.mockResolvedValue({ changedDocumentCount: 1, resultingDocumentCount: 1, affectedRowCount: 1 })
+  const { client } = mount()
+  expect(await screen.findByRole('alert')).toHaveTextContent('обе роли в таких итоговых документах будут пустыми')
+  expect(rpc.apply).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Подтвердить и применить' }))
+  await waitFor(() => expect(rpc.apply).toHaveBeenCalledOnce())
+  expect(rpc.apply.mock.calls[0][0].data.acceptSpecialistClearing).toBe(true)
+  client.clear()
+})
 it('never automatically applies the next packet and preserves the successful partial result', async () => {
   rpc.preview.mockResolvedValueOnce(preview(1)).mockResolvedValueOnce(preview(2))
   rpc.apply.mockResolvedValueOnce({ changedDocumentCount: 1, resultingDocumentCount: 1, affectedRowCount: 1 }).mockRejectedValueOnce(new Error('Failed query: update weld_joints'))

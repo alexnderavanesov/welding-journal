@@ -32,6 +32,7 @@ import {
 } from '@/server/generated-document-number-sequence'
 import { lockControlProcessSettings } from '@/server/control-process-settings-lock'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
+import { touchDocumentMembershipParents } from './document-version'
 
 const LAYERED_CONTROL_INDEX_SETTING_KEY = 'layered-control-document-index-version'
 const LAYERED_CONTROL_INDEX_VERSION = '2'
@@ -497,6 +498,7 @@ export async function persistLayeredControlDocumentWrites(
   ])).values()]
   if (duplicates.length > 0) {
     const documentIds = duplicates.map((assignment) => assignment.documentId)
+    await touchDocumentMembershipParents(tx, documentIds)
     const weldJointIds = duplicates.map((assignment) => assignment.weldJointId)
     await tx.execute(sql`
       delete from "generated_document_weld_joints" as assignment

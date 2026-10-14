@@ -3,6 +3,33 @@ import { describe, expect, it, vi } from 'vitest'
 import { ResultDialogFooter } from '@/components/result-dialog-footer'
 
 describe('ResultDialogFooter', () => {
+  it('keeps the server error visible when the draft also has a validation error', () => {
+    render(<ResultDialogFooter saveBlockReason="Укажите дату контроля" saveError="Сервер недоступен" isSaveDisabled onSave={vi.fn()} onClose={vi.fn()} />)
+    expect(screen.getByRole('alert')).toHaveTextContent('Укажите дату контроля')
+    expect(screen.getByRole('alert')).toHaveTextContent('Не удалось сохранить: Сервер недоступен')
+  })
+  it('shows a real failed save inside the form without disabling retry', () => {
+    const onSave = vi.fn()
+    render(<ResultDialogFooter saveBlockReason={null} saveError="Сервер недоступен" isSaveDisabled={false} onSave={onSave} onClose={vi.fn()} />)
+    expect(screen.getByRole('alert')).toHaveTextContent('Не удалось сохранить: Сервер недоступен')
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить результат' }))
+    expect(onSave).toHaveBeenCalledOnce()
+  })
+  it('shows neutral progress without an error, prevents a duplicate, and leaves real errors visible', () => {
+    const onSave = vi.fn()
+    const props = { onSave, onClose: vi.fn(), isSaveDisabled: false, saveBlockReason: null, saveBlockReasonVariant: 'danger' as const }
+    const view = render(<ResultDialogFooter {...props} isSaving />)
+    const save = screen.getByRole('button', { name: 'Сохраняем…' })
+    expect(save).toBeDisabled()
+    expect(screen.queryByText(/Сохранение заблокировано/)).not.toBeInTheDocument()
+    fireEvent.click(save)
+    expect(onSave).not.toHaveBeenCalled()
+    view.rerender(<ResultDialogFooter {...props} saveBlockReason="Ошибка сервера" isSaveDisabled />)
+    expect(screen.getByText('Сохранение заблокировано: Ошибка сервера')).toBeVisible()
+    view.rerender(<ResultDialogFooter {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить результат' }))
+    expect(onSave).toHaveBeenCalledOnce()
+  })
   it('keeps a blocking reason and all corrections separate from disabled save', () => {
     const onSave = vi.fn()
     const onClose = vi.fn()

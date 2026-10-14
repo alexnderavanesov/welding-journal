@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { WeldRow } from './dispatcher-types'
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS as settings } from './request-conclusion-settings'
-import { buildCurrentSystemDocumentName, buildSystemDocumentSummaries } from './system-document-types'
+import { buildCurrentSystemDocumentName, buildSystemDocumentSummaries, getSystemDocumentNumber } from './system-document-types'
 import { assertDocumentMergeCompatible, assertDocumentOperationIntent, buildDocumentOperationGroups, getDocumentOperationPositions, type DocumentOperationSource } from './system-document-operation'
 
 const date = '2026-10-09'
@@ -17,6 +17,13 @@ function build(sources: DocumentOperationSource[], merge: boolean, mode: 'line' 
 }
 
 describe('selected document grouping — agreed business rules', () => {
+  it.each([false, true])('refuses undated legacy documents before split/merge (merge=%s), preserving the source', merge => {
+    const source = request(10, [1, 2])
+    source.document.date = ''
+    const before = structuredClone(source)
+    expect(() => build([source], merge)).toThrow('Сначала дозаполните')
+    expect(source).toEqual(before)
+  })
   it('standalone merge combines every selected source into exactly one group', () => {
     const sources = [request(1, [1, 2]), request(2, [3, 4])]
     const groups = buildDocumentOperationGroups({ sources, request: { documentIds: [1, 2], action: 'merge', mode: 'none', merge: true }, settings, nextNumbers: {} })
@@ -133,5 +140,24 @@ describe('selected document grouping — agreed business rules', () => {
     const groups = build([before], false, 'joint')
     expect(groups.map(group => group.positions.map(p => [p.row.id, p.relationId, p.stage]))).toEqual([[[1, 11, 'До ТО']], [[2, 12, 'До ТО']]])
     expect(() => build([primary, before], true, 'none')).toThrow('разные этапы')
+  })
+  it('splits a legacy pre-TO name using only its stage counter, retaining the first historical number', () => {
+    const title = 'ЗНК-ВИК-09.10.2026-005'
+    const rows = [1, 2].map(id => ({ id, joint: `С${id}`, vikConclusion: title, vikConclusionDate: date })) as WeldRow[]
+    const source: DocumentOperationSource = {
+      document: { ...buildSystemDocumentSummaries(rows, 'lnkConclusion')[0], documentId: 2, sourceKind: 'beforeHeatTreatment' }, rows,
+      controls: rows.map(row => ({ position: { kind: 'beforeHeatTreatment', weldJointId: row.id, relationId: row.id + 10, methodCode: 'ВИК' }, control: { id: row.id + 10, weldJointId: row.id, method: 'ВИК', conclusionName: title, conclusionDate: date } })),
+    }
+    const original = structuredClone(source)
+    const groups = buildDocumentOperationGroups({ sources: [source], request: { documentIds: [2], action: 'split', mode: 'joint', merge: false }, settings,
+      nextNumbers: { lnkConclusionVik: 300, 'lnkConclusionVik:beforeHeatTreatment': 126 },
+      occupiedNumbers: new Map([['lnkConclusionVik:beforeHeatTreatment', new Set([126])]]),
+    })
+    expect(groups.map(group => [group.name, group.reserveNumber])).toEqual([
+      ['ЗНК-ВИК-ДО-ТО-09.10.2026-005', false], ['ЗНК-ВИК-ДО-ТО-09.10.2026-127', true],
+    ])
+    expect(source).toEqual(original)
+    // A normal move may retain the pre-TO name in the main stage.
+    expect(getSystemDocumentNumber({ ...source.document, sourceKind: undefined, title: groups[1].name }, settings)).toBe('127')
   })
 })

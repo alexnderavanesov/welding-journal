@@ -185,7 +185,9 @@ test('200k, five browser clients, mixed reads/writes/import/documents under hard
         if (round === 0) {
           await page.route('**/_serverFn/**', async route => {
             if (!failureInjected && rpcName(route.request().url()).startsWith('updateWeldJoint')) {
-              failureInjected = true; await route.abort('failed')
+              failureInjected = true
+              telemetry[2].expectInjectedNetworkFailure(route.request())
+              await route.abort('failed')
             } else await route.continue()
           })
           await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()

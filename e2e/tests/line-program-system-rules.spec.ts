@@ -2,8 +2,9 @@ import { expect, test, type Route } from '@playwright/test'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { E2E_DATABASE_URL, withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
-import { rpcName } from '../rpc'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
+import { rpcName, serializeRpcData } from '../rpc'
+import { confirmLnkResultChanges } from '../lnk-result-confirmation'
 
 test.afterEach(() => cleanupLineProgramProjects(['E2E system rules']))
 
@@ -41,7 +42,7 @@ async function ownControlSnapshot(id: number) {
 for (const order of ['одновременно', 'сначала послойный', 'сначала дубль'] as const) {
 test(`два окна не сохраняют несовместимые послойный контроль и дубль: ${order}`, async ({ page }) => {
   const joint = 'F704', lineName = 'SYS-LAYERED-RACE'
-  const id = await withE2eDatabase(async db => {
+  const id = await withLineProgramFixture(async db => {
     const { rows: [line] } = await db.query(`insert into line_programs (project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
       values ('E2E system rules','SYS',$1,'II','A',100,100) returning id`, [lineName])
     const { rows: [row] } = await db.query(`insert into weld_joints
@@ -112,7 +113,7 @@ test(`два окна не сохраняют несовместимые пос�
 
 test('после выполненного РК можно назначить ПВК, создать заявку и довнести только допустимую дату результата', async ({ page }) => {
   const joint = 'F703', lineName = 'SYS-LATE-PVK'
-  const id = await withE2eDatabase(async db => {
+  const id = await withLineProgramFixture(async db => {
     const { rows: [line] } = await db.query(`insert into line_programs (project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
       values ('E2E system rules','SYS',$1,'II','A',100,100) returning id`, [lineName])
     const { rows: [row] } = await db.query(`insert into weld_joints
@@ -168,7 +169,7 @@ for (const beforeHeatTreatment of [false, true]) for (const date of ['2026-09-10
   test(`довнесение УЗК ${date} после РК с браком 11 сентября: ${beforeHeatTreatment ? 'до ТО' : 'основной НК'}`, async ({ page }) => {
     const joint = beforeHeatTreatment ? 'F702' : 'F701'
     const createHistoricalRequest = date === '2026-09-11'
-    const id = await withE2eDatabase(async db => {
+    const id = await withLineProgramFixture(async db => {
       const { rows: [row] } = await db.query(`insert into weld_joints
         (project_title,subtitle_code,line,joint,connection_type,weld_date,stamp_1_k,has_vik,has_rk,has_uzk,psto_required,officiality,
         material_group,welding_method,d1,d2,t1,t2,wdi,vik_control_basis,rk_control_basis,uzk_control_basis)
@@ -276,13 +277,41 @@ for (const beforeHeatTreatment of [false, true]) for (const date of ['2026-09-10
       await expect(correctionResult.getByRole('button', { name: 'годен', exact: true })).toHaveAttribute('aria-pressed', 'true')
       const beforeCorrection = await ownControlSnapshot(id)
       await correctionResult.getByRole('button', { name: 'вырез', exact: true }).click()
-      const corrected = page.waitForResponse(response => response.url().includes('/_serverFn/') && rpcName(response.url()).startsWith('correctPreHeatTreatmentLnkResult_'))
-      await manager.getByRole('button', { name: 'Сохранить результат', exact: true }).click()
-      expect(await (await corrected).text()).toContain('только один негодный результат')
-      expect(await ownControlSnapshot(id)).toEqual(beforeCorrection)
+      const isCorrection = (url: string) => url.includes('/_serverFn/') && rpcName(url).startsWith('savePreHeatTreatmentLnkResultEdits_')
+      const correctionCalls: string[] = []
+      page.on('request', request => { if (isCorrection(request.url())) correctionCalls.push(request.url()) })
+      await manager.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
+      // The final batch is validated before confirmation; an invalid change
+      // must not reach the server or open a misleading save confirmation.
       await expect(page.getByText(/только один негодный результат/).first()).toBeVisible()
+      expect(correctionCalls).toEqual([])
+      await expect(page.getByRole('heading', { name: 'Подтвердить изменения результатов', exact: true })).toHaveCount(0)
+      expect(await ownControlSnapshot(id)).toEqual(beforeCorrection)
       await correctionResult.getByRole('button', { name: 'годен', exact: true }).click()
-      await expect(manager.getByRole('button', { name: 'Сохранить результат', exact: true })).toBeDisabled()
+      await expect(manager.getByRole('button', { name: 'Сохранить изменения', exact: true })).toBeDisabled()
+      // Bypass only client validation through an actual compiled RPC. Removing
+      // this good UZK is a valid UI change (the rejected RK stays); forge a
+      // second rejection with current versions instead and require server refusal.
+      const control = await withE2eDatabase(async db => (await db.query<{ id: number; version: string }>(
+        "select c.id,w.xmin::text as version from pre_heat_treatment_controls c join weld_joints w on w.id=c.weld_joint_id where w.id=$1 and c.method='УЗК'", [id])).rows[0])
+      const injectInvalidCorrection = async (route: Route) => {
+        if (!isCorrection(route.request().url())) return route.continue()
+        await route.continue({ postData: await serializeRpcData({ changes: [{
+          rowId: id, relationId: control.id, expectedVersion: control.version, result: 'вырез',
+        }] }) })
+      }
+      await page.route('**/_serverFn/**', injectInvalidCorrection)
+      await manager.getByRole('button', { name: 'Удалить результат', exact: true }).click()
+      const corrected = page.waitForResponse(response => isCorrection(response.url()))
+      await manager.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
+      await confirmLnkResultChanges(page)
+      expect(await (await corrected).text()).toContain('только один негодный результат')
+      expect(correctionCalls).toHaveLength(1)
+      expect(await ownControlSnapshot(id)).toEqual(beforeCorrection)
+      await page.unroute('**/_serverFn/**', injectInvalidCorrection)
+      await expect(manager.getByRole('button', { name: 'Сохранить изменения', exact: true })).toBeEnabled()
+      await manager.getByRole('button', { name: 'Отменить изменения', exact: true }).click()
+      await expect(manager.getByRole('button', { name: 'Сохранить изменения', exact: true })).toBeDisabled()
       await page.keyboard.press('Escape')
       await expect(manager).toBeHidden()
       expect(await ownControlSnapshot(id)).toEqual(beforeCorrection)
@@ -301,7 +330,7 @@ test('физическая замена, удаление и позднее со
 })
 
 test('объяснение загружается только по раскрытию, постранично; обязательный ремонт виден и защищён', async ({ page }) => {
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     const { rows: [line] } = await db.query("insert into line_programs (project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent) values ('E2E system rules','SYS','SYS-EXPLAIN','II','A',10,10) returning id")
     await db.query(`insert into weld_joints (line_program_id,project_title,subtitle_code,line,joint,connection_type,weld_date,stamp_1_k,has_vik,has_rk,rk_result,weld_control_percent,pvk_control_percent,category,group_name)
       select $1,'E2E system rules','SYS','SYS-EXPLAIN','F'||n,'С17','2026-09-01','SYS-A','да',case when n=1 then 'да' end,case when n=1 then 'ремонт' end,10,10,'II','A' from generate_series(1,55) n`, [line.id])

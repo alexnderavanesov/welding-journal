@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-settings'
-import { buildSystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
+import { buildSystemDocumentCreationPlan, systemNamePreviewSignature } from '@/lib/system-document-creation-plan'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 const rows = [
@@ -9,7 +9,39 @@ const rows = [
   { id: 2, projectTitle: 'Проект', subtitleCode: '01', line: 'L-1', joint: '2' },
 ] as WeldRow[]
 
+it('rejects a missing manual name beyond the first 50 displayed groups', () => {
+  const many = Array.from({ length: 101 }, (_, index) => ({ ...rows[0], id: index + 1, joint: String(index + 1) }))
+  const settings = { ...REQUEST_CONCLUSION_DEFAULT_SETTINGS, splitModes: { ...REQUEST_CONCLUSION_DEFAULT_SETTINGS.splitModes, lnkConclusionVik: 'joint' as const } }
+  const base = { type: 'lnkConclusion' as const, methodCode: 'ВИК', date: '2026-09-01', rows: many, settings, nextNumber: 1 }
+  const initial = buildSystemDocumentCreationPlan({ ...base, naming: { mode: 'system', customName: '' } })
+  const customGroupNames = Object.fromEntries(initial.groups.map((group, index) => [group.key, index === 100 ? ' ' : `ВИК-${index}`]))
+  const final = buildSystemDocumentCreationPlan({ ...base, naming: { mode: 'custom', customName: '', customGroupNames } })
+  expect(final.groups).toHaveLength(101)
+  expect(final.error).toContain('название для каждого')
+})
+
 describe('system document creation plan', () => {
+  it('uses a checked free name only for the same stage, date, rule, members and naming context', () => {
+    const input = { type: 'lnkRequest' as const, sourceKind: 'beforeHeatTreatment' as const, date: '2026-10-13', rows, naming: { mode: 'system' as const, customName: '' }, settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS, nextNumber: 1 }
+    const original = buildSystemDocumentCreationPlan(input)
+    const group = original.groups[0]
+    const name = 'Заявка-ДО-ТО-13.10.2026-004'
+    const naming = { ...input.naming, systemGroupNames: { [group.key]: { name, signature: systemNamePreviewSignature(original, group, input.settings.lnkRequestBeforeHeatTreatment.systemPattern) } } }
+    expect(buildSystemDocumentCreationPlan({ ...input, naming }).groups[0].name).toBe(name)
+    for (const changed of [
+      { ...input, date: '2026-10-14' },
+      { ...input, sourceKind: undefined },
+      { ...input, rows: rows.slice(0, 1) },
+      { ...input, rows: rows.map(row => ({ ...row, projectTitle: 'Changed' })) },
+      { ...input, settings: { ...input.settings, lnkRequestBeforeHeatTreatment: { systemPattern: 'NEW-{{№}}' } } },
+    ]) expect(buildSystemDocumentCreationPlan({ ...changed, naming }).groups[0].name).not.toBe(name)
+    expect(buildSystemDocumentCreationPlan({ ...input, naming: { ...naming, mode: 'custom', customName: 'Ручное' } }).groups[0].name).toBe('Ручное')
+  })
+  it('uses the pre-TO formula only for the pre-TO creation flow', () => {
+    const input = { type: 'lnkConclusion' as const, methodCode: 'ВИК', date: '2026-10-13', rows, naming: { mode: 'system' as const, customName: '' }, settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS, nextNumber: 126 }
+    expect(buildSystemDocumentCreationPlan(input).groups[0].name).toBe('ЗНК-ВИК-13.10.2026-126')
+    expect(buildSystemDocumentCreationPlan({ ...input, sourceKind: 'beforeHeatTreatment' }).groups[0].name).toBe('ЗНК-ВИК-ДО-ТО-13.10.2026-126')
+  })
   it('requires review of manual names after regrouping instead of silently replacing or carrying them', () => {
     const base = { type: 'pstoRequest' as const, date: '2026-08-24', rows, settings: REQUEST_CONCLUSION_DEFAULT_SETTINGS, nextNumber: 12 }
     const original = buildSystemDocumentCreationPlan({ ...base, naming: { mode: 'system', customName: '' } }).groups[0]
@@ -137,7 +169,7 @@ describe('system document creation plan', () => {
     expect(plan.error).toBe('Названия создаваемых документов должны различаться.')
   })
 
-  it('preserves optional results without a conclusion while rejecting a partial series', () => {
+  it('rejects both fully unnamed and partially named series', () => {
     const settings = {
       ...REQUEST_CONCLUSION_DEFAULT_SETTINGS,
       splitModes: {
@@ -152,7 +184,6 @@ describe('system document creation plan', () => {
       rows,
       naming: { mode: 'custom', customName: '' },
       settings,
-      allowAllNamesEmpty: true,
     })
     const partialPlan = buildSystemDocumentCreationPlan({
       type: 'lnkConclusion',
@@ -165,10 +196,10 @@ describe('system document creation plan', () => {
         customGroupNames: { [emptyPlan.groups[0].key]: 'Только одно имя' },
       },
       settings,
-      allowAllNamesEmpty: true,
     })
 
-    expect(emptyPlan.error).toBe('')
+    expect(emptyPlan.error).toBe('Укажите название для каждого создаваемого документа.')
+    expect(emptyPlan.documentCount).toBe(2)
     expect(partialPlan.error).toBe('Укажите название для каждого создаваемого документа.')
   })
 

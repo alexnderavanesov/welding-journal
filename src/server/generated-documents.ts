@@ -48,10 +48,14 @@ import {
   lockInteractiveWeldRows,
 } from '@/server/weld-row-version'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
+import { DOCUMENT_VERSION_SELECT } from './document-version'
 
 export type { GeneratedDocumentType } from '@/lib/generated-document-types'
 
 export type RemoteGeneratedDocument = {
+  documentVersion?: string
+  specialists?: import('@/lib/document-specialists').DocumentSpecialists | null
+  specialistsRevision?: number
   id: number
   type: GeneratedDocumentType
   title: string
@@ -127,6 +131,8 @@ export const listRemoteGeneratedDocumentHistoryFilterOptions = createServerFn({ 
   })
 
 export const GENERATED_DOCUMENT_HISTORY_FILTER_KEYS = [
+  'specialistFirst',
+  'specialistSecond',
   'title',
   'stage',
   'project',
@@ -246,7 +252,9 @@ function buildRemoteGeneratedDocumentHistoryBaseQuery(
           "document_aggregate"."updatedAt" at time zone 'Europe/Moscow',
           'DD.MM.YYYY, HH24:MI'
         )
-      ]::text[] as "filter_updatedAt"
+      ]::text[] as "filter_updatedAt",
+      array[coalesce("document_aggregate"."specialists" -> 'first' ->> 'name', '')]::text[] as "filter_specialistFirst",
+      array[coalesce("document_aggregate"."specialists" -> 'second' ->> 'name', '')]::text[] as "filter_specialistSecond"
     from (
       select
         ${generatedDocuments.id} as "id",
@@ -260,6 +268,9 @@ function buildRemoteGeneratedDocumentHistoryBaseQuery(
         coalesce(sum(${currentWdi}), 0)::numeric as "wdiTotal",
         ${generatedDocuments.documentNumber} as "documentNumber",
         ${generatedDocuments.createdAt} as "createdAt",
+        ${generatedDocuments.specialists} as "specialists",
+        ${generatedDocuments.specialistsRevision} as "specialistsRevision",
+        min(${DOCUMENT_VERSION_SELECT}) as "documentVersion",
         ${generatedDocuments.updatedAt} as "updatedAt",
         coalesce(
           array_agg(distinct ${weldJoints.projectTitle} order by ${weldJoints.projectTitle})
@@ -933,9 +944,11 @@ function normalizeSaveGeneratedDocumentInput(data: SaveGeneratedDocumentInput): 
   }
 
   const fallbackTitle = getGeneratedDocumentProfile(data.type).label
+  const title = String(data.title ?? '').trim()
+  if (!title) throw new Error('Укажите название документа.')
   return {
     type: data.type,
-    title: String(data.title ?? '').trim() || fallbackTitle,
+    title,
     fileName: String(data.fileName ?? '').trim() || `${fallbackTitle}.xlsx`,
     mimeType: String(data.mimeType ?? '').trim(),
     weldJointIds,
@@ -995,6 +1008,8 @@ function toRemoteGeneratedDocument(
     subtitleCodes: record.subtitleCodes ?? [],
     lines: record.lines ?? [],
     createdAt: record.createdAt.toISOString(),
+    specialists: record.specialists,
+    specialistsRevision: record.specialistsRevision,
     updatedAt: record.updatedAt.toISOString(),
   }
 }
@@ -1023,6 +1038,9 @@ function toRemoteGeneratedDocumentHistoryRow(
     subtitleCodes: normalizeDocumentHistoryStringArray(record.subtitleCodes),
     lines: normalizeDocumentHistoryStringArray(record.lines),
     createdAt: normalizeGeneratedDocumentTimestamp(record.createdAt),
+    specialists: record.specialists as RemoteGeneratedDocument['specialists'],
+    specialistsRevision: Number(record.specialistsRevision) || 0,
+    documentVersion: String(record.documentVersion ?? ''),
     updatedAt: normalizeGeneratedDocumentTimestamp(record.updatedAt),
   }
 }

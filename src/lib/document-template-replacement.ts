@@ -12,6 +12,30 @@ import {
 import { loadXlsx, decodeCellReference, encodeCellReference } from '@/lib/document-template-xlsx'
 import { getTemplateCellText } from '@/lib/document-template-workbook'
 
+/** With no source file, check only the saved addresses. Never infer a shift or drop bindings. */
+export async function validateDocumentTemplateRecovery(config: DocumentTemplateConstructorConfig | undefined, fileData: ArrayBuffer | Uint8Array): Promise<string[]> {
+  if (!config) return []
+  const target = await readDocumentTemplateWorkbookStructure(fileData)
+  const sheet = target.sheets.get(config.sheetName)
+  if (!sheet) return [`В новом файле нет листа «${config.sheetName}».`]
+  const issues: string[] = []
+  for (const binding of config.bindings) {
+    const cell = decodeCellReference(binding.cell)
+    if (!cell || !isDocumentTemplateCellInsideSheet(sheet, cell.row, cell.column)) {
+      issues.push(`Назначенная ячейка ${binding.cell} вне области листа.`)
+      continue
+    }
+    const merge = findDocumentTemplateMerge(sheet, cell.row, cell.column)
+    if (merge && (cell.row !== merge.startRow || cell.column !== merge.startColumn)) issues.push(`Ячейка ${binding.cell} находится внутри объединения, но не является его началом.`)
+  }
+  if (config.repeatRow) {
+    const end = config.repeatRowEnd ?? config.repeatRow
+    if (config.repeatRow < sheet.startRow || end > sheet.endRow || end < config.repeatRow) issues.push('Повторяемый блок не помещается в листе.')
+    if (sheet.merges.some(merge => merge.startRow <= end && merge.endRow >= config.repeatRow! && (merge.startRow < config.repeatRow! || merge.endRow > end))) issues.push('Объединение ячеек пересекает границу повторяемого блока.')
+  }
+  return [...new Set(issues)]
+}
+
 export async function analyzeDocumentTemplateReplacement(
   currentTemplate: StoredDocumentTemplate,
   parsedTemplate: TemplateUploadInfo & { fileData: ArrayBuffer },
@@ -276,7 +300,7 @@ type DocumentTemplateWorkbookStructure = {
 }
 
 async function readDocumentTemplateWorkbookStructure(
-  fileData: ArrayBuffer,
+  fileData: ArrayBuffer | Uint8Array,
 ): Promise<DocumentTemplateWorkbookStructure> {
   const XLSX = await loadXlsx()
   const workbook = XLSX.read(fileData, { type: 'array', cellStyles: true })

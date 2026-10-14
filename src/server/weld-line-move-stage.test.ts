@@ -43,6 +43,37 @@ function context(record: WeldRow, target: string): ServerWeldValidationContext {
 }
 
 describe('line moves preserve recorded stages', () => {
+  function primaryMovable() {
+    return { id: 1, joint: 'F1', projectTitle: 'P', subtitleCode: 'S', line: 'source',
+      officiality: 'действующий', hasVik: 'да', weldDate: '2026-07-01',
+      vikRequest: 'ВИК-З', vikRequestDate: '2026-07-02', vikResult: 'годен', vikConclusion: 'ВИК-К', vikConclusionDate: '2026-07-03',
+      preHeatTreatmentControls: [], pstoRepeatCycles: [],
+    } as unknown as WeldRow
+  }
+  async function toAssigned(previous = primaryMovable(), edits: Partial<WeldRow> = {}, target = 'assigned') {
+    const record = { ...previous, line: 'target', ...edits }
+    return preparePstoLineMoveRecordInTransaction({ tx: {} as never, record, previousStored: previous as unknown as WeldJoint,
+      validationContext: context(record, target), processSettings: DEFAULT_CONTROL_PROCESS_SETTINGS, disposition: 'movePrimaryToPreHeatTreatment' })
+  }
+  it('moves the primary package onto an assigned line without inheriting other welds history', async () => {
+    const next = await toAssigned()
+    expect(next.record).toMatchObject({ line: 'target', pstoRequired: 'да', vikRequest: null, vikResult: null })
+    expect(next.record.preHeatTreatmentControls).toEqual([expect.objectContaining({ method: 'ВИК', requestName: 'ВИК-З', conclusionName: 'ВИК-К', conclusionDate: '2026-07-03' })])
+    expect(next.transferredToPreHeatTreatment).toBe(true)
+    expect(next.validationPrevious.weldDate).toBe('2026-07-01')
+  })
+  it.each([
+    { pstoRequest: 'ПСТО-1' }, { pstoDate: '2026-07-04', pstoResult: 'проведено' },
+    { pstoRepeatCycles: [{ id: 5, weldJointId: 1, sequence: 2 }] },
+    { preHeatTreatmentControls: [{ id: 8, weldJointId: 1, method: 'ВИК' }] },
+  ])('does not use the new assigned-line choice to rewrite protected or occupied stages: %j', change => {
+    return expect(toAssigned({ ...primaryMovable(), ...change } as WeldRow)).rejects.toThrow()
+  })
+  it('rejects the wrong direction, unchanged line, and bad chronology on the new path', async () => {
+    await expect(toAssigned(primaryMovable(), {}, 'unassigned')).rejects.toThrow('назначенной ПСТО')
+    await expect(toAssigned(primaryMovable(), { line: 'source' })).rejects.toThrow('назначенной ПСТО')
+    await expect(toAssigned(primaryMovable(), { weldDate: '2026-07-10' })).rejects.toThrow()
+  })
   function movable() {
     return {
       id: 1, joint: 'F1', projectTitle: 'P', subtitleCode: 'S', line: 'source',

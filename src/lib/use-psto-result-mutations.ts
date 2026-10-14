@@ -1,4 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useConfirmAction } from './confirm-action-context'
+import { withSpecialistCorrectionConfirmation } from './specialist-correction-confirmation'
 import {
   createDefaultPstoResultDraft,
 } from '@/lib/report-draft-state'
@@ -32,6 +34,7 @@ export function usePstoResultMutations({
   onWorkflowCorrectionSaved,
 }: UsePstoReportMutationsOptions) {
   const queryClient = useQueryClient()
+  const confirm = useConfirmAction()
 
   const pstoResultMutation = useMutation({
     mutationFn: async ({
@@ -114,11 +117,11 @@ export function usePstoResultMutations({
     }) => {
       const updatedRecord = buildPstoResultCorrectionRow({ record, action, diagramName })
 
-      const saved = await updateWeldRowOrThrow(
+      const saved = await withSpecialistCorrectionConfirmation(confirmation => updateWeldRowOrThrow(
         updatedRecord,
         'Не удалось изменить результат ПСТО',
-        { mutationScope: 'psto' },
-      )
+        { mutationScope: 'psto', specialistCorrectionConfirmation: confirmation },
+      ), confirm)
       return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {
@@ -145,11 +148,11 @@ export function usePstoResultMutations({
       rows: RowWithId[]
     }) => {
       const updatedRecord = buildHeatTreatmentFieldRow({ record, fieldKey, value, rows })
-      const saved = await updateWeldRowOrThrow(
+      const saved = await withSpecialistCorrectionConfirmation(confirmation => updateWeldRowOrThrow(
         updatedRecord,
         'Не удалось обновить поле ПСТО',
-        { mutationScope: 'psto' },
-      )
+        { mutationScope: 'psto', specialistCorrectionConfirmation: confirmation },
+      ), confirm)
       return saved as unknown as WeldRow
     },
     onSuccess: async (saved, variables) => {

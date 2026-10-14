@@ -1,11 +1,10 @@
 import { expect, test } from '@playwright/test'
-import { withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
 
 test('500 стыков: ограниченный DOM, поиск последней записи и отсутствие повторных RPC', async ({ page }) => {
   const project = 'E2E practical 500-joint line', line = 'SCALE-500'
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     const { rows: [program] } = await db.query(`insert into line_programs(project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
       values ($1,'SCALE',$2,'II','A',10,0) returning id`, [project, line])
     await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,weld_date,
@@ -19,6 +18,7 @@ test('500 стыков: ограниченный DOM, поиск последн�
   try {
     await page.goto('/line-program')
     const program = page.getByTestId('line-program')
+    await expect(program.getByLabel('Итоги раздела')).toBeVisible()
     await program.getByLabel('Поиск программы линий').fill(line)
     const card = program.getByTestId('line-program-card')
     await expect(card).toHaveCount(1)
@@ -39,7 +39,10 @@ test('500 стыков: ограниченный DOM, поиск последн�
     await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
     await editor.getByRole('button', { name: 'Очистить поиск стыков' }).click()
     await editor.getByRole('button', { name: 'Вернуться к просмотру', exact: true }).click()
-    for (const prefix of ['getLineProgramSection_', 'getLineProgramCalculation_', 'getLineProgramJointPage_']) {
+    // One initial section and one independent search; opening details, focus
+    // and filtering the already loaded joint editor must not reload sections.
+    expect(calls.filter(name => name.startsWith('getLineProgramSection_'))).toHaveLength(2)
+    for (const prefix of ['getLineProgramCalculation_', 'getLineProgramJointPage_']) {
       expect(calls.filter(name => name.startsWith(prefix))).toHaveLength(1)
     }
     expect(errors).toEqual([])

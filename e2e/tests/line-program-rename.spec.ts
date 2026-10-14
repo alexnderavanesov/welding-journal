@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { E2E_DATABASE_URL, withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 
 test.afterEach(() => cleanupLineProgramProjects(['Rename Project', 'Renamed Project']))
 
@@ -18,7 +18,7 @@ test('переименование сохраняет историю и реше
 })
 
 test('вся линия: редактирование трёх полей, отмена, сохранение, конфликт и устаревшее окно', async ({ page }) => {
-  const id = await withE2eDatabase(async (client) => {
+  const id = await withLineProgramFixture(async (client) => {
     const { rows: [line] } = await client.query("insert into line_programs (project_title, subtitle_code, line, category, group_name, weld_control_percent, pvk_control_percent) values ('Rename Project', 'OLD', 'RENAME-LINE', 'II', 'A', 10, 10) returning id")
     await client.query(`insert into weld_joints (line_program_id, project_title, subtitle_code, line, joint, has_vik, category, group_name, weld_control_percent, pvk_control_percent, isometry, rk_result, rk_conclusion)
       select $1, 'Rename Project', 'OLD', 'RENAME-LINE', joint, 'да', 'II', 'A', 10, 10, 'ISO-' || joint, 'ремонт', 'KEEP-DOC' from unnest(array['F1','F1R1','F1W1','F1W2']) joint`, [line.id])
@@ -54,7 +54,7 @@ test('вся линия: редактирование трёх полей, от�
   await editor.getByRole('button', { name: 'Сохранить программу' }).click()
   await confirm.getByRole('button', { name: 'Изменить всю линию', exact: true }).click()
   await expect(editor.getByRole('alert')).toContainText('уже существует')
-  await withE2eDatabase(async (client) => { await client.query('update line_programs set updated_at=clock_timestamp() where id=$1', [id]) })
+  await withLineProgramFixture(async (client) => { await client.query('update line_programs set updated_at=clock_timestamp() where id=$1', [id]) })
   await editor.getByLabel('Линия', { exact: true }).fill('ANOTHER-LINE')
   await editor.getByRole('button', { name: 'Сохранить программу' }).click()
   await confirm.getByRole('button', { name: 'Изменить всю линию', exact: true }).click()

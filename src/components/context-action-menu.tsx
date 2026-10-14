@@ -36,6 +36,7 @@ export type ContextActionMenuState = {
   anchorElement?: Element
   heading?: string
   description?: string
+  itemMinHeight?: number
   items: ContextActionMenuItem[]
 } | null
 
@@ -149,6 +150,9 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
         return
       }
       const origin = target && scrollOrigins.get(target)
+      // Scrolling an unrelated input on blur does not move the menu's row.
+      // Only its ancestors (including the page) can invalidate the anchor.
+      if (menu.anchorElement && target instanceof Node && !origin) return
       if (origin) {
         const current = origin.read()
         if (current.left === origin.left && current.top === origin.top) return
@@ -170,7 +174,7 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
 
   const viewportPadding = 8
   const menuWidth = Math.min(320, Math.max(224, window.innerWidth - viewportPadding * 2))
-  const menuHeight = estimateMenuHeight(menu.items) + (menu.heading ? 52 : 0)
+  const menuHeight = estimateMenuHeight(menu.items, menu.itemMinHeight) + (menu.heading ? 52 : 0)
   const maxMenuHeight = Math.max(160, window.innerHeight - viewportPadding * 2)
   const menuLeft = Math.min(menu.x, window.innerWidth - menuWidth - viewportPadding)
   const stackSubmenus = window.innerWidth < menuWidth * 2 + viewportPadding * 2
@@ -316,6 +320,7 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
                 aria-label={item.label}
                 aria-haspopup={hasChildren ? 'menu' : undefined}
                 aria-expanded={hasChildren ? isSubmenuOpen : undefined}
+                style={menu.itemMinHeight ? { minHeight: menu.itemMinHeight } : undefined}
                 className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition-colors ${
                   item.danger
                     ? 'text-rose-600 hover:bg-rose-50 hover:text-rose-700'
@@ -364,10 +369,10 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
   )
 }
 
-function estimateMenuHeight(items: ContextActionMenuItem[]) {
+function estimateMenuHeight(items: ContextActionMenuItem[], itemMinHeight = 0) {
   return items.reduce((height, item) => {
     if (item.type === 'separator') return height + 9
     if (item.type === 'label') return height + 28
-    return height + (item.description || (item.disabled && item.title) ? 56 : 36)
+    return height + Math.max(itemMinHeight, item.description || (item.disabled && item.title) ? 56 : 36)
   }, 12)
 }

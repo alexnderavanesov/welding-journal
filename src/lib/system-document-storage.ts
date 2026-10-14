@@ -27,6 +27,7 @@ import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import {
     getSystemDocumentDateContext,
     getSystemDocumentRows,
+    getSystemDocumentSpecialists,
     listSystemDocumentHistory,
     listSystemDocumentHistoryFilterOptions,
     listSystemDocuments,
@@ -93,10 +94,14 @@ export async function createCurrentSystemDocumentBlob({
     currentSummary?.methodCodes ??
     (reference.methodCode ? [reference.methodCode] : [])
 
+  const specialists = currentSummary?.specialists !== undefined ? currentSummary.specialists
+    : reference.specialists !== undefined ? reference.specialists
+    : reference.type.endsWith('Conclusion') ? await getSystemDocumentSpecialists({ data: reference }) : null
+
   return createWeldingJournalBlobFromTemplate(currentTemplate, currentRows, {
     welderStamps,
     systemDocument: createSystemDocumentTemplateContext(
-      currentSummary ?? reference,
+      { ...(currentSummary ?? reference), specialists },
       methodCodes,
       loadRequestConclusionSettings(),
     ),

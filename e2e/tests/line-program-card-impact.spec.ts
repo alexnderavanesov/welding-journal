@@ -1,12 +1,12 @@
 import { rpcName } from '../rpc'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 
 test.afterEach(() => cleanupLineProgramProjects(['E2E impact']))
 
 test('карточка: запрет очистки виден сразу; влияние на линию только по нажатию и без записи', async ({ page }) => {
-  const id = await withE2eDatabase(async db => {
+  const id = await withLineProgramFixture(async db => {
     const { rows: [line] } = await db.query("insert into line_programs (project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent) values ('E2E impact','IMPACT','CARD-IMPACT','II','A',100,10) returning id")
     await db.query(`insert into weld_joints (line_program_id,project_title,subtitle_code,line,joint,weld_date,connection_type,category,group_name,weld_control_percent,pvk_control_percent,has_vik,stamp_1_k,officiality,has_pvk,pvk_request,pvk_result,pvk_conclusion)
       select $1,'E2E impact','IMPACT','CARD-IMPACT','F989'||n,date '2026-09-01','СШ','II','A',100,10,'да','IMPACT-A','действующий','да','PVK-1','годен','PVK-CONCLUSION' from generate_series(1,2) n`, [line.id])

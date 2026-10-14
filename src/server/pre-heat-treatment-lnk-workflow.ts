@@ -1,10 +1,14 @@
 import { assertCreationGrouping, normalizeDocumentGroupingCommand, type DocumentGroupingCommand } from '@/lib/document-grouping-command'
+import { buildPreHeatTreatmentResultEditWrites, normalizePreHeatTreatmentResultEditBatch } from '@/lib/pre-heat-treatment-result-edit-plan'
+import { syncPreHeatTreatmentDocumentsInTransaction } from './pre-heat-treatment-system-documents'
+import { captureCorrectedDocumentSpecialists, restoreCorrectedDocumentSpecialists } from './document-specialist-corrections'
+import { getDocumentRequisiteErrors } from '@/lib/document-requisites'
 import { getSystemDocumentSplitSettingId } from '@/lib/system-document-splitting'
 import { lockDocumentGroupingPreference, rememberDocumentGrouping } from '@/server/document-grouping-preferences'
 import { assertNewDocumentNamesAvailable, prepareDocumentCreationIndex } from '@/server/document-name-conflicts'
 import { createServerFn } from '@tanstack/react-start'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
-import { and, asc, eq, sql, type SQL } from 'drizzle-orm'
+import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
 import {
@@ -240,6 +244,11 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
         controls: savedControls,
       })
       const touchedRows = await touchLnkRows(tx, rows, savedControls)
+      if (documentGrouping?.specialists?.length) {
+        if (data.action !== 'result') throw new Error('Специалисты назначаются только заключениям.')
+        const { assignCreatedDocumentSpecialists } = await import('@/server/specialists')
+        await assignCreatedDocumentSpecialists(tx, documentGrouping.specialists, resolvedGroups.map(group => ({ type: 'lnkConclusion', title: group.name, date: data.date, methodCode: group.positions[0]?.methodCode, sourceKind: 'beforeHeatTreatment' })))
+      }
       if (resolvedGroups.some(group => group.name)) await rememberDocumentGrouping(tx, documentGrouping)
       await markDispatcherTaskIndexDirty(tx, {
         scopes: getDispatcherDirtyScopes(touchedRows, new Map()),
@@ -314,7 +323,50 @@ export const updatePreHeatTreatmentRkExposure = createServerFn({ method: 'POST' 
     })
   })
 
+export const savePreHeatTreatmentLnkResultEdits = createServerFn({ method: 'POST' })
+  .validator(normalizePreHeatTreatmentResultEditBatch)
+  .handler(async ({ data }) => {
+    await assertSecurityScope('edit')
+    if (data.changes.some(change => change.result === null)) await assertSecurityScope('delete')
+    return requireDb().transaction(async tx => {
+      const processSettings = await assertPreHeatTreatmentLnkEnabled(tx)
+      const workflowSettings = await loadWeldWorkflowSettingsFromTransaction(tx)
+      const rowIds = [...new Set(data.changes.map(change => change.rowId))].sort((a, b) => a - b)
+      const membership = await lockWeldLineMembershipsForWeldIds(tx, rowIds)
+      const storedRows = await lockInteractiveWeldRows(tx, rowIds)
+      if (!haveSameWeldLineMemberships(membership, storedRows)) throw new Error('Стык перенесён на другую линию. Обновите отчет.')
+      assertExpectedInteractiveWeldVersions(rowIds, [...new Map(data.changes.map(change =>
+        [change.rowId, { id: change.rowId, version: change.expectedVersion }])).values()], storedRows)
+      const relationIds = data.changes.map(change => change.relationId).sort((a, b) => a - b)
+      const storedControls = await tx.select().from(preHeatTreatmentControls)
+        .where(inArray(preHeatTreatmentControls.id, relationIds)).orderBy(asc(preHeatTreatmentControls.id)).for('update')
+      const controlsById = new Map(storedControls.map(control => [control.id, control]))
+      if (data.changes.some(change => controlsById.get(change.relationId)?.weldJointId !== change.rowId)) {
+        throw new Error('Позиция НК до ТО больше не существует. Ничего не сохранено.')
+      }
+      const rows = await attachDuplicateControlRelations(await attachHeatTreatmentControlRelations(storedRows as WeldRow[], tx), tx)
+      const { writes, finalRows } = buildPreHeatTreatmentResultEditWrites({ rows, changes: data.changes,
+        saveCheckSettings: workflowSettings.saveCheckSettings, systemIndexSettings: workflowSettings.systemIndexSettings,
+        rkExposureTable: workflowSettings.otherSettings.rkExposureTable })
+      const previousById = new Map(rows.map(row => [row.id, row]))
+      for (const row of finalRows) {
+        const reason = getLayeredControlSaveError(row, previousById.get(row.id)!, processSettings.pvkGoodOnly)
+        if (reason) throw new Error(reason)
+      }
+      const specialists = await captureCorrectedDocumentSpecialists(tx, rowIds)
+      await removeSourcedSystemDocumentPositionsInTransaction({ tx, sourceKind: 'beforeHeatTreatment', relationIds })
+      const saved = await savePreHeatTreatmentControlWrites(tx, 'result', writes)
+      await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, rowIds)
+      await syncPreHeatTreatmentDocumentsInTransaction(tx, finalRows, saved)
+      await restoreCorrectedDocumentSpecialists(tx, specialists, data.specialistCorrectionConfirmation)
+      const updatedRows = await touchLnkRows(tx, rows, saved)
+      await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes(updatedRows, new Map()) })
+      return attachDuplicateControlRelations(await attachHeatTreatmentControlRelations(updatedRows, tx), tx)
+    })
+  })
+
 export type CorrectPreHeatTreatmentLnkResultPayload = {
+  specialistCorrectionConfirmation?: string
   relationId: number
   expectedVersion: string
   stage?: 'request' | 'result'
@@ -373,6 +425,7 @@ export const correctPreHeatTreatmentLnkResult = createServerFn({ method: 'POST' 
       )
       const currentControl = row.preHeatTreatmentControls?.find((control) => control.id === storedControl.id)
       if (!currentControl) throw new Error('Позиция НК до ТО изменилась. Обновите отчет.')
+      const correctedSpecialists = await captureCorrectedDocumentSpecialists(tx, [row.id])
 
       await removeSourcedSystemDocumentPositionsInTransaction({
         tx,
@@ -473,6 +526,7 @@ export const correctPreHeatTreatmentLnkResult = createServerFn({ method: 'POST' 
         })
       }
 
+      await restoreCorrectedDocumentSpecialists(tx, correctedSpecialists, data.specialistCorrectionConfirmation)
       const [updatedRow] = await touchLnkRows(tx, [row], [savedControl])
       await markDispatcherTaskIndexDirty(tx, {
         scopes: getDispatcherDirtyScopes([updatedRow], new Map()),
@@ -495,6 +549,7 @@ export function normalizePreHeatTreatmentLnkResultCorrectionPayload(
   if (stage !== 'request' && stage !== 'result') throw new Error('Неизвестный этап НК до ТО.')
   return {
     relationId,
+    ...(typeof value.specialistCorrectionConfirmation === 'string' ? { specialistCorrectionConfirmation: value.specialistCorrectionConfirmation } : {}),
     expectedVersion: String(value?.expectedVersion ?? '').trim(),
     stage,
     action,
@@ -540,9 +595,6 @@ function normalizePayload(value: PreHeatTreatmentLnkWorkflowPayload): Normalized
   }
   const rawDate = String(value?.date ?? '').trim()
   const date = action === 'result' ? rawDate : rawDate.slice(0, 10)
-  if (action === 'request' && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    throw new Error('Укажите дату документа НК до ТО.')
-  }
 
   const groups = (Array.isArray(value?.groups) ? value.groups : []).map((group) => ({
     positions: normalizePositions(group?.positions),
@@ -550,9 +602,10 @@ function normalizePayload(value: PreHeatTreatmentLnkWorkflowPayload): Normalized
     useSystemName: Boolean(group?.useSystemName),
   })).filter((group) => group.positions.length > 0)
   if (groups.length === 0) throw new Error('Выберите хотя бы одну позицию НК до ТО.')
-  if (action === 'request' && groups.some((group) => !group.name)) {
-    throw new Error('Укажите наименование документа НК до ТО.')
-  }
+  const requisiteErrors = [...new Set(groups.flatMap(group => getDocumentRequisiteErrors({
+    name: group.name, date, nameLabel: 'наименование документа НК до ТО', dateLabel: 'Дата документа НК до ТО',
+  })))]
+  if (requisiteErrors.length) throw new Error(requisiteErrors.join('\n'))
 
   const assigned = new Set<string>()
   for (const group of groups) {
@@ -951,6 +1004,7 @@ function getSequenceRequest(
   if (action === 'request') {
     return {
       type: 'lnkRequest',
+      sourceKind: 'beforeHeatTreatment',
       date,
       provisionalName,
       fieldKeys: methodCodes.map((code) => getPreMethod(code).requestKey),
@@ -959,6 +1013,7 @@ function getSequenceRequest(
   const methodCode = methodCodes[0]!
   return {
     type: 'lnkConclusion',
+    sourceKind: 'beforeHeatTreatment',
     date,
     provisionalName,
     methodCode,

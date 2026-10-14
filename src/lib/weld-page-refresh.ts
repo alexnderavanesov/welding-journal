@@ -14,6 +14,13 @@ import type { WeldPageRequest } from '@/server/weld-contracts'
 import { splitReportQuickSearch } from '@/lib/report-quick-search'
 
 export const WELD_JOINT_PAGES_QUERY_KEY = ['weld-joint-pages'] as const
+export const WELD_REPORT_SUMMARY_QUERY_KEY = ['weld-report-summary'] as const
+
+/** Counts never join the save/row refresh promise, and inactive filters stay lazy. */
+export function invalidateWeldReportSummaries(queryClient: QueryClient, queryKey: QueryKey = WELD_REPORT_SUMMARY_QUERY_KEY) {
+  void queryClient.cancelQueries({ queryKey })
+  void queryClient.invalidateQueries({ queryKey, refetchType: 'none' })
+}
 
 type WeldPageFetcher = (report: WeldReportKind, request: WeldPageRequest) => Promise<WeldPageResult>
 
@@ -31,11 +38,48 @@ type RefreshState = {
   generation: number
   sourceData: InfiniteData<WeldPageResult> | undefined
   promise?: Promise<boolean>
+  failure?: { error: Error; updatedAt: number }
 }
 
 const refreshStates = new WeakMap<QueryClient, Map<string, RefreshState>>()
 const refreshRequiredKeys = new WeakMap<QueryClient, Set<string>>()
 const scheduledActiveRefreshes = new WeakMap<QueryClient, ReturnType<typeof setTimeout>>()
+const invalidationVersions = new WeakMap<QueryClient, Map<string, number>>()
+const refreshNotifications = new WeakMap<QueryClient, { revision: number; listeners: Set<() => void> }>()
+
+function getRefreshNotifications(queryClient: QueryClient) {
+  let state = refreshNotifications.get(queryClient)
+  if (!state) {
+    state = { revision: 0, listeners: new Set() }
+    refreshNotifications.set(queryClient, state)
+  }
+  return state
+}
+
+export function subscribeWeldPageRefresh(queryClient: QueryClient, listener: () => void) {
+  const state = getRefreshNotifications(queryClient)
+  state.listeners.add(listener)
+  return () => { state.listeners.delete(listener) }
+}
+
+export function getWeldPageRefreshRevision(queryClient: QueryClient) {
+  return getRefreshNotifications(queryClient).revision
+}
+
+function notifyWeldPageRefresh(queryClient: QueryClient) {
+  const state = getRefreshNotifications(queryClient)
+  state.revision++
+  state.listeners.forEach((listener) => listener())
+}
+
+function getInvalidationVersions(queryClient: QueryClient) {
+  let versions = invalidationVersions.get(queryClient)
+  if (!versions) {
+    versions = new Map()
+    invalidationVersions.set(queryClient, versions)
+  }
+  return versions
+}
 
 export async function refreshLoadedWeldPageQuery(
   queryClient: QueryClient,
@@ -55,7 +99,12 @@ export async function refreshLoadedWeldPageQuery(
     return previousState.promise
   }
 
+  // Keep React Query's infinite cache fresh: invalidating it would automatically
+  // refetch every loaded page when its observer is enabled again.
+  getRefreshRequiredKeys(queryClient).add(stateKey)
+  invalidateWeldReportSummaries(queryClient, [...WELD_REPORT_SUMMARY_QUERY_KEY, queryKey[1], queryKey[2]])
   const generation = (previousState?.generation ?? 0) + 1
+  const invalidationVersion = getInvalidationVersions(queryClient).get(stateKey) ?? 0
   const promise = runLoadedPageRefresh({
     queryClient,
     queryKey,
@@ -64,16 +113,31 @@ export async function refreshLoadedWeldPageQuery(
     fetchPage: options.fetchPage ?? fetchReportPage,
     generation,
     stateKey,
+    invalidationVersion,
     retryWhenCacheChanges: options.retryWhenCacheChanges ?? true,
   })
   stateMap.set(stateKey, { generation, sourceData, promise })
+  notifyWeldPageRefresh(queryClient)
 
   try {
     return await promise
+  } catch (cause) {
+    const currentState = stateMap.get(stateKey)
+    // Background invalidations have no hook-owned catch. Publish the failure
+    // only for this still-current refresh, without making the query stale or retrying.
+    if (currentState?.generation === generation &&
+        (getInvalidationVersions(queryClient).get(stateKey) ?? 0) === invalidationVersion) {
+      stateMap.set(stateKey, { ...currentState, failure: {
+        error: cause instanceof Error ? cause : new Error(String(cause)),
+        updatedAt: Date.now(),
+      } })
+      notifyWeldPageRefresh(queryClient)
+    }
+    throw cause
   } finally {
     const currentState = stateMap.get(stateKey)
     if (currentState?.generation === generation) {
-      stateMap.set(stateKey, { generation, sourceData: queryClient.getQueryData(queryKey) })
+      stateMap.set(stateKey, { ...currentState, sourceData: queryClient.getQueryData(queryKey), promise: undefined })
     }
   }
 }
@@ -92,7 +156,19 @@ export async function refreshActiveLoadedWeldPages(queryClient: QueryClient): Pr
     type: 'active',
   })
   await Promise.allSettled(
-    activeQueries.map((query) => refreshLoadedWeldPageQuery(queryClient, query.queryKey, { force: true })),
+    activeQueries.map(async (query) => {
+      if (query.state.data) return refreshLoadedWeldPageQuery(queryClient, query.queryKey, { force: true })
+      // An invalidation during the initial fetch must not publish its older response.
+      const stateKey = getQueryStateKey(query.queryKey)
+      const version = getInvalidationVersions(queryClient).get(stateKey)
+      await queryClient.cancelQueries({ queryKey: query.queryKey, exact: true })
+      await queryClient.refetchQueries({ queryKey: query.queryKey, exact: true, type: 'active' })
+      if (query.state.status === 'success' && !query.state.isInvalidated &&
+          getInvalidationVersions(queryClient).get(stateKey) === version) {
+        getRefreshRequiredKeys(queryClient).delete(stateKey)
+      }
+      notifyWeldPageRefresh(queryClient)
+    }),
   )
 }
 
@@ -104,7 +180,14 @@ export async function invalidateWeldPageQueries(
     queryKey: WELD_JOINT_PAGES_QUERY_KEY,
   })
   const requiredKeys = getRefreshRequiredKeys(queryClient)
-  queries.forEach((query) => requiredKeys.add(getQueryStateKey(query.queryKey)))
+  const versions = getInvalidationVersions(queryClient)
+  queries.forEach((query) => {
+    const key = getQueryStateKey(query.queryKey)
+    requiredKeys.add(key)
+    versions.set(key, (versions.get(key) ?? 0) + 1)
+  })
+  invalidateWeldReportSummaries(queryClient)
+  notifyWeldPageRefresh(queryClient)
   if (options.deferActiveRefresh) {
     if (queries.some((query) => query.isActive())) scheduleActiveWeldPageRefresh(queryClient)
     return
@@ -114,6 +197,10 @@ export async function invalidateWeldPageQueries(
 
 export function isWeldPageRefreshRequired(queryClient: QueryClient, queryKey: QueryKey) {
   return getRefreshRequiredKeys(queryClient).has(getQueryStateKey(queryKey))
+}
+
+export function getWeldPageRefreshFailure(queryClient: QueryClient, queryKey: QueryKey) {
+  return getRefreshStateMap(queryClient).get(getQueryStateKey(queryKey))?.failure ?? null
 }
 
 export function rebuildLoadedWeldPages(
@@ -130,7 +217,8 @@ export function rebuildLoadedWeldPages(
   }
 
   const rows = refreshedResult.rows.slice(0, loadedRowLimit)
-  const refreshedTotal = refreshedResult.total ?? sourceData.pages[0]?.total
+  const refreshedTotal = refreshedResult.total
+  const hasUnloadedRows = refreshedResult.rows.length > rows.length || refreshedResult.hasMore
   const pageCount = Math.max(1, Math.ceil(rows.length / originalPageSize))
   const pages = Array.from({ length: pageCount }, (_, index): WeldPageResult => {
     const page = index + 1
@@ -145,10 +233,7 @@ export function rebuildLoadedWeldPages(
         : {}),
       page,
       pageSize: originalPageSize,
-      hasMore:
-        refreshedTotal === undefined
-          ? page < pageCount || refreshedResult.hasMore
-          : page * originalPageSize < refreshedTotal,
+      hasMore: page < pageCount || hasUnloadedRows,
     }
   })
 
@@ -166,6 +251,7 @@ async function runLoadedPageRefresh({
   fetchPage,
   generation,
   stateKey,
+  invalidationVersion,
   retryWhenCacheChanges,
 }: {
   queryClient: QueryClient
@@ -175,6 +261,7 @@ async function runLoadedPageRefresh({
   fetchPage: WeldPageFetcher
   generation: number
   stateKey: string
+  invalidationVersion: number
   retryWhenCacheChanges: boolean
 }) {
   const loadedRowLimit = parsedKey.pageSize === WELD_PAGE_ALL_SIZE
@@ -184,12 +271,14 @@ async function runLoadedPageRefresh({
   const firstResult = await fetchPage(parsedKey.report, {
     page: 1,
     pageSize: refreshPageSize,
+    includeTotals: false,
     columnFilters: parsedKey.columnFilters,
     ...(parsedKey.search ? { search: parsedKey.search } : {}),
     ...(parsedKey.sort ? { sort: parsedKey.sort } : {}),
   })
 
   const rows = [...firstResult.rows]
+  let hasMore = firstResult.hasMore
   if (refreshPageSize !== WELD_PAGE_ALL_SIZE) {
     const requiredRows = firstResult.total === undefined
       ? firstResult.hasMore ? loadedRowLimit : rows.length
@@ -198,17 +287,20 @@ async function runLoadedPageRefresh({
       const result = await fetchPage(parsedKey.report, {
         page,
         pageSize: refreshPageSize,
+        includeTotals: false,
         columnFilters: parsedKey.columnFilters,
         ...(parsedKey.search ? { search: parsedKey.search } : {}),
         ...(parsedKey.sort ? { sort: parsedKey.sort } : {}),
       })
       rows.push(...result.rows)
+      hasMore = result.hasMore && result.rows.length > 0
       if (!result.hasMore || result.rows.length === 0) break
     }
   }
 
   const stateMap = getRefreshStateMap(queryClient)
   if (stateMap.get(stateKey)?.generation !== generation) return false
+  if ((getInvalidationVersions(queryClient).get(stateKey) ?? 0) !== invalidationVersion) return false
 
   const currentData = queryClient.getQueryData<InfiniteData<WeldPageResult>>(queryKey)
   if (currentData !== sourceData) {
@@ -220,16 +312,24 @@ async function runLoadedPageRefresh({
     })
   }
 
+  getRefreshRequiredKeys(queryClient).delete(stateKey)
   queryClient.setQueryData<InfiniteData<WeldPageResult>>(
     queryKey,
     rebuildLoadedWeldPages(
       sourceData,
-      { ...firstResult, rows },
+      { ...firstResult, rows, hasMore },
       parsedKey.pageSize,
       loadedRowLimit,
     ),
   )
-  getRefreshRequiredKeys(queryClient).delete(stateKey)
+  notifyWeldPageRefresh(queryClient)
+  // A fast row response may be batched with invalidation before the observer
+  // ever becomes disabled. In that case enabled:false -> true cannot start counts.
+  // Disabled observers start on row readiness themselves; active ones coalesce here.
+  void queryClient.refetchQueries({
+    queryKey: [...WELD_REPORT_SUMMARY_QUERY_KEY, queryKey[1], queryKey[2]],
+    type: 'active',
+  }, { cancelRefetch: false })
   return true
 }
 

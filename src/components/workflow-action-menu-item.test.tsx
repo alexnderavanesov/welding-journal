@@ -2,9 +2,26 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { Plus } from 'lucide-react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { WorkflowActionMenuItem } from '@/components/workflow-action-menu-item'
+import { WorkflowActionMenuItem, WorkflowActionScope, type WorkflowAvailability } from '@/components/workflow-action-menu-item'
 
 describe('WorkflowActionMenuItem', () => {
+  it('runs only the latest pending action and cancels a pending choice when context changes', () => {
+    const first = vi.fn(), second = vi.fn()
+    const menu = (context: string, availability: WorkflowAvailability) => <WorkflowActionScope key={context}>
+      <WorkflowActionMenuItem label="Первое" icon={Plus} onClick={first} availability={availability} />
+      <WorkflowActionMenuItem label="Второе" icon={Plus} onClick={second} availability={availability} />
+    </WorkflowActionScope>
+    const view = render(menu('one', 'loading'))
+    fireEvent.click(screen.getByRole('button', { name: 'Первое' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Второе' }))
+    view.rerender(menu('one', 'ready'))
+    expect(first).not.toHaveBeenCalled()
+    expect(second).toHaveBeenCalledOnce()
+    view.rerender(menu('one', 'loading'))
+    fireEvent.click(screen.getByRole('button', { name: 'Первое' }))
+    view.rerender(menu('two', 'ready'))
+    expect(first).not.toHaveBeenCalled()
+  })
   it('shows the reason directly for a disabled action', () => {
     const onClick = vi.fn()
     render(
@@ -38,10 +55,10 @@ describe('WorkflowActionMenuItem', () => {
 
 it('reserves the same description space through loading, available, blocked and error states', () => {
   const props = { label: 'Результат', icon: Plus, onClick: vi.fn(), description: 'Внести результат заявки.', disabledReason: 'Нет ожидающих заявок.' }
-  const { rerender } = render(<WorkflowActionMenuItem {...props} disabled availability="loading" />)
-  expect(screen.getByText('Проверяем доступность…')).toHaveClass('h-8')
+  const { rerender } = render(<WorkflowActionMenuItem {...props} availability="loading" />)
+  expect(screen.getByText(props.description)).toHaveClass('h-8')
   expect(screen.queryByText(props.disabledReason)).not.toBeInTheDocument()
-  expect(screen.getByRole('button')).toBeDisabled()
+  expect(screen.getByRole('button')).toBeEnabled()
   rerender(<WorkflowActionMenuItem {...props} availability="ready" />)
   expect(screen.getByText(props.description)).toHaveClass('h-8')
   expect(screen.getByRole('button')).toBeEnabled()
@@ -50,4 +67,25 @@ it('reserves the same description space through loading, available, blocked and 
   rerender(<WorkflowActionMenuItem {...props} availability="error" />)
   expect(screen.getByText(/Не удалось проверить доступность/)).toHaveClass('h-8')
   expect(screen.getByRole('button')).toBeDisabled()
+})
+
+it('waits for the current check once, cancels on rejection and never runs after unmount', () => {
+  const onClick = vi.fn()
+  const props = { label: 'Результат', icon: Plus, onClick, description: 'Внести результат.' }
+  const view = render(<WorkflowActionMenuItem {...props} availability="loading" />)
+  fireEvent.click(screen.getByRole('button'))
+  fireEvent.click(screen.getByRole('button'))
+  expect(onClick).not.toHaveBeenCalled()
+  view.rerender(<WorkflowActionMenuItem {...props} availability="ready" />)
+  expect(onClick).toHaveBeenCalledOnce()
+  view.rerender(<WorkflowActionMenuItem {...props} availability="loading" />)
+  fireEvent.click(screen.getByRole('button'))
+  view.rerender(<WorkflowActionMenuItem {...props} availability="ready" disabled />)
+  view.rerender(<WorkflowActionMenuItem {...props} availability="ready" />)
+  expect(onClick).toHaveBeenCalledOnce()
+  view.rerender(<WorkflowActionMenuItem {...props} availability="loading" />)
+  fireEvent.click(screen.getByRole('button'))
+  view.unmount()
+  render(<WorkflowActionMenuItem {...props} availability="ready" />)
+  expect(onClick).toHaveBeenCalledOnce()
 })

@@ -39,7 +39,12 @@ export function buildOfficialityRestorationRenames(
       const current = officials[0]!
       const rejection = getPrimaryRejectedLnkResult(previous)
       if (!rejection) {
-        throw new Error('Для обратной перестройки нужен негодный результат восстановленного источника. Без него нет основания для продолжения. Ничего не сохранено.')
+        throw new Error(
+          `В этой цепочке уже есть официальный стык ${String(current.joint)}. ` +
+          `У восстанавливаемого стыка ${String(previous.joint)} нет собственного результата «ремонт» или «вырез», ` +
+          'поэтому нельзя автоматически определить следующее имя и перестроить цепочку. ' +
+          'Сначала проверьте обе записи и их результаты в «Картине стыка». Ничего не сохранено.',
+        )
       }
       const targetJoint = getExpectedRepeatedJointName(previous, String(previous.joint), rejection.result, settings)
       for (const member of group) {

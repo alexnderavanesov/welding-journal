@@ -238,6 +238,7 @@ export function shouldDeferModalEscape() {
   return Boolean(
     document.querySelector('[data-confirm-action-dialog="true"]') ||
     document.querySelector('[data-workflow-result-tooltip="true"]') ||
+    document.querySelector('[data-specialist-listbox]') ||
     document.querySelector('[data-dispatcher-action-menu="true"]') ||
     isContextActionMenuOpen(),
   )

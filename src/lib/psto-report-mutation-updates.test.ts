@@ -14,7 +14,7 @@ import {
 } from '@/lib/save-check-settings'
 
 describe('buildPstoResultRows', () => {
-  it('keeps the diagram empty when its save check is disabled', () => {
+  it('requires a diagram name despite a stale disabled save check', () => {
     saveSaveCheckSettings({
       ...DEFAULT_SAVE_CHECK_SETTINGS,
       pstoResultDiagramRequired: false,
@@ -27,17 +27,13 @@ describe('buildPstoResultRows', () => {
       pstoRequestDate: '2026-08-21',
     }] as RowWithId[]
 
-    const [updated] = buildPstoResultRows({
+    expect(() => buildPstoResultRows({
       records: rows,
       rows,
       pstoDate: '2026-08-25',
       result: 'проведено',
       diagramName: '',
-    })
-
-    expect(updated.pstoResult).toBe('проведено')
-    expect(updated.pstoDate).toBe('2026-08-25')
-    expect(updated.heatTreatmentDiagram).toBe('')
+    })).toThrow('наименование диаграммы')
   })
 
   it('refuses primary PSTO while assigned pre-TO control is incomplete', () => {

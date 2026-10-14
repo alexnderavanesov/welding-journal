@@ -12,7 +12,11 @@ describe('WorkflowResultOptionPicker', () => {
     rerender(<WorkflowResultOptionPicker {...props} restrictionHelpHref="/settings#system-rule-lnk-results"
       restrictionHelpLabel="Правило СП-07" getDisabledReason={option => option === 'вырез' ? 'По ВИК вырез запрещён' : undefined} />)
     expect(container.querySelector('[data-result-picker-help]')).toBe(slot)
-    expect(slot).toHaveTextContent('Правило СП-07')
+    expect(slot).not.toHaveTextContent('Правило СП-07')
+    const link = screen.getByRole('link', { name: 'Правило СП-07' })
+    expect(link).toHaveTextContent('')
+    expect(link.querySelector('svg')).not.toBeNull()
+    expect(link.closest('[data-result-picker-rule]')).not.toBeNull()
     rerender(<WorkflowResultOptionPicker {...props} />)
     expect(container.querySelector('[data-result-picker-help]')).toBe(slot)
     expect(slot).toBeEmptyDOMElement()

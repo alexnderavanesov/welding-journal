@@ -36,9 +36,10 @@ export async function loadFilteredCurrentReportOutputRows({
     data: {
       page: 1,
       pageSize: WELD_PAGE_ALL_SIZE as typeof WELD_PAGE_ALL_SIZE,
+      includeTotals: false,
       columnFilters: filters.columnFilters,
       ...(filters.search ? { search: filters.search } : {}),
-      ...(sort ? { sort } : {}),
+      ...(sort ? { sort: { ...sort } } : {}),
     },
   }
   const result = report === 'lnk'

@@ -1,6 +1,8 @@
 import { sql, type SQL } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { FULL_REBUILD_GENERATION_KIND } from './dispatcher-refresh-catchup'
+import { getLineProgramIdentityKey } from '@/lib/line-program'
+import { LINE_PROGRAM_OVERVIEW_CACHE_PREFIX } from './derived-calculation-cache'
 import {
   DISPATCHER_INDEX_LOCK_ID,
   DISPATCHER_INDEX_STATE_ID,
@@ -89,15 +91,15 @@ export async function markDispatcherTaskIndexDirty(
       set
         "source_revision" = "derived_calculation_state"."source_revision" + 1,
         "updated_at" = now()
-      returning "id"
+      returning "source_revision"
     )
-    delete from "derived_calculation_cache"
-    where exists (select 1 from "derived_state")
+    ${buildDerivedCacheRetention(fullRebuild ? null : scopes.map(getLineProgramIdentityKey))}
   `)
 }
 
 export async function invalidateDerivedCalculationCache(
   executor: SqlExecutor = requireDb(),
+  options: { preserveLineOverviews?: boolean } = {},
 ) {
   await executor.execute(sql`
     with "derived_state" as (
@@ -107,11 +109,37 @@ export async function invalidateDerivedCalculationCache(
       set
         "source_revision" = "derived_calculation_state"."source_revision" + 1,
         "updated_at" = now()
-      returning "id"
+      returning "source_revision"
     )
-    delete from "derived_calculation_cache"
-    where exists (select 1 from "derived_state")
+    ${buildDerivedCacheRetention(options.preserveLineOverviews ? [] : null)}
   `)
+}
+
+/** The derived_state upsert holds the same row lock as cache publication. Only
+ * the immediately preceding revision may advance; pending old calculations and
+ * already invalidated payloads must not be resurrected on a subsequent write.
+ * null is a full clear, [] is an explicitly independent invalidation. */
+function buildDerivedCacheRetention(affectedIdentityKeys: readonly string[] | null) {
+  if (affectedIdentityKeys === null) return sql`
+    delete from "derived_calculation_cache" where exists (select 1 from "derived_state")
+  `
+  return sql`, "retained_overviews" as (
+    update "derived_calculation_cache" as cache
+    set "source_revision" = state."source_revision"
+    from "derived_state" as state
+    where cache."source_revision" = state."source_revision" - 1
+      and cache."cache_key" like ${LINE_PROGRAM_OVERVIEW_CACHE_PREFIX + '%'}
+      and case when cache."payload" is json object then
+        (cache."payload"::jsonb ->> 'namespace') = ${LINE_PROGRAM_OVERVIEW_CACHE_PREFIX}
+        and jsonb_typeof(cache."payload"::jsonb -> 'identityKey') = 'string'
+        and not ((cache."payload"::jsonb ->> 'identityKey') = any(${sql.param([...new Set(affectedIdentityKeys)])}::text[]))
+      else false end
+    returning cache."cache_key"
+  )
+  delete from "derived_calculation_cache"
+  where exists (select 1 from "derived_state")
+    and "cache_key" not in (select "cache_key" from "retained_overviews")
+  `
 }
 
 function normalizeDirtyScopes(scopes: DispatcherDirtyScope[]) {

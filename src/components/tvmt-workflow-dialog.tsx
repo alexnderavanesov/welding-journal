@@ -5,6 +5,7 @@ import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/com
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
+import { DocumentSpecialistsPanel } from '@/components/document-specialists-panel'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { WorkflowSelectionWarning } from '@/components/workflow-selection-warning'
 import { useWorkflowSelectionState } from '@/lib/use-workflow-selection-state'
@@ -135,7 +136,7 @@ export function TvmtWorkflowDialog({
   const [rowsViewMode, setRowsViewMode] = useState<SelectedRowsViewMode>('all')
   const [workspaceTab, setWorkspaceTab] = useState<DocumentWorkspaceTab>('joints')
   const [naming, setNaming] = useState<RequestNamingState>(() =>
-    getDefaultNamingState(settings, mode === 'request' ? 'tvmtRequest' : 'tvmtConclusion'),
+    getDefaultNamingState(),
   )
   const requestOptions = useMemo(() => getTvmtRequestOptions(rows), [rows])
   const [requestKey, setRequestKey] = useState(() =>
@@ -242,6 +243,7 @@ export function TvmtWorkflowDialog({
   const dateReason = getDateInputValidationReason(
     date,
     mode === 'request' ? 'Дата заявки ТВМТ' : 'Дата ТВМТ',
+    { required: true },
   )
   const domainReason = useMemo(() => {
     if (selectedRows.length === 0 || dateReason || creationPlan.error) return ''
@@ -323,7 +325,6 @@ export function TvmtWorkflowDialog({
   })
   const effectiveSaveBlockReason = getSaveBlockReason({
     mode,
-    isPending: mutation.isPending,
     selectedRowsCount: selectedRows.length,
     requestSelected: Boolean(selectedRequest),
     dateReason,
@@ -518,6 +519,7 @@ export function TvmtWorkflowDialog({
 
       <DocumentWorkspaceTabs
         activeTab={workspaceTab}
+        specialists={mode === 'result'}
         ariaLabel={mode === 'request' ? 'Разделы заявки ТВМТ' : 'Разделы результата ТВМТ'}
         controls={<SystemDocumentSplitControl plan={creationPlan} naming={naming} onChange={setNaming} disabled={mutation.isPending} />}
         documentsLabel={mode === 'request' ? 'Заявки и имена' : 'Заключения и имена'}
@@ -526,7 +528,7 @@ export function TvmtWorkflowDialog({
         onChange={setWorkspaceTab}
       />
 
-      {workspaceTab === 'documents' ? (
+      {workspaceTab === 'specialists' && creationPlan ? <DocumentSpecialistsPanel plan={creationPlan} naming={naming} onChange={setNaming} disabled={mutation.isPending} /> : workspaceTab === 'documents' ? (
         <SystemDocumentNamesPanel
           plan={creationPlan}
           naming={naming}
@@ -726,7 +728,6 @@ function validateTvmtResultRow(
 
 function getSaveBlockReason({
   mode,
-  isPending,
   selectedRowsCount,
   requestSelected,
   dateReason,
@@ -734,15 +735,13 @@ function getSaveBlockReason({
   domainReason,
 }: {
   mode: TvmtWorkflowRowMode
-  isPending: boolean
   selectedRowsCount: number
   requestSelected: boolean
   dateReason: string | null
   creationPlanError: string
   domainReason: string
 }) {
-  if (isPending) return 'Сохранение выполняется.'
   if (mode === 'result' && !requestSelected) return 'Выберите заявку ТВМТ.'
   if (selectedRowsCount === 0) return 'Выберите хотя бы один доступный стык.'
-  return dateReason || creationPlanError || domainReason || ''
+  return [dateReason, creationPlanError].filter(Boolean).join('\n') || domainReason || ''
 }

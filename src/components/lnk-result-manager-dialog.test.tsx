@@ -57,7 +57,6 @@ function renderDialog(overrides: Partial<Parameters<typeof LnkResultManagerDialo
       conclusionDrafts={{}}
       pendingResultChanges={{}}
       changeHint={null}
-      isResultCorrectionPending={false}
       isResultReplacementPending={false}
       isConclusionCorrectionPending={false}
       onClose={vi.fn()}
@@ -110,7 +109,6 @@ describe('LnkResultManagerDialog', () => {
     { isResultReplacementPending: true },
     { isConclusionCorrectionPending: true },
     { isRequestCorrectionPending: true },
-    { isResultCorrectionPending: true },
   ])('protects unfinished edits and in-flight mutations from immediate layered removal: %j', (overrides) => {
     const onRemoveLayeredControl = vi.fn()
     renderDialog({ rows: [layeredRow], entries: [layeredEntry], initialEntryKey: layeredEntry.changeKey, onRemoveLayeredControl, ...overrides })

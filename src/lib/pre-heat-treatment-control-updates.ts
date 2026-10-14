@@ -1,4 +1,5 @@
 import { formatDisplayDate, getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
+import { assertDocumentRequisites } from '@/lib/document-requisites'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   getPreHeatTreatmentControl,
@@ -162,7 +163,8 @@ export function buildPreHeatTreatmentResultWrite({
   if (blockReason) throw new Error(`Стык ${formatJoint(row)}: ${blockReason}`)
   const current = getPreHeatTreatmentControl(row, methodCode)
   if (!current) throw new Error(`Стык ${formatJoint(row)}: позиция НК до ТО не найдена.`)
-  const date = normalizeOptionalLnkResultDate(controlDate, saveCheckSettings)
+  assertDocumentRequisites({ name: conclusionName, date: controlDate, nameLabel: 'наименование заключения НК до ТО', dateLabel: 'Дата контроля НК до ТО' })
+  const date = parseDateLikeToIso(controlDate)!
   validatePreHeatTreatmentResultDate(row, current, methodCode, date, saveCheckSettings)
 
   const normalizedResult = text(result).toLocaleLowerCase('ru-RU')
@@ -172,9 +174,6 @@ export function buildPreHeatTreatmentResultWrite({
   }
   assertLnkResultAllowed(row, methodCode, normalizedResult, { systemIndexSettings })
   const name = conclusionName.trim()
-  if (saveCheckSettings.lnkResultConclusionRequired && !name) {
-    throw new Error('Укажите наименование заключения НК до ТО.')
-  }
 
   const exposureRecord = methodCode === 'РК'
     ? applyRkExposureResultTransition({
@@ -233,7 +232,8 @@ export function buildPreHeatTreatmentResultCorrectionWrite({
   if (!isPreHeatTreatmentLnkMethodCode(methodCode)) throw new Error('Вид НК до ТО не определен.')
   if (!text(control.requestName)) throw new Error(`Стык ${formatJoint(row)}: у ${methodCode} до ТО нет заявки.`)
 
-  const date = normalizeOptionalLnkResultDate(controlDate, saveCheckSettings)
+  assertDocumentRequisites({ name: conclusionName, date: controlDate, nameLabel: 'наименование заключения НК до ТО', dateLabel: 'Дата контроля НК до ТО' })
+  const date = parseDateLikeToIso(controlDate)!
   validatePreHeatTreatmentResultDate(row, control, methodCode, date, saveCheckSettings)
 
   const normalizedResult = text(result).toLocaleLowerCase('ru-RU')
@@ -261,9 +261,6 @@ export function buildPreHeatTreatmentResultCorrectionWrite({
     }
   }
   const name = conclusionName.trim()
-  if (saveCheckSettings.lnkResultConclusionRequired && !name) {
-    throw new Error('Укажите наименование заключения НК до ТО.')
-  }
 
   const exposureRecord = methodCode === 'РК'
     ? applyRkExposureResultTransition({
@@ -443,22 +440,6 @@ function validatePreHeatTreatmentResultDate(
     assertNotAfterPsto(row, date, 'Дата НК до ТО')
   }
   assertPreHeatTreatmentVikOrder(row, methodCode, date, settings)
-}
-
-function normalizeOptionalLnkResultDate(value: string, settings: SaveCheckSettings) {
-  const rawDate = text(value)
-  if (!rawDate) {
-    if (settings.lnkResultControlDateRequired) throw new Error('Укажите дату контроля НК до ТО.')
-    return ''
-  }
-  const parsedDate = parseDateLikeToIso(rawDate)
-  if (!parsedDate) {
-    const reason = getDateInputValidationReason(rawDate, 'Дата контроля НК до ТО')
-    throw new Error(reason || 'Укажите корректную дату контроля НК до ТО.')
-  }
-  const reason = getDateInputValidationReason(parsedDate, 'Дата контроля НК до ТО')
-  if (reason) throw new Error(reason)
-  return parsedDate
 }
 
 function assertNotBeforeWeld(row: WeldRow, date: string, label: string) {

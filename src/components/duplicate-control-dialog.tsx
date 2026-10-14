@@ -1,5 +1,7 @@
-import { memo, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
-import { Check, ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react'
+import { memo, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import { getDuplicateControlRequisiteErrors } from '@/lib/document-requisites'
+import { getDateInputValidationReason } from '@/lib/date-format'
+import { Check, ChevronDown, ChevronUp, Loader2, Pencil, Trash2 } from 'lucide-react'
 
 import { DialogCloseFooter } from '@/components/dialog-close-footer'
 import { DialogEmptyState } from '@/components/dialog-empty-state'
@@ -127,16 +129,27 @@ export function DuplicateControlDialog({
     selectedRows.length === 0 ? 'Выберите стыки.' : undefined,
   ].filter(Boolean).join('\n') || undefined
   if (draft.result) saveBlockReason = saveBlockReason || getDisabledResultReason(draft.result) || null
+  const requisiteErrors = getDuplicateControlRequisiteErrors(draft)
+  if (draft.result && !saveBlockReason && requisiteErrors.length) saveBlockReason = requisiteErrors.join('\n')
   const isEditing = typeof draft.id === 'number'
   const [showExistingControls, setShowExistingControls] = useState(false)
   const [showSelectedPreview, setShowSelectedPreview] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const saveInFlight = useRef(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const saving = isSaving || isSubmitting
   const handleSave = async () => {
+    if (saveInFlight.current || isSaving || saveBlockReason || selectedRowsLoading) return
+    saveInFlight.current = true
+    setIsSubmitting(true)
     setSaveError(null)
     try {
       await onSave()
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'Не удалось сохранить дубль-контроль. Повторите попытку.')
+    } finally {
+      saveInFlight.current = false
+      setIsSubmitting(false)
     }
   }
   const handleDelete = async (control: DuplicateControlRecord) => {
@@ -252,27 +265,30 @@ export function DuplicateControlDialog({
                 Дата контроля
                 <input
                   value={draft.controlDate}
+                  aria-invalid={Boolean(getDateInputValidationReason(draft.controlDate, 'Дата контроля', { required: true }))}
                   onChange={(event) => onDraftChange((current) => ({ ...current, controlDate: event.target.value }))}
                   placeholder="08.07.2026"
-                  className="mt-1 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                  className="mt-1 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100 aria-invalid:border-rose-400"
                 />
               </label>
               <label className="block text-xs font-semibold text-slate-600">
                 Заключение
                 <input
                   value={draft.conclusion}
+                  aria-invalid={!draft.conclusion.trim()}
                   onChange={(event) => onDraftChange((current) => ({ ...current, conclusion: event.target.value }))}
                   placeholder="Номер заключения заказчика"
-                  className="mt-1 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                  className="mt-1 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100 aria-invalid:border-rose-400"
                 />
               </label>
               <label className="block text-xs font-semibold text-slate-600">
                 Дата заключения
                 <input
                   value={draft.conclusionDate}
+                  aria-invalid={Boolean(getDateInputValidationReason(draft.conclusionDate, 'Дата заключения', { required: true }))}
                   onChange={(event) => onDraftChange((current) => ({ ...current, conclusionDate: event.target.value }))}
                   placeholder="08.07.2026"
-                  className="mt-1 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                  className="mt-1 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100 aria-invalid:border-rose-400"
                 />
               </label>
             </div>
@@ -397,7 +413,7 @@ export function DuplicateControlDialog({
                 : `Будет сохранено: ${selectedRows.length * draft.methods.size}`}
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onClose}>
+            <Button variant="outline" onClick={onClose} disabled={saving}>
               Отмена
             </Button>
             <Button
@@ -407,9 +423,9 @@ export function DuplicateControlDialog({
             >
               {`Предпросмотр (${selectedRows.length})`}
             </Button>
-            <Button onClick={handleSave} disabled={Boolean(saveBlockReason) || selectedRowsLoading || isSaving}>
-              <Check className="mr-2 h-4 w-4" />
-              {isEditing ? 'Сохранить дубль' : 'Добавить дубль'}
+            <Button onClick={handleSave} aria-busy={saving} className="min-w-44" disabled={Boolean(saveBlockReason) || selectedRowsLoading || saving}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+              {saving ? 'Сохраняем…' : isEditing ? 'Сохранить дубль' : 'Добавить дубль'}
             </Button>
           </div>
         </div>

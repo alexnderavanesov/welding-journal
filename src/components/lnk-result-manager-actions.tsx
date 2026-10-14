@@ -16,8 +16,7 @@ type LnkResultManagerActionsProps = {
   row: WeldRow
   method: LnkResultMethod
   currentResult: string
-  pendingResult: string
-  isResultCorrectionPending: boolean
+  pendingResult: string | null
   isResultReplacementPending: boolean
   onReplaceResult: (row: WeldRow, methodKey: WeldFieldKey, result: string) => void
   onClearResult: (row: WeldRow, methodKey: WeldFieldKey) => void
@@ -28,7 +27,6 @@ export function LnkResultManagerActions({
   method,
   currentResult,
   pendingResult,
-  isResultCorrectionPending,
   isResultReplacementPending,
   onReplaceResult,
   onClearResult,
@@ -53,7 +51,7 @@ export function LnkResultManagerActions({
               pvkGoodOnly: processSettings.pvkGoodOnly,
             }),
             getUnofficialLnkGoodResultReason(row, option, currentResult, method.code),
-            isResultCorrectionPending || isResultReplacementPending ? 'Дождитесь сохранения изменений.' : undefined,
+            isResultReplacementPending ? 'Дождитесь сохранения изменений.' : undefined,
           ].filter(Boolean).join('\n') || undefined}
           onChange={(option) => onReplaceResult(row, method.requestKey, option)}
         />
@@ -62,11 +60,11 @@ export function LnkResultManagerActions({
           onClick={() => {
             if (!removalBlockReason) onClearResult(row, method.requestKey)
           }}
-          disabled={!currentResult || Boolean(removalBlockReason) || isResultCorrectionPending || isResultReplacementPending}
-          title={removalBlockReason || undefined}
+          disabled={pendingResult === null || !currentResult || Boolean(removalBlockReason) || isResultReplacementPending}
+          title={removalBlockReason || 'Подготовить удаление; оно будет применено только после сохранения и подтверждения.'}
           className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-800 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Удалить результат
+          {pendingResult === null ? 'Будет удалён' : 'Удалить результат'}
         </button>
       </div>
       {officialityReason && !removalBlockReason ? <p className="max-w-sm text-right text-xs leading-5 text-amber-700">{officialityReason}</p> : null}

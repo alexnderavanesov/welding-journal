@@ -26,7 +26,7 @@ import {
 } from '@/lib/repeated-joint-check-tasks'
 import {
   buildJointChainConsistencyCheckTasks,
-  hasCompletedParentBranch,
+  createCompletedParentBranchChecker,
   isBlockingRepeatedJointCheckTask,
 } from '@/lib/repeated-joint-consistency-tasks'
 import { buildDuplicateJointCheckTasks } from '@/lib/repeated-joint-duplicate-tasks'
@@ -198,6 +198,7 @@ export function buildRepeatedJointTasks(
     return key ? [key] : []
   }))
   const createTaskTargetKeys = new Set<string>()
+  const hasCompletedParentBranch = createCompletedParentBranchChecker(rows, systemIndexSettings)
 
   for (const row of rows) {
     // Keep excluded rows in the lookup and integrity audit: an active repair
@@ -212,7 +213,7 @@ export function buildRepeatedJointTasks(
     if (!rejection) continue
     const sourceJoint = String(row.joint ?? '').trim()
     if (!sourceJoint) continue
-    if (hasCompletedParentBranch(rows, row, sourceJoint, systemIndexSettings)) continue
+    if (hasCompletedParentBranch(row, sourceJoint)) continue
 
     const suffix = getExpectedRepeatedJointSuffix(row, rejection.result, systemIndexSettings)
     const parsed = parseRepeatedJointName(sourceJoint, systemIndexSettings)

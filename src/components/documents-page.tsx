@@ -1,3 +1,6 @@
+import { DocumentSpecialistCell, DocumentSpecialistAssignmentDialog, type SpecialistDocument } from './document-specialist-assignment'
+import { specialistHistoryColumns } from '@/lib/document-history-columns'
+import { getSpecialistDocumentProfile } from '@/lib/document-specialists'
 import {
   type CSSProperties,
   type ReactNode,
@@ -32,6 +35,7 @@ import {
   Search,
   SlidersHorizontal,
   Trash2,
+  UsersRound,
   X,
   ZoomIn,
   ZoomOut,
@@ -468,13 +472,13 @@ export function DocumentsPage({
   })
   const availableHistoryColumns = useMemo(
     () => {
-      if (activeLayeredDocumentView) return [...LAYERED_GENERATED_DOCUMENT_HISTORY_COLUMNS]
+      if (activeLayeredDocumentView) return [...LAYERED_GENERATED_DOCUMENT_HISTORY_COLUMNS, ...specialistHistoryColumns()]
       if (!activeSystemDocumentOption) return [...GENERATED_DOCUMENT_HISTORY_COLUMNS]
       const showMethodColumn = activeSystemDocumentOption.documentType.startsWith('lnk')
         && activeSystemDocumentOption.methodScope !== 'tvmt'
-      return SYSTEM_DOCUMENT_HISTORY_COLUMNS.filter(
+      return [...SYSTEM_DOCUMENT_HISTORY_COLUMNS.filter(
         (column) => showMethodColumn || column.key !== 'method',
-      )
+      ), ...(activeSystemDocumentOption.documentType.endsWith('Conclusion') ? specialistHistoryColumns(activeSystemDocumentOption.documentType === 'pstoConclusion') : [])]
     }, [activeLayeredDocumentView, activeSystemDocumentOption],
   )
   const visibleHistoryColumns = useMemo(
@@ -889,7 +893,7 @@ export function DocumentsPage({
                 visibleColumnKeys={visibleHistoryColumnKeys}
                 onChange={changeVisibleHistoryColumns}
               />
-              {isSystemDocument ? <div ref={setHistoryActionsContainer} /> : null}
+              {isSystemDocument || activeLayeredDocumentView ? <div ref={setHistoryActionsContainer} /> : null}
             </div>
           ) : null}
         </div>
@@ -1273,6 +1277,7 @@ export function DocumentsPage({
         ) : activeLayeredDocumentView ? (
           <GeneratedDocumentsPanel
             key={activeLayeredDocumentView.id}
+            actionsContainer={historyActionsContainer}
             documentType={activeLayeredDocumentView.types[0]}
             documentTypes={activeLayeredDocumentView.types}
             documentLabel={activeLayeredDocumentView.label}
@@ -1363,6 +1368,7 @@ export function DocumentsPage({
 }
 
 function GeneratedDocumentsPanel({
+  actionsContainer,
   documentType,
   documentTypes,
   documentLabel,
@@ -1377,6 +1383,7 @@ function GeneratedDocumentsPanel({
   onOpenRows,
   onOpenJointHistory,
 }: {
+  actionsContainer?: HTMLDivElement | null
   documentType: GeneratedDocumentType
   documentTypes?: readonly GeneratedDocumentType[]
   documentLabel: string
@@ -1415,6 +1422,7 @@ function GeneratedDocumentsPanel({
     navigationRequest?.documentId ?? null,
   )
   const [openingRowsDocumentId, setOpeningRowsDocumentId] = useState<number | null>(null)
+  const [specialistDocuments, setSpecialistDocuments] = useState<SpecialistDocument[] | null>(null)
   const [previewRequest, setPreviewRequest] = useState<HistoryDocumentPreviewRequest | null>(null)
   const closePreview = useCallback(() => setPreviewRequest(null), [])
   const [openRowsError, setOpenRowsError] = useState<string | null>(null)
@@ -1425,8 +1433,8 @@ function GeneratedDocumentsPanel({
     [visibleColumns],
   )
   const historyGridLayout = useMemo(
-    () => getDocumentHistoryGridLayout({ columns: visibleColumns, actionsWidth: 172 }),
-    [visibleColumns],
+    () => getDocumentHistoryGridLayout({ columns: visibleColumns, actionsWidth: 120 + (onRepeat ? 36 : 0) + (allowDelete ? 36 : 0) }),
+    [visibleColumns, onRepeat, allowDelete],
   )
 
   useEffect(() => {
@@ -1606,6 +1614,9 @@ function GeneratedDocumentsPanel({
 
   return (
     <section className="min-w-0 overflow-hidden rounded-md border border-[#cbdde6] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      {actionsContainer && getSpecialistDocumentProfile(documentType) ? createPortal(
+        <button type="button" aria-label={`Действия с документами, выбрано: ${selectedDocuments.length}`} aria-haspopup="menu" aria-expanded={contextMenu?.heading === 'Действия с документами'} className="inline-flex h-10 items-center gap-2 rounded-md border border-[#cbdde6] bg-white px-3 text-sm font-semibold text-[#31566a] hover:bg-sky-50"
+          onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); setContextMenu({ x: rect.right - Math.min(320, window.innerWidth - 16), y: rect.bottom + 4, anchorElement: event.currentTarget, heading: 'Действия с документами', itemMinHeight: 76, description: `Выбрано: ${selectedDocuments.length} · только отмеченные документы`, items: [{ id: 'assign-specialists', label: 'Назначить специалистов', icon: UsersRound, description: 'Назначить, заменить или очистить роли в отмеченных документах.', disabled: !selectedDocuments.length, onSelect: () => setSpecialistDocuments(selectedDocuments) }] }) }}>Действия{selectedDocuments.length ? <span className="rounded bg-sky-100 px-1.5 text-xs">{selectedDocuments.length}</span> : null}<ChevronDown aria-hidden="true" className="h-3.5 w-3.5" /></button>, actionsContainer) : null}
       {hasActiveFilters ? (
         <div className="flex flex-wrap items-center justify-end gap-2 border-b border-[#d8e5eb] bg-[#f6fafc] px-4 py-2.5">
           <button
@@ -1803,6 +1814,8 @@ function GeneratedDocumentsPanel({
                 {visibleColumnKeySet.has('updatedAt') ? (
                   <span className="text-xs leading-4 text-slate-500">{formatGeneratedDocumentDate(documentRecord.updatedAt)}</span>
                 ) : null}
+                {visibleColumnKeySet.has('specialistFirst') ? <DocumentSpecialistCell document={documentRecord} role="first" /> : null}
+                {visibleColumnKeySet.has('specialistSecond') ? <DocumentSpecialistCell document={documentRecord} role="second" /> : null}
                 <div data-document-row-actions className="sticky right-0 z-10 flex items-center justify-end gap-1 border-l border-[#dce7ed] bg-inherit pl-3 shadow-[-12px_0_16px_-16px_rgba(15,23,42,0.55)]">
                   <DocumentHistoryActionButton
                     title="Показать стыки документа в сварочном журнале"
@@ -1856,6 +1869,7 @@ function GeneratedDocumentsPanel({
       </div>
       {previewRequest ? <HistoryDocumentPreview request={previewRequest} onClose={closePreview} /> : null}
       <ContextActionMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
+      {specialistDocuments ? <DocumentSpecialistAssignmentDialog documents={specialistDocuments} onClose={() => setSpecialistDocuments(null)} /> : null}
     </section>
   )
 }
@@ -1908,6 +1922,7 @@ function SystemDocumentsPanel({
   const closePreview = useCallback(() => setPreviewRequest(null), [])
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [documentOperation, setDocumentOperation] = useState<{ action: DocumentOperationRequest['action']; documents: SystemDocumentSummary[] } | null>(null)
+  const [specialistDocuments, setSpecialistDocuments] = useState<SpecialistDocument[] | null>(null)
   const [isDownloadingArchive, setIsDownloadingArchive] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
   const [navigationTarget, setNavigationTarget] = useState(() => navigationRequest
@@ -1927,7 +1942,7 @@ function SystemDocumentsPanel({
     [visibleColumns],
   )
   const historyGridLayout = useMemo(
-    () => getDocumentHistoryGridLayout({ columns: visibleColumns, actionsWidth: 152 }),
+    () => getDocumentHistoryGridLayout({ columns: visibleColumns, actionsWidth: 120 }),
     [visibleColumns],
   )
   const navigationDocumentIdentity = navigationTarget?.identity ?? null
@@ -2157,8 +2172,8 @@ function SystemDocumentsPanel({
               <button type="button" aria-label={`Действия с документами, выбрано: ${selectedDocuments.length}`} aria-haspopup="menu" aria-expanded={contextMenu?.heading === 'Действия с документами'}
                 className={`inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm font-semibold normal-case transition-colors ${selectedDocuments.length ? 'border-sky-200 bg-white text-sky-800 shadow-sm hover:bg-sky-50' : 'border-[#cbdde6] bg-white text-[#31566a] shadow-sm hover:border-[#79aebe] hover:bg-[#edf7fa]'}`}
                 onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); setContextMenu({ x: rect.right - Math.min(320, window.innerWidth - 16), y: rect.bottom + 4, anchorElement: event.currentTarget,
-                  heading: 'Действия с документами', description: selectedDocuments.length ? `Выбрано: ${selectedDocuments.length} · только отмеченные документы` : 'Сначала отметьте нужные документы в списке.',
-                  items: [...documentOperationItems(selectedDocuments), { type: 'separator', id: 'archive-separator' },
+                  heading: 'Действия с документами', itemMinHeight: 76, description: selectedDocuments.length ? `Выбрано: ${selectedDocuments.length} · только отмеченные документы` : 'Сначала отметьте нужные документы в списке.',
+                  items: [...(documentType.endsWith('Conclusion') ? [{ id: 'assign-specialists', label: 'Назначить специалистов', icon: UsersRound, description: 'Назначить, заменить или очистить роли в отмеченных документах.', disabled: !selectedDocuments.length, onSelect: () => setSpecialistDocuments(selectedDocuments) }] : []), ...documentOperationItems(selectedDocuments), { type: 'separator', id: 'archive-separator' },
                     { id: 'download-selected-archive', label: isDownloadingArchive ? 'Готовим архив…' : 'Скачать выбранные архивом', icon: Archive, disabled: !downloadableSelectedDocuments.length || isDownloadingArchive,
                       description: `Доступен Excel: ${downloadableSelectedDocuments.length} из ${selectedDocuments.length}. Для скачивания нужен шаблон.`, onSelect: () => downloadSelectedArchive() }],
                 }) }}>
@@ -2418,6 +2433,8 @@ function SystemDocumentsPanel({
                   {visibleColumnKeySet.has('date') ? (
                     <span className="text-xs text-slate-600">{formatDate(documentRecord.date) || '-'}</span>
                   ) : null}
+                  {visibleColumnKeySet.has('specialistFirst') ? <DocumentSpecialistCell document={documentRecord} role="first" /> : null}
+                  {visibleColumnKeySet.has('specialistSecond') ? <DocumentSpecialistCell document={documentRecord} role="second" /> : null}
                   <div data-document-row-actions className="sticky right-0 z-10 flex items-center justify-end gap-1 border-l border-[#dce7ed] bg-inherit pl-3 shadow-[-12px_0_16px_-16px_rgba(15,23,42,0.55)]">
                     <DocumentHistoryActionButton
                       title={`Показать стыки документа в отчете ${getSystemDocumentTargetReport(documentRecord) === 'lnk' ? 'ЛНК' : 'ПСТО'}`}
@@ -2460,6 +2477,7 @@ function SystemDocumentsPanel({
         </div>
       </div>
       <ContextActionMenu menu={contextMenu} autoFocus={contextMenu?.heading === 'Действия с документами'} onClose={() => setContextMenu(null)} />
+      {specialistDocuments ? <DocumentSpecialistAssignmentDialog documents={specialistDocuments} onClose={() => setSpecialistDocuments(null)} /> : null}
       {documentOperation ? <DocumentOperationDialog documents={documentOperation.documents} action={documentOperation.action} onClose={() => setDocumentOperation(null)} onApplied={() => onRenamed()} /> : null}
       {previewRequest ? <HistoryDocumentPreview request={previewRequest} onClose={closePreview} /> : null}
     </section>

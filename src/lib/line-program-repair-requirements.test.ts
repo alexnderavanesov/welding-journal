@@ -19,6 +19,14 @@ const methods = (rows: WeldRow[], id: number, approved = new Set<string>()) =>
   buildProgramRepairRequirements(rows, approved).get(id)?.map(item => item.method).sort()
 
 describe('mandatory repair controls, independent of percentage credit', () => {
+  it.each([false, true])('inherits the skipped mixed predecessor methods (saved identities: %s)', saved => {
+    const input = [row(1, 'S63', { uzkResult: 'вырез' }), row(2, 'S63W1', { uzkResult: 'ремонт' }),
+      row(3, 'S63W1R1', { rkResult: 'вырез', pvkResult: 'годен' }), row(4, 'S63W2R1')]
+    const rows = saved ? capture(input) : input
+    expect(methods(rows, 4)).toEqual(['ВИК', 'ПВК', 'РК', 'УЗК'].sort())
+    expect(buildProgramRepairRequirements(rows).get(4)).toContainEqual(expect.objectContaining({ method: 'РК', sourceRowId: 3 }))
+    expect(buildProgramRepairTasks(rows, new Set()).find(task => task.row.id === 4)?.values).toEqual(['РК', 'ПВК', 'УЗК'])
+  })
   it.each(['ВИК', 'ПВК'] as const)('inherits the complete approved pair after rejected %s', method => {
     const source = row(1, 'F1', { hasRk: 'да', hasUzk: 'да', [method === 'ВИК' ? 'vikResult' : 'pvkResult']: 'ремонт' })
     const rows = [source, row(2, 'F1R1')]

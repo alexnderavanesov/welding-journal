@@ -11,6 +11,8 @@ import type {
 } from '@/lib/psto-line-assignment'
 
 vi.mock('@/server/weld-line-operations', () => ({ getPstoWeldLineMovePreview: vi.fn() }))
+// The shared confirmation hook has its own query/acknowledgment tests.
+vi.mock('@/components/specialist-transfer-confirmation', () => ({ useSpecialistTransferConfirmation: () => ({ ready: true, notice: null, confirmation: undefined }) }))
 
 const assignedRow: PstoWeldLineMovePreviewRow = {
     rowId: 7,
@@ -93,7 +95,7 @@ describe('PstoWeldLineMoveDialog', () => {
     expect(screen.getByRole('radio', { name: 'Оставить НК до ТО' })).toBeChecked()
     expect(screen.getByRole('radio', { name: 'Весь НК до ТО → основной' })).toBeEnabled()
     expect(screen.getByRole('status')).toHaveTextContent('перенос НК в основной — 0 · сохранить этапы — 1')
-    expect(screen.getByText(/все методы, заявки, результаты и заключения вместе, с исходными датами и названиями/)).toBeInTheDocument()
+    expect(screen.getByText(/Все методы, заявки, результаты и заключения переносятся вместе, с исходными датами и названиями/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить перенос' }))
     expect(onConfirm).toHaveBeenCalledWith([{ rowId: 7, disposition: 'keepPrimary' }])
   })
@@ -128,13 +130,17 @@ describe('PstoWeldLineMoveDialog', () => {
     expect(onConfirm).toHaveBeenCalledWith([{ rowId: 7, disposition: 'keepPrimary' }])
   })
 
-  it.each(['primary', 'beforeHeatTreatment'] as const)('never offers a stage correction into an assigned target (%s metadata)', targetStage => {
+  it.each(['primary', 'beforeHeatTreatment'] as const)('offers only the correct direction into an assigned target (%s metadata)', targetStage => {
     const onConfirm = vi.fn()
     const row = { ...preToRow, stageCorrection: { targetStage, disabledReason: null } }
     render(<PstoWeldLineMoveDialog preview={{ ...assignedPreview, rows: [row], row }} pending={false} onClose={vi.fn()} onConfirm={onConfirm} />)
-    expect(screen.queryByRole('radio')).not.toBeInTheDocument()
+    if (targetStage === 'primary') expect(screen.queryByRole('radio')).not.toBeInTheDocument()
+    else {
+      expect(screen.getByRole('radio', { name: 'Оставить основной НК' })).toBeChecked()
+      fireEvent.click(screen.getByRole('radio', { name: 'Весь основной НК → до ТО' }))
+    }
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить перенос' }))
-    expect(onConfirm).toHaveBeenCalledWith([{ rowId: 7, disposition: 'keepPrimary' }])
+    expect(onConfirm).toHaveBeenCalledWith([{ rowId: 7, disposition: targetStage === 'primary' ? 'keepPrimary' : 'movePrimaryToPreHeatTreatment' }])
   })
 
   it('drops a selected correction when a refreshed preview blocks it', () => {

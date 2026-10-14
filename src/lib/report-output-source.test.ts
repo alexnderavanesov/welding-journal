@@ -1,5 +1,6 @@
 import { QueryClient } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { WeldSort } from '@/server/weld-contracts'
 
 const serverMocks = vi.hoisted(() => ({
   listWeldReportContextRows: vi.fn(),
@@ -46,11 +47,29 @@ describe('complete report output source', () => {
       data: {
         page: 1,
         pageSize: 'all',
+        includeTotals: false,
         columnFilters: { line: '=LINE-1' },
         search: 'F501',
         sort: { fieldKey: 'weldDate', direction: 'desc' },
       },
     })
     expect(serverMocks.listWeldReportContextRows).not.toHaveBeenCalled()
+  })
+
+  it('captures filters and sort at opening instead of using objects later changed by the UI', async () => {
+    let resolve!: (value: { rows: { id: number }[] }) => void
+    serverMocks.listHeatTreatmentReportPage.mockReturnValueOnce(new Promise(done => { resolve = done }))
+    const columnFilters = { line: '=A', search: 'S1' }
+    const sort: WeldSort = { fieldKey: 'joint', direction: 'desc' }
+    const loading = loadFilteredCurrentReportOutputRows({ report: 'heatTreatment', columnFilters, sort })
+    columnFilters.line = '=B'
+    columnFilters.search = 'S2'
+    sort.fieldKey = 'line'
+    resolve({ rows: [{ id: 1 }] })
+    expect(await loading).toEqual([{ id: 1 }])
+    expect(serverMocks.listHeatTreatmentReportPage).toHaveBeenCalledExactlyOnceWith({
+      data: { page: 1, pageSize: 'all', includeTotals: false, columnFilters: { line: '=A' },
+        search: 'S1', sort: { fieldKey: 'joint', direction: 'desc' } },
+    })
   })
 })

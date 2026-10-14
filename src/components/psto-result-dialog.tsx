@@ -4,6 +4,7 @@ import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/com
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
+import { DocumentSpecialistsPanel } from '@/components/document-specialists-panel'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { PstoResultFilters } from '@/components/psto-result-filters'
 import { PstoResultRow } from '@/components/psto-result-row'
@@ -46,6 +47,8 @@ export type PstoResultDialogProps = {
   filteredRequestOptions: RequestDocumentIdentity[]
   availableRequestOptions: RequestDocumentIdentity[]
   saveBlockReason: string | null
+  isSaving?: boolean
+  saveError?: string | null
   rootCauseActions?: WorkflowRootCauseAction[]
   onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
   allFilteredSelectableRowsSelected: boolean
@@ -75,6 +78,8 @@ export function PstoResultDialog({
   filteredRequestOptions,
   availableRequestOptions,
   saveBlockReason,
+  isSaving = false,
+  saveError,
   rootCauseActions = [],
   onRunRootCauseAction,
   allFilteredSelectableRowsSelected,
@@ -201,6 +206,7 @@ export function PstoResultDialog({
 
       <DocumentWorkspaceTabs
         activeTab={workspaceTab}
+        specialists={true}
         ariaLabel="Разделы результата ПСТО"
         controls={<SystemDocumentSplitControl plan={systemDocumentCreationPlan} naming={draft.diagramNaming} onChange={diagramNaming => onDraftChange(current => ({ ...current, diagramNaming }))} />}
         documentsLabel="Диаграммы и имена"
@@ -209,7 +215,7 @@ export function PstoResultDialog({
         onChange={setWorkspaceTab}
       />
 
-      {workspaceTab === 'documents' ? (
+      {workspaceTab === 'specialists' && systemDocumentCreationPlan ? <DocumentSpecialistsPanel plan={systemDocumentCreationPlan} naming={draft.diagramNaming} onChange={(diagramNaming) => onDraftChange(current => ({ ...current, diagramNaming }))} disabled={isSaving} /> : workspaceTab === 'documents' ? (
         <SystemDocumentNamesPanel
           plan={systemDocumentCreationPlan}
           naming={draft.diagramNaming}
@@ -313,6 +319,8 @@ export function PstoResultDialog({
           onAction: () => runRootCauseAction(action),
         }))}
         isSaveDisabled={Boolean(saveBlockReason)}
+        isSaving={isSaving}
+        saveError={saveError}
         saveBlockReasonVariant="danger"
         blockReasonActionLabel={systemDocumentCreationPlan.error && workspaceTab !== 'documents' ? 'Открыть диаграммы и имена' : undefined}
         onBlockReasonAction={systemDocumentCreationPlan.error && workspaceTab !== 'documents' ? () => setWorkspaceTab('documents') : undefined}

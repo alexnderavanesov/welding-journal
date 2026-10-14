@@ -1,13 +1,12 @@
 import { expect, test } from '@playwright/test'
-import { withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { programApprovalKey } from '../../src/lib/program-control-approval'
 import { rpcName } from '../rpc'
 
 test.afterEach(() => cleanupLineProgramProjects(['E2E exception objects']))
 
 test('согласование переживает 30→50 и 100→50; исключение показывает новое имя и исчезает с объектом', async ({ page }) => {
-  const seeded = await withE2eDatabase(async db => {
+  const seeded = await withLineProgramFixture(async db => {
     const { rows: [line] } = await db.query("insert into line_programs (project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent) values ('E2E exception objects','APPROVED','APPROVED-LINE','II','A',30,10) returning id")
     const { rows: [joint] } = await db.query(`insert into weld_joints (line_program_id,project_title,subtitle_code,line,joint,weld_date,connection_type,category,group_name,weld_control_percent,pvk_control_percent,has_vik,stamp_1_k,has_rk,has_uzk,rk_result,rk_conclusion,uzk_result,uzk_conclusion)
       values ($1,'E2E exception objects','APPROVED','APPROVED-LINE','F934','2026-09-01','С17','II','A',30,10,'да','APPROVED-K','да','да','годен','KEEP-RK','годен','KEEP-UZK') returning id`, [line.id])
@@ -45,7 +44,7 @@ test('согласование переживает 30→50 и 100→50; иск�
   expect(calls.filter(name => name.startsWith('listDispatcherAcceptedWarnings'))).toHaveLength(1)
   await page.getByLabel('Поиск принятых исключений').fill('RENAMED-APPROVED')
   await expect(page.getByText('Найдено: 1', { exact: true })).toBeVisible()
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     expect((await db.query('select key from dispatcher_accepted_warnings where weld_joint_id=$1', [seeded.jointId])).rows).toEqual([{ key: seeded.key }])
     expect((await db.query('select rk_conclusion,uzk_conclusion from weld_joints where id=$1', [seeded.jointId])).rows).toEqual([{ rk_conclusion: 'KEEP-RK', uzk_conclusion: 'KEEP-UZK' }])
     // The lifecycle is enforced by object FKs, independent of the deletion entry point.

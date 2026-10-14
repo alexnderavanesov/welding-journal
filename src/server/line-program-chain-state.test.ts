@@ -3,6 +3,25 @@ import { syncProgramChainStates } from './line-program-chain-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 describe('stable program topology query budget', () => {
+  it.each([1, 1000])('persists immediate predecessors for %i mixed chains with batched queries', async count => {
+    const rows = Array.from({ length: count }, (_, group) => ['', 'W1', 'W1R1', 'W2R1']
+      .map((suffix, i) => ({ id: group * 4 + i + 1, joint: `S${group + 1}${suffix}`, line: 'L' }))).flat()
+    const results = [rows, [], []]
+    const select = vi.fn(() => {
+      const result = results.shift()
+      const query = { from: () => query, where: () => Object.assign(Promise.resolve(result), { orderBy: () => Promise.resolve(result) }) }
+      return query
+    })
+    const values = vi.fn((_batch: unknown[]) => ({ onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) }))
+    await syncProgramChainStates({ select, insert: () => ({ values }) } as never, rows.filter(row => row.id % 4 === 0), new Map())
+    expect(select).toHaveBeenCalledTimes(3)
+    expect(values).toHaveBeenCalledTimes(Math.ceil(rows.length / 1000))
+    expect(values.mock.calls.every(([batch]) => batch.length <= 1000)).toBe(true)
+    const states = values.mock.calls.flatMap(([batch]) => batch) as Array<{ weldJointId: number; sourceRowId: number; physicalRootId: number }>
+    const children = states.filter(state => state.weldJointId % 4 === 0)
+    expect(children).toHaveLength(count)
+    expect(children.every(state => state.sourceRowId === state.weldJointId - 1 && state.physicalRootId === state.weldJointId - 3)).toBe(true)
+  })
   it('captures physical before-state when the first structural touch deletes both legacy sides', async () => {
     const root = { id: 1, joint: 'S1', line: 'L', weldDate: '2026-09-01' }
     const sides = [2, 3].map((id, index) => ({ ...root, id, joint: `S1Y${index + 1}` }))

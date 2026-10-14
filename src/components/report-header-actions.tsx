@@ -1,5 +1,6 @@
 import type { WorkflowAvailability } from '@/components/workflow-action-menu-item'
 import { HeatTreatmentHeaderActions, LnkHeaderActions, WeldingJournalHeaderActions } from '@/components/report-header-action-groups'
+import { WorkflowActionScope } from '@/components/workflow-action-menu-item'
 import type { ActiveReport } from '@/lib/home-state'
 import { Button } from '@/components/ui/button'
 
@@ -49,6 +50,7 @@ export type ReportHeaderActionsProps = {
   onOpenPstoResultsReport: () => void
   onPstoWorkflowMenuOpenChange: (open: boolean) => void
   onCreateLnkRequest: () => void
+  createLnkRequestDisabled?: boolean
   onExtendLnkRequest: () => void
   onOpenLnkRequestRegistry: () => void
   lnkAvailability?: WorkflowAvailability
@@ -118,6 +120,7 @@ export function ReportHeaderActions({
   onOpenPstoResultsReport,
   onPstoWorkflowMenuOpenChange,
   onCreateLnkRequest,
+  createLnkRequestDisabled,
   onExtendLnkRequest,
   onOpenLnkRequestRegistry,
   lnkRequestPending,
@@ -141,6 +144,7 @@ export function ReportHeaderActions({
   onLnkWorkflowMenuOpenChange,
 }: ReportHeaderActionsProps) {
   return (
+    <WorkflowActionScope key={activeReport}>
     <div className="flex flex-wrap gap-2 lg:pt-0.5">
       {activeReport === 'weldingJournal' && onOpenLineProgram ? <Button variant="outline" onClick={onOpenLineProgram}>Программа линий</Button> : null}
       {activeReport === 'heatTreatment' ? (
@@ -175,6 +179,7 @@ export function ReportHeaderActions({
       {activeReport === 'lnk' ? (
         <LnkHeaderActions
           onCreateRequest={onCreateLnkRequest}
+          createRequestDisabled={createLnkRequestDisabled}
           onExtendRequest={onExtendLnkRequest}
           onOpenRequestRegistry={onOpenLnkRequestRegistry}
           requestPending={lnkRequestPending}
@@ -220,5 +225,6 @@ export function ReportHeaderActions({
         />
       ) : null}
     </div>
+    </WorkflowActionScope>
   )
 }

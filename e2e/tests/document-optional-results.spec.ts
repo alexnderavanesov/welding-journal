@@ -5,7 +5,7 @@ import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '../../src/lib/control-process-
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '../../src/lib/request-conclusion-settings'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '../../src/lib/save-check-settings'
 
-const project = 'E2E optional unnamed document results'
+const project = 'E2E required document requisites'
 const settings = {
   'control-processes': DEFAULT_CONTROL_PROCESS_SETTINGS,
   'request-conclusion': REQUEST_CONCLUSION_DEFAULT_SETTINGS,
@@ -35,7 +35,7 @@ test.afterEach(async ({ page }) => {
 })
 
 for (const stage of ['beforeHeatTreatment', 'psto'] as const) {
-  test(`UI saves two line groups with optional empty result names: ${stage}`, async ({ page }) => {
+  test(`UI requires names and dates for all groups despite stale optional settings: ${stage}`, async ({ page }) => {
     const isPre = stage === 'beforeHeatTreatment'
     await withE2eDatabase(async db => {
       await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,officiality,revision_actuality,has_vik,psto_required,psto_request,psto_request_date)
@@ -74,8 +74,19 @@ for (const stage of ['beforeHeatTreatment', 'psto'] as const) {
     const names = dialog.getByRole('textbox', { name: isPre ? /^Название заключения НК до ТО:/ : /^Название диаграммы ПСТО:/ })
     await expect(names).toHaveCount(2)
     for (const name of await names.all()) await expect(name).toHaveValue('')
-    await expect(dialog.getByRole('status').filter({ hasText: 'Будет создано: 0' })).toBeVisible()
+    await expect(dialog.getByRole('status').filter({ hasText: 'Будет создано: 2' })).toBeVisible()
     const save = dialog.getByRole('button', { name: isPre ? 'Сохранить результат до ТО' : 'Сохранить результат', exact: true })
+    await expect(save).toBeDisabled()
+    const date = dialog.getByLabel(isPre ? 'Дата контроля' : 'Дата ПСТО', { exact: true })
+    await date.fill('')
+    await expect(dialog).toContainText(/Укажите дату/)
+    await expect(dialog).toContainText('Укажите название для каждого')
+    await names.nth(0).fill('Итоговый документ-1')
+    await names.nth(0).blur()
+    await date.fill('2026-09-06')
+    await expect(save).toBeDisabled()
+    await names.nth(1).fill('Итоговый документ-2')
+    await names.nth(1).blur()
     await expect(save).toBeEnabled()
     await save.click()
     await expect(dialog).toBeHidden()
@@ -89,8 +100,8 @@ for (const stage of ['beforeHeatTreatment', 'psto'] as const) {
     expect(stored.rows).toHaveLength(2)
     for (const saved of stored.rows) {
       expect(saved).toMatchObject({ result: isPre ? 'годен' : 'проведено', date: '2026-09-06', request_date: isPre ? '2026-09-02' : '2026-09-03' })
-      expect(saved.name ?? '').toBe('')
+      expect(saved.name).toMatch(/^Итоговый документ-[12]$/)
     }
-    expect(stored.documents).toHaveLength(0)
+    expect(stored.documents).toHaveLength(2)
   })
 }

@@ -7,8 +7,15 @@ export const EDITABLE_NK_ASSIGNMENT_FIELDS = ['hasRk', 'hasUzk', 'hasPvk'] as co
 /** Exclusion suspends work, not history. This is independent of joint type and
  * does not restrict unrelated edits or the always-on system assignment of VIK. */
 export function isActiveOfficialWeld(row: Pick<WeldInput, 'officiality' | 'revisionActuality'>) {
-  return String(row.officiality ?? '').trim().toLocaleLowerCase('ru') !== 'неофициальный' &&
-    String(row.revisionActuality ?? '').trim().toLocaleLowerCase('ru') !== 'не актуален'
+  const officiality = row.officiality
+  if (officiality === 'неофициальный') return false
+  if (officiality !== 'действующий' && officiality !== '' && officiality != null &&
+    String(officiality ?? '').trim().toLocaleLowerCase('ru') === 'неофициальный') return false
+
+  const revisionActuality = row.revisionActuality
+  if (revisionActuality === 'не актуален') return false
+  return revisionActuality === 'актуальная' || revisionActuality === '' || revisionActuality == null ||
+    String(revisionActuality ?? '').trim().toLocaleLowerCase('ru') !== 'не актуален'
 }
 
 export function getExcludedControlAssignmentIssues(current: WeldInput, previous?: WeldInput) {

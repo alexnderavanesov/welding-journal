@@ -6,10 +6,11 @@ import type { WeldPageResult } from '@/server/weld-contracts'
 import {
   invalidateWeldPageQueries,
   WELD_JOINT_PAGES_QUERY_KEY,
+  WELD_REPORT_SUMMARY_QUERY_KEY,
 } from '@/lib/weld-page-refresh'
 
 export const WELD_JOINTS_QUERY_KEY = ['weld-joints'] as const
-export { invalidateWeldPageQueries, WELD_JOINT_PAGES_QUERY_KEY }
+export { invalidateWeldPageQueries, WELD_JOINT_PAGES_QUERY_KEY, WELD_REPORT_SUMMARY_QUERY_KEY }
 export const WELD_REPORT_CONTEXT_QUERY_KEY = ['weld-report-context'] as const
 export const LNK_WORKFLOW_QUERY_KEY = [...WELD_JOINTS_QUERY_KEY, 'lnk-workflow'] as const
 export const LNK_WORKFLOW_SUMMARY_QUERY_KEY = [...LNK_WORKFLOW_QUERY_KEY, 'summary'] as const
@@ -42,8 +43,8 @@ type WeldCacheChange = {
 type WeldInvalidationOptions = {
   refetchLnkWorkflow?: boolean
   refetchPstoWorkflow?: boolean
-  /** The line workspace replaces its changed summary and refreshes only active details. */
-  skipLineProgramRefetch?: boolean
+  /** The line workspace owns section/page reconciliation and scoped detail refresh. */
+  lineProgramListsHandled?: boolean
 }
 
 /**
@@ -75,7 +76,12 @@ export function scheduleWeldDataRefresh(
   void queryClient.invalidateQueries({ queryKey: WELD_DATA_USAGE_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: WELD_FINAL_STATUS_CONTEXT_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: WELD_FORM_SUGGESTIONS_QUERY_KEY })
-  void queryClient.invalidateQueries({ queryKey: ['line-program'], refetchType: options.skipLineProgramRefetch ? 'none' : 'active' })
+  void queryClient.invalidateQueries({ queryKey: ['line-program'], ...(options.lineProgramListsHandled ? {
+    // Even a no-refetch invalidation can enable an early-page query. Leave
+    // these snapshots to the workspace's cancel/patch helper atomically.
+    predicate: (query: { queryKey: readonly unknown[] }) => query.queryKey[1] !== 'section' && query.queryKey[1] !== 'page',
+    refetchType: 'none' as const,
+  } : { refetchType: 'active' as const }) })
   void queryClient.invalidateQueries({ queryKey: DUPLICATE_CONTROL_CANDIDATES_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: DUPLICATE_CONTROL_REGISTRY_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: GENERATED_DOCUMENT_HISTORY_QUERY_KEY })

@@ -1,7 +1,7 @@
 import { PROGRAM_DEMAND_LABELS } from '@/lib/line-program-labels'
 import type { ProgramReportNavigation } from './line-program-context-menu'
 import { useEffect, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Calculator, Check, ChevronDown, ChevronRight, ListFilter, Plus, Search, Settings2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,7 +17,7 @@ import type { LineProgramRecord, LineProgramSaveRequest, LineProgramTab } from '
 import { isLineProgramFinished, type LineProgramOverview } from '@/lib/line-program-overview'
 import { isProgramRowClick, type ProgramSelection } from '@/lib/line-program-workspace'
 import type { PercentageLineNavigationRequest, PercentageLineNavigationOutcome } from '@/lib/percentage-line-navigation'
-import { findLineProgram, getLineProgramSection } from '@/server/line-program'
+import { findLineProgram, getLineProgramPage, getLineProgramSection } from '@/server/line-program'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import { LineProgramReports, type LineProgramReportsHandle } from './line-program-reports'
 import { LineProgramSectionCalculationDialog } from './line-program-section-calculation-dialog'
@@ -60,15 +60,40 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
   const [sectionMetric, setSectionMetric] = useState<ProgramSectionMetric | null>(null)
   const reports = useRef<LineProgramReportsHandle>(null)
   const scopeMenu = useProgramScopeMenu(request => reports.current?.open(request))
-  const query = useQuery({ queryKey: ['line-program', 'section'], queryFn: () => getLineProgramSection({ data: {} }), ...lineProgramQueryPolicy })
-  // Search and tabs use compact line summaries, not repeated 200k-joint calculations.
-  const needle = debouncedSearch.trim().toLocaleLowerCase('ru')
-  const lines = (query.data?.rows ?? []).filter(line => (tab === 'lines' || !line.configurationIssue && (tab === 'full' ? line.weldControlPercent === 100 : line.weldControlPercent != null && line.weldControlPercent < 100)) &&
-    (!needle || [line.projectTitle, line.subtitleCode, line.line, ...(line.searchStamps ?? [])].some(value => value.toLocaleLowerCase('ru').includes(needle))))
+  const client = useQueryClient()
+  const needle = debouncedSearch.trim().slice(0, 200).toLocaleLowerCase('ru')
+  const searchReady = search.trim().slice(0, 200).toLocaleLowerCase('ru') === needle
+  const sectionKey = tab === 'lines' && !needle ? ['line-program', 'section'] : ['line-program', 'section', tab, needle]
+  const pageKey = ['line-program', 'page', tab, needle, page]
+  const cachedSection = client.getQueryState<Awaited<ReturnType<typeof getLineProgramSection>>>(sectionKey)
+  const cachedPage = client.getQueryState<Awaited<ReturnType<typeof getLineProgramPage>>>(pageKey)
+  const cachedPages = client.getQueriesData<Awaited<ReturnType<typeof getLineProgramPage>>>({ queryKey: ['line-program', 'page', tab, needle] })
+  const latestPageRevision = Math.max(0, ...cachedPages.map(([, data]) => data?.revision ?? 0))
+  const sectionBehindPage = !!cachedSection?.data && (cachedSection.data.revision ?? 0) < latestPageRevision
+  const hasCachedSection = !!cachedSection?.data && !cachedSection.isInvalidated && !sectionBehindPage
+  const pageQuery = useQuery({ queryKey: pageKey,
+    queryFn: () => getLineProgramPage({ data: { tab, search: needle, page } }),
+    enabled: searchReady && !hasCachedSection && cachedPage?.status !== 'error', ...lineProgramQueryPolicy, retry: false, retryOnMount: false })
+  const query = useQuery({ queryKey: sectionKey, queryFn: () => getLineProgramSection({ data: { tab, search: needle } }),
+    enabled: searchReady && cachedSection?.status !== 'error' && (hasCachedSection || pageQuery.isSuccess && !pageQuery.isFetching), ...lineProgramQueryPolicy, retry: false, retryOnMount: false })
+  // Never let a late response or debounce placeholder become a different search.
+  // The full snapshot alone feeds derived filters, section totals and exports.
+  const summaryReady = searchReady && hasCachedSection && !query.error
+  const pageBehind = !!pageQuery.data && (pageQuery.data.revision ?? 0) < latestPageRevision
+  const pageReady = searchReady && !!pageQuery.data && !pageBehind && !pageQuery.error
+  const lines = summaryReady ? query.data!.rows : []
   const filtered = lines.filter(line => matches(line, filter))
-  const actualPage = Math.min(page, Math.max(0, Math.ceil(filtered.length / 30) - 1))
-  const paged = filtered.slice(actualPage * 30, (actualPage + 1) * 30)
-  const outside = [...expanded.values()].filter(open => !paged.some(line => line.id === open.id)).map(open => lines.find(line => line.id === open.id) ?? open)
+  const actualPage = summaryReady ? Math.min(page, Math.max(0, Math.ceil(filtered.length / 30) - 1)) : pageQuery.data?.page ?? 0
+  const paged = summaryReady ? filtered.slice(actualPage * 30, (actualPage + 1) * 30) : pageReady && filter === 'all' ? pageQuery.data!.rows : []
+  useEffect(() => {
+    // A newer page is evidence of a concurrent edit. Refresh only this active
+    // summary; a failed refresh remains an explicit retry, never a polling loop.
+    if (searchReady && sectionBehindPage && !query.isFetching && !query.error) void query.refetch()
+  }, [searchReady, sectionBehindPage, query.isFetching, query.error, query.refetch])
+  useEffect(() => {
+    if (searchReady && !summaryReady && pageBehind && !pageQuery.isFetching && !pageQuery.error) void pageQuery.refetch()
+  }, [searchReady, summaryReady, pageBehind, pageQuery.isFetching, pageQuery.error, pageQuery.refetch])
+  const outside = searchReady ? [...expanded.values()].filter(open => !paged.some(line => line.id === open.id)).map(open => lines.find(line => line.id === open.id) ?? open) : []
   const visible: Program[] = [...outside, ...paged]
   const choose = (line: Program, selection?: ProgramSelection) => {
     setCommand(null)
@@ -103,28 +128,31 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
   const totals = summarizeProgramSection(lines)
   const sectionContext = `${tab === 'lines' ? 'Все линии' : tab === 'full' ? '100%-ные линии' : 'Процентные линии'}${debouncedSearch.trim() ? ` · поиск: ${debouncedSearch.trim()}` : ''}`
   const reportContext = `${sectionContext} · ${filterNames[filter]}`
-  const reportDisabled = !query.data || query.isFetching || search !== debouncedSearch
+  const reportDisabled = !summaryReady || query.isFetching
+  const filteredCount = summaryReady ? filtered.length : '…'
+  const filteredCountLabel = summaryReady ? `Линий: ${filtered.length}` : 'Идёт подсчёт линий'
+  const filteredDescription = `${filterNames[filter]} · ${summaryReady ? `линий: ${filtered.length}` : 'идёт подсчёт'}`
   const reportIds = filtered.map(line => line.id)
   const selectFilter = (next: Filter) => { setFilter(next); setPage(0); collapseAll() }
   const openSectionMenu = (event: ProgramScopeMenuEvent) => scopeMenu.openSection(event, {
-    description: sectionContext, onSelect: selectFilter, onCalculation: query.data ? setSectionMetric : undefined,
+    description: sectionContext, onSelect: selectFilter, onCalculation: summaryReady ? setSectionMetric : undefined,
     report: reportDisabled ? undefined : { ids: reportIds, context: reportContext },
   })
   return <div className="min-w-0 space-y-3 pb-4 lg:pb-6" data-testid="line-program" onContextMenu={openSectionMenu} onKeyDown={openSectionMenu}>
-    <LineProgramReports ref={reports} ids={reportIds} context={reportContext} disabled={reportDisabled}>{query.data ? <Button variant="ghost" size="sm" className="h-10 gap-2" aria-label="Расчёт итогов раздела" aria-haspopup="dialog" onClick={() => setSectionMetric('common')}><Calculator className="h-4 w-4" />Расчёт итогов</Button> : null}</LineProgramReports>
+    <LineProgramReports ref={reports} ids={reportIds} context={reportContext} disabled={reportDisabled}>{summaryReady ? <Button variant="ghost" size="sm" className="h-10 gap-2" aria-label="Расчёт итогов раздела" aria-haspopup="dialog" disabled={query.isFetching} onClick={() => setSectionMetric('common')}><Calculator className="h-4 w-4" />Расчёт итогов</Button> : null}</LineProgramReports>
     <div ref={toolbarRef} data-testid="line-program-toolbar" className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white py-1.5"><div className="flex max-w-full gap-1 overflow-x-auto rounded-md border border-slate-200 bg-white p-1">{([['lines', 'Все линии'], ['full', '100%-ные линии'], ['percentage', 'Процентные линии']] as const).map(([key, label]) => <button type="button" key={key} aria-pressed={tab === key} className={`whitespace-nowrap rounded px-3 py-1.5 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 ${tab === key ? 'bg-sky-50 text-sky-800' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`} onClick={() => { setTab(key); setPage(0); collapseAll(); setFilter('all') }}>{label}</button>)}</div>
       <div className={`flex min-w-0 flex-1 items-center justify-end gap-2 ${filter === 'all' ? 'basis-[28rem]' : 'basis-[44rem]'}`}>
         {tab === 'lines' ? <Button className="shrink-0 gap-2" onClick={() => setEditing({ projectTitle: '', subtitleCode: '', line: '', category: null, groupName: null, weldControlPercent: null, pvkControlPercent: null })}><Plus className="h-4 w-4" />Новая линия</Button> : null}
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          {filter !== 'all' ? <div data-testid="line-program-filter" role="group" aria-label={`${filterNames[filter]} · линий: ${filtered.length}`} title={`${filterNames[filter]} · линий: ${filtered.length}`} className="flex h-10 min-w-0 max-w-[55%] items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 pl-2.5 pr-1 text-xs text-sky-800">
-            <ListFilter aria-hidden="true" className="h-3.5 w-3.5 shrink-0" /><span className="truncate font-medium">{filterNames[filter]}</span><span className="shrink-0 rounded bg-white/80 px-1.5 py-0.5 font-semibold tabular-nums" aria-label={`Линий: ${filtered.length}`}>{filtered.length}</span>
+          {filter !== 'all' ? <div data-testid="line-program-filter" role="group" aria-label={filteredDescription} title={filteredDescription} className="flex h-10 min-w-0 max-w-[55%] items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 pl-2.5 pr-1 text-xs text-sky-800">
+            <ListFilter aria-hidden="true" className="h-3.5 w-3.5 shrink-0" /><span className="truncate font-medium">{filterNames[filter]}</span><span className="shrink-0 rounded bg-white/80 px-1.5 py-0.5 font-semibold tabular-nums" aria-label={filteredCountLabel}>{filteredCount}</span>
             <button type="button" aria-label="Сбросить фильтр" title="Сбросить фильтр" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sky-600 hover:bg-sky-100 hover:text-sky-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500" onClick={() => selectFilter('all')}><X aria-hidden="true" className="h-3.5 w-3.5" /></button>
           </div> : null}
           <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input className="h-10 bg-white pl-9 pr-9" aria-label="Поиск программы линий" placeholder="Линия, проект, шифр или клеймо" value={search} onChange={event => { setSearch(event.target.value); setPage(0); collapseAll() }} />{search ? <button type="button" aria-label="Очистить поиск линий" className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded text-slate-600 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500" onClick={() => { setSearch(''); setPage(0) }}><X className="h-4 w-4" /></button> : null}</div>
         </div>
       </div>
     </div>
-    {query.data ? <div className="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-[minmax(15rem,1fr)_minmax(19rem,1.1fr)_minmax(24rem,1.1fr)]" aria-label="Итоги раздела" title={`Итоги всех линий раздела${debouncedSearch ? ' по поиску' : ''}, не только текущей страницы.`}>
+    {summaryReady ? <div className="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-[minmax(15rem,1fr)_minmax(19rem,1.1fr)_minmax(24rem,1.1fr)]" aria-label="Итоги раздела" title={`Итоги всех линий раздела${debouncedSearch ? ' по поиску' : ''}, не только текущей страницы.`}>
       <div data-testid="program-count-metrics" className="grid min-w-0 grid-cols-2 min-[600px]:grid-cols-3 gap-2"><Metric metric="lines" label="Линий" value={lines.length} onClick={() => selectFilter('all')} /><Metric metric="joints" label="Учитываемых соединений" value={totals.joints} onClick={() => selectFilter('all')} /><Metric metric="stamps" label="Клейм в линиях" value={totals.stamps} onClick={() => selectFilter('all')} /></div>
       <ProgramQuotaSummary fluid common={totals.common} pvk={totals.pvk} onCommon={() => selectFilter('common')} onPvk={() => selectFilter('pvk')} />
       <div data-testid="program-action-metrics" className={`grid min-w-0 grid-cols-2 gap-2 md:col-span-2 2xl:col-span-1 ${totals.issues ? 'sm:grid-cols-3' : ''}`}>
@@ -132,10 +160,11 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
         {totals.issues ? <button type="button" data-section-metric="configuration" className="flex min-h-20 min-w-0 flex-col justify-between rounded-lg border border-amber-200 bg-amber-50/40 px-3 py-2 text-left text-sm font-medium leading-[18px] text-amber-800 hover:bg-amber-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500" onClick={() => selectFilter('configuration')}>Нужна настройка: {totals.issues}<span className="text-sm font-normal leading-[18px] text-amber-700">СП-01</span></button> : null}
       </div>
     </div> : null}
-    {sectionMetric && query.data ? <LineProgramSectionCalculationDialog lines={lines} totals={totals} context={sectionContext} initialMetric={sectionMetric} onClose={() => setSectionMetric(null)} onOpenLine={(line, metric) => { setSectionMetric(null); requestCommand(line, 'calculation', programSectionMetricSelection(metric), true) }} /> : null}
-    {query.error ? <ProgramError error={query.error} /> : null}{query.isPending ? <p role="status" className="rounded-xl border bg-white p-8 text-center text-sm text-slate-500">Загружаем линии и итоги…</p> : null}
+    {sectionMetric && summaryReady ? <LineProgramSectionCalculationDialog lines={lines} totals={totals} context={sectionContext} initialMetric={sectionMetric} onClose={() => setSectionMetric(null)} onOpenLine={(line, metric) => { setSectionMetric(null); requestCommand(line, 'calculation', programSectionMetricSelection(metric), true) }} /> : null}
+    {searchReady && !summaryReady && (query.error || pageQuery.error) ? <div className="flex items-center gap-3 rounded-lg border border-rose-100 bg-rose-50/40 px-3 py-2"><ProgramError error={(query.error || pageQuery.error)!} /><Button variant="ghost" size="sm" onClick={() => { if (pageQuery.error) void pageQuery.refetch(); else void query.refetch() }}>Повторить загрузку</Button></div> : null}
+    {(!summaryReady || query.isFetching) && !query.error && !pageQuery.error ? <p role="status" className="rounded-lg border border-sky-100 bg-sky-50/40 px-3 py-2 text-sm text-slate-500">{pageReady && filter === 'all' ? 'Линии доступны. Рассчитываем итоги всего отбора…' : pageReady ? 'Рассчитываем все подходящие линии для выбранного фильтра…' : 'Загружаем найденные линии…'}</p> : null}
     {editing ? <LineProgramEditor key={editing.id ?? 'new'} value={editing} onClose={() => setEditing(null)} onSaved={line => { setEditing(null); setTab(current => current === 'lines' ? current : programTab(line)); setSearch(line.line); setPage(0); setFilter('all'); choose(line) }} /> : null}
-    {outside.length > 0 && query.data ? <p className="text-xs text-sky-700">Открытые линии вне текущей страницы показаны первыми.</p> : null}
+    {outside.length > 0 ? <p className="text-xs text-sky-700">Открытые линии вне текущей страницы показаны первыми.</p> : null}
     <div className="space-y-3">{visible.map(line => <LineCard key={line.id} line={line} expanded={expanded.has(line.id)} onToggle={() => toggle(line)} onEdit={tab === 'lines' ? () => setEditing(line) : undefined} onSelect={selection => choose(line, selection)} onOpenMenu={event => scopeMenu.open(event, {
       line, scope: { slice: 'all' }, expanded: expanded.has(line.id), onToggle: () => toggle(line),
       onAssignments: () => requestCommand(line, 'assignments'), onCalculation: (selection, explain) => requestCommand(line, 'calculation', selection, explain),
@@ -145,8 +174,8 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
         command={command?.lineId === line.id ? command.value : undefined} onCommandHandled={handled => setCommand(current => current?.value === handled ? null : current)} onOpenScopeMenu={scopeMenu.open} /></div> : null}
     </LineCard>)}</div>
     {scopeMenu.menu}
-    {query.data && !visible.length ? <p className="rounded-xl border border-dashed p-10 text-center text-sm text-slate-500">Линии не найдены. Попробуйте изменить поиск или фильтр.</p> : null}
-    {query.data ? <ProgramPagination page={actualPage} pageSize={30} total={filtered.length} noun="линий" onChange={next => { setPage(next); collapseAll() }} /> : null}
+    {(summaryReady || pageReady && filter === 'all') && !visible.length ? <p className="rounded-xl border border-dashed p-10 text-center text-sm text-slate-500">Линии не найдены. Попробуйте изменить поиск или фильтр.</p> : null}
+    {summaryReady || pageReady && filter === 'all' ? <ProgramPagination page={actualPage} pageSize={30} total={summaryReady ? filtered.length : pageQuery.data!.total} noun="линий" onChange={next => { setPage(next); collapseAll() }} /> : null}
   </div>
 }
 

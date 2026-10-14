@@ -10,8 +10,9 @@ import { useConfirmAction } from '@/lib/confirm-action-context'
 import { DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY } from '@/lib/dispatcher-accepted-warning-query'
 import { useSecurityGuard } from '@/lib/security-context'
 import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
+import { updateLineProgramSectionCaches } from '@/lib/line-program-section-cache'
 import { shouldDeferModalEscape } from '@/lib/use-report-modal-escape-key'
-import { saveLineProgram, type getLineProgramSection } from '@/server/line-program'
+import { saveLineProgram } from '@/server/line-program'
 
 export function LineProgramEditor({ value, onClose, onSaved }: {
   value: LineProgramSaveRequest; onClose: () => void; onSaved: (line: LineProgramRecord) => void
@@ -36,18 +37,17 @@ export function LineProgramEditor({ value, onClose, onSaved }: {
   },
     onSuccess: async (line) => {
       if (!line) return
-      // The generic invalidator intentionally does not await refetches. Keep
-      // this editor pending until its own active views finish refreshing, so
-      // immediately reopening it cannot capture the pre-save version.
-      await queryClient.cancelQueries({ queryKey: ['line-program', 'section'] })
-      queryClient.setQueryData<Awaited<ReturnType<typeof getLineProgramSection>>>(['line-program', 'section'], previous => previous
-        ? { ...previous, rows: previous.rows.map(row => row.id === line.id ? { ...row, ...line } : row) }
-        : previous)
-      scheduleWeldDataRefresh(queryClient, undefined, { skipLineProgramRefetch: true })
-      await queryClient.invalidateQueries({
-        queryKey: ['line-program'], refetchType: 'active',
-        predicate: query => query.queryKey[1] === 'section' || query.queryKey[2] === line.id,
-      })
+      // Patch the returned version before closing and await only this line's
+      // active details. Full selections refresh in the background, so an
+      // unfinished section calculation cannot keep a successful save pending.
+      scheduleWeldDataRefresh(queryClient, undefined, { lineProgramListsHandled: true })
+      await Promise.all([
+        updateLineProgramSectionCaches(queryClient, line, { membershipChanged: true }),
+        queryClient.invalidateQueries({
+          queryKey: ['line-program'], refetchType: 'active',
+          predicate: query => query.queryKey[2] === line.id,
+        }),
+      ])
       if (value.id && hasLineProgramIdentityChanges(value, line)) {
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ['psto-line-assignments'], refetchType: 'none' }),

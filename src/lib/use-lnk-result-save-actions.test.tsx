@@ -88,6 +88,37 @@ describe('useLnkResultSaveActions', () => {
   ] as WeldRow[]
   const pvkDraft = () => ({ ...createDraft(), methodKey: 'pvkRequest' as const, rowIds: new Set([1, 2, 3, 4]) })
 
+  it('allows saving again after cancelling layered-control confirmation', async () => {
+    confirmAction.mockResolvedValueOnce(false)
+    const mutate = vi.fn<LnkResultMutate>()
+    const { result } = renderHook(() => useHarness(pvkDraft(), mixedRows, { mutate }))
+    act(() => result.current.setLnkResultLayeredControl(1, true))
+    await act(async () => result.current.handleAddLnkResult())
+    expect(mutate).not.toHaveBeenCalled()
+    await act(async () => result.current.handleAddLnkResult())
+    expect(confirmAction).toHaveBeenCalledTimes(2)
+    expect(mutate).toHaveBeenCalledOnce()
+  })
+
+  it('blocks repeated submission during confirmation and mutation, and permits retry after settling', async () => {
+    let confirm!: (value: boolean) => void
+    confirmAction.mockImplementationOnce(() => new Promise<boolean>(resolve => { confirm = resolve }))
+    const mutate = vi.fn<LnkResultMutate>()
+    const { result } = renderHook(() => useHarness(pvkDraft(), mixedRows, { mutate }))
+    act(() => result.current.setLnkResultLayeredControl(1, true))
+    let saving!: Promise<void>
+    act(() => { saving = result.current.handleAddLnkResult() })
+    await act(async () => result.current.handleAddLnkResult())
+    expect(confirmAction).toHaveBeenCalledOnce()
+    expect(mutate).not.toHaveBeenCalled()
+    await act(async () => { confirm(true); await saving })
+    await act(async () => result.current.handleAddLnkResult())
+    expect(mutate).toHaveBeenCalledOnce()
+    act(() => mutate.mock.calls[0]![1]!.onSettled())
+    await act(async () => result.current.handleAddLnkResult())
+    expect(mutate).toHaveBeenCalledTimes(2)
+  })
+
   it('assigns only the individually checked U-joint in a mixed save and never unsets stored assignments', async () => {
     const mutate = vi.fn<LnkResultMutate>()
     const { result } = renderHook(() => useHarness(pvkDraft(), mixedRows, { mutate }))
@@ -101,7 +132,7 @@ describe('useLnkResultSaveActions', () => {
     await act(async () => result.current.handleAddLnkResult())
     expect(confirmAction).toHaveBeenCalledOnce()
     expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({ itemName: 'Новых назначений: 1' }))
-    expect(mutate).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ records: mixedRows, layeredControlRowIds: [1] }))
+    expect(mutate).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ records: mixedRows, layeredControlRowIds: [1] }), expect.objectContaining({ onSettled: expect.any(Function) }))
     expect(mutate.mock.calls[0]![0].resultById).toEqual({ 1: 'годен', 2: 'ремонт', 3: 'годен', 4: 'годен' })
     expect(mutate.mock.calls[0]![0].records[3]?.layeredControlAssigned).toBe(true)
   })
@@ -113,7 +144,7 @@ describe('useLnkResultSaveActions', () => {
     act(() => result.current.setLnkResultLayeredControl(1, false))
     await act(async () => result.current.handleAddLnkResult())
     expect(confirmAction).not.toHaveBeenCalled()
-    expect(mutate).toHaveBeenCalledWith(expect.objectContaining({ layeredControlRowIds: [] }))
+    expect(mutate).toHaveBeenCalledWith(expect.objectContaining({ layeredControlRowIds: [] }), expect.objectContaining({ onSettled: expect.any(Function) }))
   })
 
   it('keeps choices on cancellation and sends no mutation', async () => {

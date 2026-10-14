@@ -101,7 +101,7 @@ export async function createCurrentGeneratedDocumentBlob({
   rows: WeldRow[]
   welderStamps: WelderStampRecord[]
   template?: StoredDocumentTemplate | null
-  documentRecord?: Pick<StoredGeneratedDocument, 'title' | 'documentNumber' | 'periodFrom'> | null
+  documentRecord?: Pick<StoredGeneratedDocument, 'title' | 'documentNumber' | 'periodFrom' | 'specialists'> | null
 }) {
   const currentTemplate = template === undefined ? await loadDocumentTemplate(type) : template
   if (isLayeredControlDocumentType(type) && !currentTemplate) {
@@ -113,7 +113,7 @@ export async function createCurrentGeneratedDocumentBlob({
   return currentTemplate?.fileType === 'xlsx' || currentTemplate?.fileType === 'xls'
     ? createWeldingJournalBlobFromTemplate(currentTemplate, layeredTemplateData?.rows ?? rows, {
         welderStamps,
-        ...(layeredTemplateData ? { systemDocument: layeredTemplateData.context } : {}),
+        ...(layeredTemplateData ? { systemDocument: { ...layeredTemplateData.context, specialists: documentRecord?.specialists } } : {}),
       })
     : createBaseWeldingJournalDocumentBlob(rows, type)
 }

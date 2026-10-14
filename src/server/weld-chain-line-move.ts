@@ -16,6 +16,7 @@ import { getDispatcherDirtyScopes, markDispatcherTaskIndexDirty } from '@/server
 import { assertSecurityScope } from '@/server/security-functions'
 import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
 import { type WeldPayload } from '@/server/weld-contracts'
+import { captureTransferredSpecialists, restoreTransferredSpecialists } from './document-specialist-transfers'
 import {
   loadPreviousWeldRows,
   loadServerWeldValidationContext,
@@ -38,7 +39,9 @@ import {
   preparePstoLineMoveRecordInTransaction,
   buildWeldLineIdentityWhere,
   removeTransferredPreControlsInTransaction,
+  persistTransferredPrimaryControls,
 } from '@/server/weld-line-move-stage'
+import { syncPreHeatTreatmentDocumentsInTransaction } from './pre-heat-treatment-system-documents'
 import { normalizeSubmittedWeldLineIdentity } from '@/lib/psto-line-assignment'
 
 export async function moveWeldJointChain({ data }: { data: WeldPayload }) {
@@ -215,8 +218,14 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
     const updatedRows = await updateWeldJointsInBatches(tx, records, previousRows, {
       preserveRecordedControlHistoryRowIds: allowedLineMoveRowIds,
     })
+    const transferRowIds = records.filter(record => decisions.get(Number(record.id)) !== 'keepPrimary' && decisions.has(Number(record.id))).map(record => Number(record.id))
+    const toPre = [...decisions.values()].includes('movePrimaryToPreHeatTreatment')
+    const transferredSpecialists = await captureTransferredSpecialists(tx, transferRowIds, toPre ? 'beforeHeatTreatment' : 'primary', data.weldChainLineMovePlan!.decisions.find(decision => transferRowIds.includes(decision.rowId))?.specialistTransferConfirmation)
+    const savedControls = toPre ? await persistTransferredPrimaryControls(tx, records) : []
     await removeTransferredPreControlsInTransaction(tx, transferredPreControlIds)
     await syncSystemDocumentsForWeldChangesInTransaction(tx, updatedRows, previousRows)
+    if (savedControls.length) await syncPreHeatTreatmentDocumentsInTransaction(tx, updatedRows, savedControls)
+    await restoreTransferredSpecialists(tx, transferredSpecialists)
     await refreshEarlyCoilDecisionContextsInTransaction(
       tx,
       updatedRows,
@@ -260,6 +269,7 @@ function normalizeChainLineMoveDecisions(
   const allowedDispositions = new Set<PstoWeldLineMoveDisposition>([
     'keepPrimary',
     'movePreHeatTreatmentToPrimary',
+    'movePrimaryToPreHeatTreatment',
   ])
   const result = new Map<number, PstoWeldLineMoveDisposition>()
   for (const decision of decisions) {

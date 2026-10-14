@@ -25,7 +25,9 @@ type UseWeldTableModelOptions = {
   columnFilters: Record<string, string>
   manualFiltering?: boolean
   manualPagination?: {
-    totalCount: number
+    totalCount: number | undefined
+    summaryStatus?: 'pending' | 'ready' | 'error'
+    rowsLoading?: boolean
     firstItemNumber: number
     lastItemNumber: number
     pageSize: number

@@ -10,7 +10,7 @@ export const previewDocumentOperation = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => (await import('./document-operation-service')).previewOperation(data))
 
 export const applyDocumentOperation = createServerFn({ method: 'POST' })
-  .validator((data: DocumentOperationRequest & { fingerprint: string; previewHash: string; operationId: string }) => data)
+  .validator((data: DocumentOperationRequest & { fingerprint: string; previewHash: string; operationId: string; acceptSpecialistClearing?: boolean }) => data)
   .handler(async ({ data }) => (await import('./document-operation-service')).applyOperation(data))
 
 export const getDocumentOperationResult = createServerFn({ method: 'POST' })

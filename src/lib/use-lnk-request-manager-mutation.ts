@@ -29,13 +29,16 @@ export function useLnkRequestManagerMutation({
       requestDate,
       nextRequestName,
       action,
+      expectedVersions,
     }: {
       requestName: string
       requestDate: string
       nextRequestName?: string
       action: 'rename' | 'delete'
+      expectedVersions?: Array<{ id: number; version: string }>
     }) => {
       const currentName = requestName.trim()
+      if (action === 'delete' && !expectedVersions?.length) throw new Error('Состав заявки недоступен. Обновите отчет и подтвердите удаление заново.')
       const renamedName = nextRequestName?.trim() ?? ''
       if (!currentName) throw new Error('Выберите заявку ЛНК')
       if (action === 'rename') {
@@ -78,7 +81,7 @@ export function useLnkRequestManagerMutation({
           requestDate,
           nextRequestName: renamedName,
           action,
-          expectedVersions: requestRows.map((row) => ({
+          expectedVersions: expectedVersions ?? requestRows.map((row) => ({
             id: row.id,
             version: String(row.rowVersion ?? ''),
           })),

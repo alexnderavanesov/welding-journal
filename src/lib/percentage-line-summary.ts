@@ -4,10 +4,9 @@ import { calculateFinalStatus, normalizeFinalStatus } from '@/lib/weld-status'
 import { encodeIdentityKey } from '@/lib/identity-key'
 import { getLineProgramIdentityKey } from '@/lib/line-program'
 import {
-  calculateLineProgram, isLineProgramCalculationRow, isLineProgramControlRow, parseLineProgramPercent,
+  calculateLineProgramDetails, parseLineProgramPercent,
   type LineProgramDemand, type LineProgramStampCalculation,
 } from '@/lib/line-program-calculation'
-import { buildLineProgramTopology } from './line-program-topology'
 
 
 export type PercentageLineStampSummary = {
@@ -112,14 +111,13 @@ export function buildPercentageLineSummaries(
     const percent = [...percents][0]!
     const pvkPercent = [...pvkPercents][0]!
     if (percent === 100 ? pvkPercent < 1 : pvkPercent > percent) return []
-    const calculationRows = buildLineProgramTopology(allRows, percent === 100, systemIndexSettings).physicalRows.filter(percent === 100 ? isLineProgramControlRow : isLineProgramCalculationRow)
     const sample = allRows[0]
     const group = {
       lineKey, projectTitle: String(sample.projectTitle ?? '').trim(),
       subtitleCode: String(sample.subtitleCode ?? '').trim(), line: String(sample.line ?? '').trim(), percent,
     }
     const rowById = new Map(allRows.map((row) => [row.id, row]))
-    const calculations = calculateLineProgram(allRows, percent, pvkPercent, systemIndexSettings, approved)
+    const { calculations, calculationRows } = calculateLineProgramDetails(allRows, percent, pvkPercent, systemIndexSettings, approved)
     if (!calculationRows.length && !calculations.length) return []
     const stamps = calculations.map((stamp) => toSummary(group, stamp, rowById)).sort((a, b) =>
       b.officialJointCount - a.officialJointCount || b.excessControls - a.excessControls || a.stamp.localeCompare(b.stamp, 'ru', { numeric: true }))

@@ -94,6 +94,18 @@ afterEach(() => {
 })
 
 describe('document template builder cell clipboard', () => {
+  it.each(['lnkConclusionVik', 'tvmtConclusion', 'pstoConclusion', 'layeredVikEdges', 'weldingJournal'] as const)('shows only the specialist fields appropriate to %s', async id => {
+    render(<DocumentTemplateBuilder template={{ ...createConfiguredTemplate(), id }} onClose={vi.fn()} onSave={vi.fn()} />)
+    await screen.findByLabelText('Ячейка A1')
+    const groups = document.querySelectorAll('optgroup[label="Специалисты документа"]')
+    if (id === 'weldingJournal') { expect(groups).toHaveLength(0); return }
+    expect(groups.length).toBeGreaterThan(0)
+    for (const group of groups) {
+      expect(group.children).toHaveLength(4)
+      expect(group.textContent).toContain(id === 'pstoConclusion' ? 'Оператор-термист — ФИО' : 'Провёл контроль — ФИО')
+      expect(group.textContent).not.toContain(id === 'pstoConclusion' ? 'Провёл контроль' : 'Оператор-термист')
+    }
+  })
   it('copies with the context menu and pastes into another template', async () => {
     const sourceView = render(
       <DocumentTemplateBuilder

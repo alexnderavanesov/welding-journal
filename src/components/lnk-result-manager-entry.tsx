@@ -25,9 +25,8 @@ export type LnkResultChangeHintState = {
 type LnkResultManagerEntryProps = {
   entry: LnkResultManagerEntryData
   conclusionDrafts: Record<string, string>
-  pendingResultChanges: Record<string, string>
+  pendingResultChanges: Record<string, string | null>
   changeHint: LnkResultChangeHintState
-  isResultCorrectionPending: boolean
   isResultReplacementPending: boolean
   isConclusionCorrectionPending: boolean
   onConclusionDraftChange: (changeKey: string, value: string) => void
@@ -41,7 +40,6 @@ export function LnkResultManagerEntry({
   conclusionDrafts,
   pendingResultChanges,
   changeHint,
-  isResultCorrectionPending,
   isResultReplacementPending,
   isConclusionCorrectionPending,
   onConclusionDraftChange,
@@ -55,7 +53,8 @@ export function LnkResultManagerEntry({
   const conclusionDate = String(row[method.conclusionDateKey] ?? '').trim()
   const conclusionDraft = conclusionDrafts[changeKey] ?? conclusionName
   const customConclusionDraft = formatCustomDocumentName(conclusionDraft)
-  const pendingResult = pendingResultChanges[changeKey] ?? ''
+  const pendingResult = pendingResultChanges[changeKey] === undefined ? '' : pendingResultChanges[changeKey]
+  const metadataBlocked = Object.keys(pendingResultChanges).length > 0 || isResultReplacementPending
   const activeChangeHint =
     pendingResult && pendingResult !== currentResult
       ? { changeKey, rowId: row.id, methodKey: method.requestKey, from: currentResult, to: pendingResult }
@@ -79,9 +78,10 @@ export function LnkResultManagerEntry({
           value={conclusionDraft}
           placeholder="Наименование заключения для этого стыка"
           hint="Дата заключения фиксируется отдельно и не меняется через название."
-          disabled={isConclusionCorrectionPending}
+          disabled={isConclusionCorrectionPending || metadataBlocked}
           canRename={
             !isConclusionCorrectionPending &&
+            !metadataBlocked &&
             Boolean(customConclusionDraft) &&
             customConclusionDraft !== conclusionName
           }
@@ -94,7 +94,6 @@ export function LnkResultManagerEntry({
         method={method}
         currentResult={currentResult}
         pendingResult={pendingResult}
-        isResultCorrectionPending={isResultCorrectionPending}
         isResultReplacementPending={isResultReplacementPending}
         onReplaceResult={onReplaceResult}
         onClearResult={onClearResult}

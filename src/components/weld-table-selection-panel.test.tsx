@@ -70,4 +70,67 @@ describe('WeldTable selection panel', () => {
 
     expect(screen.getByRole('button', { name: 'Удалить выбранные (2)' })).toBeVisible()
   })
+
+  it('keeps the same table body while filters settle but disables row and selection actions immediately', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const rows = [{ id: 1, line: 'L1', joint: 'S1' }] as WeldRow[]
+    const onSelectedRowIdsChange = vi.fn()
+    const onSelect = vi.fn()
+    const table = (rowsReady: boolean, queryIdentity: string) => (
+      <QueryClientProvider client={queryClient}>
+        <WeldTable rows={rows} rowsReady={rowsReady} queryIdentity={queryIdentity}
+          columnFilters={{ line: 'L1' }} onColumnFiltersChange={vi.fn()}
+          selectable selectedRowIds={new Set([1])} onSelectedRowIdsChange={onSelectedRowIdsChange}
+          getContextMenuItems={() => [{ id: 'delete', label: 'Удалить текущий набор', onSelect }]} />
+      </QueryClientProvider>
+    )
+    const { container, rerender } = render(table(true, 'A'))
+    const body = container.querySelector('tbody')!
+    const row = body.querySelector('tr[data-weld-row-id="1"]')!
+    fireEvent.click(screen.getByRole('button', { name: 'Действия' }))
+    expect(screen.getByRole('button', { name: 'Удалить текущий набор' })).toBeVisible()
+
+    rerender(table(false, 'B'))
+    expect(container.querySelector('tbody')).toBe(body)
+    expect(body.querySelector('tr[data-weld-row-id="1"]')).toBe(row)
+    expect(body).toHaveAttribute('inert')
+    expect(body).toHaveAttribute('aria-busy', 'true')
+    expect(screen.queryByRole('button', { name: 'Удалить текущий набор' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Действия' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Выбрать видимые стыки' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Сбросить все фильтры' })).toBeEnabled()
+    fireEvent.contextMenu(row)
+    fireEvent.click(screen.getByRole('button', { name: 'Действия' }))
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(onSelectedRowIdsChange).not.toHaveBeenCalled()
+
+    rerender(table(true, 'B'))
+    expect(body).not.toHaveAttribute('inert')
+    expect(screen.getByRole('button', { name: 'Действия' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Удалить текущий набор' })).not.toBeInTheDocument()
+  })
+
+  it('never silently replaces an explicit selection with only its loaded subset', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const rows = [{ id: 1, line: 'L1', joint: 'S1' }] as WeldRow[]
+    const getContextMenuItems = vi.fn((_row: WeldRow, selectedRows: WeldRow[]) => [{
+      id: 'selected', label: `Обработать ${selectedRows.length}`, onSelect: vi.fn(),
+    }])
+    const table = (actionRows: WeldRow[]) => (
+      <QueryClientProvider client={queryClient}>
+        <WeldTable rows={rows} actionRows={actionRows} columnFilters={{}} onColumnFiltersChange={vi.fn()}
+          selectable selectedRowIds={new Set([1, 2])} onSelectedRowIdsChange={vi.fn()}
+          getContextMenuItems={getContextMenuItems} />
+      </QueryClientProvider>
+    )
+    const { container, rerender } = render(table(rows))
+    expect(screen.getByText('Выбрано: 2')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Действия' })).toBeDisabled()
+    fireEvent.contextMenu(container.querySelector('tr[data-weld-row-id="1"]')!)
+    expect(getContextMenuItems).not.toHaveBeenCalled()
+    rerender(table([...rows, { id: 2, line: 'L2', joint: 'S2' } as WeldRow]))
+    fireEvent.click(screen.getByRole('button', { name: 'Действия' }))
+    expect(screen.getByRole('button', { name: 'Обработать 2' })).toBeVisible()
+    expect(getContextMenuItems.mock.calls.at(-1)?.[1].map(row => row.id)).toEqual([1, 2])
+  })
 })

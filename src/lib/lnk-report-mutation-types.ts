@@ -40,7 +40,7 @@ export type UseLnkReportMutationsOptions = {
   setLnkOfficialityDraft: Dispatch<SetStateAction<LnkOfficialityDraftState>>
   setIsLnkOfficialityModalOpen: (value: boolean) => void
   resetDismissedRepeatedJointTasks: () => void
-  setManagedLnkPendingResultChanges: Dispatch<SetStateAction<Record<string, string>>>
+  setManagedLnkPendingResultChanges: Dispatch<SetStateAction<Record<string, string | null>>>
   setManagedLnkResultChangeHint: (value: ManagedLnkResultChangeHintState) => void
   setHeatTreatmentFieldEditing: (value: HeatTreatmentFieldEditingState | null) => void
   defaultLnkRequestNaming: RequestNamingState

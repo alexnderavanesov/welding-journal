@@ -43,8 +43,11 @@ export function parseJointName(
   const prefix = prefixMatch[1].toUpperCase()
   const tail = raw.slice(prefixMatch[1].length)
   const firstSystemSegment = tail.search(patterns.firstSegment)
-  const baseExtra = firstSystemSegment === -1 ? tail : tail.slice(0, firstSystemSegment)
-  const systemTail = firstSystemSegment === -1 ? '' : tail.slice(firstSystemSegment)
+  if (firstSystemSegment === -1) {
+    return { raw, base: `${prefix}${tail}`, segments: [], hasRequiredPrefix: true }
+  }
+  const baseExtra = tail.slice(0, firstSystemSegment)
+  const systemTail = tail.slice(firstSystemSegment)
   const segments = [...systemTail.matchAll(patterns.segments)]
     .map((match) => {
       const suffix = getSemanticJointChainSuffix(match[1], settings)

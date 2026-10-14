@@ -7,6 +7,7 @@ const PROJECT = 'E2E contextual PSTO correction'
 const SOURCE = 'CTX-PSTO-SOURCE'
 const TARGET = 'CTX-PSTO-TARGET'
 const STAMP = 'ECPC'
+const historicalSpecialists = { first: { id: 900001, name: 'Исторический дефектоскопист', certificate: 'СТАРОЕ-УД' }, second: null }
 const METHODS = [
   { key: 'vik', code: 'ВИК', defect: 'vik_defect_description' },
   { key: 'rk', code: 'РК', defect: 'lnk_defect_description' },
@@ -111,6 +112,7 @@ async function seed(stage: Stage) {
       ...(positions ? { sourceKind: 'beforeHeatTreatment', sourcePositions: positions } : {}),
     })])).rows[0]!
     await db.query('insert into generated_document_weld_joints(document_id,weld_joint_id) select $1,unnest($2::int[])', [document.id, rows.map(row => row.id)])
+    await db.query('update generated_documents set specialists=$1::jsonb where id=$2', [JSON.stringify(historicalSpecialists), document.id])
     return { moved: rows[0]!, kept: rows[1]!, sourceDocumentId: document.id }
   })
 }
@@ -196,12 +198,225 @@ async function openMove(page: Page, id: number, isChain = false) {
   return { editor, move }
 }
 
+async function openCancellation(page: Page) {
+  await page.goto('/psto')
+  await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()
+  const program = dialog(page, 'Программа ПСТО')
+  await program.getByLabel('Поиск линий', { exact: true }).fill(SOURCE)
+  await expect(program.getByText(SOURCE, { exact: true })).toBeVisible()
+  await program.getByRole('button', { name: 'Отменить ПСТО', exact: true }).click()
+  const cancellation = dialog(page, 'Отмена ПСТО')
+  await expect(choices(cancellation, 'F881')).toBeVisible()
+  return cancellation
+}
+
+async function addTarget(fixture: Awaited<ReturnType<typeof seed>>, pre: boolean, merge = false) {
+  return withE2eDatabase(async db => {
+    const row = (await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,
+      connection_type,officiality,revision_actuality,has_vik,psto_required,category,group_name,weld_control_percent,pvk_control_percent)
+      values ($1,'CTX',$2,'F883','2026-09-01','С17','действующий','актуальная','да',$3,'II','A',100,100) returning id`,
+    [PROJECT, TARGET, pre ? 'да' : null])).rows[0]
+    if (!merge) return row.id as number
+    let positions: unknown[] | undefined
+    if (pre) {
+      const c = (await db.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,request_name,request_date,result,conclusion_name,conclusion_date)
+        values ($1,'ВИК','CTX-vik-REQUEST','2026-09-02','годен','CTX-vik-CONCLUSION','2026-09-03') returning id`, [row.id])).rows[0]
+      positions = [{ kind: 'beforeHeatTreatment', weldJointId: row.id, relationId: c.id, methodCode: 'ВИК' }]
+    } else await db.query(`update weld_joints set vik_request='CTX-vik-REQUEST',vik_request_date='2026-09-02',
+      vik_result='годен',vik_conclusion='CTX-vik-CONCLUSION',vik_conclusion_date='2026-09-03' where id=$1`, [row.id])
+    const document = (await db.query(`insert into generated_documents(type,title,file_name,mime_type,period_from,period_to,row_count,source_metadata,specialists)
+      values ('system:lnkConclusionVik','CTX-vik-CONCLUSION','target.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      '2026-09-03','2026-09-03',1,$1,$2::jsonb) returning id`, [JSON.stringify({ methodCode: 'ВИК', methodCodes: ['ВИК'], projects: [PROJECT], lines: [TARGET],
+        ...(positions ? { sourceKind: 'beforeHeatTreatment', sourcePositions: positions, positionCount: 1 } : {}),
+      }), JSON.stringify({ first: { id: 900002, name: 'Другой специалист', certificate: 'ДРУГОЕ-УД' }, second: null })])).rows[0]
+    await db.query('insert into generated_document_weld_joints(document_id,weld_joint_id) values ($1,$2)', [document.id, row.id])
+    return document.id as number
+  })
+}
+
+test('отмена ПСТО: явный перенос одного стыка сохраняет специалистов и не переносит соседний', async ({ page }) => {
+  const fixture = await seed('beforeHeatTreatment')
+  const cancellation = await openCancellation(page)
+  await expect(choices(cancellation, 'F881').getByRole('radio', { name: 'Оставить НК до ТО' })).toBeChecked()
+  await choices(cancellation, 'F881').getByRole('radio', { name: 'Весь НК до ТО → основной' }).check()
+  await cancellation.getByRole('button', { name: 'Отменить ПСТО на линии', exact: true }).click()
+  await expect(dialog(page, 'Программа ПСТО')).toBeVisible()
+  await expectPackage(fixture.moved.id, 'primary')
+  await expectPackage(fixture.kept.id, 'beforeHeatTreatment')
+  expect((await snapshot(fixture.moved.id)).row.psto_required).toBe('отменен')
+  await expectSharedDocument(page, fixture, 'primary')
+})
+
+for (const scenario of ['cancel', 'moveWithPsto'] as const) test(`новый сценарий ${scenario}: заявка ПСТО блокирует перенос только своего стыка, подделка откатывается`, async ({ page }) => {
+  const fixture = await seed(scenario === 'cancel' ? 'beforeHeatTreatment' : 'primary')
+  if (scenario === 'moveWithPsto') await addTarget(fixture, true)
+  await withE2eDatabase(db => db.query("update weld_joints set psto_request='CTX-PSTO-REQUEST',psto_request_date='2026-09-06' where id=$1", [fixture.moved.id]))
+  const moveState = scenario === 'moveWithPsto' ? await openMove(page, fixture.moved.id) : null
+  const window = moveState?.move ?? await openCancellation(page)
+  const label = scenario === 'cancel' ? 'Весь НК до ТО → основной' : 'Весь основной НК → до ТО'
+  await expect(choices(window, 'F881').getByRole('radio', { name: label })).toBeDisabled()
+  await expect(choices(window, 'F881')).toContainText('заявка или история ПСТО/ТВМТ')
+  if (scenario === 'cancel') await expect(choices(window, 'F882').getByRole('radio', { name: label })).toBeEnabled()
+  const before = await snapshot(fixture.moved.id)
+  let forged = false
+  const isSave = (url: string) => url.includes('/_serverFn/') && rpcName(url).startsWith(scenario === 'cancel' ? 'savePstoLineAssignment' : 'updateWeldJoint')
+  await page.route('**/_serverFn/**', async route => {
+    if (!forged && isSave(route.request().url())) {
+      forged = true
+      await route.continue({ postData: route.request().postData()!.replaceAll('keepPrimary', scenario === 'cancel' ? 'movePreHeatTreatmentToPrimary' : 'movePrimaryToPreHeatTreatment') })
+    } else await route.continue()
+  })
+  const response = page.waitForResponse(response => isSave(response.url()))
+  await window.getByRole('button', { name: scenario === 'cancel' ? 'Отменить ПСТО на линии' : 'Подтвердить перенос', exact: true }).click()
+  if (moveState) await moveState.editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  expect(await (await response).text()).toContain('заявка или история ПСТО/ТВМТ')
+  expect(forged).toBe(true)
+  expect(await snapshot(fixture.moved.id)).toEqual(before)
+})
+
+test('подтверждение очистки не действует после изменения удостоверения; вся отмена откатывается', async ({ page }) => {
+  const fixture = await seed('beforeHeatTreatment')
+  const targetId = await addTarget(fixture, false, true)
+  const cancellation = await openCancellation(page)
+  await choices(cancellation, 'F881').getByRole('radio', { name: 'Весь НК до ТО → основной' }).check()
+  await cancellation.getByRole('checkbox', { name: 'Подтверждаю очистку обеих ролей в объединяемых заключениях' }).check()
+  const before = await snapshot(fixture.moved.id)
+  await withE2eDatabase(db => db.query(`update generated_documents set specialists=jsonb_set(specialists,'{first,certificate}','"ЕЩЁ НОВЕЕ"'),specialists_revision=specialists_revision+1 where id=$1`, [targetId]))
+  await cancellation.getByRole('button', { name: 'Отменить ПСТО на линии', exact: true }).click()
+  await expect(cancellation.getByText(/Ничего не изменено. Обновите проверку специалистов/)).toBeVisible()
+  expect(await snapshot(fixture.moved.id)).toEqual(before)
+  await cancellation.getByRole('button', { name: 'Обновить проверку специалистов' }).click()
+  await expect(cancellation.getByRole('checkbox')).not.toBeChecked()
+  await cancellation.getByRole('checkbox').check()
+  await cancellation.getByRole('button', { name: 'Отменить ПСТО на линии', exact: true }).click()
+  await expect(dialog(page, 'Программа ПСТО')).toBeVisible()
+  await expectPackage(fixture.moved.id, 'primary')
+})
+
+test('предкоммит: удаление старой позиции целевого документа аннулирует подтверждение очистки специалистов', async ({ page }) => {
+  const fixture = await seed('beforeHeatTreatment')
+  const targetId = await addTarget(fixture, false, true)
+  const oldId = await withE2eDatabase(async db => {
+    await db.query(`update weld_joints set updated_at='2026-10-10T12:00:00Z',final_status='годен'
+      where project_title=$1 and line=$2`, [PROJECT, TARGET])
+    return (await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,
+      officiality,revision_actuality,connection_type,has_vik,vik_request,vik_request_date,vik_result,
+      vik_conclusion,vik_conclusion_date,final_status,updated_at)
+      values ($1,'CTX',$2,'F884','2026-09-01','действующий','актуальная','С17','да',
+        'CTX-vik-REQUEST','2026-09-02','годен','CTX-vik-CONCLUSION','2026-09-03','годен','2026-10-09T12:00:00Z') returning id`, [PROJECT, TARGET])).rows[0].id as number
+  })
+  const [{ requireDb }, { weldJoints }, { and, eq }, index, mutations] = await Promise.all([
+    import('../../src/db'), import('../../src/db/schema'), import('drizzle-orm'),
+    import('../../src/server/system-document-index'), import('../../src/server/weld-mutations'),
+  ])
+  await requireDb().transaction(async tx => {
+    const rows = await tx.select().from(weldJoints).where(and(eq(weldJoints.projectTitle, PROJECT), eq(weldJoints.line, TARGET)))
+    await index.syncSystemDocumentsForWeldChangesInTransaction(tx, rows, new Map())
+  })
+  const cancellation = await openCancellation(page)
+  await choices(cancellation, 'F881').getByRole('radio', { name: 'Весь НК до ТО → основной' }).check()
+  await cancellation.getByRole('checkbox', { name: 'Подтверждаю очистку обеих ролей в объединяемых заключениях' }).check()
+  const before = await snapshot(fixture.moved.id)
+  const targetBefore = await withE2eDatabase(async db => (await db.query('select updated_at,row_count from generated_documents where id=$1', [targetId])).rows[0])
+  expect(targetBefore.row_count).toBe(2)
+  const version = await withE2eDatabase(async db => (await db.query('select xmin::text version from weld_joints where id=$1', [oldId])).rows[0].version)
+  // This is a real supported deletion, not direct manipulation of the token.
+  await mutations.deleteWeldJoint({ data: { id: oldId, version } })
+  const targetAfter = await withE2eDatabase(async db => (await db.query('select updated_at,row_count from generated_documents where id=$1', [targetId])).rows[0])
+  expect(targetAfter.row_count).toBe(1)
+  expect(targetAfter.updated_at).toEqual(targetBefore.updated_at)
+  await cancellation.getByRole('button', { name: 'Отменить ПСТО на линии', exact: true }).click()
+  await expect(cancellation.getByText(/Ничего не изменено. Обновите проверку специалистов/)).toBeVisible()
+  expect(await snapshot(fixture.moved.id)).toEqual(before)
+})
+
+test('цепочка на назначенную линию: подтверждение специалистов доходит до сервера, новый R-стык не наследует НК', async ({ page }) => {
+  const fixture = await seed('primary')
+  const targetId = await addTarget(fixture, true, true)
+  const childId = await withE2eDatabase(async db => {
+    await db.query("update weld_joints set rk_result='ремонт',lnk_defect_description='Дефект',final_status='не годен' where id=$1", [fixture.moved.id])
+    return (await db.query(`insert into weld_joints(project_title,subtitle_code,line,line_program_id,joint,weld_date,connection_type,material_group,welding_method,
+      officiality,revision_actuality,d1,d2,t1,t2,wdi,stamp_1_k,stamp_1_z,stamp_1_o,stamp_1_k_fact,stamp_1_z_fact,stamp_1_o_fact,
+      has_vik,has_rk,has_uzk,has_pvk,category,group_name,weld_control_percent,pvk_control_percent)
+      select project_title,subtitle_code,line,line_program_id,'F881R1','2026-09-06',connection_type,material_group,welding_method,
+      officiality,revision_actuality,d1,d2,t1,t2,wdi,stamp_1_k,stamp_1_z,stamp_1_o,stamp_1_k_fact,stamp_1_z_fact,stamp_1_o_fact,
+      has_vik,has_rk,has_uzk,has_pvk,category,group_name,weld_control_percent,pvk_control_percent
+      from weld_joints where id=$1 returning id`, [fixture.moved.id])).rows[0].id as number
+  })
+  const { editor, move } = await openMove(page, fixture.moved.id, true)
+  await choices(move, 'F881').getByRole('radio', { name: 'Весь основной НК → до ТО' }).check()
+  await move.getByRole('checkbox', { name: 'Подтверждаю очистку обеих ролей в объединяемых заключениях' }).check()
+  await move.getByRole('button', { name: 'Подтвердить перенос цепочки', exact: true }).click()
+  await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(editor).toBeHidden()
+  const child = await snapshot(childId)
+  expect(child.row.line).toBe(TARGET)
+  expect(child.controls).toEqual([])
+  expect(child.row.vik_conclusion).toBeNull()
+  const parent = await snapshot(fixture.moved.id)
+  expect(parent.row.line).toBe(TARGET)
+  expect(parent.controls).toHaveLength(4)
+  expect(parent.controls.find(row => row.method === 'РК')?.result).toBe('ремонт')
+  await withE2eDatabase(async db => {
+    expect((await db.query('select specialists from generated_documents where id=$1', [targetId])).rows[0].specialists).toEqual({ first: null, second: null })
+  })
+})
+
+test('перенос на назначенную линию: основной комплект → до ТО, исходные реквизиты и специалисты сохранены', async ({ page }) => {
+  const fixture = await seed('primary')
+  await addTarget(fixture, true)
+  const { editor, move } = await openMove(page, fixture.moved.id)
+  await expect(choices(move, 'F881').getByRole('radio', { name: 'Оставить основной НК' })).toBeChecked()
+  await choices(move, 'F881').getByRole('radio', { name: 'Весь основной НК → до ТО' }).check()
+  await move.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
+  await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(editor).toBeHidden()
+  await expectPackage(fixture.moved.id, 'beforeHeatTreatment')
+  await expectPackage(fixture.kept.id, 'primary')
+  expect((await snapshot(fixture.moved.id)).row.psto_required).toBe('да')
+  await expectSharedDocument(page, fixture, 'beforeHeatTreatment')
+})
+
+for (const scenario of ['assign', 'moveWithoutPsto', 'cancel', 'moveWithPsto'] as const) {
+  test(`специалисты при ${scenario}: предупреждение, явное подтверждение, очистка только объединённого документа`, async ({ page }) => {
+    const toPre = scenario === 'assign' || scenario === 'moveWithPsto'
+    const fixture = await seed(toPre ? 'primary' : 'beforeHeatTreatment')
+    const targetId = await addTarget(fixture, toPre, true)
+    const before = await snapshot(fixture.moved.id)
+    const editorAndMove = scenario.startsWith('move') ? await openMove(page, fixture.moved.id) : null
+    const window = editorAndMove?.move ?? (scenario === 'assign' ? await openAssignment(page) : await openCancellation(page))
+    await choices(window, 'F881').getByRole('radio', { name: toPre ? 'Весь основной НК → до ТО' : 'Весь НК до ТО → основной' }).check()
+    const submit = window.getByRole('button', { name: scenario === 'assign' ? 'Назначить ПСТО' : scenario === 'cancel' ? 'Отменить ПСТО на линии' : 'Подтвердить перенос', exact: true })
+    await expect(window.getByText(/В итоговых заключениях будут очищены обе роли/)).toBeVisible()
+    await expect(submit).toBeDisabled()
+    expect((await snapshot(fixture.moved.id)).controls).toEqual(before.controls)
+    const accept = window.getByRole('checkbox', { name: 'Подтверждаю очистку обеих ролей в объединяемых заключениях' })
+    await accept.check()
+    await accept.uncheck()
+    await expect(submit).toBeDisabled()
+    await accept.check()
+    await submit.click()
+    if (editorAndMove) {
+      await editorAndMove.editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
+      await expect(editorAndMove.editor).toBeHidden()
+    } else await expect(dialog(page, 'Программа ПСТО')).toBeVisible()
+    await expectPackage(fixture.moved.id, toPre ? 'beforeHeatTreatment' : 'primary')
+    await withE2eDatabase(async db => {
+      const target = (await db.query('select specialists,row_count from generated_documents where id=$1', [targetId])).rows[0]
+      expect(target).toEqual({ specialists: { first: null, second: null }, row_count: 2 })
+      const source = (await db.query('select specialists,row_count from generated_documents where id=$1', [fixture.sourceDocumentId])).rows[0]
+      expect(source).toEqual({ specialists: historicalSpecialists, row_count: 1 })
+    })
+  })
+}
+
 async function expectSharedDocument(page: Page, fixture: Awaited<ReturnType<typeof seed>>, stage: Stage) {
-  const documents = await withE2eDatabase(async db => (await db.query(`select d.id,d.row_count,d.source_metadata,
+  const documents = await withE2eDatabase(async db => (await db.query(`select d.id,d.row_count,d.source_metadata,d.specialists,
     array_agg(a.weld_joint_id order by a.weld_joint_id) as ids from generated_documents d
     join generated_document_weld_joints a on a.document_id=d.id
     where d.title='CTX-vik-CONCLUSION' group by d.id order by d.id`)).rows)
   expect(documents).toHaveLength(2)
+  for (const document of documents) expect(document.specialists).toEqual(historicalSpecialists)
   const remaining = documents.find(document => document.id === fixture.sourceDocumentId)!
   expect(remaining).toMatchObject({ row_count: 1, ids: [fixture.kept.id] })
   const moved = documents.find(document => document.id !== fixture.sourceDocumentId)!
@@ -231,12 +446,97 @@ async function expectSharedDocument(page: Page, fixture: Awaited<ReturnType<type
   }
 }
 
+// Independent acceptance counterexample: a request is already a package even
+// without a result. Line-wide waiting/assignment is not a started PSTO cycle.
+for (const scenario of ['assign', 'moveWithoutPsto', 'cancel', 'moveWithPsto'] as const) {
+  test(`предкоммит ${scenario}: перенос заявок без результатов, отмена окна и повторное открытие`, async ({ page }) => {
+    const toPre = scenario === 'assign' || scenario === 'moveWithPsto'
+    const fixture = await seed(toPre ? 'primary' : 'beforeHeatTreatment')
+    await withE2eDatabase(async db => {
+      if (toPre) {
+        for (const method of METHODS) await db.query(`update weld_joints set ${method.key}_result='ожидает НК',
+          ${method.key}_conclusion=null,${method.key}_conclusion_date=null,${method.defect}=null,
+          rk_exposure_confirmed_diameter=null,final_status='ожидает НК' where id=$1`, [fixture.moved.id])
+      } else {
+        await db.query(`update pre_heat_treatment_controls set result='ожидает НК',conclusion_name=null,
+          conclusion_date=null,defect_description=null,rk_exposure_confirmed_diameter=null where weld_joint_id=$1`, [fixture.moved.id])
+      }
+      await db.query('delete from generated_document_weld_joints where document_id=$1 and weld_joint_id=$2', [fixture.sourceDocumentId, fixture.moved.id])
+      // Keep the fixture's indexed composition consistent with the removed
+      // result. A stale sourcePositions entry would test damaged storage rather
+      // than the approved request-only transfer.
+      await db.query(`update generated_documents set row_count=1,source_metadata=(
+        source_metadata::jsonb || jsonb_build_object('positionCount',1,'rowIds',jsonb_build_array($3::int)) ||
+        case when source_metadata::jsonb ? 'sourcePositions' then jsonb_build_object('sourcePositions',
+          (select coalesce(jsonb_agg(p),'[]'::jsonb) from jsonb_array_elements(source_metadata::jsonb->'sourcePositions') p
+           where (p->>'weldJointId')::int<>$2)) else '{}'::jsonb end
+        )::text where id=$1`, [fixture.sourceDocumentId, fixture.moved.id, fixture.kept.id])
+    })
+    if (scenario === 'moveWithPsto') await addTarget(fixture, true)
+    // The raw conversion from completed controls to request-only controls leaves
+    // seed()'s persisted final_status stale (notably pre-TO: awaiting request → NK).
+    // Settle the normal derived calculation before the cancellation baseline;
+    // navigation may refresh the dispatcher but must still preserve the FULL row.
+    const [{ requireDb }, { markDispatcherTaskIndexDirty }, { ensureDispatcherTaskIndexFresh }] = await Promise.all([
+      import('../../src/db'), import('../../src/server/dispatcher-task-index-dirty'),
+      import('../../src/server/dispatcher-task-index'),
+    ])
+    await markDispatcherTaskIndexDirty(requireDb())
+    await ensureDispatcherTaskIndexFresh()
+    const before = await snapshot(fixture.moved.id)
+    // Every required method has a request and no completed result, in either stage.
+    expect(before.row.final_status).toBe('ожидает НК')
+    const open = async () => {
+      const move = scenario.startsWith('move') ? await openMove(page, fixture.moved.id) : null
+      return { move, window: move?.move ?? (scenario === 'assign' ? await openAssignment(page) : await openCancellation(page)) }
+    }
+    let opened = await open()
+    const transferLabel = toPre ? 'Весь основной НК → до ТО' : 'Весь НК до ТО → основной'
+    await choices(opened.window, 'F881').getByRole('radio', { name: transferLabel, exact: true }).check()
+    // Navigation discards the complete unsaved operation, not just a select.
+    await page.goto('/journal')
+    expect(await snapshot(fixture.moved.id)).toEqual(before)
+    opened = await open()
+    await expect(choices(opened.window, 'F881').getByRole('radio', { name: toPre ? 'Оставить основной НК' : 'Оставить НК до ТО', exact: true })).toBeChecked()
+    await choices(opened.window, 'F881').getByRole('radio', { name: transferLabel, exact: true }).check()
+    await opened.window.getByRole('button', { name: scenario === 'assign' ? 'Назначить ПСТО' : scenario === 'cancel' ? 'Отменить ПСТО на линии' : 'Подтвердить перенос', exact: true }).click()
+    if (opened.move) {
+      await opened.move.editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
+      await expect(opened.move.editor).toBeHidden()
+    } else await expect(dialog(page, 'Программа ПСТО')).toBeVisible()
+    await page.reload()
+    const after = await snapshot(fixture.moved.id)
+    expect(after.controls).toHaveLength(toPre ? 4 : 0)
+    for (const method of METHODS) {
+      const expected = control(method)
+      if (toPre) {
+        expect(after.controls.find(row => row.method === method.code)).toMatchObject({ request_name: expected.request_name,
+          request_date: expected.request_date, conclusion_name: null, conclusion_date: null })
+        expect(after.row[`${method.key}_request`]).toBeNull()
+      } else expect(after.row).toMatchObject({ [`${method.key}_request`]: expected.request_name,
+        [`${method.key}_request_date`]: expected.request_date, [`${method.key}_conclusion`]: null,
+        [`${method.key}_conclusion_date`]: null })
+    }
+    expect(after.documents.filter(document => String(document.title).endsWith('CONCLUSION'))).toEqual([])
+    await expectPackage(fixture.kept.id, toPre ? 'primary' : 'beforeHeatTreatment')
+  })
+}
+
 for (const unnamed of [false, true]) {
-test(`назначение ПСТО: ${unnamed ? 'необязательные пустые имена' : 'имена заполнены'}, весь комплект одного стыка и сохранность общего документа`, async ({ page }, testInfo) => {
+test(`назначение ПСТО: ${unnamed ? 'старые пустые имена требуют KEEP' : 'имена заполнены'}, весь комплект одного стыка и сохранность общего документа`, async ({ page }, testInfo) => {
   const fixture = await seed('primary')
   if (unnamed) await clearOptionalNames(fixture.moved.id, 'primary')
   const assignment = await openAssignment(page)
   for (const joint of ['F881', 'F882']) await expect(choices(assignment, joint).getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
+  if (unnamed) {
+    await expect(choices(assignment, 'F881').getByRole('radio', { name: 'Весь основной НК → до ТО', exact: true })).toBeDisabled()
+    await expect(choices(assignment, 'F881')).toContainText('наименование заключения')
+    await assignment.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
+    await expect(dialog(page, 'Программа ПСТО')).toBeVisible()
+    await expectPackage(fixture.moved.id, 'primary', true)
+    await expectPackage(fixture.kept.id, 'primary')
+    return
+  }
   await choices(assignment, 'F881').getByRole('radio', { name: 'Весь основной НК → до ТО', exact: true }).check()
   await expect(choices(assignment, 'F882').getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
   const screenshot = testInfo.outputPath('assignment-contextual-choice.png')
@@ -251,11 +551,21 @@ test(`назначение ПСТО: ${unnamed ? 'необязательные �
   await expectSharedDocument(page, fixture, 'beforeHeatTreatment')
 })
 
-test(`перенос на линию без ПСТО: ${unnamed ? 'необязательные пустые имена' : 'имена заполнены'}, весь НК до ТО становится основным, общий документ сохранён`, async ({ page }, testInfo) => {
+test(`перенос на линию без ПСТО: ${unnamed ? 'старые пустые имена требуют KEEP' : 'имена заполнены'}, сохранность истории`, async ({ page }, testInfo) => {
   const fixture = await seed('beforeHeatTreatment')
   if (unnamed) await clearOptionalNames(fixture.moved.id, 'beforeHeatTreatment')
   const { editor, move } = await openMove(page, fixture.moved.id)
   await expect(choices(move, 'F881').getByRole('radio', { name: 'Оставить НК до ТО', exact: true })).toBeChecked()
+  if (unnamed) {
+    await expect(choices(move, 'F881').getByRole('radio', { name: 'Весь НК до ТО → основной', exact: true })).toBeDisabled()
+    await expect(choices(move, 'F881')).toContainText('наименование заключения')
+    await move.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
+    await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
+    await expect(editor).toBeHidden()
+    await expectPackage(fixture.moved.id, 'beforeHeatTreatment', true)
+    await expectPackage(fixture.kept.id, 'beforeHeatTreatment')
+    return
+  }
   await choices(move, 'F881').getByRole('radio', { name: 'Весь НК до ТО → основной', exact: true }).check()
   const screenshot = testInfo.outputPath('move-contextual-choice.png')
   await move.screenshot({ path: screenshot })
@@ -295,7 +605,7 @@ test('подтверждённый выбор этапа сохраняется 
   await expectPackage(fixture.kept.id, 'beforeHeatTreatment')
 })
 
-test('весь комплект без названий: назначение ПСТО и обратный перенос сохраняют факты без создания заключений', async ({ page }) => {
+test('весь комплект без названий: перенос запрещён, KEEP сохраняет факты без создания заключений', async ({ page }) => {
   const fixture = await seed('primary')
   await withE2eDatabase(async db => {
     await db.query('update weld_joints set vik_conclusion=null,rk_conclusion=null,uzk_conclusion=null,pvk_conclusion=null where id=$1', [fixture.moved.id])
@@ -307,19 +617,10 @@ test('весь комплект без названий: назначение П
   const before = await snapshot(fixture.moved.id)
   const sibling = await snapshot(fixture.kept.id)
   const assignment = await openAssignment(page)
-  await choices(assignment, 'F881').getByRole('radio', { name: 'Весь основной НК → до ТО', exact: true }).check()
+  await expect(choices(assignment, 'F881').getByRole('radio', { name: 'Весь основной НК → до ТО', exact: true })).toBeDisabled()
+  await expect(choices(assignment, 'F881').getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
   await assignment.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
   await expect(dialog(page, 'Программа ПСТО')).toBeVisible()
-  const intermediate = await snapshot(fixture.moved.id)
-  expect(intermediate.controls).toHaveLength(4)
-  for (const method of METHODS) expect(intermediate.controls.find(row => row.method === method.code))
-    .toMatchObject({ ...control(method), conclusion_name: null })
-
-  const { editor, move } = await openMove(page, fixture.moved.id)
-  await choices(move, 'F881').getByRole('radio', { name: 'Весь НК до ТО → основной', exact: true }).check()
-  await move.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
-  await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
-  await expect(editor).toBeHidden()
   const after = await snapshot(fixture.moved.id)
   expect(after.controls).toEqual([])
   for (const field of RECORDED_CONTROL_FIELDS) expect(after.row[field], field).toEqual(before.row[field])

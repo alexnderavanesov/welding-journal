@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode, type RefCallback } from 'react'
+import { useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode, type RefCallback } from 'react'
 import {
   Activity,
   ArrowUpRight,
@@ -351,6 +351,14 @@ function StatisticsReports({
     controlDynamicsScale: controlDynamicsScaleSetting,
     weldingDynamicsScale: activeTab === 'general' ? weldingDynamicsScaleSetting : 'auto',
   })
+  const calculationStatusId = useId()
+  // A successful placeholder belongs to the PREVIOUS query key, not the labels
+  // currently selected above. Cached results for this key are usable when idle.
+  const calculationReady = statisticsQuery.isSuccess && Boolean(statisticsQuery.data) &&
+    !statisticsQuery.isPlaceholderData && statisticsQuery.fetchStatus === 'idle'
+  const calculationPendingMessage = statisticsQuery.fetchStatus === 'paused'
+    ? 'Ожидаем подключения для расчёта статистики.'
+    : 'Обновляем статистику для выбранных параметров…'
   const projectOptions = statisticsQuery.data?.projectOptions ?? []
   const subtitleOptions = statisticsQuery.data?.subtitleOptions ?? []
   const returnedSummary = statisticsQuery.data?.summary ?? EMPTY_STATISTICS_SUMMARY
@@ -389,7 +397,7 @@ function StatisticsReports({
   const periodLabel = getStatisticsPeriodLabel(allPeriod, periodFrom, periodTo)
   const printableReport = useMemo(
     () =>
-      buildStatisticsPrintableReport({
+      calculationReady ? buildStatisticsPrintableReport({
         activeTab,
         dynamics: weldingDynamics,
         dynamicsTableGrouping: weldingDynamicsTableGrouping,
@@ -404,8 +412,9 @@ function StatisticsReports({
         unofficialValue,
         unit,
         welderSummary,
-      }),
+      }) : null,
     [
+      calculationReady,
       activeTab,
       allPeriod,
       jointFilter,
@@ -507,7 +516,15 @@ function StatisticsReports({
               variant="outline"
               size="sm"
               className="h-9 gap-2 rounded-md border-sky-200 bg-white text-sky-800 hover:bg-sky-50"
-              onClick={() => { void openPreview(async () => ({ report: printableReport, onDownloadExcel: () => downloadPrintableReport(printableReport) })) }}
+              disabled={!calculationReady}
+              aria-describedby={!calculationReady ? calculationStatusId : undefined}
+              onClick={() => {
+                if (!calculationReady || !printableReport) return
+                // Preview, print and Excel retain the same immutable snapshot,
+                // even if the underlying query refreshes while the modal is open.
+                const report = printableReport
+                void openPreview(async () => ({ report, onDownloadExcel: () => downloadPrintableReport(report) }))
+              }}
               title="Предпросмотр и печать отчёта"
             >
               <Download className="h-4 w-4" />
@@ -703,16 +720,26 @@ function StatisticsReports({
         ) : null}
       </div>
 
-      {statisticsQuery.isLoading ? (
-        <div className="rounded-md border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-          Рассчитываем статистику по всей базе...
+      {statisticsQuery.isError ? (
+        <div id={calculationStatusId} role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <p>Не удалось рассчитать статистику: {statisticsQuery.error.message}</p>
+          {statisticsQuery.fetchStatus !== 'idle' ? <p role="status">{calculationPendingMessage}</p> : null}
+          <Button type="button" variant="outline" size="sm" className="mt-2"
+            disabled={statisticsQuery.fetchStatus !== 'idle'}
+            onClick={() => { void statisticsQuery.refetch() }}>
+            Повторить расчёт
+          </Button>
         </div>
-      ) : statisticsQuery.error ? (
-        <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          Не удалось рассчитать статистику: {(statisticsQuery.error as Error).message}
+      ) : !calculationReady ? (
+        <div id={calculationStatusId} role="status" className="rounded-md border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+          {calculationPendingMessage}
+          {' '}Отчёт будет доступен после завершения расчёта.
         </div>
       ) : null}
 
+      {/* Keep local chart/table controls mounted, but never expose previous-key
+          values (or empty fallbacks) under the newly selected period/unit. */}
+      <div hidden={!calculationReady}>
       {activeTab === 'general' ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -845,6 +872,7 @@ function StatisticsReports({
       ) : (
         <LineSummaryPanel onOpenRows={onOpenWeldRowIds} summary={lineSummary} unit={lineSummaryUnit} />
       )}
+      </div>
     </section>
   )
 }

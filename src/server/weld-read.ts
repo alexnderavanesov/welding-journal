@@ -2,6 +2,7 @@
 
 import { requireDb } from '@/db'
 import { WDI_FILTER_SOURCE_SELECT } from './wdi-filter-source'
+import { getReportTaskPublicationCacheIdentity } from './report-task-publication-cache-key'
 import { getJournalDerivedFilters, getWeldColumnFilterOptionSourceFilters, loadJournalDerivedFilterMatches } from './journal-filter-source'
 export { getWeldColumnFilterOptionSourceFilters } from './journal-filter-source'
 import { buildNormalizedLnkResultText, buildOwnLnkBackfillWhere } from './lnk-system-order-sql'
@@ -116,6 +117,7 @@ normalizeWeldFormSuggestionRows,
 } from '@/server/weld-form-suggestions-sql'
 import {
 ensureDispatcherTaskIndexFresh,
+isDispatcherTaskIndexFresh,
 readDispatcherTaskIndexState,
 } from '@/server/dispatcher-task-index'
 import {
@@ -142,6 +144,8 @@ type WeldFormSuggestionsRequest,
 type WeldJointChainResult,
 type WeldPageRequest,
 type WeldPageResult,
+type WeldReportSummaryRequest,
+type WeldReportSummaryResult,
 type WeldPageSize,
 type WeldReportContextKind,
 type WeldReportKind,
@@ -764,15 +768,26 @@ export function sortUsageAggregateRows(rows: UsageAggregateRow[]): Array<[string
     .sort(([left], [right]) => left.localeCompare(right, 'ru', { numeric: true, sensitivity: 'base' }))
 }
 
-export async function listReportPage(report: WeldReportKind, data: ReturnType<typeof normalizeWeldPageRequest>) {
-  const db = requireDb()
+function assertCurrentDispatcherStatuses(state: Awaited<ReturnType<typeof readDispatcherTaskIndexState>>) {
+  // A bounded refresh may return stale after concurrent writes. Waiting for the
+  // promise is not proof that status-dependent selection is now safe.
+  if (!isDispatcherTaskIndexFresh(state)) {
+    throw new Error('Не удалось подтвердить актуальность итоговых статусов: данные менялись во время пересчёта. Повторите загрузку.')
+  }
+}
+
+async function getReportReadContext(
+  data: ReturnType<typeof normalizeWeldPageRequest>,
+  waitForDispatcher = false,
+) {
   const hasFinalStatusFilter = Boolean(
     String(data.finalStatus ?? '').trim() || String(data.columnFilters.finalStatus ?? '').trim(),
   )
   const [dispatcherState, otherSettings] = await Promise.all([
-    hasFinalStatusFilter ? ensureDispatcherTaskIndexFresh() : readDispatcherTaskIndexState(),
+    hasFinalStatusFilter || waitForDispatcher ? ensureDispatcherTaskIndexFresh() : readDispatcherTaskIndexState(),
     loadServerOtherSettings(),
   ])
+  if (hasFinalStatusFilter || waitForDispatcher) assertCurrentDispatcherStatuses(dispatcherState)
   const hasCurrentSystemWdiFilter = isSystemWdiMode(otherSettings) && Boolean(data.columnFilters.wdi?.trim())
   const sourceColumnFilters = getWeldColumnFilterOptionSourceFilters(
     data.columnFilters,
@@ -782,6 +797,70 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
   const sourceFilterData = sourceColumnFilters === data.columnFilters
     ? data
     : { ...data, columnFilters: sourceColumnFilters }
+  return { dispatcherState, otherSettings, hasCurrentSystemWdiFilter, hasDerivedColumnFilters, sourceFilterData }
+}
+
+export async function getWeldReportSummary({ data: input }: { data: WeldReportSummaryRequest }): Promise<WeldReportSummaryResult> {
+  await assertSecurityScope('entry')
+  const report = input?.report
+  if (report !== 'weldingJournal' && report !== 'lnk' && report !== 'heatTreatment') {
+    throw new Error('Неизвестный вид отчета.')
+  }
+  // Summary identity never depends on the visible portion or sort order.
+  const data = normalizeWeldPageRequest({ ...input, page: 1, pageSize: 100, sort: undefined })
+  const needsCurrentStatuses = report === 'weldingJournal' || Boolean(
+    String(data.finalStatus ?? '').trim() || String(data.columnFilters.finalStatus ?? '').trim(),
+  )
+  const assertCurrent = (state: Awaited<ReturnType<typeof readDispatcherTaskIndexState>>) => {
+    if (needsCurrentStatuses && !isDispatcherTaskIndexFresh(state)) {
+      throw new Error('Данные изменились во время расчёта. Повторите подсчёт итогов; найденные строки остаются доступны.')
+    }
+  }
+  // Even a cache hit must not present yesterday's/still-invalidated status totals.
+  if (needsCurrentStatuses) assertCurrent(await ensureDispatcherTaskIndexFresh())
+  return getOrComputeDerivedCalculation(
+    buildDerivedReportCacheKey('report-summary:v2', report, data, await getReportTaskPublicationCacheIdentity(data.columnFilters)),
+    async () => {
+      // Read settings only after the cache captures its source revision. A
+      // concurrent setting change then prevents publishing this cached result.
+      const { dispatcherState, otherSettings, hasCurrentSystemWdiFilter, hasDerivedColumnFilters, sourceFilterData } =
+        await getReportReadContext(data)
+      assertCurrent(dispatcherState)
+      const db = requireDb()
+      if (report !== 'weldingJournal') {
+        const where = and(buildReportKindWhere(report), buildReportSourceWhere(sourceFilterData)) ?? sql`true`
+        if (!canPaginateReportSource(data.columnFilters) || hasCurrentSystemWdiFilter) {
+          const ids = await listDerivedReportRowIds(report, data, where)
+          return {
+            total: ids.length,
+            ...(report === 'lnk' ? { availableRequestCount: await countAvailableLnkRequestRowsByIds(ids) } : {}),
+          }
+        }
+        const [[row], availableRequestCount] = await Promise.all([
+          db.select({ total: count() }).from(weldJoints).where(where),
+          report === 'lnk' ? countAvailableLnkRequestRows(where) : Promise.resolve(undefined),
+        ])
+        return { total: Number(row?.total) || 0, ...(availableRequestCount === undefined ? {} : { availableRequestCount }) }
+      }
+      if (hasDerivedColumnFilters) {
+        const rows = await loadJournalFilteredRows(data, sourceFilterData, otherSettings)
+        return { total: rows.length, acceptedWdiTotal: sumAcceptedWdi(rows) }
+      }
+      const where = buildWhere(data)
+      const [[row], acceptedWdiTotal] = await Promise.all([
+        db.select({ total: count() }).from(weldJoints).where(where),
+        computeAcceptedWdiTotal(where, otherSettings),
+      ])
+      return { total: Number(row?.total) || 0, acceptedWdiTotal }
+    },
+  )
+}
+
+export async function listReportPage(report: WeldReportKind, data: ReturnType<typeof normalizeWeldPageRequest>): Promise<WeldPageResult> {
+  const db = requireDb()
+  const includeTotals = data.includeTotals !== false
+  const { dispatcherState, otherSettings, hasCurrentSystemWdiFilter, hasDerivedColumnFilters, sourceFilterData } =
+    await getReportReadContext(data)
   if (data.pageSize === WELD_PAGE_ALL_SIZE) {
     const sourceWhere = report === 'weldingJournal'
       ? buildWhere(sourceFilterData)
@@ -796,14 +875,14 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
         .from(weldJoints)
         .where(where)
         .orderBy(...getReportOrderBy(report, data.sort))
-      const shouldCount = data.page === 1 && data.pageSize !== WELD_PAGE_ALL_SIZE
+      const shouldCount = includeTotals && data.page === 1 && data.pageSize !== WELD_PAGE_ALL_SIZE
       const countQuery = shouldCount
         ? db.select({ total: count() }).from(weldJoints).where(where)
         : Promise.resolve([])
-      const availableRequestCountQuery = data.page === 1 && report === 'lnk'
+      const availableRequestCountQuery = includeTotals && data.page === 1 && report === 'lnk'
         ? countAvailableLnkRequestRows(where)
         : Promise.resolve(undefined)
-      const fetchExtraRow = data.page > 1 && data.pageSize !== WELD_PAGE_ALL_SIZE
+      const fetchExtraRow = !shouldCount && data.pageSize !== WELD_PAGE_ALL_SIZE
       const rowsQuery =
         data.pageSize === WELD_PAGE_ALL_SIZE
           ? query
@@ -819,7 +898,10 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
         : countRow
           ? Number(countRow.total) || 0
           : undefined
-      const reportRows = applyCurrentSystemWdi(buildServerReportRows(rows, report), otherSettings)
+      const reportRows = applyCurrentSystemWdi(
+        buildServerReportRows(rows, report, { preserveSourceOrder: Boolean(data.sort) }),
+        otherSettings,
+      )
       const rowsWithMetadata = compactWeldRowsForTransport(
         await attachReportPageMetadata(reportRows, { dispatcherState }),
       )
@@ -838,7 +920,7 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
 
     const filteredIds = await listDerivedReportRowIds(report, data, where)
     const total = filteredIds.length
-    const availableRequestCount = data.page === 1 && report === 'lnk'
+    const availableRequestCount = includeTotals && data.page === 1 && report === 'lnk'
       ? await countAvailableLnkRequestRowsByIds(filteredIds)
       : undefined
     const pageIds =
@@ -852,7 +934,7 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
 
     return {
       rows,
-      total,
+      ...(includeTotals ? { total } : {}),
       availableRequestCount,
       page: data.page,
       pageSize: data.pageSize,
@@ -862,36 +944,11 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
 
   if (hasDerivedColumnFilters) {
     const compactWdiSelect = getJournalWdiFilterSelect({})
-    const matches = await loadJournalDerivedFilterMatches(db, buildWhere(sourceFilterData),
-      getJournalDerivedFilters(data.columnFilters, isSystemWdiMode(otherSettings)), otherSettings)
-    if (!matches.length) return { rows: [], total: 0, acceptedWdiTotal: 0, page: data.page, pageSize: data.pageSize, hasMore: false }
-    const sourceWhere = buildNumberArrayMatch(weldJoints.id, matches.map(row => row.id))
-    const currentRows = buildServerReportRows(applyCurrentSystemWdi(
-      await db
-        .select(compactWdiSelect)
-        .from(weldJoints)
-        .where(sourceWhere)
-        .orderBy(...getReportOrderBy('weldingJournal', data.sort)),
-      otherSettings,
-    ), 'weldingJournal')
-    const versions = new Map(matches.map(row => [row.id, row.rowVersion]))
-    if (currentRows.length !== matches.length || currentRows.some(row => row.rowVersion !== versions.get(row.id))) {
-      throw new Error('Данные журнала изменились во время отбора. Повторите загрузку.')
-    }
-    const filteredRows = await attachRkExposureSchemeFilterValuesIfNeeded(
-      await attachCurrentFinalStatuses(currentRows),
-      data.columnFilters,
-    )
+    const filteredRows = await loadJournalFilteredRows(data, sourceFilterData, otherSettings)
     const total = filteredRows.length
     let pageRows: WeldRow[] = data.pageSize === WELD_PAGE_ALL_SIZE
       ? filteredRows
       : filteredRows.slice((data.page - 1) * data.pageSize, data.page * data.pageSize)
-    const acceptedWdiTotal = filteredRows.reduce(
-      (sum, row) => String(row.finalStatus ?? '').trim().toLocaleLowerCase('ru') === 'годен'
-        ? sum + (Number(row.wdi) || 0)
-        : sum,
-      0,
-    )
     if (compactWdiSelect !== WELD_TABLE_SELECT && pageRows.length) {
       const fullRows = await loadWeldRowsByIdsInBatches(db, pageRows.map(row => row.id))
       pageRows = mergeJournalFilterPage(pageRows, fullRows)
@@ -901,8 +958,7 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
     )
     return {
       rows,
-      total,
-      acceptedWdiTotal,
+      ...(includeTotals ? { total, acceptedWdiTotal: sumAcceptedWdi(filteredRows) } : {}),
       page: data.page,
       pageSize: data.pageSize,
       hasMore: data.pageSize !== WELD_PAGE_ALL_SIZE && data.page * data.pageSize < total,
@@ -916,14 +972,14 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
     .where(where)
     .orderBy(...getReportOrderBy('weldingJournal', data.sort))
 
-  const shouldCount = data.page === 1 && data.pageSize !== WELD_PAGE_ALL_SIZE
+  const shouldCount = includeTotals && data.page === 1 && data.pageSize !== WELD_PAGE_ALL_SIZE
   const countQuery = shouldCount
     ? db.select({ total: count() }).from(weldJoints).where(where)
     : Promise.resolve([])
-  const acceptedWdiTotalQuery = data.page === 1
+  const acceptedWdiTotalQuery = includeTotals && data.page === 1
     ? getCurrentAcceptedWdiTotal(data, where, otherSettings)
-    : Promise.resolve(0)
-  const fetchExtraRow = data.page > 1 && data.pageSize !== WELD_PAGE_ALL_SIZE
+    : Promise.resolve(undefined)
+  const fetchExtraRow = !shouldCount && data.pageSize !== WELD_PAGE_ALL_SIZE
   const rowsQuery =
     data.pageSize === WELD_PAGE_ALL_SIZE
       ? query
@@ -945,13 +1001,40 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
   return {
     rows: rowsWithMetadata,
     ...(total === undefined ? {} : { total }),
-    acceptedWdiTotal,
+    ...(acceptedWdiTotal === undefined ? {} : { acceptedWdiTotal }),
     page: data.page,
     pageSize: data.pageSize,
     hasMore: data.pageSize !== WELD_PAGE_ALL_SIZE && (
       total === undefined ? fetchedRows.length > data.pageSize : data.page * data.pageSize < total
     ),
   }
+}
+
+async function loadJournalFilteredRows(
+  data: ReturnType<typeof normalizeWeldPageRequest>,
+  sourceFilterData: ReturnType<typeof normalizeWeldPageRequest>,
+  otherSettings: Awaited<ReturnType<typeof loadServerOtherSettings>>,
+) {
+  const db = requireDb()
+  const matches = await loadJournalDerivedFilterMatches(db, buildWhere(sourceFilterData),
+    getJournalDerivedFilters(data.columnFilters, isSystemWdiMode(otherSettings)), otherSettings)
+  if (!matches.length) return []
+  const currentRows = buildServerReportRows(applyCurrentSystemWdi(
+    await db.select(getJournalWdiFilterSelect({})).from(weldJoints)
+      .where(buildNumberArrayMatch(weldJoints.id, matches.map(row => row.id)))
+      .orderBy(...getReportOrderBy('weldingJournal', data.sort)),
+    otherSettings,
+  ), 'weldingJournal')
+  const versions = new Map(matches.map(row => [row.id, row.rowVersion]))
+  if (currentRows.length !== matches.length || currentRows.some(row => row.rowVersion !== versions.get(row.id))) {
+    throw new Error('Данные журнала изменились во время отбора. Повторите загрузку.')
+  }
+  return attachRkExposureSchemeFilterValuesIfNeeded(await attachCurrentFinalStatuses(currentRows), data.columnFilters)
+}
+
+function sumAcceptedWdi(rows: WeldRow[]) {
+  return rows.reduce((sum, row) => String(row.finalStatus ?? '').trim().toLocaleLowerCase('ru') === 'годен'
+    ? sum + (Number(row.wdi) || 0) : sum, 0)
 }
 
 export const MAX_REPORT_OUTPUT_ROWS = 10_000
@@ -980,14 +1063,18 @@ export async function getCurrentAcceptedWdiTotal(
       'welding-journal-accepted-wdi:v3',
       'weldingJournal',
       data,
+      await getReportTaskPublicationCacheIdentity(data.columnFilters),
     ),
-    async () => {
-      const result = await requireDb().execute<{ total: string | number }>(
-        buildAcceptedWdiTotalQuery(where, otherSettings),
-      )
-      return Number(result.rows[0]?.total) || 0
-    },
+    () => computeAcceptedWdiTotal(where, otherSettings),
   )
+}
+
+async function computeAcceptedWdiTotal(
+  where: SQL | undefined,
+  otherSettings: Awaited<ReturnType<typeof loadServerOtherSettings>>,
+) {
+  const result = await requireDb().execute<{ total: string | number }>(buildAcceptedWdiTotalQuery(where, otherSettings))
+  return Number(result.rows[0]?.total) || 0
 }
 
 export async function countAvailableLnkRequestRows(where: SQL) {
@@ -1337,13 +1424,17 @@ export function buildWeldReportPageFromRows(
   }
 }
 
-export function buildServerReportRows<Row extends WeldInput & { id: number }>(sourceRows: Row[], report: WeldReportKind): WeldRow[] {
+export function buildServerReportRows<Row extends WeldInput & { id: number }>(
+  sourceRows: Row[],
+  report: WeldReportKind,
+  orderOptions: { preserveSourceOrder?: boolean } = {},
+): WeldRow[] {
   if (report === 'weldingJournal') return sourceRows.map((row) => withControlBasisSummary(row, 'all')) as WeldRow[]
   const weldedRows = sourceRows.filter(hasWeldDate) as WeldRow[]
   if (report === 'heatTreatment') {
-    return buildHeatTreatmentReportRows(weldedRows).map((row) => withControlBasisSummary(row, 'psto'))
+    return buildHeatTreatmentReportRows(weldedRows, orderOptions).map((row) => withControlBasisSummary(row, 'psto'))
   }
-  return buildLnkReportRows(weldedRows).map((row) => withControlBasisSummary(row, 'lnk'))
+  return buildLnkReportRows(weldedRows, undefined, orderOptions).map((row) => withControlBasisSummary(row, 'lnk'))
 }
 
 export async function loadCurrentFinalStatusRowsContext() {
@@ -1514,8 +1605,8 @@ export function parseStoredJson(value: unknown) {
 export async function listColumnFilterOptions(data: ReturnType<typeof normalizeWeldColumnFilterOptionsRequest>) {
   if (!FIELD_BY_KEY.has(data.fieldKey)) return []
   const columnFilters = getColumnFilterOptionFilters(data.columnFilters, data.fieldKey)
-  if (shouldEnsureDispatcherTaskIndexForColumnFilter(data.fieldKey, columnFilters)) {
-    await ensureDispatcherTaskIndexFresh()
+  if (String(data.finalStatus ?? '').trim() || shouldEnsureDispatcherTaskIndexForColumnFilter(data.fieldKey, columnFilters)) {
+    assertCurrentDispatcherStatuses(await ensureDispatcherTaskIndexFresh())
   }
   const currentWdiSettings = data.fieldKey === 'wdi' || Boolean(columnFilters.wdi?.trim())
     ? await loadServerOtherSettings()
@@ -1561,7 +1652,7 @@ export async function listColumnFilterOptions(data: ReturnType<typeof normalizeW
         'report-column-options:v4',
         data.report,
         { ...data, columnFilters },
-        { fieldKey: data.fieldKey },
+        { fieldKey: data.fieldKey, ...await getReportTaskPublicationCacheIdentity(columnFilters, data.fieldKey) },
       ),
       async () => {
         const sourceRows = await requireDb()
@@ -1730,7 +1821,9 @@ export async function listDerivedReportRowIds(
 ) {
   const { columnFilters } = filters
   return getOrComputeDerivedCalculation(
-    buildDerivedReportCacheKey('report-derived-row-ids:v3', report, filters),
+    buildDerivedReportCacheKey('report-derived-row-ids:v5', report, filters, {
+      sort: filters.sort ?? null, ...await getReportTaskPublicationCacheIdentity(columnFilters),
+    }),
     async () => {
       const sourceRows = await requireDb()
         .select(REPORT_DERIVED_FILTER_SELECT)
@@ -1744,7 +1837,7 @@ export async function listDerivedReportRowIds(
       ])
       const reportRows = applyCurrentSystemWdi(
         withCurrentFinalStatuses(
-          buildServerReportRows(sourceRowsWithControls as unknown as WeldJoint[], report),
+          buildServerReportRows(sourceRowsWithControls as unknown as WeldJoint[], report, { preserveSourceOrder: Boolean(filters.sort) }),
           finalStatusContext,
         ),
         otherSettings,
@@ -1891,6 +1984,7 @@ export function normalizeWeldPageRequest(
 ): Required<Pick<WeldPageRequest, 'page' | 'pageSize' | 'columnFilters'>> & WeldFilters & {
   report?: WeldReportKind
   sort?: WeldSort
+  includeTotals?: boolean
 } {
   const page = Math.max(1, Math.floor(Number(data?.page) || 1))
   const pageSize = normalizeWeldPageSize(data?.pageSize)

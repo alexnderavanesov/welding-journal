@@ -48,6 +48,7 @@ type CreateReportHeaderActionsPropsOptions = {
   onOpenPstoResultsReport: () => void
   onPstoWorkflowMenuOpenChange: (open: boolean) => void
   onCreateLnkRequest: () => void
+  createLnkRequestDisabled?: boolean
   onExtendLnkRequest: () => void
   onOpenLnkRequestRegistry: () => void
   lnkAvailability?: WorkflowAvailability
@@ -117,6 +118,7 @@ export function createReportHeaderActionsProps({
   onOpenPstoResultsReport,
   onPstoWorkflowMenuOpenChange,
   onCreateLnkRequest,
+  createLnkRequestDisabled,
   onExtendLnkRequest,
   onOpenLnkRequestRegistry,
   lnkRequestPending,
@@ -185,6 +187,7 @@ export function createReportHeaderActionsProps({
     onOpenPstoResultsReport,
     onPstoWorkflowMenuOpenChange,
     onCreateLnkRequest,
+    createLnkRequestDisabled,
     onExtendLnkRequest,
     onOpenLnkRequestRegistry,
     lnkRequestPending,

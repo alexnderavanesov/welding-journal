@@ -1,0 +1,2 @@
+ALTER TABLE "specialists" ADD COLUMN "archived" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE INDEX "specialists_archive_name_idx" ON "specialists" USING btree ("archived","name","id");

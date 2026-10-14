@@ -2,6 +2,7 @@ import { expect, test, type Page, type Request } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
+import { confirmLnkResultChanges, lnkResultConfirmation } from '../lnk-result-confirmation'
 
 const project = 'E2E unofficial result guard', joint = 'F731', lineName = 'UNOFFICIAL-GUARD'
 test.afterEach(() => cleanupLineProgramProjects([project]))
@@ -24,6 +25,55 @@ async function openManager(page: Page) {
   await dialog.getByRole('button', { name: new RegExp(`${lineName} · ${joint}`) }).click()
   return dialog
 }
+
+for (const beforeHeatTreatment of [false, true]) test(`довнесение ВИК годен при сохранённом ремонте УЗК: ${beforeHeatTreatment ? 'до ТО' : 'основной этап'}`, async ({ page }) => {
+  const id = await seed(), errors: string[] = [], writes: Request[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('request', request => { if (request.url().includes('/_serverFn/') && /^(updateWeldJoints_|savePreHeatTreatment)/.test(rpcName(request.url()))) writes.push(request) })
+  await withE2eDatabase(async db => {
+    if (beforeHeatTreatment) {
+      await db.query(`update weld_joints set vik_result=null,vik_request=null,vik_request_date=null,vik_conclusion=null,vik_conclusion_date=null,
+        uzk_result=null,uzk_request=null,uzk_request_date=null,uzk_conclusion=null,uzk_conclusion_date=null,psto_required='да' where id=$1`, [id])
+      await db.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,request_name,request_date,result,conclusion_name,conclusion_date)
+        values ($1,'ВИК','UG-PRE-VIK','2026-09-01','ожидает НК',null,null),
+          ($1,'УЗК','UG-PRE-UZK','2026-09-02','ремонт','UG-PRE-UZK-C','2026-09-03')`, [id])
+    } else {
+      await db.query("update weld_joints set vik_result='ожидает НК',vik_conclusion=null,vik_conclusion_date=null where id=$1", [id])
+    }
+  })
+  await page.goto('/lnk')
+  await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(joint)
+  await page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).click()
+  await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
+  await page.getByRole('button', { name: 'Внести результаты', exact: true }).click()
+  if (beforeHeatTreatment) {
+    const stage = page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' })
+    await stage.getByRole('button', { name: 'До ТО', exact: true }).click()
+  }
+  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', {
+    name: beforeHeatTreatment ? 'Внесение результатов ЛНК до ТО' : 'Внесение результатов ЛНК', exact: true,
+  }) })
+  if (!beforeHeatTreatment) await dialog.getByLabel('Метод контроля', { exact: true }).selectOption('vikRequest')
+  await dialog.getByRole('checkbox', { name: `Выбрать стык ${lineName} ${joint}`, exact: true }).check()
+  await dialog.getByLabel('Дата контроля', { exact: true }).fill('2026-09-02')
+  await dialog.getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
+  await dialog.getByRole('button', { name: beforeHeatTreatment ? 'Сохранить результат до ТО' : 'Сохранить результат', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  const facts = () => withE2eDatabase(async db => {
+    const row = (await db.query('select officiality,final_status,vik_result,uzk_result from weld_joints where id=$1', [id])).rows[0]
+    if (beforeHeatTreatment) {
+      for (const control of (await db.query('select method,result from pre_heat_treatment_controls where weld_joint_id=$1', [id])).rows) {
+        row[control.method === 'ВИК' ? 'vik_result' : 'uzk_result'] = control.result
+      }
+    }
+    return row
+  })
+  await expect.poll(facts).toEqual({ officiality: 'неофициальный', final_status: 'не годен', vik_result: 'годен', uzk_result: 'ремонт' })
+  await page.reload()
+  expect(await facts()).toEqual({ officiality: 'неофициальный', final_status: 'не годен', vik_result: 'годен', uzk_result: 'ремонт' })
+  expect(errors).toEqual([])
+  expect(writes).toHaveLength(1)
+})
 
 test('негодный неофициальный: запрет годного результата, отдельное восстановление официальности и защита от старого клиента', async ({ page }) => {
   const id = await seed(), writes: Request[] = [], errors: string[] = []
@@ -54,6 +104,7 @@ test('негодный неофициальный: запрет годного �
   const before = await stored(id)
   await manager.getByRole('button', { name: 'годен', exact: true }).last().click()
   await manager.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
+  await confirmLnkResultChanges(page)
   await expect(manager).toBeHidden()
   expect((await stored(id)).uzk_result).toBe('годен')
   expect(writes).toHaveLength(1)
@@ -90,13 +141,17 @@ test('удаление последнего брака: возврат офиц�
   const remove = manager.getByRole('button', { name: 'Удалить результат', exact: true })
   await expect(remove).toBeEnabled()
   await remove.click()
-  const confirm = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Удалить результат ЛНК', exact: true }) })
-  await confirm.getByRole('button', { name: 'Отмена', exact: true }).click()
+  // Deletion is staged, like replacement; consent is requested only on Save.
+  expect((await stored(id)).uzk_result).toBe('ремонт')
+  expect(writes).toHaveLength(0)
+  await manager.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
+  const confirm = lnkResultConfirmation(page)
+  await confirm.getByRole('button', { name: 'Вернуться к редактированию', exact: true }).click()
   expect((await stored(id)).uzk_result).toBe('ремонт')
   expect(writes).toHaveLength(0)
   const before = await stored(id)
-  await remove.click()
-  await confirm.getByRole('button', { name: 'Удалить', exact: true }).click()
+  await manager.getByRole('button', { name: 'Сохранить изменения', exact: true }).click()
+  await confirmLnkResultChanges(page)
   await expect.poll(async () => (await stored(id)).uzk_result).not.toBe('ремонт')
   expect(writes).toHaveLength(1)
   await withE2eDatabase(db => db.query(`update weld_joints set officiality='неофициальный',uzk_result='ремонт',

@@ -1,9 +1,10 @@
 import { createServerFn } from '@tanstack/react-start'
-import { asc, inArray, or, sql, type SQL } from 'drizzle-orm'
+import { asc, eq, inArray, or, sql, type SQL } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import { requireDb } from '@/db'
 import {
   dispatcherAcceptedWarnings,
+  dispatcherTaskIndexState,
   welderStampSuspensions,
   welderStamps,
   weldJoints,
@@ -25,6 +26,12 @@ import {
   prepareWelderStampSuspensionsForPersistence,
 } from '@/lib/welder-stamp-persistence-validation'
 import { lockWelderStampRegistry } from '@/server/welder-stamp-registry-lock'
+import { getWelderStampDispatcherImpact, getWelderStampSuspensionDispatcherImpact } from '@/lib/welder-stamp-dispatcher-impact'
+import { loadBoundedDispatcherDirtyScopes, loadWelderStampDispatcherScopes, parseDispatcherDirtyScopes } from './dispatcher-dirty-scope-selection'
+import { loadWelderQualificationImpactScopes } from './welder-qualification-impact'
+import { DISPATCHER_INDEX_LOCK_ID, DISPATCHER_INDEX_STATE_ID } from './dispatcher-task-index-constants'
+import type { DispatcherDirtyScope } from './dispatcher-task-index-dirty'
+import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
 
 export type WelderStampPayload = {
   id: number
@@ -200,15 +207,41 @@ export const saveWelderStampRecords = createServerFn({ method: 'POST' })
       )
       await assertRemovedWelderStampAliasesAreUnused(tx, currentStampRows, preparedRecords)
 
+      const currentRecords = currentStampRows.map(toWelderStampPayload)
+      const impact = getWelderStampDispatcherImpact(currentRecords, preparedRecords)
+      // A stale resubmission must still pass all revision/reference checks above.
+      if (!impact.changed) return createRegistrySnapshot(currentStampRows, currentSuspensionRows)
+      // Owner cascades/renames retain the conservative dependency path. The
+      // exclusive registry lock stays held across profile reads and persistence.
+      const qualificationScopes = impact.decisionOwnerIds.length ? null : await loadWelderQualificationImpactScopes(tx, {
+        officialAliases: impact.officialAliases, before: currentRecords, after: preparedRecords,
+        suspensions: currentSuspensionRows.map(suspensionToPayload),
+      })
+      const selectedScopes = qualificationScopes ?? await loadWelderStampDispatcherScopes(tx, impact.officialAliases, impact.decisionOwnerIds)
+      const scopes = selectedScopes === null ? null : await loadBoundedDispatcherDirtyScopes(tx, selectedScopes)
+
       // Preserve object IDs and dependent decisions during ordinary edits. Only truly
       // removed registry objects may cascade-delete their accepted exceptions.
       await persistWelderStampObjects(tx, currentStampRows, preparedRecords)
-      await markDispatcherTaskIndexDirty(tx)
+      await markWelderRegistryDispatcherDirty(tx, scopes)
       const savedStampRows = await tx.select().from(welderStamps).orderBy(asc(welderStamps.id))
       const savedSuspensionRows = await tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id))
       return createRegistrySnapshot(savedStampRows, savedSuspensionRows)
     })
   })
+
+/** Keep the generic derived cache invalidation, even for name-only changes:
+ * statistics and line summaries include current registry labels. Inspect dirty
+ * metadata under the index lock so corrupt state falls back to a full rebuild
+ * instead of being interpreted as reminder-only (or failing a JSONB append).
+ */
+async function markWelderRegistryDispatcherDirty(tx: SystemDocumentSequenceTransaction, scopes: DispatcherDirtyScope[] | null) {
+  await tx.execute(sql`select pg_advisory_xact_lock(${DISPATCHER_INDEX_LOCK_ID})`)
+  const [state] = await tx.select({ dirtyScopes: dispatcherTaskIndexState.dirtyScopes, fullRebuild: dispatcherTaskIndexState.fullRebuild })
+    .from(dispatcherTaskIndexState).where(eq(dispatcherTaskIndexState.id, DISPATCHER_INDEX_STATE_ID)).limit(1)
+  const unsafe = state && parseDispatcherDirtyScopes(state.dirtyScopes, state.fullRebuild) === null
+  await markDispatcherTaskIndexDirty(tx, { scopes: scopes ?? [], fullRebuild: scopes === null || Boolean(unsafe) })
+}
 
 /** Validation and registry lock belong to the caller. Retained IDs are never deleted/recreated. */
 export async function persistWelderStampObjects(
@@ -310,6 +343,11 @@ export const saveWelderStampSuspensionRecords = createServerFn({ method: 'POST' 
       assertRegistryRevision(createRegistrySnapshot(currentStampRows, currentSuspensionRows).revision, data.expectedRevision)
       assertWelderStampSuspensionsReferenceRegistry(preparedRecords, currentStampRows.map(toWelderStampPayload))
 
+      const impact = getWelderStampSuspensionDispatcherImpact(currentSuspensionRows.map(suspensionToPayload), preparedRecords)
+      if (!impact.changed) return createRegistrySnapshot(currentStampRows, currentSuspensionRows)
+      const selectedScopes = await loadWelderStampDispatcherScopes(tx, impact.officialAliases, [])
+      const scopes = selectedScopes === null ? null : await loadBoundedDispatcherDirtyScopes(tx, selectedScopes)
+
       await tx.delete(welderStampSuspensions)
 
       if (preparedRecords.length === 0) {
@@ -320,7 +358,7 @@ export const saveWelderStampSuspensionRecords = createServerFn({ method: 'POST' 
           sql`select setval(pg_get_serial_sequence('welder_stamp_suspensions','id'), coalesce((select max(id) from welder_stamp_suspensions), 1), true)`,
         )
       }
-      await markDispatcherTaskIndexDirty(tx)
+      await markWelderRegistryDispatcherDirty(tx, scopes)
       const savedStampRows = await tx.select().from(welderStamps).orderBy(asc(welderStamps.id))
       const savedSuspensionRows = await tx.select().from(welderStampSuspensions).orderBy(asc(welderStampSuspensions.id))
       return createRegistrySnapshot(savedStampRows, savedSuspensionRows)

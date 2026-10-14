@@ -2,7 +2,7 @@ import { asc, desc } from 'drizzle-orm'
 import { weldJoints } from '@/db/schema'
 import { encodeIdentityKey } from '@/lib/identity-key'
 import { normalizeJointChainPart } from '@/lib/joint-chain'
-import { buildNumberArrayMatch } from './weld-request-utils'
+import { readDispatcherWeldBatch } from './dispatcher-weld-hydration'
 import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
 
 export const DISPATCHER_WELD_READ_BATCH_SIZE = 5_000
@@ -54,23 +54,26 @@ export function planDispatcherWeldBatches(rows: Array<ScopeIdentity & { id: numb
  * The caller's transaction/revision guard remains responsible for publication.
  */
 export async function visitDispatcherWeldRows(
-  db: Pick<SystemDocumentSequenceTransaction, 'select'>,
+  db: Pick<SystemDocumentSequenceTransaction, 'select' | 'execute'>,
   visit: (rows: Row[], scopeKeys: ReadonlySet<string>) => Promise<void>,
+  onPhase?: (stage: string) => void,
 ) {
+  onPhase?.('plan-weld-batches')
   const loadPlan = async () => planDispatcherWeldBatches(await db.select({ id: weldJoints.id,
     projectTitle: weldJoints.projectTitle, subtitleCode: weldJoints.subtitleCode, line: weldJoints.line,
   }).from(weldJoints).orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint)))
   const { batches, contexts } = await loadPlan()
   const visitBatch = async (batch: Scope[]) => {
+    onPhase?.('read-weld-batch')
     const contextScopes = new Set(batch.flatMap(scope => contexts.get(scope.contextKey) ?? []))
     const ids = [...contextScopes].flatMap(scope => scope.ids)
     const rows: Row[] = []
     // Even an unusually large line is hydrated in bounded chunks, without
     // splitting its business calculation or dropping historical neighbours.
     for (let offset = 0; offset < ids.length; offset += DISPATCHER_WELD_READ_BATCH_SIZE) {
-      const source = await db.select().from(weldJoints).where(buildNumberArrayMatch(weldJoints.id, ids.slice(offset, offset + DISPATCHER_WELD_READ_BATCH_SIZE)))
-      // A spread copy avoids retaining Drizzle's wide dictionary-shaped objects.
-      for (const row of source) rows.push({ ...row })
+      const source = await readDispatcherWeldBatch(db, ids.slice(offset, offset + DISPATCHER_WELD_READ_BATCH_SIZE))
+      // The flat driver reader already returns fresh, consistently shaped rows.
+      for (const row of source) rows.push(row)
     }
     const byId = new Map(rows.map(row => [row.id, row]))
     await visit(ids.flatMap(id => { const row = byId.get(id); return row ? [row] : [] }), new Set(batch.map(scope => scope.key)))

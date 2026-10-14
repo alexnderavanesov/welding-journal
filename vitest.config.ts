@@ -9,7 +9,9 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    exclude: [...configDefaults.exclude, 'e2e/**'],
+    // Generated browser artifacts/builds contain no unit sources and must not
+    // be traversed (including cloud-synced traces from interrupted runs).
+    exclude: [...configDefaults.exclude, 'e2e/**', 'test-results/**', 'playwright-report/**', '.output/**'],
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
   },

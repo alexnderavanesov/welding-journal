@@ -1,7 +1,12 @@
 import { expect, it, vi } from 'vitest'
-import { PgDialect } from 'drizzle-orm/pg-core'
 import { DISPATCHER_WELD_READ_BATCH_SIZE, DISPATCHER_WELD_WORKING_SET_SIZE, getDispatcherScopeKey, planDispatcherWeldBatches, visitDispatcherWeldRows } from './dispatcher-weld-rows'
 import { prepareReportRowsInPlace } from '@/lib/use-report-rows'
+
+// These tests cover whole-line planning and bounded hydration, independently
+// of the real SQL reader's all-column/decoder equivalence integration tests.
+vi.mock('./dispatcher-weld-hydration', () => ({
+  readDispatcherWeldBatch: async (db: { readBatch: (ids: number[]) => Promise<unknown[]> }, ids: number[]) => db.readBatch(ids),
+}))
 
 it('plans 200k joints as ten whole-line working sets with small hydration reads, not per-joint queries', () => {
   const rows = Array.from({ length: 200_000 }, (_, i) => ({ id: i + 1,
@@ -21,22 +26,20 @@ it.each([0, 1, 5_000, 10_001])('hydrates %i wide rows in sequential bounded read
     technologyCardNumber: 'ТК  №1', line: id % 2 ? 'A' : null, layeredControlAssigned: false }]))
   const batches: number[][] = []
   let active = 0, peak = 0
-  const select = vi.fn((columns?: unknown) => ({ from: () => columns ? {
+  const select = vi.fn(() => ({ from: () => ({
     orderBy: vi.fn(async () => ordered),
-  } : {
-    where: async (condition: Parameters<PgDialect['sqlToQuery']>[0]) => {
-      const query = new PgDialect().sqlToQuery(condition)
-      const ids = query.params[0] as number[]
-      batches.push(ids); peak = Math.max(peak, ++active)
-      await Promise.resolve(); active--
-      return ids.slice().reverse().map(id => originals.get(id))
-    },
-  } }))
+  }) }))
   const rows: Array<NonNullable<ReturnType<typeof originals.get>>> = []
-  await visitDispatcherWeldRows({ select } as never, async batch => { rows.push(...batch as unknown as typeof rows) })
+  const readBatch = async (ids: number[]) => {
+    batches.push(ids); peak = Math.max(peak, ++active)
+    await Promise.resolve(); active--
+    return ids.slice().reverse().map(id => ({ ...originals.get(id)! }))
+  }
+  await visitDispatcherWeldRows({ select, readBatch } as never, async batch => { rows.push(...batch as unknown as typeof rows) })
   const expected = ordered.map(({ id }) => originals.get(id)!).sort((a, b) => getDispatcherScopeKey(a) < getDispatcherScopeKey(b) ? -1 : getDispatcherScopeKey(a) > getDispatcherScopeKey(b) ? 1 : 0)
   expect(rows).toEqual(expected)
-  expect(select).toHaveBeenCalledTimes(1 + Math.ceil(count / DISPATCHER_WELD_READ_BATCH_SIZE))
+  expect(select).toHaveBeenCalledTimes(1)
+  expect(batches).toHaveLength(Math.ceil(count / DISPATCHER_WELD_READ_BATCH_SIZE))
   expect(batches.every(batch => batch.length <= DISPATCHER_WELD_READ_BATCH_SIZE)).toBe(true)
   expect(peak).toBe(count ? 1 : 0)
   for (const row of rows) {
@@ -53,12 +56,10 @@ it('includes whitespace-equivalent final-status neighbours across batch boundari
   expect(plan.batches).toHaveLength(2)
   expect(plan.contexts.size).toBe(1)
   const byId = new Map(rows.map(row => [row.id, row]))
-  const select = vi.fn((columns?: unknown) => ({ from: () => columns ? { orderBy: async () => rows } : {
-    where: async (condition: Parameters<PgDialect['sqlToQuery']>[0]) =>
-      (new PgDialect().sqlToQuery(condition).params[0] as number[]).map(id => ({ ...byId.get(id) })),
-  } }))
+  const select = vi.fn(() => ({ from: () => ({ orderBy: async () => rows }) }))
   const statuses = new Map<number, unknown>(), published: number[] = []
-  await visitDispatcherWeldRows({ select } as never, async (batch, scopeKeys) => {
+  const readBatch = vi.fn(async (ids: number[]) => ids.map(id => ({ ...byId.get(id)! })))
+  await visitDispatcherWeldRows({ select, readBatch } as never, async (batch, scopeKeys) => {
     expect(batch).toHaveLength(DISPATCHER_WELD_WORKING_SET_SIZE + 1) // complete status context in both batches
     for (const row of prepareReportRowsInPlace(batch)) if (scopeKeys.has(getDispatcherScopeKey(row))) {
       statuses.set(row.id, row.finalStatus); published.push(row.id)
@@ -67,5 +68,6 @@ it('includes whitespace-equivalent final-status neighbours across batch boundari
   expect(statuses.get(target.id)).toBe('ожидает ремонт')
   expect(published).toHaveLength(DISPATCHER_WELD_WORKING_SET_SIZE + 1)
   expect(new Set(published).size).toBe(DISPATCHER_WELD_WORKING_SET_SIZE + 1)
-  expect(select).toHaveBeenCalledTimes(11) // identity + five 5k hydration reads per complete context
+  expect(select).toHaveBeenCalledTimes(1)
+  expect(readBatch).toHaveBeenCalledTimes(10) // five 5k hydration reads per complete context
 })

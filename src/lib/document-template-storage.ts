@@ -2,6 +2,8 @@ import { DOCUMENT_TEMPLATE_STORAGE_EVENT, GENERATED_DOCUMENT_STORAGE_EVENT } fro
 import {
   deleteRemoteDocumentTemplate,
   getRemoteDocumentTemplate,
+  getRemoteDocumentTemplateInventory,
+  cleanupRemoteDocumentTemplateFiles,
   listRemoteDocumentTemplatesWithFiles,
   saveRemoteDocumentTemplate,
   updateRemoteDocumentTemplate,
@@ -22,6 +24,7 @@ export async function saveDocumentTemplate(
   options: {
     constructorConfig?: DocumentTemplateConstructorConfig | null
     expectedVersion?: string | null
+    recoverMissingFile?: boolean
   } = {},
 ) {
   const remote = await saveRemoteDocumentTemplate({
@@ -38,6 +41,7 @@ export async function saveDocumentTemplate(
       warnings: parsedTemplate.warnings,
       constructorConfig: options.constructorConfig,
       expectedVersion: options.expectedVersion ?? null,
+      recoverMissingFile: options.recoverMissingFile,
     },
   })
   const record = fromRemoteDocumentTemplate(remote)
@@ -99,9 +103,24 @@ export async function loadDocumentTemplates() {
   }, {})
 }
 
+/** Settings need to distinguish a missing file from a genuinely absent template. */
+export async function loadDocumentTemplateInventory() {
+  const inventory = await getRemoteDocumentTemplateInventory()
+  return {
+    templates: Object.fromEntries(inventory.templates.map(remote => [remote.id, fromRemoteDocumentTemplate(remote)])) as Partial<Record<DocumentTemplateId, StoredDocumentTemplate>>,
+    missing: Object.fromEntries(inventory.missing.map(summary => [summary.id, summary])) as Partial<Record<DocumentTemplateId, Omit<StoredDocumentTemplate, 'fileData'>>>,
+    storageWarnings: inventory.storageWarnings ?? {},
+  }
+}
+
 export async function deleteDocumentTemplate(templateId: DocumentTemplateId, expectedVersion: string) {
-  await deleteRemoteDocumentTemplate({ data: { id: templateId, expectedVersion } })
+  const result = await deleteRemoteDocumentTemplate({ data: { id: templateId, expectedVersion } })
   notifyDocumentTemplateStorageChanged()
+  return result
+}
+
+export async function cleanupDocumentTemplateFiles(id: DocumentTemplateId) {
+  return cleanupRemoteDocumentTemplateFiles({ data: { id } })
 }
 
 function notifyDocumentTemplateStorageChanged() {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { getWeldFormSaveBlockReason } from './weld-form-save-reasons'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from './save-check-settings'
 import type { WeldInput } from './weld-fields'
-import { assertUnofficialLnkGoodResultAllowed, getUnofficialLastRejectionRemovalReason } from './unofficial-lnk-result-guard'
+import { assertUnofficialLnkGoodResultAllowed, getUnofficialLastRejectionRemovalReason, getUnofficialLnkResultIssues } from './unofficial-lnk-result-guard'
 import type { WeldRow } from './dispatcher-types'
 import { LNK_METHODS } from './lnk-report-config'
 import { buildLnkResultCorrectionRow, buildLnkResultReplacementRows } from './lnk-result-correction-updates'
@@ -12,6 +12,30 @@ const checksOff = Object.fromEntries(Object.keys(DEFAULT_SAVE_CHECK_SETTINGS).ma
 const previous: WeldInput = { id: 1, joint: 'S1R1', officiality: 'неофициальный', hasVik: 'да', vikResult: 'годен', hasUzk: 'да', uzkResult: 'ремонт' }
 
 describe('unofficial LNK result correction', () => {
+  it.each(LNK_METHODS)('allows backfilling $code with good while another method stays rejected', method => {
+    const other = LNK_METHODS.find(candidate => candidate.code !== method.code)!
+    const row = { id: 1, joint: 'S1', officiality: 'неофициальный', [method.resultKey]: 'ожидает НК', [other.resultKey]: 'ремонт' }
+    expect(getUnofficialLnkResultIssues({ ...row, [method.resultKey]: 'годен' }, row)).toEqual([])
+    expect(() => assertUnofficialLnkGoodResultAllowed(row, 'годен', 'ожидает НК', method.code)).not.toThrow()
+    expect(getUnofficialLnkResultIssues({ ...row, [method.resultKey]: 'годен', [other.resultKey]: null }, row).length).toBeGreaterThan(0)
+    expect(getUnofficialLnkResultIssues({ ...row, [method.resultKey]: 'годен' }, { ...row, [method.resultKey]: 'вырез' }).length).toBeGreaterThan(0)
+  })
+  it.each([true, false])('allows backfill using saved other-method pre-TO rejection with stage enabled=%s', enabled => {
+    const row = { ...previous, vikResult: null, uzkResult: null, preHeatTreatmentLnkEnabled: enabled,
+      preHeatTreatmentControls: [{ id: 8, method: 'УЗК', result: 'ремонт' }] } as WeldRow
+    expect(getUnofficialLnkResultIssues({ ...row, vikResult: 'годен' }, row)).toEqual([])
+    expect(getUnofficialLnkResultIssues({ ...row, vikResult: 'годен', preHeatTreatmentControls: [] }, row).length).toBeGreaterThan(0)
+    expect(() => assertUnofficialLnkGoodResultAllowed(row, 'годен', null, 'ВИК до ТО')).not.toThrow()
+    expect(() => assertUnofficialLnkGoodResultAllowed(row, 'годен', null, 'УЗК')).toThrow()
+  })
+  it('does not treat derived bad status or newly supplied rejection as retained historical evidence', () => {
+    const legacy = { id: 1, joint: 'S1', officiality: 'неофициальный', finalStatus: 'не годен' }
+    expect(getUnofficialLnkResultIssues({ ...legacy, vikResult: 'годен' }, legacy).length).toBeGreaterThan(0)
+    expect(getUnofficialLnkResultIssues({ ...legacy, vikResult: 'годен', uzkResult: 'ремонт' }, legacy).length).toBeGreaterThan(0)
+    const stored = { ...legacy, uzkResult: 'ремонт' }
+    expect(getUnofficialLnkResultIssues({ ...stored, vikResult: 'годен', uzkResult: null, rkResult: 'ремонт' }, stored).length).toBeGreaterThan(0)
+    expect(getUnofficialLnkResultIssues({ ...stored, vikResult: 'годен' }).length).toBeGreaterThan(0)
+  })
   it.each(LNK_METHODS)('protects $code while preserving other good methods', method => {
     const row = { ...previous, [method.resultKey]: 'вырез' }
     expect(getWeldFormSaveBlockReason({ ...row, [method.resultKey]: 'годен' }, row, checksOff)).toContain('Сначала верните')

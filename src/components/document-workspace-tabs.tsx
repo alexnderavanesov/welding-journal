@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-export type DocumentWorkspaceTab = 'joints' | 'documents'
+export type DocumentWorkspaceTab = 'joints' | 'documents' | 'specialists'
 
 type DocumentWorkspaceTabsProps = {
   activeTab: DocumentWorkspaceTab
@@ -11,6 +11,7 @@ type DocumentWorkspaceTabsProps = {
   documentsHaveError?: boolean
   onChange: (tab: DocumentWorkspaceTab) => void
   controls?: ReactNode
+  specialists?: boolean
 }
 
 export function DocumentWorkspaceTabs({
@@ -22,18 +23,19 @@ export function DocumentWorkspaceTabs({
   documentsHaveError = false,
   onChange,
   controls,
+  specialists = false,
 }: DocumentWorkspaceTabsProps) {
   return (
     <div
       className="flex shrink-0 flex-wrap items-end gap-1 border-b border-slate-200 bg-white px-5 pt-1"
     >
-      <div role="tablist" aria-label={ariaLabel} className="flex items-end gap-1">
+      <div role="tablist" aria-label={ariaLabel} className="flex min-w-0 max-w-full items-end gap-1 overflow-x-auto">
       <button
         type="button"
         role="tab"
         aria-selected={activeTab === 'joints'}
         onClick={() => onChange('joints')}
-        className={`h-9 border-b-2 px-3 text-sm font-semibold transition-colors ${
+        className={`h-9 shrink-0 whitespace-nowrap border-b-2 px-3 text-sm font-semibold transition-colors ${
           activeTab === 'joints'
             ? 'border-sky-600 text-sky-800'
             : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -47,7 +49,7 @@ export function DocumentWorkspaceTabs({
         aria-selected={activeTab === 'documents'}
         onClick={() => onChange('documents')}
         disabled={documentsDisabled}
-        className={`inline-flex h-9 items-center gap-2 border-b-2 px-3 text-sm font-semibold transition-colors ${
+        className={`inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-3 text-sm font-semibold transition-colors ${
           activeTab === 'documents'
             ? 'border-sky-600 text-sky-800'
             : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -64,6 +66,7 @@ export function DocumentWorkspaceTabs({
           {documentsCount}
         </span>
       </button>
+      {specialists ? <button type="button" role="tab" aria-selected={activeTab === 'specialists'} disabled={documentsDisabled} onClick={() => onChange('specialists')} className={`h-9 shrink-0 whitespace-nowrap border-b-2 px-3 text-sm font-semibold disabled:text-slate-300 ${activeTab === 'specialists' ? 'border-sky-600 text-sky-800' : 'border-transparent text-slate-500'}`}>Специалисты</button> : null}
       </div>
       {controls}
     </div>

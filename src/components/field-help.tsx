@@ -2,9 +2,9 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Info } from 'lucide-react'
 
-export function FieldHelp({ label, children }: { label: string; children: ReactNode }) {
+export function FieldHelp({ label, children, href }: { label: string; children: ReactNode; href?: string }) {
   const id = useId()
-  const button = useRef<HTMLButtonElement>(null)
+  const button = useRef<HTMLSpanElement>(null)
   const [position, setPosition] = useState<{ left: number; top: number; above: boolean } | null>(null)
   const [pinned, setPinned] = useState(false)
   const open = Boolean(position)
@@ -35,17 +35,18 @@ export function FieldHelp({ label, children }: { label: string; children: ReactN
       window.removeEventListener('resize', close)
     }
   }, [open])
-  return <>
-    <button ref={button} type="button" aria-label={label} aria-expanded={open} aria-describedby={open ? id : undefined}
+  const Trigger = href ? 'a' : 'button'
+  return <span ref={button} className="inline-flex shrink-0">
+    <Trigger type={href ? undefined : 'button'} href={href} target={href ? '_blank' : undefined} rel={href ? 'noreferrer' : undefined} aria-label={label} aria-expanded={open} aria-describedby={open ? id : undefined}
       onMouseEnter={show} onMouseLeave={() => { if (!pinned) setPosition(null) }} onFocus={show} onBlur={close}
-      onClick={() => { if (pinned) close(); else { setPinned(true); show() } }}
+      onClick={event => { event.stopPropagation(); if (href) return; if (pinned) close(); else { setPinned(true); show() } }}
       className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-slate-400 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
       <Info aria-hidden="true" className="h-3.5 w-3.5" />
-    </button>
-    {position ? createPortal(<div id={id} role="tooltip"
+    </Trigger>
+    {position ? createPortal(<div id={id} role="tooltip" data-workflow-result-tooltip="true"
       className="pointer-events-none fixed z-[300] w-80 max-w-[calc(100vw-16px)] rounded-lg bg-slate-900 px-3 py-2.5 text-xs font-normal leading-5 text-white shadow-lg"
       style={{ left: position.left, top: position.top, transform: position.above ? 'translateY(-100%)' : undefined }}>
       {children}
     </div>, document.body) : null}
-  </>
+  </span>
 }

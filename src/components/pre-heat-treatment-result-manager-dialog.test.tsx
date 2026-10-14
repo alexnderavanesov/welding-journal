@@ -4,14 +4,19 @@ import { describe, expect, it, vi } from 'vitest'
 import { PreHeatTreatmentResultManagerDialog } from '@/components/pre-heat-treatment-result-manager-dialog'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
+const resultEditProps = () => ({
+  pendingResultChanges: {}, pendingResultCount: 0,
+  onStageResultChange: vi.fn(), onSaveChanges: vi.fn(), onResetChanges: vi.fn(),
+})
+
 describe('PreHeatTreatmentResultManagerDialog', () => {
   it.each(['request', 'result'] as const)('opens the %s row menu without offering a stage transfer', registryMode => {
     const row = { id: 7, joint: 'F7', line: 'L7',
       preHeatTreatmentControls: [{ id: 11, weldJointId: 7, method: 'ВИК',
         requestName: 'З-11', requestDate: '2026-08-04', result: 'годен',
         conclusionDate: '2026-08-05', conclusionName: 'К-11' }] } as WeldRow
-    render(<PreHeatTreatmentResultManagerDialog rows={[row]} registryMode={registryMode} isPending={false}
-      onClose={vi.fn()} onOpenWorkflow={vi.fn()} onCorrect={vi.fn()} onDeleteRequest={vi.fn()} onDeleteResult={vi.fn()}
+    render(<PreHeatTreatmentResultManagerDialog {...resultEditProps()} rows={[row]} registryMode={registryMode} isPending={false}
+      onClose={vi.fn()} onOpenWorkflow={vi.fn()} onCorrect={vi.fn()} onDeleteRequest={vi.fn()}
       onOpenDocument={vi.fn()} onOpenJournalRows={vi.fn()} onCopyDocumentName={vi.fn()} canOpenDocument={() => true} />)
     fireEvent.contextMenu(within(screen.getByRole('complementary')).getByText(registryMode === 'request' ? 'З-11' : 'К-11'))
     const menu = screen.getByTestId('context-action-menu')
@@ -23,22 +28,23 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
     const row = { id: 7, joint: 'F7', officiality: 'неофициальный',
       preHeatTreatmentControls: [{ id: 11, weldJointId: 7, method: 'УЗК', result: 'ремонт',
         requestName: 'З-11', conclusionDate: '2026-08-05', conclusionName: 'К-11' }] } as WeldRow
-    const onDeleteResult = vi.fn()
-    render(<PreHeatTreatmentResultManagerDialog rows={[row]} registryMode="result" isPending={false}
-      onClose={vi.fn()} onOpenWorkflow={vi.fn()} onCorrect={vi.fn()} onDeleteRequest={vi.fn()} onDeleteResult={onDeleteResult}
+    const onStageResultChange = vi.fn()
+    render(<PreHeatTreatmentResultManagerDialog {...resultEditProps()} rows={[row]} registryMode="result" isPending={false}
+      onClose={vi.fn()} onOpenWorkflow={vi.fn()} onCorrect={vi.fn()} onDeleteRequest={vi.fn()} onStageResultChange={onStageResultChange}
       onOpenDocument={vi.fn()} onOpenJournalRows={vi.fn()} onCopyDocumentName={vi.fn()} canOpenDocument={() => true} />)
     expect(screen.getByRole('button', { name: 'Удалить результат' })).toBeDisabled()
     expect(screen.getByText(/последний негодный результат/)).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Удалить результат' }))
-    expect(onDeleteResult).not.toHaveBeenCalled()
+    expect(onStageResultChange).not.toHaveBeenCalled()
   })
   it('explains forbidden historical results without replacing them automatically', () => {
     const row = { id: 7, rowVersion: '107', joint: 'F7R2', d1: 57,
       preHeatTreatmentControls: [{ id: 11, weldJointId: 7, method: 'РК', result: 'ремонт',
         conclusionDate: '2026-08-05', conclusionName: 'РК-11' }] } as WeldRow
     const onCorrect = vi.fn()
-    render(<PreHeatTreatmentResultManagerDialog rows={[row]} registryMode="result" isPending={false}
-      onClose={vi.fn()} onOpenWorkflow={vi.fn()} onCorrect={onCorrect} onDeleteRequest={vi.fn()} onDeleteResult={vi.fn()}
+    const onStageResultChange = vi.fn()
+    render(<PreHeatTreatmentResultManagerDialog {...resultEditProps()} rows={[row]} registryMode="result" isPending={false}
+      onClose={vi.fn()} onOpenWorkflow={vi.fn()} onCorrect={onCorrect} onDeleteRequest={vi.fn()} onStageResultChange={onStageResultChange}
       onOpenDocument={vi.fn()} onOpenJournalRows={vi.fn()} onCopyDocumentName={vi.fn()} canOpenDocument={() => true} />)
     const picker = within(screen.getByRole('group', { name: 'Результат' }))
     expect(picker.getByRole('button', { name: 'ремонт' })).toBeDisabled()
@@ -49,8 +55,10 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
     expect(screen.getByRole('link', { name: 'Подробнее о правиле СП-07' })).toHaveAttribute('href', '/settings#system-rule-lnk-results')
     expect(onCorrect).not.toHaveBeenCalled()
     fireEvent.click(picker.getByRole('button', { name: 'годен' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Сохранить результат' }))
-    expect(onCorrect).toHaveBeenCalledWith(expect.objectContaining({ relationId: 11, result: 'годен' }))
+    expect(onStageResultChange).toHaveBeenCalledWith(row, row.preHeatTreatmentControls![0], {
+      result: 'годен', conclusionName: 'РК-11', conclusionDate: '2026-08-05',
+    })
+    expect(onCorrect).not.toHaveBeenCalled()
   })
   it('shows a request without a result and allows correcting or deleting the request stage', () => {
     const onCorrect = vi.fn()
@@ -76,6 +84,7 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
 
     render(
       <PreHeatTreatmentResultManagerDialog
+        {...resultEditProps()}
         rows={[row]}
         registryMode="request"
         isPending={false}
@@ -83,7 +92,6 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
         onOpenWorkflow={vi.fn()}
         onCorrect={onCorrect}
         onDeleteRequest={onDeleteRequest}
-        onDeleteResult={vi.fn()}
         onOpenDocument={vi.fn()}
         onOpenJournalRows={vi.fn()}
         onCopyDocumentName={vi.fn()}
@@ -145,6 +153,7 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
 
     render(
       <PreHeatTreatmentResultManagerDialog
+        {...resultEditProps()}
         rows={[row]}
         registryMode="result"
         isPending={false}
@@ -152,7 +161,6 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
         onOpenWorkflow={vi.fn()}
         onCorrect={vi.fn()}
         onDeleteRequest={vi.fn()}
-        onDeleteResult={vi.fn()}
         onOpenDocument={vi.fn()}
         onOpenJournalRows={vi.fn()}
         onCopyDocumentName={vi.fn()}
@@ -188,6 +196,7 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
 
     render(
       <PreHeatTreatmentResultManagerDialog
+        {...resultEditProps()}
         rows={rows}
         registryMode="request"
         isPending={false}
@@ -195,7 +204,6 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
         onOpenWorkflow={vi.fn()}
         onCorrect={vi.fn()}
         onDeleteRequest={vi.fn()}
-        onDeleteResult={vi.fn()}
         onOpenDocument={vi.fn()}
         onOpenJournalRows={vi.fn()}
         onCopyDocumentName={vi.fn()}
@@ -238,6 +246,7 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
 
     render(
       <PreHeatTreatmentResultManagerDialog
+        {...resultEditProps()}
         rows={[row]}
         registryMode="request"
         initialRelationId={control.id}
@@ -255,7 +264,6 @@ describe('PreHeatTreatmentResultManagerDialog', () => {
         onOpenWorkflow={vi.fn()}
         onCorrect={onCorrect}
         onDeleteRequest={vi.fn()}
-        onDeleteResult={vi.fn()}
         onOpenDocument={vi.fn()}
         onOpenJournalRows={vi.fn()}
         onCopyDocumentName={vi.fn()}

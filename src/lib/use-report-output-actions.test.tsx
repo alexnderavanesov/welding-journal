@@ -82,3 +82,47 @@ it('retries only explicitly, keeps the chosen slice and resets when leaving the 
   rerender({ context: 'lnk' })
   expect(result.current.reportPreviewProps).toBeNull()
 })
+
+it.each([
+  ['openLnkCurrentReport', 'loadLnkRows'],
+  ['openPstoCurrentReport', 'loadPstoRows'],
+  ['openWeldingJournalCurrentReport', 'loadWeldingJournalRows'],
+] as const)('%s cannot export the old visible rows while the current filter is pending', async (action, loader) => {
+  const p = params()
+  const { result } = renderHook(() => useReportOutputActions({ ...p, currentRowsReady: false, outputContext: 'new-filter' }))
+  await act(async () => { await result.current[action]() })
+  expect(p[loader]).not.toHaveBeenCalled()
+  expect(result.current.reportPreviewProps).toBeNull()
+  expect(p.setMessage).toHaveBeenCalledWith('Дождитесь загрузки строк текущей выборки.')
+})
+
+it.each(['resolve', 'reject'] as const)('ignores an old export %s after filter A → B → A without replacing the new snapshot', async (outcome) => {
+  const p = params()
+  let resolve!: (rows: WeldInput[]) => void, reject!: (reason: Error) => void
+  p.loadWeldingJournalRows.mockReturnValueOnce(new Promise((done, fail) => { resolve = done; reject = fail }))
+  p.loadWeldingJournalRows.mockResolvedValueOnce([{ joint: 'NEW-A' } as WeldInput])
+  const { result, rerender } = renderHook(({ context }) => useReportOutputActions({ ...p, outputContext: context }), {
+    initialProps: { context: 'filter-A' },
+  })
+  let oldOpening!: Promise<void>
+  act(() => { oldOpening = result.current.openWeldingJournalCurrentReport() })
+  expect(result.current.reportPreviewProps?.busy).toBe(true)
+  rerender({ context: 'filter-B' })
+  expect(result.current.reportPreviewProps).toBeNull()
+  rerender({ context: 'filter-A' })
+  await act(async () => { await result.current.openWeldingJournalCurrentReport() })
+  const snapshot = result.current.reportPreviewProps?.report
+  const download = result.current.reportPreviewProps?.onDownloadExcel
+  expect(snapshot?.tables?.[0].rows[0]).toContain('NEW-A')
+  await act(async () => {
+    if (outcome === 'resolve') resolve([{ joint: 'OLD-A' } as WeldInput])
+    else reject(new Error('Old filter export failed'))
+    await oldOpening
+  })
+  expect(result.current.reportPreviewProps?.report).toBe(snapshot)
+  expect(result.current.reportPreviewProps?.onDownloadExcel).toBe(download)
+  expect(result.current.reportPreviewProps?.error).toBe('')
+  expect(p.loadWeldingJournalRows).toHaveBeenCalledTimes(2)
+  rerender({ context: 'filter-C' })
+  expect(result.current.reportPreviewProps).toBeNull()
+})

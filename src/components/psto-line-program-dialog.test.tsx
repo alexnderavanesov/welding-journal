@@ -15,6 +15,7 @@ vi.mock('@/server/psto-line-assignment', () => ({
   listPstoLineAssignmentPage: vi.fn(),
   savePstoLineAssignment: vi.fn(),
 }))
+vi.mock('@/components/specialist-transfer-confirmation', () => ({ useSpecialistTransferConfirmation: () => ({ ready: true, notice: null, confirmation: undefined }) }))
 
 const unassignedLine: PstoLineAssignmentSummary = {
   key: 'line-a',
@@ -368,7 +369,7 @@ describe('PstoLineProgramDialog', () => {
     expect(vi.mocked(savePstoLineAssignment).mock.calls[0]![0].data).not.toHaveProperty('activationDecisions')
   })
 
-  it('preserves all stages during official cancellation without asking to choose or discard a set', async () => {
+  it('preserves stages by default during cancellation while offering explicit whole-package correction', async () => {
     vi.mocked(getPstoLineRemovalPreview).mockResolvedValue({
       ...removalPreview, rows: [{ ...activationConflictPreview.rows[0]!, stageCorrection: { targetStage: 'primary', disabledReason: null } }],
     })
@@ -382,12 +383,12 @@ describe('PstoLineProgramDialog', () => {
     expect(screen.queryByText(/Без решения:/)).not.toBeInTheDocument()
     expect(screen.queryByText(/будут удалены/)).not.toBeInTheDocument()
     expect(screen.getByText(/Отмена не удаляет историю/)).toBeInTheDocument()
-    expect(screen.queryByRole('radio')).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Оставить НК до ТО' })).toBeChecked()
     expect(screen.getByRole('button', { name: 'Отменить ПСТО на линии' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Отменить ПСТО на линии' }))
 
     await waitFor(() => expect(onRunProtectedDelete).toHaveBeenCalledOnce())
-    expect(vi.mocked(savePstoLineAssignment).mock.calls[0]![0].data).not.toHaveProperty('activationDecisions')
+    expect(vi.mocked(savePstoLineAssignment).mock.calls[0]![0].data.activationDecisions).toEqual([{ rowId: 11, disposition: 'keepPrimary' }])
   })
 
   it('explains that cancellation finishes a started physical cycle without opening another repeat', async () => {

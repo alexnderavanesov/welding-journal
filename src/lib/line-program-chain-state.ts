@@ -1,5 +1,6 @@
 import type { WeldRow } from './dispatcher-types'
-import { formatRepeatedJointName, parseJointChainName, parseRepeatedJointName } from './joint-chain'
+import { formatRepeatedJointName, getRepeatedJointNameFromParsed } from './joint-chain'
+import { parseJointName } from './joint-name'
 import { programJointIdentity } from './line-program-topology'
 import { compareJointChainRows } from './repeated-joint-row-utils'
 import { loadSystemIndexSettings, type SystemIndexSettings } from './system-index-settings'
@@ -44,11 +45,15 @@ export function captureRebuiltProgramChainStates(rows: readonly WeldRow[], setti
 export function captureProgramChainStates(rows: readonly WeldRow[], settings: SystemIndexSettings = loadSystemIndexSettings()) {
   const byIdentity = new Map<string, WeldRow[]>()
   const branches = new Map<string, WeldRow[]>()
-  const parsed = new Map(rows.map(row => [row.id, parseRepeatedJointName(String(row.joint ?? ''), settings)]))
+  const parsed = new Map(rows.map(row => {
+    const joint = String(row.joint ?? '')
+    const chain = parseJointName(joint, settings)
+    return [row.id, { joint, chain, branch: getRepeatedJointNameFromParsed(chain, settings) }] as const
+  }))
   for (const row of rows) {
     const key = programJointIdentity(row), bucket = byIdentity.get(key) ?? []
     bucket.push(row); byIdentity.set(key, bucket)
-    const branchKey = programJointIdentity(row, parsed.get(row.id)!.base), branch = branches.get(branchKey) ?? []
+    const branchKey = programJointIdentity(row, parsed.get(row.id)!.branch.base), branch = branches.get(branchKey) ?? []
     branch.push(row); branches.set(branchKey, branch)
   }
   const unique = (key: string) => {
@@ -59,18 +64,25 @@ export function captureProgramChainStates(rows: readonly WeldRow[], settings: Sy
   const states = new Map<number, ProgramChainState>()
   for (const row of rows) {
     if (row.programChainState) { states.set(row.id, { ...row.programChainState }); continue }
-    const branch = parsed.get(row.id)!
-    const chain = parseJointChainName(String(row.joint ?? ''), settings)
+    const entry = parsed.get(row.id)!
+    const branch = entry.branch
+    const joint = String(row.joint ?? '')
+    // Repeated branches use the last row with this ID, but the full chain has
+    // always used this row's own name. Preserve both for conflicting IDs.
+    const chain = entry.joint === joint ? entry.chain : parseJointName(joint, settings)
     const coil = !branch.segments.length && chain.segments.at(-1)?.suffix === 'Y'
     const root = branch.segments.length ? unique(programJointIdentity(row, branch.base)) : row
     const parentName = coil ? formatRepeatedJointName(chain.base, chain.segments.slice(0, -1), settings) : ''
     const parent = coil ? unique(programJointIdentity(row, parentName)) : undefined
     const sourceBranch = branches.get(programJointIdentity(row, coil ? parentName : branch.base)) ?? []
     const earlier = branch.segments.length ? sourceBranch.filter(candidate => {
-      const parts = parsed.get(candidate.id)!.segments
+      const parts = parsed.get(candidate.id)!.branch.segments
       return candidate.id !== row.id && parts.length <= branch.segments.length &&
+        // A repeated failure increments its existing suffix wherever it occurs:
+        // W1R1 -> W2R1 and R1W1 -> R2W1 both keep the immediate predecessor.
+        // All counters must be nondecreasing; sibling suffix paths remain separate.
         parts.every((part, i) => part.suffix === branch.segments[i].suffix &&
-          (i < parts.length - 1 ? part.index === branch.segments[i].index : part.index <= branch.segments[i].index)) &&
+          part.index <= branch.segments[i].index) &&
         (parts.length < branch.segments.length || parts.some((part, i) => part.index < branch.segments[i].index))
     }) : coil ? sourceBranch : []
     const source = earlier.sort((a, b) => compareJointChainRows(a, b, settings)).at(-1)

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   calculateLineProgram,
+  calculateLineProgramDetails,
   calculateLineProgramBaseRequired,
   parseLineProgramPercent,
 } from './line-program-calculation'
@@ -13,6 +14,23 @@ function row(id: number, overrides: Partial<WeldRow> = {}): WeldRow {
 function rows(count: number) { return Array.from({ length: count }, (_, i) => row(i + 1)) }
 
 describe('line program: requirements with September 30 clarifications', () => {
+  it('returns counted physical rows from the same calculation without changing the array API', () => {
+    const input = [row(3), row(1), row(2, { joint: 'F1R1' })]
+    const details = calculateLineProgramDetails(input, 30, 10)
+    expect(details.calculationRows).toEqual([input[1], input[0]])
+    expect(details.calculationRows[0]).toBe(input[1])
+    expect(details.calculations).toEqual(calculateLineProgram(input, 30, 10))
+    expect(details.calculations[0].rowIds).toEqual([1, 3])
+  })
+
+  it.each([[NaN, 10], [101, 10], [-1, 0], [30, -1], [30, 31], [100, 0]])(
+    'both result forms reject invalid percent/PVK %s/%s', (percent, pvk) => {
+      for (const calculate of [calculateLineProgram, calculateLineProgramDetails]) {
+        expect(() => calculate([row(1)], percent, pvk)).toThrow('Проверьте базовый процент и процент ПВК в программе линии.')
+      }
+    },
+  )
+
   it.each([
     [0, 10, 0], [4, 0, 0], [4, 10, 1], [21, 10, 2], [24, 10, 2], [25, 10, 3],
     [25, 100, 25], [2500, 0.0999, 2], [2500, 0.1, 3], [2500, 0.1001, 3],

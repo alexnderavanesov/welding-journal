@@ -10,6 +10,36 @@ describe('ContextActionMenu', () => {
     vi.unstubAllGlobals()
   })
 
+  it('ignores unrelated search-input scrolling but closes when the row or page moves', () => {
+    const onClose = vi.fn()
+    render(<><input aria-label="Поиск" /><div data-testid="row-scroller"><button>Строка</button></div></>)
+    const anchor = screen.getByRole('button', { name: 'Строка' })
+    const scroller = screen.getByTestId('row-scroller')
+    render(<ContextActionMenu menu={{ x: 20, y: 20, anchorElement: anchor,
+      items: [{ id: 'edit', label: 'Редактировать', onSelect: vi.fn() }],
+    }} onClose={onClose} />)
+
+    // Chromium can reset a long search input's inner scroll after its blur,
+    // delivering the event just after the row context menu has opened.
+    fireEvent.scroll(screen.getByRole('textbox', { name: 'Поиск' }))
+    fireEvent.scroll(scroller) // A queued event without actual row movement.
+    expect(onClose).not.toHaveBeenCalled()
+
+    scroller.scrollTop = 20
+    fireEvent.scroll(scroller)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    const previousScrollY = window.scrollY
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 20, writable: true })
+    try {
+      fireEvent.scroll(window)
+      expect(onClose).toHaveBeenCalledTimes(2)
+    } finally {
+      Object.defineProperty(window, 'scrollY', { configurable: true, value: previousScrollY, writable: true })
+    }
+    fireEvent(window, new Event('resize'))
+    expect(onClose).toHaveBeenCalledTimes(3)
+  })
+
   it('opens a document submenu without starting its first action', () => {
     const onClose = vi.fn()
     const onGenerate = vi.fn()

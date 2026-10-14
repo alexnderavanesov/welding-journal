@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react'
+import { Check, Loader2 } from 'lucide-react'
 
 import { BlockedActionHint, type BlockedActionHintAction } from '@/components/blocked-action-hint'
 import { Button } from '@/components/ui/button'
@@ -39,12 +39,12 @@ export function RequestDialogFooter({
         ) : null}
       </div>
       <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={onClose}>
+        <Button variant="outline" onClick={onClose} disabled={isPending}>
           Отмена
         </Button>
-        <Button onClick={onSubmit} disabled={isPending || isCreateDisabled} title={disabledReason ?? undefined}>
-          <Check className="mr-2 h-4 w-4" />
-          {submitLabel}
+        <Button onClick={onSubmit} disabled={isPending || isCreateDisabled} title={disabledReason ?? undefined} aria-busy={isPending} className="min-w-48">
+          {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+          {isPending ? 'Сохраняем…' : submitLabel}
         </Button>
       </div>
     </div>

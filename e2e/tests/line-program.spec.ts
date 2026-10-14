@@ -1,7 +1,7 @@
 import { rpcName } from '../rpc'
 import { programApprovalKey } from '../../src/lib/program-control-approval'
 import { expect, test, type Page } from '@playwright/test'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 
 test.afterEach(() => cleanupLineProgramProjects(['E2E программа', 'E2E layout', 'E2E compact']))
 import { execFile } from 'node:child_process'
@@ -74,7 +74,7 @@ test('реестр создаёт линию до стыков, хранит д�
 })
 
 test('поиск клейма сохраняет полную группу и не открывает расчёт второго клейма по родителю ремонта', async ({ page }) => {
-  await withE2eDatabase(async (client) => {
+  await withLineProgramFixture(async (client) => {
     const { rows: [line] } = await client.query("insert into line_programs (project_title, subtitle_code, line, category, group_name, weld_control_percent, pvk_control_percent) values ('E2E программа', 'LP', 'REPAIRS', 'II', 'A', 30, 10) returning id")
     await client.query(`insert into weld_joints (line_program_id, project_title, subtitle_code, line, joint, weld_date, connection_type, category, group_name, weld_control_percent, pvk_control_percent, has_vik, stamp_1_k, rk_result)
       select $1, 'E2E программа', 'LP', 'REPAIRS', case when n=1 then 'F501' when n=2 then 'F501R1' when n=3 then 'F501R2' else 'F' || (500+n)::text end,
@@ -98,7 +98,7 @@ test('поиск клейма сохраняет полную группу и н
 
 test('единая таблица: отмена пары и послойный контроль не подделывают результаты', async ({ page }) => {
   await seedQuickLine()
-  const approval = await withE2eDatabase(async client => {
+  const approval = await withLineProgramFixture(async client => {
     const { rows: [row] } = await client.query("update weld_joints set has_rk='да', has_uzk='да' where line='QUICK-LINE' and joint='F701' returning id")
     const key = programApprovalKey({ id: row.id, hasRk: 'да', hasUzk: 'да' }, 'common', true)
     await client.query("insert into dispatcher_accepted_warnings (key,kind,weld_joint_id) values ($1,'line-program-control',$2)", [key, row.id])
@@ -147,7 +147,7 @@ async function confirmQuickAction(page: Page) {
 
 test('карточки не переносят название, страницы компактны, редактор отдельный, стрелка внутри отчёта', async ({ page }) => {
   const longName = '330-FG-05-000 (Тех.решение) — проверка длинного названия линии без переноса'
-  await withE2eDatabase(async (client) => {
+  await withLineProgramFixture(async (client) => {
     await client.query(`insert into line_programs (project_title, subtitle_code, line, category, group_name, weld_control_percent, pvk_control_percent)
       select 'E2E layout', 'LAYOUT', case when n=1 then $1 else 'LAYOUT-' || lpad(n::text, 2, '0') end, 'II', 'A', 10, 10 from generate_series(1,35) n`, [longName])
   })
@@ -192,7 +192,7 @@ test('карточки не переносят название, страниц�
 })
 
 test('компактная таблица: 20 клейм, 148 стыков, редкие детали без лишних запросов, все стыки и сохранение выбора', async ({ page }) => {
-  await withE2eDatabase(async (client) => {
+  await withLineProgramFixture(async (client) => {
     const { rows: [line] } = await client.query("insert into line_programs (project_title, subtitle_code, line, category, group_name, weld_control_percent, pvk_control_percent) values ('E2E compact', 'COMPACT', 'COMPACT-LINE', 'II', 'A', 10, 0) returning id")
     await client.query(`insert into weld_joints (line_program_id, project_title, subtitle_code, line, joint, weld_date, connection_type, category, group_name, weld_control_percent, pvk_control_percent, has_vik, stamp_1_k, vik_result, has_rk, rk_result)
       select $1, 'E2E compact', 'COMPACT', 'COMPACT-LINE', 'F' || n::text, '2026-09-01', 'С17', 'II', 'A', 10, 0, 'да',
@@ -282,7 +282,7 @@ async function quickRows() {
 }
 
 async function seedQuickLine() {
-  await withE2eDatabase(async (client) => {
+  await withLineProgramFixture(async (client) => {
     const { rows: [line] } = await client.query("insert into line_programs (project_title, subtitle_code, line, category, group_name, weld_control_percent, pvk_control_percent) values ('E2E программа', 'LP', 'QUICK-LINE', 'II', 'A', 30, 10) returning id")
     await client.query(`insert into weld_joints (line_program_id, project_title, subtitle_code, line, joint, weld_date,
       connection_type, category, group_name, weld_control_percent, pvk_control_percent, has_vik, stamp_1_k, stamp_1_k_fact,

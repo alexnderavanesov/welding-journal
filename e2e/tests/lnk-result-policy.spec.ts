@@ -1,11 +1,206 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { rpcName } from '../rpc'
 
 const project = 'E2E LNK result policy'
 const line = 'LNK-POLICY-L1'
 
-test.afterEach(() => cleanupLineProgramProjects([project]))
+test.afterEach(async ({ page }) => {
+  await page.close()
+  await cleanupLineProgramProjects([project])
+})
+
+test('обязательные реквизиты, нейтральное сохранение и повтор без потери черновика', async ({ page }) => {
+  await seed([{ joint: 'F910', diameter: 159, method: 'ВИК' }])
+  const dialog = await openResults(page, 'F910', 'vikRequest')
+  await dialog.getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'ремонт', exact: true }).click()
+  await dialog.getByLabel('Дата контроля', { exact: true }).fill('')
+  await dialog.getByRole('tab', { name: /Заключения и имена/ }).click()
+  await dialog.getByRole('button', { name: 'Пользовательское', exact: true }).click()
+  const name = dialog.getByRole('textbox', { name: /^Название заключения:/ })
+  await name.fill('   ')
+  await name.blur()
+  const footer = dialog.getByRole('group', { name: 'Сохранение результата', exact: true })
+  const save = footer.getByRole('button', { name: 'Сохранить результат', exact: true })
+  await expect(save).toBeDisabled()
+  await expect(footer).toContainText('дату контроля')
+  await expect(footer).toContainText(/наименован|назван/)
+  await name.fill('РЕМОНТ-910')
+  await name.blur()
+  await expect(save).toBeDisabled()
+  await dialog.getByLabel('Дата контроля', { exact: true }).fill('2026-09-03')
+  await expect(save).toBeEnabled()
+
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  let writes = 0
+  await page.route('**/_serverFn/**', async route => {
+    if (!rpcName(route.request().url()).startsWith('updateWeldJoints_')) return route.continue()
+    writes += 1
+    if (writes === 1) { await held; return route.abort('failed') }
+    return route.continue()
+  })
+  const before = await footer.boundingBox()
+  await save.click()
+  const pending = footer.getByRole('button', { name: 'Сохраняем…', exact: true })
+  await expect(pending).toBeDisabled()
+  await expect(footer).not.toContainText('Сохранение заблокировано')
+  expect(await footer.boundingBox()).toEqual(before)
+  await expect.poll(() => writes).toBe(1)
+  release()
+  await expect(save).toBeEnabled()
+  await expect(dialog).toBeVisible()
+  await expect(footer.getByRole('alert')).toContainText('Не удалось сохранить:')
+  await expect(name).toHaveValue('РЕМОНТ-910')
+  await expect(dialog.getByLabel('Дата контроля', { exact: true })).toHaveValue('2026-09-03')
+  await save.click()
+  await expect(dialog).toBeHidden()
+  expect(writes).toBe(2)
+  await expect.poll(async () => withE2eDatabase(async db => (await db.query(
+    'select vik_result,vik_conclusion,vik_conclusion_date::text from weld_joints where project_title=$1 and joint=$2', [project, 'F910'],
+  )).rows[0])).toEqual({ vik_result: 'ремонт', vik_conclusion: 'РЕМОНТ-910', vik_conclusion_date: '2026-09-03' })
+})
+
+test('ранний клик меню ждёт одну проверку без серого мигания и лишних RPC', async ({ page }) => {
+  await seed([{ joint: 'F911', diameter: 159, method: 'ВИК' }])
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  let checks = 0
+  await page.route('**/_serverFn/**', async route => {
+    if (rpcName(route.request().url()).startsWith('getLnkWorkflowSummary_')) { checks += 1; await held }
+    await route.continue()
+  })
+  await page.goto('/lnk')
+  await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
+  const item = page.getByRole('button', { name: 'Внести результаты', exact: true })
+  await expect(item).toBeEnabled()
+  await expect(item).toHaveAttribute('aria-busy', 'true')
+  await expect(item).not.toContainText('Проверяем')
+  await item.click()
+  await item.press('Enter')
+  await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК', exact: true })).toHaveCount(0)
+  release()
+  await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК', exact: true })).toBeVisible()
+  expect(checks).toBe(1)
+})
+
+test('отложенный клик внесения не открывает второе окно поверх официальности', async ({ page }) => {
+  await seed([{ joint: 'F915', diameter: 159, method: 'ВИК' }])
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/_serverFn/**', async route => {
+    if (!rpcName(route.request().url()).startsWith('getLnkWorkflowSummary_')) return route.continue()
+    const response = await route.fetch()
+    await gate
+    await route.fulfill({ response })
+  })
+  await page.goto('/lnk')
+  await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
+  const add = page.getByRole('button', { name: 'Внести результаты', exact: true })
+  await expect(add).toHaveAttribute('aria-busy', 'true')
+  await add.click()
+  await page.locator('header').getByRole('button', { name: 'Официальность', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Официальность стыков', exact: true })).toBeVisible()
+  release()
+  await page.waitForLoadState('networkidle')
+  await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('dialog')).toHaveCount(1)
+})
+
+test('Escape сначала закрывает обычную подсказку i, не форму внесения и не её данные', async ({ page }) => {
+  await seed([{ joint: 'F916', diameter: 159, method: 'ВИК' }])
+  const dialog = await openResults(page, 'F916', 'vikRequest')
+  await dialog.getByLabel('Дата контроля', { exact: true }).fill('2026-09-03')
+  await dialog.getByRole('tab', { name: 'Специалисты', exact: true }).click()
+  const help = dialog.getByRole('button', { name: 'Как назначить общую пару и специалистов отдельных документов', exact: true })
+  await help.click()
+  await expect(page.getByRole('tooltip')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('tooltip')).toHaveCount(0)
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByLabel('Дата контроля', { exact: true })).toHaveValue('2026-09-03')
+})
+
+test('длинная ошибка официальности начинается справа от значка, без лишней строки и потери черновика', async ({ page }, info) => {
+  await seed([{ joint: 'F914', diameter: 159, method: 'ВИК' }])
+  await withE2eDatabase(db => db.query(`update weld_joints set officiality='неофициальный',
+    has_rk='да',rk_result='ожидает НК',rk_request='POLICY-RK',rk_request_date='2026-09-02'
+    where project_title=$1 and joint='F914'`, [project]))
+  const dialog = await openResults(page, 'F914', 'vikRequest')
+  await dialog.getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
+  await dialog.getByLabel('Дата контроля', { exact: true }).fill('2026-09-03')
+  await dialog.getByRole('button', { name: 'Сохранить результат', exact: true }).click()
+  const footer = dialog.getByRole('group', { name: 'Сохранение результата', exact: true })
+  const alert = footer.getByRole('alert')
+  await expect(alert).toContainText('Сначала верните стыку официальность')
+  const toastClose = page.getByRole('button', { name: 'Закрыть уведомление', exact: true })
+  if (await toastClose.isVisible()) await toastClose.click()
+  for (const width of [1440, 1000, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    const geometry = await alert.evaluate(element => {
+      const icon = element.querySelector('svg')!.getBoundingClientRect()
+      const text = element.querySelector('span')!
+      const range = document.createRange()
+      range.setStart(text.firstChild!, 0)
+      range.setEnd(text.firstChild!, 1)
+      const first = range.getBoundingClientRect()
+      const area = element.parentElement!
+      return { iconRight: icon.right, iconTop: icon.top, textLeft: first.left, textTop: first.top,
+        width: area.clientWidth, scrollWidth: area.scrollWidth, height: area.clientHeight, scrollHeight: area.scrollHeight }
+    })
+    expect(geometry.textLeft).toBeGreaterThan(geometry.iconRight)
+    expect(Math.abs(geometry.textTop - geometry.iconTop)).toBeLessThan(5)
+    expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.width + 1)
+    if (width >= 1000) expect(geometry.scrollHeight).toBeLessThanOrEqual(geometry.height + 1)
+    await footer.screenshot({ path: info.outputPath(`officiality-message-${width}.png`) })
+  }
+  await expect(dialog.getByLabel('Дата контроля', { exact: true })).toHaveValue('2026-09-03')
+  await dialog.getByRole('button', { name: 'Отмена', exact: true }).click()
+  expect(await withE2eDatabase(async db => (await db.query(
+    "select officiality,vik_result,rk_result from weld_joints where project_title=$1 and joint='F914'", [project],
+  )).rows[0])).toEqual({ officiality: 'неофициальный', vik_result: 'ожидает НК', rk_result: 'ожидает НК' })
+})
+
+test('старый безымянный результат: совместное дозаполнение без удаления факта', async ({ page }) => {
+  await seed([{ joint: 'F912', diameter: 159, method: 'ВИК' }])
+  await withE2eDatabase(db => db.query("update weld_joints set vik_result='ремонт',vik_conclusion=null,vik_conclusion_date=null where project_title=$1 and joint=$2", [project, 'F912']))
+  await page.goto('/lnk')
+  await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('F912')
+  await page.getByRole('button', { name: 'Выбрать стык F912', exact: true }).click()
+  await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
+  await page.getByRole('button', { name: 'Редактировать выбранные', exact: true }).click()
+  const form = page.getByRole('region', { name: 'Дозаполнение реквизитов результата' })
+  await form.getByLabel('Наименование заключения', { exact: true }).fill('ИСТОРИЯ-912')
+  await expect(form.getByRole('button', { name: 'Дозаполнить реквизиты' })).toBeDisabled()
+  await form.getByLabel('Дата контроля', { exact: true }).fill('2026-09-03')
+  await form.getByRole('button', { name: 'Дозаполнить реквизиты' }).click()
+  await expect.poll(async () => withE2eDatabase(async db => (await db.query(
+    'select vik_result,vik_conclusion,vik_conclusion_date::text from weld_joints where project_title=$1 and joint=$2', [project, 'F912'],
+  )).rows[0])).toEqual({ vik_result: 'ремонт', vik_conclusion: 'ИСТОРИЯ-912', vik_conclusion_date: '2026-09-03' })
+})
+
+test('дубль-контроль требует название и обе независимые даты', async ({ page }) => {
+  await seed([{ joint: 'F913', diameter: 159, method: 'ВИК' }])
+  await page.goto('/lnk')
+  await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('F913')
+  await page.getByRole('button', { name: 'Выбрать стык F913', exact: true }).click()
+  await page.locator('header').getByRole('button', { name: 'Дубль контроль', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'ВИК', exact: true }).click()
+  await dialog.getByRole('button', { name: 'годен', exact: true }).click()
+  const save = dialog.getByRole('button', { name: 'Добавить дубль', exact: true })
+  await expect(save).toBeDisabled()
+  await dialog.getByLabel('Заключение', { exact: true }).fill('ЗАКАЗЧИК-913')
+  await dialog.getByLabel('Дата контроля', { exact: true }).fill('03.09.2026')
+  await expect(save).toBeDisabled()
+  await expect(dialog.getByLabel('Дата заключения', { exact: true })).toHaveAttribute('aria-invalid', 'true')
+  await dialog.getByLabel('Дата заключения', { exact: true }).fill('04.09.2026')
+  await save.click()
+  await expect.poll(async () => withE2eDatabase(async db => (await db.query(
+    "select control_date::text,conclusion_date::text,conclusion from duplicate_controls where conclusion=$1", ['ЗАКАЗЧИК-913'],
+  )).rows[0])).toEqual({ control_date: '2026-09-03', conclusion_date: '2026-09-04', conclusion: 'ЗАКАЗЧИК-913' })
+})
 
 for (const viewport of [{ width: 1440, height: 900 }, { width: 1000, height: 720 }]) {
   test(`ЛНК: выбор, пояснение СП-07 и запрет сохранения не двигают список (${viewport.width})`, async ({ page }) => {

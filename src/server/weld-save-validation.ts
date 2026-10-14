@@ -1,4 +1,6 @@
 import { getControlAssignmentRemovalReason } from '@/lib/control-assignment-history'
+import { getLnkResultRemovalBlockReason } from '@/lib/lnk-chronology-checks'
+import { getDocumentRequisiteErrors } from '@/lib/document-requisites'
 import { getWeldMaterialGroupsError, normalizeWeldMaterialGroups } from '@/lib/weld-material-groups'
 import { asc, eq, inArray, sql } from 'drizzle-orm'
 
@@ -473,6 +475,11 @@ export function validateServerWeldRecords({
 
     const layeredReason = getLayeredControlSaveError(record, previous, context.controlProcessSettings.pvkGoodOnly)
     if (layeredReason) throw new Error(`${prefix}${layeredReason}`)
+    if (previous) for (const method of LNK_METHODS) {
+      if (!isFinalLnkResultValue(previous[method.resultKey]) || isFinalLnkResultValue(record[method.resultKey])) continue
+      const removalReason = getLnkResultRemovalBlockReason(previous, method.requestKey, context.saveCheckSettings)
+      if (removalReason) throw new Error(`${prefix}${removalReason}`)
+    }
     const repairIssues = getProgramRepairAssignmentIssues({ ...record, programRepairRequirements: requirements.get(newIds.get(record)!) }, previous)
     if (repairIssues.length) throw new Error(`${prefix}${repairIssues.map(issue => issue.message).join('\n')}`)
 
@@ -507,13 +514,12 @@ export function validateServerWeldRecords({
         systemIndexSettings: context.systemIndexSettings,
       },
     )
-    if (formReason) throw new Error(`${prefix}${formReason}`)
     const resultCompletenessReason = getConfiguredResultCompletenessSaveBlockReason(
       record,
       previous,
-      context.saveCheckSettings,
     )
-    if (resultCompletenessReason) throw new Error(`${prefix}${resultCompletenessReason}`)
+    const validationReasons = [...new Set([formReason, resultCompletenessReason].filter(Boolean))]
+    if (validationReasons.length) throw new Error(`${prefix}${validationReasons.join('\n')}`)
 
     if (shouldValidateOfficialStampCompatibilityForSave(record, previous)) {
       const stampReason = getOfficialStampCompatibilitySaveBlockReason(record, context.welderStamps, {
@@ -586,13 +592,9 @@ export function getSystemDocumentIntegrityReason(
   ) {
     return 'Дату или заключение ТВМТ нельзя оставить без результата ТВМТ.'
   }
-  if (hasTvmtResult && (!hadTvmtResult || tvmtDateChanged)) {
-    if (!hasText(record.tvmtConclusionDate)) return 'Для результата ТВМТ укажите дату ТВМТ.'
-    const dateReason = getDateInputValidationReason(record.tvmtConclusionDate, 'Дата ТВМТ')
-    if (dateReason) return dateReason
-  }
-  if (hasTvmtResult && (!hadTvmtResult || tvmtConclusionChanged)) {
-    if (!hasText(record.tvmtConclusion)) return 'Для результата ТВМТ укажите заключение ТВМТ.'
+  if (hasTvmtResult && (!hadTvmtResult || tvmtDateChanged || tvmtConclusionChanged || hasChangedOptionalField(record, previous, 'tvmtResult'))) {
+    return getDocumentRequisiteErrors({ name: record.tvmtConclusion, date: record.tvmtConclusionDate,
+      nameLabel: 'заключение ТВМТ', dateLabel: 'Дата ТВМТ' }).join('\n')
   }
 
   return ''
@@ -618,9 +620,9 @@ function getRequestDocumentIntegrityReason({
   if (hasText(record[dateKey]) && !hasName && (nameChanged || dateChanged)) {
     return `Дату ${label} нельзя указать без наименования заявки.`
   }
-  if (!hasName || (hadName && !dateChanged)) return ''
+  if (!hasName || (hadName && !dateChanged && !nameChanged)) return ''
   if (!hasText(record[dateKey])) return `Для ${label} укажите дату.`
-  return getDateInputValidationReason(record[dateKey], `Дата ${label}`)
+  return getDateInputValidationReason(record[dateKey], `Дата ${label}`, { required: true })
 }
 
 function hasChangedOptionalField(
@@ -635,8 +637,8 @@ function hasChangedOptionalField(
 function getConfiguredResultCompletenessSaveBlockReason(
   record: WeldInput,
   previous: WeldJoint | undefined,
-  settings: SaveCheckSettings,
 ) {
+  const errors: string[] = []
   for (const method of LNK_METHODS) {
     if (!isFinalLnkResultValue(record[method.resultKey])) continue
     if (previous && !hasChangedField(record, previous, [
@@ -645,40 +647,19 @@ function getConfiguredResultCompletenessSaveBlockReason(
       method.conclusionKey,
     ])) continue
 
-    if (settings.lnkResultControlDateRequired && !hasText(record[method.conclusionDateKey])) {
-      return formatSaveCheckBlockReason(
-        'lnkResultControlDateRequired',
-        `для результата ${method.code} укажите дату контроля.`,
-      )
-    }
-    const reason = getDateInputValidationReason(record[method.conclusionDateKey], `Дата контроля ${method.code}`)
-    if (reason) return formatSaveCheckBlockReason('lnkResultControlDateFormat', lowerFirst(reason))
-    if (settings.lnkResultConclusionRequired && !hasText(record[method.conclusionKey])) {
-      return formatSaveCheckBlockReason(
-        'lnkResultConclusionRequired',
-        `для результата ${method.code} укажите заключение.`,
-      )
-    }
+    errors.push(...getDocumentRequisiteErrors({ name: record[method.conclusionKey], date: record[method.conclusionDateKey],
+      nameLabel: `наименование заключения ${method.code}`, dateLabel: `Дата контроля ${method.code}` }))
   }
 
   if (
     isCompletedPstoValue(record.pstoResult) &&
     (!previous || hasChangedField(record, previous, ['pstoResult', 'pstoDate', 'heatTreatmentDiagram']))
   ) {
-    if (settings.pstoResultDateRequired && !hasText(record.pstoDate)) {
-      return formatSaveCheckBlockReason('pstoResultDateRequired', 'для результата ПСТО укажите дату ПСТО.')
-    }
-    const reason = getDateInputValidationReason(record.pstoDate, 'Дата ПСТО')
-    if (reason) return formatSaveCheckBlockReason('pstoResultDateFormat', lowerFirst(reason))
-    if (settings.pstoResultDiagramRequired && !hasText(record.heatTreatmentDiagram)) {
-      return formatSaveCheckBlockReason(
-        'pstoResultDiagramRequired',
-        'для результата ПСТО укажите диаграмму термообработки.',
-      )
-    }
+    errors.push(...getDocumentRequisiteErrors({ name: record.heatTreatmentDiagram, date: record.pstoDate,
+      nameLabel: 'наименование диаграммы термообработки', dateLabel: 'Дата ПСТО' }))
   }
 
-  return ''
+  return errors.join('\n')
 }
 
 function hasChangedField(
@@ -690,10 +671,6 @@ function hasChangedField(
   return fieldKeys.some(
     (fieldKey) => normalizeComparable(record[fieldKey]) !== normalizeComparable(previousValues[fieldKey]),
   )
-}
-
-function lowerFirst(value: string) {
-  return value ? `${value.charAt(0).toLocaleLowerCase('ru-RU')}${value.slice(1)}` : value
 }
 
 export function getSystemWorkflowStageTransitionReason(

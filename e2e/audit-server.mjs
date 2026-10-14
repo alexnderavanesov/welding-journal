@@ -5,6 +5,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { writeFileSync, renameSync, readFileSync } from 'node:fs'
 import { getHeapStatistics } from 'node:v8'
 import { Session } from 'node:inspector'
+import { channel } from 'node:diagnostics_channel'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -28,6 +29,11 @@ const file = process.env.AUDIT_SQL_COUNTS_FILE
 assert(resourceContainer ? file === '/audit-counts/counts.json'
   : file?.startsWith(join(tmpdir(), 'welding-e2e-sql-')) && file.endsWith('/counts.json'))
 const counts = { statements: 0, operations: {} }
+const dispatcherCalculations = []
+channel('welding.dispatcher.full-calculation').subscribe(metrics => {
+  dispatcherCalculations.push(metrics)
+  if (dispatcherCalculations.length > 20) dispatcherCalculations.shift()
+})
 const resources = resourceContainer || process.env.AUDIT_MEMORY === '1' ? { heapLimitBytes: getHeapStatistics().heap_size_limit,
   node: process.version, rssPeakBytes: 0, heapUsedPeakBytes: 0, cgroup: {}, samples: [], reads: {} } : undefined
 // Diagnostic only: sample allocation stacks without a full, stop-the-world heap
@@ -102,7 +108,7 @@ const flush = () => {
     resources.samples.push({ uptimeSeconds: Math.round(process.uptime() * 10) / 10, rss: memory.rss, heapUsed: memory.heapUsed, external: memory.external })
     if (resources.samples.length > 120) resources.samples.shift()
   }
-  writeFileSync(file + '.tmp', JSON.stringify({ ...counts, ...(resources ? { resources } : {}) }))
+  writeFileSync(file + '.tmp', JSON.stringify({ ...counts, dispatcherCalculations, ...(resources ? { resources } : {}) }))
   renameSync(file + '.tmp', file)
 }
 flush()

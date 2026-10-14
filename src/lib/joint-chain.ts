@@ -1,4 +1,4 @@
-import { parseJointName } from '@/lib/joint-name'
+import { parseJointName, type ParsedJointName } from '@/lib/joint-name'
 import {
   getConfiguredJointChainSuffix,
   getSemanticJointChainSuffix,
@@ -28,12 +28,23 @@ export function parseRepeatedJointName(
   joint: string,
   settings: SystemIndexSettings = loadSystemIndexSettings(),
 ): ParsedRepeatedJointName {
-  const parsed = parseJointName(joint, settings)
+  return getRepeatedJointNameFromParsed(parseJointName(joint, settings), settings)
+}
+
+/** Derive from a parse made with the same settings in this calculation.
+ * Return owned segments so callers cannot mutate the shared parsed name.
+ */
+export function getRepeatedJointNameFromParsed(
+  parsed: ParsedJointName,
+  settings: SystemIndexSettings,
+): ParsedRepeatedJointName {
   const lastCoilIndex = findLastIndex(parsed.segments, (segment) => segment.suffix === 'Y')
   const baseSegments = lastCoilIndex === -1 ? [] : parsed.segments.slice(0, lastCoilIndex + 1)
-  const repairSegments = parsed.segments
-    .slice(lastCoilIndex + 1)
-    .filter((segment): segment is RepeatedJointSegment => segment.suffix === 'R' || segment.suffix === 'W')
+  const repairSegments: RepeatedJointSegment[] = []
+  for (let position = lastCoilIndex + 1; position < parsed.segments.length; position += 1) {
+    const { suffix, index } = parsed.segments[position]
+    if (suffix === 'R' || suffix === 'W') repairSegments.push({ suffix, index })
+  }
   const base = formatRepeatedJointName(parsed.base, baseSegments, settings)
   const lastSegment = repairSegments.at(-1)
   return {

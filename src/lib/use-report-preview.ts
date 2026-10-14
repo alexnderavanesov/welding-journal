@@ -3,7 +3,9 @@ import type { ReportPreviewContent } from '@/lib/tabular-report'
 
 /** A single request per explicit opening/retry. Late completions cannot reopen a closed preview. */
 export function useReportPreview(context?: unknown) {
-  const [state, setState] = useState<{ busy: boolean; error: string; content: ReportPreviewContent | null } | null>(null)
+  const [state, setState] = useState<{ context: unknown; busy: boolean; error: string; content: ReportPreviewContent | null } | null>(null)
+  const contextRef = useRef(context)
+  contextRef.current = context
   const generation = useRef(0), pending = useRef(false)
   const loader = useRef<(() => Promise<ReportPreviewContent>) | null>(null)
   const trigger = useRef<HTMLElement | null>(null)
@@ -20,13 +22,14 @@ export function useReportPreview(context?: unknown) {
     if (pending.current) return
     pending.current = true
     const request = ++generation.current
+    const requestContext = contextRef.current
     loader.current = load
-    setState({ busy: true, error: '', content: null })
+    setState({ context: requestContext, busy: true, error: '', content: null })
     try {
       const content = await load()
-      if (request === generation.current) setState({ busy: false, error: '', content })
+      if (request === generation.current && requestContext === contextRef.current) setState({ context: requestContext, busy: false, error: '', content })
     } catch (error) {
-      if (request === generation.current) setState({ busy: false, content: null,
+      if (request === generation.current && requestContext === contextRef.current) setState({ context: requestContext, busy: false, content: null,
         error: error instanceof Error ? error.message : 'Не удалось подготовить отчёт. Повторите действие.' })
     } finally { if (request === generation.current) pending.current = false }
   }, [])
@@ -39,7 +42,7 @@ export function useReportPreview(context?: unknown) {
     return run(load)
   }, [run])
   const retry = useCallback(() => { if (loader.current) void run(loader.current) }, [run])
-  return { open, previewProps: state ? {
+  return { open, previewProps: state && state.context === context ? {
     report: state.content?.report ?? null, onDownloadExcel: state.content?.onDownloadExcel,
     busy: state.busy, error: state.error, onClose: close, onRetry: retry,
   } : null }

@@ -1,4 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import { chooseSpecialist } from '../specialist-helpers'
+import { confirmLnkResultChanges } from '../lnk-result-confirmation'
 
 import { LNK_VISIBLE_FIELD_SECTIONS } from '@/lib/lnk-visible-field-layout'
 import { getWeldLineMembershipLockKeys } from '@/server/weld-line-membership-lock'
@@ -25,8 +27,10 @@ type ControlProcessSettingsSnapshot = {
 }
 
 let controlProcessSettingsSnapshot: ControlProcessSettingsSnapshot | null | undefined
+const testSpecialistIds: number[] = []
 
 test.afterEach(async () => {
+  if (testSpecialistIds.length) await withE2eDatabase(db => db.query('delete from specialists where id=any($1::int[])', [testSpecialistIds.splice(0)]))
   if (controlProcessSettingsSnapshot === undefined) return
   const snapshot = controlProcessSettingsSnapshot
   controlProcessSettingsSnapshot = undefined
@@ -57,6 +61,19 @@ test('переключение этапа ЛНК сохраняет оболоч
 
 test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор -> основной НК -> ремонт -> исправление', async ({ page }) => {
   test.setTimeout(180_000)
+  const [inspector, thermist] = await withE2eDatabase(async db => (await db.query(`insert into specialists(name,kind,certificate,methods) values ('E2E полный цикл дефектоскопист','inspector','ЦИКЛ-НК',array['ВИК','ТВМТ']),('E2E полный цикл термист','thermist','ЦИКЛ-ТО',array[]::text[]) returning id`)).rows.map(row => row.id))
+  testSpecialistIds.push(inspector, thermist)
+  async function sign(heat = false) {
+    await page.getByRole('tab', { name: 'Специалисты', exact: true }).click()
+    const common = page.getByRole('group', { name: 'Общая пара', exact: true })
+    for (const role of heat ? ['Оператор-термист', 'Руководитель по ТО'] : ['Провёл контроль', 'Выдал заключение']) await chooseSpecialist(common.getByRole('combobox', { name: role, exact: true }), heat ? thermist : inspector)
+  }
+  async function expectSignature(type: string, date: string, heat = false) {
+    const snapshots = await withE2eDatabase(async db => (await db.query(`select d.specialists from generated_documents d join generated_document_weld_joints a on a.document_id=d.id join weld_joints w on w.id=a.weld_joint_id where w.joint=$1 and d.type=$2 and d.period_from=$3`, [JOINT, type, date])).rows)
+    expect(snapshots).toHaveLength(1)
+    expect(snapshots[0].specialists?.first?.id).toBe(heat ? thermist : inspector)
+    expect(snapshots[0].specialists?.second?.id).toBe(heat ? thermist : inspector)
+  }
 
   await page.goto('/lnk')
   await expect(page.getByText(JOINT, { exact: true }).first()).toBeVisible()
@@ -106,9 +123,11 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await fillDate(page, 'Дата ПСТО', '2026-08-05')
   await expect(page.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeInViewport()
   await expect(page.getByRole('status').filter({ hasText: 'Будет создано: 1' })).toBeVisible()
+  await sign(true)
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
   await expect(page.getByRole('heading', { name: 'Внесение результатов ПСТО' })).toBeHidden()
   await expectWeld({ psto_date: '2026-08-05', psto_result: 'проведено' })
+  await expectSignature('system:pstoConclusion', '2026-08-05', true)
 
   await runNextAction(page, 'Создать заявку ТВМТ · цикл 1')
   await expect(page.getByRole('heading', { name: 'Заявка ТВМТ' })).toBeVisible()
@@ -125,9 +144,11 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await chooseOptionByLabel(page, 'Результат для выбранных', 'не годен')
   await expect(page.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeInViewport()
   await expect(page.getByRole('status').filter({ hasText: 'Будет создано: 1' })).toBeVisible()
+  await sign()
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
   await expect(page.getByRole('heading', { name: 'Внесение результатов ТВМТ' })).toBeHidden()
   await expectWeld({ tvmt_result: 'не годен', tvmt_conclusion_date: '2026-08-07' })
+  await expectSignature('system:tvmtConclusion', '2026-08-07')
 
   await runNextAction(page, 'Создать заявку повторной ПСТО · цикл 2')
   await expect(page.getByRole('heading', { name: 'Заявка ПСТО' })).toBeVisible()
@@ -143,9 +164,11 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await fillDate(page, 'Дата ПСТО', '2026-08-09')
   await expect(page.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeInViewport()
   await expect(page.getByRole('status').filter({ hasText: 'Будет создано: 1' })).toBeVisible()
+  await sign(true)
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
   await expect(page.getByRole('heading', { name: 'Внесение результатов ПСТО' })).toBeHidden()
   await expectRepeatCycle({ sequence: 2, psto_date: '2026-08-09', psto_result: 'проведено' })
+  await expectSignature('system:pstoConclusion', '2026-08-09', true)
 
   await runNextAction(page, 'Создать заявку ТВМТ · цикл 2')
   await fillDate(page, 'Дата заявки', '2026-08-10')
@@ -159,8 +182,10 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await chooseOptionByLabel(page, 'Результат для выбранных', 'годен')
   await expect(page.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeInViewport()
   await expect(page.getByRole('status').filter({ hasText: 'Будет создано: 1' })).toBeVisible()
+  await sign()
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
   await expectRepeatCycle({ sequence: 2, tvmt_result: 'годен', tvmt_conclusion_date: '2026-08-11' })
+  await expectSignature('system:tvmtConclusion', '2026-08-11')
 
   await runNextAction(page, 'Создать заявку основного НК')
   await expect(page).toHaveURL(/\/lnk$/)
@@ -178,6 +203,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await page.getByRole('dialog').getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'ремонт', exact: true }).click()
   await expect(page.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeInViewport()
   await expect(page.getByRole('status').filter({ hasText: 'Будет создано: 1' })).toBeVisible()
+  await sign()
   await page.getByRole('button', { name: 'Сохранить результат' }).click()
   await expectWeld({
     vik_result: 'ремонт',
@@ -185,6 +211,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
     vik_defect_description: null,
   })
   await expectRepeatedJointCreateTask(page, JOINT, 'F1R1')
+  await expectSignature('system:lnkConclusionVik', '2026-08-13')
 
   await openHeaderMenuItem(page, 'Результат', 'Все результаты ЛНК')
   await expect(page.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeVisible()
@@ -193,6 +220,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await page.getByRole('button', { name: new RegExp(`E2E-L1 · ${JOINT}`) }).click()
   await page.getByRole('dialog').getByRole('group', { name: 'Изменить на:', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
   await page.getByRole('button', { name: 'Сохранить изменения' }).click()
+  await confirmLnkResultChanges(page)
   await expect(page.getByRole('heading', { name: 'Редактирование результатов ЛНК' })).toBeHidden()
   await expectWeld({
     vik_result: 'годен',
@@ -200,6 +228,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
     vik_defect_description: 'ДНО',
   })
   await expectRepeatedJointCreateTaskToDisappear(page, 'F1R1')
+  await expectSignature('system:lnkConclusionVik', '2026-08-13')
 
   await page.goto('/psto')
   await openHeaderMenuItem(page, 'Результат', 'История ПСТО и ТВМТ')
@@ -225,6 +254,8 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await expectNoRepeatCycleForJoint(JOINT)
   await expectPstoCycleDocumentPosition(JOINT, 1, true)
   await expectPstoCycleDocumentPosition(JOINT, 2, false)
+  await expectSignature('system:pstoConclusion', '2026-08-05', true)
+  await expectSignature('system:tvmtConclusion', '2026-08-07')
 
   await page.goto('/documents')
   await page.getByRole('button', { name: 'Заключения ЛНК', exact: true }).click()
@@ -242,16 +273,16 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   expect(stageFilterMenuBox!.y + stageFilterMenuBox!.height).toBeLessThanOrEqual(viewport!.height)
   await stageFilterMenu.getByRole('button', { name: 'Закрыть' }).click()
 
-  await page.getByRole('button', { name: /Столбцы 8\/8/ }).click()
+  await page.getByRole('button', { name: /Столбцы 10\/10/ }).click()
   await page.getByRole('checkbox', { name: 'Этап', exact: true }).click()
-  await expect(page.getByRole('button', { name: /Столбцы 7\/8/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Столбцы 9\/10/ })).toBeVisible()
   await expect(page.getByTitle('Фильтр: Этап')).toBeHidden()
 
   await page.reload()
   await page.getByRole('button', { name: 'Заявка ПСТО', exact: true }).click()
   await expect(page.getByRole('button', { name: /Столбцы 7\/7/ })).toBeVisible()
   await page.getByRole('button', { name: 'Заключения ЛНК', exact: true }).click()
-  await expect(page.getByRole('button', { name: /Столбцы 7\/8/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Столбцы 9\/10/ })).toBeVisible()
   await expect(page.getByTitle('Фильтр: Этап')).toBeHidden()
 })
 

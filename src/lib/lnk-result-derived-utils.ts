@@ -148,7 +148,6 @@ export function getSelectedLnkResultRows(
 
 export function getLnkResultSaveBlockReason({
   draft,
-  isSaving,
   nextConclusionName,
   saveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
   selectedRows,
@@ -156,14 +155,12 @@ export function getLnkResultSaveBlockReason({
   controlProcessSettings,
 }: {
   draft: LnkResultDraftState
-  isSaving: boolean
   nextConclusionName: string
   saveCheckSettings?: SaveCheckSettings
   selectedRows: WeldRow[]
   systemDocumentCreationPlan?: SystemDocumentCreationPlan | null
   controlProcessSettings?: ControlProcessSettings
 }) {
-  if (isSaving) return 'Результат сохраняется, дождитесь завершения.'
   saveCheckSettings = normalizeSaveCheckSettings(saveCheckSettings)
   if (!draft.methodKey) return 'Выберите метод контроля.'
   if (selectedRows.length === 0) return 'Отметьте один или несколько стыков галочкой.'
@@ -187,12 +184,11 @@ export function getLnkResultSaveBlockReason({
       catch (error) { return `Стык ${row.joint || row.id}: ${(error as Error).message}` }
     }
   }
-  if (saveCheckSettings.lnkResultControlDateRequired && hasNonEmptyRows && !draft.controlDate) {
-    return formatSaveCheckBlockReason('lnkResultControlDateRequired', 'Укажите дату контроля.')
-  }
   if (hasNonEmptyRows) {
-    const dateReason = getDateInputValidationReason(draft.controlDate, 'Дата контроля')
-    if (dateReason) return formatSaveCheckBlockReason('lnkResultControlDateFormat', dateReason)
+    const reasons = [getDateInputValidationReason(draft.controlDate, 'Дата контроля', { required: true }),
+      systemDocumentCreationPlan ? systemDocumentCreationPlan.error :
+        getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName).trim() ? '' : 'Укажите наименование заключения.'].filter(Boolean)
+    if (reasons.length) return reasons.join('\n')
   }
 
   const dateIssue = saveCheckSettings.lnkResultDateAfterWeldDate && hasNonEmptyRows
@@ -200,19 +196,6 @@ export function getLnkResultSaveBlockReason({
     : null
   if (dateIssue) return formatSaveCheckBlockReason('lnkResultDateAfterWeldDate', dateIssue)
 
-  if (
-    saveCheckSettings.lnkResultConclusionRequired &&
-    hasNonEmptyRows &&
-    !systemDocumentCreationPlan &&
-    !getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName)
-  ) {
-    return formatSaveCheckBlockReason('lnkResultConclusionRequired', 'Укажите наименование заключения.')
-  }
-  if (hasNonEmptyRows && systemDocumentCreationPlan?.error) {
-    return saveCheckSettings.lnkResultConclusionRequired
-      ? formatSaveCheckBlockReason('lnkResultConclusionRequired', systemDocumentCreationPlan.error)
-      : systemDocumentCreationPlan.error
-  }
 
   const vikBeforeOtherIssue = findFirstLnkResultVikBeforeOtherDraftIssue(selectedRows, draft, saveCheckSettings)
   if (vikBeforeOtherIssue) return vikBeforeOtherIssue

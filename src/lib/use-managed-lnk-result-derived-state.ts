@@ -15,7 +15,7 @@ type ManagedLnkResultDerivedStateParams = {
   lnkRows: WeldRow[]
   managedLnkResultOrderIds: number[] | null
   managedLnkResultMethodKey: WeldFieldKey | ''
-  managedLnkPendingResultChanges: Record<string, string>
+  managedLnkPendingResultChanges: Record<string, string | null>
   forcedEntry?: ForcedLnkResultEntry
 }
 

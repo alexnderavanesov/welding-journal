@@ -1,4 +1,5 @@
 import { formatDisplayDate, getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
+import { assertDocumentRequisites } from '@/lib/document-requisites'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { getRejectedPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
@@ -117,9 +118,9 @@ export function buildPrimaryTvmtResultRows({
 }) {
   const normalizedResult = normalizeTvmtResult(result)
   if (!normalizedResult) throw new Error('Выберите результат ТВМТ.')
-  const date = requireDate(controlDate, 'Укажите дату ТВМТ.', 'Дата ТВМТ')
+  assertDocumentRequisites({ name: conclusionName, date: controlDate, nameLabel: 'наименование заключения ТВМТ', dateLabel: 'Дата ТВМТ' })
+  const date = parseDateLikeToIso(controlDate)!
   const name = conclusionName.trim()
-  if (!name) throw new Error('Укажите наименование заключения ТВМТ.')
 
   const proposedRows = records.map((record) => {
     if (!canAddPrimaryTvmtResult(record)) {

@@ -182,13 +182,28 @@ export function calculateLineProgram(
   systemIndexSettings: SystemIndexSettings = loadSystemIndexSettings(),
   approved: ReadonlySet<string> = new Set(),
 ): LineProgramStampCalculation[] {
+  return calculateLineProgramDetails(rows, percent, pvkPercent, systemIndexSettings, approved).calculations
+}
+
+/** Internal full-line result for projections that also need the physical count.
+ * Build from the same complete input, mode and settings on every invocation;
+ * callers cannot supply a cached topology from a different calculation.
+ */
+export function calculateLineProgramDetails(
+  rows: readonly WeldRow[],
+  percent: number,
+  pvkPercent: number,
+  systemIndexSettings: SystemIndexSettings = loadSystemIndexSettings(),
+  approved: ReadonlySet<string> = new Set(),
+): { calculations: LineProgramStampCalculation[]; calculationRows: readonly WeldRow[] } {
   if (parseLineProgramPercent(percent) === null || parseLineProgramPercent(pvkPercent) === null ||
     (percent === 100 ? pvkPercent < 1 : pvkPercent > percent)) {
     throw new Error('Проверьте базовый процент и процент ПВК в программе линии.')
   }
   const full = percent === 100
   const topology = buildLineProgramTopology(rows, full, systemIndexSettings)
-  const uniqueRows = new Map(topology.physicalRows.filter(full ? isLineProgramControlRow : isLineProgramCalculationRow).map((row) => [row.id, row]))
+  const calculationRows = topology.physicalRows.filter(full ? isLineProgramControlRow : isLineProgramCalculationRow)
+  const uniqueRows = new Map(calculationRows.map((row) => [row.id, row]))
   const groups = new Map<string, { stamp: string; rows: WeldRow[]; sources: WeldRow[] }>()
   const flags = new Map<number, Record<LineProgramDemandKind, RowDemand>>()
   for (const row of uniqueRows.values()) {
@@ -279,7 +294,7 @@ export function calculateLineProgram(
       }
     }
   }
-  return calculations
+  return { calculations, calculationRows }
 }
 
 function buildDemand(

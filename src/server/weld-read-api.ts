@@ -19,6 +19,8 @@ import type {
   PstoWorkflowSummary,
   WeldPageRequest,
   WeldPageResult,
+  WeldReportSummaryRequest,
+  WeldReportSummaryResult,
   WeldReportContextKind,
   WeldSort,
   WeldSortDirection,
@@ -119,6 +121,13 @@ export const listWeldingJournalPage = createServerFn({ method: 'GET' })
     return server.listWeldingJournalPage({ data })
   })
 
+export const getWeldReportSummary = createServerFn({ method: 'GET' })
+  .validator((data: WeldReportSummaryRequest) => data)
+  .handler(async ({ data }): Promise<WeldReportSummaryResult> => {
+    const server = await import('@/server/weld-read')
+    return server.getWeldReportSummary({ data })
+  })
+
 export const listLnkReportPage = createServerFn({ method: 'GET' })
   .validator((data: WeldPageRequest | undefined) => data)
   .handler(async ({ data }): Promise<WeldPageResult> => {
@@ -185,6 +194,8 @@ export type {
   WeldPageRequest,
   WeldPageResult,
   WeldPageSize,
+  WeldReportSummaryRequest,
+  WeldReportSummaryResult,
   WeldReportContextKind,
   WeldReportKind,
   WeldSort,

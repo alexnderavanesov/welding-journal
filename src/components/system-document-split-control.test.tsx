@@ -8,13 +8,14 @@ import { defaultRequestNamingState } from '@/lib/request-naming-state'
 import { buildSystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
-const mocks = vi.hoisted(() => ({ defaults: vi.fn(), sequences: vi.fn() }))
+const mocks = vi.hoisted(() => ({ defaults: vi.fn(), sequences: vi.fn(), preview: vi.fn() }))
 vi.mock('@/server/document-grouping-preferences', () => ({ getDocumentGroupingDefaults: mocks.defaults }))
-vi.mock('@/server/system-document-sequences', () => ({ getSystemDocumentSequences: mocks.sequences }))
+vi.mock('@/server/system-document-sequences', () => ({ getSystemDocumentSequences: mocks.sequences, previewSystemDocumentNames: mocks.preview }))
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.defaults.mockResolvedValue({ ...REQUEST_CONCLUSION_DEFAULT_SETTINGS, splitModes: { ...REQUEST_CONCLUSION_DEFAULT_SETTINGS.splitModes, lnkRequest: 'line' } })
   mocks.sequences.mockResolvedValue({ lnkRequest: 10 })
+  mocks.preview.mockImplementation(async ({ data }) => data.map(() => ({ name: 'Заявка-09.10.2026-012', pattern: REQUEST_CONCLUSION_DEFAULT_SETTINGS.lnkRequest.systemPattern })))
 })
 const rows = [1, 2].map(id => ({ id, joint: `S${id}`, projectTitle: 'P', subtitleCode: 'C', line: 'L' })) as WeldRow[]
 function Draft({ methodSelected = true }: { methodSelected?: boolean }) {
@@ -37,6 +38,7 @@ it('shows the fresh shared default and exact count; editing the draft does not w
   expect(screen.getByRole('status')).toHaveTextContent('Будет создано: 2')
   expect(mocks.defaults).toHaveBeenCalledTimes(1)
   expect(mocks.sequences).toHaveBeenCalledTimes(1)
+  expect(mocks.preview).not.toHaveBeenCalled()
 })
 
 it('fetches again on a new opening without reusing the cancelled split', async () => {
@@ -47,6 +49,7 @@ it('fetches again on a new opening without reusing the cancelled split', async (
   open()
   await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('line'))
   expect(mocks.defaults).toHaveBeenCalledTimes(2)
+  expect(mocks.preview).not.toHaveBeenCalled()
 })
 
 it('keeps an open draft when the shared value changes and explicitly refreshes only names/numbers', async () => {
@@ -59,6 +62,7 @@ it('keeps an open draft when the shared value changes and explicitly refreshes o
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Обновить номера и имена' })) })
   expect(screen.getByRole('combobox')).toHaveValue('joint')
   expect(mocks.defaults).toHaveBeenCalledTimes(2)
+  expect(mocks.preview).toHaveBeenCalledTimes(1)
 })
 
 it('explains missing method instead of giving an invented document count', async () => {

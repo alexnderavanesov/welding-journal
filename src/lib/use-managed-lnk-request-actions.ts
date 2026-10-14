@@ -1,4 +1,6 @@
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
+import { LNK_METHODS } from './report-config'
+import { isSameRequestDocument } from './request-document-identity'
 import { useConfirmAction } from '@/lib/confirm-action-context'
 import type { RowWithId, UseManagedLnkRequestActionsOptions } from '@/lib/managed-lnk-request-action-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
@@ -9,6 +11,7 @@ import {
 } from '@/lib/request-document-identity'
 
 export function useManagedLnkRequestActions({
+  lnkRows,
   lnkRequestManagerOptions,
   managedLnkRequestName,
   managedLnkRequestDate,
@@ -62,6 +65,9 @@ export function useManagedLnkRequestActions({
     const requestName = (requestOverride?.name ?? managedLnkRequestName).trim()
     const requestDate = requestOverride?.date ?? managedLnkRequestDate
     if (!requestName) return
+    const expectedVersions = lnkRows.filter(row => LNK_METHODS.some(method =>
+      isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], { name: requestName, date: requestDate }),
+    )).map(row => ({ id: row.id, version: String(row.rowVersion ?? '') }))
     const confirmed = await confirmAction({
       title: 'Удалить заявку ЛНК',
       itemName: requestName,
@@ -71,6 +77,7 @@ export function useManagedLnkRequestActions({
     if (!confirmed) return
     lnkRequestManagerMutation.mutate({
       action: 'delete',
+      expectedVersions,
       requestName,
       requestDate,
     })

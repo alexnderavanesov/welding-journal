@@ -4,7 +4,7 @@ export const APP_REPORT_ROUTES = {
   weldingJournal: '/journal',
   heatTreatment: '/psto',
   lnk: '/lnk',
-  welderStamps: '/welder-stamps',
+  welderStamps: '/references',
   percentageLines: '/line-program',
   statistics: '/statistics',
   documents: '/documents',
@@ -19,6 +19,7 @@ const REPORT_BY_PATH = new Map<string, ActiveReport>(
 )
 // Keep the selected section stable while an old bookmark is redirected.
 REPORT_BY_PATH.set('/percentage-lines', 'percentageLines')
+REPORT_BY_PATH.set('/welder-stamps', 'welderStamps')
 
 export function getAppReportPath(report: ActiveReport): AppReportPath {
   return APP_REPORT_ROUTES[report]

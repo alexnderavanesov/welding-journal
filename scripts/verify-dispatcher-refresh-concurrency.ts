@@ -41,7 +41,10 @@ pg.Client.prototype.query = function (this: pg.Client, ...args: Parameters<pg.Cl
     }
   }
   const result = (original as (...values: unknown[]) => unknown).apply(this, args)
-  if (/^select /i.test(text) && text.includes('"technology_card_number"') && text.includes('from "weld_joints" where') && text.includes('any(')) {
+  // Both Drizzle select() and the flat schema-decoded reader issue this bounded
+  // wide read; indentation/newlines must not disable concurrent-write injection.
+  if (/^\s*select\b/i.test(text) && text.includes('"technology_card_number"') &&
+    /from\s+"weld_joints"\s+where\b/i.test(text) && /\bany\s*\(/i.test(text)) {
     wideReads++
     if (onWideRead) {
       const mutation = onWideRead; onWideRead = undefined

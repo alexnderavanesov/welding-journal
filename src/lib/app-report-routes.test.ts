@@ -23,4 +23,8 @@ describe('application report routes', () => {
     expect(getAppReportPath('percentageLines')).toBe('/line-program')
     expect(getActiveReportFromPath('/percentage-lines/')).toBe('percentageLines')
   })
+  it('uses the reference URL and recognizes old welder-stamp bookmarks', () => {
+    expect(getAppReportPath('welderStamps')).toBe('/references')
+    expect(getActiveReportFromPath('/welder-stamps/')).toBe('welderStamps')
+  })
 })

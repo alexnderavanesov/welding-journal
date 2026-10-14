@@ -42,16 +42,16 @@ export type SaveCheckSettings = Record<SaveCheckSettingId, boolean>
 
 export const OPTIONAL_SAVE_CHECK_SETTING_IDS: ReadonlySet<SaveCheckSettingId> = new Set(['officialArchive', 'manualJointName'])
 
-// These legacy policy fields now mean "block an incomplete save", not whether
-// completeness is checked. SP-03/SP-11 always audit incomplete stored records.
+// Incomplete welding metadata still creates SP-03. Document requisites are
+// mandatory on new/corrected results; SP-11 retains legacy diagnostics.
 const COMPLETENESS_SAVE_SETTING_IDS: ReadonlySet<SaveCheckSettingId> = new Set([
   'requiredRootStampWithWeldDate', 'requiredMaterialGroupWithWeldDate',
   'requiredConnectionTypeWithWeldDate', 'requiredWeldingMethodWithWeldDate',
-  'lnkResultControlDateRequired', 'lnkResultConclusionRequired',
-  'pstoResultDateRequired', 'pstoResultDiagramRequired',
 ])
 
 export const REQUIRED_SAVE_CHECK_SETTING_IDS: ReadonlySet<SaveCheckSettingId> = new Set([
+  'lnkResultControlDateRequired', 'lnkResultConclusionRequired',
+  'pstoResultDateRequired', 'pstoResultDiagramRequired',
   'officialRegistry', 'officialNaksDate', 'officialSuspension', 'officialWeldingMethod',
   'officialMaterialGroup', 'officialDiameter', 'officialThickness', 'dateFormat',
   'weldDateNotFuture', 'lnkResultControlDateFormat', 'lnkResultDateAfterWeldDate',
@@ -126,18 +126,18 @@ export const DEFAULT_SAVE_CHECK_SETTINGS: SaveCheckSettings = {
   requiredWeldingMethodWithWeldDate: false,
   dateFormat: true,
   weldDateNotFuture: true,
-  lnkResultControlDateRequired: false,
+  lnkResultControlDateRequired: true,
   lnkResultControlDateFormat: true,
   lnkResultDateAfterWeldDate: true,
   lnkResultRequestDateOrder: true,
   lnkResultVikDateBeforeOther: true,
   lnkResultVikRequiredBeforeOther: true,
-  lnkResultConclusionRequired: false,
-  pstoResultDateRequired: false,
+  lnkResultConclusionRequired: true,
+  pstoResultDateRequired: true,
   pstoResultDateFormat: true,
   pstoResultDateAfterWeldDate: true,
   pstoResultRequestDateOrder: true,
-  pstoResultDiagramRequired: false,
+  pstoResultDiagramRequired: true,
   manualJointName: true,
   controlHistoryProtection: true,
   systemJointRenameProtection: true,

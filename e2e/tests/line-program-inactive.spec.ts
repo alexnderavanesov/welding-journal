@@ -1,15 +1,27 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
 import { programApprovalKey } from '../../src/lib/program-control-approval'
+
+// Finish the initial key before searching; rows can arrive before full totals.
+async function searchProgram(page: Page, search: string) {
+  const totals = page.getByTestId('line-program').getByLabel('Итоги раздела')
+  await expect(totals).toBeVisible()
+  const [response] = await Promise.all([
+    page.waitForResponse(response => response.url().includes('/_serverFn/') && rpcName(response.url()).startsWith('getLineProgramSection_')),
+    page.getByLabel('Поиск программы линий').fill(search),
+  ])
+  expect(response.ok()).toBe(true)
+  await expect(totals).toBeVisible()
+}
 
 const project = 'E2E inactive joints'
 test.afterEach(() => cleanupLineProgramProjects([project]))
 
 for (const percent of [10, 100]) test(`неофициальные и неактуальные: пометки и нулевой вклад в показатели при ${percent}%`, async ({ page }) => {
   const name = `INACTIVE-${percent}`
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     const { rows: [line] } = await db.query(`insert into line_programs (project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
       values ($1,'INACTIVE',$2,'II','A',$3,$3) returning id`, [project, name, percent])
     const { rows } = await db.query(`insert into weld_joints (line_program_id,project_title,subtitle_code,line,joint,weld_date,connection_type,
@@ -28,7 +40,7 @@ for (const percent of [10, 100]) test(`неофициальные и неакт�
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/line-program')
   const program = page.getByTestId('line-program'), totals = program.getByLabel('Итоги раздела')
-  await program.getByLabel('Поиск программы линий').fill(name)
+  await searchProgram(page, name)
   const card = program.getByTestId('line-program-card')
   await expect(card).toHaveCount(1)
   await expect(totals.getByRole('button', { name: 'Учитываемых соединений 1', exact: true })).toBeVisible()
@@ -70,7 +82,8 @@ for (const percent of [10, 100]) test(`неофициальные и неакт�
   await expect(joints.nth(1).getByRole('button', { name: 'F2', exact: true })).toHaveAttribute('aria-expanded', 'true')
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
   const count = (prefix: string) => calls.filter(name => name.startsWith(prefix)).length
-  expect(count('getLineProgramSection_')).toBe(1)
+  expect(count('getLineProgramSection_')).toBe(2)
+  expect(count('getLineProgramPage_')).toBe(2)
   expect(count('getLineProgramCalculation_')).toBe(1)
   expect(count('getLineProgramJointPage_')).toBe(1)
   expect(count('getLineProgramExplanation_')).toBe(0)

@@ -5,6 +5,7 @@ import {
   buildSystemNameWithNumber,
   extractSystemNameNumber,
   getRequestConclusionNamingKind,
+  getDefaultNamingState,
   hasSystemDocumentNumberField,
   loadRequestConclusionSettings,
   normalizeRequestConclusionSettings,
@@ -18,6 +19,17 @@ import { formatLnkRequestName } from '@/lib/report-request-naming'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 describe('request and conclusion naming settings', () => {
+  it('seeds a separately editable pre-TO formula from the actual main rule, without changing it', () => {
+    const old = { lnkConclusion: { systemPattern: 'АКТ-{{Метод}}-{{Дата}}-{{№}}', defaultMode: 'custom' } }
+    const settings = normalizeRequestConclusionSettings(old)
+    expect(settings.lnkConclusion.systemPattern).toBe(old.lnkConclusion.systemPattern)
+    expect(settings.lnkConclusionBeforeHeatTreatment.systemPattern).toBe('АКТ-{{Метод}}-ДО-ТО-{{Дата}}-{{№}}')
+    expect(settings.lnkConclusionBeforeHeatTreatment.systemPatternHistory).toContain(old.lnkConclusion.systemPattern)
+    const next = normalizeRequestConclusionSettings({ ...settings, lnkConclusion: { systemPattern: 'NEW-{{№}}' } })
+    expect(next.lnkConclusionBeforeHeatTreatment.systemPattern).toBe(settings.lnkConclusionBeforeHeatTreatment.systemPattern)
+    expect(getRequestConclusionNamingKind({ type: 'lnkConclusion', methodCode: 'ВИК', sourceKind: 'beforeHeatTreatment' })).toBe('lnkConclusionBeforeHeatTreatment')
+    expect(getRequestConclusionNamingKind({ type: 'lnkRequest', sourceKind: 'beforeHeatTreatment' })).toBe('lnkRequestBeforeHeatTreatment')
+  })
   it('uses independent naming kinds for TVMT documents', () => {
     expect(getRequestConclusionNamingKind({ type: 'lnkRequest', methodCode: 'ТВМТ' })).toBe('tvmtRequest')
     expect(getRequestConclusionNamingKind({ type: 'lnkConclusion', methodCode: 'ТВМТ' })).toBe('tvmtConclusion')
@@ -37,15 +49,15 @@ describe('request and conclusion naming settings', () => {
     })
 
     expect(settings.tvmtRequest).toMatchObject({
-      defaultMode: 'custom',
       systemPattern: 'Старая-заявка-{{№}}',
     })
+    expect(settings.tvmtRequest).not.toHaveProperty('defaultMode')
+    expect(getDefaultNamingState()).toEqual({ mode: 'system', customName: '' })
     expect(settings.tvmtConclusion.systemPattern).toBe('Старое-заключение-{{№}}')
   })
 
   it('uses ZNK in the default LNK conclusion name while recognizing the previous default', () => {
     expect(REQUEST_CONCLUSION_DEFAULT_SETTINGS.lnkConclusion).toEqual({
-      defaultMode: 'system',
       systemPattern: 'ЗНК-{{Метод}}-{{Дата}}-{{№}}',
       systemPatternHistory: ['Заключение-{{Метод}}-{{Дата}}-{{№}}'],
     })
@@ -197,7 +209,6 @@ describe('request and conclusion naming settings', () => {
       {
         ...REQUEST_CONCLUSION_DEFAULT_SETTINGS,
         lnkRequest: {
-          defaultMode: 'system',
           systemPattern: 'Заявка НК №{{Шифр}}-{{№}}3333333',
         },
       },

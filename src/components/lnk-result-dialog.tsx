@@ -8,6 +8,7 @@ import { LnkControlStageSwitch } from '@/components/lnk-control-stage-switch'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
+import { DocumentSpecialistsPanel } from '@/components/document-specialists-panel'
 import { LnkResultConclusionsPanel } from '@/components/lnk-result-conclusions-panel'
 import { SystemDocumentSplitControl } from '@/components/system-document-split-control'
 import { LnkResultRow } from '@/components/lnk-result-row'
@@ -63,6 +64,8 @@ export type LnkResultDialogProps = {
   rootCauseActions?: WorkflowRootCauseAction[]
   onRunRootCauseAction?: (action: WorkflowRootCauseAction) => void
   isSaveDisabled: boolean
+  isSaving?: boolean
+  saveError?: string | null
   contextReady: boolean
   canBulkToggleRows: boolean
   areAllFilteredRowsSelected: boolean
@@ -103,6 +106,8 @@ export function LnkResultDialog({
   rootCauseActions = [],
   onRunRootCauseAction,
   isSaveDisabled,
+  isSaving = false,
+  saveError,
   contextReady,
   canBulkToggleRows,
   areAllFilteredRowsSelected,
@@ -294,6 +299,7 @@ export function LnkResultDialog({
 
       <DocumentWorkspaceTabs
         activeTab={workspaceTab}
+        specialists={true}
         ariaLabel="Разделы результата ЛНК"
         controls={<SystemDocumentSplitControl plan={systemDocumentCreationPlan} naming={draft.conclusionNaming} onChange={onConclusionNamingChange} />}
         documentsLabel="Заключения и имена"
@@ -303,7 +309,7 @@ export function LnkResultDialog({
         onChange={setWorkspaceTab}
       />
 
-      {workspaceTab === 'documents' && systemDocumentCreationPlan ? (
+      {workspaceTab === 'specialists' && systemDocumentCreationPlan ? <DocumentSpecialistsPanel plan={systemDocumentCreationPlan} naming={draft.conclusionNaming} onChange={onConclusionNamingChange} disabled={isSaving} /> : workspaceTab === 'documents' && systemDocumentCreationPlan ? (
         <LnkResultConclusionsPanel
           plan={systemDocumentCreationPlan}
           naming={draft.conclusionNaming}
@@ -389,6 +395,8 @@ export function LnkResultDialog({
           onAction: () => runRootCauseAction(action),
         }))}
         isSaveDisabled={isSaveDisabled}
+        isSaving={isSaving}
+        saveError={saveError}
         saveBlockReasonVariant="danger"
         blockReasonActionLabel={systemDocumentCreationPlan?.error && workspaceTab !== 'documents' ? 'Открыть заключения и имена' : undefined}
         onBlockReasonAction={systemDocumentCreationPlan?.error && workspaceTab !== 'documents' ? () => setWorkspaceTab('documents') : undefined}

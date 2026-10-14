@@ -9,7 +9,7 @@ import { SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY } from '@/lib/system-document-seque
 
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-settings'
 vi.mock('@/server/document-grouping-preferences', () => ({ getDocumentGroupingDefaults: vi.fn(async () => REQUEST_CONCLUSION_DEFAULT_SETTINGS) }))
-vi.mock('@/server/system-document-sequences', () => ({ getSystemDocumentSequences: vi.fn(async () => ({ lnkRequest: 10, lnkConclusionVik: 20, lnkConclusionRk: 30 })) }))
+vi.mock('@/server/system-document-sequences', () => ({ getSystemDocumentSequences: vi.fn(async () => ({ lnkRequest: 10, lnkConclusionVik: 20, lnkConclusionRk: 30, 'lnkRequest:beforeHeatTreatment': 110, 'lnkConclusionVik:beforeHeatTreatment': 120, 'lnkConclusionRk:beforeHeatTreatment': 130 })) }))
 
 function makeRow(overrides: Partial<WeldRow> = {}): WeldRow {
   return {
@@ -50,6 +50,9 @@ async function renderDialogRows(
     lnkRequest: 10,
     lnkConclusionVik: 20,
     lnkConclusionRk: 30,
+    'lnkRequest:beforeHeatTreatment': 110,
+    'lnkConclusionVik:beforeHeatTreatment': 120,
+    'lnkConclusionRk:beforeHeatTreatment': 130,
   })
   const renderTree = () => (
     <QueryClientProvider client={queryClient}>
@@ -84,6 +87,14 @@ async function renderDialog(mode: 'request' | 'result', row: WeldRow) {
 }
 
 describe('PreHeatTreatmentLnkWorkflowDialog', async () => {
+  it('starts with a system name using the pre-TO formula and its own next number', async () => {
+    await renderDialog('request', makeRow())
+    fireEvent.click(screen.getByRole('tab', { name: /Заявки и имена/ }))
+    expect(within(screen.getByRole('group', { name: 'Наименование заявки' })).getByRole('button', { name: 'Системное' })).toHaveAttribute('aria-pressed', 'true')
+    const names = screen.getAllByRole('textbox').filter(input => (input as HTMLInputElement).value.includes('ДО-ТО'))
+    expect(names.length).toBeGreaterThan(0)
+    expect((names[0] as HTMLInputElement).value).toMatch(/ДО-ТО-.*-110$/)
+  })
   it('applies the same selected-row matrix before heat treatment with hover and focus reasons', async () => {
     const request = { requestName: 'РК-до-ТО', requestDate: '2026-08-20', result: 'ожидает НК' }
     await renderDialogRows('result', [

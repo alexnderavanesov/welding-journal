@@ -1,4 +1,18 @@
-import type { ComponentType } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, type ComponentType, type ReactNode, type RefObject } from 'react'
+
+const PendingActionContext = createContext<RefObject<symbol | null> | null>(null)
+
+/** Only the most recently selected action in an open menu may await its check. */
+export function WorkflowActionScope({ children }: { children: ReactNode }) {
+  const pending = useRef<symbol | null>(null)
+  return <PendingActionContext.Provider value={pending}>{children}</PendingActionContext.Provider>
+}
+
+/** Cancel synchronously before another entry point can update availability. */
+export function useCancelPendingWorkflowAction() {
+  const pending = useContext(PendingActionContext)
+  return useCallback(() => { if (pending) pending.current = null }, [pending])
+}
 
 export type WorkflowAvailability = 'loading' | 'error' | 'ready'
 
@@ -23,6 +37,23 @@ export function WorkflowActionMenuItem({
   availability = 'ready',
   tone = 'sky',
 }: WorkflowActionMenuItemProps) {
+  const localPending = useRef<symbol | null>(null)
+  const pending = useContext(PendingActionContext) ?? localPending
+  const token = useRef(Symbol('workflow-action'))
+  const activated = useRef(false)
+  useEffect(() => {
+    if (availability === 'loading') { activated.current = false; return }
+    if (pending.current !== token.current) return
+    pending.current = null
+    if (availability === 'ready' && !disabled) {
+      activated.current = true
+      onClick()
+    }
+  }, [availability, disabled, onClick, pending])
+  useEffect(() => {
+    const currentToken = token.current
+    return () => { if (pending.current === currentToken) pending.current = null }
+  }, [pending])
   const toneClasses = tone === 'violet'
     ? 'hover:bg-violet-50 hover:text-violet-900'
     : tone === 'slate'
@@ -34,13 +65,19 @@ export function WorkflowActionMenuItem({
       ? 'text-slate-500'
       : 'text-sky-600'
 
-  const blocked = disabled || availability !== 'ready'
-  const detail = availability === 'loading' ? 'Проверяем доступность…' : availability === 'error' ? 'Не удалось проверить доступность. Закройте меню и повторите.' : disabled ? disabledReason : description
+  const blocked = disabled || availability === 'error'
+  const detail = disabled ? disabledReason : availability === 'error' ? 'Не удалось проверить доступность. Закройте меню и повторите.' : description
 
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={() => {
+        if (blocked || activated.current) return
+        if (availability === 'loading') { pending.current = token.current; return }
+        pending.current = null
+        activated.current = true
+        onClick()
+      }}
       disabled={blocked}
       aria-busy={availability === 'loading'}
       aria-label={label}

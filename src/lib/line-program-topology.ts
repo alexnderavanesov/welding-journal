@@ -1,6 +1,7 @@
 import type { WeldRow } from './dispatcher-types'
 import { encodeIdentityKey } from './identity-key'
-import { formatRepeatedJointName, normalizeJointChainPart, parseJointChainName, parseRepeatedJointName } from './joint-chain'
+import { formatRepeatedJointName, getRepeatedJointNameFromParsed, normalizeJointChainPart } from './joint-chain'
+import { parseJointName } from './joint-name'
 import { loadSystemIndexSettings, type SystemIndexSettings } from './system-index-settings'
 
 export type ProgramExclusionReason = 'repair' | 'replaced' | 'incomplete-coil' | 'ineligible'
@@ -26,13 +27,14 @@ export function buildLineProgramTopology(
   const roots = new Map<string, WeldRow[]>()
   const pairs = new Map<string, { anchor: WeldRow; parent: string; parentId?: number | null; sides: Map<number, WeldRow[]> }>()
   const byId = new Map(rows.map(row => [row.id, row]))
-  const repairs: WeldRow[] = []
+  const repairs: { row: WeldRow; branch: string }[] = []
   for (const row of rows) {
     const joint = String(row.joint ?? '')
-    const branch = parseRepeatedJointName(joint, settings)
+    const parsed = parseJointName(joint, settings)
+    const branch = getRepeatedJointNameFromParsed(parsed, settings)
     if (row.programChainState?.kind === 'repair' || !row.programChainState && branch.segments.length) {
       excluded.set(row.id, 'repair')
-      repairs.push(row)
+      repairs.push({ row, branch: branch.base })
       continue
     }
     primaryRows.push(row)
@@ -40,7 +42,6 @@ export function buildLineProgramTopology(
     const key = programJointIdentity(row)
     const bucket = roots.get(key) ?? []
     bucket.push(row); roots.set(key, bucket)
-    const parsed = parseJointChainName(joint, settings)
     const last = parsed.segments.at(-1)
     if (row.programChainState ? row.programChainState.kind !== 'coil' : last?.suffix !== 'Y') continue
     const parent = formatRepeatedJointName(parsed.base, parsed.segments.slice(0, -1), settings)
@@ -51,8 +52,7 @@ export function buildLineProgramTopology(
     const side = pair.sides.get(sideIndex) ?? []
     side.push(row); pair.sides.set(sideIndex, side); pairs.set(parentKey, pair)
   }
-  for (const row of repairs) {
-    const branch = parseRepeatedJointName(String(row.joint ?? ''), settings).base
+  for (const { row, branch } of repairs) {
     if (row.programChainState ? !byId.has(row.programChainState.physicalRootId ?? -1) : !roots.has(programJointIdentity(row, branch))) {
       issues.push({ rowId: row.id, message: `Не найден исходный стык ${branch}. Ремонт не участвует в процентном расчёте; проверьте целостность цепочки.` })
     }

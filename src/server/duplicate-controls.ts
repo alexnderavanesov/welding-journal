@@ -21,6 +21,7 @@ import {
   type DuplicateControlResult,
 } from '@/lib/duplicate-control-types'
 import { getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
+import { getDuplicateControlRequisiteErrors } from '@/lib/document-requisites'
 import {
   getDispatcherDirtyScopes,
   markDispatcherTaskIndexDirty,
@@ -542,6 +543,9 @@ export function prepareDuplicateControlWrite(record: DuplicateControlPayload): N
   }
   if (!isDuplicateControlMethod(record.method)) throw new Error(DUPLICATE_CONTROL_METHOD_ERROR)
   if (!resultSet.has(record.result)) throw new Error('Выберите результат дубль-контроля')
+
+  const errors = getDuplicateControlRequisiteErrors(record)
+  if (errors.length) throw new Error(errors.join('\n'))
 
   return {
     weldJointId: record.weldJointId,

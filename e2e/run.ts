@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdtemp } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -7,8 +7,13 @@ import { dropE2eDatabase } from './database'
 import prepareE2eDatabase from './global-setup'
 
 let exitCode = 1
+let templateDirectory: string | undefined
 
 try {
+  // Database isolation alone is insufficient: template replacement removes old
+  // file versions. Every runner must also own an empty, disposable file store.
+  templateDirectory = await mkdtemp(join(tmpdir(), 'welding-e2e-templates-'))
+  process.env.DOCUMENT_TEMPLATE_STORAGE_PATH = templateDirectory
   await prepareE2eDatabase()
   if (process.env.AUDIT_SQL_COUNTS === '1') {
     process.env.AUDIT_SQL_COUNTS_FILE = join(await mkdtemp(join(tmpdir(), 'welding-e2e-sql-')), 'counts.json')
@@ -16,6 +21,8 @@ try {
   exitCode = await runPlaywright(process.argv.slice(2))
 } finally {
   await dropE2eDatabase()
+  if (templateDirectory && exitCode === 0) await rm(templateDirectory, { recursive: true })
+  else if (templateDirectory) process.stderr.write(`E2E template files preserved for diagnostics: ${templateDirectory}\n`)
 }
 
 process.exitCode = exitCode

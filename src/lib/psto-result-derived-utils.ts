@@ -61,20 +61,17 @@ export function getSelectedPstoResultRows(rows: WeldRow[], draft: PstoResultDraf
 
 export function getPstoResultSaveBlockReason({
   draft,
-  isSaving,
   nextDiagramName,
   saveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
   selectedRows,
   systemDocumentCreationPlan,
 }: {
   draft: PstoResultDraftState
-  isSaving: boolean
   nextDiagramName: string
   saveCheckSettings?: SaveCheckSettings
   selectedRows: WeldRow[]
   systemDocumentCreationPlan?: SystemDocumentCreationPlan | null
 }) {
-  if (isSaving) return 'Результат сохраняется, дождитесь завершения.'
   if (!draft.requestName) return 'Выберите заявку ПСТО.'
   if (selectedRows.length === 0) return 'Отметьте один или несколько стыков галочкой.'
   if (!draft.result) return 'Выберите результат ПСТО.'
@@ -82,8 +79,10 @@ export function getPstoResultSaveBlockReason({
   saveCheckSettings = normalizeSaveCheckSettings(saveCheckSettings)
 
   {
-    const dateReason = getDateInputValidationReason(draft.pstoDate, 'Дата ПСТО')
-    if (dateReason) return formatSaveCheckBlockReason('pstoResultDateFormat', dateReason)
+    const reasons = [getDateInputValidationReason(draft.pstoDate, 'Дата ПСТО', { required: true }),
+      systemDocumentCreationPlan ? systemDocumentCreationPlan.error :
+        getRequestNameFromNaming(draft.diagramNaming, nextDiagramName).trim() ? '' : 'Укажите наименование диаграммы термообработки.'].filter(Boolean)
+    if (reasons.length) return reasons.join('\n')
   }
 
   const dateIssue = saveCheckSettings.pstoResultDateAfterWeldDate
@@ -91,18 +90,6 @@ export function getPstoResultSaveBlockReason({
     : null
   if (dateIssue) return formatSaveCheckBlockReason('pstoResultDateAfterWeldDate', dateIssue)
 
-  if (
-    saveCheckSettings.pstoResultDiagramRequired &&
-    !systemDocumentCreationPlan &&
-    !getRequestNameFromNaming(draft.diagramNaming, nextDiagramName)
-  ) {
-    return formatSaveCheckBlockReason('pstoResultDiagramRequired', 'Укажите наименование диаграммы термообработки.')
-  }
-  if (systemDocumentCreationPlan?.error) {
-    return saveCheckSettings.pstoResultDiagramRequired
-      ? formatSaveCheckBlockReason('pstoResultDiagramRequired', systemDocumentCreationPlan.error)
-      : systemDocumentCreationPlan.error
-  }
 
   const chronologyIssue = findFirstPstoChronologySaveBlockReason(
     buildProposedPstoResultRowsForChecks(selectedRows, draft, nextDiagramName, systemDocumentCreationPlan),

@@ -14,11 +14,9 @@ describe('server creation grouping command', () => {
     expect(() => assertCreationGrouping(rows.map(row => ({ name: ' Same ', rows: [row] })), 'joint')).toThrow('должны различаться')
     expect(() => assertCreationGrouping([{ name: 'A', rows }, { name: 'B', rows: [rows[0]] }], 'joint')).toThrow('несколько')
   })
-  it('does not treat unnamed optional results as duplicate documents', () => {
-    // НК до ТО / ПСТО may save factual results without conclusion names when
-    // their dedicated save setting allows this. No document owns a blank name.
-    expect(() => assertCreationGrouping(rows.map(row => ({ name: '', rows: [row] })), 'line')).not.toThrow()
-    expect(() => assertCreationGrouping(rows.map(row => ({ name: '  ', rows: [row] })), 'line')).not.toThrow()
+  it('rejects empty and whitespace names in every group', () => {
+    expect(() => assertCreationGrouping(rows.map(row => ({ name: '', rows: [row] })), 'line')).toThrow('название')
+    expect(() => assertCreationGrouping(rows.map(row => ({ name: '  ', rows: [row] })), 'line')).toThrow('название')
   })
   it('does not accept missing grouping metadata as arbitrary singletons', () => {
     expect(() => assertCreationGrouping([{ name: 'A', rows: [{ id: 1, projectTitle: '', line: '' }] }], 'line')).toThrow('Заполните поля')

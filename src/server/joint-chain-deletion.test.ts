@@ -2,6 +2,20 @@ import { describe, expect, it, vi } from 'vitest'
 import { assertJointChainRowsCanBeDeleted } from './joint-chain-deletion'
 
 describe('chain deletion bounded query budget', () => {
+  it.each([[3], [2, 3]])('blocks mixed-chain predecessor deletion for selected IDs %j', async (...ids) => {
+    const rows = ['S63', 'S63W1', 'S63W1R1', 'S63W2R1'].map((joint, i) => ({ id: i + 1, joint, line: 'L', projectTitle: 'P' }))
+    const answers = [rows, [], []]
+    const select = vi.fn(() => {
+      const answer = answers.shift()
+      const query = { from: () => query, where: () => Object.assign(Promise.resolve(answer), { orderBy: () => Promise.resolve(answer) }) }
+      return query
+    })
+    const execute = vi.fn()
+    await expect(assertJointChainRowsCanBeDeleted({ select, execute } as never, rows.filter(row => ids.includes(row.id))))
+      .rejects.toThrow('S63W2R1')
+    expect(select).toHaveBeenCalledTimes(3)
+    expect(execute).not.toHaveBeenCalled()
+  })
   it.each([1, 1000])('uses four reads for %i selected primary joints on one line', async count => {
     const rows = Array.from({ length: count }, (_, i) => ({ id: i + 1, joint: `F${i + 1}`, line: 'L', projectTitle: 'P' }))
     const answers = [rows, [], []]

@@ -3,13 +3,13 @@ import {
   BookOpenText,
   ClipboardCheck,
   FileText,
-  Flame,
+  Thermometer,
   ClipboardList,
   PanelLeftClose,
   PanelLeftOpen,
   ListTree,
   Settings,
-  Stamp,
+  BookUser,
 } from 'lucide-react'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -30,9 +30,9 @@ const sidebarItems: Array<{
 }> = [
   { report: 'weldingJournal', label: 'Сварочный журнал', icon: ClipboardList },
   { report: 'percentageLines', label: 'Программа линий', icon: ListTree },
-  { report: 'heatTreatment', label: 'ПСТО и ТВМТ', icon: Flame },
+  { report: 'heatTreatment', label: 'ПСТО и ТВМТ', icon: Thermometer },
   { report: 'lnk', label: 'ЛНК', icon: ClipboardCheck },
-  { report: 'welderStamps', label: 'Клейма', icon: Stamp },
+  { report: 'welderStamps', label: 'Справочники', icon: BookUser },
   { report: 'statistics', label: 'Статистика', icon: BarChart3 },
   { report: 'documents', label: 'Документы', icon: FileText },
 ]

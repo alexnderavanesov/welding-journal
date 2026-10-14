@@ -7,23 +7,23 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 export type RowWithId = WeldRow
 
 export type MutationLike<TVariables> = {
-  mutate: (variables: TVariables, options?: { onSuccess?: () => void }) => void
+  mutate: (variables: TVariables, options?: { onSuccess?: () => void; onSettled?: () => void }) => void
 }
 
 export type UseManagedLnkResultActionsOptions = {
   isLnkRowsContextReady: boolean
   lnkRows: WeldRow[]
   selectedLnkResultRowIds: Set<number>
-  managedLnkPendingResultChanges: Record<string, string>
+  managedLnkPendingResultChanges: Record<string, string | null>
   managedLnkPendingResultRows: ManagedLnkPendingResultRow[]
-  lnkResultCorrectionMutation: MutationLike<{ record: RowWithId; methodKey: WeldFieldKey; result: string | null }>
   lnkResultReplacementMutation: MutationLike<{
-    updates: Array<{ record: RowWithId; methodKey: WeldFieldKey; result: string }>
+    updates: Array<{ record: RowWithId; methodKey: WeldFieldKey; result: string | null }>
   }>
   lnkConclusionCorrectionMutation: MutationLike<{
     records: RowWithId[]
     methodKey: WeldFieldKey
     conclusionName: string
+    conclusionDate?: string
   }>
   setMessage: (value: string | null) => void
   setIsLnkResultModalOpen: (value: boolean) => void
@@ -33,5 +33,5 @@ export type UseManagedLnkResultActionsOptions = {
   setManagedLnkResultOrderIds: Dispatch<SetStateAction<number[] | null>>
   setManagedLnkResultTargetKey: Dispatch<SetStateAction<string>>
   setManagedLnkResultChangeHint: Dispatch<SetStateAction<ManagedLnkResultChangeHintState>>
-  setManagedLnkPendingResultChanges: Dispatch<SetStateAction<Record<string, string>>>
+  setManagedLnkPendingResultChanges: Dispatch<SetStateAction<Record<string, string | null>>>
 }

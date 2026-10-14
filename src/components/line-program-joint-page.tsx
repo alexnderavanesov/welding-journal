@@ -14,6 +14,7 @@ import { calculateFinalStatus } from '@/lib/weld-status'
 import { ProgramChangeSummary } from './line-program-change-summary'
 import { useSecurityGuard } from '@/lib/security-context'
 import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
+import { updateLineProgramSectionCaches } from '@/lib/line-program-section-cache'
 import { getExpectedWeldRowVersions } from '@/lib/weld-save-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { LineProgramRecord } from '@/lib/line-program'
@@ -21,7 +22,7 @@ import { calculateLineProgram, getLineProgramOfficialStamps, isLineProgramContro
 import { countProgramRemovalHints, getProgramRemovalHints, type ProgramRemovalHints } from '@/lib/line-program-excess'
 import { createProgramRowSelector } from '@/lib/line-program-selection'
 import { applyProgramPatch, getProgramBatchTargets, matchesProgramScope, isProgramEditableRow, PROGRAM_ASSIGNMENT_OPTIONS, PROGRAM_METHODS, PROGRAM_EDITOR_METHODS, programAssignment, toggleProgramMethodSelection, type ProgramAssignment, type ProgramChange, type ProgramMethod, type ProgramPatch, type ProgramSelection } from '@/lib/line-program-workspace'
-import { getLineProgramJointPage, type getLineProgramSection } from '@/server/line-program'
+import { getLineProgramJointPage } from '@/server/line-program'
 import { applyLineProgramControl, previewLineProgramControl, type LineProgramControlRequest } from '@/server/line-program-control'
 import { LineProgramAssignmentDialog } from './line-program-assignment-dialog'
 import { ProgramReadOnlyTable, ProgramAssignmentTable } from './line-program-assignment-table'
@@ -113,9 +114,9 @@ export function LineJointPage({ line, workspaces, onOpenReportRows, enabled = tr
   }, onError: () => setReview(null), onSuccess: async result => {
     if (!result) return
     setSelected(new Set()); setManual(new Map()); setReview(null); setFocusedMethod(undefined); setFeedback(`Назначения сохранены · стыков: ${result.changed}`)
-    scheduleWeldDataRefresh(queryClient, { upsertRows: result.rows }, { skipLineProgramRefetch: !!result.lineSummary })
+    scheduleWeldDataRefresh(queryClient, { upsertRows: result.rows }, { lineProgramListsHandled: !!result.lineSummary })
     if (result.lineSummary) {
-      queryClient.setQueryData<Awaited<ReturnType<typeof getLineProgramSection>>>(['line-program', 'section'], previous => previous ? { rows: previous.rows.map(item => item.id === line.id ? result.lineSummary! : item) } : previous)
+      await updateLineProgramSectionCaches(queryClient, result.lineSummary)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['line-program', 'calculation', line.id] }),
         queryClient.invalidateQueries({ queryKey: ['line-program', 'rows', line.id] }),
@@ -137,7 +138,7 @@ export function LineJointPage({ line, workspaces, onOpenReportRows, enabled = tr
   }, onSuccess: async (result, { action }) => {
     if (!result) return
     resetReview(); setSelected(new Set()); setFeedback(`${action === 'approve' ? 'Контроль согласован' : 'Согласование снято'} · стыков: ${result.changed}. Назначения и документы не изменены.`)
-    queryClient.setQueryData<Awaited<ReturnType<typeof getLineProgramSection>>>(['line-program', 'section'], previous => previous ? { rows: previous.rows.map(item => item.id === line.id ? result.lineSummary : item) } : previous)
+    await updateLineProgramSectionCaches(queryClient, result.lineSummary)
     await invalidateProgramApprovalCaches(queryClient, line.id)
   } })
   const busy = preview.isPending || save.isPending || approval.isPending

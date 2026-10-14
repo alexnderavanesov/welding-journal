@@ -1,11 +1,14 @@
 import type { WeldRow } from './dispatcher-types'
+import { getDocumentRequisiteErrors } from './document-requisites'
 import type { PreHeatTreatmentControlRecord } from './lnk-control-stage'
 import { ALL_LNK_FIELD_METHODS } from './lnk-report-config'
 import type { PstoRepeatCycleRecord } from './psto-cycle'
 import { buildSystemDocumentSplitGroups, type SystemDocumentSplitMode } from './system-document-splitting'
-import { buildCurrentSystemDocumentName, getSystemDocumentLabel, getSystemDocumentNumber, type SystemDocumentReference, type SystemDocumentSourcePosition, type SystemDocumentSummary } from './system-document-types'
+import { buildCurrentSystemDocumentName, getSystemDocumentLabel, getSystemDocumentNumber, getSystemDocumentNamingContext, type SystemDocumentReference, type SystemDocumentSourcePosition, type SystemDocumentSummary } from './system-document-types'
+import { getSystemDocumentSequenceId, type SystemDocumentSequenceId } from './system-document-sequence-id'
 import { getSystemDocumentTemplateId, type SystemDocumentTemplateId } from './system-document-template-types'
-import type { RequestConclusionSettings } from './request-conclusion-settings'
+import { getRequestConclusionNamingKind, type RequestConclusionSettings } from './request-conclusion-settings'
+import { findAvailableSystemDocumentName, systemDocumentNameKey } from './system-document-name-allocation'
 import { REBUILD_POSITION_LIMIT, REBUILD_PREVIEW_BYTES_LIMIT } from './system-document-rebuild-batch'
 
 export type DocumentOperationSource = {
@@ -133,24 +136,24 @@ export function assertDocumentMergeCompatible(sources: DocumentOperationSource[]
   }
 }
 
-export function buildDocumentOperationGroups({ sources, request, settings, nextNumbers, occupiedNumbers = new Map() }: {
+export function buildDocumentOperationGroups({ sources, request, settings, nextNumbers, occupiedNumbers = new Map(), occupiedNames = new Map() }: {
   sources: DocumentOperationSource[]; request: DocumentOperationRequest; settings: RequestConclusionSettings
-  nextNumbers: Partial<Record<SystemDocumentTemplateId, number>>
-  occupiedNumbers?: ReadonlyMap<SystemDocumentTemplateId, ReadonlySet<number>>
+  nextNumbers: Partial<Record<SystemDocumentSequenceId, number>>
+  occupiedNumbers?: ReadonlyMap<SystemDocumentSequenceId, ReadonlySet<number>>
+  occupiedNames?: ReadonlyMap<SystemDocumentTemplateId, ReadonlySet<string>>
 }): DocumentOperationGroup[] {
   assertDocumentOperationIntent(request)
   const ordered = [...sources].sort((a, b) => a.document.documentId - b.document.documentId)
   if (!ordered.length || ordered.length !== request.documentIds.length || ordered.some(source => !request.documentIds.includes(source.document.documentId))) throw new Error('Выбранные документы больше не найдены. Обновите список.')
+  for (const { document } of ordered) {
+    const errors = getDocumentRequisiteErrors({ name: document.title, date: document.date,
+      nameLabel: 'название документа', dateLabel: 'Дата документа' })
+    if (errors.length) throw new Error(`Сначала дозаполните исходный документ «${document.title}» через его реестр. ${errors.join('\n')}`)
+  }
   const bySource = new Map(ordered.map(source => [source.document.documentId, getDocumentOperationPositions(source)]))
   const allPositions = [...bySource.values()].flat()
   if (allPositions.length > REBUILD_POSITION_LIMIT) throw new Error('Превышен безопасный объём позиций. Документы не изменены.')
   if (request.merge) assertDocumentMergeCompatible(ordered, allPositions)
-  const cursors = new Map(Object.entries(nextNumbers) as Array<[SystemDocumentTemplateId, number]>)
-  const used = new Map([...occupiedNumbers].map(([id, values]) => [id, new Set(values)]))
-  for (const source of ordered) {
-    const number = Number(getSystemDocumentNumber(source.document, settings))
-    if (number > 0) { const id = getSystemDocumentTemplateId(source.document); const values = used.get(id) ?? new Set<number>(); values.add(number); used.set(id, values) }
-  }
   const groups: DocumentOperationGroup[] = []
   let outputBytes = 0
   for (const unit of request.merge ? [ordered] : ordered.map(source => [source])) {
@@ -170,11 +173,8 @@ export function buildDocumentOperationGroups({ sources, request, settings, nextN
       if (namingMode === 'system') {
         number = index === 0 && oldNumber > 0 ? oldNumber : undefined
         if (!number) {
-          const template = getSystemDocumentTemplateId(first)
-          const values = used.get(template) ?? new Set<number>()
-          number = Math.max(1, cursors.get(template) ?? 1)
-          while (values.has(number)) number++
-          values.add(number); used.set(template, values); cursors.set(template, number + 1); reserveNumber = true
+          number = Math.max(1, nextNumbers[getSystemDocumentSequenceId(first)] ?? 1)
+          reserveNumber = true
         }
       }
       const name = namingMode === 'system' ? buildCurrentSystemDocumentName(first, split.rows, settings, number!)
@@ -183,14 +183,35 @@ export function buildDocumentOperationGroups({ sources, request, settings, nextN
         reference: { ...first, ...(request.merge && isCycleDocument(first) ? { sourceKind: 'pstoCycle' as const } : {}) },
         positions: split.rowIds.flatMap(id => positionsByRow.get(id)!), rows: split.rows, name, namingMode, systemNumber: number,
         reserveNumber, error: split.isMissingValueFallback ? 'Не заполнены поля выбранного разделения.' : !name ? 'Название не указано' : '' }
-      // The preview carries summaries only; exact positions are paged separately.
       outputBytes += (key.length + group.label.length + name.length) * 2 + sourceIds.length * 12 + 256
       if (outputBytes > REBUILD_PREVIEW_BYTES_LIMIT) throw new Error('Результат разделения превышает безопасный объём предпросмотра. Уменьшите выбор или выберите более крупные группы.')
       groups.push(group)
     }
   }
+  // Include all fixed output names before allocating any new number: a manual
+  // name later in the list must be protected just like an existing document.
+  const names = getDocumentOperationOccupiedNames(groups, occupiedNames)
+  const cursors = new Map(Object.entries(nextNumbers) as Array<[SystemDocumentSequenceId, number]>)
   const owners = new Map<string, DocumentOperationGroup>()
   for (const group of groups) {
+    if (group.reserveNumber) {
+      const sequence = getSystemDocumentSequenceId(group.reference)
+      const template = getSystemDocumentTemplateId(group.reference)
+      const occupied = names.get(template) ?? new Set<string>()
+      const allocated = findAvailableSystemDocumentName({
+        pattern: settings[getRequestConclusionNamingKind(group.reference)].systemPattern,
+        context: getSystemDocumentNamingContext(group.reference, group.rows), date: group.reference.date,
+        nextNumber: cursors.get(sequence) ?? 1, occupiedNames: occupied, occupiedNumbers: occupiedNumbers.get(sequence),
+      })
+      outputBytes += (allocated.name.length - group.name.length) * 2
+      group.name = allocated.name
+      group.systemNumber = allocated.number
+      cursors.set(sequence, allocated.number + 1)
+      occupied.add(systemDocumentNameKey(group.reference.date, group.name))
+      names.set(template, occupied)
+    }
+    // The preview carries summaries only; exact positions are paged separately.
+    if (outputBytes > REBUILD_PREVIEW_BYTES_LIMIT) throw new Error('Результат разделения превышает безопасный объём предпросмотра. Уменьшите выбор или выберите более крупные группы.')
     if (!group.name) continue
     const identity = documentOperationIdentity(group.reference, group.name)
     const owner = owners.get(identity)
@@ -198,6 +219,18 @@ export function buildDocumentOperationGroups({ sources, request, settings, nextN
     owners.set(identity, group)
   }
   return groups
+}
+
+export function getDocumentOperationOccupiedNames(groups: readonly DocumentOperationGroup[], existing: ReadonlyMap<SystemDocumentTemplateId, ReadonlySet<string>>) {
+  const names = new Map([...existing].map(([id, values]) => [id, new Set(values)]))
+  for (const group of groups) {
+    if (group.reserveNumber || !group.name) continue
+    const template = getSystemDocumentTemplateId(group.reference)
+    const values = names.get(template) ?? new Set<string>()
+    values.add(systemDocumentNameKey(group.reference.date, group.name))
+    names.set(template, values)
+  }
+  return names
 }
 
 export function documentOperationIdentity(document: SystemDocumentReference, name: string) {

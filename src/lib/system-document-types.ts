@@ -1,4 +1,5 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import type { DocumentSpecialists } from './document-specialists'
 import { getBusinessDateIso } from '@/lib/business-date'
 import { ALL_LNK_FIELD_METHODS as LNK_METHODS } from '@/lib/lnk-report-config'
 import {
@@ -8,6 +9,7 @@ import {
   extractSystemNameNumber,
   getPstoConclusionDateParts,
   getRequestConclusionNamingKind,
+  getSystemDocumentRecognitionPatternGroups,
   type RequestConclusionSettings,
 } from '@/lib/request-conclusion-settings'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
@@ -40,6 +42,9 @@ export type SystemDocumentSourcePosition = {
 }
 
 export type SystemDocumentReference = {
+  documentVersion?: string
+  specialists?: DocumentSpecialists | null
+  specialistsRevision?: number
   documentId?: number
   type: SystemDocumentType
   title: string
@@ -76,6 +81,7 @@ export type SystemDocumentSummary = SystemDocumentReference & {
 }
 
 export type SystemDocumentTemplateContext = {
+  specialists?: DocumentSpecialists | null
   type: SystemDocumentType
   label: string
   title: string
@@ -373,18 +379,13 @@ function getSystemDocumentRawNumberCandidates(
       }
     : baseContext
   const namingKind = getRequestConclusionNamingKind(reference)
-  const namingSettings = settings[namingKind]
-  const patterns = Array.from(
-    new Set([
-      namingSettings.systemPattern,
-      ...(namingSettings.systemPatternHistory ?? []),
-      REQUEST_CONCLUSION_DEFAULT_SETTINGS[namingKind].systemPattern,
-    ]),
-  )
-  const candidates = patterns
-    .map((pattern) => extractSystemNameNumber(pattern, context, reference.title, { allowDifferentDate: true }))
-    .filter((number) => /^\d+$/.test(number))
-  return candidates
+  for (const patterns of getSystemDocumentRecognitionPatternGroups(settings, namingKind)) {
+    const candidates = patterns
+      .map((pattern) => extractSystemNameNumber(pattern, context, reference.title, { allowDifferentDate: true }))
+      .filter((number) => /^\d+$/.test(number) && Number.isSafeInteger(Number(number)) && Number(number) > 0)
+    if (candidates.length) return candidates
+  }
+  return []
 }
 
 export function getSystemDocumentRenameNumber(
@@ -434,17 +435,24 @@ export function buildCurrentSystemDocumentName(
   settings: RequestConclusionSettings,
   number: number,
 ) {
+  return buildSystemNameWithNumber(
+    settings[getRequestConclusionNamingKind(reference)].systemPattern,
+    getSystemDocumentNamingContext(reference, rows),
+    number,
+  )
+}
+
+export function getSystemDocumentNamingContext(
+  reference: Pick<SystemDocumentReference, 'type' | 'date' | 'methodCode'>,
+  rows: Array<Partial<Pick<WeldRow, 'projectTitle' | 'subtitleCode' | 'line'>>>,
+) {
   const baseContext = reference.type === 'pstoConclusion'
     ? getPstoConclusionDateParts(reference.date)
     : {
         date: reference.date ? new Date(`${reference.date}T00:00:00`) : new Date(),
         methodCode: reference.methodCode,
       }
-  return buildSystemNameWithNumber(
-    settings[getRequestConclusionNamingKind(reference)].systemPattern,
-    addRowsToNamingPatternContext(baseContext, rows),
-    number,
-  )
+  return addRowsToNamingPatternContext(baseContext, rows)
 }
 
 export function buildSystemDocumentRenameRows(

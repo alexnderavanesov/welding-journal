@@ -190,14 +190,14 @@ describe('repeat PSTO and TVMT cycle updates', () => {
       pstoDate: 'дата уточняется',
       diagramName: 'Диаграмма-2',
       saveCheckSettings: settings,
-    })).toThrow('корректную дату повторной ПСТО')
+    })).toThrow('формате')
 
     expect(() => buildRepeatPstoResultCycle({
       row: waitingPsto,
       pstoDate: 'дата уточняется',
       diagramName: 'Диаграмма-2',
       saveCheckSettings: { ...settings, pstoResultDateFormat: false },
-    })).toThrow('корректную дату повторной ПСТО')
+    })).toThrow('формате')
   })
 
   it('rejects malformed dates in repeat request and TVMT stages', () => {

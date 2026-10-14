@@ -18,6 +18,8 @@ const REQUEST_CONCLUSION_SETTINGS_STORAGE_KEY = 'welding-request-conclusion-sett
 export type RequestConclusionNamingKind =
   | 'lnkRequest'
   | 'lnkConclusion'
+  | 'lnkRequestBeforeHeatTreatment'
+  | 'lnkConclusionBeforeHeatTreatment'
   | 'pstoRequest'
   | 'pstoConclusion'
   | 'tvmtRequest'
@@ -26,6 +28,8 @@ export type RequestConclusionNamingKind =
 export const REQUEST_CONCLUSION_NAMING_KINDS: RequestConclusionNamingKind[] = [
   'lnkRequest',
   'lnkConclusion',
+  'lnkRequestBeforeHeatTreatment',
+  'lnkConclusionBeforeHeatTreatment',
   'pstoRequest',
   'pstoConclusion',
   'tvmtRequest',
@@ -33,7 +37,6 @@ export const REQUEST_CONCLUSION_NAMING_KINDS: RequestConclusionNamingKind[] = [
 ]
 
 export type RequestConclusionNamingItemSettings = {
-  defaultMode: RequestNamingState['mode']
   systemPattern: string
   systemPatternHistory?: string[]
 }
@@ -71,31 +74,27 @@ export type RequestConclusionSettings = Record<RequestConclusionNamingKind, Requ
 
 export const REQUEST_CONCLUSION_DEFAULT_SETTINGS: RequestConclusionSettings = {
   lnkRequest: {
-    defaultMode: 'system',
     systemPattern: 'Заявка-{{Дата}}-{{№}}',
   },
   lnkConclusion: {
-    defaultMode: 'system',
     systemPattern: 'ЗНК-{{Метод}}-{{Дата}}-{{№}}',
     systemPatternHistory: ['Заключение-{{Метод}}-{{Дата}}-{{№}}'],
   },
   pstoRequest: {
-    defaultMode: 'system',
     systemPattern: 'ПСТО-{{ДатаКороткая}}-{{№}}',
   },
   pstoConclusion: {
-    defaultMode: 'system',
     systemPattern: 'ПСТО-Д-{{ДатаКороткая}}-{{№}}',
   },
   tvmtRequest: {
-    defaultMode: 'system',
     systemPattern: 'Заявка-{{Дата}}-{{№}}',
   },
   tvmtConclusion: {
-    defaultMode: 'system',
     systemPattern: 'ЗНК-{{Метод}}-{{Дата}}-{{№}}',
     systemPatternHistory: ['Заключение-{{Метод}}-{{Дата}}-{{№}}'],
   },
+  lnkRequestBeforeHeatTreatment: { systemPattern: 'Заявка-ДО-ТО-{{Дата}}-{{№}}' },
+  lnkConclusionBeforeHeatTreatment: { systemPattern: 'ЗНК-{{Метод}}-ДО-ТО-{{Дата}}-{{№}}' },
   splitModes: DEFAULT_SYSTEM_DOCUMENT_SPLIT_SETTINGS,
 }
 
@@ -178,9 +177,9 @@ export function applyRemoteRequestConclusionSettings(settings: unknown) {
   window.dispatchEvent(new Event(REQUEST_CONCLUSION_SETTINGS_EVENT))
 }
 
-export function getDefaultNamingState(settings: RequestConclusionSettings, kind: RequestConclusionNamingKind): RequestNamingState {
+export function getDefaultNamingState(): RequestNamingState {
   return {
-    mode: settings[kind].defaultMode,
+    mode: 'system',
     customName: '',
   }
 }
@@ -188,14 +187,20 @@ export function getDefaultNamingState(settings: RequestConclusionSettings, kind:
 export function getRequestConclusionNamingKind({
   type,
   methodCode,
+  sourceKind,
 }: {
   type: 'lnkRequest' | 'lnkConclusion' | 'pstoRequest' | 'pstoConclusion'
   methodCode?: string
+  sourceKind?: string
 }): RequestConclusionNamingKind {
   const normalizedMethod = String(methodCode ?? '').trim().toLocaleUpperCase('ru-RU')
   if (normalizedMethod === 'ТВМТ') {
     if (type === 'lnkRequest') return 'tvmtRequest'
     if (type === 'lnkConclusion') return 'tvmtConclusion'
+  }
+  if (sourceKind === 'beforeHeatTreatment') {
+    if (type === 'lnkRequest') return 'lnkRequestBeforeHeatTreatment'
+    if (type === 'lnkConclusion') return 'lnkConclusionBeforeHeatTreatment'
   }
   return type
 }
@@ -317,9 +322,13 @@ export function normalizeRequestConclusionSettings(value: unknown): RequestConcl
     ? value as Partial<Record<RequestConclusionNamingKind, Partial<RequestConclusionNamingItemSettings>>> & { splitModes?: unknown }
     : {}
 
+  const lnkRequest = normalizeSettingsItem(source.lnkRequest, REQUEST_CONCLUSION_DEFAULT_SETTINGS.lnkRequest)
+  const lnkConclusion = normalizeSettingsItem(source.lnkConclusion, REQUEST_CONCLUSION_DEFAULT_SETTINGS.lnkConclusion)
   return {
     lnkRequest: normalizeSettingsItem(source.lnkRequest, REQUEST_CONCLUSION_DEFAULT_SETTINGS.lnkRequest),
     lnkConclusion: normalizeSettingsItem(source.lnkConclusion, REQUEST_CONCLUSION_DEFAULT_SETTINGS.lnkConclusion),
+    lnkRequestBeforeHeatTreatment: normalizeSettingsItem(source.lnkRequestBeforeHeatTreatment, beforeHeatTreatmentNamingDefaults(lnkRequest)),
+    lnkConclusionBeforeHeatTreatment: normalizeSettingsItem(source.lnkConclusionBeforeHeatTreatment, beforeHeatTreatmentNamingDefaults(lnkConclusion)),
     pstoRequest: normalizeSettingsItem(source.pstoRequest, REQUEST_CONCLUSION_DEFAULT_SETTINGS.pstoRequest),
     pstoConclusion: normalizeSettingsItem(source.pstoConclusion, REQUEST_CONCLUSION_DEFAULT_SETTINGS.pstoConclusion),
     tvmtRequest: normalizeSettingsItem(
@@ -338,7 +347,6 @@ function normalizeSettingsItem(
   value: Partial<RequestConclusionNamingItemSettings> | undefined,
   fallback: RequestConclusionNamingItemSettings,
 ): RequestConclusionNamingItemSettings {
-  const defaultMode = value?.defaultMode === 'custom' ? 'custom' : 'system'
   const systemPattern = String(value?.systemPattern ?? '').trim() || fallback.systemPattern
   const systemPatternHistory = Array.from(
     new Set(
@@ -350,7 +358,32 @@ function normalizeSettingsItem(
         .filter((pattern) => pattern && pattern !== systemPattern),
     ),
   ).slice(0, 20)
-  return { defaultMode, systemPattern, systemPatternHistory }
+  return { systemPattern, systemPatternHistory }
+}
+
+function beforeHeatTreatmentNamingDefaults(main: RequestConclusionNamingItemSettings): RequestConclusionNamingItemSettings {
+  const date = /\{\{\s*(?:Дата|ДатаКороткая|Короткая дата)\s*\}\}/i
+  const systemPattern = date.test(main.systemPattern)
+    ? main.systemPattern.replace(date, token => `ДО-ТО-${token}`)
+    : `ДО-ТО-${main.systemPattern}`
+  return { systemPattern, systemPatternHistory: [main.systemPattern, ...(main.systemPatternHistory ?? [])] }
+}
+
+/** Own-stage recognition wins; another stage is only a legacy/transfer fallback. */
+export function getSystemDocumentRecognitionPatternGroups(settings: RequestConclusionSettings, kind: RequestConclusionNamingKind): string[][] {
+  const patterns = (key: RequestConclusionNamingKind) => [...new Set([
+    settings[key].systemPattern, ...(settings[key].systemPatternHistory ?? []), REQUEST_CONCLUSION_DEFAULT_SETTINGS[key].systemPattern,
+  ])]
+  const main = kind === 'lnkRequestBeforeHeatTreatment' ? 'lnkRequest'
+    : kind === 'lnkConclusionBeforeHeatTreatment' ? 'lnkConclusion' : null
+  const other = main ?? (kind === 'lnkRequest' ? 'lnkRequestBeforeHeatTreatment'
+    : kind === 'lnkConclusion' ? 'lnkConclusionBeforeHeatTreatment' : null)
+  if (!other) return [patterns(kind)]
+  const fallback = patterns(other)
+  // Normalization historically copied the main rules into pre-TO history.
+  // Keep those readable, but do not let them override an actual pre-TO rule.
+  const own = patterns(kind).filter(pattern => !main || pattern === settings[kind].systemPattern || !fallback.includes(pattern))
+  return [own, fallback.filter(pattern => !own.includes(pattern))]
 }
 
 function rememberPreviousSystemPatterns(

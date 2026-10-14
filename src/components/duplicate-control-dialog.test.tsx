@@ -1,10 +1,12 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DuplicateControlDialog } from '@/components/duplicate-control-dialog'
-import { createEmptyDuplicateControlDraft, DUPLICATE_CONTROL_METHOD_ERROR, type DuplicateControlDraft } from '@/lib/duplicate-control-types'
+import { createEmptyDuplicateControlDraft as emptyDraft, DUPLICATE_CONTROL_METHOD_ERROR, type DuplicateControlDraft } from '@/lib/duplicate-control-types'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { applyRemoteControlProcessSettings } from '@/lib/control-process-settings'
+
+const createEmptyDuplicateControlDraft = () => ({ ...emptyDraft(), controlDate: '2026-08-20', conclusionDate: '2026-08-21', conclusion: 'Дубль-1' })
 
 class IntersectionObserverStub implements IntersectionObserver {
   readonly root = null
@@ -20,6 +22,25 @@ class IntersectionObserverStub implements IntersectionObserver {
 }
 
 describe('DuplicateControlDialog', () => {
+  it('coalesces clicks while password/save is pending and allows retry after a failure', async () => {
+    let reject!: (error: Error) => void
+    const pending = new Promise<void>((_, fail) => { reject = fail })
+    const onSave = vi.fn().mockReturnValueOnce(pending).mockResolvedValue(undefined)
+    const row = { id: 1, joint: 'F1', d1: 159 } as WeldRow
+    render(<DuplicateControlDialog draft={{ ...createEmptyDuplicateControlDraft(), rowIds: new Set([1]), methods: new Set(['ВИК']), result: 'годен' }}
+      filteredRows={[row]} selectedRows={[row]} controls={[]} saveBlockReason={null} isSaving={false}
+      onClose={vi.fn()} onSave={onSave} onDelete={vi.fn()} onEdit={vi.fn()} onDraftChange={vi.fn()}
+      onToggleRow={vi.fn()} onSetVisibleRowsSelected={vi.fn()} onToggleMethod={vi.fn()} />)
+    const save = screen.getByRole('button', { name: 'Добавить дубль' })
+    fireEvent.click(save)
+    fireEvent.click(save)
+    expect(onSave).toHaveBeenCalledOnce()
+    expect(screen.getByRole('button', { name: 'Сохраняем…' })).toBeDisabled()
+    await act(async () => reject(new Error('Проверка отказа')))
+    expect(screen.getByRole('alert')).toHaveTextContent('Проверка отказа')
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Добавить дубль' })))
+    expect(onSave).toHaveBeenCalledTimes(2)
+  })
   it('allows duplicate PVK repair with own-PVK good-only enabled, but never a cut', () => {
     applyRemoteControlProcessSettings({ pvkGoodOnly: true })
     const row = { id: 1, joint: 'F1', d1: 57 } as WeldRow

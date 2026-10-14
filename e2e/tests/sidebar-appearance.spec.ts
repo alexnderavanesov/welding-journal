@@ -8,9 +8,9 @@ test('контурное меню: все разделы, мягкая подс�
   const sections = [
     ['Сварочный журнал', '/journal', 'clipboard-list'],
     ['Программа линий', '/line-program', 'list-tree'],
-    ['ПСТО и ТВМТ', '/psto', 'flame'],
+    ['ПСТО и ТВМТ', '/psto', 'thermometer'],
     ['ЛНК', '/lnk', 'clipboard-check'],
-    ['Клейма', '/welder-stamps', 'stamp'],
+    ['Справочники', '/references', 'book-user'],
     ['Статистика', '/statistics', 'chart-column'],
     ['Документы', '/documents', 'file-text'],
     ['Настройки', '/settings', 'settings'],

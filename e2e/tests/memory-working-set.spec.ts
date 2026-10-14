@@ -1,6 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { observeMixedClient } from '../mixed-resource-telemetry'
 
 const project = 'E2E ordinary latency'
@@ -10,7 +9,7 @@ test('ordinary journal, editor, line section and detail before/after memory opti
   page.on('pageerror', error => telemetry.errors.push(error.message))
   const samples: Array<{ action: string; round: number; milliseconds: number }> = []
   try {
-    await withE2eDatabase(async db => {
+    await withLineProgramFixture(async db => {
       await db.query(`insert into line_programs(project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
         select $1,'LAT','LAT-'||lpad(n::text,2,'0'),'II','Б(а)',10,10 from generate_series(1,10) n`, [project])
       await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,weld_date,
@@ -19,7 +18,6 @@ test('ordinary journal, editor, line section and detail before/after memory opti
         select p.id,p.project_title,p.subtitle_code,p.line,'F'||n,'2026-09-01','действующий','актуальная','С17',
           p.category,p.group_name,10,10,'да','нет','LAT1'
         from line_programs p cross join generate_series(1,200) n where p.project_title=$1`, [project])
-      await db.query("update dispatcher_task_index_state set source_revision=source_revision+1,full_rebuild=true,dirty_scopes='[]'")
     })
     for (let round = 0; round < 4; round++) {
       const measure = async (action: string, run: () => Promise<void>) => {

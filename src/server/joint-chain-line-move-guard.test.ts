@@ -8,6 +8,11 @@ import {
 } from '@/server/joint-chain-line-move-guard'
 
 describe('normalizeWeldChainLineMovePlan', () => {
+  it('keeps the assigned-line direction and exact specialist confirmation for every chain member', () => {
+    const plan = { expectedRowIds: [1], expectedVersions: [{ id: 1, version: 'v1' }],
+      decisions: [{ rowId: 1, disposition: 'movePrimaryToPreHeatTreatment', specialistTransferConfirmation: 'snapshot-token' }] }
+    expect(normalizeWeldChainLineMovePlan(plan)).toEqual(plan)
+  })
   it('accepts per-weld contextual correction without restoring the old general transfers', () => {
     const plan = {
       expectedRowIds: [1, 2], expectedVersions: [{ id: 1, version: '101' }, { id: 2, version: '102' }],

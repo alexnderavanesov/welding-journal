@@ -8,9 +8,9 @@ afterEach(cleanup)
 const sections: [ActiveReport, string, string][] = [
   ['weldingJournal', 'Сварочный журнал', 'clipboard-list'],
   ['percentageLines', 'Программа линий', 'list-tree'],
-  ['heatTreatment', 'ПСТО и ТВМТ', 'flame'],
+  ['heatTreatment', 'ПСТО и ТВМТ', 'thermometer'],
   ['lnk', 'ЛНК', 'clipboard-check'],
-  ['welderStamps', 'Клейма', 'stamp'],
+  ['welderStamps', 'Справочники', 'book-user'],
   ['statistics', 'Статистика', 'chart-column'],
   ['documents', 'Документы', 'file-text'],
   ['settings', 'Настройки', 'settings'],

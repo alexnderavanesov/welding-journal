@@ -1,4 +1,5 @@
 import { lockDocumentGroupingPreference, rememberDocumentGrouping, validatePrimaryCreationGrouping, primaryCreationReferences } from '@/server/document-grouping-preferences'
+import { captureCorrectedDocumentSpecialists, restoreCorrectedDocumentSpecialists } from './document-specialist-corrections'
 import { assertNewDocumentNamesAvailable, prepareDocumentCreationIndex } from '@/server/document-name-conflicts'
 // This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
 import { requireDb } from '@/db'
@@ -11,7 +12,7 @@ import { assertExistingRowsImportPayload } from '@/lib/existing-row-import-valid
 import { buildLnkRequestExtensionRows, getLnkRequestExtensionDisabledReason, normalizeLnkRequestExtensionRequest, type LnkRequestExtensionRequest } from '@/lib/lnk-request-extension'
 import { buildLnkRequestManagerRows, buildLnkRequestPositionRemovalRow } from '@/lib/lnk-request-mutation-updates'
 import { buildPstoRequestManagerRows } from '@/lib/psto-report-mutation-updates'
-import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
+import { getLnkMethodByRequestKey, isFinalLnkResultValue } from '@/lib/lnk-status'
 import { normalizePstoLineIdentity } from '@/lib/psto-line-assignment'
 import { getCoilJointNames, normalizeJointChainPart, parseRepeatedJointName } from '@/lib/joint-chain'
 import { getCoilTransitionModeForSource } from '@/lib/joint-chain-transitions'
@@ -56,7 +57,9 @@ import { prepareLineProgramWeldRecords } from '@/server/line-program-registry'
 import { buildLayeredControlAssignment } from '@/lib/layered-control-rules'
 import { persistLayeredControlFlags } from '@/server/line-program-control'
 
-import { preparePstoLineMoveRecordInTransaction, buildWeldLineIdentityWhere, removeTransferredPreControlsInTransaction } from '@/server/weld-line-move-stage'
+import { preparePstoLineMoveRecordInTransaction, buildWeldLineIdentityWhere, removeTransferredPreControlsInTransaction, persistTransferredPrimaryControls } from '@/server/weld-line-move-stage'
+import { syncPreHeatTreatmentDocumentsInTransaction } from './pre-heat-treatment-system-documents'
+import { captureTransferredSpecialists, restoreTransferredSpecialists } from './document-specialist-transfers'
 import { normalizeSubmittedWeldLineIdentity } from '@/lib/psto-line-assignment'
 
 // This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
@@ -419,8 +422,14 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       await persistLayeredControlFlags(tx, [id], true)
       updated.layeredControlAssigned = true
     }
+    const correctedSpecialists = mutationScope !== 'welding' ? await captureCorrectedDocumentSpecialists(tx, [id]) : null
+    const transferredSpecialists = await captureTransferredSpecialists(tx, preparedMove.transferredPreControlIds.length || preparedMove.transferredToPreHeatTreatment ? [id] : [], preparedMove.transferredToPreHeatTreatment ? 'beforeHeatTreatment' : 'primary', data.specialistTransferConfirmation)
+    const savedControls = preparedMove.transferredToPreHeatTreatment ? await persistTransferredPrimaryControls(tx, [record]) : []
     await removeTransferredPreControlsInTransaction(tx, preparedMove.transferredPreControlIds)
     await syncSystemDocumentsForWeldChangesInTransaction(tx, [updated], previousRows)
+    if (savedControls.length) await syncPreHeatTreatmentDocumentsInTransaction(tx, [updated], savedControls)
+    await restoreTransferredSpecialists(tx, transferredSpecialists)
+    if (correctedSpecialists) await restoreCorrectedDocumentSpecialists(tx, correctedSpecialists, data.specialistCorrectionConfirmation)
     await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes([record], previousRows) })
     return {
       ...updated,
@@ -611,6 +620,7 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
         getSystemDocumentTemplateId(left).localeCompare(getSystemDocumentTemplateId(right))
       ))
       const systemDocumentReservationInputs = systemDocumentSequences.map((systemDocumentSequence) => {
+        if (systemDocumentSequence.sourceKind) throw new Error('НК до ТО сохраняется через отдельное окно своего этапа.')
         const targetRecords = data.records.filter((record) =>
           systemDocumentSequence.fieldKeys.some(
             (fieldKey) =>
@@ -670,6 +680,11 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
         records.map((record) => restrictWeldMutationRecord(record, mutationScope)),
         previousRows,
       )
+      if (mutationScope === 'lnk' && records.some(record => {
+        const previous = previousRows.get(Number(record.id))
+        return previous && LNK_METHODS.some(method =>
+          isFinalLnkResultValue(previous[method.resultKey]) && !isFinalLnkResultValue(record[method.resultKey]))
+      })) await assertSecurityScope('delete')
       await prepareLineProgramWeldRecords(tx, records, previousRows)
       const layeredIds = new Set(data.layeredControl?.rowIds ?? [])
       if (layeredIds.size && (importMode || mutationScope !== 'lnk' || [...layeredIds].some((id) => !previousRows.has(id)))) {
@@ -704,10 +719,18 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
       })
       const createdDocuments = validatePrimaryCreationGrouping(documentGrouping, records, previousRows)
       if (documentGrouping && createdDocuments) await assertNewDocumentNamesAvailable(tx, primaryCreationReferences(documentGrouping, records, previousRows))
+      const correctedSpecialists = !importMode && mutationScope !== 'welding' && !createdDocuments
+        ? await captureCorrectedDocumentSpecialists(tx, records.map(record => Number(record.id))) : null
       const updated = await updateWeldJointsInBatches(tx, records, previousRows)
       await persistLayeredControlFlags(tx, [...layeredIds], true)
       for (const row of updated) if (layeredIds.has(row.id)) row.layeredControlAssigned = true
       await syncSystemDocumentsForWeldChangesInTransaction(tx, updated, previousRows)
+      if (correctedSpecialists) await restoreCorrectedDocumentSpecialists(tx, correctedSpecialists, data.specialistCorrectionConfirmation)
+      if (documentGrouping?.specialists?.length) {
+        if (importMode || !createdDocuments) throw new Error('Назначать специалистов здесь можно только при создании заключений.')
+        const { assignCreatedDocumentSpecialists } = await import('@/server/specialists')
+        await assignCreatedDocumentSpecialists(tx, documentGrouping.specialists, primaryCreationReferences(documentGrouping, records, previousRows))
+      }
       await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes(records, previousRows) })
       if (createdDocuments) await rememberDocumentGrouping(tx, documentGrouping)
       return updated

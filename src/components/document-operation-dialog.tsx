@@ -90,7 +90,7 @@ export function DocumentOperationDialog({ documents, action, onClose, onApplied 
   async function apply() {
     if (!preview || !previewRequest || dirty || busy || batchSaved) return
     setSaving(true); setError('')
-    const data = pending.current ?? { ...previewRequest, fingerprint: preview.fingerprint, previewHash: preview.previewHash, operationId: crypto.randomUUID() }
+    const data = pending.current ?? { ...previewRequest, fingerprint: preview.fingerprint, previewHash: preview.previewHash, operationId: crypto.randomUUID(), ...(preview.groups.some(group => group.specialistsCleared) ? { acceptSpecialistClearing: true } : {}) }
     pending.current = data
     try { await accepted(await applyDocumentOperation({ data })) }
     catch (cause) {
@@ -193,6 +193,7 @@ export function DocumentOperationDialog({ documents, action, onClose, onApplied 
       </div>
     </div>
     <div className="shrink-0 border-t bg-white px-5 py-3">
+      {groups.some(group => group.specialistsCleared) && !batchSaved ? <p role="alert" className="mb-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">У объединяемых документов различаются специалисты или сохранённые удостоверения. После подтверждения обе роли в таких итоговых документах будут пустыми (документов: {groups.filter(group => group.specialistsCleared).length}). Назначить специалистов можно в «Документах». Отмена сохранит прежние назначения.</p> : null}
       {blocked.length ? <details className="mb-2 text-xs text-amber-800"><summary>Не будут изменены: {blocked.length}</summary><div className="max-h-28 overflow-auto">{blocked.slice(blockedPage * 50, (blockedPage + 1) * 50).map((item, index) => <p key={index}>{item.title}: {item.reason}</p>)}</div>{blocked.length > 50 ? <div className="flex justify-between"><button type="button" disabled={!blockedPage} onClick={() => setBlockedPage(value => value - 1)}>Предыдущие отказы</button><span>Страница {blockedPage + 1}</span><button type="button" disabled={(blockedPage + 1) * 50 >= blocked.length} onClick={() => setBlockedPage(value => value + 1)}>Следующие отказы</button></div> : null}</details> : null}
       {error ? <p role="alert" className="mb-2 max-h-28 overflow-auto whitespace-pre-line text-sm text-rose-700">{error}</p> : null}
       {saved.length ? <p role="status" className="mb-2 text-sm text-emerald-700">Сохранено пакетов: {saved.length}. Изменено документов: {saved.reduce((sum, result) => sum + result.changedDocumentCount, 0)}.</p> : null}

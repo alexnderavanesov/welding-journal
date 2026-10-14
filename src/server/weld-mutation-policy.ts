@@ -142,6 +142,7 @@ export function restrictWeldMutationRecord(
   }
   if (record.pstoLineMoveDisposition) {
     restricted.pstoLineMoveDisposition = record.pstoLineMoveDisposition
+    restricted.specialistTransferConfirmation = record.specialistTransferConfirmation
   }
   if (record.weldChainLineMovePlan) {
     restricted.weldChainLineMovePlan = record.weldChainLineMovePlan

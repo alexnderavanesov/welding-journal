@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import { ChevronDown, ClipboardCheck, CopyCheck, FilePlus2, Gauge, ListChecks, ListFilter, Pencil, Plus, ShieldCheck, Upload } from 'lucide-react'
 import { ReportShowMenu } from '@/components/report-show-menu'
 import { Button } from '@/components/ui/button'
-import { WorkflowActionMenuItem, type WorkflowAvailability } from '@/components/workflow-action-menu-item'
+import { useCancelPendingWorkflowAction, WorkflowActionMenuItem, type WorkflowAvailability } from '@/components/workflow-action-menu-item'
 
 const REPORT_WORKFLOW_BUTTON_CLASS =
   'border-sky-100 bg-sky-50 text-sky-700 hover:border-sky-200 hover:bg-sky-100 hover:text-sky-800'
@@ -141,35 +141,28 @@ export function HeatTreatmentHeaderActions({
   onWorkflowMenuOpenChange = () => undefined,
 }: HeatTreatmentHeaderActionsProps) {
   const workflowMenuRootRef = useRef<HTMLDivElement | null>(null)
+  const cancelPendingAction = useCancelPendingWorkflowAction()
   const [isRequestMenuOpen, setIsRequestMenuOpen] = useState(false)
   const [isResultMenuOpen, setIsResultMenuOpen] = useState(false)
   const [isTvmtMenuOpen, setIsTvmtMenuOpen] = useState(false)
+  const closeWorkflowMenus = () => {
+    cancelPendingAction()
+    setIsRequestMenuOpen(false)
+    setIsResultMenuOpen(false)
+    setIsTvmtMenuOpen(false)
+    onWorkflowMenuOpenChange(false)
+  }
   useDismissWorkflowMenus({
     open: isRequestMenuOpen || isResultMenuOpen || isTvmtMenuOpen,
     rootRef: workflowMenuRootRef,
-    onDismiss: () => {
-      setIsRequestMenuOpen(false)
-      setIsResultMenuOpen(false)
-      setIsTvmtMenuOpen(false)
-      onWorkflowMenuOpenChange(false)
-    },
+    onDismiss: closeWorkflowMenus,
   })
-  const runRequestAction = (action: () => void) => {
-    setIsRequestMenuOpen(false)
-    onWorkflowMenuOpenChange(false)
-    action()
-  }
-  const runResultAction = (action: () => void) => {
-    setIsResultMenuOpen(false)
-    onWorkflowMenuOpenChange(false)
-    action()
-  }
-  const runTvmtAction = (action: () => void) => {
-    setIsTvmtMenuOpen(false)
-    onWorkflowMenuOpenChange(false)
+  const runWorkflowAction = (action: () => void) => {
+    closeWorkflowMenus()
     action()
   }
   const toggleRequestMenu = () => {
+    cancelPendingAction()
     const nextOpen = !isRequestMenuOpen
     setIsRequestMenuOpen(nextOpen)
     setIsResultMenuOpen(false)
@@ -178,6 +171,7 @@ export function HeatTreatmentHeaderActions({
     if (isShowMenuOpen) onToggleShowMenu()
   }
   const toggleResultMenu = () => {
+    cancelPendingAction()
     const nextOpen = !isResultMenuOpen
     setIsResultMenuOpen(nextOpen)
     setIsRequestMenuOpen(false)
@@ -186,6 +180,7 @@ export function HeatTreatmentHeaderActions({
     if (isShowMenuOpen) onToggleShowMenu()
   }
   const toggleTvmtMenu = () => {
+    cancelPendingAction()
     const nextOpen = !isTvmtMenuOpen
     setIsTvmtMenuOpen(nextOpen)
     setIsRequestMenuOpen(false)
@@ -194,10 +189,7 @@ export function HeatTreatmentHeaderActions({
     if (isShowMenuOpen) onToggleShowMenu()
   }
   const toggleShowMenu = () => {
-    setIsRequestMenuOpen(false)
-    setIsResultMenuOpen(false)
-    setIsTvmtMenuOpen(false)
-    onWorkflowMenuOpenChange(false)
+    closeWorkflowMenus()
     onToggleShowMenu()
   }
 
@@ -206,13 +198,7 @@ export function HeatTreatmentHeaderActions({
       <Button
         variant="outline"
         className={REPORT_WORKFLOW_BUTTON_CLASS}
-        onClick={() => {
-          setIsRequestMenuOpen(false)
-          setIsResultMenuOpen(false)
-          setIsTvmtMenuOpen(false)
-          onWorkflowMenuOpenChange(false)
-          onOpenLineProgram()
-        }}
+        onClick={() => runWorkflowAction(onOpenLineProgram)}
       >
         <ListChecks className="mr-2 h-4 w-4" />
         Программа ПСТО
@@ -233,8 +219,8 @@ export function HeatTreatmentHeaderActions({
             <WorkflowActionMenuItem
               label="Новая заявка"
               icon={Plus}
-              onClick={() => runRequestAction(onCreateRequest)}
-              disabled={createRequestDisabled}
+              onClick={() => runWorkflowAction(onCreateRequest)}
+              disabled={availability === 'ready' && createRequestDisabled}
               disabledReason="Нет стыков, готовых к ПСТО. Следующий этап — в истории стыка."
               description="Создать заявку для стыков, готовых к ПСТО."
               availability={availability}
@@ -242,7 +228,7 @@ export function HeatTreatmentHeaderActions({
             <WorkflowActionMenuItem
               label="Редактировать выбранную"
               icon={Pencil}
-              onClick={() => runRequestAction(onEditSelectedRequest)}
+              onClick={() => runWorkflowAction(onEditSelectedRequest)}
               disabled={editSelectedRequestDisabled}
               disabledReason="Выберите в таблице стык с созданной заявкой ПСТО."
               description="Изменить заявку отмеченного в таблице стыка."
@@ -252,7 +238,7 @@ export function HeatTreatmentHeaderActions({
               label="История ПСТО и ТВМТ"
               icon={ListFilter}
               tone="slate"
-              onClick={() => runRequestAction(onOpenRequestRegistry)}
+              onClick={() => runWorkflowAction(onOpenRequestRegistry)}
             />
           </div>
         ) : null}
@@ -272,8 +258,8 @@ export function HeatTreatmentHeaderActions({
             <WorkflowActionMenuItem
               label="Внести результаты"
               icon={Plus}
-              onClick={() => runResultAction(onAddResult)}
-              disabled={resultDisabled}
+              onClick={() => runWorkflowAction(onAddResult)}
+              disabled={availability === 'ready' && resultDisabled}
               disabledReason="Нет заявок ПСТО, ожидающих результата. Сначала создайте заявку ПСТО."
               description="Внести результаты по ожидающим заявкам ПСТО."
               availability={availability}
@@ -281,7 +267,7 @@ export function HeatTreatmentHeaderActions({
             <WorkflowActionMenuItem
               label="Редактировать выбранные"
               icon={ClipboardCheck}
-              onClick={() => runResultAction(onEditSelectedResults)}
+              onClick={() => runWorkflowAction(onEditSelectedResults)}
               disabled={editSelectedResultsDisabled}
               disabledReason="Выберите в таблице стык с уже внесенным результатом ПСТО."
               description="Открыть результаты отмеченных в таблице стыков."
@@ -291,8 +277,8 @@ export function HeatTreatmentHeaderActions({
               label="История ПСТО и ТВМТ"
               icon={ListFilter}
               tone="slate"
-              onClick={() => runResultAction(onOpenResultRegistry)}
-              disabled={resultRegistryDisabled}
+              onClick={() => runWorkflowAction(onOpenResultRegistry)}
+              disabled={availability === 'ready' && resultRegistryDisabled}
               disabledReason="История пока пуста: ни один цикл ПСТО еще не начат."
               description="Посмотреть заявки, результаты и циклы ПСТО/ТВМТ."
               availability={availability}
@@ -317,8 +303,8 @@ export function HeatTreatmentHeaderActions({
               label="Новая заявка ТВМТ"
               icon={FilePlus2}
               tone="violet"
-              onClick={() => runTvmtAction(onCreateTvmtRequest)}
-              disabled={createTvmtRequestDisabled}
+              onClick={() => runWorkflowAction(onCreateTvmtRequest)}
+              disabled={availability === 'ready' && createTvmtRequestDisabled}
               disabledReason="Нет стыков с проведенной ПСТО, ожидающих заявку ТВМТ."
               description="Создать заявку ТВМТ после проведённой ПСТО."
               availability={availability}
@@ -327,8 +313,8 @@ export function HeatTreatmentHeaderActions({
               label="Внести результаты ТВМТ"
               icon={ClipboardCheck}
               tone="violet"
-              onClick={() => runTvmtAction(onAddTvmtResult)}
-              disabled={addTvmtResultDisabled}
+              onClick={() => runWorkflowAction(onAddTvmtResult)}
+              disabled={availability === 'ready' && addTvmtResultDisabled}
               disabledReason="Нет заявок ТВМТ, ожидающих результата. Сначала создайте заявку ТВМТ."
               description="Внести результаты по ожидающим заявкам ТВМТ."
               availability={availability}
@@ -353,6 +339,7 @@ export function HeatTreatmentHeaderActions({
 
 type LnkHeaderActionsProps = {
   onCreateRequest: () => void
+  createRequestDisabled?: boolean
   onExtendRequest: () => void
   onOpenRequestRegistry: () => void
   requestPending: boolean
@@ -378,6 +365,7 @@ type LnkHeaderActionsProps = {
 
 export function LnkHeaderActions({
   onCreateRequest,
+  createRequestDisabled = false,
   onExtendRequest,
   onOpenRequestRegistry,
   requestPending,
@@ -401,28 +389,26 @@ export function LnkHeaderActions({
   onWorkflowMenuOpenChange = () => undefined,
 }: LnkHeaderActionsProps) {
   const workflowMenuRootRef = useRef<HTMLDivElement | null>(null)
+  const cancelPendingAction = useCancelPendingWorkflowAction()
   const [isRequestMenuOpen, setIsRequestMenuOpen] = useState(false)
   const [isResultMenuOpen, setIsResultMenuOpen] = useState(false)
+  const closeWorkflowMenus = () => {
+    cancelPendingAction()
+    setIsRequestMenuOpen(false)
+    setIsResultMenuOpen(false)
+    onWorkflowMenuOpenChange(false)
+  }
   useDismissWorkflowMenus({
     open: isRequestMenuOpen || isResultMenuOpen,
     rootRef: workflowMenuRootRef,
-    onDismiss: () => {
-      setIsRequestMenuOpen(false)
-      setIsResultMenuOpen(false)
-      onWorkflowMenuOpenChange(false)
-    },
+    onDismiss: closeWorkflowMenus,
   })
-  const runRequestAction = (action: () => void) => {
-    setIsRequestMenuOpen(false)
-    onWorkflowMenuOpenChange(false)
-    action()
-  }
-  const runResultAction = (action: () => void) => {
-    setIsResultMenuOpen(false)
-    onWorkflowMenuOpenChange(false)
+  const runWorkflowAction = (action: () => void) => {
+    closeWorkflowMenus()
     action()
   }
   const toggleRequestMenu = () => {
+    cancelPendingAction()
     const nextOpen = !isRequestMenuOpen
     setIsRequestMenuOpen(nextOpen)
     setIsResultMenuOpen(false)
@@ -430,6 +416,7 @@ export function LnkHeaderActions({
     if (isShowMenuOpen) onToggleShowMenu()
   }
   const toggleResultMenu = () => {
+    cancelPendingAction()
     const nextOpen = !isResultMenuOpen
     setIsResultMenuOpen(nextOpen)
     setIsRequestMenuOpen(false)
@@ -437,9 +424,7 @@ export function LnkHeaderActions({
     if (isShowMenuOpen) onToggleShowMenu()
   }
   const toggleShowMenu = () => {
-    setIsRequestMenuOpen(false)
-    setIsResultMenuOpen(false)
-    onWorkflowMenuOpenChange(false)
+    closeWorkflowMenus()
     onToggleShowMenu()
   }
 
@@ -461,19 +446,21 @@ export function LnkHeaderActions({
             <WorkflowActionMenuItem
               label="Новая заявка"
               icon={Plus}
-              onClick={() => runRequestAction(onCreateRequest)}
+              onClick={() => runWorkflowAction(onCreateRequest)}
+              disabled={createRequestDisabled}
+              disabledReason="Дождитесь загрузки текущей выборки и всех выбранных стыков."
             />
             <WorkflowActionMenuItem
               label="Добавить позиции"
               icon={FilePlus2}
-              onClick={() => runRequestAction(onExtendRequest)}
+              onClick={() => runWorkflowAction(onExtendRequest)}
             />
             <div className="my-1 border-t border-slate-100" />
             <WorkflowActionMenuItem
               label="Все заявки ЛНК"
               icon={ListFilter}
               tone="slate"
-              onClick={() => runRequestAction(onOpenRequestRegistry)}
+              onClick={() => runWorkflowAction(onOpenRequestRegistry)}
             />
           </div>
         ) : null}
@@ -493,8 +480,8 @@ export function LnkHeaderActions({
             <WorkflowActionMenuItem
               label="Внести результаты"
               icon={Plus}
-              onClick={() => runResultAction(onAddResult)}
-              disabled={resultDisabled}
+              onClick={() => runWorkflowAction(onAddResult)}
+              disabled={availability === 'ready' && resultDisabled}
               disabledReason="Нет ожидающих заявок ЛНК. Создайте заявку нужного этапа."
               description="Внести результаты по заявкам выбранного этапа НК."
               availability={availability}
@@ -502,7 +489,7 @@ export function LnkHeaderActions({
             <WorkflowActionMenuItem
               label="Редактировать выбранные"
               icon={ClipboardCheck}
-              onClick={() => runResultAction(onEditSelectedResults)}
+              onClick={() => runWorkflowAction(onEditSelectedResults)}
               disabled={editSelectedResultsDisabled}
               disabledReason="Выберите в таблице стык с внесенным результатом ЛНК."
               description="Открыть результаты отмеченных в таблице стыков."
@@ -512,8 +499,8 @@ export function LnkHeaderActions({
               label="Все результаты ЛНК"
               icon={ListFilter}
               tone="slate"
-              onClick={() => runResultAction(onOpenResultRegistry)}
-              disabled={resultRegistryDisabled}
+              onClick={() => runWorkflowAction(onOpenResultRegistry)}
+              disabled={availability === 'ready' && resultRegistryDisabled}
               disabledReason="Внесенных результатов ЛНК пока нет."
               description="Посмотреть внесённые результаты и заключения ЛНК."
               availability={availability}
@@ -524,7 +511,7 @@ export function LnkHeaderActions({
       <Button
         variant="outline"
         className={REPORT_WORKFLOW_BUTTON_CLASS}
-        onClick={onOpenOfficiality}
+        onClick={() => runWorkflowAction(onOpenOfficiality)}
         disabled={officialityPending}
       >
         <ShieldCheck className="mr-2 h-4 w-4" />
@@ -533,7 +520,7 @@ export function LnkHeaderActions({
       <Button
         variant="outline"
         className={REPORT_WORKFLOW_BUTTON_CLASS}
-        onClick={onOpenDuplicateControl}
+        onClick={() => runWorkflowAction(onOpenDuplicateControl)}
         disabled={duplicateControlPending}
       >
         <CopyCheck className="mr-2 h-4 w-4" />
@@ -565,7 +552,7 @@ function useDismissWorkflowMenus({
 }) {
   useEffect(() => {
     if (!open) return undefined
-    const handlePointerDown = (event: PointerEvent) => {
+    const handleOutsideActivation = (event: Event) => {
       const target = event.target
       if (target instanceof Node && !rootRef.current?.contains(target)) onDismiss()
     }
@@ -575,10 +562,17 @@ function useDismissWorkflowMenus({
       event.stopImmediatePropagation()
       onDismiss()
     }
-    document.addEventListener('pointerdown', handlePointerDown)
+    // Capture also covers entries that stop propagation. Click covers keyboard
+    // activation outside the menu, which has no preceding pointerdown. Leaving
+    // the group with Tab must also discard a pending choice.
+    document.addEventListener('pointerdown', handleOutsideActivation, true)
+    document.addEventListener('click', handleOutsideActivation, true)
+    document.addEventListener('focusin', handleOutsideActivation, true)
     window.addEventListener('keydown', handleKeyDown, true)
     return () => {
-      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('pointerdown', handleOutsideActivation, true)
+      document.removeEventListener('click', handleOutsideActivation, true)
+      document.removeEventListener('focusin', handleOutsideActivation, true)
       window.removeEventListener('keydown', handleKeyDown, true)
     }
   }, [onDismiss, open, rootRef])

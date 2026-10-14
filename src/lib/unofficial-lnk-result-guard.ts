@@ -28,16 +28,31 @@ export function assertUnofficialLastRejectionRetained(next: OfficialityResultRow
   if (reason) throw new Error(reason)
 }
 
-/** Compare facts, not finalStatus: a different method can already be good on a
- * rejected unofficial joint. An empty/waiting intermediate value is no bypass. */
+function rejectedMethods(row: OfficialityResultRow) {
+  return new Set([
+    ...LNK_METHODS.map(method => ({ method: method.code, result: row[method.resultKey] })),
+    ...getPreHeatTreatmentControls(row),
+    ...getDuplicateControls(row),
+  ].filter(control => ['ремонт', 'вырез'].includes(normalizeResultStatus(control.result) ?? ''))
+    .map(control => control.method))
+}
+
+/** Backfill is not correction of a rejection. Require another method's stored
+ * rejection on both sides of the save; a derived status is not historical evidence. */
 export function getUnofficialLnkGoodResultReason(
-  row: WeldInput,
+  row: OfficialityResultRow,
   nextResult: unknown,
   previousResult: unknown,
   method: string,
+  { nextRow = row, allowBackfill = true }: { nextRow?: OfficialityResultRow; allowBackfill?: boolean } = {},
 ) {
   if (!isUnofficialJoint(row) || normalizeResultStatus(nextResult) !== 'годен' ||
     normalizeResultStatus(previousResult) === 'годен') return null
+  const methodCode = LNK_METHODS.find(candidate => method === candidate.code || method === `${candidate.code} до ТО`)?.code
+  if (allowBackfill && methodCode && !['ремонт', 'вырез'].includes(normalizeResultStatus(previousResult) ?? '')) {
+    const retained = rejectedMethods(nextRow)
+    if ([...rejectedMethods(row)].some(code => code !== methodCode && retained.has(code))) return null
+  }
   return `Стык ${String(row.joint ?? '').trim() || 'без номера'}: нельзя установить «годен» для ${method} на неофициальном стыке. Сначала верните стыку официальность через ЛНК → «Официальность», сохраните её, затем исправьте результат.`
 }
 
@@ -48,11 +63,14 @@ export function assertUnofficialLnkGoodResultAllowed(
   if (reason) throw new Error(reason)
 }
 
-export function getUnofficialLnkResultIssues(next: WeldInput, previous?: WeldInput) {
+export function getUnofficialLnkResultIssues(next: OfficialityResultRow, previous?: OfficialityResultRow) {
   // Restoring officiality and replacing a result must be separate operations.
   const protectedRow = previous && isUnofficialJoint(previous) ? previous : next
   const issues: Array<{ message: string; fieldKeys: WeldFieldKey[] }> = LNK_METHODS.flatMap(method => {
-    const message = getUnofficialLnkGoodResultReason(protectedRow, next[method.resultKey], previous?.[method.resultKey], method.code)
+    const message = getUnofficialLnkGoodResultReason(protectedRow, next[method.resultKey], previous?.[method.resultKey], method.code, {
+      nextRow: next,
+      allowBackfill: Boolean(previous && isUnofficialJoint(previous)),
+    })
     return message ? [{ message, fieldKeys: [method.resultKey] }] : []
   })
   const removalReason = getUnofficialLastRejectionRemovalReason(next, previous)

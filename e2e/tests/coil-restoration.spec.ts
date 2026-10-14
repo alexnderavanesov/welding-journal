@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { E2E_DATABASE_URL, withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
 
 test('отмена ошибочной катушки: транзакция, устаревший расчёт, повтор и ограниченное число SQL', async () => {
@@ -17,7 +17,7 @@ test('отмена ошибочной катушки: транзакция, ус
 
 for (const final of ['original', 'renamed-repair', 'mixed-actuality'] as const) test(`диспетчер: отмена/подтверждение восстановления, финал ${final}`, async ({ page }) => {
   const project = `E2E coil restoration UI ${final}`, lineName = `RESTORE-UI-${final}`
-  const rootId = await withE2eDatabase(async db => {
+  const rootId = await withLineProgramFixture(async db => {
     const { rows: [line] } = await db.query(`insert into line_programs(project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
       values ($1,'C',$2,'II','A',10,0) returning id`, [project, lineName])
     const { rows } = await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,connection_type,weld_date,stamp_1_k,has_vik,vik_result,has_uzk,uzk_result,category,group_name,weld_control_percent,pvk_control_percent)
@@ -41,7 +41,6 @@ for (const final of ['original', 'renamed-repair', 'mixed-actuality'] as const) 
         values ($1,$2,'C',$3,$4,'С17','2026-09-03','A','да','годен','да','годен','II','A',10,0) returning id`, [line.id, project, lineName, final === 'renamed-repair' ? 'S100' : 'S1991R2'])
       await db.query(`insert into weld_joint_program_states(weld_joint_id,kind,physical_root_id,source_row_id) values ($1,'repair',$2,$3)`, [repair.id, root, sourceId])
     }
-    await db.query(`update dispatcher_task_index_state set source_revision=source_revision+1,full_rebuild=true,updated_at=now() where id=1`)
     return root
   })
   const errors: string[] = [], calls: string[] = []

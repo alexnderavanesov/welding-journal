@@ -109,10 +109,10 @@ export function getManagedLnkPendingResultRows<
     method: { resultKey: WeldFieldKey }
     changeKey: string
   },
->(managedLnkResultEntries: TEntry[], managedLnkPendingResultChanges: Record<string, string>) {
+>(managedLnkResultEntries: TEntry[], managedLnkPendingResultChanges: Record<string, string | null>) {
   return managedLnkResultEntries.filter(({ row, method, changeKey }) => {
     const nextResult = managedLnkPendingResultChanges[changeKey]
     const currentResult = String(row[method.resultKey] ?? '').trim()
-    return Boolean(nextResult && nextResult !== currentResult)
+    return nextResult !== undefined && nextResult !== currentResult
   })
 }

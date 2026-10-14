@@ -48,6 +48,7 @@ type LnkDialogNavigationOptions = Pick<ReturnType<typeof useHomeLnkController>,
   setMessage: (message: string) => void
   setSelectedLnkIds: Dispatch<SetStateAction<Set<number>>>
   tableActionRows: WeldRow[]
+  canLeaveResultEditor?: () => boolean
 }
 
 export function createLnkDialogNavigation({
@@ -79,17 +80,25 @@ export function createLnkDialogNavigation({
   setMessage,
   setSelectedLnkIds,
   tableActionRows,
+  canLeaveResultEditor = () => true,
 }: LnkDialogNavigationOptions) {
   const openAllLnkResultRegistry = () => {
+    if (!canLeaveResultEditor()) return
     setLnkResultRegistrySearch('')
     setLnkResultRegistryFilter('all')
     setLnkResultRegistryLimit(WORKFLOW_REGISTRY_PAGE_SIZE)
     openLnkResultManager({ rowIds: null })
   }
-  const openSelectedLnkResultRegistry = () => openLnkResultManager({ rowIds: [...selectedLnkIds] })
-  const openLnkResultRegistryForRows = (selectedRows: WeldRow[]) =>
+  const openSelectedLnkResultRegistry = () => {
+    if (!canLeaveResultEditor()) return
+    openLnkResultManager({ rowIds: [...selectedLnkIds] })
+  }
+  const openLnkResultRegistryForRows = (selectedRows: WeldRow[]) => {
+    if (!canLeaveResultEditor()) return
     openLnkResultManager({ rowIds: selectedRows.map((selectedRow) => selectedRow.id) })
+  }
   const openExactLnkResult = (row: WeldRow, methodKey: WeldFieldKey) => {
+    if (!canLeaveResultEditor()) return
     const entry = getLnkResultNavigationEntry(row, methodKey)
     if (!entry) {
       setMessage('Не удалось определить внесенный результат ЛНК')
@@ -102,6 +111,7 @@ export function createLnkDialogNavigation({
     })
   }
   const openAddLnkResultFromRegistry = () => {
+    if (!canLeaveResultEditor()) return
     closeLnkResultManager()
     openAddLnkResultModal()
   }
@@ -109,6 +119,7 @@ export function createLnkDialogNavigation({
     closePreHeatTreatmentResultRegistryState(preHeatTreatmentResultCorrectionMutation.isPending)
   }
   const openPrimaryLnkRegistryFromPreHeatTreatment = () => {
+    if (!canLeaveResultEditor()) return
     const rowIds = preHeatTreatmentResultManagerRowIds
     startTransition(() => {
       setIsPreHeatTreatmentResultManagerOpen(false)
@@ -127,6 +138,7 @@ export function createLnkDialogNavigation({
     selectedRowIds: number[],
     requestSubmitMode: LnkRequestComposerMode = 'create',
   ) => {
+    if (!canLeaveResultEditor()) return
     const selectedRows = lnkRows.filter((row) => selectedRowIds.includes(row.id))
     if (
       stage === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE &&
@@ -164,6 +176,7 @@ export function createLnkDialogNavigation({
     })
   }
   const openCreateLnkWorkflowRequestForRow = (row: WeldRow) => {
+    if (!canLeaveResultEditor()) return
     if (getPreferredLnkRequestStage(row) === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE) {
       setSelectedLnkIds(new Set([row.id]))
       openPreHeatTreatmentLnkWorkflow('request')
@@ -172,6 +185,7 @@ export function createLnkDialogNavigation({
     openCreateLnkRequestModalForRow(row)
   }
   const openCreateLnkWorkflowRequestForRows = (selectedRows: WeldRow[]) => {
+    if (!canLeaveResultEditor()) return
     if (selectedRows.length === 0) {
       openCreateLnkRequestModal()
       return
@@ -189,6 +203,7 @@ export function createLnkDialogNavigation({
     setMessage('Выбранные стыки требуют заявок на разных этапах ЛНК. Выберите стыки одного этапа.')
   }
   const openAddLnkWorkflowResultForRow = (row: WeldRow) => {
+    if (!canLeaveResultEditor()) return
     if (getPreferredLnkResultStage(row) === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE) {
       setSelectedLnkIds(new Set([row.id]))
       openPreHeatTreatmentLnkWorkflow('result')
@@ -197,6 +212,7 @@ export function createLnkDialogNavigation({
     openAddLnkResultModalForRow(row)
   }
   const openAddLnkWorkflowResultFromHeader = () => {
+    if (!canLeaveResultEditor()) return
     const selectedRows = tableActionRows.filter((row) => selectedLnkIds.has(row.id))
     if (
       selectedRows.length > 0 &&

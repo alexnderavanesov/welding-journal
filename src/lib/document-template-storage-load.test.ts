@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const apiMocks = vi.hoisted(() => ({
   deleteRemoteDocumentTemplate: vi.fn(),
   getRemoteDocumentTemplate: vi.fn(),
+  getRemoteDocumentTemplateInventory: vi.fn(),
+  cleanupRemoteDocumentTemplateFiles: vi.fn(),
   listRemoteDocumentTemplatesWithFiles: vi.fn(),
   saveRemoteDocumentTemplate: vi.fn(),
   updateRemoteDocumentTemplate: vi.fn(),
@@ -10,10 +12,20 @@ const apiMocks = vi.hoisted(() => ({
 
 vi.mock('@/server/document-templates-api', () => apiMocks)
 
-import { loadDocumentTemplates } from '@/lib/document-template-storage'
+import { loadDocumentTemplates, loadDocumentTemplateInventory } from '@/lib/document-template-storage'
 
 describe('document template bulk loading', () => {
   beforeEach(() => vi.clearAllMocks())
+  it('loads missing-file metadata and its version separately in one settings request', async () => {
+    const { fileDataBase64: _, ...missing } = remoteTemplate('weldingJournal', 'ЖСР.xlsx', '')
+    apiMocks.getRemoteDocumentTemplateInventory.mockResolvedValue({ templates: [remoteTemplate('checklist', 'Чек-лист.xlsx', 'AwQ=')], missing: [missing] })
+    const inventory = await loadDocumentTemplateInventory()
+    expect(inventory.templates.weldingJournal).toBeUndefined()
+    expect(inventory.missing.weldingJournal).toEqual(missing)
+    expect(inventory.templates.checklist?.fileData).toEqual(new Uint8Array([3, 4]).buffer)
+    expect(apiMocks.getRemoteDocumentTemplateInventory).toHaveBeenCalledOnce()
+    expect(apiMocks.getRemoteDocumentTemplate).not.toHaveBeenCalled()
+  })
 
   it('loads every template through one server request', async () => {
     apiMocks.listRemoteDocumentTemplatesWithFiles.mockResolvedValue([

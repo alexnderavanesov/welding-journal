@@ -3,7 +3,9 @@ import { useEffect, useRef } from 'react'
 import { DEFAULT_PAGE_SIZE_OPTIONS } from '@/lib/use-pagination'
 
 type PaginationBarProps = {
-  totalCount: number
+  totalCount: number | undefined
+  summaryStatus?: 'pending' | 'ready' | 'error'
+  rowsLoading?: boolean
   firstItemNumber: number
   lastItemNumber: number
   pageSize: number
@@ -15,6 +17,8 @@ type PaginationBarProps = {
 
 export function PaginationBar({
   totalCount,
+  summaryStatus,
+  rowsLoading = false,
   firstItemNumber,
   lastItemNumber,
   pageSize,
@@ -44,8 +48,12 @@ export function PaginationBar({
         <span className="font-medium text-slate-800">
           {firstItemNumber}-{lastItemNumber}
         </span>
-        <span>из {totalCount} {label}</span>
-        {hasMore ? <span className="text-slate-400">дальше подгрузится при скролле</span> : <span className="text-emerald-600">показано все</span>}
+        <span>{totalCount === undefined
+          ? summaryStatus === 'error' ? 'Итоги недоступны' : 'Идёт подсчёт…'
+          : `из ${totalCount} ${label}`}</span>
+        {rowsLoading ? <span>Загружаются строки…</span> : hasMore
+          ? <span className="text-slate-400">дальше подгрузится при скролле</span>
+          : <span className="text-emerald-600">показано все</span>}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

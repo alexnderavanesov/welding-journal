@@ -12,6 +12,8 @@ export type DocumentHistoryColumnKey =
   | 'date'
   | 'rowCount'
   | 'wdi'
+  | 'specialistFirst'
+  | 'specialistSecond'
 
 export type DocumentHistoryColumnDefinition = {
   key: DocumentHistoryColumnKey
@@ -24,6 +26,13 @@ export type DocumentHistoryColumnDefinition = {
 }
 
 export type DocumentHistoryColumnPreferences = Record<string, DocumentHistoryColumnKey[]>
+
+export function specialistHistoryColumns(thermist = false): DocumentHistoryColumnDefinition[] {
+  return [
+    { key: 'specialistFirst', label: thermist ? 'Оператор-термист' : 'Провёл контроль', gridTrack: 'minmax(190px, 1fr)', minWidth: 190 },
+    { key: 'specialistSecond', label: thermist ? 'Руководитель по ТО' : 'Выдал заключение', gridTrack: 'minmax(190px, 1fr)', minWidth: 190 },
+  ]
+}
 
 export const GENERATED_DOCUMENT_HISTORY_COLUMNS: readonly DocumentHistoryColumnDefinition[] = [
   { key: 'title', label: 'Документ', gridTrack: 'minmax(280px, 1.5fr)', minWidth: 280, required: true },
@@ -58,6 +67,8 @@ export const SYSTEM_DOCUMENT_HISTORY_COLUMNS: readonly DocumentHistoryColumnDefi
 ]
 
 const DOCUMENT_HISTORY_COLUMN_KEY_SET = new Set<DocumentHistoryColumnKey>([
+  'specialistFirst',
+  'specialistSecond',
   'title',
   'project',
   'subtitle',

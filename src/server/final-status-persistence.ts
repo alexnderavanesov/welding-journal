@@ -2,7 +2,9 @@ import { sql, type SQL } from 'drizzle-orm'
 
 import { weldJoints } from '@/db/schema'
 
-const FINAL_STATUS_UPDATE_BATCH_SIZE = 10_000
+// Array parameters keep the SQL/parameter count constant; match the existing
+// bounded dispatcher staging batch rather than rescanning the table per 10k.
+export const FINAL_STATUS_UPDATE_BATCH_SIZE = 50_000
 
 type FinalStatusRow = {
   id: number
@@ -41,15 +43,14 @@ export async function persistCalculatedFinalStatuses(
     if (pendingChanges.length === 0) return
     const chunk = pendingChanges.splice(0, pendingChanges.length)
     changeCount += chunk.length
-    const values = sql.join(chunk.map((change) => sql`(
-      ${change.id}::integer,
-      ${change.previousFinalStatus}::text,
-      ${change.finalStatus}::text
-    )`), sql`, `)
     await executor.execute(sql`
       update ${weldJoints} as "target"
       set "final_status" = "changes"."final_status"
-      from (values ${values}) as "changes"("id", "previous_final_status", "final_status")
+      from unnest(
+        ${sql.param(chunk.map(change => change.id))}::integer[],
+        ${sql.param(chunk.map(change => change.previousFinalStatus))}::text[],
+        ${sql.param(chunk.map(change => change.finalStatus))}::text[]
+      ) as "changes"("id", "previous_final_status", "final_status")
       where "target"."id" = "changes"."id"
         and "target"."final_status" is not distinct from "changes"."previous_final_status"
     `)

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 type LnkResultManagerFooterProps = {
   pendingEntriesCount: number
   isResultReplacementPending: boolean
+  saveDisabledReason?: string
   onResetPendingChanges: () => void
   onSaveChanges: () => void
 }
@@ -12,6 +13,7 @@ type LnkResultManagerFooterProps = {
 export function LnkResultManagerFooter({
   pendingEntriesCount,
   isResultReplacementPending,
+  saveDisabledReason,
   onResetPendingChanges,
   onSaveChanges,
 }: LnkResultManagerFooterProps) {
@@ -23,7 +25,7 @@ export function LnkResultManagerFooter({
             Подготовлено изменений: {pendingEntriesCount}
           </span>
         ) : (
-          <span className="text-xs">Выберите новый результат, затем сохраните изменения.</span>
+          <span className="text-xs">Выберите замену или удаление результата, затем сохраните изменения.</span>
         )}
       </div>
       <div className="grid shrink-0 gap-2 sm:flex sm:justify-end">
@@ -37,13 +39,15 @@ export function LnkResultManagerFooter({
         </Button>
         <Button
           onClick={onSaveChanges}
-          disabled={pendingEntriesCount === 0 || isResultReplacementPending}
+          disabled={pendingEntriesCount === 0 || isResultReplacementPending || Boolean(saveDisabledReason)}
+          title={saveDisabledReason}
           className="w-full sm:w-auto"
         >
           <Check className="mr-2 h-4 w-4" />
           Сохранить изменения
         </Button>
       </div>
+      {saveDisabledReason ? <p role="alert" className="text-xs text-amber-700">{saveDisabledReason}</p> : null}
     </div>
   )
 }

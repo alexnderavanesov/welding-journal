@@ -4,6 +4,7 @@ import { DialogHeader } from '@/components/dialog-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { Button } from '@/components/ui/button'
 import type { PstoLineRemovalPreviewRow, PstoWeldLineMoveDecision, PstoWeldLineMovePreview } from '@/lib/psto-line-assignment'
+import { useSpecialistTransferConfirmation } from './specialist-transfer-confirmation'
 
 export type PstoWeldLineMoveDialogProps = {
   preview: PstoWeldLineMovePreview
@@ -18,18 +19,21 @@ export function PstoWeldLineMoveDialog({ preview, initialDecisions, pending, err
   const [selection, setSelection] = useState(() => ({
     preview,
     rowIds: new Set((initialDecisions ?? [])
-      .filter(decision => decision.disposition === 'movePreHeatTreatmentToPrimary')
+      .filter(decision => decision.disposition !== 'keepPrimary')
       .map(decision => decision.rowId)),
   }))
-  const correctionRows = preview.targetState === 'assigned' ? [] : preview.rows.filter(row => row.stageCorrection?.targetStage === 'primary')
+  const target = preview.targetState === 'assigned' ? 'beforeHeatTreatment' : 'primary'
+  const correctionRows = preview.rows.filter(row => row.stageCorrection?.targetStage === target)
   const correctionRowIds = new Set(correctionRows.map(row => row.rowId))
   const decisions: PstoWeldLineMoveDecision[] = preview.rows.map(row => ({
     rowId: row.rowId,
     disposition: selection.preview === preview && selection.rowIds.has(row.rowId) &&
       correctionRowIds.has(row.rowId) && !row.stageCorrection?.disabledReason
-      ? 'movePreHeatTreatmentToPrimary' : 'keepPrimary',
+      ? target === 'primary' ? 'movePreHeatTreatmentToPrimary' : 'movePrimaryToPreHeatTreatment' : 'keepPrimary',
   }))
-  const transferRowIds = new Set(decisions.filter(decision => decision.disposition === 'movePreHeatTreatmentToPrimary').map(decision => decision.rowId))
+  const transferRowIds = new Set(decisions.filter(decision => decision.disposition !== 'keepPrimary').map(decision => decision.rowId))
+  const specialists = useSpecialistTransferConfirmation([...transferRowIds], target)
+  const directionLabel = target === 'primary' ? 'НК до ТО → основной' : 'основной НК → до ТО'
   return <LargeDialogShell maxWidthClassName="max-w-[940px]" maxHeightClassName="max-h-[92vh]" overlayClassName="z-[90] bg-slate-950/35">
     <DialogHeader title={preview.isChainMove ? `Перенос цепочки ${preview.rootJoint}` : 'Перенос стыка на другую линию'}
       subtitle="Проверьте состав переноса и этапы контроля" closeDisabled={pending} onClose={onClose} />
@@ -43,7 +47,7 @@ export function PstoWeldLineMoveDialog({ preview, initialDecisions, pending, err
         <p className="flex items-center gap-2 font-semibold"><GitBranch aria-hidden="true" className="h-4 w-4" />Перенос с сохранением истории</p>
         <p className="mt-1">Назначение ПСТО будет взято с целевой линии. По умолчанию НК до ТО остаётся НК до ТО, основной НК — основным. ПСТО, ТВМТ и повторные циклы сохраняются.</p>
         <p className="mt-1">{preview.targetState === 'assigned' ? 'Для новых работ сохраняются требования к предыдущим этапам. Основной НК не заменяет НК до ТО.' : 'Если оставить исходный этап, НК до ТО останется видимым в документах и не заполнит основной НК.'}</p>
-        {correctionRows.length > 0 ? <p className="mt-1">Для каждого стыка можно перенести весь комплект НК до ТО в основной этап: все методы, заявки, результаты и заключения вместе, с исходными датами и названиями. Целевой этап должен быть пустым; проверяются хронология и зависимости заявки ПСТО. Причина запрета показана у варианта переноса.</p> : null}
+        {correctionRows.length > 0 ? <p className="mt-1">Для каждого стыка можно перенести весь комплект: {directionLabel}. Все методы, заявки, результаты и заключения переносятся вместе, с исходными датами и названиями. Целевой этап должен быть пустым; проверяются хронология и зависимости заявки ПСТО. Причина запрета показана у варианта переноса.</p> : null}
         {preview.isChainMove ? <p className="mt-1">Вместе с базовым стыком переносится вся цепочка. Проект, шифр и номера стыков не меняются. При любой ошибке изменения не сохранятся.</p> : null}
       </div>
       <div className="mt-4 grid gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 sm:grid-cols-3">
@@ -51,11 +55,11 @@ export function PstoWeldLineMoveDialog({ preview, initialDecisions, pending, err
         <SummaryCell label="Позиций НК до ТО" value={preview.preControlCount} tone="sky" />
         <SummaryCell label="Повторных циклов" value={preview.repeatCycleCount} />
       </div>
-      {correctionRows.length > 0 ? <p role="status" className="mt-4 text-sm font-medium text-slate-700">Стыков: перенос НК в основной — {transferRowIds.size} · сохранить этапы — {preview.rows.length - transferRowIds.size}</p> : null}
+      {correctionRows.length > 0 ? <p role="status" className="mt-4 text-sm font-medium text-slate-700">Стыков: {target === 'primary' ? 'перенос НК в основной' : 'перенос НК до ТО'} — {transferRowIds.size} · сохранить этапы — {preview.rows.length - transferRowIds.size}</p> : null}
       <div className="mt-4 divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white">
         {preview.rows.map(row => <div key={row.rowId} className="px-4 py-3 text-sm">
           <p className="font-semibold text-slate-900">{row.joint || `#${row.rowId}`}</p>
-          <p className="mt-1 text-xs text-slate-500">Спул: {row.spool || '—'} · {row.primaryMethods.length ? `Основной НК: ${row.primaryMethods.join(', ')} · ` : ''}{row.preMethods.length ? `До ТО: ${row.preMethods.join(', ')} · ` : ''}{transferRowIds.has(row.rowId) ? 'Весь НК до ТО перейдёт в основной' : 'Этапы сохраняются'}</p>
+          <p className="mt-1 text-xs text-slate-500">Спул: {row.spool || '—'} · {row.primaryMethods.length ? `Основной НК: ${row.primaryMethods.join(', ')} · ` : ''}{row.preMethods.length ? `До ТО: ${row.preMethods.join(', ')} · ` : ''}{transferRowIds.has(row.rowId) ? `Весь ${directionLabel}` : 'Этапы сохраняются'}</p>
           {correctionRowIds.has(row.rowId) ? <PstoStageCorrectionChoice row={row} moveSelected={transferRowIds.has(row.rowId)} disabled={pending} onChange={move => {
             setSelection(current => {
               const rowIds = new Set(current.preview === preview ? current.rowIds : [])
@@ -66,12 +70,13 @@ export function PstoWeldLineMoveDialog({ preview, initialDecisions, pending, err
           }} /> : null}
         </div>)}
       </div>
+      {specialists.notice}
       <p className="mt-4 text-xs leading-5 text-slate-500">Изменения сохраняются вместе с карточкой стыка. Ошибочные документы исправляются отдельно в ЛНК/ПСТО с проверкой зависимостей.</p>
       {error ? <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p> : null}
     </div>
     <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-200 bg-white px-5 py-4 sm:flex-row sm:justify-end">
       <Button variant="outline" onClick={onClose} disabled={pending}>Вернуться к форме</Button>
-      <Button onClick={() => onConfirm(decisions)} disabled={pending}>
+      <Button onClick={() => { if (specialists.ready) onConfirm(decisions.map(decision => ({ ...decision, ...(decision.disposition !== 'keepPrimary' && specialists.confirmation ? { specialistTransferConfirmation: specialists.confirmation } : {}) }))) }} disabled={pending || !specialists.ready}>
         {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
         {preview.isChainMove ? 'Подтвердить перенос цепочки' : 'Подтвердить перенос'}
       </Button>

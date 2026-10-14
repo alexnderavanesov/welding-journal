@@ -1,17 +1,17 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useConfirmAction } from './confirm-action-context'
+import { withSpecialistCorrectionConfirmation } from './specialist-correction-confirmation'
 import {
   getLnkConclusionHighlightFields,
-  getLnkResultHighlightFields,
   getLnkResultReplacementHighlightFields,
 } from '@/lib/lnk-report-mutation-highlight-fields'
 import {
   buildLnkConclusionCorrectionRows,
-  buildLnkResultCorrectionRow,
   buildLnkResultReplacementRows,
 } from '@/lib/lnk-report-mutation-updates'
 import { getManagedLnkResultChangeKey } from '@/lib/lnk-result-draft'
 import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
-import { updateWeldRowOrThrow, updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
+import { updateWeldRowsOrThrow } from '@/lib/weld-save-utils'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { RowWithId, UseLnkReportMutationsOptions } from '@/lib/lnk-report-mutation-types'
@@ -24,49 +24,21 @@ export function useLnkResultManagerMutations({
   onWorkflowCorrectionSaved,
 }: UseLnkReportMutationsOptions) {
   const queryClient = useQueryClient()
-
-  const lnkResultCorrectionMutation = useMutation({
-    mutationFn: async ({
-      record,
-      methodKey,
-      result,
-    }: {
-      record: RowWithId
-      methodKey: WeldFieldKey
-      result: string | null
-    }) => {
-      const updatedRecord = buildLnkResultCorrectionRow({ record, methodKey, result })
-      const saved = await updateWeldRowOrThrow(
-        updatedRecord,
-        'Не удалось изменить результат ЛНК',
-        { mutationScope: 'lnk' },
-      )
-      return saved as unknown as WeldRow
-    },
-    onSuccess: async (saved, variables) => {
-      highlightChangedRows(saved ? [saved] : [], getLnkResultHighlightFields(variables.methodKey))
-      setMessage(variables.result ? 'Результат ЛНК изменен' : 'Результат ЛНК удален')
-      scheduleWeldDataRefresh(queryClient, { upsertRows: [saved] })
-      onWorkflowCorrectionSaved?.()
-    },
-    onError: (error) => {
-      setMessage((error as Error).message)
-    },
-  })
+  const confirm = useConfirmAction()
 
   const lnkResultReplacementMutation = useMutation({
     mutationFn: async ({
       updates,
     }: {
-      updates: Array<{ record: RowWithId; methodKey: WeldFieldKey; result: string }>
+      updates: Array<{ record: RowWithId; methodKey: WeldFieldKey; result: string | null }>
     }) => {
       const updatedRecords = buildLnkResultReplacementRows({ updates })
 
-      const savedRows = await updateWeldRowsOrThrow(
+      const savedRows = await withSpecialistCorrectionConfirmation(confirmation => updateWeldRowsOrThrow(
         updatedRecords,
-        'Не удалось заменить результаты ЛНК',
-        { mutationScope: 'lnk' },
-      )
+        'Не удалось сохранить изменения результатов ЛНК',
+        { mutationScope: 'lnk', specialistCorrectionConfirmation: confirmation },
+      ), confirm)
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
@@ -90,25 +62,27 @@ export function useLnkResultManagerMutations({
       records,
       methodKey,
       conclusionName,
+      conclusionDate,
     }: {
       records: RowWithId[]
       methodKey: WeldFieldKey
       conclusionName: string
+      conclusionDate?: string
     }) => {
-      const updatedRecords = buildLnkConclusionCorrectionRows({ records, methodKey, conclusionName })
+      const updatedRecords = buildLnkConclusionCorrectionRows({ records, methodKey, conclusionName, conclusionDate })
 
       if (updatedRecords.length === 0) throw new Error('Нет результатов для переименования заключения')
 
-      const savedRows = await updateWeldRowsOrThrow(
+      const savedRows = await withSpecialistCorrectionConfirmation(confirmation => updateWeldRowsOrThrow(
         updatedRecords,
         'Не удалось переименовать заключение ЛНК',
-        { mutationScope: 'lnk' },
-      )
+        { mutationScope: 'lnk', specialistCorrectionConfirmation: confirmation },
+      ), confirm)
       return savedRows as unknown as WeldRow[]
     },
     onSuccess: async (savedRows, variables) => {
       highlightChangedRows(savedRows, getLnkConclusionHighlightFields(variables.methodKey))
-      setMessage(`Заключение переименовано для позиций: ${savedRows.length}`)
+      setMessage(`Реквизиты заключения сохранены для позиций: ${savedRows.length}`)
       scheduleWeldDataRefresh(queryClient, { upsertRows: savedRows })
       onWorkflowCorrectionSaved?.()
     },
@@ -118,7 +92,6 @@ export function useLnkResultManagerMutations({
   })
 
   return {
-    lnkResultCorrectionMutation,
     lnkResultReplacementMutation,
     lnkConclusionCorrectionMutation,
   }

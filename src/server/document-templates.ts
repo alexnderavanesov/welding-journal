@@ -14,6 +14,7 @@ import {
   createDocumentTemplateFileKey,
   deleteDocumentTemplateFileVersions,
   resolveDocumentTemplateStorageDirectory,
+  assertPersistentDocumentTemplateStorage,
 } from '@/server/document-template-files'
 import {
   GENERATED_DOCUMENT_TYPES,
@@ -24,6 +25,7 @@ import { assertSecurityScope } from '@/server/security-functions'
 import { rebuildLayeredControlDocumentsInTransaction } from '@/server/layered-control-documents'
 import { lockControlProcessSettings } from '@/server/control-process-settings-lock'
 import { getNextTimestampVersion } from '@/server/timestamp-version'
+import { validateDocumentTemplateRecovery } from '@/lib/document-template-replacement'
 
 const DOCUMENT_TEMPLATE_IDS = new Set<DocumentTemplateId>([
   ...GENERATED_DOCUMENT_TYPES,
@@ -58,6 +60,7 @@ type SaveDocumentTemplateInput = {
   warnings: string[]
   constructorConfig?: DocumentTemplateConstructorConfig | null
   expectedVersion: string | null
+  recoverMissingFile?: boolean
 }
 
 type UpdateDocumentTemplateInput = {
@@ -68,18 +71,35 @@ type UpdateDocumentTemplateInput = {
 }
 
 export async function listRemoteDocumentTemplatesWithFiles(): Promise<RemoteDocumentTemplate[]> {
+  return (await getRemoteDocumentTemplateInventory()).templates
+}
+
+export async function getRemoteDocumentTemplateInventory() {
   await assertSecurityScope('entry')
-  const rows = await requireDb().select().from(documentTemplates)
-  const templates = await Promise.all(rows.map(async (record) => {
-    const fileData = await templateStore.get(record.blobKey)
-    return fileData
-      ? {
-          ...toTemplateSummary(record),
-          fileDataBase64: Buffer.from(fileData).toString('base64'),
+  return requireDb().transaction(async tx => {
+    // Keep metadata and file reads together: a concurrent replacement must not
+    // delete the old file after we read its key but before we read its bytes.
+    await lockDocumentTemplateReads(tx, [...DOCUMENT_TEMPLATE_IDS])
+    const rows = await tx.select().from(documentTemplates)
+    const entries = await Promise.all(rows.map(async (record) => {
+      const fileData = await templateStore.get(record.blobKey)
+      return { summary: toTemplateSummary(record), fileData }
+    }))
+    const activeKeys = new Map(rows.map(row => [row.id, row.blobKey]))
+    const storageWarnings: Partial<Record<DocumentTemplateId, string>> = {}
+    await Promise.all([...DOCUMENT_TEMPLATE_IDS].map(async id => {
+      try {
+        if ((await templateStore.list(`${id}/`)).some(key => key !== activeKeys.get(id))) {
+          storageWarnings[id] = 'В хранилище остались лишние файлы. Можно очистить их, не меняя активный шаблон и настройки конструктора.'
         }
-      : null
-  }))
-  return templates.filter((template): template is RemoteDocumentTemplate => template !== null)
+      } catch { storageWarnings[id] = 'Не удалось проверить очистку файлов. Проверьте доступность хранилища и повторите очистку.' }
+    }))
+    return {
+      templates: entries.flatMap(({ summary, fileData }) => fileData ? [{ ...summary, fileDataBase64: Buffer.from(fileData).toString('base64') }] : []),
+      missing: entries.flatMap(({ summary, fileData }) => fileData ? [] : [summary]),
+      storageWarnings,
+    }
+  })
 }
 
 export async function listRemoteDocumentTemplateIds() {
@@ -99,16 +119,19 @@ export async function getRemoteDocumentTemplate({
   const data = { id: requireTemplateId(input?.id) }
   await assertSecurityScope('entry')
   const db = requireDb()
-  const [record] = await db.select().from(documentTemplates).where(eq(documentTemplates.id, data.id)).limit(1)
-  if (!record) return null
+  return db.transaction(async tx => {
+    await lockDocumentTemplateReads(tx, [data.id])
+    const [record] = await tx.select().from(documentTemplates).where(eq(documentTemplates.id, data.id)).limit(1)
+    if (!record) return null
 
-  const fileData = await templateStore.get(record.blobKey)
-  if (!fileData) throw new Error('Файл шаблона не найден в общем хранилище.')
+    const fileData = await templateStore.get(record.blobKey)
+    if (!fileData) throw new Error('Файл шаблона не найден в общем хранилище.')
 
-  return {
-    ...toTemplateSummary(record),
-    fileDataBase64: Buffer.from(fileData).toString('base64'),
-  }
+    return {
+      ...toTemplateSummary(record),
+      fileDataBase64: Buffer.from(fileData).toString('base64'),
+    }
+  })
 }
 
 export async function saveRemoteDocumentTemplate({
@@ -120,6 +143,7 @@ export async function saveRemoteDocumentTemplate({
   await assertSecurityScope('settings')
   const db = requireDb()
   const fileKey = createDocumentTemplateFileKey(data.id, data.fileType)
+  await assertPersistentDocumentTemplateStorage(resolveDocumentTemplateStorageDirectory())
   const fileData = Buffer.from(data.fileDataBase64, 'base64')
   if (fileData.byteLength === 0) throw new Error('Файл шаблона пуст.')
 
@@ -130,6 +154,7 @@ export async function saveRemoteDocumentTemplate({
     locations: data.locations,
     warnings: data.warnings,
   }
+  let wroteFile = false
   const saved = await db.transaction(async (tx) => {
     const isLayeredTemplate = isLayeredControlDocumentType(data.id)
     if (isLayeredTemplate) await lockControlProcessSettings(tx, 'layeredControl')
@@ -141,8 +166,20 @@ export async function saveRemoteDocumentTemplate({
       .for('update')
       .limit(1)
     assertExpectedDocumentTemplateVersion(existing, data.expectedVersion)
+    if (data.recoverMissingFile) {
+      if (!existing) throw new Error('Запись шаблона больше не существует. Обновите страницу настроек.')
+      if (await templateStore.get(existing.blobKey)) throw new Error('Файл шаблона уже доступен. Обновите страницу настроек; для замены используйте обычную загрузку.')
+      const issues = await validateDocumentTemplateRecovery(parseJson<DocumentTemplateConstructorConfig | undefined>(existing.constructorConfig, undefined), fileData)
+      if (issues.length) throw new Error(`Файл не подходит для сохранённых настроек конструктора. ${issues.join(' ')} Настройки не изменены; загрузите исходный файл с прежней структурой.`)
+    }
+    // Retry unfinished cleanup before accepting another upload, bounding garbage
+    // even after crashes. Do not remove possible recovery copies of a missing file.
+    if (!existing || await templateStore.get(existing.blobKey)) {
+      await deleteDocumentTemplateFileVersions(templateStore, data.id, { keepKey: existing?.blobKey })
+    }
     const now = existing ? getNextTimestampVersion(existing.updatedAt) : new Date()
 
+    wroteFile = true
     await templateStore.set(
       fileKey,
       fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength),
@@ -153,7 +190,7 @@ export async function saveRemoteDocumentTemplate({
       throw new Error('Не удалось проверить сохраненный файл шаблона в общем хранилище.')
     }
     const constructorConfig =
-      data.constructorConfig === undefined
+      data.recoverMissingFile || data.constructorConfig === undefined
         ? existing?.constructorConfig ?? null
         : data.constructorConfig === null
           ? null
@@ -187,16 +224,38 @@ export async function saveRemoteDocumentTemplate({
       })
       .returning()
     if (!savedRecord) throw new Error('Не удалось сохранить шаблон документа.')
-    if (isLayeredTemplate) {
+    if (isLayeredTemplate && !data.recoverMissingFile) {
       await rebuildLayeredControlDocumentsInTransaction(tx, { processSettingsLocked: true })
     }
     return savedRecord
+  }).catch(async error => {
+    if (wroteFile) {
+      try {
+        // A lost COMMIT acknowledgement does not prove rollback. Re-read under
+        // the lock and never delete a file now referenced by the database.
+        const committed = await db.transaction(async tx => {
+          await lockDocumentTemplate(tx, data.id)
+          const [active] = await tx.select().from(documentTemplates).where(eq(documentTemplates.id, data.id)).limit(1)
+          if (active?.blobKey === fileKey) return active
+          await templateStore.delete(fileKey)
+          return null
+        })
+        if (committed) return committed
+      } catch {
+        throw new Error(`${error instanceof Error ? error.message : 'Не удалось сохранить шаблон.'} Не удалось проверить и очистить незавершённый файл; повторите очистку в настройках после восстановления хранилища.`)
+      }
+    }
+    throw error
   })
 
-  await cleanupDocumentTemplateFileVersions(db, data.id)
+  let storageWarning: string | undefined
+  try { await cleanupDocumentTemplateFileVersions(db, data.id) } catch {
+    storageWarning = 'Шаблон сохранён. Не удалось удалить лишние файлы. Повторите очистку; повторно загружать шаблон не нужно.'
+  }
   return {
     ...toTemplateSummary(saved),
     fileDataBase64: data.fileDataBase64,
+    ...(storageWarning ? { storageWarning } : {}),
   }
 }
 
@@ -268,9 +327,20 @@ export async function deleteRemoteDocumentTemplate({
     }
   })
 
-  const deletedFileKeys = await cleanupDocumentTemplateFileVersions(db, data.id)
+  let deletedFileKeys: string[] = [], storageWarning: string | undefined
+  try { deletedFileKeys = await cleanupDocumentTemplateFileVersions(db, data.id) } catch {
+    storageWarning = 'Запись шаблона удалена, но файлы очистить не удалось. Повторите очистку в настройках.'
+  }
 
-  return { ok: true, deletedFileCount: deletedFileKeys.length }
+  return { ok: true, deletedFileCount: deletedFileKeys.length, storageWarning }
+}
+
+export async function cleanupRemoteDocumentTemplateFiles({ data }: { data: { id: DocumentTemplateId } }) {
+  await assertSecurityScope('settings')
+  const id = requireTemplateId(data?.id)
+  await assertPersistentDocumentTemplateStorage(resolveDocumentTemplateStorageDirectory())
+  const deleted = await cleanupDocumentTemplateFileVersions(requireDb(), id)
+  return { deletedFileCount: deleted.length }
 }
 
 function normalizeSaveTemplateInput(data: SaveDocumentTemplateInput): SaveDocumentTemplateInput {
@@ -299,6 +369,7 @@ function normalizeSaveTemplateInput(data: SaveDocumentTemplateInput): SaveDocume
       data?.expectedVersion === null
         ? null
         : String(data?.expectedVersion ?? '').trim(),
+    recoverMissingFile: data?.recoverMissingFile === true,
   }
 }
 
@@ -347,6 +418,13 @@ async function lockDocumentTemplate(tx: DocumentTemplateTransaction, id: Documen
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`document-template:${id}`}))`)
 }
 
+async function lockDocumentTemplateReads(tx: DocumentTemplateTransaction, ids: DocumentTemplateId[]) {
+  // One bounded statement for the catalog, not one database call per file.
+  // Shared locks allow concurrent readers and serialize only file mutations.
+  await tx.execute(sql`select pg_advisory_xact_lock_shared(hashtext('document-template:' || item.id))
+    from (select value as id from jsonb_array_elements_text(${JSON.stringify([...ids].sort())}::jsonb) order by value) item`)
+}
+
 export function assertExpectedDocumentTemplateVersion(
   record: Pick<typeof documentTemplates.$inferSelect, 'updatedAt'> | undefined,
   expectedVersion: string | null,
@@ -373,9 +451,10 @@ async function cleanupDocumentTemplateFileVersions(
       .from(documentTemplates)
       .where(eq(documentTemplates.id, id))
       .limit(1)
+    if (active && !await templateStore.get(active.blobKey)) throw new Error('Сначала восстановите отсутствующий файл шаблона. Возможные резервные копии не удалены.')
     return deleteDocumentTemplateFileVersions(templateStore, id, {
       ...(active?.blobKey ? { keepKey: active.blobKey } : {}),
-    }).catch(() => [])
+    })
   })
 }
 

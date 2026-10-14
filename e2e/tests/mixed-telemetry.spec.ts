@@ -1,6 +1,47 @@
 import { createServer, type ServerResponse } from 'node:http'
 import { expect, test } from '@playwright/test'
 import { observeMixedClient } from '../mixed-resource-telemetry'
+import { rpcName } from '../rpc'
+
+test('отмена чтения не путается с явно имитированным сбоем; настоящие ошибки записи не скрываются', async ({ browser }) => {
+  const server = createServer((_request, response) => response.end('<html>telemetry fixture</html>'))
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const context = await browser.newContext()
+  const telemetry = observeMixedClient(context, 'writer')
+  try {
+    const page = await context.newPage(), address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Expected a local ephemeral server')
+    await page.goto(`http://127.0.0.1:${address.port}`)
+    await page.route('**/_serverFn/**', async route => {
+      if (rpcName(route.request().url()) === 'updateWeldJoint_injected') {
+        telemetry.expectInjectedNetworkFailure(route.request())
+      }
+      await route.abort(route.request().method() === 'GET' ? 'aborted' : 'failed')
+    })
+    const fail = async (name: string, method = 'POST') => {
+      const url = '/_serverFn/' + Buffer.from(JSON.stringify({ export: name })).toString('base64url')
+      await page.evaluate(async ({ url, method }) => { await fetch(url, { method }).catch(() => {}) }, { url, method })
+      await expect.poll(() => telemetry.pending.size).toBe(0)
+    }
+    await fail('updateWeldJoint_realFirst')
+    expect(telemetry.errors).toEqual(['updateWeldJoint_realFirst: net::ERR_FAILED'])
+    await fail('getWeldReportSummary_obsolete', 'GET')
+    await fail('updateWeldJoint_injected')
+    expect(telemetry.expectedFailures).toEqual([
+      'getWeldReportSummary_obsolete: net::ERR_ABORTED',
+      'updateWeldJoint_injected: net::ERR_FAILED',
+    ])
+    await fail('updateWeldJoint_realLater')
+    expect(telemetry.errors).toEqual([
+      'updateWeldJoint_realFirst: net::ERR_FAILED',
+      'updateWeldJoint_realLater: net::ERR_FAILED',
+    ])
+  } finally {
+    await context.close()
+    server.closeAllConnections()
+    await new Promise<void>(resolve => server.close(() => resolve()))
+  }
+})
 
 test('счётчик нагрузки отличает уход со страницы от живого запроса и не скрывает запись', async ({ browser }) => {
   const held: ServerResponse[] = []

@@ -9,6 +9,7 @@ export type MutationLike<TVariables> = {
 }
 
 export type UseManagedLnkRequestActionsOptions = {
+  lnkRows: WeldRow[]
   lnkRequestManagerOptions: RequestDocumentIdentity[]
   managedLnkRequestName: string
   managedLnkRequestDate: string
@@ -16,7 +17,7 @@ export type UseManagedLnkRequestActionsOptions = {
   lnkRequestCorrectionMutation: MutationLike<{ record: RowWithId; methodKey: WeldFieldKey; requestName: string | null }>
   lnkRequestManagerMutation: MutationLike<
     | { action: 'rename'; requestName: string; requestDate: string; nextRequestName: string }
-    | { action: 'delete'; requestName: string; requestDate: string }
+    | { action: 'delete'; requestName: string; requestDate: string; expectedVersions: Array<{ id: number; version: string }> }
   >
   setIsLnkRequestManagerOpen: (value: boolean) => void
   setManagedLnkRequestName: (value: string) => void

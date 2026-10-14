@@ -26,6 +26,7 @@ type SaveDocumentTemplateInput = {
   warnings: string[]
   constructorConfig?: DocumentTemplateConstructorConfig | null
   expectedVersion: string | null
+  recoverMissingFile?: boolean
 }
 
 type UpdateDocumentTemplateInput = {
@@ -39,6 +40,18 @@ export const listRemoteDocumentTemplatesWithFiles = createServerFn({ method: 'GE
   .handler(async (): Promise<RemoteDocumentTemplate[]> => {
     const server = await import('@/server/document-templates')
     return server.listRemoteDocumentTemplatesWithFiles()
+  })
+
+export const getRemoteDocumentTemplateInventory = createServerFn({ method: 'GET' }).handler(async () => {
+  const server = await import('@/server/document-templates')
+  return server.getRemoteDocumentTemplateInventory()
+})
+
+export const cleanupRemoteDocumentTemplateFiles = createServerFn({ method: 'POST' })
+  .validator((data: { id: DocumentTemplateId }) => data)
+  .handler(async ({ data }) => {
+    const server = await import('@/server/document-templates')
+    return server.cleanupRemoteDocumentTemplateFiles({ data })
   })
 
 export const listRemoteDocumentTemplateIds = createServerFn({ method: 'GET' })

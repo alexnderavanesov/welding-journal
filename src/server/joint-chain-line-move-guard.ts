@@ -19,6 +19,7 @@ const MAX_CHAIN_LINE_MOVE_ROWS = 1_000
 const CHAIN_LINE_MOVE_DISPOSITIONS = new Set<PstoWeldLineMoveDisposition>([
   'keepPrimary',
   'movePreHeatTreatmentToPrimary',
+  'movePrimaryToPreHeatTreatment',
 ])
 
 export function normalizeWeldChainLineMovePlan(value: unknown): WeldChainLineMovePlan | null {
@@ -66,7 +67,7 @@ export function normalizeWeldChainLineMovePlan(value: unknown): WeldChainLineMov
   const decisionRowIds = new Set<number>()
   for (const value of candidate.decisions) {
     if (!value || typeof value !== 'object') return null
-    const decision = value as { rowId?: unknown; disposition?: unknown }
+    const decision = value as { rowId?: unknown; disposition?: unknown; specialistTransferConfirmation?: unknown }
     const rowId = Number(decision.rowId)
     const disposition = String(decision.disposition ?? '') as PstoWeldLineMoveDisposition
     if (
@@ -76,7 +77,7 @@ export function normalizeWeldChainLineMovePlan(value: unknown): WeldChainLineMov
       !CHAIN_LINE_MOVE_DISPOSITIONS.has(disposition)
     ) return null
     decisionRowIds.add(rowId)
-    decisions.push({ rowId, disposition })
+    decisions.push({ rowId, disposition, ...(typeof decision.specialistTransferConfirmation === 'string' ? { specialistTransferConfirmation: decision.specialistTransferConfirmation } : {}) })
   }
 
   return {

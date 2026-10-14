@@ -28,14 +28,12 @@ type PstoLineIdentityInput = {
 }
 
 // Correction is contextual and explicit; keeping recorded stages is always the default.
-export type PstoWeldLineMoveDisposition = 'keepPrimary' | 'movePreHeatTreatmentToPrimary'
-export type PstoLineActivationDecision = {
-  rowId: number
-  disposition: 'keepPrimary' | 'movePrimaryToPreHeatTreatment'
-}
+export type PstoWeldLineMoveDisposition = 'keepPrimary' | 'movePreHeatTreatmentToPrimary' | 'movePrimaryToPreHeatTreatment'
+export type PstoLineActivationDecision = PstoWeldLineMoveDecision
 export type PstoWeldLineMoveDecision = {
   rowId: number
   disposition: PstoWeldLineMoveDisposition
+  specialistTransferConfirmation?: string
 }
 export type WeldChainLineMovePlan = {
   expectedRowIds: number[]

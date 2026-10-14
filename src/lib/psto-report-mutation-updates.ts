@@ -1,4 +1,5 @@
 import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
+import { assertDocumentRequisites } from '@/lib/document-requisites'
 import {
   applyPstoRequestManagerAction,
   applyPstoResult,
@@ -76,14 +77,8 @@ export function buildPstoResultRows({
   saveCheckSettings?: SaveCheckSettings
 }) {
   if (result !== 'проведено') throw new Error('Выберите результат ПСТО')
-  if (saveCheckSettings.pstoResultDateRequired && !pstoDate) throw new Error('Укажите дату ПСТО')
-  {
-    const pstoDateReason = getDateInputValidationReason(pstoDate, 'Дата ПСТО')
-    if (pstoDateReason) throw new Error(pstoDateReason)
-  }
-  if (saveCheckSettings.pstoResultDiagramRequired && !diagramName.trim()) {
-    throw new Error('Укажите наименование диаграммы термообработки')
-  }
+  assertDocumentRequisites({ name: diagramName, date: pstoDate,
+    nameLabel: 'наименование диаграммы термообработки', dateLabel: 'Дата ПСТО' })
   if (records.some((record) => !hasText(record.pstoRequest))) throw new Error('Сначала укажите заявку ПСТО')
   assertPrimaryPstoReady(records)
   const normalizedPstoDate = normalizeDateLikeForStorage(pstoDate)

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
-import { withE2eDatabase } from '../database'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
+import { ensureDispatcherTaskIndexFresh } from '@/server/dispatcher-task-index'
 import {
   listColumnFilterOptions, listReportPage, normalizeWeldColumnFilterOptionsRequest, normalizeWeldPageRequest,
 } from '@/server/weld-read'
@@ -9,10 +10,15 @@ import { LAYERED_CONTROL_WAITING_LABEL } from '@/lib/layered-control-documents'
 import { LNK_VISIBLE_FIELD_SECTIONS } from '@/lib/lnk-visible-field-layout'
 
 const project = 'E2E document filters'
+const waitingProject = 'E2E layered waiting'
 const ids: number[] = []
 
 test.beforeAll(async () => {
-  await withE2eDatabase(async (client) => {
+  // A worker restart reruns beforeAll. Own and clean the fixture, and establish
+  // its calculated versions before testing filters (not concurrent writes).
+  ids.length = 0
+  await cleanupLineProgramProjects([project, waitingProject])
+  await withLineProgramFixture(async (client) => {
     for (let i = 1; i <= 6; i++) {
       const result = await client.query(`insert into weld_joints
         (project_title, line, joint, weld_date, has_vik, psto_required, vik_control_basis)
@@ -35,7 +41,10 @@ test.beforeAll(async () => {
       await client.query('insert into generated_document_weld_joints (document_id, weld_joint_id) values ($1, $2)', [document.rows[0].id, ids[index]])
     }
   })
+  await ensureDispatcherTaskIndexFresh()
 })
+
+test.afterAll(async () => { await cleanupLineProgramProjects([project, waitingProject]) })
 
 for (const report of ['weldingJournal', 'lnk', 'heatTreatment'] as const) {
   test(`${report}: послойные фильтры учитывают документы, границы отчета и составные условия`, async () => {
@@ -58,7 +67,8 @@ for (const report of ['weldingJournal', 'lnk', 'heatTreatment'] as const) {
     ])
     expect(await options('layeredPvkDocuments', { joint: '=нет такого стыка' })).toEqual([])
 
-    for (const extra of [{}, { preVikConclusion: '=' }]) {
+    const additionalFilters: Record<string, string>[] = [{}, { preVikConclusion: '=' }]
+    for (const extra of additionalFilters) {
       expect(await filteredIds(report, { layeredPvkDocuments: '=ПВК общий', ...extra })).toEqual(ids.slice(0, 2))
       expect(await filteredIds(report, { layeredPvkDocuments: buildWeldColumnValueFilter(['']), ...extra })).toEqual([ids[2]])
       expect(await filteredIds(report, { layeredPvkDocuments: buildWeldColumnValueFilter(['ПВК общий', '']), ...extra })).toEqual(ids.slice(0, 3))
@@ -80,7 +90,6 @@ async function filteredIds(report: WeldReportKind, columnFilters: Record<string,
 }
 
 test('назначенный послойный контроль без основного ПВК виден как ожидание и отдельно фильтруется', async ({ page }) => {
-  const waitingProject = 'E2E layered waiting'
   const cases = [
     { joint: 'WAIT-1', assigned: true, result: 'ожидает НК' },
     { joint: 'WAIT-2', assigned: false, result: null },
@@ -90,7 +99,7 @@ test('назначенный послойный контроль без осно
       ({ joint: `DONE-${index}`, assigned: true, result })),
     { joint: 'WAIT-4', assigned: true, result: null }, // Pre-TO and duplicate PVK do not complete primary PVK.
   ]
-  await withE2eDatabase(async (client) => {
+  await withLineProgramFixture(async (client) => {
     for (const item of cases) {
       const record = await client.query(`insert into weld_joints
         (project_title, line, joint, weld_date, has_vik, has_pvk, psto_required, layered_control_assigned, pvk_result)
@@ -110,6 +119,7 @@ test('назначенный послойный контроль без осно
       }
     }
   })
+  await ensureDispatcherTaskIndexFresh()
 
   for (const report of ['weldingJournal', 'lnk', 'heatTreatment'] as const) {
     for (const fieldKey of ['layeredVikDocuments', 'layeredPvkDocuments'] as const) {

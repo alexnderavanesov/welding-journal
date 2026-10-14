@@ -22,7 +22,7 @@ describe('LnkResultManagerActions', () => {
     const onReplaceResult = vi.fn()
     render(<LnkResultManagerActions row={{ ...row, joint: 'F17R2', d1: 57, layeredControlAssigned: true }}
       method={LNK_METHODS.find((method) => method.code === 'РК')!} currentResult="ремонт" pendingResult=""
-      isResultCorrectionPending={false} isResultReplacementPending={false}
+      isResultReplacementPending={false}
       onReplaceResult={onReplaceResult} onClearResult={vi.fn()} />)
     expect(screen.getByRole('button', { name: 'ремонт' })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.mouseEnter(screen.getByRole('group', { name: 'ремонт' }))
@@ -38,7 +38,7 @@ describe('LnkResultManagerActions', () => {
   it('adds pvkGoodOnly to the method restriction for replacement results', () => {
     window.localStorage.setItem('welding-control-process-settings', JSON.stringify({ pvkGoodOnly: true }))
     render(<LnkResultManagerActions row={row} method={LNK_METHODS.find((method) => method.code === 'ПВК')!}
-      currentResult="годен" pendingResult="" isResultCorrectionPending={false} isResultReplacementPending={false}
+      currentResult="годен" pendingResult="" isResultReplacementPending={false}
       onReplaceResult={vi.fn()} onClearResult={vi.fn()} />)
     expect(screen.getByRole('button', { name: 'ремонт' })).toBeDisabled()
     fireEvent.focus(screen.getByRole('group', { name: 'вырез' }))
@@ -55,7 +55,6 @@ describe('LnkResultManagerActions', () => {
         method={LNK_METHODS[0]}
         currentResult="годен"
         pendingResult=""
-        isResultCorrectionPending={false}
         isResultReplacementPending={false}
         onReplaceResult={vi.fn()}
         onClearResult={onClearResult}
@@ -76,7 +75,6 @@ describe('LnkResultManagerActions', () => {
         method={LNK_METHODS[1]}
         currentResult="годен"
         pendingResult=""
-        isResultCorrectionPending={false}
         isResultReplacementPending={false}
         onReplaceResult={vi.fn()}
         onClearResult={vi.fn()}

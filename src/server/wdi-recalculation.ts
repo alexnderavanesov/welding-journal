@@ -89,7 +89,7 @@ export const recalculateWdi = createServerFn({ method: 'POST' })
           where document."id" = totals."document_id"
             and document."wdi_total" is distinct from totals.wdi_total
         `)
-        await invalidateDerivedCalculationCache(tx)
+        await invalidateDerivedCalculationCache(tx, { preserveLineOverviews: true })
       }
 
       return { updated: plan.changed }

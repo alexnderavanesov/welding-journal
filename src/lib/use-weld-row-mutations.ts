@@ -32,6 +32,7 @@ export function useWeldRowMutations({
   const saveMutation = useMutation({
     mutationFn: async (value: WeldDraft & {
       pstoLineMoveDisposition?: PstoWeldLineMoveDisposition
+      specialistTransferConfirmation?: string
       weldChainLineMovePlan?: WeldChainLineMovePlan
     }) => {
       const validationRows = rows.length > 0 ? rows : editingRecord ? [editingRecord] : []
@@ -39,7 +40,7 @@ export function useWeldRowMutations({
       const saveValue = {
         ...preparedValue,
         ...(value.pstoLineMoveDisposition
-          ? { pstoLineMoveDisposition: value.pstoLineMoveDisposition }
+          ? { pstoLineMoveDisposition: value.pstoLineMoveDisposition, specialistTransferConfirmation: value.specialistTransferConfirmation }
           : {}),
         ...(value.weldChainLineMovePlan
           ? { weldChainLineMovePlan: value.weldChainLineMovePlan }

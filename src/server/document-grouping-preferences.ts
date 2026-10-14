@@ -10,10 +10,13 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { buildSystemDocumentSummaries, SYSTEM_DOCUMENT_TYPES } from '@/lib/system-document-types'
 import { readRequestConclusionSettings, type SystemDocumentSequenceTransaction } from './system-document-sequences'
 import { assertSecurityScope } from './security-functions'
+import { readSpecialistDefaults, rememberSpecialistDefaults } from './specialist-defaults'
 
 export const getDocumentGroupingDefaults = createServerFn({ method: 'GET' }).handler(async () => {
   await assertSecurityScope('entry')
-  return readRequestConclusionSettings(requireDb())
+  const db = requireDb()
+  const [settings, defaults] = await Promise.all([readRequestConclusionSettings(db), readSpecialistDefaults(db)])
+  return { ...settings, ...defaults }
 })
 
 /** Take before counters/rows. Settings writers use this same lock. No separate settings permission is granted. */
@@ -26,6 +29,7 @@ export async function lockDocumentGroupingPreference(tx: SystemDocumentSequenceT
 /** Called only inside a successfully validated document mutation's transaction. */
 export async function rememberDocumentGrouping(tx: SystemDocumentSequenceTransaction, command?: DocumentGroupingCommand) {
   if (!command) return
+  await rememberSpecialistDefaults(tx, command.settingId, command.specialistDefaults)
   const settings = await readRequestConclusionSettings(tx)
   if (settings.splitModes[command.settingId] === command.mode) return
   const value = JSON.stringify({ ...settings, splitModes: { ...settings.splitModes, [command.settingId]: command.mode } })

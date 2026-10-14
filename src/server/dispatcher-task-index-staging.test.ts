@@ -23,11 +23,43 @@ describe('dispatcher task index staging', () => {
     await writer.flush()
 
     expect(execute).toHaveBeenCalledTimes(3)
+    const batches = execute.mock.calls.map(([query]) => new PgDialect().sqlToQuery(query))
+    expect(batches.map(batch => batch.params[0])).toEqual([
+      rows.slice(0, DISPATCHER_TASK_INDEX_STAGE_BATCH_SIZE).map(row => row.rowId),
+      rows.slice(DISPATCHER_TASK_INDEX_STAGE_BATCH_SIZE, DISPATCHER_TASK_INDEX_STAGE_BATCH_SIZE * 2).map(row => row.rowId),
+      rows.slice(DISPATCHER_TASK_INDEX_STAGE_BATCH_SIZE * 2).map(row => row.rowId),
+    ])
+    const restored = batches.flatMap(batch => (batch.params[0] as number[]).map((rowId, i) => ({
+      rowId, taskKey: (batch.params[1] as string[])[i], code: (batch.params[2] as string[])[i],
+    })))
+    expect(restored).toEqual(rows)
     expect(writer.getMetrics()).toEqual({
       insertedRowCount: rowCount,
       insertRequestCount: 3,
       pendingRowCount: 0,
     })
+  })
+
+  it('preserves paired values and duplicates without interpolating text into SQL', async () => {
+    const execute = vi.fn().mockResolvedValue(undefined)
+    const writer = createDispatcherTaskIndexStageWriter({ execute }, 'background')
+    const rows = [
+      { rowId: 1, taskKey: 'quote"\\{comma,}\nNULL', code: 'СП-01' },
+      { rowId: 1, taskKey: 'quote"\\{comma,}\nNULL', code: 'СП-01' },
+      { rowId: 2, taskKey: '', code: '' },
+    ]
+    await writer.append([])
+    await writer.flush()
+    expect(execute).not.toHaveBeenCalled()
+    await writer.append(rows.slice(0, 1))
+    await writer.append(rows.slice(1))
+    await writer.flush()
+    await writer.flush()
+    expect(execute).toHaveBeenCalledTimes(1)
+    const query = new PgDialect().sqlToQuery(execute.mock.calls[0][0])
+    expect(query.sql).toContain('unnest(')
+    expect(query.sql).not.toContain(rows[0].taskKey)
+    expect(query.params).toEqual([rows.map(row => row.rowId), rows.map(row => row.taskKey), rows.map(row => row.code)])
   })
 
   it('stores task-card pages in bounded batches and keeps every task beyond 5,000', async () => {

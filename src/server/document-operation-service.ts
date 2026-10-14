@@ -6,15 +6,16 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { PstoRepeatCycleRecord } from '@/lib/psto-cycle'
 import { getRequestConclusionNamingKind } from '@/lib/request-conclusion-settings'
-import { assertDocumentOperationIntent, buildDocumentOperationGroups, documentOperationIdentity, isCycleDocument, type DocumentOperationGroup, type DocumentOperationRequest, type DocumentOperationSource } from '@/lib/system-document-operation'
+import { assertDocumentOperationIntent, buildDocumentOperationGroups, getDocumentOperationOccupiedNames, documentOperationIdentity, isCycleDocument, type DocumentOperationGroup, type DocumentOperationRequest, type DocumentOperationSource } from '@/lib/system-document-operation'
 import { SYSTEM_DOCUMENT_SPLIT_MODES, getSystemDocumentSplitSettingId } from '@/lib/system-document-splitting'
 import { SYSTEM_DOCUMENT_TYPES, getSystemDocumentFileName, type SystemDocumentSummary } from '@/lib/system-document-types'
 import { getSystemDocumentTemplateId, SYSTEM_DOCUMENT_TEMPLATE_PROFILES } from '@/lib/system-document-template-types'
+import { getSystemDocumentSequenceId } from '@/lib/system-document-sequence-id'
 import { REBUILD_DOCUMENT_LIMIT, REBUILD_POSITION_LIMIT, REBUILD_METADATA_LIMIT, REBUILD_FACT_BYTES_LIMIT, REBUILD_PREVIEW_BYTES_LIMIT, selectRebuildBatch, type RebuildCatalogSize } from '@/lib/system-document-rebuild-batch'
-import { readRequestConclusionSettings, readSystemDocumentNextNumbers, reserveSystemDocumentNames, lockSystemDocumentNumberCounter, type SystemDocumentSequenceTransaction } from './system-document-sequences'
+import { readRequestConclusionSettings, readSystemDocumentNextNumbers, reserveSystemDocumentNames, loadExistingSystemDocumentNameKeys, lockSystemDocumentNumberCounter, type SystemDocumentSequenceTransaction } from './system-document-sequences'
 import { initializeSystemDocumentIndexesInTransaction, loadIndexedSystemDocumentSummaries, lockSystemDocumentIndexes, parseSystemDocumentMetadata, serializeSystemDocumentSummary, syncSystemDocumentsForWeldChangesInTransaction, upsertSourcedSystemDocumentsInTransaction, type SourcedSystemDocumentUpsertInput } from './system-document-index'
 import { attachRebuildCyclePositions, persistRebuildDocumentNames } from './system-document-rebuild'
-import { assertRebuildFactBudget, loadRebuildOccupiedNumbers } from './system-document-rebuild-batch'
+import { assertRebuildFactBudget } from './system-document-rebuild-batch'
 import { loadRebuildWeldFacts } from './system-document-rebuild-facts'
 import { buildNumberArrayMatch } from './weld-request-utils'
 import { assertSecurityScope } from './security-functions'
@@ -22,6 +23,8 @@ import { lockAllControlProcessSettings } from './control-process-settings-lock'
 import { lockLayeredControlDocumentsForWeldChange } from './layered-control-documents'
 import { lockDocumentGroupingPreference, rememberDocumentGrouping } from './document-grouping-preferences'
 import { getDispatcherDirtyScopes, markDispatcherTaskIndexDirty } from './dispatcher-task-index-dirty'
+import { getSpecialistDocumentProfile, inheritDocumentSpecialists } from '@/lib/document-specialists'
+import { writeDocumentSpecialists } from './specialists'
 
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('base64url')
 const stale = () => new Error('Документы, номера или настройки имён изменились. Нажмите «Проверить изменения» и подтвердите актуальный результат.')
@@ -139,15 +142,15 @@ export async function loadDocumentOperationSnapshot(tx: SystemDocumentSequenceTr
     })
   }
   const settings = await readRequestConclusionSettings(tx)
-  const templateIds = [...new Set(sources.map(source => getSystemDocumentTemplateId(source.document)))]
-  const nextNumbers = await readSystemDocumentNextNumbers(tx, templateIds)
-  const occupiedNumbers = await loadRebuildOccupiedNumbers(tx, settings, templateIds)
+  const sequenceIds = [...new Set(sources.map(source => getSystemDocumentSequenceId(source.document)))]
+  const nextNumbers = await readSystemDocumentNextNumbers(tx, sequenceIds)
+  const occupiedNames = await loadExistingSystemDocumentNameKeys(tx, sources.map(source => source.document))
   const namingSettings = Object.fromEntries([...new Set(sources.map(s => getRequestConclusionNamingKind(s.document)))].map(kind => [kind, {
     systemPattern: settings[kind].systemPattern, systemPatternHistory: settings[kind].systemPatternHistory,
   }]))
   const fingerprint = hash({ documents: selection.documents, revisions, controls: controls.map(hash), cycles: sources.map(s => s.cyclePositions?.map(hash)), settings: namingSettings, nextNumbers,
-    occupied: templateIds.map(id => [id, [...occupiedNumbers.get(id) ?? []].sort((a, b) => a - b)]) })
-  return { ...selection, sources, settings, nextNumbers, occupiedNumbers, fingerprint }
+    occupied: [...occupiedNames].sort(([a], [b]) => a.localeCompare(b)).map(([id, names]) => [id, [...names].sort()]) })
+  return { ...selection, sources, settings, nextNumbers, occupiedNames, fingerprint }
 }
 type Snapshot = Awaited<ReturnType<typeof loadDocumentOperationSnapshot>>
 
@@ -207,6 +210,7 @@ function publicPreview(state: Snapshot, request: DocumentOperationRequest, group
   const result = { fingerprint: state.fingerprint, sources: state.sources.map(s => ({ id: s.document.documentId, title: s.document.title })), groups: groups.map(group => ({
     key: group.key, membership: membership(group), label: group.label, name: group.name, namingMode: group.namingMode, systemNumber: group.systemNumber,
     sourceIds: group.sourceIds, rowCount: group.rows.length, positionCount: group.positions.length, error: group.error,
+    specialistsCleared: Boolean(getSpecialistDocumentProfile(group.reference.type, group.reference.methodCode)) && inheritDocumentSpecialists(group.sourceIds.map(id => original.get(id)?.specialists)).conflict,
     unchanged: group.sourceIds.length === 1 && group.name === original.get(group.sourceIds[0])!.title && group.rows.length === original.get(group.sourceIds[0])!.rowIds.length,
   })), selectedCount: state.sources.length, rowCount: state.rowIds.length, positionCount: groups.reduce((sum, g) => sum + g.positions.length, 0) }
   if (Buffer.byteLength(JSON.stringify(result)) > REBUILD_PREVIEW_BYTES_LIMIT) throw new Error('Результат разделения превышает безопасный объём предпросмотра. Уменьшите выбор или выберите более крупные группы.')
@@ -227,10 +231,10 @@ export async function previewOperation(input: DocumentOperationRequest) {
   }, { isolationLevel: 'repeatable read' })
 }
 
-export async function applyOperation(input: DocumentOperationRequest & { fingerprint: string; previewHash: string; operationId: string }) {
+export async function applyOperation(input: DocumentOperationRequest & { fingerprint: string; previewHash: string; operationId: string; acceptSpecialistClearing?: boolean }) {
   await assertSecurityScope('edit')
   const request = normalizeOperationRequest(input), id = operationId(input.operationId)
-  const requestHash = hash({ request, fingerprint: input.fingerprint, previewHash: input.previewHash })
+  const requestHash = hash({ request, fingerprint: input.fingerprint, previewHash: input.previewHash, ...(input.acceptSpecialistClearing === true ? { acceptSpecialistClearing: true } : {}) })
   return requireDb().transaction(async tx => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`document-operation:${id}`}))`)
     const [receipt] = await tx.select().from(documentOperationReceipts).where(eq(documentOperationReceipts.id, id))
@@ -245,20 +249,26 @@ export async function applyOperation(input: DocumentOperationRequest & { fingerp
     if (initial.controlIds.length) await tx.select({ id: preHeatTreatmentControls.id }).from(preHeatTreatmentControls).where(buildNumberArrayMatch(preHeatTreatmentControls.id, initial.controlIds)).orderBy(asc(preHeatTreatmentControls.id)).for('update')
     await lockLayeredControlDocumentsForWeldChange(tx)
     await lockSystemDocumentIndexes(tx)
+    // Assignments lock only document rows. Serialize before hashing the preview.
+    await tx.select({ id: generatedDocuments.id }).from(generatedDocuments).where(buildNumberArrayMatch(generatedDocuments.id, request.documentIds)).orderBy(asc(generatedDocuments.id)).for('update')
     const state = await loadDocumentOperationSnapshot(tx, request.documentIds)
     if (state.fingerprint !== input.fingerprint) throw stale()
     assertDocumentOperationLockCoverage(initial, state)
     const groups = makeGroups(state, request)
     await checkOperationNameConflicts(tx, groups, request.documentIds)
     if (groups.some(group => group.error)) throw new Error(groups.filter(group => group.error).map(group => `${group.label}: ${group.error}`).join('\n'))
-    if (publicPreview(state, request, groups).previewHash !== input.previewHash) throw stale()
-    const unchanged = new Set(publicPreview(state, request, groups).groups.filter(group => group.unchanged).flatMap(group => group.sourceIds))
+    const preview = publicPreview(state, request, groups)
+    if (preview.previewHash !== input.previewHash) throw stale()
+    if (preview.groups.some(group => group.specialistsCleared) && input.acceptSpecialistClearing !== true) throw new Error('Специалисты или удостоверения различаются. Откройте актуальное окно объединения и подтвердите предупреждение об очистке обеих ролей. Документы не изменены.')
+    const unchanged = new Set(preview.groups.filter(group => group.unchanged).flatMap(group => group.sourceIds))
     const changedGroups = groups.filter(group => !group.sourceIds.every(sourceId => unchanged.has(sourceId)))
     const newNumbers = changedGroups.filter(group => group.reserveNumber)
     await reserveSystemDocumentNames(tx, newNumbers.map(group => ({ rows: group.rows, request: {
       type: group.reference.type, date: group.reference.date, methodCode: group.reference.methodCode, provisionalName: group.name,
+      ...(group.reference.sourceKind === 'beforeHeatTreatment' ? { sourceKind: 'beforeHeatTreatment' as const } : {}),
       fieldKeys: sequenceFields(group),
-    } })), { countersAlreadyLocked: true, rejectChangedProvisionalNames: true, occupiedNumbersBySequence: state.occupiedNumbers })
+    } })), { countersAlreadyLocked: true, rejectChangedProvisionalNames: true,
+      occupiedNamesByTemplate: getDocumentOperationOccupiedNames(groups, state.occupiedNames) })
     const result = await persistOperation(tx, state, changedGroups)
     if (request.action === 'split' && result.changedDocumentCount) for (const settingId of new Set(changedGroups.map(group => getSystemDocumentSplitSettingId(group.reference)))) await rememberDocumentGrouping(tx, { settingId, mode: request.mode })
     await tx.insert(documentOperationReceipts).values({ id, requestHash, result: JSON.stringify(result) })
@@ -268,7 +278,7 @@ export async function applyOperation(input: DocumentOperationRequest & { fingerp
 
 function sequenceFields(group: DocumentOperationGroup): WeldFieldKey[] {
   if (group.reference.sourceKind !== 'beforeHeatTreatment') return [...new Set(group.positions.map(p => p.field))] as WeldFieldKey[]
-  // Names are reserved in the same method counters as ordinary control.
+  // Pre-TO uses the ordinary field keys; sourceKind selects its separate counter.
   const map = { ВИК: ['vikRequest', 'vikConclusion'], РК: ['rkRequest', 'rkConclusion'], УЗК: ['uzkRequest', 'uzkConclusion'], ПВК: ['pvkRequest', 'pvkConclusion'] } as const
   return [...new Set(group.positions.map(p => map[p.method as keyof typeof map]?.[group.reference.type === 'lnkRequest' ? 0 : 1]).filter(Boolean))] as WeldFieldKey[]
 }
@@ -336,9 +346,26 @@ async function persistOperation(tx: SystemDocumentSequenceTransaction, state: Sn
   if (rows.length) {
     await syncSystemDocumentsForWeldChangesInTransaction(tx, rows, previous, { documentNamesOnly: true })
     await upsertSourcedSystemDocumentsInTransaction({ tx, documents: sourced })
+    await preserveOperationSpecialists(tx, groups, sourceMap)
     await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes(rows, previous) })
   }
   return { changedDocumentCount: new Set(groups.flatMap(g => g.sourceIds)).size, resultingDocumentCount: groups.length, affectedRowCount: rows.length }
+}
+
+async function preserveOperationSpecialists(tx: SystemDocumentSequenceTransaction, groups: DocumentOperationGroup[], sources: Map<number, DocumentOperationSource>) {
+  const targets = groups.filter(group => getSpecialistDocumentProfile(group.reference.type, group.reference.methodCode)).map(group => ({
+    type: `system:${getSystemDocumentTemplateId(group.reference)}`, title: group.name, date: group.reference.date,
+    source: group.reference.sourceKind ?? (isCycleDocument(group.reference) ? 'pstoCycle' : ''),
+    snapshot: inheritDocumentSpecialists(group.sourceIds.map(id => sources.get(id)!.document.specialists)).snapshot,
+  }))
+  if (!targets.length) return
+  const result = await tx.execute(sql`select d.id, n.ordinal from ${generatedDocuments} d
+    join jsonb_to_recordset(${JSON.stringify(targets.map((target, ordinal) => ({ ...target, ordinal })))}::jsonb)
+      as n(type text, title text, date date, source text, ordinal integer)
+      on d.type = n.type and d.title = n.title and d.period_from = n.date
+      and coalesce(d.source_metadata::jsonb->>'sourceKind', '') = n.source order by d.id for update of d`)
+  if (result.rows.length !== targets.length || new Set(result.rows.map(row => Number(row.ordinal))).size !== targets.length) throw stale()
+  await writeDocumentSpecialists(tx, result.rows.map(row => ({ id: Number(row.id), snapshot: targets[Number(row.ordinal)].snapshot })))
 }
 function values(rows: WeldRow[], field: 'projectTitle' | 'subtitleCode' | 'line') { return [...new Set(rows.map(row => String(row[field] ?? '').trim()).filter(Boolean))] }
 

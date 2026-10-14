@@ -16,7 +16,7 @@ test.afterEach(async ({ page }) => {
 })
 
 async function setup() {
-  return withE2eDatabase(async db => {
+  const id = await withE2eDatabase(async db => {
     const { rows: [program] } = await db.query(`insert into line_programs
       (project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
       values ($1,'MATERIALS','MATERIAL-SIDES','II','Б(а)',10,10) returning id`, [project])
@@ -28,6 +28,15 @@ async function setup() {
       values ($1,$2,'MATERIALS','MATERIAL-SIDES','F982','II','Б(а)',10,10,'У19','М05','РАД',57,3,159,8,'да','2026-07-01') returning id`,
       [program.id, project])).rows[0].id as number
   })
+  // SQL fixtures bypass normal mutation invalidation. Establish the derived
+  // status/version before opening an editor: this test exercises material sides,
+  // not a stale save racing the initial background status calculation.
+  const [{ requireDb }, { markDispatcherTaskIndexDirty }, { ensureDispatcherTaskIndexFresh }] = await Promise.all([
+    import('../../src/db'), import('../../src/server/dispatcher-task-index-dirty'), import('../../src/server/dispatcher-task-index'),
+  ])
+  await markDispatcherTaskIndexDirty(requireDb(), { scopes: [{ projectTitle: project, subtitleCode: 'MATERIALS', line: 'MATERIAL-SIDES' }] })
+  await ensureDispatcherTaskIndexFresh()
+  return id
 }
 const saved = (id: number) => withE2eDatabase(async db => (await db.query('select material_group,stamp_1_k,d1::float,t1::float,d2::float,t2::float from weld_joints where id=$1', [id])).rows[0])
 
@@ -139,6 +148,9 @@ test('форма: номера сторон, максимум две групп�
     if (name.startsWith('refreshDispatcherTaskSnapshot_')) dispatcherRefreshed = true
     return dispatcherRefreshed && name.startsWith('listWeldingJournalPage_')
   })
+  // Still awaited below; avoid a second unhandled rejection if an earlier
+  // assertion fails and afterEach closes the page first.
+  void refreshedReport.catch(() => {})
   await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
   await expect(editor).toBeHidden()
   expect(await (await refreshedReport).finished()).toBeNull()
@@ -178,7 +190,7 @@ test('сохраненные стыки: СП-02 в индексе и вирту
   prototype.query = function (this: unknown, ...args: unknown[]) { statements++; return (original as (...args: unknown[]) => unknown).apply(this, args) } as typeof original
   try {
     const virtual = await read.attachDispatcherTaskCodesToPage([{ id }])
-    expect((virtual[0] as { dispatcherTasks: string }).dispatcherTasks).toContain('СП-02')
+    expect(virtual[0]).toMatchObject({ dispatcherTasks: expect.stringContaining('СП-02') })
     expect(statements).toBe(1)
     statements = 0
     const usage = new Map(await read.listMultiValueUsage(schema.weldJoints.materialGroup, '[+]'))

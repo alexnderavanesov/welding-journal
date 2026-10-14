@@ -1,10 +1,9 @@
 import { expect, test } from '@playwright/test'
-import { withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 
 test('годный ремонт и две годные стороны катушки завершают линию; исключение финала и удаление стороны возвращают незавершённость', async ({ page }) => {
   const project = 'E2E physical chain completion', allIds: number[] = []
-  const fixtures = await withE2eDatabase(async db => {
+  const fixtures = await withLineProgramFixture(async db => {
     const result = []
     for (const mode of ['REPAIR', 'COIL']) {
       const name = `COMPLETE-${mode}`
@@ -32,9 +31,9 @@ test('годный ремонт и две годные стороны катуш
       const line = page.getByTestId('line-program-card').filter({ has: page.getByRole('button', { name: `Расчёт линии ${fixture.name}`, exact: true }) })
       await expect(line.getByTestId('program-finished-label')).toBeVisible()
       if (fixture.name.endsWith('REPAIR')) {
-        await withE2eDatabase(db => db.query(`update weld_joints set officiality='неофициальный' where id=$1`, [fixture.ids[1]]))
+        await withLineProgramFixture(db => db.query(`update weld_joints set officiality='неофициальный' where id=$1`, [fixture.ids[1]]))
       } else {
-        await withE2eDatabase(db => db.query('delete from weld_joints where id=$1', [fixture.ids[2]]))
+        await withLineProgramFixture(db => db.query('delete from weld_joints where id=$1', [fixture.ids[2]]))
       }
       await page.reload()
       await page.getByLabel('Поиск программы линий').fill(fixture.name)
@@ -44,6 +43,6 @@ test('годный ремонт и две годные стороны катуш
   } finally {
     await page.close()
     await cleanupLineProgramProjects([project])
-    await withE2eDatabase(db => db.query('delete from weld_joint_program_states where weld_joint_id=any($1::int[])', [allIds]))
+    await withLineProgramFixture(db => db.query('delete from weld_joint_program_states where weld_joint_id=any($1::int[])', [allIds]))
   }
 })

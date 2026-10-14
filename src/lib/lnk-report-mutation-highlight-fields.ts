@@ -29,7 +29,7 @@ export function getLnkResultReplacementHighlightFields(
     ...new Set(
       updates.flatMap(({ methodKey }) => {
         const method = getLnkMethodByRequestKey(methodKey)
-        return method ? [method.resultKey, method.defectDescriptionKey] : []
+        return method ? [method.resultKey, method.defectDescriptionKey, method.conclusionKey, method.conclusionDateKey] : []
       }),
     ),
     ...LNK_COMMON_HIGHLIGHT_FIELDS,

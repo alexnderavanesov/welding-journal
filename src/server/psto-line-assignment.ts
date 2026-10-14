@@ -35,7 +35,6 @@ import {
   isPstoCancelledValue,
   normalizePstoLineIdentity,
   normalizePstoLineMoveTargetIdentity,
-  hasPrimaryLnkHistoryBeforePstoAssignment,
   type PstoLineAssignmentAction,
   type PstoLineActivationDecision,
   type PstoLineAssignmentPageRequest,
@@ -52,6 +51,8 @@ import { isPreHeatTreatmentLnkMethodCode } from '@/lib/lnk-control-stage'
 import { loadProgramSystemIndexSettings } from '@/server/line-program'
 import { attachDuplicateControlRelations } from '@/server/duplicate-control-relations'
 import { syncPreHeatTreatmentDocumentsInTransaction } from '@/server/pre-heat-treatment-system-documents'
+import { captureTransferredSpecialists, restoreTransferredSpecialists } from './document-specialist-transfers'
+import { removeTransferredPreControlsInTransaction } from './weld-line-move-stage'
 import { splitWeldImportInsertBatches } from '@/lib/weld-import-limits'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import { getJointChainRows } from '@/lib/repeated-joint-row-utils'
@@ -132,6 +133,11 @@ export const getPstoLineRemovalPreview = createServerFn({ method: 'POST' })
             { ...row, pstoRequired: 'да', pstoCancellationDate: null, pstoControlBasis: null },
             'beforeHeatTreatment', processSettings, systemIndexSettings,
           ),
+        }
+      } else if (item.preMethods.length > 0 && isControlEnabledValue(row.pstoRequired)) {
+        item.stageCorrection = {
+          targetStage: 'primary',
+          disabledReason: getPstoContextualStageCorrectionReason({ ...row, pstoRequired: 'отменен' }, 'primary', processSettings, systemIndexSettings),
         }
       }
     })
@@ -242,7 +248,7 @@ export const getPstoWeldLineMovePreview = createServerFn({ method: 'POST' })
     if (
       !isChainMove &&
       targetAssigned &&
-      !hasPrimaryLnkHistoryBeforePstoAssignment(sourceRow)
+      getPrimaryStagedMethodCodes(sourceRow).length === 0
     ) return null
     if (
       !isChainMove &&
@@ -259,22 +265,22 @@ export const getPstoWeldLineMovePreview = createServerFn({ method: 'POST' })
         ? 'cancelled'
         : 'unassigned'
     const preview = buildRemovalPreview(sourceIdentity, chainRows)
-    if (!targetAssigned) {
+    {
       const processSettings = await loadCorrectionPreviewProcessSettings(db)
       const targetCancellationDate = targetRows.map(row => String(row.pstoCancellationDate ?? '').trim()).filter(Boolean).sort().at(-1) ?? ''
       preview.rows.forEach((item, index) => {
         const row = chainRows[index]!
-        if ((row.preHeatTreatmentControls?.length ?? 0) === 0) return
+        if (targetAssigned ? item.primaryMethods.length === 0 : (row.preHeatTreatmentControls?.length ?? 0) === 0) return
         let cancellationReason: string | null = null
         if (targetState === 'cancelled') {
           try { assertPstoCancellationDateAfterHistory([row], targetCancellationDate) }
           catch (error) { cancellationReason = error instanceof Error ? error.message : String(error) }
         }
         item.stageCorrection = {
-          targetStage: 'primary',
+          targetStage: targetAssigned ? 'beforeHeatTreatment' : 'primary',
           disabledReason: cancellationReason ?? getPstoContextualStageCorrectionReason(
-            { ...row, ...data.targetIdentity, pstoRequired: targetState === 'cancelled' ? 'отменен' : null },
-            'primary', processSettings, systemIndexSettings,
+            { ...row, ...data.targetIdentity, pstoRequired: targetAssigned ? 'да' : targetState === 'cancelled' ? 'отменен' : null },
+            targetAssigned ? 'beforeHeatTreatment' : 'primary', processSettings, systemIndexSettings,
           ),
         }
       })
@@ -386,8 +392,10 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
           transferredRowIds,
         )
         if (transferredRowIds.size > 0) {
+          const transferredSpecialists = await captureTransferredSpecialists(tx, [...transferredRowIds], 'beforeHeatTreatment', data.activationDecisions.find(decision => transferredRowIds.has(decision.rowId))?.specialistTransferConfirmation)
           await syncSystemDocumentsForWeldChangesInTransaction(tx, updatedRows, previousRows)
           await syncPreHeatTreatmentDocumentsInTransaction(tx, updatedRows, savedControls)
+          await restoreTransferredSpecialists(tx, transferredSpecialists)
         }
         await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, rowIds)
         await markDispatcherTaskIndexDirty(tx, { scopes: [data.identity] })
@@ -417,14 +425,23 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
         throw new Error('У линии нет истории. Уберите ошибочное назначение без оформления отмены.')
       }
       assertPstoCancellationDateAfterHistory(rows, data.cancellationDate)
+      const transferIds = new Set(data.activationDecisions.filter(decision => decision.disposition === 'movePreHeatTreatmentToPrimary').map(decision => decision.rowId))
+      if (data.activationDecisions.some(decision => !previousRows.has(decision.rowId))) throw new Error('Решение о НК содержит стык вне выбранной линии. Обновите окно.')
+      const systemIndexSettings = transferIds.size ? await loadProgramSystemIndexSettings(tx) : DEFAULT_SYSTEM_INDEX_SETTINGS
       const nextRows = rows.map(row => {
-        const next = buildPstoCancelledRow({ row, cancellationDate: data.cancellationDate, cancellationBasis: data.cancellationBasis })
+        let next = buildPstoCancelledRow({ row, cancellationDate: data.cancellationDate, cancellationBasis: data.cancellationBasis })
+        if (transferIds.has(row.id)) {
+          try { next = buildPstoContextualStageCorrection(next, 'primary', processSettings, systemIndexSettings) }
+          catch (error) { throw new Error(`Стык ${row.joint}: ${error instanceof Error ? error.message : String(error)}`) }
+        }
         next.finalStatus = calculateFinalStatus(next)
         return next
       })
-      const updatedRows = await persistPstoLineAssignmentRows(tx, nextRows, now)
-      // No stage promotion, source-document removal or repeat-cycle deletion on cancellation.
+      const transferredSpecialists = await captureTransferredSpecialists(tx, [...transferIds], 'primary', data.activationDecisions.find(decision => transferIds.has(decision.rowId))?.specialistTransferConfirmation)
+      const updatedRows = await persistPstoLineAssignmentRows(tx, nextRows, now, transferIds)
+      await removeTransferredPreControlsInTransaction(tx, rows.filter(row => transferIds.has(row.id)).flatMap(row => (row.preHeatTreatmentControls ?? []).map(control => control.id)))
       await syncSystemDocumentsForWeldChangesInTransaction(tx, updatedRows, previousRows)
+      await restoreTransferredSpecialists(tx, transferredSpecialists)
       await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, rowIds)
       await markDispatcherTaskIndexDirty(tx, { scopes: [data.identity] })
       return updatedRows
@@ -443,11 +460,11 @@ function normalizePayload(value: PstoLineAssignmentPayload) {
   }
   if (value.activationDecisions !== undefined && !Array.isArray(value.activationDecisions)) throw new Error('Некорректные решения о НК.')
   const activationDecisions = value.activationDecisions ?? []
-  if (activationDecisions.length > 0 && action !== 'assign' && action !== 'reactivate') throw new Error('При снятии или отмене ПСТО этапы НК сохраняются.')
+  if (activationDecisions.length > 0 && action === 'remove') throw new Error('При удалении пустого назначения нет НК для переноса.')
   const decisionIds = new Set<number>()
   for (const decision of activationDecisions) {
     if (!Number.isSafeInteger(decision?.rowId) || decision.rowId <= 0 || decisionIds.has(decision.rowId)) throw new Error('Некорректный или повторный стык в решениях о НК.')
-    if (!['keepPrimary', 'movePrimaryToPreHeatTreatment'].includes(decision.disposition) || 'methodCodes' in decision) {
+    if (!['keepPrimary', action === 'cancel' ? 'movePreHeatTreatmentToPrimary' : 'movePrimaryToPreHeatTreatment'].includes(decision.disposition) || 'methodCodes' in decision) {
       throw new Error('Смена этапа НК больше не поддерживается в прежнем формате. Обновите окно: переносится только целый комплект.')
     }
     decisionIds.add(decision.rowId)

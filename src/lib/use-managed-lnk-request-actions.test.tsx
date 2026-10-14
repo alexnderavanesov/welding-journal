@@ -16,6 +16,7 @@ describe('useManagedLnkRequestActions', () => {
       <ConfirmActionProvider>{children}</ConfirmActionProvider>
     )
     const { result } = renderHook(() => useManagedLnkRequestActions({
+      lnkRows: [],
       lnkRequestManagerOptions: [{
         key: '["Первая","2026-08-01"]',
         name: 'Первая',

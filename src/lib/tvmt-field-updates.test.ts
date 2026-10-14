@@ -148,7 +148,7 @@ describe('primary TVMT updates', () => {
       controlDate: 'не дата',
       result: 'годен',
       conclusionName: 'ЗНК-ТВМТ-001',
-    })).toThrow('корректную дату документа')
+    })).toThrow('формате')
   })
 
   it('rejects primary TVMT dates before the system minimum', () => {

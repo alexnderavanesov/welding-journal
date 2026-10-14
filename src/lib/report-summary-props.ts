@@ -8,9 +8,14 @@ type CreateReportSummaryBarPropsOptions = {
   activeReport: ActiveReport
   left: number
   isLoading: boolean
+  summaryStatus?: ReportSummaryBarProps['summaryStatus']
+  summaryError?: string
+  onRetrySummary?: () => void
+  rowsError?: string
+  onRetryRows?: () => void
   weldingRows: WeldRow[]
   weldingRowCount?: number
-  acceptedWdiTotal: number
+  acceptedWdiTotal: number | undefined
   isAcceptedWdiRecalculating?: boolean
   heatTreatmentRows: WeldRow[]
   heatTreatmentRowCount?: number
@@ -27,6 +32,11 @@ export function createReportSummaryBarProps({
   activeReport,
   left,
   isLoading,
+  summaryStatus,
+  summaryError,
+  onRetrySummary,
+  rowsError,
+  onRetryRows,
   weldingRows,
   weldingRowCount,
   acceptedWdiTotal,
@@ -45,12 +55,19 @@ export function createReportSummaryBarProps({
     activeReport,
     left,
     isLoading,
-    weldingRowCount: weldingRowCount ?? weldingRows.length,
-    acceptedWdiTotalText: `${formatWdiTotal(acceptedWdiTotal)}${isAcceptedWdiRecalculating ? ' (пересчёт)' : ''}`,
-    heatTreatmentRowCount: heatTreatmentRowCount ?? heatTreatmentRows.length,
+    summaryStatus,
+    summaryError,
+    onRetrySummary,
+    rowsError,
+    onRetryRows,
+    weldingRowCount: summaryStatus ? weldingRowCount : weldingRowCount ?? weldingRows.length,
+    acceptedWdiTotalText: acceptedWdiTotal === undefined
+      ? 'Недоступно'
+      : `${formatWdiTotal(acceptedWdiTotal)}${isAcceptedWdiRecalculating ? ' (пересчёт)' : ''}`,
+    heatTreatmentRowCount: summaryStatus ? heatTreatmentRowCount : heatTreatmentRowCount ?? heatTreatmentRows.length,
     selectedHeatTreatmentRowCount,
-    lnkRowCount: lnkRowCount ?? lnkRows.length,
-    availableLnkRequestRowCount: availableLnkRequestRowCount ?? availableLnkRequestRows.length,
+    lnkRowCount: summaryStatus ? lnkRowCount : lnkRowCount ?? lnkRows.length,
+    availableLnkRequestRowCount: summaryStatus ? availableLnkRequestRowCount : availableLnkRequestRowCount ?? availableLnkRequestRows.length,
     activeWelderStampCount: welderStamps.filter((record) => !record.archived).length,
     archivedWelderStampCount: welderStamps.filter((record) => record.archived).length,
     filteredWelderStampCount: filteredWelderStamps.length,

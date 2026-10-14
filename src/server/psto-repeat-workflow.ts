@@ -1,4 +1,6 @@
 import { assertCreationGrouping, normalizeDocumentGroupingCommand, type DocumentGroupingCommand } from '@/lib/document-grouping-command'
+import { captureCorrectedDocumentSpecialists, restoreCorrectedDocumentSpecialists } from './document-specialist-corrections'
+import { getDocumentRequisiteErrors } from '@/lib/document-requisites'
 import { lockDocumentGroupingPreference, rememberDocumentGrouping } from '@/server/document-grouping-preferences'
 import { assertNewDocumentNamesAvailable, prepareDocumentCreationIndex } from '@/server/document-name-conflicts'
 import { createServerFn } from '@tanstack/react-start'
@@ -199,6 +201,11 @@ export const savePstoRepeatWorkflow = createServerFn({ method: 'POST' })
         tx,
       )
       await syncPstoCycleDocuments(tx, data.action, resolvedGroups, updatedRows)
+      if (documentGrouping?.specialists?.length) {
+        if (data.action !== 'pstoResult' && data.action !== 'tvmtResult') throw new Error('Специалисты назначаются только заключениям.')
+        const { assignCreatedDocumentSpecialists } = await import('@/server/specialists')
+        await assignCreatedDocumentSpecialists(tx, documentGrouping.specialists, resolvedGroups.map(group => ({ type: data.action === 'pstoResult' ? 'pstoConclusion' : 'lnkConclusion', title: group.name, date: data.date, ...(data.action === 'tvmtResult' ? { methodCode: 'ТВМТ' } : {}), sourceKind: 'pstoCycle' })))
+      }
       if (resolvedGroups.some(group => group.name)) await rememberDocumentGrouping(tx, documentGrouping)
       await markDispatcherTaskIndexDirty(tx, {
         scopes: getDispatcherDirtyScopes(updatedRows, new Map()),
@@ -208,6 +215,7 @@ export const savePstoRepeatWorkflow = createServerFn({ method: 'POST' })
   })
 
 export type CorrectPstoCycleStagePayload = {
+  specialistCorrectionConfirmation?: string
   rowId: number
   expectedVersion: string
   sequence: number
@@ -254,6 +262,7 @@ export const correctPstoCycleStage = createServerFn({ method: 'POST' })
         ? data.rowId
         : correction.repeatCycle?.id ?? correction.deletedRepeatCycleId
       if (!sourceRelationId) throw new Error('Цикл ПСТО больше не существует. Обновите отчет ПСТО.')
+      const correctedSpecialists = await captureCorrectedDocumentSpecialists(tx, [data.rowId])
       await removeSourcedSystemDocumentPositionsInTransaction({
         tx,
         sourceKind: 'pstoCycle',
@@ -298,6 +307,7 @@ export const correctPstoCycleStage = createServerFn({ method: 'POST' })
         }
       }
 
+      await restoreCorrectedDocumentSpecialists(tx, correctedSpecialists, data.specialistCorrectionConfirmation)
       await markDispatcherTaskIndexDirty(tx, {
         scopes: getDispatcherDirtyScopes([savedRow], new Map()),
       })
@@ -309,6 +319,7 @@ export const correctPstoCycleStage = createServerFn({ method: 'POST' })
   })
 
 export type CorrectPstoTvmtAndRemoveLaterCyclesPayload = {
+  specialistCorrectionConfirmation?: string
   rowId: number
   expectedVersion: string
   sequence: number
@@ -353,6 +364,7 @@ export const correctPstoTvmtAndRemoveLaterCycles = createServerFn({ method: 'POS
         ? data.rowId
         : correction.repeatCycle?.id
       if (!currentRelationId) throw new Error('Цикл ПСТО больше не существует. Обновите отчет ПСТО.')
+      const correctedSpecialists = await captureCorrectedDocumentSpecialists(tx, [data.rowId])
 
       const removedCyclePositions = correction.deletedRepeatCycles.flatMap((cycle) => [
         {
@@ -419,6 +431,7 @@ export const correctPstoTvmtAndRemoveLaterCycles = createServerFn({ method: 'POS
         )
       }
       await syncAllPstoCycleDocuments(tx, savedRow, data.sequence)
+      await restoreCorrectedDocumentSpecialists(tx, correctedSpecialists, data.specialistCorrectionConfirmation)
 
       await markDispatcherTaskIndexDirty(tx, {
         scopes: getDispatcherDirtyScopes([savedRow], new Map()),
@@ -448,6 +461,7 @@ export function normalizePstoCycleStageCorrectionPayload(
   if (action !== 'update' && action !== 'delete') throw new Error('Неизвестное изменение цикла ПСТО/ТВМТ.')
   return {
     rowId,
+    ...(typeof value.specialistCorrectionConfirmation === 'string' ? { specialistCorrectionConfirmation: value.specialistCorrectionConfirmation } : {}),
     expectedVersion: String(value?.expectedVersion ?? '').trim(),
     sequence,
     cycleId,
@@ -469,6 +483,7 @@ export function normalizePstoTvmtAndRemoveLaterCyclesPayload(
   })
   return {
     rowId: normalized.rowId,
+    ...(normalized.specialistCorrectionConfirmation ? { specialistCorrectionConfirmation: normalized.specialistCorrectionConfirmation } : {}),
     expectedVersion: normalized.expectedVersion,
     sequence: normalized.sequence,
     cycleId: normalized.cycleId,
@@ -487,9 +502,6 @@ export function normalizePstoCycleWorkflowPayload(
   }
   const rawDate = String(value?.date ?? '').trim()
   const date = action === 'pstoResult' ? rawDate : rawDate.slice(0, 10)
-  if (action !== 'pstoResult' && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    throw new Error('Укажите дату документа.')
-  }
   const groups = (Array.isArray(value?.groups) ? value.groups : []).map((group) => ({
     rowIds: [...new Set((Array.isArray(group?.rowIds) ? group.rowIds : [])
       .map(Number)
@@ -498,9 +510,10 @@ export function normalizePstoCycleWorkflowPayload(
     useSystemName: Boolean(group?.useSystemName),
   })).filter((group) => group.rowIds.length > 0)
   if (groups.length === 0) throw new Error('Выберите хотя бы один стык.')
-  if (action !== 'pstoResult' && groups.some((group) => !group.name)) {
-    throw new Error('Укажите наименование документа.')
-  }
+  const requisiteErrors = [...new Set(groups.flatMap(group => getDocumentRequisiteErrors({
+    name: group.name, date, nameLabel: 'наименование документа', dateLabel: 'Дата документа',
+  })))]
+  if (requisiteErrors.length) throw new Error(requisiteErrors.join('\n'))
   const assigned = new Set<number>()
   for (const group of groups) {
     for (const rowId of group.rowIds) {

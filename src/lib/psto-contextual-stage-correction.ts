@@ -69,7 +69,7 @@ export function buildPstoContextualStageCorrection(
     if (packages.length === 0) throw new Error('Нет основного комплекта НК для исправления этапа.')
     packages.forEach(assertPackageComplete)
     for (const control of packages) {
-      assertUnofficialLnkGoodResultAllowed(previous, control.result, null, `${control.method} до ТО`)
+      assertUnofficialLnkGoodResultAllowed(previous, control.result, null, `${control.method} до ТО`, { allowBackfill: false })
       const method = LNK_METHODS.find(method => method.code === control.method)!
       for (const [, key] of PACKAGE_FIELDS) next[method[key]] = null
       if (method.code === 'РК') next.rkExposureConfirmedDiameter = null
@@ -88,7 +88,7 @@ export function buildPstoContextualStageCorrection(
       }
       methods.add(control.method)
       if (hasPackageTrace(control)) assertPackageComplete(control)
-      assertUnofficialLnkGoodResultAllowed(previous, control.result, null, control.method)
+      assertUnofficialLnkGoodResultAllowed(previous, control.result, null, control.method, { allowBackfill: false })
       for (const [field, key] of PACKAGE_FIELDS) next[method[key]] = control[field] ?? null
       if (method.code === 'РК') next.rkExposureConfirmedDiameter = control.rkExposureConfirmedDiameter ?? null
     }
@@ -152,10 +152,7 @@ function hasResultTrace(value: unknown) {
     !['-', 'нет потребности', 'не требуется'].includes(text)
 }
 
-/** Relocation always requires request integrity and a dated final result.
- * An optional conclusion name remains an SP-11 completion task, not a transfer
- * blocker. Keep is handled outside this helper.
- */
+/** Relocation requires complete source documents. KEEP is handled separately. */
 function assertPackageComplete(control: PreHeatTreatmentControlRecord) {
   const present = (value: unknown) => Boolean(String(value ?? '').trim()) && String(value).trim() !== '-'
   if (!present(control.requestName)) {
@@ -167,7 +164,7 @@ function assertPackageComplete(control: PreHeatTreatmentControlRecord) {
   const final = ['годен', 'ремонт', 'вырез'].includes(normalizeResultStatus(control.result) ?? '')
   if (final) {
     if (!present(control.conclusionDate)) throw new Error(`${control.method}: для результата укажите дату заключения.`)
-    if (DEFAULT_SAVE_CHECK_SETTINGS.lnkResultConclusionRequired && !present(control.conclusionName)) {
+    if (!present(control.conclusionName)) {
       throw new Error(`${control.method}: для результата укажите наименование заключения.`)
     }
   }

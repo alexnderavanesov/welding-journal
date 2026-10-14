@@ -1,6 +1,8 @@
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
+import { assertDocumentRequisites } from '@/lib/document-requisites'
+import { normalizeDateLikeForStorage } from '@/lib/date-format'
 import { withTouchedLnkFinalStatus } from '@/lib/lnk-field-updates'
-import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
+import { assertNoNewLnkChronologyIssues, getLnkResultRemovalBlockReason } from '@/lib/lnk-chronology-checks'
 import { assertValidLnkResultValue } from '@/lib/lnk-result-draft'
 import { assertLnkResultAllowed } from '@/lib/lnk-result-policy'
 import { loadControlProcessSettings } from '@/lib/control-process-settings'
@@ -66,7 +68,7 @@ export function buildLnkResultReplacementRows({
   updates,
   rkExposureTable: suppliedRkExposureTable,
 }: {
-  updates: Array<{ record: RowWithId; methodKey: WeldFieldKey; result: string }>
+  updates: Array<{ record: RowWithId; methodKey: WeldFieldKey; result: string | null }>
   rkExposureTable?: RkExposureTableSettings | null
 }) {
   const saveCheckSettings = loadSaveCheckSettings()
@@ -78,7 +80,11 @@ export function buildLnkResultReplacementRows({
   for (const { record, methodKey, result } of updates) {
     const method = getLnkMethodByRequestKey(methodKey)
     if (!method) throw new Error('Выберите метод контроля')
-    assertValidLnkResultValue(result)
+    if (result === null) {
+      const reason = getLnkResultRemovalBlockReason(record, methodKey, saveCheckSettings)
+      if (reason) throw new Error(reason)
+    }
+    if (result !== null) assertValidLnkResultValue(result)
     assertUnofficialLnkGoodResultAllowed(record, result, record[method.resultKey], method.code)
     const currentRecord = updatedById.get(record.id) ?? record
     assertLnkResultAllowed(currentRecord, method.code, result, { pvkGoodOnly })
@@ -88,6 +94,7 @@ export function buildLnkResultReplacementRows({
     updatedById.set(record.id, {
       ...currentRecord,
       [method.resultKey]: result,
+      ...(result === null ? { [method.conclusionKey]: null, [method.conclusionDateKey]: null } : {}),
       ...(method.code === 'РК'
         ? {
             lnkDefectDescription: exposureRecord.lnkDefectDescription,
@@ -117,10 +124,12 @@ export function buildLnkConclusionCorrectionRows({
   records,
   methodKey,
   conclusionName,
+  conclusionDate,
 }: {
   records: RowWithId[]
   methodKey: WeldFieldKey
   conclusionName: string
+  conclusionDate?: string
 }) {
   const saveCheckSettings = loadSaveCheckSettings()
   const method = getLnkMethodByRequestKey(methodKey)
@@ -132,9 +141,17 @@ export function buildLnkConclusionCorrectionRows({
     .filter((record) => hasText(record[method.resultKey]))
     .map((record) => {
       const customConclusionName = formatCustomDocumentName(nextConclusionName)
+      // An unnamed legacy result has no document to edit. Repair both facts
+      // atomically on that result; ordinary dated documents keep the date editor.
+      if (conclusionDate !== undefined && String(record[method.conclusionKey] ?? '').trim()) {
+        throw new Error('Измените дату именованного документа через действие «Изменить дату».')
+      }
+      const date = conclusionDate === undefined ? record[method.conclusionDateKey] : conclusionDate
+      assertDocumentRequisites({ name: customConclusionName, date })
       const proposedRecord = {
         ...record,
         [method.conclusionKey]: customConclusionName,
+        ...(conclusionDate !== undefined ? { [method.conclusionDateKey]: normalizeDateLikeForStorage(date) } : {}),
       } as RowWithId
       return withTouchedLnkFinalStatus(proposedRecord)
     })

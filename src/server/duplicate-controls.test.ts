@@ -83,7 +83,7 @@ describe('duplicate-control affected weld joints', () => {
     expect(changed).toBe(1)
     expect(select).toHaveBeenCalledTimes(5) // Includes stable physical-connection state.
     expect(execute).toHaveBeenCalledTimes(1)
-    expect(compiledQueries[0]?.params).toEqual([7, 'не годен по дублю', 'годен'])
+    expect(compiledQueries[0]?.params).toEqual([[7], ['не годен по дублю'], ['годен']])
   })
 
   it('leaves an unwelded same-name repair to the scoped dispatcher context', async () => {

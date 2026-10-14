@@ -1,8 +1,9 @@
 import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { BookOpen, FileText, Plus, Stamp } from 'lucide-react'
+import { BookOpen, FileText, Plus, Stamp, UsersRound } from 'lucide-react'
 import { WelderStampCheckParameters } from '@/components/welder-stamp-check-parameters'
 import { DialogHeader } from '@/components/dialog-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
+import { SpecialistsRegistry } from '@/components/specialists-registry'
 import { Button } from '@/components/ui/button'
 import { WelderStampsCreatePanel } from '@/components/welder-stamps-create-panel'
 import { WelderStampsFiltersPanel } from '@/components/welder-stamps-filters-panel'
@@ -62,6 +63,7 @@ const WELDER_STAMP_STATUS_OPTIONS: Array<{
 
 const REGISTRY_TABS = [
   { id: 'registry', label: 'Клейма', Icon: Stamp },
+  { id: 'specialists', label: 'Специалисты', Icon: UsersRound },
   { id: 'technologyCards', label: 'Технологические карты', Icon: FileText },
   { id: 'checks', label: 'Параметры проверки', Icon: BookOpen },
 ] as const
@@ -79,7 +81,7 @@ export function WelderStampsRegistry({ header, taskPanels, onTasksVisibilityChan
 
   return (
     <div className="min-w-0 space-y-4">
-      <div role="tablist" aria-label="Разделы клейм" className="sticky top-0 z-40 flex h-14 gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm shadow-slate-100">
+      <div role="tablist" aria-label="Разделы справочников" className="sticky top-0 z-40 flex h-14 gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm shadow-slate-100">
         {REGISTRY_TABS.map(({ id, label, Icon }, index) => (
           <button key={id} id={`stamp-tab-${id}`} type="button" role="tab" aria-label={label} aria-selected={activeTab === id}
             aria-controls={`stamp-panel-${id}`} tabIndex={activeTab === id ? 0 : -1}
@@ -98,6 +100,7 @@ export function WelderStampsRegistry({ header, taskPanels, onTasksVisibilityChan
           </button>
         ))}
       </div>
+      {activeTab === 'specialists' ? <div role="tabpanel" id="stamp-panel-specialists" aria-labelledby="stamp-tab-specialists"><SpecialistsRegistry /></div> : null}
       {/* Keep the registry mounted: switching to the reference must not reset
           filters, expanded cards or suspension editor state, or refetch data. */}
       <div id="stamp-panel-registry" role="tabpanel" aria-labelledby="stamp-tab-registry" hidden={activeTab !== 'registry'}>

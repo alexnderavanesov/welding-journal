@@ -23,6 +23,7 @@ import {
   loadIndexedSystemDocumentHistoryFilterOptions,
   loadSystemDocumentRows,
   loadSystemDocumentSummaries,
+  loadSystemDocumentSpecialistSnapshot,
 } from '@/server/system-document-index'
 import type { SqlDocumentHistoryFilterOptionsResult } from '@/server/document-history-sql'
 import { assertSecurityScope } from '@/server/security-functions'
@@ -141,6 +142,13 @@ export const getSystemDocumentRows = createServerFn({ method: 'GET' })
   .handler(async ({ data }): Promise<WeldRow[]> => {
     await assertSecurityScope('entry')
     return loadSystemDocumentRows(data)
+  })
+
+export const getSystemDocumentSpecialists = createServerFn({ method: 'GET' })
+  .validator(normalizeSystemDocumentReference)
+  .handler(async ({ data }) => {
+    await assertSecurityScope('entry')
+    return loadSystemDocumentSpecialistSnapshot(data)
   })
 
 export const getSystemDocumentDateContext = createServerFn({ method: 'GET' })

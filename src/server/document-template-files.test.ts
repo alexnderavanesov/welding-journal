@@ -8,10 +8,30 @@ import {
   createDocumentTemplateFileKey,
   deleteDocumentTemplateFileVersions,
   resolveDocumentTemplateStorageDirectory,
+  hasPersistentTemplateMount,
   type DocumentTemplateFileStore,
 } from '@/server/document-template-files'
 
 describe('document template files', () => {
+  it('requires durable storage rather than the container layer or a temporary memory mount', () => {
+    const overlay = '1 0 0:1 / / rw - overlay overlay rw'
+    const disk = '2 1 8:1 /volumes/templates /app/data rw - ext4 /dev/sda rw'
+    expect(hasPersistentTemplateMount('/app/data/document-templates', overlay)).toBe(false)
+    expect(hasPersistentTemplateMount('/app/data/document-templates', `${overlay}\n${disk}`)).toBe(true)
+    expect(hasPersistentTemplateMount('/app/database/templates', `${overlay}\n${disk}`)).toBe(false)
+    expect(hasPersistentTemplateMount('/app/data/document-templates', `${overlay}\n${disk}\n3 2 0:2 / /app/data/document-templates rw - tmpfs tmpfs rw`)).toBe(false)
+  })
+  it('survives reopening the store and never publishes a partial file', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'document-template-files-'))
+    try {
+      const first = createDocumentTemplateFileStore(directory)
+      const bytes = new Uint8Array([1, 5, 9]).buffer
+      await first.set('checklist/restart.xlsx', bytes)
+      const restarted = createDocumentTemplateFileStore(directory)
+      expect(await restarted.get('checklist/restart.xlsx')).toEqual(bytes)
+      expect(await restarted.list('checklist/')).toEqual(['checklist/restart.xlsx'])
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
   it('uses the persistent data directory by default and accepts an override', () => {
     expect(resolveDocumentTemplateStorageDirectory('/app')).toBe('/app/data/document-templates')
     expect(resolveDocumentTemplateStorageDirectory('/app', '/mnt/templates')).toBe('/mnt/templates')

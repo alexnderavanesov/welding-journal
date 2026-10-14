@@ -1,4 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useConfirmAction } from './confirm-action-context'
+import { withSpecialistCorrectionConfirmation } from './specialist-correction-confirmation'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
@@ -15,9 +17,10 @@ export function usePreHeatTreatmentResultCorrectionMutation({
   onSaved: (row: WeldRow) => void
 }) {
   const queryClient = useQueryClient()
+  const confirm = useConfirmAction()
   return useMutation({
     mutationFn: async (payload: CorrectPreHeatTreatmentLnkResultPayload) =>
-      correctPreHeatTreatmentLnkResult({ data: payload }) as Promise<WeldRow>,
+      withSpecialistCorrectionConfirmation(confirmation => correctPreHeatTreatmentLnkResult({ data: { ...payload, specialistCorrectionConfirmation: confirmation } }) as Promise<WeldRow>, confirm),
     onSuccess: async (row, variables) => {
       scheduleWeldDataRefresh(queryClient, { upsertRows: [row] })
       onSaved(row)

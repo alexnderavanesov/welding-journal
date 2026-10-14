@@ -178,18 +178,18 @@ test('измененный ЖСР нельзя удалить устаревши
 test('реквизиты документа на 200000 стыков возвращают одну сводку без выгрузки строк', async () => {
   test.setTimeout(120_000)
   const documentId = await withE2eDatabase(async db => {
-    await db.query(`insert into weld_joints (project_title,subtitle_code,line,joint,weld_date,wdi)
+    await test.step('seed 200000 weld rows', () => db.query(`insert into weld_joints (project_title,subtitle_code,line,joint,weld_date,wdi)
       select $1,'LARGE','LARGE','F'||n,case when n=1 then '2026-09-01'::date else '2026-09-02'::date end,1
-      from generate_series(1,200000) n`, [project])
-    const { rows: [record] } = await db.query(`insert into generated_documents
+      from generate_series(1,200000) n`, [project]))
+    const { rows: [record] } = await test.step('seed document metadata', () => db.query(`insert into generated_documents
       (type,title,file_name,mime_type,row_count,period_from,period_to)
-      values ('weldingJournal','SHARED-LARGE','large.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',1,'2020-01-01','2020-01-01') returning id`)
-    await db.query(`insert into generated_document_weld_joints(document_id,weld_joint_id)
-      select $1,id from weld_joints where project_title=$2`, [record.id, project])
+      values ('weldingJournal','SHARED-LARGE','large.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',1,'2020-01-01','2020-01-01') returning id`))
+    await test.step('seed 200000 document memberships', () => db.query(`insert into generated_document_weld_joints(document_id,weld_joint_id)
+      select $1,id from weld_joints where project_title=$2`, [record.id, project]))
     return record.id as number
   })
   const start = performance.now()
-  const metadata = await loadRemoteGeneratedDocument(documentId)
+  const metadata = await test.step('read aggregated document metadata', () => loadRemoteGeneratedDocument(documentId))
   expect(metadata).toMatchObject({ rowCount: 200_000, periodFrom: '2026-09-01', periodTo: '2026-09-02',
     wdiTotal: 200_000, lines: ['LARGE'], projects: [project] })
   const bytes = Buffer.byteLength(JSON.stringify(metadata))

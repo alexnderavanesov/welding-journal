@@ -19,14 +19,15 @@ describe('PSTO line assignment payload', () => {
     })
   })
 
-  it('accepts only explicit whole-package activation decisions and never on cancellation', () => {
+  it('accepts only whole-package decisions in the direction appropriate to the action', () => {
     const payload = {
       identity: { projectTitle: 'P', subtitleCode: 'S', line: 'L' },
       action: 'assign' as const, expectedVersions: [],
       activationDecisions: [{ rowId: 1, disposition: 'movePrimaryToPreHeatTreatment' as const }],
     }
     expect(normalizePstoLineAssignmentPayload(payload).activationDecisions).toEqual(payload.activationDecisions)
-    expect(() => normalizePstoLineAssignmentPayload({ ...payload, action: 'cancel', cancellationDate: '2026-08-10' })).toThrow('этапы НК сохраняются')
+    expect(() => normalizePstoLineAssignmentPayload({ ...payload, action: 'cancel', cancellationDate: '2026-08-10' })).toThrow('целый комплект')
+    expect(normalizePstoLineAssignmentPayload({ ...payload, action: 'cancel', cancellationDate: '2026-08-10', activationDecisions: [{ rowId: 1, disposition: 'movePreHeatTreatmentToPrimary' }] }).activationDecisions).toEqual([{ rowId: 1, disposition: 'movePreHeatTreatmentToPrimary' }])
     expect(() => normalizePstoLineAssignmentPayload({ ...payload, activationDecisions: [...payload.activationDecisions, ...payload.activationDecisions] })).toThrow('повторный')
     expect(() => normalizePstoLineAssignmentPayload({ ...payload, activationDecisions: [{ rowId: 1, disposition: 'movePrimaryToPreHeatTreatment', ...{ methodCodes: ['ВИК'] } }] })).toThrow('целый комплект')
   })

@@ -14,7 +14,7 @@ type LnkResultManagerSummaryProps = {
   row: WeldRow
   methodCode: string
   currentResult: string
-  pendingResult: string
+  pendingResult: string | null
   activeChangeHint: ResultChangeView
   conclusionName: string
   conclusionDate: string
@@ -36,7 +36,10 @@ export function LnkResultManagerSummary({
         <span>
           <JointFullMeta row={row} />
         </span>
-        {activeChangeHint ? (
+        {pendingResult === null ? <>
+          <span className={`rounded border px-2 py-0.5 text-xs font-semibold ${getLnkResultBadgeClass(currentResult)}`}>Сейчас {methodCode}: {currentResult || '-'}</span>
+          <LnkPendingResultBadge result={null} currentResult={currentResult} />
+        </> : activeChangeHint ? (
           <span className="inline-flex items-center gap-1.5">
             <span className="font-medium text-slate-500">
               {pendingResult && pendingResult !== currentResult ? 'Будет:' : 'Проверка:'}
@@ -65,4 +68,13 @@ export function LnkResultManagerSummary({
       ) : null}
     </>
   )
+}
+
+export function LnkPendingResultBadge({ result, currentResult }: { result: string | null | undefined; currentResult: string }) {
+  if (result === undefined || result === '' || result === currentResult) return null
+  return <span className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold ${result === null
+    ? 'border-rose-200 bg-rose-50 text-rose-800'
+    : 'border-sky-200 bg-sky-50 text-sky-800'}`}>
+    {result === null ? 'Будет удалён' : `Будет: ${result}`}
+  </span>
 }

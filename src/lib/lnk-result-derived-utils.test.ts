@@ -60,7 +60,7 @@ describe('getLnkResultSaveBlockReason', () => {
     const row = { ...baseRow, connectionType: 'У19', hasPvk: 'да', pvkRequest: 'ПВК-1', pvkRequestDate: '2026-07-03' } as WeldRow
     const reason = getLnkResultSaveBlockReason({
       draft: { ...baseDraft, methodKey: 'pvkRequest', result, controlDate: '2026-07-04', layeredControlRowIds: new Set([1]) },
-      selectedRows: [row], isSaving: false, nextConclusionName: 'ПВК-1',
+      selectedRows: [row], nextConclusionName: 'ПВК-1',
     })
     expect(reason).toMatch(/послойно|Послойно/)
   })
@@ -99,7 +99,6 @@ describe('getLnkResultSaveBlockReason', () => {
     expect(
       getLnkResultSaveBlockReason({
         draft: baseDraft,
-        isSaving: false,
         nextConclusionName: 'Заключение-001',
         selectedRows: [baseRow],
       }),
@@ -110,7 +109,6 @@ describe('getLnkResultSaveBlockReason', () => {
     expect(
       getLnkResultSaveBlockReason({
         draft: baseDraft,
-        isSaving: false,
         nextConclusionName: 'Заключение-001',
         saveCheckSettings: {
           ...DEFAULT_SAVE_CHECK_SETTINGS,
@@ -123,14 +121,13 @@ describe('getLnkResultSaveBlockReason', () => {
     ).toContain('СП-04')
   })
 
-  it('allows empty control date and conclusion when these LNK checks are disabled', () => {
+  it('requires both control date and conclusion despite stale disabled settings', () => {
     expect(
       getLnkResultSaveBlockReason({
         draft: {
           ...baseDraft,
           controlDate: '',
         },
-        isSaving: false,
         nextConclusionName: '',
         saveCheckSettings: {
           ...DEFAULT_SAVE_CHECK_SETTINGS,
@@ -139,7 +136,7 @@ describe('getLnkResultSaveBlockReason', () => {
         },
         selectedRows: [baseRow],
       }),
-    ).toBe('')
+    ).toMatch(/дату контроля[\s\S]*наименование заключения/)
   })
 
   it('accepts filled names for every split conclusion group when the shared custom name is empty', () => {
@@ -179,7 +176,6 @@ describe('getLnkResultSaveBlockReason', () => {
             },
           },
         },
-        isSaving: false,
         nextConclusionName: '',
         selectedRows: rows,
         systemDocumentCreationPlan,
@@ -199,7 +195,6 @@ describe('getLnkResultSaveBlockReason', () => {
     expect(
       getLnkResultSaveBlockReason({
         draft: repairDraft,
-        isSaving: false,
         nextConclusionName: 'Заключение-001',
         saveCheckSettings: settings,
         selectedRows: [repairRow],
@@ -229,7 +224,6 @@ describe('getLnkResultSaveBlockReason', () => {
           rowResults: { 1: 'годен' },
           result: LNK_CUSTOM_RESULT_VALUE,
         },
-        isSaving: false,
         nextConclusionName: 'Заключение-УЗК',
         selectedRows: [row],
       }),
@@ -258,7 +252,6 @@ describe('getLnkResultSaveBlockReason', () => {
     }
     const saveBlockReason = getLnkResultSaveBlockReason({
       draft,
-      isSaving: false,
       nextConclusionName: 'Заключение-УЗК',
       selectedRows: [currentRow],
     })
@@ -358,7 +351,6 @@ describe('getLnkResultSaveBlockReason', () => {
           rowResults: { 1: 'годен' },
           result: LNK_CUSTOM_RESULT_VALUE,
         },
-        isSaving: false,
         nextConclusionName: 'Заключение-ВИК',
         selectedRows: [row],
       }),

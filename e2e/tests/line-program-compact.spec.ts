@@ -1,15 +1,26 @@
-import { expect, test } from '@playwright/test'
-import { withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { expect, test, type Page } from '@playwright/test'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
+
+// Finish the initial key before searching; rows can arrive before full totals.
+async function searchProgram(page: Page, search: string) {
+  const totals = page.getByTestId('line-program').getByLabel('Итоги раздела')
+  await expect(totals).toBeVisible()
+  const [response] = await Promise.all([
+    page.waitForResponse(response => response.url().includes('/_serverFn/') && rpcName(response.url()).startsWith('getLineProgramSection_')),
+    page.getByLabel('Поиск программы линий').fill(search),
+  ])
+  expect(response.ok()).toBe(true)
+  await expect(totals).toBeVisible()
+}
 
 test.afterEach(async () => {
   await cleanupLineProgramProjects(['E2E compact-next'])
-  await withE2eDatabase(db => db.query("delete from welder_stamps where naks_stamp in ('DENSE-FIO-A','DENSE-FIO-C')"))
+  await withLineProgramFixture(db => db.query("delete from welder_stamps where naks_stamp in ('DENSE-FIO-A','DENSE-FIO-C')"))
 })
 
 async function seed(name: string, count: number) {
-  return withE2eDatabase(async db => {
+  return withLineProgramFixture(async db => {
     const { rows: [line] } = await db.query(`insert into line_programs (project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
       values ('E2E compact-next','DENSE',$1,'II','A',100,10) returning id`, [name])
     await db.query(`insert into weld_joints (line_program_id,project_title,subtitle_code,line,joint,weld_date,connection_type,category,group_name,weld_control_percent,pvk_control_percent,has_vik,has_rk,has_pvk,vik_result,rk_result,pvk_result,stamp_1_k,officiality,revision_actuality)
@@ -25,7 +36,7 @@ test('компактная завершённая линия: все стыки,
   page.on('request', request => { if(request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error=>errors.push(error.message))
   await page.goto('/line-program')
-  await page.getByLabel('Поиск программы линий').fill(name)
+  await searchProgram(page, name)
   const card=page.getByTestId('line-program-card')
   // Search is debounced; the full suite has other lines on the initial page.
   await expect(card).toHaveCount(1)
@@ -89,20 +100,22 @@ test('компактная завершённая линия: все стыки,
   await modal.getByRole('button',{name:'Вернуться к просмотру'}).click()
   await page.evaluate(()=>{window.dispatchEvent(new Event('focus'));window.dispatchEvent(new Event('online'))})
   await page.screenshot({path:'outputs/line-program-compact-finished.png',fullPage:true})
-  for(const prefix of ['getLineProgramSection_','getLineProgramCalculation_','getLineProgramJointPage_']) expect(calls.filter(x=>x.startsWith(prefix))).toHaveLength(1)
+  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(2)
+  expect(calls.filter(call => call.startsWith('getLineProgramPage_'))).toHaveLength(2)
+  for(const prefix of ['getLineProgramCalculation_','getLineProgramJointPage_']) expect(calls.filter(x=>x.startsWith(prefix))).toHaveLength(1)
   expect(errors).toEqual([])
 })
 
 test('назначения: без ВИК, три клейма, стабильные строки и общие тонкие границы выделения', async ({ page }) => {
   const name = 'DENSE-ASSIGNMENT-LAYOUT', id = await seed(name, 4)
-  await withE2eDatabase(db => db.query(`update weld_joints set has_rk=null,rk_result=null,pvk_result=null,
+  await withLineProgramFixture(db => db.query(`update weld_joints set has_rk=null,rk_result=null,pvk_result=null,
     stamp_1_k='ABC12345',stamp_1_z='Q8245678',stamp_1_o='XYZ45678'
     where line_program_id=$1`, [id]))
   const calls: string[] = [], errors: string[] = []
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/line-program')
-  await page.getByLabel('Поиск программы линий').fill(name)
+  await searchProgram(page, name)
   const card = page.getByTestId('line-program-card')
   await expect(card).toHaveCount(1)
   await card.getByRole('button', { name: `Расчёт линии ${name}`, exact: true }).click()
@@ -172,19 +185,21 @@ test('назначения: без ВИК, три клейма, стабильн
   await expect(rows.first().getByText('ВИК: годен')).toBeVisible()
   await expect(modal.getByRole('checkbox', { name: 'Выбрать F1', exact: true })).not.toBeChecked()
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
-  for (const prefix of ['getLineProgramSection_', 'getLineProgramCalculation_', 'getLineProgramJointPage_']) expect(calls.filter(call => call.startsWith(prefix))).toHaveLength(1)
+  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(2)
+  expect(calls.filter(call => call.startsWith('getLineProgramPage_'))).toHaveLength(2)
+  for (const prefix of ['getLineProgramCalculation_', 'getLineProgramJointPage_']) expect(calls.filter(call => call.startsWith(prefix))).toHaveLength(1)
   expect(errors).toEqual([])
 })
 
 test('область действий: клеймо помещается целиком и не перекрывается стрелкой', async ({ page }) => {
   const name = 'DENSE-SCOPE-LABEL', id = await seed(name, 4)
   const stamps = ['D501', 'D501-ABC12345']
-  await withE2eDatabase(db => db.query("update weld_joints set stamp_1_k=case when stamp_1_k='DENSE-A' then $2 else $3 end where line_program_id=$1", [id, ...stamps]))
+  await withLineProgramFixture(db => db.query("update weld_joints set stamp_1_k=case when stamp_1_k='DENSE-A' then $2 else $3 end where line_program_id=$1", [id, ...stamps]))
   const calls: string[] = [], errors: string[] = []
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/line-program')
-  await page.getByLabel('Поиск программы линий').fill(name)
+  await searchProgram(page, name)
   const card = page.getByTestId('line-program-card')
   await card.getByRole('button', { name: `Расчёт линии ${name}`, exact: true }).click()
   for (const stamp of stamps) await card.getByRole('button', { name: `Клеймо ${stamp}`, exact: true }).click()
@@ -216,18 +231,20 @@ test('область действий: клеймо помещается цел�
   await page.setViewportSize({ width: 1600, height: 1000 })
   await scope.selectOption('stamp:d501')
   await card.getByTestId('program-line-filters').screenshot({ path: 'outputs/line-program-scope-label.png' })
-  for (const prefix of ['getLineProgramSection_', 'getLineProgramCalculation_', 'getLineProgramJointPage_']) expect(calls.filter(call => call.startsWith(prefix))).toHaveLength(1)
+  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(2)
+  expect(calls.filter(call => call.startsWith('getLineProgramPage_'))).toHaveLength(2)
+  for (const prefix of ['getLineProgramCalculation_', 'getLineProgramJointPage_']) expect(calls.filter(call => call.startsWith(prefix))).toHaveLength(1)
   expect(errors).toEqual([])
 })
 
 test('плоская иерархия: подчёркнутые виды, широкие результаты и явная область действий без повторных блоков', async ({ page }) => {
   const name = 'DENSE-HIERARCHY', id = await seed(name, 6)
-  await withE2eDatabase(db => db.query("update weld_joints set rk_result='ремонт',pvk_result=null,has_uzk='да' where line_program_id=$1 and joint='F2'", [id]))
+  await withLineProgramFixture(db => db.query("update weld_joints set rk_result='ремонт',pvk_result=null,has_uzk='да' where line_program_id=$1 and joint='F2'", [id]))
   const calls: string[] = [], errors: string[] = []
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/line-program')
-  await page.getByLabel('Поиск программы линий').fill(name)
+  await searchProgram(page, name)
   const card = page.getByTestId('line-program-card')
   const totals = page.getByRole('button', { name: 'Расчёт итогов раздела', exact: true })
   await expect(page.locator('[data-line-program-report-actions]')).toContainText('Расчёт итогов')
@@ -294,18 +311,20 @@ test('плоская иерархия: подчёркнутые виды, шир
   await expect(card.getByRole('button', { name: 'Клеймо DENSE-A', exact: true })).toHaveAttribute('aria-expanded', 'true')
   await expect(card.getByRole('button', { name: 'Клеймо DENSE-B', exact: true })).toHaveAttribute('aria-expanded', 'true')
   await page.screenshot({ path: 'outputs/line-program-hierarchy-groups.png', fullPage: true })
-  for (const prefix of ['getLineProgramSection_', 'getLineProgramCalculation_', 'getLineProgramJointPage_']) expect(calls.filter(call => call.startsWith(prefix))).toHaveLength(1)
+  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(2)
+  expect(calls.filter(call => call.startsWith('getLineProgramPage_'))).toHaveLength(2)
+  for (const prefix of ['getLineProgramCalculation_', 'getLineProgramJointPage_']) expect(calls.filter(call => call.startsWith(prefix))).toHaveLength(1)
   expect(errors).toEqual([])
 })
 
 test('вложенность клейма: отступ и направляющая, независимые группы и сохранённая история без лишних запросов', async ({ page }) => {
   const name = 'DENSE-NESTING', id = await seed(name, 8)
-  await withE2eDatabase(db => db.query("update weld_joints set rk_result='ремонт' where line_program_id=$1 and joint='F2'", [id]))
+  await withLineProgramFixture(db => db.query("update weld_joints set rk_result='ремонт' where line_program_id=$1 and joint='F2'", [id]))
   const calls: string[] = [], errors: string[] = []
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/line-program')
-  await page.getByLabel('Поиск программы линий').fill(name)
+  await searchProgram(page, name)
   const card = page.getByTestId('line-program-card')
   await card.getByRole('button', { name: `Расчёт линии ${name}`, exact: true }).click()
   const stamp = (code: string) => card.locator(`[data-testid="line-program-stamp"][data-stamp="${code}"]`)
@@ -369,13 +388,15 @@ test('вложенность клейма: отступ и направляющ�
   await expect(body('DENSE-B')).toBeHidden()
   await card.screenshot({ path: 'outputs/line-program-nested-stamps.png' })
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
-  for (const prefix of ['getLineProgramSection_', 'getLineProgramCalculation_', 'getLineProgramJointPage_']) expect(calls.filter(call => call.startsWith(prefix))).toHaveLength(1)
+  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(2)
+  expect(calls.filter(call => call.startsWith('getLineProgramPage_'))).toHaveLength(2)
+  for (const prefix of ['getLineProgramCalculation_', 'getLineProgramJointPage_']) expect(calls.filter(call => call.startsWith(prefix))).toHaveLength(1)
   expect(errors).toEqual([])
 })
 
 test('плашки не увеличивают строку, НК до ТО перед основным контролем, компактные действия и более широкие шкалы', async ({ page }) => {
   const name = 'DENSE-ROW-BADGES', id = await seed(name, 6)
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query(`update weld_joints set has_rk=null,has_pvk=null,rk_result=null,pvk_result=null,
       officiality=case when joint in ('F2','F4') then 'неофициальный' else officiality end,
       revision_actuality=case when joint in ('F3','F4') then 'не актуален' else revision_actuality end,
@@ -389,7 +410,7 @@ test('плашки не увеличивают строку, НК до ТО пе
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/line-program')
-  await page.getByLabel('Поиск программы линий').fill(name)
+  await searchProgram(page, name)
   const card = page.getByTestId('line-program-card')
   await card.getByRole('button', { name: `Расчёт линии ${name}`, exact: true }).click()
   await card.getByRole('button', { name: 'Все стыки линии', exact: true }).click()
@@ -427,7 +448,9 @@ test('плашки не увеличивают строку, НК до ТО пе
   await page.setViewportSize({ width: 1600, height: 1000 })
   await rows.filter({ hasText: 'F5' }).getByRole('button', { name: 'НК до ТО: ВИК вырез' }).click()
   await expect(card.getByRole('button', { name: 'ROW-PRE', exact: true })).toBeVisible()
-  for (const prefix of ['getLineProgramSection_', 'getLineProgramCalculation_', 'getLineProgramJointPage_']) expect(calls.filter(call => call.startsWith(prefix))).toHaveLength(1)
+  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(2)
+  expect(calls.filter(call => call.startsWith('getLineProgramPage_'))).toHaveLength(2)
+  for (const prefix of ['getLineProgramCalculation_', 'getLineProgramJointPage_']) expect(calls.filter(call => call.startsWith(prefix))).toHaveLength(1)
   expect(errors).toEqual([])
 })
 
@@ -435,12 +458,12 @@ test('галочка завершения в правом верхнем угл�
   const prefix = 'DENSE-HEIGHT-4861/2020-ПГ-2-', done = prefix + 'DONE', wait = prefix + 'WAIT'
   await seed(done, 4)
   const waitId = await seed(wait, 4)
-  await withE2eDatabase(db => db.query('update weld_joints set rk_result=null where line_program_id=$1', [waitId]))
+  await withLineProgramFixture(db => db.query('update weld_joints set rk_result=null where line_program_id=$1', [waitId]))
   const calls: string[] = [], errors: string[] = []
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/line-program')
-  await page.getByLabel('Поиск программы линий').fill(prefix)
+  await searchProgram(page, prefix)
   const cards = page.getByTestId('line-program-card')
   const completed = cards.filter({ has: page.getByTestId('line-name').filter({ hasText: done }) })
   const incomplete = cards.filter({ has: page.getByTestId('line-name').filter({ hasText: wait }) })
@@ -476,7 +499,8 @@ test('галочка завершения в правом верхнем угл�
   }
   await completed.getByRole('button', { name: `Расчёт линии ${done}`, exact: true }).click()
   await expect(completed.getByRole('button', { name: 'Все стыки линии', exact: true })).toBeVisible()
-  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(1)
+  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(2)
+  expect(calls.filter(call => call.startsWith('getLineProgramPage_'))).toHaveLength(2)
   expect(calls.filter(call => call.startsWith('getLineProgramCalculation_'))).toHaveLength(1)
   expect(calls.filter(call => call.startsWith('getLineProgramJointPage_'))).toHaveLength(0)
   expect(errors).toEqual([])
@@ -488,14 +512,14 @@ test('одно- и двухстрочное описание оставляют 
   const prefix = 'DENSE-BASE-'
   const short = await seed(prefix + 'SHORT', 2)
   await seed(prefix + 'LONG', 2)
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query('update line_programs set weld_control_percent=50,pvk_control_percent=50 where id=$1', [short])
     await db.query('update weld_joints set weld_control_percent=50,pvk_control_percent=50 where line_program_id=$1', [short])
   })
   const calls: string[] = []
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   await page.goto('/line-program')
-  await page.getByLabel('Поиск программы линий').fill(prefix)
+  await searchProgram(page, prefix)
   const cards = page.getByTestId('line-program-card')
   await expect(cards).toHaveCount(2)
   for (const width of [1840, 1600]) {
@@ -516,7 +540,8 @@ test('одно- и двухстрочное описание оставляют 
   await expect(shortCard.getByTestId('line-program-header')).toHaveCSS('height', '72px')
   await expect(shortCard.getByRole('button', { name: 'По клеймам', exact: true })).toBeVisible()
   await page.screenshot({ path: 'outputs/line-program-uniform-header-base.png', fullPage: true })
-  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(1)
+  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(2)
+  expect(calls.filter(call => call.startsWith('getLineProgramPage_'))).toHaveLength(2)
   expect(calls.filter(call => call.startsWith('getLineProgramJointPage_'))).toHaveLength(0)
   expect(errors).toEqual([])
 })
@@ -524,7 +549,7 @@ test('одно- и двухстрочное описание оставляют 
 test('ФИО под клеймом: одинаковая высота при разных именах и одинаковых расчётных пометках, без новых загрузок', async ({ page }) => {
   const name = 'DENSE-FIO', id = await seed(name, 6)
   const longName = 'Александров-Константинопольский Александр Александрович'
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     // Isolate name length: different excess badges still affect the existing result column.
     await db.query('update line_programs set pvk_control_percent=100 where id=$1', [id])
     await db.query("update weld_joints set pvk_control_percent=100,stamp_1_k=case when joint='F1' then 'DENSE-FIO-C' when stamp_1_k='DENSE-A' then 'DENSE-FIO-A' else 'DENSE-FIO-B' end where line_program_id=$1", [id])
@@ -534,7 +559,7 @@ test('ФИО под клеймом: одинаковая высота при р�
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/line-program')
-  await page.getByLabel('Поиск программы линий').fill(name)
+  await searchProgram(page, name)
   const card = page.getByTestId('line-program-card')
   await expect(card).toHaveCount(1)
   await card.getByRole('button', { name: `Расчёт линии ${name}`, exact: true }).click()
@@ -569,7 +594,8 @@ test('ФИО под клеймом: одинаковая высота при р�
   await card.getByRole('button', { name: 'По клеймам', exact: true }).click()
   await expect(rows.first().getByTestId('line-program-welder-name')).toBeVisible()
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
-  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(1)
+  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(2)
+  expect(calls.filter(call => call.startsWith('getLineProgramPage_'))).toHaveLength(2)
   expect(calls.filter(call => call.startsWith('getLineProgramCalculation_'))).toHaveLength(1)
   expect(calls.filter(call => call.startsWith('getLineProgramJointPage_'))).toHaveLength(1)
   expect(errors).toEqual([])
@@ -577,7 +603,7 @@ test('ФИО под клеймом: одинаковая высота при р�
 
 test('расчёт отдельно от результатов: одинаковые строки клейм с долгом, закрытием, лишним и сокращением', async ({ page }) => {
   const name = 'DENSE-CALC-COLUMN', id = await seed(name, 18)
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query('update line_programs set weld_control_percent=30 where id=$1', [id])
     await db.query(`update weld_joints set weld_control_percent=30,rk_result=null,pvk_result=null,
       stamp_1_k=case when substring(joint from 2)::int<=6 then 'A' when substring(joint from 2)::int<=12 then 'B' else 'C' end,
@@ -588,7 +614,7 @@ test('расчёт отдельно от результатов: одинако�
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/line-program')
-  await page.getByLabel('Поиск программы линий').fill(name)
+  await searchProgram(page, name)
   const card = page.getByTestId('line-program-card')
   await card.getByRole('button', { name: `Расчёт линии ${name}`, exact: true }).click()
   const table = card.getByRole('table', { name: 'Расчёт по клеймам', exact: true })
@@ -645,18 +671,20 @@ test('расчёт отдельно от результатов: одинако�
     await expect(body.getByRole('table', { name: 'Назначения и результаты', exact: true })).toBeVisible()
   }
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
-  for (const prefix of ['getLineProgramSection_', 'getLineProgramCalculation_', 'getLineProgramJointPage_']) expect(calls.filter(call => call.startsWith(prefix))).toHaveLength(1)
+  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(2)
+  expect(calls.filter(call => call.startsWith('getLineProgramPage_'))).toHaveLength(2)
+  for (const prefix of ['getLineProgramCalculation_', 'getLineProgramJointPage_']) expect(calls.filter(call => call.startsWith(prefix))).toHaveLength(1)
   expect(errors).toEqual([])
 })
 
 test('компактные фильтры отделяют ошибки и исключённую историю; не теряют черновик в назначениях',async({page})=>{
   const name='DENSE-MIXED',id=await seed(name,10)
-  await withE2eDatabase(db=>db.query(`update weld_joints set
+  await withLineProgramFixture(db=>db.query(`update weld_joints set
     rk_result=case when joint='F2' then 'ремонт' when joint in ('F3','F7','F8','F9','F10') then null else 'годен' end,
     has_rk=case when joint='F4' then null else 'да' end,
     revision_actuality=case when joint='F5' then 'не актуален' else 'актуальная' end,
     officiality=case when joint='F6' then 'неофициальный' else 'действующий' end where line_program_id=$1`,[id]))
-  await page.goto('/line-program');await page.getByLabel('Поиск программы линий').fill(name)
+  await page.goto('/line-program');await searchProgram(page, name)
   const card=page.getByTestId('line-program-card')
   await card.getByRole('button',{name:`Расчёт линии ${name}`,exact:true}).click()
   const filters=card.getByTestId('program-line-filters')

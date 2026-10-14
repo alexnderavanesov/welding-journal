@@ -44,13 +44,14 @@ export async function createWeldRowsOrThrow(
 export async function updateWeldRowOrThrow<T extends RowWithId>(
   record: T,
   errorMessage = 'Запись не найдена',
-  options: { mutationScope?: WeldMutationScope } = {},
+  options: { mutationScope?: WeldMutationScope; specialistCorrectionConfirmation?: string } = {},
 ) {
   const saved = await updateWeldJoint({
     data: {
       ...normalizeDateFieldsForSave(record),
       expectedVersion: getExpectedWeldRowVersion(record),
       mutationScope: options.mutationScope,
+      ...(options.specialistCorrectionConfirmation ? { specialistCorrectionConfirmation: options.specialistCorrectionConfirmation } : {}),
     },
   })
   if (!saved) throw new Error(errorMessage)
@@ -82,6 +83,7 @@ export async function updateWeldRowsOrThrow<T extends RowWithId>(
   errorMessage = 'Не удалось сохранить часть записей',
   options: {
     mutationScope?: WeldMutationScope
+    specialistCorrectionConfirmation?: string
     systemDocumentSequence?: SystemDocumentSequenceUpdate
     systemDocumentSequences?: SystemDocumentSequenceUpdate[]
     documentGrouping?: DocumentGroupingCommand
@@ -94,6 +96,7 @@ export async function updateWeldRowsOrThrow<T extends RowWithId>(
       records: records.map((record) => normalizeDateFieldsForSave(record)),
       expectedVersions: getExpectedWeldRowVersions(records),
       mutationScope: options.mutationScope,
+      ...(options.specialistCorrectionConfirmation ? { specialistCorrectionConfirmation: options.specialistCorrectionConfirmation } : {}),
       systemDocumentSequence: options.systemDocumentSequence,
       systemDocumentSequences: options.systemDocumentSequences,
       documentGrouping: options.documentGrouping,

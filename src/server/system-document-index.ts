@@ -1,4 +1,5 @@
-import { and, asc, eq, inArray, isNull, ne, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
+import { and, asc, eq, getTableColumns, inArray, isNull, ne, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
+import { DOCUMENT_VERSION_SELECT, touchLayeredDocumentParentsForWeldDeletion, touchSystemDocumentParentsForWeldDeletion } from './document-version'
 
 import { requireDb } from '@/db'
 import {
@@ -163,6 +164,8 @@ export function buildSystemDocumentNameConflictWhere(
 }
 
 export const SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS = [
+  'specialistFirst',
+  'specialistSecond',
   'title',
   'method',
   'stage',
@@ -359,6 +362,26 @@ async function loadSystemDocumentRowSource(
     rows: rows as WeldRow[],
     metadata: parseSystemDocumentMetadata(sourceMetadata),
   }
+}
+
+export async function loadSystemDocumentSpecialistSnapshot(reference: SystemDocumentReference) {
+  const db = requireDb()
+  const type = systemDocumentStorageType(getSystemDocumentTemplateId(reference))
+  if (reference.documentId) {
+    const [document] = await db.select({ specialists: generatedDocuments.specialists }).from(generatedDocuments).where(and(eq(generatedDocuments.id, reference.documentId), eq(generatedDocuments.type, type))).limit(1)
+    return document?.specialists ?? null
+  }
+  // A report link may have no stored ID. Return only signature/identity facts,
+  // never the document's potentially 200,000-position source metadata.
+  const metadata = sql`coalesce(nullif(${generatedDocuments.sourceMetadata}, ''), '{}')::jsonb`
+  const candidates = await db.select({
+    specialists: generatedDocuments.specialists,
+    identity: sql`jsonb_build_object('sourceKind', ${metadata}->'sourceKind', 'methodCode', ${metadata}->'methodCode',
+      'cycleSequences', case when jsonb_typeof(${metadata}->'cycleSequences') = 'array' then ${metadata}->'cycleSequences'
+        else (select jsonb_agg(distinct p->'sequence') from jsonb_array_elements(case when jsonb_typeof(${metadata}->'sourcePositions') = 'array' then ${metadata}->'sourcePositions' else '[]'::jsonb end) p) end)`,
+  }).from(generatedDocuments).where(and(eq(generatedDocuments.type, type), eq(generatedDocuments.title, reference.title), sql`coalesce(${generatedDocuments.periodFrom}::text, '') = ${reference.date}`)).orderBy(asc(generatedDocuments.id))
+  const matching = candidates.filter(candidate => matchesSourcedSystemDocumentReference(candidate.identity, reference))
+  return (matching.find(candidate => parseSystemDocumentMetadata(candidate.identity)?.sourceKind === reference.sourceKind) ?? matching[0])?.specialists ?? null
 }
 
 async function findSourcedSystemDocumentId(
@@ -918,6 +941,11 @@ export async function removeHeatTreatmentSourcedDocumentPositionsForWeldsInTrans
     .filter((value) => Number.isInteger(value) && value > 0))]
   if (rowIds.length === 0) return
 
+  // All weld-deletion entry points run this preparation before FK cascades:
+  // single/bulk deletion, import replacement and early-coil workflows. Legacy
+  // layered parents may survive a cascade and need a new editor version too.
+  await touchLayeredDocumentParentsForWeldDeletion(tx, rowIds)
+
   const [preControls, repeatCycles] = await Promise.all([
     tx
       .select({ id: preHeatTreatmentControls.id })
@@ -944,6 +972,10 @@ export async function removeHeatTreatmentSourcedDocumentPositionsForWeldsInTrans
     sourceKind: 'pstoCycle',
     weldJointIds: rowIds,
   })
+  // The preceding sourced cleanup has acquired the ordered index locks. Touch
+  // remaining system parents even if legacy metadata omitted this weld. Keep
+  // the normal lock order: layered parents, index locks, system parents.
+  await touchSystemDocumentParentsForWeldDeletion(tx, rowIds)
 }
 
 export async function loadSourcedSystemDocumentPositionsInTransaction({
@@ -1962,6 +1994,8 @@ function buildIndexedSystemDocumentHistoryBaseQuery(
   return sql`
     select
       "document_source".*,
+      array[coalesce("document_source"."specialists" -> 'first' ->> 'name', '')]::text[] as "filter_specialistFirst",
+      array[coalesce("document_source"."specialists" -> 'second' ->> 'name', '')]::text[] as "filter_specialistSecond",
       array["document_source"."title"]::text[] as "filter_title",
       ${metadataArray('methodCodes')} as "filter_method",
       array[
@@ -2009,6 +2043,9 @@ function buildIndexedSystemDocumentHistoryBaseQuery(
           ${generatedDocuments.fileName} as "fileName",
           ${generatedDocuments.rowCount} as "rowCount",
           ${generatedDocuments.sourceMetadata} as "sourceMetadata",
+          ${generatedDocuments.specialists} as "specialists",
+          ${generatedDocuments.specialistsRevision} as "specialistsRevision",
+          ${DOCUMENT_VERSION_SELECT} as "documentVersion",
           ${generatedDocuments.updatedAt} as "updatedAt"
         from ${generatedDocuments}
         where ${documentId
@@ -2034,6 +2071,9 @@ function toIndexedSystemDocumentHistorySummary(
   return {
     documentId,
     id: `system-document:${documentId}`,
+    specialists: record.specialists as SystemDocumentSummary['specialists'],
+    specialistsRevision: Number(record.specialistsRevision) || 0,
+    documentVersion: String(record.documentVersion ?? ''),
     type,
     title,
     date,
@@ -2064,7 +2104,7 @@ export async function loadIndexedSystemDocumentSummaries(
   if (storageTypes.length === 0) return []
   if (selectedDocumentIds?.length === 0) return []
   const documents = await tx
-    .select()
+    .select({ ...getTableColumns(generatedDocuments), documentVersion: DOCUMENT_VERSION_SELECT })
     .from(generatedDocuments)
     .where(and(inArray(generatedDocuments.type, storageTypes), selectedDocumentIds
       ? buildNumberArrayMatch(generatedDocuments.id, selectedDocumentIds) : undefined))
@@ -2093,6 +2133,9 @@ export async function loadIndexedSystemDocumentSummaries(
       return {
         documentId: document.id,
         id: `system-document:${document.id}`,
+        specialists: document.specialists,
+        specialistsRevision: document.specialistsRevision,
+        documentVersion: document.documentVersion,
         type,
         title: document.title,
         date: document.periodFrom ?? '',

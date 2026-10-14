@@ -15,6 +15,18 @@ import {
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
 describe('pre-heat-treatment control updates', () => {
+  it('backfills missing pre-TO VIK while preserving own UZK rejection and chronology', () => {
+    const waiting = control({ result: 'ожидает НК', conclusionDate: null, conclusionName: null })
+    const rejected = control({ id: 2, method: 'УЗК', result: 'ремонт', conclusionDate: '2026-08-05' })
+    const row = makeRow({ officiality: 'неофициальный', preHeatTreatmentControls: [waiting, rejected], pstoDate: null })
+    const write = (controlDate: string) => buildPreHeatTreatmentResultWrite({ row, methodCode: 'ВИК', result: 'годен', controlDate, conclusionName: 'К-ВИК' })
+    expect(write('2026-08-04')).toMatchObject({ result: 'годен', conclusionName: 'К-ВИК' })
+    expect(() => write('2026-08-06')).toThrow()
+    expect(rejected.result).toBe('ремонт')
+    expect(waiting.result).toBe('ожидает НК')
+    expect(() => buildPreHeatTreatmentResultCorrectionWrite({ row, control: rejected, result: 'годен', controlDate: '2026-08-05', conclusionName: 'К-УЗК' }))
+      .toThrow('Сначала верните стыку официальность')
+  })
   it('warns before deleting the last rejected pre-TO result and allows deletion after restoration', () => {
     const current = control({ result: 'ремонт' })
     const row = makeRow({ officiality: 'неофициальный', preHeatTreatmentControls: [current], pstoDate: null, pstoResult: null })

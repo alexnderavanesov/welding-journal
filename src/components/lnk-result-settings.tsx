@@ -4,7 +4,7 @@ import { WorkflowResultOptionPicker } from '@/components/workflow-result-option-
 import { RequestDocumentCombobox } from '@/components/request-document-combobox'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
+import { getDateInputValidationReason, MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   getEffectiveLnkResultDraftValueForRow,
@@ -95,9 +95,10 @@ export function LnkResultSettings({
             type="date"
             min={MIN_ALLOWED_DATE_ISO}
             value={draft.controlDate}
+            aria-invalid={hasNonEmptyRows && Boolean(getDateInputValidationReason(draft.controlDate, 'Дата контроля', { required: true }))}
             disabled={!hasNonEmptyRows}
             onChange={(event) => onControlDateChange(event.target.value)}
-            className="h-9 bg-white"
+            className="h-9 bg-white aria-invalid:border-rose-400"
           />
         </label>
       )}

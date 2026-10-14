@@ -37,6 +37,8 @@ export type WeldingJournalOutputRowsKind =
 type UseReportOutputActionsParams = {
   activeReport: ActiveReport
   activeTitle: string
+  outputContext?: string
+  currentRowsReady?: boolean
   loadLnkRows: (kind: LnkOutputRowsKind) => Promise<ReportRow[]>
   loadPstoRows: (kind: PstoOutputRowsKind) => Promise<ReportRow[]>
   loadWeldingJournalRows: (kind: WeldingJournalOutputRowsKind) => Promise<WeldInput[]>
@@ -49,6 +51,8 @@ type UseReportOutputActionsParams = {
 export function useReportOutputActions({
   activeReport,
   activeTitle,
+  outputContext,
+  currentRowsReady = true,
   loadLnkRows,
   loadPstoRows,
   loadWeldingJournalRows,
@@ -58,8 +62,13 @@ export function useReportOutputActions({
   setMessage,
 }: UseReportOutputActionsParams) {
   const controlProcessSettings = useControlProcessSettings()
-  const { open, previewProps } = useReportPreview(activeReport)
+  const { open, previewProps } = useReportPreview(outputContext ?? activeReport)
   const actions = useMemo(() => {
+    function canOpenCurrentReport() {
+      if (currentRowsReady) return true
+      setMessage('Дождитесь загрузки строк текущей выборки.')
+      return false
+    }
     async function openLoadedReport<Row>(
       reportLabel: string,
       loadRows: () => Promise<Row[]>,
@@ -73,6 +82,7 @@ export function useReportOutputActions({
     }
 
     async function openLnkCurrentReport() {
+      if (!canOpenCurrentReport()) return
       setIsLnkShowMenuOpen(false)
       await openLoadedReport(
         'ЛНК',
@@ -102,6 +112,7 @@ export function useReportOutputActions({
     }
 
     async function openPstoCurrentReport() {
+      if (!canOpenCurrentReport()) return
       setIsPstoShowMenuOpen(false)
       await openLoadedReport(
         'ПСТО и ТВМТ',
@@ -126,6 +137,7 @@ export function useReportOutputActions({
     }
 
     async function openWeldingJournalCurrentReport() {
+      if (!canOpenCurrentReport()) return
       setIsWeldingJournalShowMenuOpen(false)
       await openLoadedReport(
         'сварочного журнала',
@@ -187,6 +199,7 @@ export function useReportOutputActions({
     open,
     activeReport,
     activeTitle,
+    currentRowsReady,
     controlProcessSettings,
     loadLnkRows,
     loadPstoRows,

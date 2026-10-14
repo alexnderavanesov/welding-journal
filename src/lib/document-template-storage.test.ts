@@ -14,8 +14,28 @@ import {
 } from '@/lib/document-template-storage'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldInput } from '@/lib/weld-fields'
+import { SPECIALIST_TEMPLATE_FIELDS } from './document-specialists'
 
 describe('document template storage', () => {
+  it.each(['lnkConclusion', 'pstoConclusion'] as const)('exports and previews all eight semantic specialist fields correctly for %s', async type => {
+    const template = createXlsxTemplate([Array(8).fill('')])
+    template.id = type === 'pstoConclusion' ? type : 'lnkConclusionVik'
+    template.constructorConfig = { version: 1, sheetName: 'Шаблон', bindings: SPECIALIST_TEMPLATE_FIELDS.map((field, index) => ({ cell: `${String.fromCharCode(65 + index)}1`, mode: 'summary', field: field.key })) }
+    const rows = [{ joint: 'F1' }] as WeldInput[]
+    const context = { systemDocument: { type, label: 'Заключение', title: 'Заключение-1', number: '1', date: '2026-10-12', methodCode: type === 'lnkConclusion' ? 'ВИК' : undefined, methodCodes: type === 'lnkConclusion' ? ['ВИК'] : [], specialists: { first: { id: 1, name: 'Иванов', certificate: 'СТАРОЕ' }, second: { id: 2, name: 'Петров', certificate: 'ДРУГОЕ' } } } }
+    const blob = await createWeldingJournalBlobFromTemplate(template, rows, context)
+    const sheet = XLSX.read(await readBlobAsArrayBuffer(blob), { type: 'array' }).Sheets['Шаблон']
+    for (const [index, field] of SPECIALIST_TEMPLATE_FIELDS.entries()) {
+      const applicable = field.kind === (type === 'pstoConclusion' ? 'thermist' : 'inspector')
+      expect(sheet[`${String.fromCharCode(65 + index)}1`]?.v ?? '').toBe(applicable ? context.systemDocument.specialists[field.role][field.value] : '')
+    }
+    const preview = await createWeldingJournalDocumentPreview(template, rows, context)
+    expect(JSON.stringify(preview)).toContain('Иванов')
+    expect(JSON.stringify(preview)).toContain('СТАРОЕ')
+    const cleared = await createWeldingJournalBlobFromTemplate(template, rows, { systemDocument: { ...context.systemDocument, specialists: { first: null, second: null } } })
+    const empty = XLSX.read(await readBlobAsArrayBuffer(cleared), { type: 'array' }).Sheets['Шаблон']
+    for (let index = 0; index < 8; index++) expect(empty[`${String.fromCharCode(65 + index)}1`]?.v ?? '').toBe('')
+  })
   it('keeps constructor settings when only template content changes', async () => {
     const current = createXlsxTemplate([
       ['Заголовок'],

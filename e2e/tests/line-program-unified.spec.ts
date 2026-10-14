@@ -1,14 +1,26 @@
 import { rpcName } from '../rpc'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { calculateLineProgram } from '../../src/lib/line-program-calculation'
 import { programExcessEntries } from '../../src/lib/line-program-workspace'
+
+// Finish the initial key before searching; rows can arrive before full totals.
+async function searchProgram(page: Page, search: string) {
+  const totals = page.getByTestId('line-program').getByLabel('Итоги раздела')
+  await expect(totals).toBeVisible()
+  const [response] = await Promise.all([
+    page.waitForResponse(response => response.url().includes('/_serverFn/') && rpcName(response.url()).startsWith('getLineProgramSection_')),
+    page.getByLabel('Поиск программы линий').fill(search),
+  ])
+  expect(response.ok()).toBe(true)
+  await expect(totals).toBeVisible()
+}
 
 test.afterEach(() => cleanupLineProgramProjects(['E2E unified']))
 
 async function seed(name: string, percent: number, count: number) {
-  return withE2eDatabase(async db => {
+  return withLineProgramFixture(async db => {
     await db.query("delete from weld_joints where project_title='E2E unified' and line=$1", [name])
     await db.query("delete from line_programs where project_title='E2E unified' and line=$1", [name])
     const { rows: [line] } = await db.query(`insert into line_programs (project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent) values ('E2E unified','UNI',$1,'II','A',$2,10) returning id`, [name, percent])
@@ -23,7 +35,7 @@ async function seed(name: string, percent: number, count: number) {
 async function openLine(page: Page, name: string) {
   await page.goto('/line-program')
   const program = page.getByTestId('line-program')
-  await program.getByLabel('Поиск программы линий').fill(name)
+  await searchProgram(page, name)
   await expect(program.getByTestId('line-program-card')).toHaveCount(1)
   await program.getByRole('button', { name: `Расчёт линии ${name}`, exact: true }).click()
   return program
@@ -36,7 +48,7 @@ async function openAssignments(page: Page) {
 
 test('семь UX-уточнений: соединения и записи, этапы, видимая потребность и доступные действия', async ({ page }) => {
   const name = 'UNIFIED-INTERFACE-CLARITY', id = await seed(name, 12, 5)
-  await withE2eDatabase(db => db.query(`update weld_joints set
+  await withLineProgramFixture(db => db.query(`update weld_joints set
     weld_date=case when joint in ('F1','F2') then null else date '2026-09-05' end,
     stamp_1_k=case when joint in ('F1','F2') then null else 'UNIFIED-A' end,
     vik_result=case when joint='F3' then 'ожидает НК' when joint='F5' then 'годен' end,
@@ -88,7 +100,8 @@ test('семь UX-уточнений: соединения и записи, эт
   await editor.getByRole('button', { name: 'Вернуться к просмотру' }).click()
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
   const count = (prefix: string) => calls.filter(name => name.startsWith(prefix)).length
-  expect(count('getLineProgramSection_')).toBe(1)
+  expect(count('getLineProgramSection_')).toBe(2)
+  expect(count('getLineProgramPage_')).toBe(2)
   expect(count('getLineProgramCalculation_')).toBe(1)
   expect(count('getLineProgramJointPage_')).toBe(1)
   expect(count('getLineProgramExplanation_')).toBe(0)
@@ -98,7 +111,7 @@ test('семь UX-уточнений: соединения и записи, эт
 test('зелёная рамка только у завершённой линии, без влияния исключённых записей и дополнительных запросов', async ({ page }) => {
   const prefix = 'UNIFIED-FINISHED-'
   for (const [suffix, count] of [['DONE', 3], ['WAIT', 1], ['REJECT', 1], ['ERROR', 1], ['EMPTY', 0], ['MISSING', 1], ['UNKNOWN', 1]] as const) await seed(prefix + suffix, 12, count)
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query("update weld_joints set has_rk='да',has_pvk='да',vik_result='годен',rk_result='годен',pvk_result='годен' where line like $1", [prefix + '%'])
     await db.query("update weld_joints set officiality='неофициальный',vik_result='ремонт' where line=$1 and joint='F2'", [prefix + 'DONE'])
     await db.query("update weld_joints set revision_actuality='не актуален',has_rk=null where line=$1 and joint='F3'", [prefix + 'DONE'])
@@ -113,7 +126,7 @@ test('зелёная рамка только у завершённой лини�
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/line-program')
   const program = page.getByTestId('line-program')
-  await program.getByLabel('Поиск программы линий').fill(prefix)
+  await searchProgram(page, prefix)
   await expect(program.getByTestId('line-program-card')).toHaveCount(7)
   const card = (suffix: string) => program.locator(`[data-testid="line-program-card"][data-line="${prefix + suffix}"]`)
   await expect(card('DONE')).toHaveClass(/border-emerald-300/)
@@ -125,7 +138,8 @@ test('зелёная рамка только у завершённой лини�
   }
   await expect(card('WAIT').getByRole('button', { name: 'К назначению 0', exact: true })).toBeVisible()
   await expect(card('REJECT').getByRole('button', { name: 'К назначению 0', exact: true })).toBeVisible()
-  expect(calls.filter(name => name.startsWith('getLineProgramSection_'))).toHaveLength(1)
+  expect(calls.filter(name => name.startsWith('getLineProgramSection_'))).toHaveLength(2)
+  expect(calls.filter(name => name.startsWith('getLineProgramPage_'))).toHaveLength(2)
   expect(calls.some(name => name.startsWith('getLineProgramCalculation_') || name.startsWith('getLineProgramJointPage_'))).toBe(false)
   await page.screenshot({ path: 'outputs/line-program-finished-border.png', fullPage: true })
   await card('DONE').getByRole('button', { name: 'Учитываемых соединений 1', exact: true }).click()
@@ -134,9 +148,9 @@ test('зелёная рамка только у завершённой лини�
   await expect(card('DONE').getByText('Неактуальный', { exact: true })).toBeVisible()
   await expect(card('DONE')).toHaveClass(/border-emerald-300/)
   for (const result of [null, 'годен']) {
-    await withE2eDatabase(db => db.query("update weld_joints set rk_result=$1 where line=$2 and joint='F1'", [result, prefix + 'DONE']))
+    await withLineProgramFixture(db => db.query("update weld_joints set rk_result=$1 where line=$2 and joint='F1'", [result, prefix + 'DONE']))
     await page.reload()
-    await program.getByLabel('Поиск программы линий').fill(prefix)
+    await searchProgram(page, prefix)
     await expect(card('DONE')).toHaveAttribute('data-program-finished', String(result === 'годен'))
     if (result) await expect(card('DONE')).toHaveClass(/border-emerald-300/)
     else await expect(card('DONE')).toHaveClass(/border-slate-200/)
@@ -148,7 +162,7 @@ test('зелёная рамка только у завершённой лини�
 
 test('цвета назначений и мягкая подсветка итогового состояния в списке и окне назначений', async ({ page }) => {
   const name = 'UNIFIED-COLOR-STATES', id = await seed(name, 12, 6)
-  await withE2eDatabase(db => db.query(`update weld_joints set
+  await withLineProgramFixture(db => db.query(`update weld_joints set
     vik_result=case when joint='F2' then 'ремонт' when joint!='F6' then 'годен' end,
     has_rk=case when joint='F3' then 'да' when joint='F4' then 'отменен' end,
     rk_result=case when joint='F4' then 'вырез' end,
@@ -200,7 +214,7 @@ test('цвета назначений и мягкая подсветка ито�
 
 test('спокойная иерархия: расчёт в модальном окне, разбивка и стыки независимы, без скрытых запросов', async ({ page }) => {
   const name = 'UNIFIED-VISUAL-HIERARCHY', id = await seed(name, 10, 5)
-  await withE2eDatabase(db => db.query("update weld_joints set has_pvk=case when joint='F1' then 'да' end where line_program_id=$1", [id]))
+  await withLineProgramFixture(db => db.query("update weld_joints set has_pvk=case when joint='F1' then 'да' end where line_program_id=$1", [id]))
   const errors: string[] = [], calls: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
@@ -286,7 +300,7 @@ test('спокойная иерархия: расчёт в модальном о
 
 test('ПКМ показателей открывает их подробный расчёт, обычный клик сохраняет переход к стыкам', async ({ page }) => {
   const name = 'UNIFIED-METRIC-CALCULATION', id = await seed(name, 10, 5)
-  await withE2eDatabase(db => db.query("update weld_joints set has_rk=case when joint in ('F1','F2','F3') then 'да' end, rk_result=case when joint='F3' then 'годен' end where line_program_id=$1", [id]))
+  await withLineProgramFixture(db => db.query("update weld_joints set has_rk=case when joint in ('F1','F2','F3') then 'да' end, rk_result=case when joint='F3' then 'годен' end where line_program_id=$1", [id]))
   const calls: string[] = [], errors: string[] = []
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error => errors.push(error.message))
@@ -324,7 +338,7 @@ test('ПКМ показателей открывает их подробный �
 
 test('ПКМ в меню «Ещё»: дополнительный ПВК открывается мышью и с клавиатуры без повторного запроса', async ({ page }) => {
   const name = 'UNIFIED-MORE-CALCULATION', id = await seed(name, 10, 2)
-  await withE2eDatabase(db => db.query("update weld_joints set has_pvk='дополнительный' where line_program_id=$1 and joint='F1'", [id]))
+  await withLineProgramFixture(db => db.query("update weld_joints set has_pvk='дополнительный' where line_program_id=$1 and joint='F1'", [id]))
   const calls: string[] = [], errors: string[] = []
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error => errors.push(error.message))
@@ -402,7 +416,7 @@ test('переключатели расчёта: единое оформлени
 
 test('ПКМ линии и клейма: точная область, черновик, независимое раскрытие и ограниченные запросы', async ({ page }) => {
   const name = 'UNIFIED-SCOPE-MENU', id = await seed(name, 30, 4)
-  await withE2eDatabase(db => db.query("update weld_joints set stamp_1_k='UNIFIED-B',stamp_1_k_fact='UNIFIED-B' where line_program_id=$1 and joint='F4'", [id]))
+  await withLineProgramFixture(db => db.query("update weld_joints set stamp_1_k='UNIFIED-B',stamp_1_k_fact='UNIFIED-B' where line_program_id=$1 and joint='F4'", [id]))
   const calls: string[] = [], errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => {
@@ -420,7 +434,7 @@ test('ПКМ линии и клейма: точная область, черно
   }
   await page.goto('/line-program')
   const program = page.getByTestId('line-program')
-  await program.getByLabel('Поиск программы линий').fill(name)
+  await searchProgram(page, name)
   const header = program.getByTestId('line-program-header'), menu = page.getByTestId('context-action-menu')
   await expect(header).toHaveCount(1)
   await rightClick(program.getByRole('button', { name: 'Клейм в линиях 2', exact: true }))
@@ -482,7 +496,8 @@ test('ПКМ линии и клейма: точная область, черно
   await page.screenshot({ path: '/private/tmp/line-program-scope-menu.png' })
   await page.getByRole('menu').getByRole('button', { name: 'К назначению', exact: true }).click()
   await expect(program.locator('[data-scope="stamp:unified-a"]')).toBeVisible()
-  expect(count('getLineProgramSection')).toBe(1)
+  expect(count('getLineProgramSection')).toBe(2)
+  expect(count('getLineProgramPage')).toBe(2)
   expect(count('getLineProgramCalculation')).toBe(1)
   expect(count('getLineProgramJointPage')).toBe(1)
   expect(count('previewLineProgramControl')).toBe(0)
@@ -495,7 +510,7 @@ test('ПКМ линии и клейма: точная область, черно
 test('возможное сокращение: счётчик равен рамкам; заявки всех этапов защищены, отмена сохраняет факты', async ({ page }) => {
   const name = 'UNIFIED-REDUCTION-HISTORY'
   const id = await seed(name, 25, 4)
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query(`update weld_joints set has_rk='да',
       rk_request=case when joint in ('F2','F4') then 'RK-'||joint end,
       rk_request_date=case when joint in ('F2','F4') then date '2026-09-02' end,
@@ -547,7 +562,7 @@ test('мягкая красная строка только у клейм с т�
   ]
   for (const item of cases) {
     const id = await seed(item.name, item.percent, 10)
-    await withE2eDatabase(db => db.query(`update weld_joints set
+    await withLineProgramFixture(db => db.query(`update weld_joints set
       weld_date=date '2026-09-01',
       stamp_1_k=case when substring(joint from 2)::int <= 5 then 'UNIFIED-A' else 'UNIFIED-B' end,
       rk_result=case when substring(joint from 2)::int in (1,2,3,4) or ($2 and substring(joint from 2)::int in (6,7,8,9)) then 'ремонт' else null end
@@ -563,7 +578,7 @@ test('мягкая красная строка только у клейм с т�
   await page.goto('/line-program')
   const program = page.getByTestId('line-program')
   for (const item of cases) {
-    await program.getByLabel('Поиск программы линий').fill(item.name)
+    await searchProgram(page, item.name)
     const card = program.getByTestId('line-program-card')
     await expect(card).toHaveCount(1)
     await expect(card).toHaveAttribute('data-line', item.name)
@@ -589,7 +604,9 @@ test('мягкая красная строка только у клейм с т�
     await expect(a).toHaveCSS('background-color', item.percent < 100 ? 'rgba(255, 241, 242, 0.3)' : 'rgb(241, 245, 249)')
     if (item.name.endsWith('-ALL')) await card.screenshot({ path: 'outputs/line-program-rejection-highlights.png' })
   }
-  expect(requests.filter(url => url.includes('getLineProgramSection'))).toHaveLength(1)
+  // Initial all-lines key plus one full/page read for each of the three searches.
+  expect(requests.filter(url => url.includes('getLineProgramSection'))).toHaveLength(1 + cases.length)
+  expect(requests.filter(url => url.includes('getLineProgramPage'))).toHaveLength(1 + cases.length)
   expect(requests.filter(url => url.includes('getLineProgramCalculation'))).toHaveLength(3)
   expect(errors).toEqual([])
 })
@@ -599,13 +616,13 @@ test('компактные заголовки: общие колонки, чит
   await seed(prefix + 'A', 30, 5)
   await seed(prefix + 'B', 100, 5)
   await seed(prefix + 'C', 100, 5)
-  await withE2eDatabase(db => db.query("update weld_joints set has_rk=case when joint='F5' then 'дополнительный' else 'да' end where line=$1", [prefix + 'A']))
-  await withE2eDatabase(db => db.query("update weld_joints set weld_date='2026-09-01',stamp_1_k='UNIFIED-A',has_rk='да',has_pvk='да',vik_result='годен',rk_result='годен',pvk_result='годен' where line=$1", [prefix + 'C']))
+  await withLineProgramFixture(db => db.query("update weld_joints set has_rk=case when joint='F5' then 'дополнительный' else 'да' end where line=$1", [prefix + 'A']))
+  await withLineProgramFixture(db => db.query("update weld_joints set weld_date='2026-09-01',stamp_1_k='UNIFIED-A',has_rk='да',has_pvk='да',vik_result='годен',rk_result='годен',pvk_result='годен' where line=$1", [prefix + 'C']))
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/line-program')
   const program = page.getByTestId('line-program')
-  await program.getByLabel('Поиск программы линий').fill(prefix)
+  await searchProgram(page, prefix)
   const cards = program.getByTestId('line-program-card')
   await expect(cards).toHaveCount(3)
   await expect(cards.first().getByRole('button', { name: /^Возможное сокращение/ })).toBeVisible()
@@ -662,13 +679,13 @@ test('ширина заголовка не оставляет пустую ко�
   const prefix = 'UNIFIED-SIDEBAR-'
   await seed(prefix + 'A', 30, 5)
   await seed(prefix + 'B — длинное название линии, которое должно сокращаться без сдвига показателей', 100, 5)
-  await withE2eDatabase(db => db.query("update weld_joints set has_rk=case when joint='F5' then 'дополнительный' else 'да' end where line=$1", [prefix + 'A']))
+  await withLineProgramFixture(db => db.query("update weld_joints set has_rk=case when joint='F5' then 'дополнительный' else 'да' end where line=$1", [prefix + 'A']))
   const calls: string[] = [], errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   await page.goto('/line-program')
   const program = page.getByTestId('line-program')
-  await program.getByLabel('Поиск программы линий').fill(prefix)
+  await searchProgram(page, prefix)
   const cards = program.getByTestId('line-program-card')
   await expect(cards).toHaveCount(2)
   for (const width of [1600, 1866, 2048, 2760]) {
@@ -699,14 +716,15 @@ test('ширина заголовка не оставляет пустую ко�
       if (width === 1866) await program.screenshot({ path: `outputs/line-program-sidebar-${collapsed ? 'collapsed' : 'expanded'}.png` })
     }
   }
-  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(1)
+  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(2)
+  expect(calls.filter(call => call.startsWith('getLineProgramPage_'))).toHaveLength(2)
   expect(errors).toEqual([])
 })
 
 test('единый блок общего НК и ПВК, простой остаток и выровненные строки методов', async ({ page }) => {
   const name = 'UNIFIED-COUNT-UNITS'
   await seed(name, 100, 7)
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query('update line_programs set pvk_control_percent=100 where line=$1', [name])
     await db.query("update weld_joints set pvk_control_percent=100,weld_date='2026-09-01',stamp_1_k='UNIFIED-A',has_rk=case when joint in ('F1','F2','F3') then 'да' end,has_pvk=case when joint in ('F1','F2','F3','F4','F5') then 'да' end where line=$1", [name])
   })
@@ -829,7 +847,8 @@ test('единый блок общего НК и ПВК, простой оста
   await program.getByRole('button', { name: 'Сбросить фильтр', exact: true }).click()
   await expect(program.getByTestId('line-program-filter')).toHaveCount(0)
   await expect(program.getByLabel('Поиск программы линий')).toHaveValue(name)
-  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(1)
+  expect(calls.filter(call => call.startsWith('getLineProgramSection_'))).toHaveLength(2)
+  expect(calls.filter(call => call.startsWith('getLineProgramPage_'))).toHaveLength(2)
   expect(calls.filter(call => call.startsWith('getLineProgramCalculation_'))).toHaveLength(1)
   expect(calls.filter(call => call.startsWith('getLineProgramJointPage_'))).toHaveLength(1)
   expect(errors).toEqual([])
@@ -838,7 +857,7 @@ test('единый блок общего НК и ПВК, простой оста
 test('доп закрывает норму: видимый состав, лишнее да и ручное снятие без потери результатов', async ({ page }) => {
   const name = 'UNIFIED-ADDITIONAL'
   await seed(name, 50, 4)
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query('update line_programs set pvk_control_percent=50 where line=$1', [name])
     await db.query("update weld_joints set pvk_control_percent=50,has_rk=case when joint in ('F1','F2') then 'да' end,has_pvk=case when joint in ('F1','F2') then 'да' end,vik_result='годен',vik_conclusion='ADDITIONAL-VIK',vik_conclusion_date='2026-09-02' where line=$1", [name])
   })
@@ -913,7 +932,7 @@ test('доп закрывает норму: видимый состав, лиш�
 test('результаты продолжают строки назначений: одинаковый фон, подписи этапов, без ссылок и лишней нижней границы', async ({ page }) => {
   const name = 'UNIFIED-RESULTS-STYLE'
   await seed(name, 100, 5)
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query("update weld_joints set vik_result='годен',vik_conclusion='STYLE-VIK',vik_conclusion_date='2026-09-02',has_rk='да',rk_result='годен',rk_conclusion='STYLE-RK',rk_conclusion_date='2026-09-03' where line=$1", [name])
     await db.query("insert into pre_heat_treatment_controls (weld_joint_id,method,result,conclusion_name,conclusion_date) select id,'ВИК','годен','STYLE-PRE','2026-09-01' from weld_joints where line=$1 and joint='F2'", [name])
     await db.query("insert into pre_heat_treatment_controls (weld_joint_id,method,result) select id,m,'годен' from weld_joints cross join unnest(array['РК','УЗК','ПВК']) m where line=$1 and joint='F2'", [name])
@@ -984,7 +1003,7 @@ test('результаты продолжают строки назначени�
 test('назначения с компактными результатами: явное применение, пусто по правилам карточки, ПКМ и безопасный переход', async ({ page }) => {
   const name = 'UNIFIED-ACTIONS'
   await seed(name, 30, 5)
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query("update weld_joints set has_rk='да', rk_result='годен', rk_request='ACTIONS-REQ-1', rk_request_date='2026-09-02', rk_conclusion='ACTIONS-RES-1', rk_conclusion_date='2026-09-03' where line=$1 and joint='F1'", [name])
     await db.query("update weld_joints set has_rk='да', rk_result='ожидает НК', rk_request='ACTIONS-PENDING', rk_request_date='2026-09-02' where line=$1 and joint='F2'", [name])
     await db.query("update weld_joints set has_rk='да', rk_result='ожидает заявку' where line=$1 and joint in ('F3','F5')", [name])
@@ -1057,7 +1076,7 @@ test('назначения с компактными результатами: �
 test('предел назначений, компактные результаты и четыре клейма без дополнительных запросов', async ({ page }) => {
   const name = 'UNIFIED-DEFICIT-RESULTS'
   await seed(name, 100, 5)
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query(`update weld_joints set weld_date='2026-09-01', stamp_1_k='UNIFIED-A',
       has_rk=case when joint='F4' then null else 'да' end,
       has_pvk=case when joint in ('F1','F3','F5') then 'да' else null end,
@@ -1128,7 +1147,7 @@ test('предел назначений, компактные результат
   await expect(program.getByLabel('История контроля F4')).toContainText('ВИК: ремонт')
   await page.screenshot({ path: 'outputs/line-program-assignment-cap-20260928.png' })
   // A new eligible joint restores demand. The exhausted original stays rejected.
-  await withE2eDatabase(db => db.query(`insert into weld_joints (line_program_id,project_title,subtitle_code,line,joint,weld_date,connection_type,category,group_name,weld_control_percent,pvk_control_percent,has_vik,stamp_1_k,stamp_1_k_fact,officiality,revision_actuality,welding_method,material_group,d1,d2,t1,t2,wdi,isometry,spool,vik_control_basis,rk_control_basis,uzk_control_basis,pvk_control_basis)
+  await withLineProgramFixture(db => db.query(`insert into weld_joints (line_program_id,project_title,subtitle_code,line,joint,weld_date,connection_type,category,group_name,weld_control_percent,pvk_control_percent,has_vik,stamp_1_k,stamp_1_k_fact,officiality,revision_actuality,welding_method,material_group,d1,d2,t1,t2,wdi,isometry,spool,vik_control_basis,rk_control_basis,uzk_control_basis,pvk_control_basis)
     select line_program_id,project_title,subtitle_code,line,'F6',weld_date,connection_type,category,group_name,weld_control_percent,pvk_control_percent,has_vik,stamp_1_k,stamp_1_k_fact,officiality,revision_actuality,welding_method,material_group,d1,d2,t1,t2,wdi,isometry,spool,vik_control_basis,rk_control_basis,uzk_control_basis,pvk_control_basis from weld_joints where line=$1 and joint='F3'`, [name]))
   await openLine(page, name)
   await expect(card).toHaveClass(/border-amber-300/)
@@ -1149,8 +1168,8 @@ test('предел назначений, компактные результат
 test('панель раздела: создание и настройки только во всех линиях, выровненные итоги', async ({ page }) => {
   await seed('UNIFIED-TOOLBAR-PERCENT', 10, 1)
   await seed('UNIFIED-TOOLBAR-FULL', 100, 1)
-  await withE2eDatabase(db => db.query("update line_programs set weld_control_percent=0,pvk_control_percent=0 where line='UNIFIED-TOOLBAR-PERCENT'"))
-  await withE2eDatabase(db => db.query("insert into line_programs (project_title, subtitle_code, line) values ('E2E unified', 'UNI', 'UNIFIED-TOOLBAR-SETUP')"))
+  await withLineProgramFixture(db => db.query("update line_programs set weld_control_percent=0,pvk_control_percent=0 where line='UNIFIED-TOOLBAR-PERCENT'"))
+  await withLineProgramFixture(db => db.query("insert into line_programs (project_title, subtitle_code, line) values ('E2E unified', 'UNI', 'UNIFIED-TOOLBAR-SETUP')"))
   const errors: string[] = [], calls: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => { const id = new URL(request.url()).pathname.split('/_serverFn/')[1]; if (id) try { calls.push(rpcName(request.url())) } catch { /* built RPC ID */ } })
@@ -1158,7 +1177,7 @@ test('панель раздела: создание и настройки тол
   const program = page.getByTestId('line-program')
   const search = program.getByLabel('Поиск программы линий')
   const create = program.getByRole('button', { name: 'Новая линия', exact: true })
-  await search.fill('UNIFIED-TOOLBAR')
+  await searchProgram(page, 'UNIFIED-TOOLBAR')
   await expect(program.getByTestId('line-program-card')).toHaveCount(3)
   await expect(program.getByRole('heading', { name: 'Программа линий', exact: true })).toHaveCount(0)
   await expect(program.getByText('Расчёт, назначения и результаты — в одном рабочем пространстве линии.')).toHaveCount(0)
@@ -1194,17 +1213,31 @@ test('панель раздела: создание и настройки тол
     await page.screenshot({ path: 'outputs/line-program-long-filter-' + width + '.png' })
   }
   await program.getByRole('button', { name: 'Сбросить фильтр', exact: true }).click()
-  for (const [tab, name] of [['Процентные линии', 'UNIFIED-TOOLBAR-PERCENT'], ['100%-ные линии', 'UNIFIED-TOOLBAR-FULL']] as const) {
-    await program.getByRole('button', { name: tab, exact: true }).click()
+  // Two keys are ready: initial all-lines and the searched all-lines selection.
+  expect(calls.filter(name => name.startsWith('getLineProgramSection_'))).toHaveLength(2)
+  expect(calls.filter(name => name.startsWith('getLineProgramPage_'))).toHaveLength(2)
+  for (const [tab, name, reads] of [['Процентные линии', 'UNIFIED-TOOLBAR-PERCENT', 3], ['100%-ные линии', 'UNIFIED-TOOLBAR-FULL', 4]] as const) {
+    const [response] = await Promise.all([
+      page.waitForResponse(response => response.url().includes('/_serverFn/') && rpcName(response.url()).startsWith('getLineProgramSection_')),
+      program.getByRole('button', { name: tab, exact: true }).click(),
+    ])
+    expect(response.ok()).toBe(true)
+    await expect(totals).toBeVisible()
+    expect(calls.filter(name => name.startsWith('getLineProgramSection_'))).toHaveLength(reads)
+    expect(calls.filter(name => name.startsWith('getLineProgramPage_'))).toHaveLength(reads)
     await expect(program.getByTestId('line-program-card')).toHaveCount(1)
     await expect(program.getByTestId('line-program-card')).toHaveAttribute('data-line', name)
     await expect(create).toHaveCount(0)
     await expect(program.getByRole('button', { name: 'Настроить', exact: true })).toHaveCount(0)
   }
   await program.getByRole('button', { name: 'Все линии', exact: true }).click()
+  await expect(totals).toBeVisible()
+  await expect(program.getByTestId('line-program-card')).toHaveCount(3)
   await create.click()
   await expect(page.getByRole('dialog', { name: 'Новая линия', exact: true })).toBeVisible()
-  expect(calls.filter(name => name.startsWith('getLineProgramSection_'))).toHaveLength(1)
+  // Returning to the same tab/search uses its completed cached selection.
+  expect(calls.filter(name => name.startsWith('getLineProgramSection_'))).toHaveLength(4)
+  expect(calls.filter(name => name.startsWith('getLineProgramPage_'))).toHaveLength(4)
   expect(calls.filter(name => name.startsWith('getLineProgramCalculation_') || name.startsWith('getLineProgramJointPage_'))).toHaveLength(0)
   expect(errors).toEqual([])
 })
@@ -1213,13 +1246,13 @@ test('оформление программы как у журнала: белы
   const prefix = 'UNIFIED-WHITE-'
   await seed(prefix + 'A', 30, 5)
   await seed(prefix + 'B', 100, 5)
-  await withE2eDatabase(db => db.query("update weld_joints set has_rk='да',has_pvk='да' where line=$1", [prefix + 'B']))
+  await withLineProgramFixture(db => db.query("update weld_joints set has_rk='да',has_pvk='да' where line=$1", [prefix + 'B']))
   const calls: string[] = [], errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   await page.goto('/line-program')
   const program = page.getByTestId('line-program'), toolbar = program.getByTestId('line-program-toolbar')
-  await program.getByLabel('Поиск программы линий').fill(prefix)
+  await searchProgram(page, prefix)
   await expect(program.getByTestId('line-program-card')).toHaveCount(2)
   for (const width of [1000, 1600]) {
     await page.setViewportSize({ width, height: 1000 })
@@ -1247,14 +1280,15 @@ test('оформление программы как у журнала: белы
   await program.getByRole('button', { name: 'Все стыки линии', exact: true }).click()
   await expect(program.getByTestId('line-program-all-joints')).toBeVisible()
   await page.screenshot({ path: 'outputs/line-program-white-details.png' })
-  expect(calls.filter(name => name.startsWith('getLineProgramSection_'))).toHaveLength(1)
+  expect(calls.filter(name => name.startsWith('getLineProgramSection_'))).toHaveLength(2)
+  expect(calls.filter(name => name.startsWith('getLineProgramPage_'))).toHaveLength(2)
   expect(errors).toEqual([])
 })
 
 test('сводка всех клейм, послойный черновик и смена клейма без потери данных и повторных запросов', async ({ page }) => {
   const name = 'UNIFIED-SCOPES'
   await seed(name, 100, 5)
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query("update line_programs set pvk_control_percent=30 where line=$1", [name])
     await db.query("update weld_joints set weld_date='2026-09-01',stamp_1_k='UNIFIED-A',stamp_1_k_fact='UNIFIED-A',pvk_control_percent=30,has_rk=case when joint in ('F2','F5') then 'да' end,has_uzk=case when joint='F3' then 'да' end,has_pvk=case when joint in ('F2','F3','F5') then 'да' end,connection_type=case when joint='F4' then 'У17' else 'СШ' end where line=$1", [name])
     await db.query("update weld_joints set stamp_1_o='UNIFIED-B' where line=$1 and joint='F1'", [name])
@@ -1309,7 +1343,7 @@ test('сводка всех клейм, послойный черновик и �
 test('планирование до сварки: группа без клейма, смешанный С/У, панель действий и сохранение', async ({ page }) => {
   const name = 'UNIFIED-PRE-WELD'
   await seed(name, 30, 4)
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query("update weld_joints set weld_date=null,stamp_1_k=null,stamp_1_k_fact=null where line=$1 and joint in ('F1','F2')", [name])
     await db.query("update weld_joints set weld_date=null,stamp_1_k='UNIFIED-B',stamp_1_k_fact='UNIFIED-B' where line=$1 and joint='F3'", [name])
   })
@@ -1403,7 +1437,7 @@ test('несколько линий, клейм и историй открыва
   page.on('request', request => { const id = new URL(request.url()).pathname.split('/_serverFn/')[1]; if (id) try { calls.push(rpcName(request.url())) } catch { /* asset */ } })
   await page.goto('/line-program')
   const program = page.getByTestId('line-program')
-  await program.getByLabel('Поиск программы линий').fill('UNIFIED-MULTI')
+  await searchProgram(page, 'UNIFIED-MULTI')
   const a = program.locator('[data-line="UNIFIED-MULTI-A"]'), b = program.locator('[data-line="UNIFIED-MULTI-B"]')
   await a.getByRole('button', { name: 'Расчёт линии UNIFIED-MULTI-A', exact: true }).click()
   await b.getByRole('button', { name: 'Расчёт линии UNIFIED-MULTI-B', exact: true }).click()
@@ -1452,7 +1486,7 @@ test('несколько линий, клейм и историй открыва
 test('лишнее: согласованные методы и доп отдельно, жёлтые кандидаты только без защищённой истории', async ({ page }) => {
   const name = 'UNIFIED-SURPLUS'
   const id = await seed(name, 30, 10)
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query("update weld_joints set has_rk=case when joint='F4' then 'дополнительный' when joint in ('F1','F2','F3','F5','F6') then 'да' end,has_uzk=case when joint in ('F3','F5') then 'да' end,rk_result=case when joint in ('F1','F6') then 'годен' end,rk_conclusion=case when joint in ('F1','F6') then 'FACT-'||joint end where line=$1", [name])
     const source = (await db.query('select id,joint,connection_type as "connectionType",weld_date::text as "weldDate",stamp_1_k as "stamp1K",has_rk as "hasRk",has_uzk as "hasUzk",rk_result as "rkResult" from weld_joints where line=$1 order by id', [name])).rows
     const joint = source.find(row => row.joint === 'F5')
@@ -1547,7 +1581,7 @@ test('лишнее: согласованные методы и доп отдел
 test('просмотр отдельно от назначений: размеры окон, сохранение черновика, виды, цвета и смена раздела', async ({ page }) => {
   const name = 'UNIFIED-POLISH'
   await seed(name, 10, 6)
-  await withE2eDatabase(db => db.query(`update weld_joints set
+  await withLineProgramFixture(db => db.query(`update weld_joints set
     has_rk = case when joint in ('F1','F2') then 'да' when joint='F3' then 'дополнительный' else null end,
     has_pvk = case when joint='F1' then 'да' when joint='F3' then 'дополнительный' else null end,
     rk_result = case when joint='F1' then 'годен' else null end,
@@ -1559,7 +1593,7 @@ test('просмотр отдельно от назначений: размер�
   await page.goto('/percentage-lines?source=bookmark#program')
   await expect(page).toHaveURL(/\/line-program\?source=bookmark#program$/)
   const program = page.getByTestId('line-program')
-  await program.getByLabel('Поиск программы линий').fill(name)
+  await searchProgram(page, name)
   const card = program.getByTestId('line-program-card')
   await expect(card).toHaveCount(1)
   await expect(card).toHaveClass(/border-slate-200/)
@@ -1738,7 +1772,7 @@ test('просмотр отдельно от назначений: размер�
 test('краткий просмотр: история по строке, этапы и колонки, ссылки без потери места', async ({ page }) => {
   const name = 'UNIFIED-HISTORY'
   await seed(name, 30, 3)
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query(`update weld_joints set has_rk='отменен', has_uzk='дополнительный', has_pvk='да',
       rk_request='HISTORY-RK-REQ', rk_request_date='2026-09-10', rk_result='годен', rk_conclusion='HISTORY-RK-RES', rk_conclusion_date='2026-09-11', lnk_defect_description='ДНО',
       psto_request='HISTORY-PSTO-REQ', psto_request_date='2026-09-03', psto_date='2026-09-04', psto_result='проведено', heat_treatment_diagram='HISTORY-PSTO-RES',
@@ -1902,7 +1936,7 @@ test('процентная линия: несколько методов, явн
   await expect(editor.getByTestId('line-program-joint').first()).toContainText('было: да')
   await editor.getByRole('button', { name: 'Проверить изменения' }).click()
   await expect(save).toBeVisible()
-  await withE2eDatabase(db => db.query("update weld_joints set updated_at=now() where line='UNIFIED-PERCENT' and joint='F20'"))
+  await withLineProgramFixture(db => db.query("update weld_joints set updated_at=now() where line='UNIFIED-PERCENT' and joint='F20'"))
   const confirmation = editor.getByRole('checkbox', { name: /Подтверждаю назначение сверх нормы/ })
   if (await confirmation.count()) await confirmation.check()
   await save.click()

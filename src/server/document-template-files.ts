@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
 
 export type DocumentTemplateFileStore = {
@@ -50,9 +50,58 @@ export function createDocumentTemplateFileStore(directory: string): DocumentTemp
     async set(key, data) {
       const path = resolveStoragePath(rootDirectory, key)
       await mkdir(dirname(path), { recursive: true })
-      await writeFile(path, new Uint8Array(data))
+      // Publish only a complete, durable file. A reader never sees a half upload.
+      const temporaryPath = `${path}.${randomUUID()}.tmp`
+      try {
+        const handle = await open(temporaryPath, 'wx')
+        try { await handle.writeFile(new Uint8Array(data)); await handle.sync() } finally { await handle.close() }
+        await rename(temporaryPath, path)
+        const directoryHandle = await open(dirname(path), 'r')
+        try { await directoryHandle.sync() } finally { await directoryHandle.close() }
+      } finally {
+        await rm(temporaryPath, { force: true })
+      }
     },
   }
+}
+
+/** Container writable layers disappear on redeploy. Check before any file mutation. */
+export async function assertPersistentDocumentTemplateStorage(directory: string) {
+  if (process.env.NODE_ENV !== 'production') return
+  if (!process.env.DOCUMENT_TEMPLATE_STORAGE_PATH?.trim()) {
+    throw new Error('Не задано постоянное хранилище шаблонов (DOCUMENT_TEMPLATE_STORAGE_PATH). Загрузка остановлена: файл не должен храниться внутри обновляемого приложения.')
+  }
+  if (process.platform !== 'linux') return // Local production-mode browser tests, not a container deployment.
+  let mounts: string
+  try { mounts = await readFile('/proc/self/mountinfo', 'utf8') } catch {
+    throw new Error('Не удалось проверить постоянное хранилище шаблонов. Файлы не изменены.')
+  }
+  // Resolve existing ancestors so a symlink cannot hide an ephemeral destination.
+  let existing = resolve(directory), suffix = ''
+  while (true) {
+    try { existing = await realpath(existing); break } catch (error) {
+      if (!isMissingFileError(error) || dirname(existing) === existing) throw error
+      suffix = `${existing.slice(dirname(existing).length)}/${suffix}`
+      existing = dirname(existing)
+    }
+  }
+  const target = resolve(existing, `.${suffix}`)
+  if (!hasPersistentTemplateMount(target, mounts)) {
+    throw new Error('Папка шаблонов не подключена к постоянному диску. Подключите volume для неё перед загрузкой: иначе обновление приложения удалит файлы. Ничего не изменено.')
+  }
+}
+
+export function hasPersistentTemplateMount(directory: string, mountInfo: string) {
+  const decode = (value: string) => value.replace(/\\([0-7]{3})/g, (_, octal: string) => String.fromCharCode(parseInt(octal, 8)))
+  const mounts = mountInfo.split('\n').flatMap(line => {
+    const [details, storage] = line.split(' - ')
+    if (!storage) return []
+    const target = decode(details.split(' ')[4] ?? '')
+    return target && (directory === target || directory.startsWith(target === '/' ? '/' : `${target}/`))
+      ? [{ target, type: storage.split(' ')[0] }] : []
+  }).sort((a, b) => b.target.length - a.target.length)
+  const mount = mounts[0]
+  return Boolean(mount && !['overlay', 'tmpfs', 'ramfs', 'aufs', 'rootfs', 'squashfs'].includes(mount.type))
 }
 
 export async function deleteDocumentTemplateFileVersions(

@@ -36,7 +36,7 @@ async function seed() {
   })
 }
 
-async function openMove(page: Page, id: number, existingStages = false) {
+async function openMove(page: Page, id: number) {
   await page.goto('/journal')
   await page.locator(`tr[data-weld-row-id="${id}"]`).getByRole('button', { name: 'Редактировать', exact: true }).click()
   const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
@@ -45,7 +45,7 @@ async function openMove(page: Page, id: number, existingStages = false) {
   await line.fill(targetLine)
   await line.press('Tab')
   await checked
-  if (!existingStages) await expect(page.getByRole('heading', { name: 'Перенос стыка на другую линию', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Перенос стыка на другую линию', exact: true })).toBeVisible()
   return editor
 }
 
@@ -120,8 +120,13 @@ test('возврат на линию ПСТО сохраняет ранее ра
     await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,psto_required,has_vik)
       select id,project_title,subtitle_code,line,'F782','да','да' from line_programs where project_title=$1 and line=$2`, [project, targetLine])
   })
-  const editor = await openMove(page, id, true)
-  // This joint already has separate pre/primary stages, not a new stage choice.
+  const editor = await openMove(page, id)
+  // The unified move dialog still appears; an occupied pre-TO stage disables
+  // transfer but leaves the default KEEP available, preserving both packages.
+  const move = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Перенос стыка на другую линию', exact: true }) })
+  await expect(move.getByText(/Целевой этап НК до ТО уже заполнен/)).toBeVisible()
+  await expect(move.getByRole('button', { name: 'Подтвердить перенос', exact: true })).toBeEnabled()
+  await move.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
   await expect(editor.getByRole('button', { name: 'Сохранить', exact: true })).toBeEnabled()
   await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
   await expect(editor).toBeHidden()

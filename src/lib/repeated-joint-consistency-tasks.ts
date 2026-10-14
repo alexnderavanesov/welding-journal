@@ -402,6 +402,47 @@ function hasJointChainSegment(
   return parseJointChainName(joint, systemIndexSettings).segments.some((segment) => segment.suffix === normalizedSuffix)
 }
 
+/** Reuse only inside one calculation over unchanged rows and settings.
+ * Non-Y queries never build the index. Two distinct candidate branches suffice
+ * to answer whether one differs from the queried branch, bounding each bucket.
+ * Keep the one-off public predicate below independent (also used by mutations).
+ */
+export function createCompletedParentBranchChecker(
+  rows: readonly WeldRow[],
+  systemIndexSettings: SystemIndexSettings = loadSystemIndexSettings(),
+) {
+  let completedBranches: Map<string, [string, string?]> | undefined
+  const chainKey = (identity: NonNullable<ReturnType<typeof getJointChainIdentity>>) =>
+    encodeIdentityKey([identity.project, identity.subtitle, identity.line, identity.baseJoint])
+
+  return (row: WeldInput, sourceJoint: string): boolean => {
+    if (!hasJointChainSegment(sourceJoint, 'Y', systemIndexSettings)) return false
+    const chainIdentity = getJointChainIdentity({ ...row, joint: sourceJoint }, systemIndexSettings)
+    const branchIdentity = getRepeatedJointIdentity(row, parseRepeatedJointName(sourceJoint, systemIndexSettings).base)
+    if (!chainIdentity || !branchIdentity) return false
+
+    if (!completedBranches) {
+      completedBranches = new Map()
+      for (const candidate of rows) {
+        if (isUnofficialJoint(candidate) || getJointStatusLabel(candidate) !== 'годен') continue
+        const candidateChainIdentity = getJointChainIdentity(candidate, systemIndexSettings)
+        if (!candidateChainIdentity) continue
+        const candidateBranchJoint = parseRepeatedJointName(String(candidate.joint ?? ''), systemIndexSettings).base
+        const candidateBranchIdentity = getRepeatedJointIdentity(candidate, candidateBranchJoint)
+        if (!candidateBranchIdentity || hasJointChainSegment(candidateBranchJoint, 'Y', systemIndexSettings)) continue
+        const key = chainKey(candidateChainIdentity)
+        const branches = completedBranches.get(key)
+        if (!branches) completedBranches.set(key, [candidateBranchIdentity.joint])
+        else if (branches[0] !== candidateBranchIdentity.joint && branches[1] === undefined) {
+          branches[1] = candidateBranchIdentity.joint
+        }
+      }
+    }
+    const branches = completedBranches.get(chainKey(chainIdentity))
+    return branches !== undefined && (branches[0] !== branchIdentity.joint || branches[1] !== undefined)
+  }
+}
+
 export function hasCompletedParentBranch(
   rows: WeldRow[],
   row: WeldInput,

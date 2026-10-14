@@ -32,12 +32,13 @@ const EDITABLE_REPORT_IMPORT_LABELS: Partial<Record<ActiveReport, string>> = {
 export type ReportSummaryTextParams = {
   activeReport: ActiveReport
   isLoading: boolean
-  weldingRowCount: number
+  summaryStatus?: 'pending' | 'ready' | 'error'
+  weldingRowCount: number | undefined
   acceptedWdiTotalText: string
-  heatTreatmentRowCount: number
+  heatTreatmentRowCount: number | undefined
   selectedHeatTreatmentRowCount: number
-  lnkRowCount: number
-  availableLnkRequestRowCount: number
+  lnkRowCount: number | undefined
+  availableLnkRequestRowCount: number | undefined
   activeWelderStampCount: number
   archivedWelderStampCount: number
   filteredWelderStampCount: number
@@ -50,6 +51,7 @@ export function getActiveReportTitle(activeReport: ActiveReport) {
 export function getReportSummaryText({
   activeReport,
   isLoading,
+  summaryStatus,
   weldingRowCount,
   acceptedWdiTotalText,
   heatTreatmentRowCount,
@@ -61,11 +63,15 @@ export function getReportSummaryText({
   filteredWelderStampCount,
 }: ReportSummaryTextParams) {
   if (isLoading) return 'Загрузка...'
+  if (summaryStatus === 'pending' || summaryStatus === 'error') {
+    const text = summaryStatus === 'error' ? 'Не удалось подсчитать итоги' : 'Идёт подсчёт…'
+    return activeReport === 'heatTreatment' ? `${text} · Выбрано: ${selectedHeatTreatmentRowCount}` : text
+  }
   if (activeReport === 'heatTreatment') {
-    return `Стыков на ПСТО: ${heatTreatmentRowCount} · Выбрано: ${selectedHeatTreatmentRowCount}`
+    return `Стыков на ПСТО: ${heatTreatmentRowCount ?? 'Недоступно'} · Выбрано: ${selectedHeatTreatmentRowCount}`
   }
   if (activeReport === 'lnk') {
-    return `Стыков на ЛНК: ${lnkRowCount} · Доступно для основной заявки: ${availableLnkRequestRowCount}`
+    return `Стыков на ЛНК: ${lnkRowCount ?? 'Недоступно'} · Доступно для основной заявки: ${availableLnkRequestRowCount ?? 'Недоступно'}`
   }
   if (activeReport === 'welderStamps') {
     return `Клейм: ${activeWelderStampCount} · Архив: ${archivedWelderStampCount} · Найдено: ${filteredWelderStampCount}`
@@ -85,7 +91,7 @@ export function getReportSummaryText({
   if (activeReport === 'userGuide') {
     return 'Подробное руководство по разделам, кнопкам, правилам и кейсам'
   }
-  return `Записей: ${weldingRowCount} · WDI годных: ${acceptedWdiTotalText}`
+  return `Записей: ${weldingRowCount ?? 'Недоступно'} · WDI годных: ${acceptedWdiTotalText}`
 }
 
 export function getReportExportFilename(activeReport: ActiveReport) {

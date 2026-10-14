@@ -20,6 +20,7 @@ import { getDispatcherLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
 import { getDispatcherPstoChronologyIssues } from '@/lib/psto-chronology-checks'
 import { formatOfficialStampCompatibilityIssue, getOfficialStampCompatibilityIssues } from '@/lib/welder-stamp-compatibility'
 import { normalizeStampForCompare } from '@/lib/welder-stamp-compatibility-utils'
+import { getOfficialStampCompatibilityProfileKey } from './welder-stamp-compatibility-profile'
 import { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 import type { RepeatedJointCheckTask, WeldRow } from '@/lib/dispatcher-types'
 import { DEFAULT_SAVE_CHECK_SETTINGS, normalizeSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
@@ -373,19 +374,28 @@ export function buildWelderStampCompatibilityCheckTasks(
     recordsByStamp.set(key, matches)
   }
   const auditSettings = { ...normalizeSaveCheckSettings(saveCheckSettings), officialArchive: false }
+  // Owned by this synchronous calculation only. Registry, settings and
+  // suspensions cannot leak across requests; every distinct use still runs the
+  // original validator. Bound memory for a single unusually varied large line.
+  const issuesByProfile = new Map<string, ReturnType<typeof getOfficialStampCompatibilityIssues>>()
   for (const row of rows) {
     // Keep all cards for each stamp, including archived permits, but do not
     // scan the entire registry for each of the 200,000 journal rows.
-    const stamps = new Set(OFFICIAL_WELDER_STAMP_FIELD_KEYS.map(key => normalizeStampForCompare(row[key])))
-    const matchingRecords = [...stamps].flatMap(stamp => recordsByStamp.get(stamp) ?? [])
-    const issues = getOfficialStampCompatibilityIssues(row, matchingRecords, {
-      archiveValidationMode: 'audit',
-      materialGroups: dataListSettings?.materialGroups,
-      // Archive is an optional administrative guard, not a qualification defect.
-      saveCheckSettings: auditSettings,
-      suspensions: welderStampSuspensions,
-      weldingTypes: dataListSettings?.weldingTypes,
-    })
+    const profile = getOfficialStampCompatibilityProfileKey(row)
+    let issues = issuesByProfile.get(profile)
+    if (!issues) {
+      const stamps = new Set(OFFICIAL_WELDER_STAMP_FIELD_KEYS.map(key => normalizeStampForCompare(row[key])))
+      const matchingRecords = [...stamps].flatMap(stamp => recordsByStamp.get(stamp) ?? [])
+      issues = getOfficialStampCompatibilityIssues(row, matchingRecords, {
+        archiveValidationMode: 'audit',
+        materialGroups: dataListSettings?.materialGroups,
+        // Archive is an optional administrative guard, not a qualification defect.
+        saveCheckSettings: auditSettings,
+        suspensions: welderStampSuspensions,
+        weldingTypes: dataListSettings?.weldingTypes,
+      })
+      if (issuesByProfile.size < 512) issuesByProfile.set(profile, issues)
+    }
     if (issues.length === 0) continue
 
     const joint = String(row.joint ?? '').trim() || '-'

@@ -1,3 +1,4 @@
+import { chooseSpecialist } from '../specialist-helpers'
 import { rpcName } from '../rpc'
 import { expect, test, type Page } from '@playwright/test'
 import { LNK_VISIBLE_FIELD_SECTIONS } from '@/lib/lnk-visible-field-layout'
@@ -106,6 +107,26 @@ test('создает комплект только по явному назна�
     exact: true,
   })).toBeVisible()
   await expect(page.getByRole('tab', { name: 'Формирование', exact: true })).toHaveCount(0)
+
+  // Automatically generated documents begin empty; later assignment stays in Documents.
+  const layeredSnapshots = () => withE2eDatabase(async db => (await db.query(`select d.type,d.specialists from generated_documents d join generated_document_weld_joints a on a.document_id=d.id join weld_joints w on w.id=a.weld_joint_id where w.joint=$1 and d.type like 'layered%'`, [JOINT])).rows)
+  expect((await layeredSnapshots()).every(doc => doc.specialists === null)).toBe(true)
+  const specialistId = await withE2eDatabase(async db => (await db.query(`insert into specialists(name,kind,certificate,methods) values ('E2E послойный специалист','inspector','ПОСЛ-123',array['ВИК']) returning id`)).rows[0].id)
+  try {
+    for (const stage of ['кромки', 'слои']) await page.getByRole('button', { name: `Выбрать документ «ВИК - ${stage} - ${JOINT} - 15.08.2026»`, exact: true }).click()
+    await page.getByRole('button', { name: /^Действия с документами, выбрано:/ }).click()
+    await page.getByRole('button', { name: 'Назначить специалистов', exact: true }).click()
+    const assignment = page.getByRole('dialog', { name: 'Назначить специалистов', exact: true })
+    await chooseSpecialist(assignment.getByRole('combobox', { name: 'Провёл контроль', exact: true }), String(specialistId))
+    await chooseSpecialist(assignment.getByRole('combobox', { name: 'Выдал заключение', exact: true }), String(specialistId))
+    await page.screenshot({ path: '/private/tmp/welding-specialists-layered-assignment.png' })
+    await assignment.getByRole('button', { name: 'Применить', exact: true }).click()
+    await expect(assignment).toBeHidden()
+    for (const doc of await layeredSnapshots()) {
+      if (doc.type.startsWith('layeredVik')) expect(doc.specialists).toEqual({ first: { id: specialistId, name: 'E2E послойный специалист', certificate: 'ПОСЛ-123' }, second: { id: specialistId, name: 'E2E послойный специалист', certificate: 'ПОСЛ-123' } })
+      else expect(doc.specialists).toBeNull()
+    }
+  } finally { await withE2eDatabase(db => db.query('delete from specialists where id=$1', [specialistId])) }
 
   await page.getByRole('button', { name: 'Послойный ПВК', exact: true }).click()
   await expect(page.getByRole('button', {

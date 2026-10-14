@@ -10,9 +10,15 @@ import { compactLineProgramDemand, summarizeLineProgram } from '@/lib/line-progr
 import type { PercentageLineNavigationRequest } from '@/lib/percentage-line-navigation'
 import { explainLineProgram } from '@/lib/line-program-explanation'
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), calculate: vi.fn(), explanation: vi.fn(), rows: vi.fn(), find: vi.fn(), save: vi.fn(), assign: vi.fn(), preview: vi.fn(), confirm: vi.fn(), report: vi.fn() }))
+const mocks = vi.hoisted(() => ({ page: vi.fn(), list: vi.fn(), calculate: vi.fn(), explanation: vi.fn(), rows: vi.fn(), find: vi.fn(), save: vi.fn(), assign: vi.fn(), preview: vi.fn(), confirm: vi.fn(), report: vi.fn() }))
 vi.mock('@/server/line-program-report', () => ({ getLineProgramReport: mocks.report }))
-vi.mock('@/server/line-program', () => ({ getLineProgramSection: mocks.list, getLineProgramCalculation: mocks.calculate, getLineProgramExplanation: mocks.explanation, getLineProgramJointPage: mocks.rows, findLineProgram: mocks.find, saveLineProgram: mocks.save }))
+vi.mock('@/server/line-program', () => ({ getLineProgramPage: mocks.page, getLineProgramSection: async (request: { data: { tab: string; search: string } }) => {
+  const result = await mocks.list(request)
+  const { tab, search } = request.data
+  return { ...result, rows: result.rows.filter((line: { configurationIssue: string | null; weldControlPercent: number | null; projectTitle: string; subtitleCode: string; line: string; searchStamps?: string[] }) =>
+    (tab === 'lines' || !line.configurationIssue && line.weldControlPercent != null && (tab === 'full' ? line.weldControlPercent === 100 : line.weldControlPercent < 100)) &&
+    (!search || [line.projectTitle, line.subtitleCode, line.line, ...(line.searchStamps ?? [])].some(value => value.toLocaleLowerCase('ru').includes(search)))) }
+}, getLineProgramCalculation: mocks.calculate, getLineProgramExplanation: mocks.explanation, getLineProgramJointPage: mocks.rows, findLineProgram: mocks.find, saveLineProgram: mocks.save }))
 vi.mock('@/server/line-program-control', () => ({ applyLineProgramControl: mocks.assign, previewLineProgramControl: mocks.preview }))
 vi.mock('@/lib/security-context', () => ({ useSecurityGuard: () => ({ requireEditPassword: async () => true }) }))
 vi.mock('@/lib/confirm-action-context', () => ({ useConfirmAction: () => mocks.confirm }))
@@ -24,6 +30,7 @@ let client: QueryClient
 beforeEach(() => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   vi.clearAllMocks()
+  mocks.page.mockResolvedValue({ rows: [], total: 0, page: 0 })
   mocks.report.mockResolvedValue({ title: 'Печатная сводка' })
   mocks.confirm.mockResolvedValue(true)
   mocks.explanation.mockImplementation(async ({ data }) => explainLineProgram([sample], 30, 10, data))
@@ -38,6 +45,124 @@ afterEach(() => { cleanup(); client.clear(); focusManager.setFocused(undefined);
 
 
 function mount() { return render(<QueryClientProvider client={client}><LineProgramPage /></QueryClientProvider>) }
+
+describe('search-first complete-line loading', () => {
+  const summary = (value = line) => ({ ...value, overview: summarizeLineProgram([sample], value) })
+  it('makes the first page usable while section totals are pending, without zero totals or partial export', async () => {
+    let finish!: (value: { rows: ReturnType<typeof summary>[] }) => void
+    mocks.page.mockResolvedValue({ rows: [summary()], total: 90, page: 0 })
+    mocks.list.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    mount()
+    expect(await screen.findByRole('button', { name: 'Расчёт линии LP-1' })).toBeEnabled()
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledOnce())
+    expect(screen.getByRole('status')).toHaveTextContent('Рассчитываем итоги всего отбора')
+    expect(screen.queryByLabelText('Итоги раздела')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Показать' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Расчёт линии LP-1' }))
+    expect(await screen.findByTestId('line-program-stamp')).toBeVisible()
+    await act(async () => finish({ rows: [summary()] }))
+    expect(await screen.findByLabelText('Итоги раздела')).toBeVisible()
+  })
+
+  it('searches independently of an old full calculation and ignores its late response', async () => {
+    let finishOld!: (value: { rows: ReturnType<typeof summary>[] }) => void
+    const other = summary({ ...line, id: 2, line: 'TARGET' })
+    mocks.page.mockImplementation(async ({ data }) => ({ rows: data.search ? [other] : [summary()], total: data.search ? 1 : 90, page: 0 }))
+    mocks.list.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve })).mockResolvedValue({ rows: [other] })
+    mount()
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledOnce())
+    fireEvent.change(screen.getByLabelText('Поиск программы линий'), { target: { value: 'TARGET' } })
+    expect(screen.queryByRole('button', { name: 'Расчёт линии LP-1' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Расчёт линии TARGET' })).toBeVisible()
+    await screen.findByLabelText('Итоги раздела')
+    expect(mocks.page).toHaveBeenLastCalledWith({ data: { tab: 'lines', search: 'target', page: 0 } })
+    await act(async () => finishOld({ rows: [summary()] }))
+    expect(screen.getAllByTestId('line-program-card')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Расчёт линии TARGET' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Линий 1' })).toBeVisible()
+  })
+
+  it('keeps early cards after a summary failure and retries only on request', async () => {
+    mocks.page.mockResolvedValue({ rows: [summary()], total: 1, page: 0 })
+    mocks.list.mockRejectedValueOnce(new Error('Итоги временно недоступны'))
+    mount()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Итоги временно недоступны')
+    expect(screen.getByRole('button', { name: 'Расчёт линии LP-1' })).toBeEnabled()
+    expect(screen.queryByLabelText('Итоги раздела')).not.toBeInTheDocument()
+    await act(async () => { focusManager.setFocused(false); focusManager.setFocused(true); onlineManager.setOnline(false); onlineManager.setOnline(true) })
+    expect(mocks.list).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку' }))
+    await screen.findByLabelText('Итоги раздела')
+    expect(mocks.list).toHaveBeenCalledTimes(2)
+    expect(mocks.page).toHaveBeenCalledOnce()
+  })
+
+  it('does not expose an invalidated cached selection or export when its new page fails', async () => {
+    const key = ['line-program', 'section', 'percentage', '']
+    client.setQueryData(key, { rows: [summary()], revision: 1 })
+    await client.invalidateQueries({ queryKey: key, refetchType: 'none' })
+    mocks.page.mockImplementation(async ({ data }) => {
+      if (data.tab === 'percentage') throw new Error('Новый отбор недоступен')
+      return { rows: [summary()], total: 1, page: 0, revision: 2 }
+    })
+    mocks.list.mockResolvedValue({ rows: [summary()], revision: 2 })
+    mount()
+    await screen.findByLabelText('Итоги раздела')
+    fireEvent.click(screen.getByRole('button', { name: 'Процентные линии' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Новый отбор недоступен')
+    expect(screen.queryByLabelText('Итоги раздела')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('line-program-card')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Показать' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Повторить загрузку' })).toBeEnabled()
+    expect(mocks.list).toHaveBeenCalledOnce()
+    mocks.page.mockResolvedValue({ rows: [], total: 0, page: 0, revision: 2 })
+    mocks.list.mockResolvedValue({ rows: [], revision: 2 })
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку' }))
+    expect(await screen.findByRole('button', { name: 'Линий 0' })).toBeVisible()
+  })
+
+  it('keeps a newer page while a late older summary is replaced, including a failed refresh', async () => {
+    let finishOld!: (value: { rows: ReturnType<typeof summary>[]; revision: number }) => void
+    const fresh = summary({ ...line, id: 2, line: 'NEWER', version: 'newer' })
+    mocks.page.mockImplementation(async ({ data }) => ({ rows: data.page ? [fresh] : [summary()], total: 61, page: data.page, revision: data.page ? 2 : 1 }))
+    mocks.list.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+      .mockRejectedValueOnce(new Error('Не удалось обновить итоги'))
+    mount()
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledOnce())
+    fireEvent.click(screen.getByRole('button', { name: 'Страница 2' }))
+    await screen.findByRole('button', { name: 'Расчёт линии NEWER' })
+    await act(async () => finishOld({ rows: [summary()], revision: 1 }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось обновить итоги')
+    expect(screen.getByRole('button', { name: 'Расчёт линии NEWER' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Расчёт линии LP-1' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Итоги раздела')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Показать' })).toBeDisabled()
+    expect(mocks.list).toHaveBeenCalledTimes(2)
+    // Returning to a cached older page must not forget the newer revision
+    // already seen on another page of this same selection.
+    const firstFresh = summary({ ...line, line: 'UPDATED', version: 'newer' })
+    mocks.page.mockResolvedValue({ rows: [firstFresh], total: 61, page: 0, revision: 2 })
+    fireEvent.click(screen.getByRole('button', { name: 'Страница 1' }))
+    expect(screen.queryByRole('button', { name: 'Расчёт линии LP-1' })).not.toBeInTheDocument()
+    await screen.findByRole('button', { name: 'Расчёт линии UPDATED' })
+    expect(mocks.list).toHaveBeenCalledTimes(2)
+    mocks.list.mockResolvedValue({ rows: [firstFresh, fresh], revision: 2 })
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку' }))
+    await screen.findByLabelText('Итоги раздела')
+    expect(screen.getByRole('button', { name: 'Расчёт линии NEWER' })).toBeEnabled()
+    expect(mocks.list).toHaveBeenCalledTimes(3)
+  })
+
+  it('shows pending instead of zero for a derived filter during a new search', async () => {
+    mount()
+    fireEvent.click(within(await screen.findByLabelText('Итоги раздела')).getByRole('button', { name: /^К назначению \d+$/ }))
+    mocks.list.mockImplementationOnce(() => new Promise(() => {}))
+    fireEvent.change(screen.getByLabelText('Поиск программы линий'), { target: { value: 'NEW' } })
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(2))
+    expect(within(screen.getByTestId('line-program-filter')).getByLabelText('Идёт подсчёт линий')).toHaveTextContent('…')
+    expect(screen.queryByText('Линии не найдены. Попробуйте изменить поиск или фильтр.')).not.toBeInTheDocument()
+  })
+})
 it.each(['Иванов Иван Иванович', 'Александров-Константинопольский Александр Александрович', '', undefined])('shows the welder name below the stamp without another lookup: %s', async welderName => {
   mocks.calculate.mockResolvedValue({ line, issue: null, stamps: [{ stamp: 'STAMP', welderName, count: 1, good: 0, scope: 'stamp', rejected: 0, fullControlRequired: false, common: compact(demand.common), pvk: compact(demand.pvk) }] })
   mount()
@@ -205,7 +330,7 @@ describe('section calculation from compact line summaries', () => {
     mount()
     await screen.findByRole('button', { name: 'К назначению 12' })
     fireEvent.click(screen.getByRole('button', { name: 'Процентные линии' }))
-    context(within(screen.getByLabelText('Итоги раздела')).getByRole('button', { name: 'К назначению 5' }))
+    context(within(await screen.findByLabelText('Итоги раздела')).getByRole('button', { name: 'К назначению 5' }))
     expect(dialog().getAllByTestId('section-calculation-line')).toHaveLength(1)
     fireEvent.click(dialog().getByRole('button', { name: 'Закрыть общий расчёт' }))
     fireEvent.change(screen.getByLabelText('Поиск программы линий'), { target: { value: 'absent' } })
@@ -213,7 +338,7 @@ describe('section calculation from compact line summaries', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Расчёт итогов раздела' }))
     expect(dialog().getByText('Процентные линии · поиск: absent')).toBeVisible()
     expect(dialog().getByText('В текущей вкладке и поиске линий нет.')).toBeVisible()
-    expect(mocks.list).toHaveBeenCalledOnce()
+    expect(mocks.list).toHaveBeenCalledTimes(3) // Initial, tab, then search; no per-line calculation.
     expect(mocks.calculate).not.toHaveBeenCalled()
   })
 })
@@ -675,10 +800,10 @@ it('pairs common and PVK counts in both summaries with equal links and a simple 
 })
 it('keeps the active filter beside search and resets it without clearing search or fetching again', async () => {
   mount()
-  const totals = await screen.findByLabelText('Итоги раздела')
+  await screen.findByLabelText('Итоги раздела')
   const search = screen.getByRole('textbox', { name: 'Поиск программы линий' })
   fireEvent.change(search, { target: { value: 'LP-1' } })
-  fireEvent.click(within(totals).getByRole('button', { name: 'К назначению 2' }))
+  fireEvent.click(within(await screen.findByLabelText('Итоги раздела')).getByRole('button', { name: 'К назначению 2' }))
   const toolbar = screen.getByTestId('line-program-toolbar')
   const filter = within(toolbar).getByRole('group', { name: 'Есть НК к назначению · линий: 1' })
   expect(within(filter).getByLabelText('Линий: 1')).toBeVisible()
@@ -687,7 +812,7 @@ it('keeps the active filter beside search and resets it without clearing search 
   expect(screen.queryByTestId('line-program-filter')).not.toBeInTheDocument()
   expect(search).toHaveValue('LP-1')
   expect(screen.getByRole('button', { name: 'Все линии' })).toHaveAttribute('aria-pressed', 'true')
-  expect(mocks.list).toHaveBeenCalledTimes(1)
+  expect(mocks.list).toHaveBeenCalledTimes(2) // Resetting the derived filter reuses this search snapshot.
   expect(mocks.calculate).not.toHaveBeenCalled()
   expect(mocks.rows).not.toHaveBeenCalled()
 })
@@ -1012,7 +1137,7 @@ describe('unified line workspace', () => {
     expect(screen.getAllByRole('button', { name: 'Настроить' })).toHaveLength(2)
     for (const tab of ['Процентные линии', '100%-ные линии']) {
       fireEvent.click(screen.getByRole('button', { name: tab }))
-      expect(screen.getAllByTestId('line-program-card')).toHaveLength(1)
+      await waitFor(() => expect(screen.getAllByTestId('line-program-card')).toHaveLength(1))
       expect(screen.queryByRole('button', { name: 'Новая линия' })).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Настроить' })).not.toBeInTheDocument()
     }
@@ -1020,7 +1145,7 @@ describe('unified line workspace', () => {
     expect(screen.getAllByRole('button', { name: 'Настроить' })).toHaveLength(2)
     fireEvent.click(screen.getByRole('button', { name: 'Новая линия' }))
     expect(screen.getByRole('dialog', { name: 'Новая линия' })).toBeVisible()
-    expect(mocks.list).toHaveBeenCalledOnce()
+    expect(mocks.list).toHaveBeenCalledTimes(3)
     expect(mocks.calculate).not.toHaveBeenCalled()
     expect(mocks.rows).not.toHaveBeenCalled()
   })
@@ -1192,12 +1317,11 @@ describe('unified line workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить программу' }))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Настройка линии' })).not.toBeInTheDocument())
     expect(screen.getByRole('button', { name: 'Все линии' })).toHaveAttribute('aria-pressed', 'true')
-    await waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(2))
-    expect(screen.getAllByTestId('line-program-card')).toHaveLength(1)
+    await waitFor(() => expect(screen.getAllByTestId('line-program-card')).toHaveLength(1))
     expect(screen.queryByTestId('line-program-readonly-joint')).not.toBeInTheDocument()
     expect(mocks.rows).not.toHaveBeenCalled() // Switching the norm no longer expands all joints.
     fireEvent.click(screen.getByRole('button', { name: toTab }))
-    expect(screen.getAllByTestId('line-program-card')).toHaveLength(1)
+    await waitFor(() => expect(screen.getAllByTestId('line-program-card')).toHaveLength(1))
     fireEvent.click(screen.getByRole('button', { name: fromTab }))
     await waitFor(() => expect(screen.queryByTestId('line-program-card')).not.toBeInTheDocument())
   })
@@ -1228,10 +1352,13 @@ describe('unified line workspace', () => {
     expect(mocks.rows).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: 'Проверить изменения' })).not.toBeInTheDocument()
   })
-  it('filters by stamps and tabs without another server calculation, then refreshes only the saved line', async () => {
-    mocks.list.mockResolvedValue({ rows: [{ ...line, searchStamps: ['STAMP'], overview: summarizeLineProgram([sample], line) }] })
+  it('fetches the stamp/tab search once, then refreshes only the saved line', async () => {
+    const initial = { ...line, searchStamps: ['STAMP'], overview: summarizeLineProgram([sample], line) }
+    let revision = 1
+    mocks.list.mockResolvedValue({ rows: [initial], revision: 1 })
+    mocks.page.mockImplementation(async () => ({ rows: [initial], total: 1, page: 0, revision }))
     const saved = { ...sample, hasRk: 'да' }
-    mocks.assign.mockResolvedValue({ changed: 1, rows: [saved], lineSummary: { ...line, searchStamps: ['STAMP'], overview: summarizeLineProgram([saved], line) } })
+    mocks.assign.mockImplementation(async () => { revision = 2; return { changed: 1, rows: [saved], lineSummary: { ...line, searchStamps: ['STAMP'], overview: summarizeLineProgram([saved], line) } } })
     mount()
     await screen.findByRole('button', { name: 'Расчёт линии LP-1' })
     fireEvent.change(screen.getByLabelText('Поиск программы линий'), { target: { value: 'STAMP' } })
@@ -1244,7 +1371,8 @@ describe('unified line workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Проверить изменения' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Сохранить назначения' }))
     await screen.findByText('Назначения сохранены · стыков: 1')
-    expect(mocks.list).toHaveBeenCalledTimes(1)
+    expect(mocks.list).toHaveBeenCalledTimes(2)
+    expect(mocks.page).toHaveBeenCalledTimes(2)
     expect(mocks.rows).toHaveBeenCalledTimes(2)
     expect(mocks.calculate).toHaveBeenCalledTimes(2)
   })
@@ -1412,7 +1540,7 @@ describe('unified line workspace', () => {
 })
 
 describe('compact program editor and explicit PVK exception', () => {
-  it('finishes refreshing the saved program before reopening settings with its next version', async () => {
+  it('reopens settings with the saved version without waiting for the complete section refresh', async () => {
     const unrelatedQuery = vi.fn().mockResolvedValue({ cached: true })
     const unrelatedKey = ['line-program', 'calculation', 999]
     client.setQueryData(unrelatedKey, { cached: true })
@@ -1427,16 +1555,14 @@ describe('compact program editor and explicit PVK exception', () => {
     fireEvent.change(screen.getByLabelText('Базовый % контроля'), { target: { value: '50' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить программу' }))
     await waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(2))
-    expect(screen.getByRole('dialog', { name: 'Настройка линии' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Сохранение…' })).toBeDisabled()
-    await act(async () => finishRefresh({ rows: [{ ...saved, overview: summarizeLineProgram([sample], saved) }] }))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Настройка линии' })).not.toBeInTheDocument())
-    fireEvent.click(screen.getByRole('button', { name: 'Настроить' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Настроить' }))
+    expect(screen.getByLabelText('Базовый % контроля')).toHaveValue(50)
     fireEvent.change(screen.getByLabelText('Базовый % контроля'), { target: { value: '100' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить программу' }))
     await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2))
     expect(mocks.save.mock.lastCall?.[0].data).toMatchObject({ version: saved.version, weldControlPercent: 100 })
-    expect(mocks.list).toHaveBeenCalledTimes(3)
+    await act(async () => finishRefresh({ rows: [{ ...saved, overview: summarizeLineProgram([sample], saved) }] }))
     expect(unrelatedQuery).not.toHaveBeenCalled()
     expect(client.getQueryState(unrelatedKey)?.isInvalidated).toBe(true)
     unsubscribe()

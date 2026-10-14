@@ -144,6 +144,7 @@ export function createPstoResultActionHandlers({
   }
 
   function handleAddPstoResult() {
+    if (pstoResultMutation.isPending) return
     if (pstoResultSaveBlockReason) {
       setMessage(pstoResultSaveBlockReason)
       return
@@ -171,7 +172,6 @@ export function createPstoResultActionHandlers({
       naming: pstoResultDraft.diagramNaming,
       settings: requestConclusionSettings,
       nextNumber: nextPstoConclusionNumber,
-      allowAllNamesEmpty: !saveCheckSettings.pstoResultDiagramRequired,
     })
     if (creationPlan.error) {
       setMessage(creationPlan.error)

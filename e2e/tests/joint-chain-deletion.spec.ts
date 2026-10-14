@@ -20,15 +20,15 @@ test.afterAll(async () => withE2eDatabase(async db => {
 }))
 test.afterEach(() => cleanupLineProgramProjects([project]))
 
-async function seed() {
+async function seed(names = ['S1', 'S1R1', 'S1R2', 'F9']) {
   return withE2eDatabase(async db => {
     const { rows } = await db.query<Target>(`insert into weld_joints
       (project_title, subtitle_code, line, joint, officiality, revision_actuality, has_vik, final_status)
       select $1,'DELETE','CHAIN-DELETE',name,
-        case when name='S1R1' then 'неофициальный' else 'действующий' end,
-        case when name='S1R2' then 'не актуален' else 'актуален' end,'да',
-        case when name in ('S1R1','S1R2') then 'ожидает ремонт' else 'ожидает сварку' end
-      from unnest(array['S1','S1R1','S1R2','F9']) name returning id,xmin::text as version`, [project])
+        case when n=2 then 'неофициальный' else 'действующий' end,
+        case when n=3 then 'не актуален' else 'актуален' end,'да',
+        case when n in (2,3) then 'ожидает ремонт' else 'ожидает сварку' end
+      from unnest($2::text[]) with ordinality as t(name,n) returning id,xmin::text as version`, [project, names])
     return rows
   })
 }
@@ -58,6 +58,20 @@ for (const deletionFirst of [true, false]) test(`создание продолж
 })
 
 for (const mode of ['single', 'bulk', 'import'] as const) {
+  for (const [source, child] of [['S1W1R1', 'S1W2R1'], ['S1R1W1', 'S1R2W1']]) {
+    test(`${mode}: смешанный предшественник ${source} защищён при продолжении ${child}`, async () => {
+      const rows = await seed(['S1', source, child, 'F9']), before = await snapshot()
+      const action = mode === 'single' ? deleteWeldJoint({ data: rows[1] })
+        : mode === 'bulk' ? deleteWeldJoints({ data: { targets: [rows[1], rows[3]] } })
+        : replaceWeldJoints({ data: { records: [], deleteIds: [rows[1].id, rows[3].id], expectedVersions: [rows[1], rows[3]] } })
+      await expect(action).rejects.toThrow(new RegExp(`Нельзя удалить предшественника.*${child}`))
+      expect(await snapshot()).toEqual(before)
+      await deleteWeldJoint({ data: rows[2] })
+      const sourceVersion = await withE2eDatabase(async db => (await db.query<Target>('select id,xmin::text as version from weld_joints where id=$1', [rows[1].id])).rows[0])
+      await deleteWeldJoint({ data: sourceVersion })
+      expect((await snapshot()).map(row => row.joint)).toEqual(['S1', 'F9'])
+    })
+  }
   test(`${mode}: предшественник с неофициальным/неактуальным продолжением не удаляется; группа атомарна`, async () => {
     const rows = await seed(), before = await snapshot()
     const action = mode === 'single' ? deleteWeldJoint({ data: rows[0] })

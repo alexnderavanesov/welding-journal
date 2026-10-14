@@ -1,4 +1,5 @@
 import { PROGRAM_DEMAND_LABELS } from '@/lib/line-program-labels'
+import { touchDocumentMembershipParents } from './document-version'
 import { hashJsonRecordTuple } from './json-record-token'
 import { deleteChangedProgramApprovals } from './program-approval-lifecycle'
 import { createServerFn } from '@tanstack/react-start'
@@ -126,6 +127,7 @@ export const changeLayeredControl = createServerFn({ method: 'POST' })
         .where(and(inArray(generatedDocumentWeldJoints.weldJointId, ids), inArray(generatedDocuments.type, [...LAYERED_CONTROL_DOCUMENT_TYPES])))
       const documentIds = [...new Set(links.map((link) => link.documentId))]
       if (documentIds.length) {
+        await touchDocumentMembershipParents(tx, documentIds)
         await tx.delete(generatedDocumentWeldJoints).where(and(inArray(generatedDocumentWeldJoints.weldJointId, ids), inArray(generatedDocumentWeldJoints.documentId, documentIds)))
         await tx.delete(generatedDocuments).where(and(inArray(generatedDocuments.id, documentIds), notExists(tx.select({ one: sql`1` }).from(generatedDocumentWeldJoints).where(eq(generatedDocumentWeldJoints.documentId, generatedDocuments.id)))))
       }

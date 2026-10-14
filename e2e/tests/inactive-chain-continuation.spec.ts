@@ -1,13 +1,13 @@
 import { expect, test, type Page, type Request } from '@playwright/test'
 import { withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
 
 const project = 'E2E inactive chain', lineName = 'INACTIVE-CHAIN', joint = 'F751'
 const stamp = 'E2IC'
 let dataListSnapshot: { value: string; updated_at: Date } | undefined
 test.beforeEach(async () => {
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     dataListSnapshot = (await db.query("select value,updated_at from app_settings where key='data-list'")).rows[0]
     await db.query(`insert into app_settings(key,value,updated_at) values ('data-list',$1,now())
       on conflict(key) do update set value=excluded.value,updated_at=now()`,
@@ -19,7 +19,7 @@ test.beforeEach(async () => {
 })
 test.afterEach(async () => {
   await cleanupLineProgramProjects([project])
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query('delete from welder_stamps where naks_stamp=$1', [stamp])
     await db.query("delete from app_settings where key='data-list'")
     if (dataListSnapshot) await db.query("insert into app_settings(key,value,updated_at) values ('data-list',$1,$2)", [dataListSnapshot.value, dataListSnapshot.updated_at])
@@ -27,15 +27,11 @@ test.afterEach(async () => {
 })
 
 async function seed(withUnofficialRepair = false) {
-  return withE2eDatabase(async db => {
+  return withLineProgramFixture(async db => {
     const { rows: [line] } = await db.query(`insert into line_programs(project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent) values ($1,'U',$2,'II','A',10,0) returning id`, [project, lineName])
     const { rows } = await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,officiality,revision_actuality,weld_date,connection_type,material_group,welding_method,d1,d2,t1,t2,wdi,stamp_1_k,stamp_1_k_fact,has_vik,vik_result,vik_request,vik_request_date,vik_conclusion,vik_conclusion_date,has_uzk,uzk_result,uzk_request,uzk_request_date,uzk_conclusion,uzk_conclusion_date,final_status)
       select $1,$2,'U',$3,case when n=1 then $4 else $4||'R1' end,case when n=1 then 'действующий' else 'неофициальный' end,null,'2026-09-01','С17','M01','РД',108,108,4,4,0.42,'A','A','да','годен','IC-VIK','2026-09-01','IC-VIK-C','2026-09-02','да',case when n=1 then 'ремонт' else 'вырез' end,'IC-UZK','2026-09-02','IC-UZK-C','2026-09-03','не годен' from generate_series(1,$5::int) n returning id,joint`, [line.id, project, lineName, joint, withUnofficialRepair ? 2 : 1])
-    // Raw fixture SQL bypasses the invalidation performed by application saves.
     await db.query(`update weld_joints set stamp_1_k=$1,stamp_1_z=$1,stamp_1_o=$1,stamp_1_k_fact=$1,stamp_1_z_fact=$1,stamp_1_o_fact=$1 where project_title=$2`, [stamp, project])
-    await db.query(`insert into dispatcher_task_index_state(id,source_revision,computed_revision,full_rebuild,updated_at)
-      values (1,1,-1,true,now()) on conflict (id) do update
-      set source_revision=dispatcher_task_index_state.source_revision+1,full_rebuild=true,updated_at=now()`)
     return rows as Array<{ id: number; joint: string }>
   })
 }
@@ -78,7 +74,7 @@ test('карточка → неактуальность → нет требов�
 
 test('одиночный неактуальный стык: понятное подтверждение, отмена и возврат скрывают лишние команды без фоновых запросов', async ({ page }) => {
   const [{ id }] = await seed(), calls: string[] = [], errors: string[] = []
-  await withE2eDatabase(db => db.query("update weld_joints set revision_actuality='не актуален' where id=$1", [id]))
+  await withLineProgramFixture(db => db.query("update weld_joints set revision_actuality='не актуален' where id=$1", [id]))
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/journal')
@@ -132,7 +128,7 @@ test('официальность туда и обратно: отмена, дв�
   page.on('pageerror', error => errors.push(error.message))
   // Initial valid history only. The transition under audit is performed through
   // the real officiality dialog, including its chain-rebuild confirmation.
-  await withE2eDatabase(db => db.query(`update weld_joints set officiality='действующий',
+  await withLineProgramFixture(db => db.query(`update weld_joints set officiality='действующий',
     weld_date='2026-09-04',vik_request_date='2026-09-04',vik_conclusion_date='2026-09-04',
     uzk_request_date='2026-09-04',uzk_conclusion_date='2026-09-04',uzk_result='годен',final_status='годен'
     where id=$1`, [repair.id]))
@@ -232,7 +228,7 @@ test('официальность туда и обратно: отмена, дв�
 
 test('перестройка официальности не обходит подтверждение восстановления после удаления катушки', async ({ page }) => {
   const [source, repair] = await seed(true)
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query(`update weld_joints set officiality='действующий',weld_date='2026-09-04',
       vik_request_date='2026-09-04',vik_conclusion_date='2026-09-04',uzk_request_date='2026-09-04',
       uzk_conclusion_date='2026-09-04',uzk_result='годен',final_status='годен' where id=$1`, [repair.id])
@@ -268,7 +264,7 @@ test('перестройка официальности не обходит по
 for (const recovery of ['вернуть ремонт', 'исключить источник'] as const) test(`СП-09 актуальности: отмена безопасна, путь «${recovery}» снимает задачу без потери истории`, async ({ page }) => {
   const [source, repair] = await seed(true), errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
-  await withE2eDatabase(db => db.query(`update weld_joints set officiality='действующий',revision_actuality='не актуален',uzk_result='годен',final_status='годен' where id=$1`, [repair.id]))
+  await withLineProgramFixture(db => db.query(`update weld_joints set officiality='действующий',revision_actuality='не актуален',uzk_result='годен',final_status='годен' where id=$1`, [repair.id]))
   const state = () => withE2eDatabase(async db => (await db.query('select id,revision_actuality,uzk_result,uzk_conclusion from weld_joints where project_title=$1 order by id', [project])).rows)
   const before = await state(), active = recovery === 'вернуть ремонт'
   const title = active ? 'Вернуть актуальность цепочке' : 'Сделать цепочку неактуальной'
@@ -326,7 +322,7 @@ for (const recovery of ['вернуть ремонт', 'исключить ис�
 test('актуальность: Escape и устаревшее окно не меняют цепочку; повторная проверка восстанавливает путь', async ({ page }) => {
   const [source, repair] = await seed(true), calls: string[] = [], errors: string[] = []
   const pending = new Set<Request>()
-  await withE2eDatabase(db => db.query(`update weld_joints set revision_actuality='не актуален' where id=$1`, [repair.id]))
+  await withLineProgramFixture(db => db.query(`update weld_joints set revision_actuality='не актуален' where id=$1`, [repair.id]))
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => { if (request.url().includes('/_serverFn/')) { calls.push(rpcName(request.url())); pending.add(request) } })
   page.on('requestfinished', request => pending.delete(request))
@@ -344,7 +340,7 @@ test('актуальность: Escape и устаревшее окно не м�
   expect(calls.filter(name => name.startsWith('setChainActuality_'))).toHaveLength(0)
   await open.click(); await expect(dialog.getByRole('checkbox')).toBeVisible()
   // Another operator has reactivated the historical repair after this preview.
-  await withE2eDatabase(db => db.query(`update weld_joints set revision_actuality=null,updated_at=clock_timestamp() where id=$1`, [repair.id]))
+  await withLineProgramFixture(db => db.query(`update weld_joints set revision_actuality=null,updated_at=clock_timestamp() where id=$1`, [repair.id]))
   await dialog.getByRole('checkbox').check()
   await dialog.getByRole('button', { name: 'Подтвердить актуальность цепочки' }).click()
   await expect(dialog.getByRole('alert')).toContainText('изменились')

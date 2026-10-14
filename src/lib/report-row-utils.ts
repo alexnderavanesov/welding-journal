@@ -20,12 +20,17 @@ export function filterPstoResultRows(rows: WeldRow[], search: string) {
   return filterPstoRows(rows, search).sort(compareHeatTreatmentReportRows)
 }
 
-export function buildHeatTreatmentReportRows(rows: WeldRow[]) {
-  return rows.filter(hasHeatTreatmentReportState).map(toHeatTreatmentReportRow).sort(compareHeatTreatmentReportRows)
+type ReportRowOrderOptions = { preserveSourceOrder?: boolean }
+
+export function buildHeatTreatmentReportRows(rows: WeldRow[], { preserveSourceOrder = false }: ReportRowOrderOptions = {}) {
+  const reportRows = rows.filter(hasHeatTreatmentReportState).map(toHeatTreatmentReportRow)
+  return preserveSourceOrder ? reportRows : reportRows.sort(compareHeatTreatmentReportRows)
 }
 
-export function buildLnkReportRows(rows: WeldRow[], preservedIds?: number[] | null) {
-  const sortedRows = rows.filter(hasAnyLnkReportControl).map(toLnkReportRow).sort(compareLnkReportRows)
+export function buildLnkReportRows(rows: WeldRow[], preservedIds?: number[] | null, { preserveSourceOrder = false }: ReportRowOrderOptions = {}) {
+  const reportRows = rows.filter(hasAnyLnkReportControl).map(toLnkReportRow)
+  if (preserveSourceOrder) return reportRows
+  const sortedRows = reportRows.sort(compareLnkReportRows)
   return preservedIds ? sortRowsByPreservedOrder(sortedRows, preservedIds) : sortedRows
 }
 

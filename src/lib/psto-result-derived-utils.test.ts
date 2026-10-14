@@ -134,7 +134,6 @@ describe('PSTO result request identity', () => {
 
     expect(getPstoResultSaveBlockReason({
       draft,
-      isSaving: false,
       nextDiagramName: 'ПСТО-Д-25.08.2026-001',
       selectedRows: rows,
       systemDocumentCreationPlan,
@@ -180,7 +179,6 @@ describe('PSTO result request identity', () => {
       nextPstoDiagramName: 'ПСТО-Д-001',
       nextPstoConclusionNumber: 1,
       requestConclusionSettings: REQUEST_CONCLUSION_DEFAULT_SETTINGS,
-      isPstoResultSaving: false,
       saveCheckSettings: DEFAULT_SAVE_CHECK_SETTINGS,
     }))
 
@@ -208,7 +206,6 @@ describe('PSTO result request identity', () => {
     }
     const saveBlockReason = getPstoResultSaveBlockReason({
       draft,
-      isSaving: false,
       nextDiagramName: 'Диаграмма ПСТО',
       selectedRows: [currentRow],
     })

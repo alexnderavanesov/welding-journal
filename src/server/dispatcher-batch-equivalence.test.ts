@@ -6,6 +6,10 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { calculateFullDispatcherTasks } from './dispatcher-task-index'
 import { DISPATCHER_WELD_WORKING_SET_SIZE, getDispatcherScopeKey, visitDispatcherWeldRows } from './dispatcher-weld-rows'
 
+vi.mock('./dispatcher-weld-hydration', () => ({
+  readDispatcherWeldBatch: async (db: { readBatch: (ids: number[]) => Promise<unknown[]> }, ids: number[]) => db.readBatch(ids),
+}))
+
 vi.mock('./dispatcher-weld-rows', async importOriginal => {
   const original = await importOriginal<typeof import('./dispatcher-weld-rows')>()
   return { ...original, visitDispatcherWeldRows: vi.fn(original.visitDispatcherWeldRows) }
@@ -38,7 +42,8 @@ it('keeps full-calculation tasks, publication order, chains and statuses identic
   } })
   const run = async () => {
     const index: unknown[] = [], pages: unknown[] = []
-    const result = await calculateFullDispatcherTasks({ select } as never, {
+    const readBatch = async (ids: number[]) => structuredClone(rows.filter(row => ids.includes(row.id)))
+    const result = await calculateFullDispatcherTasks({ select, readBatch } as never, {
       taskSnapshotLimit: 100,
       onTaskIndexRows: value => { index.push(...value) },
       onTaskPageRows: (scope, value) => { pages.push({ scope, value }) },

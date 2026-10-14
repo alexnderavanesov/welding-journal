@@ -141,7 +141,7 @@ export function SystemDocumentNamesPanel({
         <div className="hidden shrink-0 grid-cols-[minmax(160px,.9fr)_minmax(200px,1.2fr)_60px_32px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 text-[11px] font-semibold text-slate-500 md:grid">
           <span>Группа и стыки</span>
           <span>{documentNameLabel}</span>
-          <span>Стыков</span>
+          <span className="text-center">Стыков</span>
           <span />
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
@@ -181,7 +181,7 @@ export function SystemDocumentNamesPanel({
                   <button type="button" className="mt-1 text-xs font-semibold text-sky-700" onClick={() => setComposition(group.key)}>Состав — {group.positions?.length ?? group.rows.length} позиций</button>
                   {group.positions && group.positions.length !== group.rows.length ? <div className="text-xs text-slate-500">Уникальных стыков: {group.rows.length}</div> : null}
                 </div>
-                <div className="min-w-0 self-center">
+                <div className="min-w-0 self-start">
                       <BufferedDocumentNameInput
                         ref={(node) => { inputRefs.current[index] = node }}
                         value={group.name}
@@ -202,9 +202,9 @@ export function SystemDocumentNamesPanel({
                         {nameError || (multipleGroups && index === 0 ? 'Можно вставить несколько названий, по одному в строке.' : '')}
                       </div>
                 </div>
-                <div className="self-center text-sm font-semibold text-slate-700">{group.rows.length}</div>
+                <div data-group-joint-count className="flex h-9 items-center justify-center self-start text-sm font-semibold tabular-nums text-slate-700">{group.rows.length}</div>
                 {onOpenGroupContextMenu ? (
-                  <div className="self-center">
+                  <div className="flex h-9 items-center self-start">
                     <DialogRowMenuButton
                       label={`Действия: ${group.label}`}
                       onOpen={(event) => onOpenGroupContextMenu(event, group)}

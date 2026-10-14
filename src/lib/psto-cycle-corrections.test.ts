@@ -88,7 +88,7 @@ describe('PSTO cycle corrections', () => {
       action: 'update',
       date: 'дата уточняется',
       name: 'Диаграмма-2',
-    }, settings)).toThrow('корректную дату ПСТО')
+    }, settings)).toThrow('формате')
   })
 
   it('rejects malformed dates when correcting request and TVMT stages', () => {
@@ -98,7 +98,7 @@ describe('PSTO cycle corrections', () => {
       action: 'update',
       date: 'не дата',
       name: 'Заявка ПСТО-2',
-    })).toThrow('корректную дату документа')
+    })).toThrow('формате')
 
     expect(() => applyPstoCycleCorrection(makeRow(), {
       sequence: 1,
@@ -107,7 +107,7 @@ describe('PSTO cycle corrections', () => {
       date: 'не дата',
       name: 'ЗТВМТ-2',
       result: 'годен',
-    })).toThrow('корректную дату документа')
+    })).toThrow('формате')
   })
 
   it('rejects dates before the system minimum in cycle corrections', () => {
@@ -125,7 +125,7 @@ describe('PSTO cycle corrections', () => {
       action: 'update',
       date: '2023-12-31',
       name: 'Диаграмма-2',
-    })).toThrow('Дата результата ПСТО не может быть раньше 01.01.2024')
+    })).toThrow('Дата ПСТО не может быть раньше 01.01.2024')
   })
 
   it('deletes only the tail of the latest cycle without cascading', () => {

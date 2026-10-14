@@ -1,4 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useConfirmAction } from './confirm-action-context'
+import { withSpecialistCorrectionConfirmation } from './specialist-correction-confirmation'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { PstoCycleStage } from '@/lib/psto-cycle-corrections'
@@ -18,9 +20,10 @@ export function usePstoCycleCorrectionMutation({
   onSaved: (row: WeldRow, stage: PstoCycleStage) => void
 }) {
   const queryClient = useQueryClient()
+  const confirm = useConfirmAction()
   return useMutation({
     mutationFn: async (payload: CorrectPstoCycleStagePayload) =>
-      correctPstoCycleStage({ data: payload }) as Promise<WeldRow>,
+      withSpecialistCorrectionConfirmation(confirmation => correctPstoCycleStage({ data: { ...payload, specialistCorrectionConfirmation: confirmation } }) as Promise<WeldRow>, confirm),
     onSuccess: async (row, variables) => {
       scheduleWeldDataRefresh(queryClient, { upsertRows: [row] })
       onSaved(row, variables.stage)
@@ -40,9 +43,10 @@ export function usePstoTvmtCorrectionWithLaterCycleRemovalMutation({
   onSaved: (row: WeldRow) => void
 }) {
   const queryClient = useQueryClient()
+  const confirm = useConfirmAction()
   return useMutation({
     mutationFn: async (payload: CorrectPstoTvmtAndRemoveLaterCyclesPayload) =>
-      correctPstoTvmtAndRemoveLaterCycles({ data: payload }) as Promise<WeldRow>,
+      withSpecialistCorrectionConfirmation(confirmation => correctPstoTvmtAndRemoveLaterCycles({ data: { ...payload, specialistCorrectionConfirmation: confirmation } }) as Promise<WeldRow>, confirm),
     onSuccess: async (row) => {
       scheduleWeldDataRefresh(queryClient, { upsertRows: [row] })
       onSaved(row)

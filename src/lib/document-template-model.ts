@@ -1,4 +1,5 @@
 import { type WeldInput } from '@/lib/weld-fields'
+import type { SpecialistTemplateFieldKey } from './document-specialists'
 import { type TemplateStampNameFieldKey } from '@/lib/welder-stamp-names'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import {
@@ -89,6 +90,7 @@ export type DocumentTemplateOptions = {
 }
 
 export type DocumentTemplateFieldKey =
+  | SpecialistTemplateFieldKey
   | keyof WeldInput
   | '__index'
   | '__groupIndex'
@@ -277,6 +279,8 @@ export function convertDocumentTemplateBindingToJointRow(
 }
 
 export type StoredDocumentTemplate = TemplateUploadInfo & {
+  /** Transient storage maintenance notice; never saved as constructor metadata. */
+  storageWarning?: string
   id: DocumentTemplateId
   version?: string
   fileData: ArrayBuffer
@@ -383,6 +387,7 @@ export type TemplateMarkerCell = {
 }
 
 export type TemplateSystemField =
+  | SpecialistTemplateFieldKey
   | '__index'
   | '__groupIndex'
   | '__welderName'

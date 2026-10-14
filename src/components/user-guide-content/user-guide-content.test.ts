@@ -11,12 +11,13 @@ describe('user guide content', () => {
     for (const text of ['ПСТО не предусмотрено', 'ПСТО отменено', 'НК до ТО отключён в настройках',
       'без отдельного блока сверху', 'Подписи не скрывают документы и историю']) expect(content).toContain(text)
   })
-  it('teaches only the two contextual corrections and preserves dependency-protected cancellation', () => {
+  it('teaches four contextual corrections and preserves dependency-protected cancellation', () => {
     const content = JSON.stringify([WORK_GUIDE_SECTIONS, REFERENCE_GUIDE_SECTIONS_1, REFERENCE_GUIDE_SECTIONS_2, REFERENCE_GUIDE_SECTIONS_3])
     for (const removed of ['Изменить этап контроля', 'перенести комплект в «До ТО»', 'перенос годного комплекта', 'выберите судьбу связанных комплектов']) expect(content).not.toContain(removed)
     expect(content).not.toContain('Смены этапа у уже внесённого НК нет')
     expect(content).toContain('Весь основной НК → до ТО')
     expect(content).toContain('Весь НК до ТО → основной')
+    expect(content).toContain('в четырёх сценариях')
     expect(content).toContain('Основной этап должен быть пустым')
     expect(content).toContain('результат НК до ТО нельзя удалить, пока на него опирается заявка ПСТО')
   })
@@ -106,6 +107,7 @@ describe('user guide content', () => {
       'work-stamps',
       'work-dispatcher',
       'work-percentage',
+      'specialists',
       'work-statistics',
       'work-documents',
       'work-import',

@@ -1,5 +1,15 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { createRequire } from 'node:module'
+
+// Use the transport's installed serializer for forged-payload guard tests.
+// Calling an uncompiled createServerFn directly has no Start request context.
+const startRequire = createRequire(import.meta.resolve('@tanstack/react-start/client-rpc'))
+const coreRequire = createRequire(startRequire.resolve('@tanstack/start-client-core/package.json'))
+const { toJSONAsync } = coreRequire('seroval') as { toJSONAsync: (value: unknown) => Promise<unknown> }
+export async function serializeRpcData(data: unknown): Promise<string> {
+  return JSON.stringify(await toJSONAsync({ data }))
+}
 
 let productionNames: Map<string, string> | undefined
 

@@ -2,7 +2,7 @@ import type { Dispatch, Ref, SetStateAction } from 'react'
 
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
+import { getDateInputValidationReason, MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
 
 type PstoResultSettingsProps = {
@@ -22,8 +22,9 @@ export function PstoResultSettings({ draft, onDraftChange, dateInputRef }: PstoR
             type="date"
             min={MIN_ALLOWED_DATE_ISO}
             value={draft.pstoDate}
+            aria-invalid={Boolean(draft.result && getDateInputValidationReason(draft.pstoDate, 'Дата ПСТО', { required: true }))}
             onChange={(event) => onDraftChange((current) => ({ ...current, pstoDate: event.target.value }))}
-            className="h-9 bg-white"
+            className="h-9 bg-white aria-invalid:border-rose-400"
           />
         </label>
 

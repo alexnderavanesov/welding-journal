@@ -1,13 +1,23 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import { withE2eDatabase } from '../database'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
+import { ensureDispatcherTaskIndexFresh } from '@/server/dispatcher-task-index'
 
 const SOURCE_JOINT = 'F5'
 const SECOND_JOINT = 'F6'
+const PROJECT = 'E2E точное исправление'
+
+test.beforeEach(async () => { await cleanupLineProgramProjects([PROJECT]) })
+test.afterEach(async ({ context }) => {
+  await Promise.all(context.pages().map(page => page.close()))
+  await cleanupLineProgramProjects([PROJECT])
+})
 
 test('точное исправление ZV возвращает черновик и меняет дату всего документа атомарно', async ({ page }) => {
   test.setTimeout(120_000)
   await seedChronologyRows()
+  await ensureDispatcherTaskIndexFresh()
 
   await page.goto('/lnk')
   await runNextAction(page, SOURCE_JOINT, 'Создать заявку основного НК')
@@ -23,6 +33,9 @@ test('точное исправление ZV возвращает чернови
   await expect(page.getByRole('checkbox', { name: `Выбрать стык E2E-ROOT-L1 ${SOURCE_JOINT}`, exact: true })).toBeChecked()
 
   await page.getByRole('button', { name: 'Очистить', exact: true }).click()
+  // Candidates are paginated. Find our line instead of assuming F6 is on the
+  // first page after other scenarios have created their own eligible joints.
+  await page.getByPlaceholder('Проект, шифр, линия, спул или стык', { exact: true }).fill('E2E-ROOT-L1')
   await page.getByRole('checkbox', { name: `Выбрать стык E2E-ROOT-L1 ${SECOND_JOINT}`, exact: true }).click()
   await requestDate.fill('2026-08-09')
   await expect(page.getByRole('button', { name: 'Исправить дату ПСТО' })).toBeHidden()
@@ -106,7 +119,7 @@ async function loadVikRequests() {
 }
 
 async function seedChronologyRows() {
-  await withE2eDatabase(async (client) => {
+  await withLineProgramFixture(async (client) => {
     await client.query(`
       insert into weld_joints (
         weld_date, project_title, subtitle_code, line, isometry, joint, spool,

@@ -44,6 +44,8 @@ const LNK_DEFAULT_COLLAPSED_SECTIONS = new Set(['НК до ТО'])
 type CreateWeldTablePropsOptions = {
   activeReport: ActiveReport
   rows: WeldTableProps['rows']
+  rowsReady?: WeldTableProps['rowsReady']
+  queryIdentity?: WeldTableProps['queryIdentity']
   actionRows?: WeldTableProps['actionRows']
   duplicateRows?: WeldTableProps['duplicateRows']
   duplicateKeyOverrides?: WeldTableProps['duplicateKeyOverrides']
@@ -86,6 +88,8 @@ type CreateWeldTablePropsOptions = {
 export function createWeldTableProps({
   activeReport,
   rows,
+  rowsReady,
+  queryIdentity,
   actionRows,
   duplicateRows,
   duplicateKeyOverrides,
@@ -126,6 +130,8 @@ export function createWeldTableProps({
 }: CreateWeldTablePropsOptions): WeldTableProps {
   return {
     rows,
+    rowsReady,
+    queryIdentity,
     actionRows,
     duplicateRows,
     duplicateKeyOverrides,

@@ -20,6 +20,7 @@ import {
   WELD_FORM_SUGGESTIONS_QUERY_KEY,
   WELD_JOINT_PAGES_QUERY_KEY,
   WELD_REPORT_CONTEXT_QUERY_KEY,
+  WELD_REPORT_SUMMARY_QUERY_KEY,
   WELD_ROWS_BY_IDS_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 
@@ -38,6 +39,7 @@ describe('weld query cache updates', () => {
     expect(notification).toBeUndefined()
     expect(queryClient.getQueryData<WeldRow[]>(WELD_COMPLETE_SNAPSHOT_QUERY_KEY)?.[0].joint).toBe('F2')
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: STATISTICS_SERVER_QUERY_KEY })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_REPORT_SUMMARY_QUERY_KEY, refetchType: 'none' })
     queryClient.clear()
   })
 
@@ -106,13 +108,17 @@ describe('weld query cache updates', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: GENERATED_DOCUMENT_HISTORY_QUERY_KEY })
   })
 
-  it('can leave section summaries stale without refetching all lines during a scoped assignment save', async () => {
+  it('leaves section/page ownership to the workspace without transient invalidation or refetch', async () => {
     const queryClient = createQueryClient()
-    queryClient.setQueryData(['line-program', 'section'], { rows: [] })
+    const lists = [['line-program', 'section'], ['line-program', 'section', 'lines', 'search'], ['line-program', 'page', 'lines', 'search', 0]]
+    for (const key of lists) queryClient.setQueryData(key, { rows: [] })
+    const detailKey = ['line-program', 'calculation', 1]
+    queryClient.setQueryData(detailKey, { line: {} })
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
-    scheduleWeldDataRefresh(queryClient, { upsertRows: [{ id: 1, hasRk: 'да' }] }, { skipLineProgramRefetch: true })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['line-program'], refetchType: 'none' })
-    expect(queryClient.getQueryState(['line-program', 'section'])?.isInvalidated).toBe(true)
+    scheduleWeldDataRefresh(queryClient, { upsertRows: [{ id: 1, hasRk: 'да' }] }, { lineProgramListsHandled: true })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['line-program'], predicate: expect.any(Function), refetchType: 'none' })
+    for (const key of lists) expect(queryClient.getQueryState(key)?.isInvalidated).toBe(false)
+    expect(queryClient.getQueryState(detailKey)?.isInvalidated).toBe(true)
   })
 
   it('removes deleted rows from an existing complete snapshot', async () => {
@@ -245,6 +251,17 @@ describe('weld query cache updates', () => {
       queryKey: WELD_COMPLETE_SNAPSHOT_QUERY_KEY,
       refetchType: 'none',
     })
+  })
+  it('marks summary results stale after a mutation without fabricating totals or fetching inactive filters', async () => {
+    const queryClient = createQueryClient()
+    const key = [...WELD_REPORT_SUMMARY_QUERY_KEY, 'weldingJournal', { line: '=L1' }]
+    const queryFn = vi.fn(async () => ({ total: 8, acceptedWdiTotal: 12 }))
+    await queryClient.fetchQuery({ queryKey: key, queryFn })
+    scheduleWeldDataRefresh(queryClient, { deleteIds: [1], upsertRows: [{ id: 2, joint: 'F2' }] })
+    expect(queryClient.getQueryData(key)).toEqual({ total: 8, acceptedWdiTotal: 12 })
+    expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true)
+    expect(queryFn).toHaveBeenCalledTimes(1)
+    queryClient.clear()
   })
 })
 

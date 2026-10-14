@@ -1,5 +1,6 @@
 import { LNK_EMPTY_RESULT_VALUE } from '@/lib/report-config'
-import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
+import { assertDocumentRequisites } from '@/lib/document-requisites'
+import { normalizeDateLikeForStorage } from '@/lib/date-format'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 import { withLnkFinalStatus } from '@/lib/lnk-field-updates'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
@@ -49,14 +50,11 @@ export function buildLnkResultRows({
   const results = records.map((record) => resultById[record.id] ?? '')
   const hasNonEmptyResult = results.some((result) => result !== LNK_EMPTY_RESULT_VALUE)
   if (results.some((result) => !isValidLnkResultDraftValue(result))) throw new Error('Укажите результат для каждого выбранного стыка')
-  if (saveCheckSettings.lnkResultControlDateRequired && hasNonEmptyResult && !controlDate) throw new Error('Укажите дату контроля')
-  const controlDateReason = hasNonEmptyResult ? getDateInputValidationReason(controlDate, 'Дата контроля') : ''
-  if (controlDateReason) throw new Error(controlDateReason)
+  if (hasNonEmptyResult) assertDocumentRequisites({ name: conclusionName, date: controlDate })
   if (saveCheckSettings.lnkResultDateAfterWeldDate && hasNonEmptyResult) {
     const dateIssueRecord = records.find((record) => isDateBeforeWeldDate(controlDate, record.weldDate))
     if (dateIssueRecord) throw new Error(formatDateBeforeWeldDateSaveReason(dateIssueRecord, controlDate, `Дата контроля ${method.code}`))
   }
-  if (saveCheckSettings.lnkResultConclusionRequired && hasNonEmptyResult && !conclusionName.trim()) throw new Error('Укажите наименование заключения')
   if (hasNonEmptyResult) {
     const blockedAccess = records
       .map((record) => getPrimaryLnkStageAccess(record, method.code, controlProcessSettings))

@@ -1,13 +1,12 @@
 import { expect, test } from '@playwright/test'
-import { withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
 
 const project = 'E2E section calculation'
 test.afterEach(() => cleanupLineProgramProjects([project]))
 
 test('верхний итог: 5 + 7, все страницы, ПКМ и Ещё, адаптивность и только выбранная линия загружает детали', async ({ page }) => {
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query(`insert into line_programs (project_title, subtitle_code, line, category, group_name, weld_control_percent, pvk_control_percent)
       select $1, 'SEC', 'TOTAL-' || lpad(n::text, 2, '0'), 'II', 'A', 10, 0 from generate_series(1,61) n`, [project])
     await db.query(`insert into weld_joints (line_program_id,project_title,subtitle_code,line,joint,weld_date,connection_type,
@@ -24,6 +23,7 @@ test('верхний итог: 5 + 7, все страницы, ПКМ и Ещё,
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/line-program')
   const program = page.getByTestId('line-program'), totals = program.getByLabel('Итоги раздела')
+  await expect(totals).toBeVisible()
   await program.getByLabel('Поиск программы линий').fill(project)
   await expect(totals.getByRole('button', { name: 'Линий 61', exact: true })).toBeVisible()
   const needed = totals.getByRole('button', { name: 'К назначению 12', exact: true })
@@ -65,7 +65,9 @@ test('верхний итог: 5 + 7, все страницы, ПКМ и Ещё,
   await page.getByTestId('context-action-menu').getByRole('button', { name: 'Расчёт', exact: true }).click()
   await aggregate.getByRole('button', { name: 'Страница 2', exact: true }).click()
   const count = (prefix: string) => calls.filter(name => name.startsWith(prefix)).length
-  expect(count('getLineProgramSection_')).toBe(1)
+  // Initial section + server-side search only; derived filters, paging and
+  // the calculation dialog reuse that complete searched snapshot.
+  expect(count('getLineProgramSection_')).toBe(2)
   expect(count('getLineProgramCalculation_')).toBe(0)
   expect(count('getLineProgramExplanation_')).toBe(0)
   expect(count('getLineProgramJointPage_')).toBe(0)

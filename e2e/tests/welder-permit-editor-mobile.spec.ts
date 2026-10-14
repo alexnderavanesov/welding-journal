@@ -99,9 +99,15 @@ test('редактор НАКС/ДЛС на 390px: длинные группы �
     })])
   })
   await page.goto('/welder-stamps')
+  // Other scenarios retain shared welder fixtures. Exercise the empty-table
+  // layout in our own search scope without deleting their records.
+  const filters = page.getByRole('button', { name: /Фильтры и поиск/ })
+  await filters.click()
+  await page.getByLabel('Поиск', { exact: true }).fill(code)
   const emptyRegion = page.getByRole('region', { name: 'Таблица клейм — горизонтальная прокрутка' })
-  await expect(emptyRegion.getByText('Пока нет добавленных клейм.')).toBeVisible()
+  await expect(emptyRegion.getByText('По выбранным фильтрам клейма не найдены.')).toBeVisible()
   expect(await emptyRegion.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await filters.click()
   await keyboardOpen(page.getByRole('button', { name: 'Добавить клеймо', exact: true }), page)
   const dialog = page.getByRole('dialog')
   const editors = dialog.locator('[data-permit-editor-id]')

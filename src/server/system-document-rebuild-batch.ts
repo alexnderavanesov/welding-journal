@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { generatedDocuments, weldJoints, pstoRepeatCycles, preHeatTreatmentControls } from '@/db/schema'
-import { SYSTEM_DOCUMENT_TEMPLATE_PROFILES, getSystemDocumentTemplateId, type SystemDocumentTemplateId } from '@/lib/system-document-template-types'
+import { SYSTEM_DOCUMENT_TEMPLATE_PROFILES, type SystemDocumentTemplateId } from '@/lib/system-document-template-types'
+import { getSystemDocumentSequenceId, type SystemDocumentSequenceId } from '@/lib/system-document-sequence-id'
 import { getSystemDocumentNumber, type SystemDocumentReference } from '@/lib/system-document-types'
 import { REBUILD_FACT_BYTES_LIMIT } from '@/lib/system-document-rebuild-batch'
 import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
@@ -38,11 +39,11 @@ export async function* readRebuildIdentities(tx: SystemDocumentSequenceTransacti
 }
 
 export async function loadRebuildOccupiedNumbers(tx: SystemDocumentSequenceTransaction, settings: RequestConclusionSettings, templateIds?: readonly SystemDocumentTemplateId[]) {
-  const result = new Map<SystemDocumentTemplateId, Set<number>>()
+  const result = new Map<SystemDocumentSequenceId, Set<number>>()
   for await (const document of readRebuildIdentities(tx, templateIds)) {
     const number = Number(getSystemDocumentNumber(document, settings))
     if (!Number.isInteger(number) || number <= 0) continue
-    const templateId = getSystemDocumentTemplateId(document)
+    const templateId = getSystemDocumentSequenceId(document)
     const numbers = result.get(templateId) ?? new Set<number>()
     numbers.add(number)
     result.set(templateId, numbers)

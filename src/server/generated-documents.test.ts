@@ -15,6 +15,9 @@ import { DEFAULT_OTHER_SETTINGS } from '@/lib/other-settings'
 import type { GeneratedDocumentsTransaction } from '@/server/generated-document-number-sequence'
 
 describe('generated document batch', () => {
+  it.each(['', '   '])('rejects a blank document title even when its filename is populated: %s', title => {
+    expect(() => normalizeSaveGeneratedDocumentBatch([input(title, [1])])).toThrow('название документа')
+  })
   it('normalizes a disjoint series of documents of one type', () => {
     const result = normalizeSaveGeneratedDocumentBatch([
       input('ЖСР 1', [1, 2]),

@@ -5,6 +5,7 @@ import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/com
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
+import { DocumentSpecialistsPanel } from '@/components/document-specialists-panel'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { WorkflowSelectionWarning } from '@/components/workflow-selection-warning'
 import { useWorkflowSelectionState } from '@/lib/use-workflow-selection-state'
@@ -123,7 +124,7 @@ export function PstoRepeatWorkflowDialog({
   const [rowsViewMode, setRowsViewMode] = useState<SelectedRowsViewMode>('all')
   const [workspaceTab, setWorkspaceTab] = useState<DocumentWorkspaceTab>('joints')
   const [naming, setNaming] = useState<RequestNamingState>(() =>
-    getDefaultNamingState(settings, mode === 'request' ? 'pstoRequest' : 'pstoConclusion'),
+    getDefaultNamingState(),
   )
   const requestOptions = useMemo(() => getPstoRequestOptions(rows), [rows])
   const [requestKey, setRequestKey] = useState(() =>
@@ -218,11 +219,10 @@ export function PstoRepeatWorkflowDialog({
     settings,
     positionDetails: row => [{ method: 'ПСТО', stage: 'Цикл ПСТО', cycle: getPstoWorkflowCycleSequence(row, mode === 'request' ? 'pstoRequest' : 'pstoResult'), source: mode === 'result' ? getCurrentPstoCycle(row)?.pstoRequest : undefined }],
     nextNumber: mode === 'request' ? sequences?.pstoRequest : sequences?.pstoConclusion,
-    allowAllNamesEmpty: mode === 'result' && !saveCheckSettings.pstoResultDiagramRequired,
   }), [date, mode, naming, saveCheckSettings.pstoResultDiagramRequired, selectedRows, sequences, settings])
   const dateReason = mode === 'request'
-    ? getDateInputValidationReason(date, 'Дата заявки ПСТО')
-    : getOptionalPstoResultDateReason(date, saveCheckSettings, naming.mode === 'system')
+    ? getDateInputValidationReason(date, 'Дата заявки ПСТО', { required: true })
+    : getDateInputValidationReason(date, 'Дата ПСТО', { required: true })
   const domainReason = useMemo(() => {
     if (selectedRows.length === 0 || dateReason || creationPlan.error) return ''
     try {
@@ -293,13 +293,11 @@ export function PstoRepeatWorkflowDialog({
     },
     onError: (error) => onSaved([], [], (error as Error).message),
   })
-  const saveBlockReason = mutation.isPending
-    ? 'Сохранение выполняется.'
-    : mode === 'result' && !selectedRequest
+  const saveBlockReason = mode === 'result' && !selectedRequest
       ? 'Выберите заявку ПСТО.'
       : selectedRows.length === 0
         ? 'Выберите хотя бы один доступный стык.'
-        : dateReason || creationPlan.error || effectiveDomainReason
+        : [dateReason, creationPlan.error].filter(Boolean).join('\n') || effectiveDomainReason
 
   const runRootCauseAction = (action: WorkflowRootCauseAction) => {
     const target = action.target
@@ -427,6 +425,7 @@ export function PstoRepeatWorkflowDialog({
 
       <DocumentWorkspaceTabs
         activeTab={workspaceTab}
+        specialists={mode === 'result'}
         ariaLabel="Разделы ПСТО"
         controls={<SystemDocumentSplitControl plan={creationPlan} naming={naming} onChange={setNaming} disabled={mutation.isPending} />}
         documentsLabel={mode === 'request' ? 'Заявки и имена' : 'Диаграммы и имена'}
@@ -435,7 +434,7 @@ export function PstoRepeatWorkflowDialog({
         onChange={setWorkspaceTab}
       />
 
-      {workspaceTab === 'documents' ? (
+      {workspaceTab === 'specialists' && creationPlan ? <DocumentSpecialistsPanel plan={creationPlan} naming={naming} onChange={setNaming} disabled={mutation.isPending} /> : workspaceTab === 'documents' ? (
         <SystemDocumentNamesPanel
           plan={creationPlan}
           naming={naming}
@@ -615,19 +614,6 @@ function validatePstoResultRow(
     rows: [row],
     saveCheckSettings,
   })
-}
-
-function getOptionalPstoResultDateReason(
-  date: string,
-  settings: SaveCheckSettings,
-  systemNameRequiresDate: boolean,
-) {
-  if (!date.trim()) {
-    return settings.pstoResultDateRequired || systemNameRequiresDate
-      ? getDateInputValidationReason(date, 'Дата ПСТО')
-      : null
-  }
-  return getDateInputValidationReason(date, 'Дата ПСТО')
 }
 
 function filterRows(rows: WeldRow[], search: string) {

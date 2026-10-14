@@ -19,6 +19,7 @@ import { DialogHeader } from '@/components/dialog-header'
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { PstoStageCorrectionChoice } from '@/components/psto-weld-line-move-dialog'
+import { useSpecialistTransferConfirmation } from './specialist-transfer-confirmation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatDateInputValue } from '@/lib/date-format'
@@ -139,6 +140,15 @@ export function PstoLineProgramDialog({
     if (!linesQuery.isPlaceholderData && serverPage && serverPage !== page) setPage(serverPage)
   }, [linesQuery.data?.page, linesQuery.isPlaceholderData, page])
 
+  const transferTarget = view.type === 'cancel' ? 'primary' : 'beforeHeatTreatment'
+  const effectiveTransfers = open && view.type !== 'list' && view.type !== 'remove'
+    ? (previewMutation.data?.rows ?? []).filter(row => transferRowIds.has(row.rowId) && row.stageCorrection?.targetStage === transferTarget && !row.stageCorrection.disabledReason).map(row => row.rowId) : []
+  const specialists = useSpecialistTransferConfirmation(effectiveTransfers, transferTarget)
+  const effectiveTransferSet = new Set(effectiveTransfers)
+  const onTransferChange = (rowId: number, move: boolean) => setTransferRowIds(current => {
+    const next = new Set(current); if (move) next.add(rowId); else next.delete(rowId); return next
+  })
+
   if (!open) return null
 
   const closeDisabled = previewMutation.isPending || saveMutation.isPending
@@ -167,6 +177,8 @@ export function PstoLineProgramDialog({
     previewMutation.mutate(toIdentity(line))
   }
   const openRemove = (line: PstoLineAssignmentSummary) => {
+    setTransferRowIds(new Set())
+    previewMutation.reset()
     setCancellationDate(formatDateInputValue(new Date()))
     setCancellationBasis('')
     setView({ type: line.historyRowCount > 0 ? 'cancel' : 'remove', line })
@@ -177,7 +189,7 @@ export function PstoLineProgramDialog({
       (view.type !== 'assign' && view.type !== 'reactivate') ||
       saveMutation.isPending ||
       previewMutation.isPending || previewMutation.isError ||
-      !previewMutation.data
+      !previewMutation.data || !specialists.ready
     ) return
     const reactivating = view.type === 'reactivate'
     const activationDecisions = previewMutation.data.rows
@@ -186,6 +198,7 @@ export function PstoLineProgramDialog({
         rowId: row.rowId,
         disposition: transferRowIds.has(row.rowId) && !row.stageCorrection?.disabledReason
           ? 'movePrimaryToPreHeatTreatment' as const : 'keepPrimary' as const,
+        ...(specialists.confirmation ? { specialistTransferConfirmation: specialists.confirmation } : {}),
       }))
     onRunProtectedEdit(reactivating ? 'возобновление программы ПСТО' : 'назначение ПСТО на всю линию', async () => {
       await saveMutation.mutateAsync({
@@ -197,7 +210,7 @@ export function PstoLineProgramDialog({
     })
   }
   const submitRemoval = () => {
-    if ((view.type !== 'remove' && view.type !== 'cancel') || !previewMutation.data || saveMutation.isPending) return
+    if ((view.type !== 'remove' && view.type !== 'cancel') || !previewMutation.data || saveMutation.isPending || !specialists.ready) return
     const cancelling = view.type === 'cancel'
     if (cancelling !== (previewMutation.data.historyRowCount > 0)) return
     onRunProtectedDelete(cancelling ? 'официальная отмена ПСТО на линии' : 'удаление ошибочного назначения ПСТО', async () => {
@@ -207,6 +220,10 @@ export function PstoLineProgramDialog({
         expectedVersions: previewMutation.data.expectedVersions,
         cancellationDate: cancelling ? cancellationDate : undefined,
         cancellationBasis: cancelling ? cancellationBasis : undefined,
+        ...(cancelling ? { activationDecisions: previewMutation.data.rows.filter(row => row.stageCorrection?.targetStage === 'primary').map(row => ({
+          rowId: row.rowId, disposition: effectiveTransferSet.has(row.rowId) ? 'movePreHeatTreatmentToPrimary' as const : 'keepPrimary' as const,
+          ...(specialists.confirmation ? { specialistTransferConfirmation: specialists.confirmation } : {}),
+        })) } : {}),
       })
     })
   }
@@ -235,6 +252,7 @@ export function PstoLineProgramDialog({
         onClose={handleClose}
       />
 
+      {specialists.notice}
       {linesQuery.isError ? <PstoProgramDiagnostics /> : null}
       {view.type === 'list' ? (
         <LineListView
@@ -276,14 +294,10 @@ export function PstoLineProgramDialog({
           previewLoading={previewMutation.isPending}
           previewError={(previewMutation.error as Error | null)?.message ?? ''}
           pending={saveMutation.isPending}
+          transferBlocked={!specialists.ready}
           error={(saveMutation.error as Error | null)?.message ?? ''}
           transferRowIds={transferRowIds}
-          onTransferChange={(rowId, move) => setTransferRowIds(current => {
-            const next = new Set(current)
-            if (move) next.add(rowId)
-            else next.delete(rowId)
-            return next
-          })}
+          onTransferChange={onTransferChange}
           onRetry={() => {
             setTransferRowIds(new Set())
             previewMutation.mutate(toIdentity(view.line))
@@ -299,6 +313,9 @@ export function PstoLineProgramDialog({
           saveError={(saveMutation.error as Error | null)?.message ?? ''}
           pending={saveMutation.isPending}
           officialCancellation={view.type === 'cancel'}
+          transferRowIds={transferRowIds}
+          onTransferChange={onTransferChange}
+          transferBlocked={!specialists.ready}
           cancellationDate={cancellationDate}
           cancellationBasis={cancellationBasis}
           onCancellationDateChange={setCancellationDate}
@@ -558,7 +575,7 @@ function LineAssignmentStatus({ line }: { line: PstoLineAssignmentSummary }) {
 
 function AssignmentView({
   line, reactivating, preview, previewLoading, previewError, pending, error, onRetry, onCancel, onSubmit,
-  transferRowIds, onTransferChange,
+  transferRowIds, onTransferChange, transferBlocked,
 }: {
   line: PstoLineAssignmentSummary
   reactivating: boolean
@@ -568,12 +585,13 @@ function AssignmentView({
   pending: boolean
   error: string
   transferRowIds: ReadonlySet<number>
+  transferBlocked: boolean
   onTransferChange: (rowId: number, move: boolean) => void
   onRetry: () => void
   onCancel: () => void
   onSubmit: () => void
 }) {
-  const submitDisabled = pending || previewLoading || !preview || Boolean(previewError)
+  const submitDisabled = pending || previewLoading || !preview || Boolean(previewError) || transferBlocked
   const correctionRows = (preview?.rows ?? []).filter(row => row.stageCorrection?.targetStage === 'beforeHeatTreatment')
   const pagination = usePagePagination({ items: correctionRows, defaultPageSize: 25, resetKeys: [preview] })
   const transferCount = correctionRows.filter(row => transferRowIds.has(row.rowId) && !row.stageCorrection?.disabledReason).length
@@ -644,6 +662,7 @@ function RemovalView({
   onRetry,
   onCancel,
   onSubmit,
+  transferRowIds, onTransferChange, transferBlocked,
 }: {
   preview: PstoLineRemovalPreview | null
   loading: boolean
@@ -659,6 +678,9 @@ function RemovalView({
   onRetry: () => void
   onCancel: () => void
   onSubmit: () => void
+  transferRowIds: ReadonlySet<number>
+  onTransferChange: (rowId: number, move: boolean) => void
+  transferBlocked: boolean
 }) {
   const rows = preview?.rows ?? []
   const pagination = usePagePagination({ items: rows, defaultPageSize: 25, resetKeys: [preview] })
@@ -754,7 +776,10 @@ function RemovalView({
                     <div>
                       {actionOutdated ? (
                         <p className="text-xs leading-5 text-amber-700">Ничего не изменится, пока не выбран актуальный способ снятия ПСТО.</p>
-                      ) : officialCancellation ? (<p className="text-xs leading-5 text-emerald-700">Назначение ПСТО будет отменено. Все заявки, результаты, заключения НК до ТО, основного этапа и повторных циклов сохранятся на своих этапах. Если физическая ПСТО уже проведена, внесите фактическую ТВМТ; новый повтор не откроется.</p>) : (
+                      ) : officialCancellation ? (<>
+                        <p className="text-xs leading-5 text-emerald-700">Назначение ПСТО будет отменено. По умолчанию этапы сохраняются. Если физическая ПСТО уже проведена, внесите фактическую ТВМТ; новый повтор не откроется.</p>
+                        {row.stageCorrection?.targetStage === 'primary' ? <PstoStageCorrectionChoice row={row} moveSelected={transferRowIds.has(row.rowId) && !row.stageCorrection.disabledReason} disabled={pending} onChange={move => onTransferChange(row.rowId, move)} /> : null}
+                      </>) : (
                         <p className="text-xs text-slate-500">Основной комплект НК не изменится.</p>
                       )}
                     </div>
@@ -786,7 +811,7 @@ function RemovalView({
               {actionOutdated
                 ? 'Предпросмотр обнаружил изменение истории. Выберите предложенный способ снятия ПСТО либо вернитесь назад; документы автоматически не удаляются.'
                 : officialCancellation
-                ? 'Все заявки, результаты и заключения ПСТО, ТВМТ и НК до ТО сохранятся на своих этапах. Отмена не удаляет историю и не переносит её в основной НК.'
+                ? `Отмена не удаляет историю. Перенос НК до ТО в основной выполняется только для явно выбранных стыков: ${rows.filter(row => transferRowIds.has(row.rowId) && row.stageCorrection?.targetStage === 'primary' && !row.stageCorrection.disabledReason).length}. Заявка или история ПСТО/ТВМТ запрещают перенос соответствующего стыка.`
                 : 'У линии нет документов и результатов. Будет удалено только ошибочное назначение ПСТО; другие данные стыков не изменятся.'}
             </p>
           </div>
@@ -795,7 +820,7 @@ function RemovalView({
             <Button
               variant="destructive"
               onClick={onSubmit}
-              disabled={!preview || pending || actionOutdated || (officialCancellation && !cancellationDate)}
+              disabled={!preview || pending || actionOutdated || transferBlocked || (officialCancellation && !cancellationDate)}
             >
               {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CircleSlash2 className="mr-2 h-4 w-4" />}
               {officialCancellation ? 'Отменить ПСТО на линии' : 'Удалить назначение'}

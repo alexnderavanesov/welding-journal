@@ -148,7 +148,6 @@ export function useLnkResultDerivedState({
       naming: lnkResultDraft.conclusionNaming,
       settings: requestConclusionSettings,
       nextNumber: nextLnkConclusionNumber,
-      allowAllNamesEmpty: !saveCheckSettings.lnkResultConclusionRequired,
     })
   }, [
     lnkResultDraft.conclusionNaming,
@@ -166,7 +165,6 @@ export function useLnkResultDerivedState({
     () =>
       getLnkResultSaveBlockReason({
         draft: lnkResultDraft,
-        isSaving: isLnkResultSaving,
         nextConclusionName: nextLnkConclusionName,
         saveCheckSettings,
         selectedRows: selectedLnkResultRows,
@@ -188,7 +186,7 @@ export function useLnkResultDerivedState({
     ],
   )
 
-  const isLnkResultSaveDisabled = Boolean(lnkResultSaveBlockReason)
+  const isLnkResultSaveDisabled = isLnkResultSaving || Boolean(lnkResultSaveBlockReason)
   const lnkResultRootCauseActions = useMemo(
     () => getLnkResultRootCauseActions({
       draft: lnkResultDraft,

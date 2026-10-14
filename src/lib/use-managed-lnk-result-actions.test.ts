@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/confirm-action-context', () => ({
-  useConfirmAction: () => vi.fn(),
+  useConfirmAction: () => vi.fn().mockResolvedValue(true),
 }))
 
 vi.mock('@/lib/managed-lnk-result-utils', () => ({
@@ -27,7 +27,6 @@ describe('useManagedLnkResultActions', () => {
       selectedLnkResultRowIds: new Set(),
       managedLnkPendingResultChanges: {},
       managedLnkPendingResultRows: [],
-      lnkResultCorrectionMutation: { mutate: vi.fn() },
       lnkResultReplacementMutation: { mutate: vi.fn() },
       lnkConclusionCorrectionMutation: { mutate },
       setMessage: vi.fn(),
@@ -50,7 +49,7 @@ describe('useManagedLnkResultActions', () => {
     })
   })
 
-  it('closes the result manager only after a successful save', () => {
+  it('closes the result manager only after a confirmed successful save', async () => {
     let finishSave: (() => void) | undefined
     const mutate = vi.fn((_variables, options?: { onSuccess?: () => void }) => {
       finishSave = options?.onSuccess
@@ -68,8 +67,7 @@ describe('useManagedLnkResultActions', () => {
       lnkRows: [],
       selectedLnkResultRowIds: new Set(),
       managedLnkPendingResultChanges: { '7:vikRequest': 'годен' },
-      managedLnkPendingResultRows: [{} as never],
-      lnkResultCorrectionMutation: { mutate: vi.fn() },
+      managedLnkPendingResultRows: [{ row: { id: 7, rowVersion: 'v1', vikResult: 'ремонт' }, method: { requestKey: 'vikRequest' }, changeKey: '7:vikRequest' }],
       lnkResultReplacementMutation: { mutate },
       lnkConclusionCorrectionMutation: { mutate: vi.fn() },
       setMessage: vi.fn(),
@@ -83,7 +81,7 @@ describe('useManagedLnkResultActions', () => {
       setManagedLnkPendingResultChanges,
     }))
 
-    act(() => result.current.saveManagedLnkResultChanges())
+    await act(async () => { await result.current.saveManagedLnkResultChanges() })
     expect(setIsLnkResultManagerOpen).not.toHaveBeenCalled()
 
     act(() => finishSave?.())
@@ -116,7 +114,6 @@ describe('useManagedLnkResultActions', () => {
       selectedLnkResultRowIds: new Set(),
       managedLnkPendingResultChanges: {},
       managedLnkPendingResultRows: [],
-      lnkResultCorrectionMutation: { mutate: vi.fn() },
       lnkResultReplacementMutation: { mutate: vi.fn() },
       lnkConclusionCorrectionMutation: { mutate: vi.fn() },
       setMessage: vi.fn(),
@@ -154,7 +151,6 @@ describe('useManagedLnkResultActions', () => {
       selectedLnkResultRowIds: new Set(),
       managedLnkPendingResultChanges: {},
       managedLnkPendingResultRows: [],
-      lnkResultCorrectionMutation: { mutate: vi.fn() },
       lnkResultReplacementMutation: { mutate: vi.fn() },
       lnkConclusionCorrectionMutation: { mutate: vi.fn() },
       setMessage,
@@ -186,7 +182,6 @@ describe('useManagedLnkResultActions', () => {
       selectedLnkResultRowIds: new Set(),
       managedLnkPendingResultChanges: {},
       managedLnkPendingResultRows: [],
-      lnkResultCorrectionMutation: { mutate: vi.fn() },
       lnkResultReplacementMutation: { mutate: vi.fn() },
       lnkConclusionCorrectionMutation: { mutate: vi.fn() },
       setMessage,

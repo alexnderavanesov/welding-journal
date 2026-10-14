@@ -28,7 +28,7 @@ export function getManagedLnkResultChangeHint(
 
 export function buildManagedLnkResultReplacementUpdates(
   pendingRows: ManagedLnkPendingResultRow[],
-  pendingChanges: Record<string, string>,
+  pendingChanges: Record<string, string | null>,
 ) {
   return pendingRows.map(({ row, method, changeKey }) => ({
     record: row,

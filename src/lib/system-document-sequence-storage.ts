@@ -4,6 +4,7 @@ import {
   resetSystemDocumentSequence,
 } from '@/server/system-document-sequences'
 import type { SystemDocumentTemplateId } from '@/lib/system-document-template-types'
+import type { DocumentNumberStage } from './system-document-sequence-id'
 
 export const SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY = ['system-document-sequences'] as const
 
@@ -15,6 +16,6 @@ export function loadSystemDocumentSequence(type: SystemDocumentTemplateId) {
   return getSystemDocumentSequence({ data: { type } })
 }
 
-export function resetStoredSystemDocumentSequence(type: SystemDocumentTemplateId) {
-  return resetSystemDocumentSequence({ data: { type } })
+export function resetStoredSystemDocumentSequence(type: SystemDocumentTemplateId, stage: DocumentNumberStage = 'main') {
+  return resetSystemDocumentSequence({ data: { type, stage } })
 }

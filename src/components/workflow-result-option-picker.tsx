@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { FieldHelp } from './field-help'
 import { getLnkResultBadgeClass } from '@/lib/report-badges'
 
 type WorkflowResultOptionPickerProps = {
@@ -28,10 +29,13 @@ export function WorkflowResultOptionPicker({
   onChange,
 }: WorkflowResultOptionPickerProps) {
   const choices = options.map((option) => ({ option, disabledReason: getDisabledReason?.(option) }))
-  const showHelp = Boolean(restrictionHelpHref && choices.some(({ disabledReason }) => disabledReason))
   return (
     <span className={compact ? 'flex min-w-0 flex-col gap-1' : 'mt-2 flex flex-wrap items-center gap-1.5'}>
-      <span className="text-[11px] font-medium text-slate-500">{label}</span>
+      <span className="inline-flex min-h-5 items-center gap-1.5 text-[11px] font-medium text-slate-500">{label}
+        {(reserveHelpSpace || restrictionHelpHref) ? <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center" data-result-picker-rule>
+          {restrictionHelpHref ? <FieldHelp href={restrictionHelpHref} label={restrictionHelpLabel}>Правило СП-07: какие результаты доступны и почему. Нажмите, чтобы открыть описание в новой вкладке.</FieldHelp> : null}
+        </span> : null}
+      </span>
       <span role="group" aria-label={label} className="flex flex-wrap items-center gap-1">
         {choices.map(({ option, disabledReason }) => {
           const active = value === option
@@ -46,13 +50,8 @@ export function WorkflowResultOptionPicker({
           )
         })}
       </span>
-      {reserveHelpSpace || showHelp || helperText ? <span data-result-picker-help className="flex min-h-4 items-center justify-between gap-2 text-[11px] leading-4">
+      {reserveHelpSpace || helperText ? <span data-result-picker-help className="flex min-h-4 items-center gap-2 text-[11px] leading-4">
         {helperText ? <span className="text-slate-500">{helperText}</span> : null}
-        {showHelp ? <a href={restrictionHelpHref} target="_blank" rel="noreferrer"
-          onClick={(event) => event.stopPropagation()}
-          className="whitespace-nowrap text-sky-700 underline underline-offset-2 hover:text-sky-900">
-          {restrictionHelpLabel}
-        </a> : null}
       </span> : null}
     </span>
   )

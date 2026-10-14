@@ -161,7 +161,7 @@ describe('buildLnkOfficialityChainPlan', () => {
     expect(() => buildLnkOfficialityChainPlan([
       row({ id: 1, joint: 'S1', officiality: 'неофициальный', rkResult }),
       row({ id: 2, joint: 'S1', finalStatus: 'годен' }),
-    ], [1], 'official')).toThrow(/основан|негод|результат/)
+    ], [1], 'official')).toThrow(/уже есть официальный стык S1.*нет собственного результата.*Картине стыка.*Ничего не сохранено/)
   })
 
   it('refuses an ambiguous official namesake and a chronological inversion', () => {

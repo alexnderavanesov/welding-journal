@@ -296,6 +296,19 @@ export type WeldPageRequest = WeldFilters & {
   pageSize?: WeldPageSize
   columnFilters?: Record<string, string>
   sort?: WeldSort
+  /** Interactive tables request rows independently of potentially expensive totals. */
+  includeTotals?: boolean
+}
+
+export type WeldReportSummaryRequest = WeldFilters & {
+  report: WeldReportKind
+  columnFilters?: Record<string, string>
+}
+
+export type WeldReportSummaryResult = {
+  total: number
+  acceptedWdiTotal?: number
+  availableRequestCount?: number
 }
 
 export type WeldImportSecurityAction = 'newRecords' | 'massFill' | 'replaceData'
@@ -380,13 +393,16 @@ export type WeldDataUsageSummary = {
 export type WeldMutationScope = 'welding' | 'lnk' | 'psto'
 
 export type WeldPayload = WeldDraft & {
+  specialistCorrectionConfirmation?: string
   expectedVersion?: string
   pstoLineMoveDisposition?: PstoWeldLineMoveDisposition
+  specialistTransferConfirmation?: string
   weldChainLineMovePlan?: WeldChainLineMovePlan
   mutationScope?: WeldMutationScope
 }
 
 export type WeldBatchUpdateData = {
+  specialistCorrectionConfirmation?: string
   documentGrouping?: DocumentGroupingCommand
   records: WeldPayload[]
   expectedVersions: WeldRowVersionTarget[]

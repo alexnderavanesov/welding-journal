@@ -53,7 +53,12 @@ export function useEscapeToClearReportFilters({
         editingOpen ||
         isReportModalOpen ||
         chainOpen ||
-        isModalDialogOpen()
+        isModalDialogOpen() ||
+        // Portaled toolbar panels are dialogs, but are not modal-layer entries.
+        // Their close handler owns this Escape; leave report conditions intact.
+        Array.from(document.querySelectorAll('[role="dialog"]')).some(
+          (panel) => !panel.closest('[hidden], [aria-hidden="true"]'),
+        )
       ) return
 
       const activeSelection = getActiveReportSelection(activeReport, {

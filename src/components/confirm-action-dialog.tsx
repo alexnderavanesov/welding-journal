@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { cn } from '@/lib/utils'
 
-export type ConfirmActionDialogTone = 'danger' | 'warning'
+export type ConfirmActionDialogTone = 'danger' | 'warning' | 'neutral'
 
 type ConfirmActionDialogProps = {
   title: string
@@ -49,6 +49,7 @@ export function ConfirmActionDialog({
 
   return (
     <LargeDialogShell
+      ariaLabel={title}
       maxWidthClassName="max-w-[720px]"
       maxHeightClassName="max-h-[90vh]"
       overlayClassName="z-[160] bg-slate-950/35"
@@ -57,7 +58,7 @@ export function ConfirmActionDialog({
     >
       <div
         data-confirm-action-dialog="true"
-        className="flex items-center justify-between border-b border-slate-200 px-6 py-5"
+        className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 px-4 py-4 sm:px-6 sm:py-5"
       >
         <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
         <button
@@ -70,26 +71,28 @@ export function ConfirmActionDialog({
         </button>
       </div>
 
-      <div className="space-y-5 px-6 py-6">
+      <div className="min-h-0 overflow-y-auto overscroll-contain px-3 py-4 sm:px-6 sm:py-6">
         <div
           className={cn(
-            'rounded-md border px-5 py-4',
+            'min-w-0 rounded-md border px-3 py-3 sm:px-5 sm:py-4',
             isDanger
               ? 'border-red-200 bg-red-50 text-red-950'
-              : 'border-amber-200 bg-amber-50 text-amber-950',
+              : tone === 'warning'
+                ? 'border-amber-200 bg-amber-50 text-amber-950'
+                : 'border-slate-200 bg-slate-50 text-slate-950',
           )}
         >
           {itemName ? <div className="text-base font-semibold leading-relaxed">{itemName}</div> : null}
           {description ? <div className="mt-2 text-sm leading-relaxed">{description}</div> : null}
           {warning ? (
-            <div className={cn('mt-3 text-sm leading-relaxed', isDanger ? 'text-red-700' : 'text-amber-700')}>
+            <div className={cn('mt-3 text-sm leading-relaxed', isDanger ? 'text-red-700' : tone === 'warning' ? 'text-amber-700' : 'text-slate-600')}>
               {warning}
             </div>
           ) : null}
         </div>
       </div>
 
-      <div className="flex justify-end gap-3 border-t border-slate-100 px-6 py-5">
+      <div className="flex shrink-0 flex-col-reverse justify-end gap-3 border-t border-slate-100 px-4 py-4 sm:flex-row sm:px-6 sm:py-5">
         <Button type="button" variant="outline" onClick={onClose}>
           {cancelLabel}
         </Button>

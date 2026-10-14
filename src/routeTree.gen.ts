@@ -17,6 +17,7 @@ import { Route as AppLineProgramRouteImport } from './routes/_app.line-program'
 import { Route as AppLnkRouteImport } from './routes/_app.lnk'
 import { Route as AppPercentageLinesRouteImport } from './routes/_app.percentage-lines'
 import { Route as AppPstoRouteImport } from './routes/_app.psto'
+import { Route as AppReferencesRouteImport } from './routes/_app.references'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppStatisticsRouteImport } from './routes/_app.statistics'
 import { Route as AppUserGuideRouteImport } from './routes/_app.user-guide'
@@ -62,6 +63,11 @@ const AppPstoRoute = AppPstoRouteImport.update({
   path: '/psto',
   getParentRoute: () => AppRoute,
 } as any)
+const AppReferencesRoute = AppReferencesRouteImport.update({
+  id: '/references',
+  path: '/references',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -97,6 +103,7 @@ export interface FileRoutesByFullPath {
   '/lnk': typeof AppLnkRoute
   '/percentage-lines': typeof AppPercentageLinesRoute
   '/psto': typeof AppPstoRoute
+  '/references': typeof AppReferencesRoute
   '/settings': typeof AppSettingsRoute
   '/statistics': typeof AppStatisticsRoute
   '/user-guide': typeof AppUserGuideRoute
@@ -111,6 +118,7 @@ export interface FileRoutesByTo {
   '/lnk': typeof AppLnkRoute
   '/percentage-lines': typeof AppPercentageLinesRoute
   '/psto': typeof AppPstoRoute
+  '/references': typeof AppReferencesRoute
   '/settings': typeof AppSettingsRoute
   '/statistics': typeof AppStatisticsRoute
   '/user-guide': typeof AppUserGuideRoute
@@ -127,6 +135,7 @@ export interface FileRoutesById {
   '/_app/lnk': typeof AppLnkRoute
   '/_app/percentage-lines': typeof AppPercentageLinesRoute
   '/_app/psto': typeof AppPstoRoute
+  '/_app/references': typeof AppReferencesRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/statistics': typeof AppStatisticsRoute
   '/_app/user-guide': typeof AppUserGuideRoute
@@ -143,6 +152,7 @@ export interface FileRouteTypes {
     | '/lnk'
     | '/percentage-lines'
     | '/psto'
+    | '/references'
     | '/settings'
     | '/statistics'
     | '/user-guide'
@@ -157,6 +167,7 @@ export interface FileRouteTypes {
     | '/lnk'
     | '/percentage-lines'
     | '/psto'
+    | '/references'
     | '/settings'
     | '/statistics'
     | '/user-guide'
@@ -172,6 +183,7 @@ export interface FileRouteTypes {
     | '/_app/lnk'
     | '/_app/percentage-lines'
     | '/_app/psto'
+    | '/_app/references'
     | '/_app/settings'
     | '/_app/statistics'
     | '/_app/user-guide'
@@ -243,6 +255,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPstoRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/references': {
+      id: '/_app/references'
+      path: '/references'
+      fullPath: '/references'
+      preLoaderRoute: typeof AppReferencesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/settings': {
       id: '/_app/settings'
       path: '/settings'
@@ -288,6 +307,7 @@ interface AppRouteChildren {
   AppLnkRoute: typeof AppLnkRoute
   AppPercentageLinesRoute: typeof AppPercentageLinesRoute
   AppPstoRoute: typeof AppPstoRoute
+  AppReferencesRoute: typeof AppReferencesRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppStatisticsRoute: typeof AppStatisticsRoute
   AppUserGuideRoute: typeof AppUserGuideRoute
@@ -301,6 +321,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppLnkRoute: AppLnkRoute,
   AppPercentageLinesRoute: AppPercentageLinesRoute,
   AppPstoRoute: AppPstoRoute,
+  AppReferencesRoute: AppReferencesRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppStatisticsRoute: AppStatisticsRoute,
   AppUserGuideRoute: AppUserGuideRoute,

@@ -207,26 +207,19 @@ describe('contextual PSTO stage correction', () => {
       expect(reason(row, target, settings, indices)).toContain(message!)
     })
 
-    it.each([null, '', '  '])('preserves optional conclusion names verbatim across the whole package: %s', name => {
+    it.each([null, '', '  '])('blocks transfer of unnamed history without changing it: %s', name => {
       const row = candidate(target)
       if (target === 'beforeHeatTreatment') {
         for (const method of LNK_METHODS) row[method.conclusionKey] = name
       } else row.preHeatTreatmentControls = pre.map(control => ({ ...control, conclusionName: name }))
       freeze(row)
-      expect(reason(row, target, settings, indices)).toBeNull()
-      const next = build(row, target, settings, indices)
-      const completionTasks = buildLnkResultCompletenessCheckTasks([next])
+      expect(reason(row, target, settings, indices)).toContain('наименование заключения')
+      expect(() => build(row, target, settings, indices)).toThrow('наименование заключения')
+      const completionTasks = buildLnkResultCompletenessCheckTasks([row])
       expect(completionTasks).toHaveLength(1)
       expect(getDispatcherTaskCode(completionTasks[0]!)).toBe('СП-11')
       for (const method of LNK_METHODS) {
-        expect(completionTasks[0]!.details).toContain(`${method.code}${target === 'beforeHeatTreatment' ? ' до ТО' : ''}: не заполнено заключение`)
-      }
-      if (target === 'primary') {
-        expect(next).toMatchObject({ ...primary, ...Object.fromEntries(LNK_METHODS.map(method => [method.conclusionKey, name])) })
-        expect(next.preHeatTreatmentControls).toEqual([])
-      } else {
-        expect(next.preHeatTreatmentControls).toEqual(pre.map(control => ({ ...control, id: expect.any(Number), conclusionName: name })))
-        for (const key of Object.keys(primary)) expect(next[key as keyof WeldRow]).toBeNull()
+        expect(completionTasks[0]!.details).toContain(`${method.code}${target === 'primary' ? ' до ТО' : ''}: не заполнено заключение`)
       }
     })
 
@@ -235,10 +228,8 @@ describe('contextual PSTO stage correction', () => {
       ['conclusionDate', '2026-07-31', 'раньше даты'],
       ['conclusionDate', '2026-02-31', 'формате'],
       ['conclusionDate', null, 'дату заключения'],
-    ])('still checks chronology with an optional empty name: %s=%s', (field, value, message) => {
+    ])('still checks chronology for a named package: %s=%s', (field, value, message) => {
       const row = withPackageChange(target, 'ВИК', field!, value)
-      if (target === 'beforeHeatTreatment') row.vikConclusion = null
-      else row.preHeatTreatmentControls![0].conclusionName = null
       expect(() => build(freeze(row), target, settings, indices)).toThrow(message!)
     })
 
@@ -257,11 +248,11 @@ describe('contextual PSTO stage correction', () => {
       } else row.preHeatTreatmentControls = [{ ...row.preHeatTreatmentControls![0], result }]
       const beforeTasks = buildLnkResultCompletenessCheckTasks([row])
       expect(beforeTasks).toHaveLength(1)
-      const next = build(freeze(row), target, settings, indices)
-      const afterTasks = buildLnkResultCompletenessCheckTasks([next])
+      expect(() => build(freeze(row), target, settings, indices)).toThrow('наименование заключения')
+      const afterTasks = buildLnkResultCompletenessCheckTasks([row])
       expect(afterTasks).toHaveLength(1)
       expect(getDispatcherTaskCode(afterTasks[0]!)).toBe('СП-11')
-      expect(target === 'primary' ? next.vikResult : next.preHeatTreatmentControls![0].result).toBe(result)
+      expect(target === 'beforeHeatTreatment' ? row.vikResult : row.preHeatTreatmentControls![0].result).toBe(result)
     })
 
     it('does not treat an unnamed result as permission to bypass a PSTO request dependency', () => {

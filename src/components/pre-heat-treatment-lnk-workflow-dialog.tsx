@@ -5,6 +5,7 @@ import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/com
 import { DialogRowPagination } from '@/components/dialog-row-pagination'
 import { DialogVirtualizedRows } from '@/components/dialog-virtualized-rows'
 import { DocumentWorkspaceTabs, type DocumentWorkspaceTab } from '@/components/document-workspace-tabs'
+import { DocumentSpecialistsPanel } from '@/components/document-specialists-panel'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { WorkflowSelectionWarning } from '@/components/workflow-selection-warning'
 import { useWorkflowSelectionState } from '@/lib/use-workflow-selection-state'
@@ -81,6 +82,7 @@ import {
   type SystemDocumentCreationGroup,
 } from '@/lib/system-document-creation-plan'
 import { getSystemDocumentTemplateId } from '@/lib/system-document-template-types'
+import { sequenceIdForStage } from '@/lib/system-document-sequence-id'
 import { usePagePagination } from '@/lib/use-page-pagination'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
@@ -192,7 +194,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
   const [rowsViewMode, setRowsViewMode] = useState<SelectedRowsViewMode>('all')
   const [workspaceTab, setWorkspaceTab] = useState<DocumentWorkspaceTab>('joints')
   const [naming, setNaming] = useState<RequestNamingState>(() =>
-    getDefaultNamingState(settings, mode === 'request' ? 'lnkRequest' : 'lnkConclusion'),
+    getDefaultNamingState(),
   )
   const [selectedMethods, setSelectedMethods] = useState<Set<PreHeatTreatmentLnkMethodCode>>(() =>
     getInitialRequestMethods(mode, rows, initialSelectedIds, initialMethodCode),
@@ -385,11 +387,12 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     ? getSystemDocumentTemplateId({ type: 'lnkConclusion', methodCode: resultMethod })
     : null
   const nextNumber = mode === 'request'
-    ? sequences?.lnkRequest
+    ? sequences?.['lnkRequest:beforeHeatTreatment']
     : conclusionTemplateId
-      ? sequences?.[conclusionTemplateId]
+      ? sequences?.[sequenceIdForStage(conclusionTemplateId, 'beforeHeatTreatment')]
       : undefined
   const creationPlan = useMemo(() => buildSystemDocumentCreationPlan({
+    sourceKind: 'beforeHeatTreatment',
     type: mode === 'request' ? 'lnkRequest' : 'lnkConclusion',
     ...(mode === 'result' && resultMethod ? { methodCode: resultMethod } : {}),
     date,
@@ -398,7 +401,6 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     settings,
     nextNumber,
     positionDetails: row => (mode === 'request' ? getAvailableRequestMethods(row, selectedMethods) : resultMethod ? [resultMethod] : []).map(method => ({ method, stage: 'До ТО', source: mode === 'result' ? getPreHeatTreatmentControl(row, method)?.requestName ?? '' : undefined })),
-    allowAllNamesEmpty: mode === 'result' && !saveCheckSettings.lnkResultConclusionRequired,
   }), [date, mode, naming, nextNumber, resultMethod, saveCheckSettings.lnkResultConclusionRequired, selectedRows, selectedMethods, settings])
   const effectiveDate = mode === 'request' && requestSubmitMode === 'extend'
     ? selectedExistingRequest?.date ?? ''
@@ -425,12 +427,8 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     ? ''
     : creationPlan.error
   const dateReason = mode === 'request'
-    ? getDateInputValidationReason(effectiveDate, 'Дата заявки НК до ТО')
-    : getOptionalPreHeatTreatmentResultDateReason(
-        effectiveDate,
-        saveCheckSettings,
-        naming.mode === 'system',
-      )
+    ? getDateInputValidationReason(effectiveDate, 'Дата заявки НК до ТО', { required: true })
+    : getDateInputValidationReason(effectiveDate, 'Дата контроля НК до ТО', { required: true })
   const domainReason = useMemo(() => {
     if (selectedRows.length === 0 || dateReason || creationPlanError) return ''
     try {
@@ -548,7 +546,6 @@ export function PreHeatTreatmentLnkWorkflowDialog({
 
   const saveBlockReason = getSaveBlockReason({
     mode,
-    isPending: mutation.isPending,
     selectedMethodsCount: selectedMethods.size,
     resultMethod,
     requestSelected: Boolean(selectedRequest),
@@ -822,7 +819,8 @@ export function PreHeatTreatmentLnkWorkflowDialog({
 
       {mode === 'result' || requestSubmitMode === 'create' ? (
         <DocumentWorkspaceTabs
-          activeTab={workspaceTab}
+        activeTab={workspaceTab}
+        specialists={mode === 'result'}
           ariaLabel={mode === 'request' ? 'Разделы заявки ЛНК до ТО' : 'Разделы результата ЛНК до ТО'}
           controls={<SystemDocumentSplitControl plan={(mode === 'request' ? selectedMethods.size > 0 : Boolean(resultMethod)) ? creationPlan : null} naming={naming} onChange={setNaming} disabled={mutation.isPending} />}
           documentsLabel={mode === 'request' ? 'Заявки и имена' : 'Заключения и имена'}
@@ -832,7 +830,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
         />
       ) : null}
 
-      {workspaceTab === 'documents' && !(mode === 'request' && requestSubmitMode === 'extend') ? (
+      {workspaceTab === 'specialists' && creationPlan ? <DocumentSpecialistsPanel plan={creationPlan} naming={naming} onChange={setNaming} disabled={mutation.isPending} /> : workspaceTab === 'documents' && !(mode === 'request' && requestSubmitMode === 'extend') ? (
         <SystemDocumentNamesPanel
           plan={creationPlan}
           naming={naming}
@@ -1091,22 +1089,8 @@ function filterRows(rows: WeldRow[], search: string) {
   ].join(' ')).includes(query))
 }
 
-function getOptionalPreHeatTreatmentResultDateReason(
-  date: string,
-  settings: SaveCheckSettings,
-  systemNameRequiresDate: boolean,
-) {
-  if (!date.trim()) {
-    return settings.lnkResultControlDateRequired || systemNameRequiresDate
-      ? getDateInputValidationReason(date, 'Дата контроля НК до ТО')
-      : null
-  }
-  return getDateInputValidationReason(date, 'Дата контроля НК до ТО')
-}
-
 function getSaveBlockReason({
   mode,
-  isPending,
   selectedMethodsCount,
   resultMethod,
   requestSelected,
@@ -1119,7 +1103,6 @@ function getSaveBlockReason({
   domainReason,
 }: {
   mode: PreHeatTreatmentLnkWorkflowRowMode
-  isPending: boolean
   selectedMethodsCount: number
   resultMethod: PreHeatTreatmentLnkMethodCode | ''
   requestSelected: boolean
@@ -1131,7 +1114,6 @@ function getSaveBlockReason({
   creationPlanError: string
   domainReason: string
 }) {
-  if (isPending) return 'Сохранение выполняется.'
   if (mode === 'request' && selectedMethodsCount === 0) return 'Выберите хотя бы один вид НК до ТО.'
   if (mode === 'request' && requestSubmitMode === 'extend' && !existingRequestSelected) {
     return 'Выберите существующую заявку НК до ТО.'
@@ -1139,5 +1121,5 @@ function getSaveBlockReason({
   if (mode === 'result' && !resultMethod) return 'Выберите вид НК до ТО.'
   if (mode === 'result' && !requestSelected) return requestSelectionReason
   if (selectedRowsCount === 0) return 'Выберите хотя бы один доступный стык.'
-  return dateReason || creationPlanError || domainReason || ''
+  return [dateReason, creationPlanError].filter(Boolean).join('\n') || domainReason || ''
 }

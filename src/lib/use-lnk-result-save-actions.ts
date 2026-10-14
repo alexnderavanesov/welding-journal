@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from 'react'
+import { useRef, type Dispatch, type SetStateAction } from 'react'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getLnkResultRestrictionReason } from '@/lib/lnk-result-policy'
 import {
@@ -20,6 +20,7 @@ import { getPrimaryLnkStageAccess } from '@/lib/lnk-control-stage'
 import { buildLayeredControlAssignment } from '@/lib/layered-control-rules'
 
 type LnkResultMutation = {
+  isPending?: boolean
   mutate: (variables: {
     records: WeldRow[]
     methodKey: WeldFieldKey
@@ -29,7 +30,7 @@ type LnkResultMutation = {
     useSystemName?: boolean
     documentGroups?: SystemDocumentCreationGroup[]
     layeredControlRowIds?: number[]
-  }) => void
+  }, options?: { onSettled: () => void }) => void
 }
 
 type UseLnkResultSaveActionsOptions = {
@@ -61,6 +62,7 @@ export function useLnkResultSaveActions({
 }: UseLnkResultSaveActionsOptions) {
   const saveCheckSettings = useSaveCheckSettings()
   const confirmAction = useConfirmAction()
+  const saveInFlight = useRef(false)
 
   function setLnkResultForRow(rowId: number, result: string) {
     setLnkResultForRows([rowId], result)
@@ -102,102 +104,109 @@ export function useLnkResultSaveActions({
   }
 
   async function handleAddLnkResult() {
-    if (saveBlockReason) {
-      setMessage(saveBlockReason)
-      return
-    }
-    if (!draft.methodKey) {
-      setMessage('Выберите метод контроля')
-      return
-    }
-    if (selectedRows.length === 0) {
-      setMessage('Выберите один или несколько стыков')
-      return
-    }
-    const resultById = buildLnkResultDraftById(selectedRows, draft)
-    const resultValues = Object.values(resultById)
-    if (resultValues.some((result) => !isValidLnkResultDraftValue(result))) {
-      setMessage('Укажите результат для каждого выбранного стыка')
-      return
-    }
-    const hasNonEmptyResult = resultValues.some((result) => result !== LNK_EMPTY_RESULT_VALUE)
-    if (saveCheckSettings.lnkResultControlDateRequired && hasNonEmptyResult && !draft.controlDate) {
-      setMessage('Укажите дату контроля')
-      return
-    }
-    const method = getLnkMethodByRequestKey(draft.methodKey)
-    if (!method) return
-    const restrictionReasons = [...new Set(selectedRows.flatMap((row) => {
-      const reason = getLnkResultRestrictionReason(row, method.code, resultById[row.id], {
-        pvkGoodOnly: controlProcessSettings.pvkGoodOnly,
-        layeredControlSelected: draft.layeredControlRowIds.has(row.id),
-      })
-      return reason ? [reason] : []
-    }))]
-    if (restrictionReasons.length) {
-      setMessage(restrictionReasons.join('\n'))
-      return
-    }
-    const layeredRows = method?.code === 'ПВК'
-      ? selectedRows.filter((row) => draft.layeredControlRowIds.has(row.id) && !row.layeredControlAssigned)
-      : []
-    if (layeredRows.length) {
-      try {
-        for (const row of layeredRows) {
-          if (resultById[row.id] === LNK_EMPTY_RESULT_VALUE) throw new Error('Для назначения послойного контроля внесите основной результат ПВК.')
-          buildLayeredControlAssignment({ ...row, pvkResult: resultById[row.id] }, true)
-        }
-      } catch (error) { setMessage((error as Error).message); return }
-      if (!await confirmAction({ title: 'Назначить послойный контроль?', itemName: `Новых назначений: ${layeredRows.length}`, description: 'Только для отмеченных У-стыков вместе с основным ПВК назначаются послойные ВИК и ПВК и создаются четыре заключения. ПВК переводится в «да», в том числе из «отменен» или «дополнительный». Остальные стыки и ранее назначенный послойный контроль не изменяются.', confirmLabel: 'Назначить и сохранить' })) return
-    }
-    const conclusionRows = selectedRows.filter((row) => resultById[row.id] !== LNK_EMPTY_RESULT_VALUE)
-    const creationPlan = buildSystemDocumentCreationPlan({
-      type: 'lnkConclusion',
-      methodCode: method?.code,
-      date: draft.controlDate,
-      rows: conclusionRows,
-      naming: draft.conclusionNaming,
-      settings: requestConclusionSettings,
-      nextNumber: nextConclusionNumber,
-      allowAllNamesEmpty: !saveCheckSettings.lnkResultConclusionRequired,
-    })
-    const conclusionName = !hasNonEmptyResult
-      ? ''
-      : creationPlan.groups[0]?.name ?? getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName)
-    if (hasNonEmptyResult && creationPlan.error) {
-      setMessage(creationPlan.error)
-      return
-    }
-
-    if (method) {
-      const warningRows = selectedRows.filter(
-        (row) =>
-          resultById[row.id] !== LNK_EMPTY_RESULT_VALUE &&
-          getPrimaryLnkStageAccess(row, method.code, controlProcessSettings).status === 'allowed-with-warning',
-      )
-      if (warningRows.length > 0) {
-        const confirmed = await confirmAction({
-          title: 'Продолжить основной НК раньше?',
-          itemName: `Стыков: ${warningRows.length} · Метод: ${method.code}`,
-          description: 'Предыдущие этапы контроля еще не завершены. Результаты и заключения будут оформлены в основном этапе ЛНК.',
-          warning: 'В диспетчере появится системное предупреждение СП-06 до завершения НК до ТО, ПСТО и ТВМТ.',
-          confirmLabel: 'Продолжить',
-          tone: 'warning',
-        })
-        if (!confirmed) return
+    if (resultMutation.isPending || saveInFlight.current) return
+    saveInFlight.current = true
+    let submitted = false
+    try {
+      if (saveBlockReason) {
+        setMessage(saveBlockReason)
+        return
       }
-    }
+      if (!draft.methodKey) {
+        setMessage('Выберите метод контроля')
+        return
+      }
+      if (selectedRows.length === 0) {
+        setMessage('Выберите один или несколько стыков')
+        return
+      }
+      const resultById = buildLnkResultDraftById(selectedRows, draft)
+      const resultValues = Object.values(resultById)
+      if (resultValues.some((result) => !isValidLnkResultDraftValue(result))) {
+        setMessage('Укажите результат для каждого выбранного стыка')
+        return
+      }
+      const hasNonEmptyResult = resultValues.some((result) => result !== LNK_EMPTY_RESULT_VALUE)
+      if (saveCheckSettings.lnkResultControlDateRequired && hasNonEmptyResult && !draft.controlDate) {
+        setMessage('Укажите дату контроля')
+        return
+      }
+      const method = getLnkMethodByRequestKey(draft.methodKey)
+      if (!method) return
+      const restrictionReasons = [...new Set(selectedRows.flatMap((row) => {
+        const reason = getLnkResultRestrictionReason(row, method.code, resultById[row.id], {
+          pvkGoodOnly: controlProcessSettings.pvkGoodOnly,
+          layeredControlSelected: draft.layeredControlRowIds.has(row.id),
+        })
+        return reason ? [reason] : []
+      }))]
+      if (restrictionReasons.length) {
+        setMessage(restrictionReasons.join('\n'))
+        return
+      }
+      const layeredRows = method?.code === 'ПВК'
+        ? selectedRows.filter((row) => draft.layeredControlRowIds.has(row.id) && !row.layeredControlAssigned)
+        : []
+      if (layeredRows.length) {
+        try {
+          for (const row of layeredRows) {
+            if (resultById[row.id] === LNK_EMPTY_RESULT_VALUE) throw new Error('Для назначения послойного контроля внесите основной результат ПВК.')
+            buildLayeredControlAssignment({ ...row, pvkResult: resultById[row.id] }, true)
+          }
+        } catch (error) { setMessage((error as Error).message); return }
+        if (!await confirmAction({ title: 'Назначить послойный контроль?', itemName: `Новых назначений: ${layeredRows.length}`, description: 'Только для отмеченных У-стыков вместе с основным ПВК назначаются послойные ВИК и ПВК и создаются четыре заключения. ПВК переводится в «да», в том числе из «отменен» или «дополнительный». Остальные стыки и ранее назначенный послойный контроль не изменяются.', confirmLabel: 'Назначить и сохранить' })) return
+      }
+      const conclusionRows = selectedRows.filter((row) => resultById[row.id] !== LNK_EMPTY_RESULT_VALUE)
+      const creationPlan = buildSystemDocumentCreationPlan({
+        type: 'lnkConclusion',
+        methodCode: method?.code,
+        date: draft.controlDate,
+        rows: conclusionRows,
+        naming: draft.conclusionNaming,
+        settings: requestConclusionSettings,
+        nextNumber: nextConclusionNumber,
+      })
+      const conclusionName = !hasNonEmptyResult
+        ? ''
+        : creationPlan.groups[0]?.name ?? getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName)
+      if (hasNonEmptyResult && creationPlan.error) {
+        setMessage(creationPlan.error)
+        return
+      }
 
-    resultMutation.mutate({
-      records: selectedRows,
-      methodKey: draft.methodKey,
-      controlDate: draft.controlDate,
-      resultById,
-      conclusionName,
-      useSystemName: hasNonEmptyResult && draft.conclusionNaming.mode === 'system',
-      documentGroups: creationPlan.groups,
-      layeredControlRowIds: layeredRows.map((row) => row.id),
-    })
+      if (method) {
+        const warningRows = selectedRows.filter(
+          (row) =>
+            resultById[row.id] !== LNK_EMPTY_RESULT_VALUE &&
+            getPrimaryLnkStageAccess(row, method.code, controlProcessSettings).status === 'allowed-with-warning',
+        )
+        if (warningRows.length > 0) {
+          const confirmed = await confirmAction({
+            title: 'Продолжить основной НК раньше?',
+            itemName: `Стыков: ${warningRows.length} · Метод: ${method.code}`,
+            description: 'Предыдущие этапы контроля еще не завершены. Результаты и заключения будут оформлены в основном этапе ЛНК.',
+            warning: 'В диспетчере появится системное предупреждение СП-06 до завершения НК до ТО, ПСТО и ТВМТ.',
+            confirmLabel: 'Продолжить',
+            tone: 'warning',
+          })
+          if (!confirmed) return
+        }
+      }
+
+      resultMutation.mutate({
+        records: selectedRows,
+        methodKey: draft.methodKey,
+        controlDate: draft.controlDate,
+        resultById,
+        conclusionName,
+        useSystemName: hasNonEmptyResult && draft.conclusionNaming.mode === 'system',
+        documentGroups: creationPlan.groups,
+        layeredControlRowIds: layeredRows.map((row) => row.id),
+      }, { onSettled: () => { saveInFlight.current = false } })
+      submitted = true
+    } finally {
+      if (!submitted) saveInFlight.current = false
+    }
   }
 
   return {
