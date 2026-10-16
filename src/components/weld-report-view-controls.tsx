@@ -64,7 +64,11 @@ export function WeldReportViewControls({
       setPanel(null)
     }
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setPanel(null)
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        setPanel(null)
+      }
     }
     const closeOnScroll = (event: Event) => {
       const target = event.target

@@ -32,6 +32,7 @@ export function DispatcherWorkspaceDialog({
   onRetryTaskBatch,
   onRefreshTasks,
   handlers,
+  journalAppearance = false,
   onClose,
 }: {
   tasks: RepeatedJointTask[]
@@ -47,6 +48,7 @@ export function DispatcherWorkspaceDialog({
   onRetryTaskBatch?: () => void
   onRefreshTasks?: () => Promise<number | undefined>
   handlers: DispatcherTaskCardHandlers
+  journalAppearance?: boolean
   onClose: () => void
 }) {
   const searchRef = useRef<HTMLInputElement>(null)
@@ -158,7 +160,7 @@ export function DispatcherWorkspaceDialog({
 
   return (
     <WorkflowDialogShell ariaLabel="Диспетчер задач">
-      <div className="flex min-h-0 flex-1 flex-col" aria-label="Рабочее пространство диспетчера">
+      <div className={`flex min-h-0 flex-1 flex-col ${journalAppearance ? 'journal-dispatcher' : ''}`} aria-label="Рабочее пространство диспетчера">
         <div className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-sky-100 bg-sky-50 text-sky-700" aria-hidden="true">
@@ -166,7 +168,7 @@ export function DispatcherWorkspaceDialog({
             </span>
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
               <h2 className="text-lg font-semibold tracking-tight text-slate-900">Диспетчер задач</h2>
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+              <span data-dispatcher-badge className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
                 {formatTaskCount(totalTaskCount)}
               </span>
             </div>
@@ -190,7 +192,7 @@ export function DispatcherWorkspaceDialog({
               <button type="button" onClick={() => chooseCode(null)} aria-pressed={selectedCode === null}
                 className={`flex w-full items-center justify-between gap-2 rounded-lg border-l-[3px] px-3 py-3 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${selectedCode === null ? 'border-sky-500 bg-sky-50 text-sky-900' : 'border-transparent text-slate-700 hover:bg-slate-50'}`}>
                 <span>Все задачи</span>
-                <span className="inline-flex min-w-8 justify-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-700">{totalTaskCount}</span>
+                <span data-dispatcher-badge className="inline-flex min-w-8 justify-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-700">{totalTaskCount}</span>
               </button>
               <div className="mx-2 my-1 border-t border-slate-100" />
               {codeOptions.map((option) => (
@@ -200,7 +202,7 @@ export function DispatcherWorkspaceDialog({
                     <span className="text-xs font-semibold text-violet-700">{option.code}</span>
                     <span className="break-words text-sm font-medium leading-5">{option.label}</span>
                   </span>
-                  <span className="mt-0.5 inline-flex shrink-0 justify-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">{hasMoreTasks ? `${option.count} загр.` : option.count}</span>
+                  <span data-dispatcher-badge className="mt-0.5 inline-flex shrink-0 justify-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">{hasMoreTasks ? `${option.count} загр.` : option.count}</span>
                 </button>
               ))}
             </div>
@@ -212,7 +214,7 @@ export function DispatcherWorkspaceDialog({
                   <h3 className={`min-w-0 font-semibold leading-snug text-slate-900 ${selectedCode ? 'text-[15px]' : 'text-base'}`}>
                     {selectedCode ? `${selectedCode} · ${selectedCodeOption?.label ?? 'Задачи диспетчера'}` : hasCommittedSearch ? 'Результаты поиска' : 'Все задачи'}
                   </h3>
-                  {!isSearchPending ? <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-700">{formatTaskCount(resultCount)}</span> : null}
+                  {!isSearchPending ? <span data-dispatcher-badge className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-700">{formatTaskCount(resultCount)}</span> : null}
                 </div>
                 {resultSummary ? <p className="mt-1 text-xs leading-5 text-slate-500" role="status">{resultSummary}</p> : null}
               </div>

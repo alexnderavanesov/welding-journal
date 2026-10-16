@@ -1,3 +1,4 @@
+import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Page, type Request } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
@@ -34,6 +35,7 @@ test.afterEach(async ({ page }) => {
 })
 const saved = (id: number) => withE2eDatabase(async db => (await db.query('select *, xmin::text as version from weld_joints where id=$1', [id])).rows[0])
 const registry = (value = name) => withE2eDatabase(async db => (await db.query('select * from technology_cards where name=$1', [value])).rows[0])
+const virtualTasks = (id: number) => attachDispatcherTaskCodesToPage<{ id: number; dispatcherTasks?: string }>([{ id }])
 async function waitForPublishedDispatcher() {
   await expect.poll(() => withE2eDatabase(async db => (await db.query('select source_revision=computed_revision as fresh from dispatcher_task_index_state where id=1')).rows[0]?.fresh), { timeout: 10_000 }).toBe(true)
 }
@@ -146,7 +148,7 @@ test('два пользователя: возврат обновляет дис�
   await dispatcher.getByLabel('Поиск задач диспетчера', { exact: true }).press('Enter')
   await expect(dispatcher.getByLabel('Очередь задач диспетчера')).toContainText('F987')
   await dispatcher.getByRole('button', { name: 'Закрыть диспетчер' }).click()
-  await page.getByRole('button', { name: 'F987', exact: true }).locator('xpath=ancestor::tr').getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, 'F987')
   const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка' }) })
   const draft = editor.getByRole('textbox', { name: 'Изометрия', exact: true })
   await draft.fill('Несохранённый черновик')
@@ -231,7 +233,7 @@ test('компактная ТК: стабильная высота, справк
     expect((await registry()).welding_methods).toEqual(['РАД'])
     await page.setViewportSize({ width: 1600, height: 1000 })
     await page.goto('/journal')
-    await page.getByRole('button', { name: 'F988', exact: true }).locator('xpath=ancestor::tr').getByRole('button', { name: 'Редактировать', exact: true }).click()
+    await editJournalJoint(page, 'F988')
     await dialog.getByRole('button', { name: 'Сварочный материал и ТК', exact: true }).click()
     const field = dialog.getByTestId('technology-card-field')
     const input = field.getByRole('textbox')
@@ -349,7 +351,7 @@ test('точное имя ТК: двойной и неразрывный про�
     expect((await saved(row.id)).technology_card_number).toBe(exactName)
   }
   await page.goto('/journal')
-  await page.getByRole('button', { name: 'F980', exact: true }).locator('xpath=ancestor::tr').getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, 'F980')
   const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка' }) })
   await editor.getByRole('button', { name: 'Сварочный материал и ТК', exact: true }).click()
   const field = editor.getByLabel('Номер технологической карты', { exact: true })
@@ -361,7 +363,7 @@ test('точное имя ТК: двойной и неразрывный про�
   await expect(editor).toBeHidden()
   expect((await saved(created.id)).technology_card_number).toBe(exactName)
   await ensureDispatcherTaskIndexFresh()
-  expect(String((await attachDispatcherTaskCodesToPage([{ id: created.id }]))[0].dispatcherTasks)).not.toContain('ДЗ-06')
+  expect(String((await virtualTasks(created.id))[0].dispatcherTasks)).not.toContain('ДЗ-06')
 })
 
 test('стык, импорт, массовое заполнение, замена и ДЗ-06: одинаковые переходы и ручное назначение старому стыку', async ({ page }) => {
@@ -371,7 +373,7 @@ test('стык, импорт, массовое заполнение, замен�
   await openCards(page)
   await addCard(page)
   await ensureDispatcherTaskIndexFresh()
-  const virtual = await attachDispatcherTaskCodesToPage([{ id: old.id }])
+  const virtual = await virtualTasks(old.id)
   expect(String(virtual[0].dispatcherTasks)).toContain('ДЗ-06')
   const filtered = () => listWeldingJournalPage({ data: { columnFilters: buildDispatcherTaskServerFilters({ dispatcherTasks: 'ДЗ-06', projectTitle: project }) } })
   expect((await filtered()).rows.map(row => row.id)).toEqual([old.id])
@@ -379,7 +381,7 @@ test('стык, импорт, массовое заполнение, замен�
   await updateWeldJoint({ data: { id: old.id, expectedVersion: (await saved(old.id)).version, responsible: 'Несвязанная правка' } })
   expect((await saved(old.id)).technology_card_number).toBeNull()
   await page.goto('/journal')
-  await page.getByRole('button', { name: 'F981', exact: true }).locator('xpath=ancestor::tr').getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, 'F981')
   const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка' }) })
   await editor.getByRole('button', { name: 'Сварочный материал и ТК', exact: true }).click()
   await editor.getByLabel('Выбрать подходящую ТК').selectOption(String((await registry()).id))
@@ -387,7 +389,7 @@ test('стык, импорт, массовое заполнение, замен�
   await expect(editor).toBeHidden()
   expect((await saved(old.id)).technology_card_number).toBe(name)
   await ensureDispatcherTaskIndexFresh()
-  expect(String((await attachDispatcherTaskCodesToPage([{ id: old.id }]))[0].dispatcherTasks)).not.toContain('ДЗ-06')
+  expect(String((await virtualTasks(old.id))[0].dispatcherTasks)).not.toContain('ДЗ-06')
   expect((await filtered()).rows).toEqual([])
 
   const imported = await importWeldJoints({ data: { records: [{ ...base, joint: 'F982', weldDate: '2026-10-01' }] } })
@@ -402,7 +404,9 @@ test('стык, импорт, массовое заполнение, замен�
     expect(stored.welding_electrodes).toBe(base.weldingElectrodes)
   }
   const second = await changeCard({ action: 'create', card: { ...parameters, name: 'E2E Вторая' } })
-  if (!('revision' in second)) throw new Error('Создание ТК должно вернуть карту с версией')
+  if (!('revision' in second) || typeof second.revision !== 'number' || !('name' in second) || typeof second.name !== 'string') {
+    throw new Error('Создание ТК должно вернуть карту с названием и числовой версией')
+  }
   const multiple = await createWeldJoint({ data: { ...base, joint: 'F985', weldDate: '2026-10-01' } })
   expect((await saved(multiple.id)).technology_card_number).toBeNull()
   await changeCard({ action: 'archive', id: second.id, expectedRevision: second.revision, archived: true })
@@ -413,7 +417,7 @@ test('стык, импорт, массовое заполнение, замен�
   const mismatch = await createWeldJoint({ data: { ...base, joint: 'F986', weldDate: '2026-10-01', technologyCardNumber: name, d1: 219, d2: 325 } })
   expect((await saved(mismatch.id)).technology_card_number).toBe(name)
   await ensureDispatcherTaskIndexFresh()
-  expect(String((await attachDispatcherTaskCodesToPage([{ id: mismatch.id }]))[0].dispatcherTasks)).toContain('ДЗ-06')
+  expect(String((await virtualTasks(mismatch.id))[0].dispatcherTasks)).toContain('ДЗ-06')
 })
 
 test('выключение ДЗ-06 через настройки не отключает подбор; повторное включение возвращает старые задачи', async ({ page }) => {
@@ -432,14 +436,14 @@ test('выключение ДЗ-06 через настройки не отклю
     const state = () => withE2eDatabase(async db => JSON.parse((await db.query("select value from app_settings where key='dispatcher'")).rows[0]?.value ?? '{}')['check-technology-card'])
     await expect.poll(state).toBe(false)
     await ensureDispatcherTaskIndexFresh()
-    expect(String((await attachDispatcherTaskCodesToPage([{ id: old.id }]))[0].dispatcherTasks)).not.toContain('ДЗ-06')
+    expect(String((await virtualTasks(old.id))[0].dispatcherTasks)).not.toContain('ДЗ-06')
     const fresh = await createWeldJoint({ data: { ...base, joint: 'F982', weldDate: '2026-10-01' } })
     expect((await saved(fresh.id)).technology_card_number).toBe(name)
     expect((await saved(old.id)).technology_card_number).toBeNull()
     await toggle.click()
     await expect.poll(state).toBe(true)
     await ensureDispatcherTaskIndexFresh()
-    expect(String((await attachDispatcherTaskCodesToPage([{ id: old.id }]))[0].dispatcherTasks)).toContain('ДЗ-06')
+    expect(String((await virtualTasks(old.id))[0].dispatcherTasks)).toContain('ДЗ-06')
     expect((await saved(old.id)).technology_card_number).toBeNull()
   } finally {
     await page.close()

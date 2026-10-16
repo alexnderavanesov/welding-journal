@@ -84,6 +84,25 @@ describe('WeldTableBodyCell background', () => {
 })
 
 describe('WeldTableBodyCell LNK request link', () => {
+  it.each(['pstoRequest', 'heatTreatmentDiagram'] as const)('opens the saved %s document without a template-availability gate', (fieldKey) => {
+    const onOpenDocument = vi.fn()
+    const row = { id: 1, [fieldKey]: 'ПСТО-17', systemDocumentIds: { [fieldKey]: 17 } } as WeldRow
+    const field = { key: fieldKey, dbName: fieldKey, label: fieldKey, kind: 'text', group: 'Контроль' } satisfies WeldField
+    const draw = (displayValue: string) => <table><tbody><tr><WeldTableBodyCell
+      row={row} field={field} displayValue={displayValue}
+      isEditableCell={false} isBlockedEditableCell={false} isHighlightedRow={false}
+      isSelectedRow={false} hasDispatcherTask={false} isHighlightedCell={false} isResultField={false}
+      stickyLeft={0} stickyIdentityLeadingWidth={0} stickyIdentityColumns={false}
+      stickyBackgroundClassName="bg-white" isSectionEnd={false}
+      onOpenDocument={onOpenDocument}
+    /></tr></tbody></table>
+    const { rerender } = render(draw('ПСТО-17'))
+    fireEvent.click(screen.getByRole('button', { name: 'ПСТО-17' }))
+    expect(onOpenDocument).toHaveBeenCalledExactlyOnceWith(row, fieldKey)
+    rerender(draw(''))
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
   it('opens PSTO history from the joint cell when the report enables that transition', () => {
     const onOpenJoint = vi.fn()
     const row = { id: 8, joint: 'F8' } as WeldRow
@@ -254,7 +273,6 @@ describe('WeldTableBodyCell LNK request link', () => {
       canOpenLnkResult: false,
       canOpenJointOverview: true,
       canOpenWeldEditor: true,
-      availableSystemDocumentTypes: new Set(),
     })).toContain('Открыть картину')
   })
 
@@ -307,18 +325,20 @@ describe('WeldTableBodyCell LNK request link', () => {
     expect(onEdit).toHaveBeenCalledWith(row, 'controlBasisSummary')
   })
 
-  it('opens the request card instead of guessing or opening the document preview', () => {
+  it.each([
+    'vikRequest', 'rkRequest', 'uzkRequest', 'pvkRequest', 'tvmtRequest',
+    'preVikRequest', 'preRkRequest', 'preUzkRequest', 'prePvkRequest',
+  ] as const)('opens the exact request preview for %s, including while templates are unavailable', (fieldKey) => {
     const onOpenLnkRequest = vi.fn()
     const onOpenDocument = vi.fn()
     const row = {
       id: 1,
-      vikRequest: 'Заявка-001',
-      vikRequestDate: '2026-08-14',
+      [fieldKey]: 'Заявка-001',
     } as WeldRow
     const field = {
-      key: 'vikRequest',
-      dbName: 'vik_request',
-      label: 'Заявка ВИК',
+      key: fieldKey,
+      dbName: fieldKey,
+      label: fieldKey,
       kind: 'text',
       group: 'Контроль',
     } satisfies WeldField
@@ -330,7 +350,7 @@ describe('WeldTableBodyCell LNK request link', () => {
             <WeldTableBodyCell
               row={row}
               field={field}
-              displayValue={row.vikRequest}
+              displayValue={row[fieldKey]}
               isEditableCell={false}
               isBlockedEditableCell={false}
               isHighlightedRow={false}
@@ -345,7 +365,6 @@ describe('WeldTableBodyCell LNK request link', () => {
               isSectionEnd={false}
               onOpenDocument={onOpenDocument}
               onOpenLnkRequest={onOpenLnkRequest}
-              availableSystemDocumentTypes={new Set(['lnkRequest'])}
             />
           </tr>
         </tbody>
@@ -354,11 +373,11 @@ describe('WeldTableBodyCell LNK request link', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Заявка-001' }))
 
-    expect(onOpenLnkRequest).toHaveBeenCalledWith(row, 'vikRequest')
-    expect(onOpenDocument).not.toHaveBeenCalled()
+    expect(onOpenDocument).toHaveBeenCalledWith(row, fieldKey)
+    expect(onOpenLnkRequest).not.toHaveBeenCalled()
   })
 
-  it('opens the conclusion document in a new tab instead of the result card', () => {
+  it('opens the conclusion preview instead of the result card', () => {
     const onOpenLnkResult = vi.fn()
     const onOpenDocument = vi.fn()
     const row = {
@@ -397,7 +416,6 @@ describe('WeldTableBodyCell LNK request link', () => {
               isSectionEnd={false}
               onOpenDocument={onOpenDocument}
               onOpenLnkResult={onOpenLnkResult}
-              availableSystemDocumentTypes={new Set(['lnkConclusionVik'])}
             />
           </tr>
         </tbody>
@@ -449,7 +467,6 @@ describe('WeldTableBodyCell LNK request link', () => {
               isSectionEnd={false}
               onOpenDocument={onOpenDocument}
               onOpenLnkResult={onOpenLnkResult}
-              availableSystemDocumentTypes={new Set(['lnkConclusionVik'])}
             />
           </tr>
         </tbody>

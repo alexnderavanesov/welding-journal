@@ -1,3 +1,4 @@
+import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Locator } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
@@ -45,8 +46,7 @@ test('поля сварки: стабильные размеры, компакт
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/journal')
-  await page.getByRole('button', { name: 'F982', exact: true }).locator('xpath=ancestor::tr')
-    .getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, 'F982')
   const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка' }) })
   const groups = editor.getByRole('group', { name: 'Группа материалов', exact: true })
   const methods = editor.getByRole('group', { name: 'Способ сварки', exact: true })
@@ -127,8 +127,7 @@ test('форма: номера сторон, максимум две групп�
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   await page.goto('/journal')
-  const row = page.getByRole('button', { name: 'F982', exact: true }).locator('xpath=ancestor::tr')
-  await row.getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, id)
   const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка' }) })
   const groups = editor.getByRole('group', { name: 'Группа материалов', exact: true })
   await expect(groups.getByRole('button', { name: 'М05', exact: true })).toContainText('1/2')
@@ -155,7 +154,7 @@ test('форма: номера сторон, максимум две групп�
   await expect(editor).toBeHidden()
   expect(await (await refreshedReport).finished()).toBeNull()
   expect(await saved(id)).toMatchObject({ material_group: 'М05 + М01', stamp_1_k: stampCode, d1: 57, t1: 3, d2: 159, t2: 8 })
-  await row.getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, id)
   await expect(groups.getByRole('button', { name: 'М05', exact: true })).toHaveText('М051')
   calls.length = 0
   await groups.getByRole('button', { name: 'Поменять 1 ↔ 2', exact: true }).click()

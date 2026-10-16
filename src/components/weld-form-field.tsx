@@ -355,8 +355,8 @@ function FreeTextField({
     }
 
     if (event.key === 'Escape') {
-      event.preventDefault()
-      event.stopPropagation()
+      // Suggestions are part of this editor, not a separate modal. Let its
+      // existing Escape handler cancel the form in the same key press.
       setOpen(false)
     }
   }

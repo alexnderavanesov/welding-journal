@@ -1,3 +1,4 @@
+import { journalRow } from '../journal-grid'
 import { expect, test } from '@playwright/test'
 
 import { withE2eDatabase } from '../database'
@@ -17,7 +18,7 @@ test('recalculates R/W counters for the whole remaining chain in one user action
   const ids = await seedRenameChain()
 
   await page.goto('/journal')
-  const changedRow = page.locator(`tr[data-weld-row-id="${ids.get('S991R1')}"]`)
+  const changedRow = journalRow(page, ids.get('S991R1'))
   await expect(changedRow).toBeVisible()
   await changedRow.getByRole('button', { name: 'S991R1', exact: true }).click()
 
@@ -41,7 +42,7 @@ test('recalculates R/W counters for the whole remaining chain in one user action
 
   await expect(page.getByRole('status')).toContainText('Цепочка исправлена: переименовано стыков - 2')
   await page.reload()
-  const renamedRow = page.locator(`tr[data-weld-row-id="${ids.get('S991R1')}"]`)
+  const renamedRow = journalRow(page, ids.get('S991R1'))
   await renamedRow.getByRole('button', { name: 'S991W1', exact: true }).click()
   await expect(page.getByRole('button', { name: /Переименовать S991R1/ })).toHaveCount(0)
 })

@@ -99,6 +99,24 @@ describe('report selection action opening', () => {
     expect(onOpen).toHaveBeenCalledTimes(1)
   })
 
+  it('cancels an explicit menu intent and permits retry before the old request settles', async () => {
+    const { result, pending, loadRowsByIds, onOpen, onError } = setup()
+    let first!: Promise<void>, second!: Promise<void>
+    act(() => { first = result.current.run() })
+    act(() => { result.current.cancel() })
+    expect(result.current.disabled).toBe(false)
+    const retry = deferred()
+    loadRowsByIds.mockImplementationOnce(() => retry.promise)
+    act(() => { second = result.current.run(); void result.current.run() })
+    expect(loadRowsByIds).toHaveBeenCalledTimes(2)
+    await act(async () => { pending.resolve(rows); await first })
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(result.current.disabled).toBe(true)
+    await act(async () => { retry.resolve(rows); await second })
+    expect(onOpen).toHaveBeenCalledExactlyOnceWith(rows)
+    expect(onError).not.toHaveBeenCalled()
+  })
+
   it.each(['missing', 'extra', 'duplicate', 'error'] as const)('refuses %s data without clearing, truncating or expanding selection', async kind => {
     const { result, pending, loadRowsByIds, onOpen, onError } = setup()
     let running!: Promise<void>

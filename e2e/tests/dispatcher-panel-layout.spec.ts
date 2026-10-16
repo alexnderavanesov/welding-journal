@@ -1,5 +1,23 @@
-import { expect, test, type Request } from '@playwright/test'
+import { expect, test, type Locator, type Request } from '@playwright/test'
 import { rpcName } from '../rpc'
+
+async function waitForStablePanelGeometry(panel: Locator) {
+  let previous: string | null = null
+  await expect.poll(async () => {
+    const current = await panel.evaluate(element => {
+      const rect = element.getBoundingClientRect()
+      // A viewport breakpoint animates the workspace padding. Only inspect
+      // the panel and its ancestors; descendant loading spinners may never stop.
+      for (let ancestor: Element | null = element; ancestor; ancestor = ancestor.parentElement) {
+        if (ancestor.getAnimations().some(animation => animation.pending || animation.playState === 'running')) return null
+      }
+      return JSON.stringify({ x: rect.x, y: rect.y, width: rect.width, height: rect.height })
+    })
+    const stable = current !== null && current === previous
+    previous = current
+    return stable
+  }).toBe(true)
+}
 
 for (const path of ['/journal', '/lnk', '/psto']) {
   test(`${path}: диспетчер свернут по умолчанию, кнопки не сдвигаются при раскрытии`, async ({ page }) => {
@@ -30,6 +48,7 @@ for (const path of ['/journal', '/lnk', '/psto']) {
 
     for (const width of [1600, 1000]) {
       await page.setViewportSize({ width, height: 1000 })
+      await waitForStablePanelGeometry(panel)
       const collapsedButton = (await expand.boundingBox())!
       const openButton = (await open.boundingBox())!
       const panelWidth = (await panel.boundingBox())!.width

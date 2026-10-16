@@ -17,10 +17,6 @@ import {
   isReadOnlyReport,
   shouldMergePstoSections,
 } from '@/lib/report-ui-state'
-import {
-  LNK_CONCLUSION_TEMPLATE_PROFILES,
-  type SystemDocumentTemplateId,
-} from '@/lib/system-document-template-types'
 import { LNK_VISIBLE_FIELD_SECTIONS } from '@/lib/lnk-visible-field-layout'
 import type { WeldTableSection } from '@/lib/weld-table-sections'
 import {
@@ -28,17 +24,6 @@ import {
   isLnkDefectDescriptionEditable,
 } from '@/lib/lnk-defect-description'
 
-const LNK_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentTemplateId>([
-  'lnkRequest',
-  ...LNK_CONCLUSION_TEMPLATE_PROFILES.map((profile) => profile.id),
-])
-const PSTO_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentTemplateId>([
-  'pstoRequest',
-  'pstoConclusion',
-  'tvmtRequest',
-  'tvmtConclusion',
-])
-const NO_SYSTEM_DOCUMENT_TYPES = new Set<SystemDocumentTemplateId>()
 const LNK_DEFAULT_COLLAPSED_SECTIONS = new Set(['НК до ТО'])
 
 type CreateWeldTablePropsOptions = {
@@ -47,6 +32,8 @@ type CreateWeldTablePropsOptions = {
   rowsReady?: WeldTableProps['rowsReady']
   queryIdentity?: WeldTableProps['queryIdentity']
   actionRows?: WeldTableProps['actionRows']
+  loadContextMenuRows?: WeldTableProps['loadContextMenuRows']
+  onContextMenuError?: WeldTableProps['onContextMenuError']
   duplicateRows?: WeldTableProps['duplicateRows']
   duplicateKeyOverrides?: WeldTableProps['duplicateKeyOverrides']
   filterOptionRows?: WeldTableProps['filterOptionRows']
@@ -72,7 +59,6 @@ type CreateWeldTablePropsOptions = {
   onOpenLnkResult?: WeldTableProps['onOpenLnkResult']
   onOpenJoint?: WeldTableProps['onOpenJoint']
   onOpenJointOverview?: WeldTableProps['onOpenJointOverview']
-  availableSystemDocumentTypes?: WeldTableProps['availableSystemDocumentTypes']
   onOpenDuplicateControl: (row: WeldRow) => void
   rowActionHandlers: ReportRowActionHandlers
   getContextMenuItems?: WeldTableProps['getContextMenuItems']
@@ -91,6 +77,8 @@ export function createWeldTableProps({
   rowsReady,
   queryIdentity,
   actionRows,
+  loadContextMenuRows,
+  onContextMenuError,
   duplicateRows,
   duplicateKeyOverrides,
   filterOptionRows,
@@ -116,7 +104,6 @@ export function createWeldTableProps({
   onOpenLnkResult,
   onOpenJoint,
   onOpenJointOverview,
-  availableSystemDocumentTypes,
   onOpenDuplicateControl,
   rowActionHandlers,
   getContextMenuItems,
@@ -133,6 +120,8 @@ export function createWeldTableProps({
     rowsReady,
     queryIdentity,
     actionRows,
+    loadContextMenuRows,
+    onContextMenuError,
     duplicateRows,
     duplicateKeyOverrides,
     filterOptionRows,
@@ -187,12 +176,6 @@ export function createWeldTableProps({
         ? onOpenJointOverview
         : undefined,
     controlBasisEditorEnabled: activeReport === 'weldingJournal',
-    availableSystemDocumentTypes:
-      activeReport === 'lnk'
-        ? intersectSystemDocumentTypes(availableSystemDocumentTypes, LNK_SYSTEM_DOCUMENT_TYPES)
-        : activeReport === 'heatTreatment'
-          ? intersectSystemDocumentTypes(availableSystemDocumentTypes, PSTO_SYSTEM_DOCUMENT_TYPES)
-          : NO_SYSTEM_DOCUMENT_TYPES,
     openLinkedReportTitle: getOpenLinkedReportTitle(activeReport),
     rowActions: getReportRowActions(activeReport, rowActionHandlers),
     extraColumns: [
@@ -217,12 +200,4 @@ export function createWeldTableProps({
     stickyIdentityColumns: activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment',
     onFilterLine,
   }
-}
-
-function intersectSystemDocumentTypes(
-  availableTypes: ReadonlySet<SystemDocumentTemplateId> | undefined,
-  reportTypes: ReadonlySet<SystemDocumentTemplateId>,
-) {
-  if (!availableTypes?.size) return NO_SYSTEM_DOCUMENT_TYPES
-  return new Set(Array.from(availableTypes).filter((type) => reportTypes.has(type)))
 }

@@ -9,7 +9,7 @@ import { getProgramAssignmentError } from '@/lib/line-program-assignment-validat
 
 const mocks = vi.hoisted(() => ({ open: vi.fn(), registry: vi.fn(async () => ({ stamps: [] })) }))
 vi.mock('@/server/welder-stamps', () => ({ loadWelderStampRegistrySnapshot: mocks.registry }))
-vi.mock('@/lib/system-document-storage', () => ({ openSystemDocument: mocks.open }))
+vi.mock('@/lib/system-document-storage', () => ({ createCurrentSystemDocumentBlob: mocks.open }))
 const clients: QueryClient[] = []
 afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear()); vi.restoreAllMocks(); vi.clearAllMocks() })
 const row: WeldRow = { id: 1, joint: 'F1', connectionType: 'С17', hasRk: 'да', vikResult: 'годен', rkResult: 'ремонт', rkRequest: 'Заявка-1', rkConclusion: 'Заключение-1' }
@@ -230,7 +230,8 @@ describe('compact joint rows preserve meaningful details', () => {
       ['Заключение-1', { type: 'lnkConclusion', methodCode: 'РК', date: '2026-09-11' }],
     ] as const) {
       fireEvent.click(screen.getByRole('button', { name: title }))
-      await vi.waitFor(() => expect(mocks.open).toHaveBeenLastCalledWith(expect.objectContaining({ reference: expect.objectContaining({ title, ...scope }), previewWindow: preview })))
+      await vi.waitFor(() => expect(mocks.open).toHaveBeenLastCalledWith(expect.objectContaining({ reference: expect.objectContaining({ title, ...scope }) })))
+      fireEvent.click(screen.getByRole('button', { name: 'Закрыть предпросмотр' }))
     }
     expect(mocks.registry).toHaveBeenCalledOnce()
     expect(screen.getByText('РК: результата нет')).toBeVisible()

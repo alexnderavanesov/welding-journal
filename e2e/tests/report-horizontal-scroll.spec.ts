@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
 
@@ -17,6 +17,68 @@ async function seed(count: number) {
     from generate_series(1,$2::int) n`, [project, count]))
 }
 
+async function journalHasNoVisibleGaps(grid: Locator) {
+  return grid.evaluate(element => {
+    const viewport = element.querySelector('.ag-grid-viewport')!.getBoundingClientRect()
+    const row = element.querySelector('.ag-grid-scrolling-rows .ag-row[row-index="0"]')
+    if (!row) return false
+    const cells = [...row.querySelectorAll<HTMLElement>('.ag-cell')].map(cell => ({ cell, rect: cell.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.right > viewport.left && rect.left < viewport.right)
+      .sort((a, b) => a.rect.left - b.rect.left)
+    let covered = viewport.left
+    for (const { cell, rect } of cells) {
+      if (rect.left > covered + 2) return false
+      covered = Math.max(covered, rect.right)
+      const header = element.querySelector(`.ag-header-cell[col-id="${CSS.escape(cell.getAttribute('col-id')!)}"]`)
+      if (!header) return false
+      const headerRect = header.getBoundingClientRect()
+      if (Math.abs(headerRect.left - rect.left) > 2 || Math.abs(headerRect.width - rect.width) > 2) return false
+    }
+    return cells.length > 0 && covered >= viewport.right - 2
+  })
+}
+
+async function checkJournalHorizontalNavigation(page: Page, calls: string[]) {
+  const grid = page.locator('[data-welding-journal-grid]')
+  const viewport = grid.locator('.ag-grid-viewport')
+  await expect(grid.locator('.ag-grid-scrolling-rows .ag-row[row-index="0"]')).toBeVisible()
+  const noVisibleGaps = () => journalHasNoVisibleGaps(grid)
+  const line = grid.locator('.ag-grid-scrolling-rows .ag-row[row-index="0"] [col-id="line"]')
+  const pinnedLeft = (await line.boundingBox())!.x
+  for (const left of [800, 4200, 1500, 9500, 0, 800]) {
+    await viewport.evaluate((element, value) => { element.scrollLeft = value }, left)
+    await expect.poll(() => viewport.evaluate(element => element.scrollLeft)).toBe(left)
+    await expect.poll(noVisibleGaps).toBe(true)
+    expect((await line.boundingBox())!.x).toBe(pinnedLeft)
+  }
+  await page.waitForTimeout(300)
+  calls.length = 0
+  const start = await viewport.evaluate(element => ({ x: element.scrollLeft, y: element.scrollTop, pageX: scrollX, pageY: scrollY }))
+  const box = (await viewport.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + 30)
+  for (const direction of [1, -1]) {
+    for (let step = 0; step < 24; step++) {
+      await page.mouse.wheel(direction * 6, 0)
+      await page.waitForTimeout(20)
+    }
+    await expect.poll(() => viewport.evaluate(element => element.scrollLeft)).toBe(direction === 1 ? start.x + 144 : start.x)
+    await expect.poll(noVisibleGaps).toBe(true)
+    expect((await line.boundingBox())!.x).toBe(pinnedLeft)
+  }
+  expect(await viewport.evaluate(element => ({ y: element.scrollTop, pageX: scrollX, pageY: scrollY }))).toEqual({ y: start.y, pageX: start.pageX, pageY: start.pageY })
+  expect(calls).toEqual([])
+  for (const width of [1100, 1920]) {
+    await page.setViewportSize({ width, height: 1000 })
+    await expect.poll(noVisibleGaps).toBe(true)
+  }
+  await grid.locator('.ag-header-cell[col-id="line"] .ag-header-cell-filter-button').click()
+  const filter = page.getByRole('dialog', { name: 'Фильтр: Линия', exact: true })
+  await expect(filter.getByRole('textbox', { name: 'Найти значение фильтра' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(filter).toBeHidden()
+  await expect.poll(noVisibleGaps).toBe(true)
+}
+
 for (const count of [74, 150]) test(`горизонтальный скролл: ${count} стыков, медленное движение без перестройки на каждом столбце`, async ({ page }, testInfo) => {
   await seed(count)
   await page.addInitScript(() => localStorage.setItem('welding-report-view:v1:weldingJournal', JSON.stringify({
@@ -26,23 +88,31 @@ for (const count of [74, 150]) test(`горизонтальный скролл: 
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(request.url()) })
   await page.goto('/journal')
+  // Keep both former boundary sizes, but AG Grid virtualises either size.
   // Other files may leave their own fixtures in the shared disposable DB.
-  // Keep this scenario below/above the 80-row virtualization boundary exactly.
   await page.getByPlaceholder('Поиск по отчету').fill('SCROLL-')
   await expect(page.getByText(`Записей: ${count} ·`, { exact: false })).toBeVisible()
+  await page.getByRole('combobox', { name: 'Размер порции строк' }).selectOption('300')
+  await expect(page.getByText(`Загружено: ${count} из ${count}`, { exact: true })).toBeVisible()
   await page.waitForLoadState('networkidle')
-  const table = page.locator('table[data-horizontal-virtualized="true"]')
-  await expect(table.locator('tbody tr[data-weld-row-id]').first()).toBeVisible()
+  const table = page.locator('[data-welding-journal-grid]')
+  await expect(table.locator('.ag-grid-scrolling-rows .ag-row[row-index="0"]')).toBeVisible()
   const hideMenu = page.getByRole('button', { name: 'Скрыть меню', exact: true })
   if (await hideMenu.count()) await hideMenu.click()
-  await page.evaluate(() => window.scrollTo({ left: 800, top: 0, behavior: 'instant' }))
+  await table.locator('.ag-grid-viewport').evaluate(element => { element.scrollLeft = 800 })
+  await expect.poll(() => journalHasNoVisibleGaps(table)).toBe(true)
   await page.waitForTimeout(300)
   calls.length = 0
   const measured = await table.evaluate(async element => {
-    const first = element.querySelector('tbody tr[data-weld-row-id]')!
-    let patches = 0
-    const observer = new MutationObserver(() => patches++)
-    observer.observe(first, { childList: true, subtree: true, attributes: true, attributeFilter: ['colspan'] })
+    const viewport = element.querySelector<HTMLElement>('.ag-grid-viewport')!
+    const first = element.querySelector('.ag-grid-scrolling-rows .ag-row[row-index="0"]')!
+    const line = first.querySelector('[col-id="line"]')!
+    const initialLineLeft = line.getBoundingClientRect().left
+    let rowReplacements = 0, pinnedDrift = 0, maxCells = 0, maxRows = 0
+    const observer = new MutationObserver(records => {
+      for (const record of records) if ([...record.removedNodes].includes(first)) rowReplacements++
+    })
+    observer.observe(first.parentElement!, { childList: true })
     const frames: number[] = [], longTasks: number[] = [], heights = new Set<number>()
     const performanceObserver = new PerformanceObserver(list => list.getEntries().forEach(entry => longTasks.push(entry.duration)))
     performanceObserver.observe({ type: 'longtask' })
@@ -51,8 +121,11 @@ for (const count of [74, 150]) test(`горизонтальный скролл: 
       await new Promise<void>(resolve => requestAnimationFrame(time => {
         frames.push(time - last)
         last = time
-        window.scrollTo({ left: 800 + step * 6, top: 0, behavior: 'instant' })
+        viewport.scrollLeft = 800 + step * 6
         heights.add(element.getBoundingClientRect().height)
+        pinnedDrift = Math.max(pinnedDrift, Math.abs(line.getBoundingClientRect().left - initialLineLeft))
+        maxCells = Math.max(maxCells, first.querySelectorAll('.ag-cell').length)
+        maxRows = Math.max(maxRows, element.querySelectorAll('.ag-grid-scrolling-rows .ag-row').length)
         resolve()
       }))
     }
@@ -60,19 +133,24 @@ for (const count of [74, 150]) test(`горизонтальный скролл: 
     observer.disconnect()
     performanceObserver.disconnect()
     const sorted = frames.slice(2).sort((a, b) => a - b)
-    return { patches, p95: sorted[Math.floor(sorted.length * .95)], max: sorted.at(-1), longTasks,
-      heights: [...heights], cells: first.querySelectorAll('td').length,
-      rows: element.querySelectorAll('tbody tr[data-weld-row-id]').length, scrollX: window.scrollX }
+    return { rowReplacements, originalRowConnected: first.isConnected, pinnedDrift,
+      p95: sorted[Math.floor(sorted.length * .95)], max: sorted.at(-1), longTasks,
+      heights: [...heights], maxCells, maxRows, scrollLeft: viewport.scrollLeft, pageScrollX: window.scrollX }
   })
   console.info(`Horizontal scroll ${count}:`, JSON.stringify(measured))
   await testInfo.attach('horizontal-scroll.json', { body: JSON.stringify(measured), contentType: 'application/json' })
   await page.screenshot({ path: `/private/tmp/welding-horizontal-scroll-${count}.png` })
-  expect(measured.patches).toBeLessThanOrEqual(4)
+  expect(measured.rowReplacements).toBe(0)
+  expect(measured.originalRowConnected).toBe(true)
+  expect(measured.pinnedDrift).toBeLessThan(2)
   expect(measured.heights).toHaveLength(1)
-  expect(measured.scrollX).toBe(2234)
-  expect(measured.cells).toBeLessThan(45)
-  if (count >= 80) expect(measured.rows).toBeLessThan(40)
-  else expect(measured.rows).toBe(count)
+  expect(measured.scrollLeft).toBe(2234)
+  expect(measured.pageScrollX).toBe(0)
+  expect(measured.maxCells).toBeLessThan(45)
+  expect(measured.maxRows).toBeGreaterThan(0)
+  expect(measured.maxRows).toBeLessThan(60)
+  await expect.poll(() => journalHasNoVisibleGaps(table)).toBe(true)
+  await expect(page.getByText(`Загружено: ${count} из ${count}`, { exact: true })).toBeVisible()
   expect(calls).toEqual([])
   expect(errors).toEqual([])
 })
@@ -89,6 +167,11 @@ for (const [path, report] of [['/journal', 'weldingJournal'], ['/lnk', 'lnk'], [
     page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(request.url()) })
     await page.goto(path)
     await page.waitForLoadState('networkidle')
+    if (report === 'weldingJournal') {
+      await checkJournalHorizontalNavigation(page, calls)
+      expect(errors).toEqual([])
+      return
+    }
     const table = page.locator('table[data-horizontal-virtualized="true"]')
     await expect(table.locator('tbody tr[data-weld-row-id]').first()).toBeVisible()
     const noVisibleGaps = () => table.evaluate(element => {

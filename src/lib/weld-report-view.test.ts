@@ -15,6 +15,10 @@ const sections = [{
 }]
 
 describe('weld report views', () => {
+  it('preserves quick search together with server column filters in a saved view', () => {
+    const view = createSavedWeldReportView('Смена', { hiddenFieldKeys: [], collapsedSections: [], columnFilters: { search: 'Проект А', line: '=L1' }, sort: null })
+    expect(view.snapshot.columnFilters).toEqual({ search: 'Проект А', line: '=L1' })
+  })
   beforeEach(() => window.localStorage.clear())
 
   it('builds predictable compact and chronology column sets', () => {

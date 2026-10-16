@@ -236,6 +236,7 @@ export function useReportModalEscapeKey({
 
 export function shouldDeferModalEscape() {
   return Boolean(
+    document.querySelector('[data-document-preview="true"]') ||
     document.querySelector('[data-confirm-action-dialog="true"]') ||
     document.querySelector('[data-workflow-result-tooltip="true"]') ||
     document.querySelector('[data-specialist-listbox]') ||

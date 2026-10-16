@@ -1,3 +1,4 @@
+import { editJournalJoint } from '../journal-grid'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
@@ -22,8 +23,7 @@ test('ожидание ПВК без документов не блокируе�
   })
   await page.goto('/journal')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
-  await page.getByRole('button', { name: 'F988', exact: true }).locator('xpath=ancestor::tr')
-    .getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, 'F988')
   const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка' }) })
   await editor.getByLabel('Дата сварки', { exact: true }).fill('')
   await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()

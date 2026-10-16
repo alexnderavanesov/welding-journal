@@ -27,15 +27,15 @@ export function isAdditionalText(value: unknown) {
 }
 
 export function YesBadge() {
-  return <Badge className="bg-background px-2 py-0.5 text-xs font-normal text-slate-600">да</Badge>
+  return <Badge data-weld-badge="neutral" className="bg-background px-2 py-0.5 text-xs font-normal text-slate-600">да</Badge>
 }
 
 export function CancelledBadge() {
-  return <Badge className="bg-amber-50 px-2 py-0.5 text-xs font-normal text-amber-700">отменен</Badge>
+  return <Badge data-weld-badge="warning" className="bg-amber-50 px-2 py-0.5 text-xs font-normal text-amber-700">отменен</Badge>
 }
 
 export function AdditionalBadge() {
-  return <Badge className="bg-sky-50 px-2 py-0.5 text-xs font-normal text-sky-700">доп.</Badge>
+  return <Badge data-weld-badge="additional" className="bg-sky-50 px-2 py-0.5 text-xs font-normal text-sky-700">доп.</Badge>
 }
 
 export function ResultBadge({ value }: { value: unknown }) {
@@ -63,6 +63,7 @@ export function ResultBadge({ value }: { value: unknown }) {
 
   return (
     <Badge
+      data-weld-badge={className.includes('emerald') ? 'success' : className.includes('rose') ? 'warning' : 'neutral'}
       className={`inline-flex max-w-full justify-center whitespace-normal break-words px-1.5 py-0.5 text-center text-[11px] font-normal leading-tight ${className}`}
     >
       {text}

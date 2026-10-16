@@ -1,3 +1,4 @@
+import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Locator } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
@@ -111,8 +112,7 @@ test('UI: диапазоны, сроки и архив допуска обнов
   await expectTasks([])
   const stale = await context.newPage()
   await stale.goto('/journal')
-  await stale.getByRole('button', { name: 'F971', exact: true }).locator('xpath=ancestor::tr')
-    .getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(stale, 'F971')
   const weldDialog = stale.getByRole('dialog').filter({ has: stale.getByRole('heading', { name: 'Редактирование стыка' }) })
   await weldDialog.getByRole('textbox', { name: 'T2', exact: true }).fill('9')
   await expect(weldDialog.getByRole('button', { name: 'Сохранить', exact: true })).toBeEnabled()

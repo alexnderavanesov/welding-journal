@@ -39,9 +39,10 @@ test.afterEach(async () => {
 test('import scope respects journal basis and quick search before the 500-row limit', async () => {
   await withE2eDatabase(db => db.query(`update weld_joints set vik_control_basis =
     case when joint='WDI-601' then 'ALPHA' else 'BETA' end where project_title=$1`, [project]))
-  for (const extra of [{ controlBasisSummary: 'ALPHA' }, { search: 'WDI-601' },
-    { controlBasisSummary: 'ALPHA', wdi: '=10' }]) {
-    const columnFilters = { projectTitle: `=${project}`, ...extra } as Record<string, string>
+  const cases: Record<string, string>[] = [{ controlBasisSummary: 'ALPHA' }, { search: 'WDI-601' },
+    { controlBasisSummary: 'ALPHA', wdi: '=10' }]
+  for (const extra of cases) {
+    const columnFilters = { projectTitle: `=${project}`, ...extra }
     const journal = await listReportPage('weldingJournal', normalizeWeldPageRequest({ ...splitReportQuickSearch(columnFilters), page: 1, pageSize: 100 }))
     expect(journal.rows.map(row => row.joint)).toEqual(['WDI-601'])
     const scope = await listWeldingJournalImportScope({ data: { columnFilters } })
@@ -193,9 +194,9 @@ test('WDI filter and mass-fill use the same current result without refetching on
   }, VISIBLE_FIELDS.filter(field => !['joint', 'wdi', 'projectTitle'].includes(field.key)).map(field => field.key))
   await page.goto('/journal')
   await page.waitForLoadState('networkidle')
-  await page.getByRole('button', { name: 'WDI. Открыть фильтр', exact: true }).click()
+  await page.locator('[data-welding-journal-grid] .ag-header-cell[col-id="wdi"] .ag-header-cell-filter-button').click()
   const filter = page.getByRole('dialog', { name: 'Фильтр: WDI', exact: true })
-  await filter.getByRole('button', { name: /^10\s/ }).click()
+  await filter.getByRole('checkbox', { name: /^10\s/ }).check()
   await page.keyboard.press('Escape')
   await expect(page.getByText('WDI-601', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Импорт', exact: true }).click()

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useMemo, useRef, type MouseEvent, type ReactNode } from 'react'
 import { CheckSquare2, MoreHorizontal, X } from 'lucide-react'
 
-import { ContextActionMenu, type ContextActionMenuItem, type ContextActionMenuState } from '@/components/context-action-menu'
+import { ContextActionMenu, type ContextActionMenuItem } from '@/components/context-action-menu'
 import { PaginationBar } from '@/components/pagination-bar'
 import { WeldTableBodyRows } from '@/components/weld-table-body-rows'
 import { getWeldTableBodyCellTooltip } from '@/components/weld-table-body-cell'
@@ -21,18 +21,17 @@ import { useWeldReportViewState } from '@/lib/use-weld-report-view-state'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { ROW_ACTIONS_COLUMN_WIDTH, SELECT_COLUMN_WIDTH } from '@/lib/weld-table-layout'
 import type { WeldColumnFilterOption, WeldReportKind, WeldSort } from '@/server/weld-contracts'
-import type { SystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import { useWindowTableVirtualization } from '@/lib/use-window-table-virtualization'
 import { useWindowTableHorizontalVirtualization } from '@/lib/use-window-table-horizontal-virtualization'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import type { WeldTableSection } from '@/lib/weld-table-sections'
 import { getAlwaysVisibleFieldKeys, getAvailableWeldTableSections } from '@/lib/weld-table-sections'
 import { REPORT_RIGHT_EDGE_GUTTER_PX } from '@/lib/report-layout'
+import { useWeldTableContextMenu } from '@/lib/use-weld-table-context-menu'
 
 const EMPTY_FIELD_KEY_SET = new Set<WeldFieldKey>()
 const EMPTY_NUMBER_SET = new Set<number>()
 const EMPTY_STRING_SET = new Set<string>()
-const EMPTY_SYSTEM_DOCUMENT_TYPE_SET = new Set<SystemDocumentTemplateId>()
 const EMPTY_EXTRA_COLUMNS: WeldTableExtraColumn[] = []
 const DEFAULT_CELL_EDITABLE = () => true
 const DEFAULT_DISPLAY_VALUE = (row: WeldRow, fieldKey: WeldFieldKey) => row[fieldKey]
@@ -44,6 +43,8 @@ export type WeldTableProps = {
   rowsReady?: boolean
   queryIdentity?: string
   actionRows?: WeldRow[]
+  loadContextMenuRows?: (ids: number[]) => Promise<WeldRow[]>
+  onContextMenuError?: (message: string) => void
   duplicateRows?: WeldRow[]
   duplicateKeyOverrides?: ReadonlySet<string>
   filterOptionRows?: WeldRow[]
@@ -86,7 +87,6 @@ export type WeldTableProps = {
   onOpenJoint?: (row: WeldRow) => void
   onOpenJointOverview?: (row: WeldRow) => void
   controlBasisEditorEnabled?: boolean
-  availableSystemDocumentTypes?: ReadonlySet<SystemDocumentTemplateId>
   openLinkedReportTitle?: string
   selectable?: boolean
   selectedRowIds?: ReadonlySet<number>
@@ -113,6 +113,8 @@ export function WeldTable({
   rowsReady = true,
   queryIdentity = '',
   actionRows,
+  loadContextMenuRows,
+  onContextMenuError,
   duplicateRows,
   duplicateKeyOverrides,
   filterOptionRows,
@@ -145,7 +147,6 @@ export function WeldTable({
   onOpenJoint,
   onOpenJointOverview,
   controlBasisEditorEnabled = false,
-  availableSystemDocumentTypes = EMPTY_SYSTEM_DOCUMENT_TYPE_SET,
   selectable = false,
   selectedRowIds = EMPTY_NUMBER_SET,
   onSelectedRowIdsChange,
@@ -161,10 +162,6 @@ export function WeldTable({
   getContextMenuItems,
   reportTaskPanels,
 }: WeldTableProps) {
-  const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
-  const [contextMenuScope, setContextMenuScope] = useState('')
-  const selectionScope = `${queryIdentity}:${[...selectedRowIds].sort((a, b) => a - b).join(',')}`
-  useEffect(() => { setContextMenu(null) }, [selectionScope, rowsReady])
   const tableRef = useRef<HTMLTableElement>(null)
   const stableOnColumnFiltersChange = useStableEventCallback(onColumnFiltersChange)
   const stableOnSortChange = useStableEventCallback(onSortChange)
@@ -220,13 +217,6 @@ export function WeldTable({
       stableCanCreateRequest,
       stableCreateRequest,
     ],
-  )
-  const availableSystemDocumentTypesSignature = Array.from(availableSystemDocumentTypes).sort().join('|')
-  const stableAvailableSystemDocumentTypes = useMemo(
-    () => new Set(availableSystemDocumentTypes),
-    // The signature keeps the set stable when only its reference changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [availableSystemDocumentTypesSignature],
   )
   const modelManualPagination = useMemo(
     () =>
@@ -354,13 +344,13 @@ export function WeldTable({
   const getActionRow = useCallback((row: WeldRow) => {
     return mergedActionRowsById.get(row.id) ?? mergeWeldTableActionRow(rowsById.get(row.id), row)
   }, [mergedActionRowsById, rowsById])
-  const selectedRows = useMemo(
-    () => Array.from(selectedRowIds)
-      .map((rowId) => mergedActionRowsById.get(rowId) ?? rowsById.get(rowId))
-      .filter((row): row is WeldRow => Boolean(row)),
-    [mergedActionRowsById, rowsById, selectedRowIds],
-  )
-  const selectionReady = rowsReady && selectedRows.length === selectedRowIds.size
+  const contextRows = useMemo(() => [...new Map([...rowsById, ...mergedActionRowsById]).values()], [rowsById, mergedActionRowsById])
+  const rowMenu = useWeldTableContextMenu({
+    rowsReady, queryIdentity, selectedIds: selectedRowIds, rows: contextRows,
+    loadRowsByIds: loadContextMenuRows, onError: onContextMenuError, getItems: stableGetContextMenuItems,
+  })
+  const contextMenu = rowMenu.menu
+  const selectionReady = rowMenu.selectionAvailable
   const {
     bodyRef,
     bottomSpacerHeight,
@@ -374,42 +364,22 @@ export function WeldTable({
   const openRowContextMenu = useCallback(
     (event: MouseEvent, row: WeldRow) => {
       if (!rowsReady || (selectedRowIds.has(row.id) && !selectionReady)) return
-      const actionRow = getActionRow(row)
-      const contextRows = selectedRowIds.has(row.id) && selectedRows.length > 1 ? selectedRows : [actionRow]
       const cell = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-weld-field-key]')
       const fieldKey = cell?.dataset.weldFieldKey as WeldFieldKey | undefined
-      const items = stableGetContextMenuItems(actionRow, contextRows, fieldKey)?.filter((item, index, list) => {
-        if (item.type !== 'separator') return true
-        return index > 0 && list[index - 1]?.type !== 'separator' && list[index + 1]?.type !== 'separator'
-      })
-      if (!items?.length) return
       event.preventDefault()
-      const identity = getWeldContextMenuIdentity(actionRow, contextRows)
-      setContextMenuScope(selectionScope)
-      setContextMenu({ x: event.clientX, y: event.clientY, anchorRowId: row.id, anchorElement: event.currentTarget, ...identity, items })
+      rowMenu.openRow(getActionRow(row), { x: event.clientX, y: event.clientY, anchorElement: event.currentTarget }, fieldKey)
     },
-    [getActionRow, selectedRowIds, selectedRows, stableGetContextMenuItems, rowsReady, selectionReady, selectionScope],
+    [getActionRow, selectedRowIds, rowsReady, selectionReady, rowMenu.openRow],
   )
   const openSelectedRowsContextMenu = useCallback((event: MouseEvent<HTMLButtonElement>) => {
     if (!selectionReady) return
-    const firstRow = selectedRows[0]
-    if (!firstRow) return
-    const items = stableGetContextMenuItems(firstRow, selectedRows)?.filter((item, index, list) => {
-      if (item.type !== 'separator') return true
-      return index > 0 && list[index - 1]?.type !== 'separator' && list[index + 1]?.type !== 'separator'
-    })
-    if (!items?.length) return
     const rect = event.currentTarget.getBoundingClientRect()
-    setContextMenuScope(selectionScope)
-    setContextMenu({
+    rowMenu.openSelection({
       x: rect.left,
       y: rect.bottom + 4,
-      anchorRowId: firstRow.id,
       closeOnScroll: false,
-      ...getWeldContextMenuIdentity(firstRow, selectedRows),
-      items,
     })
-  }, [selectedRows, stableGetContextMenuItems, selectionReady, selectionScope])
+  }, [selectionReady, rowMenu.openSelection])
   const clearSelectedRows = useCallback(() => {
     stableOnSelectedRowIdsChange(new Set())
   }, [stableOnSelectedRowIdsChange])
@@ -435,7 +405,6 @@ export function WeldTable({
       canOpenJoint: Boolean(onOpenJoint),
       canOpenJointOverview: Boolean(onOpenJointOverview),
       canOpenWeldEditor: controlBasisEditorEnabled && Boolean(onEdit),
-      availableSystemDocumentTypes: stableAvailableSystemDocumentTypes,
     })
     if (tooltip) cell.title = tooltip
   }, [
@@ -449,7 +418,6 @@ export function WeldTable({
     onOpenJointOverview,
     onEdit,
     controlBasisEditorEnabled,
-    stableAvailableSystemDocumentTypes,
     stableGetDisplayValue,
     tableRowsById,
   ])
@@ -625,7 +593,6 @@ export function WeldTable({
                 onOpenJoint={onOpenJoint ? stableOnOpenJoint : undefined}
                 onOpenJointOverview={onOpenJointOverview ? stableOnOpenJointOverview : undefined}
                 controlBasisEditorEnabled={controlBasisEditorEnabled}
-                availableSystemDocumentTypes={stableAvailableSystemDocumentTypes}
                 visibleFieldKeys={visibleFieldKeys}
               />
               <TableVirtualSpacer colSpan={fullTableColumnSpan} height={bottomSpacerHeight} />
@@ -654,27 +621,10 @@ export function WeldTable({
         {selectable && selectedRowIds.size > 0 ? (
           <div className="h-12" data-selection-panel-clearance aria-hidden="true" />
         ) : null}
-        <ContextActionMenu menu={rowsReady && contextMenuScope === selectionScope ? contextMenu : null} onClose={() => setContextMenu(null)} />
+        <ContextActionMenu menu={contextMenu} onClose={rowMenu.close} />
       </div>
     </div>
   )
-}
-
-function getWeldContextMenuIdentity(row: WeldRow, contextRows: WeldRow[]) {
-  if (contextRows.length > 1) {
-    const lines = new Set(contextRows.map((item) => String(item.line ?? '').trim()).filter(Boolean))
-    return {
-      heading: `Выбрано стыков: ${contextRows.length}`,
-      description: lines.size === 1 ? `Линия ${Array.from(lines)[0]}` : 'Групповые действия',
-    }
-  }
-
-  const joint = String(row.joint ?? '').trim()
-  const line = String(row.line ?? '').trim()
-  return {
-    heading: joint ? `Стык ${joint}` : 'Действия по строке',
-    description: line ? `Линия ${line}` : undefined,
-  }
 }
 
 function mergeWeldTableActionRow(actionRow: WeldRow | undefined, displayRow: WeldRow) {

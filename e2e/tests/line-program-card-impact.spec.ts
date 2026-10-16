@@ -1,3 +1,4 @@
+import { editJournalJoint } from '../journal-grid'
 import { rpcName } from '../rpc'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
@@ -19,7 +20,7 @@ test('карточка: запрет очистки виден сразу; вл�
     if (id) try { calls.push(rpcName(request.url())) } catch { /* production ID */ }
   })
   await page.goto('/journal')
-  await page.getByRole('button', { name: 'F9891', exact: true }).locator('xpath=ancestor::tr').getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, 'F9891')
   const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка' }) })
   await expect(editor.getByText(/Программа линии: базовый 100%/)).toBeVisible()
   await editor.getByRole('button', { name: 'Назначение контроля', exact: true }).click()

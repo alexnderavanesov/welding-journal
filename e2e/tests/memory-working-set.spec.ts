@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { observeMixedClient } from '../mixed-resource-telemetry'
+import { editJournalJoint } from '../journal-grid'
 
 const project = 'E2E ordinary latency'
 test('ordinary journal, editor, line section and detail before/after memory optimization', async ({ page, context }) => {
@@ -20,6 +21,7 @@ test('ordinary journal, editor, line section and detail before/after memory opti
         from line_programs p cross join generate_series(1,200) n where p.project_title=$1`, [project])
     })
     for (let round = 0; round < 4; round++) {
+      let firstRowId: number | undefined
       const measure = async (action: string, run: () => Promise<void>) => {
         const start = performance.now()
         await run()
@@ -27,12 +29,17 @@ test('ordinary journal, editor, line section and detail before/after memory opti
       }
       await measure('journal', async () => {
         await page.goto('/journal')
-        await expect(page.getByRole('button', { name: 'Редактировать', exact: true }).first()).toBeVisible()
+        const grid = page.locator('[data-welding-journal-grid]')
+        await expect(grid.locator('.journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
+        const firstRow = grid.locator('.ag-grid-scrolling-rows .ag-row[row-id]').first()
+        await expect(firstRow).toBeVisible()
+        firstRowId = Number(await firstRow.getAttribute('row-id'))
+        expect(firstRowId).toBeGreaterThan(0)
         await expect.poll(() => telemetry.pending.size).toBe(0)
       })
       await measure('editor', async () => {
         const started = performance.now(), requestsBefore = telemetry.calls.length
-        await page.getByRole('button', { name: 'Редактировать', exact: true }).first().click()
+        await editJournalJoint(page, firstRowId)
         const clicked = performance.now()
         await expect(page.getByRole('heading', { name: 'Редактирование стыка', exact: true })).toBeVisible()
         console.log(JSON.stringify({ phase: 'ordinary editor timing', round,

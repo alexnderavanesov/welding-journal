@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { WeldTable } from '@/components/weld-table'
@@ -132,5 +132,37 @@ describe('WeldTable selection panel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Действия' }))
     expect(screen.getByRole('button', { name: 'Обработать 2' })).toBeVisible()
     expect(getContextMenuItems.mock.calls.at(-1)?.[1].map(row => row.id)).toEqual([1, 2])
+  })
+
+  it.each(['lnk', 'heatTreatment'])('%s row and selection menus load exactly the offpage selection and consume Escape without clearing it', async storageKey => {
+    const rows: WeldRow[] = [{ id: 1, line: 'L1', joint: 'F1', rowVersion: 'v1' }, { id: 2, line: 'L2', joint: 'F2', rowVersion: 'v2' }]
+    let resolve!: (rows: WeldRow[]) => void
+    const pending = new Promise<WeldRow[]>(yes => { resolve = yes })
+    const load = vi.fn(() => pending), onError = vi.fn(), onSelection = vi.fn(), onAction = vi.fn()
+    const getItems = vi.fn((_row: WeldRow, selected: WeldRow[]) => [{ id: 'selected', label: `Обработать ${selected.length}`, onSelect: () => onAction(selected) }])
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { container } = render(<QueryClientProvider client={queryClient}><WeldTable
+      storageKey={storageKey} rows={rows.slice(0, 1)} columnFilters={{}} onColumnFiltersChange={vi.fn()}
+      selectable selectedRowIds={new Set([1, 2])} onSelectedRowIdsChange={onSelection}
+      getContextMenuItems={getItems} loadContextMenuRows={load} onContextMenuError={onError}
+    /></QueryClientProvider>)
+    expect(load).not.toHaveBeenCalled()
+    fireEvent.contextMenu(container.querySelector('tr[data-weld-row-id="1"]')!)
+    expect(screen.getByText('Загружаем выбранные стыки…')).toBeVisible()
+    expect(getItems).not.toHaveBeenCalled()
+    expect(load).toHaveBeenCalledExactlyOnceWith([1, 2])
+    const escaped = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    fireEvent(window, escaped)
+    expect(escaped.defaultPrevented).toBe(true)
+    await act(async () => { resolve(rows); await pending })
+    expect(screen.queryByTestId('context-action-menu')).not.toBeInTheDocument()
+    expect(onSelection).not.toHaveBeenCalled()
+    load.mockResolvedValueOnce([...rows].reverse())
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Действия' })) })
+    expect(load).toHaveBeenCalledTimes(2)
+    fireEvent.click(screen.getByRole('button', { name: 'Обработать 2' }))
+    expect(onAction).toHaveBeenCalledExactlyOnceWith(rows)
+    expect(onError).not.toHaveBeenCalled()
+    expect(onSelection).not.toHaveBeenCalled()
   })
 })

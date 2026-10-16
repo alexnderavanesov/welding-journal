@@ -27,6 +27,8 @@ type DispatcherTaskPanelProps = {
   isRefreshing?: boolean
   onWorkspaceOpenChange?: (open: boolean) => void
   stickyLeft: number
+  fitContainer?: boolean
+  journalAppearance?: boolean
   handlers: DispatcherTaskCardHandlers
   onCollapseTaskDetails?: () => void
 }
@@ -43,6 +45,8 @@ export function DispatcherTaskPanel({
   isRefreshing = false,
   onWorkspaceOpenChange,
   stickyLeft,
+  fitContainer = false,
+  journalAppearance = false,
   handlers,
   onCollapseTaskDetails,
 }: DispatcherTaskPanelProps) {
@@ -63,23 +67,23 @@ export function DispatcherTaskPanel({
 
   return (
     <div
-      className="sticky z-20 overflow-x-auto rounded-md border border-sky-200/80 bg-[#eef7fb]/95 px-3 py-2 shadow-sm shadow-sky-100/70 backdrop-blur"
+      className={`sticky z-20 overflow-x-auto rounded-md border border-sky-200/80 bg-[#eef7fb]/95 px-3 py-2 shadow-sm shadow-sky-100/70 backdrop-blur ${journalAppearance ? 'journal-dispatcher journal-dispatcher-panel' : ''}`}
       style={{
-        left: stickyLeft,
+        left: fitContainer ? 0 : stickyLeft,
         width: '100%',
-        maxWidth: viewportWidth,
+        maxWidth: fitContainer ? '100%' : viewportWidth,
       }}
       aria-label="Диспетчер задач"
     >
       <div className="flex min-w-0 flex-col gap-2">
-        <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
+        <div data-dispatcher-toolbar className="flex min-h-8 flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 flex-wrap items-center gap-2.5">
             <div className="flex min-w-0 items-center gap-2 leading-snug">
               <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-amber-200 bg-amber-50 text-amber-700">
                 <BellRing className="h-4 w-4" />
               </span>
               <span className="shrink-0 text-sm font-semibold text-slate-900">Диспетчер</span>
-              <span className="shrink-0 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">
+              <span data-dispatcher-badge className="shrink-0 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">
                 {formatTaskCount(totalTaskCount)}
               </span>
               <span className="hidden min-w-0 text-xs leading-snug text-slate-500 2xl:inline">

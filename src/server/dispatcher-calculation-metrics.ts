@@ -1,10 +1,13 @@
 import { channel } from 'node:diagnostics_channel'
+import { createServerOnlyFn } from '@tanstack/react-start'
 
 // Opt-in, aggregate diagnostics only. No identifiers, facts or credentials;
 // no logging, timers, queries or retained history in the application itself.
 export type DispatcherCalculationMetrics = ReturnType<typeof startDispatcherCalculationMetrics>
 
-export function startDispatcherCalculationMetrics() {
+// Strip the Node import from the dev client graph before module evaluation.
+// A window guard alone runs too late to protect a static Node import.
+export const startDispatcherCalculationMetrics = createServerOnlyFn(() => {
   if (typeof window !== 'undefined') return undefined
   const diagnostics = channel('welding.dispatcher.full-calculation')
   if (!diagnostics.hasSubscribers) return undefined
@@ -27,4 +30,4 @@ export function startDispatcherCalculationMetrics() {
       diagnostics.publish({ outcome, milliseconds: performance.now() - started, stages })
     },
   }
-}
+})

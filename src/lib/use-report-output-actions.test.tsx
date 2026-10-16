@@ -2,14 +2,43 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { useReportOutputActions } from '@/lib/use-report-output-actions'
 import type { ActiveReport } from '@/lib/home-state'
-import type { WeldInput } from '@/lib/weld-fields'
+import { FIELD_BY_KEY, VISIBLE_FIELDS, type WeldInput } from '@/lib/weld-fields'
+import { DEFAULT_JOURNAL_APPEARANCE, writeJournalGridStorage } from './welding-journal-grid-state'
 
 function params(activeReport: ActiveReport = 'weldingJournal') {
-  return { activeReport, activeTitle: 'Отчёт', loadLnkRows: vi.fn(async () => []),
+  return { activeReport, activeTitle: 'Отчёт', journalExportFieldsRef: { current: () => VISIBLE_FIELDS }, loadLnkRows: vi.fn(async () => []),
     loadPstoRows: vi.fn(async () => []), loadWeldingJournalRows: vi.fn<() => Promise<WeldInput[]>>(async () => []),
     setIsLnkShowMenuOpen: vi.fn(), setIsPstoShowMenuOpen: vi.fn(), setIsWeldingJournalShowMenuOpen: vi.fn(), setMessage: vi.fn() }
 }
 afterEach(() => vi.restoreAllMocks())
+
+it('captures live journal columns even when persisting their order fails, before awaiting rows', async () => {
+  const stored = { appearance: DEFAULT_JOURNAL_APPEARANCE, views: {}, columns: [{ colId: 'joint' }, { colId: 'line' }] }
+  writeJournalGridStorage(stored)
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Quota exceeded', 'QuotaExceededError') })
+  // Grid layout remains in memory after best-effort persistence fails.
+  writeJournalGridStorage({ ...stored, columns: [{ colId: 'line' }, { colId: 'joint' }] })
+  const p = params()
+  let visible = [FIELD_BY_KEY.get('line')!, FIELD_BY_KEY.get('joint')!]
+  let resolve!: (rows: WeldInput[]) => void
+  p.loadWeldingJournalRows.mockReturnValueOnce(new Promise(done => { resolve = done }))
+  const { result } = renderHook(() => useReportOutputActions({ ...p, journalExportFieldsRef: { current: () => visible } }))
+  let opening!: Promise<void>
+  act(() => { opening = result.current.openWeldingJournalCurrentReport() })
+  visible = [FIELD_BY_KEY.get('projectTitle')!]
+  await act(async () => { resolve([{ line: 'LIVE', joint: 'F001', projectTitle: 'HIDDEN' } as WeldInput]); await opening })
+  expect(result.current.reportPreviewProps?.report?.tables?.[0].columns).toEqual(['Линия', 'Стык'])
+  expect(result.current.reportPreviewProps?.report?.tables?.[0].rows).toEqual([['LIVE', 'F001']])
+})
+
+it.each([null, () => null, () => []])('does not load a current journal report without ready visible fields (%s)', async source => {
+  const p = params()
+  const { result } = renderHook(() => useReportOutputActions({ ...p, journalExportFieldsRef: { current: source } }))
+  await act(async () => { await result.current.openWeldingJournalCurrentReport() })
+  expect(p.loadWeldingJournalRows).not.toHaveBeenCalled()
+  expect(result.current.reportPreviewProps).toBeNull()
+  expect(p.setMessage).toHaveBeenCalledWith(source?.() ? expect.stringContaining('нет столбцов') : expect.stringContaining('Дождитесь'))
+})
 
 it.each([
   ['openLnkCurrentReport', 'loadLnkRows', 'current'],

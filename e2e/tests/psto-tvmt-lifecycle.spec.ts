@@ -1,3 +1,4 @@
+import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { chooseSpecialist } from '../specialist-helpers'
 import { confirmLnkResultChanges } from '../lnk-result-confirmation'
@@ -518,12 +519,7 @@ test('карточка стыка переносит основной НК на 
   await seedLineMoveJoint()
   await page.goto('/journal')
 
-  const sourceRow = page
-    .getByText(LINE_MOVE_JOINT, { exact: true })
-    .first()
-    .locator('xpath=ancestor::tr')
-  await expect(sourceRow).toBeVisible()
-  await sourceRow.getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, LINE_MOVE_JOINT)
 
   const editor = page.getByRole('dialog').filter({
     has: page.getByRole('heading', { name: 'Редактирование стыка' }),
@@ -724,8 +720,7 @@ type ExpectedVikStage = 'primary' | 'beforeHeatTreatment'
 
 async function moveStageSyncKeepingHistory(page: Page, targetLine: string, cancelFirst = false) {
   await openReport(page, 'Сварочный журнал', '/journal')
-  await page.getByRole('button', { name: `Выбрать стык ${STAGE_SYNC_JOINT}`, exact: true }).locator('xpath=ancestor::tr')
-    .getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, STAGE_SYNC_JOINT)
   const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
   const calls: string[] = []
   const listener = (request: import('@playwright/test').Request) => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) }

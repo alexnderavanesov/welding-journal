@@ -1,3 +1,4 @@
+import { editJournalJoint } from '../journal-grid'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
@@ -20,8 +21,7 @@ test('карточка: общие поля защищены, индивидуа
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto('/journal')
-  const row = page.getByRole('button', { name: 'F990', exact: true }).locator('xpath=ancestor::tr')
-  await row.getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, 'F990')
   const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка' }) })
   await expect(editor.getByText(/Программа линии: базовый 10%/)).toBeVisible()
   for (const label of ['Проект', 'Шифр', 'Группа трубопровода', 'Категория трубопровода', 'Контроль швов, (%)']) {

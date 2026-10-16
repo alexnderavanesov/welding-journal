@@ -111,7 +111,7 @@ export function DispatcherTaskDetails({ task, showHeading = true, workspace = fa
           {metrics.length > 0 ? (
             <div className="flex flex-wrap items-center gap-1.5" aria-label="Показатели задачи">
               {metrics.map((metric) => (
-                <span
+                <span data-dispatcher-badge
                   key={metric.label}
                   className={`inline-flex min-h-6 items-center gap-1 rounded border px-2 leading-none ${
                     metric.emphasis
@@ -195,7 +195,7 @@ export function DispatcherTaskGroupFrame({
       >
         <span className="flex w-full items-center gap-2">
           <span className="font-semibold text-slate-900">{group.baseJoint}</span>
-          <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
+          <span data-dispatcher-badge className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
             {reminder ? formatReminderCount(group.tasks.length) : formatTaskCount(group.tasks.length)}
           </span>
           {hideTaskSummaries ? <span className="min-w-0 flex-1" /> : (
@@ -204,7 +204,7 @@ export function DispatcherTaskGroupFrame({
               aria-label={`Краткое описание задач ${group.baseJoint}`}
             >
               {visibleSummaries.map((summary) => (
-                <span
+                <span data-dispatcher-badge
                   key={summary.code}
                   className={`inline-flex min-w-0 items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs ${
                     visibleSummaries.length === 1 ? 'max-w-[440px]' : 'max-w-[280px]'
@@ -216,7 +216,7 @@ export function DispatcherTaskGroupFrame({
                 </span>
               ))}
               {hiddenSummaryCount > 0 ? (
-                <span
+                <span data-dispatcher-badge
                   className="shrink-0 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-500"
                   title={summaries.slice(visibleSummaries.length).map((summary) => `${summary.code} · ${summary.label}`).join('; ')}
                 >
@@ -226,7 +226,7 @@ export function DispatcherTaskGroupFrame({
             </span>
           )}
           {metric ? (
-            <span
+            <span data-dispatcher-badge
               className="hidden max-w-[280px] shrink-0 items-center truncate rounded border border-sky-100 bg-sky-50/70 px-2 py-0.5 text-xs font-medium text-sky-800 md:inline-flex"
               title={metric}
             >

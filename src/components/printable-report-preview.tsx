@@ -44,18 +44,18 @@ export function PrintableReportPreview({ report, templateDocument, busy, error, 
   }, [report, templateDocument?.buildPrintHtml])
   useEffect(() => {
     const previousFocus = document.activeElement as HTMLElement | null
-    closeButton.current?.focus()
+    closeButton.current?.focus({ preventScroll: true })
     const keydown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
         event.preventDefault(); printAction.current(); return
       }
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); return }
+      if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); onClose(); return }
       if (event.key !== 'Tab') return
       const targets = panel.current?.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), iframe')
       if (!targets?.length) return
       const first = targets[0], last = targets[targets.length - 1]
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus({ preventScroll: true }) }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus({ preventScroll: true }) }
     }
     document.addEventListener('keydown', keydown, true)
     return () => { document.removeEventListener('keydown', keydown, true); detachFrame.current?.(); previousFocus?.focus({ preventScroll: true }) }
@@ -73,7 +73,7 @@ export function PrintableReportPreview({ report, templateDocument, busy, error, 
       if (event.key === 'Tab') {
         event.preventDefault()
         const targets = panel.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
-        targets?.[event.shiftKey ? targets.length - 1 : 0]?.focus()
+        targets?.[event.shiftKey ? targets.length - 1 : 0]?.focus({ preventScroll: true })
       }
     }
     doc.addEventListener('keydown', keydown)
@@ -87,7 +87,7 @@ export function PrintableReportPreview({ report, templateDocument, busy, error, 
     if (templateDocument || (page && page.pageCount > 1)) {
       printingRef.current = true; setPrinting(true)
       disposePrint.current?.()
-      const done = () => { printingRef.current = false; setPrinting(false); closeButton.current?.focus() }
+      const done = () => { printingRef.current = false; setPrinting(false); closeButton.current?.focus({ preventScroll: true }) }
       const failed = (message?: string) => {
         done(); setPrintError(message || 'Не удалось открыть печать. Повторите действие в браузере.')
       }
@@ -110,8 +110,8 @@ export function PrintableReportPreview({ report, templateDocument, busy, error, 
     catch { setDownloadError('Не удалось скачать Excel. Повторите действие.') }
     finally { downloadingRef.current = false; setDownloading(false) }
   }
-  return <LargeDialogShell ariaLabel={previewTitle} maxWidthClassName="max-w-[1480px]" panelClassName="h-[92vh]">
-    <div ref={panel} className="flex min-h-0 flex-1 flex-col">
+  return <LargeDialogShell ariaLabel={previewTitle} overlayClassName="z-[100] bg-slate-950/30" maxWidthClassName="max-w-[1480px]" panelClassName="h-[92vh]">
+    <div ref={panel} data-document-preview="true" className="flex min-h-0 flex-1 flex-col">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-3">
         <h2 className="min-w-0 text-base font-semibold text-slate-800">{previewTitle}</h2>
         <div className="flex flex-wrap items-center gap-2">

@@ -38,7 +38,7 @@ export function LineProgramAssignmentDialog({ line, context, busy, children, too
         {review}
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-600">{summary}</div>
-          <div className="flex items-center gap-2"><button type="button" disabled={busy} onClick={onClose} title="Закрыть без сохранения. Черновик останется до ухода из раздела." className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40">Вернуться к просмотру</button>{actions}</div>
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 [&>button]:shrink-0"><button type="button" disabled={busy} onClick={onClose} title="Закрыть без сохранения. Черновик останется до ухода из раздела." className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40">Вернуться к просмотру</button>{actions}</div>
         </div>
       </footer>
     </div>

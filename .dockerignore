@@ -9,6 +9,8 @@ node_modules
 data
 backups
 outputs
+# Standalone local UI prototypes must not enter the build context.
+prototypes
 .pnpm-store
 db_dump*.sql
 db_dump*.bak

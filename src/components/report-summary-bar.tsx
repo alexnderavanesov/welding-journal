@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Search, X } from 'lucide-react'
 import type { ActiveReport } from '@/lib/home-state'
 import { getReportSummaryText } from '@/lib/report-ui-state'
@@ -23,6 +24,7 @@ export type ReportSummaryBarProps = {
   quickSearchValue?: string
   onQuickSearchChange?: (value: string) => void
   embedded?: boolean
+  beforeSearch?: ReactNode
 }
 
 export function ReportSummaryBar({
@@ -46,6 +48,7 @@ export function ReportSummaryBar({
   quickSearchValue,
   onQuickSearchChange,
   embedded = false,
+  beforeSearch,
 }: ReportSummaryBarProps) {
   const summaryText = rowsError ? 'Не удалось обновить строки' : getReportSummaryText({
     activeReport,
@@ -75,6 +78,7 @@ export function ReportSummaryBar({
       ) : !rowsError && summaryStatus === 'error' && onRetrySummary ? (
         <button type="button" onClick={onRetrySummary} className="ml-2 shrink-0 text-xs text-sky-700 underline">Повторить подсчёт</button>
       ) : null}
+      {beforeSearch}
       {onQuickSearchChange ? (
         <label className="relative ml-3 block w-[min(18rem,48vw)] shrink-0">
           <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />

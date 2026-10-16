@@ -2,7 +2,6 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   loadGeneratedDocument,
   loadGeneratedDocumentRows,
-  openGeneratedDocument,
   type StoredGeneratedDocument,
 } from '@/lib/generated-document-storage'
 import {
@@ -118,26 +117,21 @@ export async function createCurrentGeneratedDocumentBlob({
     : createBaseWeldingJournalDocumentBlob(rows, type)
 }
 
-export function openWeldingJournalDocumentForRow(row: WeldRow, welderStamps: WelderStampRecord[]) {
-  return openGeneratedDocumentForRow(row, 'jsrDocument', welderStamps)
-}
-
-export function openGeneratedDocumentForRow(
+export async function createGeneratedDocumentBlobForRow(
   row: WeldRow,
   fieldKey: GeneratedDocumentFieldKey,
   welderStamps: WelderStampRecord[],
-  previewWindow?: Window | null,
 ) {
   const type = (
     Object.entries(GENERATED_DOCUMENT_PROFILES) as Array<
       [GeneratedDocumentType, (typeof GENERATED_DOCUMENT_PROFILES)[GeneratedDocumentType]]
     >
   ).find(([, profile]) => profile.fieldKey === fieldKey)?.[0]
-  if (!type) return
+  if (!type) throw new Error('Неизвестный тип документа.')
   const profile = getGeneratedDocumentProfile(type)
   const documentId = Number(row[profile.idKey])
   const title = String(row[profile.fieldKey] ?? '').trim()
-  if (!Number.isInteger(documentId) || documentId <= 0 || !title) return
+  if (!Number.isInteger(documentId) || documentId <= 0 || !title) throw new Error('У документа не сохранены номер или связь со стыком. Откройте его из раздела «Документы».')
 
   const documentRecord: StoredGeneratedDocument = {
     id: documentId,
@@ -152,23 +146,14 @@ export function openGeneratedDocumentForRow(
     createdAt: '',
     updatedAt: '',
   }
-  void openGeneratedDocument(
-    documentRecord,
-    async () => {
-      const [rows, storedDocument] = await Promise.all([
-        loadGeneratedDocumentRows(documentId),
-        loadGeneratedDocument(documentId),
-      ])
-      if (rows.length === 0) throw new Error('В документе больше нет стыков.')
-      return createCurrentGeneratedDocumentBlob({
-        type,
-        rows,
-        welderStamps,
-        documentRecord: storedDocument ?? documentRecord,
-      })
-    },
-    previewWindow,
-  )
+  const [rows, storedDocument] = await Promise.all([
+    loadGeneratedDocumentRows(documentId),
+    loadGeneratedDocument(documentId),
+  ])
+  if (rows.length === 0) throw new Error('В документе больше нет стыков.')
+  return createCurrentGeneratedDocumentBlob({
+    type, rows, welderStamps, documentRecord: storedDocument ?? documentRecord,
+  })
 }
 
 function buildLayeredControlTemplateData(

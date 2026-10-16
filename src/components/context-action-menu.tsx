@@ -44,10 +44,12 @@ type ContextActionMenuProps = {
   menu: ContextActionMenuState
   autoFocus?: boolean
   closeOnEscapeWithModal?: boolean
+  /** Applied to both panels, including submenus portalled outside the parent. */
+  panelClassName?: string
   onClose: () => void
 }
 
-export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithModal = false, onClose }: ContextActionMenuProps) {
+export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithModal = false, panelClassName = '', onClose }: ContextActionMenuProps) {
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null)
   const [submenuLayout, setSubmenuLayout] = useState<{
     id: string
@@ -59,6 +61,20 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
   const menuPanelRef = useRef<HTMLDivElement | null>(null)
   const submenuAnchorRefs = useRef(new Map<string, HTMLDivElement>())
   const submenuPanelRefs = useRef(new Map<string, HTMLDivElement>())
+  const [measuredPanelHeight, setMeasuredPanelHeight] = useState<{ menu: ContextActionMenuState; height: number } | null>(null)
+
+  // Wrapped labels/reasons can exceed the estimate even without custom styles.
+  // Measure before paint so every root menu stays inside the viewport.
+  useLayoutEffect(() => {
+    if (!menu) {
+      setMeasuredPanelHeight(null)
+      return
+    }
+    const panel = menuPanelRef.current
+    if (panel) {
+      setMeasuredPanelHeight({ menu, height: panel.scrollHeight + 2 })
+    }
+  }, [menu, panelClassName, openSubmenuId])
 
   useLayoutEffect(() => {
     if (menu && autoFocus) menuPanelRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true })
@@ -174,7 +190,9 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
 
   const viewportPadding = 8
   const menuWidth = Math.min(320, Math.max(224, window.innerWidth - viewportPadding * 2))
-  const menuHeight = estimateMenuHeight(menu.items, menu.itemMinHeight) + (menu.heading ? 52 : 0)
+  const menuHeight = measuredPanelHeight?.menu === menu
+    ? measuredPanelHeight.height
+    : estimateMenuHeight(menu.items, menu.itemMinHeight) + (menu.heading ? 52 : 0)
   const maxMenuHeight = Math.max(160, window.innerHeight - viewportPadding * 2)
   const menuLeft = Math.min(menu.x, window.innerWidth - menuWidth - viewportPadding)
   const stackSubmenus = window.innerWidth < menuWidth * 2 + viewportPadding * 2
@@ -189,25 +207,25 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
       <div
         ref={menuPanelRef}
         data-testid="context-action-menu"
-        className="absolute min-w-0 rounded-lg border border-slate-200 bg-white py-1.5 shadow-xl shadow-slate-900/12"
+        className={`absolute min-w-0 rounded-lg border border-slate-200 bg-white py-1.5 shadow-xl shadow-slate-900/12 ${panelClassName}`}
         style={{
           left: Math.max(viewportPadding, menuLeft),
           top: menuTop,
           width: menuWidth,
           maxHeight: maxMenuHeight,
-          overflowY: stackSubmenus || menuHeight > maxMenuHeight ? 'auto' : undefined,
+          overflowY: panelClassName || stackSubmenus || menuHeight > maxMenuHeight ? 'auto' : undefined,
         }}
         onMouseDown={(event) => event.stopPropagation()}
       >
         {menu.heading ? (
-          <div className="border-b border-slate-100 px-3 pb-2 pt-1">
+          <div data-menu-heading className="border-b border-slate-100 px-3 pb-2 pt-1">
             <div title={menu.heading} className="truncate text-sm font-semibold text-slate-900">{menu.heading}</div>
             {menu.description ? <div title={menu.description} className="mt-0.5 truncate text-xs text-slate-500">{menu.description}</div> : null}
           </div>
         ) : null}
         {menu.items.map((item) => {
           if (item.type === 'separator') {
-            return <div key={item.id} className="my-1 border-t border-slate-100" />
+            return <div key={item.id} data-menu-separator className="my-1 border-t border-slate-100" />
           }
           if (item.type === 'label') {
             return (
@@ -229,6 +247,7 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
               }}
               role="menu"
               aria-label={item.label}
+              data-menu-submenu={stackSubmenus ? 'stacked' : 'floating'}
               className={`${
                 stackSubmenus
                   ? 'relative mx-2 mb-1 w-[calc(100%-1rem)] border-l-2 border-sky-100 bg-slate-50 py-1'
@@ -239,7 +258,7 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
                   : stackSubmenus
                     ? 'hidden'
                     : 'invisible opacity-0'
-              }`}
+              } ${panelClassName}`}
               style={!stackSubmenus ? {
                 left: submenuLayout?.id === item.id ? submenuLayout.left : Math.max(viewportPadding, menuLeft + menuWidth - 1),
                 top: submenuLayout?.id === item.id ? submenuLayout.top : menuTop,
@@ -249,7 +268,7 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
               onMouseDown={(event) => event.stopPropagation()}
             >
               {item.children?.map((child) => {
-                if (child.type === 'separator') return <div key={child.id} className="my-1 border-t border-slate-100" />
+                if (child.type === 'separator') return <div key={child.id} data-menu-separator className="my-1 border-t border-slate-100" />
                 if (child.type === 'label') {
                   return (
                     <div key={child.id} className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase text-slate-400">
@@ -269,6 +288,8 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
                   >
                   <button
                     type="button"
+                    data-menu-item
+                    data-danger={child.danger || undefined}
                     disabled={child.disabled}
                     title={child.title}
                     aria-label={child.label}
@@ -285,9 +306,9 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
                   >
                     {ChildIcon ? <ChildIcon className="mt-0.5 h-4 w-4 shrink-0" /> : <span className="h-4 w-4 shrink-0" />}
                     <span className="min-w-0 flex-1">
-                      <span className="block break-words leading-5">{child.label}</span>
+                      <span data-menu-label className="block break-words leading-5">{child.label}</span>
                       {childDescription ? (
-                        <span className={`mt-0.5 block text-xs font-normal leading-4 ${
+                        <span data-menu-description className={`mt-0.5 block text-xs font-normal leading-4 ${
                           child.disabled ? 'text-slate-400' : 'text-slate-500'
                         }`}>
                           {childDescription}
@@ -311,10 +332,14 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
               role={item.disabled && description ? 'group' : undefined}
               aria-label={item.disabled && description ? `${item.label}: ${description}` : undefined}
               className="relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500"
-              onMouseEnter={() => setOpenSubmenuId(hasChildren ? item.id : null)}
+              onMouseEnter={() => {
+                if (!stackSubmenus) setOpenSubmenuId(hasChildren ? item.id : null)
+              }}
             >
               <button
                 type="button"
+                data-menu-item
+                data-danger={item.danger || undefined}
                 disabled={item.disabled}
                 title={item.title}
                 aria-label={item.label}
@@ -340,9 +365,9 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
               >
                 {Icon ? <Icon className="mt-0.5 h-4 w-4 shrink-0" /> : <span className="h-4 w-4 shrink-0" />}
                 <span className="min-w-0 flex-1">
-                  <span className="block break-words leading-5">{item.label}</span>
+                  <span data-menu-label className="block break-words leading-5">{item.label}</span>
                   {description ? (
-                    <span className={`mt-0.5 block text-xs font-normal leading-4 ${
+                    <span data-menu-description className={`mt-0.5 block text-xs font-normal leading-4 ${
                       item.disabled ? 'text-slate-400' : 'text-slate-500'
                     }`}>
                       {description}

@@ -8,7 +8,11 @@ const startRequire = createRequire(import.meta.resolve('@tanstack/react-start/cl
 const coreRequire = createRequire(startRequire.resolve('@tanstack/start-client-core/package.json'))
 const { toJSONAsync } = coreRequire('seroval') as { toJSONAsync: (value: unknown) => Promise<unknown> }
 export async function serializeRpcData(data: unknown): Promise<string> {
-  return JSON.stringify(await toJSONAsync({ data }))
+  return serializeRpcPayload({ data })
+}
+
+export async function serializeRpcPayload(payload: unknown): Promise<string> {
+  return JSON.stringify(await toJSONAsync(payload))
 }
 
 let productionNames: Map<string, string> | undefined

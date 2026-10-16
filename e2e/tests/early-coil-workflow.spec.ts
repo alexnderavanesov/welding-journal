@@ -1,3 +1,4 @@
+import { journalRow, editJournalJoint, deleteJournalJoint, selectJournalJoint, revealJournalColumn } from '../journal-grid'
 import { scrypt } from 'node:crypto'
 
 import { expect, test, type Page } from '@playwright/test'
@@ -84,8 +85,9 @@ test('creates, navigates, revokes and safely protects an early coil', async ({ p
   const sourceRowId = await seedEarlyCoilChain()
 
   await page.goto('/journal')
-  const sourceRow = page.locator(`tr[data-weld-row-id="${sourceRowId}"]`)
+  const sourceRow = journalRow(page, sourceRowId)
   await expect(sourceRow).toBeVisible()
+  await revealJournalColumn(page, 'jointNextAction')
   await sourceRow.getByRole('button', { name: SOURCE_JOINT, exact: true }).click()
 
   await expect(page.getByRole('heading', { name: `Картина стыка ${SOURCE_JOINT}` })).toBeVisible()
@@ -97,8 +99,8 @@ test('creates, navigates, revokes and safely protects an early coil', async ({ p
     expectedRepairExists: false,
     coilJoints: [...COIL_JOINTS],
   })
-  await expect(page.getByText('Цепочка продолжена катушкой', { exact: true })).toBeVisible()
-  await expect(page.getByText('Ожидается решение по негодному результату', { exact: true })).toHaveCount(0)
+  await expect(sourceRow.getByText('Цепочка продолжена катушкой', { exact: true })).toBeVisible()
+  await expect(sourceRow.getByText('Ожидается решение по негодному результату', { exact: true })).toHaveCount(0)
   await expect(page.getByText('Стык превратился в катушку')).toBeVisible()
   await page.getByRole('region', { name: 'Продолжение цепочки катушкой' })
     .getByRole('button', { name: COIL_JOINTS[0], exact: true })
@@ -217,7 +219,7 @@ test('opens the selected rejected joint in LNK officiality and changes it only a
   await expect.poll(loadUnofficialityChoice).toBe('действующий')
 
   await page.goto('/journal')
-  const sourceRow = page.locator(`tr[data-weld-row-id="${sourceRowId}"]`)
+  const sourceRow = journalRow(page, sourceRowId)
   await expect(sourceRow).toBeVisible()
   await sourceRow.getByRole('button', { name: UNOFFICIALITY_JOINT, exact: true }).click()
 
@@ -394,17 +396,19 @@ test('blocks predecessor deletion and keeps recovery after deleting a tail or au
   const rowIds = await seedDeletionRecoveryChains()
 
   await page.goto('/journal')
-  await expect(page.locator(`tr[data-weld-row-id="${rowIds.get(RECOVERY_CHAIN[0])}"]`)
+  await revealJournalColumn(page, 'jointNextAction')
+  await expect(journalRow(page, rowIds.get(RECOVERY_CHAIN[0]))
     .getByText(`Цепочка продолжена стыком ${RECOVERY_CHAIN[1]}`, { exact: true })).toBeVisible()
-  await expect(page.locator(`tr[data-weld-row-id="${rowIds.get(RECOVERY_CHAIN[1])}"]`)
+  await expect(journalRow(page, rowIds.get(RECOVERY_CHAIN[1]))
     .getByText(`Цепочка продолжена стыком ${RECOVERY_CHAIN[2]}`, { exact: true })).toBeVisible()
-  await expect(page.locator(`tr[data-weld-row-id="${rowIds.get(AUTOMATIC_COIL_CHAIN[3])}"]`)
+  await expect(journalRow(page, rowIds.get(AUTOMATIC_COIL_CHAIN[3]))
     .getByText('Цепочка продолжена катушкой', { exact: true })).toBeVisible()
 
   // Confirmed 01.10 rule: do not create an orphan by deleting the middle.
   await deleteJournalRows(page, [{ id: rowIds.get(RECOVERY_CHAIN[1])!, joint: RECOVERY_CHAIN[1] }], true)
   await deleteJournalRows(page, RECOVERY_CHAIN.slice(1).map(joint => ({ id: rowIds.get(joint)!, joint })))
-  const recoverySourceRow = page.locator(`tr[data-weld-row-id="${rowIds.get(RECOVERY_CHAIN[0])}"]`)
+  await revealJournalColumn(page, 'jointNextAction')
+  const recoverySourceRow = journalRow(page, rowIds.get(RECOVERY_CHAIN[0]))
   await expect(recoverySourceRow.getByText(`Создать ${RECOVERY_CHAIN[1]}`, { exact: true })).toBeVisible()
   await expect(recoverySourceRow.getByText(
     `Цепочка продолжена стыком ${RECOVERY_CHAIN[1]}`,
@@ -419,10 +423,9 @@ test('blocks predecessor deletion and keeps recovery after deleting a tail or au
     .toEqual([RECOVERY_CHAIN[1]])
 
   await deleteJournalRows(page, [{ id: rowIds.get(AUTOMATIC_COIL_JOINTS[0])!, joint: AUTOMATIC_COIL_JOINTS[0] }])
+  await revealJournalColumn(page, 'jointNextAction')
   const automaticIntegrityGroup = await openDispatcherObjectGroup(page, AUTOMATIC_COIL_CHAIN[0], 'СП-09')
-  const automaticCoilSourceRow = page.locator(
-    `tr[data-weld-row-id="${rowIds.get(AUTOMATIC_COIL_CHAIN[3])}"]`,
-  )
+  const automaticCoilSourceRow = journalRow(page, rowIds.get(AUTOMATIC_COIL_CHAIN[3]))
   await expect(automaticCoilSourceRow.getByText('Цепочка продолжена катушкой', { exact: true })).toHaveCount(0)
   await expect(automaticIntegrityGroup.getByText('Проверить целостность цепочки', { exact: true })).toBeVisible()
   taskGroup = await openDispatcherObjectGroup(page, AUTOMATIC_COIL_CHAIN[0], 'СП-09')
@@ -470,7 +473,7 @@ test('moves an accepted coil chain through its base and preserves each row workf
   const sourceRowId = await seedChainLineMoveCase()
 
   await page.goto('/journal')
-  const sourceRow = page.locator(`tr[data-weld-row-id="${sourceRowId}"]`)
+  const sourceRow = journalRow(page, sourceRowId)
   await expect(sourceRow).toBeVisible()
   await sourceRow.getByRole('button', { name: MOVE_SOURCE_JOINT, exact: true }).click()
   await page.getByRole('button', { name: 'Врезать катушку досрочно', exact: true }).click()
@@ -492,16 +495,14 @@ test('moves an accepted coil chain through its base and preserves each row workf
   ])
 
   await page.goto('/journal')
-  const childRow = page.locator(`tr[data-weld-row-id="${movedIds.get(MOVE_COIL_JOINTS[0])}"]`)
-  await childRow.getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, movedIds.get(MOVE_COIL_JOINTS[0]))
   let editor = getWeldEditor(page)
   await changeEditorLine(editor, MOVE_TARGET_LINE)
   await expect(editor.getByText(/входит в цепочку S981.*через базовый стык S981/i).first()).toBeVisible()
   await expect(editor.getByRole('button', { name: 'Сохранить', exact: true })).toBeDisabled()
   await editor.getByRole('button', { name: 'Отмена', exact: true }).click()
 
-  const refreshedSourceRow = page.locator(`tr[data-weld-row-id="${sourceRowId}"]`)
-  await refreshedSourceRow.getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, sourceRowId)
   editor = getWeldEditor(page)
   await changeEditorLine(editor, MOVE_TARGET_LINE)
 
@@ -1035,8 +1036,7 @@ async function removeCoilJointsOutOfBand(joints: string[]) {
 async function assertDirectCoilDeletionIsBlocked(page: Page) {
   const rowId = await loadJointId(COIL_JOINTS[0])
   await page.goto('/journal')
-  const row = page.locator(`tr[data-weld-row-id="${rowId}"]`)
-  await row.getByRole('button', { name: 'Удалить', exact: true }).click()
+  await deleteJournalJoint(page, rowId)
   await expect(page.getByRole('heading', { name: 'Подтверждение удаления', exact: true })).toBeVisible()
   await page.getByLabel('Пароль', { exact: true }).fill(DELETE_PASSWORD)
   await page.getByRole('button', { name: 'Продолжить', exact: true }).click()
@@ -1053,8 +1053,7 @@ async function assertDirectCoilDeletionIsBlocked(page: Page) {
 
 async function assertDirectEarlyCoilSourceDeletionIsBlocked(page: Page, sourceRowId: number) {
   await page.goto('/journal')
-  const row = page.locator(`tr[data-weld-row-id="${sourceRowId}"]`)
-  await row.getByRole('button', { name: 'Удалить', exact: true }).click()
+  await deleteJournalJoint(page, sourceRowId)
   await expect(page.getByRole('heading', { name: 'Подтверждение удаления', exact: true })).toBeVisible()
   await page.getByLabel('Пароль', { exact: true }).fill(DELETE_PASSWORD)
   await page.getByRole('button', { name: 'Продолжить', exact: true }).click()
@@ -1068,12 +1067,9 @@ async function assertDirectEarlyCoilSourceDeletionIsBlocked(page: Page, sourceRo
 async function assertDirectCoilPairDeletionIsBlocked(page: Page) {
   const rowIds = await Promise.all(COIL_JOINTS.map(loadJointId))
   await page.goto('/journal')
-  for (const [index, rowId] of rowIds.entries()) {
-    const row = page.locator(`tr[data-weld-row-id="${rowId}"]`)
-    await row.getByRole('button', { name: `Выбрать стык ${COIL_JOINTS[index]}`, exact: true }).click()
-  }
+  for (const rowId of rowIds) await selectJournalJoint(page, rowId)
 
-  await page.getByRole('button', { name: 'Действия', exact: true }).click()
+  await journalRow(page, rowIds[0]).locator('[col-id="joint"]').click({ button: 'right' })
   const deleteSelectedAction = page.getByRole('button', { name: 'Удалить выбранные (2)', exact: true })
   await deleteSelectedAction.evaluate((element) => element.scrollIntoView({ block: 'center' }))
   await deleteSelectedAction.click()
@@ -1176,23 +1172,25 @@ async function seedDeletionRecoveryChains() {
 
 async function deleteJournalRows(page: Page, rows: Array<{ id: number; joint: string }>, expectBlocked = false) {
   await page.goto('/journal')
-  await expect(page.locator(`tr[data-weld-row-id="${rows[0].id}"]`)).toBeVisible()
-  const clearSelection = page.getByRole('button', { name: 'Снять выбор', exact: true })
-  if (await clearSelection.isVisible()) {
-    await clearSelection.click()
-    await expect(clearSelection).toBeHidden()
+  await expect(journalRow(page, rows[0].id)).toBeVisible()
+  const selection = page.getByLabel('Статистика выделения')
+  if ((await selection.textContent())?.includes('Выбрано:')) {
+    const selectAll = page.locator('[data-welding-journal-grid] .ag-header-cell').getByRole('checkbox')
+    await selectAll.check()
+    await selectAll.uncheck()
+    await expect(selection).not.toContainText('Выбрано:')
   }
   if (rows.length === 1) {
-    const row = page.locator(`tr[data-weld-row-id="${rows[0].id}"]`)
+    const row = journalRow(page, rows[0].id)
     await expect(row).toBeVisible()
-    await row.getByRole('button', { name: 'Удалить', exact: true }).click()
+    await deleteJournalJoint(page, rows[0].id)
   } else {
     for (const rowInfo of rows) {
-      const row = page.locator(`tr[data-weld-row-id="${rowInfo.id}"]`)
+      const row = journalRow(page, rowInfo.id)
       await expect(row).toBeVisible()
-      await row.getByRole('button', { name: `Выбрать стык ${rowInfo.joint}`, exact: true }).click()
+      await selectJournalJoint(page, rowInfo.id)
     }
-    await page.getByRole('button', { name: 'Действия', exact: true }).click()
+    await journalRow(page, rows[0].id).locator('[col-id="joint"]').click({ button: 'right' })
     const deleteAction = page.getByRole('button', { name: `Удалить выбранные (${rows.length})`, exact: true })
     await deleteAction.evaluate((element) => element.scrollIntoView({ block: 'center' }))
     await deleteAction.click()

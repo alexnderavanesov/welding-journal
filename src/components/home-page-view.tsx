@@ -13,6 +13,7 @@ import { ReportWorkspace } from '@/components/report-workspace'
 import type { DocumentGenerationRequest } from '@/lib/document-generation'
 import type { FinalStatusRowsContext } from '@/lib/weld-status'
 import { useFrozenValue } from '@/lib/use-frozen-value'
+import { HistoryDocumentPreview } from '@/components/history-document-preview'
 import { PrintableReportPreview } from '@/components/printable-report-preview'
 import { Button } from './ui/button'
 
@@ -21,6 +22,7 @@ type HomePageViewProps = {
   coilRestorationDialogProps?: ComponentProps<typeof CoilRestorationDialog> | null
   coilCorrectionReturnProps?: { onReturn: () => void; onDismiss: () => void } | null
   chainActualityDialogProps?: ComponentProps<typeof ChainActualityDialog> | null
+  documentPreviewProps?: ComponentProps<typeof HistoryDocumentPreview> | null
   reportPreviewProps: ComponentProps<typeof PrintableReportPreview> | null
   activeReport: ComponentProps<typeof ReportWorkspace>['activeReport']
   activeTitle: string
@@ -41,6 +43,7 @@ type HomePageViewProps = {
   welderStamps: ComponentProps<typeof ReportMainContent>['welderStamps']
   welderStampsRegistryProps: ComponentProps<typeof ReportMainContent>['welderStampsRegistryProps']
   weldTableProps: ComponentProps<typeof ReportMainContent>['weldTableProps']
+  journalExportFieldsRef: ComponentProps<typeof ReportMainContent>['journalExportFieldsRef']
   onOpenPercentageLineStampRows: ComponentProps<typeof ReportMainContent>['onOpenPercentageLineStampRows']
   onOpenReportRowIds: ComponentProps<typeof ReportMainContent>['onOpenReportRowIds']
   onOpenWeldRowIds: ComponentProps<typeof ReportMainContent>['onOpenWeldRowIds']
@@ -70,6 +73,7 @@ export function HomePageView({
   coilCorrectionReturnProps,
   chainActualityDialogProps,
   reportPreviewProps,
+  documentPreviewProps,
   activeReport,
   activeTitle,
   freezeReportBackground,
@@ -89,6 +93,7 @@ export function HomePageView({
   welderStamps,
   welderStampsRegistryProps,
   weldTableProps,
+  journalExportFieldsRef,
   onOpenPercentageLineStampRows,
   onOpenReportRowIds,
   onOpenWeldRowIds,
@@ -123,6 +128,7 @@ export function HomePageView({
     welderStamps,
     welderStampsRegistryProps,
     weldTableProps,
+    journalExportFieldsRef,
     onOpenPercentageLineStampRows,
     onOpenReportRowIds,
     onOpenWeldRowIds,
@@ -153,6 +159,7 @@ export function HomePageView({
 
       {reportTaskPanelsProps.dispatcherWorkspaceOpen ? (
         <DispatcherWorkspaceDialog
+          journalAppearance={reportTaskPanelsProps.activeReport === 'weldingJournal'}
           tasks={reportTaskPanelsProps.repeatedJointTasks}
           groups={reportTaskPanelsProps.repeatedJointTaskGroups}
           totalTaskCount={reportTaskPanelsProps.repeatedJointTaskCount ?? reportTaskPanelsProps.repeatedJointTasks.length}
@@ -197,6 +204,7 @@ export function HomePageView({
             : null
         }
       />
+      {documentPreviewProps ? <HistoryDocumentPreview {...documentPreviewProps} /> : null}
     </ReportWorkspace>
   )
 }
@@ -214,6 +222,7 @@ type ReportBackgroundProps = Pick<
   | 'welderStamps'
   | 'welderStampsRegistryProps'
   | 'weldTableProps'
+  | 'journalExportFieldsRef'
   | 'onOpenPercentageLineStampRows'
   | 'onOpenReportRowIds'
   | 'onOpenWeldRowIds'
@@ -241,6 +250,7 @@ function ReportBackground({
   welderStamps,
   welderStampsRegistryProps,
   weldTableProps,
+  journalExportFieldsRef,
   onOpenPercentageLineStampRows,
   onOpenReportRowIds,
   onOpenWeldRowIds,
@@ -268,8 +278,8 @@ function ReportBackground({
       <ReportPageHeader
         title={activeTitle}
         stickyLeft={stickyLeft}
-        fluid={activeReport === 'percentageLines'}
-        summary={!isStandaloneReport ? <ReportSummaryBar {...reportSummaryBarProps} embedded /> : undefined}
+        fluid={activeReport === 'percentageLines' || activeReport === 'weldingJournal'}
+        summary={!isStandaloneReport && activeReport !== 'weldingJournal' ? <ReportSummaryBar {...reportSummaryBarProps} embedded /> : undefined}
       >
         {activeReport === 'percentageLines' ? <div data-line-program-report-actions /> : null}
         {activeReport !== 'percentageLines' && activeReport !== 'documents' && activeReport !== 'settings' && activeReport !== 'userGuide' ? (
@@ -290,6 +300,8 @@ function ReportBackground({
         welderStampsRegistryProps={welderStampsRegistryProps}
         welderStampsHeader={activeReport === 'welderStamps' ? reportHeader : undefined}
         weldTableProps={weldTableProps}
+        journalExportFieldsRef={journalExportFieldsRef}
+        journalSummary={activeReport === 'weldingJournal' ? beforeSearch => <ReportSummaryBar {...reportSummaryBarProps} embedded beforeSearch={beforeSearch} /> : undefined}
         onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
         onOpenReportRowIds={onOpenReportRowIds}
         onOpenWeldRowIds={onOpenWeldRowIds}

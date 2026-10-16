@@ -48,6 +48,20 @@ function pressEscape() {
   })
 }
 
+it('defers Escape to document preview above a workflow manager', () => {
+  const options = createOptions({ isLnkResultManagerOpen: true })
+  const { unmount } = renderHook(() => useReportModalEscapeKey(options))
+  const preview = document.createElement('div')
+  preview.dataset.documentPreview = 'true'
+  document.body.appendChild(preview)
+  pressEscape()
+  expect(options.onCloseLnkResultManager).not.toHaveBeenCalled()
+  preview.remove()
+  pressEscape()
+  expect(options.onCloseLnkResultManager).toHaveBeenCalledOnce()
+  unmount()
+})
+
 describe('useReportModalEscapeKey', () => {
   afterEach(() => {
     setContextActionMenuOpen(false)

@@ -22,10 +22,6 @@ import {
   getSystemDocumentProfile,
   getSystemDocumentTypeForField,
 } from '@/lib/system-document-types'
-import {
-  getSystemDocumentTemplateIdForField,
-  type SystemDocumentTemplateId,
-} from '@/lib/system-document-template-types'
 import { memo } from 'react'
 import { cn } from '@/lib/utils'
 import {
@@ -133,7 +129,6 @@ export function getWeldTableBodyCellTooltip({
   canOpenJoint = false,
   canOpenJointOverview = false,
   canOpenWeldEditor,
-  availableSystemDocumentTypes,
 }: {
   row: WeldRow
   fieldKey: WeldFieldKey
@@ -146,7 +141,6 @@ export function getWeldTableBodyCellTooltip({
   canOpenJoint?: boolean
   canOpenJointOverview?: boolean
   canOpenWeldEditor: boolean
-  availableSystemDocumentTypes: ReadonlySet<SystemDocumentTemplateId>
 }) {
   const visibleValue = fieldKey === 'finalStatus' ? formatFinalStatusDisplay(row, displayValue) : displayValue
   const finalStatusErrorReason =
@@ -172,7 +166,6 @@ export function getWeldTableBodyCellTooltip({
     canOpenDocument,
     canOpenLnkRequest,
     canOpenLnkResult,
-    availableSystemDocumentTypes,
   })
   if (linkState.isLnkRequestCardLink) {
     return composeWeldTableCellTooltip(visibleValue, 'Открыть карточку этой заявки ЛНК')
@@ -195,7 +188,7 @@ export function getWeldTableBodyCellTooltip({
         isSystemDocumentLink: linkState.isSystemDocumentLink,
         isChecklistDocumentLink: linkState.isChecklistDocumentLink,
         isZniDocumentLink: linkState.isZniDocumentLink,
-      })}» в новой вкладке`,
+      })}» в окне предпросмотра`,
     )
   }
   if (fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY && canOpenWeldEditor) {
@@ -217,6 +210,7 @@ export function getWeldTableBodyCellTooltip({
 }
 
 type WeldTableBodyCellProps = {
+  presentation?: 'table' | 'grid'
   row: WeldRow
   field: WeldField
   displayValue: unknown
@@ -240,10 +234,10 @@ type WeldTableBodyCellProps = {
   onOpenJoint?: (row: WeldRow) => void
   onOpenJointOverview?: (row: WeldRow) => void
   controlBasisEditorEnabled?: boolean
-  availableSystemDocumentTypes?: ReadonlySet<SystemDocumentTemplateId>
 }
 
 export const WeldTableBodyCell = memo(function WeldTableBodyCell({
+  presentation = 'table',
   row,
   field,
   displayValue,
@@ -267,8 +261,8 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
   onOpenJoint,
   onOpenJointOverview,
   controlBasisEditorEnabled = false,
-  availableSystemDocumentTypes = new Set(),
 }: WeldTableBodyCellProps) {
+  const Cell = presentation === 'grid' ? 'div' : 'td'
   const visibleValue = field.key === 'finalStatus' ? formatFinalStatusDisplay(row, displayValue) : displayValue
   const fieldKey = field.key as WeldFieldKey
   const layeredWaitingLabel = getLayeredControlWaitingLabel(row, fieldKey)
@@ -295,7 +289,6 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
     canOpenDocument: Boolean(onOpenDocument),
     canOpenLnkRequest: Boolean(onOpenLnkRequest),
     canOpenLnkResult: Boolean(onOpenLnkResult),
-    availableSystemDocumentTypes,
   })
   const contentClass = `block h-[52px] w-full overflow-hidden border-0 bg-transparent px-3 py-2.5 text-center text-[13px] font-normal text-slate-700 ${
     isDocumentLink || isLnkRequestCardLink || isLnkResultCardLink || isControlBasisEditorLink || isJointHistoryLink
@@ -308,9 +301,9 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
   }`
 
   return (
-    <td
+    <Cell
       data-weld-field-key={field.key}
-      className={cn(bodyCellClass(
+      className={presentation === 'grid' ? 'journal-grid-value' : cn(bodyCellClass(
         field.key,
         !isEditableCell,
         isHighlightedRow,
@@ -333,7 +326,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
       )}
       style={isStickyCell ? getStickyWeldTableFieldStyle(field.key, stickyLeft, stickyIdentityLeadingWidth) : undefined}
       onClick={(event) => {
-        if (isDocumentLink || isLnkRequestCardLink || isLnkResultCardLink || isControlBasisEditorLink || isJointHistoryLink || !isEditableCell) return
+        if (presentation === 'grid' || isDocumentLink || isLnkRequestCardLink || isLnkResultCardLink || isControlBasisEditorLink || isJointHistoryLink || !isEditableCell) return
         event.stopPropagation()
         onEdit?.(row, field.key as WeldFieldKey)
       }}
@@ -427,7 +420,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
           <WeldTableValue field={field} value={visibleValue} isResultField={isResultField} />
         </div>
       )}
-    </td>
+    </Cell>
   )
 })
 
@@ -438,7 +431,6 @@ function getWeldTableCellLinkState({
   canOpenDocument,
   canOpenLnkRequest,
   canOpenLnkResult,
-  availableSystemDocumentTypes,
 }: {
   row: WeldRow
   fieldKey: WeldFieldKey
@@ -446,7 +438,6 @@ function getWeldTableCellLinkState({
   canOpenDocument: boolean
   canOpenLnkRequest: boolean
   canOpenLnkResult: boolean
-  availableSystemDocumentTypes: ReadonlySet<SystemDocumentTemplateId>
 }) {
   const hasVisibleValue = Boolean(visibleValue)
   const isJsrDocumentLink = fieldKey === 'jsrDocument' && Boolean(row.jsrDocumentId) && hasVisibleValue
@@ -470,16 +461,14 @@ function getWeldTableCellLinkState({
   const preHeatTreatmentField = getPreHeatTreatmentReportField(fieldKey)
   const defectDescriptionField = getLnkDefectDescriptionDescriptor(fieldKey)
   const systemDocumentType = hasVisibleValue ? getSystemDocumentTypeForField(fieldKey) : null
-  const systemDocumentTemplateId = systemDocumentType ? getSystemDocumentTemplateIdForField(fieldKey) : null
   const isLnkRequestCardLink =
-    hasVisibleValue && canOpenLnkRequest && (
+    hasVisibleValue && canOpenLnkRequest && !canOpenDocument && (
       LNK_REQUEST_NAME_FIELD_KEYS.has(fieldKey) || PRE_HEAT_TREATMENT_REQUEST_FIELD_KEYS.has(fieldKey)
     )
   const isSystemDocumentLink =
     canOpenDocument &&
     Boolean(systemDocumentType) &&
-    hasVisibleValue &&
-    Boolean(systemDocumentTemplateId && availableSystemDocumentTypes.has(systemDocumentTemplateId))
+    hasVisibleValue
   const isLnkResultCardLink =
     hasVisibleValue &&
     canOpenLnkResult &&
@@ -490,7 +479,7 @@ function getWeldTableCellLinkState({
         preHeatTreatmentField.valueKey !== 'requestName' &&
         preHeatTreatmentField.valueKey !== 'requestDate'),
     ) &&
-    !(isSystemDocumentLink && systemDocumentType === 'lnkConclusion')
+    systemDocumentType !== 'lnkConclusion'
   const isDocumentLink =
     isGeneratedDocumentLink ||
     (isSystemDocumentLink && !isLnkRequestCardLink && !isLnkResultCardLink)

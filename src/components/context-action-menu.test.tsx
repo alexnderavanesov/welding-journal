@@ -10,6 +10,34 @@ describe('ContextActionMenu', () => {
     vi.unstubAllGlobals()
   })
 
+  it.each(['', 'journal-context-menu'])('keeps the actual panel inside the viewport when wrapped text exceeds the estimate (style: %s)', panelClassName => {
+    vi.stubGlobal('innerWidth', 1600)
+    vi.stubGlobal('innerHeight', 1000)
+    // JSDOM has no layout. Model the larger actual content height produced by
+    // the two-line disabled reason in the real footer-selection menu.
+    const height = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.dataset.testid === 'context-action-menu' ? 316 : 0
+    })
+    try {
+      render(<ContextActionMenu panelClassName={panelClassName} onClose={vi.fn()} menu={{
+        x: 768, y: 990, heading: 'Выбрано стыков: 100', description: 'Линия OFFPAGE-MENU', items: [
+          { type: 'label', id: 'navigation-label', label: 'Переходы' },
+          { id: 'picture', label: 'Картина стыка', disabled: true,
+            description: 'Полная хронология, активные СП/ДЗ и следующий доступный шаг.', onSelect: vi.fn() },
+          { id: 'navigate', label: 'Перейти', onSelect: vi.fn() },
+          { type: 'separator', id: 'workflow-separator' },
+          { id: 'requests', label: 'Заявки', onSelect: vi.fn() },
+          { id: 'results', label: 'Результаты и заключения', onSelect: vi.fn() },
+          { id: 'extra', label: 'Дополнительно', onSelect: vi.fn() },
+        ],
+      }} />)
+      const panel = screen.getByTestId('context-action-menu')
+      const top = Number.parseFloat(panel.style.top)
+      expect(top).toBeGreaterThanOrEqual(8)
+      expect(top + panel.scrollHeight + 2).toBeLessThanOrEqual(1000 - 8)
+    } finally { height.mockRestore() }
+  })
+
   it('ignores unrelated search-input scrolling but closes when the row or page moves', () => {
     const onClose = vi.fn()
     render(<><input aria-label="Поиск" /><div data-testid="row-scroller"><button>Строка</button></div></>)
@@ -294,11 +322,17 @@ describe('ContextActionMenu', () => {
       />,
     )
 
+    // A real pointer enters before clicking; hover must not pre-toggle an inline submenu.
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Заявки' }))
     fireEvent.click(screen.getByRole('button', { name: 'Заявки' }))
 
+    expect(screen.getByRole('button', { name: 'Заявки' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('menu')).toHaveClass('relative')
     expect(screen.getByRole('menu')).not.toHaveClass('absolute')
     expect(screen.getByRole('button', { name: 'Новая заявка ПСТО' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Заявки' }))
+    expect(screen.getByRole('button', { name: 'Заявки' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('menu')).toHaveClass('hidden')
   })
 
   it('moves a submenu upward when it would cross the bottom viewport boundary', () => {

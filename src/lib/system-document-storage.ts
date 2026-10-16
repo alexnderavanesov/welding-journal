@@ -6,7 +6,6 @@ import {
 } from '@/lib/document-template-storage'
 import {
     downloadGeneratedDocument,
-    openGeneratedDocument,
     type GeneratedDocumentPreviewRecord,
 } from '@/lib/generated-document-storage'
 import { loadRequestConclusionSettings } from '@/lib/request-conclusion-settings'
@@ -17,12 +16,10 @@ import {
 import {
     buildSystemDocumentSummaries,
     createSystemDocumentTemplateContext,
-    getSystemDocumentReferenceForField,
     type SystemDocumentReference,
     type SystemDocumentSummary,
     type SystemDocumentType
 } from '@/lib/system-document-types'
-import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import {
     getSystemDocumentDateContext,
@@ -118,33 +115,6 @@ async function loadFirstSystemDocumentTemplate(
   return undefined
 }
 
-export function openSystemDocument({
-  reference,
-  summary,
-  welderStamps,
-  template,
-  previewWindow,
-}: {
-  reference: SystemDocumentReference
-  summary?: SystemDocumentSummary
-  welderStamps: WelderStampRecord[]
-  template?: StoredDocumentTemplate | null
-  previewWindow?: Window | null
-}) {
-  const previewRecord = createSystemDocumentPreviewRecord(reference)
-  return openGeneratedDocument(
-    previewRecord,
-    () =>
-      createCurrentSystemDocumentBlob({
-        reference,
-        summary,
-        welderStamps,
-        template,
-      }),
-    previewWindow,
-  )
-}
-
 export function downloadSystemDocument({
   reference,
   summary,
@@ -165,17 +135,6 @@ export function downloadSystemDocument({
       template,
     }),
   )
-}
-
-export function openSystemDocumentForRow(
-  row: WeldRow,
-  fieldKey: WeldFieldKey,
-  welderStamps: WelderStampRecord[],
-  previewWindow?: Window | null,
-) {
-  const reference = getSystemDocumentReferenceForField(row, fieldKey)
-  if (!reference) return
-  return openSystemDocument({ reference, welderStamps, previewWindow })
 }
 
 export function createSystemDocumentPreviewRecord(

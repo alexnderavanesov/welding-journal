@@ -1,3 +1,4 @@
+import { journalRow, editJournalJoint } from '../journal-grid'
 import { expect, test, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
@@ -38,7 +39,7 @@ async function seed() {
 
 async function openMove(page: Page, id: number) {
   await page.goto('/journal')
-  await page.locator(`tr[data-weld-row-id="${id}"]`).getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, id)
   const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
   const line = editor.getByText('Линия', { exact: true }).locator('..').getByRole('textbox')
   const checked = page.waitForResponse(response => response.url().includes('/_serverFn/') && rpcName(response.url()).startsWith('getPstoWeldLineMovePreview_'))
@@ -105,7 +106,7 @@ test('сохранённый брак до ТО после смены линии
   expect(await withE2eDatabase(async db => (await db.query(`select w.line,w.final_status,c.result,c.conclusion_name
     from weld_joints w join pre_heat_treatment_controls c on c.weld_joint_id=w.id where w.id=$1`, [id])).rows))
     .toEqual([{ line: targetLine, final_status: 'не годен', result: 'ремонт', conclusion_name: 'MO-PRE-C' }])
-  await page.locator(`tr[data-weld-row-id="${id}"]`).getByRole('button', { name: joint, exact: true }).click()
+  await journalRow(page, id).getByRole('button', { name: joint, exact: true }).click()
   const picture = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: `Картина стыка ${joint}`, exact: true }) })
   await expect(picture.getByText(/На текущей линии этап не предусмотрен/)).toBeVisible()
   await expect(picture.getByRole('region', { name: 'Продолжение цепочки стыка' }).getByRole('button', { name: `Создать ${joint}R1`, exact: true })).toBeVisible()

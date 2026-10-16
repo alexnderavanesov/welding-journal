@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { sql } from 'drizzle-orm'
 import { inheritDocumentSpecialists, type DocumentSpecialists } from '@/lib/document-specialists'
 import { lockLayeredControlDocumentsForWeldChange } from './layered-control-documents'
@@ -65,6 +64,9 @@ export function planCorrectedDocumentSpecialists(before: Document[], after: Docu
 
 export async function restoreCorrectedDocumentSpecialists(tx: SystemDocumentSequenceTransaction, captured: Awaited<ReturnType<typeof captureCorrectedDocumentSpecialists>>, confirmation?: string) {
   if (!captured.documents.length) return
+  // This helper is reachable from shared dialog imports in development. Load
+  // Node crypto only inside the server operation, never while opening a dialog.
+  const { createHash } = await import('node:crypto')
   const changes = planCorrectedDocumentSpecialists(captured.documents, await loadDocuments(tx, captured.rowIds))
   const conflicts = changes.filter(change => change.conflict)
   // Newly recreated IDs/timestamps vary after a rollback. Bind consent to the

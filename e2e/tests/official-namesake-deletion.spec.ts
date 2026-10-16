@@ -1,3 +1,4 @@
+import { journalRow, deleteJournalJoint } from '../journal-grid'
 import { expect, test, type Page } from '@playwright/test'
 import { inArray } from 'drizzle-orm'
 import { requireDb } from '@/db'
@@ -110,12 +111,12 @@ for (const result of ['ремонт', 'вырез'] as const) test(`удалит
 
   await page.goto('/journal')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
-  const remove = page.locator(`tr[data-weld-row-id="${removedId}"]`).getByRole('button', { name: 'Удалить', exact: true })
+  const remove = () => deleteJournalJoint(page, removedId)
   const confirm = page.locator('[data-confirm-action-dialog="true"]').locator('..')
-  await remove.click()
+  await remove()
   await confirm.getByRole('button', { name: 'Отмена', exact: true }).click()
   expect(await facts()).toEqual(original)
-  await remove.click()
+  await remove()
   await confirm.getByRole('button', { name: 'Удалить', exact: true }).click()
   await expect.poll(async () => (await facts()).map(row => row.id)).toEqual([rootId, sourceId, remainingId])
   expect(await facts()).toEqual(original.filter(row => row.id !== removedId))
@@ -152,7 +153,7 @@ for (const result of ['ремонт', 'вырез'] as const) test(`удалит
   expect(tasks.filter(task => ['rename', 'delete', 'duplicate-check', 'check'].includes(task.kind))).toEqual([])
   await page.goto('/journal')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
-  await page.locator(`tr[data-weld-row-id="${remainingId}"]`).getByRole('button', { name: joint, exact: true }).click()
+  await journalRow(page, remainingId).getByRole('button', { name: joint, exact: true }).click()
   const picture = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: `Картина стыка ${joint}`, exact: true }) })
   await picture.getByRole('region', { name: 'Продолжение цепочки стыка' }).getByRole('button', { name: `Создать ${target}`, exact: true }).click()
   await expect.poll(async () => (await facts()).map(row => row.joint)).toEqual(['S63', 'S63W1', joint, target])
@@ -170,7 +171,7 @@ for (const result of ['ремонт', 'вырез'] as const) test(`удалит
   expect((await facts()).map(row => row.joint)).toEqual(['S63', 'S63W1', joint, target])
   await expectNoChainCodes()
   const beforeBlockedDeletion = await facts()
-  await page.locator(`tr[data-weld-row-id="${remainingId}"]`).getByRole('button', { name: 'Удалить', exact: true }).click()
+  await deleteJournalJoint(page, remainingId)
   await confirm.getByRole('button', { name: 'Удалить', exact: true }).click()
   await expect(page.getByText(/Нельзя удалить предшественника: остаются продолжения цепочки/)).toContainText(target)
   expect(await facts()).toEqual(beforeBlockedDeletion)

@@ -10,6 +10,7 @@ import type {
 } from '@/lib/percentage-line-navigation'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import type { JournalExportFieldsRef } from '@/lib/welding-journal-export-fields'
 
 const StatisticsPage = lazy(() => import('@/components/statistics-page').then((module) => ({ default: module.StatisticsPage })))
 const LineProgramPage = lazy(() => import('@/components/line-program-page').then((module) => ({ default: module.LineProgramPage })))
@@ -19,6 +20,7 @@ const WelderStampsRegistry = lazy(() =>
 const DocumentsPage = lazy(() => import('@/components/documents-page').then((module) => ({ default: module.DocumentsPage })))
 const SettingsPage = lazy(() => import('@/components/settings-page').then((module) => ({ default: module.SettingsPage })))
 const UserGuidePage = lazy(() => import('@/components/user-guide-page').then((module) => ({ default: module.UserGuidePage })))
+const WeldingJournalGrid = lazy(() => import('@/components/welding-journal-grid').then((module) => ({ default: module.WeldingJournalGrid })))
 
 type ReportMainContentProps = {
   onCancelEarlyCoil?: (sourceId: number) => void
@@ -50,6 +52,8 @@ type ReportMainContentProps = {
   documentNavigationRequest?: DocumentNavigationRequest | null
   onDocumentNavigationRequestHandled?: (requestId: number) => void
   reportTaskPanels?: ReactNode
+  journalSummary?: (beforeSearch?: ReactNode) => ReactNode
+  journalExportFieldsRef?: JournalExportFieldsRef
 }
 
 export function ReportMainContent({
@@ -71,6 +75,8 @@ export function ReportMainContent({
   documentNavigationRequest,
   onDocumentNavigationRequestHandled,
   reportTaskPanels,
+  journalSummary,
+  journalExportFieldsRef,
 }: ReportMainContentProps) {
   if (activeReport === 'percentageLines') {
     return <Suspense fallback={<ReportSectionFallback label="Загружаем программу линий" />}>
@@ -131,6 +137,9 @@ export function ReportMainContent({
     )
   }
 
+  if (activeReport === 'weldingJournal') return <Suspense fallback={<ReportSectionFallback label="Загружаем сварочный журнал" />}>
+    <WeldingJournalGrid {...weldTableProps} reportTaskPanels={reportTaskPanels} renderSummary={journalSummary} journalExportFieldsRef={journalExportFieldsRef} />
+  </Suspense>
   return <WeldTable {...weldTableProps} reportTaskPanels={reportTaskPanels} />
 }
 

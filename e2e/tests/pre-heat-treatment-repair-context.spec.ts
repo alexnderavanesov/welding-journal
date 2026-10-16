@@ -1,3 +1,4 @@
+import { journalRow } from '../journal-grid'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 
@@ -23,10 +24,8 @@ test('негодный НК до ТО неофициального стыка з
     expect(calculateFinalStatusInRows(continuation, [continuation], context)).toBe('ожидает ремонт')
     await page.goto('/journal')
     await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
-    await expect(page.getByRole('button', { name: 'Выбрать стык F99', exact: true })).toHaveCount(2)
-    await page.getByRole('button', { name: 'Наборы', exact: true }).click()
-    await page.getByRole('button', { name: /^Компактно/ }).click()
-    const continuationRow = page.locator(`tr[data-weld-row-id="${ids[1]}"]`)
+    await expect(page.locator('[data-welding-journal-grid]').getByRole('button', { name: 'F99', exact: true })).toHaveCount(2)
+    const continuationRow = journalRow(page, ids[1])
     await expect(continuationRow.getByRole('button', { name: 'ожидает ремонт', exact: true })).toBeVisible()
   } finally {
     await page.close()

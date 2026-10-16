@@ -1,3 +1,4 @@
+import { journalRow } from '../journal-grid'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
@@ -50,7 +51,7 @@ test('ремонт катушки наследует её УЗК, но не РК
   const before = await history(), errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/journal')
-  await page.locator(`tr[data-weld-row-id="${ids.find(row => row.joint === joint)!.id}"]`).getByRole('button', { name: joint, exact: true }).click()
+  await journalRow(page, ids.find(row => row.joint === joint)!.id).getByRole('button', { name: joint, exact: true }).click()
   const picture = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: `Картина стыка ${joint}`, exact: true }) })
   await picture.getByRole('region', { name: 'Продолжение цепочки стыка' }).getByRole('button', { name: `Создать ${joint}R1`, exact: true }).click()
   const repair = () => withE2eDatabase(async db => (await db.query(`select id,has_vik,has_rk,has_uzk,has_pvk,uzk_request,uzk_conclusion from weld_joints where project_title=$1 and joint=$2`, [project, `${joint}R1`])).rows[0])

@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
 import { JOINT_CHAIN_FILTER_KEY } from '@/lib/report-hidden-filters'
@@ -18,6 +18,18 @@ const sections = [
 
 describe('useWeldReportViewState', () => {
   beforeEach(() => window.localStorage.clear())
+  afterEach(() => vi.restoreAllMocks())
+
+  it('keeps live visibility and sections usable when browser storage is unavailable', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Quota exceeded', 'QuotaExceededError') })
+    const { result } = renderHook(() => useWeldReportViewState({
+      storageKey: 'weldingJournal', sections, alwaysVisibleFieldKeys: new Set(), defaultCollapsedSections: new Set(),
+      columnFilters: {}, sort: null, onColumnFiltersChange: vi.fn(), onSortChange: vi.fn(),
+    }))
+    act(() => { result.current.toggleField('weldDate'); result.current.toggleSection('Материалы') })
+    expect(result.current.hiddenFieldKeys).toEqual(new Set(['weldDate']))
+    expect(result.current.collapsedSections).toEqual(new Set(['Материалы']))
+  })
 
   it('saves and restores columns, filters, sorting and expanded sections as one browser view', () => {
     const onColumnFiltersChange = vi.fn()

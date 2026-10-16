@@ -2,10 +2,9 @@ import { useCallback, useState, type Dispatch, type SetStateAction } from 'react
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DocumentGenerationRequest } from '@/lib/document-generation'
 import type { DocumentNavigationRequest } from '@/lib/document-navigation'
-import {
-  getGeneratedDocumentProfile,
-  isGeneratedDocumentFieldKey,
-} from '@/lib/generated-document-types'
+import { getGeneratedDocumentProfile } from '@/lib/generated-document-types'
+import { createRowDocumentPreviewRequest } from '@/lib/row-document-preview'
+import type { HistoryDocumentPreviewRequest } from '@/components/history-document-preview'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
@@ -22,6 +21,8 @@ export function useHomeDocumentController({
   setShowMenuOpen,
   welderStamps,
 }: UseHomeDocumentControllerOptions) {
+  const [documentPreviewRequest, setDocumentPreviewRequest] = useState<HistoryDocumentPreviewRequest | null>(null)
+  const closeDocumentPreview = useCallback(() => setDocumentPreviewRequest(null), [])
   const [documentGenerationRequest, setDocumentGenerationRequest] =
     useState<DocumentGenerationRequest | null>(null)
   const [documentNavigationRequest, setDocumentNavigationRequest] =
@@ -52,19 +53,12 @@ export function useHomeDocumentController({
   }, [])
 
   const openReportDocument = useCallback((row: WeldRow, fieldKey: WeldFieldKey) => {
-    const previewWindow = openDocumentPreviewWindow()
-    if (!previewWindow) return
-    const openDocument = isGeneratedDocumentFieldKey(fieldKey)
-      ? import('@/lib/welding-journal-document').then(({ openGeneratedDocumentForRow }) =>
-          openGeneratedDocumentForRow(row, fieldKey, welderStamps, previewWindow),
-        )
-      : import('@/lib/system-document-storage').then(({ openSystemDocumentForRow }) =>
-          openSystemDocumentForRow(row, fieldKey, welderStamps, previewWindow),
-        )
-    void openDocument.catch((reason) => writeDocumentPreviewImportError(previewWindow, reason))
+    setDocumentPreviewRequest(createRowDocumentPreviewRequest(row, fieldKey, welderStamps))
   }, [welderStamps])
 
   return {
+    documentPreviewRequest,
+    closeDocumentPreview,
     documentGenerationRequest,
     setDocumentGenerationRequest,
     generateDocumentForRows,
@@ -74,23 +68,4 @@ export function useHomeDocumentController({
     setDocumentNavigationRequest,
     handleDocumentNavigationRequest,
   }
-}
-
-function openDocumentPreviewWindow() {
-  const previewWindow = window.open('', '_blank')
-  if (!previewWindow) {
-    window.alert('Браузер заблокировал открытие новой вкладки.')
-    return null
-  }
-  previewWindow.opener = null
-  previewWindow.document.title = 'Подготовка документа'
-  previewWindow.document.body.textContent = 'Подготавливаем документ...'
-  return previewWindow
-}
-
-function writeDocumentPreviewImportError(previewWindow: Window, reason: unknown) {
-  if (previewWindow.closed) return
-  previewWindow.document.title = 'Не удалось открыть документ'
-  previewWindow.document.body.textContent =
-    reason instanceof Error ? reason.message : 'Не удалось загрузить модуль документа.'
 }

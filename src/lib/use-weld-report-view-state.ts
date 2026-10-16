@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { isHiddenReportFilterKey } from '@/lib/report-hidden-filters'
+import { REPORT_QUICK_SEARCH_FILTER_KEY } from '@/lib/report-quick-search'
 import { isVirtualWeldField, type WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldTableSection } from '@/lib/weld-table-sections'
 import {
@@ -170,7 +171,7 @@ export function useWeldReportViewState({
     const hiddenFieldKeys = savedView.snapshot.hiddenFieldKeys.filter((fieldKey) => allowedFieldKeys.has(fieldKey))
     const columnFilters = Object.fromEntries(
       Object.entries(savedView.snapshot.columnFilters)
-        .filter(([fieldKey]) => allowedFieldKeys.has(fieldKey as WeldFieldKey) || isHiddenReportFilterKey(fieldKey)),
+        .filter(([fieldKey]) => fieldKey === REPORT_QUICK_SEARCH_FILTER_KEY || allowedFieldKeys.has(fieldKey as WeldFieldKey) || isHiddenReportFilterKey(fieldKey)),
     )
     const nextSort = savedView.snapshot.sort && allowedSortFieldKeys.has(savedView.snapshot.sort.fieldKey)
       ? savedView.snapshot.sort

@@ -22,6 +22,7 @@ import type { WeldInput } from '@/lib/weld-fields'
 import { useControlProcessSettings } from '@/lib/control-process-settings'
 import { useReportPreview } from '@/lib/use-report-preview'
 import type { ReportPreviewContent } from '@/lib/tabular-report'
+import type { JournalExportFieldsRef } from '@/lib/welding-journal-export-fields'
 
 export type LnkOutputRowsKind = 'current' | 'waitingNk' | 'waitingRequest' | 'conclusions'
 export type PstoOutputRowsKind = 'current' | 'waitingRequest' | 'results'
@@ -39,6 +40,7 @@ type UseReportOutputActionsParams = {
   activeTitle: string
   outputContext?: string
   currentRowsReady?: boolean
+  journalExportFieldsRef: JournalExportFieldsRef
   loadLnkRows: (kind: LnkOutputRowsKind) => Promise<ReportRow[]>
   loadPstoRows: (kind: PstoOutputRowsKind) => Promise<ReportRow[]>
   loadWeldingJournalRows: (kind: WeldingJournalOutputRowsKind) => Promise<WeldInput[]>
@@ -53,6 +55,7 @@ export function useReportOutputActions({
   activeTitle,
   outputContext,
   currentRowsReady = true,
+  journalExportFieldsRef,
   loadLnkRows,
   loadPstoRows,
   loadWeldingJournalRows,
@@ -138,13 +141,22 @@ export function useReportOutputActions({
 
     async function openWeldingJournalCurrentReport() {
       if (!canOpenCurrentReport()) return
+      const fields = journalExportFieldsRef.current?.()
+      if (!fields) {
+        setMessage('Дождитесь загрузки столбцов сварочного журнала.')
+        return
+      }
+      if (!fields.length) {
+        setMessage('В текущем виде нет столбцов для отчёта. Выберите поля в «Настроить вид → Столбцы».')
+        return
+      }
       setIsWeldingJournalShowMenuOpen(false)
       await openLoadedReport(
         'сварочного журнала',
         () => loadWeldingJournalRows('current'),
         (rows) => buildWeldingJournalCurrentReport(
           rows,
-          getReportExportOptions(activeReport, activeTitle, controlProcessSettings).fields,
+          fields,
         ),
       )
     }
@@ -200,6 +212,7 @@ export function useReportOutputActions({
     activeReport,
     activeTitle,
     currentRowsReady,
+    journalExportFieldsRef,
     controlProcessSettings,
     loadLnkRows,
     loadPstoRows,

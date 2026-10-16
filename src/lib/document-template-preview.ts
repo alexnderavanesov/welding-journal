@@ -85,7 +85,7 @@ async function readDocumentWorkbookPreview(
         ? options.preferredSheetName
         : workbook.SheetNames[0]
   const worksheet = workbook.Sheets[sheetName]
-  if (!worksheet) throw new Error('В шаблоне не найден выбранный лист.')
+  if (!worksheet) throw new Error('Не удалось прочитать лист Excel для предпросмотра. Проверьте файл шаблона и загрузите его заново в «Настройки» → «Документы».')
   const xmlStylesByCell = getPreviewWorkbookXmlStyles(
     fileData,
     workbook.SheetNames.indexOf(sheetName),

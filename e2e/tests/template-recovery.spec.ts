@@ -145,7 +145,7 @@ test('metadata and file readers wait for a concurrent replacement instead of fal
       ]).then(result => { completed = true; return result })
       await expect.poll(() => withE2eDatabase(async observer => Number((await observer.query("select count(*) from pg_stat_activity where datname=current_database() and wait_event='advisory' and query like '%pg_advisory_xact_lock_shared%'")).rows[0].count))).toBe(2)
       expect(completed).toBe(false)
-      await store.set(key, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))
+      await store.set(key, new Uint8Array(bytes).buffer)
       await writer.query("update document_templates set blob_key=$1 where id='weldingJournal'", [key])
       await writer.query('commit')
     } finally { await writer.query('rollback') }

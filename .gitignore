@@ -8,6 +8,8 @@ dist/
 backups/
 data/
 outputs/
+## Standalone local UI prototypes are not part of the application.
+/prototypes/
 .pnpm-store/
 playwright-report/
 test-results/

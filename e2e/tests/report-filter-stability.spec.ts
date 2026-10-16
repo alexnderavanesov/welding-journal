@@ -43,12 +43,15 @@ for (const [path, pageRpc] of [
   try {
     await page.goto(path!)
     await page.waitForLoadState('networkidle')
-    await page.getByRole('button', { name: 'Линия. Открыть фильтр', exact: true }).click()
+    const grid = path === '/journal'
+    if (grid) await page.locator('.ag-header-cell[col-id="line"] .ag-header-cell-filter-button').click()
+    else await page.getByRole('button', { name: 'Линия. Открыть фильтр', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Фильтр: Линия' })
-    const search = dialog.getByPlaceholder('Найти значение')
-    await expect(dialog.getByRole('button', { name: /FILTER-01/ })).toBeVisible()
+    const search = grid ? dialog.getByLabel('Найти значение фильтра') : dialog.getByPlaceholder('Найти значение')
+    const choice = () => grid ? dialog.getByRole('checkbox', { name: /FILTER-01/ }) : dialog.getByRole('button', { name: /FILTER-01/ })
+    await expect(choice()).toBeVisible()
     await search.fill('FILTER-')
-    const list = dialog.locator('.max-h-60')
+    const list = dialog.locator(grid ? '.journal-filter-values' : '.max-h-60')
     await list.evaluate(async (element) => {
       element.scrollTop = 210
       // The captured scroll event repositions the anchored menu asynchronously.
@@ -61,7 +64,7 @@ for (const [path, pageRpc] of [
     const initialPageRequests = count(pageRpc!)
     blockNextPage = true
 
-    await dialog.getByRole('button', { name: 'Выбрать все', exact: true }).click()
+    await dialog.getByRole('button', { name: grid ? 'Выбрать найденные' : 'Выбрать все', exact: true }).click()
     await expect.poll(() => pageBlocked).toBe(true)
     await expect(search).toBeFocused()
     await expect(search).toHaveValue('FILTER-')
@@ -74,16 +77,18 @@ for (const [path, pageRpc] of [
     releasePage()
     await page.waitForLoadState('networkidle')
     await expect(search).toBeFocused()
-    await expect(dialog.getByRole('button', { name: /FILTER-01/ })).toHaveAttribute('aria-pressed', 'true')
+    if (grid) await expect(choice()).toBeChecked()
+    else await expect(choice()).toHaveAttribute('aria-pressed', 'true')
     expect(count(pageRpc!)).toBe(initialPageRequests + 1)
     expect(count('listWeldColumnFilterOptions')).toBe(initialOptionsRequests)
 
-    await dialog.getByRole('button', { name: 'Очистить', exact: true }).click()
+    await dialog.getByRole('button', { name: grid ? 'Сбросить фильтр' : 'Очистить', exact: true }).click()
     await page.waitForLoadState('networkidle')
     await expect(search).toBeFocused()
     await expect(search).toHaveValue('')
     await expect(dialog).toBeVisible()
-    await expect(dialog.getByRole('button', { name: /FILTER-01/ })).toHaveAttribute('aria-pressed', 'false')
+    if (grid) await expect(choice()).not.toBeChecked()
+    else await expect(choice()).toHaveAttribute('aria-pressed', 'false')
     expect(await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }))).toEqual({ x: initial.x, y: initial.y })
     expect(count('listWeldColumnFilterOptions')).toBe(initialOptionsRequests)
     expect(documentLoads).toBe(1)

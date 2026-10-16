@@ -17,6 +17,7 @@ test.beforeEach(async () => {
 })
 
 function jointRow(page: Page, joint = 'F1') {
+  if (new URL(page.url()).pathname === '/journal') return page.locator('.ag-grid-scrolling-rows .ag-row').filter({ has: page.getByRole('button', { name: joint, exact: true }) })
   return page.locator('tr').filter({ has: page.getByRole('button', { name: joint, exact: true }) })
     .filter({ has: page.getByText('E2E проект', { exact: true }) })
 }
@@ -44,7 +45,7 @@ async function openRowMenu(page: Page) {
   // Cross-report navigation already filters the target joint. Do not launch
   // another debounced search while the report restores its navigation context.
   await page.waitForLoadState('networkidle')
-  const cell = jointRow(page).getByText('E2E проект', { exact: true })
+  const cell = jointRow(page).getByRole('button', { name: 'F1', exact: true })
   // Use a visible leading cell: the row menu is shared by every column.
   // Finish scrolling before opening a menu that intentionally closes on scroll.
   await cell.scrollIntoViewIfNeeded()
@@ -116,11 +117,11 @@ test('групповые переходы сохраняют счетчики и
   await page.goto('/journal')
   await findProject(page)
   await expect(jointRow(page, 'F2')).toBeVisible()
-  await expect(jointRow(page, 'F1').getByText('E2E проект', { exact: true })).toBeVisible()
+  await expect(jointRow(page, 'F1')).toBeVisible()
   await page.waitForLoadState('networkidle')
   // Only this scenario's two joints: other suites also use E2E-L* lines.
   for (const joint of ['F1', 'F2']) {
-    await jointRow(page, joint).getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).click()
+    await jointRow(page, joint).getByRole('checkbox').check()
   }
   await openRowMenu(page)
   await page.getByRole('button', { name: 'Перейти', exact: true }).click()

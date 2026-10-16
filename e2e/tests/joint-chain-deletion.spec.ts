@@ -1,3 +1,4 @@
+import { deleteJournalJoint } from '../journal-grid'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { createWeldJoints, deleteWeldJoint, deleteWeldJoints } from '@/server/weld-mutations'
@@ -113,16 +114,16 @@ test('карточка удаления объясняет отказ; отме�
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/journal')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
-  await page.locator(`tr[data-weld-row-id="${rows[0].id}"]`).getByRole('button', { name: 'Удалить', exact: true }).click()
+  await deleteJournalJoint(page, rows[0].id)
   const confirmation = page.locator('[data-confirm-action-dialog="true"]').locator('..')
   await confirmation.getByRole('button', { name: 'Отмена', exact: true }).click()
   expect(await snapshot()).toEqual(before)
-  await page.locator(`tr[data-weld-row-id="${rows[0].id}"]`).getByRole('button', { name: 'Удалить', exact: true }).click()
+  await deleteJournalJoint(page, rows[0].id)
   await confirmation.getByRole('button', { name: 'Удалить', exact: true }).click()
   await expect(page.getByText(/Нельзя удалить предшественника: остаются продолжения цепочки/)).toBeVisible()
   expect(await snapshot()).toEqual(before)
   if (await confirmation.isVisible()) await confirmation.getByRole('button', { name: 'Отмена', exact: true }).click()
-  await page.locator(`tr[data-weld-row-id="${rows[2].id}"]`).getByRole('button', { name: 'Удалить', exact: true }).click()
+  await deleteJournalJoint(page, rows[2].id)
   await confirmation.getByRole('button', { name: 'Удалить', exact: true }).click()
   await expect.poll(async () => (await snapshot()).map(r => r.joint)).toEqual(['S1', 'S1R1', 'F9'])
   expect(errors).toEqual([])

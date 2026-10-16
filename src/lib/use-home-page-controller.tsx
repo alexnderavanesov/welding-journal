@@ -88,6 +88,7 @@ import { useSecurityGuard } from '@/lib/security-context'
 import { createDispatcherTaskCardHandlers } from '@/lib/dispatcher-task-card-props'
 import { createReportRowActionHandlers } from '@/lib/report-row-action-handlers'
 import { createWeldTableProps } from '@/lib/weld-table-props'
+import type { JournalExportFieldsRef } from '@/lib/welding-journal-export-fields'
 import { createWelderStampsRegistryProps } from '@/lib/welder-stamps-registry-props'
 import { createReportHeaderActionsProps } from '@/lib/report-header-actions-props'
 import { createReportSummaryBarProps } from '@/lib/report-summary-props'
@@ -159,6 +160,7 @@ import { splitReportQuickSearch } from '@/lib/report-quick-search'
 import { buildHeatTreatmentReportRows, buildLnkReportRows, sumAcceptedWdi } from '@/lib/report-row-utils'
 import type { ReportImportRecord } from '@/lib/report-import-preview'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
+import { captureWeldRowDeletionTargets } from '@/lib/weld-row-deletion-targets'
 import {
 	type FinalStatusRowsContext,
 	type WeldFieldKey,
@@ -743,6 +745,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     generateDocumentForRows,
     handleDocumentGenerationRequest,
     openReportDocument,
+    documentPreviewRequest,
+    closeDocumentPreview,
     documentNavigationRequest,
     setDocumentNavigationRequest,
     handleDocumentNavigationRequest,
@@ -2087,6 +2091,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     loadLnkOutputRows,
     loadWeldingJournalPageRows,
   ])
+  const journalExportFieldsRef = useRef<JournalExportFieldsRef['current']>(null)
   const {
     reportPreviewProps,
     openLnkConclusionsReport,
@@ -2108,6 +2113,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     activeTitle,
     outputContext: `${reportOutputContext}:${reportOutputGeneration}`,
     currentRowsReady: weldPageQuery.rowsReady,
+    journalExportFieldsRef,
     loadLnkRows: loadLnkOutputRows,
     loadPstoRows: loadPstoOutputRows,
     loadWeldingJournalRows: loadWeldingJournalOutputRows,
@@ -2461,31 +2467,36 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     })
   }
 
-  async function deleteWeldRowById(id: number) {
-    if (!(await requireDeletePassword('удаление стыка'))) return
-    const row = tableActionRows.find((candidate) => candidate.id === id)
-    const version = String(row?.rowVersion ?? '').trim()
-    if (!row || !version) {
+  async function deleteWeldRowById(id: number, sourceRows: readonly WeldRow[] = tableActionRows) {
+    const row = sourceRows.find(candidate => candidate.id === id)
+    const target = row && captureWeldRowDeletionTargets([id], [row])?.[0]
+    if (!target) {
       setMessage('Открытые данные устарели. Обновите отчет и повторите удаление.')
       return
     }
+    if (!(await requireDeletePassword('удаление стыка'))) return
     const confirmed = await confirmAction({
       title: 'Удалить стык',
       itemName: row ? `${String(row.line ?? '-')} · ${String(row.joint ?? '-')}` : 'Запись стыка',
       description: 'Запись будет удалена из сварочного журнала.',
       warning: 'Связанные данные по этому стыку могут стать неактуальными. Это действие нельзя отменить.',
     })
-    if (confirmed) deleteMutation.mutate({ id, version })
+    if (confirmed) deleteMutation.mutate(target)
   }
 
-  async function deleteWeldRowsByIds(ids: number[]) {
+  async function deleteWeldRowsByIds(ids: number[], sourceRows: readonly WeldRow[] = tableActionRows) {
     const rowIds = Array.from(new Set(ids)).filter(Number.isFinite)
     if (rowIds.length === 0) return
     if (rowIds.length === 1) {
-      await deleteWeldRowById(rowIds[0])
+      await deleteWeldRowById(rowIds[0], sourceRows)
       return
     }
 
+    const targets = captureWeldRowDeletionTargets(rowIds, sourceRows)
+    if (!targets) {
+      setMessage('Открытые данные устарели. Обновите отчет и повторите удаление.')
+      return
+    }
     if (!(await requireDeletePassword('удаление выбранных стыков'))) return
     const confirmed = await confirmAction({
       title: 'Удалить выбранные стыки',
@@ -2494,16 +2505,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       warning: 'Связанные данные по этим стыкам могут стать неактуальными. Это действие нельзя отменить.',
     })
     if (!confirmed) return
-
-    const rowsById = new Map(tableActionRows.map((row) => [row.id, row]))
-    const targets = rowIds.map((id) => ({
-      id,
-      version: String(rowsById.get(id)?.rowVersion ?? '').trim(),
-    }))
-    if (targets.some((target) => !target.version)) {
-      setMessage('Открытые данные устарели. Обновите отчет и повторите удаление.')
-      return
-    }
 
     try {
       await deleteManyMutation.mutateAsync(targets)
@@ -3095,7 +3096,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
           label: isGroupAction ? `Удалить выбранные (${contextRows.length})` : 'Удалить стык',
           icon: Trash2,
           danger: true,
-          onSelect: () => deleteWeldRowsByIds(contextRows.map((selectedRow) => selectedRow.id)),
+          onSelect: () => deleteWeldRowsByIds(contextRows.map((selectedRow) => selectedRow.id), contextRows),
         },
       )
       return items
@@ -3466,6 +3467,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     activeReport,
     rowsReady: !isServerPagedTab || weldPageQuery.rowsReady,
     queryIdentity: `${reportOutputContext}:${reportOutputGeneration}`,
+    loadContextMenuRows: ids => listWeldJointRowsByIds({ data: { ids } }),
+    onContextMenuError: setMessage,
     rows: isServerPagedTab ? pagedReportRows : (visibleRows as WeldRow[]),
     actionRows: tableActionRows,
     duplicateRows: tableActionRows,
@@ -3533,7 +3536,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     },
     onOpenJoint: openPstoHistoryFromDialog,
     onOpenJointOverview: (row) => setChainRecord(row),
-    availableSystemDocumentTypes,
     onOpenDuplicateControl: openDuplicateControlModalForRow,
     rowActionHandlers,
     getContextMenuItems: getReportContextMenuItems,
@@ -5416,7 +5418,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     chainActualityDialogProps: chainActuality == null ? null : { ...chainActuality, onClose: () => setChainActuality(null), onSaved: setMessage },
     activeTitle,
     reportPreviewProps,
-    freezeReportBackground: isReportModalOpen || coilCorrectionTarget !== null || chainActuality !== null || Boolean(documentGenerationRequest) || Boolean(reportPreviewProps),
+    documentPreviewProps: documentPreviewRequest ? { request: documentPreviewRequest, onClose: closeDocumentPreview } : null,
+    freezeReportBackground: isReportModalOpen || coilCorrectionTarget !== null || chainActuality !== null || Boolean(documentGenerationRequest) || Boolean(reportPreviewProps) || Boolean(documentPreviewRequest),
     navCollapsed,
     registerMinWidth,
     stickyLeft,
@@ -5437,6 +5440,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     welderStamps,
     welderStampsRegistryProps: { ...welderStampsRegistryProps, onTasksVisibilityChange: setAreWelderTasksVisible },
     weldTableProps,
+    journalExportFieldsRef,
     onOpenPercentageLineStampRows: openPercentageLineStampRows,
     onOpenReportRowIds: openReportRowIds,
     onOpenWeldRowIds: openWeldRowIds,

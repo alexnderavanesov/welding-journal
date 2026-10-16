@@ -28,11 +28,7 @@ import {
   syncSystemDocumentsForWeldChangesInTransaction,
 } from '@/server/system-document-index'
 import type { SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
-import {
-  deleteEmptyGeneratedDocuments,
-  getDispatcherDirtyScopes,
-  insertWeldJointsInBatches,
-} from '@/server/weld-mutations'
+import { getDispatcherDirtyScopes } from '@/server/dispatcher-task-index-dirty'
 import {
   loadServerWeldValidationContext,
   prepareServerWeldRecords,
@@ -145,6 +141,7 @@ export async function createEarlyCoilDecision({
       context: systemContext,
       allowSystemJointNames: true,
     })
+    const { insertWeldJointsInBatches, deleteEmptyGeneratedDocuments } = await import('@/server/weld-mutations')
     const createdRows = await insertWeldJointsInBatches(tx, drafts, processSettings)
     await syncSystemDocumentsForWeldChangesInTransaction(tx, createdRows, previousRows)
     if (deletedRowIds.length > 0) await deleteEmptyGeneratedDocuments(tx)
@@ -263,6 +260,7 @@ export async function revokeEarlyCoilDecisionInTransaction(
     })
     await tx.delete(weldJoints).where(inArray(weldJoints.id, deletedRowIds))
     await syncSystemDocumentsForWeldChangesInTransaction(tx, [], previousRows)
+    const { deleteEmptyGeneratedDocuments } = await import('@/server/weld-mutations')
     await deleteEmptyGeneratedDocuments(tx)
   }
   await tx.delete(dispatcherAcceptedWarnings).where(eq(dispatcherAcceptedWarnings.key, key))

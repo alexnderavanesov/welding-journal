@@ -6,6 +6,7 @@ import {
   type WeldFieldKey,
 } from '@/lib/weld-fields'
 import { isHiddenReportFilterKey } from '@/lib/report-hidden-filters'
+import { REPORT_QUICK_SEARCH_FILTER_KEY } from '@/lib/report-quick-search'
 import type { WeldTableSection } from '@/lib/weld-table-sections'
 import type { WeldSort } from '@/server/weld-contracts'
 
@@ -93,7 +94,8 @@ export function readWeldReportViewStorage(
 
 export function writeWeldReportViewStorage(storageKey: string, value: WeldReportViewStorage) {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(getStorageKey(storageKey), JSON.stringify(value))
+  try { window.localStorage.setItem(getStorageKey(storageKey), JSON.stringify(value)) }
+  catch { /* Keep the current view usable in memory when browser storage is unavailable. */ }
 }
 
 export function createSavedWeldReportView(
@@ -138,7 +140,7 @@ function normalizeSnapshot(value: WeldReportViewSnapshot): WeldReportViewSnapsho
     collapsedSections: normalizeStrings(value.collapsedSections),
     columnFilters: Object.fromEntries(
       Object.entries(columnFilters)
-        .filter(([fieldKey]) => isKnownWeldFieldKey(fieldKey) || isHiddenReportFilterKey(fieldKey)),
+        .filter(([fieldKey]) => fieldKey === REPORT_QUICK_SEARCH_FILTER_KEY || isKnownWeldFieldKey(fieldKey) || isHiddenReportFilterKey(fieldKey)),
     ),
     sort: value.sort && sortField && !isVirtualWeldField(sortField) &&
         (value.sort.direction === 'asc' || value.sort.direction === 'desc')

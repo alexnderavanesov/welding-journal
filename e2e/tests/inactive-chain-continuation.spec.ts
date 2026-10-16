@@ -1,3 +1,4 @@
+import { journalRow, editJournalJoint } from '../journal-grid'
 import { expect, test, type Page, type Request } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
@@ -37,7 +38,7 @@ async function seed(withUnofficialRepair = false) {
 }
 
 async function openPicture(page: Page, id: number) {
-  await page.locator(`tr[data-weld-row-id="${id}"]`).getByRole('button', { name: joint, exact: true }).click()
+  await journalRow(page, id).getByRole('button', { name: joint, exact: true }).click()
   return page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: `Картина стыка ${joint}`, exact: true }) })
 }
 
@@ -50,7 +51,7 @@ test('карточка → неактуальность → нет требов�
   await expect(picture.getByRole('region', { name: 'Продолжение цепочки стыка' }).getByRole('button', { name: `Создать ${joint}R1`, exact: true })).toBeVisible()
   await picture.getByRole('button', { name: 'Закрыть', exact: true }).click()
   for (const inactive of [true, false]) {
-    await page.locator(`tr[data-weld-row-id="${id}"]`).getByRole('button', { name: 'Редактировать', exact: true }).click()
+    await editJournalJoint(page, id)
     const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
     await editor.getByText('Актуальность по ИЗМу', { exact: true }).locator('..').getByRole('combobox').selectOption(inactive ? 'не актуален' : '')
     await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
@@ -295,7 +296,7 @@ for (const recovery of ['вернуть ремонт', 'исключить ис�
   if (active) {
     await expect(picture.getByRole('region', { name: 'Актуальность по ИЗМу' })).toHaveCount(0)
     await picture.getByRole('button', { name: 'Закрыть', exact: true }).click()
-    await page.locator(`tr[data-weld-row-id="${source.id}"]`).getByRole('button', { name: 'Редактировать', exact: true }).click()
+    await editJournalJoint(page, source.id)
     const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
     await editor.getByText('Актуальность по ИЗМу', { exact: true }).locator('..').getByRole('combobox').selectOption('не актуален')
     await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()

@@ -9,6 +9,7 @@ import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dir
 import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
 import { attachDispatcherTaskCodesToPage } from '@/server/weld-read'
 import { withE2eDatabase } from '../database'
+import { revealJournalColumn } from '../journal-grid'
 
 for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}: единые требования, сохранность ПСТО/ТВМТ и довнесение до ТО`, async ({ page }) => {
   test.setTimeout(120_000)
@@ -18,8 +19,9 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
   let previousSetting: { value: string; updated_at: Date } | undefined
   let settingsChanged = false
   const errors: string[] = []
+  const consoleDiagnostics: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
-  page.on('console', (message) => { if (['error', 'warning'].includes(message.type())) errors.push(message.text()) })
+  page.on('console', (message) => { if (['error', 'warning'].includes(message.type())) consoleDiagnostics.push(message.text()) })
   page.on('response', (response) => { if (response.status() >= 400) errors.push(`HTTP ${response.status()} ${response.url()}`) })
   try {
     await withE2eDatabase(async (client) => {
@@ -67,6 +69,7 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
     expect(before.documents.length).toBeGreaterThan(0)
 
     await page.goto(report)
+    if (report === '/journal') await revealJournalColumn(page, 'jointNextAction')
     await page.getByRole('button', { name: `Открыть картину стыка ${joint}`, exact: true }).click()
     const pictureHeading = page.getByRole('heading', { name: `Картина стыка ${joint}`, exact: true })
     await expect(pictureHeading).toBeVisible()
@@ -164,6 +167,19 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
     await expectFinalStatus(id, 'годен')
     expect(await readPreservedState(id)).toEqual(before)
     expect(errors).toEqual([])
+    // The 16 Oct handoff explicitly allows this local audit without the new
+    // license key. Accept exactly its complete banner, never other diagnostics.
+    const missingLocalLicense = report === '/journal' && consoleDiagnostics.some(message => message.includes('License Key Not Found'))
+    expect(consoleDiagnostics).toEqual(missingLocalLicense ? [
+      expect.stringMatching(/^\*+$/),
+      expect.stringMatching(/^\*+ AG Grid Enterprise License \*+$/),
+      expect.stringMatching(/^\*+ License Key Not Found \*+$/),
+      expect.stringMatching(/^\* All AG Grid Enterprise features are unlocked for trial\. +\*$/),
+      expect.stringMatching(/^\* If you want to hide the watermark please email info@ag-grid\.com for a trial license key\. +\*$/),
+      expect.stringMatching(/^\*+$/),
+      expect.stringMatching(/^\*+$/),
+    ] : [])
+    if (missingLocalLicense) console.info('Known local audit diagnostic: AG Grid License Key Not Found; exact banner verified, all other diagnostics empty.')
   } finally {
     await page.close()
     await withE2eDatabase(async (client) => {
@@ -193,8 +209,10 @@ async function readPreservedState(id: number) {
       tvmt_conclusion_date, vik_request, vik_request_date, vik_result, vik_conclusion,
       vik_conclusion_date, pre_heat_treatment_lnk_exempt from weld_joints where id = $1`, [id])).rows[0],
     cycles: (await client.query('select * from psto_repeat_cycles where weld_joint_id = $1 order by id', [id])).rows,
+    // Fresh databases initialize the document index through jsonb_build_object;
+    // compare every metadata value, not its JSON.stringify spacing/key order.
     documents: (await client.query(`select d.id, d.type, d.title, d.period_from, d.period_to,
-      d.document_number, d.source_metadata
+      d.document_number, d.source_metadata::jsonb as source_metadata
       from generated_document_weld_joints link join generated_documents d on d.id = link.document_id
       where link.weld_joint_id = $1 and coalesce(d.source_metadata::jsonb ->> 'sourceKind', '') <> 'beforeHeatTreatment'
       order by d.id`, [id])).rows,

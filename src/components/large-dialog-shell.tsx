@@ -18,9 +18,8 @@ type LargeDialogShellProps = {
   returnPageScrollPosition?: PageScrollPosition
 }
 
-let bodyScrollLockCount = 0
-let previousBodyOverflow = ''
-let previousDocumentOverflow = ''
+let pageScrollLockCount = 0
+let previousDocumentOverflow: Array<{ name: string; value: string; priority: string }> = []
 let lockedPageScrollPosition = { left: 0, top: 0 }
 let restorePageScrollFrame: number | null = null
 let restorePageScrollInnerFrame: number | null = null
@@ -64,20 +63,26 @@ export function LargeDialogShell({
 }: LargeDialogShellProps) {
   useEffect(() => {
     cancelPendingPageScrollRestore()
-    if (bodyScrollLockCount === 0) {
+    if (pageScrollLockCount === 0) {
       lockedPageScrollPosition = returnPageScrollPosition ?? getPageScrollPosition()
-      previousBodyOverflow = document.body.style.overflow
-      previousDocumentOverflow = document.documentElement.style.overflow
-      document.body.style.overflow = 'hidden'
-      document.documentElement.style.overflow = 'hidden'
+      const style = document.documentElement.style
+      previousDocumentOverflow = ['overflow-x', 'overflow-y'].map(name => ({
+        name, value: style.getPropertyValue(name), priority: style.getPropertyPriority(name),
+      }))
+      // Lock the viewport only. Clipping body makes a wide report's overflow
+      // disappear from the root scroll range and unmounts its virtual columns.
+      style.overflow = 'hidden'
     }
-    bodyScrollLockCount += 1
+    pageScrollLockCount += 1
 
     return () => {
-      bodyScrollLockCount = Math.max(0, bodyScrollLockCount - 1)
-      if (bodyScrollLockCount === 0) {
-        document.body.style.overflow = previousBodyOverflow
-        document.documentElement.style.overflow = previousDocumentOverflow
+      pageScrollLockCount = Math.max(0, pageScrollLockCount - 1)
+      if (pageScrollLockCount === 0) {
+        const style = document.documentElement.style
+        style.removeProperty('overflow')
+        for (const { name, value, priority } of previousDocumentOverflow) {
+          if (value) style.setProperty(name, value, priority)
+        }
         schedulePageScrollRestore()
       }
     }

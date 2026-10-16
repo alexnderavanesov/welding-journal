@@ -15,7 +15,6 @@ import {
 } from '@/lib/weld-table-row-state'
 import { getCellKey, getDuplicateKey } from '@/lib/weld-table-utils'
 import { RESULT_FIELD_KEYS, type WeldFieldKey } from '@/lib/weld-fields'
-import type { SystemDocumentTemplateId } from '@/lib/system-document-template-types'
 import {
   buildWeldTableRenderColumns,
   type WeldTableRenderColumn,
@@ -58,7 +57,6 @@ type WeldTableBodyRowsProps = {
   onOpenJoint?: (row: WeldRow) => void
   onOpenJointOverview?: (row: WeldRow) => void
   controlBasisEditorEnabled?: boolean
-  availableSystemDocumentTypes?: ReadonlySet<SystemDocumentTemplateId>
   visibleFieldKeys?: ReadonlySet<WeldFieldKey>
 }
 
@@ -99,7 +97,6 @@ export function WeldTableBodyRows({
   onOpenJoint,
   onOpenJointOverview,
   controlBasisEditorEnabled,
-  availableSystemDocumentTypes,
   visibleFieldKeys,
 }: WeldTableBodyRowsProps) {
   const renderColumns = useMemo(
@@ -160,7 +157,6 @@ export function WeldTableBodyRows({
             onOpenJoint={onOpenJoint}
             onOpenJointOverview={onOpenJointOverview}
             controlBasisEditorEnabled={controlBasisEditorEnabled}
-            availableSystemDocumentTypes={availableSystemDocumentTypes}
           />
         )
       })}
@@ -203,7 +199,6 @@ type WeldTableBodyRowProps = {
   onOpenJoint?: (row: WeldRow) => void
   onOpenJointOverview?: (row: WeldRow) => void
   controlBasisEditorEnabled?: boolean
-  availableSystemDocumentTypes?: ReadonlySet<SystemDocumentTemplateId>
 }
 
 const WeldTableBodyRow = memo(function WeldTableBodyRow({
@@ -241,7 +236,6 @@ const WeldTableBodyRow = memo(function WeldTableBodyRow({
   onOpenJoint,
   onOpenJointOverview,
   controlBasisEditorEnabled,
-  availableSystemDocumentTypes,
 }: WeldTableBodyRowProps) {
   const stickyBackgroundClassName = getWeldTableStickyCellBackgroundClassName({
     rowIndex,
@@ -315,7 +309,6 @@ const WeldTableBodyRow = memo(function WeldTableBodyRow({
             onOpenJoint={onOpenJoint}
             onOpenJointOverview={onOpenJointOverview}
             controlBasisEditorEnabled={controlBasisEditorEnabled}
-            availableSystemDocumentTypes={availableSystemDocumentTypes}
           />
         )
       })}

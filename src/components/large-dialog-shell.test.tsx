@@ -32,7 +32,7 @@ describe('LargeDialogShell', () => {
       </LargeDialogShell>,
     )
 
-    expect(document.body.style.overflow).toBe('hidden')
+    expect(document.body.style.overflow).toBe('')
     expect(document.documentElement.style.overflow).toBe('hidden')
 
     view.unmount()
@@ -83,6 +83,30 @@ describe('LargeDialogShell', () => {
       top: 720,
       behavior: 'auto',
     })
+  })
+
+  it('keeps wide body overflow intact and restores root styles only after the last nested dialog closes', () => {
+    vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1)
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+    document.body.style.overflow = 'visible'
+    document.documentElement.style.setProperty('overflow-x', 'auto', 'important')
+    document.documentElement.style.setProperty('overflow-y', 'scroll')
+    const parent = render(<LargeDialogShell><div>Результат</div></LargeDialogShell>)
+    const child = render(<LargeDialogShell><div>Документ</div></LargeDialogShell>)
+
+    // Clipping body would collapse the viewport's horizontal range and remove
+    // the source cell from the report's horizontal virtual window.
+    expect(document.body.style.overflow).toBe('visible')
+    expect(document.documentElement.style.overflow).toBe('hidden')
+    child.unmount()
+    expect(document.documentElement.style.overflow).toBe('hidden')
+    expect(document.body.style.overflow).toBe('visible')
+
+    parent.unmount()
+    expect(document.body.style.overflow).toBe('visible')
+    expect(document.documentElement.style.overflowX).toBe('auto')
+    expect(document.documentElement.style.getPropertyPriority('overflow-x')).toBe('important')
+    expect(document.documentElement.style.overflowY).toBe('scroll')
   })
 
   it('marks the panel as the active modal layer', () => {

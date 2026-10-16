@@ -1,3 +1,4 @@
+import { editJournalJoint } from '../journal-grid'
 import { setTimeout as pause } from 'node:timers/promises'
 import { expect, test, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
@@ -84,7 +85,7 @@ const coldFacts = () => withE2eDatabase(async db => ({
 }))
 
 async function openEditor(page: Page) {
-  await page.getByRole('button', { name: writerJoint, exact: true }).locator('xpath=ancestor::tr').getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, writerJoint)
   const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
   await editor.getByRole('button', { name: 'Стык', exact: true }).first().click()
   return editor

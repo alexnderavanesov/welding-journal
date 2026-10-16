@@ -1,0 +1,105 @@
+/* Shared visual scale for the journal only. Portal panels opt in explicitly. */
+:where([data-welding-journal-grid], .journal-context-menu, .journal-dispatcher) {
+  --journal-ui-font: Inter, ui-sans-serif, system-ui, sans-serif;
+  --journal-ui-text: #334155;
+  --journal-ui-muted: #64748b;
+  --journal-ui-border: #dce4ee;
+  --journal-ui-hover: #eff6ff;
+  --journal-ui-menu-shadow: 0 10px 32px #0f172a1f;
+  --journal-ui-menu-background: #f9fafb;
+  --journal-ui-menu-radius: 12px;
+  --journal-ui-control-radius: 6px;
+  --journal-ui-control-height: 32px;
+  --journal-ui-menu-height: 36px;
+  --journal-ui-control-font-size: 12px;
+  font-family: var(--journal-ui-font);
+}
+
+/* Both menu surfaces use the same scale; descriptions may take a second line. */
+.journal-context-menu {
+  border-color: var(--journal-ui-border);
+  border-radius: var(--journal-ui-menu-radius);
+  background: var(--journal-ui-menu-background);
+  padding-block: 8px;
+  box-shadow: var(--journal-ui-menu-shadow);
+  font-size: var(--journal-ui-control-font-size);
+  color: var(--journal-ui-text);
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.journal-context-menu [data-menu-heading] { padding: 6px 16px 10px; margin-bottom: 8px; border-color: #e3e7ee; }
+.journal-context-menu [data-menu-separator] { margin: 8px 0; border-color: #e3e7ee; }
+.journal-context-menu [data-menu-heading] > div:first-child { font-size: 13px; line-height: 18px; }
+.journal-context-menu [data-menu-heading] > div + div { font-size: 11px; line-height: 16px; color: var(--journal-ui-muted); }
+.journal-context-menu [data-menu-item] {
+  min-height: var(--journal-ui-menu-height);
+  padding: 9px 16px;
+  gap: 16px;
+  font-size: var(--journal-ui-control-font-size);
+  font-weight: 400;
+  color: var(--journal-ui-text);
+  transition: background-color .12s;
+}
+.journal-context-menu [data-menu-label] { line-height: 18px; }
+.journal-context-menu [data-menu-description] { font-size: 11px; line-height: 16px; color: var(--journal-ui-muted); }
+.journal-context-menu [data-menu-item] > svg { width: 16px; height: 16px; margin-top: 1px; color: var(--journal-ui-muted); stroke-width: 1.5; }
+.journal-context-menu [data-menu-item]:enabled:is(:hover, :focus-visible, [aria-expanded=true]) { background: var(--journal-ui-hover); color: var(--journal-ui-text); }
+.journal-context-menu [data-menu-item]:focus-visible { outline: 2px solid #7dd3fc; outline-offset: -2px; }
+.journal-context-menu [data-menu-item][data-danger] { color: #be123c; }
+.journal-context-menu [data-menu-item][data-danger] > svg { color: inherit; }
+.journal-context-menu [data-menu-item][data-danger]:enabled:is(:hover, :focus-visible) { background: #fff1f2; color: #9f1239; }
+.journal-context-menu [data-menu-item]:disabled { color: #94a3b8; background: transparent; }
+.journal-context-menu [data-menu-item]:disabled > svg { color: #94a3b8; }
+.journal-context-menu[data-menu-submenu=stacked] { border-radius: 6px; box-shadow: none; background: #f8fafc; }
+
+/* Keep hierarchy, warning colours and wrapping while matching the grid scale. */
+.journal-dispatcher { font-size: 13px; line-height: 20px; color: var(--journal-ui-text); }
+.journal-dispatcher .text-sm { font-size: 13px; line-height: 20px; }
+.journal-dispatcher .text-xs { font-size: 12px; line-height: 18px; }
+.journal-dispatcher h2 { font-size: 16px; line-height: 22px; }
+.journal-dispatcher h3 { font-size: 14px; line-height: 20px; }
+.journal-dispatcher-panel { border-color: var(--journal-ui-border); border-radius: var(--journal-ui-control-radius); background: #f7f9fc; box-shadow: none; backdrop-filter: none; }
+.journal-dispatcher [data-dispatcher-toolbar] { min-height: var(--journal-ui-control-height); }
+.journal-dispatcher button:not([aria-expanded]):not([aria-pressed]),
+.journal-dispatcher [data-dispatcher-task-actions] button {
+  min-height: var(--journal-ui-control-height);
+  height: auto;
+  padding: 6px 10px;
+  gap: 6px;
+  border-radius: var(--journal-ui-control-radius);
+  font-size: var(--journal-ui-control-font-size);
+  line-height: 18px;
+  box-shadow: none;
+}
+.journal-dispatcher button[aria-expanded] { font-size: 13px; }
+.journal-dispatcher [data-dispatcher-toolbar] button {
+  height: var(--journal-ui-control-height);
+  min-height: var(--journal-ui-control-height);
+  border-radius: var(--journal-ui-control-radius);
+  border-color: var(--journal-ui-border);
+  padding: 0 10px;
+  gap: 6px;
+  font-size: var(--journal-ui-control-font-size);
+  font-weight: 400;
+  color: #475569;
+}
+.journal-dispatcher [data-dispatcher-toolbar] button:hover { background: #f8fafc; border-color: #94a3b8; }
+.journal-dispatcher button svg { width: 16px; height: 16px; }
+.journal-dispatcher [data-dispatcher-toolbar] button svg { margin: 0; }
+.journal-dispatcher [data-dispatcher-badge] {
+  min-height: 20px;
+  border: 0;
+  border-radius: 3px;
+  padding: 3px 7px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.journal-dispatcher [data-dispatcher-badge=rule] { font-size: 13px; line-height: 18px; }
+.journal-dispatcher [data-dispatcher-code-group] > summary,
+.journal-dispatcher [data-dispatcher-object-summary] { min-height: 40px; }
+.journal-dispatcher input, .journal-dispatcher select { font-size: var(--journal-ui-control-font-size); border-radius: var(--journal-ui-control-radius); }
+@media (prefers-reduced-motion: reduce) {
+  .journal-context-menu [data-menu-item] { transition: none; }
+}

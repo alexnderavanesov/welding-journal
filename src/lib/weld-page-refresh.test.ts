@@ -7,12 +7,128 @@ import {
   invalidateWeldPageQueries,
   isWeldPageRefreshRequired,
   getWeldPageRefreshFailure,
+  refreshActiveLoadedWeldPages,
   refreshLoadedWeldPageQuery,
   WELD_JOINT_PAGES_QUERY_KEY,
   WELD_REPORT_SUMMARY_QUERY_KEY,
 } from '@/lib/weld-page-refresh'
 
 describe('consolidated weld page refresh', () => {
+  it('cleans refresh metadata for equivalent query keys with reordered filter properties', async () => {
+    const client = createQueryClient()
+    const key = createQueryKey('lnk', { line: 'L1', search: 'F1' })
+    const alias = createQueryKey('lnk', { search: 'F1', line: 'L1' })
+    client.setQueryData(key, createInfiniteData(1, 100))
+    try {
+      await expect(refreshLoadedWeldPageQuery(client, alias, {
+        fetchPage: async () => { throw new Error('Offline') },
+      })).rejects.toThrow('Offline')
+      expect(getWeldPageRefreshFailure(client, alias)?.error.message).toBe('Offline')
+      client.removeQueries({ queryKey: key, exact: true })
+      expect(getWeldPageRefreshFailure(client, alias)).toBeNull()
+      expect(isWeldPageRefreshRequired(client, alias)).toBe(false)
+      expect(getWeldPageRefreshFailure(client, key)).toBeNull()
+      expect(isWeldPageRefreshRequired(client, key)).toBe(false)
+    } finally { client.clear() }
+  })
+
+  it.each(['remove', 'gc'] as const)('forgets failed refresh state and reconciliation markers after query %s', async removal => {
+    vi.useFakeTimers()
+    const client = createQueryClient(), key = createQueryKey()
+    client.setQueryDefaults(key, { gcTime: 10 })
+    client.setQueryData(key, createInfiniteData(1, 100))
+    try {
+      await expect(refreshLoadedWeldPageQuery(client, key, {
+        fetchPage: async () => { throw new Error('Expired query') },
+      })).rejects.toThrow('Expired query')
+      expect(getWeldPageRefreshFailure(client, key)?.error.message).toBe('Expired query')
+      expect(isWeldPageRefreshRequired(client, key)).toBe(true)
+      if (removal === 'remove') client.removeQueries({ queryKey: key, exact: true })
+      else await vi.advanceTimersByTimeAsync(11)
+      expect(client.getQueryState(key)).toBeUndefined()
+      expect(getWeldPageRefreshFailure(client, key)).toBeNull()
+      expect(isWeldPageRefreshRequired(client, key)).toBe(false)
+      client.setQueryData(key, createInfiniteData(1, 1, 500))
+      expect(getWeldPageRefreshFailure(client, key)).toBeNull()
+      expect(isWeldPageRefreshRequired(client, key)).toBe(false)
+    } finally { client.clear(); vi.clearAllTimers(); vi.useRealTimers() }
+  })
+
+  it.each([1, 2])('stops subsequent page requests when query is removed during page %i', async removedPage => {
+    const client = createQueryClient(), key = createQueryKey()
+    client.setQueryData(key, createInfiniteData(25, 3000))
+    const pending = createDeferred<WeldPageResult>(), arrived = createDeferred<void>()
+    const fetchPage = vi.fn(async (_report: WeldReportKind, request: WeldPageRequest) => {
+      if (request.page === removedPage) { arrived.resolve(); return pending.promise }
+      return createResult(request.page!, 1000, 3000, 1000)
+    })
+    try {
+      const refresh = refreshLoadedWeldPageQuery(client, key, { fetchPage })
+      await arrived.promise
+      client.removeQueries({ queryKey: key, exact: true })
+      pending.resolve(createResult(removedPage, 1000, 3000, 1000))
+      expect(await refresh).toBe(false)
+      expect(fetchPage).toHaveBeenCalledTimes(removedPage)
+      expect(client.getQueryState(key)).toBeUndefined()
+      expect(isWeldPageRefreshRequired(client, key)).toBe(false)
+    } finally { client.clear() }
+  })
+
+  it.each(['success', 'failure'] as const)('isolates an old %s and finally from a recreated same-key refresh', async outcome => {
+    const client = createQueryClient(), key = createQueryKey()
+    const original = createInfiniteData(1, 100)
+    client.setQueryData(key, original)
+    const oldResponse = createDeferred<WeldPageResult>(), newResponse = createDeferred<WeldPageResult>()
+    const oldFetch = vi.fn(() => oldResponse.promise), newFetch = vi.fn(() => newResponse.promise)
+    try {
+      const oldRefresh = refreshLoadedWeldPageQuery(client, key, { fetchPage: oldFetch })
+      const oldOutcome = oldRefresh.catch(error => error)
+      client.removeQueries({ queryKey: key, exact: true })
+      // Reusing the exact data object must not join a removed query's promise.
+      client.setQueryData(key, original)
+      const newRefresh = refreshLoadedWeldPageQuery(client, key, { fetchPage: newFetch }).catch(error => error)
+      if (outcome === 'failure') oldResponse.reject(new Error('Removed query failed'))
+      else oldResponse.resolve(createResult(1, 90, 90, 100))
+      await oldOutcome
+      expect(newFetch).toHaveBeenCalledTimes(1)
+      expect(getWeldPageRefreshFailure(client, key)).toBeNull()
+      expect(isWeldPageRefreshRequired(client, key)).toBe(true)
+      expect(client.getQueryData(key)).toBe(original)
+      const joined = refreshLoadedWeldPageQuery(client, key, { fetchPage: newFetch })
+      expect(newFetch).toHaveBeenCalledTimes(1)
+      newResponse.resolve(createResult(1, 80, 80, 100))
+      expect(await newRefresh).toBe(true)
+      expect(await joined).toBe(true)
+      expect(client.getQueryData<InfiniteData<WeldPageResult>>(key)?.pages[0].total).toBe(80)
+      expect(isWeldPageRefreshRequired(client, key)).toBe(false)
+    } finally { client.clear() }
+  })
+
+  it('does not refresh a recreated empty query after cancellation of the removed instance', async () => {
+    const client = createQueryClient(), key = createQueryKey()
+    const oldResponse = createDeferred<InfiniteData<WeldPageResult>>()
+    const observer = new QueryObserver(client, { queryKey: key, queryFn: () => oldResponse.promise })
+    const unsubscribe = observer.subscribe(() => undefined)
+    const originalCancel = client.cancelQueries.bind(client)
+    const cancelled = createDeferred<void>()
+    const cancelSpy = vi.spyOn(client, 'cancelQueries').mockImplementation(async filters => {
+      await originalCancel(filters)
+      await cancelled.promise
+    })
+    const refetchSpy = vi.spyOn(client, 'refetchQueries')
+    try {
+      const refresh = refreshActiveLoadedWeldPages(client)
+      client.removeQueries({ queryKey: key, exact: true })
+      client.setQueryData(key, createInfiniteData(1, 1, 500))
+      await invalidateWeldPageQueries(client, { deferActiveRefresh: true })
+      cancelled.resolve()
+      await refresh
+      expect(refetchSpy).not.toHaveBeenCalled()
+      expect(isWeldPageRefreshRequired(client, key)).toBe(true)
+      expect(client.getQueryData<InfiniteData<WeldPageResult>>(key)?.pages[0].rows[0].id).toBe(500)
+    } finally { unsubscribe(); cancelSpy.mockRestore(); refetchSpy.mockRestore(); client.clear() }
+  })
+
   it.each(['weldingJournal', 'lnk', 'heatTreatment'] as const)('preserves quick search on every refreshed page of %s', async report => {
     const queryClient = createQueryClient()
     const queryKey = createQueryKey(report, { search: ' F001 ', line: 'L1' })

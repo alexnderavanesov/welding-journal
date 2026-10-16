@@ -19,6 +19,7 @@ import { getLayeredControlDocumentProfile } from '@/lib/layered-control-document
 import { getSystemDocumentRowResult } from '@/lib/system-document-types'
 
 import {
+  DOCUMENT_TEMPLATE_TYPES,
   type TemplateSystemField,
   type TemplateUploadInfo,
   getFileExtension,
@@ -171,7 +172,7 @@ export async function createWeldingJournalBlobFromTemplate(
       ? constructorConfig.sheetName
       : workbook.SheetNames[0]
   const worksheet = workbook.Sheets[sheetName]
-  if (!worksheet) throw new Error('В шаблоне не найден выбранный лист.')
+  if (!worksheet) throw new Error(`Не удалось прочитать лист Excel в файле «${template.fileName}». Проверьте файл и загрузите его заново в «Настройки» → «Документы».`)
 
   if (constructorConfig?.bindings.length) {
     return createWeldingJournalBlobFromConstructor(
@@ -193,7 +194,13 @@ export async function createWeldingJournalBlobFromTemplate(
   }
 
   const markerCells = collectTemplateMarkerCells(worksheet)
-  if (!markerCells.length) throw new Error('В шаблоне не найдено строки с маркерами вида {{Поле}}.')
+  if (!markerCells.length) {
+    const templateLabel = DOCUMENT_TEMPLATE_TYPES.find(({ id }) => id === template.id)?.label ?? template.fileName
+    throw new Error(
+      `Шаблон «${templateLabel}» загружен, но на листе «${sheetName}» не настроено заполнение. `
+      + 'Откройте «Настройки» → «Документы», выберите этот шаблон, назначьте поля ячейкам в конструкторе и сохраните настройки.',
+    )
+  }
 
   const markerRow = getPrimaryMarkerRow(markerCells)
   const repeatedCells = markerCells.filter((cell) => cell.row === markerRow)

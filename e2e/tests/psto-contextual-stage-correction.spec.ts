@@ -1,3 +1,4 @@
+import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
@@ -188,7 +189,7 @@ async function openAssignment(page: Page) {
 async function openMove(page: Page, id: number, isChain = false) {
   await page.goto('/journal')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(SOURCE)
-  await page.locator(`tr[data-weld-row-id="${id}"]`).getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, id)
   const editor = dialog(page, 'Редактирование стыка')
   const input = editor.getByText('Линия', { exact: true }).locator('..').getByRole('textbox')
   await input.fill(TARGET)

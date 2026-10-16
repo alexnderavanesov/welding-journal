@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
 
@@ -12,6 +12,26 @@ async function searchProgram(page: Page, search: string) {
   ])
   expect(response.ok()).toBe(true)
   await expect(totals).toBeVisible()
+}
+
+async function expectAssignmentDialogFitsViewport(modal: Locator) {
+  // The locked background retains its full scroll range for restoration.
+  // Assert the visible dialog and every footer action, not the hidden page width.
+  await expect.poll(() => modal.evaluate(element => {
+    const bounds = element.getBoundingClientRect()
+    const footer = element.querySelector('[data-testid="assignment-dialog-footer"]')!
+    const footerBounds = footer.getBoundingClientRect()
+    return {
+      fitsViewport: bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= 0 && bounds.bottom <= innerHeight,
+      noDialogOverflow: element.scrollWidth <= element.clientWidth,
+      pageLocked: getComputedStyle(document.documentElement).overflowX === 'hidden' && getComputedStyle(document.documentElement).overflowY === 'hidden',
+      clippedFooterButtons: [...footer.querySelectorAll('button')].filter(button => {
+        const rect = button.getBoundingClientRect()
+        return rect.left < footerBounds.left || rect.right > footerBounds.right || rect.top < footerBounds.top || rect.bottom > footerBounds.bottom ||
+          button.scrollWidth > button.clientWidth || button.scrollHeight > button.clientHeight
+      }).map(button => button.textContent),
+    }
+  })).toEqual({ fitsViewport: true, noDialogOverflow: true, pageLocked: true, clippedFooterButtons: [] })
 }
 
 test.afterEach(async () => {
@@ -173,7 +193,7 @@ test('назначения: без ВИК, три клейма, стабильн
     expect(await modal.getByRole('columnheader').evaluateAll(headers => headers.every(header => getComputedStyle(header).textAlign === 'left'))).toBe(true)
     const methodWidths = await modal.getByRole('columnheader').evaluateAll(headers => headers.slice(2, 6).map(header => header.getBoundingClientRect().width))
     expect(Math.max(...methodWidths) - Math.min(...methodWidths)).toBeLessThan(0.5)
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await expectAssignmentDialogFitsViewport(modal)
     if (width === 1600) await modal.screenshot({ path: 'outputs/line-program-assignment-polish.png' })
     await modal.getByRole('combobox', { name: 'F1 · РК', exact: true }).selectOption('')
     await modal.getByRole('combobox', { name: 'F2 · УЗК', exact: true }).selectOption('')
@@ -701,5 +721,23 @@ test('компактные фильтры отделяют ошибки и ис�
   await modal.locator('[data-program-filter="all"]').click();await expect(modal.getByRole('combobox',{name:'F3 · УЗК',exact:true})).toHaveValue('дополнительный')
   await expect(modal.getByText('было: —')).toBeVisible()
   await expect(modal.getByRole('combobox',{name:'F5 · РК',exact:true})).toBeDisabled()
-  for(const width of [1600,1000,390]){await page.setViewportSize({width,height:1100});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true)}
+  for(const width of [1600,1000,390]){
+    await page.setViewportSize({width,height:1100})
+    await expectAssignmentDialogFitsViewport(modal)
+  }
+  const body = modal.getByTestId('assignment-dialog-body')
+  const pageScroll = await page.evaluate(() => ({ x: scrollX, y: scrollY }))
+  await body.hover()
+  await page.mouse.wheel(1000, 0)
+  await expect.poll(() => body.evaluate(element => element.scrollLeft > 0 && element.scrollLeft + element.clientWidth >= element.scrollWidth - 1)).toBe(true)
+  await expect(modal.getByRole('columnheader', { name: 'Результат', exact: true })).toBeInViewport()
+  expect(await page.evaluate(() => ({ x: scrollX, y: scrollY }))).toEqual(pageScroll)
+  await modal.getByRole('button', { name: 'Проверить изменения', exact: true }).click()
+  await expect(modal.getByRole('button', { name: 'Сохранить назначения', exact: true })).toBeVisible()
+  await expectAssignmentDialogFitsViewport(modal)
+  await modal.getByRole('button', { name: 'Вернуться к просмотру', exact: true }).click()
+  await expect(modal).toBeHidden()
+  await card.getByTestId('program-scope-actions').getByRole('button',{name:/^Назначения/}).click()
+  await expect(modal.getByRole('combobox',{name:'F3 · УЗК',exact:true})).toHaveValue('дополнительный')
+  await expectAssignmentDialogFitsViewport(modal)
 })

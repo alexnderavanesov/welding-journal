@@ -1,3 +1,4 @@
+import { journalRow, deleteJournalJoint } from '../journal-grid'
 import { expect, test } from '@playwright/test'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -24,13 +25,12 @@ test('обычное удаление сторон с заявками: отме
     await page.goto('/journal')
     await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
     const confirmation = page.locator('[data-confirm-action-dialog="true"]').locator('..')
-    const first = page.locator(`tr[data-weld-row-id="${sides[0].id}"]`)
-    await first.getByRole('button', { name: 'Удалить', exact: true }).click()
+    await deleteJournalJoint(page, sides[0].id)
     await confirmation.getByRole('button', { name: 'Отмена', exact: true }).click()
     expect(await remaining()).toEqual(beforeSides)
     for (const side of sides) {
-      const row = page.locator(`tr[data-weld-row-id="${side.id}"]`)
-      await row.getByRole('button', { name: 'Удалить', exact: true }).click()
+      const row = journalRow(page, side.id)
+      await deleteJournalJoint(page, side.id)
       await confirmation.getByRole('button', { name: 'Удалить', exact: true }).click()
       await expect(row).toHaveCount(0)
     }
@@ -79,7 +79,7 @@ test('помощник: переходы, удаление сторон, исп�
     else {
       await page.goto('/journal')
       await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
-      await page.locator(`tr[data-weld-row-id="${rootId}"]`).getByRole('button', { name: 'F902', exact: true }).click()
+      await journalRow(page, rootId).getByRole('button', { name: 'F902', exact: true }).click()
       await picture.getByRole('button', { name: 'Исправить ошибочную катушку', exact: true }).click()
       hasOpened = true
     }
@@ -138,6 +138,8 @@ test('помощник: переходы, удаление сторон, исп�
     await expect(helper).toBeHidden()
     expect(await loadRoot()).toBe(false)
     await expect(page.getByRole('button', { name: 'Вернуться к исправлению катушки', exact: true })).toHaveCount(0)
+    // The helper returns to the source-chain LNK report opened above.
+    await expect(page).toHaveURL(/\/lnk$/)
     await page.locator(`tr[data-weld-row-id="${rootId}"]`).getByRole('button', { name: 'F902', exact: true }).click()
     await expect(picture.getByRole('button', { name: 'Исправить ошибочную катушку' })).toHaveCount(0)
     await picture.getByRole('button', { name: 'История отмен ошибочной катушки' }).click()

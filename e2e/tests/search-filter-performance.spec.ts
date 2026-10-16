@@ -1,3 +1,4 @@
+import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { observeMixedClient, sampleMixedResources } from '../mixed-resource-telemetry'
@@ -125,8 +126,7 @@ test('200k search: first rows, totals, save and dispatcher readiness are measure
     const page = pages[0]
     await search(page, 0, 'F000125', 'before save')
     const openStarted = now()
-    await page.getByRole('button', { name: 'F000125', exact: true }).locator('xpath=ancestor::tr')
-      .getByRole('button', { name: 'Редактировать', exact: true }).click()
+    await editJournalJoint(page, 'F000125')
     const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
     await editor.getByRole('button', { name: 'Стык', exact: true }).first().click()
     await expect(editor.getByLabel('Изометрия', { exact: true })).toHaveValue('SEARCH-ISO')

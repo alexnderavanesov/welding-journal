@@ -36,7 +36,6 @@ vi.mock('@/lib/system-document-storage', () => ({
   downloadSystemDocument: vi.fn(),
   loadSystemDocumentHistory,
   loadSystemDocumentRows: vi.fn(),
-  openSystemDocument: vi.fn(),
   renameSystemDocumentToCurrentName: vi.fn(),
 }))
 
@@ -46,7 +45,6 @@ vi.mock('@/lib/generated-document-storage', () => ({
   downloadGeneratedDocumentArchive: vi.fn(),
   loadGeneratedDocumentHistory,
   loadGeneratedDocumentRows: vi.fn(),
-  openGeneratedDocument: vi.fn(),
 }))
 
 describe('DocumentsPage report navigation', () => {

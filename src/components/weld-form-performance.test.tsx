@@ -11,6 +11,19 @@ import { ConfirmActionProvider } from '@/lib/confirm-action-context'
 vi.mock('@/lib/security-context', () => ({ useSecurityGuard: () => ({ requireEditPassword: vi.fn() }) }))
 
 describe('weld form input performance', () => {
+  it('closes the weld editor with one Escape even when a text suggestion is open', () => {
+    HTMLElement.prototype.scrollTo = vi.fn()
+    const onCancel = vi.fn(), onSave = vi.fn()
+    renderWithQueryClient(<WeldForm value={{ id: 1, joint: 'F1', line: 'L1' }}
+      suggestionRows={[{ id: 2, line: 'L1', joint: 'F2' }]} onSave={onSave} onCancel={onCancel} />)
+    const line = screen.getByRole('textbox', { name: 'Линия' })
+    fireEvent.focus(line)
+    expect(screen.getByRole('button', { name: /^L1/ })).toBeVisible()
+    fireEvent.keyDown(line, { key: 'Escape' })
+    expect(onCancel).toHaveBeenCalledOnce()
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
   it('updates assignment availability on officiality/actuality transitions through the memoized field', () => {
     const field = FIELD_BY_KEY.get('hasUzk')!
     const fieldRefs = { current: {} }

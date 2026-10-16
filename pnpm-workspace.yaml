@@ -10,20 +10,6 @@ auditConfig:
   ignoreGhsas:
     - GHSA-67mh-4wv8-2f99
 
-minimumReleaseAgeExclude:
-  - '@tanstack/react-router@1.170.25'
-  - '@tanstack/react-start-client@1.168.23'
-  - '@tanstack/react-start-rsc@0.1.41'
-  - '@tanstack/react-start-server@1.167.30'
-  - '@tanstack/react-start@1.168.42'
-  - '@tanstack/router-core@1.171.21'
-  - '@tanstack/router-generator@1.167.27'
-  - '@tanstack/router-plugin@1.168.29'
-  - '@tanstack/start-client-core@1.170.21'
-  - '@tanstack/start-plugin-core@1.171.33'
-  - '@tanstack/start-server-core@1.169.25'
-  - '@tanstack/start-storage-context@1.167.23'
-
 overrides:
   'braces@<=3.0.3': 'file:vendor/braces-3.0.4-security.0.tgz'
   'esbuild@>=0.27.3 <0.28.1': '0.28.1'
@@ -31,6 +17,6 @@ overrides:
   'js-yaml@>=4.0.0 <4.3.2': '4.3.2'
   'nanoid@>=3.0.0 <3.3.17': '3.3.17'
   'postcss@<=8.5.22': '8.5.26'
-  'seroval@<=1.6.2': '1.6.3'
+  'seroval@<=1.6.2': '^1.6.3'
   'source-map-js@>=1.0.0 <1.2.2': '1.2.2'
   'postcss-selector-parser@<7.1.6': '7.1.6'

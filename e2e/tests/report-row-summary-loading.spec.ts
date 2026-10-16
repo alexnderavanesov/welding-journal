@@ -1,3 +1,4 @@
+import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { rpcName } from '../rpc'
@@ -41,12 +42,12 @@ for (const path of ['/journal', '/lnk', '/psto']) {
     try {
       await page.goto(path)
       await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(first)
-      const row = page.getByRole('button', { name: first, exact: true }).locator('xpath=ancestor::tr')
+      const row = page.getByRole('button', { name: first, exact: true }).locator(path === '/journal' ? 'xpath=ancestor::*[@role="row"]' : 'xpath=ancestor::tr')
       await expect(row).toBeVisible()
       await expect.poll(() => requests).toBeGreaterThan(0)
       await expect(summary(page)).toContainText(/Ид[её]т подсч[её]т/)
       if (path === '/journal') {
-        await row.getByRole('button', { name: 'Редактировать', exact: true }).click()
+        await editJournalJoint(page, first)
         const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
         await expect(editor).toBeVisible()
         await editor.getByRole('button', { name: 'Отмена', exact: true }).click()
@@ -104,10 +105,10 @@ test('summary failure does not hide the found rows or prevent opening their card
   })
   await page.goto('/journal')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(second)
-  const row = page.getByRole('button', { name: second, exact: true }).locator('xpath=ancestor::tr')
+  const row = page.getByRole('button', { name: second, exact: true }).locator('xpath=ancestor::*[@role="row"]')
   await expect(row).toBeVisible()
   await expect(summary(page)).toContainText(/Не удалось|Ошибка/)
-  await row.getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, second)
   await expect(page.getByRole('heading', { name: 'Редактирование стыка', exact: true })).toBeVisible()
 })
 
@@ -124,7 +125,10 @@ test('fast typing is coalesced and does not request every intermediate search', 
   })
   await search.fill('')
   await search.pressSequentially(second, { delay: 8 })
-  await expect(page.getByRole('button', { name: second, exact: true })).toBeVisible()
+  // AG Grid retains the outgoing, transparent row until its animation ends.
+  const result = page.locator('.ag-row:not(.ag-opacity-zero)').getByRole('button', { name: second, exact: true })
+  await expect(result).toHaveCount(1)
+  await expect(result).toBeVisible()
   await expect(summary(page)).toContainText(/Записей: 1(?:\s|·|$)/)
   expect(requests).toHaveLength(1)
   expect(new URL(requests[0]).searchParams.get('payload')).toContain(second)
@@ -135,8 +139,7 @@ test('failed background refresh after saving shows an explicit retry and keeps t
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(editable)
   await expect(summary(page)).toContainText(/Записей: 1(?:\s|·|$)/)
   await page.waitForLoadState('networkidle')
-  await page.getByRole('button', { name: editable, exact: true }).locator('xpath=ancestor::tr')
-    .getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, editable)
   const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
   await editor.getByRole('button', { name: 'Стык', exact: true }).first().click()
   await editor.getByLabel('Изометрия', { exact: true }).fill('SUMMARY-SAVED')
@@ -191,8 +194,7 @@ test('failed background refresh after saving shows an explicit retry and keeps t
     await retry.click()
     await expect(summary(page)).toContainText(/Записей: 1(?:\s|·|$)/)
     await expect(retry).toBeHidden()
-    await page.getByRole('button', { name: editable, exact: true }).locator('xpath=ancestor::tr')
-      .getByRole('button', { name: 'Редактировать', exact: true }).click()
+    await editJournalJoint(page, editable)
     await expect(editor).toBeVisible()
     await editor.getByRole('button', { name: 'Стык', exact: true }).first().click()
     await expect(editor.getByLabel('Изометрия', { exact: true })).toHaveValue('SUMMARY-SAVED')

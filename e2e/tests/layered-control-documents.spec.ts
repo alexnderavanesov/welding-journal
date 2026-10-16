@@ -1,3 +1,4 @@
+import { editJournalJoint } from '../journal-grid'
 import { chooseSpecialist } from '../specialist-helpers'
 import { rpcName } from '../rpc'
 import { expect, test, type Page } from '@playwright/test'
@@ -492,11 +493,7 @@ async function loadVikAssignment() {
 
 async function changeLayeredAssignment(page: Page, assigned: boolean) {
   await page.goto('/journal')
-  const row = page
-    .getByRole('button', { name: `Выбрать стык ${JOINT}`, exact: true })
-    .locator('xpath=ancestor::tr')
-  await expect(row).toBeVisible()
-  await row.getByRole('button', { name: 'Редактировать', exact: true }).click()
+  await editJournalJoint(page, JOINT)
 
   const editor = page.getByRole('dialog').filter({
     has: page.getByRole('heading', { name: 'Редактирование стыка' }),

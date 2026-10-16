@@ -184,19 +184,19 @@ export function DispatcherTaskCodeGroup({ group, ...handlers }: DispatcherTaskCo
     >
       <summary className="min-h-11 cursor-pointer list-none px-3 py-2 text-sm marker:hidden hover:bg-white/75">
         <span className="flex w-full items-center gap-2">
-          <span className="inline-flex min-w-0 items-center gap-1 rounded border border-violet-200 bg-violet-50 px-2 py-1">
+          <span data-dispatcher-badge="rule" className="inline-flex min-w-0 items-center gap-1 rounded border border-violet-200 bg-violet-50 px-2 py-1">
             <strong className="shrink-0 font-semibold text-violet-700">{group.code}</strong>
             <span className="truncate text-slate-700">· {group.label}</span>
           </span>
-          <span className="shrink-0 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">
+          <span data-dispatcher-badge className="shrink-0 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">
             {formatTaskCount(group.tasks.length)}
           </span>
-          <span className="hidden shrink-0 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600 sm:inline-flex">
+          <span data-dispatcher-badge className="hidden shrink-0 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600 sm:inline-flex">
             {formatObjectCount(group.objectGroups.length)}
           </span>
           <span className="min-w-0 flex-1" />
           {group.metric ? (
-            <span className="shrink-0 rounded border border-sky-100 bg-sky-50/70 px-2 py-0.5 text-xs font-medium text-sky-800">
+            <span data-dispatcher-badge className="shrink-0 rounded border border-sky-100 bg-sky-50/70 px-2 py-0.5 text-xs font-medium text-sky-800">
               {group.metric}
             </span>
           ) : null}

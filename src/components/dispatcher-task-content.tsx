@@ -10,7 +10,7 @@ export function WelderStampTaskContent({ task, label }: { task: WelderStampExpir
     <>
       <span className="text-slate-800">{label}</span>
       <span className={task.expired ? 'text-rose-700' : 'text-slate-700'}>{title.type}</span>
-      <span
+      <span data-dispatcher-badge
         className={`rounded border px-1.5 py-0.5 text-xs font-semibold ${
           task.expired ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'
         }`}
@@ -36,7 +36,7 @@ export function RepeatedJointTaskContent({ task, nested = false }: { task: Dispa
         <span className="text-amber-700">→</span>
         <span className="text-slate-800">{task.targetJoint}</span>
         <span className="text-slate-400">·</span>
-        <span className={`inline-flex min-h-6 items-center rounded border px-1.5 text-xs font-semibold leading-none ${getLnkResultBadgeClass(task.result)}`}>
+        <span data-dispatcher-badge className={`inline-flex min-h-6 items-center rounded border px-1.5 text-xs font-semibold leading-none ${getLnkResultBadgeClass(task.result)}`}>
           {task.methodCode} - {task.result}
         </span>
       </>
@@ -48,7 +48,7 @@ export function RepeatedJointTaskContent({ task, nested = false }: { task: Dispa
         {jointLabel}
         <span className="text-slate-700">{title.type}</span>
         <span className="text-slate-400">·</span>
-        <span className={`inline-flex min-h-6 items-center rounded border px-1.5 text-xs font-semibold leading-none ${getLnkResultBadgeClass(task.result)}`}>
+        <span data-dispatcher-badge className={`inline-flex min-h-6 items-center rounded border px-1.5 text-xs font-semibold leading-none ${getLnkResultBadgeClass(task.result)}`}>
           {task.methodCode} - {task.result}
         </span>
         <span className="text-slate-400">·</span>
@@ -95,7 +95,7 @@ export function RepeatedJointTaskContent({ task, nested = false }: { task: Dispa
       <>
         {jointLabel}
         <span className="text-slate-700">{title.type}</span>
-        <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
+        <span data-dispatcher-badge className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
           {task.count}
         </span>
       </>
@@ -105,7 +105,7 @@ export function RepeatedJointTaskContent({ task, nested = false }: { task: Dispa
     <>
       {jointLabel}
       <span className="text-slate-700">{title.type}</span>
-      <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">{task.count}</span>
+      <span data-dispatcher-badge className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">{task.count}</span>
     </>
   )
 }

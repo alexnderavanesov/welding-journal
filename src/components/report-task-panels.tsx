@@ -77,6 +77,8 @@ export function ReportTaskPanels({
       isRefreshing={dispatcherTasksRefreshing}
       onWorkspaceOpenChange={onDispatcherWorkspaceOpenChange}
       stickyLeft={stickyLeft}
+      fitContainer={activeReport === 'weldingJournal'}
+      journalAppearance={activeReport === 'weldingJournal'}
       handlers={handlers}
       onCollapseTaskDetails={onCollapseTaskDetails}
     />

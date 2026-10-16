@@ -454,7 +454,7 @@ function WeldColumnFilterControl({
   )
 }
 
-function DateFilterOptions({
+export function DateFilterOptions({
   options,
   selectedValues,
   onToggleValue,

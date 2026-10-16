@@ -142,12 +142,14 @@ test('1000 строк: разрешённая широкая печать цел
   const sampling = await sampleLocalAuditResources(browser)
   try {
     await page.goto('/journal')
+    const filteredRows = page.waitForResponse(response => rpcName(response.url()).startsWith('listWeldingJournalPage_') &&
+      Boolean(new URL(response.url()).searchParams.get('payload')?.includes('ALLOWED-PRINT-')))
     await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('ALLOWED-PRINT-')
+    await (await filteredRows).finished()
     await expect(page.getByText('ALLOWED-PRINT-F0001', { exact: true })).toBeVisible()
     // This same row is present before filtering. Its visibility alone can be
     // the inert placeholder; wait for the actual current rows, not the totals.
-    await expect(page.getByText('ALLOWED-PRINT-F0001', { exact: true })
-      .locator('xpath=ancestor::tbody')).toHaveAttribute('aria-busy', 'false')
+    await expect(page.locator('[data-welding-journal-grid] .journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
     const started = Date.now()
     await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
     await page.getByRole('button', { name: 'Текущая версия', exact: true }).click()
