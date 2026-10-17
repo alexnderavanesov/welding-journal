@@ -2,12 +2,13 @@ import {
   ClientSideRowModelModule, ClientSideRowModelApiModule, ColumnApiModule, RowApiModule,
   CellApiModule, ScrollApiModule, RenderApiModule, EventApiModule, ColumnAutoSizeModule,
   CustomFilterModule, RowSelectionModule, CellStyleModule, RowStyleModule, TooltipModule,
-  LocaleModule, themeQuartz, themeAlpine, themeBalham,
+  LocaleModule,
   type ICellRendererParams, type RowClassParams, type SelectionColumnDef,
 } from 'ag-grid-community'
 import { CellSelectionModule, ClipboardModule, ColumnMenuModule, RowGroupingModule } from 'ag-grid-enterprise'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getWeldColumnWidth } from '@/lib/weld-column-widths'
+export { GRID_THEMES as THEMES } from './grid-themes'
 
 // Explicit feature boundary: server paging/filtering and the native weld editor
 // stay outside AG Grid. Module dependencies are included by AG Grid itself.
@@ -37,21 +38,6 @@ export const LOCALE = {
 }
 // Leave room for AG Grid's filter/menu controls in addition to the field label.
 export const journalColumnWidth = (field: string) => Math.max(112, getWeldColumnWidth(field) + 32)
-const BASE_THEME = themeQuartz.withParams({
-  accentColor: '#0284c7', backgroundColor: '#ffffff', foregroundColor: '#334155',
-  borderColor: '#e2e8f0', headerBackgroundColor: '#f7f9fc', headerTextColor: '#475569',
-  fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif', fontSize: 13,
-  headerFontSize: 12, headerFontWeight: 600, wrapperBorderRadius: 0,
-  headerColumnResizeHandleColor: '#cbd5e1', headerColumnResizeHandleHeight: '40%',
-  selectedRowBackgroundColor: '#e0f2fe', rangeSelectionBorderColor: '#0284c7',
-  rowBorder: { width: 1, color: '#edf1f5' }, cellHorizontalPadding: 10,
-})
-
-export const THEMES = {
-  quartz: BASE_THEME,
-  alpine: themeAlpine.withParams({ accentColor: '#16816a', backgroundColor: '#fff', foregroundColor: '#334155', headerBackgroundColor: '#eef4f1', headerTextColor: '#35534c', borderColor: '#d6e2dc', fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif', fontSize: 13, headerFontSize: 12, wrapperBorderRadius: 0, cellHorizontalPadding: 10, rowBorder: { width: 1, color: '#e8eeeb' } }),
-  balham: themeBalham.withParams({ accentColor: '#52657b', backgroundColor: '#fff', foregroundColor: '#334155', headerBackgroundColor: '#e9edf2', headerTextColor: '#364152', borderColor: '#d4dbe4', fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif', fontSize: 13, headerFontSize: 12, wrapperBorderRadius: 0, cellHorizontalPadding: 10, rowBorder: { width: 1, color: '#e5e9ef' } }),
-}
 // Plain fields keep F2, double-click editing and context actions on the grid.
 // Links, badges and joint cards retain the shared business renderer. The explicit
 // allowlist ensures new workflows do not accidentally lose an interactive cell.

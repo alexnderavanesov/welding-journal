@@ -1,3 +1,4 @@
+import { documentGridRow, revealDocumentColumn } from '../document-grid'
 import { chooseSpecialist } from '../specialist-helpers'
 import { expect, test, type Page } from '@playwright/test'
 import { eq } from 'drizzle-orm'
@@ -44,15 +45,33 @@ async function openAssignments(page: Page, titles: string[]) {
   await page.goto('/documents')
   await page.getByRole('button', { name: 'Заключения ЛНК', exact: true }).click()
   for (const title of titles) {
-    const checkbox = page.getByRole('button', { name: `Выбрать документ «${title}»`, exact: true })
-    if (await checkbox.getAttribute('aria-pressed') !== 'true') await checkbox.click()
+    await (await documentGridRow(page, title)).checkbox.check()
   }
   await page.getByRole('button', { name: /^Действия с документами, выбрано:/ }).click()
-  const actions = page.getByTestId('context-action-menu').getByRole('button')
-  const heights = await actions.evaluateAll(buttons => buttons.map(button => button.getBoundingClientRect().height))
-  expect(new Set(heights).size).toBe(1)
-  expect(heights[0]).toBe(76)
-  await page.getByTestId('context-action-menu').screenshot({ path: '/private/tmp/specialists-compact-actions.png' })
+  const menu = page.getByTestId('context-action-menu')
+  await expect(menu).toHaveClass(/journal-context-menu/)
+  const actions = menu.locator('[data-menu-item]')
+  // Descriptions may wrap to different heights. All actions retain the journal's
+  // compact visual scale, and their labels/descriptions must fit their buttons.
+  const metrics = await actions.evaluateAll(buttons => buttons.map(button => {
+    const style = getComputedStyle(button), bounds = button.getBoundingClientRect()
+    return {
+      height: bounds.height, minHeight: Number.parseFloat(style.minHeight), fontSize: style.fontSize,
+      paddingLeft: style.paddingLeft, paddingRight: style.paddingRight, gap: style.gap,
+      textFits: [...button.querySelectorAll<HTMLElement>('[data-menu-label], [data-menu-description]')].every(text => {
+        const rect = text.getBoundingClientRect()
+        return rect.height > 0 && rect.top >= bounds.top && rect.bottom <= bounds.bottom
+          && text.scrollWidth <= text.clientWidth + 1 && text.scrollHeight <= text.clientHeight + 1
+      }),
+    }
+  }))
+  expect(metrics.length).toBeGreaterThan(0)
+  for (const item of metrics) {
+    expect(item.height).toBeGreaterThanOrEqual(36)
+    expect(item).toMatchObject({ minHeight: 36, fontSize: '12px', paddingLeft: '16px', paddingRight: '16px', gap: '16px', textFits: true })
+  }
+  for (const text of await menu.locator('[data-menu-label], [data-menu-description]').all()) await expect(text).toBeVisible()
+  await menu.screenshot({ path: '/private/tmp/specialists-compact-actions.png' })
   await page.getByRole('button', { name: 'Назначить специалистов', exact: true }).click()
   return page.getByRole('dialog', { name: 'Назначить специалистов', exact: true })
 }
@@ -102,8 +121,14 @@ test('registry UI, selected-only assignment, historical certificate, replacement
   snapshot = await stored()
   expect(snapshot.slice(0, 2).every(doc => doc.specialists.first.id === petr && doc.specialists.second === null)).toBe(true)
   expect(snapshot[2].specialists).toBeNull()
-  const cell = page.getByRole('button', { name: `Провёл контроль: ${documents[0].title}`, exact: true })
-  const row = cell.locator('xpath=../..')
+  const { id: rowId } = await documentGridRow(page, documents[0].title)
+  await revealDocumentColumn(page, 'specialistFirst')
+  // AG36 retains the outgoing row briefly during a purge. Pinned and center
+  // cells share one live row; measure that exact document, not its fading copy.
+  const row = page.locator(`[data-document-history-grid] .ag-row[row-id="${rowId}"]:not(.ag-opacity-zero)`)
+  await expect(row).toHaveCount(1)
+  const cell = row.locator('[col-id="specialistFirst"]').getByRole('button', { name: `Провёл контроль: ${documents[0].title}`, exact: true })
+  await expect(cell).toBeVisible()
   const rowHeight = (await row.boundingBox())!.height
   await cell.click()
   await expect(page.getByRole('dialog', { name: 'Назначить специалистов', exact: true })).toBeVisible()
@@ -250,7 +275,7 @@ test('merge warns before clearing conflicting snapshots; cancel preserves them',
   await withE2eDatabase(db => db.query('update generated_documents set specialists=$1::jsonb where id=$2', [JSON.stringify(snapshot), documents[0].id]))
   await page.goto('/documents')
   await page.getByRole('button', { name: 'Заключения ЛНК', exact: true }).click()
-  for (const doc of documents.slice(0, 2)) await page.getByRole('button', { name: `Выбрать документ «${doc.title}»`, exact: true }).click()
+  for (const doc of documents.slice(0, 2)) await (await documentGridRow(page, doc.title)).checkbox.check()
   async function openMerge() {
     await page.getByRole('button', { name: /^Действия с документами, выбрано:/ }).click()
     await page.getByRole('button', { name: 'Объединить', exact: true }).click()

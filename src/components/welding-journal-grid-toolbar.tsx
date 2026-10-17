@@ -4,6 +4,7 @@ import { useWeldReportViewState } from '@/lib/use-weld-report-view-state'
 import { isModalDialogOpen } from '@/lib/modal-layer'
 import type { WeldTableSection } from '@/lib/weld-table-sections'
 import type { JournalAppearance } from '@/lib/welding-journal-grid-state'
+import { GridAppearanceSwitch, GridDensitySelect, GridThemeChoices } from './grid-view-settings-controls'
 
 type Props = {
   summary?: ReactNode
@@ -19,11 +20,6 @@ type Props = {
   onClearFilters: () => void
 }
 const TABS = [{ id: 'columns', label: 'Столбцы', icon: Columns3 }, { id: 'appearance', label: 'Оформление', icon: SlidersHorizontal }, { id: 'themes', label: 'Темы', icon: Palette }, { id: 'views', label: 'Мои виды', icon: Bookmark }] as const
-const THEMES = [
-  { id: 'quartz', name: 'Светлая', detail: 'Quartz · мягкие границы и голубой акцент' },
-  { id: 'alpine', name: 'Классическая', detail: 'Alpine · контрастная шапка и зелёный акцент' },
-  { id: 'balham', name: 'Нейтральная', detail: 'Balham · строгие линии и серые оттенки' },
-] as const
 export function JournalGridToolbar({ summary, sections, extraSections, alwaysVisible, view, openColumnsRequest, appearance, onAppearanceChange, onResetLayout, hasFilters, onClearFilters }: Props) {
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<typeof TABS[number]['id']>('columns')
@@ -93,18 +89,11 @@ export function JournalGridToolbar({ summary, sections, extraSections, alwaysVis
             <p className="journal-panel-note">Порядок и ширина — перетаскиванием заголовков. Закрепление и подбор ширины — ПКМ по заголовку.</p>
           </> : null}
           {tab === 'appearance' ? <div className="p-4 space-y-4">
-            <JournalDensitySelect value={appearance.density} onChange={density => onAppearanceChange({ ...appearance, density })} />
-            {([['wrapText', 'Перенос текста'], ['verticalLines', 'Вертикальная сетка'], ['stripes', 'Чередование строк'], ['taskFill', 'Жёлтая заливка задач и дублей']] as const).map(([key, label]) => <div key={key} className="journal-setting-row"><span id={`journal-setting-${key}`}>{label}</span><button type="button" className="journal-switch" role="switch" aria-labelledby={`journal-setting-${key}`} aria-checked={appearance[key]} onClick={() => onAppearanceChange({ ...appearance, [key]: !appearance[key] })}><span /></button></div>)}
+            <GridDensitySelect value={appearance.density} onChange={density => onAppearanceChange({ ...appearance, density })} />
+            {([['wrapText', 'Перенос текста'], ['verticalLines', 'Вертикальная сетка'], ['stripes', 'Чередование строк'], ['taskFill', 'Жёлтая заливка задач и дублей']] as const).map(([key, label]) => <GridAppearanceSwitch key={key} label={label} checked={appearance[key]} onChange={checked => onAppearanceChange({ ...appearance, [key]: checked })} />)}
             <button type="button" className="journal-button w-full" onClick={onResetLayout}><RotateCcw size={14} />Сбросить столбцы</button>
           </div> : null}
-          {tab === 'themes' ? <div className="journal-theme-list" role="radiogroup" aria-label="Тема таблицы">
-            <p className="journal-panel-note">Оформление меняется сразу. Тема сохраняется в вашем браузере и в «Моих видах».</p>
-            {THEMES.map(item => <button key={item.id} type="button" role="radio" aria-checked={appearance.theme === item.id} className={`journal-theme-choice journal-theme-preview-${item.id}`} onClick={() => onAppearanceChange({ ...appearance, theme: item.id })}>
-              <span className="journal-theme-swatch" aria-hidden="true"><i /><i /><i /><i /><i /><i /></span>
-              <span><strong>{item.name}</strong><small>{item.detail}</small></span>
-              <span className="journal-theme-check" aria-hidden="true">{appearance.theme === item.id ? <Check size={15} /> : null}</span>
-            </button>)}
-          </div> : null}
+          {tab === 'themes' ? <GridThemeChoices value={appearance.theme} onChange={theme => onAppearanceChange({ ...appearance, theme })} /> : null}
           {tab === 'views' ? <>
             <p className="journal-panel-note">Сохраните столбцы, фильтры, сортировку и оформление, чтобы возвращаться к привычному виду одним нажатием.</p>
             <form className="flex gap-2 px-4 pb-3" onSubmit={event => { event.preventDefault(); if (view.saveView(viewName)) { setViewName(''); setSaved(true) } }}><input className="journal-input min-w-0 flex-1" placeholder="Название вида" aria-label="Название вида" value={viewName} onChange={event => { setViewName(event.target.value); setSaved(false) }} /><button type="submit" className="journal-button" disabled={!viewName.trim()}>Сохранить</button></form>
@@ -115,34 +104,4 @@ export function JournalGridToolbar({ summary, sections, extraSections, alwaysVis
       </div> : null}
     </div>
   </div>
-}
-
-const DENSITIES = [
-  { value: 'compact', label: 'Компактно', description: 'Больше строк на экране' },
-  { value: 'comfortable', label: 'Комфортно', description: 'Для ежедневной работы' },
-  { value: 'spacious', label: 'Просторно', description: 'Больше воздуха между строками' },
-] as const
-function JournalDensitySelect({ value, onChange }: { value: JournalAppearance['density']; onChange: (value: JournalAppearance['density']) => void }) {
-  const [open, setOpen] = useState(false)
-  const [active, setActive] = useState(0)
-  const root = useRef<HTMLDivElement>(null)
-  const trigger = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const outside = (event: PointerEvent) => { if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false) }
-    document.addEventListener('pointerdown', outside)
-    return () => document.removeEventListener('pointerdown', outside)
-  }, [open])
-  const select = (index: number) => { onChange(DENSITIES[index].value); setOpen(false); trigger.current?.focus({ preventScroll: true }) }
-  return <div className="journal-setting-row"><span id="journal-density-label">Плотность строк</span><div ref={root} className="journal-density-select" onKeyDown={event => {
-    if (event.key === 'Escape' && open) { event.preventDefault(); event.stopPropagation(); setOpen(false); return }
-    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-      event.preventDefault(); setOpen(true)
-      setActive(index => event.key === 'Home' ? 0 : event.key === 'End' ? 2 : !open ? DENSITIES.findIndex(item => item.value === value) : (index + (event.key === 'ArrowDown' ? 1 : 2)) % 3)
-    } else if (open && ['Enter', ' '].includes(event.key)) { event.preventDefault(); select(active) }
-    else if (event.key === 'Tab') setOpen(false)
-  }}>
-    <button ref={trigger} type="button" role="combobox" aria-labelledby="journal-density-label" aria-expanded={open} aria-controls="journal-density-options" aria-activedescendant={open ? `journal-density-${active}` : undefined} className="journal-button" onClick={() => { setActive(DENSITIES.findIndex(item => item.value === value)); setOpen(!open) }}>{DENSITIES.find(item => item.value === value)?.label}<ChevronDown size={14} /></button>
-    {open ? <div id="journal-density-options" role="listbox" aria-labelledby="journal-density-label" className="journal-density-options">{DENSITIES.map((item, index) => <button key={item.value} id={`journal-density-${index}`} type="button" role="option" tabIndex={-1} aria-selected={value === item.value} data-active={active === index} onMouseEnter={() => setActive(index)} onClick={() => select(index)}><span><strong>{item.label}</strong><small>{item.description}</small></span>{value === item.value ? <Check size={15} /> : null}</button>)}</div> : null}
-  </div></div>
 }

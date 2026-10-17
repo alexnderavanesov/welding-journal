@@ -10,7 +10,7 @@ type GroupDrag = {
 type DragPreview = { group: JournalGrouping; level: number; left: number; top: number; width: number; height: number; target: number | null }
 
 /** Lives in the existing toolbar: adding levels never shifts the grid or its header. */
-export function JournalGroupingControls({ groups, onChange }: { groups: JournalGrouping[]; onChange: (ids: string[]) => void }) {
+export function JournalGroupingControls({ groups, onChange, scope = 'loaded' }: { groups: JournalGrouping[]; onChange: (ids: string[]) => void; scope?: 'loaded' | 'documents' }) {
   const levels = useRef<HTMLDivElement>(null)
   const dragged = useRef<GroupDrag | null>(null)
   const [preview, setPreview] = useState<DragPreview | null>(null)
@@ -54,7 +54,7 @@ export function JournalGroupingControls({ groups, onChange }: { groups: JournalG
     drag.target = inside ? distances.indexOf(Math.min(...distances)) : null
     setPreview({ group, level: index, left: drag.rect.left + dx, top: drag.rect.top + dy, width: drag.rect.width, height: drag.rect.height, target: drag.target })
   }
-  return <div className="journal-grouping" data-dragging={Boolean(preview)} aria-label="Группировка загруженных строк" title="Группируются только загруженные строки. Добавить уровень — ПКМ по заголовку столбца.">
+  return <div className="journal-grouping" data-dragging={Boolean(preview)} aria-label={scope === 'documents' ? 'Группировка документов' : 'Группировка загруженных строк'} title={scope === 'documents' ? 'Группируется весь отфильтрованный реестр документов. Добавить уровень — ПКМ по заголовку столбца.' : 'Группируются только загруженные строки. Добавить уровень — ПКМ по заголовку столбца.'}>
     <ListTree size={15} aria-hidden="true" className="journal-grouping-icon" />
     {groups.length ? <>
       <div ref={levels} className="journal-grouping-levels" role="list" aria-label="Порядок группировок">

@@ -1,5 +1,6 @@
+import { positionGridPopup } from './grid-popup-position'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { type RowHeightParams, type IRowNode, type ColDef, type ColGroupDef, type GridApi, type RowSelectionOptions, type PostProcessPopupParams, type CellPosition, type GetColumnMenuItemsParams, type MenuItemDef, type DefaultMenuItem } from 'ag-grid-community'
+import { type RowHeightParams, type IRowNode, type ColDef, type ColGroupDef, type GridApi, type RowSelectionOptions, type CellPosition, type GetColumnMenuItemsParams, type MenuItemDef, type DefaultMenuItem } from 'ag-grid-community'
 import { AgGridProvider, AgGridReact } from 'ag-grid-react'
 import { ChevronDown, ChevronUp, ChevronsDown, ChevronsUp, Copy } from 'lucide-react'
 import type { WeldTableProps } from './weld-table'
@@ -412,7 +413,7 @@ function JournalGrid(props: WeldingJournalGridProps) {
           if (popupColumn.current) api?.setFocusedHeader(popupColumn.current)
         }}>
         <AgGridReact<WeldRow>
-          postProcessPopup={positionJournalPopup}
+          postProcessPopup={positionGridPopup}
           theme={THEMES[appearance.theme]} rowData={rows} columnDefs={columns} defaultColDef={defaultColDef}
           getRowId={({ data }) => String(data.id)}
           onGridReady={event => { initialLayout.current = journalColumnLayout(event.api.getColumnState()); setApi(event.api) }}
@@ -492,14 +493,4 @@ function JournalGrid(props: WeldingJournalGridProps) {
       <ContextActionMenu menu={rowMenu.menu} panelClassName="journal-context-menu" onClose={() => { rowMenu.close(); requestAnimationFrame(focus.restore) }} autoFocus />
     </section>
   </JournalExtrasContext.Provider></JournalFilterContext.Provider></JournalGridContext.Provider>
-}
-
-// AG bounds popups by the full grid, which may extend below the browser viewport.
-// Its resize observer calls this again after async filter contents arrive.
-function positionJournalPopup({ ePopup }: PostProcessPopupParams) {
-  const rect = ePopup.getBoundingClientRect()
-  const dy = Math.max(12 - rect.top, Math.min(0, window.innerHeight - 12 - rect.bottom))
-  const dx = Math.max(12 - rect.left, Math.min(0, window.innerWidth - 12 - rect.right))
-  if (dy) ePopup.style.top = `${parseFloat(ePopup.style.top || '0') + dy}px`
-  if (dx) ePopup.style.left = `${parseFloat(ePopup.style.left || '0') + dx}px`
 }

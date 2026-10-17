@@ -13,20 +13,21 @@ import {
   normalizeDocumentHistoryColumnFilters,
   normalizeDocumentHistoryDocumentId,
   normalizeDocumentHistoryLimit,
-  type RemoteDocumentHistoryFilterOption,
 } from '@/server/generated-documents'
 import {
   isSystemDocumentHistoryFilterKey,
   hasSystemDocumentNameConflict,
   loadSystemDocumentDateContext,
-  loadIndexedSystemDocumentHistory,
   loadIndexedSystemDocumentHistoryFilterOptions,
+  loadIndexedSystemDocumentHistoryGrid,
+  SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS,
   loadSystemDocumentRows,
-  loadSystemDocumentSummaries,
   loadSystemDocumentSpecialistSnapshot,
 } from '@/server/system-document-index'
 import type { SqlDocumentHistoryFilterOptionsResult } from '@/server/document-history-sql'
 import { assertSecurityScope } from '@/server/security-functions'
+import type { DocumentHistoryGridRequest, DocumentHistoryGridResult } from '@/lib/document-history-grid'
+import { normalizeDocumentHistoryGridRequest } from './document-history-grid'
 
 export type RemoteSystemDocumentHistoryRequest = {
   type: SystemDocumentType
@@ -35,18 +36,27 @@ export type RemoteSystemDocumentHistoryRequest = {
   columnFilters?: Record<string, string>
 }
 
-export type RemoteSystemDocumentHistoryResult = {
-  documents: SystemDocumentSummary[]
-  total: number
-  filterOptions: Record<string, RemoteDocumentHistoryFilterOption[]>
-}
-
 export type RemoteSystemDocumentHistoryFilterOptionsRequest = {
   type: SystemDocumentType
   documentId?: number
   fieldKey: string
   search?: string
+  gridSearch?: string
   columnFilters?: Record<string, string>
+}
+
+export type RemoteSystemDocumentHistoryGridRequest = Omit<RemoteSystemDocumentHistoryRequest, 'limit'> & DocumentHistoryGridRequest
+
+export const listSystemDocumentHistoryGrid = createServerFn({ method: 'POST' })
+  .validator(normalizeSystemDocumentHistoryGridRequest)
+  .handler(async ({ data }): Promise<DocumentHistoryGridResult<SystemDocumentSummary>> => {
+    await assertSecurityScope('entry')
+    return loadIndexedSystemDocumentHistoryGrid(data)
+  })
+
+export function normalizeSystemDocumentHistoryGridRequest(data: RemoteSystemDocumentHistoryGridRequest | undefined) {
+  const { limit: _limit, ...history } = normalizeSystemDocumentHistoryRequest(data)
+  return { ...history, ...normalizeDocumentHistoryGridRequest(data, SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS, 'system') }
 }
 
 export type RemoteSystemDocumentNameConflictRequest = {
@@ -57,32 +67,11 @@ export type RemoteSystemDocumentNameConflictRequest = {
   excludeDocumentId?: number
 }
 
-export const listSystemDocuments = createServerFn({ method: 'GET' })
-  .validator((data: { type: SystemDocumentType }) => ({
-    type: requireSystemDocumentType(data?.type),
-  }))
-  .handler(async ({ data }): Promise<SystemDocumentSummary[]> => {
-    await assertSecurityScope('entry')
-    return loadSystemDocumentSummaries(data.type)
-  })
-
 export const checkSystemDocumentNameConflict = createServerFn({ method: 'POST' })
   .validator(normalizeSystemDocumentNameConflictRequest)
   .handler(async ({ data }): Promise<boolean> => {
     await assertSecurityScope('entry')
     return hasSystemDocumentNameConflict(data)
-  })
-
-export const listSystemDocumentHistory = createServerFn({ method: 'GET' })
-  .validator(normalizeSystemDocumentHistoryRequest)
-  .handler(async ({ data }): Promise<RemoteSystemDocumentHistoryResult> => {
-    await assertSecurityScope('entry')
-    return loadIndexedSystemDocumentHistory({
-      type: data.type,
-      documentId: data.documentId,
-      columnFilters: data.columnFilters,
-      limit: data.limit,
-    })
   })
 
 export const listSystemDocumentHistoryFilterOptions = createServerFn({ method: 'GET' })
@@ -116,6 +105,7 @@ export function normalizeSystemDocumentHistoryFilterOptionsRequest(
     ...(documentId ? { documentId } : {}),
     fieldKey: data.fieldKey,
     search: String(data?.search ?? '').trim().slice(0, 200),
+    ...(data?.gridSearch === undefined ? {} : { gridSearch: String(data.gridSearch).trim().slice(0, 200) }),
     columnFilters: normalizeDocumentHistoryColumnFilters(data?.columnFilters),
   }
 }

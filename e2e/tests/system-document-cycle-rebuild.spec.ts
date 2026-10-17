@@ -5,7 +5,7 @@ import { openDocumentOperation, confirmDocumentOperation } from '../document-ope
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
-import { rpcName } from '../rpc'
+import { deserializeRpcPayload, rpcName } from '../rpc'
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '../../src/lib/request-conclusion-settings'
 import { buildCurrentSystemDocumentName } from '../../src/lib/system-document-types'
 import { ensureDispatcherTaskIndexFresh } from '@/server/dispatcher-task-index'
@@ -208,9 +208,18 @@ test('manual collision with unselected legacy first cycle is refused, including 
 
 test('active history refresh is coalesced and reopening does not restore stale names', async ({ page }) => {
   const data = await seed(true), calls: string[] = []
-  page.on('request', req => { if (req.url().includes('/_serverFn/')) calls.push(rpcName(req.url()).split('_')[0]) })
+  const historyRequests: Array<{ selectionOnly?: boolean; selectedIds?: Array<string | number>; startRow: number; endRow: number }> = []
+  page.on('request', req => {
+    if (!req.url().includes('/_serverFn/')) return
+    const name = rpcName(req.url()).split('_')[0]
+    calls.push(name)
+    if (name === 'listSystemDocumentHistoryGrid') {
+      const payload = deserializeRpcPayload(req.postData()!) as { data: typeof historyRequests[number] }
+      historyRequests.push(payload.data)
+    }
+  })
   const dialog = await openDocumentOperation(page, [data.documents[0].title])
-  const before = calls.filter(n => n === 'listSystemDocumentHistory').length
+  const before = historyRequests.length
   const inputs = dialog.getByRole('textbox', { name: /^Название:/ })
   await inputs.nth(0).fill('Cached history L1'); await inputs.nth(1).fill('Cached history L2'); await inputs.nth(1).blur()
   await dialog.getByRole('button', { name: 'Проверить изменения' }).click()
@@ -218,7 +227,14 @@ test('active history refresh is coalesced and reopening does not restore stale n
   await dialog.getByRole('button', { name: 'Остановиться / закрыть' }).click()
   await expect(page.getByText('Cached history L1', { exact: true })).toBeVisible()
   await expect(page.getByText('Cached history L2', { exact: true })).toBeVisible()
-  expect(calls.filter(n => n === 'listSystemDocumentHistory')).toHaveLength(before + 1)
+  // One active block reload and one exact-selection snapshot refresh share the
+  // invalidation; neither a second block reload nor per-document requests are needed.
+  expect(historyRequests).toHaveLength(before + 2)
+  const refreshed = historyRequests.slice(before)
+  expect(refreshed.filter(request => !request.selectionOnly)).toHaveLength(1)
+  expect(refreshed.filter(request => request.selectionOnly)).toHaveLength(1)
+  expect(refreshed.find(request => request.selectionOnly)?.selectedIds).toHaveLength(1)
+  for (const request of refreshed) expect(request.endRow - request.startRow).toBe(100)
   expect(calls.filter(n => n === 'getDocumentOperationComposition')).toHaveLength(0)
 })
 

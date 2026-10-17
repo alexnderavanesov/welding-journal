@@ -35,24 +35,60 @@ test.afterEach(async () => {
   await cleanupLineProgramProjects([project])
 })
 
-test('меню столбцов поверх кнопок; закрепленные действия принимают фон строки', async ({ page }) => {
+test('меню столбцов поверх кнопок; закрепленные действия принимают фон строки', async ({ page }, info) => {
   await page.setViewportSize({ width: 1200, height: 800 })
   await page.goto('/documents')
   for (const view of ['ЖСР', 'Заявка ЛНК']) {
     await page.getByRole('button', { name: view, exact: true }).click()
-    const actions = page.locator('[data-document-row-actions]')
+    const grid = page.locator('[data-document-history-grid]')
+    const actions = grid.locator('[data-document-row-actions]')
     await expect(actions.first()).toBeVisible()
     for (let index = 0; index < 2; index++) {
-      const cell = actions.nth(index), row = cell.locator('..')
-      const matchingColor = () => cell.evaluate(element => getComputedStyle(element).backgroundColor === getComputedStyle(element.parentElement!).backgroundColor)
-      await expect.poll(matchingColor).toBe(true)
+      const cell = actions.nth(index)
+      const rowId = await cell.evaluate(element => element.closest('.ag-row')!.getAttribute('row-id'))
+      const row = grid.locator(`.ag-row[row-id="${rowId}"]`)
+      const checkbox = grid.locator(`.ag-row[row-id="${rowId}"]`).getByRole('checkbox')
+      const colorLayers = () => cell.evaluate(element => {
+        const row = element.closest('.ag-row')!
+        const pinnedCells = element.closest('.ag-grid-pinned-right-cells')
+        const scrollingCells = row.querySelector('.ag-grid-scrolling-cells')
+        const pinnedWrapper = element.closest('.ag-grid-container-wrapper')
+        if (!pinnedCells || !scrollingCells || !pinnedWrapper) return { matches: false, missingNativeLayer: true }
+        const color = (target: Element, pseudo: string | null = null) => {
+          const style = getComputedStyle(target, pseudo)
+          return { background: style.backgroundColor, image: style.backgroundImage, opacity: style.opacity }
+        }
+        const customLayers = []
+        for (let current: Element | null = element; current && current !== pinnedWrapper; current = current.parentElement) {
+          customLayers.push({ className: current.className, ...color(current) })
+        }
+        const rowBase = color(row), wrapperBase = color(pinnedWrapper)
+        const pinnedOverlays = ['::before', '::after'].map(pseudo => color(pinnedCells, pseudo))
+        const scrollingOverlays = ['::before', '::after'].map(pseudo => color(scrollingCells, pseudo))
+        // AG 36 paints scrolling cells through their parent row, while the
+        // pinned native wrapper inherits that same opaque row background.
+        // Only the application/individual cell layers must be transparent.
+        const matches = customLayers.every(layer => ['transparent', 'rgba(0, 0, 0, 0)'].includes(layer.background) && layer.image === 'none')
+          && wrapperBase.background === rowBase.background && wrapperBase.image === rowBase.image
+          && wrapperBase.opacity === rowBase.opacity
+          && JSON.stringify(pinnedOverlays) === JSON.stringify(scrollingOverlays)
+        return { matches, rowBase, wrapperBase, pinnedBase: color(pinnedCells), scrollingBase: color(scrollingCells), customLayers, pinnedOverlays, scrollingOverlays }
+      })
+      const assertMatchingColor = async (state: string) => {
+        try { await expect.poll(async () => (await colorLayers()).matches).toBe(true) }
+        catch (error) {
+          await info.attach(`document-row-colors-${view}-${index}-${state}`, { body: JSON.stringify(await colorLayers(), null, 2), contentType: 'application/json' })
+          throw error
+        }
+      }
+      await assertMatchingColor('normal')
       await row.hover()
-      await expect.poll(matchingColor).toBe(true)
-      await row.getByRole('button', { name: /^Выбрать документ/ }).click()
-      await expect.poll(matchingColor).toBe(true)
+      await assertMatchingColor('hover')
+      await checkbox.check()
+      await assertMatchingColor('selected')
     }
-    await page.getByRole('button', { name: /Столбцы/ }).click()
-    const menu = page.getByRole('dialog', { name: 'Столбцы истории документов' })
+    await grid.getByRole('button', { name: 'Настроить вид', exact: true }).click()
+    const menu = page.getByRole('dialog', { name: 'Настройка вида документов' })
     await expect(menu).toBeInViewport()
     // Check actual browser hit-testing, not merely the numeric z-index.
     expect(await menu.evaluate(element => {
@@ -64,7 +100,7 @@ test('меню столбцов поверх кнопок; закрепленн�
     await page.screenshot({ path: `/private/tmp/welding-columns-${view === 'ЖСР' ? 'manual' : 'system'}.png` })
     await page.keyboard.press('Escape')
     await expect(menu).toBeHidden()
-    await expect(page.getByRole('button', { name: /Столбцы/ })).toBeFocused()
+    await expect(grid.getByRole('button', { name: 'Настроить вид', exact: true })).toBeFocused()
   }
 })
 

@@ -55,12 +55,15 @@ async function state() {
     settings: (await db.query('select * from app_settings order by key')).rows,
   }))
 }
+function documentCheckbox(page: Page, documentId: number) {
+  return page.locator(`[data-document-history-grid] .ag-row[row-id="document:system-document:${documentId}"]`).getByRole('checkbox')
+}
+
 async function open(page: Page, documents: Array<{ id: number; title: string }>, action: 'split' | 'rename' | 'merge' = 'split') {
   await page.goto('/documents')
   await page.getByRole('button', { name: 'Заявка ЛНК', exact: true }).click()
   for (const doc of documents) {
-    const checkbox = page.getByRole('button', { name: `Выбрать документ «${doc.title}»`, exact: true })
-    if (await checkbox.getAttribute('aria-pressed') !== 'true') await checkbox.click()
+    await documentCheckbox(page, doc.id).check()
   }
   await page.getByRole('button', { name: /^Действия с документами, выбрано:/ }).click()
   await page.getByRole('button', { name: action === 'split' ? 'Изменить разделение' : action === 'merge' ? 'Объединить' : 'Переименовать', exact: true }).click()
@@ -264,25 +267,25 @@ test('standalone merge from compact actions preserves all facts, replaces only t
   expect(errors).toEqual([])
 })
 
-test('compact actions and row context explain the minimum selection without adding another toolbar', async ({ page }, info) => {
+test('registry toolbar and row context explain the minimum selection and keep the exact selected scope', async ({ page }, info) => {
   const docs = await seedRequests(2)
   await page.goto('/documents'); await page.getByRole('button', { name: 'Заявка ЛНК', exact: true }).click()
-  const toolbar = page.locator('[data-documents-navigation]')
+  const toolbar = page.locator('[data-document-history-grid] .document-grid-toolbar')
   await expect(toolbar.getByRole('button', { name: 'Действия с документами, выбрано: 0', exact: true })).toBeVisible()
   await toolbar.getByRole('button', { name: 'Действия с документами, выбрано: 0', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Объединить', exact: true })).toBeDisabled()
   await expect(page.getByText(/Отметьте минимум два документа/)).toBeVisible()
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: `Выбрать документ «${docs[0].title}»`, exact: true }).click()
+  await documentCheckbox(page, docs[0].id).check()
   await page.getByRole('button', { name: 'Действия с документами, выбрано: 1', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Объединить', exact: true })).toBeDisabled()
   await expect(page.getByRole('button', { name: 'Изменить разделение', exact: true })).toBeEnabled()
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: `Выбрать документ «${docs[1].title}»`, exact: true }).click()
+  await documentCheckbox(page, docs[1].id).check()
   await page.getByRole('button', { name: 'Действия с документами, выбрано: 2', exact: true }).click()
   await page.screenshot({ path: info.outputPath('compact-document-actions.png') })
   await page.keyboard.press('Escape')
-  const row = page.locator('div[style*="grid-template-columns"]').filter({ has: page.getByRole('button', { name: `Выбрать документ «${docs[0].title}»`, exact: true }) }).last()
+  const row = page.locator(`[data-document-history-grid] .ag-row[row-id="document:system-document:${docs[0].id}"] [col-id="title"]`)
   await row.click({ button: 'right' })
   await page.getByRole('button', { name: 'Объединить (2)', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Объединить документы' })
@@ -294,7 +297,7 @@ test('compact actions and row context explain the minimum selection without addi
 test('standalone merge refuses incompatible dates and forged split parameters without changing any document', async ({ page }) => {
   const docs = await seedRequests(2, 2, '2026-10-10')
   await page.goto('/documents'); await page.getByRole('button', { name: 'Заявка ЛНК', exact: true }).click()
-  for (const doc of docs) await page.getByRole('button', { name: `Выбрать документ «${doc.title}»`, exact: true }).click()
+  for (const doc of docs) await documentCheckbox(page, doc.id).check()
   await page.getByRole('button', { name: 'Действия с документами, выбрано: 2', exact: true }).click()
   const before = await state()
   await page.getByRole('button', { name: 'Объединить', exact: true }).click()
@@ -414,7 +417,7 @@ test('before-TO requests and conclusions preserve exact methods, stage, IDs and 
     { kind: 'Заявка ЛНК', docs: [primary[0], documents[0]], reason: 'разные этапы: НК до ТО и основной НК' },
   ]) {
     await page.goto('/documents'); await page.getByRole('button', { name: selection.kind, exact: true }).click()
-    for (const doc of selection.docs) await page.getByRole('button', { name: `Выбрать документ «${doc.title}»`, exact: true }).click()
+    for (const doc of selection.docs) await documentCheckbox(page, doc.id).check()
     await page.getByRole('button', { name: 'Действия с документами, выбрано: 2', exact: true }).click()
     const unchanged = await state()
     await page.getByRole('button', { name: 'Объединить', exact: true }).click()
@@ -463,15 +466,15 @@ test('action dialogs: Escape closes help then dialog, preserves selection, works
     await dialog.getByRole('textbox', { name: /^Название:/ }).first().fill('Не сохранять этот черновик')
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
-    await expect(page.locator('[data-documents-navigation]').getByRole('button', { name: 'Действия с документами, выбрано: 2', exact: true })).toBeVisible()
-    for (const doc of docs) await expect(page.getByRole('button', { name: `Выбрать документ «${doc.title}»`, exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('[data-document-history-grid] .document-grid-toolbar').getByRole('button', { name: 'Действия с документами, выбрано: 2', exact: true })).toBeVisible()
+    for (const doc of docs) await expect(documentCheckbox(page, doc.id)).toBeChecked()
   }
   await page.screenshot({ path: info.outputPath('document-actions-top-panel.png') })
   await page.getByRole('button', { name: 'Скрыть меню', exact: true }).click()
   await page.setViewportSize({ width: 430, height: 900 })
   await expect(page.locator('aside').filter({ has: page.getByRole('navigation', { name: 'Разделы программы' }) })).toHaveCSS('width', '64px')
   await expect(page.locator('main > div').first()).toHaveCSS('padding-left', '80px')
-  const actions = page.locator('[data-documents-navigation]').getByRole('button', { name: /^Действия с документами/ })
+  const actions = page.locator('[data-document-history-grid] .document-grid-toolbar').getByRole('button', { name: /^Действия с документами/ })
   const box = await actions.boundingBox()
   expect(box!.x).toBeGreaterThanOrEqual(0)
   expect(box!.x + box!.width).toBeLessThanOrEqual(430)

@@ -18,7 +18,6 @@ export type DocumentHistoryColumnKey =
 export type DocumentHistoryColumnDefinition = {
   key: DocumentHistoryColumnKey
   label: string
-  gridTrack: string
   minWidth: number
   align?: 'end'
   dateGrouped?: boolean
@@ -29,41 +28,42 @@ export type DocumentHistoryColumnPreferences = Record<string, DocumentHistoryCol
 
 export function specialistHistoryColumns(thermist = false): DocumentHistoryColumnDefinition[] {
   return [
-    { key: 'specialistFirst', label: thermist ? 'Оператор-термист' : 'Провёл контроль', gridTrack: 'minmax(190px, 1fr)', minWidth: 190 },
-    { key: 'specialistSecond', label: thermist ? 'Руководитель по ТО' : 'Выдал заключение', gridTrack: 'minmax(190px, 1fr)', minWidth: 190 },
+    { key: 'specialistFirst', label: thermist ? 'Оператор-термист' : 'Провёл контроль', minWidth: 190 },
+    { key: 'specialistSecond', label: thermist ? 'Руководитель по ТО' : 'Выдал заключение', minWidth: 190 },
   ]
 }
 
 export const GENERATED_DOCUMENT_HISTORY_COLUMNS: readonly DocumentHistoryColumnDefinition[] = [
-  { key: 'title', label: 'Документ', gridTrack: 'minmax(280px, 1.5fr)', minWidth: 280, required: true },
-  { key: 'project', label: 'Проект', gridTrack: 'minmax(140px, 0.72fr)', minWidth: 140 },
-  { key: 'subtitle', label: 'Шифр', gridTrack: 'minmax(130px, 0.66fr)', minWidth: 130 },
-  { key: 'line', label: 'Линия', gridTrack: 'minmax(150px, 0.72fr)', minWidth: 150 },
-  { key: 'period', label: 'Период', gridTrack: 'minmax(160px, 0.75fr)', minWidth: 160, dateGrouped: true },
-  { key: 'rowCount', label: 'Стыков', gridTrack: '84px', minWidth: 84, align: 'end' },
-  { key: 'wdi', label: 'WDI', gridTrack: '76px', minWidth: 76, align: 'end' },
-  { key: 'updatedAt', label: 'Обновлен', gridTrack: '140px', minWidth: 140, dateGrouped: true },
+  { key: 'title', label: 'Документ', minWidth: 280, required: true },
+  { key: 'project', label: 'Проект', minWidth: 140 },
+  { key: 'subtitle', label: 'Шифр', minWidth: 130 },
+  { key: 'line', label: 'Линия', minWidth: 150 },
+  { key: 'period', label: 'Период', minWidth: 160, dateGrouped: true },
+  { key: 'rowCount', label: 'Стыков', minWidth: 110, align: 'end' },
+  { key: 'wdi', label: 'WDI', minWidth: 76, align: 'end' },
+  { key: 'updatedAt', label: 'Обновлен', minWidth: 140, dateGrouped: true },
 ]
 
 export const LAYERED_GENERATED_DOCUMENT_HISTORY_COLUMNS: readonly DocumentHistoryColumnDefinition[] = [
-  { key: 'title', label: 'Заключение', gridTrack: 'minmax(280px, 1.5fr)', minWidth: 280, required: true },
-  { key: 'stage', label: 'Этап', gridTrack: '100px', minWidth: 100 },
-  { key: 'project', label: 'Проект', gridTrack: 'minmax(140px, 0.72fr)', minWidth: 140 },
-  { key: 'subtitle', label: 'Шифр', gridTrack: 'minmax(130px, 0.66fr)', minWidth: 130 },
-  { key: 'line', label: 'Линия', gridTrack: 'minmax(150px, 0.72fr)', minWidth: 150 },
-  { key: 'period', label: 'Дата заключения', gridTrack: '150px', minWidth: 150, dateGrouped: true },
-  { key: 'updatedAt', label: 'Обновлен', gridTrack: '140px', minWidth: 140, dateGrouped: true },
+  { key: 'title', label: 'Заключение', minWidth: 280, required: true },
+  { key: 'stage', label: 'Этап', minWidth: 100 },
+  { key: 'project', label: 'Проект', minWidth: 140 },
+  { key: 'subtitle', label: 'Шифр', minWidth: 130 },
+  { key: 'line', label: 'Линия', minWidth: 150 },
+  { key: 'period', label: 'Дата заключения', minWidth: 150, dateGrouped: true },
+  { key: 'rowCount', label: 'Стыков', minWidth: 110, align: 'end' },
+  { key: 'updatedAt', label: 'Обновлен', minWidth: 140, dateGrouped: true },
 ]
 
 export const SYSTEM_DOCUMENT_HISTORY_COLUMNS: readonly DocumentHistoryColumnDefinition[] = [
-  { key: 'title', label: 'Документ', gridTrack: 'minmax(280px, 1.5fr)', minWidth: 280, required: true },
-  { key: 'method', label: 'Вид НК', gridTrack: '84px', minWidth: 84 },
-  { key: 'stage', label: 'Этап', gridTrack: '110px', minWidth: 110 },
-  { key: 'project', label: 'Проект', gridTrack: 'minmax(130px, 0.6fr)', minWidth: 130 },
-  { key: 'subtitle', label: 'Шифр', gridTrack: 'minmax(120px, 0.58fr)', minWidth: 120 },
-  { key: 'line', label: 'Линия', gridTrack: 'minmax(150px, 0.68fr)', minWidth: 150 },
-  { key: 'rowCount', label: 'Стыков', gridTrack: '84px', minWidth: 84, align: 'end' },
-  { key: 'date', label: 'Дата', gridTrack: '128px', minWidth: 128, dateGrouped: true },
+  { key: 'title', label: 'Документ', minWidth: 280, required: true },
+  { key: 'method', label: 'Вид НК', minWidth: 84 },
+  { key: 'stage', label: 'Этап', minWidth: 110 },
+  { key: 'project', label: 'Проект', minWidth: 130 },
+  { key: 'subtitle', label: 'Шифр', minWidth: 120 },
+  { key: 'line', label: 'Линия', minWidth: 150 },
+  { key: 'rowCount', label: 'Стыков', minWidth: 110, align: 'end' },
+  { key: 'date', label: 'Дата', minWidth: 128, dateGrouped: true },
 ]
 
 const DOCUMENT_HISTORY_COLUMN_KEY_SET = new Set<DocumentHistoryColumnKey>([
@@ -116,52 +116,6 @@ export function getVisibleDocumentHistoryColumns({
 
   const preferredSet = new Set(preferredKeys)
   return availableColumns.filter((column) => column.required || preferredSet.has(column.key))
-}
-
-export function setVisibleDocumentHistoryColumns({
-  viewId,
-  visibleColumnKeys,
-  availableColumns,
-  preferences,
-}: {
-  viewId: string
-  visibleColumnKeys: readonly DocumentHistoryColumnKey[]
-  availableColumns: readonly DocumentHistoryColumnDefinition[]
-  preferences: DocumentHistoryColumnPreferences
-}): DocumentHistoryColumnPreferences {
-  const visibleSet = new Set(visibleColumnKeys)
-  const normalizedKeys = availableColumns
-    .filter((column) => column.required || visibleSet.has(column.key))
-    .map((column) => column.key)
-  return { ...preferences, [viewId]: normalizedKeys }
-}
-
-export function getDocumentHistoryGridLayout({
-  columns,
-  actionsWidth,
-}: {
-  columns: readonly DocumentHistoryColumnDefinition[]
-  actionsWidth: number
-}) {
-  const trackCount = columns.length + 2
-  return {
-    gridTemplateColumns: ['34px', ...columns.map((column) => column.gridTrack), `${actionsWidth}px`].join(' '),
-    minWidth: 34
-      + columns.reduce((sum, column) => sum + column.minWidth, 0)
-      + actionsWidth
-      + Math.max(0, trackCount - 1) * 16
-      + 32,
-  }
-}
-
-export function retainVisibleDocumentHistoryColumnFilters(
-  filters: Record<string, string>,
-  visibleColumnKeys: ReadonlySet<DocumentHistoryColumnKey>,
-) {
-  const next = Object.fromEntries(
-    Object.entries(filters).filter(([key]) => visibleColumnKeys.has(key as DocumentHistoryColumnKey)),
-  )
-  return Object.keys(next).length === Object.keys(filters).length ? filters : next
 }
 
 function isDocumentHistoryColumnKey(value: unknown): value is DocumentHistoryColumnKey {

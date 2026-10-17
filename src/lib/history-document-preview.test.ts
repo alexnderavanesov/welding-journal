@@ -10,6 +10,22 @@ function file(sheet: XLSX.WorkSheet, additional?: XLSX.WorkSheet) {
 }
 
 describe('history workbook preview', () => {
+  it('centres the screen page without changing Excel column widths or the print shell', async () => {
+    const sheet = XLSX.utils.aoa_to_sheet([['One', 'Two']])
+    sheet['!cols'] = [{ wpx: 190 }, { wpx: 230 }]
+    const workbook = await readHistoryDocumentWorkbook(file(sheet))
+    const fullPrint = workbook.print('Document')
+    const html = workbook.page(0, 0, 0, 'Document', 75)
+    expect(html).toContain('data-document-preview-page style="zoom:0.75"')
+    expect(html).toContain('width:max-content;margin:0 auto')
+    expect(html).toContain('@media screen{html{scrollbar-gutter:stable}')
+    expect(html).toContain('<table style="width:420px">')
+    expect(html).not.toContain('<script')
+    expect(fullPrint).not.toContain('data-document-preview-page')
+    expect(fullPrint).not.toContain('@media screen')
+    expect(workbook.print('Document')).toBe(fullPrint)
+  })
+
   it('preserves merges, formatted values, sizes and OOXML cell styling; escapes content', async () => {
     const sheet = XLSX.utils.aoa_to_sheet([['<script>alert(1)</script>', ''], [123.5, 'Последний']])
     sheet.A2.z = '0.00'

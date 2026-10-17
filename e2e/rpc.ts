@@ -6,13 +6,21 @@ import { createRequire } from 'node:module'
 // Calling an uncompiled createServerFn directly has no Start request context.
 const startRequire = createRequire(import.meta.resolve('@tanstack/react-start/client-rpc'))
 const coreRequire = createRequire(startRequire.resolve('@tanstack/start-client-core/package.json'))
-const { toJSONAsync } = coreRequire('seroval') as { toJSONAsync: (value: unknown) => Promise<unknown> }
+const { toJSONAsync, fromJSON } = coreRequire('seroval') as {
+  toJSONAsync: (value: unknown) => Promise<unknown>
+  fromJSON: (value: unknown) => unknown
+}
 export async function serializeRpcData(data: unknown): Promise<string> {
   return serializeRpcPayload({ data })
 }
 
 export async function serializeRpcPayload(payload: unknown): Promise<string> {
   return JSON.stringify(await toJSONAsync(payload))
+}
+
+/** Inspect the actual typed request when asserting bounded browser RPC scopes. */
+export function deserializeRpcPayload(payload: string): unknown {
+  return fromJSON(JSON.parse(payload))
 }
 
 let productionNames: Map<string, string> | undefined

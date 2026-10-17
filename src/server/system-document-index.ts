@@ -55,6 +55,8 @@ import {
 import { WELD_TABLE_SELECT } from '@/server/weld-server-shared'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { syncProgramChainStates } from './line-program-chain-state'
+import type { DocumentHistoryGridRequest, DocumentHistoryGridResult } from '@/lib/document-history-grid'
+import { buildDocumentHistoryGridSql, documentHistoryTextSort, normalizeDocumentHistoryGridResult, withDocumentHistoryGridSearch } from './document-history-grid'
 
 const BASE_HISTORY_SELECT = {
   id: weldJoints.id,
@@ -203,6 +205,24 @@ export async function loadIndexedSystemDocumentHistory({
   })
 }
 
+export async function loadIndexedSystemDocumentHistoryGrid(
+  request: Omit<IndexedSystemDocumentHistoryRequest, 'limit'> & DocumentHistoryGridRequest,
+): Promise<DocumentHistoryGridResult<SystemDocumentSummary>> {
+  return requireDb().transaction(async tx => {
+    await lockSystemDocumentIndex(tx, request.type)
+    await ensureSystemDocumentIndexInitializedInTransaction(tx, request.type)
+    const sortExpressions = Object.fromEntries(SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS.map(key => [key, documentHistoryTextSort(key)]))
+    Object.assign(sortExpressions, { rowCount: sql`"rowCount"`, date: sql`nullif("date", '')::date` })
+    const result = await tx.execute(buildDocumentHistoryGridSql({
+      baseQuery: buildIndexedSystemDocumentHistoryBaseQuery(request.type, getSystemDocumentStorageTypes(request.type), request.documentId, true),
+      columnFilters: request.columnFilters, filterKeys: SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS,
+      request, idKind: 'system', sortExpressions,
+      defaultOrder: sql`"date" desc, "title" desc, "documentId" desc`,
+    }))
+    return normalizeDocumentHistoryGridResult(result.rows[0], request, 'system', record => toIndexedSystemDocumentHistorySummary(record, request.type))
+  })
+}
+
 export async function queryIndexedSystemDocumentHistory(
   tx: Pick<SystemDocumentSequenceTransaction, 'execute'>,
   { type, documentId, limit, columnFilters }: IndexedSystemDocumentHistoryRequest,
@@ -241,12 +261,14 @@ export async function loadIndexedSystemDocumentHistoryFilterOptions({
   columnFilters,
   fieldKey,
   search,
+  gridSearch,
 }: {
   type: SystemDocumentType
   documentId?: number
   columnFilters: Record<string, string>
   fieldKey: SystemDocumentHistoryFilterKey
   search: string
+  gridSearch?: string
 }): Promise<SqlDocumentHistoryFilterOptionsResult> {
   const db = requireDb()
   return db.transaction(async (tx) => {
@@ -255,7 +277,7 @@ export async function loadIndexedSystemDocumentHistoryFilterOptions({
     const storageTypes = getSystemDocumentStorageTypes(type)
     if (storageTypes.length === 0) return { options: [], hasMore: false }
 
-    const baseQuery = buildIndexedSystemDocumentHistoryBaseQuery(type, storageTypes, documentId)
+    const baseQuery = withDocumentHistoryGridSearch(buildIndexedSystemDocumentHistoryBaseQuery(type, storageTypes, documentId), gridSearch, SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS)
     const result = await tx.execute(buildDocumentHistoryFilterOptionsSqlQuery({
       baseQuery,
       columnFilters,
@@ -1955,6 +1977,7 @@ function buildIndexedSystemDocumentHistoryBaseQuery(
   type: SystemDocumentType,
   storageTypes: string[],
   documentId?: number,
+  summaryOnly = false,
 ) {
   const metadataArray = (key: string) => sql`
     case
@@ -1993,7 +2016,25 @@ function buildIndexedSystemDocumentHistoryBaseQuery(
   `
   return sql`
     select
-      "document_source".*,
+      ${summaryOnly ? sql`
+        "document_source"."documentId", "document_source"."type", "document_source"."title",
+        "document_source"."date", "document_source"."fileName", "document_source"."rowCount",
+        "document_source"."specialists", "document_source"."specialistsRevision",
+        "document_source"."documentVersion", "document_source"."updatedAt",
+        jsonb_build_object(
+          'label', "document_source"."metadata" -> 'label',
+          'methodCode', "document_source"."metadata" -> 'methodCode',
+          'sourceKind', "document_source"."metadata" -> 'sourceKind',
+          'cycleSequences', ${cycleSequences},
+          'methodCodes', "document_source"."metadata" -> 'methodCodes',
+          'positionCount', "document_source"."metadata" -> 'positionCount',
+          'projects', "document_source"."metadata" -> 'projects',
+          'subtitleCodes', "document_source"."metadata" -> 'subtitleCodes',
+          'lines', "document_source"."metadata" -> 'lines',
+          'periodFrom', "document_source"."metadata" -> 'periodFrom',
+          'periodTo', "document_source"."metadata" -> 'periodTo'
+        ) as "metadata"
+      ` : sql`"document_source".*`},
       array[coalesce("document_source"."specialists" -> 'first' ->> 'name', '')]::text[] as "filter_specialistFirst",
       array[coalesce("document_source"."specialists" -> 'second' ->> 'name', '')]::text[] as "filter_specialistSecond",
       array["document_source"."title"]::text[] as "filter_title",

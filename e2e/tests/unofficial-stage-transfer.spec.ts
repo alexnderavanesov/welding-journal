@@ -1,3 +1,4 @@
+import { documentGridRow } from '../document-grid'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
@@ -65,7 +66,7 @@ for (const officiality of ['действующий', 'неофициальный
     const document = page.getByText(title, { exact: true }).first()
     await expect(document).toBeVisible()
     const before = await snapshot(id)
-    await document.locator('xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " grid ")][1]').click({ button: 'right' })
+    await (await documentGridRow(page, title)).titleCell.click({ button: 'right' })
     await expect(page.getByTestId('context-action-menu')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Изменить этап контроля', exact: true })).toHaveCount(0)
     await page.keyboard.press('Escape')

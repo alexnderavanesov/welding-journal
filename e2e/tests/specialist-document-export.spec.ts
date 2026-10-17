@@ -1,3 +1,4 @@
+import { documentGridRow } from '../document-grid'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { eq } from 'drizzle-orm'
@@ -129,7 +130,7 @@ for (const thermist of [false, true]) test(`${thermist ? 'ПСТО' : 'ВИК'}:
   const first = await createPerson(page, firstName, 'УД-ИСТОРИЯ-А', thermist)
   const second = await createPerson(page, secondName, 'УД-ИСТОРИЯ-Б', thermist)
   await openDocuments(page, thermist)
-  await page.getByRole('button', { name: `Выбрать документ «${title}»`, exact: true }).click()
+  await (await documentGridRow(page, title)).checkbox.check()
   await page.getByRole('button', { name: /^Действия с документами, выбрано:/ }).click()
   await page.getByRole('button', { name: 'Назначить специалистов', exact: true }).click()
   const assignment = page.getByRole('dialog', { name: 'Назначить специалистов', exact: true })

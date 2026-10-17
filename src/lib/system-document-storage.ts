@@ -18,29 +18,23 @@ import {
     createSystemDocumentTemplateContext,
     type SystemDocumentReference,
     type SystemDocumentSummary,
-    type SystemDocumentType
 } from '@/lib/system-document-types'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 import {
     getSystemDocumentDateContext,
     getSystemDocumentRows,
     getSystemDocumentSpecialists,
-    listSystemDocumentHistory,
     listSystemDocumentHistoryFilterOptions,
-    listSystemDocuments,
+    listSystemDocumentHistoryGrid,
     type RemoteSystemDocumentHistoryFilterOptionsRequest,
-    type RemoteSystemDocumentHistoryRequest
+    type RemoteSystemDocumentHistoryGridRequest,
 } from '@/server/system-documents'
 
 const SYSTEM_DOCUMENT_MIME_TYPE =
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
-export function loadSystemDocuments(type: SystemDocumentType) {
-  return listSystemDocuments({ data: { type } })
-}
-
-export function loadSystemDocumentHistory(request: RemoteSystemDocumentHistoryRequest) {
-  return listSystemDocumentHistory({ data: request })
+export function loadSystemDocumentHistoryGrid(request: RemoteSystemDocumentHistoryGridRequest) {
+  return listSystemDocumentHistoryGrid({ data: request })
 }
 
 export function loadSystemDocumentHistoryFilterOptions(

@@ -85,7 +85,7 @@ export async function readHistoryDocumentWorkbook(fileData: ArrayBuffer) {
       s: { r: source.s.r + rowPage * DOCUMENT_PREVIEW_PAGE_ROWS, c: source.s.c + columnPage * DOCUMENT_PREVIEW_PAGE_COLUMNS },
       e: { r: Math.min(source.e.r, source.s.r + (rowPage + 1) * DOCUMENT_PREVIEW_PAGE_ROWS - 1), c: Math.min(source.e.c, source.s.c + (columnPage + 1) * DOCUMENT_PREVIEW_PAGE_COLUMNS - 1) },
     } : null
-    return shell(title, `<div style="zoom:${zoom / 100}">${table(sheet, range)}</div>`)
+    return shell(title, `<div data-document-preview-page style="zoom:${zoom / 100}">${table(sheet, range)}</div>`, true)
   }
   function print(title: string) {
     if (printRestriction) throw new Error(printRestriction)
@@ -118,9 +118,10 @@ function cellCss(style: DocumentTemplatePreviewCellStyle) {
   return Object.entries(properties).filter(([, value]) => value !== undefined).map(([key, value]) => `${key}:${value}`).join(';')
 }
 
-function shell(title: string, content: string) {
+function shell(title: string, content: string, preview = false) {
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>${escapeHtml(title)}</title><style>
     *{box-sizing:border-box}body{margin:0;padding:20px;background:#f1f5f9;color:#000;font:11pt Arial,sans-serif}table{table-layout:fixed;border-collapse:collapse;background:white}td{padding:1px 3px;overflow:hidden;vertical-align:bottom;overflow-wrap:break-word}tr{break-inside:avoid}.sheet{break-after:page}.sheet:last-child{break-after:auto}@media print{body{padding:0;background:white}td{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+    ${preview ? '@media screen{html{scrollbar-gutter:stable}body{padding:16px}[data-document-preview-page]{width:max-content;margin:0 auto;background:white;box-shadow:0 1px 5px #0f172a1a}[data-document-preview-page]>p{min-width:240px;margin:0;padding:16px}}' : ''}
     </style></head><body>${content}</body></html>`
 }
 

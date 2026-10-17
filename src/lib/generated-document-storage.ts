@@ -3,13 +3,13 @@ import {
   getRemoteGeneratedDocument,
   getRemoteGeneratedDocumentSequence,
   getRemoteGeneratedDocumentRows,
-  listRemoteGeneratedDocumentHistory,
   listRemoteGeneratedDocumentHistoryFilterOptions,
+  listRemoteGeneratedDocumentHistoryGrid,
   resetRemoteGeneratedDocumentSequence,
   saveRemoteGeneratedDocuments,
   type RemoteGeneratedDocument,
-  type RemoteGeneratedDocumentHistoryRequest,
   type RemoteGeneratedDocumentHistoryFilterOptionsRequest,
+  type RemoteGeneratedDocumentHistoryGridRequest,
   type SaveGeneratedDocumentInput,
 } from '@/server/generated-documents'
 import { GENERATED_DOCUMENT_STORAGE_EVENT } from '@/lib/document-storage-events'
@@ -28,8 +28,8 @@ export async function saveGeneratedDocuments(inputs: SaveGeneratedDocumentInput[
   return records
 }
 
-export async function loadGeneratedDocumentHistory(request: RemoteGeneratedDocumentHistoryRequest) {
-  return listRemoteGeneratedDocumentHistory({ data: request })
+export async function loadGeneratedDocumentHistoryGrid(request: RemoteGeneratedDocumentHistoryGridRequest) {
+  return listRemoteGeneratedDocumentHistoryGrid({ data: request })
 }
 
 export async function loadGeneratedDocumentHistoryFilterOptions(

@@ -7,27 +7,23 @@ import {
   type SetStateAction,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react'
-import { createPortal } from 'react-dom'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Check,
   CheckCircle2,
+  Copy,
   ChevronDown,
   Download,
   FilePenLine,
   FileSpreadsheet,
   FileText,
   GitBranch,
-  ListFilter,
   Maximize2,
   Minimize2,
   Merge,
-  Minus,
   Archive,
   PanelLeftClose,
   PanelLeftOpen,
@@ -42,13 +38,13 @@ import {
 } from 'lucide-react'
 import { ContextActionMenu, type ContextActionMenuItem, type ContextActionMenuState } from '@/components/context-action-menu'
 import type { DocumentOperationRequest } from '@/lib/system-document-operation'
-import { DocumentHistoryColumnChooser } from '@/components/document-history-column-chooser'
+import { DocumentsHistoryGrid } from '@/components/documents-history-grid'
+import { useDocumentGridController } from '@/lib/use-document-grid-controller'
+import type { DocumentHistoryGridRequest } from '@/lib/document-history-grid'
 import { HistoryDocumentPreview, type HistoryDocumentPreviewRequest } from '@/components/history-document-preview'
-import { PaginationBar } from '@/components/pagination-bar'
 import { ReportNotificationToast } from '@/components/report-notification-toast'
 import { Button } from '@/components/ui/button'
 import { useConfirmAction } from '@/lib/confirm-action-context'
-import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
 import { isModalDialogOpen } from '@/lib/modal-layer'
 import { useSecurityGuard } from '@/lib/security-context'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -67,7 +63,7 @@ import {
   deleteGeneratedDocument,
   downloadGeneratedDocumentArchive,
   downloadGeneratedDocument,
-  loadGeneratedDocumentHistory,
+  loadGeneratedDocumentHistoryGrid,
   loadGeneratedDocumentHistoryFilterOptions,
   loadGeneratedDocumentRows,
   type StoredGeneratedDocument,
@@ -101,7 +97,7 @@ import {
 import {
   createCurrentSystemDocumentBlob,
   downloadSystemDocument,
-  loadSystemDocumentHistory,
+  loadSystemDocumentHistoryGrid,
   loadSystemDocumentHistoryFilterOptions,
   loadSystemDocumentRows,
   createSystemDocumentPreviewRecord,
@@ -137,23 +133,13 @@ import {
   GENERATED_DOCUMENT_HISTORY_COLUMNS,
   LAYERED_GENERATED_DOCUMENT_HISTORY_COLUMNS,
   SYSTEM_DOCUMENT_HISTORY_COLUMNS,
-  getDocumentHistoryGridLayout,
   getVisibleDocumentHistoryColumns,
   parseDocumentHistoryColumnPreferences,
-  retainVisibleDocumentHistoryColumnFilters,
-  setVisibleDocumentHistoryColumns,
   type DocumentHistoryColumnDefinition,
   type DocumentHistoryColumnKey,
   type DocumentHistoryColumnPreferences,
 } from '@/lib/document-history-columns'
 import {
-  getDocumentHistoryFilterMenuPosition,
-  type DocumentHistoryFilterMenuPosition,
-} from '@/lib/document-history-filter-menu'
-import {
-  parseStoredDocumentNumberId,
-  parseStoredDocumentStringId,
-  useDocumentHistorySessionState,
   useDocumentHistorySessionValue,
 } from '@/lib/use-document-history-session-state'
 import {
@@ -165,7 +151,6 @@ import {
   getSystemDocumentStageLabel,
   type SystemDocumentMethodScope,
 } from '@/lib/system-document-stage'
-import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { useDocumentEscapeKey } from '@/lib/use-document-escape-key'
 
 type DocumentsPageProps = {
@@ -188,7 +173,6 @@ const DOCUMENT_PREVIEW_MIN_SCALE = 0.45
 const DOCUMENT_PREVIEW_MAX_SCALE = 1.8
 const DOCUMENT_PREVIEW_SCALE_STEP = 0.15
 const DOCUMENT_PARAMETERS_COLLAPSED_STORAGE_KEY = 'welding-journal:documents:parameters-collapsed'
-const DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE = 100
 
 const DOCUMENT_TYPE_OPTIONS: Array<{
   type: ManualGeneratedDocumentType
@@ -245,12 +229,6 @@ function DocumentTypeGroupLabel({ children }: { children: ReactNode }) {
 
 export type DocumentsPageType = ManualGeneratedDocumentType | SystemDocumentViewId | LayeredControlDocumentViewId
 type DocumentHistoryFilterKey = DocumentHistoryColumnKey
-
-type DocumentHistoryColumnOption = {
-  value: string
-  label: string
-  count: number
-}
 
 function getDocumentHistoryFiltersWithoutKey(
   filters: Record<string, string>,
@@ -310,30 +288,6 @@ function getCellValue(row: WeldRow, key: string) {
   const value = (row as Record<string, unknown>)[key]
   if (key.toLowerCase().includes('date')) return formatDate(value)
   return value == null || value === '' ? '-' : String(value)
-}
-
-function getTextValue(value: unknown) {
-  return String(value ?? '').trim()
-}
-
-function getDocumentHistoryFilterCount(value: string | undefined) {
-  const choiceFilter = parseWeldColumnChoiceFilter(value ?? '')
-  if (choiceFilter?.kind === 'values') return choiceFilter.values.length
-  return value?.trim() ? 1 : 0
-}
-
-function getDocumentHistoryFilterSummary(value: string | undefined) {
-  const filterValue = String(value ?? '').trim()
-  const choiceFilter = parseWeldColumnChoiceFilter(filterValue)
-  if (choiceFilter?.kind === 'values') {
-    if (choiceFilter.values.length === 1) return choiceFilter.values[0] || '(пусто)'
-    const preview = choiceFilter.values
-      .slice(0, 2)
-      .map((selectedValue) => selectedValue || '(пусто)')
-      .join(', ')
-    return `${choiceFilter.values.length} выбрано: ${preview}${choiceFilter.values.length > 2 ? ` +${choiceFilter.values.length - 2}` : ''}`
-  }
-  return filterValue
 }
 
 function hasDocumentHistoryFilters(filters: Record<string, string>) {
@@ -415,7 +369,6 @@ export function DocumentsPage({
   onOpenJointHistory,
 }: DocumentsPageProps) {
   const queryClient = useQueryClient()
-  const [historyActionsContainer, setHistoryActionsContainer] = useState<HTMLDivElement | null>(null)
   const { requireDocumentGenerationPassword } = useSecurityGuard()
   const initialRange = useMemo(() => getCurrentMonthRange(), [])
   const [periodFrom, setPeriodFrom] = useState(initialRange.from)
@@ -445,7 +398,7 @@ export function DocumentsPage({
     tone: 'success' | 'error'
     text: string
   } | null>(null)
-  const [historyColumnPreferences, setHistoryColumnPreferences] =
+  const [historyColumnPreferences] =
     useState<DocumentHistoryColumnPreferences>(() => {
       if (typeof window === 'undefined') return {}
       try {
@@ -557,16 +510,6 @@ export function DocumentsPage({
     }
   }, [])
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        DOCUMENT_HISTORY_COLUMNS_STORAGE_KEY,
-        JSON.stringify(historyColumnPreferences),
-      )
-    } catch {
-      // Column selection remains available for the current page session.
-    }
-  }, [historyColumnPreferences])
 
   useEffect(() => {
     if (!isPreviewFullscreen) return
@@ -783,14 +726,6 @@ export function DocumentsPage({
     )
   }
 
-  const changeVisibleHistoryColumns = (keys: DocumentHistoryColumnKey[]) => {
-    setHistoryColumnPreferences((current) => setVisibleDocumentHistoryColumns({
-      viewId: activeDocumentType,
-      visibleColumnKeys: keys,
-      availableColumns: availableHistoryColumns,
-      preferences: current,
-    }))
-  }
 
   return (
     <div className="w-full min-w-0 space-y-5">
@@ -886,16 +821,7 @@ export function DocumentsPage({
               </button>
             ))}
           </div>
-          {isSystemDocument || isLayeredDocumentView || activeWorkspaceTab === 'history' ? (
-            <div className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2 lg:flex-col lg:items-end">
-              <DocumentHistoryColumnChooser
-                columns={availableHistoryColumns}
-                visibleColumnKeys={visibleHistoryColumnKeys}
-                onChange={changeVisibleHistoryColumns}
-              />
-              {isSystemDocument || activeLayeredDocumentView ? <div ref={setHistoryActionsContainer} /> : null}
-            </div>
-          ) : null}
+
         </div>
       </div>
 
@@ -1238,7 +1164,6 @@ export function DocumentsPage({
         isSystemDocument ? (
           <SystemDocumentsPanel
             key={activeDocumentType}
-            actionsContainer={historyActionsContainer}
             documentLabel={activeSystemDocumentOption!.label}
             documentType={activeSystemDocumentOption!.documentType}
             methodScope={activeSystemDocumentOption!.methodScope}
@@ -1249,7 +1174,8 @@ export function DocumentsPage({
                 : null
             }
             availableTemplateIds={availableSystemDocumentTemplates}
-            visibleColumns={visibleHistoryColumns}
+            columns={availableHistoryColumns}
+            initialVisibleColumnKeys={visibleHistoryColumnKeys}
             welderStamps={welderStamps}
             onOpenRows={async (documentRecord) => {
               const documentRows = await loadSystemDocumentRows(documentRecord)
@@ -1277,12 +1203,12 @@ export function DocumentsPage({
         ) : activeLayeredDocumentView ? (
           <GeneratedDocumentsPanel
             key={activeLayeredDocumentView.id}
-            actionsContainer={historyActionsContainer}
             documentType={activeLayeredDocumentView.types[0]}
             documentTypes={activeLayeredDocumentView.types}
             documentLabel={activeLayeredDocumentView.label}
             documentFieldLabel={activeLayeredDocumentView.label}
-            visibleColumns={visibleHistoryColumns}
+            columns={availableHistoryColumns}
+            initialVisibleColumnKeys={visibleHistoryColumnKeys}
             navigationRequest={
               activeNavigationRequest?.kind === 'generated'
                 && (activeLayeredDocumentView.types as readonly GeneratedDocumentType[])
@@ -1319,10 +1245,12 @@ export function DocumentsPage({
           />
         ) : (
           <GeneratedDocumentsPanel
+            key={activeGeneratedDocumentType}
             documentType={activeGeneratedDocumentType}
             documentLabel={activeDocumentProfile.label}
             documentFieldLabel={activeDocumentProfile.label}
-            visibleColumns={visibleHistoryColumns}
+            columns={availableHistoryColumns}
+            initialVisibleColumnKeys={visibleHistoryColumnKeys}
             navigationRequest={
               activeNavigationRequest?.kind === 'generated'
                 && activeNavigationRequest.type === activeGeneratedDocumentType
@@ -1368,27 +1296,16 @@ export function DocumentsPage({
 }
 
 function GeneratedDocumentsPanel({
-  actionsContainer,
-  documentType,
-  documentTypes,
-  documentLabel,
-  documentFieldLabel,
-  visibleColumns,
-  navigationRequest,
-  onCreate,
-  onRepeat,
-  allowDelete = true,
-  singleDate = false,
-  createDocumentBlob,
-  onOpenRows,
-  onOpenJointHistory,
+  documentType, documentTypes, documentLabel, documentFieldLabel, columns, initialVisibleColumnKeys,
+  navigationRequest, onCreate, onRepeat, allowDelete = true, singleDate = false,
+  createDocumentBlob, onOpenRows, onOpenJointHistory,
 }: {
-  actionsContainer?: HTMLDivElement | null
   documentType: GeneratedDocumentType
   documentTypes?: readonly GeneratedDocumentType[]
   documentLabel: string
   documentFieldLabel: string
-  visibleColumns: readonly DocumentHistoryColumnDefinition[]
+  columns: readonly DocumentHistoryColumnDefinition[]
+  initialVisibleColumnKeys: readonly DocumentHistoryColumnKey[]
   navigationRequest: GeneratedDocumentNavigationRequest | null
   onCreate?: () => void
   onRepeat?: (documentRecord: StoredGeneratedDocument) => void
@@ -1401,155 +1318,42 @@ function GeneratedDocumentsPanel({
   const { requireDeletePassword } = useSecurityGuard()
   const historyTypes = documentTypes ?? [documentType]
   const historyStorageKey = `generated:${historyTypes.join('+')}`
-  const [columnFilters, setColumnFilters] = useStoredDocumentHistoryFilters(
-    historyStorageKey,
-    navigationRequest ? getDocumentNavigationColumnFilters(navigationRequest) : undefined,
-  )
-  const {
-    pageSize,
-    setPageSize,
-    visibleLimit,
-    setVisibleLimit,
-    selectedDocumentIds,
-    setSelectedDocumentIds,
-  } = useDocumentHistorySessionState(
-    historyStorageKey,
-    parseStoredDocumentNumberId,
-    DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE,
-  )
+  const [columnFilters, setColumnFilters] = useStoredDocumentHistoryFilters(historyStorageKey,
+    navigationRequest ? getDocumentNavigationColumnFilters(navigationRequest) : undefined)
+  const [navigationDocumentId, setNavigationDocumentId] = useState<number | null>(navigationRequest?.documentId ?? null)
   const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
-  const [navigationDocumentId, setNavigationDocumentId] = useState<number | null>(
-    navigationRequest?.documentId ?? null,
-  )
   const [openingRowsDocumentId, setOpeningRowsDocumentId] = useState<number | null>(null)
   const [specialistDocuments, setSpecialistDocuments] = useState<SpecialistDocument[] | null>(null)
+  const [specialistRole, setSpecialistRole] = useState<'first' | 'second' | undefined>()
   const [previewRequest, setPreviewRequest] = useState<HistoryDocumentPreviewRequest | null>(null)
   const closePreview = useCallback(() => setPreviewRequest(null), [])
   const [openRowsError, setOpenRowsError] = useState<string | null>(null)
   const [isDownloadingArchive, setIsDownloadingArchive] = useState(false)
+  const [totalDocuments, setTotalDocuments] = useState<number | null>(null)
   const confirmAction = useConfirmAction()
-  const visibleColumnKeySet = useMemo(
-    () => new Set(visibleColumns.map((column) => column.key)),
-    [visibleColumns],
-  )
-  const historyGridLayout = useMemo(
-    () => getDocumentHistoryGridLayout({ columns: visibleColumns, actionsWidth: 120 + (onRepeat ? 36 : 0) + (allowDelete ? 36 : 0) }),
-    [visibleColumns, onRepeat, allowDelete],
-  )
-
   useEffect(() => {
     if (!navigationRequest) return
     setNavigationDocumentId(navigationRequest.documentId)
     setColumnFilters(getDocumentNavigationColumnFilters(navigationRequest))
-    setVisibleLimit(pageSize)
   }, [navigationRequest])
-
-  const historyQuery = useQuery({
-    queryKey: [
-      ...GENERATED_DOCUMENT_HISTORY_QUERY_KEY,
-      historyTypes,
-      'paged',
-      visibleLimit,
-      columnFilters,
-      navigationDocumentId,
-    ],
-    queryFn: () => loadGeneratedDocumentHistory({
-      types: [...historyTypes],
-      ...(navigationDocumentId === null ? {} : { documentId: navigationDocumentId }),
-      limit: visibleLimit,
-      columnFilters,
-    }),
-    staleTime: 30_000,
-    placeholderData: keepPreviousData,
-    retry: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+  const [gridSearch, setGridSearch] = useState('')
+  const loadRows = (request: DocumentHistoryGridRequest) => loadGeneratedDocumentHistoryGrid({
+    ...request, search: request.search ?? gridSearch, types: [...historyTypes], columnFilters,
+    ...(navigationDocumentId === null ? {} : { documentId: navigationDocumentId }),
   })
-  const documents = historyQuery.data?.documents ?? []
-  const visibleDocuments = useMemo(
-    () => navigationDocumentId === null
-      ? documents
-      : documents.filter((documentRecord) => documentRecord.id === navigationDocumentId),
-    [documents, navigationDocumentId],
-  )
-  const totalDocuments = historyQuery.data?.total ?? 0
-  const filterOptions = historyQuery.data?.filterOptions ?? {}
-  const hasMoreDocuments = documents.length < totalDocuments
-  const pageDocumentIds = useMemo(
-    () => new Set(visibleDocuments.map((documentRecord) => documentRecord.id)),
-    [visibleDocuments],
-  )
-  const selectedDocuments = useMemo(
-    () => visibleDocuments.filter((documentRecord) => selectedDocumentIds.has(documentRecord.id)),
-    [selectedDocumentIds, visibleDocuments],
-  )
-  const selectedPageCount = visibleDocuments.filter((documentRecord) =>
-    selectedDocumentIds.has(documentRecord.id),
-  ).length
-  const allPageSelected = visibleDocuments.length > 0 && selectedPageCount === visibleDocuments.length
+  const { selectedDocuments, setSelectedDocuments, sourceRevision, refresh, selectionError, selectionPending } =
+    useDocumentGridController(historyStorageKey, loadRows, JSON.stringify([columnFilters, navigationDocumentId, gridSearch]))
   const hasActiveFilters = hasDocumentHistoryFilters(columnFilters)
   useDocumentEscapeKey({
-    selectedCount: selectedDocumentIds.size,
+    selectedCount: selectedDocuments.length,
     hasFilters: hasActiveFilters || navigationDocumentId !== null,
-    onClearSelection: () => setSelectedDocumentIds(new Set()),
-    onClearFilters: () => { setNavigationDocumentId(null); setColumnFilters({}); setVisibleLimit(pageSize) },
+    onClearSelection: () => setSelectedDocuments([]),
+    onClearFilters: () => { setNavigationDocumentId(null); setColumnFilters({}) },
   })
-  const historyError = historyQuery.error
-    ? getDocumentActionErrorMessage(historyQuery.error, 'Не удалось загрузить историю документов.')
-    : null
-
-  useEffect(() => {
-    if (!historyQuery.isSuccess || historyQuery.isPlaceholderData) return
-    setSelectedDocumentIds((current) => {
-      const availableIds = new Set(documents.map((documentRecord) => documentRecord.id))
-      const next = new Set([...current].filter((id) => availableIds.has(id)))
-      return next.size === current.size ? current : next
-    })
-  }, [documents, historyQuery.isPlaceholderData, historyQuery.isSuccess])
-
-  useEffect(() => {
-    setColumnFilters((current) => retainVisibleDocumentHistoryColumnFilters(current, visibleColumnKeySet))
-  }, [visibleColumnKeySet])
-
-  const changeColumnFilter = (key: DocumentHistoryFilterKey, value: string) => {
+  const changeColumnFilter = (key: DocumentHistoryColumnKey, value: string) => {
     setNavigationDocumentId(null)
-    const nextFilters = { ...columnFilters }
-    if (value) nextFilters[key] = value
-    else delete nextFilters[key]
-    setColumnFilters(nextFilters)
-    setVisibleLimit(pageSize)
+    setColumnFilters(current => { const next = { ...current }; if (value) next[key] = value; else delete next[key]; return next })
   }
-
-  const changePageSize = (nextPageSize: number) => {
-    setPageSize(nextPageSize)
-    setVisibleLimit(nextPageSize)
-  }
-
-  const loadMoreDocuments = () => {
-    setVisibleLimit((current) => Math.min(totalDocuments || current + pageSize, current + pageSize))
-  }
-
-  const toggleDocumentSelection = (documentId: number) => {
-    setSelectedDocumentIds((current) => {
-      const next = new Set(current)
-      if (next.has(documentId)) next.delete(documentId)
-      else next.add(documentId)
-      return next
-    })
-  }
-
-  const togglePageSelection = () => {
-    setSelectedDocumentIds((current) => {
-      const next = new Set(current)
-      if (allPageSelected) {
-        for (const id of pageDocumentIds) next.delete(id)
-      } else {
-        for (const id of pageDocumentIds) next.add(id)
-      }
-      return next
-    })
-  }
-
   const deleteDocumentRecord = async (documentRecord: StoredGeneratedDocument) => {
     setOpenRowsError(null)
     try {
@@ -1591,7 +1395,12 @@ function GeneratedDocumentsPanel({
     setPreviewRequest({ title: documentRecord.title, fileName: documentRecord.fileName, createBlob: () => createDocumentBlob(documentRecord) })
   }
   const downloadDocumentRecord = async (documentRecord: StoredGeneratedDocument) => {
-    await downloadGeneratedDocument(documentRecord, () => createDocumentBlob(documentRecord))
+    setOpenRowsError(null)
+    try {
+      await downloadGeneratedDocument(documentRecord, () => createDocumentBlob(documentRecord))
+    } catch (error) {
+      setOpenRowsError(getDocumentActionErrorMessage(error, 'Не удалось скачать документ. Повторите скачивание.'))
+    }
   }
   const downloadSelectedArchive = async () => {
     if (selectedDocuments.length === 0 || isDownloadingArchive) return
@@ -1612,140 +1421,68 @@ function GeneratedDocumentsPanel({
     }
   }
 
-  return (
-    <section className="min-w-0 overflow-hidden rounded-md border border-[#cbdde6] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-      {actionsContainer && getSpecialistDocumentProfile(documentType) ? createPortal(
-        <button type="button" aria-label={`Действия с документами, выбрано: ${selectedDocuments.length}`} aria-haspopup="menu" aria-expanded={contextMenu?.heading === 'Действия с документами'} className="inline-flex h-10 items-center gap-2 rounded-md border border-[#cbdde6] bg-white px-3 text-sm font-semibold text-[#31566a] hover:bg-sky-50"
-          onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); setContextMenu({ x: rect.right - Math.min(320, window.innerWidth - 16), y: rect.bottom + 4, anchorElement: event.currentTarget, heading: 'Действия с документами', itemMinHeight: 76, description: `Выбрано: ${selectedDocuments.length} · только отмеченные документы`, items: [{ id: 'assign-specialists', label: 'Назначить специалистов', icon: UsersRound, description: 'Назначить, заменить или очистить роли в отмеченных документах.', disabled: !selectedDocuments.length, onSelect: () => setSpecialistDocuments(selectedDocuments) }] }) }}>Действия{selectedDocuments.length ? <span className="rounded bg-sky-100 px-1.5 text-xs">{selectedDocuments.length}</span> : null}<ChevronDown aria-hidden="true" className="h-3.5 w-3.5" /></button>, actionsContainer) : null}
-      {hasActiveFilters ? (
-        <div className="flex flex-wrap items-center justify-end gap-2 border-b border-[#d8e5eb] bg-[#f6fafc] px-4 py-2.5">
-          <button
-            type="button"
-            onClick={() => {
-              setNavigationDocumentId(null)
-              setColumnFilters({})
-              setVisibleLimit(pageSize)
-            }}
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-[#cbdde6] bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            <X className="h-3.5 w-3.5" />
-            Сбросить фильтры
-          </button>
-        </div>
-      ) : null}
-
-      {historyError ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-          <span>Не удалось загрузить историю документов: {historyError}</span>
-          <button type="button" className="rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold" onClick={() => void historyQuery.refetch()}>Повторить</button>
-        </div>
-      ) : null}
-      {openRowsError ? (
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-          <span>{openRowsError}</span>
-          <button type="button" disabled={historyQuery.isFetching} className="rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold" onClick={() => {
-            setOpenRowsError(null)
-            void historyQuery.refetch()
-          }}>Обновить историю</button>
-        </div>
-      ) : null}
-
-      {historyQuery.isLoading ? (
-        <div className="px-4 py-10 text-center text-sm text-slate-500">Загружаем актуальную историю...</div>
-      ) : totalDocuments === 0 && !historyError && !hasActiveFilters ? (
-        <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center text-sm text-slate-500">
-          <span>Пока нет сохраненных документов.</span>
-          {onCreate ? (
-            <Button type="button" variant="outline" size="sm" onClick={onCreate}>
-              <FileSpreadsheet className="mr-2 h-4 w-4" />
-              Перейти к формированию
-            </Button>
-          ) : null}
-        </div>
-      ) : totalDocuments === 0 ? (
-        <div className="px-4 py-10 text-center text-sm text-slate-500">По выбранным условиям документы не найдены.</div>
-      ) : (
-        <div className="min-w-0 overflow-x-auto">
-          <div
-            className="grid items-center gap-x-4 gap-y-2 border-b border-[#cfdee6] bg-[#eaf2f6] px-4 py-2 text-[11px] font-semibold uppercase text-[#60778a]"
-            style={{
-              gridTemplateColumns: historyGridLayout.gridTemplateColumns,
-              minWidth: historyGridLayout.minWidth,
-            }}
-          >
-            <DocumentHistorySelectAllButton
-              checked={allPageSelected}
-              partial={selectedPageCount > 0 && !allPageSelected}
-              disabled={visibleDocuments.length === 0}
-              onClick={togglePageSelection}
-            />
-            {visibleColumns.map((filter) => (
-              <DocumentHistoryColumnFilter
-                key={filter.key}
-                label={filter.label}
-                value={columnFilters[filter.key] ?? ''}
-                options={filterOptions[filter.key] ?? []}
-                optionsQueryKey={[
-                  ...GENERATED_DOCUMENT_HISTORY_QUERY_KEY,
-                  historyTypes,
-                  'filter-options',
-                  filter.key,
-                  getDocumentHistoryFiltersWithoutKey(columnFilters, filter.key),
-                  navigationDocumentId,
-                ]}
-                loadOptions={(search) => loadGeneratedDocumentHistoryFilterOptions({
-                  types: [...historyTypes],
-                  ...(navigationDocumentId === null ? {} : { documentId: navigationDocumentId }),
-                  fieldKey: filter.key,
-                  search,
-                  columnFilters: getDocumentHistoryFiltersWithoutKey(columnFilters, filter.key),
-                })}
-                className={filter.align === 'end' ? 'justify-end' : ''}
-                alignRight={filter.align === 'end'}
-                dateGrouped={filter.dateGrouped}
-                onChange={(value) => changeColumnFilter(filter.key, value)}
-              />
-            ))}
-            <div className="sticky right-0 z-10 flex justify-end border-l border-[#cfdee6] bg-[#eaf2f6] pl-3 shadow-[-12px_0_16px_-16px_rgba(15,23,42,0.55)]">
-              {selectedDocuments.length > 0 ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-7 gap-1.5 px-2 text-[11px] normal-case"
-                  disabled={isDownloadingArchive}
-                  onClick={() => void downloadSelectedArchive()}
-                >
-                  <Archive className="h-3.5 w-3.5" />
-                  {isDownloadingArchive ? 'Готовим' : `Архив (${selectedDocuments.length})`}
-                </Button>
-              ) : <span>Действия</span>}
-            </div>
-          </div>
-          <div className="divide-y divide-[#dce7ed]" style={{ minWidth: historyGridLayout.minWidth }}>
-            {visibleDocuments.map((documentRecord, documentIndex) => {
-              const isSelected = selectedDocumentIds.has(documentRecord.id)
-              return (
-              <div
-                key={documentRecord.id}
-                className={`grid min-w-0 items-center gap-x-4 gap-y-2 px-4 py-2.5 transition-colors hover:bg-[#e2f2f6] ${
-                  navigationDocumentId === documentRecord.id
-                    ? 'bg-sky-50 ring-1 ring-inset ring-sky-300'
-                    : isSelected
-                    ? 'bg-sky-50 ring-1 ring-inset ring-sky-200'
-                    : documentIndex % 2 === 0 ? 'bg-white' : 'bg-[#f4f8fa]'
-                }`}
-                style={{ gridTemplateColumns: historyGridLayout.gridTemplateColumns }}
-                onContextMenu={(event) => {
-                  event.preventDefault()
-                  const bulkItems = selectedDocumentIds.has(documentRecord.id) && selectedDocuments.length > 1
+  const getCellValue = (key: DocumentHistoryColumnKey, record: StoredGeneratedDocument): string | number => {
+    switch (key) {
+      case 'title': return record.title
+      case 'stage': return record.stage ?? '-'
+      case 'project': return record.projects.join(', ') || '-'
+      case 'subtitle': return record.subtitleCodes.join(', ') || '-'
+      case 'line': return record.lines.join(', ') || '-'
+      case 'period': return singleDate ? formatDate(record.periodFrom ?? record.periodTo) : `${formatDate(record.periodFrom)} - ${formatDate(record.periodTo)}`
+      case 'rowCount': return record.rowCount
+      case 'wdi': return formatWdi(record.wdiTotal)
+      case 'updatedAt': return formatGeneratedDocumentDate(record.updatedAt)
+      case 'specialistFirst': case 'specialistSecond': return record.specialists?.[key === 'specialistFirst' ? 'first' : 'second']?.name || 'Не назначен'
+      default: return ''
+    }
+  }
+  const renderCell = (key: DocumentHistoryColumnKey, documentRecord: StoredGeneratedDocument) => {
+    switch (key) {
+      case 'title': return <DocumentTitleButton title={documentRecord.title} onClick={() => void openDocumentRecord(documentRecord)} />
+      case 'stage': return <span className="inline-flex rounded border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-800">{documentRecord.stage ?? '-'}</span>
+      case 'project': return <DocumentDimensionCell values={documentRecord.projects} />
+      case 'subtitle': return <DocumentDimensionCell values={documentRecord.subtitleCodes} />
+      case 'line': return <DocumentDimensionCell values={documentRecord.lines} />
+      case 'period': return <span className="text-xs text-slate-600">{singleDate ? formatDate(documentRecord.periodFrom ?? documentRecord.periodTo) : `${formatDate(documentRecord.periodFrom)} - ${formatDate(documentRecord.periodTo)}`}</span>
+      case 'rowCount': return <span className="font-semibold tabular-nums">{documentRecord.rowCount}</span>
+      case 'wdi': return <span className="font-semibold tabular-nums">{formatWdi(documentRecord.wdiTotal)}</span>
+      case 'updatedAt': return <span className="text-xs text-slate-500">{formatGeneratedDocumentDate(documentRecord.updatedAt)}</span>
+      case 'specialistFirst': case 'specialistSecond': return <DocumentSpecialistCell document={documentRecord} role={key === 'specialistFirst' ? 'first' : 'second'} onEdit={(document, role) => { setSpecialistRole(role); setSpecialistDocuments([document]) }} />
+      default: return null
+    }
+  }
+  const renderActions = (documentRecord: StoredGeneratedDocument) => <div data-document-row-actions className="flex items-center justify-end gap-1">
+    <DocumentHistoryActionButton title="Показать стыки документа в сварочном журнале" tone="emerald" disabled={openingRowsDocumentId === documentRecord.id} onClick={() => void openDocumentRows(documentRecord)}><Rows3 className="h-4 w-4" /></DocumentHistoryActionButton>
+    {documentRecord.rowCount === 1 ? <DocumentHistoryActionButton title="Открыть картину стыка" tone="sky" disabled={openingRowsDocumentId === documentRecord.id} onClick={() => void openDocumentJointHistory(documentRecord)}><GitBranch className="h-4 w-4" /></DocumentHistoryActionButton> : null}
+    {onRepeat ? <DocumentHistoryActionButton title="Повторить с параметрами" tone="violet" onClick={() => onRepeat(documentRecord)}><SlidersHorizontal className="h-4 w-4" /></DocumentHistoryActionButton> : null}
+    <DocumentHistoryActionButton title="Скачать Excel" onClick={() => void downloadDocumentRecord(documentRecord)}><Download className="h-4 w-4" /></DocumentHistoryActionButton>
+    {allowDelete ? <DocumentHistoryActionButton title="Удалить документ" tone="rose" onClick={() => void deleteDocumentRecord(documentRecord)}><Trash2 className="h-4 w-4" /></DocumentHistoryActionButton> : null}
+  </div>
+  return <section className="min-w-0 rounded-md border border-[#cbdde6] bg-white">
+    {openRowsError || selectionError ? <DocumentHistoryError message={openRowsError || selectionError!} onRetry={() => { setOpenRowsError(null); refresh() }} /> : null}
+    <DocumentsHistoryGrid viewId={historyStorageKey} columns={columns} initialVisibleColumnKeys={initialVisibleColumnKeys}
+      renderCell={renderCell} renderActions={renderActions} getCellValue={getCellValue} loadRows={loadRows}
+      sourceRevision={`${sourceRevision}:${navigationDocumentId ?? ''}`}
+      filterSourceRevision={`${sourceRevision}:${navigationDocumentId ?? ''}`}
+      highlightedDocumentId={navigationDocumentId}
+      loadFilterOptions={(fieldKey, search, gridSearch) => loadGeneratedDocumentHistoryFilterOptions({ types: [...historyTypes], ...(navigationDocumentId === null ? {} : { documentId: navigationDocumentId }), fieldKey, search, gridSearch, columnFilters: getDocumentHistoryFiltersWithoutKey(columnFilters, fieldKey) })}
+      columnFilters={columnFilters} onColumnFilterChange={changeColumnFilter}
+      selectedDocuments={selectedDocuments} onSelectionChange={setSelectedDocuments} selectionDisabled={selectionPending || Boolean(selectionError)}
+      onSelectionPendingChange={pending => { if (pending) setContextMenu(null) }} onTotalChange={setTotalDocuments} onSearchChange={setGridSearch}
+      toolbarActions={<>
+        {getSpecialistDocumentProfile(documentType) ? <Button variant="outline" size="sm" disabled={!selectedDocuments.length} onClick={() => { setSpecialistRole(undefined); setSpecialistDocuments(selectedDocuments) }}><UsersRound className="mr-1 h-4 w-4" />Назначить специалистов ({selectedDocuments.length})</Button> : null}
+        <Button variant="outline" size="sm" disabled={!selectedDocuments.length || isDownloadingArchive} onClick={() => void downloadSelectedArchive()}><Archive className="mr-1 h-4 w-4" />{isDownloadingArchive ? 'Готовим архив…' : `Архив (${selectedDocuments.length})`}</Button>
+      </>}
+      onRowContextMenu={(documentRecord, event) => {
+                  const bulkItems = selectedDocuments.some(selected => selected.id === documentRecord.id) && selectedDocuments.length > 1
                     ? [
                         { id: 'download-selected-archive', label: `Скачать выбранные архивом (${selectedDocuments.length})`, icon: Archive, onSelect: () => downloadSelectedArchive() },
                         { type: 'separator' as const, id: 'bulk-separator' },
                       ]
                     : []
                   setContextMenu({
-                    x: event.clientX,
-                    y: event.clientY,
+                    x: event.x,
+                    y: event.y, anchorElement: event.anchorElement,
                     items: [
                       ...bulkItems,
                       { id: 'show-document-rows', label: 'Показать стыки в журнале', icon: Rows3, onSelect: () => openDocumentRows(documentRecord) },
@@ -1758,6 +1495,7 @@ function GeneratedDocumentsPanel({
                       }] : []),
                       ...(onRepeat ? [{ id: 'repeat-document', label: 'Повторить с параметрами', icon: SlidersHorizontal, onSelect: () => onRepeat(documentRecord) }] : []),
                       { type: 'separator', id: 'open-separator' },
+                      { id: 'copy-cells', label: 'Копировать ячейки', icon: Copy, description: 'Ctrl+C · выбранные ячейки загруженных документов', onSelect: event.copyCells },
                       { id: 'open-document', label: 'Предпросмотр', icon: FileText, onSelect: () => openDocumentRecord(documentRecord) },
                       { id: 'download-document', label: 'Скачать Excel', icon: Download, onSelect: () => downloadDocumentRecord(documentRecord) },
                       ...(allowDelete ? [
@@ -1766,134 +1504,34 @@ function GeneratedDocumentsPanel({
                       ] : []),
                     ],
                   })
-                }}
-              >
-                <DocumentHistoryRowCheckbox
-                  checked={isSelected}
-                  label={`Выбрать документ «${documentRecord.title}»`}
-                  onChange={() => toggleDocumentSelection(documentRecord.id)}
-                />
-                <button
-                  type="button"
-                  className="group min-w-0 text-left"
-                  onClick={() => void openDocumentRecord(documentRecord)}
-                  title="Предпросмотр актуального документа"
-                >
-                  <span className="flex min-w-0 items-start gap-2.5">
-                    <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[#c9dce5] bg-[#f4fafc] text-[#14779a] transition-colors group-hover:border-[#9fc4d2] group-hover:bg-[#e9f5f8]">
-                      <FileSpreadsheet className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block break-words text-[13px] font-medium leading-5 text-slate-800 transition-colors group-hover:text-[#0b526c]">
-                        {documentRecord.title}
-                      </span>
-                    </span>
-                  </span>
-                </button>
-                {visibleColumnKeySet.has('stage') ? (
-                  <span className="inline-flex w-fit items-center rounded border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-800">
-                    {documentRecord.stage ?? '-'}
-                  </span>
-                ) : null}
-                {visibleColumnKeySet.has('project') ? <DocumentDimensionCell values={documentRecord.projects} /> : null}
-                {visibleColumnKeySet.has('subtitle') ? <DocumentDimensionCell values={documentRecord.subtitleCodes} /> : null}
-                {visibleColumnKeySet.has('line') ? <DocumentDimensionCell values={documentRecord.lines} /> : null}
-                {visibleColumnKeySet.has('period') ? (
-                  <span className="text-xs text-slate-600">
-                    {singleDate
-                      ? formatDate(documentRecord.periodFrom ?? documentRecord.periodTo)
-                      : `${formatDate(documentRecord.periodFrom)} - ${formatDate(documentRecord.periodTo)}`}
-                  </span>
-                ) : null}
-                {visibleColumnKeySet.has('rowCount') ? (
-                  <span className="text-right text-sm font-semibold tabular-nums text-slate-800">{documentRecord.rowCount}</span>
-                ) : null}
-                {visibleColumnKeySet.has('wdi') ? (
-                  <span className="text-right text-sm font-semibold tabular-nums text-slate-700">{formatWdi(documentRecord.wdiTotal)}</span>
-                ) : null}
-                {visibleColumnKeySet.has('updatedAt') ? (
-                  <span className="text-xs leading-4 text-slate-500">{formatGeneratedDocumentDate(documentRecord.updatedAt)}</span>
-                ) : null}
-                {visibleColumnKeySet.has('specialistFirst') ? <DocumentSpecialistCell document={documentRecord} role="first" /> : null}
-                {visibleColumnKeySet.has('specialistSecond') ? <DocumentSpecialistCell document={documentRecord} role="second" /> : null}
-                <div data-document-row-actions className="sticky right-0 z-10 flex items-center justify-end gap-1 border-l border-[#dce7ed] bg-inherit pl-3 shadow-[-12px_0_16px_-16px_rgba(15,23,42,0.55)]">
-                  <DocumentHistoryActionButton
-                    title="Показать стыки документа в сварочном журнале"
-                    tone="emerald"
-                    disabled={openingRowsDocumentId === documentRecord.id}
-                    onClick={() => void openDocumentRows(documentRecord)}
-                  ><Rows3 className="h-4 w-4" /></DocumentHistoryActionButton>
-                  {documentRecord.rowCount === 1 ? (
-                    <DocumentHistoryActionButton
-                      title="Открыть картину стыка"
-                      tone="sky"
-                      disabled={openingRowsDocumentId === documentRecord.id}
-                      onClick={() => void openDocumentJointHistory(documentRecord)}
-                    ><GitBranch className="h-4 w-4" /></DocumentHistoryActionButton>
-                  ) : null}
-                  {onRepeat ? (
-                    <DocumentHistoryActionButton title="Повторить с параметрами" tone="violet" onClick={() => onRepeat(documentRecord)}>
-                      <SlidersHorizontal className="h-4 w-4" />
-                    </DocumentHistoryActionButton>
-                  ) : null}
-                  <DocumentHistoryActionButton title="Скачать Excel" onClick={() => void downloadDocumentRecord(documentRecord)}>
-                    <Download className="h-4 w-4" />
-                  </DocumentHistoryActionButton>
-                  {allowDelete ? (
-                    <DocumentHistoryActionButton title="Удалить документ" tone="rose" onClick={() => void deleteDocumentRecord(documentRecord)}>
-                      <Trash2 className="h-4 w-4" />
-                    </DocumentHistoryActionButton>
-                  ) : null}
-                </div>
-              </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-      <div className="border-t border-[#dbe6ec] bg-[#f4f8fa] px-4 py-2">
-        <PaginationBar
-          totalCount={totalDocuments}
-          firstItemNumber={visibleDocuments.length === 0 ? 0 : 1}
-          lastItemNumber={visibleDocuments.length}
-          pageSize={pageSize}
-          hasMore={hasMoreDocuments}
-          label="документов"
-          onLoadMore={loadMoreDocuments}
-          onPageSizeChange={changePageSize}
-        />
-        <div className="mt-2 text-xs text-slate-500">
-          Найдено: {totalDocuments}
-          {selectedDocuments.length > 0 ? ` · выбрано: ${selectedDocuments.length}` : ''}
-        </div>
-      </div>
-      {previewRequest ? <HistoryDocumentPreview request={previewRequest} onClose={closePreview} /> : null}
-      <ContextActionMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
-      {specialistDocuments ? <DocumentSpecialistAssignmentDialog documents={specialistDocuments} onClose={() => setSpecialistDocuments(null)} /> : null}
-    </section>
-  )
+      }} />
+    {totalDocuments === 0 && !hasActiveFilters && onCreate ? <div className="p-3 text-center"><Button variant="outline" size="sm" onClick={onCreate}><FileSpreadsheet className="mr-2 h-4 w-4" />Перейти к формированию</Button></div> : null}
+    {previewRequest ? <HistoryDocumentPreview request={previewRequest} onClose={closePreview} /> : null}
+    <ContextActionMenu menu={contextMenu} panelClassName="journal-context-menu" autoFocus onClose={() => setContextMenu(null)} />
+    {specialistDocuments ? <DocumentSpecialistAssignmentDialog documents={specialistDocuments} onlyRole={specialistRole} onClose={() => { setSpecialistDocuments(null); setSpecialistRole(undefined) }} /> : null}
+  </section>
 }
 
 function SystemDocumentsPanel({
-  actionsContainer,
   documentLabel,
   documentType,
   methodScope,
   navigationRequest,
   availableTemplateIds,
-  visibleColumns,
+  columns,
+  initialVisibleColumnKeys,
   welderStamps,
   onOpenRows,
   onOpenJointHistory,
   onRenamed,
 }: {
-  actionsContainer: HTMLDivElement | null
   documentLabel: string
   documentType: SystemDocumentType
   methodScope: SystemDocumentMethodScope
   navigationRequest: SystemDocumentNavigationRequest | null
   availableTemplateIds: ReadonlySet<SystemDocumentTemplateId>
-  visibleColumns: readonly DocumentHistoryColumnDefinition[]
+  columns: readonly DocumentHistoryColumnDefinition[]
+  initialVisibleColumnKeys: readonly DocumentHistoryColumnKey[]
   welderStamps: WelderStampRecord[]
   onOpenRows: (documentRecord: SystemDocumentSummary) => Promise<void>
   onOpenJointHistory: (documentRecord: SystemDocumentSummary) => Promise<void>
@@ -1905,23 +1543,11 @@ function SystemDocumentsPanel({
     historyStorageKey,
     navigationRequest ? getDocumentNavigationColumnFilters(navigationRequest) : undefined,
   )
-  const {
-    pageSize,
-    setPageSize,
-    visibleLimit,
-    setVisibleLimit,
-    selectedDocumentIds,
-    setSelectedDocumentIds,
-  } = useDocumentHistorySessionState(
-    historyStorageKey,
-    parseStoredDocumentStringId,
-    DOCUMENT_HISTORY_DEFAULT_PAGE_SIZE,
-  )
   const [actionError, setActionError] = useState<string | null>(null)
   const [previewRequest, setPreviewRequest] = useState<HistoryDocumentPreviewRequest | null>(null)
   const closePreview = useCallback(() => setPreviewRequest(null), [])
-  const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [documentOperation, setDocumentOperation] = useState<{ action: DocumentOperationRequest['action']; documents: SystemDocumentSummary[] } | null>(null)
+  const [specialistRole, setSpecialistRole] = useState<'first' | 'second' | undefined>()
   const [specialistDocuments, setSpecialistDocuments] = useState<SpecialistDocument[] | null>(null)
   const [isDownloadingArchive, setIsDownloadingArchive] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
@@ -1937,15 +1563,6 @@ function SystemDocumentsPanel({
       'all' as LnkConclusionTemplateFilter,
       isLnkConclusionTemplateFilter,
     )
-  const visibleColumnKeySet = useMemo(
-    () => new Set(visibleColumns.map((column) => column.key)),
-    [visibleColumns],
-  )
-  const historyGridLayout = useMemo(
-    () => getDocumentHistoryGridLayout({ columns: visibleColumns, actionsWidth: 120 }),
-    [visibleColumns],
-  )
-  const navigationDocumentIdentity = navigationTarget?.identity ?? null
 
   useEffect(() => {
     if (!navigationRequest) return
@@ -1960,11 +1577,6 @@ function SystemDocumentsPanel({
       )
     }
   }, [navigationRequest])
-
-  useEffect(() => {
-    setColumnFilters((current) => retainVisibleDocumentHistoryColumnFilters(current, visibleColumnKeySet))
-  }, [visibleColumnKeySet])
-
   const effectiveColumnFilters = useMemo(
     () => {
       const filters = { ...columnFilters }
@@ -1987,100 +1599,35 @@ function SystemDocumentsPanel({
     },
     [columnFilters, documentType, lnkConclusionTemplateFilter, methodScope],
   )
-  const historyQuery = useQuery({
-    queryKey: [
-      ...GENERATED_DOCUMENT_HISTORY_QUERY_KEY,
-      'system-document-history',
-      documentType,
-      visibleLimit,
-      effectiveColumnFilters,
-      navigationTarget?.documentId ?? null,
-    ],
-    queryFn: () => loadSystemDocumentHistory({
-      type: documentType,
-      ...(navigationTarget?.documentId ? { documentId: navigationTarget.documentId } : {}),
-      limit: visibleLimit,
-      columnFilters: effectiveColumnFilters,
-    }),
-    staleTime: 30_000,
-    placeholderData: keepPreviousData,
-    retry: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+
+  const [gridSearch, setGridSearch] = useState('')
+  const loadRows = (request: DocumentHistoryGridRequest) => loadSystemDocumentHistoryGrid({
+    ...request, search: request.search ?? gridSearch, type: documentType, columnFilters: effectiveColumnFilters,
+    ...(navigationTarget?.documentId ? { documentId: navigationTarget.documentId } : {}),
   })
-  const documents = historyQuery.data?.documents ?? []
-  const totalDocuments = historyQuery.data?.total ?? 0
-  const filterOptions = useMemo(
-    () => getScopedSystemDocumentHistoryFilterOptions(historyQuery.data?.filterOptions, methodScope),
-    [historyQuery.data?.filterOptions, methodScope],
-  )
-  const visibleDocuments = useMemo(
-    () => {
-      if (!navigationDocumentIdentity) return documents
-      return [...documents].sort((left, right) => {
-        const leftMatch = getSystemDocumentNavigationIdentity(left) === navigationDocumentIdentity ? 1 : 0
-        const rightMatch = getSystemDocumentNavigationIdentity(right) === navigationDocumentIdentity ? 1 : 0
-        return rightMatch - leftMatch
-      })
-    },
-    [documents, navigationDocumentIdentity],
-  )
-  const hasMoreDocuments = documents.length < totalDocuments
-  const pageDocumentIds = useMemo(
-    () => new Set(visibleDocuments.map((documentRecord) => documentRecord.id)),
-    [visibleDocuments],
-  )
-  const selectedDocuments = useMemo(
-    () => visibleDocuments.filter((documentRecord) => selectedDocumentIds.has(documentRecord.id)),
-    [visibleDocuments, selectedDocumentIds],
-  )
-  const downloadableSelectedDocuments = selectedDocuments.filter((documentRecord) =>
-    availableTemplateIds.has(getSystemDocumentTemplateId(documentRecord)),
-  )
-  const selectedPageCount = visibleDocuments.filter((documentRecord) =>
-    selectedDocumentIds.has(documentRecord.id),
-  ).length
-  const allPageSelected = visibleDocuments.length > 0 && selectedPageCount === visibleDocuments.length
+  const { selectedDocuments, setSelectedDocuments, sourceRevision, refresh, selectionError, selectionPending } =
+    useDocumentGridController(historyStorageKey, loadRows, JSON.stringify([effectiveColumnFilters, navigationTarget?.documentId, gridSearch]))
+  const downloadableSelectedDocuments = selectedDocuments.filter(document => availableTemplateIds.has(getSystemDocumentTemplateId(document)))
+  const methodOptionsQuery = useQuery({
+    queryKey: [...GENERATED_DOCUMENT_HISTORY_QUERY_KEY, 'grid-method-counts', historyStorageKey, effectiveColumnFilters, navigationTarget?.documentId, gridSearch],
+    queryFn: () => loadSystemDocumentHistoryFilterOptions({ type: documentType, fieldKey: 'method', columnFilters: getDocumentHistoryFiltersWithoutKey(effectiveColumnFilters, 'method'), gridSearch, ...(navigationTarget?.documentId ? { documentId: navigationTarget.documentId } : {}) }),
+    enabled: documentType === 'lnkConclusion' && methodScope === 'lnk', staleTime: 30_000, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
+  })
+  const filterOptions = { method: methodOptionsQuery.data?.options ?? [] }
   const hasActiveFilters = hasDocumentHistoryFilters(columnFilters)
-  const hasActiveHistoryScope = hasActiveFilters || (
-    documentType === 'lnkConclusion' && lnkConclusionTemplateFilter !== 'all'
-  )
-  useDocumentEscapeKey({
-    selectedCount: selectedDocumentIds.size,
-    hasFilters: hasActiveHistoryScope || navigationTarget !== null,
-    onClearSelection: () => setSelectedDocumentIds(new Set()),
-    onClearFilters: () => { setNavigationTarget(null); setColumnFilters({}); setLnkConclusionTemplateFilter('all'); setVisibleLimit(pageSize) },
+  const hasActiveHistoryScope = hasActiveFilters || (documentType === 'lnkConclusion' && lnkConclusionTemplateFilter !== 'all')
+  useDocumentEscapeKey({ selectedCount: selectedDocuments.length, hasFilters: hasActiveHistoryScope || navigationTarget !== null,
+    onClearSelection: () => setSelectedDocuments([]),
+    onClearFilters: () => { setNavigationTarget(null); setColumnFilters({}); setLnkConclusionTemplateFilter('all') },
   })
-  const historyError = historyQuery.error
-    ? getDocumentActionErrorMessage(historyQuery.error, 'Не удалось загрузить системные документы.')
-    : null
-  const hasTemplateForDocument = (documentRecord: SystemDocumentSummary) =>
-    availableTemplateIds.has(getSystemDocumentTemplateId(documentRecord))
-
-  const changeColumnFilter = (key: DocumentHistoryFilterKey, value: string) => {
+  const hasTemplateForDocument = (document: SystemDocumentSummary) => availableTemplateIds.has(getSystemDocumentTemplateId(document))
+  const changeColumnFilter = (key: DocumentHistoryColumnKey, value: string) => {
     setNavigationTarget(null)
-    const nextFilters = { ...columnFilters }
-    if (value) nextFilters[key] = value
-    else delete nextFilters[key]
-    setColumnFilters(nextFilters)
-    if (documentType === 'lnkConclusion' && key === 'method') {
-      setLnkConclusionTemplateFilter('all')
-    }
-    setVisibleLimit(pageSize)
+    setColumnFilters(current => { const next = { ...current }; if (value) next[key] = value; else delete next[key]; return next })
+    if (documentType === 'lnkConclusion' && key === 'method') setLnkConclusionTemplateFilter('all')
   }
-
-  const changePageSize = (nextPageSize: number) => {
-    setPageSize(nextPageSize)
-    setVisibleLimit(nextPageSize)
-  }
-
-  const loadMoreDocuments = () => {
-    setVisibleLimit((current) => Math.min(totalDocuments || current + pageSize, current + pageSize))
-  }
-
   const runAction = async (action: () => Promise<unknown> | void) => {
     setActionError(null)
-    setActionNotice(null)
     try {
       await action()
     } catch (actionFailure) {
@@ -2114,25 +1661,6 @@ function SystemDocumentsPanel({
   const downloadDocumentRecord = (documentRecord: SystemDocumentSummary) => runAction(() =>
     downloadSystemDocument({ reference: documentRecord, summary: documentRecord, welderStamps }),
   )
-  const toggleDocumentSelection = (documentId: string) => {
-    setSelectedDocumentIds((current) => {
-      const next = new Set(current)
-      if (next.has(documentId)) next.delete(documentId)
-      else next.add(documentId)
-      return next
-    })
-  }
-  const togglePageSelection = () => {
-    setSelectedDocumentIds((current) => {
-      const next = new Set(current)
-      if (allPageSelected) {
-        for (const id of pageDocumentIds) next.delete(id)
-      } else {
-        for (const id of pageDocumentIds) next.add(id)
-      }
-      return next
-    })
-  }
   const downloadSelectedArchive = async () => {
     if (downloadableSelectedDocuments.length === 0 || isDownloadingArchive) return
     setIsDownloadingArchive(true)
@@ -2157,46 +1685,40 @@ function SystemDocumentsPanel({
     setIsDownloadingArchive(false)
   }
 
-  useEffect(() => {
-    if (!historyQuery.isSuccess || historyQuery.isPlaceholderData) return
-    setSelectedDocumentIds((current) => {
-      const availableIds = new Set(visibleDocuments.map((documentRecord) => documentRecord.id))
-      const next = new Set([...current].filter((id) => availableIds.has(id)))
-      return next.size === current.size ? current : next
-    })
-  }, [historyQuery.isPlaceholderData, historyQuery.isSuccess, visibleDocuments])
-
-  return (
-    <section className="min-w-0 overflow-hidden rounded-md border border-[#cbdde6] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-      {actionsContainer ? createPortal(
-              <button type="button" aria-label={`Действия с документами, выбрано: ${selectedDocuments.length}`} aria-haspopup="menu" aria-expanded={contextMenu?.heading === 'Действия с документами'}
-                className={`inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm font-semibold normal-case transition-colors ${selectedDocuments.length ? 'border-sky-200 bg-white text-sky-800 shadow-sm hover:bg-sky-50' : 'border-[#cbdde6] bg-white text-[#31566a] shadow-sm hover:border-[#79aebe] hover:bg-[#edf7fa]'}`}
-                onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); setContextMenu({ x: rect.right - Math.min(320, window.innerWidth - 16), y: rect.bottom + 4, anchorElement: event.currentTarget,
-                  heading: 'Действия с документами', itemMinHeight: 76, description: selectedDocuments.length ? `Выбрано: ${selectedDocuments.length} · только отмеченные документы` : 'Сначала отметьте нужные документы в списке.',
-                  items: [...(documentType.endsWith('Conclusion') ? [{ id: 'assign-specialists', label: 'Назначить специалистов', icon: UsersRound, description: 'Назначить, заменить или очистить роли в отмеченных документах.', disabled: !selectedDocuments.length, onSelect: () => setSpecialistDocuments(selectedDocuments) }] : []), ...documentOperationItems(selectedDocuments), { type: 'separator', id: 'archive-separator' },
-                    { id: 'download-selected-archive', label: isDownloadingArchive ? 'Готовим архив…' : 'Скачать выбранные архивом', icon: Archive, disabled: !downloadableSelectedDocuments.length || isDownloadingArchive,
-                      description: `Доступен Excel: ${downloadableSelectedDocuments.length} из ${selectedDocuments.length}. Для скачивания нужен шаблон.`, onSelect: () => downloadSelectedArchive() }],
-                }) }}>
-                Действия{selectedDocuments.length > 0 ? <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] tabular-nums">{selectedDocuments.length}</span> : null}<ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
-              </button>
-      , actionsContainer) : null}
-      {hasActiveFilters ? (
-        <div className="flex flex-wrap items-center justify-end gap-2 border-b border-[#d8e5eb] bg-[#f6fafc] px-4 py-2.5">
-          <button
-            type="button"
-            onClick={() => {
-              setNavigationTarget(null)
-              setColumnFilters({})
-              setVisibleLimit(pageSize)
-            }}
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-[#cbdde6] bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            <X className="h-3.5 w-3.5" />
-            Сбросить фильтры
-          </button>
-        </div>
-      ) : null}
-
+  const getCellValue = (key: DocumentHistoryColumnKey, record: SystemDocumentSummary): string | number => {
+    switch (key) {
+      case 'title': return record.title
+      case 'method': return getSystemDocumentMethodCodes(record).join(', ') || '-'
+      case 'stage': return getSystemDocumentStageLabel(record)
+      case 'project': return record.projects.join(', ') || '-'
+      case 'subtitle': return record.subtitleCodes.join(', ') || '-'
+      case 'line': return record.lines.join(', ') || '-'
+      case 'rowCount': return record.rowCount
+      case 'date': return formatDate(record.date) || '-'
+      case 'specialistFirst': case 'specialistSecond': return record.specialists?.[key === 'specialistFirst' ? 'first' : 'second']?.name || 'Не назначен'
+      default: return ''
+    }
+  }
+  const renderCell = (key: DocumentHistoryColumnKey, documentRecord: SystemDocumentSummary) => {
+    switch (key) {
+      case 'title': return <DocumentTitleButton title={documentRecord.title} disabled={!hasTemplateForDocument(documentRecord)} onClick={() => openDocumentRecord(documentRecord)} />
+      case 'method': return <DocumentDimensionCell values={getSystemDocumentMethodCodes(documentRecord)} />
+      case 'stage': return <span className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${getSystemDocumentStageClassName(documentRecord)}`}>{getSystemDocumentStageLabel(documentRecord)}</span>
+      case 'project': return <DocumentDimensionCell values={documentRecord.projects} />
+      case 'subtitle': return <DocumentDimensionCell values={documentRecord.subtitleCodes} />
+      case 'line': return <DocumentDimensionCell values={documentRecord.lines} />
+      case 'rowCount': return <span className="font-semibold tabular-nums">{documentRecord.rowCount}</span>
+      case 'date': return <span className="text-xs text-slate-600">{formatDate(documentRecord.date) || '-'}</span>
+      case 'specialistFirst': case 'specialistSecond': return <DocumentSpecialistCell document={documentRecord} role={key === 'specialistFirst' ? 'first' : 'second'} onEdit={(document, role) => { setSpecialistRole(role); setSpecialistDocuments([document]) }} />
+      default: return null
+    }
+  }
+  const renderActions = (documentRecord: SystemDocumentSummary) => <div data-document-row-actions className="flex items-center justify-end gap-1">
+    <DocumentHistoryActionButton title={`Показать стыки документа в отчете ${getSystemDocumentTargetReport(documentRecord) === 'lnk' ? 'ЛНК' : 'ПСТО'}`} tone="emerald" onClick={() => void runAction(() => onOpenRows(documentRecord))}><Rows3 className="h-4 w-4" /></DocumentHistoryActionButton>
+    {documentRecord.rowCount === 1 ? <DocumentHistoryActionButton title="Открыть картину стыка" tone="sky" onClick={() => void runAction(() => onOpenJointHistory(documentRecord))}><GitBranch className="h-4 w-4" /></DocumentHistoryActionButton> : null}
+    <DocumentHistoryActionButton title={hasTemplateForDocument(documentRecord) ? 'Скачать актуальный Excel' : 'Для этого вида документа шаблон еще не загружен'} disabled={!hasTemplateForDocument(documentRecord)} onClick={() => void downloadDocumentRecord(documentRecord)}><Download className="h-4 w-4" /></DocumentHistoryActionButton>
+  </div>
+  return <section className="min-w-0 rounded-md border border-[#cbdde6] bg-white">
       {documentType === 'lnkConclusion' && methodScope === 'lnk' ? (
         <div
           className="flex flex-wrap gap-2 border-b border-[#d8e5eb] bg-white px-4 py-3"
@@ -2260,96 +1782,36 @@ function SystemDocumentsPanel({
         </div>
       ) : null}
 
-      {historyError || actionError ? (
-        <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-          {historyError ?? actionError}
-        </div>
-      ) : null}
-      {actionNotice ? (
-        <div className="border-b border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
-          {actionNotice}
-        </div>
-      ) : null}
-
-      {historyQuery.isLoading ? (
-        <div className="px-4 py-10 text-center text-sm text-slate-500">Загружаем актуальную историю...</div>
-      ) : totalDocuments === 0 && !hasActiveHistoryScope ? (
-        <div className="px-4 py-10 text-center">
-          <div className="text-sm font-medium text-slate-700">Документов пока нет</div>
-          <div className="mt-1 text-xs text-slate-500">
-            Они появятся автоматически после создания соответствующих заявок или заключений.
-          </div>
-        </div>
-      ) : totalDocuments === 0 ? (
-        <div className="px-4 py-10 text-center text-sm text-slate-500">По выбранным условиям документы не найдены.</div>
-      ) : (
-        <div className="min-w-0 overflow-x-auto">
-          <div
-            className="grid items-center gap-x-4 gap-y-2 border-b border-[#cfdee6] bg-[#eaf2f6] px-4 py-2 text-[11px] font-semibold uppercase text-[#60778a]"
-            style={{
-              gridTemplateColumns: historyGridLayout.gridTemplateColumns,
-              minWidth: historyGridLayout.minWidth,
-            }}
-          >
-            <DocumentHistorySelectAllButton
-              checked={allPageSelected}
-              partial={selectedPageCount > 0 && !allPageSelected}
-              disabled={visibleDocuments.length === 0}
-              onClick={togglePageSelection}
-            />
-            {visibleColumns.map((filter) => (
-              <DocumentHistoryColumnFilter
-                key={filter.key}
-                label={filter.label}
-                value={columnFilters[filter.key] ?? ''}
-                options={filterOptions[filter.key] ?? []}
-                optionsQueryKey={[
-                  ...GENERATED_DOCUMENT_HISTORY_QUERY_KEY,
-                  'system-document-history',
-                  documentType,
-                  'filter-options',
-                  filter.key,
-                  getDocumentHistoryFiltersWithoutKey(effectiveColumnFilters, filter.key),
-                  navigationTarget?.documentId ?? null,
-                ]}
-                loadOptions={(search) => loadSystemDocumentHistoryFilterOptions({
-                  type: documentType,
-                  ...(navigationTarget?.documentId ? { documentId: navigationTarget.documentId } : {}),
-                  fieldKey: filter.key,
-                  search,
-                  columnFilters: getDocumentHistoryFiltersWithoutKey(effectiveColumnFilters, filter.key),
-                })}
-                className={filter.align === 'end' ? 'justify-end' : ''}
-                alignRight={filter.align === 'end'}
-                dateGrouped={filter.dateGrouped}
-                onChange={(value) => changeColumnFilter(filter.key, value)}
-              />
-            ))}
-            <div className="sticky right-0 z-10 flex justify-end border-l border-[#cfdee6] bg-[#eaf2f6] pl-3 shadow-[-12px_0_16px_-16px_rgba(15,23,42,0.55)]">
-              <span>Просмотр</span>
-            </div>
-          </div>
-          <div className="divide-y divide-[#dce7ed]" style={{ minWidth: historyGridLayout.minWidth }}>
-            {visibleDocuments.map((documentRecord, documentIndex) => {
-              const templateAvailable = hasTemplateForDocument(documentRecord)
-              const isSelected = selectedDocumentIds.has(documentRecord.id)
-              const isBulkSelectionContext = isSelected && selectedDocuments.length > 1
-              const methodCodes = getSystemDocumentMethodCodes(documentRecord)
-              return (
-                <div
-                  key={documentRecord.id}
-                  className={`grid min-w-0 items-center gap-x-4 gap-y-2 px-4 py-2.5 transition-colors hover:bg-[#e2f2f6] ${
-                    getSystemDocumentNavigationIdentity(documentRecord) === navigationDocumentIdentity
-                      ? 'bg-sky-50 ring-1 ring-inset ring-sky-300'
-                      : isSelected
-                        ? 'bg-sky-50 ring-1 ring-inset ring-sky-200'
-                      : documentIndex % 2 === 0
-                        ? 'bg-white'
-                        : 'bg-[#f4f8fa]'
-                  }`}
-                  style={{ gridTemplateColumns: historyGridLayout.gridTemplateColumns }}
-                  onContextMenu={(event) => {
-                    event.preventDefault()
+    {actionError || selectionError ? <DocumentHistoryError message={actionError || selectionError!} onRetry={() => { setActionError(null); refresh() }} /> : null}
+    <DocumentsHistoryGrid viewId={historyStorageKey} columns={columns} initialVisibleColumnKeys={initialVisibleColumnKeys}
+      renderCell={renderCell} renderActions={renderActions} getCellValue={getCellValue} loadRows={loadRows}
+      sourceRevision={`${sourceRevision}:${JSON.stringify(effectiveColumnFilters)}:${navigationTarget?.documentId ?? ''}`}
+      filterSourceRevision={`${sourceRevision}:${lnkConclusionTemplateFilter}:${navigationTarget?.documentId ?? ''}`}
+      highlightedDocumentId={navigationTarget?.documentId ? `system-document:${navigationTarget.documentId}` : null}
+      highlightRow={document => navigationTarget !== null && getSystemDocumentNavigationIdentity(document) === navigationTarget.identity}
+      loadFilterOptions={async (fieldKey, search, registrySearch) => {
+        const result = await loadSystemDocumentHistoryFilterOptions({ type: documentType, ...(navigationTarget?.documentId ? { documentId: navigationTarget.documentId } : {}), fieldKey, search, gridSearch: registrySearch, columnFilters: getDocumentHistoryFiltersWithoutKey(effectiveColumnFilters, fieldKey) })
+        return { ...result, options: getScopedSystemDocumentHistoryFilterOptions({ [fieldKey]: result.options }, methodScope)[fieldKey] ?? [] }
+      }}
+      columnFilters={columnFilters} onColumnFilterChange={changeColumnFilter}
+      selectedDocuments={selectedDocuments} onSelectionChange={setSelectedDocuments} selectionDisabled={selectionPending || Boolean(selectionError)}
+      onSelectionPendingChange={pending => { if (pending) setContextMenu(null) }} onSearchChange={setGridSearch}
+      toolbarActions={
+              <button type="button" aria-label={`Действия с документами, выбрано: ${selectedDocuments.length}`} aria-haspopup="menu" aria-expanded={contextMenu?.heading === 'Действия с документами'}
+                className="journal-button"
+                onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); setContextMenu({ x: rect.right - Math.min(320, window.innerWidth - 16), y: rect.bottom + 4, anchorElement: event.currentTarget,
+                  heading: 'Действия с документами', description: selectedDocuments.length ? `Выбрано: ${selectedDocuments.length} · только отмеченные документы` : 'Сначала отметьте нужные документы в списке.',
+                  items: [...(documentType.endsWith('Conclusion') ? [{ id: 'assign-specialists', label: 'Назначить специалистов', icon: UsersRound, description: 'Назначить, заменить или очистить роли в отмеченных документах.', disabled: !selectedDocuments.length, onSelect: () => { setSpecialistRole(undefined); setSpecialistDocuments(selectedDocuments) } }] : []), ...documentOperationItems(selectedDocuments), { type: 'separator', id: 'archive-separator' },
+                    { id: 'download-selected-archive', label: isDownloadingArchive ? 'Готовим архив…' : 'Скачать выбранные архивом', icon: Archive, disabled: !downloadableSelectedDocuments.length || isDownloadingArchive,
+                      description: `Доступен Excel: ${downloadableSelectedDocuments.length} из ${selectedDocuments.length}. Для скачивания нужен шаблон.`, onSelect: () => downloadSelectedArchive() }],
+                }) }}>
+                Действия{selectedDocuments.length > 0 ? <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] tabular-nums">{selectedDocuments.length}</span> : null}<ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
+              </button>
+      }
+      onRowContextMenu={(documentRecord, event) => {
+        const templateAvailable = hasTemplateForDocument(documentRecord)
+        const isSelected = selectedDocuments.some(document => document.id === documentRecord.id)
+        const isBulkSelectionContext = isSelected && selectedDocuments.length > 1
                     const bulkItems = isBulkSelectionContext
                       ? [
                           {
@@ -2363,8 +1825,8 @@ function SystemDocumentsPanel({
                         ]
                       : []
                     setContextMenu({
-                      x: event.clientX,
-                      y: event.clientY,
+                      x: event.x,
+                      y: event.y, anchorElement: event.anchorElement,
                       items: [
                         ...bulkItems,
                         { id: 'show-document-rows', label: 'Показать стыки в отчете', icon: Rows3, onSelect: () => runAction(() => onOpenRows(documentRecord)) },
@@ -2377,111 +1839,27 @@ function SystemDocumentsPanel({
                         }] : []),
                         ...documentOperationItems(isSelected ? selectedDocuments : [documentRecord], isSelected ? ` (${selectedDocuments.length})` : ''),
                         { type: 'separator', id: 'open-separator' },
+                      { id: 'copy-cells', label: 'Копировать ячейки', icon: Copy, description: 'Ctrl+C · выбранные ячейки загруженных документов', onSelect: event.copyCells },
                         { id: 'open-document', label: 'Предпросмотр', icon: FileText, disabled: !templateAvailable, onSelect: () => openDocumentRecord(documentRecord) },
                         { id: 'download-document', label: 'Скачать Excel', icon: Download, disabled: !templateAvailable, onSelect: () => downloadDocumentRecord(documentRecord) },
                       ],
                     })
-                  }}
-                >
-                  <DocumentHistoryRowCheckbox
-                    checked={isSelected}
-                    label={`Выбрать документ «${documentRecord.title}»`}
-                    onChange={() => toggleDocumentSelection(documentRecord.id)}
-                  />
-                  <button
-                    type="button"
-                    className="group min-w-0 text-left disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={!templateAvailable}
-                    onClick={() => void openDocumentRecord(documentRecord)}
-                    title={templateAvailable ? 'Предпросмотр актуального документа' : 'Для этого вида документа шаблон еще не загружен'}
-                  >
-                    <span className="flex min-w-0 items-start gap-2.5">
-                      <span className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors ${
-                        templateAvailable
-                          ? 'border-[#c9dce5] bg-[#f4fafc] text-[#14779a] group-hover:border-[#9fc4d2] group-hover:bg-[#e9f5f8]'
-                          : 'border-slate-200 bg-slate-50 text-slate-300'
-                      }`}>
-                        <FileSpreadsheet className="h-4 w-4" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block break-words text-[13px] font-medium leading-5 text-slate-800 transition-colors group-hover:text-[#0b526c]">
-                          {documentRecord.title}
-                        </span>
-                      </span>
-                    </span>
-                  </button>
-                  {visibleColumnKeySet.has('method') ? (
-                    <span className="truncate text-xs font-semibold text-slate-600" title={methodCodes.join(', ')}>
-                      {methodCodes.join(', ') || '-'}
-                    </span>
-                  ) : null}
-                  {visibleColumnKeySet.has('stage') ? (
-                    <span
-                      className={`w-fit rounded border px-1.5 py-0.5 text-[11px] font-medium leading-4 ${getSystemDocumentStageClassName(documentRecord)}`}
-                    >
-                      {getSystemDocumentStageLabel(documentRecord)}
-                    </span>
-                  ) : null}
-                  {visibleColumnKeySet.has('project') ? <DocumentDimensionCell values={documentRecord.projects} /> : null}
-                  {visibleColumnKeySet.has('subtitle') ? <DocumentDimensionCell values={documentRecord.subtitleCodes} /> : null}
-                  {visibleColumnKeySet.has('line') ? (
-                    <span className="truncate text-xs text-slate-600" title={documentRecord.lines.join(', ')}>{documentRecord.lines.join(', ') || '-'}</span>
-                  ) : null}
-                  {visibleColumnKeySet.has('rowCount') ? (
-                    <span className="text-right text-sm font-semibold tabular-nums text-slate-800">{documentRecord.rowCount}</span>
-                  ) : null}
-                  {visibleColumnKeySet.has('date') ? (
-                    <span className="text-xs text-slate-600">{formatDate(documentRecord.date) || '-'}</span>
-                  ) : null}
-                  {visibleColumnKeySet.has('specialistFirst') ? <DocumentSpecialistCell document={documentRecord} role="first" /> : null}
-                  {visibleColumnKeySet.has('specialistSecond') ? <DocumentSpecialistCell document={documentRecord} role="second" /> : null}
-                  <div data-document-row-actions className="sticky right-0 z-10 flex items-center justify-end gap-1 border-l border-[#dce7ed] bg-inherit pl-3 shadow-[-12px_0_16px_-16px_rgba(15,23,42,0.55)]">
-                    <DocumentHistoryActionButton
-                      title={`Показать стыки документа в отчете ${getSystemDocumentTargetReport(documentRecord) === 'lnk' ? 'ЛНК' : 'ПСТО'}`}
-                      tone="emerald"
-                      onClick={() => void runAction(() => onOpenRows(documentRecord))}
-                    ><Rows3 className="h-4 w-4" /></DocumentHistoryActionButton>
-                    {documentRecord.rowCount === 1 ? (
-                      <DocumentHistoryActionButton
-                        title="Открыть картину стыка"
-                        tone="sky"
-                        onClick={() => void runAction(() => onOpenJointHistory(documentRecord))}
-                      ><GitBranch className="h-4 w-4" /></DocumentHistoryActionButton>
-                    ) : null}
-                    <DocumentHistoryActionButton
-                      title={templateAvailable ? 'Скачать актуальный Excel' : 'Для этого вида документа шаблон еще не загружен'}
-                      disabled={!templateAvailable}
-                      onClick={() => void downloadDocumentRecord(documentRecord)}
-                    ><Download className="h-4 w-4" /></DocumentHistoryActionButton>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-      <div className="border-t border-[#dbe6ec] bg-[#f4f8fa] px-4 py-2">
-        <PaginationBar
-          totalCount={totalDocuments}
-          firstItemNumber={visibleDocuments.length === 0 ? 0 : 1}
-          lastItemNumber={visibleDocuments.length}
-          pageSize={pageSize}
-          hasMore={hasMoreDocuments}
-          label="документов"
-          onLoadMore={loadMoreDocuments}
-          onPageSizeChange={changePageSize}
-        />
-        <div className="mt-2 text-xs text-slate-500">
-          Найдено: {totalDocuments}
-          {selectedDocuments.length > 0 ? ` · выбрано: ${selectedDocuments.length}` : ''}
-        </div>
-      </div>
-      <ContextActionMenu menu={contextMenu} autoFocus={contextMenu?.heading === 'Действия с документами'} onClose={() => setContextMenu(null)} />
-      {specialistDocuments ? <DocumentSpecialistAssignmentDialog documents={specialistDocuments} onClose={() => setSpecialistDocuments(null)} /> : null}
-      {documentOperation ? <DocumentOperationDialog documents={documentOperation.documents} action={documentOperation.action} onClose={() => setDocumentOperation(null)} onApplied={() => onRenamed()} /> : null}
-      {previewRequest ? <HistoryDocumentPreview request={previewRequest} onClose={closePreview} /> : null}
-    </section>
-  )
+      }} />
+    <ContextActionMenu menu={contextMenu} panelClassName="journal-context-menu" autoFocus onClose={() => setContextMenu(null)} />
+    {specialistDocuments ? <DocumentSpecialistAssignmentDialog documents={specialistDocuments} onlyRole={specialistRole} onClose={() => { setSpecialistDocuments(null); setSpecialistRole(undefined) }} /> : null}
+    {documentOperation ? <DocumentOperationDialog documents={documentOperation.documents} action={documentOperation.action} onClose={() => setDocumentOperation(null)} onApplied={() => onRenamed()} /> : null}
+    {previewRequest ? <HistoryDocumentPreview request={previewRequest} onClose={closePreview} /> : null}
+  </section>
+}
+
+function DocumentTitleButton({ title, disabled = false, onClick }: { title: string; disabled?: boolean; onClick: () => void }) {
+  return <button type="button" data-document-title-button className="group flex w-full min-w-0 items-center gap-2 text-left disabled:cursor-not-allowed disabled:opacity-60" disabled={disabled} onClick={onClick} title={disabled ? 'Для этого вида документа шаблон еще не загружен' : 'Предпросмотр актуального документа'}>
+    <FileSpreadsheet className="h-4 w-4 shrink-0 text-sky-700" /><span className="document-grid-title min-w-0 text-[13px] font-medium text-slate-800 group-hover:text-sky-800">{title}</span>
+  </button>
+}
+
+function DocumentHistoryError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return <div role="alert" className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-200 bg-rose-50 p-3 text-sm text-rose-700"><span>{message}</span><button type="button" className="rounded border border-rose-200 bg-white px-2 py-1" onClick={onRetry}>Обновить историю</button></div>
 }
 
 function formatGeneratedDocumentDate(value: string) {
@@ -2504,574 +1882,6 @@ function DocumentDimensionCell({ values }: { values: string[] }) {
       {text}
     </span>
   )
-}
-
-function DocumentHistorySelectAllButton({
-  checked,
-  partial,
-  disabled,
-  onClick,
-}: {
-  checked: boolean
-  partial: boolean
-  disabled: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      title={checked ? 'Снять выбор с показанных документов' : 'Выбрать показанные документы'}
-      aria-label={checked ? 'Снять выбор с показанных документов' : 'Выбрать показанные документы'}
-      aria-pressed={checked}
-      onClick={onClick}
-      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
-        checked || partial
-          ? 'border-sky-300 bg-sky-100 text-sky-800'
-          : 'border-slate-300 bg-white text-transparent hover:border-sky-300 hover:bg-sky-50 hover:text-sky-500'
-      }`}
-    >
-      {partial ? <Minus className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-    </button>
-  )
-}
-
-function DocumentHistoryRowCheckbox({
-  checked,
-  label,
-  onChange,
-}: {
-  checked: boolean
-  label: string
-  onChange: () => void
-}) {
-  return (
-    <button
-      type="button"
-      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border shadow-sm transition-colors ${
-        checked
-          ? 'border-sky-300 bg-sky-100 text-sky-800'
-          : 'border-slate-300 bg-white text-transparent hover:border-sky-300 hover:bg-sky-50 hover:text-sky-500'
-      }`}
-      aria-label={label}
-      aria-pressed={checked}
-      title={label}
-      onClick={onChange}
-    >
-      <Check className="h-4 w-4" />
-    </button>
-  )
-}
-
-export function DocumentHistoryColumnFilter({
-  label,
-  value,
-  options,
-  optionsQueryKey,
-  loadOptions,
-  className = '',
-  alignRight = false,
-  dateGrouped = false,
-  onChange,
-}: {
-  label: string
-  value: string
-  options: DocumentHistoryColumnOption[]
-  optionsQueryKey?: readonly unknown[]
-  loadOptions?: (search: string) => Promise<{
-    options: DocumentHistoryColumnOption[]
-    hasMore: boolean
-  }>
-  className?: string
-  alignRight?: boolean
-  dateGrouped?: boolean
-  onChange: (value: string) => void
-}) {
-  const [isOpen, setIsOpen] = useState(false)
-  const [optionSearch, setOptionSearch] = useState('')
-  const [menuPosition, setMenuPosition] = useState<DocumentHistoryFilterMenuPosition | null>(null)
-  const anchorRef = useRef<HTMLButtonElement | null>(null)
-  const menuRef = useRef<HTMLDivElement | null>(null)
-  const choiceFilter = parseWeldColumnChoiceFilter(value)
-  const selectedValues = choiceFilter?.kind === 'values' ? choiceFilter.values : []
-  const hasActiveFilter = Boolean(value.trim())
-  const normalizedSearch = optionSearch.trim().toLocaleLowerCase('ru-RU')
-  const debouncedOptionSearch = useDebouncedValue(optionSearch.trim(), 250)
-  const remoteOptionsQuery = useQuery({
-    queryKey: [
-      ...(optionsQueryKey ?? ['document-history-filter-options', label]),
-      debouncedOptionSearch,
-    ],
-    queryFn: () => {
-      if (!loadOptions) return Promise.resolve({ options, hasMore: false })
-      return loadOptions(debouncedOptionSearch)
-    },
-    enabled: isOpen && Boolean(loadOptions),
-    staleTime: 60_000,
-    placeholderData: keepPreviousData,
-    retry: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  })
-  const loadedOptions = loadOptions
-    ? remoteOptionsQuery.data?.options ?? options
-    : options
-  const optionsWithSelectedValues = useMemo(() => {
-    const byValue = new Map(loadedOptions.map((option) => [option.value, option]))
-    for (const selectedValue of selectedValues) {
-      if (
-        !byValue.has(selectedValue)
-        && (!normalizedSearch || selectedValue.toLocaleLowerCase('ru-RU').includes(normalizedSearch))
-      ) {
-        byValue.set(selectedValue, {
-          value: selectedValue,
-          label: selectedValue || '(пусто)',
-          count: 0,
-        })
-      }
-    }
-    return [...byValue.values()]
-  }, [loadedOptions, normalizedSearch, selectedValues])
-  const visibleOptions = loadOptions
-    ? optionsWithSelectedValues
-    : normalizedSearch
-      ? optionsWithSelectedValues.filter((option) =>
-          option.label.toLocaleLowerCase('ru-RU').includes(normalizedSearch),
-        )
-      : optionsWithSelectedValues
-  const remoteHasMore = Boolean(loadOptions && remoteOptionsQuery.data?.hasMore)
-  const isRemoteOptionsLoading = Boolean(loadOptions && remoteOptionsQuery.isLoading)
-
-  const toggleValue = (optionValue: string) => {
-    const selectedSet = new Set(selectedValues)
-    if (selectedSet.has(optionValue)) selectedSet.delete(optionValue)
-    else selectedSet.add(optionValue)
-    onChange(selectedSet.size > 0 ? buildWeldColumnValueFilter(Array.from(selectedSet)) : '')
-  }
-
-  useEffect(() => {
-    if (!isOpen) return
-    const close = () => setIsOpen(false)
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target
-      if (!(target instanceof Node)) return
-      if (anchorRef.current?.contains(target) || menuRef.current?.contains(target)) return
-      close()
-    }
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      if (isModalDialogOpen() || isContextActionMenuOpen()) return
-      event.preventDefault()
-      event.stopPropagation()
-      event.stopImmediatePropagation()
-      close()
-      window.requestAnimationFrame(() => anchorRef.current?.focus())
-    }
-    document.addEventListener('pointerdown', handlePointerDown)
-    window.addEventListener('keydown', handleKeyDown, { capture: true })
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown)
-      window.removeEventListener('keydown', handleKeyDown, { capture: true })
-    }
-  }, [isOpen])
-
-  useLayoutEffect(() => {
-    if (!isOpen) {
-      setMenuPosition(null)
-      return undefined
-    }
-
-    const updateMenuPosition = () => {
-      const anchor = anchorRef.current
-      if (!anchor) return
-      const rect = anchor.getBoundingClientRect()
-      const nextPosition = getDocumentHistoryFilterMenuPosition({
-        anchorLeft: rect.left,
-        anchorRight: rect.right,
-        anchorTop: rect.top,
-        anchorBottom: rect.bottom,
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight,
-        alignRight,
-      })
-      setMenuPosition((current) =>
-        current?.left === nextPosition.left
-        && current.width === nextPosition.width
-        && current.maxHeight === nextPosition.maxHeight
-        && current.placement === nextPosition.placement
-        && current.offset === nextPosition.offset
-          ? current
-          : nextPosition,
-      )
-    }
-
-    updateMenuPosition()
-    window.addEventListener('resize', updateMenuPosition)
-    document.addEventListener('scroll', updateMenuPosition, true)
-    return () => {
-      window.removeEventListener('resize', updateMenuPosition)
-      document.removeEventListener('scroll', updateMenuPosition, true)
-    }
-  }, [alignRight, isOpen])
-
-  return (
-    <span className={`relative flex min-w-0 ${alignRight ? 'justify-end' : ''} ${className}`}>
-      <button
-        ref={anchorRef}
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={isOpen}
-        onClick={() => {
-          if (!isOpen && !hasActiveFilter) setOptionSearch('')
-          setIsOpen((current) => !current)
-        }}
-        className={`inline-flex h-8 max-w-full items-center gap-1 rounded-md px-1.5 text-[11px] font-semibold uppercase transition ${
-          hasActiveFilter || isOpen
-            ? 'bg-white text-slate-900 shadow-sm'
-            : 'text-[#60778a] hover:bg-white/60 hover:text-slate-800'
-        }`}
-        title={hasActiveFilter ? `${label}: ${getDocumentHistoryFilterSummary(value)}` : `Фильтр: ${label}`}
-      >
-        <span className="min-w-0 truncate">{label}</span>
-        <span className={`inline-flex h-5 min-w-5 items-center justify-center gap-1 rounded border border-[#bdd4df] bg-white px-1 text-sky-700 ${
-          hasActiveFilter ? '' : 'text-slate-400'
-        }`}>
-          <ListFilter className="h-3.5 w-3.5" />
-          {hasActiveFilter ? <span>{getDocumentHistoryFilterCount(value)}</span> : null}
-        </span>
-      </button>
-
-      {isOpen && typeof document !== 'undefined' ? createPortal(
-        <div
-          ref={menuRef}
-          role="dialog"
-          aria-label={`Фильтр: ${label}`}
-          className="fixed z-[80] flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white text-left normal-case shadow-xl shadow-slate-300/40"
-          style={menuPosition
-            ? {
-                left: menuPosition.left,
-                width: menuPosition.width,
-                maxHeight: menuPosition.maxHeight,
-                ...(menuPosition.placement === 'above'
-                  ? { bottom: menuPosition.offset }
-                  : { top: menuPosition.offset }),
-              }
-            : { left: 12, top: 0, visibility: 'hidden' }}
-        >
-          <div className="shrink-0 border-b border-slate-100 bg-slate-50 px-3 py-2">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-slate-800">{label}</div>
-                <div className="mt-0.5 break-words text-xs text-slate-500">
-                  {hasActiveFilter
-                    ? `Активно: ${getDocumentHistoryFilterSummary(value)}`
-                    : remoteHasMore
-                      ? `Показаны первые ${visibleOptions.length}`
-                      : `Значений: ${visibleOptions.length}`}
-                </div>
-              </div>
-              <button type="button" className="shrink-0 text-xs text-slate-500 hover:text-slate-900" onClick={() => setIsOpen(false)}>
-                Закрыть
-              </button>
-            </div>
-          </div>
-          <div className="shrink-0 p-3">
-            <label className="relative block">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-              <input
-                type="search"
-                value={optionSearch}
-                onChange={(event) => setOptionSearch(event.target.value)}
-                placeholder="Найти значение"
-                className="h-8 w-full rounded-md border border-slate-200 bg-white py-1 pl-8 pr-2 text-xs text-slate-900 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
-              />
-            </label>
-            <div className="mt-2 flex items-center gap-2">
-              <button
-                type="button"
-                className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
-                disabled={visibleOptions.length === 0}
-                onClick={() => onChange(buildWeldColumnValueFilter(visibleOptions.map((option) => option.value)))}
-              >
-                {remoteHasMore ? 'Выбрать показанные' : 'Выбрать все'}
-              </button>
-              <button
-                type="button"
-                className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
-                onClick={() => {
-                  setOptionSearch('')
-                  onChange('')
-                }}
-              >
-                Очистить
-              </button>
-            </div>
-          </div>
-          <div className="min-h-0 flex-1 overflow-auto border-t border-slate-100">
-            {isRemoteOptionsLoading && visibleOptions.length === 0 ? (
-              <div className="px-3 py-6 text-center text-xs text-slate-500">Загружаем значения...</div>
-            ) : remoteOptionsQuery.isError ? (
-              <div className="px-3 py-6 text-center text-xs text-rose-600">
-                Не удалось загрузить значения фильтра.
-              </div>
-            ) : dateGrouped ? (
-              <DocumentDateFilterOptions
-                options={visibleOptions}
-                selectedValues={selectedValues}
-                onToggleValue={toggleValue}
-                onToggleValues={(values) => {
-                  const selectedSet = new Set(selectedValues)
-                  const hasEveryValue = values.every((optionValue) => selectedSet.has(optionValue))
-                  for (const optionValue of values) {
-                    if (hasEveryValue) selectedSet.delete(optionValue)
-                    else selectedSet.add(optionValue)
-                  }
-                  onChange(selectedSet.size > 0 ? buildWeldColumnValueFilter(Array.from(selectedSet)) : '')
-                }}
-              />
-            ) : visibleOptions.length > 0 ? (
-              visibleOptions.map((option) => {
-                const checked = selectedValues.includes(option.value)
-                return (
-                  <button
-                    key={option.value || '__empty__'}
-                    type="button"
-                    aria-pressed={checked}
-                    onClick={() => toggleValue(option.value)}
-                    className={`flex w-full items-center gap-2 border-b border-slate-100 px-3 py-2 text-left text-xs last:border-b-0 hover:bg-slate-50 ${
-                      checked ? 'bg-sky-50/80 text-slate-900' : 'text-slate-700'
-                    }`}
-                  >
-                    <span
-                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                        checked ? 'border-sky-500 bg-sky-500 text-white' : 'border-slate-300 bg-white'
-                      }`}
-                    >
-                      {checked ? <Check className="h-3 w-3" /> : null}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate" title={option.label}>{option.label}</span>
-                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">{option.count}</span>
-                  </button>
-                )
-              })
-            ) : (
-              <div className="px-3 py-6 text-center text-xs text-slate-500">Значений не найдено</div>
-            )}
-            {remoteHasMore ? (
-              <div className="border-t border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                Уточните поиск, чтобы увидеть остальные значения.
-              </div>
-            ) : null}
-          </div>
-        </div>,
-        document.body,
-      ) : null}
-    </span>
-  )
-}
-
-function DocumentDateFilterOptions({
-  options,
-  selectedValues,
-  onToggleValue,
-  onToggleValues,
-}: {
-  options: DocumentHistoryColumnOption[]
-  selectedValues: string[]
-  onToggleValue: (value: string) => void
-  onToggleValues: (values: string[]) => void
-}) {
-  const groups = getDocumentDateFilterGroups(options)
-  if (groups.length === 0) {
-    return <div className="px-3 py-6 text-center text-xs text-slate-500">Дат не найдено</div>
-  }
-
-  return (
-    <div className="divide-y divide-slate-100">
-      {groups.map((group) =>
-        group.kind === 'empty' ? (
-          <DocumentFilterValueRow
-            key="empty"
-            label={group.label}
-            count={group.count}
-            checked={selectedValues.includes(group.value)}
-            onClick={() => onToggleValue(group.value)}
-          />
-        ) : (
-          <div key={group.year} className="py-1">
-            <button
-              type="button"
-              onClick={() => onToggleValues(group.values)}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
-            >
-              <DocumentGroupFilterCheck values={group.values} selectedValues={selectedValues} />
-              <span className="min-w-0 flex-1">{group.year}</span>
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">{group.count}</span>
-            </button>
-            {group.months.map((month) => (
-              <div key={`${group.year}-${month.month}`} className="pb-1">
-                <button
-                  type="button"
-                  onClick={() => onToggleValues(month.values)}
-                  className="flex w-full items-center gap-2 px-6 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50"
-                >
-                  <DocumentGroupFilterCheck values={month.values} selectedValues={selectedValues} />
-                  <span className="min-w-0 flex-1">{month.label}</span>
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">{month.count}</span>
-                </button>
-                {month.options.map((option) => (
-                  <DocumentFilterValueRow
-                    key={option.value || '__empty__'}
-                    label={option.label}
-                    count={option.count}
-                    checked={selectedValues.includes(option.value)}
-                    onClick={() => onToggleValue(option.value)}
-                    className="pl-9"
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-        ),
-      )}
-    </div>
-  )
-}
-
-function DocumentGroupFilterCheck({
-  values,
-  selectedValues,
-}: {
-  values: string[]
-  selectedValues: string[]
-}) {
-  const selectedSet = new Set(selectedValues)
-  const checkedCount = values.filter((value) => selectedSet.has(value)).length
-  const checked = values.length > 0 && checkedCount === values.length
-  const partial = checkedCount > 0 && !checked
-  return (
-    <span
-      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-        checked ? 'border-sky-500 bg-sky-500 text-white' : partial ? 'border-sky-300 bg-sky-50 text-sky-500' : 'border-slate-300 bg-white text-transparent'
-      }`}
-    >
-      {checked ? <Check className="h-3 w-3" /> : partial ? <span className="h-0.5 w-2 rounded-full bg-current" /> : null}
-    </span>
-  )
-}
-
-function DocumentFilterValueRow({
-  label,
-  count,
-  checked,
-  onClick,
-  className = '',
-}: {
-  label: string
-  count: number
-  checked: boolean
-  onClick: () => void
-  className?: string
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={checked}
-      onClick={onClick}
-      className={`flex w-full items-center gap-2 border-b border-slate-100 px-3 py-2 text-left text-xs last:border-b-0 hover:bg-slate-50 ${
-        checked ? 'bg-sky-50/80 text-slate-900' : 'text-slate-700'
-      } ${className}`}
-    >
-      <span
-        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-          checked ? 'border-sky-500 bg-sky-500 text-white' : 'border-slate-300 bg-white'
-        }`}
-      >
-        {checked ? <Check className="h-3 w-3" /> : null}
-      </span>
-      <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>
-      <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">{count}</span>
-    </button>
-  )
-}
-
-function getDocumentDateFilterGroups(options: DocumentHistoryColumnOption[]) {
-  const emptyOptions = options.filter((option) => !parseDocumentFilterDateKey(option.value))
-  const dateOptions = options
-    .map((option) => ({ option, iso: parseDocumentFilterDateKey(option.value) }))
-    .filter((item): item is { option: DocumentHistoryColumnOption; iso: string } => Boolean(item.iso))
-    .sort((left, right) => right.iso.localeCompare(left.iso))
-
-  const yearGroups = new Map<string, Map<string, DocumentHistoryColumnOption[]>>()
-  for (const item of dateOptions) {
-    const [year, month] = item.iso.split('-')
-    if (!year || !month) continue
-    if (!yearGroups.has(year)) yearGroups.set(year, new Map())
-    const months = yearGroups.get(year)!
-    if (!months.has(month)) months.set(month, [])
-    months.get(month)!.push(item.option)
-  }
-
-  const groups: Array<
-    | { kind: 'empty'; value: string; label: string; count: number }
-    | {
-        kind: 'year'
-        year: string
-        count: number
-        values: string[]
-        months: Array<{
-          month: string
-          label: string
-          count: number
-          values: string[]
-          options: DocumentHistoryColumnOption[]
-        }>
-      }
-  > = []
-
-  if (emptyOptions.length > 0) {
-    groups.push({
-      kind: 'empty',
-      value: '',
-      label: '(пусто)',
-      count: emptyOptions.reduce((sum, option) => sum + option.count, 0),
-    })
-  }
-
-  for (const [year, months] of [...yearGroups.entries()].sort((left, right) => right[0].localeCompare(left[0]))) {
-    const monthGroups = [...months.entries()]
-      .sort((left, right) => right[0].localeCompare(left[0]))
-      .map(([month, monthOptions]) => ({
-        month,
-        label: formatDocumentFilterMonth(year, month),
-        count: monthOptions.reduce((sum, option) => sum + option.count, 0),
-        values: monthOptions.map((option) => option.value),
-        options: monthOptions,
-      }))
-    groups.push({
-      kind: 'year',
-      year,
-      count: monthGroups.reduce((sum, month) => sum + month.count, 0),
-      values: monthGroups.flatMap((month) => month.values),
-      months: monthGroups,
-    })
-  }
-
-  return groups
-}
-
-function parseDocumentFilterDateKey(value: string) {
-  const match = String(value ?? '').match(/(\d{2})\.(\d{2})\.(\d{4})/)
-  if (!match) return null
-  return `${match[3]}-${match[2]}-${match[1]}`
-}
-
-function formatDocumentFilterMonth(year: string, month: string) {
-  const parsed = new Date(Number(year), Number(month) - 1, 1)
-  return parsed.toLocaleDateString('ru-RU', {
-    month: 'long',
-    year: 'numeric',
-  })
 }
 
 function DocumentHistoryActionButton({

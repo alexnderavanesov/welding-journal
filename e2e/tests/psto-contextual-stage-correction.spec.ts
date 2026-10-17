@@ -1,3 +1,4 @@
+import { documentGridRow } from '../document-grid'
 import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
@@ -248,6 +249,148 @@ test('отмена ПСТО: явный перенос одного стыка �
   await expectSharedDocument(page, fixture, 'primary')
 })
 
+test('возобновление после отмены: явный перенос одного стыка сохраняет специалистов, сосед с заявкой ПСТО остаётся KEEP', async ({ page }) => {
+  const fixture = await seed('primary')
+  const assignment = await openAssignment(page)
+  for (const joint of ['F881', 'F882']) {
+    await expect(choices(assignment, joint).getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
+  }
+  await assignment.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
+  await expect(dialog(page, 'Программа ПСТО')).toBeVisible()
+  await expectPackage(fixture.moved.id, 'primary')
+  await expectPackage(fixture.kept.id, 'primary')
+
+  // A primary NK package alone permits removing an empty assignment, not an
+  // official cancellation. Give only the sibling an existing request-only PSTO
+  // history: this is fixture preparation, not a test of request creation. The
+  // assignment, cancellation and reactivation themselves all use the real UI.
+  await withE2eDatabase(db => db.query(`update weld_joints
+    set psto_request='CTX-REACTIVATE-PSTO',psto_request_date='2026-09-06'
+    where id=$1`, [fixture.kept.id]))
+  await page.goto('/psto')
+  await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()
+  const program = dialog(page, 'Программа ПСТО')
+  await program.getByLabel('Поиск линий', { exact: true }).fill(SOURCE)
+  await expect(program.getByText(SOURCE, { exact: true })).toBeVisible()
+  await program.getByRole('button', { name: 'Отменить ПСТО', exact: true }).click()
+  const cancellation = dialog(page, 'Отмена ПСТО')
+  await cancellation.getByLabel(/Дата решения об отмене ПСТО/).fill('2026-09-10')
+  await cancellation.getByLabel('Основание отмены ПСТО', { exact: true }).fill('CTX-REACTIVATE-CANCELLATION')
+  await cancellation.getByRole('button', { name: 'Отменить ПСТО на линии', exact: true }).click()
+  await expect(program).toBeVisible()
+  for (const row of [fixture.moved, fixture.kept]) {
+    await expectPackage(row.id, 'primary')
+    expect((await snapshot(row.id)).row).toMatchObject({
+      psto_required: 'отменен', psto_cancellation_date: '2026-09-10',
+      psto_control_basis: 'CTX-REACTIVATE-CANCELLATION',
+    })
+  }
+  const keptBefore = await snapshot(fixture.kept.id)
+
+  await program.getByRole('button', { name: 'Возобновить', exact: true }).click()
+  const reactivation = dialog(page, 'Возобновление ПСТО')
+  for (const joint of ['F881', 'F882']) {
+    await expect(choices(reactivation, joint).getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
+  }
+  const transferLabel = 'Весь основной НК → до ТО'
+  await expect(choices(reactivation, 'F881').getByRole('radio', { name: transferLabel, exact: true })).toBeEnabled()
+  await expect(choices(reactivation, 'F882').getByRole('radio', { name: transferLabel, exact: true })).toBeDisabled()
+  await expect(choices(reactivation, 'F882')).toContainText('заявка или история ПСТО/ТВМТ')
+  await choices(reactivation, 'F881').getByRole('radio', { name: transferLabel, exact: true }).check()
+  await expect(choices(reactivation, 'F882').getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
+  await reactivation.getByRole('button', { name: 'Возобновить ПСТО', exact: true }).click()
+  await expect(program).toBeVisible()
+  await page.reload()
+
+  await expectPackage(fixture.moved.id, 'beforeHeatTreatment')
+  await expectPackage(fixture.kept.id, 'primary')
+  for (const row of [fixture.moved, fixture.kept]) {
+    expect((await snapshot(row.id)).row).toMatchObject({
+      psto_required: 'да', psto_cancellation_date: null, psto_control_basis: null,
+    })
+  }
+  expect((await snapshot(fixture.moved.id)).row).toMatchObject({
+    psto_request: null, psto_request_date: null, psto_result: null, psto_date: null,
+  })
+  const keptAfter = await snapshot(fixture.kept.id)
+  for (const field of RECORDED_CONTROL_FIELDS) expect(keptAfter.row[field], field).toEqual(keptBefore.row[field])
+  expect(keptAfter.controls).toEqual(keptBefore.controls)
+  expect(keptAfter.cycles).toEqual(keptBefore.cycles)
+  await expectSharedDocument(page, fixture, 'beforeHeatTreatment')
+})
+
+test('после переноса: переход из документа и исправление названия до ТО сохраняют исходный этап соседа и специалистов', async ({ page }) => {
+  const fixture = await seed('primary')
+  const assignment = await openAssignment(page)
+  await choices(assignment, 'F881').getByRole('radio', { name: 'Весь основной НК → до ТО', exact: true }).check()
+  await expect(choices(assignment, 'F882').getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
+  await assignment.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
+  await expect(dialog(page, 'Программа ПСТО')).toBeVisible()
+  await expectPackage(fixture.moved.id, 'beforeHeatTreatment')
+  await expectPackage(fixture.kept.id, 'primary')
+  await expectSharedDocument(page, fixture, 'beforeHeatTreatment')
+
+  await page.goto('/documents')
+  await page.getByRole('button', { name: 'Заключения ЛНК', exact: true }).click()
+  const transferredRow = await documentGridRow(page, 'CTX-vik-CONCLUSION', 'До ТО')
+  await transferredRow.actions.getByTitle('Показать стыки документа в отчете ЛНК', { exact: true }).click()
+  await expect(page).toHaveURL(/\/lnk(?:\?|$)/)
+  await expect(page.locator(`tr[data-weld-row-id="${fixture.moved.id}"]`)).toBeVisible()
+  await expect(page.locator(`tr[data-weld-row-id="${fixture.kept.id}"]`)).toHaveCount(0)
+  await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
+  await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
+  await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
+  const manager = dialog(page, 'Редактирование результатов ЛНК до ТО')
+  await manager.getByLabel('Вид контроля в реестре').selectOption('ВИК')
+  await manager.getByPlaceholder('Стык, линия, заявка или заключение').fill(SOURCE)
+  const entry = manager.getByRole('button').filter({ hasText: `${SOURCE} · F881` })
+  await expect(entry).toHaveCount(1)
+  await expect(manager.getByRole('button').filter({ hasText: `${SOURCE} · F882` })).toHaveCount(0)
+  await entry.click()
+  const nameInput = manager.getByRole('textbox', { name: 'Наименование заключения', exact: true })
+  await expect(nameInput).toHaveValue('CTX-vik-CONCLUSION')
+
+  const documents = () => withE2eDatabase(async db => (await db.query(`select d.id,d.title,d.row_count,d.source_metadata,d.specialists,
+    array_agg(a.weld_joint_id order by a.weld_joint_id) as ids
+    from generated_documents d join generated_document_weld_joints a on a.document_id=d.id
+    where d.type='system:lnkConclusionVik' and a.weld_joint_id=any($1::int[]) group by d.id order by d.id`,
+  [[fixture.moved.id, fixture.kept.id]])).rows)
+  const beforeDocuments = await documents()
+  expect(beforeDocuments).toHaveLength(2)
+  const sourceBefore = beforeDocuments.find(document => document.id === fixture.sourceDocumentId)!
+  const transferredBefore = beforeDocuments.find(document => document.id !== fixture.sourceDocumentId)!
+  const movedBefore = await snapshot(fixture.moved.id)
+  const keptBefore = await snapshot(fixture.kept.id)
+  const correctedName = 'CTX-vik-CORRECTED-AFTER-TRANSFER'
+  // A name-only correction is a supported document edit; dates, the good
+  // result, relation identity and the historical specialist pair stay intact.
+  await nameInput.fill(correctedName)
+  await manager.getByRole('button', { name: 'Сохранить реквизиты', exact: true }).click()
+  await expect(page.getByText('Результат НК до ТО обновлен.', { exact: true })).toBeVisible()
+  await expect(manager.getByRole('button', { name: 'Сохранить реквизиты', exact: true })).toBeDisabled()
+  const movedAfter = await snapshot(fixture.moved.id)
+  const controlFacts = (controls: StoredRow[]) => controls.map(({ updated_at: _updatedAt, ...facts }) => facts)
+  expect(controlFacts(movedAfter.controls)).toEqual(controlFacts(movedBefore.controls).map(control =>
+    control.method === 'ВИК' ? { ...control, conclusion_name: correctedName } : control))
+  for (const field of RECORDED_CONTROL_FIELDS) expect(movedAfter.row[field], field).toEqual(movedBefore.row[field])
+  expect(movedAfter.cycles).toEqual(movedBefore.cycles)
+  expect(await snapshot(fixture.kept.id)).toEqual(keptBefore)
+  const afterDocuments = await documents()
+  expect(afterDocuments).toHaveLength(2)
+  expect(afterDocuments.find(document => document.id === fixture.sourceDocumentId)).toEqual(sourceBefore)
+  const corrected = afterDocuments.find(document => document.title === correctedName)!
+  expect(corrected).toMatchObject({ row_count: 1, ids: [fixture.moved.id], specialists: historicalSpecialists })
+  expect(JSON.parse(corrected.source_metadata)).toMatchObject({
+    sourceKind: 'beforeHeatTreatment', sourcePositions: JSON.parse(transferredBefore.source_metadata).sourcePositions,
+  })
+  expect(sourceBefore.specialists).toEqual(historicalSpecialists)
+
+  await page.goto('/documents')
+  await page.getByRole('button', { name: 'Заключения ЛНК', exact: true }).click()
+  await documentGridRow(page, correctedName, 'До ТО')
+  await documentGridRow(page, 'CTX-vik-CONCLUSION', 'Основной')
+})
+
 for (const scenario of ['cancel', 'moveWithPsto'] as const) test(`новый сценарий ${scenario}: заявка ПСТО блокирует перенос только своего стыка, подделка откатывается`, async ({ page }) => {
   const fixture = await seed(scenario === 'cancel' ? 'beforeHeatTreatment' : 'primary')
   if (scenario === 'moveWithPsto') await addTarget(fixture, true)
@@ -435,11 +578,9 @@ async function expectSharedDocument(page: Page, fixture: Awaited<ReturnType<type
   ] as const) {
     await page.goto('/documents')
     await page.getByRole('button', { name: 'Заключения ЛНК', exact: true }).click()
-    const documentRow = page.getByText('CTX-vik-CONCLUSION', { exact: true })
-      .locator('xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " grid ")][1]')
-      .filter({ has: page.getByText(label, { exact: true }) })
-    await expect(documentRow).toHaveCount(1)
-    await documentRow.getByTitle('Показать стыки документа в отчете ЛНК', { exact: true }).click()
+    const documentRow = await documentGridRow(page, 'CTX-vik-CONCLUSION', label)
+    await expect(documentRow.center.getByText(label, { exact: true })).toBeVisible()
+    await documentRow.actions.getByTitle('Показать стыки документа в отчете ЛНК', { exact: true }).click()
     await expect(page).toHaveURL(/\/lnk(?:\?|$)/)
     await expect(page.locator(`tr[data-weld-row-id="${included.id}"]`)).toBeVisible()
     await expect(page.locator(`tr[data-weld-row-id="${excluded.id}"]`)).toHaveCount(0)

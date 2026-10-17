@@ -1,0 +1,7 @@
+.journal-filter .journal-search .journal-input { padding-left: 32px; }
+.journal-filter-option input:indeterminate + .journal-filter-check { background: #e0f2fe; border-color: #7dd3fc; color: #0284c7; }
+.grid-filter-date-heading { display: flex; align-items: center; }
+.grid-filter-date-heading > .journal-icon-button { flex: none; margin-left: 4px; }
+.grid-filter-date-heading > .journal-filter-option { flex: 1; min-width: 0; padding-left: 4px; }
+.grid-filter-date-heading > [aria-expanded=true] svg { transform: rotate(90deg); }
+.grid-filter-date-children { padding-left: 16px; }

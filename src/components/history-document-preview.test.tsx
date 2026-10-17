@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { HistoryDocumentPreview } from './history-document-preview'
 
-const { read, download } = vi.hoisted(() => ({ read: vi.fn(), download: vi.fn() }))
+const { read, download, page } = vi.hoisted(() => ({ read: vi.fn(), download: vi.fn(), page: vi.fn() }))
 vi.mock('@/lib/generated-document-storage', () => ({ downloadBlob: download }))
 vi.mock('@/lib/history-document-preview', () => ({
   readHistoryDocumentWorkbook: read, DOCUMENT_PREVIEW_PAGE_ROWS: 100, DOCUMENT_PREVIEW_PAGE_COLUMNS: 40,
@@ -12,9 +12,10 @@ const blob = { arrayBuffer: vi.fn(async () => new ArrayBuffer(1)) } as unknown a
 beforeEach(() => {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
   read.mockReset(); download.mockReset()
+  page.mockReset().mockImplementation((sheet: number, row: number, col: number) => `<p>${sheet}:${row}:${col}</p>`)
   read.mockResolvedValue({
     sheets: [{ name: 'Бланк', rowCount: 202, columnCount: 60 }, { name: 'Подписи', rowCount: 1, columnCount: 2 }],
-    printRestriction: '', page: (sheet: number, row: number, col: number) => `<p>${sheet}:${row}:${col}</p>`, print: () => '<p>ALL SHEETS</p>',
+    printRestriction: '', page, print: () => '<p>ALL SHEETS</p>',
   })
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
@@ -25,6 +26,14 @@ it('opens once even in StrictMode, pages locally and downloads the exact preview
   const frame = await screen.findByTitle('Документ') as HTMLIFrameElement
   fireEvent.load(frame)
   expect(screen.getByRole('dialog', { name: 'Предпросмотр документа' })).toBeInTheDocument()
+  expect(screen.getByLabelText('Масштаб документа')).toHaveValue('auto')
+  const originalHtml = frame.srcdoc
+  const initialPageBuilds = page.mock.calls.length
+  fireEvent.change(screen.getByLabelText('Масштаб документа'), { target: { value: '75' } })
+  expect(frame.srcdoc).toBe(originalHtml)
+  fireEvent.change(screen.getByLabelText('Масштаб документа'), { target: { value: 'auto' } })
+  expect(frame.srcdoc).toBe(originalHtml)
+  expect(page).toHaveBeenCalledTimes(initialPageBuilds)
   fireEvent.click(screen.getByRole('button', { name: 'Далее' }))
   fireEvent.click(screen.getByRole('button', { name: 'Правее' }))
   expect(frame.srcdoc).toContain('0:1:1')

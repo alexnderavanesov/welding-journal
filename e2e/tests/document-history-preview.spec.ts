@@ -1,3 +1,4 @@
+import { documentGridRow, openDocumentGridFilter, revealDocumentColumn } from '../document-grid'
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { requireDb } from '../../src/db'
@@ -64,9 +65,8 @@ test.afterEach(async () => {
 })
 
 async function chooseProject(page: Page) {
-  await page.getByTitle('Фильтр: Проект', { exact: true }).click()
-  const filter = page.getByRole('dialog', { name: 'Фильтр: Проект', exact: true })
-  await filter.getByRole('button', { name: new RegExp(project) }).click()
+  const filter = await openDocumentGridFilter(page, 'project', 'Проект')
+  await filter.getByRole('checkbox', { name: new RegExp(project) }).check()
   await page.keyboard.press('Escape')
   await expect(filter).toBeHidden()
 }
@@ -82,12 +82,13 @@ test('history preview: manual and system documents, all sheets, full print/downl
   for (const [view, title, rowRpc] of [['ЖСР', manualTitle, 'getRemoteGeneratedDocumentRows'], ['Заявка ЛНК', systemTitle, 'getSystemDocumentRows']]) {
     await page.getByRole('button', { name: view, exact: true }).click()
     await chooseProject(page)
-    const titleButton = page.getByRole('button', { name: title, exact: true })
+    const { checkbox, titleCell } = await documentGridRow(page, title)
+    await expect(page.getByRole('button', { name: title, exact: true })).toHaveCount(1)
+    const titleButton = titleCell.getByRole('button', { name: title, exact: true })
     await expect(titleButton).toBeVisible()
     await expect(page.getByTitle('Открыть актуальный Excel', { exact: true })).toHaveCount(0)
     await expect(page.getByTitle('Открыть Excel', { exact: true })).toHaveCount(0)
-    const checkbox = page.getByRole('button', { name: `Выбрать документ «${title}»`, exact: true })
-    await checkbox.click()
+    await checkbox.check()
     const beforeOpen = calls.length
     if (view === 'ЖСР') await titleButton.click()
     else {
@@ -128,21 +129,51 @@ test('history preview: manual and system documents, all sheets, full print/downl
     await page.screenshot({ path: info.outputPath(`${view === 'ЖСР' ? 'manual' : 'system'}-preview.png`) })
     await frame.locator('body').press('Escape')
     await expect(modal).toBeHidden()
-    await expect(checkbox).toHaveAttribute('aria-pressed', 'true')
-    await expect(page.getByTitle(/^Проект: /)).toBeVisible()
+    await expect(titleCell).toBeFocused()
+    await expect(checkbox).toBeChecked()
+    await expect(page.locator('[data-document-history-grid] .ag-header-cell[col-id="project"] .ag-header-cell-filter-button')).toHaveClass(/ag-filter-active/)
     await page.keyboard.press('Escape')
-    await expect(checkbox).toHaveAttribute('aria-pressed', 'false')
-    await expect(page.getByTitle(/^Проект: /)).toBeVisible()
+    await expect(checkbox).not.toBeChecked()
+    await expect(page.locator('[data-document-history-grid] .ag-header-cell[col-id="project"] .ag-header-cell-filter-button')).toHaveClass(/ag-filter-active/)
     await page.keyboard.press('Escape')
-    await expect(page.getByTitle('Фильтр: Проект', { exact: true })).toBeVisible()
+    await expect(page.locator('[data-document-history-grid] .ag-header-cell[col-id="project"] .ag-header-cell-filter-button')).not.toHaveClass(/ag-filter-active/)
+    await expect(await revealDocumentColumn(page, 'project')).toBeVisible()
   }
+  expect(errors).toEqual([])
+})
+
+test('manual document Excel: failed loading is visible, retry downloads the complete file and preserves selection', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/documents')
+  await chooseProject(page)
+  const row = await documentGridRow(page, manualTitle)
+  await row.checkbox.check()
+  let attempts = 0
+  await page.route('**/_serverFn/**', async route => {
+    if (!rpcName(route.request().url()).startsWith('getRemoteGeneratedDocumentRows')) return route.continue()
+    if (++attempts === 1) return route.abort('failed')
+    return route.continue()
+  })
+  await row.actions.getByTitle('Скачать Excel', { exact: true }).click()
+  await expect(page.getByRole('alert')).toBeVisible()
+  await expect(row.checkbox).toBeChecked()
+  const downloaded = page.waitForEvent('download')
+  await row.actions.getByTitle('Скачать Excel', { exact: true }).click()
+  const file = await downloaded
+  expect(await file.failure()).toBeNull()
+  const book = XLSX.read(await readFile((await file.path())!), { type: 'buffer' })
+  expect(book.Sheets['Бланк'].A127.v).toBe('F125')
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(row.checkbox).toBeChecked()
+  expect(attempts).toBe(2)
   expect(errors).toEqual([])
 })
 
 test('navigation stays visible and clickable when scrolling history; Formation preview stays inline', async ({ page }, info) => {
   await page.setViewportSize({ width: 1200, height: 800 })
   await page.goto('/documents')
-  await expect(page.getByRole('button', { name: manualTitle, exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: `${manualTitle}-24`, exact: true })).toBeVisible()
   await page.mouse.move(700, 650); await page.mouse.wheel(0, 900)
   const navigation = page.locator('[data-documents-navigation]')
   await expect.poll(() => navigation.evaluate(element => Math.round(element.getBoundingClientRect().top))).toBe(0)
@@ -424,4 +455,112 @@ test('line-program document portal isolates the underlying joint menu while load
   await expect(modal).toBeHidden()
   expect(context.pages()).toHaveLength(1)
   expect(errors).toEqual([])
+})
+
+test('history preview: automatic width fits and centres the sheet; manual scale and resize stay local', async ({ page }, info) => {
+  const original = await store.get(fileKey)
+  if (!original) throw new Error('Missing isolated preview template')
+  const book = XLSX.read(original, { type: 'array', cellStyles: true })
+  book.Sheets['Бланк']['!cols'] = [{ wpx: 350 }, { wpx: 400 }, { wpx: 500 }]
+  book.Sheets['Подписи']['!cols'] = [{ wpx: 300 }]
+  const data = XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+  await store.set(fileKey, data)
+  await withE2eDatabase(db => db.query('update document_templates set file_size=$2 where blob_key=$1', [fileKey, data.byteLength]))
+
+  const calls: string[] = [], errors: string[] = [], pending = new Set<Request>()
+  page.on('request', request => {
+    if (request.url().includes('/_serverFn/')) { calls.push(rpcName(request.url())); pending.add(request) }
+  })
+  page.on('requestfinished', request => pending.delete(request))
+  page.on('requestfailed', request => pending.delete(request))
+  page.on('pageerror', error => errors.push(error.message))
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  await page.goto('/documents')
+  await chooseProject(page)
+  const { titleCell } = await documentGridRow(page, `${manualTitle}-24`)
+  await titleCell.getByRole('button', { name: `${manualTitle}-24`, exact: true }).click()
+  const modal = page.getByRole('dialog', { name: 'Предпросмотр документа', exact: true })
+  const frame = modal.frameLocator('iframe'), previewPage = frame.locator('[data-document-preview-page]')
+  const scale = modal.getByRole('combobox', { name: 'Масштаб документа', exact: true })
+  await expect(frame.getByText('Шаблон — готовый документ', { exact: true })).toBeVisible()
+  await expect(scale).toHaveValue('auto')
+  await expect(scale.locator('option[value="auto"]')).toHaveText('Авто')
+  expect(await scale.locator('option').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))).toEqual(['auto', '50', '75', '100', '125', '150'])
+  const geometry = () => previewPage.evaluate(element => {
+    const doc = element.ownerDocument, win = doc.defaultView!
+    const table = element.querySelector('table')!
+    const rect = table.getBoundingClientRect(), viewportWidth = doc.documentElement.clientWidth
+    return {
+      viewportWidth, scrollWidth: doc.documentElement.scrollWidth,
+      naturalWidth: table.offsetWidth, width: rect.width,
+      left: rect.left + win.scrollX, right: viewportWidth - rect.right - win.scrollX,
+      zoom: Number(getComputedStyle(element).zoom), scrollX: win.scrollX,
+    }
+  })
+  const fitsWithSmallSymmetricMargins = async () => {
+    const value = await geometry()
+    return value.scrollWidth <= value.viewportWidth + 1 && value.left >= 0 && value.right >= 0
+      && Math.abs(value.left - value.right) <= 2 && value.width >= value.viewportWidth - 80
+  }
+  await expect.poll(fitsWithSmallSymmetricMargins).toBe(true)
+  const wideAuto = await geometry()
+  expect(wideAuto.naturalWidth).toBeGreaterThanOrEqual(1200)
+  expect(wideAuto.naturalWidth).toBeLessThanOrEqual(1300)
+  expect(wideAuto.zoom).toBeGreaterThan(1)
+  expect(wideAuto.zoom).toBeLessThanOrEqual(1.5)
+  // A srcdoc frame can keep Playwright's aggregate lifecycle from reaching
+  // networkidle even after every request ends. Use actual RPC completion and
+  // the loaded preview state; any later RPC still fails the exact count below.
+  await expect.poll(() => pending.size).toBe(0)
+  await expect(modal.getByRole('button', { name: 'Печать / Сохранить PDF', exact: true })).toBeEnabled()
+  const localStart = calls.length
+  await page.screenshot({ path: info.outputPath('document-preview-auto-wide.png') })
+
+  // Resizing must reuse the parsed page and adjust its DOM scale, rather than
+  // replacing the iframe document or requesting the stored rows again.
+  await previewPage.evaluate(element => { (element as HTMLElement).dataset.e2eResizeIdentity = 'same-preview-page' })
+  await page.setViewportSize({ width: 900, height: 850 })
+  await expect.poll(fitsWithSmallSymmetricMargins).toBe(true)
+  await expect(previewPage).toHaveAttribute('data-e2e-resize-identity', 'same-preview-page')
+  const narrowAuto = await geometry()
+  expect(narrowAuto.zoom).toBeLessThan(wideAuto.zoom)
+  expect(narrowAuto.zoom).toBeLessThan(1)
+  expect(narrowAuto.naturalWidth).toBe(wideAuto.naturalWidth)
+  await page.screenshot({ path: info.outputPath('document-preview-auto-narrow.png') })
+
+  await scale.selectOption('100')
+  await expect.poll(async () => (await geometry()).zoom).toBe(1)
+  const narrowManual = await geometry()
+  expect(Math.abs(narrowManual.width - wideAuto.naturalWidth)).toBeLessThanOrEqual(1)
+  expect(narrowManual.scrollWidth).toBeGreaterThan(narrowManual.viewportWidth + 250)
+  await frame.locator('html').evaluate(element => element.ownerDocument.defaultView!.scrollTo({ left: element.scrollWidth, top: 0 }))
+  await expect.poll(async () => (await geometry()).scrollX).toBeGreaterThan(100)
+  await expect(frame.locator('tr').nth(2).locator('td').last()).toBeInViewport()
+
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  await expect(scale).toHaveValue('100')
+  await expect.poll(async () => {
+    const value = await geometry()
+    return value.zoom === 1 && Math.abs(value.width - wideAuto.naturalWidth) <= 1
+      && value.scrollWidth <= value.viewportWidth + 1 && value.left > 0 && Math.abs(value.left - value.right) <= 2
+  }).toBe(true)
+  const wideManual = await geometry()
+  await scale.selectOption('auto')
+  await modal.getByRole('combobox', { name: 'Лист документа', exact: true }).selectOption('1')
+  await expect(frame.getByText('Подписи — конец документа', { exact: true })).toBeVisible()
+  await expect.poll(async () => (await geometry()).zoom).toBe(1.5)
+  const shortSheet = await geometry()
+  expect(shortSheet.scrollWidth).toBeLessThanOrEqual(shortSheet.viewportWidth + 1)
+  expect(Math.abs(shortSheet.left - shortSheet.right)).toBeLessThanOrEqual(2)
+  await modal.getByRole('combobox', { name: 'Лист документа', exact: true }).selectOption('0')
+  await expect(frame.getByText('Шаблон — готовый документ', { exact: true })).toBeVisible()
+  await expect.poll(fitsWithSmallSymmetricMargins).toBe(true)
+  await expect.poll(() => pending.size).toBe(0)
+  await expect(modal.getByRole('button', { name: 'Печать / Сохранить PDF', exact: true })).toBeEnabled()
+  expect(calls.slice(localStart)).toEqual([])
+  expect(errors).toEqual([])
+  await info.attach('document-preview-scale-geometry', { body: JSON.stringify({ wideAuto, narrowAuto, narrowManual, wideManual, shortSheet }, null, 2), contentType: 'application/json' })
+  await frame.locator('body').press('Escape')
+  await expect(modal).toBeHidden()
+  await expect(titleCell).toBeFocused()
 })

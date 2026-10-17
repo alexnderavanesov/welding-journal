@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   GENERATED_DOCUMENT_HISTORY_COLUMNS,
+  LAYERED_GENERATED_DOCUMENT_HISTORY_COLUMNS,
   SYSTEM_DOCUMENT_HISTORY_COLUMNS,
-  getDocumentHistoryGridLayout,
   getVisibleDocumentHistoryColumns,
   parseDocumentHistoryColumnPreferences,
-  retainVisibleDocumentHistoryColumnFilters,
-  setVisibleDocumentHistoryColumns,
 } from '@/lib/document-history-columns'
 
 describe('document history column preferences', () => {
@@ -19,14 +17,8 @@ describe('document history column preferences', () => {
   })
 
   it('keeps the document column visible and restores the configured order', () => {
-    const preferences = setVisibleDocumentHistoryColumns({
-      viewId: 'lnkConclusion',
-      visibleColumnKeys: ['stage', 'date'],
-      availableColumns: SYSTEM_DOCUMENT_HISTORY_COLUMNS,
-      preferences: {},
-    })
+    const preferences = parseDocumentHistoryColumnPreferences(JSON.stringify({ lnkConclusion: ['stage', 'date'] }))
 
-    expect(preferences.lnkConclusion).toEqual(['title', 'stage', 'date'])
     expect(getVisibleDocumentHistoryColumns({
       viewId: 'lnkConclusion',
       availableColumns: SYSTEM_DOCUMENT_HISTORY_COLUMNS,
@@ -34,21 +26,15 @@ describe('document history column preferences', () => {
     }).map((column) => column.key)).toEqual(['title', 'stage', 'date'])
   })
 
-  it('builds a compact grid from only the visible columns', () => {
-    const visibleColumns = GENERATED_DOCUMENT_HISTORY_COLUMNS.filter((column) =>
-      ['title', 'rowCount'].includes(column.key),
-    )
-
-    expect(getDocumentHistoryGridLayout({ columns: visibleColumns, actionsWidth: 168 })).toEqual({
-      gridTemplateColumns: '34px minmax(280px, 1.5fr) 84px 168px',
-      minWidth: 646,
-    })
+  it.each([
+    ['generated', GENERATED_DOCUMENT_HISTORY_COLUMNS],
+    ['layered', LAYERED_GENERATED_DOCUMENT_HISTORY_COLUMNS],
+    ['system', SYSTEM_DOCUMENT_HISTORY_COLUMNS],
+  ])('offers the joint count in %s and respects personal hiding', (viewId, availableColumns) => {
+    expect(getVisibleDocumentHistoryColumns({ viewId, availableColumns, preferences: {} }))
+      .toContainEqual({ key: 'rowCount', label: 'Стыков', minWidth: 110, align: 'end' })
+    expect(getVisibleDocumentHistoryColumns({ viewId, availableColumns, preferences: { [viewId]: ['title'] } })
+      .map(column => column.key)).toEqual(['title'])
   })
 
-  it('removes a filter when its column is hidden', () => {
-    expect(retainVisibleDocumentHistoryColumnFilters(
-      { title: 'ЗНК', stage: 'До ТО', date: '2026-08-30' },
-      new Set(['title', 'date']),
-    )).toEqual({ title: 'ЗНК', date: '2026-08-30' })
-  })
 })

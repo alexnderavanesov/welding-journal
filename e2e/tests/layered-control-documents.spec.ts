@@ -1,3 +1,4 @@
+import { documentGridRow } from '../document-grid'
 import { editJournalJoint } from '../journal-grid'
 import { chooseSpecialist } from '../specialist-helpers'
 import { rpcName } from '../rpc'
@@ -114,9 +115,8 @@ test('создает комплект только по явному назна�
   expect((await layeredSnapshots()).every(doc => doc.specialists === null)).toBe(true)
   const specialistId = await withE2eDatabase(async db => (await db.query(`insert into specialists(name,kind,certificate,methods) values ('E2E послойный специалист','inspector','ПОСЛ-123',array['ВИК']) returning id`)).rows[0].id)
   try {
-    for (const stage of ['кромки', 'слои']) await page.getByRole('button', { name: `Выбрать документ «ВИК - ${stage} - ${JOINT} - 15.08.2026»`, exact: true }).click()
-    await page.getByRole('button', { name: /^Действия с документами, выбрано:/ }).click()
-    await page.getByRole('button', { name: 'Назначить специалистов', exact: true }).click()
+    for (const stage of ['кромки', 'слои']) await (await documentGridRow(page, `ВИК - ${stage} - ${JOINT} - 15.08.2026`)).checkbox.check()
+    await page.getByRole('button', { name: 'Назначить специалистов (2)', exact: true }).click()
     const assignment = page.getByRole('dialog', { name: 'Назначить специалистов', exact: true })
     await chooseSpecialist(assignment.getByRole('combobox', { name: 'Провёл контроль', exact: true }), String(specialistId))
     await chooseSpecialist(assignment.getByRole('combobox', { name: 'Выдал заключение', exact: true }), String(specialistId))

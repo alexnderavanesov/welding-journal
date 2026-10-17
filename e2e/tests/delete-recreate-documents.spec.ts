@@ -1,3 +1,4 @@
+import { documentGridRow } from '../document-grid'
 import { expect, test } from '@playwright/test'
 import { inArray } from 'drizzle-orm'
 import { requireDb } from '@/db'
@@ -125,9 +126,9 @@ for (const [documentIndex, label] of ['ЖСР', 'Чек-лист', 'ЗНИ'].ent
   await page.getByRole('button', { name: label, exact: true }).click()
   await page.getByRole('tab', { name: 'История', exact: true }).click()
   const title = `SHARED-${['weldingJournal', 'checklist', 'zni'][documentIndex]}`
-  const row = page.getByRole('button', { name: title, exact: true }).locator('..')
+  const { actions: row } = await documentGridRow(page, title)
   await expect(row).toBeVisible()
-  const historyReads = () => calls.filter(name => name.startsWith('listRemoteGeneratedDocumentHistory_')).length
+  const historyReads = () => calls.filter(name => name.startsWith('listRemoteGeneratedDocumentHistoryGrid_')).length
   const deleteWrites = () => calls.filter(name => name.startsWith('deleteRemoteGeneratedDocument_')).length
   const initialReads = historyReads()
   await row.getByRole('button', { name: 'Удалить документ', exact: true }).click()
@@ -142,6 +143,10 @@ for (const [documentIndex, label] of ['ЖСР', 'Чек-лист', 'ЗНИ'].ent
   await expect.poll(() => loadRemoteGeneratedDocument(manualIds[documentIndex])).toBeNull()
   await expect(row).toHaveCount(0)
   expect(deleteWrites()).toBe(1)
+  // Purging removes the old row before AG's debounced replacement block starts.
+  // Count only after that response has published the empty registry.
+  await expect(page.locator('[data-document-history-grid]').getByText('Найдено: 0', { exact: true })).toBeVisible()
+  await expect(page.locator('[data-document-history-grid]').getByText('Загрузка…', { exact: true })).toBeHidden()
   expect(historyReads()).toBe(initialReads + 1)
   expect(await withE2eDatabase(async db => (await db.query(
     'select id,vik_conclusion,psto_request from weld_joints where id=any($1::int[]) order by id', [ids])).rows)).toEqual(
@@ -155,7 +160,7 @@ test('измененный ЖСР нельзя удалить устаревши
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/documents')
-  const row = page.getByRole('button', { name: 'SHARED-weldingJournal', exact: true }).locator('..')
+  const { actions: row } = await documentGridRow(page, 'SHARED-weldingJournal')
   await row.getByRole('button', { name: 'Удалить документ', exact: true }).click()
   // Simulate a committed document revision after the operator saw the old name.
   await withE2eDatabase(db => db.query("update generated_documents set title='SHARED-CHANGED',updated_at=updated_at+interval '1 second' where id=$1", [manualIds[0]]))
@@ -165,7 +170,7 @@ test('измененный ЖСР нельзя удалить устаревши
   await page.screenshot({ path: testInfo.outputPath('document-stale-delete-recovery.png') })
   expect(await loadRemoteGeneratedDocument(manualIds[0])).toMatchObject({ title: 'SHARED-CHANGED', rowCount: 2 })
   await page.getByRole('button', { name: 'Обновить историю', exact: true }).click()
-  const changedRow = page.getByRole('button', { name: 'SHARED-CHANGED', exact: true }).locator('..')
+  const { actions: changedRow } = await documentGridRow(page, 'SHARED-CHANGED')
   await expect(changedRow).toBeVisible()
   await changedRow.getByRole('button', { name: 'Удалить документ', exact: true }).click()
   await expect(confirmation).toContainText('SHARED-CHANGED')
@@ -203,7 +208,7 @@ test('повторное формирование, выделение части
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/documents')
-  await page.getByRole('button', { name: 'SHARED-weldingJournal', exact: true }).locator('..')
+  await (await documentGridRow(page, 'SHARED-weldingJournal')).actions
     .getByRole('button', { name: 'Повторить с параметрами', exact: true }).click()
   await expect(page.getByText('показаны первые 2 из 2', { exact: true })).toBeVisible()
   await page.getByLabel('Название документа').fill('SHARED-REBUILT')

@@ -1,14 +1,14 @@
 import { useMemo, useRef, useState } from 'react'
-import { Check, Search, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useGridFilterDisplay, type CustomFilterDisplayProps } from 'ag-grid-react'
 import { useJournalFilter } from './welding-journal-grid-context'
 import { buildWeldColumnFilterOptionsRequestFilters } from '@/lib/dispatcher-task-row-codes'
+import { formatDisplayDate } from '@/lib/date-format'
 import { splitReportQuickSearch } from '@/lib/report-quick-search'
 import { buildWeldColumnValueFilter, groupWeldDateTimeFilterOptions, normalizeWeldColumnFilterChoiceValues, parseWeldColumnChoiceFilter } from '@/lib/weld-table-filtering'
 import { DATE_TIME_WELD_FIELD_KEYS, FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
 import { journalFilterValueLabel } from '@/lib/welding-journal-grid-state'
-import { DateFilterOptions } from './weld-table-field-header-rows'
+import { GridDateFilterOptions, GridFilterValue, GridValueFilterPanel } from './grid-value-filter'
 import { listWeldColumnFilterOptions } from '@/server/weld-read-api'
 
 // Server filtering remains authoritative, including hidden navigation filters and
@@ -50,7 +50,8 @@ function JournalGridFilter({ column, onModelChange }: CustomFilterDisplayProps) 
       : values.map(value => ({ ...value, values: [value.value] }))
     return grouped.map(value => {
       const displayLabel = journalFilterValueLabel(fieldKey, value.label)
-      return { ...value, displayLabel, searchText: `${value.label} ${value.value} ${displayLabel} ${displayLabel.replace(',', '.')}`.toLocaleLowerCase('ru') }
+      const dateLabel = FIELD_BY_KEY.get(fieldKey)?.kind === 'date' ? formatDisplayDate(value.label) : ''
+      return { ...value, displayLabel, searchText: `${value.label} ${value.value} ${displayLabel} ${displayLabel.replace(',', '.')} ${dateLabel}`.toLocaleLowerCase('ru') }
     })
   }, [query.data, fieldKey])
   const options = useMemo(() => {
@@ -70,36 +71,14 @@ function JournalGridFilter({ column, onModelChange }: CustomFilterDisplayProps) 
     for (const value of values) remove ? next.delete(value) : next.add(value)
     apply(buildWeldColumnValueFilter([...next]))
   }
-  return <div className="journal-filter" role="dialog" aria-label={`Фильтр: ${column.getColDef().headerName}`}
-    onKeyDownCapture={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); hidePopup.current?.() } }}>
-    <div className="journal-filter-heading"><strong>{column.getColDef().headerName}</strong><button type="button" className="journal-icon-button" aria-label="Закрыть фильтр" onClick={() => hidePopup.current?.()}><X size={15} /></button></div>
-    {filter && !choice ? <p className="journal-filter-legacy">Сохранённый фильтр: <strong>{filter}</strong>. Выберите значения ниже, чтобы заменить его, или нажмите «Сбросить фильтр».</p> : null}
-    <div className="border-b border-slate-100 px-3 pb-3">
-      <div className="journal-search"><Search size={14} /><input ref={searchInput} aria-label="Найти значение фильтра" placeholder="Найти значение…" value={search}
-        onChange={event => { setSearch(event.target.value); setLimit(150) }} className="journal-input w-full" /></div>
-      <div className="mt-2 flex justify-between gap-3 text-xs">
-        <button type="button" disabled={!options.length || query.isError} onClick={() => { apply(buildWeldColumnValueFilter(options.flatMap(value => value.values))); searchInput.current?.focus({ preventScroll: true }) }}>Выбрать найденные</button>
-        <button type="button" onClick={() => { apply(''); setSearch(''); searchInput.current?.focus({ preventScroll: true }) }}>Сбросить фильтр</button>
-      </div>
-    </div>
-    <div className="journal-filter-values" aria-busy={query.isFetching}>
-      {query.isError ? <div role="alert" className="p-4 text-sm text-rose-700">Не удалось загрузить значения. <button type="button" onClick={() => void query.refetch()} className="underline">Повторить</button></div>
-        : query.isLoading ? <p className="p-4 text-slate-500">Загрузка значений…</p>
-        : options.length === 0 ? <p className="p-4 text-slate-500">Значений не найдено</p>
-        : (FIELD_BY_KEY.get(fieldKey)?.kind === 'date' || DATE_TIME_WELD_FIELD_KEYS.has(fieldKey)) ? <DateFilterOptions options={options} selectedValues={selected} onToggleValue={value => toggleValues([value])} onToggleValues={toggleValues} />
-        : options.slice(0, limit).map(option => <label key={option.value} className={`journal-filter-option ${option.values.every(value => selectedSet.has(value)) ? 'is-selected' : ''}`}>
-          <input type="checkbox" checked={option.values.every(value => selectedSet.has(value))}
-            onChange={event => {
-              const next = new Set(selected)
-              for (const value of option.values) event.target.checked ? next.add(value) : next.delete(value)
-              apply(buildWeldColumnValueFilter([...next]))
-            }} />
-          <span className="journal-filter-check" aria-hidden="true"><Check size={12} /></span>
-          <span className="min-w-0 flex-1 truncate" title={option.label}>{option.displayLabel || '(Пусто)'}</span>
-          <span className="journal-count">{option.count}</span>
-        </label>)}
-      {options.length > limit ? <button type="button" className="w-full p-2 text-sm text-sky-700" onClick={() => setLimit(value => value + 150)}>Ещё значения ({options.length - limit})</button> : null}
-    </div>
-
-  </div>
+  const dated = FIELD_BY_KEY.get(fieldKey)?.kind === 'date' || DATE_TIME_WELD_FIELD_KEYS.has(fieldKey)
+  return <GridValueFilterPanel title={column.getColDef().headerName} search={search}
+    onSearchChange={value => { setSearch(value); setLimit(150) }} inputRef={searchInput} onClose={() => hidePopup.current?.()}
+    legacyFilter={filter && !choice ? filter : undefined} canSelectFound={options.length > 0}
+    onSelectFound={() => apply(buildWeldColumnValueFilter(options.flatMap(option => option.values)))} onReset={() => apply('')}
+    isFetching={query.isFetching} isError={query.isError} isLoading={query.isLoading} onRetry={() => { void query.refetch() }} empty={!options.length}>
+    {dated ? <GridDateFilterOptions options={options} selectedValues={selectedSet} onToggleValues={toggleValues} search={search} />
+      : options.slice(0, limit).map(option => <GridFilterValue key={option.value} option={option} selectedValues={selectedSet} onToggleValues={toggleValues} />)}
+    {!dated && options.length > limit ? <button type="button" className="w-full p-2 text-sm text-sky-700" onClick={() => setLimit(value => value + 150)}>Ещё значения ({options.length - limit})</button> : null}
+  </GridValueFilterPanel>
 }

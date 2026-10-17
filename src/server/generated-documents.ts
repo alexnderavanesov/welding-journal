@@ -19,7 +19,6 @@ import { DEFAULT_OTHER_SETTINGS, normalizeOtherSettings, type OtherSettings } fr
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import type { WeldInput } from '@/lib/weld-fields'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
-import { parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
 import { calculateWdi, isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
 import { attachGeneratedDocumentFields } from '@/server/generated-document-row-fields'
 import { attachPreHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
@@ -49,6 +48,8 @@ import {
 } from '@/server/weld-row-version'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { DOCUMENT_VERSION_SELECT } from './document-version'
+import type { DocumentHistoryGridRequest, DocumentHistoryGridResult } from '@/lib/document-history-grid'
+import { buildDocumentHistoryGridSql, documentHistoryTextSort, normalizeDocumentHistoryGridRequest, normalizeDocumentHistoryGridResult, withDocumentHistoryGridSearch } from './document-history-grid'
 
 export type { GeneratedDocumentType } from '@/lib/generated-document-types'
 
@@ -100,8 +101,18 @@ export type RemoteGeneratedDocumentHistoryFilterOptionsRequest = {
   documentId?: number
   fieldKey: string
   search?: string
+  gridSearch?: string
   columnFilters?: Record<string, string>
 }
+
+export type RemoteGeneratedDocumentHistoryGridRequest = Omit<RemoteGeneratedDocumentHistoryRequest, 'limit'> & DocumentHistoryGridRequest
+
+export const listRemoteGeneratedDocumentHistoryGrid = createServerFn({ method: 'POST' })
+  .validator(normalizeGeneratedDocumentHistoryGridRequest)
+  .handler(async ({ data }): Promise<DocumentHistoryGridResult<RemoteGeneratedDocument>> => {
+    await assertSecurityScope('entry')
+    return loadRemoteGeneratedDocumentHistoryGrid(data)
+  })
 
 export type SaveGeneratedDocumentInput = {
   type: GeneratedDocumentType
@@ -115,13 +126,6 @@ export type SaveGeneratedDocumentInput = {
   rowCount?: number
   wdiTotal?: number
 }
-
-export const listRemoteGeneratedDocumentHistory = createServerFn({ method: 'GET' })
-  .validator(normalizeGeneratedDocumentHistoryRequest)
-  .handler(async ({ data }): Promise<RemoteGeneratedDocumentHistoryResult> => {
-    await assertSecurityScope('entry')
-    return loadRemoteGeneratedDocumentHistory(data)
-  })
 
 export const listRemoteGeneratedDocumentHistoryFilterOptions = createServerFn({ method: 'GET' })
   .validator(normalizeGeneratedDocumentHistoryFilterOptionsRequest)
@@ -155,7 +159,7 @@ export async function loadRemoteGeneratedDocumentHistoryFilterOptions(
 ): Promise<SqlDocumentHistoryFilterOptionsResult> {
   const db = requireDb()
   const otherSettings = await loadGeneratedDocumentOtherSettings(db)
-  const baseQuery = buildRemoteGeneratedDocumentHistoryBaseQuery(data, otherSettings)
+  const baseQuery = withDocumentHistoryGridSearch(buildRemoteGeneratedDocumentHistoryBaseQuery(data, otherSettings), data.gridSearch, GENERATED_DOCUMENT_HISTORY_FILTER_KEYS)
   const result = await db.execute(buildDocumentHistoryFilterOptionsSqlQuery({
     baseQuery,
     columnFilters: data.columnFilters,
@@ -168,6 +172,30 @@ export async function loadRemoteGeneratedDocumentHistoryFilterOptions(
     result.rows,
     DOCUMENT_HISTORY_FILTER_OPTION_LIMIT,
   )
+}
+
+export function normalizeGeneratedDocumentHistoryGridRequest(data: RemoteGeneratedDocumentHistoryGridRequest | undefined) {
+  const { limit: _limit, ...history } = normalizeGeneratedDocumentHistoryRequest(data)
+  return { ...history, ...normalizeDocumentHistoryGridRequest(data, GENERATED_DOCUMENT_HISTORY_FILTER_KEYS, 'generated') }
+}
+
+export async function loadRemoteGeneratedDocumentHistoryGrid(
+  data: ReturnType<typeof normalizeGeneratedDocumentHistoryGridRequest>,
+): Promise<DocumentHistoryGridResult<RemoteGeneratedDocument>> {
+  const db = requireDb()
+  const otherSettings = await loadGeneratedDocumentOtherSettings(db)
+  const sortExpressions = Object.fromEntries(GENERATED_DOCUMENT_HISTORY_FILTER_KEYS.map(key => [key, documentHistoryTextSort(key)]))
+  Object.assign(sortExpressions, {
+    rowCount: sql`"rowCount"`, wdi: sql`"wdiTotal"`, updatedAt: sql`"updatedAt"`,
+    period: sql`"periodFrom"`,
+  })
+  const result = await db.execute(buildDocumentHistoryGridSql({
+    baseQuery: buildRemoteGeneratedDocumentHistoryBaseQuery(data, otherSettings),
+    columnFilters: data.columnFilters, filterKeys: GENERATED_DOCUMENT_HISTORY_FILTER_KEYS,
+    request: data, idKind: 'generated', sortExpressions,
+    defaultOrder: sql`"updatedAt" desc, "id" desc`,
+  }))
+  return normalizeDocumentHistoryGridResult(result.rows[0], data, 'generated', toRemoteGeneratedDocumentHistoryRow)
 }
 
 export async function loadRemoteGeneratedDocumentHistory(
@@ -331,6 +359,7 @@ export function normalizeGeneratedDocumentHistoryFilterOptionsRequest(
     ...(documentId ? { documentId } : {}),
     fieldKey: data.fieldKey,
     search: String(data?.search ?? '').trim().slice(0, 200),
+    ...(data?.gridSearch === undefined ? {} : { gridSearch: String(data.gridSearch).trim().slice(0, 200) }),
     columnFilters: normalizeDocumentHistoryColumnFilters(data?.columnFilters),
   }
 }
@@ -363,143 +392,6 @@ export function normalizeDocumentHistoryColumnFilters(value: unknown) {
     if (filter) normalized[key] = filter
   }
   return normalized
-}
-
-export function buildRemoteDocumentHistoryResult<TDocument>({
-  documents,
-  columnFilters,
-  limit,
-  getValues,
-  filterKeys,
-}: {
-  documents: TDocument[]
-  columnFilters: Record<string, string>
-  limit: number
-  getValues: (documentRecord: TDocument, key: string) => string[]
-  filterKeys: string[]
-}) {
-  const filteredDocuments = filterRemoteDocumentHistoryItems(documents, columnFilters, getValues)
-  return {
-    documents: filteredDocuments.slice(0, limit),
-    total: filteredDocuments.length,
-    filterOptions: Object.fromEntries(
-      filterKeys.map((key) => [
-        key,
-        getRemoteDocumentHistoryFilterOptions(documents, columnFilters, key, getValues),
-      ]),
-    ),
-  }
-}
-
-function filterRemoteDocumentHistoryItems<TDocument>(
-  documents: TDocument[],
-  columnFilters: Record<string, string>,
-  getValues: (documentRecord: TDocument, key: string) => string[],
-) {
-  return documents.filter((documentRecord) =>
-    Object.entries(columnFilters).every(([key, filterValue]) => {
-      const values = getValues(documentRecord, key)
-      const choiceFilter = parseWeldColumnChoiceFilter(filterValue)
-      if (choiceFilter?.kind === 'values') {
-        const selectedValues = new Set(choiceFilter.values.map(normalizeDocumentHistoryFilterValue))
-        return values.some((value) => selectedValues.has(normalizeDocumentHistoryFilterValue(value)))
-      }
-      const normalizedQuery = filterValue.toLocaleLowerCase('ru-RU')
-      return values.some((value) => value.toLocaleLowerCase('ru-RU').includes(normalizedQuery))
-    }),
-  )
-}
-
-function getRemoteDocumentHistoryFilterOptions<TDocument>(
-  documents: TDocument[],
-  columnFilters: Record<string, string>,
-  key: string,
-  getValues: (documentRecord: TDocument, key: string) => string[],
-) {
-  const filtersWithoutCurrent = { ...columnFilters }
-  delete filtersWithoutCurrent[key]
-  const counts = new Map<string, number>()
-  for (const documentRecord of filterRemoteDocumentHistoryItems(documents, filtersWithoutCurrent, getValues)) {
-    for (const value of getValues(documentRecord, key)) {
-      const normalized = String(value ?? '').trim()
-      counts.set(normalized, (counts.get(normalized) ?? 0) + 1)
-    }
-  }
-  return Array.from(counts.entries())
-    .map(([value, count]) => ({
-      value,
-      count,
-      label: value || '(пусто)',
-    }))
-    .sort(compareRemoteDocumentHistoryFilterOptions)
-}
-
-function compareRemoteDocumentHistoryFilterOptions(
-  left: RemoteDocumentHistoryFilterOption,
-  right: RemoteDocumentHistoryFilterOption,
-) {
-  if (left.value === '') return -1
-  if (right.value === '') return 1
-  const leftNumber = Number(left.value.replace(',', '.'))
-  const rightNumber = Number(right.value.replace(',', '.'))
-  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) return leftNumber - rightNumber
-  return left.label.localeCompare(right.label, 'ru', { numeric: true, sensitivity: 'base' })
-}
-
-function getGeneratedDocumentHistoryFilterValues(
-  documentRecord: RemoteGeneratedDocument,
-  key: string,
-) {
-  if (key === 'title') return [documentRecord.title]
-  if (key === 'stage') return [documentRecord.stage ?? '']
-  if (key === 'project') return documentRecord.projects.length ? documentRecord.projects : ['']
-  if (key === 'subtitle') return documentRecord.subtitleCodes.length ? documentRecord.subtitleCodes : ['']
-  if (key === 'line') return documentRecord.lines.length ? documentRecord.lines : ['']
-  if (key === 'period') {
-    const periodFrom = formatDocumentHistoryDate(documentRecord.periodFrom)
-    const periodTo = formatDocumentHistoryDate(documentRecord.periodTo)
-    return [periodFrom || periodTo ? `${periodFrom} - ${periodTo}` : '']
-  }
-  if (key === 'updatedAt') return [formatDocumentHistoryDateTime(documentRecord.updatedAt)]
-  if (key === 'rowCount') return [String(documentRecord.rowCount)]
-  if (key === 'wdi') return [formatDocumentHistoryNumber(documentRecord.wdiTotal)]
-  return ['']
-}
-
-function normalizeDocumentHistoryFilterValue(value: string) {
-  return value.trim().toLocaleLowerCase('ru-RU')
-}
-
-function formatDocumentHistoryDate(value: unknown) {
-  const raw = String(value ?? '').trim()
-  if (!raw) return ''
-  const parsed = new Date(raw)
-  if (Number.isNaN(parsed.getTime())) return raw
-  return parsed.toLocaleDateString('ru-RU', {
-    timeZone: 'Europe/Moscow',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
-}
-
-function formatDocumentHistoryDateTime(value: unknown) {
-  const raw = String(value ?? '').trim()
-  if (!raw) return ''
-  const parsed = new Date(raw)
-  if (Number.isNaN(parsed.getTime())) return raw
-  return parsed.toLocaleString('ru-RU', {
-    timeZone: 'Europe/Moscow',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function formatDocumentHistoryNumber(value: unknown) {
-  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value) || 0)
 }
 
 export const getRemoteGeneratedDocument = createServerFn({ method: 'GET' })

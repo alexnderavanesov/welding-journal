@@ -206,9 +206,14 @@ test('200k, five browser clients, mixed reads/writes/import/documents under hard
         const page = pages[3]
         await page.getByRole('button', { name: 'Импорт', exact: true }).click()
         const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Импорт данных', exact: true }) })
-        const download = page.waitForEvent('download')
-        await dialog.getByRole('button', { name: 'Скачать шаблон', exact: true }).click()
-        expect(await (await download).failure()).toBeNull()
+        // Observe both promises immediately: another failed client can close
+        // this page while the click is pending. Its download rejection must
+        // remain part of this task instead of aborting the runner's cleanup.
+        const [download] = await Promise.all([
+          page.waitForEvent('download'),
+          dialog.getByRole('button', { name: 'Скачать шаблон', exact: true }).click(),
+        ])
+        expect(await download.failure()).toBeNull()
         const fields = getReportImportTemplateFields('weldingJournal')
         const rows = Array.from({ length: 20 }, (_, i) => {
           const values: Record<string, string | number> = { projectTitle: project, subtitleCode: 'MIX', line: 'MIX-L1000',

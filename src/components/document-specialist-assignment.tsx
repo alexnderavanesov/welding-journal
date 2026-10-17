@@ -17,22 +17,22 @@ export type SpecialistDocument = {
   documentVersion?: string
 }
 
-export function DocumentSpecialistCell({ document, role }: { document: SpecialistDocument; role: keyof SpecialistSelection }) {
+export function DocumentSpecialistCell({ document, role, onEdit }: { document: SpecialistDocument; role: keyof SpecialistSelection; onEdit?: (document: SpecialistDocument, role: keyof SpecialistSelection) => void }) {
   const [editing, setEditing] = useState<SpecialistDocument | null>(null)
   const snapshot = document.specialists?.[role]
   const label = getSpecialistDocumentProfile(document.type, document.methodCode)?.labels[role === 'first' ? 0 : 1]
   return <div className="min-w-0 text-xs">
     <button type="button" className="group flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-2 text-left text-slate-600 transition-colors hover:bg-sky-50 hover:text-sky-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
-      aria-label={`${label}: ${document.title}`} title={snapshot ? `${snapshot.name} · № ${snapshot.certificate}` : 'Назначить специалиста'} onClick={() => setEditing({ ...document })}>
+      aria-label={`${label}: ${document.title}`} title={snapshot ? `${snapshot.name} · № ${snapshot.certificate}` : 'Назначить специалиста'} onClick={() => onEdit ? onEdit({ ...document }, role) : setEditing({ ...document })}>
       <UserRound aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="truncate">{snapshot?.name || 'Не назначен'}</span><Pencil aria-hidden="true" className="ml-auto h-3 w-3 shrink-0 text-slate-300 group-hover:text-sky-600" />
     </button>
     {editing ? <SpecialistAssignmentEditor documents={[editing]} onlyRole={role} onClose={() => setEditing(null)} /> : null}
   </div>
 }
 
-export function DocumentSpecialistAssignmentDialog({ documents, onClose }: { documents: SpecialistDocument[]; onClose: () => void }) {
+export function DocumentSpecialistAssignmentDialog({ documents, onClose, onlyRole }: { documents: SpecialistDocument[]; onClose: () => void; onlyRole?: keyof SpecialistSelection }) {
   const [openedDocuments] = useState(() => documents.map(document => ({ ...document })))
-  return <SpecialistAssignmentEditor documents={openedDocuments} onClose={onClose} />
+  return <SpecialistAssignmentEditor documents={openedDocuments} onClose={onClose} onlyRole={onlyRole} />
 }
 
 function SpecialistAssignmentEditor({ documents, onClose, onlyRole }: { documents: SpecialistDocument[]; onClose: () => void; onlyRole?: keyof SpecialistSelection }) {

@@ -5,7 +5,7 @@ const ease = (progress: number) => progress * progress * (3 - 2 * progress)
 const wholePixels = (value: number) => Math.trunc(value + Math.sign(value) * 1e-7)
 
 /** Carry one continuous movement from the page heading into the native grid. */
-export function useJournalPageScroll(frame: RefObject<HTMLDivElement | null>) {
+export function useJournalPageScroll(frame: RefObject<HTMLDivElement | null>, stickyOffset = 0) {
   useEffect(() => {
     const element = frame.current
     if (!element) return
@@ -15,7 +15,7 @@ export function useJournalPageScroll(frame: RefObject<HTMLDivElement | null>) {
     const detach = () => { element.removeEventListener('wheel', wheel, true); attached = false }
     const pageRoom = () => Math.max(0, document.documentElement.scrollHeight - window.innerHeight - window.scrollY)
     const sync = () => {
-      const canMovePage = element.getBoundingClientRect().top > 1 && pageRoom() > 0
+      const canMovePage = element.getBoundingClientRect().top > stickyOffset + 1 && pageRoom() > 0
       // Stop accepting input at the boundary, not when the gesture goes idle.
       // Otherwise every trackpad event extends the queue and keeps the entire
       // downward gesture on the main thread until a reversal cancels it.
@@ -35,7 +35,7 @@ export function useJournalPageScroll(frame: RefObject<HTMLDivElement | null>) {
       })
       const viewport = element.querySelector<HTMLElement>('.ag-grid-viewport')
       if (viewport && (pendingY || pendingX)) {
-        const top = Math.max(0, element.getBoundingClientRect().top)
+        const top = Math.max(0, element.getBoundingClientRect().top - stickyOffset)
         const before = window.scrollY
         // Retain fractional pixels between frames; measure actual consumption.
         const pageDelta = wholePixels(Math.min(top, pageRoom(), pendingY))
@@ -69,9 +69,10 @@ export function useJournalPageScroll(frame: RefObject<HTMLDivElement | null>) {
       sync()
     }
     // The blocking listener is already gone during the short handoff tail.
-    // A passive observer still lets an immediate reversal cancel that tail
-    // without intercepting or slowing native grid scrolling.
-    const cancelOnReverse = (event: WheelEvent) => { if (inputs.length && event.deltaY < 0) cancelMovement() }
+    // A passive observer still cancels that tail when the gesture reverses.
+    const cancelOnWheelChange = (event: WheelEvent) => {
+      if ((inputs.length || pendingY || pendingX) && event.deltaY < 0) cancelMovement()
+    }
     const wheel = (event: WheelEvent) => {
       if (!(event.target instanceof Element) || !event.target.closest('.ag-grid-viewport')
         || event.target.closest('.ag-popup, .ag-menu') || event.ctrlKey || event.shiftKey
@@ -87,7 +88,7 @@ export function useJournalPageScroll(frame: RefObject<HTMLDivElement | null>) {
       schedule()
     }
     sync()
-    element.addEventListener('wheel', cancelOnReverse, { passive: true, capture: true })
+    element.addEventListener('wheel', cancelOnWheelChange, { passive: true, capture: true })
     window.addEventListener('scroll', schedule, { passive: true })
     window.addEventListener('resize', schedule)
     window.addEventListener('pointerdown', cancelMovement, { passive: true, capture: true })
@@ -98,11 +99,11 @@ export function useJournalPageScroll(frame: RefObject<HTMLDivElement | null>) {
     observer.observe(element.closest('[data-welding-journal-grid]') ?? element)
     return () => {
       detach(); cancelAnimationFrame(scheduled); observer.disconnect()
-      element.removeEventListener('wheel', cancelOnReverse, true)
+      element.removeEventListener('wheel', cancelOnWheelChange, true)
       window.removeEventListener('scroll', schedule); window.removeEventListener('resize', schedule)
       window.removeEventListener('pointerdown', cancelMovement, true)
       window.removeEventListener('keydown', cancelMovement, true)
       window.removeEventListener('blur', cancelMovement)
     }
-  }, [frame])
+  }, [frame, stickyOffset])
 }

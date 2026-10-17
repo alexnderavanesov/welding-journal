@@ -1,3 +1,4 @@
+import { documentGridRow, openDocumentGridFilter, revealDocumentColumn } from '../document-grid'
 import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { chooseSpecialist } from '../specialist-helpers'
@@ -260,31 +261,39 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
 
   await page.goto('/documents')
   await page.getByRole('button', { name: 'Заключения ЛНК', exact: true }).click()
-  const stageFilterButton = page.getByTitle('Фильтр: Этап')
-  await expect(stageFilterButton).toBeVisible()
-  await stageFilterButton.click()
-  const stageFilterMenu = page.getByRole('dialog', { name: 'Фильтр: Этап' })
-  await expect(stageFilterMenu).toBeVisible()
-  expect(await stageFilterMenu.evaluate((element) => element.parentElement === document.body)).toBe(true)
+  const stageFilterMenu = await openDocumentGridFilter(page, 'stage', 'Этап')
   const stageFilterMenuBox = await stageFilterMenu.boundingBox()
   const viewport = page.viewportSize()
   expect(stageFilterMenuBox).not.toBeNull()
   expect(viewport).not.toBeNull()
   expect(stageFilterMenuBox!.y).toBeGreaterThanOrEqual(0)
   expect(stageFilterMenuBox!.y + stageFilterMenuBox!.height).toBeLessThanOrEqual(viewport!.height)
-  await stageFilterMenu.getByRole('button', { name: 'Закрыть' }).click()
+  expect(await stageFilterMenu.evaluate(element => {
+    const rect = element.getBoundingClientRect()
+    return [0.25, 0.5, 0.75].every(fraction => element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height * fraction)))
+  })).toBe(true)
+  await stageFilterMenu.getByRole('button', { name: 'Закрыть фильтр', exact: true }).click()
 
-  await page.getByRole('button', { name: /Столбцы 10\/10/ }).click()
-  await page.getByRole('checkbox', { name: 'Этап', exact: true }).click()
-  await expect(page.getByRole('button', { name: /Столбцы 9\/10/ })).toBeVisible()
-  await expect(page.getByTitle('Фильтр: Этап')).toBeHidden()
+  await page.getByRole('button', { name: 'Настроить вид', exact: true }).click()
+  const settings = page.getByRole('dialog', { name: 'Настройка вида документов', exact: true })
+  const checkedBefore = await settings.locator('input[type="checkbox"]:checked').count()
+  await expect(settings.getByRole('checkbox', { name: 'Этап', exact: true })).toBeChecked()
+  await settings.getByRole('checkbox', { name: 'Этап', exact: true }).uncheck()
+  await expect(settings.locator('input[type="checkbox"]:checked')).toHaveCount(checkedBefore - 1)
+  await page.keyboard.press('Escape')
+  await expect(page.locator('[data-document-history-grid] .ag-header-cell[col-id="stage"]')).toHaveCount(0)
 
   await page.reload()
   await page.getByRole('button', { name: 'Заявка ПСТО', exact: true }).click()
-  await expect(page.getByRole('button', { name: /Столбцы 7\/7/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Настроить вид', exact: true }).click()
+  await expect(settings.getByRole('checkbox', { name: 'Этап', exact: true })).toBeChecked()
+  await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Заключения ЛНК', exact: true }).click()
-  await expect(page.getByRole('button', { name: /Столбцы 9\/10/ })).toBeVisible()
-  await expect(page.getByTitle('Фильтр: Этап')).toBeHidden()
+  await page.getByRole('button', { name: 'Настроить вид', exact: true }).click()
+  await expect(settings.getByRole('checkbox', { name: 'Этап', exact: true })).not.toBeChecked()
+  await expect(settings.locator('input[type="checkbox"]:checked')).toHaveCount(checkedBefore - 1)
+  await page.keyboard.press('Escape')
+  await expect(page.locator('[data-document-history-grid] .ag-header-cell[col-id="stage"]')).toHaveCount(0)
 })
 
 test('официальная отмена сохраняет выполненный цикл и заявку незапущенного повтора', async ({ page }) => {
@@ -809,13 +818,11 @@ async function openLnkDocumentRow(page: Page, title: string, type: 'request' | '
     name: type === 'request' ? 'Заявка ЛНК' : 'Заключения ЛНК',
     exact: true,
   }).click()
-  const titleText = page.getByText(title, { exact: true }).first()
-  await expect(titleText).toBeVisible()
-  const row = titleText.locator(
-    'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " grid ")][1]',
-  )
-  await expect(row).toBeVisible()
-  return row
+  const row = await documentGridRow(page, title)
+  await revealDocumentColumn(page, 'stage')
+  await revealDocumentColumn(page, 'line')
+  await expect(row.center).toBeVisible()
+  return row.center
 }
 
 async function expectVikStageEverywhere(page: Page, {

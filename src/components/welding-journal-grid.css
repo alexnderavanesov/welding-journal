@@ -13,8 +13,8 @@
 .journal-grid-frame .ag-row-group .ag-cell-wrapper { display: flex; align-items: center; flex-wrap: nowrap; height: 100%; min-width: 0; }
 .journal-grid-frame .ag-row-group .ag-group-value { flex: 0 1 auto; min-width: 0; height: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .journal-grid-frame .ag-row-group .ag-group-child-count { flex: none; height: auto; margin-inline-start: 8px; padding: 2px 7px; border-radius: 12px; background: #e8eef5; color: #64748b; font-size: 11px; line-height: 18px; }
-.journal-grid-frame .ag-row-group { font-weight: 500; }
-.journal-grid-frame .ag-row-group:not(.ag-row-selected) { background: var(--journal-group-bg, #f1f5f9); }
+.journal-grid-frame .ag-full-width-row.ag-row-group { font-weight: 500; }
+.journal-grid-frame .ag-full-width-row.ag-row-group:not(.ag-row-selected) { background: var(--journal-group-bg, #f1f5f9); }
 .journal-plain-cell { display: flex; align-items: center; justify-content: center; height: 100%; min-width: 0; text-align: center; color: #475569; }
 .journal-plain-cell > span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; white-space: normal; line-height: 1.35; }
 .journal-no-wrap .journal-plain-cell > span { display: block; white-space: nowrap; text-overflow: ellipsis; }
@@ -116,7 +116,15 @@ select.journal-page-size { min-width: 80px; height: 30px; font-variant-numeric: 
 /* Alternating data rows must not replace the hierarchy colours of group rows. */
 .journal-stripes .ag-row-odd:not(.ag-row-group):not(.ag-row-selected):not(.journal-row-highlight) { background-color: #f9fbfd; }
 .journal-stripes.journal-task-fill .ag-row.journal-row-task:not(.ag-row-selected):not(.journal-row-highlight) { background-color: #fffbeb; }
-.journal-vertical-lines .ag-cell { border-right: 1px solid #edf1f5; }
+/* Let AG Grid resolve focus/range borders above ordinary column separators. */
+.journal-vertical-lines .ag-root-wrapper { --ag-column-border: 1px solid #edf1f5; }
+/* AG36 fills unused width with a flex pseudo-element before right-pinned cells.
+   Carry the row's stripe/selection/hover and separator across that space. */
+.journal-grid-frame .ag-row:not(.ag-full-width-row)::after {
+  background-color: inherit;
+  background-image: var(--ag-internal-row-overlay-image), linear-gradient(var(--ag-internal-row-overlay-color), var(--ag-internal-row-overlay-color));
+  border-bottom: var(--ag-row-border);
+}
 .journal-no-wrap .journal-grid-value .line-clamp-2 { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .journal-wrap-text .journal-grid-value .line-clamp-2 { white-space: normal; -webkit-line-clamp: 2; }
 .journal-density-spacious.journal-wrap-text .journal-grid-value .line-clamp-2 { -webkit-line-clamp: 3; }

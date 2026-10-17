@@ -237,7 +237,7 @@ function buildDocumentHistoryFilterOptionsQuery({
   `
 }
 
-function buildDocumentHistoryWhere(
+export function buildDocumentHistoryWhere(
   columnFilters: Record<string, string>,
   filterKeys: string[],
   omittedKey?: string,
