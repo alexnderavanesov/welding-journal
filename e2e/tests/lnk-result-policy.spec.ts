@@ -1,3 +1,4 @@
+import { lnkRow as lnkGridRow } from './lnk-grid-helpers'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
@@ -167,7 +168,7 @@ test('старый безымянный результат: совместное
   await withE2eDatabase(db => db.query("update weld_joints set vik_result='ремонт',vik_conclusion=null,vik_conclusion_date=null where project_title=$1 and joint=$2", [project, 'F912']))
   await page.goto('/lnk')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('F912')
-  await page.getByRole('button', { name: 'Выбрать стык F912', exact: true }).click()
+  await lnkGridRow(page, 'F912').getByRole('checkbox').click()
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: 'Редактировать выбранные', exact: true }).click()
   const form = page.getByRole('region', { name: 'Дозаполнение реквизитов результата' })
@@ -184,7 +185,7 @@ test('дубль-контроль требует название и обе не
   await seed([{ joint: 'F913', diameter: 159, method: 'ВИК' }])
   await page.goto('/lnk')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('F913')
-  await page.getByRole('button', { name: 'Выбрать стык F913', exact: true }).click()
+  await lnkGridRow(page, 'F913').getByRole('checkbox').click()
   await page.locator('header').getByRole('button', { name: 'Дубль контроль', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: 'ВИК', exact: true }).click()
@@ -345,7 +346,7 @@ async function checkReason(page: Page, picker: Locator, result: string, reasons:
 async function openResults(page: Page, joint: string, methodKey: string) {
   await page.goto('/lnk')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(joint)
-  await page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).click()
+  await lnkGridRow(page, joint).getByRole('checkbox').click()
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: 'Внести результаты', exact: true }).click()
   const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Внесение результатов ЛНК', exact: true }) })

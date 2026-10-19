@@ -45,7 +45,7 @@ function LineMetric({ data: line, colDef }: ICellRendererParams<Program>) {
 const lineTone = (line: Program) => line.configurationIssue || (line.overview?.common?.missing ?? 0) + (line.overview?.pvk?.missing ?? 0) > 0 ? 'program-line-needs-work' : isLineProgramFinished(line.overview) ? 'program-line-finished' : 'program-line-neutral'
 function LineDetail({ data }: ICellRendererParams<Program>) { const state = useContext(Context); return data ? <div className="program-line-detail-space"><section data-line={data.line} data-testid="line-program-detail" className={`program-grid-detail program-line-workspace ${lineTone(data)}`}>{state.renderDetail(data)}</section></div> : null }
 const columns: ColDef<Program>[] = [
-  { colId: 'line', field: 'line', headerName: 'Линия', width: 280, minWidth: 240, flex: 2, cellRenderer: LineIdentity, autoHeight: true },
+  { colId: 'line', field: 'line', lockVisible: true, headerName: 'Линия', width: 280, minWidth: 240, flex: 2, cellRenderer: LineIdentity, autoHeight: true },
   ...(['stamps', 'joints', 'common', 'pvk', 'missing', 'excess', 'reduction', 'control'] as const).map<ColDef<Program>>(key => ({
     colId: key, headerName: { stamps: 'Клейм', joints: 'Соединений', common: 'РК/УЗК · зачтено / нужно', pvk: 'ПВК · зачтено / нужно', missing: 'К назначению', excess: 'Лишнее', reduction: 'Можно снять', control: 'Контроль' }[key],
     width: key === 'control' || key === 'missing' ? 140 : key === 'common' || key === 'pvk' ? 135 : 100, minWidth: key === 'control' || key === 'missing' ? 130 : key === 'common' || key === 'pvk' ? 125 : key === 'joints' ? 122 : 90, flex: 1, cellRenderer: LineMetric, autoHeight: key === 'missing' || key === 'control',

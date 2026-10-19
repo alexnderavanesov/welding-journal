@@ -1,3 +1,4 @@
+import { buildWeldColumnFilterOptionsFromRows } from './report-filter-reference.test-helper'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Pool } from 'pg'
 import { PgDialect } from 'drizzle-orm/pg-core'
@@ -11,7 +12,6 @@ vi.mock('@/db', async () => {
 
 import {
   buildReportSourceWhere,
-  buildWeldColumnFilterOptionsFromRows,
   canPaginateReportSource,
   listColumnFilterOptions,
   normalizeWeldColumnFilterOptionsRequest,

@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { ensureDispatcherTaskIndexFresh } from '@/server/dispatcher-task-index'
+import { lnkActionRow } from './lnk-grid-helpers'
 
 const SOURCE_JOINT = 'F5'
 const SECOND_JOINT = 'F6'
@@ -20,6 +21,7 @@ test('точное исправление ZV возвращает чернови
   await ensureDispatcherTaskIndexFresh()
 
   await page.goto('/lnk')
+  await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(PROJECT)
   await runNextAction(page, SOURCE_JOINT, 'Создать заявку основного НК')
   await expect(page.getByRole('heading', { name: 'Заявка ЛНК' })).toBeVisible()
 
@@ -89,9 +91,8 @@ test('точное исправление ZV возвращает чернови
 })
 
 async function runNextAction(page: Page, joint: string, title: string) {
-  const row = page.locator('tr')
+  const row = (await lnkActionRow(page, joint))
     .filter({ has: page.getByText('E2E-ROOT-L1', { exact: true }) })
-    .filter({ has: page.getByText(joint, { exact: true }) })
   const button = row.getByRole('button', { name: `Выполнить: ${title}`, exact: true })
   await expect(button).toBeVisible({ timeout: 15_000 })
   await button.click()

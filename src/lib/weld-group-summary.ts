@@ -6,6 +6,7 @@ import { buildFinalStatusRowsContext, calculateFinalStatusInRows, normalizeFinal
 import { formatDisplayDate, parseDateLikeToIso } from './date-format'
 import { journalNumericValue } from './welding-journal-grid-state'
 import { createHeatTreatmentGroupSummarizer, type WeldGroupStageSummary } from './weld-group-stage-summary'
+import { createLnkGroupSummarizer, type LnkGroupResultField } from './weld-group-lnk-summary'
 
 export type WeldGroupSummary = {
   rows: readonly WeldRow[]
@@ -23,6 +24,7 @@ export type WeldGroupSummary = {
   partialChains: number
   pstoResult?: WeldGroupStageSummary
   tvmtResult?: WeldGroupStageSummary
+  lnkResults?: Record<LnkGroupResultField, WeldGroupStageSummary>
 }
 
 const text = (value: unknown) => String(value ?? '').trim()
@@ -32,9 +34,10 @@ const waiting = ['ожидает сварку', 'ожидает ремонт', '
  * Resolve identity once per loaded batch; aggregate once per group, never per cell.
  * Saved IDs take precedence over names; legacy continuations are explicit evidence.
  */
-export function createWeldGroupSummarizer(input: readonly WeldRow[], settings: SystemIndexSettings = loadSystemIndexSettings(), options: { heatTreatment?: boolean } = {}) {
+export function createWeldGroupSummarizer(input: readonly WeldRow[], settings: SystemIndexSettings = loadSystemIndexSettings(), options: { heatTreatment?: boolean; lnk?: boolean } = {}) {
   const rows = [...new Map(input.map(row => [row.id, row])).values()]
   const createStageSummary = options.heatTreatment ? createHeatTreatmentGroupSummarizer(rows) : undefined
+  const createLnkSummary = options.lnk ? createLnkGroupSummarizer(rows) : undefined
   const byId = new Map(rows.map(row => [row.id, row]))
   const context = buildFinalStatusRowsContext(rows)
   const statuses = new Map(rows.map(row => [row.id, normalizeFinalStatus(row.finalStatus) ?? calculateFinalStatusInRows(row, rows, context)]))
@@ -86,9 +89,11 @@ export function createWeldGroupSummarizer(input: readonly WeldRow[], settings: S
     const dates: string[] = []
     const lines = new Set<string>()
     const stages = createStageSummary?.()
+    const lnkStages = createLnkSummary?.()
     let errors = 0
     for (const row of group) {
       stages?.addHistory(row)
+      lnkStages?.addHistory(row)
       if (statuses.get(row.id) === 'ошибка') errors++ // History errors must never be hidden by a good successor.
       if (text(row.line)) lines.add(programJointIdentity(row, ''))
       const date = parseDateLikeToIso(row.weldDate)
@@ -131,6 +136,7 @@ export function createWeldGroupSummarizer(input: readonly WeldRow[], settings: S
       if (leaves.length !== 1) partial = true
       if (partial) partialChains++
       stages?.addBranch(leaves, partial)
+      lnkStages?.addBranch(leaves, partial)
       let hasRejection = false
       for (const row of leaves) {
         const status = statuses.get(row.id) ?? 'ошибка'
@@ -150,6 +156,7 @@ export function createWeldGroupSummarizer(input: readonly WeldRow[], settings: S
     return { rows: group, lines: lines.size, joints: branches.size, wdi: knownWdi ? cents / 100 : null, missingWdi,
       weldDate: !first ? '—' : first === last ? formatDisplayDate(first) : `${formatDisplayDate(first)} — ${formatDisplayDate(last)}`,
       missingDates: group.length - dates.length, projectTitle: common('projectTitle'), subtitleCode: common('subtitleCode'),
-      status, rejected, errors, partialChains, ...stages?.finish(group.length) }
+      status, rejected, errors, partialChains, ...stages?.finish(group.length),
+      ...(lnkStages ? { lnkResults: lnkStages.finish(group.length) } : {}) }
   }
 }

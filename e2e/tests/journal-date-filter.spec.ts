@@ -37,7 +37,10 @@ async function openJournal(page: Page) {
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(PROJECT)
   await expect(page.getByText('Загружено: 5 из 5', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Настроить вид', exact: true }).click()
-  await page.getByRole('button', { name: 'Показать все', exact: true }).click()
+  const settings = page.getByRole('dialog', { name: 'Настройка вида журнала', exact: true })
+  const showAll = settings.getByRole('button', { name: 'Показать все', exact: true })
+  if (await showAll.isVisible()) await showAll.click()
+  await expect(settings.getByRole('button', { name: 'Скрыть все', exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
 }
 

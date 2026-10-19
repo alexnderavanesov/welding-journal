@@ -16,15 +16,7 @@ function renderActions(row: WeldRow, report: 'heatTreatment' | 'lnk' = 'heatTrea
   const rowActions = getReportRowActions(report, handlers)
   if (!rowActions) throw new Error(`${report} row actions are not configured`)
 
-  render(
-    <table>
-      <tbody>
-        <tr>
-          <WeldTableRowActions row={row} rowActions={rowActions} />
-        </tr>
-      </tbody>
-    </table>,
-  )
+  render(<WeldTableRowActions row={row} rowActions={rowActions} />)
 }
 
 describe('WeldTableRowActions for PSTO', () => {

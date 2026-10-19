@@ -30,8 +30,7 @@ export function ReportWorkspace({
     activeReport === 'settings' ||
     activeReport === 'userGuide'
   const isWideTableReport =
-    isAgGridWeldReport(activeReport) ||
-    activeReport === 'lnk'
+    isAgGridWeldReport(activeReport)
   const workspaceBackgroundClass = isWideTableReport || activeReport === 'percentageLines' ? 'bg-white' : 'bg-[#f4f7f9]'
 
   return (

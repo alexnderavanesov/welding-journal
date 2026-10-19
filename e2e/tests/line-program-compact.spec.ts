@@ -367,7 +367,7 @@ test('карточка по эскизу: явные вкладки, широк�
   expect(errors).toEqual([])
 })
 
-test('вложенность клейма: отступ и направляющая, независимые группы и сохранённая история без лишних запросов', async ({ page }) => {
+test('вложенность клейма: таблица без зазора, независимые группы и сохранённая история без лишних запросов', async ({ page }) => {
   const name = 'DENSE-NESTING', id = await seed(name, 8)
   await withLineProgramFixture(db => db.query("update weld_joints set rk_result='ремонт' where line_program_id=$1 and joint='F2'", [id]))
   const calls: string[] = [], errors: string[] = []
@@ -401,7 +401,8 @@ test('вложенность клейма: отступ и направляющ�
         const group = element.getBoundingClientRect()
         const table = element.querySelector('[data-program-grid="joints"]')!.getBoundingClientRect()
         const branch = element.querySelector('[data-testid="program-stamp-branch"]')!.getBoundingClientRect()
-        return Math.abs(table.left - group.left - 12) < 1 && Math.abs(table.top - branch.top) < 1
+        // The accepted 19.10 correction removed the 12px white strip.
+        return Math.abs(table.left - group.left) < 1 && Math.abs(table.top - branch.top) < 1
       })).toBe(true)
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)

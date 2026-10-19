@@ -20,8 +20,7 @@ vi.mock('@/server/weld-server-shared', async importOriginal => ({
 }))
 
 import { WELD_TABLE_SELECT } from './weld-server-shared'
-import { getWeldReportSummary, listColumnFilterOptions, listDerivedReportRowIds, listReportPage, normalizeWeldColumnFilterOptionsRequest, normalizeWeldPageRequest } from './weld-read'
-import { sql } from 'drizzle-orm'
+import { getWeldReportSummary, listColumnFilterOptions, listReportPage, normalizeWeldColumnFilterOptionsRequest, normalizeWeldPageRequest } from './weld-read'
 import { DEFAULT_OTHER_SETTINGS } from '@/lib/other-settings'
 
 describe('independent report rows and summaries', () => {
@@ -158,11 +157,60 @@ describe('independent report rows and summaries', () => {
     expect(mocks.compute).not.toHaveBeenCalled()
   })
 
-  it('derived ordered IDs have distinct cache identities for different sorts', async () => {
-    mocks.compute.mockResolvedValue([])
-    for (const direction of ['asc', 'desc'] as const) {
-      await listDerivedReportRowIds('lnk', normalizeWeldPageRequest({ sort: { fieldKey: 'joint', direction } }), sql`true`)
+  it.each(['lnk', 'heatTreatment'] as const)('%s derived totals use SQL without a full-card/ID cache', async report => {
+    mocks.query.mockResolvedValue({ rows: [[12]] })
+    await getWeldReportSummary({ data: { report, columnFilters: { preRkResult: '=ремонт' } } })
+    expect(mocks.query).toHaveBeenCalledTimes(report === 'lnk' ? 2 : 1)
+    for (const [query, params] of mocks.query.mock.calls) {
+      expect(query.text).toContain('count(*)')
+      expect(query.text).toContain('"pre_heat_treatment_controls"')
+      expect(params).toContain('ремонт')
     }
-    expect(mocks.compute.mock.calls[0][0]).not.toEqual(mocks.compute.mock.calls[1][0])
+    expect(mocks.compute).toHaveBeenCalledOnce()
   })
+  it.each([{ current: [] }, { current: [{ id: 1, rowVersion: 'new' }] }])('rejects a cached page whose card was deleted or concurrently edited', async ({ current }) => {
+    mocks.compute.mockResolvedValue([{ id: 1, rowVersion: 'old' }])
+    mocks.query.mockResolvedValue({ rows: current.map(row => Object.keys(WELD_TABLE_SELECT).map(key => row[key as keyof typeof row] ?? null)) })
+    await expect(listReportPage('lnk', normalizeWeldPageRequest({ includeTotals: false,
+      columnFilters: { rkResult: '=ремонт' },
+    }))).rejects.toThrow('изменились во время отбора')
+    expect(mocks.query).toHaveBeenCalledOnce()
+  })
+
+  it('bounded selection cache separates pages and sorts and never serves full output', async () => {
+    mocks.compute.mockResolvedValue([])
+    for (const page of [1, 2]) for (const direction of ['asc', 'desc'] as const) {
+      await listReportPage('lnk', normalizeWeldPageRequest({ page, includeTotals: false,
+        columnFilters: { rkResult: '=ремонт' }, sort: { fieldKey: 'joint', direction },
+      }))
+    }
+    expect(new Set(mocks.compute.mock.calls.map(([key]) => key)).size).toBe(4)
+    mocks.compute.mockClear()
+    await listReportPage('lnk', normalizeWeldPageRequest({ pageSize: 'all', includeTotals: false, columnFilters: { rkResult: '=ремонт' } }))
+    expect(mocks.compute).not.toHaveBeenCalled()
+  })
+
+  it.each(['wdi', 'rkExposureScheme'] as const)('separates bounded %s pages by captured settings, including a change back', async field => {
+    mocks.compute.mockResolvedValue([])
+    const first = { ...DEFAULT_OTHER_SETTINGS, wdiCalculationMode: 'formula' as const }
+    const second = { ...first, wdiCalculationMode: 'table' as const,
+      wdiTable: { fileName: 'WDI', uploadedAt: '', diameters: [100], thicknesses: [5], values: [[7.25]] },
+      rkExposureTable: { fileName: 'large', uploadedAt: '',
+      entries: Array.from({ length: 300 }, (_, i) => ({ diameter: i + 1,
+        options: [{ label: 'Схема', values: ['0', '120'], isDefault: true, note: '' }],
+      })),
+    } }
+    for (const settings of [first, second, first]) {
+      mocks.settings.mockResolvedValue(settings)
+      await listReportPage('weldingJournal', normalizeWeldPageRequest({ includeTotals: false,
+        columnFilters: { [field]: '=значение' },
+      }))
+    }
+    const keys = mocks.compute.mock.calls.map(([key]) => key as string)
+    expect(keys).toHaveLength(3)
+    expect(keys[0]).not.toBe(keys[1])
+    expect(keys[2]).toBe(keys[0])
+    expect(keys.every(key => key.length < 1000)).toBe(true)
+  })
+
 })

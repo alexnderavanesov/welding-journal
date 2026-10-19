@@ -31,11 +31,9 @@ export function JournalCell({ data, column, value }: ICellRendererParams<WeldRow
   if (!data || !field) return null
   const row = getActionRow(data)
   const ready = table.rowsReady !== false
-  return <WeldTableBodyCell presentation="grid" row={row} field={field} displayValue={value}
-    isEditableCell={ready && canEditCell(row, field.key)} isBlockedEditableCell={false}
-    isHighlightedRow={false} isSelectedRow={false} hasDispatcherTask={false} isHighlightedCell={false}
-    isResultField={RESULT_FIELD_KEYS.has(field.key)} stickyLeft={0} stickyIdentityLeadingWidth={0}
-    stickyIdentityColumns={false} stickyBackgroundClassName="" isSectionEnd={false}
+  return <WeldTableBodyCell row={row} field={field} displayValue={value}
+    isEditableCell={ready && canEditCell(row, field.key)}
+    isResultField={RESULT_FIELD_KEYS.has(field.key)}
     onEdit={ready ? table.onEdit : undefined} onOpenDocument={ready ? table.onOpenDocument : undefined}
     onOpenLnkRequest={ready ? table.onOpenLnkRequest : undefined} onOpenLnkResult={ready ? table.onOpenLnkResult : undefined}
     onOpenJoint={ready ? table.onOpenJoint : undefined} onOpenJointOverview={ready ? table.onOpenJointOverview : undefined}
@@ -65,7 +63,7 @@ export function JournalReportActions({ data }: ICellRendererParams<WeldRow>) {
   if (!data || !table.rowActions) return null
   const row = getActionRow(data)
   return <div className="flex h-full items-center justify-center gap-1">
-    <WeldTableRowActions presentation="grid" row={row} rowActions={table.rowActions} disabled={table.rowsReady === false} />
+    <WeldTableRowActions row={row} rowActions={table.rowActions} disabled={table.rowsReady === false} />
     <button type="button" className="journal-icon-button" title="Действия со стыком" aria-label="Действия со стыком" disabled={table.rowsReady === false} onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); openMenu(row, { x: rect.left, y: rect.bottom, anchorElement: event.currentTarget }) }}><MoreHorizontal size={16} /></button>
   </div>
 }

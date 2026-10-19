@@ -1,8 +1,7 @@
-import { isAgGridWeldReport } from '@/lib/weld-report-grid-profile'
 import { lazy, Suspense, type ReactNode } from 'react'
 import type { WelderStampsRegistryProps } from '@/components/welder-stamps-registry'
 import type { DocumentsPageType } from '@/components/documents-page'
-import { WeldTable, type WeldTableProps } from '@/components/weld-table'
+import type { WeldTableProps } from '@/lib/weld-report-table-types'
 import type { ActiveReport } from '@/lib/home-state'
 import type { DocumentNavigationRequest } from '@/lib/document-navigation'
 import type {
@@ -138,10 +137,9 @@ export function ReportMainContent({
     )
   }
 
-  if (isAgGridWeldReport(activeReport)) return <Suspense fallback={<ReportSectionFallback label="Загружаем таблицу" />}>
+  return <Suspense fallback={<ReportSectionFallback label="Загружаем таблицу" />}>
     <WeldReportGrid {...weldTableProps} report={activeReport} reportTaskPanels={reportTaskPanels} renderSummary={journalSummary} reportExportFieldsRef={reportExportFieldsRef} />
   </Suspense>
-  return <WeldTable {...weldTableProps} reportTaskPanels={reportTaskPanels} />
 }
 
 function ReportSectionFallback({ label }: { label: string }) {

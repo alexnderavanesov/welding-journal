@@ -1,3 +1,4 @@
+import { lnkRow as lnkGridRow } from './lnk-grid-helpers'
 import { expect, test, type Page, type Request } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
@@ -43,7 +44,7 @@ for (const beforeHeatTreatment of [false, true]) test(`довнесение ВИ
   })
   await page.goto('/lnk')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(joint)
-  await page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).click()
+  await lnkGridRow(page, joint).getByRole('checkbox').click()
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: 'Внести результаты', exact: true }).click()
   if (beforeHeatTreatment) {

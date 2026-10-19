@@ -1,3 +1,4 @@
+import { lnkRow as lnkGridRow, revealLnkColumn, lnkActionRow } from './lnk-grid-helpers'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { expect, test } from '@playwright/test'
@@ -34,7 +35,8 @@ for (const historical of [false, true]) test(`НК до ТО доступен: $
     // Other scenarios leave hundreds of rows: locate this joint through server search,
     // not by assuming it is rendered on the first virtualized page.
     await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(joint)
-    const row = () => page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).locator('xpath=ancestor::tr')
+    await revealLnkColumn(page, 'jointNextAction')
+    const row = () => lnkGridRow(page, joint)
     await row().getByRole('button', { name: 'Выполнить: Создать заявку НК до ТО', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Заявка ЛНК до ТО', exact: true })).toBeVisible()
     await page.getByLabel('Дата заявки', { exact: true }).fill('2026-09-17')
@@ -74,7 +76,7 @@ test('открытая заявка не обходит выключение э�
     })
     await page.goto('/lnk')
     await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(joint)
-    const row = page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).locator('xpath=ancestor::tr')
+    const row = await lnkActionRow(page, joint)
     await row.getByRole('button', { name: 'Выполнить: Создать заявку НК до ТО', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Заявка ЛНК до ТО', exact: true })).toBeVisible()
     await page.getByLabel('Дата заявки', { exact: true }).fill('2026-09-17')

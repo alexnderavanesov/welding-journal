@@ -32,6 +32,7 @@ export function JournalGridToolbar({ settingsLabel, summary, sections, extraSect
   const trigger = useRef<HTMLButtonElement>(null)
   const fields = useMemo(() => sections.flatMap(section => section.fields), [sections])
   const visibleCount = sections.reduce((count, section) => count + section.fields.filter(field => alwaysVisible.has(field.key) || (!view.collapsedSections.has(section.section) && !view.hiddenFieldKeys.has(field.key))).length, 0)
+  const allVisible = visibleCount === fields.length && extraSections.every(section => !view.collapsedSections.has(section))
   const positionPanel = () => {
     const rect = trigger.current?.getBoundingClientRect()
     if (!rect) return
@@ -73,7 +74,7 @@ export function JournalGridToolbar({ settingsLabel, summary, sections, extraSect
           {tab === 'columns' ? <>
             <div className="journal-settings-tools">
               <div className="journal-search"><Search size={14} /><input className="journal-input" placeholder="Найти столбец или раздел…" aria-label="Найти столбец или раздел" value={search} onChange={event => setSearch(event.target.value)} /></div>
-              <div className="flex items-center justify-between text-xs text-slate-500"><span>Раздел целиком или отдельные поля</span><button type="button" className="journal-text-button" onClick={() => { view.showAllFields(); for (const section of view.collapsedSections) view.toggleSection(section) }}>Показать все</button></div>
+              <div className="flex items-center justify-between text-xs text-slate-500"><span>Раздел целиком или отдельные поля</span><button type="button" className="journal-text-button" onClick={() => view.setAllFieldsVisible(!allVisible)}>{allVisible ? 'Скрыть все' : 'Показать все'}</button></div>
             </div>
             {sections.map(section => {
               const matchesSection = section.section.toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru'))

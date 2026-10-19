@@ -1,3 +1,4 @@
+import { lnkRow as lnkGridRow, revealLnkColumn } from './lnk-grid-helpers'
 import { expect, test } from '@playwright/test'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { ensureDispatcherTaskIndexFresh } from '@/server/dispatcher-task-index'
@@ -150,18 +151,19 @@ test('назначенный послойный контроль без осно
   }, hidden)
   await page.goto('/lnk')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(waitingProject)
-  const row = page.locator('tbody tr').filter({ has: page.getByRole('button', { name: 'WAIT-1', exact: true }) })
+  await revealLnkColumn(page, 'layeredPvkDocuments')
+  const row = lnkGridRow(page, 'WAIT-1')
   await expect(row.getByText(LAYERED_CONTROL_WAITING_LABEL, { exact: true })).toHaveCount(2)
   await expect(row.getByRole('button', { name: 'Кромки', exact: true })).toHaveCount(0)
   await row.screenshot({ path: 'outputs/layered-waiting-state-20260927.png' })
-  await page.getByRole('button', { name: 'Послойный ПВК. Открыть фильтр', exact: true }).click()
+  await page.locator('.ag-header-cell[col-id="layeredPvkDocuments"] .ag-header-cell-filter-button').click()
   const filter = page.getByRole('dialog', { name: 'Фильтр: Послойный ПВК' })
-  await filter.getByRole('button', { name: new RegExp(LAYERED_CONTROL_WAITING_LABEL) }).click()
+  await filter.getByRole('checkbox', { name: new RegExp(LAYERED_CONTROL_WAITING_LABEL) }).check()
   await expect(row).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Выбрать стык WAIT-2', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Выбрать стык WAIT-3', exact: true })).toHaveCount(0)
-  await filter.getByRole('button', { name: 'Очистить', exact: true }).click()
-  await filter.getByRole('button', { name: /\(пусто\)/ }).click()
+  await expect(lnkGridRow(page, 'WAIT-2').getByRole('checkbox')).toHaveCount(0)
+  await expect(lnkGridRow(page, 'WAIT-3').getByRole('checkbox')).toHaveCount(0)
+  await filter.getByRole('button', { name: 'Сбросить фильтр', exact: true }).click()
+  await filter.getByRole('checkbox', { name: /\(пусто\)/ }).check()
   await expect(row).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Выбрать стык WAIT-2', exact: true })).toBeVisible()
+  await expect(lnkGridRow(page, 'WAIT-2').getByRole('checkbox')).toBeVisible()
 })

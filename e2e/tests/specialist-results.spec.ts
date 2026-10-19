@@ -1,3 +1,4 @@
+import { lnkRow as lnkGridRow, lnkActionRow } from './lnk-grid-helpers'
 import { chooseSpecialist } from '../specialist-helpers'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
@@ -47,7 +48,7 @@ for (const stage of ['beforeHeatTreatment', 'psto'] as const) test(`new ${stage}
   })
   await page.goto(isPre ? '/lnk' : '/psto')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
-  const loadedRows = page.getByText(isPre ? 'из 2 строк' : 'Загружено: 2 из 2', { exact: true })
+  const loadedRows = page.getByText('Загружено: 2 из 2', { exact: true })
   await expect(loadedRows).toBeVisible()
   // Initial dispatcher publication persists finalStatus and changes rowVersion.
   // This scenario tests specialist creation, so open its draft only after the
@@ -58,7 +59,7 @@ for (const stage of ['beforeHeatTreatment', 'psto'] as const) test(`new ${stage}
   await page.waitForLoadState('networkidle')
   await expect(loadedRows).toBeVisible()
   const row = isPre
-    ? page.getByRole('button', { name: 'Выбрать стык F99001', exact: true }).locator('xpath=ancestor::tr')
+    ? await lnkActionRow(page, 'F99001')
     : await pstoActionRow(page, 'F99001')
   await row.getByRole('button', { name: isPre ? 'Выполнить: Внести результат НК до ТО' : 'Выполнить: Внести результат ПСТО · цикл 1', exact: true }).click()
   const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: isPre ? 'Внесение результатов ЛНК до ТО' : 'Внесение результатов ПСТО', exact: true }) })
@@ -137,7 +138,7 @@ for (const stage of ['beforeHeatTreatment', 'psto'] as const) test(`new ${stage}
     await page.reload()
     await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
     const newRow = isPre
-      ? page.getByRole('button', { name: 'Выбрать стык F99003', exact: true }).locator('xpath=ancestor::tr')
+      ? await lnkActionRow(page, 'F99003')
       : await pstoActionRow(page, 'F99003')
     await newRow.getByRole('button', { name: isPre ? 'Выполнить: Внести результат НК до ТО' : 'Выполнить: Внести результат ПСТО · цикл 1', exact: true }).click()
     await expect(dialog.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeEnabled()

@@ -26,7 +26,7 @@ test('меню ЛНК заранее объясняет запрет посло�
   for (const [index, row] of rows.entries()) {
     // Reopen on the joint cell after Escape, including a horizontal scroll to
     // that cell. A queued scroll from before opening must not close the menu.
-    await page.locator(`tr[data-weld-row-id="${row.id}"]`).getByRole('button', { name: row.joint, exact: true }).click({ button: 'right' })
+    await page.locator(`.ag-row[row-id="${row.id}"]`).getByRole('button', { name: row.joint, exact: true }).click({ button: 'right' })
     await page.getByRole('button', { name: 'Дополнительно', exact: true }).click()
     const assign = page.getByRole('button', { name: 'Назначить послойный контроль', exact: true })
     if (reasons[index]) {

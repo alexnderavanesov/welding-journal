@@ -1,3 +1,4 @@
+import { buildWeldReportPageFromRows } from './report-filter-reference.test-helper'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Pool } from 'pg'
 import { sql } from 'drizzle-orm'
@@ -22,9 +23,9 @@ vi.mock('@/server/weld-server-shared', async importOriginal => ({
 }))
 
 import {
-  buildReportSourceWhere, buildWeldReportPageFromRows, canPaginateReportSource, getReportOrderBy,
-  listColumnFilterOptions, listDerivedReportRowIds, normalizeWeldColumnFilterOptionsRequest,
-  normalizeWeldPageRequest, getReportDerivedFilterSelect,
+  buildReportSourceWhere, canPaginateReportSource, getReportOrderBy,
+  listColumnFilterOptions, normalizeWeldColumnFilterOptionsRequest,
+  normalizeWeldPageRequest, buildReportQueryWhere,
 } from './weld-read'
 
 const dialect = new PgDialect()
@@ -83,19 +84,6 @@ describe('PSTO server selection uses the displayed current cycle', () => {
     expect(sorted.rows.map(row => row.id)).toEqual([2, 1])
   })
 
-  it('uses current values again in the derived ID branch', async () => {
-    const columnFilters = { tvmtResult: '=годен', pstoCycleSummary: 'Повтор #2' }
-    const select = getReportDerivedFilterSelect(undefined, { report: 'heatTreatment', columnFilters })
-    mocks.query.mockResolvedValueOnce({ rows: sourceRows.map(row =>
-      Object.keys(select).map(key => row[key as keyof WeldRow] ?? null),
-    ) })
-    const ids = await listDerivedReportRowIds('heatTreatment', normalizeWeldPageRequest({
-      columnFilters,
-    }), sql`true`)
-    expect(ids).toEqual([1])
-    expect(sourceRows[0].tvmtResult).toBe('не годен')
-  })
-
   it('aggregates current-cycle facet values in a single scoped SQL query', async () => {
     mocks.query.mockResolvedValueOnce({ rows: [['годен', 4], ['', 2]] })
     const options = await listColumnFilterOptions(normalizeWeldColumnFilterOptionsRequest({
@@ -113,34 +101,14 @@ describe('PSTO server selection uses the displayed current cycle', () => {
     expect(params).not.toContain('собственный фильтр')
   })
 
-  it('uses current filter and facet values together in the derived options branch', async () => {
-    const columnFilters = { pstoCycleSummary: 'Повтор #2', pstoDate: '=2026-10-02' }
-    const select = getReportDerivedFilterSelect('tvmtResult', { report: 'heatTreatment', columnFilters })
-    mocks.query.mockResolvedValueOnce({ rows: sourceRows.map(row =>
-      Object.keys(select).map(key => row[key as keyof WeldRow] ?? null),
-    ) })
-    const options = await listColumnFilterOptions(normalizeWeldColumnFilterOptionsRequest({
-      report: 'heatTreatment', fieldKey: 'tvmtResult',
-      columnFilters,
-    }))
-    expect(options).toEqual([{ value: 'годен', label: 'годен', count: 1 }])
-    expect(sourceRows[0]).toMatchObject({ pstoDate: '2026-09-01', tvmtResult: 'не годен' })
-  })
-
-  it('loads free-text notes only for an explicit PSTO filter or requested facet', () => {
-    expect(getReportDerivedFilterSelect()).not.toHaveProperty('pstoNote')
-    expect(getReportDerivedFilterSelect(undefined, { report: 'heatTreatment', columnFilters: { tvmtResult: '=годен' } })).not.toHaveProperty('pstoNote')
-    expect(getReportDerivedFilterSelect(undefined, { report: 'weldingJournal', columnFilters: { pstoNote: '=заметка' } })).not.toHaveProperty('pstoNote')
-    expect(getReportDerivedFilterSelect(undefined, { report: 'heatTreatment', columnFilters: { pstoNote: '=заметка' } })).toHaveProperty('pstoNote')
-    expect(getReportDerivedFilterSelect('pstoNote', { report: 'heatTreatment', columnFilters: {} })).toHaveProperty('pstoNote')
-  })
-
-  it('keeps primary notes available when combined with a derived PSTO filter', async () => {
-    const columnFilters = { pstoCycleSummary: 'Основной', pstoNote: '=Первичная заметка' }
-    const source: WeldRow = { id: 3, weldDate: '2026-09-01', pstoRequired: 'да', pstoNote: 'Первичная заметка' }
-    const select = getReportDerivedFilterSelect(undefined, { report: 'heatTreatment', columnFilters })
-    mocks.query.mockResolvedValueOnce({ rows: [Object.keys(select).map(key => source[key as keyof WeldRow] ?? null)] })
-    expect(await listDerivedReportRowIds('heatTreatment', normalizeWeldPageRequest({ columnFilters }), sql`true`)).toEqual([3])
+  it('combines cycle summary, current dates and notes in SQL without replacing primary facts', () => {
+    const query = dialect.sqlToQuery(buildReportQueryWhere('heatTreatment', { columnFilters: {
+      pstoCycleSummary: 'Повтор #2', pstoDate: '=2026-10-02', pstoNote: '=заметка',
+    } }, DEFAULT_OTHER_SETTINGS))
+    expect(query.sql).toContain('"summary_cycle"')
+    expect(query.sql).toContain('"psto_display_cycles"')
+    expect(query.sql).toContain('"psto_note"')
+    expect(query.params).toEqual(expect.arrayContaining(['повтор #2', '2026-10-02', 'заметка']))
   })
 
   it('uses the displayed cancellation and no-need labels in result SQL too', () => {

@@ -22,17 +22,12 @@ for (const path of ['/lnk', '/psto']) {
     await page.goto(path)
     const search = page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' })
     await search.fill(PROJECT)
-    if (path === '/psto') {
-      await expect(page.getByText('Загружено: 100 из 110', { exact: true })).toBeVisible()
-      await page.locator('[data-psto-grid] .ag-header-cell').getByRole('checkbox').check()
-    } else {
-      await expect(page.getByText('из 110 строк', { exact: true })).toBeVisible()
-      await expect(page.getByText('1-100', { exact: true })).toBeVisible()
-      await page.getByRole('button', { name: 'Выбрать видимые стыки', exact: true }).click()
-    }
+    await expect(page.getByText('Загружено: 100 из 110', { exact: true })).toBeVisible()
+    const selectLoaded = page.locator('[data-weld-report-grid] .ag-header-cell').getByRole('checkbox')
+    await selectLoaded.check()
     const panel = page.getByLabel('Действия с выбранными стыками', { exact: true })
     await expect(panel).toContainText('Выбрано: 100')
-    if (path === '/psto') {
+    {
       const actions = panel.getByRole('button', { name: 'Действия', exact: true })
       await actions.click()
       await expect(page.getByTestId('context-action-menu')).toContainText('Выбрано стыков: 100')
@@ -42,8 +37,13 @@ for (const path of ['/lnk', '/psto']) {
       await expect(panel).toContainText('Выбрано: 100')
       expect(countExact()).toBe(0)
     }
+    await panel.getByRole('button', { name: 'Снять выбор', exact: true }).click()
+    await expect(panel).toBeHidden()
+    await expect(selectLoaded).not.toBeChecked()
+    await selectLoaded.check()
+    await expect(panel).toContainText('Выбрано: 100')
     await search.fill(`${PROJECT} отсутствующий-стык`)
-    await expect(page.getByText(path === '/psto' ? 'Загружено: 0 из 0' : 'из 0 строк', { exact: true })).toBeVisible()
+    await expect(page.getByText('Загружено: 0 из 0', { exact: true })).toBeVisible()
     await page.waitForLoadState('networkidle')
     expect(countExact()).toBe(0)
     await panel.getByRole('button', { name: 'Действия', exact: true }).click()

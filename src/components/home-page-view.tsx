@@ -271,8 +271,7 @@ function ReportBackground({
     activeReport === 'settings' ||
     activeReport === 'userGuide'
   const isWeldTableReport =
-    isAgGridWeldReport(activeReport) ||
-    activeReport === 'lnk'
+    isAgGridWeldReport(activeReport)
   const reportTaskPanels = !isStandaloneReport ? <ReportTaskPanels {...reportTaskPanelsProps} /> : null
   const reportHeader = (
       <ReportPageHeader

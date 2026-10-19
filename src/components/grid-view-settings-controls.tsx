@@ -45,9 +45,9 @@ export function GridAppearanceSwitch({ label, checked, onChange }: { label: stri
   return <div className="journal-setting-row"><span id={id}>{label}</span><button type="button" className="journal-switch" role="switch" aria-labelledby={id} aria-checked={checked} onClick={() => onChange(!checked)}><span /></button></div>
 }
 
-export function GridThemeChoices({ value, onChange, label = 'Тема таблицы' }: { value: GridTheme; onChange: (value: GridTheme) => void; label?: string }) {
+export function GridThemeChoices({ value, onChange, label = 'Тема таблицы', note = 'Оформление меняется сразу. Тема сохраняется в вашем браузере и в «Моих видах».' }: { value: GridTheme; onChange: (value: GridTheme) => void; label?: string; note?: string }) {
   return <div className="journal-theme-list" role="radiogroup" aria-label={label}>
-    <p className="journal-panel-note">Оформление меняется сразу. Тема сохраняется в вашем браузере и в «Моих видах».</p>
+    <p className="journal-panel-note">{note}</p>
     {THEMES.map(item => <button key={item.id} type="button" role="radio" aria-checked={value === item.id} className={`journal-theme-choice journal-theme-preview-${item.id}`} onClick={() => onChange(item.id)}>
       <span className="journal-theme-swatch" aria-hidden="true"><i /><i /><i /><i /><i /><i /></span>
       <span><strong>{item.name}</strong><small>{item.detail}</small></span>

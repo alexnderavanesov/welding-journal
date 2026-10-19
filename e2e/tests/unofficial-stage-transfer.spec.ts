@@ -1,3 +1,4 @@
+import { lnkRow as lnkGridRow } from './lnk-grid-helpers'
 import { documentGridRow } from '../document-grid'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
@@ -72,7 +73,7 @@ for (const officiality of ['действующий', 'неофициальный
     await page.keyboard.press('Escape')
     await page.goto('/lnk')
     await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('F781')
-    await page.getByRole('button', { name: 'Выбрать стык F781', exact: true }).click()
+    await lnkGridRow(page, 'F781').getByRole('checkbox').click()
     await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
     await page.getByRole('button', { name: 'Редактировать выбранные', exact: true }).click()
     let dialog = page.getByRole('dialog')

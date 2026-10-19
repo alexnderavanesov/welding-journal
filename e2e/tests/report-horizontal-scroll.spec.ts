@@ -177,57 +177,11 @@ for (const [path, report] of [['/journal', 'weldingJournal'], ['/lnk', 'lnk'], [
     page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(request.url()) })
     await page.goto(path)
     await page.getByPlaceholder('Поиск по отчету').fill(project)
-    await expect(page.getByText(report === 'lnk' ? 'из 74 строк' : 'Загружено: 74 из 74', { exact: true })).toBeVisible()
+    await expect(page.getByText('Загружено: 74 из 74', { exact: true })).toBeVisible()
     // The initial dispatcher refresh can complete after the first rows render
     // and legitimately refetch them. Finish setup before measuring scroll RPCs.
     await page.waitForLoadState('networkidle')
-    if (report === 'weldingJournal' || report === 'heatTreatment') {
-      await checkJournalHorizontalNavigation(page, calls, report)
-      expect(errors).toEqual([])
-      return
-    }
-    const table = page.locator('table[data-horizontal-virtualized="true"]')
-    await expect(table.locator('tbody tr[data-weld-row-id]').first()).toBeVisible()
-    const noVisibleGaps = () => table.evaluate(element => {
-      const sidebar = document.querySelector('[data-app-sidebar]')!.getBoundingClientRect().right
-      return [...element.querySelectorAll('tbody tr[data-weld-row-id]:first-child td[data-horizontal-spacer]')].every(cell => {
-        const rect = cell.getBoundingClientRect()
-        return rect.right <= sidebar + 1 || rect.left >= innerWidth - 1
-      })
-    })
-    for (const left of [800, 4200, 1500, 9500, 0, 800]) {
-      await page.evaluate(x => window.scrollTo({ left: x, top: 0, behavior: 'instant' }), left)
-      await expect.poll(noVisibleGaps).toBe(true)
-    }
-    await page.waitForTimeout(300)
-    calls.length = 0
-    const start = await page.evaluate(() => ({ x: scrollX, y: scrollY }))
-    const first = table.locator('tbody tr[data-weld-row-id]').first()
-    const initialKeys = await first.locator('[data-weld-field-key]').evaluateAll(cells => cells.map(cell => cell.getAttribute('data-weld-field-key')))
-    const position = (await first.boundingBox())!
-    await page.mouse.move(1000, position.y + 20)
-    for (const direction of [1, -1]) {
-      for (let step = 0; step < 24; step++) {
-        await page.mouse.wheel(direction * 6, 0)
-        await page.waitForTimeout(20)
-      }
-      await expect.poll(noVisibleGaps).toBe(true)
-      expect(await first.locator('[data-weld-field-key]').evaluateAll(cells => cells.map(cell => cell.getAttribute('data-weld-field-key')))).toEqual(initialKeys)
-    }
-    await expect.poll(() => page.evaluate(() => scrollX)).toBe(start.x)
-    expect(await page.evaluate(() => scrollY)).toBe(start.y)
-    const pinned = first.locator('td.sticky[data-weld-field-key]')
-    expect(await pinned.evaluateAll(cells => cells.every(cell => /^rgb\(/.test(getComputedStyle(cell).backgroundColor)))).toBe(true)
-    expect(calls).toEqual([])
-    for (const width of [1100, 1920]) {
-      await page.setViewportSize({ width, height: 1000 })
-      await expect.poll(noVisibleGaps).toBe(true)
-    }
-    await page.getByRole('button', { name: 'Линия. Открыть фильтр', exact: true }).click()
-    const filter = page.getByRole('dialog', { name: 'Фильтр: Линия' })
-    await expect(filter.getByPlaceholder('Найти значение')).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(filter).toBeHidden()
+    await checkJournalHorizontalNavigation(page, calls, report)
     expect(errors).toEqual([])
   })
 }

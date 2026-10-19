@@ -1,6 +1,6 @@
+import { sortReportRows } from './report-filter-reference.test-helper'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Pool } from 'pg'
-import { sql } from 'drizzle-orm'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { DEFAULT_OTHER_SETTINGS } from '@/lib/other-settings'
 import { getPstoDisplayValue } from '@/lib/lnk-status'
@@ -26,12 +26,8 @@ vi.mock('@/server/weld-server-shared', async importOriginal => ({
 import { WELD_TABLE_SELECT } from './weld-server-shared'
 import {
   buildServerReportRows,
-  getFullReportRowsByIds,
-  listDerivedReportRowIds,
   listReportPage,
   normalizeWeldPageRequest,
-  REPORT_DERIVED_FILTER_SELECT,
-  sortReportRows,
 } from './weld-read'
 
 const sourceRows = [
@@ -50,7 +46,7 @@ describe('SQL-sorted report output survives server hydration', () => {
     mocks.compute.mockImplementation((_key, compute) => compute())
   })
 
-  it('sorts PSTO in-memory fallback by prepared primary waiting labels while preserving sparse repeat and raw facts', () => {
+  it('checks the previous PSTO sort reference by prepared primary waiting labels while preserving sparse repeat and raw facts', () => {
     const rows: WeldRow[] = [
       { id: 1, weldDate: '2026-09-01', pstoRequired: 'да', pstoResult: null },
       { id: 2, weldDate: '2026-09-01', pstoRequired: 'да', pstoRequest: 'Заявка', pstoResult: null },
@@ -63,14 +59,13 @@ describe('SQL-sorted report output survives server hydration', () => {
   })
 
   it.each(['source', 'derived'] as const)('PSTO %s path adds one page-scoped root query after metadata hydration', async path => {
-    // Derived selection is cached as ordered IDs; only the requested page is hydrated.
-    if (path === 'derived') mocks.compute.mockResolvedValueOnce([2, 1])
+    if (path === 'derived') mocks.query.mockResolvedValueOnce({ rows: sourceRows.map(row => [row.id, null]) })
     mocks.query.mockResolvedValueOnce({ rows: databaseRows(WELD_TABLE_SELECT) })
     const page = await listReportPage('heatTreatment', normalizeWeldPageRequest({
       includeTotals: false, pageSize: 100,
       columnFilters: path === 'derived' ? { pstoCycleSummary: 'Основной' } : {},
     }))
-    expect(page.rows.map(row => row.id)).toEqual(path === 'derived' ? [2, 1] : [1, 2])
+    expect(page.rows.map(row => row.id)).toEqual([1, 2])
     const rootQueries = mocks.query.mock.calls.filter(([query]) => query.text.includes('journal_physical_root'))
     expect(rootQueries).toHaveLength(1)
     expect(rootQueries[0][0].text).toContain('any(')
@@ -85,7 +80,7 @@ describe('SQL-sorted report output survives server hydration', () => {
     { id: 2, joint: 'F2', line: 'L', weldDate: '2026-09-01',
       pstoRequired: 'отменен', pstoRequest: 'ПСТО-2', pstoDate: '2026-09-02', pstoResult: 'проведено',
       tvmtResult: 'годен' }]
-    if (path === 'derived') mocks.compute.mockResolvedValueOnce([1, 2])
+    if (path === 'derived') mocks.query.mockResolvedValueOnce({ rows: stored.map(row => [row.id, null]) })
     mocks.query.mockResolvedValueOnce({ rows: databaseRows(WELD_TABLE_SELECT, stored) })
     const page = await listReportPage('heatTreatment', normalizeWeldPageRequest({ includeTotals: false,
       columnFilters: path === 'derived' ? { pstoCycleSummary: 'Основной' } : {},
@@ -122,18 +117,21 @@ describe('SQL-sorted report output survives server hydration', () => {
       for (const [query] of mocks.query.mock.calls) expect(query.text).not.toMatch(/count\(|sum\(/i)
     })
 
-    it('preserves SQL order in the derived ID cache, before pagination', async () => {
-      mocks.query.mockResolvedValueOnce({ rows: databaseRows(REPORT_DERIVED_FILTER_SELECT) })
-      const ids = await listDerivedReportRowIds(report, normalizeWeldPageRequest({
-        sort: { fieldKey: 'joint', direction: 'desc' },
-      }), sql`true`)
-      expect(ids).toEqual([2, 1])
+    it('applies derived selection before the bounded SQL-sorted page', async () => {
+      mocks.query.mockResolvedValueOnce({ rows: sourceRows.map(row => [row.id, null]) })
+      mocks.query.mockResolvedValueOnce({ rows: databaseRows(WELD_TABLE_SELECT) })
+      const result = await listReportPage(report, normalizeWeldPageRequest({
+        includeTotals: false, columnFilters: { preRkResult: '=ремонт' }, sort: { fieldKey: 'joint', direction: 'desc' },
+      }))
+      expect(result.rows.map(row => row.id)).toEqual([2, 1])
+      const [query, params] = mocks.query.mock.calls[0]
+      expect(query.text).toContain('"pre_heat_treatment_controls"')
+      expect(query.text).toContain('limit')
+      expect(params).toContain(101)
+      expect(mocks.compute).toHaveBeenCalledOnce()
     })
 
-    it('keeps the existing ID-order restoration and default report ordering', async () => {
-      mocks.query.mockResolvedValueOnce({ rows: databaseRows(WELD_TABLE_SELECT, [...sourceRows].reverse()) })
-      const rows = await getFullReportRowsByIds([2, 1], report)
-      expect(rows.map(row => row.id)).toEqual([2, 1])
+    it('retains natural ordering of in-memory report rows', () => {
       expect(buildServerReportRows(sourceRows, report).map(row => row.id)).toEqual([1, 2])
     })
   })

@@ -1,3 +1,4 @@
+import { projectPstoReportDisplayValues } from './report-filter-reference.test-helper'
 import { describe, expect, it } from 'vitest'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import { drizzle } from 'drizzle-orm/node-postgres'
@@ -10,7 +11,7 @@ import { getPstoDisplayValue } from '@/lib/lnk-status'
 import { prepareReportRows } from '@/lib/use-report-rows'
 import { toHeatTreatmentReportRow } from '@/lib/report-control-state'
 import { filterWeldRowsByColumns } from '@/lib/weld-table-filtering'
-import { buildPstoCurrentReportValueSql, projectPstoReportDisplayValues, PSTO_CURRENT_SQL_FIELD_KEYS } from './psto-report-current-values'
+import { buildPstoCurrentReportValueSql, PSTO_CURRENT_SQL_FIELD_KEYS } from './psto-report-current-values'
 
 function row(values: Partial<WeldRow> = {}): WeldRow {
   return {

@@ -1,5 +1,4 @@
 export * from '@/lib/weld-table-badges'
-export * from '@/lib/weld-table-cell-classes'
 export * from '@/lib/weld-table-duplicates'
 export * from '@/lib/weld-table-formatting'
 export * from '@/lib/weld-table-labels'

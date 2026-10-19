@@ -1,3 +1,4 @@
+import { lnkRow as lnkGridRow, lnkActionRow } from './lnk-grid-helpers'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-settings'
@@ -64,7 +65,7 @@ test('новая заявка основного ВИК доступна до П
   try {
     id = await seedJoint(joint, false)
     await page.goto('/lnk')
-    const row = page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).locator('xpath=ancestor::tr')
+    const row = await lnkActionRow(page, joint)
     await row.getByRole('button', { name: 'Выполнить: Создать заявку НК до ТО', exact: true }).click()
     await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'Основной', exact: true }).click()
     // The stage switch is a React transition: wait for the new composer,

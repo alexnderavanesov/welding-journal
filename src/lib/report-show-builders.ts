@@ -25,7 +25,7 @@ import {
 import type { ReportRow } from '@/lib/report-row-actions'
 import { buildTabularReport } from '@/lib/tabular-report'
 import type { WeldField, WeldFieldKey, WeldInput } from '@/lib/weld-fields'
-import { getPstoDisplayValue } from '@/lib/lnk-status'
+import { getLnkDisplayValue, getPstoDisplayValue } from '@/lib/lnk-status'
 
 const WAITING_LNK_FIELDS_WITH_STATUS = [
   ...LNK_WAITING_NK_FIELDS,
@@ -117,6 +117,11 @@ export function buildPstoCurrentReport(rows: WeldInput[], fields: WeldField[]) {
   // Keep source metadata for shared export formatting and never mutate live rows.
   const displayed = rows.map(row => ({ ...row, ...Object.fromEntries(fields.map(field => [field.key, getPstoDisplayValue(row, field.key as WeldFieldKey)])) }))
   return buildCurrentReport(displayed, fields, 'ПСТО и ТВМТ: текущая версия', 'psto-current.xlsx')
+}
+
+export function buildLnkCurrentReport(rows: WeldInput[], fields: WeldField[]) {
+  const displayed = rows.map(row => ({ ...row, ...Object.fromEntries(fields.map(field => [field.key, getLnkDisplayValue(row, field.key as WeldFieldKey)])) }))
+  return buildCurrentReport(displayed, fields, 'ЛНК: текущая версия', 'lnk-current.xlsx')
 }
 
 export function buildWeldingJournalWaitingWeldReport(rows: WeldInput[]) {

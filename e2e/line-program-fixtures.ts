@@ -31,6 +31,19 @@ export async function withLineProgramFixture<T>(run: (db: Client) => Promise<T>)
 // unrelated scenarios, or grow their first report page with our large fixtures.
 export async function cleanupLineProgramProjects(projects: string[]) {
   await withLineProgramFixture(async db => {
+    // Repeated load fixtures can leave FK child-table statistics from an empty
+    // database. A cascade then chooses a sequential scan for every deleted
+    // weld. Refresh statistics outside measured workflows, before the DELETE
+    // starts (changing them during an executing cascade does not replan it).
+    const large = await db.query('select 1 from weld_joints where project_title=any($1::text[]) offset 9999 limit 1', [projects])
+    if (large.rows.length) {
+      const children = await db.query<{ relation: string }>(`select distinct
+        quote_ident(n.nspname)||'.'||quote_ident(c.relname) as relation
+        from pg_constraint k join pg_class c on c.oid=k.conrelid
+        join pg_namespace n on n.oid=c.relnamespace
+        where k.confrelid='weld_joints'::regclass and k.contype='f'`)
+      for (const { relation } of children.rows) await db.query(`analyze ${relation}`)
+    }
     // Aggregate membership once. Correlated EXISTS/NOT EXISTS can choose a
     // quadratic nested-loop plan immediately after a 200k-row seed, before
     // autovacuum has refreshed statistics. Shared documents remain protected.

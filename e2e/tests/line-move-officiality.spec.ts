@@ -1,3 +1,4 @@
+import { revealLnkColumn } from './lnk-grid-helpers'
 import { journalRow, editJournalJoint } from '../journal-grid'
 import { expect, test, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
@@ -136,5 +137,6 @@ test('возврат на линию ПСТО сохраняет ранее ра
   expect(await withE2eDatabase(async db => (await db.query('select psto_required,rk_request,rk_result from weld_joints where id=$1', [id])).rows[0]))
     .toEqual({ psto_required: 'да', rk_request: 'BACK-RK', rk_result: 'ожидает НК' })
   await page.goto('/lnk')
-  await expect(page.locator(`tr[data-weld-row-id="${id}"]`).getByRole('button', { name: 'Выполнить: Создать заявку НК до ТО', exact: true })).toBeVisible()
+  await revealLnkColumn(page, 'jointNextAction')
+  await expect(page.locator(`.ag-row[row-id="${id}"]`).getByRole('button', { name: 'Выполнить: Создать заявку НК до ТО', exact: true })).toBeVisible()
 })

@@ -1,10 +1,8 @@
 import { WeldTableValue } from '@/components/weld-table-value'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { bodyCellClass } from '@/lib/weld-table-utils'
 import { DATE_TIME_WELD_FIELD_KEYS, getFinalStatusErrorReason, type WeldField, type WeldFieldKey } from '@/lib/weld-fields'
 import { formatDateTimeWithSeconds } from '@/lib/weld-table-formatting'
 import { formatFinalStatusDisplay } from '@/lib/weld-status'
-import { getStickyWeldTableFieldStyle, isStickyWeldTableField } from '@/lib/weld-table-sticky-columns'
 import { CONTROL_BASIS_SUMMARY_FIELD_KEY } from '@/lib/control-assignment-basis'
 import {
   GENERATED_DOCUMENT_PROFILES,
@@ -23,7 +21,6 @@ import {
   getSystemDocumentTypeForField,
 } from '@/lib/system-document-types'
 import { memo } from 'react'
-import { cn } from '@/lib/utils'
 import {
   getPreHeatTreatmentReportField,
   PRE_HEAT_TREATMENT_REQUEST_FIELD_KEYS,
@@ -210,23 +207,11 @@ export function getWeldTableBodyCellTooltip({
 }
 
 type WeldTableBodyCellProps = {
-  presentation?: 'table' | 'grid'
   row: WeldRow
   field: WeldField
   displayValue: unknown
   isEditableCell: boolean
-  isBlockedEditableCell: boolean
-  showBlockedEditableCellBackground?: boolean
-  isHighlightedRow: boolean
-  isSelectedRow: boolean
-  hasDispatcherTask: boolean
-  isHighlightedCell: boolean
   isResultField: boolean
-  stickyLeft: number
-  stickyIdentityLeadingWidth: number
-  stickyIdentityColumns: boolean
-  stickyBackgroundClassName: string
-  isSectionEnd: boolean
   onEdit?: (row: WeldRow, fieldKey?: WeldFieldKey) => void
   onOpenDocument?: (row: WeldRow, fieldKey: WeldFieldKey) => void
   onOpenLnkRequest?: (row: WeldRow, fieldKey: WeldFieldKey) => void
@@ -237,23 +222,11 @@ type WeldTableBodyCellProps = {
 }
 
 export const WeldTableBodyCell = memo(function WeldTableBodyCell({
-  presentation = 'table',
   row,
   field,
   displayValue,
   isEditableCell,
-  isBlockedEditableCell,
-  showBlockedEditableCellBackground = true,
-  isHighlightedRow,
-  isSelectedRow,
-  hasDispatcherTask,
-  isHighlightedCell,
   isResultField,
-  stickyLeft,
-  stickyIdentityLeadingWidth,
-  stickyIdentityColumns,
-  stickyBackgroundClassName,
-  isSectionEnd,
   onEdit,
   onOpenDocument,
   onOpenLnkRequest,
@@ -262,14 +235,12 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
   onOpenJointOverview,
   controlBasisEditorEnabled = false,
 }: WeldTableBodyCellProps) {
-  const Cell = presentation === 'grid' ? 'div' : 'td'
   const visibleValue = field.key === 'finalStatus' ? formatFinalStatusDisplay(row, displayValue) : displayValue
   const fieldKey = field.key as WeldFieldKey
   const layeredWaitingLabel = getLayeredControlWaitingLabel(row, fieldKey)
   const layeredDocumentTypes = isLayeredControlCompositeFieldKey(fieldKey)
     ? getLayeredControlDocumentTypesForCompositeField(fieldKey)
     : []
-  const isStickyCell = stickyIdentityColumns && isStickyWeldTableField(field.key)
   const isControlBasisEditorLink =
     controlBasisEditorEnabled && fieldKey === CONTROL_BASIS_SUMMARY_FIELD_KEY && Boolean(onEdit)
   const jointLinkHandler = fieldKey === 'finalStatus'
@@ -301,36 +272,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
   }`
 
   return (
-    <Cell
-      data-weld-field-key={field.key}
-      className={presentation === 'grid' ? 'journal-grid-value' : cn(bodyCellClass(
-        field.key,
-        !isEditableCell,
-        isHighlightedRow,
-        isSelectedRow,
-        hasDispatcherTask,
-        isHighlightedCell,
-        isBlockedEditableCell && showBlockedEditableCellBackground,
-        isSectionEnd,
-      ),
-        isStickyCell
-          ? getStickyWeldTableBodyCellClass({
-              isHighlightedRow,
-              isSelectedRow,
-              hasDispatcherTask,
-              isHighlightedCell,
-              isBlockedEditableCell: isBlockedEditableCell && showBlockedEditableCellBackground,
-              stickyBackgroundClassName,
-            })
-          : ''
-      )}
-      style={isStickyCell ? getStickyWeldTableFieldStyle(field.key, stickyLeft, stickyIdentityLeadingWidth) : undefined}
-      onClick={(event) => {
-        if (presentation === 'grid' || isDocumentLink || isLnkRequestCardLink || isLnkResultCardLink || isControlBasisEditorLink || isJointHistoryLink || !isEditableCell) return
-        event.stopPropagation()
-        onEdit?.(row, field.key as WeldFieldKey)
-      }}
-    >
+    <div data-weld-field-key={field.key} className="journal-grid-value">
       {layeredDocumentTypes.length > 0 ? (
         <div className="flex h-[52px] flex-col items-stretch justify-center gap-0.5 px-2 py-1">
           {layeredWaitingLabel ? (
@@ -420,7 +362,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
           <WeldTableValue field={field} value={visibleValue} isResultField={isResultField} />
         </div>
       )}
-    </Cell>
+    </div>
   )
 })
 
@@ -494,35 +436,6 @@ function getWeldTableCellLinkState({
     generatedDocumentType,
     systemDocumentType,
   }
-}
-
-function getStickyWeldTableBodyCellClass({
-  isHighlightedRow,
-  isSelectedRow,
-  isHighlightedCell,
-  hasDispatcherTask,
-  isBlockedEditableCell,
-  stickyBackgroundClassName,
-}: {
-  isHighlightedRow: boolean
-  isSelectedRow: boolean
-  isHighlightedCell: boolean
-  hasDispatcherTask: boolean
-  isBlockedEditableCell: boolean
-  stickyBackgroundClassName: string
-}) {
-  const background = isSelectedRow
-    ? stickyBackgroundClassName
-    : isHighlightedCell
-      ? 'bg-lime-100'
-      : isHighlightedRow
-        ? 'bg-emerald-50'
-        : hasDispatcherTask
-        ? 'bg-amber-100'
-        : isBlockedEditableCell
-        ? 'bg-amber-50'
-        : stickyBackgroundClassName
-  return `sticky z-[1] ${background}`
 }
 
 function getDocumentLabel({

@@ -1,20 +1,20 @@
+import { buildWeldReportPageFromRows, buildWeldColumnFilterOptionsFromRows } from './report-filter-reference.test-helper'
+import { getRkExposureSchemeState } from '@/lib/rk-exposure'
+import type { RkExposureTableSettings } from '@/lib/other-settings'
+const projectExposureScheme = (rows: WeldRow[], table: RkExposureTableSettings) => rows.map(row => ({ ...row, rkExposureScheme: getRkExposureSchemeState(row, table).label }))
 import { describe, expect, it } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import {
   WELD_PAGE_ALL_SIZE,
-  attachRkExposureSchemeFilterValues,
   buildDerivedReportCacheKey,
-  buildWeldColumnFilterOptionsFromRows,
   buildWeldDataUsageSummaryFromRows,
-  buildWeldReportPageFromRows,
   canPaginateReportSource,
   compactWeldRowsForTransport,
   getWeldImportSecurityScope,
   getControlMethodFilterColumnKey,
   getCurrentRepeatedJointTargets,
   getProfileTimestampUpdates,
-  getDerivedReportFilterSelectedFieldKeys,
   getReportContextSelect,
   getWeldColumnFilterOptionSourceFilters,
   mergeDuplicateControlsIntoRows,
@@ -31,7 +31,7 @@ import {
   sameNormalizedTextSet,
   shouldEnsureDispatcherTaskIndexForColumnFilter,
 } from './welds'
-import { getReportOrderBy, REPORT_DERIVED_FILTER_SELECT } from './weld-read'
+import { getReportOrderBy } from './weld-read'
 import type { WeldJoint } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
@@ -756,32 +756,8 @@ describe('weld server pagination helpers', () => {
     expect(getWeldColumnFilterOptionSourceFilters(ordinaryFilters, true)).toBe(ordinaryFilters)
   })
 
-  it('loads every report date needed to build LNK and PSTO date-filter options', () => {
-    const selectedFieldKeys = getDerivedReportFilterSelectedFieldKeys()
-
-    for (const method of LNK_METHODS) {
-      expect(selectedFieldKeys.has(method.requestDateKey)).toBe(true)
-      expect(selectedFieldKeys.has(method.conclusionDateKey)).toBe(true)
-    }
-    expect(selectedFieldKeys.has('pstoRequestDate')).toBe(true)
-    expect(selectedFieldKeys.has('pstoDate')).toBe(true)
-    expect(REPORT_DERIVED_FILTER_SELECT).not.toHaveProperty('preHeatTreatmentLnkExempt')
-    expect(selectedFieldKeys.has('heatTreatmentDiagram')).toBe(true)
-    expect(selectedFieldKeys.has('finalStatus')).toBe(true)
-    expect(selectedFieldKeys.has('rkControlBasis')).toBe(true)
-    expect(selectedFieldKeys.has('pstoControlBasis')).toBe(true)
-  })
-
-  it('also loads an ordinary option field when another report filter requires derived rows', () => {
-    const selectedFieldKeys = getDerivedReportFilterSelectedFieldKeys('groupName')
-
-    expect(selectedFieldKeys.has('groupName')).toBe(true)
-    expect(selectedFieldKeys.has('wdi')).toBe(true)
-    expect(selectedFieldKeys.has('rkControlBasis')).toBe(true)
-  })
-
   it('builds filters from saved RK descriptions and calculated exposure schemes', () => {
-    const rows = attachRkExposureSchemeFilterValues(
+    const rows = projectExposureScheme(
       [
         row({
           id: 1,

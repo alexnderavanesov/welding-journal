@@ -351,7 +351,7 @@ for (const removal of ['layered removal', 'duplicate pruning', 'weld deletion'] 
         rpcName(response.url()).startsWith('listLnkReportPage_') && Boolean(new URL(response.url()).searchParams.get('payload')?.includes(project)))
       await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
       await (await filtered).finished()
-      const row = page.locator(`tr[data-weld-row-id="${removedWeld}"]`)
+      const row = page.locator(`.ag-row[row-id="${removedWeld}"]`)
       const joint = row.getByRole('button', { name: 'F998001', exact: true })
       await joint.scrollIntoViewIfNeeded()
       await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))

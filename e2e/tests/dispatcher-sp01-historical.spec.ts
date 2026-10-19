@@ -11,6 +11,7 @@ import { attachDispatcherTaskCodesToPage } from '@/server/weld-read'
 import { withE2eDatabase } from '../database'
 import { revealJournalColumn } from '../journal-grid'
 import { revealPstoColumn } from './psto-grid-helpers'
+import { revealLnkColumn } from './lnk-grid-helpers'
 
 for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}: единые требования, сохранность ПСТО/ТВМТ и довнесение до ТО`, async ({ page }) => {
   test.setTimeout(120_000)
@@ -72,6 +73,7 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
     await page.goto(report)
     if (report === '/journal') await revealJournalColumn(page, 'jointNextAction')
     if (report === '/psto') await revealPstoColumn(page, 'jointNextAction')
+    if (report === '/lnk') await revealLnkColumn(page, 'jointNextAction')
     await page.getByRole('button', { name: `Открыть картину стыка ${joint}`, exact: true }).click()
     const pictureHeading = page.getByRole('heading', { name: `Картина стыка ${joint}`, exact: true })
     await expect(pictureHeading).toBeVisible()
@@ -171,8 +173,8 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
     expect(errors).toEqual([])
     // The 16 Oct handoff explicitly allows this local audit without the new
     // license key. Accept exactly its complete banner, never other diagnostics.
-    const missingLocalLicense = ['/journal', '/psto'].includes(report) && consoleDiagnostics.some(message => message.includes('License Key Not Found'))
-    expect(consoleDiagnostics).toEqual(missingLocalLicense ? [
+    const missingLocalLicense = consoleDiagnostics.filter(message => /^\*+ License Key Not Found \*+$/.test(message)).length
+    const licenseBanner = [
       expect.stringMatching(/^\*+$/),
       expect.stringMatching(/^\*+ AG Grid Enterprise License \*+$/),
       expect.stringMatching(/^\*+ License Key Not Found \*+$/),
@@ -180,7 +182,10 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
       expect.stringMatching(/^\* If you want to hide the watermark please email info@ag-grid\.com for a trial license key\. +\*$/),
       expect.stringMatching(/^\*+$/),
       expect.stringMatching(/^\*+$/),
-    ] : [])
+    ]
+    // Each mounted report can emit the same banner. Verify complete repeated
+    // banners, retaining rejection of every other warning or console error.
+    expect(consoleDiagnostics).toEqual(Array.from({ length: missingLocalLicense }, () => licenseBanner).flat())
     if (missingLocalLicense) console.info('Known local audit diagnostic: AG Grid License Key Not Found; exact banner verified, all other diagnostics empty.')
   } finally {
     await page.close()

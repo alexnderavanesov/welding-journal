@@ -7,7 +7,7 @@ import { DOCUMENT_GRID_DEFAULT_APPEARANCE } from '@/lib/document-history-grid-st
 function defaults(overrides: Partial<DocumentsGridToolbarProps> = {}): DocumentsGridToolbarProps {
   return {
     columns: [{ key: 'title', label: 'Документ', minWidth: 200, required: true }, { key: 'project', label: 'Проект', minWidth: 100 }, { key: 'stage', label: 'Этап', minWidth: 100 }],
-    visibleColumnKeys: new Set(['title', 'project']), onColumnVisibilityChange: vi.fn(), onShowAllColumns: vi.fn(),
+    visibleColumnKeys: new Set(['title', 'project']), onColumnVisibilityChange: vi.fn(), onShowAllColumns: vi.fn(), onHideAllColumns: vi.fn(),
     appearance: { ...DOCUMENT_GRID_DEFAULT_APPEARANCE }, onAppearanceChange: vi.fn(), onResetColumns: vi.fn(),
     savedViews: [], onSaveView: vi.fn(), onApplyView: vi.fn(), onDeleteView: vi.fn(),
     search: '', onSearchChange: vi.fn(), hasFilters: false, onClearFilters: vi.fn(),
@@ -41,6 +41,15 @@ describe('document grid toolbar presentation', () => {
     expect(screen.getByRole('textbox', { name: 'Поиск документов' })).toHaveValue('stored query')
     fireEvent.change(screen.getByRole('textbox', { name: 'Найти столбец' }), { target: { value: 'missing' } })
     expect(screen.getByRole('status')).toHaveTextContent('Столбцы не найдены')
+  })
+
+  it('offers hide all when all columns are visible, even with column search active', () => {
+    const props = defaults({ visibleColumnKeys: new Set(['title', 'project', 'stage']) })
+    render(<Harness options={props} />); openSettings()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Найти столбец' }), { target: { value: 'Проект' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Скрыть все' }))
+    expect(props.onHideAllColumns).toHaveBeenCalledOnce()
+    expect(props.onShowAllColumns).not.toHaveBeenCalled()
   })
 
   it('keeps a hidden-column filter discoverable in settings and resets it through the common toolbar', () => {

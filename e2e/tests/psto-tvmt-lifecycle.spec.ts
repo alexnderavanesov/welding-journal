@@ -1,3 +1,4 @@
+import { lnkRow as lnkGridRow, revealLnkColumn, lnkActionRow } from './lnk-grid-helpers'
 import { documentGridRow, openDocumentGridFilter, revealDocumentColumn } from '../document-grid'
 import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Locator, type Page } from '@playwright/test'
@@ -844,13 +845,12 @@ async function expectVikStageEverywhere(page: Page, {
   }
 
   await openReport(page, 'ЛНК', '/lnk')
-  const lnkRow = page
-    .getByRole('button', { name: `Выбрать стык ${joint}`, exact: true })
-    .locator('xpath=ancestor::tr')
+  const lnkRow = lnkGridRow(page, joint)
   await expect(lnkRow).toBeVisible()
-  await expect(lnkRow.locator('td[data-weld-field-key="line"]')).toHaveText(line)
-  await expect(lnkRow.locator('td[data-weld-field-key="pstoRequired"]')).toHaveText(pstoRequired ?? '')
-  await expectVikCells(lnkRow, stage, titles, pstoRequired, completed)
+  await expect(lnkRow.locator('[col-id="line"]')).toHaveText(line)
+  await revealLnkColumn(page, 'pstoRequired')
+  await expect(lnkRow.locator('[col-id="pstoRequired"]')).toHaveText(pstoRequired ?? '')
+  await expectVikCells(page, lnkRow, stage, titles, pstoRequired, completed)
 
   const documentRow = await openLnkDocumentRow(
     page,
@@ -862,6 +862,7 @@ async function expectVikStageEverywhere(page: Page, {
 }
 
 async function expectVikCells(
+  page: Page,
   row: Locator,
   stage: ExpectedVikStage,
   titles: VikDocumentTitles,
@@ -880,7 +881,8 @@ async function expectVikCells(
     : { preVikRequest: '', preVikResult: '', preVikConclusion: '' }
 
   for (const [fieldKey, expectedValue] of Object.entries({ ...primaryValues, ...preValues })) {
-    await expect(row.locator(`td[data-weld-field-key="${fieldKey}"]`)).toHaveText(expectedValue)
+    await revealLnkColumn(page, fieldKey)
+    await expect(row.locator(`[col-id="${fieldKey}"]`)).toHaveText(expectedValue)
   }
 }
 
@@ -1015,7 +1017,7 @@ async function fillDate(page: Page, label: string, value: string) {
 async function runNextAction(page: Page, title: string, joint = JOINT) {
   const row = new URL(page.url()).pathname === '/psto'
     ? await pstoActionRow(page, joint)
-    : page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).locator('xpath=ancestor::tr')
+    : await lnkActionRow(page, joint)
   const button = row.getByRole('button', { name: `Выполнить: ${title}`, exact: true })
   await expect(button).toBeVisible({ timeout: 15_000 })
   await button.click()

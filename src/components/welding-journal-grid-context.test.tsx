@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { JournalGridContext, useJournalCellContext, useJournalGrid } from './welding-journal-grid-context'
-import type { WeldTableProps } from './weld-table'
+import type { WeldTableProps } from '@/lib/weld-report-table-types'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 const row = { id: 1, joint: 'F1' } as WeldRow

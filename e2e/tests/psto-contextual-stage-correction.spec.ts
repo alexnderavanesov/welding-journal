@@ -1,3 +1,4 @@
+import { revealLnkColumn } from './lnk-grid-helpers'
 import { documentGridRow } from '../document-grid'
 import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Locator, type Page } from '@playwright/test'
@@ -335,8 +336,8 @@ test('после переноса: переход из документа и и�
   const transferredRow = await documentGridRow(page, 'CTX-vik-CONCLUSION', 'До ТО')
   await transferredRow.actions.getByTitle('Показать стыки документа в отчете ЛНК', { exact: true }).click()
   await expect(page).toHaveURL(/\/lnk(?:\?|$)/)
-  await expect(page.locator(`tr[data-weld-row-id="${fixture.moved.id}"]`)).toBeVisible()
-  await expect(page.locator(`tr[data-weld-row-id="${fixture.kept.id}"]`)).toHaveCount(0)
+  await expect(page.locator(`.ag-row[row-id="${fixture.moved.id}"]`)).toBeVisible()
+  await expect(page.locator(`.ag-row[row-id="${fixture.kept.id}"]`)).toHaveCount(0)
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: 'Все результаты ЛНК', exact: true }).click()
   await page.getByRole('dialog').getByRole('group', { name: 'Этап контроля ЛНК' }).getByRole('button', { name: 'До ТО', exact: true }).click()
@@ -582,8 +583,8 @@ async function expectSharedDocument(page: Page, fixture: Awaited<ReturnType<type
     await expect(documentRow.center.getByText(label, { exact: true })).toBeVisible()
     await documentRow.actions.getByTitle('Показать стыки документа в отчете ЛНК', { exact: true }).click()
     await expect(page).toHaveURL(/\/lnk(?:\?|$)/)
-    await expect(page.locator(`tr[data-weld-row-id="${included.id}"]`)).toBeVisible()
-    await expect(page.locator(`tr[data-weld-row-id="${excluded.id}"]`)).toHaveCount(0)
+    await expect(page.locator(`.ag-row[row-id="${included.id}"]`)).toBeVisible()
+    await expect(page.locator(`.ag-row[row-id="${excluded.id}"]`)).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Изменить этап контроля', exact: true })).toHaveCount(0)
   }
 }
@@ -811,7 +812,8 @@ test('СП-11 восстанавливается из старого кэша д
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(SOURCE)
   // Use the operator-facing task view rather than relying on an expanded
   // dispatcher column in the default report layout.
-  await page.locator(`tr[data-weld-row-id="${fixture.moved.id}"]`).getByRole('button', { name: /Открыть картину стыка/ }).click()
+  await revealLnkColumn(page, 'jointNextAction')
+  await page.locator(`.ag-row[row-id="${fixture.moved.id}"]`).getByRole('button', { name: /Открыть картину стыка/ }).click()
   await page.getByRole('button', { name: /Открыть задачи по стыку:/ }).click()
   await expect(page.getByRole('region', { name: 'Требует действия', exact: true })).toContainText('СП-11')
 })

@@ -1,3 +1,4 @@
+import { lnkRow as lnkGridRow } from './lnk-grid-helpers'
 import { journalRow, deleteJournalJoint } from '../journal-grid'
 import { expect, test, type Page } from '@playwright/test'
 import { inArray } from 'drizzle-orm'
@@ -135,7 +136,7 @@ for (const result of ['ремонт', 'вырез'] as const) test(`удалит
   // Backfill through the real operator dialog after restoration; the missing
   // result is not invented by either deletion or officiality change.
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(joint)
-  await page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).click()
+  await lnkGridRow(page, joint).getByRole('checkbox').click()
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: 'Внести результаты', exact: true }).click()
   const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Внесение результатов ЛНК', exact: true }) })

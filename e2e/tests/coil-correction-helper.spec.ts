@@ -98,7 +98,7 @@ test('помощник: переходы, удаление сторон, исп�
     await expect(helper).toBeHidden()
     await expect(picture).toBeHidden()
     await expect(page).toHaveURL(/\/lnk$/)
-    for (const side of sides) await expect(page.locator(`tr[data-weld-row-id="${side.id}"]`)).toBeVisible()
+    for (const side of sides) await expect(page.locator(`.ag-row[row-id="${side.id}"]`)).toBeVisible()
     expect(await loadRoot()).toBe(true)
     // Use the existing dedicated workflow, not raw field updates: the helper is
     // navigation only. Its next opening must pick up changes from another client.
@@ -140,7 +140,7 @@ test('помощник: переходы, удаление сторон, исп�
     await expect(page.getByRole('button', { name: 'Вернуться к исправлению катушки', exact: true })).toHaveCount(0)
     // The helper returns to the source-chain LNK report opened above.
     await expect(page).toHaveURL(/\/lnk$/)
-    await page.locator(`tr[data-weld-row-id="${rootId}"]`).getByRole('button', { name: 'F902', exact: true }).click()
+    await page.locator(`.ag-row[row-id="${rootId}"]`).getByRole('button', { name: 'F902', exact: true }).click()
     await expect(picture.getByRole('button', { name: 'Исправить ошибочную катушку' })).toHaveCount(0)
     await picture.getByRole('button', { name: 'История отмен ошибочной катушки' }).click()
     await expect(picture.getByText(/подтверждено исправление ошибочной записи катушки, 0 → 1 соединений/)).toBeVisible()

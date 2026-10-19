@@ -1,3 +1,4 @@
+import { lnkRow as lnkGridRow, revealLnkColumn } from './lnk-grid-helpers'
 import { expect, test, type Route } from '@playwright/test'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -138,7 +139,7 @@ test('после выполненного РК можно назначить П�
   await expect.poll(() => withE2eDatabase(async db => (await db.query('select has_pvk,rk_result from weld_joints where id=$1', [id])).rows[0])).toEqual({ has_pvk: 'да', rk_result: 'годен' })
   await page.goto('/lnk')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(joint)
-  await page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).click()
+  await lnkGridRow(page, joint).getByRole('checkbox').click()
   await page.locator('header').getByRole('button', { name: 'Заявка', exact: true }).click()
   await page.getByRole('button', { name: 'Новая заявка', exact: true }).click()
   await page.getByRole('dialog').getByLabel('Дата заявки', { exact: true }).fill('2026-09-09')
@@ -146,7 +147,7 @@ test('после выполненного РК можно назначить П�
   await expect(page.getByRole('dialog')).toBeHidden()
   await page.reload()
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(joint)
-  await page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).click()
+  await lnkGridRow(page, joint).getByRole('checkbox').click()
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: 'Внести результаты', exact: true }).click()
   const resultDialog = page.getByRole('dialog')
@@ -196,7 +197,7 @@ for (const beforeHeatTreatment of [false, true]) for (const date of ['2026-09-10
     page.on('pageerror', error => errors.push(error.message))
     await page.goto('/lnk')
     await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(joint)
-    await page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).click()
+    await lnkGridRow(page, joint).getByRole('checkbox').click()
     if (createHistoricalRequest) {
       await page.locator('header').getByRole('button', { name: 'Заявка', exact: true }).click()
       await page.getByRole('button', { name: 'Новая заявка', exact: true }).click()
@@ -210,10 +211,11 @@ for (const beforeHeatTreatment of [false, true]) for (const date of ['2026-09-10
       await expect(requestDialog).toBeHidden()
       await page.reload()
       await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(joint)
-      await page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).click()
+      await lnkGridRow(page, joint).getByRole('checkbox').click()
     }
     if (beforeHeatTreatment) {
-      await page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).locator('xpath=ancestor::tr')
+      await revealLnkColumn(page, '__actions')
+      await lnkGridRow(page, joint)
         .getByRole('button', { name: 'Добавить результат ЛНК на этот стык', exact: true }).click()
     } else {
       await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()

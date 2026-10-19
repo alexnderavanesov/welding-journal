@@ -44,13 +44,13 @@ describe('document grid clipboard', () => {
     const nodes = [row(8), row(7, { data: { id: 8, title: 'Документ\t"А"\nстрока 2', date: '16.10.2026', wdi: 12.5 } })]
     const { api } = grid(nodes, [range(8, 7, ['date', 'title', 'wdi'])])
     const text = documentGridClipboardText(api, new Set(['title', 'date', 'wdi']), (key, record) => record[key as 'title' | 'date' | 'wdi'])
-    expect(text).toBe('16.10.2026\t"Документ\t""А""\nстрока 2"\t12.5\n16.10.2026\tDOC-9\t12.5')
+    expect(text).toBe('16.10.2026\t"Документ\t""А""\nстрока 2"\t12,5\n16.10.2026\tDOC-9\t12,5')
   })
 
   it('deduplicates overlapping cells without shifting the later range columns', () => {
     const { api } = grid([row(2), row(1)], [range(1, 1, ['title', 'date']), range(1, 2, ['date', 'wdi']), range(1, 1, ['title'])])
     const getValue = vi.fn((key: string, record: Row) => record[key as 'title' | 'date' | 'wdi'])
-    expect(documentGridClipboardText(api, ['title', 'date', 'wdi'], getValue)).toBe('DOC-2\t16.10.2026\n\n\t12.5\n16.10.2026\t12.5')
+    expect(documentGridClipboardText(api, ['title', 'date', 'wdi'], getValue)).toBe('DOC-2\t16.10.2026\n\n\t12,5\n16.10.2026\t12,5')
     expect(getValue).toHaveBeenCalledTimes(5)
   })
 

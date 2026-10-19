@@ -1,4 +1,4 @@
-import type { WeldTableProps } from '@/components/weld-table'
+import type { WeldTableProps } from '@/lib/weld-report-table-types'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import { getDuplicateControlTableColumns } from '@/lib/duplicate-control-table-columns'
@@ -36,18 +36,13 @@ type CreateWeldTablePropsOptions = {
   onContextMenuError?: WeldTableProps['onContextMenuError']
   duplicateRows?: WeldTableProps['duplicateRows']
   duplicateKeyOverrides?: WeldTableProps['duplicateKeyOverrides']
-  filterOptionRows?: WeldTableProps['filterOptionRows']
   columnFilters: WeldTableProps['columnFilters']
-  manualFiltering?: WeldTableProps['manualFiltering']
-  manualFilterOptionsReport?: WeldTableProps['manualFilterOptionsReport']
-  manualFilterOptions?: WeldTableProps['manualFilterOptions']
   manualPagination?: WeldTableProps['manualPagination']
   onColumnFiltersChange: WeldTableProps['onColumnFiltersChange']
   sort?: WeldTableProps['sort']
   onSortChange?: WeldTableProps['onSortChange']
   onEdit: WeldTableProps['onEdit']
   onDelete: WeldTableProps['onDelete']
-  stickyLeft: NonNullable<WeldTableProps['stickyLeft']>
   highlightedRowIds: NonNullable<WeldTableProps['highlightedRowIds']>
   highlightedCellKeys: NonNullable<WeldTableProps['highlightedCellKeys']>
   dispatcherTaskRowIds?: WeldTableProps['dispatcherTaskRowIds']
@@ -84,18 +79,13 @@ export function createWeldTableProps({
   onContextMenuError,
   duplicateRows,
   duplicateKeyOverrides,
-  filterOptionRows,
   columnFilters,
-  manualFiltering,
-  manualFilterOptionsReport,
-  manualFilterOptions,
   manualPagination,
   onColumnFiltersChange,
   sort,
   onSortChange,
   onEdit,
   onDelete,
-  stickyLeft,
   highlightedRowIds,
   highlightedCellKeys,
   dispatcherTaskRowIds,
@@ -130,18 +120,13 @@ export function createWeldTableProps({
     onContextMenuError,
     duplicateRows,
     duplicateKeyOverrides,
-    filterOptionRows,
     columnFilters,
-    manualFiltering,
-    manualFilterOptionsReport,
-    manualFilterOptions,
     manualPagination,
     onColumnFiltersChange,
     sort,
     onSortChange,
     onEdit,
     onDelete,
-    stickyLeft,
     highlightedRowIds,
     highlightedCellKeys,
     dispatcherTaskRowIds,
@@ -201,12 +186,10 @@ export function createWeldTableProps({
     selectable,
     selectedRowIds,
     onSelectedRowIdsChange,
-    storageKey: activeReport,
     hiddenFieldKeys: getReportHiddenFieldKeys(activeReport),
     mergePstoSections: shouldMergePstoSections(activeReport),
     sectionLayout: activeReport === 'lnk' ? lnkSectionLayout : undefined,
     defaultCollapsedSections: activeReport === 'lnk' ? LNK_DEFAULT_COLLAPSED_SECTIONS : undefined,
-    stickyIdentityColumns: activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment',
     onFilterLine,
   }
 }

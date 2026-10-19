@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo } from 'react'
-import type { WeldTableProps } from '@/components/weld-table'
+import type { WeldTableProps } from '@/lib/weld-report-table-types'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'

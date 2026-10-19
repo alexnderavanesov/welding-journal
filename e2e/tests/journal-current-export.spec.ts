@@ -8,8 +8,9 @@ import { rpcName } from '../rpc'
 
 const PROJECT = 'E2E current journal columns'
 const VIEW = 'Экспорт смены'
-const FIELD_KEYS = ['line', 'joint', 'responsible', 'projectTitle', 'subtitleCode', 'materialGroup', 'finalStatus']
-const HEADERS = ['Линия', 'Стык', 'Ответственный', 'Проект', 'Шифр', 'Группа материалов', 'Итоговый статус']
+// WDI and weld date remain visible even in an older saved view that hid them.
+const FIELD_KEYS = ['line', 'joint', 'responsible', 'projectTitle', 'subtitleCode', 'materialGroup', 'wdi', 'weldDate', 'finalStatus']
+const HEADERS = ['Линия', 'Стык', 'Ответственный', 'Проект', 'Шифр', 'Группа материалов', 'WDI', 'Дата сварки', 'Итоговый статус']
 
 test.afterEach(async ({ page }) => {
   await page.close()
@@ -85,7 +86,7 @@ test('журнал: текущая версия сохраняет видимы�
     from generate_series(1,125) n`, [PROJECT]))
   // Start from a compact pre-existing personal view. The actions under test
   // (hiding a field/section, moving columns, saving and applying) use real UI.
-  const initial = new Set([...FIELD_KEYS, 'd1', 'element1'])
+  const initial = new Set([...FIELD_KEYS.filter(key => key !== 'wdi' && key !== 'weldDate'), 'd1', 'element1'])
   await page.addInitScript(hiddenFieldKeys => {
     if (localStorage.getItem('welding-report-view:v1:weldingJournal')) return
     localStorage.setItem('welding-report-view:v1:weldingJournal', JSON.stringify({
@@ -185,11 +186,11 @@ test('журнал: текущая версия сохраняет видимы�
   await page.mouse.down()
   await page.mouse.move(project.x + 8, project.y + project.height / 2, { steps: 20 })
   await page.mouse.up()
-  await expect.poll(() => currentScreenFields(page)).toEqual(['line', 'joint', 'subtitleCode', 'projectTitle', 'materialGroup', 'finalStatus'])
+  await expect.poll(() => currentScreenFields(page)).toEqual(['line', 'joint', 'subtitleCode', 'projectTitle', 'materialGroup', 'wdi', 'weldDate', 'finalStatus'])
   expect(await page.evaluate(() => ({
     view: localStorage.getItem('welding-report-view:v1:weldingJournal'),
     grid: localStorage.getItem('welding-journal-ag-grid:v1'),
   }))).toEqual(persisted)
-  await verifyCurrentOutput(page, calls, ['Линия', 'Стык', 'Шифр', 'Проект', 'Группа материалов', 'Итоговый статус'])
+  await verifyCurrentOutput(page, calls, ['Линия', 'Стык', 'Шифр', 'Проект', 'Группа материалов', 'WDI', 'Дата сварки', 'Итоговый статус'])
   expect(errors).toEqual([])
 })

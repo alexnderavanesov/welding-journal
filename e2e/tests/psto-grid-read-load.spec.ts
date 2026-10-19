@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import assert from 'node:assert/strict'
 import pg from 'pg'
 
 import type { WeldRow } from '../../src/lib/dispatcher-types'
@@ -170,26 +171,28 @@ test('200k ПСТО: paged current-cycle filters and sorting retain raw facts an
   let pageStatementCount: number | undefined
   const assertFacts = (rows: WeldRow[], selection: ExpectedRow[]) => {
     expect(rows.map(row => row.id)).toEqual(selection.map(row => row.id))
+    // Keep every fact check, without creating tens of thousands of individual
+    // Playwright trace steps (their parent lookup dominates this load test).
     rows.forEach((row, index) => {
       const fact = selection[index]!, hasRepeat = fact.n % repeatEvery === 0
-      expect(row.projectTitle).toBe(project)
-      expect(row.weldDate).toBe('2026-06-01')
+      assert.equal(row.projectTitle, project)
+      assert.equal(row.weldDate, '2026-06-01')
       // Current display fields may be projected for SQL, but stored primary
       // fields and both repeat cycles must survive for workflows and export.
-      expect([row.pstoDate, row.tvmtResult, row.tvmtConclusionDate, row.tvmtConclusion]).toEqual([
+      assert.deepEqual([row.pstoDate, row.tvmtResult, row.tvmtConclusionDate, row.tvmtConclusion], [
         primaryDate(fact.n), 'не годен', primaryDate(fact.n, 2), `PRIMARY-CON-${fact.n}`,
       ])
-      expect(row.pstoRepeatCycles?.map(cycle => ({ id: cycle.id, sequence: cycle.sequence,
-        pstoDate: cycle.pstoDate, tvmtResult: cycle.tvmtResult, tvmtConclusionDate: cycle.tvmtConclusionDate })))
-        .toEqual(hasRepeat ? fact.cycleIds.map((id, cycleIndex) => ({ id, sequence: cycleIndex + 2,
+      assert.deepEqual(row.pstoRepeatCycles?.map(cycle => ({ id: cycle.id, sequence: cycle.sequence,
+        pstoDate: cycle.pstoDate, tvmtResult: cycle.tvmtResult, tvmtConclusionDate: cycle.tvmtConclusionDate })),
+        hasRepeat ? fact.cycleIds.map((id, cycleIndex) => ({ id, sequence: cycleIndex + 2,
           pstoDate: repeatDate(fact.n, cycleIndex + 2), tvmtResult: cycleIndex === 1 ? 'годен' : 'не годен',
           tvmtConclusionDate: repeatDate(fact.n, cycleIndex + 2, 2) })) : undefined)
-      expect(getPstoDisplayValue(row, 'tvmtResult')).toBe(hasRepeat ? 'годен' : 'не годен')
-      expect(getPstoDisplayValue(row, 'tvmtConclusionDate')).toBe(hasRepeat ? repeatDate(fact.n, 3, 2) : primaryDate(fact.n, 2))
-      expect(row.programChainState).toEqual({ weldJointId: fact.id, kind: hasRepeat ? 'repair' : 'primary',
+      assert.equal(getPstoDisplayValue(row, 'tvmtResult'), hasRepeat ? 'годен' : 'не годен')
+      assert.equal(getPstoDisplayValue(row, 'tvmtConclusionDate'), hasRepeat ? repeatDate(fact.n, 3, 2) : primaryDate(fact.n, 2))
+      assert.deepEqual(row.programChainState, { weldJointId: fact.id, kind: hasRepeat ? 'repair' : 'primary',
         physicalRootId: fact.rootId, sourceRowId: hasRepeat ? fact.rootId : null,
         coilParentId: null, coilSide: null, replacedByCoil: false, replacementCoilIds: [] })
-      expect(row.groupPhysicalRoot).toEqual({ id: fact.rootId, exists: true, replaced: false, wdi: rootWdi })
+      assert.deepEqual(row.groupPhysicalRoot, { id: fact.rootId, exists: true, replaced: false, wdi: rootWdi })
     })
   }
 

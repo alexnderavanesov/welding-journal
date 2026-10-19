@@ -1,48 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { GridApi } from 'ag-grid-community'
+import { useCallback } from 'react'
+import type { GridApi, IRowNode } from 'ag-grid-community'
 import type { WeldRow } from './dispatcher-types'
 import { FIELD_BY_KEY, type WeldFieldKey } from './weld-fields'
-import { EMPTY_JOURNAL_RANGE_SUMMARY, journalRangeSummaryChunks, type JournalRangeSpan } from './journal-range-summary'
+import { useGridRangeSummary } from './use-grid-range-summary'
+import { journalNumericValue } from './welding-journal-grid-state'
 
-export function useJournalRangeSummary(api: GridApi<WeldRow> | null) {
-  const [summary, setSummary] = useState(EMPTY_JOURNAL_RANGE_SUMMARY)
-  const frame = useRef(0)
-  const task = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const cancel = useCallback(() => { cancelAnimationFrame(frame.current); clearTimeout(task.current) }, [])
-  useEffect(() => cancel, [cancel, api])
-  const update = useCallback(() => {
-    cancel()
-    frame.current = requestAnimationFrame(() => {
-      if (!api || api.isDestroyed()) return
-      const spans: JournalRangeSpan[] = []
-      for (const range of api.getCellRanges() ?? []) {
-        if (!range.startRow || !range.endRow) continue
-        const first = Math.max(0, Math.min(range.startRow.rowIndex, range.endRow.rowIndex))
-        const last = Math.min(api.getDisplayedRowCount() - 1, Math.max(range.startRow.rowIndex, range.endRow.rowIndex))
-        for (const column of range.columns) {
-          const fieldKey = column.getColId() as WeldFieldKey
-          if (FIELD_BY_KEY.has(fieldKey)) spans.push({ fieldKey, first, last })
-        }
-      }
-      const calculation = journalRangeSummaryChunks(spans, (index, fieldKey) => {
-        const node = api.getDisplayedRowAtIndex(index)
-        return node?.data ? api.getCellValue({ rowNode: node, colKey: fieldKey, useFormatter: false }) : undefined
-      })
-      const run = () => {
-        if (api.isDestroyed()) return
-        const started = performance.now()
-        do {
-          const next = calculation.next()
-          if (next.done) {
-            const value = next.value
-            setSummary(previous => previous.count === value.count && previous.numericCount === value.numericCount && previous.sum === value.sum ? previous : value)
-            return
-          }
-        } while (performance.now() - started < 4)
-        task.current = setTimeout(run, 0)
-      }
-      run()
-    })
-  }, [api, cancel])
-  return { summary, update }
+const FIELDS = new Set<string>(FIELD_BY_KEY.keys())
+const isNumeric = (key: string) => FIELD_BY_KEY.get(key as WeldFieldKey)?.kind === 'number'
+
+export function journalGroupRangeValue(node: IRowNode<WeldRow>, key: string, anchor: string): unknown {
+  if (key !== anchor) return node.aggData?.[key]
+  // The anchor displays the grouping key, which can itself be a numeric field.
+  const groupField = node.rowGroupColumn?.getColId() as WeldFieldKey | undefined
+  return groupField && isNumeric(groupField) ? journalNumericValue(node.key) ?? node.key : node.key || '(Пусто)'
+}
+
+export function useJournalRangeSummary(api: GridApi<WeldRow> | null, groupAnchor = 'line') {
+  const valueAt = useCallback((node: IRowNode<WeldRow>, key: string) => node.group
+    ? journalGroupRangeValue(node, key, groupAnchor)
+    : node.data ? api?.getCellValue({ rowNode: node, colKey: key, useFormatter: false }) : undefined,
+  [api, groupAnchor])
+  return useGridRangeSummary(api, FIELDS, valueAt, isNumeric)
 }

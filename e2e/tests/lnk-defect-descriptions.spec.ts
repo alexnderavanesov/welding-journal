@@ -1,3 +1,4 @@
+import { lnkRow as lnkGridRow, revealLnkColumn } from './lnk-grid-helpers'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { LNK_VISIBLE_FIELD_SECTIONS } from '@/lib/lnk-visible-field-layout'
@@ -7,6 +8,7 @@ const JOINT = 'F-DEFECTS'
 const CONCURRENT_JOINT = 'F-DEFECTS-CONCURRENT'
 const REPORT_VIEW_STORAGE_KEY = 'welding-report-view:v1:lnk'
 const DEFECT_FIELD_KEYS = new Set([
+  'joint',
   'vikDefectDescription',
   'uzkDefectDescription',
   'pvkDefectDescription',
@@ -32,12 +34,10 @@ test('shows and edits independent VIK, UZK and PVK defect descriptions', async (
   }, { storageKey: REPORT_VIEW_STORAGE_KEY, hiddenFields: hiddenFieldKeys })
 
   await page.goto('/lnk')
-  const row = page
-    .getByRole('button', { name: `Выбрать стык ${JOINT}`, exact: true })
-    .locator('xpath=ancestor::tr')
+  const row = lnkGridRow(page, JOINT)
   await expect(row).toBeVisible()
 
-  await page.getByRole('button', { name: /Столбцы/ }).click()
+  await page.getByRole('button', { name: 'Настроить вид', exact: true }).click()
   for (const label of [
     'Дефекты ВИК',
     'Дефекты УЗК',
@@ -46,11 +46,13 @@ test('shows and edits independent VIK, UZK and PVK defect descriptions', async (
     'Дефекты УЗК до ТО',
     'Дефекты ПВК до ТО',
   ]) {
+    await page.getByRole('textbox', { name: 'Найти столбец или раздел' }).fill(label)
     await expect(page.getByRole('checkbox', { name: label, exact: true })).toBeVisible()
   }
-  await page.getByRole('button', { name: /Столбцы/ }).click()
+  await page.getByRole('button', { name: 'Закрыть настройки вида', exact: true }).click()
 
-  const goodUzkCell = row.locator('td[data-weld-field-key="uzkDefectDescription"]')
+  await revealLnkColumn(page, 'uzkDefectDescription')
+  const goodUzkCell = row.locator('[col-id="uzkDefectDescription"]')
   await expect(goodUzkCell).toHaveText('ДНО')
   await goodUzkCell.click()
   await expect(page.getByRole('heading', { name: 'Дефекты УЗК', exact: true })).toHaveCount(0)
@@ -132,8 +134,9 @@ async function editDefectCell({
   label: string
   value: string
 }) {
-  const cell = row.locator(`td[data-weld-field-key="${fieldKey}"]`)
-  await cell.click()
+  await revealLnkColumn(page, fieldKey)
+  const cell = row.locator(`[col-id="${fieldKey}"]`)
+  await cell.dblclick()
   const dialog = page.getByRole('dialog').filter({
     has: page.getByRole('heading', { name: label, exact: true }),
   })
@@ -160,9 +163,7 @@ async function configureDefectColumns(page: Page) {
 }
 
 function findJointRow(page: Page, joint: string) {
-  return page
-    .getByRole('button', { name: `Выбрать стык ${joint}`, exact: true })
-    .locator('xpath=ancestor::tr')
+  return lnkGridRow(page, joint)
 }
 
 async function openDefectEditor(
@@ -171,7 +172,8 @@ async function openDefectEditor(
   fieldKey: string,
   label: string,
 ) {
-  await row.locator(`td[data-weld-field-key="${fieldKey}"]`).click()
+  await revealLnkColumn(page, fieldKey)
+  await row.locator(`[col-id="${fieldKey}"]`).dblclick()
   const dialog = page.getByRole('dialog').filter({
     has: page.getByRole('heading', { name: label, exact: true }),
   })

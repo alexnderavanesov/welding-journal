@@ -369,7 +369,8 @@ it.each(['Годен', 'Не завершено', 'Не годен'])('keeps %s 
   fireEvent.click(within(row).getByRole('button', { name: 'Клеймо STAMP' }))
   const actions = screen.getByTestId('program-scope-actions')
   expect(row).toHaveClass('program-stamp-open')
-  expect(screen.getByTestId('program-stamp-branch')).toHaveClass('pl-3')
+  // The agreed 19.10 fix removed this 12px gap so joints reach the blue border.
+  expect(screen.getByTestId('program-stamp-branch')).not.toHaveClass('pl-3')
   expect(screen.queryByTestId('program-stamp-guide')).not.toBeInTheDocument()
   expect(screen.queryByTestId('program-workspace-heading')).not.toBeInTheDocument()
   expect(within(actions).getByRole('button', { name: 'Расчёт клейма STAMP' })).toBeVisible()

@@ -131,6 +131,12 @@ export function useWeldReportViewState({
     }))
   }, [updateValue])
 
+  const setAllFieldsVisible = useCallback((visible: boolean) => {
+    const hidden = visible ? [] : [...allowedFieldKeys].filter(key => !alwaysVisibleFieldKeys.has(key))
+    updateValue(current => ({ ...current, activePreset: 'custom', hiddenFieldKeys: hidden,
+      customHiddenFieldKeys: hidden, collapsedSections: visible ? [] : [...allowedSectionNames] }))
+  }, [allowedFieldKeys, allowedSectionNames, alwaysVisibleFieldKeys, updateValue])
+
   const toggleSection = useCallback((section: string) => {
     updateValue((current) => {
       const collapsed = new Set(current.collapsedSections)
@@ -149,7 +155,7 @@ export function useWeldReportViewState({
     const trimmedName = name.trim()
     if (!trimmedName) return false
     const snapshot: WeldReportViewSnapshot = {
-      hiddenFieldKeys: value.hiddenFieldKeys,
+      hiddenFieldKeys: value.hiddenFieldKeys.filter(key => allowedFieldKeys.has(key) && !alwaysVisibleFieldKeys.has(key)),
       collapsedSections: value.collapsedSections,
       columnFilters,
       sort,
@@ -165,10 +171,10 @@ export function useWeldReportViewState({
       }
     })
     return true
-  }, [columnFilters, sort, updateValue, value.collapsedSections, value.hiddenFieldKeys])
+  }, [allowedFieldKeys, alwaysVisibleFieldKeys, columnFilters, sort, updateValue, value.collapsedSections, value.hiddenFieldKeys])
 
   const applySavedView = useCallback((savedView: SavedWeldReportView) => {
-    const hiddenFieldKeys = savedView.snapshot.hiddenFieldKeys.filter((fieldKey) => allowedFieldKeys.has(fieldKey))
+    const hiddenFieldKeys = savedView.snapshot.hiddenFieldKeys.filter((fieldKey) => allowedFieldKeys.has(fieldKey) && !alwaysVisibleFieldKeys.has(fieldKey))
     const columnFilters = Object.fromEntries(
       Object.entries(savedView.snapshot.columnFilters)
         .filter(([fieldKey]) => fieldKey === REPORT_QUICK_SEARCH_FILTER_KEY || allowedFieldKeys.has(fieldKey as WeldFieldKey) || isHiddenReportFilterKey(fieldKey)),
@@ -185,7 +191,7 @@ export function useWeldReportViewState({
     }))
     onColumnFiltersChange(columnFilters)
     onSortChange(nextSort)
-  }, [allowedFieldKeys, allowedSectionNames, allowedSortFieldKeys, onColumnFiltersChange, onSortChange, updateValue])
+  }, [allowedFieldKeys, allowedSectionNames, allowedSortFieldKeys, alwaysVisibleFieldKeys, onColumnFiltersChange, onSortChange, updateValue])
 
   const deleteSavedView = useCallback((id: string) => {
     updateValue((current) => ({
@@ -195,8 +201,8 @@ export function useWeldReportViewState({
   }, [updateValue])
 
   const hiddenFieldKeys = useMemo(
-    () => new Set(value.hiddenFieldKeys.filter((fieldKey) => allowedFieldKeys.has(fieldKey))),
-    [allowedFieldKeys, value.hiddenFieldKeys],
+    () => new Set(value.hiddenFieldKeys.filter((fieldKey) => allowedFieldKeys.has(fieldKey) && !alwaysVisibleFieldKeys.has(fieldKey))),
+    [allowedFieldKeys, alwaysVisibleFieldKeys, value.hiddenFieldKeys],
   )
   const collapsedSections = useMemo(() => new Set(value.collapsedSections), [value.collapsedSections])
 
@@ -208,6 +214,7 @@ export function useWeldReportViewState({
     applyPreset,
     toggleField,
     showAllFields,
+    setAllFieldsVisible,
     toggleSection,
     saveView,
     applySavedView,

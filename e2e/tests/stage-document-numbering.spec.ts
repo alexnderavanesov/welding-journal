@@ -1,3 +1,4 @@
+import { lnkRow as lnkGridRow, lnkActionRow } from './lnk-grid-helpers'
 import { expect, test } from '@playwright/test'
 import { requireDb } from '../../src/db'
 import { withE2eDatabase } from '../database'
@@ -138,7 +139,7 @@ test('after reset, explicit refresh skips occupied names without consuming numbe
   expect(originalRow.final_status).toBe('ожидает НК')
   await page.goto('/lnk')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('STAGE-REFRESH')
-  const row = page.getByRole('button', { name: 'Выбрать стык STAGE-REFRESH', exact: true }).locator('xpath=ancestor::tr')
+  const row = await lnkActionRow(page, 'STAGE-REFRESH')
   await row.getByRole('button', { name: 'Выполнить: Создать заявку НК до ТО', exact: true }).click()
   await page.getByLabel('Дата заявки', { exact: true }).fill(date)
   await page.getByRole('button', { name: 'Создать заявку до ТО', exact: true }).click()

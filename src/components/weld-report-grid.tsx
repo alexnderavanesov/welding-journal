@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { type RowHeightParams, type IRowNode, type ColDef, type ColGroupDef, type GridApi, type RowSelectionOptions, type CellPosition, type GetColumnMenuItemsParams, type MenuItemDef, type DefaultMenuItem } from 'ag-grid-community'
 import { AgGridProvider, AgGridReact } from 'ag-grid-react'
 import { ChevronDown, ChevronUp, ChevronsDown, ChevronsUp, Copy } from 'lucide-react'
-import type { WeldTableProps } from './weld-table'
+import type { WeldTableProps } from '@/lib/weld-report-table-types'
 import { getWeldTableBodyCellTooltip } from './weld-table-body-cell'
 import { ContextActionMenu } from './context-action-menu'
 import { JournalGridToolbar } from './welding-journal-grid-toolbar'
@@ -26,14 +26,15 @@ import { DEFAULT_PAGE_SIZE_OPTIONS } from '@/lib/use-pagination'
 import { useJournalGridFocus } from '@/lib/use-journal-grid-focus'
 import { useJournalPageScroll } from '@/lib/use-journal-page-scroll'
 import { REPORT_LEFT_ALIGNED_FIELDS } from '@/lib/report-column-alignment'
-import { useJournalRangeSummary } from '@/lib/use-journal-range-summary'
+import { journalGroupRangeValue, useJournalRangeSummary } from '@/lib/use-journal-range-summary'
 import { restoreJournalGridSelection } from '@/lib/journal-grid-selection'
 import { JOURNAL_GROUP_LABEL_COLUMN as GROUP_LABEL_COLUMN, formatJournalNumber, journalClipboardValue, journalColumnLayout, mergeJournalSelection, readJournalGridStorage, writeJournalGridStorage, type JournalGridStorage } from '@/lib/welding-journal-grid-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getWeldReportExportFields, type WeldReportExportFieldsRef } from '@/lib/weld-report-export-fields'
 import { useWeldTableContextMenu } from '@/lib/use-weld-table-context-menu'
 import { isModalDialogOpen } from '@/lib/modal-layer'
-import { WELD_GRID_PROFILES, type AgGridWeldReport } from '@/lib/weld-report-grid-profile'
+import { gridClipboardNumber } from '@/lib/grid-clipboard-number'
+import { WELD_GRID_REQUIRED_FIELDS, WELD_GRID_PROFILES, type AgGridWeldReport } from '@/lib/weld-report-grid-profile'
 import './welding-journal-grid.css'
 
 const EMPTY_FIELDS = new Set<WeldFieldKey>()
@@ -94,9 +95,9 @@ function ReportGrid(props: WeldReportGridProps) {
     if (grid.getColumn(GROUP_LABEL_COLUMN)?.isVisible() !== fallback) grid.setColumnsVisible([GROUP_LABEL_COLUMN], fallback)
     setGroupAnchor(fields.find(column => column.getColId() === 'line')?.getColId() ?? fields[0]?.getColId() ?? GROUP_LABEL_COLUMN)
   }, [])
-  const summarizeGroup = useMemo(() => createWeldGroupSummarizer(rows, undefined, { heatTreatment: report === 'heatTreatment' }), [rows, report])
+  const summarizeGroup = useMemo(() => createWeldGroupSummarizer(rows, undefined, { heatTreatment: report === 'heatTreatment', lnk: report === 'lnk' }), [rows, report])
   const getGroupRowAgg = useCallback((params: Parameters<typeof aggregateJournalGroup>[0]) => aggregateJournalGroup(params, summarizeGroup), [summarizeGroup])
-  const { summary: rangeSummary, update: updateRangeSummary } = useJournalRangeSummary(api)
+  const { summary: rangeSummary, update: updateRangeSummary } = useJournalRangeSummary(api, groupAnchor)
   const lastVerticalScrollTop = useRef(0)
   const loadMoreAfterScroll = useRef(false)
   const popupColumn = useRef<string | null>(null)
@@ -108,8 +109,7 @@ function ReportGrid(props: WeldReportGridProps) {
   const sections = useMemo(() => getAvailableWeldTableSections({
     hiddenFieldKeys: props.hiddenFieldKeys ?? EMPTY_FIELDS, mergePstoSections: props.mergePstoSections ?? false, sectionLayout: props.sectionLayout,
   }), [props.hiddenFieldKeys, props.mergePstoSections, props.sectionLayout])
-  // Hiding columns is a personal preference here; other reports keep their rules.
-  const alwaysVisible = EMPTY_FIELDS
+  const alwaysVisible = WELD_GRID_REQUIRED_FIELDS
   const extraSectionSignature = JSON.stringify([...new Set((props.extraColumns ?? []).filter(column => column.collapsible).map(column => column.section))])
   const extraSections = useMemo<string[]>(() => JSON.parse(extraSectionSignature), [extraSectionSignature])
   const viewSections = useMemo(() => [...sections, ...extraSections.map(section => ({ section, fields: [] }))], [sections, extraSections])
@@ -230,7 +230,7 @@ function ReportGrid(props: WeldReportGridProps) {
     for (const section of sections) {
       addExtras(extras.filter(extra => extra.insertBeforeSection === section.section))
       groups.push({ groupId: section.section, headerName: section.section, children: section.fields.map(field => ({
-        colId: field.key, headerName: field.label, headerTooltip: field.label, initialWidth: journalColumnWidth(field.key),
+        colId: field.key, lockVisible: alwaysVisible.has(field.key), headerName: field.label, headerTooltip: field.label, initialWidth: journalColumnWidth(field.key),
         initialPinned: field.key === 'line' || field.key === 'joint' ? 'left' : field.key === 'finalStatus' ? 'right' : undefined,
         sortable: !isVirtualWeldField(field), comparator: SERVER_ORDER,
         enableRowGroup: !isVirtualWeldField(field),
@@ -254,9 +254,9 @@ function ReportGrid(props: WeldReportGridProps) {
       addExtras(extras.filter(extra => extra.insertAfterSection === section.section))
     }
     addExtras(extras.filter(extra => !sections.some(section => section.section === (extra.insertBeforeSection ?? extra.insertAfterSection))))
-    if (props.rowActions) groups.push({ colId: '__actions', headerName: props.rowActions.headerLabel ?? 'Действия', initialWidth: 108, minWidth: 108,
+    if (props.rowActions) groups.push({ colId: '__actions', lockVisible: true, headerName: props.rowActions.headerLabel ?? 'Действия', initialWidth: 108, minWidth: 108,
       sortable: false, filter: false, resizable: false, suppressHeaderMenuButton: true, cellRenderer: JournalReportActions })
-    else if (!props.readOnly) groups.push({ colId: '__actions', headerName: 'Действия', initialWidth: 108, minWidth: 108,
+    else if (!props.readOnly) groups.push({ colId: '__actions', lockVisible: true, headerName: 'Действия', initialWidth: 108, minWidth: 108,
       sortable: false, filter: false, resizable: false, suppressHeaderMenuButton: true, cellRenderer: JournalActions })
     return groups
   // Runtime callbacks live in refs/context: rebuilding columns on a page response
@@ -265,7 +265,7 @@ function ReportGrid(props: WeldReportGridProps) {
   useEffect(() => {
     if (!api || api.isDestroyed()) return
     const state = sections.flatMap(section => section.fields.map(field => ({
-      colId: field.key, hide: reportView.hiddenFieldKeys.has(field.key) || (reportView.collapsedSections.has(section.section) && !alwaysVisible.has(field.key)),
+      colId: field.key, hide: !alwaysVisible.has(field.key) && (reportView.hiddenFieldKeys.has(field.key) || reportView.collapsedSections.has(section.section)),
     })))
     for (const extra of props.extraColumns ?? []) state.push({ colId: extra.key as WeldFieldKey, hide: Boolean(extra.collapsible && reportView.collapsedSections.has(extra.section)) })
     api.applyColumnState({ state })
@@ -326,7 +326,7 @@ function ReportGrid(props: WeldReportGridProps) {
     const groupId = columnGroup?.getGroupId()
     const sectionName = sections.find(section => section.section === groupId)?.section
       ?? props.extraColumns?.find(extra => `extra-${extra.key}` === groupId && extra.collapsible)?.section
-    if (fieldKey && (FIELD_BY_KEY.has(fieldKey) || extra)) items.push('separator', {
+    if (fieldKey && ((FIELD_BY_KEY.has(fieldKey) && !alwaysVisible.has(fieldKey)) || extra)) items.push('separator', {
       name: 'Скрыть столбец', icon: '<span class="ag-icon ag-icon-eye-slash" aria-hidden="true"></span>',
       action: () => extra ? reportView.toggleSection(extra.section) : reportView.toggleField(fieldKey),
     })
@@ -365,7 +365,7 @@ function ReportGrid(props: WeldReportGridProps) {
   const filterContext = useMemo(() => ({ report, columnFilters, onColumnFiltersChange: props.onColumnFiltersChange }), [report, columnFilters, props.onColumnFiltersChange])
   const extrasContext = useMemo(() => ({ table: { rowsReady, extraColumns: props.extraColumns, rowActions: props.rowActions }, getActionRow }), [rowsReady, props.extraColumns, props.rowActions, getActionRow])
   return <JournalGridContext.Provider value={context}><JournalFilterContext.Provider value={filterContext}><JournalExtrasContext.Provider value={extrasContext}><JournalGroupAnchor.Provider value={groupAnchor}>
-    <section data-weld-report-grid={report} data-welding-journal-grid={report === 'weldingJournal' ? '' : undefined} data-psto-grid={report === 'heatTreatment' ? '' : undefined} className="min-w-0 w-full" onContextMenuCapture={event => event.preventDefault()}>
+    <section data-weld-report-grid={report} data-welding-journal-grid={report === 'weldingJournal' ? '' : undefined} data-psto-grid={report === 'heatTreatment' ? '' : undefined} data-lnk-grid={report === 'lnk' ? '' : undefined} className="min-w-0 w-full" onContextMenuCapture={event => event.preventDefault()}>
       {props.reportTaskPanels}
       <JournalGridToolbar settingsLabel={profile.settingsLabel} summary={props.renderSummary?.(<JournalGroupingControls groups={groupings} onChange={ids => api?.setRowGroupColumns(ids)} />)} sections={sections} extraSections={extraSections} alwaysVisible={alwaysVisible} view={view}
         openColumnsRequest={openColumnsRequest} appearance={appearance}
@@ -452,6 +452,15 @@ function ReportGrid(props: WeldReportGridProps) {
           animateRows suppressScrollOnNewData enableFilterHandlers suppressMultiSort preventDefaultOnContextMenu suppressDragLeaveHidesColumns maintainColumnOrder
           suppressCutToClipboard suppressClipboardPaste cellSelection={CELL_SELECTION}
           copyHeadersToClipboard enableBrowserTooltips
+          processCellForClipboard={({ node, column }) => {
+            if (!node) return ''
+            const key = column.getColId()
+            const value = node.group ? journalGroupRangeValue(node, key, groupAnchor)
+              : api?.getCellValue({ rowNode: node, colKey: key, useFormatter: false })
+            if (node.group) return typeof value === 'number' || FIELD_BY_KEY.get(key as WeldFieldKey)?.kind === 'number'
+              ? gridClipboardNumber(value) : String(value ?? '')
+            return node.data ? journalClipboardValue(node.data, key as WeldFieldKey, value) : ''
+          }}
           rowSelection={rowSelection} selectionColumnDef={SELECTION_COLUMN}
           onRowDataUpdated={() => { restoreSelection(); updateRangeSummary() }}
           onCellSelectionChanged={updateRangeSummary}
@@ -510,9 +519,9 @@ function ReportGrid(props: WeldReportGridProps) {
         <span className="journal-loaded-count">{!rowsReady ? 'Обновление строк…' : `Загружено: ${rows.length}${pagination?.totalCount === undefined ? '' : ` из ${pagination.totalCount}`}`}</span>
         <div className="journal-footer-right">
         <div className="journal-range-summary" aria-label="Статистика выделения" title="Выбрано — стыков галочками; количество — непустых ячеек диапазона. Среднее и сумма — только числовые поля загруженных строк.">
-          {selectedRowIds.size > 0 ? <div className="flex items-center gap-2" aria-label={report === 'heatTreatment' ? 'Действия с выбранными стыками' : undefined}>
+          {selectedRowIds.size > 0 ? <div className="flex items-center gap-2" aria-label={report !== 'weldingJournal' ? 'Действия с выбранными стыками' : undefined}>
             <span>Выбрано: {selectedRowIds.size}</span>
-            {report === 'heatTreatment' && props.getContextMenuItems ? <>
+            {report !== 'weldingJournal' && props.getContextMenuItems ? <>
               <button type="button" data-journal-selection-actions className="journal-input text-sky-700 disabled:opacity-50" disabled={!rowMenu.selectionAvailable}
                 onClick={event => {
                   const anchorElement = event.currentTarget

@@ -116,12 +116,14 @@ test('ПСТО: фильтр текущего результата выбира�
 test('ПСТО: текущая версия и Excel повторяют видимые колонки и текущий цикл без групп', async ({ page }) => {
   await open(page, 'S800002')
   await expect(page.locator('.ag-row [col-id="tvmtResult"]')).toHaveText('годен')
+  await revealPstoColumn(page, 'finalStatus')
+  const finalStatus = (await page.locator('.ag-row [col-id="finalStatus"]').innerText()).trim()
   await groupLines(page)
   await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
   await page.getByRole('button', { name: 'Текущая версия', exact: true }).click()
   const preview = page.getByRole('dialog', { name: 'Предпросмотр отчёта', exact: true })
-  const expectedColumns = fields.map(key => WELD_FIELDS.find(field => field.key === key)!.label)
-  const expectedRow = ['PGRID-REPEAT', 'S800002', 10, 'проведено', 'годен', 'ПСТО-ТЕКУЩАЯ', '06.09.2026']
+  const expectedColumns = [...fields, 'weldDate', 'finalStatus'].map(key => WELD_FIELDS.find(field => field.key === key)!.label)
+  const expectedRow = ['PGRID-REPEAT', 'S800002', 10, 'проведено', 'годен', 'ПСТО-ТЕКУЩАЯ', '06.09.2026', '01.09.2026', finalStatus]
   await expect(preview.frameLocator('iframe').locator('thead th')).toHaveText(expectedColumns)
   await expect(preview.frameLocator('iframe').locator('tbody tr')).toHaveCount(1)
   await expect(preview.frameLocator('iframe').locator('tbody td')).toHaveText(expectedRow.map(String))
@@ -155,20 +157,22 @@ test('ПСТО: ссылка текущего цикла открывает ег
   await expect(request.getByRole('textbox', { name: 'Наименование заявки', exact: true })).toHaveValue('ПСТО-S800002')
 })
 
-test('ПСТО: пустой вид не запускает выгрузку, группы остаются доступны', async ({ page }) => {
+test('ПСТО: скрытие всех сохраняет обязательные поля, группы и текущий экспорт', async ({ page }) => {
   await open(page)
   await groupLines(page)
-  await page.getByRole('button', { name: 'Настроить вид', exact: true }).click()
-  const panel = page.getByRole('dialog', { name: 'Настройка вида ПСТО и ТВМТ' })
-  for (const checkbox of await panel.getByRole('checkbox', { name: /^Раздел:/ }).all()) await checkbox.uncheck()
-  await panel.getByRole('button', { name: 'Закрыть настройки вида' }).click()
-  await expect(group(page, 'PGRID-REPAIR').locator('[col-id="__groupLabel"]')).toContainText('PGRID-REPAIR')
   const calls: string[] = []
   await page.waitForLoadState('networkidle')
   page.on('request', request => { const name = rpcName(request.url()); if (name) calls.push(name) })
+  await page.getByRole('button', { name: 'Настроить вид', exact: true }).click()
+  const panel = page.getByRole('dialog', { name: 'Настройка вида ПСТО и ТВМТ' })
+  await panel.getByRole('button', { name: 'Показать все', exact: true }).click()
+  await panel.getByRole('button', { name: 'Скрыть все', exact: true }).click()
+  await panel.getByRole('button', { name: 'Закрыть настройки вида' }).click()
+  await expect(group(page, 'PGRID-REPAIR').locator('[col-id="line"]')).toContainText('PGRID-REPAIR')
+  expect(calls.filter(name => /listFiltered|listHeatTreatmentReportPage/.test(name))).toEqual([])
   await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
   await page.getByRole('button', { name: 'Текущая версия', exact: true }).click()
-  await expect(page.getByText(/В текущем виде нет столбцов для отчёта/)).toBeVisible()
-  await expect(page.getByRole('dialog', { name: 'Предпросмотр отчёта' })).toHaveCount(0)
-  expect(calls.filter(name => /listFiltered|listHeatTreatmentReportPage/.test(name))).toEqual([])
+  const preview = page.getByRole('dialog', { name: 'Предпросмотр отчёта', exact: true }).frameLocator('iframe')
+  await expect(preview.locator('thead th')).toHaveText(['Линия', 'Стык', 'WDI', 'Дата сварки', 'Итоговый статус'])
+  await expect(preview.locator('tbody tr')).toHaveCount(8)
 })

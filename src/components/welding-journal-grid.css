@@ -133,10 +133,10 @@ select.journal-page-size { min-width: 80px; height: 30px; font-variant-numeric: 
 .journal-footer-right { display: flex; align-items: center; justify-content: flex-end; gap: 22px; flex-wrap: wrap; margin-left: auto; }
 .journal-range-summary { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-variant-numeric: tabular-nums; color: #475569; }
 .journal-range-summary:empty { display: none; }
-[data-weld-report-grid] button.journal-switch { width: 40px; height: 24px; padding: 3px; border-radius: 20px; flex-shrink: 0; background: #cbd5e1; cursor: pointer; transition: background-color .22s ease; }
-[data-weld-report-grid] button.journal-switch > span { display: block; width: 18px; height: 18px; border-radius: 50%; background: white; box-shadow: 0 1px 3px #0f172a26; transform: translateX(0); transition: transform .22s cubic-bezier(.2,.8,.2,1); }
-[data-weld-report-grid] button.journal-switch[aria-checked=true] { background: #0284c7; }
-[data-weld-report-grid] button.journal-switch[aria-checked=true] > span { transform: translateX(16px); }
+.journal-settings-panel button.journal-switch { width: 40px; height: 24px; padding: 3px; border-radius: 20px; flex-shrink: 0; background: #cbd5e1; cursor: pointer; transition: background-color .22s ease; }
+.journal-settings-panel button.journal-switch > span { display: block; width: 18px; height: 18px; border-radius: 50%; background: white; box-shadow: 0 1px 3px #0f172a26; transform: translateX(0); transition: transform .22s cubic-bezier(.2,.8,.2,1); }
+.journal-settings-panel button.journal-switch[aria-checked=true] { background: #0284c7; }
+.journal-settings-panel button.journal-switch[aria-checked=true] > span { transform: translateX(16px); }
 .journal-switch:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 3px; }
 .journal-density-select { position: relative; }
 .journal-density-select > button { width: 170px; justify-content: space-between; height: 36px; border-radius: 8px; }
@@ -147,7 +147,7 @@ select.journal-page-size { min-width: 80px; height: 30px; font-variant-numeric: 
 .journal-density-options strong { display: block; font-weight: 500; }
 .journal-density-options small { display: block; color: #94a3b8; font-size: 11px; margin-top: 3px; }
 @media (prefers-reduced-motion: reduce) {
-  [data-weld-report-grid] button.journal-switch, [data-weld-report-grid] button.journal-switch > span, .journal-grid-frame .ag-row-animation .ag-row { transition: none; }
+  .journal-settings-panel button.journal-switch, .journal-settings-panel button.journal-switch > span, .journal-grid-frame .ag-row-animation .ag-row { transition: none; }
 }
 
 .journal-grid-frame .ag-row.ag-opacity-zero { pointer-events: none; }

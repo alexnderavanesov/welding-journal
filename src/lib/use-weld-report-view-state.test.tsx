@@ -97,6 +97,34 @@ describe('useWeldReportViewState', () => {
     expect(result.current.collapsedSections).toEqual(new Set(['Материалы']))
   })
 
+  it('protects required fields in old views and switches all optional fields without changing query state', () => {
+    window.localStorage.setItem('welding-report-view:v1:lnk', JSON.stringify({
+      activePreset: 'custom', hiddenFieldKeys: ['line', 'joint', 'weldDate', 'material1'],
+      customHiddenFieldKeys: ['line', 'joint', 'weldDate', 'material1'], collapsedSections: ['Сварка'], savedViews: [],
+    }))
+    const onColumnFiltersChange = vi.fn(), onSortChange = vi.fn()
+    const { result } = renderHook(() => useWeldReportViewState({ storageKey: 'lnk', sections,
+      alwaysVisibleFieldKeys: new Set(['line', 'joint', 'weldDate']), defaultCollapsedSections: new Set(),
+      columnFilters: { line: 'kept' }, sort: null, onColumnFiltersChange, onSortChange }))
+    expect([...result.current.hiddenFieldKeys]).toEqual(['material1'])
+    act(() => result.current.toggleField('line'))
+    expect([...result.current.hiddenFieldKeys]).toEqual(['material1'])
+    act(() => result.current.setAllFieldsVisible(true))
+    expect(result.current.hiddenFieldKeys.size).toBe(0)
+    expect(result.current.collapsedSections.size).toBe(0)
+    act(() => result.current.setAllFieldsVisible(false))
+    expect([...result.current.hiddenFieldKeys]).toEqual(['material1'])
+    expect([...result.current.collapsedSections]).toEqual(['Сварка', 'Материалы'])
+    act(() => result.current.saveView('required'))
+    expect(result.current.savedViews[0].snapshot.hiddenFieldKeys).toEqual(['material1'])
+    expect(onColumnFiltersChange).not.toHaveBeenCalled()
+    expect(onSortChange).not.toHaveBeenCalled()
+    act(() => result.current.applySavedView({ ...result.current.savedViews[0], snapshot: {
+      ...result.current.savedViews[0].snapshot, hiddenFieldKeys: ['line', 'joint', 'weldDate', 'material1'],
+    } }))
+    expect([...result.current.hiddenFieldKeys]).toEqual(['material1'])
+  })
+
   it('drops obsolete filters and sorting while preserving supported hidden report filters', () => {
     const onColumnFiltersChange = vi.fn()
     const onSortChange = vi.fn()

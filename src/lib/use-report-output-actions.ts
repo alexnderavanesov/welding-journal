@@ -1,8 +1,7 @@
 import { useMemo } from 'react'
 
-import { getReportExportFilename, getReportExportOptions } from '@/lib/report-ui-state'
 import {
-  buildCurrentReport,
+  buildLnkCurrentReport,
   buildLnkConclusionsReport,
   buildLnkToRequestReport,
   buildLnkWaitingNkReport,
@@ -20,7 +19,6 @@ import {
 import type { ReportRow } from '@/lib/report-row-actions'
 import type { ActiveReport } from '@/lib/home-state'
 import type { WeldField, WeldInput } from '@/lib/weld-fields'
-import { useControlProcessSettings } from '@/lib/control-process-settings'
 import { useReportPreview } from '@/lib/use-report-preview'
 import type { ReportPreviewContent } from '@/lib/tabular-report'
 import type { AgGridWeldReport } from '@/lib/weld-report-grid-profile'
@@ -39,7 +37,6 @@ export type WeldingJournalOutputRowsKind =
 
 type UseReportOutputActionsParams = {
   activeReport: ActiveReport
-  activeTitle: string
   outputContext?: string
   currentRowsReady?: boolean
   reportExportFieldsRef: WeldReportExportFieldsRef
@@ -54,7 +51,6 @@ type UseReportOutputActionsParams = {
 
 export function useReportOutputActions({
   activeReport,
-  activeTitle,
   outputContext,
   currentRowsReady = true,
   reportExportFieldsRef,
@@ -66,7 +62,6 @@ export function useReportOutputActions({
   setIsWeldingJournalShowMenuOpen,
   setMessage,
 }: UseReportOutputActionsParams) {
-  const controlProcessSettings = useControlProcessSettings()
   const { open, previewProps } = useReportPreview(outputContext ?? activeReport)
   const actions = useMemo(() => {
     function canOpenCurrentReport() {
@@ -88,16 +83,13 @@ export function useReportOutputActions({
 
     async function openLnkCurrentReport() {
       if (!canOpenCurrentReport()) return
+      const fields = currentGridFields('lnk')
+      if (!fields) return
       setIsLnkShowMenuOpen(false)
       await openLoadedReport(
         'ЛНК',
         () => loadLnkRows('current'),
-        (rows) => buildCurrentReport(
-          rows,
-          getReportExportOptions(activeReport, activeTitle, controlProcessSettings).fields,
-          'ЛНК: текущая версия',
-          getReportExportFilename(activeReport),
-        ),
+        (rows) => buildLnkCurrentReport(rows, fields),
       )
     }
 
@@ -215,10 +207,8 @@ export function useReportOutputActions({
   }, [
     open,
     activeReport,
-    activeTitle,
     currentRowsReady,
     reportExportFieldsRef,
-    controlProcessSettings,
     loadLnkRows,
     loadPstoRows,
     loadWeldingJournalRows,

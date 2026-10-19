@@ -1,3 +1,4 @@
+import { lnkRow as lnkGridRow } from './lnk-grid-helpers'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
@@ -24,7 +25,7 @@ for (const selected of [false, true]) test(`переключение реест�
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/lnk')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('F803')
-  await page.getByRole('button', { name: 'Выбрать стык F803', exact: true }).click()
+  await lnkGridRow(page, 'F803').getByRole('checkbox').click()
   await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
   await page.getByRole('button', { name: selected ? 'Редактировать выбранные' : 'Все результаты ЛНК', exact: true }).click()
   let dialog = page.getByRole('dialog')

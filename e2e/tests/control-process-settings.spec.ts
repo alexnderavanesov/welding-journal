@@ -1,3 +1,4 @@
+import { lnkRow as lnkGridRow, lnkActionRow } from './lnk-grid-helpers'
 import { scrypt } from 'node:crypto'
 
 import { expect, test, type Page } from '@playwright/test'
@@ -201,9 +202,9 @@ test('blocks disabling unfinished pre-TO; re-enabling requires pre-TO even for P
   await page.goto('/lnk')
   await expect(page.getByText('F-PRE-A1', { exact: true }).first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'НК до ТО', exact: true })).toHaveCount(0)
+  const unstarted = await lnkActionRow(page, 'F-PRE-A2')
   await expect(page.getByText('Создать заявку ПСТО', { exact: false }).first()).toBeVisible()
 
-  const unstarted = page.getByRole('button', { name: 'Выбрать стык F-PRE-A2', exact: true }).locator('xpath=ancestor::tr')
   await unstarted.getByRole('button', { name: 'Выполнить: Создать заявку ПСТО', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Заявка ПСТО', exact: true })).toBeVisible()
   await page.getByLabel('Дата заявки', { exact: true }).fill('2026-09-02')
@@ -222,7 +223,7 @@ test('blocks disabling unfinished pre-TO; re-enabling requires pre-TO even for P
     ['F-PRE-B2', false],
   ])
   await page.goto('/lnk')
-  const started = page.getByRole('button', { name: 'Выбрать стык F-PRE-A2', exact: true }).locator('xpath=ancestor::tr')
+  const started = await lnkActionRow(page, 'F-PRE-A2')
   await expect(started.getByRole('button', { name: 'Выполнить: Создать заявку НК до ТО', exact: true })).toBeVisible()
 })
 

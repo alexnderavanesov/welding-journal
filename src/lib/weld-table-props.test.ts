@@ -54,7 +54,6 @@ function createOptions(
     onColumnFiltersChange: vi.fn(),
     onEdit: vi.fn(),
     onDelete: vi.fn(),
-    stickyLeft: 0,
     highlightedRowIds: new Set(),
     highlightedCellKeys: new Set(),
     onOpenChain: vi.fn(),

@@ -46,7 +46,7 @@ test('одна отмена: препятствия, возврат из ЛНК 
     expect(count('cancelErroneousEarlyCoil')).toBe(0)
     await cancellation.getByRole('button', { name: 'Открыть НК сторон' }).click()
     await expect(page).toHaveURL(/\/lnk$/)
-    await expect(page.locator(`tr[data-weld-row-id="${sideIds[0]}"]`)).toBeVisible()
+    await expect(page.locator(`.ag-row[row-id="${sideIds[0]}"]`)).toBeVisible()
     await page.getByRole('button', { name: 'Вернуться к исправлению катушки' }).click()
     await expect(cancellation.getByRole('button', { name: 'Подтвердить отмену' })).toBeDisabled()
     await expect(cancellation.getByText('Проверяем сохранённую цепочку и расчёт…')).toBeHidden()

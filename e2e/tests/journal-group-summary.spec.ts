@@ -168,14 +168,20 @@ test('rejected filter selects joint records regardless of the previous group res
   await expect(group(page, 'SUMMARY-REPAIR').locator('[data-group-summary="finalStatus"]')).toHaveText('годен')
 })
 
-test('groups remain named and expandable when the view hides all data columns', async ({ page }) => {
+test('groups remain named and expandable when only mandatory columns remain', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: 'Настроить вид', exact: true }).click()
   const panel = page.getByRole('dialog', { name: 'Настройка вида журнала' })
-  for (const checkbox of await panel.getByRole('checkbox', { name: /^Раздел:/ }).all()) await checkbox.uncheck()
+  const showAll = panel.getByRole('button', { name: 'Показать все', exact: true })
+  if (await showAll.isVisible()) await showAll.click()
+  await panel.getByRole('button', { name: 'Скрыть все', exact: true }).click()
   await panel.getByRole('button', { name: 'Закрыть настройки вида' }).click()
   const target = group(page, 'SUMMARY-REPAIR')
-  await expect(target.locator('[col-id="__groupLabel"]')).toContainText('SUMMARY-REPAIR')
+  await expect(page.locator('.ag-header-cell[col-id="__groupLabel"]')).toHaveCount(0)
+  await expect(target.locator('[col-id="line"]')).toContainText('SUMMARY-REPAIR')
+  for (const field of ['line', 'joint', 'wdi', 'weldDate', 'finalStatus', '__actions']) {
+    await expect(page.locator(`.ag-header-cell[col-id="${field}"]`)).toBeVisible()
+  }
   await target.getByRole('button', { name: 'Развернуть группу SUMMARY-REPAIR' }).click()
   await expect(target.getByRole('button', { name: 'Свернуть группу SUMMARY-REPAIR' })).toBeVisible()
   await page.getByRole('button', { name: 'Настроить вид', exact: true }).click()

@@ -27,12 +27,20 @@ const waiting = [
  * This is opt-in so ordinary journal grouping does no extra cycle work.
  */
 export function createHeatTreatmentGroupSummarizer(rows: readonly WeldRow[]) {
-  const values = new Map(rows.map(row => [row.id, getRowStageResults(row)]))
+  return createGroupStageSummarizer(rows, fields, getRowStageResults, waiting)
+}
+
+/** Shared aggregation only; each report keeps its own stage classification. */
+export function createGroupStageSummarizer<Field extends string>(
+  rows: readonly WeldRow[], fields: readonly Field[],
+  getValues: (row: WeldRow) => Record<Field, string> & { errors: Record<Field, boolean> },
+  pendingOrder: readonly string[],
+) {
+  const values = new Map(rows.map(row => [row.id, getValues(row)]))
   return () => {
-    const summaries: Record<StageField, WeldGroupStageSummary> = {
-      pstoResult: { status: '—', rejected: 0, errors: 0, partialChains: 0, counts: Object.create(null) },
-      tvmtResult: { status: '—', rejected: 0, errors: 0, partialChains: 0, counts: Object.create(null) },
-    }
+    const summaries = Object.fromEntries(fields.map(field => [field,
+      { status: '—', rejected: 0, errors: 0, partialChains: 0, counts: Object.create(null) },
+    ])) as Record<Field, WeldGroupStageSummary>
     return {
       addHistory(row: WeldRow) {
         const result = values.get(row.id)
@@ -40,11 +48,11 @@ export function createHeatTreatmentGroupSummarizer(rows: readonly WeldRow[]) {
       },
       addBranch(leaves: readonly WeldRow[], partial: boolean) {
         for (const field of fields) {
-          const current = new Set(leaves.map(row => values.get(row.id)?.[field] ?? '—'))
+          const current = new Set<string>(leaves.map(row => values.get(row.id)?.[field] ?? '—'))
           const summary = summaries[field]
           if (current.has('не годен')) summary.rejected++
           if (partial) summary.partialChains++
-          const status = summarizeStatuses(current, partial)
+          const status = summarizeStatuses(current, partial, pendingOrder)
           summary.counts[status] = (summary.counts[status] ?? 0) + 1
         }
       },
@@ -53,7 +61,7 @@ export function createHeatTreatmentGroupSummarizer(rows: readonly WeldRow[]) {
           const summary = summaries[field]
           const current = new Set(Object.keys(summary.counts))
           summary.status = summary.errors ? 'ошибка'
-            : current.size ? summarizeStatuses(current, summary.partialChains > 0, summary.rejected > 0)
+            : current.size ? summarizeStatuses(current, summary.partialChains > 0, pendingOrder, summary.rejected > 0)
               : rowCount ? 'заменены катушкой' : '—'
         }
         return summaries
@@ -62,9 +70,9 @@ export function createHeatTreatmentGroupSummarizer(rows: readonly WeldRow[]) {
   }
 }
 
-function summarizeStatuses(values: ReadonlySet<string>, partial: boolean, rejected = values.has('не годен')) {
+function summarizeStatuses(values: ReadonlySet<string>, partial: boolean, pendingOrder: readonly string[], rejected = values.has('не годен')) {
   if (values.has('ошибка')) return 'ошибка'
-  const pending = waiting.find(status => values.has(status))
+  const pending = pendingOrder.find(status => values.has(status))
   if (pending) return pending
   if (rejected) return 'не годен'
   if (partial) return 'неполная цепочка'

@@ -5,6 +5,7 @@ import { getDispatcherTaskIndexSnapshot } from '../../src/server/dispatcher-task
 import { loadDispatcherTaskContext, normalizeDispatcherTaskContextRequest, type DispatcherTaskContextRequest } from '../../src/server/dispatcher-task-context'
 import { rpcName } from '../rpc'
 import { revealJournalColumn } from '../journal-grid'
+import { revealLnkColumn } from './lnk-grid-helpers'
 import { revealPstoColumn } from './psto-grid-helpers'
 
 const filler = 'AA E2E dispatcher context'
@@ -61,6 +62,7 @@ for (const route of ['/journal', '/psto', '/lnk']) test(`beyond 5000: joint acti
   await expect(joint).toBeVisible()
   if (route === '/journal') await revealJournalColumn(page, 'jointNextAction')
   if (route === '/psto') await revealPstoColumn(page, 'jointNextAction')
+  if (route === '/lnk') await revealLnkColumn(page, 'jointNextAction')
   const nextAction = page.locator('[data-joint-next-action-cell]').getByRole('button', { name: /^Выполнить:/ }).first()
   await expect(nextAction).toBeVisible()
   await nextAction.click()

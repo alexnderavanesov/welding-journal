@@ -1,3 +1,4 @@
+import { lnkRow as lnkGridRow, revealLnkColumn } from './lnk-grid-helpers'
 import { documentGridRow } from '../document-grid'
 import { editJournalJoint } from '../journal-grid'
 import { chooseSpecialist } from '../specialist-helpers'
@@ -79,23 +80,25 @@ test('создает комплект только по явному назна�
   await page.goto('/lnk')
   await page.waitForLoadState('networkidle')
   for (const method of ['ВИК', 'ПВК']) {
-    await page.getByRole('button', { name: `Послойный ${method}. Открыть фильтр`, exact: true }).click()
+    const field = method === 'ВИК' ? 'layeredVikDocuments' : 'layeredPvkDocuments'
+    await revealLnkColumn(page, field)
+    await page.locator(`.ag-header-cell[col-id="${field}"] .ag-header-cell-filter-button`).click()
     const filter = page.getByRole('dialog', { name: `Фильтр: Послойный ${method}` })
-    const edges = filter.getByRole('button', { name: new RegExp(`${method} - кромки - ${JOINT}`) })
-    const layers = filter.getByRole('button', { name: new RegExp(`${method} - слои - ${JOINT}`) })
+    const edges = filter.getByRole('checkbox', { name: new RegExp(`${method} - кромки - ${JOINT}`) })
+    const layers = filter.getByRole('checkbox', { name: new RegExp(`${method} - слои - ${JOINT}`) })
     await expect(edges).toBeVisible()
     await expect(layers).toBeVisible()
     await edges.click()
     await page.waitForLoadState('networkidle')
-    await expect(page.getByRole('button', { name: `Выбрать стык ${JOINT}`, exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Выбрать стык F1', exact: true })).toHaveCount(0)
-    await filter.getByRole('button', { name: 'Очистить', exact: true }).click()
-    await filter.getByRole('button', { name: /\(пусто\)/ }).click()
+    await expect(lnkGridRow(page, JOINT).getByRole('checkbox')).toBeVisible()
+    await expect(lnkGridRow(page, 'F1').getByRole('checkbox')).toHaveCount(0)
+    await filter.getByRole('button', { name: 'Сбросить фильтр', exact: true }).click()
+    await filter.getByRole('checkbox', { name: /\(пусто\)/ }).check()
     await page.waitForLoadState('networkidle')
-    await expect(page.getByRole('button', { name: `Выбрать стык ${JOINT}`, exact: true })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Выбрать стык F1', exact: true })).toBeVisible()
-    await filter.getByRole('button', { name: 'Очистить', exact: true }).click()
-    await filter.getByRole('button', { name: 'Закрыть', exact: true }).click()
+    await expect(lnkGridRow(page, JOINT).getByRole('checkbox')).toHaveCount(0)
+    await expect(lnkGridRow(page, 'F1').getByRole('checkbox')).toBeVisible()
+    await filter.getByRole('button', { name: 'Сбросить фильтр', exact: true }).click()
+    await page.keyboard.press('Escape')
   }
 
   await page.goto('/documents')
@@ -171,7 +174,8 @@ test('послойное назначение вместе с результат
         where a.weld_joint_id = w.id and d.type = 'system:lnkConclusionPvk') as ordinary_count
     from weld_joints w where joint = $1`, [joint])).rows[0])
   await page.goto('/lnk')
-  const row = () => page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).locator('xpath=ancestor::tr')
+  const row = () => lnkGridRow(page, joint)
+  await revealLnkColumn(page, 'jointNextAction')
   await row().getByRole('button', { name: 'Выполнить: Внести результат основного НК', exact: true }).click()
   const resultDialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Внесение результатов ЛНК', exact: true }) })
   await resultDialog.getByLabel('Метод контроля', { exact: true }).selectOption('pvkRequest')

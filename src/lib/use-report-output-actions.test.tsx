@@ -12,6 +12,30 @@ function params(activeReport: ActiveReport = 'weldingJournal') {
 }
 afterEach(() => vi.restoreAllMocks())
 
+it('exports LNK live field order with independent method/stage values without changing source facts', async () => {
+  const p = params('lnk')
+  const source = { id: 1, joint: 'S1', hasVik: 'да', hasRk: 'да', vikRequest: 'VIK', rkResult: 'годен',
+    preHeatTreatmentControls: [{ id: 11, weldJointId: 1, method: 'РК', requestName: 'PRE', result: 'вырез', conclusionDate: '2026-09-02' }] }
+  const fields = ['preRkResult', 'joint', 'rkResult', 'vikResult', 'preRkConclusionDate'].map(key => FIELD_BY_KEY.get(key as never)!)
+  const readFields = vi.fn(report => report === 'lnk' ? fields : null)
+  const { result } = renderHook(() => useReportOutputActions({ ...p, reportExportFieldsRef: { current: readFields }, loadLnkRows: async () => [source as never] }))
+  await act(async () => { await result.current.openLnkCurrentReport() })
+  expect(readFields).toHaveBeenCalledExactlyOnceWith('lnk')
+  expect(result.current.reportPreviewProps?.report?.tables?.[0]).toMatchObject({ columns: fields.map(field => field.label),
+    rows: [['вырез', 'S1', 'годен', 'нет потребности', '02.09.2026']] })
+  expect(source).not.toHaveProperty('vikResult')
+  expect(source.rkResult).toBe('годен')
+})
+
+it.each([null, [], 'psto'] as const)('refuses LNK export with unready, empty or another report columns: %s', async mode => {
+  const p = params('lnk')
+  const { result } = renderHook(() => useReportOutputActions({ ...p, reportExportFieldsRef: { current: report => mode === 'psto' ? report === 'heatTreatment' ? VISIBLE_FIELDS : null : mode === null ? null : [...mode] } }))
+  await act(async () => { await result.current.openLnkCurrentReport() })
+  expect(p.loadLnkRows).not.toHaveBeenCalled()
+  expect(result.current.reportPreviewProps).toBeNull()
+  expect(p.setMessage).toHaveBeenCalledWith(expect.any(String))
+})
+
 it('exports PSTO visible fields in screen order with current repeat values, without changing the source', async () => {
   const p = params('heatTreatment')
   const source = { id: 1, joint: 'S1', pstoRequired: 'да', pstoRequest: 'OLD', pstoResult: 'проведено', tvmtResult: 'не годен',

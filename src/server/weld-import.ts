@@ -96,8 +96,7 @@ import { loadProgramRuleContext } from './line-program-rule-context'
 import { loadProgramSystemIndexSettings } from './line-program'
 import { buildProgramRepairRequirements } from '@/lib/line-program-repair-requirements'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { getJournalDerivedFilters, getWeldColumnFilterOptionSourceFilters, loadJournalDerivedFilterMatches } from './journal-filter-source'
-import { buildNumberArrayMatch } from './weld-request-utils'
+import { getJournalDerivedFilters, getWeldColumnFilterOptionSourceFilters, buildJournalCalculatedWhere } from './journal-filter-source'
 
 const CONTROL_ENABLED_VALUES_SQL = sql.join(
   CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES.map((value) => sql`${value}`),
@@ -122,14 +121,14 @@ export async function listWeldingJournalImportScope({
     const otherSettings = await loadServerOtherSettings(tx)
     const useSystemWdi = isSystemWdiMode(otherSettings)
     const derivedFilters = getJournalDerivedFilters(data.columnFilters, useSystemWdi)
-    const where = buildWhere({ ...data, columnFilters: getWeldColumnFilterOptionSourceFilters(data.columnFilters, useSystemWdi) })
-    const matches = Object.keys(derivedFilters).length
-      ? await loadJournalDerivedFilterMatches(tx, where, derivedFilters, otherSettings)
-      : null
-    const total = matches ? matches.length : Number((await tx.select({ total: count() }).from(weldJoints).where(where))[0].total)
+    const where = buildJournalCalculatedWhere(
+      buildWhere({ ...data, columnFilters: getWeldColumnFilterOptionSourceFilters(data.columnFilters, useSystemWdi) }),
+      derivedFilters, otherSettings,
+    )
+    const total = Number((await tx.select({ total: count() }).from(weldJoints).where(where))[0].total)
     if (total === 0 || total > WELD_IMPORT_MAX_ROWS) return { total, rows: [] }
     const rows = await tx.select(WELD_IMPORT_SCOPE_SELECT).from(weldJoints)
-      .where(matches ? buildNumberArrayMatch(weldJoints.id, matches.map(row => row.id)) : where)
+      .where(where)
       .orderBy(...WELDING_JOURNAL_ORDER_BY)
     return { total, rows: await attachHeatTreatmentControlRelations(applyCurrentSystemWdi(rows, otherSettings), tx) }
   }, { isolationLevel: 'repeatable read', accessMode: 'read only' })

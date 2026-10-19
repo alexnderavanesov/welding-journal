@@ -2,7 +2,9 @@ import { act, fireEvent, render, renderHook, screen } from '@testing-library/rea
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { useEscapeToClearReportFilters } from '@/lib/report-page-effects'
-import { WeldReportViewControls } from '@/components/weld-report-view-controls'
+import { JournalGridToolbar } from '@/components/welding-journal-grid-toolbar'
+import { useWeldReportViewState } from './use-weld-report-view-state'
+import { DEFAULT_JOURNAL_APPEARANCE } from './welding-journal-grid-state'
 import { ROW_ID_LIST_FILTER_KEY } from '@/lib/report-navigation'
 
 describe('useEscapeToClearReportFilters', () => {
@@ -25,7 +27,7 @@ describe('useEscapeToClearReportFilters', () => {
   })
 
   it.each(['weldingJournal', 'lnk', 'heatTreatment'] as const)(
-    'closes the presets dialog without clearing %s search, then clears normally on the next Escape', (activeReport) => {
+    'closes grid settings without clearing %s search, then clears normally on the next Escape', (activeReport) => {
       const clearFilters = vi.fn(), clearSelection = vi.fn()
       renderHook(() => useEscapeToClearReportFilters({
         activeReport, editingOpen: false, isReportModalOpen: false, chainOpen: false,
@@ -35,13 +37,10 @@ describe('useEscapeToClearReportFilters', () => {
         setSelectedWeldingJournalIds: clearSelection, setSelectedLnkIds: clearSelection, setSelectedHeatTreatmentIds: clearSelection,
         setColumnFilters: clearFilters, setHeatTreatmentFilters: clearFilters, setLnkFilters: clearFilters,
       }))
-      render(<WeldReportViewControls sections={[]} alwaysVisibleFieldKeys={new Set()} hiddenFieldKeys={new Set()}
-        activePreset="custom" savedViews={[]} sort={null} onApplyPreset={vi.fn()} onToggleField={vi.fn()}
-        onShowAllFields={vi.fn()} onSortChange={vi.fn()} onSaveView={() => true}
-        onApplySavedView={vi.fn()} onDeleteSavedView={vi.fn()} />)
-      fireEvent.click(screen.getByRole('button', { name: 'Наборы' }))
-      const panel = screen.getByRole('dialog', { name: 'Наборы столбцов и сортировка' })
-      fireEvent.keyDown(panel.querySelector('select')!, { key: 'Escape', bubbles: true, cancelable: true })
+      render(<TestGridToolbar />)
+      fireEvent.click(screen.getByRole('button', { name: 'Настроить вид' }))
+      const panel = screen.getByRole('dialog', { name: 'Настройка вида' })
+      fireEvent.keyDown(panel.querySelector('input')!, { key: 'Escape', bubbles: true, cancelable: true })
       expect(panel).not.toBeInTheDocument()
       expect(clearFilters).not.toHaveBeenCalled()
       expect(clearSelection).not.toHaveBeenCalled()
@@ -137,4 +136,12 @@ function pressEscape() {
   act(() => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
   })
+}
+
+function TestGridToolbar() {
+  const view = useWeldReportViewState({ storageKey: 'test-grid', sections: [], alwaysVisibleFieldKeys: new Set(),
+    defaultCollapsedSections: new Set(), columnFilters: {}, sort: null, onColumnFiltersChange: vi.fn(), onSortChange: vi.fn() })
+  return <JournalGridToolbar settingsLabel="Настройка вида" sections={[]} extraSections={[]} alwaysVisible={new Set()}
+    view={view} openColumnsRequest={0} appearance={DEFAULT_JOURNAL_APPEARANCE} onAppearanceChange={vi.fn()}
+    onResetLayout={vi.fn()} hasFilters={false} onClearFilters={vi.fn()} />
 }

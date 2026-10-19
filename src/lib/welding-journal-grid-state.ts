@@ -3,6 +3,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { FIELD_BY_KEY, DATE_TIME_WELD_FIELD_KEYS, type WeldFieldKey } from '@/lib/weld-fields'
 import { formatDate, formatDateTimeWithSeconds } from '@/lib/weld-table-formatting'
 import { formatFinalStatusDisplay } from '@/lib/weld-status'
+import { gridClipboardNumber } from './grid-clipboard-number'
 
 export type JournalAppearance = {
   theme: 'quartz' | 'alpine' | 'balham'
@@ -81,6 +82,7 @@ export function journalClipboardValue(row: WeldRow, fieldKey: WeldFieldKey, valu
   if (DATE_TIME_WELD_FIELD_KEYS.has(fieldKey)) return formatDateTimeWithSeconds(value)
   if (value === true) return 'да'
   if (value === false || value == null) return ''
+  if (field?.kind === 'number') return gridClipboardNumber(value)
   return String(value)
 }
 

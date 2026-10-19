@@ -7,32 +7,13 @@ import type { WeldField } from '@/lib/weld-fields'
 import { LAYERED_CONTROL_WAITING_LABEL } from '@/lib/layered-control-documents'
 
 describe('WeldTableBodyCell background', () => {
-  it.each([
-    { hasDispatcherTask: true, isHighlightedCell: false, isHighlightedRow: false, isSelectedRow: false, background: 'bg-amber-100' },
-    { hasDispatcherTask: true, isHighlightedCell: true, isHighlightedRow: false, isSelectedRow: false, background: 'bg-lime-100' },
-    { hasDispatcherTask: true, isHighlightedCell: false, isHighlightedRow: true, isSelectedRow: false, background: 'bg-emerald-50' },
-    { hasDispatcherTask: true, isHighlightedCell: false, isHighlightedRow: false, isSelectedRow: true, background: 'bg-[#dff3ff]' },
-  ])('keeps the pinned identity cell opaque: $background', ({ background, ...state }) => {
-    render(<table><tbody><tr><WeldTableBodyCell
-      row={{ id: 1, joint: 'F1' } as WeldRow}
-      field={{ key: 'joint', dbName: 'joint', label: 'Стык', kind: 'text', group: 'Стык' }}
-      displayValue="F1" isEditableCell={false} isBlockedEditableCell={false} {...state}
-      isResultField={false} stickyLeft={64} stickyIdentityLeadingWidth={52} stickyIdentityColumns
-      stickyBackgroundClassName={state.isSelectedRow ? 'bg-[#dff3ff]' : 'bg-white'} isSectionEnd={false}
-    /></tr></tbody></table>)
-    const cell = screen.getByRole('cell')
-    expect([...cell.classList].filter(name => name.startsWith('bg-'))).toEqual([background])
-  })
-
   it.each(['Vik', 'Pvk'] as const)('shows a compact, non-clickable waiting state in the %s cell and removes it on cancellation', (method) => {
     const onOpenDocument = vi.fn()
     const field = { key: `layered${method}Documents`, dbName: '__layered', label: 'Послойный', kind: 'text', group: 'Документы', virtual: true } satisfies WeldField
-    const draw = (row: WeldRow) => <table><tbody><tr><WeldTableBodyCell
-      row={row} field={field} displayValue="" isEditableCell={false} isBlockedEditableCell={false}
-      isHighlightedRow={false} isSelectedRow={false} hasDispatcherTask={false} isHighlightedCell={false}
-      isResultField={false} stickyLeft={0} stickyIdentityLeadingWidth={0} stickyIdentityColumns={false}
-      stickyBackgroundClassName="bg-white" isSectionEnd={false} onOpenDocument={onOpenDocument}
-    /></tr></tbody></table>
+    const draw = (row: WeldRow) => <WeldTableBodyCell
+      row={row} field={field} displayValue="" isEditableCell={false}
+      isResultField={false} onOpenDocument={onOpenDocument}
+    />
     const row = { id: 42, layeredControlAssigned: true, pvkResult: 'ожидает заявку' } as WeldRow
     const { rerender } = render(draw(row))
     fireEvent.click(screen.getByText(LAYERED_CONTROL_WAITING_LABEL))
@@ -45,42 +26,6 @@ describe('WeldTableBodyCell background', () => {
     expect(screen.getByRole('button', { name: 'Кромки' })).toBeVisible()
   })
 
-  it('keeps a blocked LNK field neutral when its background is disabled', () => {
-    const field = {
-      key: 'prePvkDefectDescription',
-      dbName: '__pre_pvk_defect_description',
-      label: 'Дефекты ПВК до ТО',
-      kind: 'text',
-      group: 'Контроль',
-      virtual: true,
-    } satisfies WeldField
-    const { container } = render(
-      <table><tbody><tr>
-        <WeldTableBodyCell
-          row={{ id: 1 } as WeldRow}
-          field={field}
-          displayValue=""
-          isEditableCell={false}
-          isBlockedEditableCell
-          showBlockedEditableCellBackground={false}
-          isHighlightedRow={false}
-          isSelectedRow={false}
-          hasDispatcherTask={false}
-          isHighlightedCell={false}
-          isResultField={false}
-          stickyLeft={0}
-          stickyIdentityLeadingWidth={0}
-          stickyIdentityColumns={false}
-          stickyBackgroundClassName="bg-white"
-          isSectionEnd={false}
-        />
-      </tr></tbody></table>,
-    )
-
-    const cell = container.querySelector('td[data-weld-field-key="prePvkDefectDescription"]')
-    expect(cell).not.toHaveClass('bg-amber-50/70')
-    expect(cell?.className).not.toContain('rgba(251,191,36')
-  })
 })
 
 describe('WeldTableBodyCell LNK request link', () => {
@@ -88,14 +33,11 @@ describe('WeldTableBodyCell LNK request link', () => {
     const onOpenDocument = vi.fn()
     const row = { id: 1, [fieldKey]: 'ПСТО-17', systemDocumentIds: { [fieldKey]: 17 } } as WeldRow
     const field = { key: fieldKey, dbName: fieldKey, label: fieldKey, kind: 'text', group: 'Контроль' } satisfies WeldField
-    const draw = (displayValue: string) => <table><tbody><tr><WeldTableBodyCell
+    const draw = (displayValue: string) => <WeldTableBodyCell
       row={row} field={field} displayValue={displayValue}
-      isEditableCell={false} isBlockedEditableCell={false} isHighlightedRow={false}
-      isSelectedRow={false} hasDispatcherTask={false} isHighlightedCell={false} isResultField={false}
-      stickyLeft={0} stickyIdentityLeadingWidth={0} stickyIdentityColumns={false}
-      stickyBackgroundClassName="bg-white" isSectionEnd={false}
+      isEditableCell={false} isResultField={false}
       onOpenDocument={onOpenDocument}
-    /></tr></tbody></table>
+    />
     const { rerender } = render(draw('ПСТО-17'))
     fireEvent.click(screen.getByRole('button', { name: 'ПСТО-17' }))
     expect(onOpenDocument).toHaveBeenCalledExactlyOnceWith(row, fieldKey)
@@ -115,26 +57,14 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <table><tbody><tr>
-        <WeldTableBodyCell
-          row={row}
-          field={field}
-          displayValue={row.joint}
-          isEditableCell={false}
-          isBlockedEditableCell={false}
-          isHighlightedRow={false}
-          isSelectedRow={false}
-          hasDispatcherTask={false}
-          isHighlightedCell={false}
-          isResultField={false}
-          stickyLeft={0}
-          stickyIdentityLeadingWidth={0}
-          stickyIdentityColumns={false}
-          stickyBackgroundClassName="bg-white"
-          isSectionEnd={false}
-          onOpenJoint={onOpenJoint}
-        />
-      </tr></tbody></table>,
+      <WeldTableBodyCell
+        row={row}
+        field={field}
+        displayValue={row.joint}
+        isEditableCell={false}
+        isResultField={false}
+        onOpenJoint={onOpenJoint}
+      />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'F8' }))
@@ -154,27 +84,15 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <table><tbody><tr>
-        <WeldTableBodyCell
-          row={row}
-          field={field}
-          displayValue={row.finalStatus}
-          isEditableCell={false}
-          isBlockedEditableCell={false}
-          isHighlightedRow={false}
-          isSelectedRow={false}
-          hasDispatcherTask={false}
-          isHighlightedCell={false}
-          isResultField
-          stickyLeft={0}
-          stickyIdentityLeadingWidth={0}
-          stickyIdentityColumns={false}
-          stickyBackgroundClassName="bg-white"
-          isSectionEnd={false}
-          onOpenJoint={onOpenJoint}
-          onOpenJointOverview={onOpenJointOverview}
-        />
-      </tr></tbody></table>,
+      <WeldTableBodyCell
+        row={row}
+        field={field}
+        displayValue={row.finalStatus}
+        isEditableCell={false}
+        isResultField
+        onOpenJoint={onOpenJoint}
+        onOpenJointOverview={onOpenJointOverview}
+      />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'ожидает НК' }))
@@ -195,27 +113,15 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <table><tbody><tr>
-        <WeldTableBodyCell
-          row={row}
-          field={field}
-          displayValue={row.joint}
-          isEditableCell={false}
-          isBlockedEditableCell={false}
-          isHighlightedRow={false}
-          isSelectedRow={false}
-          hasDispatcherTask={false}
-          isHighlightedCell={false}
-          isResultField={false}
-          stickyLeft={0}
-          stickyIdentityLeadingWidth={0}
-          stickyIdentityColumns={false}
-          stickyBackgroundClassName="bg-white"
-          isSectionEnd={false}
-          onOpenJoint={onOpenJoint}
-          onOpenJointOverview={onOpenJointOverview}
-        />
-      </tr></tbody></table>,
+      <WeldTableBodyCell
+        row={row}
+        field={field}
+        displayValue={row.joint}
+        isEditableCell={false}
+        isResultField={false}
+        onOpenJoint={onOpenJoint}
+        onOpenJointOverview={onOpenJointOverview}
+      />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'F10' }))
@@ -236,27 +142,15 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <table><tbody><tr>
-        <WeldTableBodyCell
-          row={row}
-          field={field}
-          displayValue={row.joint}
-          isEditableCell
-          isBlockedEditableCell={false}
-          isHighlightedRow={false}
-          isSelectedRow={false}
-          hasDispatcherTask={false}
-          isHighlightedCell={false}
-          isResultField={false}
-          stickyLeft={0}
-          stickyIdentityLeadingWidth={0}
-          stickyIdentityColumns={false}
-          stickyBackgroundClassName="bg-white"
-          isSectionEnd={false}
-          onEdit={onEdit}
-          onOpenJointOverview={onOpenJointOverview}
-        />
-      </tr></tbody></table>,
+      <WeldTableBodyCell
+        row={row}
+        field={field}
+        displayValue={row.joint}
+        isEditableCell
+        isResultField={false}
+        onEdit={onEdit}
+        onOpenJointOverview={onOpenJointOverview}
+      />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'F11' }))
@@ -293,31 +187,15 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <table>
-        <tbody>
-          <tr>
-            <WeldTableBodyCell
-              row={row}
-              field={field}
-              displayValue={row.controlBasisSummary}
-              isEditableCell={false}
-              isBlockedEditableCell={false}
-              isHighlightedRow={false}
-              isSelectedRow={false}
-              hasDispatcherTask={false}
-              isHighlightedCell={false}
-              isResultField={false}
-              stickyLeft={0}
-              stickyIdentityLeadingWidth={0}
-              stickyIdentityColumns={false}
-              stickyBackgroundClassName="bg-white"
-              isSectionEnd={false}
-              onEdit={onEdit}
-              controlBasisEditorEnabled
-            />
-          </tr>
-        </tbody>
-      </table>,
+      <WeldTableBodyCell
+        row={row}
+        field={field}
+        displayValue={row.controlBasisSummary}
+        isEditableCell={false}
+        isResultField={false}
+        onEdit={onEdit}
+        controlBasisEditorEnabled
+      />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Открыть назначения контроля для стыка S3' }))
@@ -344,31 +222,15 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <table>
-        <tbody>
-          <tr>
-            <WeldTableBodyCell
-              row={row}
-              field={field}
-              displayValue={row[fieldKey]}
-              isEditableCell={false}
-              isBlockedEditableCell={false}
-              isHighlightedRow={false}
-              isSelectedRow={false}
-              hasDispatcherTask={false}
-              isHighlightedCell={false}
-              isResultField={false}
-              stickyLeft={0}
-              stickyIdentityLeadingWidth={0}
-              stickyIdentityColumns={false}
-              stickyBackgroundClassName="bg-white"
-              isSectionEnd={false}
-              onOpenDocument={onOpenDocument}
-              onOpenLnkRequest={onOpenLnkRequest}
-            />
-          </tr>
-        </tbody>
-      </table>,
+      <WeldTableBodyCell
+        row={row}
+        field={field}
+        displayValue={row[fieldKey]}
+        isEditableCell={false}
+        isResultField={false}
+        onOpenDocument={onOpenDocument}
+        onOpenLnkRequest={onOpenLnkRequest}
+      />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Заявка-001' }))
@@ -395,31 +257,15 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <table>
-        <tbody>
-          <tr>
-            <WeldTableBodyCell
-              row={row}
-              field={field}
-              displayValue={row.vikConclusion}
-              isEditableCell={false}
-              isBlockedEditableCell={false}
-              isHighlightedRow={false}
-              isSelectedRow={false}
-              hasDispatcherTask={false}
-              isHighlightedCell={false}
-              isResultField={false}
-              stickyLeft={0}
-              stickyIdentityLeadingWidth={0}
-              stickyIdentityColumns={false}
-              stickyBackgroundClassName="bg-white"
-              isSectionEnd={false}
-              onOpenDocument={onOpenDocument}
-              onOpenLnkResult={onOpenLnkResult}
-            />
-          </tr>
-        </tbody>
-      </table>,
+      <WeldTableBodyCell
+        row={row}
+        field={field}
+        displayValue={row.vikConclusion}
+        isEditableCell={false}
+        isResultField={false}
+        onOpenDocument={onOpenDocument}
+        onOpenLnkResult={onOpenLnkResult}
+      />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'ВИК-17' }))
@@ -446,31 +292,15 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <table>
-        <tbody>
-          <tr>
-            <WeldTableBodyCell
-              row={row}
-              field={field}
-              displayValue={row.vikResult}
-              isEditableCell={false}
-              isBlockedEditableCell={false}
-              isHighlightedRow={false}
-              isSelectedRow={false}
-              hasDispatcherTask={false}
-              isHighlightedCell={false}
-              isResultField
-              stickyLeft={0}
-              stickyIdentityLeadingWidth={0}
-              stickyIdentityColumns={false}
-              stickyBackgroundClassName="bg-white"
-              isSectionEnd={false}
-              onOpenDocument={onOpenDocument}
-              onOpenLnkResult={onOpenLnkResult}
-            />
-          </tr>
-        </tbody>
-      </table>,
+      <WeldTableBodyCell
+        row={row}
+        field={field}
+        displayValue={row.vikResult}
+        isEditableCell={false}
+        isResultField
+        onOpenDocument={onOpenDocument}
+        onOpenLnkResult={onOpenLnkResult}
+      />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'годен' }))
@@ -479,7 +309,7 @@ describe('WeldTableBodyCell LNK request link', () => {
     expect(onOpenDocument).not.toHaveBeenCalled()
   })
 
-  it('edits a rejected pre-TO defect description instead of opening the result card', () => {
+  it('leaves rejected pre-TO defect editing to the grid instead of linking to the result card', () => {
     const onEdit = vi.fn()
     const onOpenLnkResult = vi.fn()
     const row = {
@@ -504,32 +334,22 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <table><tbody><tr>
-        <WeldTableBodyCell
-          row={row}
-          field={field}
-          displayValue="Пора до ТО"
-          isEditableCell
-          isBlockedEditableCell={false}
-          isHighlightedRow={false}
-          isSelectedRow={false}
-          hasDispatcherTask={false}
-          isHighlightedCell={false}
-          isResultField={false}
-          stickyLeft={0}
-          stickyIdentityLeadingWidth={0}
-          stickyIdentityColumns={false}
-          stickyBackgroundClassName="bg-white"
-          isSectionEnd={false}
-          onEdit={onEdit}
-          onOpenLnkResult={onOpenLnkResult}
-        />
-      </tr></tbody></table>,
+      <WeldTableBodyCell
+        row={row}
+        field={field}
+        displayValue="Пора до ТО"
+        isEditableCell
+        isResultField={false}
+        onEdit={onEdit}
+        onOpenLnkResult={onOpenLnkResult}
+      />,
     )
 
     fireEvent.click(screen.getByText('Пора до ТО'))
 
-    expect(onEdit).toHaveBeenCalledWith(row, 'prePvkDefectDescription')
+    // AG Grid owns double-click editing; a single click selects the cell.
+    // The real edit/save flow is covered by lnk-defect-descriptions.spec.ts.
+    expect(onEdit).not.toHaveBeenCalled()
     expect(onOpenLnkResult).not.toHaveBeenCalled()
   })
 
@@ -554,26 +374,14 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <table><tbody><tr>
-        <WeldTableBodyCell
-          row={row}
-          field={field}
-          displayValue={row.layeredVikDocuments}
-          isEditableCell={false}
-          isBlockedEditableCell={false}
-          isHighlightedRow={false}
-          isSelectedRow={false}
-          hasDispatcherTask={false}
-          isHighlightedCell={false}
-          isResultField={false}
-          stickyLeft={0}
-          stickyIdentityLeadingWidth={0}
-          stickyIdentityColumns={false}
-          stickyBackgroundClassName="bg-white"
-          isSectionEnd={false}
-          onOpenDocument={onOpenDocument}
-        />
-      </tr></tbody></table>,
+      <WeldTableBodyCell
+        row={row}
+        field={field}
+        displayValue={row.layeredVikDocuments}
+        isEditableCell={false}
+        isResultField={false}
+        onOpenDocument={onOpenDocument}
+      />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Кромки' }))

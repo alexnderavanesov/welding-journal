@@ -14,6 +14,8 @@ import { documentGridGroupSelection, mergeLoadedDocumentGridSelection, toggleLoa
 import type { DocumentHistoryColumnDefinition, DocumentHistoryColumnKey } from '@/lib/document-history-columns'
 import type { DocumentHistoryGridRequest, DocumentHistoryGridResult, DocumentHistoryGroupRow } from '@/lib/document-history-grid'
 import { DOCUMENT_GRID_GROUP_FIELDS, documentGridRowHeight, normalizeDocumentGridColumns, readDocumentGridState, reconcileDocumentGridSelection, writeDocumentGridState, type DocumentGridAppearance, type DocumentGridState } from '@/lib/document-history-grid-state'
+import { useGridRangeSummary } from '@/lib/use-grid-range-summary'
+import { formatJournalNumber } from '@/lib/welding-journal-grid-state'
 import { useJournalPageScroll } from '@/lib/use-journal-page-scroll'
 import { isModalDialogOpen } from '@/lib/modal-layer'
 import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
@@ -26,6 +28,7 @@ import { useGridResultMotion } from './use-grid-result-motion'
 import './document-history-grid.css'
 import './welding-journal-ui.css'
 
+const isNumericColumn = (key: string) => key === 'wdi' || key === 'rowCount'
 const CELL_SELECTION = { suppressMultiRanges: false }
 
 type DocumentRow = { id: string | number }
@@ -91,6 +94,10 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   type Row = T | DocumentHistoryGroupRow
   const current = useRef(props); current.current = props
   const [api, setApi] = useState<GridApi<Row> | null>(null)
+  const summaryColumns = useMemo(() => new Set<string>(props.columns.map(column => column.key)), [props.columns])
+  const rangeValue = useCallback((node: IRowNode<Row>, key: string) => node.group || isGroup(node.data) || !node.data ? undefined
+    : api?.getCellValue({ rowNode: node, colKey: key, useFormatter: false }), [api])
+  const { summary: rangeSummary, update: updateRangeSummary } = useGridRangeSummary(api, summaryColumns, rangeValue, isNumericColumn)
   const apiRef = useRef<GridApi<Row> | null>(null)
   const rowRange = useRef<DocumentGridRowRangeState>({ anchorId: null, endId: null })
   const resetRowRange = useCallback(() => { rowRange.current = { anchorId: null, endId: null } }, [])
@@ -347,7 +354,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
           {current.current.renderCell(column.key, params.data)}</div>,
       tooltipValueGetter: params => params.node?.group || isGroup(params.data) ? '' : String(params.value ?? ''),
     } satisfies ColDef<Row>)),
-    { colId: '__actions', headerName: 'Действия', width: 205, minWidth: 205, maxWidth: 205, resizable: false, pinned: 'right', lockPinned: true, sortable: false, filter: false, suppressMovable: true,
+    { colId: '__actions', lockVisible: true, headerName: 'Действия', width: 205, minWidth: 205, maxWidth: 205, resizable: false, pinned: 'right', lockPinned: true, sortable: false, filter: false, suppressMovable: true,
       cellRenderer: (params: { data?: Row; node: { group: boolean } }) => !params.data || params.node.group || isGroup(params.data) ? null : <div className="document-grid-actions" onDoubleClick={event => event.stopPropagation()}>{current.current.renderActions(params.data)}</div> },
   ], [props.columns, props.initialVisibleColumnKeys])
   const selection = useMemo<RowSelectionOptions<Row>>(() => ({ mode: 'multiRow', headerCheckbox: false, enableClickSelection: false,
@@ -479,6 +486,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
         visibleColumnKeys={new Set(props.columns.filter(column => column.required || !(settings.columns.find(item => item.colId === column.key)?.hide ?? !props.initialVisibleColumnKeys.includes(column.key))).map(column => column.key))}
         onColumnVisibilityChange={changeColumnVisible}
         onShowAllColumns={() => { api?.setColumnsVisible(props.columns.map(column => column.key), true); captureColumns() }}
+        onHideAllColumns={() => { api?.setColumnsVisible(props.columns.filter(column => !column.required).map(column => column.key), false); captureColumns() }}
         appearance={settings.appearance} onAppearanceChange={changeAppearance} onResetColumns={resetColumns}
         savedViews={settings.views}
         onSaveView={name => {
@@ -609,7 +617,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
           rowSelection={selection} selectionColumnDef={selectionColumn}
           rowHeight={documentGridRowHeight(settings.appearance)}
           headerHeight={56} rowBuffer={6} suppressScrollOnNewData suppressDragLeaveHidesColumns maintainColumnOrder enableFilterHandlers preventDefaultOnContextMenu
-          cellSelection={CELL_SELECTION} rowClassRules={rowClassRules} getRowClass={({ node }) => node.group ? `journal-group-tone-${node.level % 4}` : undefined}
+          cellSelection={CELL_SELECTION} onCellSelectionChanged={updateRangeSummary} rowClassRules={rowClassRules} getRowClass={({ node }) => node.group ? `journal-group-tone-${node.level % 4}` : undefined}
           onGridReady={event => {
             apiRef.current = event.api
             restoring.current = true
@@ -617,7 +625,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
             restoring.current = false; setApi(event.api); captureColumns()
           }}
           onModelUpdated={() => {
-            scheduleSelectionSync(); position.restore()
+            scheduleSelectionSync(); position.restore(); updateRangeSummary()
           }}
           onFirstDataRendered={position.restore} onBodyScrollEnd={position.bodyScrollEnd} onGridPreDestroyed={position.capture}
           onRowGroupOpened={event => position.groupOpened(event.node)} onCellFocused={focus.remember}
@@ -628,7 +636,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
             current.current.onSelectionChange(mergeLoadedDocumentGridSelection(current.current.selectedDocuments, getLoadedRows(), selected))
           }}
           onColumnMoved={event => { if (event.finished) captureColumns() }} onColumnResized={event => { if (event.finished) captureColumns() }}
-          onColumnPinned={captureColumns} onColumnVisible={captureColumns} onColumnRowGroupChanged={captureColumns}
+          onColumnPinned={captureColumns} onColumnVisible={() => { captureColumns(); updateRangeSummary() }} onColumnRowGroupChanged={captureColumns}
           onSortChanged={captureColumns}
           getColumnMenuItems={getColumnMenuItems}
           onColumnMenuVisibleChanged={event => { if (event.visible) popupColumn.current = event.column?.getColId() ?? null }}
@@ -639,6 +647,9 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
       </div>
       <ContextActionMenu menu={groupMenu} panelClassName="journal-context-menu" autoFocus onClose={() => { setGroupMenu(null); requestAnimationFrame(focus.restore) }} />
       <div className="document-grid-footer" aria-live="polite"><span>Найдено: {total}</span><span>Загружено: {loadedRows.length}</span><span>Выбрано: {props.selectedDocuments.length}</span>{loading ? <span>Загрузка…</span> : null}
+        {rangeSummary.average !== null ? <span>Среднее: {formatJournalNumber(rangeSummary.average)}</span> : null}
+        {rangeSummary.count > 0 ? <span>Количество: {rangeSummary.count}</span> : null}
+        {rangeSummary.numericCount > 0 ? <span>Сумма: {formatJournalNumber(rangeSummary.sum)}</span> : null}
         {props.selectedDocuments.length ? <button type="button" onClick={() => { resetRowRange(); props.onSelectionChange([]) }}>Снять выбор</button> : null}
       </div>
     </div>

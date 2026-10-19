@@ -1,10 +1,11 @@
 import type { GridApi } from 'ag-grid-community'
 import { isDocumentHistoryGroupRow } from './document-history-grid'
+import { gridClipboardNumber } from './grid-clipboard-number'
 
 const NON_DATA_COLUMNS = new Set(['__actions', '__selection', 'ag-Grid-SelectionColumn'])
 
-function tsvValue(value: string | number) {
-  const text = String(value ?? '')
+function tsvValue(value: string | number, key: string) {
+  const text = typeof value === 'number' || key === 'wdi' || key === 'rowCount' ? gridClipboardNumber(value) : String(value ?? '')
   return /[\t\r\n"]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
 }
 
@@ -44,7 +45,7 @@ export function documentGridClipboardText<T>(
         // overlapping cell's content. Entirely repeated rows/ranges are omitted.
         if (previous.has(key)) return ''
         previous.add(key); hasNewCell = true
-        return tsvValue(getValue(key, row))
+        return tsvValue(getValue(key, row), key)
       })
       copied.set(index, previous)
       if (hasNewCell) lines.push(values.join('\t'))
