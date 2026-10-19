@@ -64,10 +64,15 @@ export function buildPstoDocumentHistoryWhere() {
           or ${pstoRepeatCycles.pstoRequestDate} is not null)))`
 }
 
-export function buildNoRejectedPreHeatTreatmentWhere() {
+export function buildNoRejectedPreHeatTreatmentWhere({ autoVikForWeldDate = false }: { autoVikForWeldDate?: boolean } = {}) {
   const activeMethod = or(...PRE_HEAT_TREATMENT_LNK_METHODS.map((method) => and(
     sql`${preHeatTreatmentControls.method} = ${method.code}`,
-    buildNullableControlEnabledWhere(weldJoints[method.enabledKey], [...CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES, 'отменен']),
+    or(
+      buildNullableControlEnabledWhere(weldJoints[method.enabledKey], [...CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES, 'отменен']),
+      // Report preparation enables VIK for every welded legacy row. Other
+      // callers keep their established stored-assignment policy by default.
+      autoVikForWeldDate && method.code === 'ВИК' ? sql`${weldJoints.weldDate} is not null` : undefined,
+    ),
   ))) ?? sql`false`
   return sql`(not (${buildPreHeatTreatmentEnabledWhere()}) or not exists (
     select 1 from ${preHeatTreatmentControls}

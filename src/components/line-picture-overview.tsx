@@ -21,6 +21,7 @@ type LinePictureOverviewProps = {
   onRunAction: JointDispatcherTaskActionHandler
   onOpenInDispatcher: () => void
   highlightedTaskKey?: string | null
+  totalTaskCount?: number
 }
 
 type LineTaskGroup = {
@@ -38,6 +39,7 @@ export function LinePictureOverview({
   onRunAction,
   onOpenInDispatcher,
   highlightedTaskKey,
+  totalTaskCount,
 }: LinePictureOverviewProps) {
   const lineTasks = useMemo(
     () => getDispatcherTasksForLinePicture(tasks, row),
@@ -87,7 +89,8 @@ export function LinePictureOverview({
           </Button>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-          <SummaryMetric value={lineTasks.length} labels={['активная задача', 'активные задачи', 'активных задач']} />
+          <SummaryMetric value={totalTaskCount ?? lineTasks.length} labels={['активная задача', 'активные задачи', 'активных задач']} />
+          {totalTaskCount !== undefined && totalTaskCount > lineTasks.length ? <span>В загруженной части:</span> : null}
           <SummaryMetric value={groups.length} labels={['тип проблемы', 'типа проблем', 'типов проблем']} />
           {affectedJointCount > 0 ? (
             <SummaryMetric

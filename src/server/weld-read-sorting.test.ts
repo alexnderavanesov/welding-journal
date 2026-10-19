@@ -3,6 +3,9 @@ import type { Pool } from 'pg'
 import { sql } from 'drizzle-orm'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { DEFAULT_OTHER_SETTINGS } from '@/lib/other-settings'
+import { getPstoDisplayValue } from '@/lib/lnk-status'
+import { createWeldGroupSummarizer } from '@/lib/weld-group-summary'
+import { prepareReportRows } from '@/lib/use-report-rows'
 
 const mocks = vi.hoisted(() => ({ query: vi.fn(), compute: vi.fn() }))
 vi.mock('@/db', async () => {
@@ -28,6 +31,7 @@ import {
   listReportPage,
   normalizeWeldPageRequest,
   REPORT_DERIVED_FILTER_SELECT,
+  sortReportRows,
 } from './weld-read'
 
 const sourceRows = [
@@ -44,6 +48,56 @@ describe('SQL-sorted report output survives server hydration', () => {
     vi.resetAllMocks()
     mocks.query.mockResolvedValue({ rows: [] })
     mocks.compute.mockImplementation((_key, compute) => compute())
+  })
+
+  it('sorts PSTO in-memory fallback by prepared primary waiting labels while preserving sparse repeat and raw facts', () => {
+    const rows: WeldRow[] = [
+      { id: 1, weldDate: '2026-09-01', pstoRequired: 'да', pstoResult: null },
+      { id: 2, weldDate: '2026-09-01', pstoRequired: 'да', pstoRequest: 'Заявка', pstoResult: null },
+      { id: 3, weldDate: '2026-09-01', pstoRequired: 'да', pstoResult: 'проведено',
+        pstoRepeatCycles: [{ id: 31, weldJointId: 3, sequence: 2, pstoRequest: 'Повторная' }] },
+    ]
+    expect(sortReportRows(rows, { fieldKey: 'pstoResult', direction: 'asc' }, 'heatTreatment').map(row => row.id)).toEqual([2, 1, 3])
+    expect(sortReportRows(rows, { fieldKey: 'pstoResult', direction: 'desc' }, 'heatTreatment').map(row => row.id)).toEqual([1, 2, 3])
+    expect(rows.map(row => row.pstoResult)).toEqual([null, null, 'проведено'])
+  })
+
+  it.each(['source', 'derived'] as const)('PSTO %s path adds one page-scoped root query after metadata hydration', async path => {
+    // Derived selection is cached as ordered IDs; only the requested page is hydrated.
+    if (path === 'derived') mocks.compute.mockResolvedValueOnce([2, 1])
+    mocks.query.mockResolvedValueOnce({ rows: databaseRows(WELD_TABLE_SELECT) })
+    const page = await listReportPage('heatTreatment', normalizeWeldPageRequest({
+      includeTotals: false, pageSize: 100,
+      columnFilters: path === 'derived' ? { pstoCycleSummary: 'Основной' } : {},
+    }))
+    expect(page.rows.map(row => row.id)).toEqual(path === 'derived' ? [2, 1] : [1, 2])
+    const rootQueries = mocks.query.mock.calls.filter(([query]) => query.text.includes('journal_physical_root'))
+    expect(rootQueries).toHaveLength(1)
+    expect(rootQueries[0][0].text).toContain('any(')
+    expect(rootQueries[0][1].flat().sort()).toEqual([1, 2])
+    expect(mocks.query.mock.calls.filter(([query]) => query.text.includes('journal_physical_root_state'))).toHaveLength(1)
+  })
+
+  it.each(['source', 'derived'] as const)('PSTO %s DTO keeps cancelled primary errors through client preparation and grouping', async path => {
+    const stored: WeldRow[] = [{ id: 1, joint: 'F1', line: 'L', weldDate: '2026-09-01',
+      pstoRequired: 'отменен', pstoRequest: 'ПСТО-1', pstoDate: '2026-09-02', pstoResult: 'ошибка',
+      tvmtResult: 'не годен' },
+    { id: 2, joint: 'F2', line: 'L', weldDate: '2026-09-01',
+      pstoRequired: 'отменен', pstoRequest: 'ПСТО-2', pstoDate: '2026-09-02', pstoResult: 'проведено',
+      tvmtResult: 'годен' }]
+    if (path === 'derived') mocks.compute.mockResolvedValueOnce([1, 2])
+    mocks.query.mockResolvedValueOnce({ rows: databaseRows(WELD_TABLE_SELECT, stored) })
+    const page = await listReportPage('heatTreatment', normalizeWeldPageRequest({ includeTotals: false,
+      columnFilters: path === 'derived' ? { pstoCycleSummary: 'Основной' } : {},
+    }))
+    expect(page.rows.map(row => row.pstoResult)).toEqual(['ошибка', 'проведено'])
+    const prepared = prepareReportRows(page.rows, [], undefined, undefined, DEFAULT_OTHER_SETTINGS, true, true)
+    expect(prepared.map(row => row.pstoResult)).toEqual(['ошибка', 'проведено'])
+    expect(prepared.map(row => getPstoDisplayValue(row, 'pstoResult'))).toEqual(['отменен', 'проведено · назначение отменено'])
+    const summary = createWeldGroupSummarizer(prepared, undefined, { heatTreatment: true })(prepared)
+    expect(summary.pstoResult).toMatchObject({ status: 'ошибка', errors: 1 })
+    expect(summary.tvmtResult).toMatchObject({ status: 'не годен', rejected: 1 })
+    expect(stored.map(row => row.pstoResult)).toEqual(['ошибка', 'проведено'])
   })
 
   describe.each(['lnk', 'heatTreatment'] as const)('%s', report => {

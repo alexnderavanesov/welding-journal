@@ -1,7 +1,7 @@
 import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Page, type Request } from '@playwright/test'
 import { withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
 import { createWeldJoint, updateWeldJoint } from '@/server/weld-mutations'
 import { importWeldJoints, massFillWeldJoints, replaceWeldJoints } from '@/server/weld-import'
@@ -116,6 +116,52 @@ test('массовый предпросмотр: назначение, ручн�
   expect(detailCalls).toBeLessThanOrEqual(4) // initial chunk + at most one filtered jump per preview
   expect(calls.filter(name => name.startsWith('applyTechnologyCardAssignmentBatch'))).toHaveLength(1)
   expect(errors).toEqual([])
+})
+
+test('упрощённый фильтр ТК: причины пропуска раздельны, фильтр сохраняет выбор без лишних запросов', async ({ page }, testInfo) => {
+  await withLineProgramFixture(db => db.query(`insert into weld_joints
+    (project_title,subtitle_code,line,joint,weld_date,welding_method,connection_type,material_group,d1,d2,t1,t2)
+    select $1,'TK','TK-FILTER',joint,weld_date::date,method,connection,'М01',57,159,6,3 from (values
+      ('F9891',null,'РАД','С17'),
+      ('F9892','2026-10-01','РАД','Т1'),
+      ('F9893',null,'РАД','Т1'),
+      ('F9894','2026-10-01','РАД','С17'),
+      ('F9895','2026-10-01',null,'С17')
+    ) fixture(joint,weld_date,method,connection)`, [project]))
+  const calls: string[] = []
+  page.on('request', request => { const name = rpcName(request.url()); if (name) calls.push(name) })
+  await openCards(page); await addCard(page)
+  await page.getByRole('button', { name: 'Проверить и назначить ТК', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Проверка и назначение ТК' })
+  await dialog.getByRole('button', { name: 'Начать проверку', exact: true }).click()
+  const filter = dialog.getByRole('combobox', { name: 'Показать стыки', exact: true })
+  await expect(filter.locator('option')).toHaveText(['Все', 'Предлагаемые изменения', 'Требуют внимания', 'Без изменений', 'Пропущены'])
+  await expect(dialog.getByRole('row').filter({ hasText: 'F9894' })).toContainText('Назначить')
+  const apply = dialog.getByRole('button', { name: /^Применить выбранное/ })
+  await expect(apply).toBeEnabled()
+  const selection = await apply.textContent()
+  await page.waitForLoadState('networkidle')
+  const detailsBefore = calls.filter(name => name.startsWith('getTechnologyCardAssignmentDetails')).length
+  await filter.selectOption('excluded')
+  const undated = dialog.getByRole('row').filter({ hasText: 'F9891' })
+  const tee = dialog.getByRole('row').filter({ hasText: 'F9892' })
+  const both = dialog.getByRole('row').filter({ hasText: 'F9893' })
+  await expect(undated).toContainText('Нет даты сварки')
+  await expect(undated).not.toContainText('Т-соединений')
+  await expect(tee).toContainText('Подбор ТК для Т-соединений пока не поддерживается')
+  await expect(tee).not.toContainText('Нет даты сварки')
+  await expect(both).toContainText('Нет даты сварки')
+  await expect(both).toContainText('Подбор ТК для Т-соединений пока не поддерживается')
+  await expect(dialog.getByRole('row').filter({ hasText: 'F9894' })).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('tk-skip-reasons.png') })
+  await filter.selectOption('attention')
+  await expect(dialog.getByRole('row').filter({ hasText: 'F9895' })).toContainText('Укажите способ сварки')
+  await expect(dialog.getByRole('row').filter({ hasText: 'F9892' })).toHaveCount(0)
+  await filter.selectOption('changes')
+  await expect(dialog.getByRole('row').filter({ hasText: 'F9894' }).getByRole('checkbox')).toBeChecked()
+  await expect(apply).toHaveText(selection!)
+  expect(calls.filter(name => name.startsWith('getTechnologyCardAssignmentDetails'))).toHaveLength(detailsBefore)
+  expect(calls.filter(name => name.startsWith('applyTechnologyCardAssignmentBatch'))).toHaveLength(0)
 })
 
 test('массовое назначение отклоняет стык, измененный после предпросмотра', async ({ page }) => {

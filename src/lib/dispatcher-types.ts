@@ -20,6 +20,8 @@ export type WeldRow = WeldInput & {
   id: number
   programRepairRequirements?: import('./line-program-repair-requirements').RepairControlRequirement[]
   programChainState?: import('./line-program-chain-state').ProgramChainState
+  /** Read-only physical root of a loaded journal row, even when a filter hides the root. */
+  groupPhysicalRoot?: { id: number; exists: boolean; replaced: boolean; wdi: number | null }
   chainContinuation?: JointChainContinuation
   earlyCoilDecisionAccepted?: boolean
   preHeatTreatmentLnkEnabled?: boolean

@@ -36,10 +36,10 @@ function JournalGridFilter({ column, onModelChange }: CustomFilterDisplayProps) 
     buildWeldColumnFilterOptionsRequestFilters(table.columnFilters, fieldKey),
   ), [table.columnFilters, fieldKey])
   const query = useQuery({
-    queryKey: ['weld-column-filter-options', 'weldingJournal', fieldKey, request],
+    queryKey: ['weld-column-filter-options', table.report, fieldKey, request],
     enabled: visible,
     queryFn: ({ signal }) => listWeldColumnFilterOptions({ signal, data: {
-      report: 'weldingJournal', fieldKey, search: request.search, columnFilters: request.columnFilters,
+      report: table.report, fieldKey, search: request.search, columnFilters: request.columnFilters,
     } }),
     staleTime: 15_000, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
   })

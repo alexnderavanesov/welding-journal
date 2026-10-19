@@ -95,13 +95,17 @@ it('shows at most 50 proposals per page without another request inside the loade
 
 it('filters cached proposals without new requests or changing selection, including an empty result', async () => {
   mount(); await preview()
-  fireEvent.change(screen.getByRole('combobox', { name: 'Показать стыки' }), { target: { value: 'rename' } })
-  expect(screen.queryByRole('checkbox', { name: 'Назначение ТК стыку 1' })).toBeNull()
+  const filter = screen.getByRole('combobox', { name: 'Показать стыки' })
+  expect([...filter.querySelectorAll('option')].map(option => option.textContent))
+    .toEqual(['Все', 'Предлагаемые изменения', 'Требуют внимания', 'Без изменений', 'Пропущены'])
+  fireEvent.change(filter, { target: { value: 'changes' } })
+  expect(screen.getByRole('checkbox', { name: 'Назначение ТК стыку 1' })).toBeChecked()
   expect(screen.getByRole('checkbox', { name: 'Назначение ТК стыку 3' })).toBeChecked()
   expect(screen.getByRole('button', { name: 'Применить выбранное (2)' })).toBeEnabled()
   expect(mocks.details).toHaveBeenCalledOnce()
-  fireEvent.change(screen.getByRole('combobox', { name: 'Показать стыки' }), { target: { value: 'ambiguous' } })
+  fireEvent.change(filter, { target: { value: 'attention' } })
   expect(screen.getByText('Стыков нет.')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Применить выбранное (2)' })).toBeEnabled()
   expect(mocks.details).toHaveBeenCalledOnce()
 })
 
@@ -113,10 +117,30 @@ it('jumps across irrelevant chunks and paginates filtered proposals in bounded d
   mount(); fireEvent.click(screen.getByRole('button', { name: 'Начать проверку' }))
   await screen.findByRole('combobox', { name: 'Показать стыки' })
   await waitFor(() => expect(screen.getByRole('button', { name: 'Далее' })).toBeEnabled())
-  fireEvent.change(screen.getByRole('combobox', { name: 'Показать стыки' }), { target: { value: 'rename' } })
+  fireEvent.change(screen.getByRole('combobox', { name: 'Показать стыки' }), { target: { value: 'changes' } })
   await screen.findByRole('checkbox', { name: 'Назначение ТК стыку 4' })
   expect(mocks.details).toHaveBeenLastCalledWith({ data: { context, chunk: renames } })
   expect(mocks.details).toHaveBeenCalledTimes(2)
   expect(screen.getByRole('button', { name: 'Далее' })).toBeDisabled()
   expect(screen.getByRole('button', { name: 'Назад' })).toBeDisabled()
+})
+
+it('finds attention cases beyond an irrelevant chunk and shows the whole filtered page without another read', async () => {
+  const attentionRows = Array.from({ length: 51 }, (_, i) => ({ ...rows[0], id: i + 4, joint: `F${i + 4}`,
+    kind: ['ambiguous', 'none', 'incomplete'][i % 3], mismatch: i % 3 === 1, newName: '' }))
+  const attentionChunk = { ...chunk, afterId: 3, throughId: 54, size: 51,
+    counts: { ...emptyTechnologyCardAssignmentCounts(), ambiguous: 17, none: 17, incomplete: 17, mismatch: 17 } }
+  mocks.preview.mockResolvedValue({ context: { ...context, upperId: 54 }, chunks: [chunk, attentionChunk], nextCursor: null })
+  mocks.details.mockResolvedValueOnce(rows).mockResolvedValueOnce(attentionRows)
+  mount(); await preview()
+  fireEvent.change(screen.getByRole('combobox', { name: 'Показать стыки' }), { target: { value: 'attention' } })
+  await screen.findByText('L / F4')
+  expect(screen.getAllByRole('row')).toHaveLength(51) // header + 50, not mismatch duplicates
+  expect(screen.getByRole('button', { name: 'Применить выбранное (2)' })).toBeEnabled()
+  fireEvent.click(screen.getByRole('button', { name: 'Далее' }))
+  expect(screen.getByText('L / F54')).toBeInTheDocument()
+  expect(screen.getAllByRole('row')).toHaveLength(2)
+  expect(screen.getByRole('button', { name: 'Далее' })).toBeDisabled()
+  expect(mocks.details).toHaveBeenCalledTimes(2)
+  expect(mocks.apply).not.toHaveBeenCalled()
 })

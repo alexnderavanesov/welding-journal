@@ -3,7 +3,7 @@ import {
   CellApiModule, ScrollApiModule, RenderApiModule, EventApiModule, ColumnAutoSizeModule,
   CustomFilterModule, RowSelectionModule, CellStyleModule, RowStyleModule, TooltipModule,
   LocaleModule,
-  type ICellRendererParams, type RowClassParams, type SelectionColumnDef,
+  type RowClassParams, type SelectionColumnDef,
 } from 'ag-grid-community'
 import { CellSelectionModule, ClipboardModule, ColumnMenuModule, RowGroupingModule } from 'ag-grid-enterprise'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -18,7 +18,6 @@ export const MODULES = [
   CustomFilterModule, RowSelectionModule, CellStyleModule, RowStyleModule, TooltipModule,
   LocaleModule, CellSelectionModule, ClipboardModule, ColumnMenuModule, RowGroupingModule,
 ]
-export const GROUP_ROW_PARAMS = { suppressCount: false, innerRenderer: ({ node }: ICellRendererParams<WeldRow>) => String(node.key || '(Пусто)') }
 export const groupRowClass = ({ node }: RowClassParams<WeldRow>) => node.group ? `journal-group-tone-${node.level % 4}` : undefined
 export const SELECTION_COLUMN: SelectionColumnDef = { pinned: 'left', lockPinned: true, width: 46, minWidth: 46, maxWidth: 46, resizable: false, suppressMovable: true, headerTooltip: 'Выбрать загруженные строки' }
 export const LOCALE = {

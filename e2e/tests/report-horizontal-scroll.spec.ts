@@ -38,16 +38,26 @@ async function journalHasNoVisibleGaps(grid: Locator) {
   })
 }
 
-async function checkJournalHorizontalNavigation(page: Page, calls: string[]) {
-  const grid = page.locator('[data-welding-journal-grid]')
+async function checkJournalHorizontalNavigation(page: Page, calls: string[], report = 'weldingJournal') {
+  const grid = page.locator(`[data-weld-report-grid="${report}"]`)
   const viewport = grid.locator('.ag-grid-viewport')
-  await expect(grid.locator('.ag-grid-scrolling-rows .ag-row[row-index="0"]')).toBeVisible()
+  // The result count can update before the search transition removes the old
+  // row at index 0. Wait for the ready, unique row before measuring its geometry.
+  await expect(grid.locator('.journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
+  const firstRow = grid.locator('.ag-grid-scrolling-rows .ag-row[row-index="0"]')
+  await expect(firstRow).toHaveCount(1)
+  await expect(firstRow).toBeVisible()
+  await expect(firstRow.getByRole('checkbox')).toBeEnabled()
   const noVisibleGaps = () => journalHasNoVisibleGaps(grid)
   const line = grid.locator('.ag-grid-scrolling-rows .ag-row[row-index="0"] [col-id="line"]')
   const pinnedLeft = (await line.boundingBox())!.x
   for (const left of [800, 4200, 1500, 9500, 0, 800]) {
-    await viewport.evaluate((element, value) => { element.scrollLeft = value }, left)
-    await expect.poll(() => viewport.evaluate(element => element.scrollLeft)).toBe(left)
+    const actualLeft = await viewport.evaluate((element, value) => {
+      const target = Math.min(value, element.scrollWidth - element.clientWidth)
+      element.scrollLeft = target
+      return target
+    }, left)
+    await expect.poll(() => viewport.evaluate(element => element.scrollLeft)).toBe(actualLeft)
     await expect.poll(noVisibleGaps).toBe(true)
     expect((await line.boundingBox())!.x).toBe(pinnedLeft)
   }
@@ -166,9 +176,13 @@ for (const [path, report] of [['/journal', 'weldingJournal'], ['/lnk', 'lnk'], [
     page.on('pageerror', error => errors.push(error.message))
     page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(request.url()) })
     await page.goto(path)
+    await page.getByPlaceholder('Поиск по отчету').fill(project)
+    await expect(page.getByText(report === 'lnk' ? 'из 74 строк' : 'Загружено: 74 из 74', { exact: true })).toBeVisible()
+    // The initial dispatcher refresh can complete after the first rows render
+    // and legitimately refetch them. Finish setup before measuring scroll RPCs.
     await page.waitForLoadState('networkidle')
-    if (report === 'weldingJournal') {
-      await checkJournalHorizontalNavigation(page, calls)
+    if (report === 'weldingJournal' || report === 'heatTreatment') {
+      await checkJournalHorizontalNavigation(page, calls, report)
       expect(errors).toEqual([])
       return
     }

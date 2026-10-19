@@ -1,6 +1,7 @@
 import type { ICellRendererComp, ICellRendererParams } from 'ag-grid-community'
 import { Edit2, MoreHorizontal, Trash2 } from 'lucide-react'
 import { WeldTableBodyCell } from './weld-table-body-cell'
+import { WeldTableRowActions } from './weld-table-actions'
 import { useJournalGrid, useJournalGridExtras } from './welding-journal-grid-context'
 import { FIELD_BY_KEY, RESULT_FIELD_KEYS, type WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -56,4 +57,15 @@ export function JournalExtraCell({ data, column }: ICellRendererParams<WeldRow>)
   const { table, getActionRow } = useJournalGridExtras()
   const extra = table.extraColumns?.find(item => item.key === column?.getColId())
   return data && extra ? <div inert={table.rowsReady === false} className={`journal-grid-extra h-full ${table.rowsReady === false ? 'opacity-50' : ''}`}>{extra.renderCell(getActionRow(data))}</div> : null
+}
+
+export function JournalReportActions({ data }: ICellRendererParams<WeldRow>) {
+  const { table, getActionRow } = useJournalGridExtras()
+  const { openMenu } = useJournalGrid()
+  if (!data || !table.rowActions) return null
+  const row = getActionRow(data)
+  return <div className="flex h-full items-center justify-center gap-1">
+    <WeldTableRowActions presentation="grid" row={row} rowActions={table.rowActions} disabled={table.rowsReady === false} />
+    <button type="button" className="journal-icon-button" title="Действия со стыком" aria-label="Действия со стыком" disabled={table.rowsReady === false} onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); openMenu(row, { x: rect.left, y: rect.bottom, anchorElement: event.currentTarget }) }}><MoreHorizontal size={16} /></button>
+  </div>
 }

@@ -16,6 +16,9 @@ export function useJournalGridFocus(api: GridApi<WeldRow> | null, frame: RefObje
     if (!api || api.isDestroyed() || isModalDialogOpen() || !lastCell.current) return
     const active = document.activeElement
     if (active && active !== document.body && !frame.current?.contains(active)) return
+    // A queued modal/menu restoration must not replay an old cell after the
+    // operator has already resumed keyboard navigation in the grid.
+    if (active?.closest('.ag-cell') && frame.current?.contains(active)) return
     const node = api.getRowNode(lastCell.current.id)
     const column = api.getColumn(lastCell.current.column)
     if (node?.rowIndex != null && column?.isVisible()) api.setFocusedCell(node.rowIndex, column)

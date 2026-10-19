@@ -7,12 +7,16 @@ import { memo } from 'react'
 export const WeldTableRowActions = memo(function WeldTableRowActions({
   row,
   rowActions,
+  presentation = 'table',
+  disabled = false,
 }: {
   row: WeldRow
   rowActions: ReportRowActions
+  presentation?: 'table' | 'grid'
+  disabled?: boolean
 }) {
-  const canCreateRequest = rowActions.canCreateRequest(row)
-  const canAddResult = rowActions.canAddResult(row)
+  const canCreateRequest = !disabled && rowActions.canCreateRequest(row)
+  const canAddResult = !disabled && rowActions.canAddResult(row)
   const createDisabledTitle = typeof rowActions.createDisabledTitle === 'function'
     ? rowActions.createDisabledTitle(row)
     : rowActions.createDisabledTitle
@@ -20,8 +24,7 @@ export const WeldTableRowActions = memo(function WeldTableRowActions({
     ? rowActions.resultDisabledTitle(row)
     : rowActions.resultDisabledTitle
 
-  return (
-    <td className="border-b border-r border-b-slate-100 border-r-slate-200 px-1.5 py-2.5 text-center align-top">
+  const buttons = (
       <div className="flex items-center justify-center gap-1">
         <button
           type="button"
@@ -30,7 +33,7 @@ export const WeldTableRowActions = memo(function WeldTableRowActions({
             rowActions.onCreateRequest(row)
           }}
           disabled={!canCreateRequest}
-          className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300 disabled:shadow-none"
+          className={presentation === 'grid' ? 'journal-icon-button' : 'inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300 disabled:shadow-none'}
           title={
             canCreateRequest
               ? rowActions.createTitle ?? 'Создать заявку на этот стык'
@@ -47,7 +50,7 @@ export const WeldTableRowActions = memo(function WeldTableRowActions({
             rowActions.onAddResult(row)
           }}
           disabled={!canAddResult}
-          className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300 disabled:shadow-none"
+          className={presentation === 'grid' ? 'journal-icon-button' : 'inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300 disabled:shadow-none'}
           title={
             canAddResult
               ? rowActions.resultTitle ?? 'Добавить результат на этот стык'
@@ -58,6 +61,6 @@ export const WeldTableRowActions = memo(function WeldTableRowActions({
           <ClipboardCheck className="h-3.5 w-3.5" />
         </button>
       </div>
-    </td>
   )
+  return presentation === 'grid' ? buttons : <td className="border-b border-r border-b-slate-100 border-r-slate-200 px-1.5 py-2.5 text-center align-top">{buttons}</td>
 })

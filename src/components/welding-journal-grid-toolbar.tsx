@@ -7,6 +7,7 @@ import type { JournalAppearance } from '@/lib/welding-journal-grid-state'
 import { GridAppearanceSwitch, GridDensitySelect, GridThemeChoices } from './grid-view-settings-controls'
 
 type Props = {
+  settingsLabel: string
   summary?: ReactNode
   sections: WeldTableSection[]
   extraSections: string[]
@@ -20,7 +21,7 @@ type Props = {
   onClearFilters: () => void
 }
 const TABS = [{ id: 'columns', label: 'Столбцы', icon: Columns3 }, { id: 'appearance', label: 'Оформление', icon: SlidersHorizontal }, { id: 'themes', label: 'Темы', icon: Palette }, { id: 'views', label: 'Мои виды', icon: Bookmark }] as const
-export function JournalGridToolbar({ summary, sections, extraSections, alwaysVisible, view, openColumnsRequest, appearance, onAppearanceChange, onResetLayout, hasFilters, onClearFilters }: Props) {
+export function JournalGridToolbar({ settingsLabel, summary, sections, extraSections, alwaysVisible, view, openColumnsRequest, appearance, onAppearanceChange, onResetLayout, hasFilters, onClearFilters }: Props) {
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<typeof TABS[number]['id']>('columns')
   const [search, setSearch] = useState('')
@@ -65,7 +66,7 @@ export function JournalGridToolbar({ summary, sections, extraSections, alwaysVis
     <div className="journal-summary">{summary}</div>
     <div ref={root} className="relative shrink-0">
       <button ref={trigger} type="button" className="journal-button" aria-expanded={open} aria-haspopup="dialog" onClick={() => { positionPanel(); setOpen(!open) }}><SlidersHorizontal size={15} />Настроить вид<ChevronDown size={12} /></button>
-      {open ? <div role="dialog" aria-label="Настройка вида журнала" className="journal-settings-panel" style={position}>
+      {open ? <div role="dialog" aria-label={settingsLabel} className="journal-settings-panel" style={position}>
         <div className="journal-panel-heading"><div><strong>Мой рабочий вид</strong><p>{visibleCount} из {fields.length} столбцов · сохраняется в этом браузере</p></div><button type="button" className="journal-icon-button" aria-label="Закрыть настройки вида" onClick={close}><X size={16} /></button></div>
         <div role="tablist" aria-label="Настройки таблицы" className="journal-settings-tabs">{TABS.map(({ id, label, icon: Icon }) => <button key={id} type="button" role="tab" aria-selected={tab === id} aria-controls={`journal-settings-${id}`} onClick={() => setTab(id)}><Icon size={14} />{label}</button>)}</div>
         <div id={`journal-settings-${tab}`} role="tabpanel" aria-label={TABS.find(item => item.id === tab)?.label} className="journal-settings-content">

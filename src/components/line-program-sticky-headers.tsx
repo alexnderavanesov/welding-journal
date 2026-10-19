@@ -1,22 +1,7 @@
 import { useEffect, type RefObject } from 'react'
 
-type Entry = { grid: HTMLElement; header: HTMLElement; viewport: HTMLElement; area: HTMLElement; details: HTMLElement[] }
+type Entry = { grid: HTMLElement; header: HTMLElement; viewport: HTMLElement; area: HTMLElement }
 type Pinned = { element: HTMLElement; spacer: HTMLElement }
-type HeaderBoundary = { bottom: number; headerBottom: number }
-
-/** The incoming heading and the outgoing table have different boundaries.
- * A parent yields before the expanded heading reaches its header, but resumes
- * as soon as no child can own a sticky header. Detail padding must not create a
- * strip where the child has already released its header and the parent is still
- * waiting for the entire detail row to leave the top of the window.
- */
-export function programDetailOwnsHeader(
-  detail: { top: number; bottom: number }, incomingBoundary: number, parentHeaderBottom: number,
-  children: readonly HeaderBoundary[],
-) {
-  if (detail.top >= incomingBoundary) return false
-  return children.length ? children.some(child => child.bottom > child.headerBottom) : detail.bottom > parentHeaderBottom
-}
 
 /** Page-scroll adapter for AG Grid 36. The real controls stay in their original
  * React/grid tree. Fixed positioning avoids a scroll-frame translate chase;
@@ -65,17 +50,15 @@ export function useProgramStickyHeaders(root: RefObject<HTMLDivElement | null>) 
           if (!header || header.closest('[data-program-grid]') !== grid || !viewport || !area) return []
           for (const element of [grid, header, viewport, area]) resize.observe(element)
           const old = previous.get(grid)
-          const entry = old?.header === header ? old : { grid, header, viewport, area, details: [] }
-          // Discover rows only when the tree changes, never walk a long joint
-          // list on every scroll frame.
-          entry.details = [...grid.querySelectorAll<HTMLElement>('.ag-full-width-row')].filter(row => row.closest('[data-program-grid]') === grid && !!row.querySelector('[data-program-grid], [data-testid="line-calculation"]'))
+          const entry = old?.header === header ? old : { grid, header, viewport, area }
           return [entry]
         })
         dirty = false
       }
       const contextHeight = 36
-      // Read each visible table once. The same trailing boundary governs both
-      // child eligibility and the parent's decision to reclaim the header.
+      // Read each visible table once, not its rows. A child only replaces its
+      // parent when its actual columns reach the pinned position. Expanded
+      // headings, loading content and detail padding must never hide both.
       const measured = entries.flatMap(entry => {
         if (!entry.grid.getClientRects().length || entry.grid.closest('[hidden]')) return []
         const bounds = entry.grid.getBoundingClientRect()
@@ -86,22 +69,8 @@ export function useProgramStickyHeaders(root: RefObject<HTMLDivElement | null>) 
       })
       let selected: (typeof measured)[number] | null = null
       for (const candidate of measured) {
-        const { entry, bounds, overview, top, headerBottom } = candidate
+        const { entry, bounds, top, headerBottom } = candidate
         if (candidate.naturalTop > top || bounds.bottom <= headerBottom) continue
-        // Yield only to another table/workspace. A joint's history has no
-        // replacement header, so keep its joint columns while reading it.
-        const overDetail = entry.details.some(row => {
-          if (!row.getClientRects().length) return false
-          const rect = row.getBoundingClientRect()
-          const children = measured.filter(child => child !== candidate && row.contains(child.entry.grid))
-          // Reserve the incoming line's context/heading area as well. An
-          // overview header must not linger above the freshly opened heading
-          // while its own inner table has yet to reach the sticky position.
-          const incomingBoundary = headerBottom + (overview ? contextHeight : 0)
-          return programDetailOwnsHeader(rect, incomingBoundary, headerBottom,
-            children.map(child => ({ bottom: child.bounds.bottom, headerBottom: child.headerBottom })))
-        })
-        if (overDetail) continue
         if (!selected || selected.entry.grid.contains(entry.grid) || bounds.top > selected.bounds.top) selected = candidate
       }
       const chosen = selected?.entry ?? null

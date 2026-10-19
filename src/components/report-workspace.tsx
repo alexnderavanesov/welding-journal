@@ -1,3 +1,4 @@
+import { isAgGridWeldReport } from '@/lib/weld-report-grid-profile'
 import type { ReactNode } from 'react'
 import { AppSidebar } from '@/components/app-sidebar'
 import type { ActiveReport } from '@/lib/home-state'
@@ -21,7 +22,7 @@ export function ReportWorkspace({
   onReportChange,
 }: ReportWorkspaceProps) {
   const isFluidReport =
-    activeReport === 'weldingJournal' ||
+    isAgGridWeldReport(activeReport) ||
     activeReport === 'statistics' ||
     activeReport === 'percentageLines' ||
     activeReport === 'welderStamps' ||
@@ -29,13 +30,12 @@ export function ReportWorkspace({
     activeReport === 'settings' ||
     activeReport === 'userGuide'
   const isWideTableReport =
-    activeReport === 'weldingJournal' ||
-    activeReport === 'heatTreatment' ||
+    isAgGridWeldReport(activeReport) ||
     activeReport === 'lnk'
   const workspaceBackgroundClass = isWideTableReport || activeReport === 'percentageLines' ? 'bg-white' : 'bg-[#f4f7f9]'
 
   return (
-    <main className={`relative min-h-screen ${workspaceBackgroundClass}`} onContextMenuCapture={event => { if (activeReport === 'weldingJournal') event.preventDefault() }}>
+    <main className={`relative min-h-screen ${workspaceBackgroundClass}`} onContextMenuCapture={event => { if (isAgGridWeldReport(activeReport)) event.preventDefault() }}>
       <AppSidebar
         activeReport={activeReport}
         collapsed={navCollapsed}
@@ -44,8 +44,8 @@ export function ReportWorkspace({
       />
 
       <div
-        className={`min-w-0 ${workspaceBackgroundClass} pt-5 transition-[padding-left] duration-200 ${activeReport === 'weldingJournal' ? 'pr-4' : 'pr-6'} ${
-          activeReport === 'weldingJournal' ? (navCollapsed ? 'pl-[72px]' : 'pl-[200px] lg:pl-[280px]') : (navCollapsed ? 'pl-20' : 'pl-52 lg:pl-72')
+        className={`min-w-0 ${workspaceBackgroundClass} pt-5 transition-[padding-left] duration-200 ${isAgGridWeldReport(activeReport) ? 'pr-4' : 'pr-6'} ${
+          isAgGridWeldReport(activeReport) ? (navCollapsed ? 'pl-[72px]' : 'pl-[200px] lg:pl-[280px]') : (navCollapsed ? 'pl-20' : 'pl-52 lg:pl-72')
         }`}
       >
         <div

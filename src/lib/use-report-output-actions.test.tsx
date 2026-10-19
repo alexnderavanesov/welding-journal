@@ -6,11 +6,34 @@ import { FIELD_BY_KEY, VISIBLE_FIELDS, type WeldInput } from '@/lib/weld-fields'
 import { DEFAULT_JOURNAL_APPEARANCE, writeJournalGridStorage } from './welding-journal-grid-state'
 
 function params(activeReport: ActiveReport = 'weldingJournal') {
-  return { activeReport, activeTitle: 'Отчёт', journalExportFieldsRef: { current: () => VISIBLE_FIELDS }, loadLnkRows: vi.fn(async () => []),
+  return { activeReport, activeTitle: 'Отчёт', reportExportFieldsRef: { current: () => VISIBLE_FIELDS }, loadLnkRows: vi.fn(async () => []),
     loadPstoRows: vi.fn(async () => []), loadWeldingJournalRows: vi.fn<() => Promise<WeldInput[]>>(async () => []),
     setIsLnkShowMenuOpen: vi.fn(), setIsPstoShowMenuOpen: vi.fn(), setIsWeldingJournalShowMenuOpen: vi.fn(), setMessage: vi.fn() }
 }
 afterEach(() => vi.restoreAllMocks())
+
+it('exports PSTO visible fields in screen order with current repeat values, without changing the source', async () => {
+  const p = params('heatTreatment')
+  const source = { id: 1, joint: 'S1', pstoRequired: 'да', pstoRequest: 'OLD', pstoResult: 'проведено', tvmtResult: 'не годен',
+    pstoRepeatCycles: [{ id: 21, weldJointId: 1, sequence: 2, pstoRequest: 'NEW', pstoRequestDate: '2026-10-18', pstoResult: 'проведено', tvmtResult: 'годен' }] }
+  const fields = ['tvmtResult', 'joint', 'pstoRequest', 'pstoRequestDate'].map(key => FIELD_BY_KEY.get(key as never)!)
+  const readFields = vi.fn(report => report === 'heatTreatment' ? fields : null)
+  const { result } = renderHook(() => useReportOutputActions({ ...p, reportExportFieldsRef: { current: readFields }, loadPstoRows: async () => [source as never] }))
+  await act(async () => { await result.current.openPstoCurrentReport() })
+  expect(readFields).toHaveBeenCalledExactlyOnceWith('heatTreatment')
+  expect(result.current.reportPreviewProps?.report?.tables?.[0]).toMatchObject({ columns: fields.map(field => field.label), rows: [['годен', 'S1', 'NEW', '18.10.2026']] })
+  expect(source.tvmtResult).toBe('не годен')
+  expect(source.pstoRequest).toBe('OLD')
+})
+
+it.each([null, [], 'journal'] as const)('refuses PSTO export with unready, empty or another report columns: %s', async mode => {
+  const p = params('heatTreatment')
+  const { result } = renderHook(() => useReportOutputActions({ ...p, reportExportFieldsRef: { current: report => mode === 'journal' ? report === 'weldingJournal' ? VISIBLE_FIELDS : null : mode === null ? null : [...mode] } }))
+  await act(async () => { await result.current.openPstoCurrentReport() })
+  expect(p.loadPstoRows).not.toHaveBeenCalled()
+  expect(result.current.reportPreviewProps).toBeNull()
+  expect(p.setMessage).toHaveBeenCalledWith(expect.any(String))
+})
 
 it('captures live journal columns even when persisting their order fails, before awaiting rows', async () => {
   const stored = { appearance: DEFAULT_JOURNAL_APPEARANCE, views: {}, columns: [{ colId: 'joint' }, { colId: 'line' }] }
@@ -22,7 +45,7 @@ it('captures live journal columns even when persisting their order fails, before
   let visible = [FIELD_BY_KEY.get('line')!, FIELD_BY_KEY.get('joint')!]
   let resolve!: (rows: WeldInput[]) => void
   p.loadWeldingJournalRows.mockReturnValueOnce(new Promise(done => { resolve = done }))
-  const { result } = renderHook(() => useReportOutputActions({ ...p, journalExportFieldsRef: { current: () => visible } }))
+  const { result } = renderHook(() => useReportOutputActions({ ...p, reportExportFieldsRef: { current: () => visible } }))
   let opening!: Promise<void>
   act(() => { opening = result.current.openWeldingJournalCurrentReport() })
   visible = [FIELD_BY_KEY.get('projectTitle')!]
@@ -33,7 +56,7 @@ it('captures live journal columns even when persisting their order fails, before
 
 it.each([null, () => null, () => []])('does not load a current journal report without ready visible fields (%s)', async source => {
   const p = params()
-  const { result } = renderHook(() => useReportOutputActions({ ...p, journalExportFieldsRef: { current: source } }))
+  const { result } = renderHook(() => useReportOutputActions({ ...p, reportExportFieldsRef: { current: source } }))
   await act(async () => { await result.current.openWeldingJournalCurrentReport() })
   expect(p.loadWeldingJournalRows).not.toHaveBeenCalled()
   expect(result.current.reportPreviewProps).toBeNull()

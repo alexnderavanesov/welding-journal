@@ -1,3 +1,4 @@
+import { isAgGridWeldReport } from '@/lib/weld-report-grid-profile'
 import { lazy, Suspense, type ReactNode } from 'react'
 import type { WelderStampsRegistryProps } from '@/components/welder-stamps-registry'
 import type { DocumentsPageType } from '@/components/documents-page'
@@ -10,7 +11,7 @@ import type {
 } from '@/lib/percentage-line-navigation'
 import type { PercentageLineStampFilter } from '@/lib/report-navigation'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
-import type { JournalExportFieldsRef } from '@/lib/welding-journal-export-fields'
+import type { WeldReportExportFieldsRef } from '@/lib/weld-report-export-fields'
 
 const StatisticsPage = lazy(() => import('@/components/statistics-page').then((module) => ({ default: module.StatisticsPage })))
 const LineProgramPage = lazy(() => import('@/components/line-program-page').then((module) => ({ default: module.LineProgramPage })))
@@ -20,7 +21,7 @@ const WelderStampsRegistry = lazy(() =>
 const DocumentsPage = lazy(() => import('@/components/documents-page').then((module) => ({ default: module.DocumentsPage })))
 const SettingsPage = lazy(() => import('@/components/settings-page').then((module) => ({ default: module.SettingsPage })))
 const UserGuidePage = lazy(() => import('@/components/user-guide-page').then((module) => ({ default: module.UserGuidePage })))
-const WeldingJournalGrid = lazy(() => import('@/components/welding-journal-grid').then((module) => ({ default: module.WeldingJournalGrid })))
+const WeldReportGrid = lazy(() => import('@/components/weld-report-grid').then((module) => ({ default: module.WeldReportGrid })))
 
 type ReportMainContentProps = {
   onCancelEarlyCoil?: (sourceId: number) => void
@@ -53,7 +54,7 @@ type ReportMainContentProps = {
   onDocumentNavigationRequestHandled?: (requestId: number) => void
   reportTaskPanels?: ReactNode
   journalSummary?: (beforeSearch?: ReactNode) => ReactNode
-  journalExportFieldsRef?: JournalExportFieldsRef
+  reportExportFieldsRef?: WeldReportExportFieldsRef
 }
 
 export function ReportMainContent({
@@ -76,7 +77,7 @@ export function ReportMainContent({
   onDocumentNavigationRequestHandled,
   reportTaskPanels,
   journalSummary,
-  journalExportFieldsRef,
+  reportExportFieldsRef,
 }: ReportMainContentProps) {
   if (activeReport === 'percentageLines') {
     return <Suspense fallback={<ReportSectionFallback label="Загружаем программу линий" />}>
@@ -137,8 +138,8 @@ export function ReportMainContent({
     )
   }
 
-  if (activeReport === 'weldingJournal') return <Suspense fallback={<ReportSectionFallback label="Загружаем сварочный журнал" />}>
-    <WeldingJournalGrid {...weldTableProps} reportTaskPanels={reportTaskPanels} renderSummary={journalSummary} journalExportFieldsRef={journalExportFieldsRef} />
+  if (isAgGridWeldReport(activeReport)) return <Suspense fallback={<ReportSectionFallback label="Загружаем таблицу" />}>
+    <WeldReportGrid {...weldTableProps} report={activeReport} reportTaskPanels={reportTaskPanels} renderSummary={journalSummary} reportExportFieldsRef={reportExportFieldsRef} />
   </Suspense>
   return <WeldTable {...weldTableProps} reportTaskPanels={reportTaskPanels} />
 }

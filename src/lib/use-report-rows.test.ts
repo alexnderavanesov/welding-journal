@@ -32,6 +32,25 @@ describe('paged repair statuses', () => {
   })
 })
 
+describe('PSTO primary facts after client preparation', () => {
+  it.each(['ошибка', 'проведено', null])('preserves cancelled %s only when requested, without changing final status', pstoResult => {
+    const source: WeldRow = { id: 1, joint: 'F1', line: 'L', weldDate: '2026-09-01',
+      pstoRequired: 'отменен', pstoRequest: 'ПСТО', pstoDate: '2026-09-02', pstoResult, tvmtResult: 'не годен' }
+    const legacy = prepareReportRows([source])
+    const psto = prepareReportRows([source], [], undefined, undefined, undefined, true, true)
+    expect(psto[0].pstoResult).toBe(pstoResult)
+    expect(psto[0].finalStatus).toBe(legacy[0].finalStatus)
+    expect(psto[0].tvmtResult).toBe('не годен')
+    expect(legacy[0].pstoResult).toBe(pstoResult === 'проведено' ? 'проведено · назначение отменено' : 'отменен')
+    expect(prepareReportRows(psto, [], undefined, undefined, undefined, true, true)[0]).toEqual(psto[0])
+  })
+
+  it('retains the existing waiting label for an active primary cycle', () => {
+    const source = { id: 1, joint: 'F1', weldDate: '2026-09-01', pstoRequired: 'да', pstoRequest: 'ПСТО' }
+    expect(prepareReportRows([source], [], undefined, undefined, undefined, true, true)[0].pstoResult).toBe('ожидает')
+  })
+})
+
 describe('reuseEquivalentWeldRows', () => {
   it('preserves references for unchanged rows and replaces only a changed row', () => {
     const previous = [

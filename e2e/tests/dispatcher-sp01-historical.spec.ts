@@ -10,6 +10,7 @@ import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-
 import { attachDispatcherTaskCodesToPage } from '@/server/weld-read'
 import { withE2eDatabase } from '../database'
 import { revealJournalColumn } from '../journal-grid'
+import { revealPstoColumn } from './psto-grid-helpers'
 
 for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}: единые требования, сохранность ПСТО/ТВМТ и довнесение до ТО`, async ({ page }) => {
   test.setTimeout(120_000)
@@ -70,6 +71,7 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
 
     await page.goto(report)
     if (report === '/journal') await revealJournalColumn(page, 'jointNextAction')
+    if (report === '/psto') await revealPstoColumn(page, 'jointNextAction')
     await page.getByRole('button', { name: `Открыть картину стыка ${joint}`, exact: true }).click()
     const pictureHeading = page.getByRole('heading', { name: `Картина стыка ${joint}`, exact: true })
     await expect(pictureHeading).toBeVisible()
@@ -169,7 +171,7 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
     expect(errors).toEqual([])
     // The 16 Oct handoff explicitly allows this local audit without the new
     // license key. Accept exactly its complete banner, never other diagnostics.
-    const missingLocalLicense = report === '/journal' && consoleDiagnostics.some(message => message.includes('License Key Not Found'))
+    const missingLocalLicense = ['/journal', '/psto'].includes(report) && consoleDiagnostics.some(message => message.includes('License Key Not Found'))
     expect(consoleDiagnostics).toEqual(missingLocalLicense ? [
       expect.stringMatching(/^\*+$/),
       expect.stringMatching(/^\*+ AG Grid Enterprise License \*+$/),

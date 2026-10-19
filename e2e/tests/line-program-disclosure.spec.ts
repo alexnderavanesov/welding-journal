@@ -271,9 +271,11 @@ test('header handover at detail tail has no empty strip, including hidden tabs a
   await detail.getByRole('button', { name: 'Все стыки линии', exact: true }).click(); await settle(page)
   const allGrid = detail.locator('[data-testid="line-program-all-joints"] [data-program-grid="joints"]')
   await expectHeaderHandover(page, allGrid, 'lines')
-  // The line heading remains unobscured on entering the expanded workspace.
+  // Keep the overview until the incoming columns arrive; the line heading
+  // itself must not create an interval with no pinned header.
   await detail.evaluate(element => window.scrollBy(0, element.getBoundingClientRect().top - 70))
-  await expect(page.locator('.program-stuck-control')).toHaveCount(0)
+  await expect.poll(() => page.locator('.program-stuck-control').evaluateAll(elements =>
+    elements.map(element => element.closest<HTMLElement>('[data-program-grid]')?.dataset.programGrid))).toEqual(['lines'])
   await allGrid.getByRole('columnheader', { name: 'Стык', exact: true }).locator('.ag-header-cell-filter-button').click()
   const filter = page.locator('.ag-filter').filter({ visible: true })
   await filter.getByRole('checkbox', { name: 'Выбрать все', exact: true }).uncheck()

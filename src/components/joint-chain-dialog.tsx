@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CoilRestorationHistory } from './coil-restoration-dialog'
 import { GitFork, History, ListTodo, LoaderCircle, RotateCcw, ShieldAlert, X } from 'lucide-react'
 
@@ -12,6 +12,7 @@ import {
 } from '@/components/joint-dispatcher-tasks-panel'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { LinePictureOverview } from '@/components/line-picture-overview'
+import { RemoteLinePicture } from '@/components/remote-line-picture'
 import { Button } from '@/components/ui/button'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import type {
@@ -45,6 +46,9 @@ type JointChainDialogProps = {
   transitions: JointCoilTransition[]
   earlyCoilCandidates: WeldJointChainEarlyCoilCandidate[]
   dispatcherTasks: RepeatedJointTask[]
+  taskContextRevision?: number | null
+  taskContextPending?: boolean
+  taskContextError?: string
   controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
   errorMessage: string | null
   isLoading: boolean
@@ -80,6 +84,9 @@ export function JointChainDialog({
   transitions,
   earlyCoilCandidates,
   dispatcherTasks,
+  taskContextRevision,
+  taskContextPending,
+  taskContextError,
   controlProcessSettings,
   errorMessage,
   isLoading,
@@ -108,6 +115,7 @@ export function JointChainDialog({
 }: JointChainDialogProps) {
   const [selectedRowId, setSelectedRowId] = useState(record.id)
   const [pictureMode, setPictureMode] = useState<JointPictureTab>(initialTab)
+  const [remoteLineCount, setRemoteLineCount] = useState<{ rowId: number; revision: number | null | undefined; total: number } | null>(null)
   const selectedRow = rows.find((row) => row.id === selectedRowId)
     ?? rows.find((row) => row.id === record.id)
     ?? rows[0]
@@ -154,6 +162,11 @@ export function JointChainDialog({
     fallbackCodes: dispatcherTaskCodes,
   })
   const lineTaskCount = getDispatcherTasksForLinePicture(dispatcherTasks, selectedRow).length
+  const remoteLineTaskCount = remoteLineCount?.rowId === selectedRow.id && remoteLineCount.revision === taskContextRevision
+    ? remoteLineCount.total : null
+  const setRemoteLineTaskCount = useCallback((total: number) => {
+    setRemoteLineCount({ rowId: selectedRow.id, revision: taskContextRevision, total })
+  }, [selectedRow.id, taskContextRevision])
 
   useEffect(() => {
     setSelectedRowId(record.id)
@@ -183,8 +196,8 @@ export function JointChainDialog({
 
       <JointPictureTabs
         activeTab={pictureMode}
-        actionCount={jointTaskCollection.totalCount}
-        lineTaskCount={lineTaskCount}
+        actionCount={taskContextPending || taskContextError ? null : jointTaskCollection.totalCount}
+        lineTaskCount={taskContextRevision !== undefined ? remoteLineTaskCount : lineTaskCount}
         onChange={setPictureMode}
       />
 
@@ -196,28 +209,34 @@ export function JointChainDialog({
             aria-labelledby="joint-picture-tab-line"
             className="h-full min-h-0 overflow-y-auto px-5 py-4"
           >
-            <LinePictureOverview
+            {taskContextRevision !== undefined ? <RemoteLinePicture
+              row={selectedRow} revision={taskContextRevision} onTotal={setRemoteLineTaskCount}
+              contextError={taskContextError}
+              onRunAction={onRunDispatcherTaskAction} onRetry={onRetry}
+              onOpenInDispatcher={() => onOpenLineInDispatcher(selectedRow)}
+              highlightedTaskKey={selectedRow.id === record.id ? focusedTaskKey : null}
+            /> : <LinePictureOverview
               row={selectedRow}
               tasks={dispatcherTasks}
               onRunAction={onRunDispatcherTaskAction}
               onOpenInDispatcher={() => onOpenLineInDispatcher(selectedRow)}
               highlightedTaskKey={selectedRow.id === record.id ? focusedTaskKey : null}
-            />
+            />}
           </main>
-        ) : isLoading ? (
+        ) : isLoading || taskContextPending ? (
           <div className="p-5">
             <DialogInlineEmptyState>
               <span className="inline-flex items-center gap-2">
                 <LoaderCircle className="h-4 w-4 animate-spin" />
-                Загружаем историю и цепочку стыка...
+                Загружаем историю и действия стыка...
               </span>
             </DialogInlineEmptyState>
           </div>
-        ) : errorMessage ? (
+        ) : errorMessage || taskContextError ? (
           <div className="p-5">
             <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-5 text-center">
-              <p className="text-sm font-medium text-rose-800">Не удалось загрузить историю и цепочку стыка.</p>
-              <p className="mt-1 text-xs text-rose-700">{errorMessage}</p>
+              <p className="text-sm font-medium text-rose-800">Не удалось загрузить историю и действия стыка.</p>
+              <p className="mt-1 text-xs text-rose-700">{errorMessage || taskContextError}</p>
               <Button type="button" variant="outline" size="sm" className="mt-3 gap-2 bg-white" onClick={onRetry}>
                 <RotateCcw className="h-4 w-4" />
                 Повторить
@@ -330,8 +349,8 @@ function JointPictureTabs({
   onChange,
 }: {
   activeTab: JointPictureTab
-  actionCount: number
-  lineTaskCount: number
+  actionCount: number | null
+  lineTaskCount: number | null
   onChange: (tab: JointPictureTab) => void
 }) {
   const tabs = [

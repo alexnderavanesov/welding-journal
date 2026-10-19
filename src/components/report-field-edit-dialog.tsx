@@ -8,6 +8,8 @@ import { Select } from '@/components/ui/select'
 import type { HeatTreatmentFieldEditingState } from '@/lib/home-state'
 import { withCurrentOption } from '@/lib/report-naming'
 import { getJointTitle } from '@/lib/report-ui-state'
+import { shouldDeferModalEscape } from '@/lib/use-report-modal-escape-key'
+import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
 import { RESULT_STATUS_OPTIONS } from '@/lib/weld-fields'
 
 type ReportFieldEditDialogProps = {
@@ -27,8 +29,15 @@ export function ReportFieldEditDialog({
   onClose,
   onSave,
 }: ReportFieldEditDialogProps) {
+  useWindowEscapeKey(true, event => {
+    if (event.defaultPrevented || shouldDeferModalEscape()) return
+    // Own Escape throughout the dialog, including its footer buttons. Closing
+    // the portal must not let the same key clear the report below it.
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    onClose()
+  })
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement | HTMLSelectElement>) {
-    if (event.key === 'Escape') onClose()
     if (event.key === 'Enter') onSave()
   }
 

@@ -1,9 +1,14 @@
 import { expect, test } from '@playwright/test'
-import { withE2eDatabase } from '../database'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
 
+const project = 'E2E filter'
+
 test.beforeAll(async () => {
-  await withE2eDatabase(async (client) => {
+  // A failed case restarts the worker and runs beforeAll again. Keep the
+  // 120-row fixture exact, including when this file is rerun in isolation.
+  await cleanupLineProgramProjects([project])
+  await withLineProgramFixture(async (client) => {
     await client.query(`
       insert into weld_joints (
         project_title, subtitle_code, line, joint, weld_date, connection_type,
@@ -14,6 +19,8 @@ test.beforeAll(async () => {
     `)
   })
 })
+
+test.afterAll(async () => { await cleanupLineProgramProjects([project]) })
 
 for (const [path, pageRpc] of [
   ['/journal', 'listWeldingJournalPage'], ['/lnk', 'listLnkReportPage'], ['/psto', 'listHeatTreatmentReportPage'],
@@ -42,15 +49,19 @@ for (const [path, pageRpc] of [
   const count = (name: string) => requests.filter((value) => value.startsWith(name + '_')).length
   try {
     await page.goto(path!)
+    await page.getByPlaceholder('Поиск по отчету').fill(project)
+    const grid = path === '/journal' || path === '/psto'
+    await expect(page.getByText(grid ? 'Загружено: 100 из 120' : 'из 120 строк', { exact: true })).toBeVisible()
+    // goto's networkidle can precede hydration. Wait after our own rows and
+    // summary exist, so initial dispatcher publication is outside the measure.
     await page.waitForLoadState('networkidle')
-    const grid = path === '/journal'
     if (grid) await page.locator('.ag-header-cell[col-id="line"] .ag-header-cell-filter-button').click()
     else await page.getByRole('button', { name: 'Линия. Открыть фильтр', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Фильтр: Линия' })
     const search = grid ? dialog.getByLabel('Найти значение фильтра') : dialog.getByPlaceholder('Найти значение')
     const choice = () => grid ? dialog.getByRole('checkbox', { name: /FILTER-01/ }) : dialog.getByRole('button', { name: /FILTER-01/ })
-    await expect(choice()).toBeVisible()
     await search.fill('FILTER-')
+    await expect(choice()).toBeVisible()
     const list = dialog.locator(grid ? '.journal-filter-values' : '.max-h-60')
     await list.evaluate(async (element) => {
       element.scrollTop = 210

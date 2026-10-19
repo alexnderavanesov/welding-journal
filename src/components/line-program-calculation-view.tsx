@@ -248,7 +248,7 @@ function StampDetail({ data }: ICellRendererParams<StampRow>) {
   const { registerContainer } = useContext(StampGridContext)
   if (!data) return null
   const scopeKey = programScopeKey(stampScope(data))
-  return <div className="program-grid-detail" data-testid="stamp-joints-container" data-scope={scopeKey} data-stamp={data.scope === 'unassigned' ? undefined : data.stamp}><div data-testid="program-stamp-branch" className="min-w-0 pl-3"><ScopeHost scopeKey={scopeKey} register={registerContainer} /></div></div>
+  return <div className="program-grid-detail" data-testid="stamp-joints-container" data-scope={scopeKey} data-stamp={data.scope === 'unassigned' ? undefined : data.stamp}><div data-testid="program-stamp-branch" className="min-w-0"><ScopeHost scopeKey={scopeKey} register={registerContainer} /></div></div>
 }
 const stampColumns: ColDef<StampRow>[] = [
 { colId: 'stamp', headerName: 'Клеймо', width: 220, minWidth: 160, flex: 1.5, autoHeight: true, cellRenderer: StampCell, valueGetter: ({ data }) => data?.scope === 'unassigned' ? 'Клеймо не назначено' : `${data?.stamp ?? ''} ${data?.welderName ?? ''}` },

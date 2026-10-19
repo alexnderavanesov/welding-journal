@@ -192,12 +192,6 @@ for (const count of [50, 100, 120, 500]) test(`${count} joints under shared stam
   await expect(page.getByLabel('Итоги раздела')).toBeVisible()
   await page.getByLabel('Поиск программы линий').fill(line)
   await page.getByRole('button', { name: `Расчёт линии ${line}`, exact: true }).click()
-  if (count === 120) {
-    // No overview header/description may cover the expanded line's own heading.
-    await page.getByTestId('line-program-detail').evaluate(element => window.scrollBy(0, element.getBoundingClientRect().top - 70))
-    await expect(page.locator('[data-program-grid="lines"] > .program-grid-toolbar')).toHaveCount(0)
-    await expect.poll(() => page.locator('[data-program-grid="lines"] > .program-grid-frame .program-stuck-control').count()).toBe(0)
-  }
   const metrics = await page.context().newCDPSession(page)
   await metrics.send('Performance.enable')
   const heap = async () => (await metrics.send('Performance.getMetrics')).metrics.find(metric => metric.name === 'JSHeapUsedSize')!.value
@@ -206,6 +200,13 @@ for (const count of [50, 100, 120, 500]) test(`${count} joints under shared stam
   await page.getByRole('button', { name: 'Клеймо GRID-A', exact: true }).click()
   const a = page.getByTestId('stamp-joints-container').filter({ has: page.getByRole('region', { name: `Стыки клейма GRID-A · ${line}`, exact: true }) })
   await expectPageList(a, count)
+  if (count === 120) {
+    // Expand the joints first: the short collapsed page fits in the viewport
+    // and cannot reach this scroll position. No headerless introductory gap.
+    await page.getByTestId('line-program-detail').evaluate(element => window.scrollBy(0, element.getBoundingClientRect().top - 70))
+    await expect(page.locator('[data-program-grid="lines"] > .program-grid-toolbar')).toHaveCount(0)
+    await expect(page.locator('[data-program-grid="lines"] .program-stuck-control')).toHaveCount(1)
+  }
   const measurements = await a.evaluate(element => ({ nodes: element.querySelectorAll('*').length, height: element.getBoundingClientRect().height,
     scrolls: [...element.querySelectorAll<HTMLElement>('*')].filter(node => ['auto', 'scroll'].includes(getComputedStyle(node).overflowY) && node.scrollHeight > node.clientHeight + 2).length }))
   expect(measurements.scrolls).toBe(0)
@@ -247,12 +248,15 @@ for (const count of [50, 100, 120, 500]) test(`${count} joints under shared stam
       await expect(historyJoint).not.toHaveClass(/program-joint-highlighted/)
       await historyJoint.getByRole('button', { name: 'F80', exact: true }).click()
     }
+    // Finish collapsing history before checking hover: moving rows can pass
+    // back under the stationary pointer after Playwright dispatches the move.
+    await expect(b.locator('[data-program-motion]')).toHaveCount(0)
     const firstHover = b.getByTestId('line-program-readonly-joint').filter({ has: page.getByRole('button', { name: 'F79', exact: true }) })
     await firstHover.hover()
     const secondHover = b.getByTestId('line-program-readonly-joint').filter({ has: page.getByRole('button', { name: 'F80', exact: true }) })
     await secondHover.hover()
-    expect(await firstHover.evaluate(element => element.matches(':hover'))).toBe(false)
-    expect(await secondHover.evaluate(element => element.matches(':hover'))).toBe(true)
+    await expect.poll(() => firstHover.evaluate(element => element.matches(':hover'))).toBe(false)
+    await expect.poll(() => secondHover.evaluate(element => element.matches(':hover'))).toBe(true)
     await expect(firstHover).not.toHaveClass(/ag-row-hover/)
     await expect(secondHover).toHaveCSS('background-color', 'rgba(209, 250, 229, 0.6)')
     // Sample animation frames during actual wheel scrolling; report scope instead of treating total test time as FPS.

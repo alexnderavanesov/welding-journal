@@ -1,3 +1,4 @@
+import { isAgGridWeldReport } from '@/lib/weld-report-grid-profile'
 import { DispatcherTaskPanel } from '@/components/dispatcher-panels'
 import type { DispatcherTaskCardHandlers } from '@/components/dispatcher-task-card'
 import { WelderStampNotificationPanel } from '@/components/welder-stamp-notification-panel'
@@ -77,8 +78,8 @@ export function ReportTaskPanels({
       isRefreshing={dispatcherTasksRefreshing}
       onWorkspaceOpenChange={onDispatcherWorkspaceOpenChange}
       stickyLeft={stickyLeft}
-      fitContainer={activeReport === 'weldingJournal'}
-      journalAppearance={activeReport === 'weldingJournal'}
+      fitContainer={isAgGridWeldReport(activeReport)}
+      journalAppearance={isAgGridWeldReport(activeReport)}
       handlers={handlers}
       onCollapseTaskDetails={onCollapseTaskDetails}
     />

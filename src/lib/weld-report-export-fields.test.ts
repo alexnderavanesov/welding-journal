@@ -1,12 +1,12 @@
 import { expect, it } from 'vitest'
 import * as XLSX from 'xlsx'
-import { getWeldingJournalExportFields } from './welding-journal-export-fields'
+import { getWeldReportExportFields } from './weld-report-export-fields'
 import type { WeldInput } from './weld-fields'
 import { buildWeldingJournalCurrentReport } from './report-show-builders'
 import { buildExportXlsxBytes } from './weld-export-xlsx-xml'
 
 it('outputs the visible journal fields in screen order, including pinning, without groups or action columns', () => {
-  const fields = getWeldingJournalExportFields([
+  const fields = getWeldReportExportFields([
     'ag-Grid-SelectionColumn', 'joint', 'line', 'ag-Grid-AutoColumn', 'materialGroup',
     'subtitleCode', 'projectTitle', '__actions', 'jointNextAction', 'finalStatus',
   ])
@@ -21,5 +21,5 @@ it('outputs the visible journal fields in screen order, including pinning, witho
 })
 
 it('does not add fields to an empty view containing only service columns', () => {
-  expect(getWeldingJournalExportFields(['__actions', 'jointNextAction', 'ag-Grid-SelectionColumn'])).toEqual([])
+  expect(getWeldReportExportFields(['__actions', 'jointNextAction', 'ag-Grid-SelectionColumn'])).toEqual([])
 })

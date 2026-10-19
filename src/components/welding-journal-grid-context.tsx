@@ -3,6 +3,7 @@ import type { WeldTableProps } from '@/components/weld-table'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
+import type { AgGridWeldReport } from '@/lib/weld-report-grid-profile'
 
 type CellTable = Pick<WeldTableProps, 'rowsReady' | 'onEdit' | 'onDelete' | 'onOpenDocument' | 'onOpenLnkRequest' | 'onOpenLnkResult' | 'onOpenJoint' | 'onOpenJointOverview' | 'controlBasisEditorEnabled'>
 export type JournalGridContextValue = {
@@ -12,9 +13,9 @@ export type JournalGridContextValue = {
   openMenu: (row: WeldRow, position: { x: number; y: number; anchorElement?: Element }, fieldKey?: WeldFieldKey) => void
 }
 export const JournalGridContext = createContext<JournalGridContextValue | null>(null)
-export const JournalFilterContext = createContext<Pick<WeldTableProps, 'columnFilters' | 'onColumnFiltersChange'> | null>(null)
+export const JournalFilterContext = createContext<(Pick<WeldTableProps, 'columnFilters' | 'onColumnFiltersChange'> & { report: AgGridWeldReport }) | null>(null)
 export const JournalExtrasContext = createContext<{
-  table: Pick<WeldTableProps, 'rowsReady' | 'extraColumns'>
+  table: Pick<WeldTableProps, 'rowsReady' | 'extraColumns' | 'rowActions'>
   getActionRow: JournalGridContextValue['getActionRow']
 } | null>(null)
 

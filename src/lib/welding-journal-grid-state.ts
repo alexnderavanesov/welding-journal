@@ -17,6 +17,7 @@ export const DEFAULT_JOURNAL_APPEARANCE: JournalAppearance = {
   density: 'comfortable', verticalLines: false, stripes: true, taskFill: true, wrapText: true,
 }
 export const JOURNAL_GRID_STORAGE_KEY = 'welding-journal-ag-grid:v1'
+export const JOURNAL_GROUP_LABEL_COLUMN = '__groupLabel'
 export type JournalLayout = { columns: ColumnState[]; appearance: JournalAppearance }
 export type JournalGridStorage = JournalLayout & { views: Record<string, JournalLayout> }
 
@@ -34,7 +35,7 @@ export function normalizeJournalAppearance(value?: Partial<JournalAppearance>): 
 // Visibility and sorting belong to the existing report views/server query. Never
 // restore them from AG Grid's independent sizing/order state.
 export function journalColumnLayout(columns: ColumnState[]): ColumnState[] {
-  return columns.filter(column => typeof column.colId === 'string').map(column => ({
+  return columns.filter(column => typeof column.colId === 'string' && column.colId !== JOURNAL_GROUP_LABEL_COLUMN).map(column => ({
     colId: column.colId,
     ...(typeof column.width === 'number' && Number.isFinite(column.width)
       ? { width: Math.max(48, Math.min(1200, column.width)) } : {}),
@@ -45,11 +46,11 @@ export function journalColumnLayout(columns: ColumnState[]): ColumnState[] {
   }))
 }
 
-export function readJournalGridStorage(): JournalGridStorage {
+export function readJournalGridStorage(storageKey = JOURNAL_GRID_STORAGE_KEY): JournalGridStorage {
   const fallback = { columns: [], appearance: DEFAULT_JOURNAL_APPEARANCE, views: {} }
   if (typeof window === 'undefined') return fallback
   try {
-    const value = JSON.parse(localStorage.getItem(JOURNAL_GRID_STORAGE_KEY) ?? 'null')
+    const value = JSON.parse(localStorage.getItem(storageKey) ?? 'null')
     if (!value || typeof value !== 'object') return fallback
     const layout = (entry: Partial<JournalLayout>): JournalLayout => ({
       columns: journalColumnLayout(Array.isArray(entry?.columns) ? entry.columns.filter(Boolean) : []),
@@ -62,8 +63,8 @@ export function readJournalGridStorage(): JournalGridStorage {
   } catch { return fallback }
 }
 
-export function writeJournalGridStorage(value: JournalGridStorage) {
-  try { localStorage.setItem(JOURNAL_GRID_STORAGE_KEY, JSON.stringify(value)) } catch { /* Private/full storage: keep the current session usable. */ }
+export function writeJournalGridStorage(value: JournalGridStorage, storageKey = JOURNAL_GRID_STORAGE_KEY) {
+  try { localStorage.setItem(storageKey, JSON.stringify(value)) } catch { /* Private/full storage: keep the current session usable. */ }
 }
 
 export function mergeJournalSelection(previous: ReadonlySet<number>, loadedIds: readonly number[], selectedIds: readonly number[]) {

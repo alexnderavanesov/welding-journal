@@ -75,7 +75,9 @@ export function hasHeatTreatmentReportState(row: WeldInput) {
 }
 
 export function toHeatTreatmentReportRow<T extends WeldInput>(row: T): T {
-  const reportRow = toControlCancellationReportRow(row)
+  // PSTO renders cancellation through getPstoDisplayValue. Keep its primary
+  // fact for cycle history and group errors; the other report annotations stay.
+  const reportRow = { ...toControlCancellationReportRow(row), pstoResult: row.pstoResult }
   return {
     ...reportRow,
     pstoCancellationDate: isCancelledPstoControl(reportRow) ? reportRow.pstoCancellationDate : null,

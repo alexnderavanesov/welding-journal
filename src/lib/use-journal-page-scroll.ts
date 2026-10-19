@@ -96,7 +96,7 @@ export function useJournalPageScroll(frame: RefObject<HTMLDivElement | null>, st
     window.addEventListener('blur', cancelMovement)
     // Expanding/collapsing the dispatcher changes the handoff position too.
     const observer = new ResizeObserver(schedule)
-    observer.observe(element.closest('[data-welding-journal-grid]') ?? element)
+    observer.observe(element.closest('[data-weld-report-grid]') ?? element)
     return () => {
       detach(); cancelAnimationFrame(scheduled); observer.disconnect()
       element.removeEventListener('wheel', cancelOnWheelChange, true)

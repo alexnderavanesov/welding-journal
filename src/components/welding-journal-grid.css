@@ -1,4 +1,4 @@
-[data-welding-journal-grid] { color: #334155; }
+[data-weld-report-grid] { color: #334155; }
 .journal-grid-frame { height: calc(100dvh - 72px); min-height: 360px; width: 100%; }
 .journal-grid-frame .ag-root-wrapper { border-color: #e2e8f0; }
 .journal-grid-frame .ag-header-group-cell { font-size: 11px; letter-spacing: .015em; color: #64748b; }
@@ -13,8 +13,8 @@
 .journal-grid-frame .ag-row-group .ag-cell-wrapper { display: flex; align-items: center; flex-wrap: nowrap; height: 100%; min-width: 0; }
 .journal-grid-frame .ag-row-group .ag-group-value { flex: 0 1 auto; min-width: 0; height: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .journal-grid-frame .ag-row-group .ag-group-child-count { flex: none; height: auto; margin-inline-start: 8px; padding: 2px 7px; border-radius: 12px; background: #e8eef5; color: #64748b; font-size: 11px; line-height: 18px; }
-.journal-grid-frame .ag-full-width-row.ag-row-group { font-weight: 500; }
-.journal-grid-frame .ag-full-width-row.ag-row-group:not(.ag-row-selected) { background: var(--journal-group-bg, #f1f5f9); }
+.journal-grid-frame .ag-row-group { font-weight: 500; }
+.journal-grid-frame .ag-row-group:not(.ag-row-selected) { background: var(--journal-group-bg, #f1f5f9); }
 .journal-plain-cell { display: flex; align-items: center; justify-content: center; height: 100%; min-width: 0; text-align: center; color: #475569; }
 .journal-plain-cell > span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; white-space: normal; line-height: 1.35; }
 .journal-no-wrap .journal-plain-cell > span { display: block; white-space: nowrap; text-overflow: ellipsis; }
@@ -47,7 +47,7 @@
 .journal-summary label { margin-left: 0; width: clamp(130px, 18vw, 240px); flex-shrink: 1; min-width: 130px; }
 .journal-summary input { font-size: 12px; background: #f8fafc; border-color: #e2e8f0; }
 .journal-filter { width: min(340px, calc(100vw - 40px)); background: white; color: #334155; }
-.journal-filter input[type=checkbox], [data-welding-journal-grid] input[type=checkbox] { accent-color: #0284c7; width: 15px; height: 15px; }
+.journal-filter input[type=checkbox], [data-weld-report-grid] input[type=checkbox] { accent-color: #0284c7; width: 15px; height: 15px; }
 
 .journal-grid-extra [data-joint-next-action-cell] { height: 100%; padding: 0; }
 
@@ -133,10 +133,10 @@ select.journal-page-size { min-width: 80px; height: 30px; font-variant-numeric: 
 .journal-footer-right { display: flex; align-items: center; justify-content: flex-end; gap: 22px; flex-wrap: wrap; margin-left: auto; }
 .journal-range-summary { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-variant-numeric: tabular-nums; color: #475569; }
 .journal-range-summary:empty { display: none; }
-[data-welding-journal-grid] button.journal-switch { width: 40px; height: 24px; padding: 3px; border-radius: 20px; flex-shrink: 0; background: #cbd5e1; cursor: pointer; transition: background-color .22s ease; }
-[data-welding-journal-grid] button.journal-switch > span { display: block; width: 18px; height: 18px; border-radius: 50%; background: white; box-shadow: 0 1px 3px #0f172a26; transform: translateX(0); transition: transform .22s cubic-bezier(.2,.8,.2,1); }
-[data-welding-journal-grid] button.journal-switch[aria-checked=true] { background: #0284c7; }
-[data-welding-journal-grid] button.journal-switch[aria-checked=true] > span { transform: translateX(16px); }
+[data-weld-report-grid] button.journal-switch { width: 40px; height: 24px; padding: 3px; border-radius: 20px; flex-shrink: 0; background: #cbd5e1; cursor: pointer; transition: background-color .22s ease; }
+[data-weld-report-grid] button.journal-switch > span { display: block; width: 18px; height: 18px; border-radius: 50%; background: white; box-shadow: 0 1px 3px #0f172a26; transform: translateX(0); transition: transform .22s cubic-bezier(.2,.8,.2,1); }
+[data-weld-report-grid] button.journal-switch[aria-checked=true] { background: #0284c7; }
+[data-weld-report-grid] button.journal-switch[aria-checked=true] > span { transform: translateX(16px); }
 .journal-switch:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 3px; }
 .journal-density-select { position: relative; }
 .journal-density-select > button { width: 170px; justify-content: space-between; height: 36px; border-radius: 8px; }
@@ -147,7 +147,7 @@ select.journal-page-size { min-width: 80px; height: 30px; font-variant-numeric: 
 .journal-density-options strong { display: block; font-weight: 500; }
 .journal-density-options small { display: block; color: #94a3b8; font-size: 11px; margin-top: 3px; }
 @media (prefers-reduced-motion: reduce) {
-  [data-welding-journal-grid] button.journal-switch, [data-welding-journal-grid] button.journal-switch > span, .journal-grid-frame .ag-row-animation .ag-row { transition: none; }
+  [data-weld-report-grid] button.journal-switch, [data-weld-report-grid] button.journal-switch > span, .journal-grid-frame .ag-row-animation .ag-row { transition: none; }
 }
 
 .journal-grid-frame .ag-row.ag-opacity-zero { pointer-events: none; }
@@ -178,9 +178,8 @@ select.journal-page-size { min-width: 80px; height: 30px; font-variant-numeric: 
 .journal-theme-balham.journal-stripes .ag-row-odd:not(.ag-row-group):not(.ag-row-selected):not(.journal-row-highlight):not(.journal-row-task) { background: #f5f7fa; }
 @media (max-width: 460px) { .journal-settings-tabs button svg { display: none; } }
 
-.journal-grid-frame .ag-full-width-row.ag-row-group { border-bottom: 1px solid #e2e8f0; }
-.journal-grid-frame .ag-full-width-row.ag-row-group .ag-cell-wrapper { padding-inline: calc(14px + var(--ag-indentation-level, 0) * 18px) 14px; }
-.journal-grid-frame .ag-full-width-row.ag-row-group .ag-group-contracted, .journal-grid-frame .ag-full-width-row.ag-row-group .ag-group-expanded { margin-inline-end: 8px; }
+.journal-grid-frame .ag-row-group { border-bottom: 1px solid #e2e8f0; }
+.journal-grid-frame .ag-row-group .ag-group-contracted, .journal-grid-frame .ag-row-group .ag-group-expanded { margin-inline-end: 8px; }
 
 /* Badges retain shared semantics; this presentation belongs only to the journal. */
 .journal-grid-value:has([data-weld-badge]) > button, .journal-grid-value:has([data-weld-badge]) > div { justify-content: flex-start; text-align: left; text-decoration: none; }
@@ -218,14 +217,28 @@ select.journal-page-size { min-width: 80px; height: 30px; font-variant-numeric: 
 .journal-grouping-clear:hover { background: #f1f5f9; color: #0369a1; }
 .journal-grouping-clear:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
 .journal-grouping-hint { color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
-.journal-grid-frame .ag-full-width-row.ag-row-group .ag-cell-wrapper { padding-inline-start: 9px; }
-.journal-grid-frame .ag-full-width-row.ag-row-group .ag-group-checkbox { order: -1; margin-inline-end: calc(20px + var(--ag-indentation-level, 0) * 18px); }
-.journal-grid-frame .ag-full-width-row.ag-row-group .ag-group-child-count { padding: 1px 6px; background: #e6edf5; }
+.journal-grid-frame .ag-row-group .ag-group-child-count { padding: 1px 6px; background: #e6edf5; }
 
 /* A shared palette ties the toolbar levels to their matching group rows. */
 .journal-group-tone-0 { --journal-group-bg: #eef5fd; --journal-group-text: #416a9b; --journal-group-border: #c8daef; --journal-group-accent: #9dbfe7; }
 .journal-group-tone-1 { --journal-group-bg: #eef8f4; --journal-group-text: #3e7766; --journal-group-border: #c5e2d6; --journal-group-accent: #9bcdbd; }
 .journal-group-tone-2 { --journal-group-bg: #f5f1fb; --journal-group-text: #76619a; --journal-group-border: #ded2ef; --journal-group-accent: #c4b1df; }
 .journal-group-tone-3 { --journal-group-bg: #f1f5f9; --journal-group-text: #5b708b; --journal-group-border: #d4dee9; --journal-group-accent: #acbacd; }
-.journal-grid-frame .ag-full-width-row.ag-row-group { color: var(--journal-group-text); box-shadow: inset 3px 0 var(--journal-group-accent); }
-.journal-grid-frame .ag-full-width-row.ag-row-group .ag-group-child-count { color: var(--journal-group-text); background: #ffffffa6; }
+.journal-grid-frame .ag-row-group { color: var(--journal-group-text); box-shadow: inset 3px 0 var(--journal-group-accent); }
+.journal-grid-frame .ag-row-group .ag-group-child-count { color: var(--journal-group-text); background: #ffffffa6; }
+
+/* Real grid cells keep grouped totals aligned through resize, pinning and scroll. */
+.journal-group-identity { display: flex; align-items: center; gap: 6px; height: 100%; min-width: 0; padding-left: calc(min(var(--ag-indentation-level, 0), 4) * 10px); }
+.journal-group-identity > .ag-group-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.journal-group-toggle { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 22px; height: 24px; border-radius: 4px; }
+.journal-group-toggle:hover { background: #ffffffa6; }
+.journal-group-toggle:focus-visible { outline: 2px solid #38bdf8; outline-offset: 1px; }
+.journal-grid-frame .ag-row-group .journal-group-toggle { margin: 0; }
+.journal-group-summary { display: flex; align-items: center; justify-content: flex-start; text-align: left; gap: 5px; height: 100%; min-width: 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.journal-group-summary > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.journal-group-summary[data-group-summary=weldDate] > span { white-space: normal; line-height: 1.2; }
+.journal-group-summary[data-group-summary=finalStatus] { flex-wrap: wrap; align-content: center; column-gap: 5px; row-gap: 0; line-height: 1.25; }
+.journal-group-summary small { font-size: 10px; white-space: nowrap; }
+.journal-group-status-good { color: #16815c; }
+.journal-group-status-bad, .journal-group-rejected { color: #c1324f; }
+.journal-group-status-pending { color: #52657b; }

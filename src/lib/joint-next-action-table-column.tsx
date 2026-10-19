@@ -8,12 +8,18 @@ import type { WeldTableExtraColumn } from '@/lib/weld-table-extra-columns'
 export function getJointNextActionTableColumns({
   activeReport,
   dispatcherTasks,
+  dispatcherTasksByRow,
+  dispatcherTasksPending,
+  dispatcherTasksError,
   controlProcessSettings,
   onRunNextAction,
   onOpenOverview,
 }: {
   activeReport: ActiveReport
   dispatcherTasks: readonly RepeatedJointTask[]
+  dispatcherTasksByRow?: ReadonlyMap<number, RepeatedJointTask[]>
+  dispatcherTasksPending?: boolean
+  dispatcherTasksError?: string
   controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
   onRunNextAction?: (row: WeldRow, action: JointNextAction) => void
   onOpenOverview?: (row: WeldRow) => void
@@ -35,7 +41,9 @@ export function getJointNextActionTableColumns({
     renderCell: (row) => (
       <JointNextActionTableCell
         row={row}
-        dispatcherTasks={dispatcherTasks}
+        dispatcherTasks={dispatcherTasksByRow ? dispatcherTasksByRow.get(row.id) ?? [] : dispatcherTasks}
+        tasksPending={dispatcherTasksPending}
+        tasksError={dispatcherTasksError}
         controlProcessSettings={controlProcessSettings}
         onRun={onRunNextAction}
         onOpenOverview={onOpenOverview}

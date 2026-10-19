@@ -36,5 +36,5 @@ test('задача линии открывает программу ПСТО и�
   await expect(page.locator('[data-welding-journal-grid]').getByRole('button', { name: 'NAV1', exact: true })).toBeVisible()
   await page.goForward()
   await expect(page).toHaveURL(/\/psto$/)
-  await expect(page.getByRole('button', { name: 'Выбрать стык NAV1', exact: true })).toBeVisible()
+  await expect(page.locator('[data-psto-grid]').getByRole('button', { name: 'NAV1', exact: true })).toBeVisible()
 })

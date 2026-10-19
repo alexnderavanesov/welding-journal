@@ -1,16 +1,27 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { journalFilterValueLabel, normalizeJournalAppearance, DEFAULT_JOURNAL_APPEARANCE, JOURNAL_GRID_STORAGE_KEY, journalClipboardValue, journalColumnLayout, mergeJournalSelection, readJournalGridStorage, writeJournalGridStorage } from './welding-journal-grid-state'
 import type { WeldRow } from './dispatcher-types'
+import { WELD_GRID_PROFILES } from './weld-report-grid-profile'
 
 describe('welding journal grid state', () => {
   beforeEach(() => localStorage.clear())
+  it('keeps PSTO layouts and named appearance snapshots separate from the journal', () => {
+    const journal = { columns: [{ colId: 'joint', width: 180 }], appearance: DEFAULT_JOURNAL_APPEARANCE, views: {} }
+    const psto = { columns: [{ colId: 'pstoResult', width: 280 }], appearance: { ...DEFAULT_JOURNAL_APPEARANCE, theme: 'balham' as const }, views: {} }
+    writeJournalGridStorage(journal)
+    const original = localStorage.getItem(JOURNAL_GRID_STORAGE_KEY)
+    writeJournalGridStorage(psto, WELD_GRID_PROFILES.heatTreatment.storageKey)
+    expect(localStorage.getItem(JOURNAL_GRID_STORAGE_KEY)).toBe(original)
+    expect(readJournalGridStorage().appearance.theme).toBe('quartz')
+    expect(readJournalGridStorage(WELD_GRID_PROFILES.heatTreatment.storageKey)).toMatchObject(psto)
+  })
   it('preserves selections outside the currently loaded page without keeping deselected visible rows', () => {
     const previous = new Set([1, 2, 501])
     expect(mergeJournalSelection(previous, [1, 2, 3], [2, 3])).toEqual(new Set([2, 3, 501]))
     expect(previous).toEqual(new Set([1, 2, 501]))
   })
   it('never restores server sorting or visibility from a sizing snapshot', () => {
-    expect(journalColumnLayout([{ colId: 'line', width: 9000, pinned: 'left', sort: 'desc', hide: true }]))
+    expect(journalColumnLayout([{ colId: '__groupLabel', pinned: 'left' }, { colId: 'line', width: 9000, pinned: 'left', sort: 'desc', hide: true }]))
       .toEqual([{ colId: 'line', width: 1200, pinned: 'left', rowGroup: false, rowGroupIndex: null }])
   })
   it('survives malformed storage and roundtrips layout alongside existing named views', () => {

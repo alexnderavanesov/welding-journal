@@ -262,7 +262,7 @@ test('request names open the exact document in grouped journal and LNK; missing 
     if (route === '/journal') {
       await page.locator('.ag-header-cell[col-id="line"]').click({ button: 'right' })
       await page.getByRole('menuitem', { name: /Сгруппировать загруженные по «Линия»/ }).click()
-      await page.locator('.ag-full-width-row.ag-row-group .ag-group-contracted').click()
+      await page.locator('[data-welding-journal-grid] .ag-row-group .ag-group-contracted').click()
     }
     for (const title of [systemTitle, secondTitle]) {
       const link = await revealReportDocument(page, title)

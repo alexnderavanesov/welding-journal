@@ -31,6 +31,7 @@ import { useReportModalEscapeKey } from '@/lib/use-report-modal-escape-key'
 import { useWorkflowRootCauseEscapeKey } from '@/lib/use-workflow-root-cause-escape-key'
 import { useReportModalSyncEffects } from '@/lib/use-report-modal-sync-effects'
 import { useJointChainDialogState } from '@/lib/use-joint-chain-dialog-state'
+import { useDispatcherTaskContext, useDispatcherTasksByRow } from '@/lib/use-dispatcher-task-context'
 import { useDispatcherTaskSnapshot } from '@/lib/use-dispatcher-task-snapshot'
 import {
 	buildDispatcherTaskServerFilters,
@@ -88,7 +89,7 @@ import { useSecurityGuard } from '@/lib/security-context'
 import { createDispatcherTaskCardHandlers } from '@/lib/dispatcher-task-card-props'
 import { createReportRowActionHandlers } from '@/lib/report-row-action-handlers'
 import { createWeldTableProps } from '@/lib/weld-table-props'
-import type { JournalExportFieldsRef } from '@/lib/welding-journal-export-fields'
+import type { WeldReportExportFieldsRef } from '@/lib/weld-report-export-fields'
 import { createWelderStampsRegistryProps } from '@/lib/welder-stamps-registry-props'
 import { createReportHeaderActionsProps } from '@/lib/report-header-actions-props'
 import { createReportSummaryBarProps } from '@/lib/report-summary-props'
@@ -1133,6 +1134,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     undefined,
     remoteFinalStatusContext,
     otherSettings,
+    false,
+    activeReport === 'heatTreatment',
   )
   const isLnkRowsContextReady = isRemoteFinalStatusContextReady &&
     lnkWorkflowRowsRequest !== null &&
@@ -1152,7 +1155,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const visibleRepeatedJointTasks = isServerPagedTab
     ? dispatcherTaskSnapshot.repeatedJointTasks
     : []
-  const adviceRepeatedJointTasks = isServerPagedTab || Boolean(chainRecord)
+  const snapshotAdviceTasks = isServerPagedTab || Boolean(chainRecord)
     ? dispatcherTaskSnapshot.adviceRepeatedJointTasks
     : []
   const visibleRepeatedJointTaskGroups = isServerPagedTab
@@ -1247,6 +1250,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     chainRecord,
     onClose: () => setChainRecord(null),
   })
+  const needsTaskContext = dispatcherTaskSnapshot.hasMoreTasks
+  const taskContextRevision = dispatcherTaskSnapshot.data?.isFresh ? dispatcherTaskSnapshot.data.computedRevision : null
+  const chainTaskContext = useDispatcherTaskContext(chainRows, taskContextRevision, Boolean(chainRecord) && needsTaskContext)
   const {
     selectedHeatTreatmentRows,
     selectedLnkRows,
@@ -1824,8 +1830,15 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     finalStatusContextQuery.isEnabled && isRemoteFinalStatusContextReady ? remoteFinalStatusContext : undefined,
     otherSettings,
     true,
+    activeReport === 'heatTreatment',
   )
   const pagedReportRows = basePagedReportRows
+  const tableTaskContext = useDispatcherTaskContext(pagedReportRows, taskContextRevision, isServerPagedTab && needsTaskContext)
+  const tableAdviceTasks = needsTaskContext ? tableTaskContext.tasks : snapshotAdviceTasks
+  const tableTasksByRow = useDispatcherTasksByRow(pagedReportRows, tableAdviceTasks)
+  const adviceRepeatedJointTasks = useMemo(() => [...new Map([
+    ...snapshotAdviceTasks, ...tableTaskContext.tasks, ...chainTaskContext.tasks,
+  ].map(task => [task.key, task])).values()], [snapshotAdviceTasks, tableTaskContext.tasks, chainTaskContext.tasks])
   const tableDispatcherTaskRowIds = useMemo(
     () =>
       new Set(
@@ -2013,7 +2026,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   )
   const preparePstoOutputRows = useCallback(
     (sourceRows: WeldRow[], finalStatusContext: FinalStatusRowsContext = remoteFinalStatusContext, preserveSourceOrder = false) => buildHeatTreatmentReportRows(
-      prepareReportRows(sourceRows, [], undefined, finalStatusContext, otherSettings),
+      prepareReportRows(sourceRows, [], undefined, finalStatusContext, otherSettings, false, preserveSourceOrder),
       { preserveSourceOrder },
     ),
     [otherSettings, remoteFinalStatusContext],
@@ -2091,7 +2104,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     loadLnkOutputRows,
     loadWeldingJournalPageRows,
   ])
-  const journalExportFieldsRef = useRef<JournalExportFieldsRef['current']>(null)
+  const reportExportFieldsRef = useRef<WeldReportExportFieldsRef['current']>(null)
   const {
     reportPreviewProps,
     openLnkConclusionsReport,
@@ -2113,7 +2126,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     activeTitle,
     outputContext: `${reportOutputContext}:${reportOutputGeneration}`,
     currentRowsReady: weldPageQuery.rowsReady,
-    journalExportFieldsRef,
+    reportExportFieldsRef,
     loadLnkRows: loadLnkOutputRows,
     loadPstoRows: loadPstoOutputRows,
     loadWeldingJournalRows: loadWeldingJournalOutputRows,
@@ -3542,7 +3555,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     selectable: activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment',
     selectedRowIds: activeSelectedRowIds,
     onSelectedRowIdsChange: setActiveSelectedRowIds,
-    dispatcherTasks: adviceRepeatedJointTasks,
+    dispatcherTasks: tableAdviceTasks,
+    dispatcherTasksByRow: tableTasksByRow,
+    dispatcherTasksPending: tableTaskContext.pending,
+    dispatcherTasksError: tableTaskContext.error?.message ?? (needsTaskContext && dispatcherTaskSnapshot.error instanceof Error ? dispatcherTaskSnapshot.error.message : undefined),
     controlProcessSettings,
     onRunNextAction: runJointNextAction,
     lnkSectionLayout,
@@ -4433,6 +4449,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     action: JointNextAction,
     options: JointNextActionOptions = {},
   ) {
+    if (action.kind === 'dispatcherTask' && !options.runDispatcherAction &&
+      !snapshotAdviceTasks.some(task => task.key === action.taskKey)) {
+      openChainPicture(row, { initialTab: 'actions', focusedTaskKey: action.taskKey })
+      return
+    }
     const targetReport = action.kind === 'editWeld' || (action.kind === 'dispatcherTask' && !options.runDispatcherAction)
       ? 'weldingJournal'
       : action.kind === 'pstoRequest' || action.kind === 'pstoResult' || action.kind === 'tvmtRequest' || action.kind === 'tvmtResult'
@@ -4535,6 +4556,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     transitions: chainTransitions,
     earlyCoilCandidates: chainEarlyCoilCandidates,
     dispatcherTasks: adviceRepeatedJointTasks,
+    taskContextRevision: needsTaskContext ? taskContextRevision : undefined,
+    taskContextPending: chainTaskContext.pending && !dispatcherTaskSnapshot.error,
+    taskContextError: chainTaskContext.error?.message ?? (needsTaskContext && dispatcherTaskSnapshot.error instanceof Error ? dispatcherTaskSnapshot.error.message : undefined),
     controlProcessSettings,
     errorMessage: chainRowsError,
     isLoading: isChainRowsLoading,
@@ -4561,7 +4585,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onCreateEarlyCoil: (row, candidate) =>
       runProtectedEdit('досрочная врезка катушки', () => createEarlyCoilFromChain(row, candidate)),
     onOpenOfficiality: openLnkOfficialityWorkflowForRow,
-    onRetry: retryChainRows,
+    onRetry: () => {
+      void retryChainRows()
+      void dispatcherTaskSnapshot.refreshTasks().then(revision => {
+        if (revision === taskContextRevision) return chainTaskContext.refetch()
+      }).catch(() => { /* Snapshot errors already expose an explicit retry. */ })
+    },
   })
   const allowedArchivedOfficialStampsForEditing = getArchivedOfficialStampValuesForRecord(editing?.record, welderStamps)
   const activeRootCauseTarget = currentWorkflowRootCauseAction?.target
@@ -5440,7 +5469,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     welderStamps,
     welderStampsRegistryProps: { ...welderStampsRegistryProps, onTasksVisibilityChange: setAreWelderTasksVisible },
     weldTableProps,
-    journalExportFieldsRef,
+    reportExportFieldsRef,
     onOpenPercentageLineStampRows: openPercentageLineStampRows,
     onOpenReportRowIds: openReportRowIds,
     onOpenWeldRowIds: openWeldRowIds,

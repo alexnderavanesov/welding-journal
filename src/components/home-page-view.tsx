@@ -1,3 +1,4 @@
+import { isAgGridWeldReport } from '@/lib/weld-report-grid-profile'
 import { lazy, Suspense, memo, type ComponentProps } from 'react'
 const CoilRestorationDialog = lazy(() => import('./coil-restoration-dialog').then(module => ({ default: module.CoilRestorationDialog })))
 const ChainActualityDialog = lazy(() => import('./chain-actuality-dialog').then(module => ({ default: module.ChainActualityDialog })))
@@ -43,7 +44,7 @@ type HomePageViewProps = {
   welderStamps: ComponentProps<typeof ReportMainContent>['welderStamps']
   welderStampsRegistryProps: ComponentProps<typeof ReportMainContent>['welderStampsRegistryProps']
   weldTableProps: ComponentProps<typeof ReportMainContent>['weldTableProps']
-  journalExportFieldsRef: ComponentProps<typeof ReportMainContent>['journalExportFieldsRef']
+  reportExportFieldsRef: ComponentProps<typeof ReportMainContent>['reportExportFieldsRef']
   onOpenPercentageLineStampRows: ComponentProps<typeof ReportMainContent>['onOpenPercentageLineStampRows']
   onOpenReportRowIds: ComponentProps<typeof ReportMainContent>['onOpenReportRowIds']
   onOpenWeldRowIds: ComponentProps<typeof ReportMainContent>['onOpenWeldRowIds']
@@ -93,7 +94,7 @@ export function HomePageView({
   welderStamps,
   welderStampsRegistryProps,
   weldTableProps,
-  journalExportFieldsRef,
+  reportExportFieldsRef,
   onOpenPercentageLineStampRows,
   onOpenReportRowIds,
   onOpenWeldRowIds,
@@ -128,7 +129,7 @@ export function HomePageView({
     welderStamps,
     welderStampsRegistryProps,
     weldTableProps,
-    journalExportFieldsRef,
+    reportExportFieldsRef,
     onOpenPercentageLineStampRows,
     onOpenReportRowIds,
     onOpenWeldRowIds,
@@ -159,7 +160,7 @@ export function HomePageView({
 
       {reportTaskPanelsProps.dispatcherWorkspaceOpen ? (
         <DispatcherWorkspaceDialog
-          journalAppearance={reportTaskPanelsProps.activeReport === 'weldingJournal'}
+          journalAppearance={isAgGridWeldReport(reportTaskPanelsProps.activeReport)}
           tasks={reportTaskPanelsProps.repeatedJointTasks}
           groups={reportTaskPanelsProps.repeatedJointTaskGroups}
           totalTaskCount={reportTaskPanelsProps.repeatedJointTaskCount ?? reportTaskPanelsProps.repeatedJointTasks.length}
@@ -222,7 +223,7 @@ type ReportBackgroundProps = Pick<
   | 'welderStamps'
   | 'welderStampsRegistryProps'
   | 'weldTableProps'
-  | 'journalExportFieldsRef'
+  | 'reportExportFieldsRef'
   | 'onOpenPercentageLineStampRows'
   | 'onOpenReportRowIds'
   | 'onOpenWeldRowIds'
@@ -250,7 +251,7 @@ function ReportBackground({
   welderStamps,
   welderStampsRegistryProps,
   weldTableProps,
-  journalExportFieldsRef,
+  reportExportFieldsRef,
   onOpenPercentageLineStampRows,
   onOpenReportRowIds,
   onOpenWeldRowIds,
@@ -270,16 +271,15 @@ function ReportBackground({
     activeReport === 'settings' ||
     activeReport === 'userGuide'
   const isWeldTableReport =
-    activeReport === 'weldingJournal' ||
-    activeReport === 'heatTreatment' ||
+    isAgGridWeldReport(activeReport) ||
     activeReport === 'lnk'
   const reportTaskPanels = !isStandaloneReport ? <ReportTaskPanels {...reportTaskPanelsProps} /> : null
   const reportHeader = (
       <ReportPageHeader
         title={activeTitle}
         stickyLeft={stickyLeft}
-        fluid={activeReport === 'percentageLines' || activeReport === 'weldingJournal'}
-        summary={!isStandaloneReport && activeReport !== 'weldingJournal' ? <ReportSummaryBar {...reportSummaryBarProps} embedded /> : undefined}
+        fluid={activeReport === 'percentageLines' || isAgGridWeldReport(activeReport)}
+        summary={!isStandaloneReport && !isAgGridWeldReport(activeReport) ? <ReportSummaryBar {...reportSummaryBarProps} embedded /> : undefined}
       >
         {activeReport === 'percentageLines' ? <div data-line-program-report-actions /> : null}
         {activeReport !== 'percentageLines' && activeReport !== 'documents' && activeReport !== 'settings' && activeReport !== 'userGuide' ? (
@@ -300,8 +300,8 @@ function ReportBackground({
         welderStampsRegistryProps={welderStampsRegistryProps}
         welderStampsHeader={activeReport === 'welderStamps' ? reportHeader : undefined}
         weldTableProps={weldTableProps}
-        journalExportFieldsRef={journalExportFieldsRef}
-        journalSummary={activeReport === 'weldingJournal' ? beforeSearch => <ReportSummaryBar {...reportSummaryBarProps} embedded beforeSearch={beforeSearch} /> : undefined}
+        reportExportFieldsRef={reportExportFieldsRef}
+        journalSummary={isAgGridWeldReport(activeReport) ? beforeSearch => <ReportSummaryBar {...reportSummaryBarProps} embedded beforeSearch={beforeSearch} /> : undefined}
         onOpenPercentageLineStampRows={onOpenPercentageLineStampRows}
         onOpenReportRowIds={onOpenReportRowIds}
         onOpenWeldRowIds={onOpenWeldRowIds}

@@ -10,6 +10,7 @@ import { buildFinalStatusRowsContext, calculateFinalStatusInRows, type FinalStat
 import { LNK_METHODS } from '@/lib/report-config'
 import type { OtherSettings } from '@/lib/other-settings'
 import { isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
+import { isControlCancelledValue } from '@/lib/control-availability-values'
 
 type ReportWdiSettings = Pick<OtherSettings, 'wdiCalculationMode' | 'wdiTable'> &
   Partial<Pick<OtherSettings, 'wdiCalculationRules'>>
@@ -34,6 +35,7 @@ export function prepareReportRows(
   finalStatusSourceContext?: FinalStatusRowsContext,
   otherSettings?: ReportWdiSettings,
   preserveStoredRepairStatus = false,
+  preserveCancelledPstoResult = false,
 ) {
   const duplicateControlsByWeldId = new Map<number, DuplicateControlRecord[]>()
   for (const control of duplicateControls) {
@@ -54,13 +56,19 @@ export function prepareReportRows(
   })
   const finalStatusRows = finalStatusSourceRows ?? rows
   const finalStatusContext = finalStatusSourceContext ?? buildFinalStatusRowsContext(finalStatusRows)
-  const preparedRows = rows.map((row) => {
+  const preparedRows = rows.map((row, index) => {
     const calculatedStatus = calculateFinalStatusInRows(row, finalStatusRows, finalStatusContext)
     // A paged report may not contain the rejected source. Keep its server-
     // calculated repair status until an authoritative complete context is loaded.
     const keepRepair = preserveStoredRepairStatus && !finalStatusSourceContext &&
       calculatedStatus === 'ожидает сварку' && row.finalStatus === 'ожидает ремонт'
-    return { ...row, finalStatus: keepRepair ? 'ожидает ремонт' : calculatedStatus }
+    const source = sourceRows?.[index] as WeldRow | undefined
+    // PSTO's display accessor decorates cancellation. Restore the primary fact
+    // only after the existing status calculation, without changing dispatcher
+    // preparation or the journal/LNK's established result annotations.
+    return { ...row, finalStatus: keepRepair ? 'ожидает ремонт' : calculatedStatus,
+      ...(preserveCancelledPstoResult && source && isControlCancelledValue(source.pstoRequired)
+        ? { pstoResult: source.pstoResult } : {}) }
   })
   return otherSettings && isSystemWdiMode(otherSettings)
     ? preparedRows.map((row) => withSystemWdi(row, otherSettings))
@@ -111,6 +119,7 @@ export function useReportRows(
   finalStatusSourceContext?: FinalStatusRowsContext,
   otherSettings?: ReportWdiSettings,
   preserveStoredRepairStatus = false,
+  preserveCancelledPstoResult = false,
 ) {
   const previousRowsRef = useRef<WeldRow[]>([])
   return useMemo(
@@ -122,12 +131,13 @@ export function useReportRows(
         finalStatusSourceContext,
         otherSettings,
         preserveStoredRepairStatus,
+        preserveCancelledPstoResult,
       )
       const sharedRows = reuseEquivalentWeldRows(previousRowsRef.current, nextRows)
       previousRowsRef.current = sharedRows
       return sharedRows
     },
-    [duplicateControls, finalStatusSourceContext, finalStatusSourceRows, otherSettings, preserveStoredRepairStatus, sourceRows],
+    [duplicateControls, finalStatusSourceContext, finalStatusSourceRows, otherSettings, preserveStoredRepairStatus, preserveCancelledPstoResult, sourceRows],
   )
 }
 

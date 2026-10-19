@@ -10,18 +10,25 @@ export const TK_ASSIGNMENT_ACTIONS = ['assign', 'reassign', 'rename'] as const
 export type TechnologyCardAssignmentAction = typeof TK_ASSIGNMENT_ACTIONS[number]
 export const TK_ASSIGNMENT_LABELS = {
   assign: 'Назначить', reassign: 'Заменить', rename: 'Обновить название', unchanged: 'Без изменений',
-  ambiguous: 'Неоднозначные', none: 'Нет подходящей ТК', incomplete: 'Недостаточно данных', excluded: 'Без даты / Т-стыки',
+  ambiguous: 'Неоднозначные', none: 'Нет подходящей ТК', incomplete: 'Недостаточно данных', excluded: 'Пропущены',
 } as const
 export type TechnologyCardAssignmentKind = keyof typeof TK_ASSIGNMENT_LABELS
 export type TechnologyCardAssignmentCounts = Record<TechnologyCardAssignmentKind | 'mismatch', number>
-export type TechnologyCardAssignmentFilter = 'all' | 'changes' | keyof TechnologyCardAssignmentCounts
+export const TK_ASSIGNMENT_FILTER_LABELS = {
+  all: 'Все', changes: 'Предлагаемые изменения', attention: 'Требуют внимания', unchanged: 'Без изменений', excluded: 'Пропущены',
+} as const
+export type TechnologyCardAssignmentFilter = keyof typeof TK_ASSIGNMENT_FILTER_LABELS
 export function technologyCardAssignmentFilterCount(counts: TechnologyCardAssignmentCounts, filter: TechnologyCardAssignmentFilter) {
   if (filter === 'changes') return counts.assign + counts.reassign + counts.rename
+  if (filter === 'attention') return counts.ambiguous + counts.none + counts.incomplete
   if (filter === 'all') return Object.entries(counts).reduce((sum, [key, count]) => sum + (key === 'mismatch' ? 0 : count), 0)
   return counts[filter]
 }
 export function matchesTechnologyCardAssignmentFilter(row: TechnologyCardAssignmentProposal, filter: TechnologyCardAssignmentFilter) {
-  return filter === 'all' || (filter === 'changes' ? isTechnologyCardAssignmentAction(row.kind) : filter === 'mismatch' ? row.mismatch : row.kind === filter)
+  if (filter === 'all') return true
+  if (filter === 'changes') return isTechnologyCardAssignmentAction(row.kind)
+  if (filter === 'attention') return row.kind === 'ambiguous' || row.kind === 'none' || row.kind === 'incomplete'
+  return row.kind === filter
 }
 export const emptyTechnologyCardAssignmentCounts = (): TechnologyCardAssignmentCounts => ({
   assign: 0, reassign: 0, rename: 0, unchanged: 0, ambiguous: 0, none: 0, incomplete: 0, excluded: 0, mismatch: 0,
@@ -47,8 +54,11 @@ export function createTechnologyCardAssignmentClassifier(snapshot: TechnologyCar
     const name = normalizeTechnologyCardName(row.technologyCardNumber)
     const base = { id: row.id, project: [row.projectTitle, row.subtitleCode].filter(Boolean).join(' / '),
       line: row.line ?? '', joint: row.joint ?? '', oldName: name, newName: '', mismatch: false }
-    if (!String(row.weldDate ?? '').trim() || isTConnectionType(row.connectionType)) {
-      return { ...base, kind: 'excluded', reason: 'Стык без даты сварки или Т-соединение: массовый подбор не выполняется.' }
+    const skipReasons: string[] = []
+    if (!String(row.weldDate ?? '').trim()) skipReasons.push('Нет даты сварки: массовый подбор выполняется только для заваренных стыков.')
+    if (isTConnectionType(row.connectionType)) skipReasons.push('Подбор ТК для Т-соединений пока не поддерживается.')
+    if (skipReasons.length) {
+      return { ...base, kind: 'excluded', reason: skipReasons.join(' ') }
     }
     const matches = matcher.match(row)
     if (!parseDateLikeToIso(row.weldDate) || matches.issues.length) {

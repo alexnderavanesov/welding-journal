@@ -42,7 +42,7 @@ for (const path of ['/journal', '/lnk', '/psto']) {
     try {
       await page.goto(path)
       await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(first)
-      const row = page.getByRole('button', { name: first, exact: true }).locator(path === '/journal' ? 'xpath=ancestor::*[@role="row"]' : 'xpath=ancestor::tr')
+      const row = page.getByRole('button', { name: first, exact: true }).locator(path === '/lnk' ? 'xpath=ancestor::tr' : 'xpath=ancestor::*[@role="row"]')
       await expect(row).toBeVisible()
       await expect.poll(() => requests).toBeGreaterThan(0)
       await expect(summary(page)).toContainText(/Ид[её]т подсч[её]т/)
@@ -53,9 +53,15 @@ for (const path of ['/journal', '/lnk', '/psto']) {
         await editor.getByRole('button', { name: 'Отмена', exact: true }).click()
       } else {
         // Dedicated control reports deliberately have no general edit button.
-        const select = row.getByRole('button', { name: `Выбрать стык ${first}`, exact: true })
-        await select.click()
-        await expect(select).toHaveAttribute('aria-pressed', 'true')
+        if (path === '/psto') {
+          const select = row.getByRole('checkbox')
+          await select.check()
+          await expect(select).toBeChecked()
+        } else {
+          const select = row.getByRole('button', { name: `Выбрать стык ${first}`, exact: true })
+          await select.click()
+          await expect(select).toHaveAttribute('aria-pressed', 'true')
+        }
         await row.getByRole('button', { name: first, exact: true }).click()
         const picture = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: `Картина стыка ${first}`, exact: true }) })
         await expect(picture).toBeVisible()
@@ -206,13 +212,29 @@ for (const path of ['/lnk', '/psto']) test(`${path}: current preview and real Ex
   await page.goto(path)
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('F970')
   await expect(summary(page)).toContainText(/(?:Стыков на ЛНК|Стыков на ПСТО): 2(?:\s|·|$)/)
-  await page.getByRole('button', { name: 'Наборы', exact: true }).click()
-  const sorting = page.getByRole('dialog', { name: 'Наборы столбцов и сортировка', exact: true })
-  await sorting.getByRole('combobox').nth(0).selectOption('joint')
-  await sorting.getByRole('combobox').nth(1).selectOption('desc')
-  await page.keyboard.press('Escape')
-  const joints = page.locator('tbody').getByRole('button', { name: /^F970\d{3}$/ })
-  await expect(joints).toHaveText([second, first])
+  if (path === '/psto') {
+    const header = page.locator('[data-psto-grid] .ag-header-cell[col-id="joint"]')
+    await header.locator('.ag-header-cell-text').click()
+    await expect(header).toHaveAttribute('aria-sort', 'ascending')
+    await header.locator('.ag-header-cell-text').click()
+    await expect(header).toHaveAttribute('aria-sort', 'descending')
+  } else {
+    await page.getByRole('button', { name: 'Наборы', exact: true }).click()
+    const sorting = page.getByRole('dialog', { name: 'Наборы столбцов и сортировка', exact: true })
+    await sorting.getByRole('combobox').nth(0).selectOption('joint')
+    await sorting.getByRole('combobox').nth(1).selectOption('desc')
+    await page.keyboard.press('Escape')
+  }
+  if (path === '/psto') {
+    // AG reuses DOM nodes and positions them by row-index; DOM insertion order
+    // can remain unchanged after sorting. Assert the actual displayed order.
+    for (const [index, joint] of [second, first].entries()) {
+      await expect(page.locator(`[data-psto-grid] .ag-grid-scrolling-rows .ag-row[row-index="${index}"] [col-id="joint"]`)
+        .getByRole('button', { name: /^F970\d{3}$/ })).toHaveText(joint)
+    }
+  } else {
+    await expect(page.locator('tbody').getByRole('button', { name: /^F970\d{3}$/ })).toHaveText([second, first])
+  }
   await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
   await page.getByRole('button', { name: 'Текущая версия', exact: true }).click()
   const preview = page.getByRole('dialog', { name: 'Предпросмотр отчёта', exact: true })

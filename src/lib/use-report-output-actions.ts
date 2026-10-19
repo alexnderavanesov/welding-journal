@@ -7,6 +7,7 @@ import {
   buildLnkToRequestReport,
   buildLnkWaitingNkReport,
   buildPstoResultsReport,
+  buildPstoCurrentReport,
   buildPstoWaitingRequestReport,
   buildWeldingJournalCancelledAcceptedReport,
   buildWeldingJournalCurrentReport,
@@ -18,11 +19,12 @@ import {
 } from '@/lib/report-show-builders'
 import type { ReportRow } from '@/lib/report-row-actions'
 import type { ActiveReport } from '@/lib/home-state'
-import type { WeldInput } from '@/lib/weld-fields'
+import type { WeldField, WeldInput } from '@/lib/weld-fields'
 import { useControlProcessSettings } from '@/lib/control-process-settings'
 import { useReportPreview } from '@/lib/use-report-preview'
 import type { ReportPreviewContent } from '@/lib/tabular-report'
-import type { JournalExportFieldsRef } from '@/lib/welding-journal-export-fields'
+import type { AgGridWeldReport } from '@/lib/weld-report-grid-profile'
+import type { WeldReportExportFieldsRef } from '@/lib/weld-report-export-fields'
 
 export type LnkOutputRowsKind = 'current' | 'waitingNk' | 'waitingRequest' | 'conclusions'
 export type PstoOutputRowsKind = 'current' | 'waitingRequest' | 'results'
@@ -40,7 +42,7 @@ type UseReportOutputActionsParams = {
   activeTitle: string
   outputContext?: string
   currentRowsReady?: boolean
-  journalExportFieldsRef: JournalExportFieldsRef
+  reportExportFieldsRef: WeldReportExportFieldsRef
   loadLnkRows: (kind: LnkOutputRowsKind) => Promise<ReportRow[]>
   loadPstoRows: (kind: PstoOutputRowsKind) => Promise<ReportRow[]>
   loadWeldingJournalRows: (kind: WeldingJournalOutputRowsKind) => Promise<WeldInput[]>
@@ -55,7 +57,7 @@ export function useReportOutputActions({
   activeTitle,
   outputContext,
   currentRowsReady = true,
-  journalExportFieldsRef,
+  reportExportFieldsRef,
   loadLnkRows,
   loadPstoRows,
   loadWeldingJournalRows,
@@ -116,16 +118,13 @@ export function useReportOutputActions({
 
     async function openPstoCurrentReport() {
       if (!canOpenCurrentReport()) return
+      const fields = currentGridFields('heatTreatment')
+      if (!fields) return
       setIsPstoShowMenuOpen(false)
       await openLoadedReport(
         'ПСТО и ТВМТ',
         () => loadPstoRows('current'),
-        (rows) => buildCurrentReport(
-          rows,
-          getReportExportOptions(activeReport, activeTitle, controlProcessSettings).fields,
-          'ПСТО и ТВМТ: текущая версия',
-          getReportExportFilename(activeReport),
-        ),
+        (rows) => buildPstoCurrentReport(rows, fields),
       )
     }
 
@@ -139,17 +138,23 @@ export function useReportOutputActions({
       await openLoadedReport('ПСТО «Результаты»', () => loadPstoRows('results'), buildPstoResultsReport)
     }
 
-    async function openWeldingJournalCurrentReport() {
-      if (!canOpenCurrentReport()) return
-      const fields = journalExportFieldsRef.current?.()
+    function currentGridFields(report: AgGridWeldReport): WeldField[] | null {
+      const fields = reportExportFieldsRef.current?.(report)
       if (!fields) {
-        setMessage('Дождитесь загрузки столбцов сварочного журнала.')
-        return
+        setMessage('Дождитесь загрузки столбцов текущего отчёта.')
+        return null
       }
       if (!fields.length) {
         setMessage('В текущем виде нет столбцов для отчёта. Выберите поля в «Настроить вид → Столбцы».')
-        return
+        return null
       }
+      return fields
+    }
+
+    async function openWeldingJournalCurrentReport() {
+      if (!canOpenCurrentReport()) return
+      const fields = currentGridFields('weldingJournal')
+      if (!fields) return
       setIsWeldingJournalShowMenuOpen(false)
       await openLoadedReport(
         'сварочного журнала',
@@ -212,7 +217,7 @@ export function useReportOutputActions({
     activeReport,
     activeTitle,
     currentRowsReady,
-    journalExportFieldsRef,
+    reportExportFieldsRef,
     controlProcessSettings,
     loadLnkRows,
     loadPstoRows,

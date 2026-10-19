@@ -7,6 +7,7 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import { buildWeldColumnValueFilter, parseWeldColumnChoiceFilter } from '@/lib/weld-table-filtering'
 import { JOURNAL_SERVER_FILTER } from './welding-journal-grid-filter'
 import { JournalFilterContext } from './welding-journal-grid-context'
+import type { AgGridWeldReport } from '@/lib/weld-report-grid-profile'
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), close: vi.fn(), model: vi.fn() }))
 vi.mock('@/server/weld-read-api', () => ({ listWeldColumnFilterOptions: mocks.load }))
@@ -16,12 +17,12 @@ vi.mock('ag-grid-react', () => ({ useGridFilterDisplay: (callbacks: { afterGuiAt
 const clients: QueryClient[] = []
 afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear()); vi.clearAllMocks() })
 
-function setup(field: WeldFieldKey, initial: string[] = []) {
+function setup(field: WeldFieldKey, initial: string[] = [], report: AgGridWeldReport = 'weldingJournal') {
   const change = vi.fn(), client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client)
   const Filter = JOURNAL_SERVER_FILTER.component
   function Test() {
     const [filters, setFilters] = useState<Record<string, string>>({ line: 'L1', ...(initial.length ? { [field]: buildWeldColumnValueFilter(initial) } : {}) })
-    return <QueryClientProvider client={client}><JournalFilterContext.Provider value={{ columnFilters: filters, onColumnFiltersChange: next => { change(next); setFilters(next) } }}>
+    return <QueryClientProvider client={client}><JournalFilterContext.Provider value={{ report, columnFilters: filters, onColumnFiltersChange: next => { change(next); setFilters(next) } }}>
       <Filter {...({ column: { getColId: () => field, getColDef: () => ({ headerName: 'Дата' }) }, onModelChange: mocks.model } as unknown as CustomFilterDisplayProps)} />
     </JournalFilterContext.Provider></QueryClientProvider>
   }
@@ -30,6 +31,15 @@ function setup(field: WeldFieldKey, initial: string[] = []) {
 }
 
 describe('journal grid date hierarchy', () => {
+  it('isolates PSTO facets from journal cached results and keeps the full query scope', async () => {
+    mocks.load.mockResolvedValue([{ value: 'проведено', label: 'проведено', count: 250 }])
+    setup('pstoResult', [], 'heatTreatment')
+    await screen.findByRole('checkbox', { name: /проведено/ })
+    expect(mocks.load).toHaveBeenCalledOnce()
+    expect(mocks.load.mock.calls[0][0].data).toEqual({ report: 'heatTreatment', fieldKey: 'pstoResult', search: '', columnFilters: { line: 'L1' } })
+    expect(clients.at(-1)!.getQueryCache().getAll().map(query => query.queryKey.slice(0, 3)))
+      .toEqual([['weld-column-filter-options', 'heatTreatment', 'pstoResult']])
+  })
   it.each(['01.10.2026', '01.10', '2026-10-01'])('finds the displayed date using %s without changing its source token or querying again', async search => {
     mocks.load.mockResolvedValue([
       { value: '2026-10-01', label: '2026-10-01', count: 2 },

@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto'
 import { applyOperation, previewOperation } from '../../src/server/document-operation-service'
 import type { DocumentOperationRequest } from '../../src/lib/system-document-operation'
 import { loadSystemDocumentSpecialistSnapshot } from '../../src/server/system-document-index'
+import { pstoActionRow } from './psto-grid-helpers'
 
 const project = 'E2E specialist result creation'
 const names = ['E2E результат специалист А', 'E2E результат специалист Б']
@@ -46,7 +47,19 @@ for (const stage of ['beforeHeatTreatment', 'psto'] as const) test(`new ${stage}
   })
   await page.goto(isPre ? '/lnk' : '/psto')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
-  const row = page.getByRole('button', { name: 'Выбрать стык F99001', exact: true }).locator('xpath=ancestor::tr')
+  const loadedRows = page.getByText(isPre ? 'из 2 строк' : 'Загружено: 2 из 2', { exact: true })
+  await expect(loadedRows).toBeVisible()
+  // Initial dispatcher publication persists finalStatus and changes rowVersion.
+  // This scenario tests specialist creation, so open its draft only after the
+  // fixture is published and the browser has received the refreshed row versions.
+  await expect.poll(() => withE2eDatabase(async db => (await db.query(
+    'select source_revision=computed_revision as fresh from dispatcher_task_index_state where id=1',
+  )).rows[0]?.fresh), { timeout: 10_000 }).toBe(true)
+  await page.waitForLoadState('networkidle')
+  await expect(loadedRows).toBeVisible()
+  const row = isPre
+    ? page.getByRole('button', { name: 'Выбрать стык F99001', exact: true }).locator('xpath=ancestor::tr')
+    : await pstoActionRow(page, 'F99001')
   await row.getByRole('button', { name: isPre ? 'Выполнить: Внести результат НК до ТО' : 'Выполнить: Внести результат ПСТО · цикл 1', exact: true }).click()
   const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: isPre ? 'Внесение результатов ЛНК до ТО' : 'Внесение результатов ПСТО', exact: true }) })
   const checkboxes = dialog.getByRole('checkbox', { name: /^Выбрать стык SPEC-L/ })
@@ -123,7 +136,9 @@ for (const stage of ['beforeHeatTreatment', 'psto'] as const) test(`new ${stage}
   async function reopen() {
     await page.reload()
     await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
-    const newRow = page.getByRole('button', { name: 'Выбрать стык F99003', exact: true }).locator('xpath=ancestor::tr')
+    const newRow = isPre
+      ? page.getByRole('button', { name: 'Выбрать стык F99003', exact: true }).locator('xpath=ancestor::tr')
+      : await pstoActionRow(page, 'F99003')
     await newRow.getByRole('button', { name: isPre ? 'Выполнить: Внести результат НК до ТО' : 'Выполнить: Внести результат ПСТО · цикл 1', exact: true }).click()
     await expect(dialog.getByRole('combobox', { name: 'Разделение документов', exact: true })).toBeEnabled()
     await dialog.getByRole('tab', { name: 'Специалисты', exact: true }).click()

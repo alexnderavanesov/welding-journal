@@ -10,6 +10,9 @@ type CreateReportChainDialogPropsOptions = {
   transitions: ChainDialogProps['transitions']
   earlyCoilCandidates: ChainDialogProps['earlyCoilCandidates']
   dispatcherTasks: ChainDialogProps['dispatcherTasks']
+  taskContextRevision?: number | null
+  taskContextPending?: boolean
+  taskContextError?: string
   controlProcessSettings: ChainDialogProps['controlProcessSettings']
   errorMessage: ChainDialogProps['errorMessage']
   isLoading: ChainDialogProps['isLoading']
@@ -45,6 +48,9 @@ export function createReportChainDialogProps({
   transitions,
   earlyCoilCandidates,
   dispatcherTasks,
+  taskContextRevision,
+  taskContextPending,
+  taskContextError,
   controlProcessSettings,
   errorMessage,
   isLoading,
@@ -81,6 +87,9 @@ export function createReportChainDialogProps({
           transitions,
           earlyCoilCandidates,
           dispatcherTasks,
+          taskContextRevision,
+          taskContextPending,
+          taskContextError,
           controlProcessSettings,
           errorMessage,
           isLoading,

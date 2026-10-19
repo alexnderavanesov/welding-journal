@@ -8,16 +8,23 @@ import { buildJointNextActions, type JointNextAction } from '@/lib/joint-next-ac
 export function JointNextActionTableCell({
   row,
   dispatcherTasks,
+  tasksPending,
+  tasksError,
   controlProcessSettings,
   onRun,
   onOpenOverview,
 }: {
   row: WeldRow
   dispatcherTasks: readonly RepeatedJointTask[]
+  tasksPending?: boolean
+  tasksError?: string
   controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
   onRun: (row: WeldRow, action: JointNextAction) => void
   onOpenOverview: (row: WeldRow) => void
 }) {
+  if (tasksPending || tasksError) return <button type="button" data-joint-next-action-cell="true"
+    className="h-[52px] px-2.5 text-left text-xs text-slate-500" title={tasksError ?? 'Действия загружаются'}
+    onClick={() => onOpenOverview(row)}>{tasksError ? 'Не удалось загрузить действия. Открыть картину стыка' : 'Загружаем действия…'}</button>
   const action = buildJointNextActions(row, dispatcherTasks, controlProcessSettings)[0]
   if (!action) return null
   const Icon = action.tone === 'success'

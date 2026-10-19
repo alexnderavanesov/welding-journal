@@ -17,7 +17,9 @@ test.beforeEach(async () => {
 })
 
 function jointRow(page: Page, joint = 'F1') {
-  if (new URL(page.url()).pathname === '/journal') return page.locator('.ag-grid-scrolling-rows .ag-row').filter({ has: page.getByRole('button', { name: joint, exact: true }) })
+  // AG retains outgoing rows briefly during filter motion. They can contain a
+  // namesake from the previous project and must not be treated as current rows.
+  if (['/journal', '/psto'].includes(new URL(page.url()).pathname)) return page.locator('[data-weld-report-grid] .ag-grid-scrolling-rows .ag-row:not(.ag-opacity-zero)').filter({ has: page.getByRole('button', { name: joint, exact: true }) })
   return page.locator('tr').filter({ has: page.getByRole('button', { name: joint, exact: true }) })
     .filter({ has: page.getByText('E2E проект', { exact: true }) })
 }

@@ -66,6 +66,9 @@ type CreateWeldTablePropsOptions = {
   selectedRowIds?: WeldTableProps['selectedRowIds']
   onSelectedRowIdsChange?: WeldTableProps['onSelectedRowIdsChange']
   dispatcherTasks?: readonly RepeatedJointTask[]
+  dispatcherTasksByRow?: ReadonlyMap<number, RepeatedJointTask[]>
+  dispatcherTasksPending?: boolean
+  dispatcherTasksError?: string
   controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
   onRunNextAction?: (row: WeldRow, action: JointNextAction) => void
   lnkSectionLayout?: WeldTableSection[]
@@ -111,6 +114,9 @@ export function createWeldTableProps({
   selectedRowIds,
   onSelectedRowIdsChange,
   dispatcherTasks = [],
+  dispatcherTasksByRow,
+  dispatcherTasksPending,
+  dispatcherTasksError,
   controlProcessSettings,
   onRunNextAction,
   lnkSectionLayout = LNK_VISIBLE_FIELD_SECTIONS,
@@ -182,6 +188,9 @@ export function createWeldTableProps({
       ...getJointNextActionTableColumns({
         activeReport,
         dispatcherTasks,
+        dispatcherTasksByRow,
+        dispatcherTasksPending,
+        dispatcherTasksError,
         controlProcessSettings,
         onRunNextAction,
         onOpenOverview: onOpenJointOverview,

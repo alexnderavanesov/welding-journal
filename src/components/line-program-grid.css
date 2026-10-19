@@ -7,6 +7,10 @@
 .program-grid-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; border: 1px solid #dce5ed; border-radius: 7px; padding: 4px 10px; background: white; color: #536b80; font-size: 12px; white-space: nowrap; }
 .program-grid-button:hover { background: #f0f7fd; border-color: #bae0f5; }
 .program-grid-frame { min-width: 0; }
+/* Match the journal's resize handle, including its larger blue hover cue. */
+.program-grid-frame .ag-header-cell-resize { width: 8px; cursor: col-resize; z-index: 3; }
+.program-grid-frame .ag-header-cell-resize::after { width: 2px; transition: background-color .12s; }
+.program-grid-frame .ag-header-cell-resize:hover::after { background-color: #0284c7; height: 65%; }
 .program-ag-grid-virtual { display: flex; flex-direction: column; height: 100%; min-height: 220px; }
 .program-ag-grid-virtual > .program-grid-frame { flex: 1; min-height: 150px; }
 .program-ag-grid .ag-cell { display: flex; align-items: center; line-height: 1.4; padding-block: 6px; }
@@ -69,6 +73,12 @@
 .program-sticky-context { margin: 0 !important; position: fixed; top: 0; height: 36px; z-index: 26; display: flex; align-items: center; padding: 0 14px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; background: #edf6fd; color: #536f88; border-bottom: 1px solid #e2e8f0; font-size: 12px; font-weight: 600; pointer-events: none; }
 .program-sticky-context[hidden] { display: none; }
 .program-ag-grid .program-stuck-control { position: fixed !important; top: var(--program-sticky-top); left: var(--program-sticky-left); width: var(--program-sticky-width); translate: none; z-index: 25; clip-path: inset(0 var(--program-sticky-clip-right, 0px) 0 var(--program-sticky-clip-left, 0px)); box-shadow: 0 1px 3px #203a2814; }
+/* Only labels fade slightly: the header background stays opaque so scrolled
+   rows never bleed through. Controls follow scrolling without positional lag. */
+@keyframes program-header-arrival { from { opacity: .78; } to { opacity: 1; } }
+@media (prefers-reduced-motion: no-preference) {
+  .program-ag-grid .program-stuck-control .ag-header-cell-label { animation: program-header-arrival 120ms ease-out; }
+}
 .program-sticky-spacer { flex: none; pointer-events: none; }
 .program-stuck-control .ag-grid-pinned-left-cells { translate: var(--program-sticky-scroll-left, 0px) 0; }
 .program-stuck-control .ag-grid-pinned-right-cells { translate: var(--program-sticky-scroll-right, 0px) 0; }

@@ -3,6 +3,7 @@ import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { chooseSpecialist } from '../specialist-helpers'
 import { confirmLnkResultChanges } from '../lnk-result-confirmation'
+import { pstoActionRow, revealPstoColumn } from './psto-grid-helpers'
 
 import { LNK_VISIBLE_FIELD_SECTIONS } from '@/lib/lnk-visible-field-layout'
 import { getWeldLineMembershipLockKeys } from '@/server/weld-line-membership-lock'
@@ -301,7 +302,7 @@ test('официальная отмена сохраняет выполненн�
   await page.goto('/psto')
   await expect(page.getByText(CANCELLED_CYCLE_JOINT, { exact: true }).first()).toBeVisible()
 
-  let row = page.getByText(CANCELLED_CYCLE_JOINT, { exact: true }).first().locator('xpath=ancestor::tr')
+  let row = await pstoActionRow(page, CANCELLED_CYCLE_JOINT, '__actions')
   await row.getByRole('button', { name: 'Создать заявку ПСТО на этот стык' }).click()
   await expect(page.getByRole('heading', { name: 'Заявка ПСТО' })).toBeVisible()
   await fillDate(page, 'Дата заявки', '2026-08-08')
@@ -340,7 +341,7 @@ test('официальная отмена сохраняет выполненн�
 
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Программа ПСТО' })).toBeHidden()
-  row = page.getByText(CANCELLED_CYCLE_JOINT, { exact: true }).first().locator('xpath=ancestor::tr')
+  row = await pstoActionRow(page, CANCELLED_CYCLE_JOINT, '__actions')
   const createRequestButton = row.getByRole('button', { name: 'Создать заявку ПСТО на этот стык' })
   await expect(createRequestButton).toBeDisabled()
   await expect(createRequestButton).toHaveAttribute(
@@ -434,7 +435,7 @@ test('позднее назначение ПСТО сохраняет факти
   await expectNoPreControl(LATE_ASSIGNMENT_JOINT)
 
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
-  const row = page.getByText(LATE_ASSIGNMENT_JOINT, { exact: true }).first().locator('xpath=ancestor::tr')
+  const row = await pstoActionRow(page, LATE_ASSIGNMENT_JOINT, '__actions')
   const createPstoRequest = row.getByRole('button', { name: 'Создать заявку ПСТО на этот стык' })
   await expect(createPstoRequest).toBeDisabled()
   await expect(createPstoRequest).toHaveAttribute('title', /НК до ТО: ВИК/)
@@ -484,13 +485,12 @@ test('позднее назначение ПСТО сохраняет факти
     result: 'годен',
     conclusion_date: '2026-08-01',
   })
-  const completedRow = page
-    .getByText(LATE_ASSIGNMENT_JOINT, { exact: true })
-    .first()
-    .locator('xpath=ancestor::tr')
-  await expect(completedRow.getByText(/СП-03/)).toBeVisible()
-  await expect(completedRow.getByText('СП-04', { exact: false })).toHaveCount(0)
+  const completedRow = await pstoActionRow(page, LATE_ASSIGNMENT_JOINT)
   await expect(completedRow.getByText('Создать заявку основного НК', { exact: true })).toHaveCount(0)
+  await revealPstoColumn(page, 'dispatcherTasks')
+  const tasks = completedRow.locator('[col-id="dispatcherTasks"]')
+  await expect(tasks.getByText(/СП-03/)).toBeVisible()
+  await expect(tasks.getByText('СП-04', { exact: false })).toHaveCount(0)
 })
 
 test('возобновление отмененной линии также может сохранить фактический основной НК', async ({ page }) => {
@@ -557,10 +557,7 @@ test('карточка стыка переносит основной НК на 
   await expectNoPreControl(LINE_MOVE_JOINT)
 
   await page.goto('/psto')
-  const movedRow = page
-    .getByText(LINE_MOVE_JOINT, { exact: true })
-    .first()
-    .locator('xpath=ancestor::tr')
+  const movedRow = await pstoActionRow(page, LINE_MOVE_JOINT, '__actions')
   const createPstoRequest = movedRow.getByRole('button', { name: 'Создать заявку ПСТО на этот стык' })
   await expect(createPstoRequest).toBeDisabled()
   await expect(createPstoRequest).toHaveAttribute('title', /НК до ТО: ВИК/)
@@ -1016,9 +1013,9 @@ async function fillDate(page: Page, label: string, value: string) {
 }
 
 async function runNextAction(page: Page, title: string, joint = JOINT) {
-  const row = page
-    .getByRole('button', { name: `Выбрать стык ${joint}`, exact: true })
-    .locator('xpath=ancestor::tr')
+  const row = new URL(page.url()).pathname === '/psto'
+    ? await pstoActionRow(page, joint)
+    : page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).locator('xpath=ancestor::tr')
   const button = row.getByRole('button', { name: `Выполнить: ${title}`, exact: true })
   await expect(button).toBeVisible({ timeout: 15_000 })
   await button.click()

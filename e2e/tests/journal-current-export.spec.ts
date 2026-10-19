@@ -127,7 +127,7 @@ test('журнал: текущая версия сохраняет видимы�
   await expect(grid.getByRole('button', { name: 'F0125', exact: true })).toBeVisible()
   await grid.locator('.ag-header-cell[col-id="materialGroup"]').click({ button: 'right' })
   await page.getByRole('menuitem', { name: /Сгруппировать загруженные/ }).click()
-  await expect(grid.locator('.ag-full-width-row.ag-row-group')).toHaveCount(1)
+  await expect(grid.locator('.ag-row-group')).toHaveCount(1)
   await page.getByRole('button', { name: 'Настроить вид', exact: true }).click()
   await settings.getByRole('tab', { name: 'Мои виды', exact: true }).click()
   await settings.getByRole('textbox', { name: 'Название вида', exact: true }).fill(VIEW)
@@ -149,7 +149,7 @@ test('журнал: текущая версия сохраняет видимы�
   await settings.getByRole('tab', { name: 'Мои виды', exact: true }).click()
   await settings.getByRole('button', { name: new RegExp(`^${VIEW}`) }).click()
   await expect(page.getByText('Загружено: 100 из 125', { exact: true })).toBeVisible()
-  await expect(grid.locator('.ag-full-width-row.ag-row-group')).toHaveCount(1)
+  await expect(grid.locator('.ag-row-group')).toHaveCount(1)
   await page.waitForLoadState('networkidle')
   // Reload discards the print interceptor, so reinstall it before the repeated output.
   await interceptCurrentPrint(page)

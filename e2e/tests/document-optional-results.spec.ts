@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { pstoActionRow } from './psto-grid-helpers'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
 import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '../../src/lib/control-process-settings'
@@ -54,7 +55,9 @@ for (const stage of ['beforeHeatTreatment', 'psto'] as const) {
 
     await page.goto(isPre ? '/lnk' : '/psto')
     await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
-    const row = page.getByRole('button', { name: 'Выбрать стык F88001', exact: true }).locator('xpath=ancestor::tr')
+    const row = isPre
+      ? page.getByRole('button', { name: 'Выбрать стык F88001', exact: true }).locator('xpath=ancestor::tr')
+      : await pstoActionRow(page, 'F88001')
     await row.getByRole('button', { name: isPre ? 'Выполнить: Внести результат НК до ТО' : 'Выполнить: Внести результат ПСТО · цикл 1', exact: true }).click()
     const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: isPre ? 'Внесение результатов ЛНК до ТО' : 'Внесение результатов ПСТО', exact: true }) })
     await expect(dialog).toBeVisible()

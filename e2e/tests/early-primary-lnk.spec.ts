@@ -6,6 +6,7 @@ import { requireDb } from '@/db'
 import { weldJoints } from '@/db/schema'
 import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { pstoActionRow } from './psto-grid-helpers'
 
 test('историческая заявка переименовывается, ТВМТ довносится между заявкой и результатом ВИК', async ({ page }) => {
   const joint = 'F543'
@@ -36,7 +37,7 @@ test('историческая заявка переименовывается, 
     await expect.poll(() => readJoint(id)).toMatchObject({ vik_request: '1503-2 исправлено', vik_request_date: '2026-03-16' })
 
     await page.goto('/psto')
-    const row = page.getByRole('button', { name: `Выбрать стык ${joint}`, exact: true }).locator('xpath=ancestor::tr')
+    const row = await pstoActionRow(page, joint)
     await row.getByRole('button', { name: 'Выполнить: Внести результат ТВМТ · цикл 1', exact: true }).click()
     await page.getByLabel('Дата ТВМТ', { exact: true }).fill('2026-03-20')
     await page.getByLabel('Результат для выбранных', { exact: true }).selectOption({ label: 'годен' })
