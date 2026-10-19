@@ -108,6 +108,10 @@ export function previewProgramChanges(rows: readonly WeldRow[], changes: readonl
 }
 
 export function isProgramRowClick(target: EventTarget | null) {
-  return target instanceof Element && !target.closest('button,a,input,label,select,textarea,summary,[contenteditable="true"]') &&
+  // AG Grid handles native row clicks before React's delegated stopPropagation.
+  // The whole results disclosure owns its clicks, including plain result text.
+  // A React disclosure can replace its SVG before AG Grid dispatches rowClicked.
+  // Detached icon targets belonged to that control, not to a plain row cell.
+  return target instanceof Element && target.isConnected && !target.closest('button,a,input,label,select,textarea,details,summary,[contenteditable="true"]') &&
     (typeof window === 'undefined' || !window.getSelection()?.toString())
 }

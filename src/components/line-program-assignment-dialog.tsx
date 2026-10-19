@@ -16,6 +16,9 @@ export function LineProgramAssignmentDialog({ line, context, busy, children, too
   }, [])
   return <LargeDialogShell ariaLabel={`Назначения · ${line}`} maxWidthClassName="max-w-[1480px]" maxHeightClassName="max-h-[94dvh]" panelRadiusClassName="rounded-2xl" panelClassName="h-[min(900px,94dvh)] min-w-0 overflow-hidden">
     <div ref={panel} className="flex min-h-0 flex-1 flex-col" onKeyDown={event => {
+      // The native grid popup handles its own Escape after this React bubble.
+      // Closing a filter must leave the assignment window and its draft open.
+      if (event.target instanceof Element && event.target.closest('.ag-popup-child')) return
       if (shouldDeferModalEscape() || !panel.current?.contains(document.activeElement)) return
       if (event.key === 'Escape') { event.stopPropagation(); if (!busy) onClose() }
       if (event.key === 'Tab') {

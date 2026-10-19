@@ -55,7 +55,8 @@ test('ordinary journal, editor, line section and detail before/after memory opti
       await measure('program-detail', async () => {
         const card = page.getByTestId('line-program-card').filter({ has: page.getByRole('button', { name: 'Расчёт линии LAT-01', exact: true }) })
         await card.getByRole('button', { name: 'Учитываемых соединений 200', exact: true }).click()
-        await expect(card.getByTestId('line-program-readonly-joint')).toHaveCount(50)
+        const rows = page.locator('[data-testid="line-program-detail"][data-line="LAT-01"]').getByTestId('line-program-readonly-joint')
+        await expect(rows.first()).toBeVisible(); expect(await rows.count()).toBeLessThanOrEqual(50)
       })
     }
     expect(telemetry.errors).toEqual([])

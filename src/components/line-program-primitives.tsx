@@ -1,7 +1,6 @@
 import { PROGRAM_DEMAND_LABELS } from '@/lib/line-program-labels'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useEffect, useRef } from 'react'
 
 export const lineProgramQueryPolicy = { staleTime: 30_000, refetchOnWindowFocus: false, refetchOnReconnect: false } as const
 export const programPrimaryActionClass = 'gap-2 border border-sky-700 bg-sky-700 text-white hover:bg-sky-800'
@@ -13,21 +12,6 @@ export const programLinkClass = 'inline-flex min-h-6 min-w-6 items-center gap-1 
 export const programMetricLabelClass = 'text-sm font-normal leading-[18px]'
 export const programMetricValueClass = 'text-lg font-medium leading-6 tabular-nums'
 export const programMetricDetailClass = 'text-sm leading-[18px]'
-
-/** Observe geometry only; never fetch or rerender line data while scrolling/resizing. */
-export function useProgramStickyHeight(variable: string) {
-  const root = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const element = root.current, target = element?.parentElement
-    if (!element || !target) return
-    const update = () => target.style.setProperty(variable, `${element.getBoundingClientRect().height}px`)
-    update()
-    if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(update); observer.observe(element)
-    return () => observer.disconnect()
-  }, [variable])
-  return root
-}
 
 export function ProgramError({ error }: { error: Error }) { return <p role="alert" className="text-sm text-red-700">{error.message}</p> }
 

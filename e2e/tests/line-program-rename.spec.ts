@@ -28,7 +28,7 @@ test('вся линия: редактирование трёх полей, от�
   await page.goto('/percentage-lines')
   const program = page.getByTestId('line-program')
   await program.getByLabel('Поиск программы линий').fill('RENAME-LINE')
-  await expect(program.getByTestId('line-program-card')).toHaveCount(1)
+  await expect(program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')).toHaveCount(1)
   await program.getByRole('button', { name: 'Настроить', exact: true }).click()
   const editor = page.getByRole('dialog', { name: 'Настройка линии', exact: true })
   await editor.getByLabel('Проект', { exact: true }).fill('Renamed Project')

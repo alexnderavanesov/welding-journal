@@ -41,7 +41,7 @@ for (const percent of [10, 100]) test(`неофициальные и неакт�
   await page.goto('/line-program')
   const program = page.getByTestId('line-program'), totals = program.getByLabel('Итоги раздела')
   await searchProgram(page, name)
-  const card = program.getByTestId('line-program-card')
+  const card = program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
   await expect(card).toHaveCount(1)
   await expect(totals.getByRole('button', { name: 'Учитываемых соединений 1', exact: true })).toBeVisible()
   await totals.getByRole('button', { name: 'Ещё показатели контроля' }).click()
@@ -51,7 +51,7 @@ for (const percent of [10, 100]) test(`неофициальные и неакт�
   await more.press('Escape')
   await card.getByRole('button', { name: `Расчёт линии ${name}`, exact: true }).click()
   const all = program.getByRole('button', { name: 'Все стыки линии', exact: true })
-  if (await all.getAttribute('aria-expanded') !== 'true') await all.click()
+  if (await all.getAttribute('aria-pressed') !== 'true') await all.click()
   const joints = program.getByTestId('line-program-readonly-joint')
   await expect(joints).toHaveCount(4)
   await expect(joints.nth(0).getByTestId('program-joint-exclusions')).toHaveCount(0)
@@ -60,14 +60,15 @@ for (const percent of [10, 100]) test(`неофициальные и неакт�
   await expect(joints.nth(3).getByTestId('program-joint-exclusions')).toHaveText('НеофициальныйНеактуальный')
   for (const width of [1600, 390]) {
     await page.setViewportSize({ width, height: 1000 })
-    expect(await joints.locator('td:first-child').evaluateAll(cells => cells.every(cell => cell.scrollWidth <= cell.clientWidth))).toBe(true)
+    const identities = joints.locator('.ag-cell[col-id="joint"]')
+    await expect(identities).toHaveCount(4)
+    expect(await identities.evaluateAll(cells => cells.every(cell => cell.scrollWidth <= cell.clientWidth))).toBe(true)
     await joints.nth(3).scrollIntoViewIfNeeded()
     await page.screenshot({ path: `outputs/line-program-inactive-${percent}-${width}.png` })
   }
   await page.setViewportSize({ width: 1600, height: 1000 })
   for (const label of ['Дополнительные стыки: 1', 'Согласовано: 1']) {
-    await card.getByRole('button', { name: 'Ещё показатели контроля' }).click()
-    await more.getByRole('button', { name: label, exact: true }).click()
+    await card.getByRole('button', { name: label, exact: true }).click()
     await expect(joints).toHaveCount(1)
     await expect(joints.first()).toHaveAttribute('data-joint', 'F1')
   }

@@ -1341,6 +1341,7 @@ test('document grid groups: checkboxes select only loaded descendants, preserve 
     await expect.poll(() => requests.blocks.filter(request => !request.selectionOnly).at(-1)?.rowGroupCols).toContain(key)
     await settled()
   }
+  await expect.poll(async () => (await reveals()).length).toBe(3)
   const parent = grid.locator('.ag-full-width-row.ag-row-group').filter({ hasText: 'LINE-A' })
   const child = grid.locator('.ag-full-width-row.ag-row-group').filter({ hasText: project })
   const parentCheckbox = parent.getByRole('checkbox', { name: 'Выбрать загруженные документы группы LINE-A', exact: true })
@@ -1452,13 +1453,121 @@ test('document grid groups: checkboxes select only loaded descendants, preserve 
   const furtherLoads = requests.blocks.slice(beforeFurtherLoad).filter(request => !request.selectionOnly)
   expect(furtherLoads).toHaveLength(1)
   expect(furtherLoads[0]).toMatchObject({ startRow: 100, endRow: 200, rowGroupCols: ['line', 'project'], groupKeys: ['["value","LINE-A"]', JSON.stringify(['value', project])] })
-  expect(await reveals()).toHaveLength(1)
+  expect(await reveals()).toHaveLength(3)
   await info.attach('document-group-loaded-selection', { body: JSON.stringify({ selectedIds: await selectedIds(), furtherLoads }, null, 2), contentType: 'application/json' })
   await page.screenshot({ path: info.outputPath('documents-group-loaded-checkboxes.png') })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await grid.locator('.ag-header-cell[col-id="title"] .ag-header-cell-label').click()
   await expect.poll(() => requests.blocks.filter(request => !request.selectionOnly).at(-1)?.sortModel).toContainEqual({ colId: 'title', sort: 'desc' })
   await settled()
-  expect(await reveals()).toHaveLength(1)
+  expect(await reveals()).toHaveLength(3)
   await expect.poll(selectedIds).toEqual(expected)
+})
+
+test('document result motion follows current sort/filter/search only and keeps pending facet choices stable and disabled', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.addInitScript(() => {
+    Object.assign(window, { documentResultReveals: 0 })
+    const animate = Element.prototype.animate
+    Element.prototype.animate = function (...args: Parameters<Element['animate']>) {
+      if (this.matches('[data-document-history-grid] .ag-grid-scrolling-container')) {
+        const state = window as unknown as { documentResultReveals: number }; state.documentResultReveals++
+      }
+      return animate.apply(this, args)
+    }
+  })
+  let releaseSort!: () => void, releaseFacet!: () => void
+  const sortGate = new Promise<void>(resolve => { releaseSort = resolve })
+  const facetGate = new Promise<void>(resolve => { releaseFacet = resolve })
+  let sortHeld = false, facetHeld = false, sortReleased = false
+  await page.route('**/_serverFn/**', async route => {
+    const name = rpcName(route.request().url())
+    if (!name.includes('DocumentHistoryGrid') && !name.includes('DocumentHistoryFilterOptions')) return route.continue()
+    const serialized = route.request().postData() ?? new URL(route.request().url()).searchParams.get('payload')
+    if (!serialized) throw new Error(`Missing RPC payload for ${name}`)
+    const payload = deserializeRpcPayload(serialized) as { data: DocumentHistoryGridRequest & { search?: string } }
+    if (!sortHeld && name.includes('DocumentHistoryGrid') && payload.data.sortModel?.some(item => item.colId === 'title' && item.sort === 'asc')) {
+      const response = await route.fetch(); sortHeld = true
+      await sortGate; await route.fulfill({ response }); sortReleased = true
+    } else if (!facetHeld && name.includes('DocumentHistoryFilterOptions') && payload.data.search === '249') {
+      const response = await route.fetch(); facetHeld = true
+      await facetGate; await route.fulfill({ response })
+    } else await route.continue()
+  })
+  const reveals = () => page.evaluate(() => (window as unknown as { documentResultReveals: number }).documentResultReveals)
+  await page.goto('/documents')
+  const grid = page.locator('[data-document-history-grid="generated:weldingJournal"]')
+  await expect(grid.getByText('Загружено: 100', { exact: true })).toBeVisible()
+  expect(await reveals()).toBe(0)
+  const instance = await grid.locator('.ag-root').elementHandle()
+  const sort = grid.locator('.ag-header-cell[col-id="title"] .ag-header-cell-label')
+  await sort.click(); await expect.poll(() => sortHeld).toBe(true)
+  await sort.click()
+  await expect.poll(reveals).toBe(1)
+  await expect(grid.getByRole('button', { name: 'GRID-DOC-250', exact: true })).toBeVisible()
+  await expect(grid.getByText('Загрузка…', { exact: true })).toBeHidden()
+  releaseSort(); await expect.poll(() => sortReleased).toBe(true)
+  await page.waitForLoadState('networkidle')
+  expect(await reveals()).toBe(1)
+  await expect(grid.getByRole('alert')).toHaveCount(0)
+
+  const search = grid.getByRole('textbox', { name: 'Поиск документов', exact: true })
+  await search.fill('GRID-DOC-249')
+  await expect(grid.getByText('Найдено: 1', { exact: true })).toBeVisible()
+  await expect.poll(reveals).toBe(2)
+  await search.fill('')
+  await expect(grid.getByText('Найдено: 250', { exact: true })).toBeVisible()
+  await expect.poll(reveals).toBe(3)
+  const filter = await openDocumentGridFilter(page, 'title', 'Документ')
+  await expect(filter.getByRole('checkbox').first()).toBeEnabled()
+  const area = filter.locator('.journal-filter-values'), beforeHeight = (await area.boundingBox())!.height
+  await filter.getByRole('textbox', { name: 'Найти значение фильтра' }).fill('249')
+  await expect.poll(() => facetHeld).toBe(true)
+  await expect(filter.getByRole('status')).toHaveText('Обновляем значения…')
+  await expect(filter.getByRole('checkbox').first()).toBeDisabled()
+  await expect(filter.getByRole('button', { name: 'Выбрать найденные' })).toBeDisabled()
+  expect(Math.abs((await area.boundingBox())!.height - beforeHeight)).toBeLessThan(1)
+  releaseFacet()
+  const choice = filter.getByRole('checkbox', { name: /GRID-DOC-249/ })
+  await expect(choice).toBeEnabled()
+  await choice.check()
+  await expect(grid.getByText('Найдено: 1', { exact: true })).toBeVisible()
+  await expect.poll(reveals).toBe(4)
+  await filter.getByRole('button', { name: 'Закрыть фильтр' }).click()
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await grid.getByRole('button', { name: 'Сбросить', exact: true }).click()
+  await expect(grid.getByText('Найдено: 250', { exact: true })).toBeVisible()
+  await page.waitForLoadState('networkidle')
+  expect(await reveals()).toBe(4)
+  expect(await instance!.evaluate(element => element.isConnected)).toBe(true)
+})
+
+test('document filter stays above the toolbar and unclipped on a short viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto('/documents')
+  const grid = page.locator('[data-document-history-grid="generated:weldingJournal"]')
+  await expect(grid.getByText('Загружено: 100', { exact: true })).toBeVisible()
+  const filter = await openDocumentGridFilter(page, 'project', 'Проект')
+  await expect(filter.getByRole('checkbox').first()).toBeEnabled()
+  expect(await filter.evaluate(element => element.closest('.document-grid-popup-layer')?.parentElement === document.body)).toBe(true)
+  const bounds = (await filter.boundingBox())!
+  expect(bounds.y).toBeGreaterThanOrEqual(10)
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(710)
+  const close = filter.getByRole('button', { name: 'Закрыть фильтр', exact: true })
+  expect(await close.evaluate(element => {
+    const rect = element.getBoundingClientRect()
+    const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+    return hit === element || element.contains(hit)
+  })).toBe(true)
+  await close.click()
+  await expect(filter).toBeHidden()
+  await expect(grid.locator('.ag-header-cell[col-id="project"]')).toBeFocused()
+  await openDocumentGridColumnMenu(page, 'project')
+  await expect(page.getByRole('menuitem', { name: 'По возрастанию', exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menuitem', { name: 'По возрастанию', exact: true })).toBeHidden()
+  const reopened = await openDocumentGridFilter(page, 'project', 'Проект')
+  await reopened.getByRole('textbox', { name: 'Найти значение фильтра' }).press('Escape')
+  await expect(reopened).toBeHidden()
+  await expect(grid.locator('.ag-header-cell[col-id="project"]')).toBeFocused()
 })

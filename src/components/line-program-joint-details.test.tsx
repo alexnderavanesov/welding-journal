@@ -1,3 +1,4 @@
+vi.mock('./line-program-grid', () => import('@/test/program-grid-mock'))
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
@@ -26,15 +27,15 @@ function mount(rows: WeldRow[]) {
 describe('compact joint rows preserve meaningful details', () => {
   const good: WeldRow = { id: 1, joint: 'F1', connectionType: 'С17', weldDate: '2026-09-01', hasVik: 'да', vikResult: 'годен' }
   const colorCases: [string, WeldRow, string, string | null][] = [
-    ['good', good, 'годен', 'bg-emerald-50/70'],
-    ['rejected', { ...good, vikResult: 'ремонт' }, 'не годен', 'bg-rose-50/70'],
-    ['duplicate rejection', { ...good, duplicateControls: [duplicate] }, 'не годен по дублю', 'bg-rose-50/70'],
-    ['cancelled method with rejection', { ...good, hasRk: 'отменен', rkResult: 'вырез' }, 'не годен', 'bg-rose-50/70'],
+    ['good', good, 'годен', 'program-joint-good'],
+    ['rejected', { ...good, vikResult: 'ремонт' }, 'не годен', 'program-joint-rejected'],
+    ['duplicate rejection', { ...good, duplicateControls: [duplicate] }, 'не годен по дублю', 'program-joint-rejected'],
+    ['cancelled method with rejection', { ...good, hasRk: 'отменен', rkResult: 'вырез' }, 'не годен', 'program-joint-rejected'],
     ['one good method and another pending', { ...good, hasRk: 'да', finalStatus: 'годен' }, 'ожидает заявку', null],
     ['assignment without result', { ...good, vikResult: null }, 'ожидает заявку', null],
     ['error is not a good joint', { ...good, hasRk: null, rkResult: 'годен' }, 'ошибка', null],
-    ['inactive historical good joint', { ...good, revisionActuality: 'не актуален', officiality: 'неофициальный' }, 'годен', 'bg-emerald-50/70'],
-    ['disabled preheat rejection stays history', { ...good, preHeatTreatmentLnkEnabled: false, preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'РК', result: 'ремонт' }] }, 'годен', 'bg-emerald-50/70'],
+    ['inactive historical good joint', { ...good, revisionActuality: 'не актуален', officiality: 'неофициальный' }, 'годен', 'program-joint-good'],
+    ['disabled preheat rejection stays history', { ...good, preHeatTreatmentLnkEnabled: false, preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'РК', result: 'ремонт' }] }, 'годен', 'program-joint-good'],
   ]
 
   it.each(colorCases)('uses the same saved final-state tint in the list and assignments: %s', (_name, source, status, tone) => {
@@ -53,11 +54,12 @@ describe('compact joint rows preserve meaningful details', () => {
     expect(mocks.registry).not.toHaveBeenCalled()
   })
 
-  it.each([['годен', 'bg-emerald-50/70'], ['ремонт', 'bg-rose-50/70']])('preserves %s tint on expansion, selection, focus and an unsaved assignment draft', (result, tone) => {
+  it.each([['годен', 'program-joint-good'], ['ремонт', 'program-joint-rejected']])('preserves %s tint on expansion, selection, focus and an unsaved assignment draft', (result, tone) => {
     const source = { ...good, vikResult: result }
     mountContent(<><ProgramReadOnlyTable rows={[source]} onAssignment={vi.fn()} /><ProgramAssignmentTable rows={[source]} selected={new Set([1])} focusedJoint={1} draft={new Map([[1, { ...source, hasRk: 'да' }]])} busy={false} canSelect={() => true} onSelect={vi.fn()} onSelectAll={vi.fn()} onChange={vi.fn()} getError={() => ''} /></>)
     fireEvent.click(screen.getByRole('button', { name: 'F1' }))
-    expect(screen.getByTestId('line-program-readonly-joint')).toHaveClass(tone, 'shadow-[inset_1px_0_0_#0284c7]')
+    expect(screen.getByTestId('line-program-readonly-joint')).toHaveClass(tone)
+    expect(screen.getByTestId('line-program-readonly-joint')).not.toHaveClass('program-joint-highlighted')
     const assignment = screen.getByTestId('line-program-joint')
     expect(assignment).toHaveClass(tone)
     expect(assignment).toHaveAttribute('data-highlighted', 'true')
@@ -82,7 +84,6 @@ describe('compact joint rows preserve meaningful details', () => {
     mountContent(<ProgramAssignmentTable rows={[row, source]} selected={new Set([2])} draft={new Map()} busy={false} canSelect={() => true} onSelect={onSelect} onSelectAll={vi.fn()} onChange={onChange} getError={() => ''} />)
     const table = screen.getByRole('table', { name: 'Стыки и назначения всех методов' })
     expect(table.parentElement).not.toHaveClass('border-y')
-    expect(table).toHaveClass('border-collapse')
     expect(screen.getByRole('columnheader', { name: 'Результат' }).className).toBe(screen.getByRole('columnheader', { name: 'РК' }).className)
     for (const joint of ['F1', 'F2']) {
       const result = screen.getByLabelText(`Результат ${joint}`)
@@ -164,7 +165,7 @@ describe('compact joint rows preserve meaningful details', () => {
     expect(onAssignment).toHaveBeenCalledWith(1, 'ПВК')
     expect(screen.getByLabelText('История контроля F1')).toBeVisible()
     fireEvent.click(joint)
-    expect(screen.queryByLabelText('История контроля F1')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('История контроля F1')).not.toBeVisible()
     expect(mocks.registry).not.toHaveBeenCalled()
   })
 

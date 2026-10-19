@@ -1,19 +1,19 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, MoreHorizontal } from 'lucide-react'
+import { MoreHorizontal } from 'lucide-react'
 import type { ProgramScopeMenuEvent } from './line-program-scope-menu'
 
 type Props = { approved: number; additional: number; onApproved: () => void; onAdditional: () => void; onOpenMenu?: (event: ProgramScopeMenuEvent) => void }
 
-export function ProgramControlDetails({ labeled = false, ...props }: Props & { labeled?: boolean }) {
+export function ProgramControlDetails(props: Props) {
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   const close = (restoreFocus = false) => { setOpen(false); if (restoreFocus) trigger.current?.focus() }
   if (!props.approved && !props.additional) return null
   return <>
     <button ref={trigger} type="button" aria-label="Ещё показатели контроля" title="Ещё: согласованный и дополнительный контроль" aria-haspopup="dialog" aria-expanded={open}
-      className={`flex h-7 shrink-0 items-center justify-center rounded-md hover:bg-slate-100 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 ${labeled ? 'w-14 gap-1 border border-slate-200 bg-white text-xs text-slate-500' : 'w-7 text-slate-400'}`}
-      onClick={() => setOpen(value => !value)}>{labeled ? <>Ещё<ChevronDown aria-hidden="true" className="h-3 w-3" /></> : <MoreHorizontal aria-hidden="true" className="h-4 w-4" />}</button>
+      className={`flex h-7 shrink-0 items-center justify-center rounded-md hover:bg-slate-100 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 w-7 text-slate-400`}
+      onClick={() => setOpen(value => !value)}><MoreHorizontal aria-hidden="true" className="h-4 w-4" /></button>
     {open ? <ControlDetailsPopover {...props} trigger={trigger} onClose={close} /> : null}
   </>
 }

@@ -28,7 +28,7 @@ test('верхний итог: 5 + 7, все страницы, ПКМ и Ещё,
   await expect(totals.getByRole('button', { name: 'Линий 61', exact: true })).toBeVisible()
   const needed = totals.getByRole('button', { name: 'К назначению 12', exact: true })
   await needed.click()
-  await expect(program.getByTestId('line-program-card')).toHaveCount(2)
+  await expect(program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')).toHaveCount(2)
   await needed.click({ button: 'right' })
   await page.getByTestId('context-action-menu').getByRole('button', { name: 'Расчёт', exact: true }).click()
   const aggregate = page.getByRole('dialog', { name: 'Расчёт · итоги раздела', exact: true })

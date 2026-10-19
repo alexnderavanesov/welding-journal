@@ -6,7 +6,7 @@ import type { CustomFilterDisplayProps } from 'ag-grid-react'
 import { DOCUMENT_HISTORY_SERVER_FILTER, DocumentGridFilterContext, type DocumentGridFilterContextValue } from './document-history-grid-filter'
 import { buildWeldColumnValueFilter, parseWeldColumnChoiceFilter } from '@/lib/weld-table-filtering'
 
-const mocks = vi.hoisted(() => ({ close: vi.fn() }))
+const mocks = vi.hoisted(() => ({ close: vi.fn(), setFocusedHeader: vi.fn() }))
 vi.mock('ag-grid-react', () => ({
   useGridFilterDisplay: (callbacks: { afterGuiAttached: (params: { hidePopup: () => void }) => void }) => {
     useEffect(() => { callbacks.afterGuiAttached({ hidePopup: mocks.close }) }, [])
@@ -22,7 +22,7 @@ function setup(loadOptions: DocumentGridFilterContextValue['loadOptions'], { fie
     const [filters, setFilters] = useState<Record<string, string>>(initial ? { [field]: initial } : {})
     return <QueryClientProvider client={client}><DocumentGridFilterContext.Provider value={{ viewId: 'test', search: 'whole registry', columnFilters: filters, sourceRevision: 1, loadOptions,
       change: (key, value) => { changes(key, value); setFilters(current => ({ ...current, [key]: value })) },
-    }}><Filter {...({ column: { getColId: () => field, getColDef: () => ({ headerName: field === 'line' ? 'Линия' : 'Дата' }) } } as unknown as CustomFilterDisplayProps)} /></DocumentGridFilterContext.Provider></QueryClientProvider>
+    }}><Filter {...({ api: { setFocusedHeader: mocks.setFocusedHeader }, column: { getColId: () => field, getColDef: () => ({ headerName: field === 'line' ? 'Линия' : 'Дата' }) } } as unknown as CustomFilterDisplayProps)} /></DocumentGridFilterContext.Provider></QueryClientProvider>
   }
   render(<Test />)
   return { changes, client }
@@ -93,5 +93,61 @@ describe('document grid server facets', () => {
     modal.remove()
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' })
     await waitFor(() => expect(mocks.close).toHaveBeenCalledTimes(1))
+    expect(mocks.setFocusedHeader).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Закрыть фильтр' }))
+    expect(mocks.close).toHaveBeenCalledTimes(2)
+    expect(mocks.setFocusedHeader).toHaveBeenCalledTimes(2)
+  })
+  it('keeps previous values disabled through rapid searches, ignores a late answer and shows a real error/retry', async () => {
+    let resolveA!: (value: { options: Array<{ value: string; label: string; count: number }>; hasMore: boolean }) => void
+    let resolveB!: typeof resolveA, rejectNext!: (reason: Error) => void
+    const a = new Promise<Parameters<typeof resolveA>[0]>(resolve => { resolveA = resolve })
+    const b = new Promise<Parameters<typeof resolveA>[0]>(resolve => { resolveB = resolve })
+    const failure = new Promise<Parameters<typeof resolveA>[0]>((_resolve, reject) => { rejectNext = reject })
+    const result = (value: string) => ({ options: [{ value, label: value, count: 1 }], hasMore: false })
+    const load = vi.fn().mockResolvedValueOnce(result('L0')).mockReturnValueOnce(a).mockReturnValueOnce(b)
+      .mockReturnValueOnce(failure).mockResolvedValueOnce(result('Recovered'))
+    const { changes } = setup(load)
+    const previous = await screen.findByRole('checkbox', { name: /L0/ })
+    const search = screen.getByRole('textbox', { name: 'Найти значение фильтра' })
+    fireEvent.change(search, { target: { value: 'A' } })
+    expect(previous).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Выбрать найденные' })).toBeDisabled()
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('checkbox', { name: /L0/ })).toBe(previous)
+    expect(screen.getByRole('status')).toHaveTextContent('Обновляем значения…')
+    fireEvent.change(search, { target: { value: 'B' } })
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(3))
+    await act(async () => resolveB(result('B')))
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: /B/ })).toBeEnabled())
+    await act(async () => resolveA(result('A')))
+    expect(screen.queryByRole('checkbox', { name: /A/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /B/ })).toBeEnabled()
+    expect(changes).not.toHaveBeenCalled()
+    fireEvent.change(search, { target: { value: 'Error' } })
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(4))
+    expect(screen.getByRole('checkbox', { name: /B/ })).toBeDisabled()
+    await act(async () => rejectNext(new Error('offline')))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось загрузить значения')
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: /Recovered/ })).toBeEnabled())
+    expect(load).toHaveBeenCalledTimes(5)
+  })
+  it('disables date-branch controls and selected children while their facet is updating', async () => {
+    const load = vi.fn().mockResolvedValueOnce({ options: [{ value: '01.10.2026', label: '01.10.2026', count: 1 }], hasMore: false })
+      .mockReturnValueOnce(new Promise(() => {}))
+    setup(load, { field: 'date', initial: buildWeldColumnValueFilter(['01.10.2026']) })
+    await screen.findByRole('checkbox', { name: 'Год 2026' })
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть Год 2026' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть Октябрь 2026' }))
+    const selected = screen.getByRole('checkbox', { name: 'День 01.10.2026' })
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '2027' } })
+    expect(selected).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Свернуть Октябрь 2026' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'Год 2026' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Выбрать найденные' })).toBeDisabled()
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('checkbox', { name: 'День 01.10.2026' })).toBeDisabled()
   })
 })

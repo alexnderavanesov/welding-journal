@@ -28,7 +28,7 @@ test('годный ремонт и две годные стороны катуш
     for (const fixture of fixtures) {
       await page.goto('/line-program')
       await page.getByLabel('Поиск программы линий').fill(fixture.name)
-      const line = page.getByTestId('line-program-card').filter({ has: page.getByRole('button', { name: `Расчёт линии ${fixture.name}`, exact: true }) })
+      const line = page.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]').filter({ has: page.getByRole('button', { name: `Расчёт линии ${fixture.name}`, exact: true }) })
       await expect(line.getByTestId('program-finished-label')).toBeVisible()
       if (fixture.name.endsWith('REPAIR')) {
         await withLineProgramFixture(db => db.query(`update weld_joints set officiality='неофициальный' where id=$1`, [fixture.ids[1]]))

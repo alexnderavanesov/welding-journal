@@ -1,21 +1,26 @@
+import type { FilterChangedEvent, GridApi } from 'ag-grid-community'
+import { ProgramViewSettings } from './line-program-view-settings'
+import { useProgramStickyHeaders } from './line-program-sticky-headers'
+import { currentProgramTarget, revealProgramLine } from './line-program-reveal'
 import { PROGRAM_DEMAND_LABELS } from '@/lib/line-program-labels'
 import type { ProgramReportNavigation } from './line-program-context-menu'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Calculator, Check, ChevronDown, ChevronRight, ListFilter, Plus, Search, Settings2, X } from 'lucide-react'
+import { Calculator, ListFilter, Plus, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { LineProgramEditor } from './line-program-editor'
 import { LineCalculation } from './line-program-calculation-view'
 import { ProgramControlDetails } from './line-program-control-details'
 import { ProgramDraftProvider } from './line-program-drafts'
-import { CompactLineMetrics } from './line-program-compact-metrics'
+import { ProgramOverviewGrid } from './line-program-overview-grid'
+import { ProgramGridSessionProvider } from './line-program-grid-session'
 import { useProgramScopeMenu, type ProgramScopeCommand, type ProgramScopeMenuEvent } from './line-program-scope-menu'
-import { ProgramError, ProgramPagination, ProgramQuotaSummary, lineProgramQueryPolicy, programMetricLabelClass, programMetricValueClass, programMetricDetailClass, useProgramStickyHeight } from './line-program-primitives'
+import { ProgramError, ProgramPagination, ProgramQuotaSummary, lineProgramQueryPolicy, programMetricLabelClass, programMetricValueClass, programMetricDetailClass } from './line-program-primitives'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
 import type { LineProgramRecord, LineProgramSaveRequest, LineProgramTab } from '@/lib/line-program'
-import { isLineProgramFinished, type LineProgramOverview } from '@/lib/line-program-overview'
-import { isProgramRowClick, type ProgramSelection } from '@/lib/line-program-workspace'
+import { type LineProgramOverview } from '@/lib/line-program-overview'
+import { type ProgramSelection } from '@/lib/line-program-workspace'
 import type { PercentageLineNavigationRequest, PercentageLineNavigationOutcome } from '@/lib/percentage-line-navigation'
 import { findLineProgram, getLineProgramPage, getLineProgramSection } from '@/server/line-program'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
@@ -41,11 +46,13 @@ function matches(line: Program, filter: Filter) {
 }
 
 export function LineProgramPage(props: Props) {
-  return <ProgramDraftProvider><LineProgramContent {...props} /></ProgramDraftProvider>
+  return <ProgramDraftProvider><ProgramGridSessionProvider><LineProgramContent {...props} /></ProgramGridSessionProvider></ProgramDraftProvider>
 }
 
 function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenReportRows }: Props) {
-  const toolbarRef = useProgramStickyHeight('--program-toolbar-height')
+  const [overviewApi, setOverviewApi] = useState<GridApi | null>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  useProgramStickyHeaders(rootRef)
   const reportNavigationHandled = useStableEventCallback(onNavigationHandled)
   const [tab, setTab] = useState<LineProgramTab>('lines')
   const [search, setSearch] = useState('')
@@ -53,9 +60,15 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
   const [filter, setFilter] = useState<Filter>('all')
   const [page, setPage] = useState(0)
   const [expanded, setExpanded] = useState(new Map<number, Program>())
-  const [visited, setVisited] = useState(new Set<number>())
   const [editing, setEditing] = useState<LineProgramSaveRequest | null>(null)
+  const editingFilters = useRef<ReturnType<GridApi['getFilterModel']>>({})
+  const edit = (value: LineProgramSaveRequest) => {
+    editingFilters.current = structuredClone(overviewApi?.getFilterModel() ?? {})
+    setEditing(value)
+  }
   const [target, setTarget] = useState<{ id: number; selection: ProgramSelection } | null>(null)
+  const [revealTarget, setRevealTarget] = useState<{ line: LineProgramRecord; filters: ReturnType<GridApi['getFilterModel']> } | null>(null)
+  const cancelledReveal = useRef<typeof revealTarget>(null)
   const [command, setCommand] = useState<{ lineId: number; value: ProgramScopeCommand } | null>(null)
   const [sectionMetric, setSectionMetric] = useState<ProgramSectionMetric | null>(null)
   const reports = useRef<LineProgramReportsHandle>(null)
@@ -82,9 +95,9 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
   const pageBehind = !!pageQuery.data && (pageQuery.data.revision ?? 0) < latestPageRevision
   const pageReady = searchReady && !!pageQuery.data && !pageBehind && !pageQuery.error
   const lines = summaryReady ? query.data!.rows : []
-  const filtered = lines.filter(line => matches(line, filter))
+  const filtered = useMemo(() => lines.filter(line => matches(line, filter)), [lines, filter])
   const actualPage = summaryReady ? Math.min(page, Math.max(0, Math.ceil(filtered.length / 30) - 1)) : pageQuery.data?.page ?? 0
-  const paged = summaryReady ? filtered.slice(actualPage * 30, (actualPage + 1) * 30) : pageReady && filter === 'all' ? pageQuery.data!.rows : []
+  const paged = useMemo(() => summaryReady ? filtered.slice(actualPage * 30, (actualPage + 1) * 30) : pageReady && filter === 'all' ? pageQuery.data!.rows : [], [summaryReady, filtered, actualPage, pageReady, filter, pageQuery.data])
   useEffect(() => {
     // A newer page is evidence of a concurrent edit. Refresh only this active
     // summary; a failed refresh remains an explicit retry, never a polling loop.
@@ -93,20 +106,87 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
   useEffect(() => {
     if (searchReady && !summaryReady && pageBehind && !pageQuery.isFetching && !pageQuery.error) void pageQuery.refetch()
   }, [searchReady, summaryReady, pageBehind, pageQuery.isFetching, pageQuery.error, pageQuery.refetch])
-  const outside = searchReady ? [...expanded.values()].filter(open => !paged.some(line => line.id === open.id)).map(open => lines.find(line => line.id === open.id) ?? open) : []
-  const visible: Program[] = [...outside, ...paged]
-  const choose = (line: Program, selection?: ProgramSelection) => {
+  const outside = useMemo(() => searchReady ? [...expanded.values()].filter(open => !paged.some(line => line.id === open.id)).map(open => lines.find(line => line.id === open.id) ?? open) : [], [searchReady, expanded, paged, lines])
+  const visible: Program[] = useMemo(() => outside.length ? [...outside, ...paged] : paged, [outside, paged])
+  useEffect(() => {
+    if (!revealTarget || !overviewApi || overviewApi.isDestroyed()) return
+    // SetFilter also emits filterChanged while validating refreshed values.
+    // Only a UI edit should cancel the explicit navigation.
+    const cancelForUserFilter = () => {
+      cancelledReveal.current = revealTarget
+      setRevealTarget(current => current === revealTarget ? null : current)
+    }
+    // AG 36's Apply/Reset buttons carry fromAction, but Reset does not emit
+    // filterUiChanged. Handler validation carries neither UI event nor action.
+    const cancelForFilterAction = (event: FilterChangedEvent & { fromAction?: string }) => {
+      if (event.source === 'columnFilter' && (event.fromAction === 'reset' || event.fromAction === 'apply')) cancelForUserFilter()
+    }
+    overviewApi.addEventListener('filterChanged', cancelForFilterAction)
+    overviewApi.addEventListener('filterUiChanged', cancelForUserFilter)
+    overviewApi.addEventListener('filterModified', cancelForUserFilter)
+    return () => {
+      if (!overviewApi.isDestroyed()) {
+        overviewApi.removeEventListener('filterChanged', cancelForFilterAction)
+        overviewApi.removeEventListener('filterUiChanged', cancelForUserFilter)
+        overviewApi.removeEventListener('filterModified', cancelForUserFilter)
+      }
+    }
+  }, [revealTarget, overviewApi])
+  useEffect(() => {
+    if (!revealTarget || !overviewApi || overviewApi.isDestroyed() || !searchReady ||
+      !(summaryReady || pageReady && !pageQuery.isFetching)) return
+    let phase: 'ready' | 'restoring' | 'filtering' | 'done' = 'ready'
+    let active = true
+    const clearTarget = () => setRevealTarget(current => current === revealTarget ? null : current)
+    const reveal = () => {
+      if (!active || cancelledReveal.current === revealTarget || overviewApi.isDestroyed()) return
+      if (phase === 'filtering') {
+        // onFilterChanged applies the filter asynchronously. Inspect membership
+        // only after its model update, before expanding any collapsed ancestors.
+        phase = 'done'
+        if (revealProgramLine(overviewApi, revealTarget.line)) clearTarget()
+        else phase = 'ready'
+        return
+      }
+      if (phase !== 'ready' || !currentProgramTarget(overviewApi, revealTarget.line)) return
+      // Empty debounce/loading rows can make SetFilter forget selected values.
+      // Restore the pre-navigation snapshot once against the ready rows.
+      phase = 'restoring'
+      const columns = new Set([...Object.keys(overviewApi.getFilterModel()), ...Object.keys(revealTarget.filters)])
+      void Promise.all([...columns].map(column => overviewApi.setColumnFilterModel(column, revealTarget.filters[column] ?? null))).then(() => {
+        if (!active || cancelledReveal.current === revealTarget || overviewApi.isDestroyed()) return
+        phase = 'filtering'
+        overviewApi.onFilterChanged()
+      }).catch(error => {
+        if (!active || cancelledReveal.current === revealTarget || overviewApi.isDestroyed()) return
+        phase = 'done'
+        clearTarget()
+        console.error('Unable to restore line program filters', error)
+      })
+    }
+    overviewApi.addEventListener('modelUpdated', reveal)
+    reveal()
+    return () => {
+      active = false
+      if (!overviewApi.isDestroyed()) {
+        overviewApi.removeEventListener('modelUpdated', reveal)
+      }
+    }
+  }, [revealTarget, overviewApi, searchReady, summaryReady, pageReady, pageQuery.isFetching, visible])
+  const choose = (line: Program, selection?: ProgramSelection, reveal = false, filters?: ReturnType<GridApi['getFilterModel']>) => {
     setCommand(null)
-    setExpanded(previous => new Map(previous).set(line.id, line)); setVisited(previous => new Set(previous).add(line.id)); setTarget(selection ? { id: line.id, selection } : null)
+    setRevealTarget(reveal ? { line, filters: structuredClone(filters ?? overviewApi?.getFilterModel() ?? {}) } : null)
+    setExpanded(previous => new Map(previous).set(line.id, line)); setTarget(selection ? { id: line.id, selection } : null)
   }
-  const collapseAll = () => { setExpanded(new Map()); setCommand(null) }
+  const collapseAll = () => { setExpanded(new Map()); setCommand(null); setRevealTarget(null) }
   const toggle = (line: Program) => {
     if (!expanded.has(line.id)) { choose(line); return }
     setExpanded(previous => { const next = new Map(previous); next.delete(line.id); return next })
+    setRevealTarget(current => current?.line.id === line.id ? null : current)
     setCommand(current => current?.lineId === line.id ? null : current)
   }
   const requestCommand = (line: Program, action: ProgramScopeCommand['action'], selection: ProgramSelection = { slice: 'all' }, explain = false) => {
-    choose(line)
+    choose(line, undefined, true)
     setCommand({ lineId: line.id, value: { action, selection, explain } })
   }
   useEffect(() => {
@@ -118,7 +198,7 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
         setCommand(null)
         setTab(programTab(line))
         setSearch(line.line); setPage(0); setFilter('all')
-        choose(line, { stamp: navigationRequest.stamp || undefined, kind: navigationRequest.action === 'open-line' ? undefined : navigationRequest.demandKind ?? 'common', slice: 'all' })
+        choose(line, { stamp: navigationRequest.stamp || undefined, kind: navigationRequest.action === 'open-line' ? undefined : navigationRequest.demandKind ?? 'common', slice: 'all' }, true)
         if (navigationRequest.jointId) setCommand({ lineId: line.id, value: { action: 'assignments', selection: { slice: 'all' }, jointId: navigationRequest.jointId } })
       }
       reportNavigationHandled(navigationRequest.id, line ? 'opened' : 'stale')
@@ -138,17 +218,17 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
     description: sectionContext, onSelect: selectFilter, onCalculation: summaryReady ? setSectionMetric : undefined,
     report: reportDisabled ? undefined : { ids: reportIds, context: reportContext },
   })
-  return <div className="min-w-0 space-y-3 pb-4 lg:pb-6" data-testid="line-program" onContextMenu={openSectionMenu} onKeyDown={openSectionMenu}>
+  return <div ref={rootRef} className="min-w-0 space-y-3 pb-4 lg:pb-6" data-testid="line-program" onContextMenu={openSectionMenu} onKeyDown={openSectionMenu}>
     <LineProgramReports ref={reports} ids={reportIds} context={reportContext} disabled={reportDisabled}>{summaryReady ? <Button variant="ghost" size="sm" className="h-10 gap-2" aria-label="Расчёт итогов раздела" aria-haspopup="dialog" disabled={query.isFetching} onClick={() => setSectionMetric('common')}><Calculator className="h-4 w-4" />Расчёт итогов</Button> : null}</LineProgramReports>
-    <div ref={toolbarRef} data-testid="line-program-toolbar" className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white py-1.5"><div className="flex max-w-full gap-1 overflow-x-auto rounded-md border border-slate-200 bg-white p-1">{([['lines', 'Все линии'], ['full', '100%-ные линии'], ['percentage', 'Процентные линии']] as const).map(([key, label]) => <button type="button" key={key} aria-pressed={tab === key} className={`whitespace-nowrap rounded px-3 py-1.5 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 ${tab === key ? 'bg-sky-50 text-sky-800' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`} onClick={() => { setTab(key); setPage(0); collapseAll(); setFilter('all') }}>{label}</button>)}</div>
+    <div data-testid="line-program-toolbar" className="relative flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white py-1.5"><div className="flex max-w-full gap-1 overflow-x-auto rounded-md border border-slate-200 bg-white p-1">{([['lines', 'Все линии'], ['full', '100%-ные линии'], ['percentage', 'Процентные линии']] as const).map(([key, label]) => <button type="button" key={key} aria-pressed={tab === key} className={`whitespace-nowrap rounded px-3 py-1.5 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 ${tab === key ? 'bg-sky-50 text-sky-800' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`} onClick={() => { setTab(key); setPage(0); collapseAll(); setFilter('all') }}>{label}</button>)}</div>
       <div className={`flex min-w-0 flex-1 items-center justify-end gap-2 ${filter === 'all' ? 'basis-[28rem]' : 'basis-[44rem]'}`}>
-        {tab === 'lines' ? <Button className="shrink-0 gap-2" onClick={() => setEditing({ projectTitle: '', subtitleCode: '', line: '', category: null, groupName: null, weldControlPercent: null, pvkControlPercent: null })}><Plus className="h-4 w-4" />Новая линия</Button> : null}
+        {tab === 'lines' ? <Button className="shrink-0 gap-2" onClick={() => edit({ projectTitle: '', subtitleCode: '', line: '', category: null, groupName: null, weldControlPercent: null, pvkControlPercent: null })}><Plus className="h-4 w-4" />Новая линия</Button> : null}
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {filter !== 'all' ? <div data-testid="line-program-filter" role="group" aria-label={filteredDescription} title={filteredDescription} className="flex h-10 min-w-0 max-w-[55%] items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 pl-2.5 pr-1 text-xs text-sky-800">
             <ListFilter aria-hidden="true" className="h-3.5 w-3.5 shrink-0" /><span className="truncate font-medium">{filterNames[filter]}</span><span className="shrink-0 rounded bg-white/80 px-1.5 py-0.5 font-semibold tabular-nums" aria-label={filteredCountLabel}>{filteredCount}</span>
             <button type="button" aria-label="Сбросить фильтр" title="Сбросить фильтр" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sky-600 hover:bg-sky-100 hover:text-sky-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500" onClick={() => selectFilter('all')}><X aria-hidden="true" className="h-3.5 w-3.5" /></button>
           </div> : null}
-          <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input className="h-10 bg-white pl-9 pr-9" aria-label="Поиск программы линий" placeholder="Линия, проект, шифр или клеймо" value={search} onChange={event => { setSearch(event.target.value); setPage(0); collapseAll() }} />{search ? <button type="button" aria-label="Очистить поиск линий" className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded text-slate-600 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500" onClick={() => { setSearch(''); setPage(0) }}><X className="h-4 w-4" /></button> : null}</div>
+          <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input className="h-10 bg-white pl-9 pr-9" aria-label="Поиск программы линий" placeholder="Линия, проект, шифр или клеймо" value={search} onChange={event => { setSearch(event.target.value); setPage(0); collapseAll() }} />{search ? <button type="button" aria-label="Очистить поиск линий" className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded text-slate-600 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500" onClick={() => { setSearch(''); setPage(0); setRevealTarget(null) }}><X className="h-4 w-4" /></button> : null}</div><ProgramViewSettings api={overviewApi} />
         </div>
       </div>
     </div>
@@ -163,16 +243,16 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
     {sectionMetric && summaryReady ? <LineProgramSectionCalculationDialog lines={lines} totals={totals} context={sectionContext} initialMetric={sectionMetric} onClose={() => setSectionMetric(null)} onOpenLine={(line, metric) => { setSectionMetric(null); requestCommand(line, 'calculation', programSectionMetricSelection(metric), true) }} /> : null}
     {searchReady && !summaryReady && (query.error || pageQuery.error) ? <div className="flex items-center gap-3 rounded-lg border border-rose-100 bg-rose-50/40 px-3 py-2"><ProgramError error={(query.error || pageQuery.error)!} /><Button variant="ghost" size="sm" onClick={() => { if (pageQuery.error) void pageQuery.refetch(); else void query.refetch() }}>Повторить загрузку</Button></div> : null}
     {(!summaryReady || query.isFetching) && !query.error && !pageQuery.error ? <p role="status" className="rounded-lg border border-sky-100 bg-sky-50/40 px-3 py-2 text-sm text-slate-500">{pageReady && filter === 'all' ? 'Линии доступны. Рассчитываем итоги всего отбора…' : pageReady ? 'Рассчитываем все подходящие линии для выбранного фильтра…' : 'Загружаем найденные линии…'}</p> : null}
-    {editing ? <LineProgramEditor key={editing.id ?? 'new'} value={editing} onClose={() => setEditing(null)} onSaved={line => { setEditing(null); setTab(current => current === 'lines' ? current : programTab(line)); setSearch(line.line); setPage(0); setFilter('all'); choose(line) }} /> : null}
+    {editing ? <LineProgramEditor key={editing.id ?? 'new'} value={editing} onClose={() => setEditing(null)} onSaved={line => { setEditing(null); setTab(current => current === 'lines' ? current : programTab(line)); setSearch(line.line); setPage(0); setFilter('all'); choose(line, undefined, true, editingFilters.current) }} /> : null}
     {outside.length > 0 ? <p className="text-xs text-sky-700">Открытые линии вне текущей страницы показаны первыми.</p> : null}
-    <div className="space-y-3">{visible.map(line => <LineCard key={line.id} line={line} expanded={expanded.has(line.id)} onToggle={() => toggle(line)} onEdit={tab === 'lines' ? () => setEditing(line) : undefined} onSelect={selection => choose(line, selection)} onOpenMenu={event => scopeMenu.open(event, {
+    <ProgramOverviewGrid onReady={setOverviewApi} rows={visible} expanded={expanded} onToggle={toggle} onAssignments={line => requestCommand(line, 'assignments')} onEdit={tab === 'lines' ? line => edit(line) : undefined} onSelect={choose}
+      onMenu={(event, line) => scopeMenu.open(event, {
       line, scope: { slice: 'all' }, expanded: expanded.has(line.id), onToggle: () => toggle(line),
       onAssignments: () => requestCommand(line, 'assignments'), onCalculation: (selection, explain) => requestCommand(line, 'calculation', selection, explain),
-      onSelect: selection => choose(line, selection), onEdit: tab === 'lines' ? () => setEditing(line) : undefined,
-    })}>
-      {visited.has(line.id) ? <div hidden={!expanded.has(line.id)}><LineCalculation onOpenReportRows={onOpenReportRows} line={line} enabled={expanded.has(line.id)} targetSelection={target?.id === line.id ? target.selection : undefined}
-        command={command?.lineId === line.id ? command.value : undefined} onCommandHandled={handled => setCommand(current => current?.value === handled ? null : current)} onOpenScopeMenu={scopeMenu.open} /></div> : null}
-    </LineCard>)}</div>
+      onSelect: selection => choose(line, selection), onEdit: tab === 'lines' ? () => edit(line) : undefined,
+    })}
+      renderDetail={line => <LineCalculation onOpenReportRows={onOpenReportRows} line={line} overview={line.overview} onEdit={tab === 'lines' ? () => edit(line) : undefined} enabled={expanded.has(line.id)} targetSelection={target?.id === line.id ? target.selection : undefined}
+        command={command?.lineId === line.id ? command.value : undefined} onCommandHandled={handled => setCommand(current => current?.value === handled ? null : current)} onOpenScopeMenu={scopeMenu.open} />} />
     {scopeMenu.menu}
     {(summaryReady || pageReady && filter === 'all') && !visible.length ? <p className="rounded-xl border border-dashed p-10 text-center text-sm text-slate-500">Линии не найдены. Попробуйте изменить поиск или фильтр.</p> : null}
     {summaryReady || pageReady && filter === 'all' ? <ProgramPagination page={actualPage} pageSize={30} total={summaryReady ? filtered.length : pageQuery.data!.total} noun="линий" onChange={next => { setPage(next); collapseAll() }} /> : null}
@@ -205,25 +285,4 @@ function ExcessMetric({ excess, reducible, approved, additional, onExcess, onRed
     </div>
     {reducible > 0 ? <button type="button" data-section-metric="reduction" aria-label={`Возможное сокращение ${reducible}`} title="Число жёлтых рамок: назначения «да», которые можно снять вместе без нарушения норм. Заявок, результатов и заключений по этим методам нет." onClick={onReduction} className={`mt-0.5 flex min-h-7 items-center justify-between gap-2 rounded px-2 text-left text-xs text-amber-800 hover:bg-amber-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400 ${approved || additional ? 'pr-10' : ''}`}><span>Возможное сокращение</span><span className="shrink-0 tabular-nums">{reducible}</span></button> : null}
   </div>
-}
-
-function LineCard({ line, expanded, onToggle, onEdit, onSelect, onOpenMenu, children }: { line: Program; expanded: boolean; onToggle: () => void; onEdit?: () => void; onSelect: (selection: ProgramSelection) => void; onOpenMenu: (event: ProgramScopeMenuEvent) => void; children: React.ReactNode }) {
-  const headerRef = useProgramStickyHeight('--program-line-height')
-  const o = line.overview
-  const missing = (o?.common?.missing ?? 0) + (o?.pvk?.missing ?? 0)
-  const finished = !line.configurationIssue && isLineProgramFinished(o)
-  const border = line.configurationIssue || missing > 0 ? 'border-amber-300' : finished ? 'border-emerald-300' : 'border-slate-200'
-  const details = [o && (line.configurationIssue || !o.common || !o.pvk) ? `Клейм: ${o.stamps}` : '', line.weldControlPercent === 100 ? '100% — вся линия' : '', line.pvkControlPercent !== line.weldControlPercent ? `ПВК ${line.pvkControlPercent ?? '—'}%` : ''].filter(Boolean).join(' · ')
-  return <section data-testid="line-program-card" data-program-finished={finished} title={finished ? 'Линия завершена: назначения достаточны, все учитываемые стыки годны' : undefined} onContextMenu={onOpenMenu} onKeyDown={onOpenMenu} data-line={line.line} className={`program-line-card min-w-0 rounded-lg border bg-white ${border}`}>
-    <div ref={headerRef} data-testid="line-program-header" className={`sticky top-[var(--program-toolbar-height,0px)] z-20 grid min-h-[4.5rem] cursor-pointer grid-cols-[minmax(0,1fr)_2rem] items-center gap-x-2 gap-y-0.5 ${expanded ? 'rounded-t-lg' : 'rounded-lg'} bg-white px-3 py-1 xl:grid-cols-[18rem_minmax(0,1fr)_2rem]`} onContextMenu={onOpenMenu} onKeyDown={onOpenMenu} onClick={event => { if (isProgramRowClick(event.target)) onToggle() }}>
-      <button type="button" aria-label={`Расчёт линии ${line.line}`} aria-expanded={expanded} onClick={onToggle} className="flex min-w-0 items-start gap-2 py-1 text-left">
-        <span className="mt-0.5 shrink-0 text-sky-700">{expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</span><span className="min-w-0 flex-1"><span className="flex min-w-0 items-center gap-2"><span data-testid="line-name" className="truncate whitespace-nowrap text-sm font-semibold text-slate-800" title={line.line}>{line.line}</span><span className="shrink-0 rounded bg-sky-50 px-1.5 py-0.5 text-xs text-sky-700">{line.weldControlPercent == null ? '—' : `${line.weldControlPercent}%`}</span></span><span className="mt-1 flex min-h-8 min-w-0 flex-wrap items-start gap-x-2 gap-y-0.5 text-xs text-slate-500" title={`${line.projectTitle || 'Без проекта'} · ${line.subtitleCode || 'Без шифра'}${details ? ` · ${details}` : ''}`}><span data-testid="line-description" className="min-w-0 break-words [overflow-wrap:anywhere]">{line.projectTitle || 'Без проекта'} · {line.subtitleCode || 'Без шифра'}{details ? ` · ${details}` : ''}</span></span></span>
-      </button>
-      <div className="col-span-2 row-start-2 min-w-0 xl:col-span-1 xl:col-start-2 xl:row-start-1">{line.configurationIssue ? <p className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">{line.configurationIssue}</p> : o ? <CompactLineMetrics overview={o} select={onSelect} onOpenMenu={onOpenMenu} /> : null}</div>
-      {finished || onEdit ? <div className={`col-start-2 row-start-1 flex flex-col items-center gap-1 self-stretch py-1 xl:col-start-3 ${finished ? 'justify-between' : 'justify-center'}`}>
-        {finished ? <span data-testid="program-finished-label" role="img" aria-label="Линия завершена" title="Линия завершена" className="flex h-5 w-8 shrink-0 items-center justify-center text-emerald-700"><Check aria-hidden="true" className="h-4 w-4" /></span> : null}
-        {onEdit ? <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-slate-400 hover:text-sky-700" aria-label="Настроить" title="Настроить линию" onClick={onEdit}><Settings2 className="h-4 w-4" /></Button> : null}
-      </div> : null}
-    </div>{o?.integrityIssues ? <p className="px-4 pb-2 text-xs text-amber-800">СП-09 · Нарушена целостность цепочки. Проверьте диспетчер и подробности расчёта; линия не завершена.</p> : null}{children}
-  </section>
 }

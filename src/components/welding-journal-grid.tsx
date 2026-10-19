@@ -1,4 +1,5 @@
 import { positionGridPopup } from './grid-popup-position'
+import { useGridResultMotion } from './use-grid-result-motion'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { type RowHeightParams, type IRowNode, type ColDef, type ColGroupDef, type GridApi, type RowSelectionOptions, type CellPosition, type GetColumnMenuItemsParams, type MenuItemDef, type DefaultMenuItem } from 'ag-grid-community'
 import { AgGridProvider, AgGridReact } from 'ag-grid-react'
@@ -24,6 +25,7 @@ import { useJournalGridFocus } from '@/lib/use-journal-grid-focus'
 import { useJournalPageScroll } from '@/lib/use-journal-page-scroll'
 import { REPORT_LEFT_ALIGNED_FIELDS } from '@/lib/report-column-alignment'
 import { useJournalRangeSummary } from '@/lib/use-journal-range-summary'
+import { restoreJournalGridSelection } from '@/lib/journal-grid-selection'
 import { formatJournalNumber, journalClipboardValue, journalColumnLayout, mergeJournalSelection, readJournalGridStorage, writeJournalGridStorage, type JournalGridStorage } from '@/lib/welding-journal-grid-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getWeldingJournalExportFields, type JournalExportFieldsRef } from '@/lib/welding-journal-export-fields'
@@ -64,6 +66,15 @@ function JournalGrid(props: WeldingJournalGridProps) {
   const restoringLayout = useRef(false)
   const initialLayout = useRef<JournalGridStorage['columns']>([])
   const frame = useRef<HTMLDivElement>(null)
+  const resultMotion = useGridResultMotion(frame, { opacity: .94, duration: 120 })
+  const resultScope = JSON.stringify([props.queryIdentity, columnFilters, sort])
+  const revealedScope = useRef(resultScope)
+  useEffect(() => {
+    if (!rowsReady) { resultMotion.cancel(); return }
+    if (revealedScope.current === resultScope) return
+    revealedScope.current = resultScope
+    resultMotion.reveal()
+  }, [resultScope, rowsReady, resultMotion])
   const focus = useJournalGridFocus(api, frame)
   useJournalPageScroll(frame)
   const [openColumnsRequest, setOpenColumnsRequest] = useState(0)
@@ -251,14 +262,8 @@ function JournalGrid(props: WeldingJournalGridProps) {
   const restoreSelection = useCallback(() => {
     if (!api || api.isDestroyed()) return
     restoringSelection.current = true
-    const select: IRowNode<WeldRow>[] = [], deselect: IRowNode<WeldRow>[] = []
-    api.forEachNode(node => {
-      if (node.data && node.isSelected() !== selectedRowIds.has(node.data.id)) (selectedRowIds.has(node.data.id) ? select : deselect).push(node)
-    })
-    // Batch leaf changes so nested group states are calculated once per batch.
-    if (deselect.length) api.setNodesSelected({ nodes: deselect, newValue: false })
-    if (select.length) api.setNodesSelected({ nodes: select, newValue: true })
-    restoringSelection.current = false
+    try { restoreJournalGridSelection(api, selectedRowIds) }
+    finally { restoringSelection.current = false }
   }, [api, selectedRowIds])
   useEffect(restoreSelection, [restoreSelection, rows, rowsReady])
 
@@ -341,7 +346,7 @@ function JournalGrid(props: WeldingJournalGridProps) {
         onAppearanceChange={appearance => updateSettings({ ...settingsRef.current, appearance })}
         onResetLayout={resetLayout}
         hasFilters={Object.values(columnFilters).some(Boolean)} onClearFilters={() => props.onColumnFiltersChange({})} />
-      <div ref={frame} className={`journal-grid-frame journal-theme-${appearance.theme} journal-density-${appearance.density} ${appearance.taskFill ? 'journal-task-fill' : ''} ${appearance.wrapText ? 'journal-wrap-text' : 'journal-no-wrap'} ${appearance.verticalLines ? 'journal-vertical-lines' : ''} ${appearance.stripes ? 'journal-stripes' : ''}`} aria-label="Сварочный журнал" aria-busy={!rowsReady} onContextMenu={event => {
+      <div ref={frame} className={`journal-grid-frame grid-result-motion journal-theme-${appearance.theme} journal-density-${appearance.density} ${appearance.taskFill ? 'journal-task-fill' : ''} ${appearance.wrapText ? 'journal-wrap-text' : 'journal-no-wrap'} ${appearance.verticalLines ? 'journal-vertical-lines' : ''} ${appearance.stripes ? 'journal-stripes' : ''}`} aria-label="Сварочный журнал" aria-busy={!rowsReady} onContextMenu={event => {
           event.preventDefault()
           const groupRow = event.target instanceof Element ? event.target.closest<HTMLElement>('.ag-full-width-row.ag-row-group') : null
           if (groupRow) {

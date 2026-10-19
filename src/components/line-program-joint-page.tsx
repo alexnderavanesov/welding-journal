@@ -1,5 +1,7 @@
+import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import { PROGRAM_SLICE_LABELS as slices } from '@/lib/line-program-labels'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useProgramSessionState } from './line-program-grid-session'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Search, X } from 'lucide-react'
@@ -20,7 +22,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { LineProgramRecord } from '@/lib/line-program'
 import { calculateLineProgram, getLineProgramOfficialStamps, isLineProgramControlRow } from '@/lib/line-program-calculation'
 import { countProgramRemovalHints, getProgramRemovalHints, type ProgramRemovalHints } from '@/lib/line-program-excess'
-import { createProgramRowSelector } from '@/lib/line-program-selection'
+import { createProgramRowSelector, programScopeKey } from '@/lib/line-program-selection'
 import { applyProgramPatch, getProgramBatchTargets, matchesProgramScope, isProgramEditableRow, PROGRAM_ASSIGNMENT_OPTIONS, PROGRAM_METHODS, PROGRAM_EDITOR_METHODS, programAssignment, toggleProgramMethodSelection, type ProgramAssignment, type ProgramChange, type ProgramMethod, type ProgramPatch, type ProgramSelection } from '@/lib/line-program-workspace'
 import { getLineProgramJointPage } from '@/server/line-program'
 import { applyLineProgramControl, previewLineProgramControl, type LineProgramControlRequest } from '@/server/line-program-control'
@@ -48,21 +50,21 @@ export function LineJointPage({ line, workspaces, onOpenReportRows, enabled = tr
   const queryClient = useQueryClient()
   const confirm = useConfirmAction()
   const { requireEditPassword } = useSecurityGuard()
-  const [selection, setSelection] = useState<ProgramSelection>({ slice: 'all' })
+  const [selection, setSelection] = useProgramSessionState<ProgramSelection>(`editor:selection:${line.id}`, { slice: 'all' })
   const contextScope = useRef<ProgramSelection>({ slice: 'all' })
   const searchInput = useRef<HTMLInputElement>(null)
   const handledAssignmentRequest = useRef<ProgramScopeCommand | undefined>(undefined)
   const [editingAssignments, setEditingAssignments] = useState(false)
-  const [editingStamp, setEditingStamp] = useState('')
-  const [editingUnassigned, setEditingUnassigned] = useState(false)
-  const [editingSlice, setEditingSlice] = useState(true)
+  const [editingStamp, setEditingStamp] = useProgramSessionState(`editor:editingStamp:${line.id}`, '')
+  const [editingUnassigned, setEditingUnassigned] = useProgramSessionState(`editor:editingUnassigned:${line.id}`, false)
+  const [editingSlice, setEditingSlice] = useProgramSessionState(`editor:editingSlice:${line.id}`, true)
   const [focusedJoint, setFocusedJoint] = useState<number | null>(null)
-  const [jointSearch, setJointSearch] = useState('')
-  const [editingFilter, setEditingFilter] = useState<ProgramQuickFilter>('all')
+  const [jointSearch, setJointSearch] = useProgramSessionState(`editor:jointSearch:${line.id}`, '')
+  const [editingFilter, setEditingFilter] = useProgramSessionState<ProgramQuickFilter>(`editor:editingFilter:${line.id}`, 'all')
   const [batchError, setBatchError] = useState('')
-  const [selected, setSelected] = useState(new Set<number>())
-  const [methods, setMethods] = useState(new Set<ProgramMethod>())
-  const [assignment, setAssignment] = useState<ProgramAssignment>('да')
+  const [selected, setSelected] = useProgramSessionState(`editor:selected:${line.id}`, new Set<number>())
+  const [methods, setMethods] = useProgramSessionState(`editor:methods:${line.id}`, new Set<ProgramMethod>())
+  const [assignment, setAssignment] = useProgramSessionState<ProgramAssignment>(`editor:assignment:${line.id}`, 'да')
   const [focusedMethod, setFocusedMethod] = useState<ProgramMethod | undefined>()
   const [review, setReview] = useState<{ token: string; excess: number; changed: number; request: LineProgramControlRequest } | null>(null)
   const [acknowledged, setAcknowledged] = useState(false)
@@ -157,7 +159,7 @@ export function LineJointPage({ line, workspaces, onOpenReportRows, enabled = tr
     if (problems.length) { setBatchError(problems.join(' ')); return }
     setManual(previous => { const next = new Map(previous); for (const { row, values } of updates) Object.keys(values).length ? next.set(row.id, values) : next.delete(row.id); return next })
   }
-  const openAssignments = (scope: ProgramSelection, id?: number, method?: ProgramMethod) => {
+  const openAssignments = useStableEventCallback((scope: ProgramSelection, id?: number, method?: ProgramMethod) => {
     if (busy) return
     // Keep useful selections on return, but never carry hidden joints from another scope.
     const scopedIds = new Set(selectRows(scope).map(row => row.id))
@@ -171,7 +173,7 @@ export function LineJointPage({ line, workspaces, onOpenReportRows, enabled = tr
     setEditingSlice(true)
     setEditingFilter(scope.status ?? (scope.slice === 'missing' ? 'missing' : 'all'))
     setEditingAssignments(true)
-  }
+  })
   useEffect(() => {
     if (!assignmentRequest || handledAssignmentRequest.current === assignmentRequest) return
     if (!enabled) { onAssignmentRequestHandled?.(assignmentRequest); return }
@@ -193,7 +195,9 @@ export function LineJointPage({ line, workspaces, onOpenReportRows, enabled = tr
     return [row.joint, row.connectionType, ...getLineProgramOfficialStamps(row), calculateFinalStatus(value), value.vikResult, value.rkResult, value.uzkResult, value.pvkResult,
       ...PROGRAM_METHODS.map(method => `${method} ${programAssignment(value, method)}`)].map(text => String(text ?? '')).join(' ').toLocaleLowerCase('ru').includes(needle)
   }), [scopedEditingRows, needle, draft])
-  const visibleReduction = editingAssignments ? countProgramRemovalHints(draftHints, editingRows.map(row => row.id)) : 0
+  const [gridFilteredIds, setGridFilteredIds] = useState<Set<number> | null>(null)
+  const filteredEditingRows = gridFilteredIds ? editingRows.filter(row => gridFilteredIds.has(row.id)) : editingRows
+  const visibleReduction = editingAssignments ? countProgramRemovalHints(draftHints, filteredEditingRows.map(row => row.id)) : 0
   const focusedRow = focusedJoint ? rows.find(row => row.id === focusedJoint) : null
   const navigate: ProgramReportNavigation | undefined = onOpenReportRows ? async (ids, report, message) => {
     if (busy) return
@@ -205,16 +209,17 @@ export function LineJointPage({ line, workspaces, onOpenReportRows, enabled = tr
     if (editingAssignments) { setFocusedJoint(id); setFocusedMethod(undefined) }
     else openAssignments(contextScope.current, id)
   }, navigate, busy)
+  const openWorkspaceContext = useStableEventCallback((scope: ProgramSelection, event: React.MouseEvent | React.KeyboardEvent, row: WeldRow) => { contextScope.current = scope; context.open(event, row) })
   const cancellationHints = [...draft].flatMap(([id, next]) => {
     const row = rowById.get(id)!, hint = getWeldFormCancellationResultHint(next, row)
     return hint ? [`${row.joint}: ${hint}`] : []
   })
   const batchTargets = getProgramBatchTargets(rows.filter(row => selected.has(row.id) && isProgramEditableRow(row)), activePatch())
   const skipped = selected.size - batchTargets.length
-  const hiddenSelected = selected.size - editingRows.filter(row => selected.has(row.id)).length
+  const hiddenSelected = selected.size - filteredEditingRows.filter(row => selected.has(row.id)).length
   const overLimit = changes.length > 1000
   const resetButton = <button type="button" disabled={busy || !selected.size} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-600 disabled:opacity-40" onClick={() => setSelected(new Set())}>Сбросить выбор</button>
-  return <>{workspaces.map(workspace => workspace.container ? <ProgramWorkspaceView key={workspace.key} line={line} selection={workspace.selection} rows={selectRows(workspace.selection)} removalHints={savedHints} container={workspace.container} error={query.error} pending={query.isPending} feedback={feedback && !editingAssignments ? feedback : ''} onAssignments={(id, method) => openAssignments(workspace.selection, id, method)} onContextMenu={(event, row) => { contextScope.current = workspace.selection; context.open(event, row) }} /> : null)}
+  return <>{workspaces.map(workspace => workspace.container ? <ProgramWorkspaceView key={workspace.key} line={line} selection={workspace.selection} rows={selectRows(workspace.selection)} removalHints={savedHints} container={workspace.container} error={query.error} pending={query.isPending} feedback={feedback && !editingAssignments ? feedback : ''} onAssignments={openAssignments} onContextMenu={openWorkspaceContext} /> : null)}
     {editingAssignments && enabled ? <LineProgramAssignmentDialog line={line.line} context={<>{line.line} → {editingUnassigned ? 'Клеймо не назначено' : editingStamp ? <span className="rounded bg-violet-50 px-1.5 py-0.5 text-violet-700">Клеймо {editingStamp}</span> : 'Все стыки линии'} · стыков: {editingRows.length}{focusedRow ? <span className="ml-2 font-semibold text-sky-800">→ Стык {String(focusedRow.joint)}</span> : null}<span className="mt-1 block text-xs text-slate-500">{editingSlice ? slices[selection.slice] : 'Все стыки'}</span></>} busy={busy} onClose={() => setEditingAssignments(false)}
       searchControl={<div className="relative"><Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-2 h-4 w-4 text-slate-400" /><Input ref={searchInput} className="h-8 bg-white pl-8 pr-8 text-xs" aria-label="Поиск стыков в назначениях" placeholder="Поиск стыков…" title="Стык, клеймо, состояние или назначение" value={jointSearch} onChange={event => { setJointSearch(event.target.value); setFocusedJoint(null) }} />{jointSearch ? <button type="button" aria-label="Очистить поиск стыков" title="Очистить поиск стыков" className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500" onClick={() => { setJointSearch(''); searchInput.current?.focus() }}><X aria-hidden="true" className="h-3.5 w-3.5" /></button> : null}</div>}
       scopeControl={<select aria-label="Стыки в окне назначений" value={editingSlice && selection.slice !== 'all' ? '__selection' : editingUnassigned ? 'unassigned:' : editingStamp ? `stamp:${editingStamp}` : ''} disabled={busy} className="h-8 max-w-64 rounded-md border border-slate-200 bg-white pl-3 pr-8 text-xs text-slate-700" onChange={event => { setEditingUnassigned(event.target.value === 'unassigned:'); setEditingStamp(event.target.value.startsWith('stamp:') ? event.target.value.slice(6) : ''); setEditingSlice(false); setEditingFilter('all'); setFocusedJoint(null); setSelected(new Set()) }}>
@@ -237,8 +242,8 @@ export function LineJointPage({ line, workspaces, onOpenReportRows, enabled = tr
         <div data-testid="program-batch-actions" className="ml-auto flex items-center gap-2">{resetButton}<Button className={programPrimaryActionClass} disabled={busy || !methods.size || !batchTargets.length} onClick={() => applyChanges(batchTargets, activePatch())}>Применить к выбранным ({batchTargets.length})</Button></div>
       </div>
       {methods.has('Послойный ПВК') && skipped > 0 ? <p role="status" className="text-xs text-amber-800">Послойный контроль: У-стыков — {batchTargets.length}. Пропущено С-стыков: {skipped}; их назначения не изменятся.</p> : null}
-      {hiddenSelected > 0 ? <p role="status" className="text-xs text-amber-800">Выбрано вне текущего поиска: {hiddenSelected}. Массовое действие затронет и эти стыки; «Сбросить выбор» снимает все отметки.</p> : null}
-      <div className="flex min-h-6 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500"><p>Выберите стыки и действие или измените ячейку. ПКМ — документы.</p>{visibleReduction > 0 ? <button type="button" aria-label="Выделить кандидатов на снятие" title={`Назначений-кандидатов в текущем списке: ${visibleReduction} (жёлтый пунктир). Нажатие только выделит стыки, не снимая назначения.`} disabled={busy} className="inline-flex min-h-6 items-center rounded border border-dashed border-amber-400 bg-white px-1.5 text-amber-800 hover:bg-amber-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400 disabled:opacity-40" onClick={() => setSelected(new Set(editingRows.filter(row => draftHints.has(row.id)).map(row => row.id)))}>Кандидаты на снятие: {visibleReduction} · Выделить</button> : null}<ProgramApprovalActions approve={approvalOptions.approve.filter(item => selected.has(item.rowId))} revoke={approvalOptions.revoke.filter(item => selected.has(item.rowId))} disabled={busy} draft={manual.size > 0} onAction={(action, entries) => approval.mutate({ action, entries })} /></div>
+      {hiddenSelected > 0 ? <p role="status" className="text-xs text-amber-800">Выбрано вне текущего отбора: {hiddenSelected}. Массовое действие затронет и эти стыки; «Сбросить выбор» снимает все отметки.</p> : null}
+      <div className="flex min-h-6 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500"><p>Выберите стыки и действие или измените ячейку. ПКМ — документы.</p>{visibleReduction > 0 ? <button type="button" aria-label="Выделить кандидатов на снятие" title={`Назначений-кандидатов в текущем списке: ${visibleReduction} (жёлтый пунктир). Нажатие только выделит стыки, не снимая назначения.`} disabled={busy} className="inline-flex min-h-6 items-center rounded border border-dashed border-amber-400 bg-white px-1.5 text-amber-800 hover:bg-amber-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400 disabled:opacity-40" onClick={() => setSelected(new Set(filteredEditingRows.filter(row => draftHints.has(row.id)).map(row => row.id)))}>Кандидаты на снятие: {visibleReduction} · Выделить</button> : null}<ProgramApprovalActions approve={approvalOptions.approve.filter(item => selected.has(item.rowId))} revoke={approvalOptions.revoke.filter(item => selected.has(item.rowId))} disabled={busy} draft={manual.size > 0} onAction={(action, entries) => approval.mutate({ action, entries })} /></div>
     </div>}>
     {batchError ? <p role="alert" className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{batchError} Изменения не применены.</p> : null}
     {overLimit ? <p role="alert" className="bg-amber-50 px-4 py-2 text-sm text-amber-900">Изменено {changes.length} стыков. За одно сохранение можно изменить не более 1000. Уменьшите черновик; автоматически разбивать сохранение система не будет.</p> : null}
@@ -252,7 +257,7 @@ export function LineJointPage({ line, workspaces, onOpenReportRows, enabled = tr
     {errors.length ? <p role="alert" className="border-b bg-amber-50 p-3 text-sm text-amber-800">{errors.join(' ')}</p> : null}
 
     {feedback ? <p role="status" className="p-3 text-sm text-emerald-700">{feedback}</p> : null}
-    {query.isPending ? <p role="status" className="p-6 text-sm text-slate-500">Загружаем стыки линии…</p> : <ProgramAssignmentTable approvedRowIds={approvedRowIds} removalHints={draftHints} rows={editingRows} selected={selected} draft={draft} busy={busy} canSelect={canSelect} onSelect={select} onSelectAll={checked => setSelected(previous => { const next = new Set(previous); editingRows.filter(canSelect).forEach(row => checked ? next.add(row.id) : next.delete(row.id)); return next })} onChange={(row, method, value) => applyChanges([row], { [method]: value })} getError={getError} focusedJoint={focusedJoint} focusedMethod={focusedMethod} onContextMenu={(event, row) => { contextScope.current = editingSlice ? selection : { stamp: editingStamp || undefined, unassigned: editingUnassigned, slice: 'all' }; context.open(event, row) }} />}
+    {query.isPending ? <p role="status" className="p-6 text-sm text-slate-500">Загружаем стыки линии…</p> : <ProgramAssignmentTable onFilterRows={visible => setGridFilteredIds(previous => previous && previous.size === visible.length && visible.every(row => previous.has(row.id)) ? previous : new Set(visible.map(row => row.id)))} sessionKey={`assignments:${line.id}`} approvedRowIds={approvedRowIds} removalHints={draftHints} rows={editingRows} selected={selected} draft={draft} busy={busy} canSelect={canSelect} onSelect={select} onSelectAll={(checked, visible) => setSelected(previous => { const next = new Set(previous); visible.filter(canSelect).forEach(row => checked ? next.add(row.id) : next.delete(row.id)); return next })} onChange={(row, method, value) => applyChanges([row], { [method]: value })} getError={getError} focusedJoint={focusedJoint} focusedMethod={focusedMethod} onContextMenu={(event, row) => { contextScope.current = editingSlice ? selection : { stamp: editingStamp || undefined, unassigned: editingUnassigned, slice: 'all' }; context.open(event, row) }} />}
     </LineProgramAssignmentDialog> : null}
     {context.menu}
   </>
@@ -276,16 +281,20 @@ function AssignmentActions({ value, onChange, busy, layered }: { value: ProgramA
   }}>{option === '' ? 'Пусто' : label}</button>)}</div>
 }
 
-function ProgramWorkspaceView({ line, selection, rows, removalHints, container, error, pending, feedback, onAssignments, onContextMenu }: {
+const ProgramWorkspaceView = memo(function ProgramWorkspaceView({ line, selection, rows, removalHints, container, error, pending, feedback, onAssignments, onContextMenu }: {
   line: LineProgramRecord; selection: ProgramSelection; rows: WeldRow[]; removalHints: ProgramRemovalHints; container: HTMLDivElement
   error: Error | null; pending: boolean; feedback: string
-  onAssignments: (id?: number, method?: ProgramMethod) => void
-  onContextMenu: (event: React.MouseEvent, row: WeldRow) => void
+  onAssignments: (scope: ProgramSelection, id?: number, method?: ProgramMethod) => void
+  onContextMenu: (scope: ProgramSelection, event: React.MouseEvent | React.KeyboardEvent, row: WeldRow) => void
 }) {
+  const assignments = useStableEventCallback((id: number, method?: ProgramMethod) => onAssignments(selection, id, method))
+  const contextMenu = useStableEventCallback((event: React.MouseEvent | React.KeyboardEvent, row: WeldRow) => onContextMenu(selection, event, row))
   const scopeName = selection.unassigned ? 'без клейма' : selection.stamp ? `клейма ${selection.stamp}` : 'всей линии'
   return createPortal(<section data-testid="program-joint-workspace" className="min-w-0 overflow-hidden bg-white" aria-label={`Стыки ${scopeName} · ${line.line}`} aria-description={`Записей в выборке: ${rows.length}. Исторические записи не увеличивают число учитываемых соединений.`}>
     {error ? <div className="p-3"><ProgramError error={error} /></div> : null}
     {feedback ? <p role="status" className="px-4 py-2 text-sm text-emerald-700">{feedback}</p> : null}
-    {pending ? <p role="status" className="p-6 text-sm text-slate-500">Загружаем стыки линии…</p> : <ProgramReadOnlyTable removalHints={removalHints} rows={rows} onAssignment={onAssignments} onContextMenu={onContextMenu} />}
+    {pending ? <p role="status" className="p-6 text-sm text-slate-500">Загружаем стыки линии…</p> : <ProgramReadOnlyTable sessionKey={`joints:${line.id}:${programScopeKey(selection)}`} contextLabel={`${line.line} · ${scopeName}`} removalHints={removalHints} rows={rows} onAssignment={assignments} onContextMenu={contextMenu} />}
   </section>, container)
-}
+}, (before, after) => Object.keys(before).every(key => key === 'selection'
+  ? (['stamp', 'unassigned', 'kind', 'slice', 'status', 'search'] as const).every(field => before.selection[field] === after.selection[field])
+  : Object.is(before[key as keyof typeof before], after[key as keyof typeof after])))

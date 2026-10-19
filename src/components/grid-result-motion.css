@@ -1,0 +1,9 @@
+/* Share a quick cadence across the existing AG reports. Keep AG's own
+   prevent-animation and no-animation modes, especially program disclosure. */
+.grid-result-motion .ag-row-animation:not(.ag-prevent-animation) .ag-row {
+  transition-duration: 160ms;
+  transition-timing-function: ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .grid-result-motion .ag-row { transition: none !important; }
+}

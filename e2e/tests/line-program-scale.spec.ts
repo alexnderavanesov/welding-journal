@@ -20,7 +20,7 @@ test('500 стыков: ограниченный DOM, поиск последн�
     const program = page.getByTestId('line-program')
     await expect(program.getByLabel('Итоги раздела')).toBeVisible()
     await program.getByLabel('Поиск программы линий').fill(line)
-    const card = program.getByTestId('line-program-card')
+    const card = program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
     await expect(card).toHaveCount(1)
     const responsePromise = page.waitForResponse(response => response.url().includes('/_serverFn/') && rpcName(response.url()).startsWith('getLineProgramJointPage_'))
     const start = Date.now()

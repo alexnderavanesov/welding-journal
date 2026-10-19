@@ -1,3 +1,4 @@
+vi.mock('./line-program-grid', () => import('@/test/program-grid-mock'))
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -9,7 +10,7 @@ const props = { rows: [source], selected: new Set<number>(), draft: new Map<numb
 
 it('omits the invariant VIK assignment without hiding saved VIK results or any participant stamp', () => {
   render(<ProgramAssignmentTable {...props} />)
-  expect(screen.getAllByRole('columnheader').map(header => header.textContent)).toEqual(['', 'Стык', 'РК', 'УЗК', 'ПВК', 'Послойный ПВК', 'Результат'])
+  expect(screen.getAllByRole('columnheader').map(header => header.textContent)).toEqual(['Выбор', 'Стык', 'РК', 'УЗК', 'ПВК', 'Послойный ПВК', 'Результат'])
   expect(screen.queryByRole('combobox', { name: 'F1 · ВИК' })).not.toBeInTheDocument()
   expect(screen.queryByText('ВИК обязателен')).not.toBeInTheDocument()
   const metadata = screen.getByTestId('program-joint-metadata')

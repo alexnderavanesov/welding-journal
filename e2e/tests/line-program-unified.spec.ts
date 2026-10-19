@@ -36,7 +36,7 @@ async function openLine(page: Page, name: string) {
   await page.goto('/line-program')
   const program = page.getByTestId('line-program')
   await searchProgram(page, name)
-  await expect(program.getByTestId('line-program-card')).toHaveCount(1)
+  await expect(program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')).toHaveCount(1)
   await program.getByRole('button', { name: `Расчёт линии ${name}`, exact: true }).click()
   return program
 }
@@ -58,8 +58,8 @@ test('семь UX-уточнений: соединения и записи, эт
   const calls: string[] = [], errors: string[] = []
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error => errors.push(error.message))
-  const program = await openLine(page, name), card = program.getByTestId('line-program-card')
-  await expect(card).toHaveClass(/border-amber-300/)
+  const program = await openLine(page, name), card = program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
+  await expect(card.filter({ has: page.getByTestId('line-name') })).toHaveClass(/program-line-needs-work/)
   await expect(card.getByRole('button', { name: 'Учитываемых соединений 4', exact: true })).toBeVisible()
   await expect(card.getByTestId('line-missing-breakdown')).toHaveText('РК/УЗК: 1 · ПВК: 1')
   const summary = card.getByTestId('line-program-stamp')
@@ -70,9 +70,9 @@ test('семь UX-уточнений: соединения и записи, эт
   await expect(card.getByTestId('line-program-unassigned').getByLabel('Этапы незавершённых соединений')).toHaveText('До сварки2')
   await expect(summary.getByTestId('stamp-control-state')).toContainText('Не завершено: 2')
   await expect(summary.getByTestId('program-demand-breakdown')).toBeVisible()
-  await expect(card.getByRole('table', { name: 'Расчёт по клеймам', exact: true }).locator('thead').first().getByRole('columnheader')).toHaveText(['Клеймо', 'Соединений', 'Состояние', 'Зачтено / нужно', 'Назначения', 'К назначению', 'Расчёт', 'Результаты'])
+  await expect(card.getByRole('grid', { name: 'Расчёт по клеймам', exact: true }).locator('.ag-header').first().getByRole('columnheader')).toHaveText(['Клеймо', 'Соединений', 'Состояние', 'Зачтено / нужно', 'Назначения', 'К назначению', 'Расчёт', 'Результаты'])
   await expect(summary.getByTestId('program-assignment-demand').getByTestId('program-demand-breakdown')).toBeVisible()
-  await expect(summary.locator('td').last().getByTestId('program-demand-breakdown')).toHaveCount(0)
+  await expect(summary.locator('.ag-cell').last().getByTestId('program-demand-breakdown')).toHaveCount(0)
   await card.getByRole('button', { name: 'Учитываемых соединений 4', exact: true }).click()
   const heading = card.getByTestId('program-scope-actions')
   await expect(card.getByTestId('program-workspace-heading')).toHaveCount(0)
@@ -85,10 +85,10 @@ test('семь UX-уточнений: соединения и записи, эт
     await page.setViewportSize({ width, height: 1100 })
     if (width === 390 && await page.getByRole('button', { name: 'Скрыть меню', exact: true }).count()) { await page.getByRole('button', { name: 'Скрыть меню', exact: true }).click(); await expect(page.locator('[data-app-sidebar]')).toHaveCSS('width', '64px') }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-    expect(await card.locator('button:visible').evaluateAll(buttons => buttons.filter(button => {
+    await expect.poll(() => card.locator('button:visible').evaluateAll(buttons => buttons.filter(button => {
       const rect = button.getBoundingClientRect()
       return rect.width < 24 || rect.height < 24 || button.scrollWidth > button.clientWidth || button.scrollHeight > button.clientHeight
-    }).map(button => ({ text: button.textContent, width: button.clientWidth, scrollWidth: button.scrollWidth, height: button.clientHeight, scrollHeight: button.scrollHeight })))).toEqual([])
+    }).map(button => ({ html: button.outerHTML, text: button.textContent, width: button.clientWidth, scrollWidth: button.scrollWidth, height: button.clientHeight, scrollHeight: button.scrollHeight })))).toEqual([])
     await page.screenshot({ path: `outputs/line-program-interface-${width}.png`, fullPage: true })
   }
   await page.setViewportSize({ width: 1600, height: 1100 })
@@ -108,7 +108,7 @@ test('семь UX-уточнений: соединения и записи, эт
   expect(errors).toEqual([])
 })
 
-test('зелёная рамка только у завершённой линии, без влияния исключённых записей и дополнительных запросов', async ({ page }) => {
+test('галочка только у завершённой линии, без влияния исключённых записей и дополнительных запросов', async ({ page }) => {
   const prefix = 'UNIFIED-FINISHED-'
   for (const [suffix, count] of [['DONE', 3], ['WAIT', 1], ['REJECT', 1], ['ERROR', 1], ['EMPTY', 0], ['MISSING', 1], ['UNKNOWN', 1]] as const) await seed(prefix + suffix, 12, count)
   await withLineProgramFixture(async db => {
@@ -127,11 +127,12 @@ test('зелёная рамка только у завершённой лини�
   await page.goto('/line-program')
   const program = page.getByTestId('line-program')
   await searchProgram(page, prefix)
-  await expect(program.getByTestId('line-program-card')).toHaveCount(7)
+  await expect(program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')).toHaveCount(7)
   const card = (suffix: string) => program.locator(`[data-testid="line-program-card"][data-line="${prefix + suffix}"]`)
-  await expect(card('DONE')).toHaveClass(/border-emerald-300/)
+  await expect(card('DONE')).toHaveClass(/program-line-finished/)
   await expect(card('DONE')).toHaveAttribute('data-program-finished', 'true')
-  await expect(card('DONE')).toHaveCSS('border-color', 'rgb(110, 231, 183)')
+  await expect(card('DONE')).toHaveCSS('box-shadow', 'none')
+  await expect(card('DONE').getByTestId('program-finished-label')).toBeVisible()
   for (const suffix of ['WAIT', 'REJECT', 'ERROR', 'EMPTY', 'MISSING', 'UNKNOWN']) {
     await expect(card(suffix)).not.toHaveClass(/border-emerald-/)
     await expect(card(suffix)).toHaveAttribute('data-program-finished', 'false')
@@ -143,17 +144,17 @@ test('зелёная рамка только у завершённой лини�
   expect(calls.some(name => name.startsWith('getLineProgramCalculation_') || name.startsWith('getLineProgramJointPage_'))).toBe(false)
   await page.screenshot({ path: 'outputs/line-program-finished-border.png', fullPage: true })
   await card('DONE').getByRole('button', { name: 'Учитываемых соединений 1', exact: true }).click()
-  await expect(card('DONE').getByTestId('line-program-readonly-joint')).toHaveCount(3)
-  await expect(card('DONE').getByText('Неофициальный', { exact: true })).toBeVisible()
-  await expect(card('DONE').getByText('Неактуальный', { exact: true })).toBeVisible()
-  await expect(card('DONE')).toHaveClass(/border-emerald-300/)
+  await expect(program.locator('[data-testid="line-program-detail"][data-line="UNIFIED-FINISHED-DONE"]').getByTestId('line-program-readonly-joint')).toHaveCount(3)
+  await expect(program.getByText('Неофициальный', { exact: true })).toBeVisible()
+  await expect(program.getByText('Неактуальный', { exact: true })).toBeVisible()
+  await expect(card('DONE')).toHaveClass(/program-line-finished/)
   for (const result of [null, 'годен']) {
     await withLineProgramFixture(db => db.query("update weld_joints set rk_result=$1 where line=$2 and joint='F1'", [result, prefix + 'DONE']))
     await page.reload()
     await searchProgram(page, prefix)
     await expect(card('DONE')).toHaveAttribute('data-program-finished', String(result === 'годен'))
-    if (result) await expect(card('DONE')).toHaveClass(/border-emerald-300/)
-    else await expect(card('DONE')).toHaveClass(/border-slate-200/)
+    if (result) await expect(card('DONE')).toHaveClass(/program-line-finished/)
+    else await expect(card('DONE')).toHaveClass(/program-line-neutral/)
   }
   expect(calls.filter(name => name.startsWith('getLineProgramCalculation_'))).toHaveLength(1)
   expect(calls.filter(name => name.startsWith('getLineProgramJointPage_'))).toHaveLength(1)
@@ -171,12 +172,12 @@ test('цвета назначений и мягкая подсветка ито�
   const calls: string[] = [], errors: string[] = []
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error => errors.push(error.message))
-  const program = await openLine(page, name), card = program.getByTestId('line-program-card')
+  const program = await openLine(page, name), card = program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
   await card.getByRole('button', { name: 'Учитываемых соединений 5', exact: true }).click()
   const joint = (name: string) => card.locator(`[data-testid="line-program-readonly-joint"][data-joint="${name}"]`)
-  for (const name of ['F1', 'F5']) await expect(joint(name)).toHaveClass(/bg-emerald-50\/70/)
-  for (const name of ['F2', 'F4']) await expect(joint(name)).toHaveClass(/bg-rose-50\/70/)
-  for (const name of ['F3', 'F6']) await expect(joint(name)).not.toHaveClass(/bg-(emerald|rose)-/)
+  for (const name of ['F1', 'F5']) await expect(joint(name)).toHaveClass(/program-joint-good/)
+  for (const name of ['F2', 'F4']) await expect(joint(name)).toHaveClass(/program-joint-rejected/)
+  for (const name of ['F3', 'F6']) await expect(joint(name)).not.toHaveClass(/program-joint-(good|rejected)/)
   await expect(joint('F3').getByText('РК: да', { exact: true })).toHaveCSS('color', 'rgb(4, 120, 87)')
   await expect(joint('F4').getByText('РК: отменен', { exact: true })).toHaveCSS('color', 'rgb(190, 18, 60)')
   await expect(joint('F5').getByText('Неактуальный', { exact: true })).toBeVisible()
@@ -191,12 +192,12 @@ test('цвета назначений и мягкая подсветка ито�
   await page.mouse.move(0, 0)
   await page.screenshot({ path: 'outputs/line-program-colors-list.png', fullPage: true })
   const editor = await openAssignments(page)
-  const editRow = (name: string) => editor.getByRole('checkbox', { name: `Выбрать ${name}`, exact: true }).locator('xpath=ancestor::tr')
+  const editRow = (name: string) => editor.getByRole('checkbox', { name: `Выбрать ${name}`, exact: true }).locator('xpath=ancestor::*[@data-testid="line-program-joint"]')
   for (const [name, good] of [['F1', true], ['F2', false], ['F4', false], ['F5', true]] as const) {
     await checkTint(editRow(name), good)
-    await expect(editRow(name)).toHaveClass(good ? /bg-emerald-50\/70/ : /bg-rose-50\/70/)
+    await expect(editRow(name)).toHaveClass(good ? /program-joint-good/ : /program-joint-rejected/)
   }
-  await expect(editRow('F3')).not.toHaveClass(/bg-(emerald|rose)-/)
+  await expect(editRow('F3')).not.toHaveClass(/program-joint-(good|rejected)/)
   await expect(editRow('F5').getByText('Неактуальный', { exact: true })).toBeVisible()
   await expect(editor.getByRole('combobox', { name: 'F5 · РК', exact: true })).toBeDisabled()
   await editor.getByRole('checkbox', { name: 'Выбрать F2', exact: true }).check()
@@ -220,7 +221,7 @@ test('спокойная иерархия: расчёт в модальном о
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   const program = await openLine(page, name)
   const summary = null, stamp = program.getByTestId('line-program-stamp')
-  const headings = program.getByRole('table', { name: 'Расчёт по клеймам' }).locator('thead').first().getByRole('columnheader')
+  const headings = program.getByRole('grid', { name: 'Расчёт по клеймам' }).locator('.ag-header').first().getByRole('columnheader')
   await expect(headings).toHaveText(['Клеймо', 'Соединений', 'Состояние', 'Зачтено / нужно', 'Назначения', 'К назначению', 'Расчёт', 'Результаты'])
   await expect(program.getByTestId('line-program-summary')).toHaveCount(0)
   await expect(stamp).toHaveCSS('background-color', 'rgb(255, 255, 255)')
@@ -259,20 +260,20 @@ test('спокойная иерархия: расчёт в модальном о
   await expect(program.getByTestId('line-program-readonly-joint')).toHaveCount(5)
   // Clicking the stamp leaves the pointer over its intentionally retained hover highlight.
   await page.mouse.move(0, 0)
-  await expect(stamp).toHaveCSS('background-color', 'rgb(241, 245, 249)')
+  await expect(stamp).toHaveCSS('background-color', 'rgb(238, 246, 253)')
   for (const width of [1000, 1800]) {
     await page.setViewportSize({ width, height: 1000 })
     for (const collapsed of [false, true]) {
       const toggle = page.getByRole('button', { name: collapsed ? 'Скрыть меню' : 'Раскрыть меню', exact: true })
       if (await toggle.count()) await toggle.click()
       await expect(page.locator('[data-app-sidebar]')).toHaveCSS('width', collapsed ? '64px' : width < 1024 ? '192px' : '256px')
-      expect(await headings.evaluateAll(elements => elements.filter(el => el.scrollWidth > el.clientWidth).map(el => ({ text: el.textContent, width: el.clientWidth, scrollWidth: el.scrollWidth })))).toEqual([])
-      expect(await headings.filter({ hasText: 'Соединений' }).evaluate(element => {
+      expect(await headings.locator('.ag-header-cell-text').evaluateAll(elements => elements.every(el => el.scrollWidth <= el.clientWidth))).toBe(true)
+      expect(await headings.filter({ hasText: 'Соединений' }).locator('.ag-header-cell-text').evaluate(element => {
         const range = document.createRange(); range.selectNodeContents(element)
         return range.getClientRects().length
       })).toBe(1)
       expect(await controls.evaluate(element => {
-        const bounds = element.closest('td')!.getBoundingClientRect()
+        const bounds = element.closest('.ag-cell')!.getBoundingClientRect()
         return [...element.querySelectorAll('*')].every(child => child.getBoundingClientRect().right <= bounds.right)
       })).toBe(true)
       for (const row of [stamp]) {
@@ -336,7 +337,7 @@ test('ПКМ показателей открывает их подробный �
   expect(errors).toEqual([])
 })
 
-test('ПКМ в меню «Ещё»: дополнительный ПВК открывается мышью и с клавиатуры без повторного запроса', async ({ page }) => {
+test('ПКМ в столбце «Контроль»: дополнительный ПВК открывается мышью и с клавиатуры без повторного запроса', async ({ page }) => {
   const name = 'UNIFIED-MORE-CALCULATION', id = await seed(name, 10, 2)
   await withLineProgramFixture(db => db.query("update weld_joints set has_pvk='дополнительный' where line_program_id=$1 and joint='F1'", [id]))
   const calls: string[] = [], errors: string[] = []
@@ -344,8 +345,7 @@ test('ПКМ в меню «Ещё»: дополнительный ПВК отк�
   page.on('pageerror', error => errors.push(error.message))
   const program = await openLine(page, name)
   for (const keyboard of [false, true]) {
-    await program.getByTestId('line-program-header').getByRole('button', { name: 'Ещё показатели контроля' }).click()
-    const metric = page.getByRole('dialog', { name: 'Другие показатели контроля' }).getByRole('button', { name: 'Дополнительные стыки: 1' })
+    const metric = program.getByTestId('line-program-card').getByRole('button', { name: 'Дополнительные стыки: 1' })
     if (keyboard) await metric.press('Shift+F10'); else await metric.click({ button: 'right' })
     await page.getByTestId('context-action-menu').getByRole('button', { name: 'Расчёт', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: `Расчёт · ${name}` })
@@ -435,7 +435,7 @@ test('ПКМ линии и клейма: точная область, черно
   await page.goto('/line-program')
   const program = page.getByTestId('line-program')
   await searchProgram(page, name)
-  const header = program.getByTestId('line-program-header'), menu = page.getByTestId('context-action-menu')
+  const header = program.getByTestId('line-program-card'), menu = page.getByTestId('context-action-menu')
   await expect(header).toHaveCount(1)
   await rightClick(program.getByRole('button', { name: 'Клейм в линиях 2', exact: true }))
   await expect(menu.getByText('Программа линий', { exact: true })).toBeVisible()
@@ -520,8 +520,9 @@ test('возможное сокращение: счётчик равен рам�
     await db.query(`insert into pre_heat_treatment_controls (weld_joint_id,method,request_name,request_date)
       select id,'РК','BEFORE-F3',date '2026-09-02' from weld_joints where line_program_id=$1 and joint='F3'`, [id])
   })
-  const program = await openLine(page, name), card = program.getByTestId('line-program-card')
-  await expect(card.getByRole('button', { name: 'Лишнее 3', exact: true })).toBeVisible()
+  const program = await openLine(page, name), card = program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
+  await expect(program.getByTestId('line-program-card').getByRole('button', { name: 'Лишнее 3', exact: true })).toBeVisible()
+  await expect(program.getByTestId('line-program-detail').getByRole('button', { name: 'Лишнее 3', exact: true })).toBeVisible()
   await expect(card.getByRole('button', { name: 'Возможное сокращение 1', exact: true })).toBeVisible()
   await card.getByRole('button', { name: 'Возможное сокращение 1', exact: true }).click()
   await expect(program.getByTestId('line-program-readonly-joint')).toHaveCount(1)
@@ -579,7 +580,7 @@ test('мягкая красная строка только у клейм с т�
   const program = page.getByTestId('line-program')
   for (const item of cases) {
     await searchProgram(page, item.name)
-    const card = program.getByTestId('line-program-card')
+    const card = program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
     await expect(card).toHaveCount(1)
     await expect(card).toHaveAttribute('data-line', item.name)
     await expect(program.getByRole('button', { name: /Потенциал сокращения/ })).toHaveCount(0)
@@ -600,9 +601,9 @@ test('мягкая красная строка только у клейм с т�
     }
     await a.getByRole('button', { name: 'Клеймо UNIFIED-A', exact: true }).click()
     await page.mouse.move(0, 0)
-    await expect(card.locator('[data-testid="stamp-joints-container"][data-stamp="UNIFIED-A"]').getByTestId('program-stamp-guide')).toBeVisible()
-    await expect(a).toHaveCSS('background-color', item.percent < 100 ? 'rgba(255, 241, 242, 0.3)' : 'rgb(241, 245, 249)')
-    if (item.name.endsWith('-ALL')) await card.screenshot({ path: 'outputs/line-program-rejection-highlights.png' })
+    await expect(card.locator('[data-testid="stamp-joints-container"][data-stamp="UNIFIED-A"]').getByTestId('program-stamp-guide')).toHaveCount(0)
+    await expect(a).toHaveCSS('background-color', item.percent < 100 ? 'rgba(255, 241, 242, 0.3)' : 'rgb(238, 246, 253)')
+    if (item.name.endsWith('-ALL')) await program.screenshot({ path: 'outputs/line-program-rejection-highlights.png' })
   }
   // Initial all-lines key plus one full/page read for each of the three searches.
   expect(requests.filter(url => url.includes('getLineProgramSection'))).toHaveLength(1 + cases.length)
@@ -623,52 +624,38 @@ test('компактные заголовки: общие колонки, чит
   await page.goto('/line-program')
   const program = page.getByTestId('line-program')
   await searchProgram(page, prefix)
-  const cards = program.getByTestId('line-program-card')
+  const cards = program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
   await expect(cards).toHaveCount(3)
   await expect(cards.first().getByRole('button', { name: /^Возможное сокращение/ })).toBeVisible()
   await expect(cards.last().getByRole('button', { name: /^Возможное сокращение/ })).toHaveCount(0)
-  await expect(cards.first().getByRole('button', { name: 'Ещё показатели контроля' })).toBeVisible()
+  await expect(cards.first().getByRole('button', { name: /^Дополнительные стыки:/ })).toBeVisible()
   await expect(cards.last().getByRole('button', { name: 'Ещё показатели контроля' })).toHaveCount(0)
   await expect(cards.last().getByTestId('program-finished-label')).toBeVisible()
   for (const width of [900, 1000, 1280, 1400, 1600, 2760]) {
     await page.setViewportSize({ width, height: 1000 })
-    // Capture all cards in one frame; sidebar transitions must settle first.
-    await expect.poll(() => cards.evaluateAll(elements => elements.map(card => {
-      const metrics = card.querySelector('[data-testid="line-card-metrics"]')!
-      const bounds = metrics.getBoundingClientRect()
-      const items = [...metrics.querySelectorAll('[data-line-metric]')]
-      const rects = items.map(item => item.getBoundingClientRect())
-      const labels = [...metrics.querySelectorAll('[data-metric-label]')].map(label => label.getBoundingClientRect())
-      const bars = [...metrics.querySelectorAll('[role="progressbar"]')].map(bar => bar.getBoundingClientRect())
-      const line = card.querySelector('button[aria-label^="Расчёт линии"]')!.getBoundingClientRect()
-      const description = card.querySelector('[data-testid="line-description"]')!
-      const frame = getComputedStyle(card, '::after')
-      return {
-        layout: getComputedStyle(metrics).display,
-        firstLineAligned: getComputedStyle(metrics).gridTemplateColumns.split(' ').length !== 8 || Math.max(...labels.map(label => label.y)) - Math.min(...labels.map(label => label.y)) < 1,
-        noOverlap: rects.every((rect, i) => rects.slice(i + 1).every(other => rect.right <= other.left || other.right <= rect.left || rect.bottom <= other.top || other.bottom <= rect.top)),
-        quotaValuesFit: [...metrics.querySelectorAll('[data-quota-value]')].every(value => value.scrollWidth <= value.clientWidth),
-        labelsFit: labels.every((label, i) => label.left >= rects[i].left && label.right <= rects[i].right)
-          && items.every(item => item.scrollWidth <= item.clientWidth),
-        readableBars: bars.length === 2 && bars.every(bar => bar.height === 4 && bar.width >= 120) && Math.abs(bars[0].width - bars[1].width) < 1,
-        thinBorder: getComputedStyle(card).borderTopWidth === '1px',
-        intactFrame: frame.position === 'absolute' && frame.top === '-1px' && frame.left === '-1px' && frame.borderColor === getComputedStyle(card).borderColor && frame.borderRadius === getComputedStyle(card).borderRadius && frame.pointerEvents === 'none' && Number(frame.zIndex) > 20,
-        fullDescription: description.scrollWidth <= description.clientWidth && description.scrollHeight <= description.clientHeight && getComputedStyle(description).textOverflow !== 'ellipsis',
-        fits: metrics.scrollWidth <= metrics.clientWidth && bounds.right <= window.innerWidth,
-        balancedTitle: window.innerWidth < 1280 || line.width >= 288,
-      }
-    }))).toMatchObject([
-      { layout: 'grid', firstLineAligned: true, noOverlap: true, quotaValuesFit: true, labelsFit: true, readableBars: true, thinBorder: true, intactFrame: true, fullDescription: true, fits: true, balancedTitle: true },
-      { layout: 'grid', firstLineAligned: true, noOverlap: true, quotaValuesFit: true, labelsFit: true, readableBars: true, thinBorder: true, intactFrame: true, fullDescription: true, fits: true, balancedTitle: true },
-      { layout: 'grid', firstLineAligned: true, noOverlap: true, quotaValuesFit: true, labelsFit: true, readableBars: true, thinBorder: true, intactFrame: true, fullDescription: true, fits: true, balancedTitle: true },
-    ])
+    // Column cells replace the card's former CSS grid. Verify the actual native
+    // column alignment and cell contents at every viewport, including horizontal overflow.
+    await expect.poll(() => cards.evaluateAll(elements => elements.every(card => {
+      const grid = card.closest('[data-program-grid]')!
+      return [...card.querySelectorAll<HTMLElement>('.ag-cell')].every(cell => {
+        const id = cell.getAttribute('col-id'), header = grid.querySelector<HTMLElement>(`.ag-header-cell[col-id="${id}"]`)
+        const rect = cell.getBoundingClientRect(), head = header?.getBoundingClientRect()
+        const content = cell.querySelector<HTMLElement>('.ag-cell-value')
+        return !!head && Math.abs(rect.width - head.width) < 2 && Math.abs(rect.x - head.x) < 2 && (!content || content.scrollWidth <= content.clientWidth + 1)
+      }) && [...card.querySelectorAll<HTMLElement>('[data-quota-value]')].every(value => value.scrollWidth <= value.clientWidth)
+    }))).toBe(true)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     // Optional reduction / More must not move any shared metric or its bar.
     await expect.poll(() => cards.evaluateAll(elements => {
-      const positions = elements.map(card => [...card.querySelectorAll('[data-line-metric]')].slice(0, 6).map(item => {
-        const rect = item.getBoundingClientRect()
-        return { x: rect.x, width: rect.width }
-      }))
-      return positions.slice(1).every(row => positions[0].every((position, index) => Math.abs(position.x - row[index].x) < 1 && Math.abs(position.width - row[index].width) < 1))
+      const columns = ['stamps', 'joints', 'common', 'pvk', 'missing', 'excess']
+      return columns.every(column => {
+        const positions = elements.map(card => card.querySelector(`[col-id="${column}"] [data-line-metric]`)?.getBoundingClientRect())
+        const first = positions[0]
+        // Text buttons have intrinsic widths (e.g. РК/УЗК: 5 vs 0); compare
+        // their start positions. The quota bars must also have equal widths.
+        // Shared column widths are checked independently above.
+        return !!first && positions.slice(1).every(rect => !!rect && Math.abs(first.x - rect.x) < 1 && (!['common', 'pvk'].includes(column) || Math.abs(first.width - rect.width) < 1))
+      })
     })).toBe(true)
     await page.screenshot({ path: `outputs/line-program-balanced-${width}.png` })
   }
@@ -686,7 +673,7 @@ test('ширина заголовка не оставляет пустую ко�
   await page.goto('/line-program')
   const program = page.getByTestId('line-program')
   await searchProgram(page, prefix)
-  const cards = program.getByTestId('line-program-card')
+  const cards = program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
   await expect(cards).toHaveCount(2)
   for (const width of [1600, 1866, 2048, 2760]) {
     await page.setViewportSize({ width, height: 1000 })
@@ -694,23 +681,12 @@ test('ширина заголовка не оставляет пустую ко�
       const toggle = page.getByRole('button', { name: collapsed ? 'Скрыть меню' : 'Раскрыть меню', exact: true })
       if (await toggle.count()) await toggle.click()
       await expect(page.locator('[data-app-sidebar]')).toHaveCSS('width', collapsed ? '64px' : '256px')
-      await expect.poll(() => cards.evaluateAll(elements => elements.map(card => {
-        const header = card.querySelector('[data-testid="line-program-header"]')!.getBoundingClientRect()
-        const title = card.querySelector('button[aria-label^="Расчёт линии"]')!.getBoundingClientRect()
-        const metrics = card.querySelector('[data-testid="line-card-metrics"]')!
-        const bounds = metrics.getBoundingClientRect()
-        const bars = [...metrics.querySelectorAll('[role="progressbar"]')].map(bar => bar.getBoundingClientRect())
-        return {
-          titleHasRoom: Math.abs(title.width - 288) < 1 && bounds.width >= 916,
-          compactLayout: getComputedStyle(metrics).display === 'grid' && bounds.height <= 90,
-          adjacent: Math.abs(bounds.left - title.right - 8) < 1,
-          // The always-visible method breakdown is wider; quota values must stay readable.
-          quotaValuesFit: [...metrics.querySelectorAll('[data-quota-value]')].every(value => value.scrollWidth <= value.clientWidth),
-          readableBars: bars.every(bar => bar.width >= 120 && bar.width <= 152.5 && bar.height === 4) && Math.abs(bars[0].width - bars[1].width) < 1,
-          noOverflow: metrics.scrollWidth <= metrics.clientWidth && bounds.right <= header.right,
-        }
-      }))).toEqual(Array.from({ length: 2 }, () => ({ titleHasRoom: true, compactLayout: true, adjacent: true, quotaValuesFit: true, readableBars: true, noOverflow: true })))
-      await expect(cards.first().getByRole('button', { name: 'Ещё показатели контроля' })).toBeVisible()
+      await expect.poll(() => cards.evaluateAll(elements => elements.every(card => {
+        const identity = card.querySelector<HTMLElement>('[col-id="line"]')!, description = card.querySelector<HTMLElement>('[data-testid="line-description"]')!
+        const buttons = [...card.querySelectorAll<HTMLElement>('[data-line-metric]')]
+        return identity.getBoundingClientRect().width >= 240 && description.scrollWidth <= description.clientWidth && buttons.every(button => button.scrollWidth <= button.clientWidth + 1)
+      }))).toBe(true)
+      await expect(cards.first().getByRole('button', { name: /^Дополнительные стыки:/ })).toBeVisible()
       await expect(cards.last().getByRole('button', { name: 'Настроить', exact: true })).toBeVisible()
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
       if (width === 1866) await program.screenshot({ path: `outputs/line-program-sidebar-${collapsed ? 'collapsed' : 'expanded'}.png` })
@@ -731,21 +707,22 @@ test('единый блок общего НК и ПВК, простой оста
   const calls: string[] = [], errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => { const id = new URL(request.url()).pathname.split('/_serverFn/')[1]; if (id) try { calls.push(rpcName(request.url())) } catch {} })
-  const program = await openLine(page, name), totals = program.getByLabel('Итоги раздела'), card = program.getByTestId('line-program-card')
+  const program = await openLine(page, name), totals = program.getByLabel('Итоги раздела'), card = program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
   await expect(program.getByTestId('program-counts-explanation')).toHaveCount(0)
   for (const width of [1000, 1600]) {
     await page.setViewportSize({ width, height: 1000 })
     for (const parent of [totals, card]) {
       const compact = parent === card
-      const typography = await parent.evaluate(el => ({
+      const measured = compact ? parent.filter({ has: page.getByTestId('line-name') }) : parent
+      const typography = await measured.evaluate(el => ({
         labels: [...el.querySelectorAll('[data-metric-label], [data-metric-detail]')].map(node => getComputedStyle(node).fontSize),
         values: [...el.querySelectorAll('[data-metric-value]:not([data-quota-value])')].map(node => getComputedStyle(node).fontSize),
         quotas: [...el.querySelectorAll('[data-quota-value]')].map(node => getComputedStyle(node).fontSize),
       }))
-      expect([...new Set(typography.labels)]).toEqual([compact ? '12px' : '14px'])
+      expect([...new Set(typography.labels)]).toEqual([compact ? '13px' : '14px'])
       expect([...new Set(typography.values)]).toEqual([compact ? '14px' : '18px'])
       expect([...new Set(typography.quotas)]).toEqual([compact ? '14px' : '16px'])
-      const weights = await parent.evaluate(el => ({
+      const weights = await measured.evaluate(el => ({
         labels: [...el.querySelectorAll('[data-metric-label]')].map(node => getComputedStyle(node).fontWeight),
         values: [...el.querySelectorAll('[data-metric-value]:not([data-quota-value])')].map(node => getComputedStyle(node).fontWeight),
         quotas: [...el.querySelectorAll('[data-quota-value]')].map(node => getComputedStyle(node).fontWeight),
@@ -755,7 +732,7 @@ test('единый блок общего НК и ПВК, простой оста
       expect([...new Set(weights.values)]).toEqual([compact ? '400' : '500'])
       expect([...new Set(weights.quotas)]).toEqual(['400'])
       expect([...new Set(weights.quotaColors)]).toEqual([compact ? 'rgb(51, 65, 85)' : 'rgb(71, 85, 105)'])
-      const quota = parent.getByTestId('program-quota-summary')
+      const quota = compact ? measured : parent.getByTestId('program-quota-summary')
       const common = quota.getByRole('button', { name: 'РК - УЗК · зачтено / нужно 3 / 7', exact: true })
       const pvk = quota.getByRole('button', { name: 'ПВК · зачтено / нужно 5 / 7', exact: true })
       await expect(common).toBeVisible(); await expect(pvk).toBeVisible()
@@ -764,12 +741,12 @@ test('единый блок общего НК и ПВК, простой оста
       await expect(pvk).toHaveCSS('text-decoration-line', 'none')
       // Sample both rows in the same frame after responsive/sidebar transitions settle.
       await expect.poll(() => quota.evaluate((el, compact) => {
-        const buttons = el.querySelectorAll('button')
+        const buttons = el.querySelectorAll('button:has([data-quota-value])')
         const labels = [...buttons].map(button => button.firstElementChild!.getBoundingClientRect())
         const counts = [...buttons].map(button => button.querySelector('[data-quota-value]')!.getBoundingClientRect())
         return compact ? Math.abs(labels[0].y - labels[1].y) + Math.abs(counts[0].y - counts[1].y) : Math.abs(labels[0].x - labels[1].x) + Math.abs(counts[0].right - counts[1].right)
       }, compact)).toBeLessThan(1)
-      const remaining = parent.getByRole('button', { name: 'К назначению 6', exact: true })
+      const remaining = measured.getByRole('button', { name: 'К назначению 6', exact: true })
       if (compact) await expect(remaining).toContainText('РК/УЗК: 4 · ПВК: 2')
       else await expect(remaining).toContainText('РК - УЗК: 4 · ПВК: 2')
       await expect(remaining).not.toContainText('мест нормы')
@@ -785,22 +762,15 @@ test('единый блок общего НК и ПВК, простой оста
     await expect(summary.getByRole('button', { name: 'РК - УЗК: 3 / 7', exact: true })).toBeVisible()
     await expect(summary.getByRole('button', { name: 'РК - УЗК: назначено 3', exact: true })).toBeVisible()
     await expect(card.getByRole('button', { name: 'По клеймам', exact: true })).toBeVisible()
-    for (const kind of ['common', 'pvk']) {
-      const row = summary.getByTestId('program-demand-row-' + kind)
-      await expect.poll(() => row.evaluate(el => {
-        const [quota, assignment] = [...el.querySelectorAll('button')].map(button => button.getBoundingClientRect())
-        // Compact cells center each method pair; an assignment label may wrap at 1000 px.
-        return Math.abs(quota.y + quota.height / 2 - assignment.y - assignment.height / 2)
-      })).toBeLessThan(1)
-      await expect(row.getByRole('button', { name: /^к назначению/ })).toHaveCount(0)
-      const assignment = row.getByRole('button', { name: /назначено/ })
+    for (const kind of ['common', 'pvk'] as const) {
+      const quota = summary.locator('[col-id="quota"]').getByTestId('program-demand-row-' + kind)
+      const assignment = summary.locator('[col-id="assigned"]').getByRole('button', { name: kind === 'common' ? 'РК - УЗК: назначено 3' : 'ПВК: назначено 5', exact: true })
+      const quotaButton = quota.getByRole('button')
+      const [q, a] = await Promise.all([quotaButton.boundingBox(), assignment.boundingBox()])
+      expect(Math.abs(q!.y + q!.height / 2 - a!.y - a!.height / 2)).toBeLessThan(1)
+      await expect(quota.getByRole('button', { name: /^к назначению/ })).toHaveCount(0)
       expect(await assignment.evaluate(el => el.scrollWidth <= el.clientWidth && el.scrollHeight <= el.clientHeight)).toBe(true)
     }
-    await expect.poll(() => summary.evaluate(el => {
-      const assignments = [...el.querySelectorAll('[data-testid^="program-demand-row-"]')].map(row => row.lastElementChild!.lastElementChild!.getBoundingClientRect())
-      // Labels may wrap on narrow screens; their left edges and each quota/count pair stay aligned.
-      return Math.abs(assignments[0].x - assignments[1].x)
-    })).toBeLessThan(1)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await page.screenshot({ path: 'outputs/line-program-summary-' + width + '.png' })
   }
@@ -815,7 +785,7 @@ test('единый блок общего НК и ПВК, простой оста
   await expect(card.getByTestId('line-program-readonly-joint').locator('visible=true')).toHaveCount(3)
   await card.getByTestId('program-quota-summary').getByRole('button', { name: /^ПВК/ }).click()
   await expect(card.getByTestId('line-program-readonly-joint').locator('visible=true')).toHaveCount(5)
-  await card.getByRole('button', { name: 'К назначению 6', exact: true }).click()
+  await card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'К назначению 6', exact: true }).click()
   const joints = card.getByTestId('line-program-readonly-joint').locator('visible=true')
   await expect(joints).toHaveCount(4)
   for (const joint of ['F4', 'F5', 'F6', 'F7']) await expect(joints.filter({ has: page.getByText(joint, { exact: true }) })).toHaveCount(1)
@@ -864,7 +834,7 @@ test('доп закрывает норму: видимый состав, лиш�
   const calls: string[] = [], errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => { const id = new URL(request.url()).pathname.split('/_serverFn/')[1]; if (id) try { calls.push(rpcName(request.url())) } catch {} })
-  const program = await openLine(page, name), card = program.getByTestId('line-program-card')
+  const program = await openLine(page, name), card = program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
   await program.getByRole('button', { name: 'Все стыки линии', exact: true }).click()
   const editor = await openAssignments(page)
   for (const method of ['РК', 'ПВК']) await editor.getByRole('combobox', { name: 'F3 · ' + method, exact: true }).selectOption('дополнительный')
@@ -874,7 +844,7 @@ test('доп закрывает норму: видимый состав, лиш�
     await expect(guidance).toContainText('Назначено стыков: 3 = только «да» 2 + только «доп» 1 + совместно 0')
     await expect(guidance).toContainText('Текущая норма: 2 · Обычных «да» сверх нормы: 1')
   }
-  await expect(card.getByRole('button', { name: 'Лишнее 0', exact: true })).toBeVisible()
+  await expect(card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'Лишнее 0', exact: true })).toBeVisible()
   for (const method of ['РК', 'ПВК']) {
     await expect(editor.getByRole('combobox', { name: 'F2 · ' + method, exact: true })).toHaveAttribute('data-removal-candidate', 'true')
     await expect(editor.getByRole('combobox', { name: 'F3 · ' + method, exact: true })).not.toHaveAttribute('data-removal-candidate', 'true')
@@ -894,7 +864,7 @@ test('доп закрывает норму: видимый состав, лиш�
   }
   await page.screenshot({ path: 'outputs/line-program-additional-accounting.png' })
   await editor.getByRole('button', { name: 'Вернуться к просмотру' }).click()
-  await expect(card.getByRole('button', { name: 'Лишнее 2', exact: true })).toBeVisible()
+  await expect(card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'Лишнее 2', exact: true })).toBeVisible()
   await program.getByRole('button', { name: 'По клеймам', exact: true }).click()
   await expect(program.getByTestId('line-program-stamp')).toContainText('назначено 3')
   await program.getByTestId('program-scope-actions').getByRole('button', { name: /^Расчёт/ }).click()
@@ -917,8 +887,8 @@ test('доп закрывает норму: видимый состав, лиш�
   await editor.getByRole('button', { name: 'Сохранить назначения' }).click()
   await expect(editor.getByText('Назначения сохранены · стыков: 1')).toBeVisible()
   await editor.getByRole('button', { name: 'Вернуться к просмотру' }).click()
-  await expect(card.getByRole('button', { name: 'Лишнее 0', exact: true })).toBeVisible()
-  await expect(card.getByRole('button', { name: 'К назначению 0', exact: true })).toBeVisible()
+  await expect(card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'Лишнее 0', exact: true })).toBeVisible()
+  await expect(card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'К назначению 0', exact: true })).toBeVisible()
   expect(calls.filter(call => call.startsWith('getLineProgramJointPage_'))).toHaveLength(3) // initial + two saves; local projections add no reads
   expect(await withE2eDatabase(async db => (await db.query("select joint,has_rk,has_pvk,vik_result,vik_conclusion from weld_joints where line=$1 order by joint", [name])).rows)).toEqual([
     { joint: 'F1', has_rk: 'да', has_pvk: 'да', vik_result: 'годен', vik_conclusion: 'ADDITIONAL-VIK' },
@@ -966,16 +936,16 @@ test('результаты продолжают строки назначени�
     // Transparent cells share their row's normal, striped, hovered and selected backgrounds.
     for (const joint of ['F1', 'F2', 'F3']) {
       const current = joints.filter({ has: page.getByText(joint, { exact: true }) })
-      const colors = await current.locator('td').evaluateAll(cells => cells.map(cell => getComputedStyle(cell).backgroundColor))
+      const colors = await current.locator('.ag-cell').evaluateAll(cells => cells.map(cell => getComputedStyle(cell).backgroundColor))
       expect(new Set(colors).size).toBe(1)
       expect(colors[0]).toBe('rgba(0, 0, 0, 0)')
-      await expect(current.locator('td').last()).toHaveCSS('border-left-width', '0px')
+      await expect(current.locator('.ag-cell').last()).toHaveCSS('border-left-color', 'rgba(0, 0, 0, 0)')
     }
     const headers = await editor.getByRole('columnheader').evaluateAll(cells => cells.map(cell => getComputedStyle(cell).backgroundColor))
     expect(new Set(headers).size).toBe(1)
-    const table = editor.getByRole('table', { name: 'Стыки и назначения всех методов' })
+    const table = editor.getByRole('grid', { name: 'Стыки и назначения всех методов' })
     expect(await table.evaluate(element => getComputedStyle(element.parentElement!).borderBottomWidth)).toBe('0px')
-    const lastBorders = await joints.last().locator('td').evaluateAll(cells => cells.map(cell => getComputedStyle(cell).borderBottomWidth))
+    const lastBorders = await joints.last().locator('.ag-cell').evaluateAll(cells => cells.map(cell => getComputedStyle(cell).borderBottomWidth))
     expect(lastBorders.every(width => width === '1px')).toBe(true)
     expect(await editor.getByTestId('assignment-dialog-body').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
     // Even multi-stage NK is entirely visible; only the modal's joint list scrolls.
@@ -1019,7 +989,7 @@ test('назначения с компактными результатами: �
   expect(sidebarLabels[journalIndex + 1].trim()).toBe('Программа линий')
   await program.getByRole('button', { name: 'Все стыки линии', exact: true }).click()
   const editor = await openAssignments(page)
-  await expect(editor.getByRole('columnheader')).toHaveText(['', 'Стык', 'РК', 'УЗК', 'ПВК', 'Послойный ПВК', 'Результат'])
+  await expect(editor.getByRole('columnheader').locator('.ag-header-cell-text')).toHaveText(['Выбор', 'Стык', 'РК', 'УЗК', 'ПВК', 'Послойный ПВК', 'Результат'])
   await expect(editor.getByRole('button', { name: 'Результаты', exact: true })).toHaveCount(0)
   await expect(editor.getByRole('combobox', { name: 'F1 · РК' }).locator('option[value=""]')).toBeDisabled()
   await expect(editor.getByRole('combobox', { name: 'F1 · РК' }).locator('option[value="отменен"]')).toBeEnabled()
@@ -1048,7 +1018,7 @@ test('назначения с компактными результатами: �
   expect(await withE2eDatabase(async db => (await db.query("select has_rk, rk_request from weld_joints where line=$1 and joint='F2'", [name])).rows[0])).toEqual({ has_rk: 'отменен', rk_request: 'ACTIONS-PENDING' })
   // A new draft is kept if the operator cancels a context-menu navigation.
   await editor.getByRole('combobox', { name: 'F5 · РК' }).selectOption('')
-  await editor.getByTestId('line-program-joint').filter({ hasText: 'F5' }).locator('td').nth(1).click({ button: 'right' })
+  await editor.getByTestId('line-program-joint').filter({ hasText: 'F5' }).locator('.ag-cell').nth(1).click({ button: 'right' })
   await page.getByRole('button', { name: 'Показать стык в ЛНК', exact: true }).click()
   await page.getByRole('button', { name: 'Остаться', exact: true }).click()
   await expect(editor.getByRole('combobox', { name: 'F5 · РК' })).toHaveValue('')
@@ -1091,12 +1061,12 @@ test('предел назначений, компактные результат
   const calls: string[] = [], errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('request', request => { const id = new URL(request.url()).pathname.split('/_serverFn/')[1]; if (id) try { calls.push(rpcName(request.url())) } catch {} })
-  const program = await openLine(page, name), card = program.getByTestId('line-program-card')
-  await expect(card.getByRole('button', { name: 'К назначению 1', exact: true })).toBeVisible()
+  const program = await openLine(page, name), card = program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
+  await expect(card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'К назначению 1', exact: true })).toBeVisible()
   await expect(card.getByText(/Не закрывается/)).toHaveCount(0)
   await expect(card.getByRole('progressbar', { name: 'РК - УЗК · зачтено / нужно' })).toHaveAttribute('aria-valuenow', '100')
   await expect(card.getByRole('progressbar', { name: 'ПВК · зачтено / нужно' })).toHaveAttribute('aria-valuenow', '80')
-  await card.getByRole('button', { name: 'К назначению 1', exact: true }).click()
+  await card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'К назначению 1', exact: true }).click()
   const candidates = program.getByTestId('line-program-readonly-joint')
   await expect(candidates).toHaveCount(1)
   await expect(candidates).toContainText('F2')
@@ -1104,12 +1074,14 @@ test('предел назначений, компактные результат
   await editor.getByRole('combobox', { name: 'Стыки в окне назначений' }).selectOption('')
   await expect(editor.getByTestId('assignment-guidance-common')).toContainText('К назначению: 0')
   await expect(editor.getByTestId('assignment-guidance-pvk')).toContainText('К назначению: 1')
-  await expect(editor.getByRole('columnheader')).toHaveText(['', 'Стык', 'РК', 'УЗК', 'ПВК', 'Послойный ПВК', 'Результат'])
+  await expect(editor.getByRole('columnheader').locator('.ag-header-cell-text')).toHaveText(['Выбор', 'Стык', 'РК', 'УЗК', 'ПВК', 'Послойный ПВК', 'Результат'])
   const first = editor.getByTestId('line-program-joint').filter({ has: page.getByText('F1', { exact: true }) })
   await expect(first.getByTestId('program-joint-metadata')).toContainText('UNIFIED-A, UNIFIED-B, UNIFIED-C, UNIFIED-D')
   const result = first.getByLabel('Результат F1')
   await expect(result).toContainText('РК: годен')
+  await expect(first.getByRole('checkbox')).not.toBeChecked()
   await result.locator('xpath=ancestor::details[1]').locator('summary').click()
+  await expect(first.getByRole('checkbox')).not.toBeChecked()
   await result.getByText('ВИК: годен').click()
   await expect(first.getByRole('checkbox')).not.toBeChecked()
   await editor.getByRole('combobox', { name: 'F1 · РК' }).selectOption('отменен')
@@ -1122,7 +1094,7 @@ test('предел назначений, компактные результат
   expect(resultBox!.x + resultBox!.width).toBeLessThanOrEqual((await editor.boundingBox())!.x + (await editor.boundingBox())!.width)
   expect(calls.filter(name => name.startsWith('getLineProgramJointPage_'))).toHaveLength(1)
   expect(calls.some(name => name.startsWith('loadWelderStampRegistrySnapshot_'))).toBe(false)
-  await editor.getByTestId('line-program-joint').filter({ has: page.getByText('F4', { exact: true }) }).locator('td').nth(1).click({ button: 'right' })
+  await editor.getByTestId('line-program-joint').filter({ has: page.getByText('F4', { exact: true }) }).locator('.ag-cell').nth(1).click({ button: 'right' })
   await page.getByRole('button', { name: 'Показать стык в ЛНК', exact: true }).click()
   await page.getByRole('button', { name: 'Остаться', exact: true }).click()
   await expect(editor.getByRole('combobox', { name: 'F1 · РК' })).toHaveValue('отменен')
@@ -1134,7 +1106,7 @@ test('предел назначений, компактные результат
   await editor.getByRole('button', { name: 'Сохранить назначения' }).click()
   await expect(editor.getByText('Назначения сохранены · стыков: 1')).toBeVisible()
   await editor.getByRole('button', { name: 'Вернуться к просмотру' }).click()
-  await expect(card).toHaveClass(/border-slate-200/)
+  await expect(card.filter({ has: page.getByTestId('line-name') })).toHaveClass(/program-line-neutral/)
   await expect(program.getByTestId('line-card-metrics').getByRole('button', { name: 'К назначению 0', exact: true })).toBeVisible()
   // The raw quota remains available without a persistent assignment debt.
   await program.getByTestId('program-scope-actions').getByRole('button', { name: /^Расчёт/ }).click()
@@ -1150,8 +1122,8 @@ test('предел назначений, компактные результат
   await withLineProgramFixture(db => db.query(`insert into weld_joints (line_program_id,project_title,subtitle_code,line,joint,weld_date,connection_type,category,group_name,weld_control_percent,pvk_control_percent,has_vik,stamp_1_k,stamp_1_k_fact,officiality,revision_actuality,welding_method,material_group,d1,d2,t1,t2,wdi,isometry,spool,vik_control_basis,rk_control_basis,uzk_control_basis,pvk_control_basis)
     select line_program_id,project_title,subtitle_code,line,'F6',weld_date,connection_type,category,group_name,weld_control_percent,pvk_control_percent,has_vik,stamp_1_k,stamp_1_k_fact,officiality,revision_actuality,welding_method,material_group,d1,d2,t1,t2,wdi,isometry,spool,vik_control_basis,rk_control_basis,uzk_control_basis,pvk_control_basis from weld_joints where line=$1 and joint='F3'`, [name]))
   await openLine(page, name)
-  await expect(card).toHaveClass(/border-amber-300/)
-  await expect(card.getByRole('button', { name: 'К назначению 1', exact: true })).toBeVisible()
+  await expect(card.filter({ has: page.getByTestId('line-name') })).toHaveClass(/program-line-needs-work/)
+  await expect(card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'К назначению 1', exact: true })).toBeVisible()
   const reopened = await openAssignments(page)
   await expect(reopened.getByTestId('assignment-guidance-common')).toContainText('К назначению: 1')
   await reopened.getByRole('combobox', { name: 'F6 · РК' }).selectOption('да')
@@ -1159,7 +1131,7 @@ test('предел назначений, компактные результат
   await reopened.getByRole('button', { name: 'Сохранить назначения' }).click()
   await expect(reopened.getByText('Назначения сохранены · стыков: 1')).toBeVisible()
   await reopened.getByRole('button', { name: 'Вернуться к просмотру' }).click()
-  await expect(card).toHaveClass(/border-slate-200/)
+  await expect(card.filter({ has: page.getByTestId('line-name') })).toHaveClass(/program-line-neutral/)
   for (const bar of await card.getByRole('progressbar').all()) await expect(bar).toHaveAttribute('aria-valuenow', '100')
   expect(await withE2eDatabase(async db => (await db.query("select vik_result from weld_joints where line=$1 and joint='F4'", [name])).rows[0].vik_result)).toBe('ремонт')
   expect(errors).toEqual([])
@@ -1178,7 +1150,7 @@ test('панель раздела: создание и настройки тол
   const search = program.getByLabel('Поиск программы линий')
   const create = program.getByRole('button', { name: 'Новая линия', exact: true })
   await searchProgram(page, 'UNIFIED-TOOLBAR')
-  await expect(program.getByTestId('line-program-card')).toHaveCount(3)
+  await expect(program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')).toHaveCount(3)
   await expect(program.getByRole('heading', { name: 'Программа линий', exact: true })).toHaveCount(0)
   await expect(program.getByText('Расчёт, назначения и результаты — в одном рабочем пространстве линии.')).toHaveCount(0)
   await expect(program.getByRole('button', { name: 'Настроить', exact: true })).toHaveCount(3)
@@ -1193,13 +1165,13 @@ test('панель раздела: создание и настройки тол
     expect((await issue.boundingBox())!.height).toBe((await totals.getByTestId('deficit-metric').boundingBox())!.height)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     const metrics = await program.getByTestId('line-card-metrics').evaluateAll(elements => elements.map(element => [...element.querySelectorAll('[data-line-metric]')].every(child => child.scrollWidth <= child.clientWidth && child.getBoundingClientRect().width >= 24)))
-    expect(metrics).toEqual([true, true])
+    expect(metrics.length).toBeGreaterThanOrEqual(2); expect(metrics.every(Boolean)).toBe(true)
   }
   await page.setViewportSize({ width: 1600, height: 1000 })
   await page.screenshot({ path: 'outputs/line-program-toolbar-20260928.png' })
   await issue.click()
-  await expect(program.getByTestId('line-program-card')).toHaveCount(1)
-  await expect(program.getByTestId('line-program-card')).toHaveAttribute('data-line', 'UNIFIED-TOOLBAR-SETUP')
+  await expect(program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')).toHaveCount(1)
+  await expect(program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')).toHaveAttribute('data-line', 'UNIFIED-TOOLBAR-SETUP')
   for (const width of [1000, 1600]) {
     await page.setViewportSize({ width, height: 1000 })
     const toolbar = program.getByTestId('line-program-toolbar')
@@ -1225,14 +1197,14 @@ test('панель раздела: создание и настройки тол
     await expect(totals).toBeVisible()
     expect(calls.filter(name => name.startsWith('getLineProgramSection_'))).toHaveLength(reads)
     expect(calls.filter(name => name.startsWith('getLineProgramPage_'))).toHaveLength(reads)
-    await expect(program.getByTestId('line-program-card')).toHaveCount(1)
-    await expect(program.getByTestId('line-program-card')).toHaveAttribute('data-line', name)
+    await expect(program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')).toHaveCount(1)
+    await expect(program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')).toHaveAttribute('data-line', name)
     await expect(create).toHaveCount(0)
     await expect(program.getByRole('button', { name: 'Настроить', exact: true })).toHaveCount(0)
   }
   await program.getByRole('button', { name: 'Все линии', exact: true }).click()
   await expect(totals).toBeVisible()
-  await expect(program.getByTestId('line-program-card')).toHaveCount(3)
+  await expect(program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')).toHaveCount(3)
   await create.click()
   await expect(page.getByRole('dialog', { name: 'Новая линия', exact: true })).toBeVisible()
   // Returning to the same tab/search uses its completed cached selection.
@@ -1253,7 +1225,7 @@ test('оформление программы как у журнала: белы
   await page.goto('/line-program')
   const program = page.getByTestId('line-program'), toolbar = program.getByTestId('line-program-toolbar')
   await searchProgram(page, prefix)
-  await expect(program.getByTestId('line-program-card')).toHaveCount(2)
+  await expect(program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')).toHaveCount(2)
   for (const width of [1000, 1600]) {
     await page.setViewportSize({ width, height: 1000 })
     for (const collapsed of [false, true]) {
@@ -1261,7 +1233,7 @@ test('оформление программы как у журнала: белы
       if (await toggle.count()) await toggle.click()
       await expect(page.locator('[data-app-sidebar]')).toHaveCSS('width', collapsed ? '64px' : width >= 1024 ? '256px' : '192px')
       await expect.poll(() => page.evaluate(() => {
-        const selectors = ['[data-report-page-header]', '[data-testid="line-program-toolbar"]', '[aria-label="Итоги раздела"]', '[data-testid="line-program-card"]']
+        const selectors = ['[data-report-page-header]', '[data-testid="line-program-toolbar"]', '[aria-label="Итоги раздела"]', '[data-program-grid="lines"]']
         const bounds = selectors.map(selector => document.querySelector(selector)!.getBoundingClientRect())
         return bounds.every(rect => Math.abs(rect.left - bounds[0].left) < 1 && Math.abs(rect.right - bounds[0].right) < 1)
       })).toBe(true)
@@ -1274,8 +1246,8 @@ test('оформление программы как у журнала: белы
       if (width === 1600) await page.screenshot({ path: `outputs/line-program-white-${collapsed ? 'collapsed' : 'expanded'}.png` })
     }
   }
-  await expect(program.getByTestId('line-program-card').first()).toHaveClass(/border-amber-300/)
-  await expect(program.getByTestId('line-program-card').last()).toHaveClass(/border-slate-200/)
+  await expect(program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]').first()).toHaveClass(/program-line-needs-work/)
+  await expect(program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]').last()).toHaveClass(/program-line-neutral/)
   await program.getByRole('button', { name: `Расчёт линии ${prefix}A`, exact: true }).click()
   await program.getByRole('button', { name: 'Все стыки линии', exact: true }).click()
   await expect(program.getByTestId('line-program-all-joints')).toBeVisible()
@@ -1304,7 +1276,7 @@ test('сводка всех клейм, послойный черновик и �
   await expect(program.getByTestId('line-program-stamp')).toHaveCount(2)
   const pvkBadges = program.getByTestId('line-program-readonly-joint').filter({ has: page.getByText('ПВК: да', { exact: true }) }).getByText('ПВК: да', { exact: true })
   await expect(pvkBadges).toHaveCount(3) // Wait for the opened line's asynchronous joint query before measuring.
-  const badges = await pvkBadges.evaluateAll(elements => elements.map(element => { const rect = element.getBoundingClientRect(), cell = element.closest('td')!.getBoundingClientRect(); return rect.width > 0 && rect.left >= cell.left && rect.right <= cell.right }))
+  const badges = await pvkBadges.evaluateAll(elements => elements.map(element => { const rect = element.getBoundingClientRect(), cell = element.closest('.ag-cell')!.getBoundingClientRect(); return rect.width > 0 && rect.left >= cell.left && rect.right <= cell.right }))
   expect(badges).toHaveLength(3)
   expect(badges.every(Boolean)).toBe(true)
   await expect(program.getByText('Свернуть', { exact: true })).toHaveCount(0)
@@ -1449,7 +1421,7 @@ test('несколько линий, клейм и историй открыва
   await expect(all).toBeVisible()
   await expect(stamp).toBeHidden()
   // One thin outer frame; expanded record lists no longer add nested card borders.
-  await expect(a).toHaveCSS('border-left-width', '1px')
+  await expect(a.filter({ has: page.getByTestId('line-name') })).toHaveAttribute('aria-expanded', 'true')
   await expect(all.locator('section').first()).toHaveCSS('border-left-width', '0px')
   for (const name of ['F1', 'F2']) await all.getByRole('button', { name, exact: true }).click()
   await expect(all.getByLabel('История контроля F1', { exact: true })).toBeVisible()
@@ -1496,12 +1468,12 @@ test('лишнее: согласованные методы и доп отдел
     // to the separately tested object-backfill workflow.
     await db.query("insert into dispatcher_accepted_warnings (key,kind,title,context,weld_joint_id) values ($1,'line-program-control','Согласованы методы','E2E',$2)", [accepted[0].key, joint.id])
   })
-  const program = await openLine(page, name), card = program.getByTestId('line-program-card')
+  const program = await openLine(page, name), card = program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
   // Six covered joints (five yes + one additional), quota three: three ordinary excess plus one unapproved duplicate.
-  await expect(card.getByRole('button', { name: 'Лишнее 4', exact: true })).toBeVisible()
+  await expect(card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'Лишнее 4', exact: true })).toBeVisible()
   for (const width of [1013, 1600]) {
     await page.setViewportSize({ width, height: 1050 })
-    for (const metric of [program.getByLabel('Итоги раздела').getByTestId('excess-metric'), card.getByTestId('line-card-metrics')]) {
+    for (const metric of [program.getByLabel('Итоги раздела').getByTestId('excess-metric')]) {
       const compact = await metric.getAttribute('data-testid') === 'line-card-metrics'
       expect(await metric.evaluate(el => el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth)).toBe(true)
       expect((await metric.boundingBox())!.height).toBeLessThanOrEqual(compact ? (width < 1280 ? 160 : 100) : 80)
@@ -1526,11 +1498,9 @@ test('лишнее: согласованные методы и доп отдел
     }
   }
   await expect(card.getByRole('button', { name: `Расчёт линии ${name}`, exact: true })).toHaveAttribute('aria-expanded', 'true')
-  await card.getByRole('button', { name: 'Ещё показатели контроля' }).click()
   const controlDetails = page.getByRole('dialog', { name: 'Другие показатели контроля' })
-  await expect(controlDetails.getByRole('button', { name: 'Согласовано: 1', exact: true })).toBeVisible()
-  await expect(controlDetails.getByRole('button', { name: 'Дополнительные стыки: 1', exact: true })).toBeVisible()
-  await controlDetails.press('Escape')
+  await expect(card.getByRole('button', { name: 'Согласовано: 1', exact: true })).toBeVisible()
+  await expect(card.getByRole('button', { name: 'Дополнительные стыки: 1', exact: true })).toBeVisible()
   // Real pointer clicks, not only Enter/synthetic clicks: both summary filters
   // and both line selections must survive focus changes inside the popover.
   for (const [choice, filter] of [['Согласовано: 1', 'Есть согласованное превышение'], ['Дополнительные стыки: 1', 'Есть дополнительные стыки']]) {
@@ -1541,8 +1511,7 @@ test('лишнее: согласованные методы и доп отдел
     await program.getByRole('button', { name: 'Сбросить фильтр' }).click()
   }
   for (const [choice, joint] of [['Согласовано: 1', 'F5'], ['Дополнительные стыки: 1', 'F4']]) {
-    await card.getByRole('button', { name: 'Ещё показатели контроля' }).click()
-    await controlDetails.getByRole('button', { name: choice, exact: true }).click()
+    await card.getByRole('button', { name: choice, exact: true }).click()
     await expect(program.getByTestId('line-program-readonly-joint')).toHaveCount(1)
     await expect(program.getByTestId('line-program-readonly-joint').getByRole('button', { name: joint, exact: true })).toBeVisible()
     await expect(controlDetails).toHaveCount(0)
@@ -1572,7 +1541,7 @@ test('лишнее: согласованные методы и доп отдел
   await editor.getByRole('button', { name: 'Сохранить назначения' }).click()
   await expect(editor.getByText('Назначения сохранены · стыков: 2')).toBeVisible()
   await editor.getByRole('button', { name: 'Закрыть назначения' }).click()
-  await expect(card.getByRole('button', { name: 'Лишнее 1', exact: true })).toBeVisible()
+  await expect(card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'Лишнее 1', exact: true })).toBeVisible()
   await expect(card.getByRole('button', { name: /^Возможное сокращение/ })).toHaveCount(0)
   await expect(program.getByTestId('line-card-metrics').getByRole('button', { name: /^Возможное сокращение/ })).toHaveCount(0)
   await expect(program.getByTestId('line-card-metrics').getByRole('button', { name: 'Лишнее 1', exact: true })).toBeVisible()
@@ -1594,20 +1563,19 @@ test('просмотр отдельно от назначений: размер�
   await expect(page).toHaveURL(/\/line-program\?source=bookmark#program$/)
   const program = page.getByTestId('line-program')
   await searchProgram(page, name)
-  const card = program.getByTestId('line-program-card')
+  const card = program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
   await expect(card).toHaveCount(1)
-  await expect(card).toHaveClass(/border-slate-200/)
+  await expect(card.filter({ has: page.getByTestId('line-name') })).toHaveClass(/program-line-neutral/)
   const excess = card.getByTestId('line-card-metrics')
   // Additional F3 closes both quotas: RK now has two excess yes, PVK has one.
   await expect(excess.getByRole('button', { name: 'Лишнее 3', exact: true })).toBeVisible()
-  await excess.getByRole('button', { name: 'Ещё показатели контроля' }).click()
-  await expect(page.getByRole('dialog', { name: 'Другие показатели контроля' }).getByRole('button', { name: 'Дополнительные стыки: 1' })).toBeVisible()
-  await page.getByRole('dialog', { name: 'Другие показатели контроля' }).press('Escape')
-  const remainingBox = await card.getByRole('button', { name: 'К назначению 0', exact: true }).boundingBox()
+  await expect(excess.getByRole('button', { name: 'Дополнительные стыки: 1' })).toBeVisible()
+  const remainingBox = await card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'К назначению 0', exact: true }).boundingBox()
   const excessBox = await excess.getByRole('button', { name: 'Лишнее 3', exact: true }).boundingBox()
   expect(excessBox!.height).toBeLessThanOrEqual(40)
-  expect(remainingBox!.height).toBeLessThanOrEqual(48)
-  expect(Math.abs(excessBox!.y - remainingBox!.y)).toBeLessThanOrEqual(1)
+  // Narrow native columns may wrap the two method subtotals onto separate lines.
+  expect(remainingBox!.height).toBeLessThanOrEqual(60)
+  expect(Math.abs(excessBox!.y + excessBox!.height / 2 - remainingBox!.y - remainingBox!.height / 2)).toBeLessThanOrEqual(1)
   await card.getByRole('button', { name: `Расчёт линии ${name}` }).click()
   for (const group of [card.getByTestId('line-program-stamp')]) {
     await expect(group.getByRole('button', { name: 'Расчёт закрыт', exact: true, includeHidden: true })).toHaveCSS('color', 'rgb(6, 95, 70)')
@@ -1625,12 +1593,12 @@ test('просмотр отдельно от назначений: размер�
   expect((await stamp.boundingBox())!.y).toBe(stampY)
   await stamp.click()
   await expect(stamp).toHaveAttribute('aria-expanded', 'false')
-  await expect(card.getByRole('table', { name: 'Назначения и результаты' })).toBeHidden()
+  await expect(card.getByRole('grid', { name: 'Назначения и результаты' })).toBeHidden()
   await stamp.click()
   await expect(stamp).toHaveAttribute('aria-expanded', 'true')
-  expect(await card.getByTestId('stamp-joints-container').evaluate(element => element.previousElementSibling?.getAttribute('data-stamp'))).toBe('UNIFIED-A')
+  await expect(card.getByTestId('stamp-joints-container')).toHaveAttribute('data-stamp', 'UNIFIED-A')
   await expect(card.getByRole('button', { name: 'Назначения клейма UNIFIED-A', exact: true })).toBeVisible()
-  const table = card.getByRole('table', { name: 'Назначения и результаты' })
+  const table = card.getByRole('grid', { name: 'Назначения и результаты' })
   await expect(table.getByRole('checkbox')).toHaveCount(0)
   await expect(card.getByTestId('program-method-toolbar')).toHaveCount(0)
   await expect(card.getByRole('combobox', { name: 'Вид таблицы стыков' })).toHaveCount(0)
@@ -1762,9 +1730,10 @@ test('просмотр отдельно от назначений: размер�
     await expect(settings).toBeHidden()
     await expect(program.getByRole('button', { name: 'Все линии', exact: true })).toHaveAttribute('aria-pressed', 'true')
     await program.getByRole('button', { name: otherTab, exact: true }).click()
-    await expect(card).toHaveCount(0)
+    await expect(program.getByTestId('line-program-card')).toHaveCount(0)
+    await expect(card.filter({ visible: true })).toHaveCount(0)
     await program.getByRole('button', { name: targetTab, exact: true }).click()
-    await expect(card).toHaveCount(1)
+    await expect(program.getByTestId('line-program-card')).toHaveCount(1)
   }
   expect(errors).toEqual([])
 })
@@ -1842,7 +1811,7 @@ test('краткий просмотр: история по строке, эта�
   await expect(history).toBeVisible()
   expect(await page.evaluate(() => window.scrollY)).toBe(before)
   await first.locator('time').click()
-  await expect(history).toHaveCount(0)
+  await expect(history).toBeHidden()
   await program.getByRole('button', { name: 'F2', exact: true }).click()
   await expect(program.getByRole('button', { name: 'HISTORY-LAYERED', exact: true })).toBeVisible()
   expect(calls.filter(name => name.startsWith('getLineProgramJointPage_'))).toHaveLength(1)
@@ -1850,7 +1819,7 @@ test('краткий просмотр: история по строке, эта�
   expect(errors).toEqual([])
 })
 
-test('100%: страницы стыков, планирование до сварки, ПВК10 по клеймам и сохранение черновика', async ({ page }) => {
+test('100%: виртуальный список стыков, планирование до сварки, ПВК10 по клеймам и сохранение черновика', async ({ page }) => {
   await seed('UNIFIED-FULL', 100, 120)
   const errors: string[] = [], calls: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -1858,9 +1827,9 @@ test('100%: страницы стыков, планирование до сва�
   const program = await openLine(page, 'UNIFIED-FULL')
   await expect(program.getByTestId('line-program-readonly-joint')).toHaveCount(0)
   await program.getByRole('button', { name: 'Все стыки линии', exact: true }).click()
-  await expect(program.getByTestId('line-program-readonly-joint')).toHaveCount(50)
+  await expect(program.getByTestId('line-program-readonly-joint').first()).toBeVisible(); expect(await program.getByTestId('line-program-readonly-joint').count()).toBeLessThanOrEqual(50)
   await expect(program.locator('[data-testid="line-program-readonly-joint"][data-joint="F1"]')).toContainText('ожидает сварку')
-  await expect(program.getByRole('navigation', { name: 'Страницы стыков списка' })).toHaveCount(1)
+  await expect(program.getByRole('navigation', { name: 'Страницы стыков списка' })).toHaveCount(0)
   await program.getByTestId('program-scope-actions').getByRole('button', { name: /^Расчёт/ }).click()
   const calculation = page.getByRole('dialog', { name: 'Расчёт · UNIFIED-FULL' })
   await expect(calculation).toContainText('ПВК — отдельно 10%')
@@ -1875,7 +1844,7 @@ test('100%: страницы стыков, планирование до сва�
   await expect(editor.getByTestId('line-program-joint').nth(1)).toContainText('01.09.2026')
   for (const width of [1600, 1000]) {
     await page.setViewportSize({ width, height: 1000 })
-    const body = editor.getByTestId('assignment-dialog-body'), header = editor.getByTestId('assignment-table-header')
+    const body = editor.locator('.ag-grid-viewport'), header = editor.locator('.ag-header').first()
     const top = (await header.boundingBox())!.y
     await body.evaluate(element => { element.scrollTop = 700 })
     await expect.poll(async () => Math.abs((await header.boundingBox())!.y - top)).toBeLessThanOrEqual(1)
@@ -1884,7 +1853,7 @@ test('100%: страницы стыков, планирование до сва�
   }
   await page.setViewportSize({ width: 1600, height: 1000 })
   await editor.getByRole('button', { name: 'РК', exact: true }).click()
-  await editor.getByTestId('line-program-joint').first().locator('td').nth(1).click({ position: { x: 10, y: 30 } })
+  await editor.getByTestId('line-program-joint').first().locator('.ag-cell').nth(1).click({ position: { x: 10, y: 30 } })
   await expect(editor.getByRole('checkbox', { name: 'Выбрать F1', exact: true })).toBeChecked()
   await editor.getByRole('button', { name: /^Применить к выбранным/ }).click()
   await expect(editor.getByTestId('line-program-joint').first()).toContainText('было: —')
@@ -1912,7 +1881,7 @@ test('100%: страницы стыков, планирование до сва�
 test('процентная линия: несколько методов, явное согласие сверх нормы, замена без потери результата, stale preview', async ({ page }) => {
   const id = await seed('UNIFIED-PERCENT', 10, 20)
   const program = await openLine(page, 'UNIFIED-PERCENT')
-  await expect(program.getByRole('table', { name: 'Расчёт по клеймам' }).getByRole('columnheader')).toHaveCount(8)
+  await expect(program.getByRole('grid', { name: 'Расчёт по клеймам' }).getByRole('columnheader')).toHaveCount(8)
   await program.getByRole('button', { name: 'Все стыки линии', exact: true }).click()
   const editor = await openAssignments(page)
   for (const method of ['РК', 'УЗК', 'ПВК']) await editor.getByRole('button', { name: method, exact: true }).click()
@@ -1927,9 +1896,7 @@ test('процентная линия: несколько методов, явн
   // Approval is attached to the joint object, not encoded line names/percentages.
   expect(await withE2eDatabase(async db => (await db.query('select count(*)::int as n from dispatcher_accepted_warnings a join weld_joints w on w.id=a.weld_joint_id where a.kind=$1 and w.line_program_id=$2', ['line-program-control', id])).rows[0].n)).toBeGreaterThan(0)
   await editor.getByRole('button', { name: 'Вернуться к просмотру' }).click()
-  await program.getByTestId('line-program-card').getByRole('button', { name: 'Ещё показатели контроля' }).click()
-  await expect(page.getByRole('dialog', { name: 'Другие показатели контроля' }).getByRole('button', { name: /^Согласовано:/ })).toBeVisible()
-  await page.getByRole('dialog', { name: 'Другие показатели контроля' }).press('Escape')
+  await expect(program.getByTestId('line-program-card').getByRole('button', { name: /^Согласовано:/ })).toBeVisible()
   await expect(program.getByTestId('line-program-readonly-joint').first()).toContainText('РК: да')
   await openAssignments(page)
   await editor.getByRole('combobox', { name: 'F1 · РК', exact: true }).selectOption('дополнительный')

@@ -1,8 +1,11 @@
+vi.mock('./line-program-grid', () => import('@/test/program-grid-mock'))
 import { fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
+import { useState } from 'react'
 import { useProgramContextMenu } from './line-program-context-menu'
 import { ProgramReadOnlyTable } from './line-program-assignment-table'
+import { LineProgramAssignmentDialog } from './line-program-assignment-dialog'
 
 vi.mock('@/server/welder-stamps', () => ({
   loadWelderStampRegistrySnapshot: () => new Promise<never>(() => {}),
@@ -29,7 +32,63 @@ function PreviewHarness({ onAssignments }: { onAssignments: (id: number) => void
   </>
 }
 
+function KeyboardHarness() {
+  const [assignments, setAssignments] = useState(false)
+  const menu = useProgramContextMenu(() => setAssignments(true))
+  return <><button onKeyDown={event => {
+    if (event.key === 'ContextMenu' || event.key === 'F10' && event.shiftKey) menu.open(event, { id: 1, joint: 'F1', line: 'L1', vikConclusion: 'ВИК-1', vikConclusionDate: '2026-10-03' })
+  }}>Стык F1</button>{menu.menu}
+    {assignments ? <LineProgramAssignmentDialog line="L1" context="Стык F1" busy={false} onClose={() => setAssignments(false)}>Назначения стыка</LineProgramAssignmentDialog> : null}
+  </>
+}
+
 describe('joint context menu editing boundaries', () => {
+  it('focuses the keyboard menu and returns to its joint without stealing focus from new assignments', () => {
+    const client = new QueryClient()
+    const { unmount } = render(<QueryClientProvider client={client}><KeyboardHarness /></QueryClientProvider>)
+    const trigger = screen.getByRole('button', { name: 'Стык F1' })
+    trigger.focus()
+    fireEvent.keyDown(trigger, { key: 'F10', shiftKey: true })
+    expect(screen.getByRole('button', { name: 'Перейти к назначениям стыка' })).toHaveFocus()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('button', { name: 'Перейти к назначениям стыка' })).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+
+    fireEvent.keyDown(trigger, { key: 'ContextMenu' })
+    fireEvent.click(screen.getByRole('button', { name: 'Перейти к назначениям стыка' }))
+    expect(screen.getByRole('button', { name: 'Закрыть назначения' })).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: 'Закрыть назначения' }))
+    expect(trigger).toHaveFocus()
+    unmount(); client.clear()
+  })
+
+  it('closes only the keyboard menu when its joint belongs to an existing assignment dialog', () => {
+    const client = new QueryClient(), closeAssignments = vi.fn()
+    const { unmount } = render(<QueryClientProvider client={client}><LineProgramAssignmentDialog line="L1" context="Стыки" busy={false} onClose={closeAssignments}><KeyboardHarness /></LineProgramAssignmentDialog></QueryClientProvider>)
+    const trigger = screen.getByRole('button', { name: 'Стык F1' })
+    trigger.focus(); fireEvent.keyDown(trigger, { key: 'F10', shiftKey: true })
+    const command = screen.getByRole('button', { name: 'Перейти к назначениям стыка' })
+    expect(command).toHaveFocus()
+    fireEvent.keyDown(command, { key: 'Escape' })
+    expect(closeAssignments).not.toHaveBeenCalled()
+    expect(trigger).toHaveFocus()
+    expect(screen.queryByRole('button', { name: 'Перейти к назначениям стыка' })).not.toBeInTheDocument()
+    unmount(); client.clear()
+  })
+
+  it('lets a document opened from the keyboard menu own focus and return to the joint', () => {
+    const client = new QueryClient()
+    const { unmount } = render(<QueryClientProvider client={client}><KeyboardHarness /></QueryClientProvider>)
+    const trigger = screen.getByRole('button', { name: 'Стык F1' })
+    trigger.focus(); fireEvent.keyDown(trigger, { key: 'F10', shiftKey: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Заявки и заключения' }))
+    fireEvent.click(screen.getByRole('button', { name: /Основной этап · ВИК · Заключение: ВИК-1/ }))
+    expect(screen.getByRole('button', { name: 'Закрыть предпросмотр' })).toHaveFocus()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(trigger).toHaveFocus()
+    unmount(); client.clear()
+  })
+
   it('keeps a portalled document preview separate from its joint menu and restores the document link focus', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const onAssignments = vi.fn()

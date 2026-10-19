@@ -150,7 +150,7 @@ test('программа линий пересчитывает сохранён�
     await page.getByRole('button', { name: 'Программа линий', exact: true }).click()
     const program = page.getByTestId('line-program')
     await program.getByLabel('Поиск программы линий').fill(line)
-    await program.getByRole('button', { name: new RegExp(line) }).click()
+    await program.getByRole('button', { name: `Расчёт линии ${line}`, exact: true }).click()
     return program.getByTestId('line-program-card').getByTestId('program-quota-summary')
   }
   await page.goto('/settings')

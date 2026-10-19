@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AgGridProvider, AgGridReact } from 'ag-grid-react'
 import type { ColDef, GridApi, IRowNode, IServerSideDatasource, RowSelectionOptions, SelectionColumnDef, GetColumnMenuItemsParams, DefaultMenuItem, MenuItemDef } from 'ag-grid-community'
 import { ChevronDown, ChevronUp, ChevronsDown, ChevronsUp } from 'lucide-react'
@@ -22,6 +22,7 @@ import { useDocumentGridFocus } from '@/lib/use-document-grid-focus'
 import { useDocumentGridSession } from '@/lib/use-document-grid-session'
 import { DOCUMENT_GRID_MODULES, DOCUMENT_GRID_LOCALE, DOCUMENT_GRID_THEMES } from './document-history-grid-config'
 import { DOCUMENT_HISTORY_SERVER_FILTER, DocumentGridFilterContext, type DocumentGridFilterOption } from './document-history-grid-filter'
+import { useGridResultMotion } from './use-grid-result-motion'
 import './document-history-grid.css'
 import './welding-journal-ui.css'
 
@@ -97,13 +98,20 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     .map(column => [column.key, { value: props.columnFilters[column.key] }])), [props.columns, props.columnFilters])
   const initialGridState = useRef({ filter: { filterModel } })
   const frame = useRef<HTMLDivElement>(null), popupColumn = useRef<string | null>(null)
+  const [popupParent] = useState(() => typeof document === 'undefined' ? undefined : document.createElement('div'))
+  useLayoutEffect(() => {
+    if (!popupParent) return
+    popupParent.className = 'document-grid-popup-layer'
+    document.body.append(popupParent)
+    return () => popupParent.remove()
+  }, [popupParent])
   const [settings, setSettings] = useState<DocumentGridState>(() => readDocumentGridState(props.viewId, props.columns))
   const settingsRef = useRef(settings); settingsRef.current = settings
-  const initialSession = useRef(readDocumentGridSession(props.viewId))
+  const [initialSession] = useState(() => readDocumentGridSession(props.viewId))
   const positionScope = JSON.stringify([Object.entries(props.columnFilters).sort(([a], [b]) => a.localeCompare(b)),
     settings.columns.filter(column => column.rowGroup || column.sort).sort((a, b) => a.colId.localeCompare(b.colId)).map(column => [column.colId, Boolean(column.rowGroup), column.rowGroupIndex ?? null, column.sort ?? null, column.sortIndex ?? null]), props.highlightedDocumentId ?? null])
   const positionScopeRef = useRef(positionScope); positionScopeRef.current = positionScope
-  const initialSearch = initialSession.current.scope === positionScope && props.highlightedDocumentId == null ? initialSession.current.search : ''
+  const initialSearch = initialSession.scope === positionScope && props.highlightedDocumentId == null ? initialSession.search : ''
   const restoring = useRef(false), restoringSelection = useRef(false)
   const [settingsOpen, setSettingsOpen] = useState(false), [openColumnsRequest, setOpenColumnsRequest] = useState(0)
   const [groupMenu, setGroupMenu] = useState<ContextActionMenuState>(null)
@@ -114,21 +122,18 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   const [navigationHeight, setNavigationHeight] = useState(0)
   const requestGeneration = useRef(0), mounted = useRef(true)
   const inFlight = useRef({ generation: 0, count: 0 })
-  const pendingSortReveal = useRef<{ generation: number; sort: string } | null>(null)
-  const sortRevealFrame = useRef(0), sortAnimation = useRef<Animation | null>(null)
-  const cancelSortReveal = useCallback(() => {
-    pendingSortReveal.current = null
-    cancelAnimationFrame(sortRevealFrame.current); sortRevealFrame.current = 0
-    sortAnimation.current?.cancel(); sortAnimation.current = null
-  }, [])
-  useEffect(() => cancelSortReveal, [cancelSortReveal])
+  const resultMotion = useGridResultMotion(frame)
+  const pendingResultReveal = useRef<{ generation: number; scope: string } | null>(null)
   const searchRef = useRef(search); searchRef.current = search
   const identity = JSON.stringify([props.columnFilters, search, props.sourceRevision])
   useEffect(resetRowRange, [identity, positionScope, resetRowRange])
   const selectionPending = resolvedIdentity !== identity || Boolean(props.selectionDisabled)
   const selectionPendingRef = useRef(selectionPending); selectionPendingRef.current = selectionPending
   const identityRef = useRef(identity)
-  if (identityRef.current !== identity) { identityRef.current = identity; requestGeneration.current++ }
+  const requestScopeRef = useRef(positionScope)
+  if (identityRef.current !== identity || requestScopeRef.current !== positionScope) {
+    identityRef.current = identity; requestScopeRef.current = positionScope; requestGeneration.current++
+  }
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; requestGeneration.current++ } }, [])
   useEffect(() => { const timer = setTimeout(() => setSearch(searchText.trim()), 250); return () => clearTimeout(timer) }, [searchText])
   useEffect(() => { props.onSearchChange?.(search) }, [search])
@@ -198,7 +203,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
       search: searchRef.current, selectedIds: current.current.selectedDocuments.map(row => row.id),
     })
   }, [fetchRows])
-  const position = useDocumentGridSession(api, frame, props.viewId, positionScope, search, initialSession.current, props.highlightedDocumentId != null, { load: loadPositionBlock, getRowId: rowId })
+  const position = useDocumentGridSession(api, frame, props.viewId, positionScope, search, initialSession, props.highlightedDocumentId != null, { load: loadPositionBlock, getRowId: rowId })
   const positionRef = useRef(position); positionRef.current = position
 
   const saveSettings = useCallback((next: DocumentGridState) => {
@@ -225,7 +230,10 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     rowRange.current = result.state
     current.current.onSelectionChange(result.selected.filter((row): row is T => !isGroup(row)))
   }, [])
+  const selectionSyncFrame = useRef(0)
+  useEffect(() => () => { cancelAnimationFrame(selectionSyncFrame.current); selectionSyncFrame.current = 0 }, [])
   const syncSelection = useCallback(() => {
+    cancelAnimationFrame(selectionSyncFrame.current); selectionSyncFrame.current = 0
     const grid = apiRef.current
     if (!grid || grid.isDestroyed()) return
     const selected = new Set(current.current.selectedDocuments.map(row => String(row.id)))
@@ -247,6 +255,11 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     }
     finally { restoringSelection.current = false }
   }, [])
+  const scheduleSelectionSync = useCallback(() => {
+    // SSRM can publish several model changes for one block and complete two
+    // blocks in the same frame. Traverse cached leaves/ancestors only once.
+    if (!selectionSyncFrame.current) selectionSyncFrame.current = requestAnimationFrame(syncSelection)
+  }, [syncSelection])
   useEffect(() => { syncSelection() }, [props.selectedDocuments, syncSelection])
   const toggleLoaded = useCallback(() => {
     if (selectionPendingRef.current) return
@@ -269,7 +282,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   const datasource = useMemo<IServerSideDatasource<Row>>(() => ({
     getRows: params => {
       const generation = requestGeneration.current, scope = positionScopeRef.current
-      const reveal = pendingSortReveal.current
+      const reveal = pendingResultReveal.current
       const request: DocumentHistoryGridRequest = {
         startRow: params.request.startRow ?? 0, endRow: params.request.endRow ?? 100,
         rowGroupCols: params.request.rowGroupCols.map(column => column.id), groupKeys: params.request.groupKeys,
@@ -280,28 +293,29 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
         if (!mounted.current || generation !== requestGeneration.current || scope !== positionScopeRef.current) { params.fail(); return }
         positionRef.current.rememberRows(request.groupKeys, request.startRow, result.rows)
         params.success({ rowData: result.rows, rowCount: result.rowCount })
-        if (reveal && pendingSortReveal.current === reveal && !request.groupKeys.length
-          && reveal.generation === generation && reveal.sort === JSON.stringify(request.sortModel)) {
-          pendingSortReveal.current = null
-          // Reveal the completed server sort without delaying data or animating
-          // normal scroll blocks, selection, or the initial session restoration.
-          sortRevealFrame.current = requestAnimationFrame(() => {
-            sortRevealFrame.current = 0
-            if (!mounted.current || generation !== requestGeneration.current || scope !== positionScopeRef.current
-              || typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-            const rows = frame.current?.querySelector<HTMLElement>('.ag-grid-scrolling-container')
-            if (rows && typeof rows.animate === 'function') sortAnimation.current = rows.animate([{ opacity: .72 }, { opacity: 1 }], { duration: 140, easing: 'ease-out' })
-          })
+        if (reveal && pendingResultReveal.current === reveal && !request.groupKeys.length
+          && reveal.generation === generation && reveal.scope === scope) {
+          pendingResultReveal.current = null
+          // Publish data immediately; only the first ready root block of a new
+          // filter/search/sort/group scope gets the short visual transition.
+          resultMotion.reveal()
         }
-        requestAnimationFrame(syncSelection)
+        scheduleSelectionSync()
       }).catch(() => params.fail())
     },
-  }), [fetchRows, syncSelection])
+  }), [fetchRows, scheduleSelectionSync, resultMotion.reveal])
   const firstIdentity = useRef(identity)
+  const firstScope = useRef(positionScope)
   useEffect(() => {
-    if (!api || api.isDestroyed() || firstIdentity.current === identity) return
+    if (!api || api.isDestroyed() || firstIdentity.current === identity && firstScope.current === positionScope) return
+    const reload = firstIdentity.current !== identity
     firstIdentity.current = identity
-    cancelSortReveal()
+    firstScope.current = positionScope
+    resultMotion.cancel()
+    pendingResultReveal.current = { generation: requestGeneration.current, scope: positionScope }
+    // Sorting/grouping already reloads SSRM through AG's native change event.
+    // Filters/search/source changes keep their single existing reload path.
+    if (!reload) return
     const applied = api.getFilterModel()
     const changed = Object.keys(applied).length !== Object.keys(filterModel).length
       || Object.entries(filterModel).some(([key, model]) => JSON.stringify(applied[key]) !== JSON.stringify(model))
@@ -309,7 +323,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     // reload. Keep the current popup/header alive for multiple choices.
     if (changed) api.setFilterModel(filterModel)
     else api.refreshServerSide({ purge: true })
-  }, [api, identity, filterModel, cancelSortReveal])
+  }, [api, identity, positionScope, filterModel, resultMotion.cancel])
 
   const defaultColDef = useMemo<ColDef<Row>>(() => ({ sortable: true, resizable: true, suppressHeaderMenuButton: true, suppressMovable: false, lockPinned: true, wrapHeaderText: true }), [])
   const columnDefs = useMemo<ColDef<Row>[]>(() => [
@@ -363,7 +377,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || isModalDialogOpen() || isContextActionMenuOpen() || settingsOpen) return
-      const popup = frame.current?.querySelector('.ag-popup')
+      const popup = popupParent?.querySelector('.ag-popup') ?? frame.current?.querySelector('.ag-popup')
       if (popup) { event.preventDefault(); event.stopImmediatePropagation(); apiRef.current?.hideColumnFilter(); apiRef.current?.hidePopupMenu(); if (popupColumn.current) apiRef.current?.setFocusedHeader(popupColumn.current); return }
       // Preserve the established order: first the top surface, then selection, then filters/search.
       if (!current.current.selectedDocuments.length && (searchText || search)) {
@@ -372,7 +386,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     }
     window.addEventListener('keydown', escape, true)
     return () => window.removeEventListener('keydown', escape, true)
-  }, [settingsOpen, searchText, search])
+  }, [settingsOpen, searchText, search, popupParent])
   const applyView = (id: string) => {
     const view = settings.views.find(view => view.id === id)
     if (!view || !api) return
@@ -485,7 +499,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
         hasFilters={Object.values(props.columnFilters).some(Boolean) || Boolean(search)} onClearFilters={clearFilters}
         settingsOpen={settingsOpen} onSettingsOpenChange={setSettingsOpen} openColumnsRequest={openColumnsRequest} />
       {error ? <div role="alert" className="document-grid-error">{error}<button type="button" onClick={() => api?.refreshServerSide({ purge: true })}>Повторить</button></div> : null}
-      <div ref={frame} className={`document-grid-frame journal-grid-frame journal-theme-${settings.appearance.theme}`} style={{ height: `calc(100dvh - ${navigationHeight + 72}px)` }}
+      <div ref={frame} className={`document-grid-frame grid-result-motion journal-grid-frame journal-theme-${settings.appearance.theme}`} style={{ height: `calc(100dvh - ${navigationHeight + 72}px)` }}
       onClickCapture={event => {
         if (!(event.target instanceof Element) || !event.target.closest('.ag-selection-checkbox')) return
         const element = event.target.closest<HTMLElement>('.ag-row[row-index]')
@@ -603,7 +617,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
             restoring.current = false; setApi(event.api); captureColumns()
           }}
           onModelUpdated={() => {
-            syncSelection(); position.restore()
+            scheduleSelectionSync(); position.restore()
           }}
           onFirstDataRendered={position.restore} onBodyScrollEnd={position.bodyScrollEnd} onGridPreDestroyed={position.capture}
           onRowGroupOpened={event => position.groupOpened(event.node)} onCellFocused={focus.remember}
@@ -615,19 +629,12 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
           }}
           onColumnMoved={event => { if (event.finished) captureColumns() }} onColumnResized={event => { if (event.finished) captureColumns() }}
           onColumnPinned={captureColumns} onColumnVisible={captureColumns} onColumnRowGroupChanged={captureColumns}
-          onSortChanged={event => {
-            if (!restoring.current && ['uiColumnSorted', 'columnMenu'].includes(event.source)) {
-              cancelSortReveal()
-              const sort = (apiRef.current?.getColumnState() ?? []).filter(column => column.sort)
-                .sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0)).map(column => ({ colId: column.colId, sort: column.sort }))
-              pendingSortReveal.current = { generation: requestGeneration.current, sort: JSON.stringify(sort) }
-            }
-            captureColumns()
-          }}
+          onSortChanged={captureColumns}
           getColumnMenuItems={getColumnMenuItems}
           onColumnMenuVisibleChanged={event => { if (event.visible) popupColumn.current = event.column?.getColId() ?? null }}
           onFilterOpened={event => { popupColumn.current = event.column.getId() }}
           postProcessPopup={positionGridPopup}
+          popupParent={popupParent}
         />
       </div>
       <ContextActionMenu menu={groupMenu} panelClassName="journal-context-menu" autoFocus onClose={() => { setGroupMenu(null); requestAnimationFrame(focus.restore) }} />

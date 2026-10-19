@@ -64,7 +64,7 @@ export function buildProgramHistory(row: WeldRow) {
 
 export function JointDetails({ row }: { row: WeldRow }) {
   const { sections, layered } = buildProgramHistory(row)
-  return <div className="space-y-3 rounded-r-lg border border-sky-100 border-l border-l-sky-500 bg-white p-3 text-xs" aria-label={`История контроля ${row.joint}`}>
+  return <div className="program-joint-history space-y-3" aria-label={`История контроля ${row.joint}`}>
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-sky-100 pb-2"><span className="font-semibold text-sky-900">Стык {String(row.joint || `#${row.id}`)}</span>{row.line ? <span className="text-slate-500">· {String(row.line)}</span> : null}<span className="text-slate-500">· История контроля</span></div>
     <table className="w-full table-fixed text-left" aria-label={`Этапы контроля ${row.joint}`}>
       <colgroup><col className="w-[20%]" /><col className="w-[29%]" /><col className="w-[29%]" /><col className="w-[22%]" /></colgroup>

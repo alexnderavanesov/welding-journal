@@ -410,7 +410,7 @@ test('line-program document portal isolates the underlying joint menu while load
   await page.goto('/line-program')
   await expect(page.getByTestId('line-program').getByLabel('Итоги раздела')).toBeVisible()
   await page.getByLabel('Поиск программы линий').fill(project)
-  const card = page.getByTestId('line-program-card')
+  const card = page.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
   await expect(card).toHaveCount(1)
   await card.getByRole('button', { name: 'Расчёт линии LINE', exact: true }).click()
   await card.getByRole('button', { name: 'Все стыки линии', exact: true }).click()

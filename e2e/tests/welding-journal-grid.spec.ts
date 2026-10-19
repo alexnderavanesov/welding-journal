@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { observeGridResults } from '../grid-result-motion'
 import { withE2eDatabase } from '../database'
 import { rpcName } from '../rpc'
 
@@ -177,6 +178,33 @@ test('AG журнал: клавиатура, копирование диапаз
   await expect(page.locator('.ag-header-cell[col-id="line"]')).toHaveAttribute('aria-sort', 'descending')
   await expect(page.getByRole('button', { name: 'F2250', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'F2250', exact: true }).locator('xpath=ancestor::*[@role="row"]')).toHaveAttribute('row-index', '0')
+})
+
+test('AG журнал: короткий переход готовых фильтров и сортировок сохраняет живую таблицу', async ({ page }) => {
+  await page.goto('/journal')
+  await expect(page.locator('[data-welding-journal-grid] .ag-root')).toBeVisible()
+  await page.waitForLoadState('networkidle')
+  const motion = await observeGridResults(page, '.journal-grid-frame .ag-grid-scrolling-container')
+  const root = (await page.locator('[data-welding-journal-grid] .ag-root').elementHandle())!
+  const search = page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' })
+  await search.fill(PROJECT)
+  await expect(page.getByText('Загружено: 100 из 250', { exact: true })).toBeVisible()
+  await motion.completed(1)
+  await expect(search).toBeFocused()
+  const header = page.locator('.ag-header-cell[col-id="line"] .ag-header-cell-text')
+  for (let i = 0; i < 4; i++) {
+    await header.click()
+    await motion.completed(i + 2)
+    expect(await root.evaluate(element => element.isConnected)).toBe(true)
+  }
+  await search.fill('NO-SUCH-GRID-RESULT')
+  await expect(page.getByText('Загружено: 0 из 0', { exact: true })).toBeVisible()
+  await motion.completed(6)
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await search.fill(PROJECT)
+  await expect(page.getByText('Загружено: 100 из 250', { exact: true })).toBeVisible()
+  await page.waitForLoadState('networkidle')
+  expect((await motion.read()).length).toBe(6)
 })
 
 test('AG журнал: прокрутка оставляет только шапку, подгружает одну порцию и сохраняет выбор', async ({ page }, info) => {

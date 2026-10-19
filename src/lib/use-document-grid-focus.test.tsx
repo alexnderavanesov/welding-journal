@@ -64,6 +64,15 @@ describe('document grid focus restoration', () => {
     expect(api.setFocusedCell).toHaveBeenCalledWith(25, column)
   })
 
+  it('keeps the remembered cell while an AG filter has focus in its body popup layer', () => {
+    const { result, api, column } = setup()
+    const popup = document.createElement('div'), input = document.createElement('input')
+    popup.className = 'document-grid-popup-layer'
+    popup.append(input); document.body.append(popup)
+    act(() => { input.focus(); popup.remove(); result.current.restore() })
+    expect(api.setFocusedCell).toHaveBeenCalledWith(9, column)
+  })
+
   it('does not steal focus after the user leaves the grid for another control', () => {
     const { result, api } = setup()
     const outside = document.createElement('button')

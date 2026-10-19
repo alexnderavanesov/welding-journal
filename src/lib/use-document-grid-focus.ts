@@ -32,7 +32,8 @@ export function useDocumentGridFocus<T>(api: GridApi<T> | null, frame: RefObject
       // ContextActionMenu autofocus runs in a layout effect, before its passive
       // effect publishes the open flag. Its mounted commands already identify
       // this portal focus, which must not discard the remembered grid cell.
-      if (event.target instanceof Element && event.target.closest('[data-menu-item]')) return
+      // Native filter/menu portals likewise belong to the document grid.
+      if (event.target instanceof Element && event.target.closest('[data-menu-item], .document-grid-popup-layer')) return
       if (!isModalDialogOpen() && !isContextActionMenuOpen() && event.target instanceof Node && event.target !== document.body && !frame.current?.contains(event.target)) last.current = null
     }
     document.addEventListener('focusin', leave)

@@ -14,7 +14,7 @@ test('SQL seed и cleanup обновляют обе ревизии: тёплый
   const seed = (line: string) => withLineProgramFixture(db => db.query(`insert into line_programs
     (project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
     values ($1,'FIXTURE',$2,'II','A',10,0)`, [project, line]))
-  const cards = page.getByTestId('line-program-card')
+  const cards = page.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
   const open = async () => {
     await page.goto('/line-program')
     await page.getByLabel('Поиск программы линий').fill(project)
