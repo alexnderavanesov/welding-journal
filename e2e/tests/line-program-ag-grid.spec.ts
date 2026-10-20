@@ -562,7 +562,10 @@ test('minimal overview: inline control, compact full-width groups and no native 
   const groups = page.locator('.program-group-label')
   await expect(groups).toHaveCount(2)
   await expect(groups.filter({ hasText: 'Соединений: 2' })).toContainText('Линий: 2')
-  for (const group of await groups.all()) expect(await group.evaluate(element => element.closest('.ag-row')!.getBoundingClientRect().height)).toBeLessThanOrEqual(40)
+  for (const group of await groups.all()) {
+    expect(await group.evaluate(element => element.closest('.ag-row')!.getBoundingClientRect().height)).toBeLessThanOrEqual(40)
+    expect(await group.evaluate(element => getComputedStyle(element.closest('.ag-row')!).borderBottomWidth)).toBe('1px')
+  }
   await page.getByRole('columnheader', { name: 'Линия', exact: true }).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Свернуть все', exact: true }).click()
   await expect(cards).toHaveCount(0)
@@ -573,7 +576,8 @@ test('minimal overview: inline control, compact full-width groups and no native 
   await first.getByRole('button', { name: 'Дополнительные стыки: 2', exact: true }).click()
   await expect(page.getByTestId('line-program-all-joints')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Свернуть линию', exact: true })).toHaveCount(0)
-  await expect(page.getByTestId('line-program-detail')).toHaveCSS('border-left-width', '4px')
+  await expect(page.getByTestId('line-program-detail')).toHaveCSS('border-left-width', '1px')
+  await expect(page.getByTestId('line-program-detail')).toHaveCSS('border-left-color', 'rgb(203, 213, 225)')
   await expect(page.getByTestId('line-program-detail')).toHaveCSS('border-radius', '10px')
   await expect(page.locator('.program-grid-count, [data-testid="program-stamp-guide"]')).toHaveCount(0)
   // Keep the event until dispatch has finished: a microtask inside a native
@@ -588,6 +592,7 @@ test('minimal overview: inline control, compact full-width groups and no native 
   await expect(page.getByRole('dialog', { name: 'Назначения · MINIMAL-A', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Вернуться к просмотру', exact: true }).click()
   await page.getByRole('button', { name: 'Расчёт линии MINIMAL-A', exact: true }).click()
+  await expect(page.locator('[data-program-motion]')).toHaveCount(0)
   await page.screenshot({ path: 'outputs/program-minimal-groups.png', fullPage: true })
   await page.getByRole('button', { name: 'Убрать группировку Соединений', exact: true }).click()
   await expect(groups).toHaveCount(0)

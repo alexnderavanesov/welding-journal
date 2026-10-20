@@ -105,7 +105,9 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
       // AG's fake scrollbar is a sibling of its viewport. Native scrollbar
       // metrics on the viewport are zero, even with a visible non-overlay bar.
       const horizontalBar = horizontalScrollbar && !horizontalScrollbar.classList.contains('ag-scrollbar-invisible') ? horizontalScrollbar.offsetHeight : 0
-      const height = Math.max(headerHeight + 1, rowHeight + headerHeight + horizontalBar + 2)
+      // Joint grids have no wrapper border: reserving another 2px leaves a
+      // blank tail between the final joint and its enclosing workspace frame.
+      const height = Math.max(headerHeight + 1, rowHeight + headerHeight + horizontalBar)
       const frameHeight = Math.min(height, Math.max(120, window.innerHeight - CONTEXT_HEIGHT))
       const maxOffset = Math.max(0, height - frameHeight)
       const wasAtReadingPosition = !!geometry && window.scrollY + CONTEXT_HEIGHT >= geometry.top - 1 && window.scrollY + CONTEXT_HEIGHT < geometry.top + geometry.height - geometry.headerHeight

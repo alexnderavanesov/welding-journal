@@ -213,7 +213,7 @@ it('does not label outstanding assignment demand as closed in the separate calcu
   mount()
   fireEvent.click(await screen.findByRole('button', { name: 'Расчёт линии LP-1' }))
   const row = await screen.findByTestId('line-program-stamp')
-  expect(within(row).getByTestId('program-stamp-calculation')).toHaveTextContent(/^—$/)
+  expect(within(row).getByTestId('program-stamp-calculation')).toHaveTextContent('—Лишнее: 0Возможное сокращение: 0')
   expect(within(row).queryByRole('button', { name: 'Расчёт закрыт' })).not.toBeInTheDocument()
   expect(within(row).getByTestId('program-assignment-demand')).not.toHaveTextContent(/^0$/)
 })
@@ -393,7 +393,7 @@ it('opens calculation in a dialog independently of breakdowns and joints, with n
   await screen.findByTestId('line-program-unassigned')
   const stamp = screen.getAllByTestId('line-program-stamp').find(row => row.dataset.stamp === 'OTHER')!
   const unstamped = screen.getByTestId('line-program-unassigned')
-  expect(within(unstamped).queryByTestId('line-program-welder-name')).not.toBeInTheDocument()
+  expect(within(unstamped).getByTestId('line-program-welder-name')).toHaveTextContent('Сварщик не назначен')
   for (const row of [null, stamp]) {
     const calculation = row === null ? screen.getByRole('button', { name: 'Расчёт линии' }) : within(row).getByRole('button', { name: /^Расчёт ·/ })
     fireEvent.click(calculation)
@@ -1271,7 +1271,7 @@ describe('unified line workspace', () => {
     expect(mocks.rows).toHaveBeenCalledTimes(1)
   })
 
-  it('hides zero reduction in section, line, stamp and assignment hints even when excess exists', async () => {
+  it('shows passive zero reduction in light summaries without offering a reduction action or assignment hint', async () => {
     const rows = [1, 2].map(id => ({ ...sample, id, joint: `F${id}`, hasRk: 'да', rkResult: 'годен', rkConclusion: `РК-${id}` }))
     const display = buildLineProgramDisplay(rows, calculateLineProgram(rows, 30, 10), 30, 10)
     mocks.list.mockResolvedValue({ rows: [{ ...line, overview: summarizeLineProgram(rows, line) }] })
@@ -1283,12 +1283,14 @@ describe('unified line workspace', () => {
     expect(screen.getByTestId('line-program-card').querySelector('[data-line-metric][data-program-slice="excess"]')).toHaveAccessibleName('Лишнее 1')
     expect(within(screen.getByTestId('line-program-detail')).getByRole('button', { name: 'Лишнее 1' })).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Лишнее: 1' })).toHaveLength(1) // Only the active view is visible.
-    expect(screen.queryByText(/Возможное сокращение/)).not.toBeInTheDocument()
+    const zero = within(screen.getByTestId('program-stamp-calculation')).getByText('Возможное сокращение: 0')
+    expect(zero.tagName).toBe('SPAN')
+    expect(screen.queryByRole('button', { name: /Возможное сокращение/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Ещё показатели контроля' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Все стыки линии' }))
     await screen.findByRole('button', { name: 'F1' })
-    await openAssignments()
-    expect(screen.queryByText(/Возможное сокращение/)).not.toBeInTheDocument()
+    const editor = await openAssignments()
+    expect(within(editor).queryByText(/Возможное сокращение/)).not.toBeInTheDocument()
   })
 
   it.each([[30, 100, 'Процентные линии', '100%-ные линии'], [100, 30, '100%-ные линии', 'Процентные линии']] as const)('moves the saved line from %s%% to %s%% without duplicating it', async (from, to, fromTab, toTab) => {

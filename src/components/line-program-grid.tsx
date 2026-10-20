@@ -34,6 +34,14 @@ const THEMES = {
   alpine: themeAlpine.withParams({ ...THEME_PARAMS, headerBackgroundColor: '#edf3f8', headerTextColor: '#475569', borderColor: '#d5dfe8' }),
   balham: themeBalham.withParams({ ...THEME_PARAMS, headerBackgroundColor: '#f5f5f2', headerTextColor: '#5d655e', borderColor: '#dfe3dc' }),
 }
+// Only the overview needs an outer frame. Detail tables already belong to
+// their workspace or dialog; adding another border there would double it.
+const OVERVIEW_FRAME = { wrapperBorder: { width: 1, color: '#e2e8f0' }, headerRowBorder: { width: 1, color: '#e2e8f0' } }
+const OVERVIEW_THEMES = {
+  quartz: THEMES.quartz.withParams(OVERVIEW_FRAME),
+  alpine: THEMES.alpine.withParams(OVERVIEW_FRAME),
+  balham: THEMES.balham.withParams(OVERVIEW_FRAME),
+}
 const LOCALE = {
   pinColumn: 'Закрепить столбец', pinLeft: 'Слева', pinRight: 'Справа', noPin: 'Не закреплять',
   autosizeThisColumn: 'Ширина по содержимому', autosizeAllColumns: 'Подобрать ширину всех', resetColumns: 'Сбросить столбцы',
@@ -183,7 +191,8 @@ function Grid<T>(props: Props<T>) {
     const row = api?.getRowNode(element.getAttribute('row-id') ?? '')?.data
     if (row) props.onRowMenu?.(event, row)
   }
-  const densityOffset = appearance.density === 'compact' ? -8 : appearance.density === 'spacious' ? 12 : 0
+  const compactOverview = appearance.theme === 'quartz' && (kind === 'lines' || kind === 'stamps')
+  const densityOffset = appearance.density === 'compact' ? compactOverview ? -20 : -8 : appearance.density === 'spacious' ? 12 : 0
   const rowHeight = props.rowHeight ?? ((kind === 'assignments' ? 72 : kind === 'stamps' ? 88 : kind === 'lines' ? 76 : 44) + densityOffset)
   const getRowHeight = useCallback(({ node }: { node: IRowNode<T> }) => node.group ? 36 : undefined, [])
   const columnMenu = useCallback<NonNullable<AgGridReactProps<T>['getColumnMenuItems']>>(params => {
@@ -224,7 +233,7 @@ function Grid<T>(props: Props<T>) {
     {props.toolbar || props.children ? <div className="program-grid-toolbar">{props.toolbar}{props.children}</div> : null}
     {groups.length ? <div className="program-grid-groups" aria-label="Группировка таблицы"><Layers size={14} />{groups.map(group => <button key={group.id} type="button" aria-label={`Убрать группировку ${group.label}`} onClick={() => api?.removeRowGroupColumns([group.id])}>{group.label}<X size={12} /></button>)}</div> : null}
     <div className="program-grid-frame">
-      <AgGridReact<T> theme={THEMES[appearance.theme]} localeText={LOCALE} rowData={rows} columnDefs={columns} defaultColDef={kind === 'lines' ? DEFAULT_COLUMN : UNGROUPED_COLUMN}
+      <AgGridReact<T> theme={(kind === 'lines' ? OVERVIEW_THEMES : THEMES)[appearance.theme]} localeText={LOCALE} rowData={rows} columnDefs={columns} defaultColDef={kind === 'lines' ? DEFAULT_COLUMN : UNGROUPED_COLUMN}
         groupDisplayType="groupRows" groupRowRendererParams={GROUP_ROW} isGroupOpenByDefault={initiallyOpenGroup}
         initialState={initialState.current} getRowId={rowId} domLayout={virtual || kind === 'joints' ? 'normal' : 'autoHeight'}
         rowHeight={rowHeight} getRowHeight={kind === 'lines' ? getRowHeight : undefined} headerHeight={36} rowBuffer={5} animateRows={false} suppressScrollOnNewData ensureDomOrder={false} suppressRowTransform

@@ -62,10 +62,35 @@ test('expanded line keeps its parent header until the incoming columns arrive, i
   await expect(page.locator('[data-program-motion]')).toHaveCount(0)
   await page.waitForLoadState('networkidle')
   const before = requests.length
+  await page.evaluate(() => window.scrollTo(0, 0))
+  await expect(page.locator('.program-stuck-control')).toHaveCount(0)
+  await expect(page.locator('.program-sticky-frame')).toBeHidden()
+  // Normal and pinned headers share the workspace's thin gray edge.
+  await expect(page.getByTestId('program-line-filters')).toHaveCSS('border-bottom-width', '0px')
+  for (const kind of ['stamps', 'joints']) {
+    const header = page.locator(`[data-program-grid="${kind}"] .ag-grid-pinned-top-rows`).first()
+    expect(await header.evaluate(element => {
+      const edge = getComputedStyle(element, '::after')
+      return { height: edge.height, color: edge.backgroundColor, pointer: edge.pointerEvents }
+    })).toEqual({ height: '1px', color: 'rgb(203, 213, 225)', pointer: 'none' })
+  }
+  await page.locator('[data-program-grid="stamps"] .ag-grid-pinned-top-rows').first().screenshot({ path: '/private/tmp/line-program-context-border-20261020/natural-stamp-header.png' })
   // The user's screenshots start here: the line heading is near the top,
   // but its stamp columns have not arrived. There must still be a header.
   await page.getByTestId('line-program-detail').evaluate(element => window.scrollBy(0, element.getBoundingClientRect().top - 70))
   await expect(page.locator('[data-program-grid="lines"] .program-stuck-control')).toHaveCount(1)
+  const pinnedHeader = page.locator('[data-program-grid="lines"] .program-stuck-control')
+  expect(await pinnedHeader.evaluate(element => {
+    const edge = getComputedStyle(element, '::after')
+    return { height: edge.height, top: edge.top, color: edge.backgroundColor, pointer: edge.pointerEvents }
+  })).toEqual({ height: '1px', top: '0px', color: 'rgb(203, 213, 225)', pointer: 'none' })
+  expect(await page.locator('[data-program-grid="lines"] .ag-root-wrapper').first().evaluate(element => {
+    const sides = getComputedStyle(element)
+    const top = getComputedStyle(document.querySelector('.program-sticky-frame')!)
+    return [sides.borderLeftWidth, sides.borderRightWidth].every(width => width === top.height)
+      && [sides.borderLeftColor, sides.borderRightColor].every(color => color === top.backgroundColor)
+  })).toBe(true)
+  await pinnedHeader.screenshot({ path: '/private/tmp/line-program-scroll-width-20261020/pinned-header.png' })
   await page.screenshot({ path: info.outputPath('expanded-line-heading.png') })
   const samples: Array<Record<string, unknown>> = []
   for (const motion of ['no-preference', 'reduce'] as const) {
@@ -87,23 +112,43 @@ test('expanded line keeps its parent header until the incoming columns arrive, i
           // Device-pixel rounding and header/spacer borders can differ by a
           // fraction of a pixel. Either owner is valid within 1px of the edge;
           // every sample must still have exactly one visible, usable header.
+          const context = document.querySelector<HTMLElement>('.program-sticky-context')!
+          const contextStyle = getComputedStyle(context)
+          const frame = document.querySelector<HTMLElement>('.program-sticky-frame')!
+          const frameStyle = getComputedStyle(frame), frameBounds = frame.getBoundingClientRect()
+          const overviewBounds = document.querySelector('[data-program-grid="lines"]')!.getBoundingClientRect()
+          const frameLeft = Math.max(0, overviewBounds.left), frameRight = Math.min(innerWidth, overviewBounds.right)
+          const contextFramed = context.hidden || contextStyle.borderTopWidth === '1px' && contextStyle.borderTopColor === 'rgb(203, 213, 225)'
+            && contextStyle.borderLeftWidth === '0px' && contextStyle.borderRightWidth === '0px' && contextStyle.borderBottomWidth === '0px'
+          // The full-width edge must remain visible even while the context
+          // title hides during a handoff back to the overview header.
+          const frameVisible = !frame.hidden && frame.parentElement === context.parentElement
+            && frameStyle.backgroundColor === 'rgb(203, 213, 225)' && frameStyle.pointerEvents === 'none'
+            && frameBounds.top === 0 && frameBounds.height === 1
+            && Math.abs(frameBounds.left - frameLeft) < 1 && Math.abs(frameBounds.right - frameRight) < 1
           const actualTop = naturalTop()
           const expected = Math.abs(actualTop - 36) <= 1 ? null : actualTop < 36 ? root.dataset.programGrid : root.dataset.programGrid === 'joints' ? 'stamps' : 'lines'
           result.push({ motion, kind: root.dataset.programGrid, target, actualTop, expected, actual: active?.closest<HTMLElement>('[data-program-grid]')?.dataset.programGrid,
-            count: current.length, visible: !!box && box.top >= 0 && !!hit && !!active?.contains(hit) })
+            count: current.length, contextFramed, frameVisible, visible: !!box && box.top >= 0 && !!hit && !!active?.contains(hit) })
         }
         return result
       }, motion))
     }
   }
   await info.attach('header-handoff-samples.json', { body: JSON.stringify(samples), contentType: 'application/json' })
-  expect(samples.filter(sample => sample.count !== 1 || !sample.visible || sample.expected !== null && sample.actual !== sample.expected)).toEqual([])
+  expect(samples.filter(sample => sample.count !== 1 || !sample.visible || !sample.contextFramed || !sample.frameVisible || sample.expected !== null && sample.actual !== sample.expected)).toEqual([])
   await page.locator('[data-program-grid="joints"]').evaluate(root => {
     const header = root.querySelector('.ag-grid-pinned-top-rows')!
     const natural = header.previousElementSibling?.classList.contains('program-sticky-spacer') ? header.previousElementSibling : header
     window.scrollBy(0, natural!.getBoundingClientRect().top - 20)
   })
   await expect(page.locator('.program-sticky-context')).toContainText('STICKY-A')
+  const contextBounds = (await page.locator('.program-sticky-context').boundingBox())!
+  const frameBounds = (await page.locator('.program-sticky-frame').boundingBox())!
+  const headerBounds = (await page.locator('[data-program-grid="joints"] .program-stuck-control').boundingBox())!
+  await page.screenshot({ path: '/private/tmp/line-program-context-border-20261020/joint-header.png', clip: {
+    x: frameBounds.x, y: frameBounds.y, width: frameBounds.width, height: headerBounds.y + headerBounds.height - contextBounds.y,
+  } })
   await page.screenshot({ path: info.outputPath('pinned-joint-columns.png') })
   expect(requests.slice(before)).toEqual([])
   expect(errors).toEqual([])

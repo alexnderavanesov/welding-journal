@@ -15,7 +15,12 @@ export function useProgramStickyHeaders(root: RefObject<HTMLDivElement | null>) 
     if (!page) return
     const context = document.createElement('div')
     context.className = 'program-sticky-context'; context.hidden = true
-    page.append(context)
+    // A sibling survives header handoffs and cannot be clipped by the
+    // context title's text overflow (notably in Safari).
+    const frameEdge = document.createElement('div')
+    frameEdge.className = 'program-sticky-frame'; frameEdge.hidden = true
+    frameEdge.setAttribute('aria-hidden', 'true')
+    page.append(context, frameEdge)
     let frame = 0, dirty = true
     let entries: Entry[] = [], active: Entry | null = null, pinned: Pinned[] = []
     const reset = () => {
@@ -74,7 +79,7 @@ export function useProgramStickyHeaders(root: RefObject<HTMLDivElement | null>) 
         if (!selected || selected.entry.grid.contains(entry.grid) || bounds.top > selected.bounds.top) selected = candidate
       }
       const chosen = selected?.entry ?? null
-      if (!chosen) { reset(); return }
+      if (!chosen) { reset(); frameEdge.hidden = true; return }
       if (active !== chosen) {
         reset(); active = chosen
         pin(chosen.header)
@@ -87,6 +92,12 @@ export function useProgramStickyHeaders(root: RefObject<HTMLDivElement | null>) 
       const contextLeft = `${Math.max(0, viewport.left)}px`, contextWidth = `${Math.max(0, Math.min(window.innerWidth, viewport.right) - Math.max(0, viewport.left))}px`
       if (context.style.left !== contextLeft) context.style.left = contextLeft
       if (context.style.width !== contextWidth) context.style.width = contextWidth
+      const frameBounds = measured.find(item => item.overview)?.bounds ?? viewport
+      const frameLeft = `${Math.max(0, frameBounds.left)}px`
+      const frameWidth = `${Math.max(0, Math.min(window.innerWidth, frameBounds.right) - Math.max(0, frameBounds.left))}px`
+      if (frameEdge.style.left !== frameLeft) frameEdge.style.left = frameLeft
+      if (frameEdge.style.width !== frameWidth) frameEdge.style.width = frameWidth
+      if (frameEdge.hidden) frameEdge.hidden = false
       let y = overview ? 0 : contextHeight
       for (const { element, spacer } of pinned) {
         const header = element === chosen.header
@@ -114,7 +125,7 @@ export function useProgramStickyHeaders(root: RefObject<HTMLDivElement | null>) 
     const mutations = new MutationObserver(records => {
       // Virtual rows/cells constantly enter and leave the DOM while scrolling.
       // They don't change which tables own the fixed header.
-      const structureChanged = records.some(record => record.target !== context && (record.type === 'attributes' && record.attributeName === 'hidden'
+      const structureChanged = records.some(record => record.target !== context && record.target !== frameEdge && (record.type === 'attributes' && record.attributeName === 'hidden'
         || record.type === 'childList' && [...record.addedNodes, ...record.removedNodes].some(node => node instanceof Element && (node.matches(inventorySelector) || node.querySelector(inventorySelector)))))
       if (structureChanged) { dirty = true; schedule() }
       else if (records.some(record => record.attributeName === 'data-program-grid-context')) schedule()
@@ -122,6 +133,6 @@ export function useProgramStickyHeaders(root: RefObject<HTMLDivElement | null>) 
     mutations.observe(page, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'data-program-grid-context'] })
     window.addEventListener('scroll', schedule, true); window.addEventListener('resize', schedule)
     schedule()
-    return () => { cancelAnimationFrame(frame); reset(); context.remove(); resize.disconnect(); mutations.disconnect(); window.removeEventListener('scroll', schedule, true); window.removeEventListener('resize', schedule) }
+    return () => { cancelAnimationFrame(frame); reset(); context.remove(); frameEdge.remove(); resize.disconnect(); mutations.disconnect(); window.removeEventListener('scroll', schedule, true); window.removeEventListener('resize', schedule) }
   }, [root])
 }

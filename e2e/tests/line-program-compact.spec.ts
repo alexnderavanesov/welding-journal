@@ -62,13 +62,28 @@ test('компактная завершённая линия: все стыки,
   await expect(card).toHaveCount(1)
   await expect(card).toHaveAttribute('data-program-finished','true')
   await expect(card.getByRole('img', { name: 'Линия завершена' })).toBeVisible()
-  await expect.poll(() => card.getByTestId('line-card-metrics').getByRole('progressbar').evaluateAll(bars => {
-    const [common, pvk] = bars.map(bar => bar.getBoundingClientRect())
-    // The latest requirement removes the old cap: each track fills its cell
-    // minus cell/button padding, including when the column is widened.
-    return Math.abs(common.y - pvk.y) < 1 && bars.every(bar =>
-      Math.abs(bar.closest('.ag-cell')!.getBoundingClientRect().width - bar.getBoundingClientRect().width - 32) < 2)
-  })).toBe(true)
+  const tracks = card.getByTestId('line-card-metrics').getByRole('progressbar')
+  const tracksFillButtons = () => tracks.evaluateAll(bars => bars.every(bar => {
+    const button = bar.closest('button')!, style = getComputedStyle(button)
+    return Math.abs(bar.getBoundingClientRect().width - button.clientWidth + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)) < 1
+  }))
+  await expect.poll(() => tracks.evaluateAll(bars => Math.abs(bars[0].getBoundingClientRect().y - bars[1].getBoundingClientRect().y))).toBeLessThan(1)
+  await expect.poll(tracksFillButtons).toBe(true)
+  // Resize the actual headers: both tracks must grow beyond their former 80px cap.
+  for (const column of ['common', 'pvk']) {
+    const bar = card.locator(`.ag-cell[col-id="${column}"] [role="progressbar"]`)
+    const before = (await bar.boundingBox())!.width
+    const handle = page.locator(`[data-program-grid="lines"] .ag-header-cell[col-id="${column}"] .ag-header-cell-resize`)
+    await handle.scrollIntoViewIfNeeded()
+    const box = (await handle.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2 + 100, box.y + box.height / 2, { steps: 10 })
+    await page.mouse.up()
+    await expect.poll(async () => (await bar.boundingBox())!.width).toBeGreaterThan(before + 70)
+    await expect.poll(tracksFillButtons).toBe(true)
+  }
+  await card.screenshot({ path: '/private/tmp/line-program-scroll-width-20261020/resized-tracks.png' })
   const count = card.getByRole('button', { name: 'Учитываемых соединений 120', exact: true })
   // The column header now supplies the visible label; the cell keeps an accessible name.
   await expect(count.locator('[data-metric-value]')).toHaveText('120')
@@ -177,6 +192,47 @@ test('назначения: без ВИК, три клейма, стабильн
     await stable(before)
     await modal.getByRole('combobox', { name: 'F2 · УЗК', exact: true }).selectOption('дополнительный')
     await stable(before)
+    if (width === 1600) {
+      // Edited fields keep their dashed border without a lingering pointer ring.
+      for (const joint of ['F3', 'F1']) {
+        const field = modal.getByRole('combobox', { name: `${joint} · РК`, exact: true })
+        await field.focus()
+        await expect(field).toHaveCSS('border-radius', '6px')
+        await expect(field).toHaveCSS('outline-style', 'none')
+        if (joint === 'F1') await expect(field).toHaveCSS('box-shadow', 'rgba(0, 0, 0, 0) 0px 0px 0px 0px')
+        else await expect(field).toHaveCSS('box-shadow', /rgb\(186, 230, 253\) 0px 0px 0px 2px/)
+        await expect(field).toHaveCSS('border-width', '1px')
+        await expect(field).toHaveCSS('border-style', joint === 'F1' ? 'dashed' : 'solid')
+      }
+      const edited = modal.getByRole('combobox', { name: 'F1 · РК', exact: true })
+      await edited.selectOption('отменен')
+      await expect(edited).toHaveValue('отменен')
+      await expect(edited).toHaveCSS('box-shadow', 'rgba(0, 0, 0, 0) 0px 0px 0px 0px')
+      await rows.first().screenshot({ path: '/private/tmp/line-program-controls-20261020/assignment-focus.png' })
+      // Real keyboard navigation must still make the focused editor visible.
+      await edited.focus()
+      await page.keyboard.press('Tab')
+      await page.keyboard.press('Shift+Tab')
+      await expect(edited).toBeFocused()
+      await expect(edited).toHaveCSS('box-shadow', /rgb\(186, 230, 253\) 0px 0px 0px 2px/)
+      await edited.selectOption('да')
+      const checkbox = modal.getByRole('checkbox', { name: 'Выбрать F1', exact: true })
+      const all = modal.getByRole('checkbox', { name: 'Выбрать все доступные стыки', exact: true })
+      for (const control of [checkbox, all]) {
+        await expect(control).toHaveCSS('border-radius', '4px')
+        await expect(control).toHaveCSS('width', '16px')
+        await expect(control).toHaveCSS('height', '16px')
+      }
+      await checkbox.focus()
+      await checkbox.press('Space')
+      await expect(checkbox).toBeChecked()
+      await expect(all).toBeChecked({ indeterminate: true })
+      await all.check()
+      for (const control of await rows.getByRole('checkbox').all()) await expect(control).toBeChecked()
+      await all.uncheck()
+      for (const control of await rows.getByRole('checkbox').all()) await expect(control).not.toBeChecked()
+      await stable(before)
+    }
     // Select adjacent rows, then a disjoint pair. No outlines overlap the shared border.
     for (const joint of ['F1', 'F2', 'F3']) await modal.getByRole('checkbox', { name: `Выбрать ${joint}`, exact: true }).check()
     await stable(before)
@@ -380,11 +436,39 @@ test('вложенность клейма: таблица без зазора, �
   const stamp = (code: string) => card.locator(`[data-testid="line-program-stamp"][data-stamp="${code}"]`)
   const body = (code: string) => card.locator(`[data-testid="stamp-joints-container"][data-stamp="${code}"]`)
   const baseHeight = (await stamp('DENSE-A').boundingBox())!.height
+  await expect(page.locator('[data-program-motion]')).toHaveCount(0)
+  const detail = page.getByTestId('line-program-detail')
+  await expect(detail).toHaveCSS('border-width', '1px')
+  await expect(detail).toHaveCSS('border-color', 'rgb(203, 213, 225)')
+  // A fractional heading height smears the bottom edge despite a 1px border.
+  const frame = (await detail.boundingBox())!
+  expect(Math.abs(frame.height - Math.round(frame.height))).toBeLessThan(0.01)
+  await detail.screenshot({ path: '/private/tmp/line-program-workspace-border-after.png' })
   for (const code of ['DENSE-A', 'DENSE-B']) {
-    await expect(stamp(code)).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+    await expect(stamp(code)).toHaveCSS('background-color', code === 'DENSE-A' ? 'rgb(237, 246, 253)' : 'rgb(245, 250, 255)')
     await stamp(code).getByRole('button', { name: `Клеймо ${code}`, exact: true }).click()
     await expect(body(code).getByTestId('line-program-readonly-joint')).toHaveCount(4)
   }
+  await expect(page.locator('[data-program-motion]')).toHaveCount(0)
+  // Only the outer workspace owns a frame; nested grids must not inherit it.
+  await expect.poll(() => card.locator('[data-program-grid="stamps"], [data-program-grid="joints"]').evaluateAll(roots => roots.every(root => {
+    const style = getComputedStyle(root.querySelector('.ag-root-wrapper')!)
+    return style.borderTopWidth === '0px' && style.borderBottomWidth === '0px'
+  }))).toBe(true)
+  const tailHasNoGap = () => body('DENSE-B').locator('[data-program-grid="joints"]').evaluate(root => {
+    const last = [...root.querySelectorAll('[data-testid="line-program-readonly-joint"]')].at(-1)!
+    const scrollbar = root.querySelector<HTMLElement>('.ag-body-horizontal-scroll')
+    const extra = scrollbar && !scrollbar.classList.contains('ag-scrollbar-invisible') ? scrollbar.offsetHeight : 0
+    return Math.abs(root.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom - extra)
+  })
+  await expect.poll(tailHasNoGap).toBeLessThan(1)
+  await detail.evaluate(element => window.scrollBy(0, element.getBoundingClientRect().bottom - innerHeight + 16))
+  const bottom = (await detail.boundingBox())!
+  await page.screenshot({ path: '/private/tmp/line-program-bottom-20261020/expanded-bottom.png', clip: {
+    x: Math.max(0, bottom.x), y: Math.max(0, bottom.y + bottom.height - 24),
+    width: Math.min(bottom.width, page.viewportSize()!.width - Math.max(0, bottom.x)), height: 32,
+  } })
+  await page.evaluate(() => window.scrollTo(0, 0))
   await page.mouse.move(0, 0)
   for (const width of [1840, 1600, 1000, 390]) {
     await page.setViewportSize({ width, height: 1000 })
@@ -393,7 +477,7 @@ test('вложенность клейма: таблица без зазора, �
       await expect(page.locator('[data-app-sidebar]')).toHaveCSS('width', '64px')
     }
     for (const code of ['DENSE-A', 'DENSE-B']) {
-      await expect(stamp(code)).toHaveCSS('background-color', 'rgb(238, 246, 253)')
+      await expect(stamp(code)).toHaveCSS('background-color', code === 'DENSE-A' ? 'rgb(237, 246, 253)' : 'rgb(245, 250, 255)')
       expect(Math.abs((await stamp(code).boundingBox())!.height - baseHeight)).toBeLessThan(1)
       await expect(body(code).getByTestId('program-stamp-guide')).toHaveCount(0)
       await expect(body(code).getByTestId('program-stamp-branch')).toBeVisible()
@@ -426,7 +510,7 @@ test('вложенность клейма: таблица без зазора, �
   await stamp('DENSE-B').getByRole('button', { name: 'Клеймо DENSE-B', exact: true }).click()
   await page.mouse.move(0, 0)
   await expect(body('DENSE-B')).toBeHidden()
-  await expect(stamp('DENSE-B')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+  await expect(stamp('DENSE-B')).toHaveCSS('background-color', 'rgb(245, 250, 255)')
   await expect(body('DENSE-A').getByLabel('История контроля F1', { exact: true })).toBeVisible()
   await card.getByRole('button', { name: 'Все стыки линии', exact: true }).click()
   const all = card.getByTestId('line-program-all-joints')
@@ -490,7 +574,7 @@ test('плашки не увеличивают строку, НК до ТО пе
     await expect(rows.filter({ hasText: 'F6' }).locator('.ag-cell').last().getByRole('button').last()).toHaveText('Дубли: РК вырез')
     for (const action of ['Расчёт линии', 'Назначения линии']) await expect(card.getByRole('button', { name: action, exact: true })).toHaveCSS('min-height', '32px')
     if (width === 1840) {
-      await expect.poll(() => card.getByTestId('line-card-metrics').getByRole('progressbar').evaluateAll(bars => bars.every(bar => bar.getBoundingClientRect().width >= 64 && bar.getBoundingClientRect().width <= 152))).toBe(true)
+      await expect.poll(() => card.getByTestId('line-card-metrics').getByRole('progressbar').evaluateAll(bars => bars.every(bar => { const button = bar.closest('button')!, style = getComputedStyle(button); return bar.getBoundingClientRect().width >= 64 && Math.abs(bar.getBoundingClientRect().width - button.clientWidth + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)) < 1 }))).toBe(true)
       await page.screenshot({ path: 'outputs/line-program-inline-badges.png', fullPage: true })
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
@@ -641,7 +725,7 @@ test('ФИО под клеймом: одинаковая высота при р�
         const name = row.querySelector('[data-testid="line-program-welder-name"]')!
         const label = name.getBoundingClientRect()
         const code = row.querySelector('button[aria-label^="Клеймо "]')!.getBoundingClientRect()
-        return label.top >= code.bottom && label.height === 16 && getComputedStyle(name).textOverflow === 'ellipsis'
+        return label.top >= code.bottom && label.height === 16.5 && getComputedStyle(name).textOverflow === 'ellipsis'
       }) && rects.every(rect => Math.abs(rect.height - rects[0].height) < 1)
     })).toBe(true)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
@@ -686,7 +770,7 @@ test('расчёт отдельно от результатов: одинако�
   await expect(calculation.getByRole('button', { name: /^Лишнее:/ })).toBeVisible()
   await expect(calculation.getByRole('button', { name: /^Возможное сокращение:/ })).toBeVisible()
   await expect(b.getByTestId('program-stamp-calculation').getByRole('button')).toHaveCount(1)
-  await expect(c.getByTestId('program-stamp-calculation')).toHaveText('—')
+  await expect(c.getByTestId('program-stamp-calculation')).toHaveText('—Лишнее: 0Возможное сокращение: 0')
   await expect(c.getByTestId('program-assignment-demand')).toContainText('3')
   for (const width of [1840, 1600, 1280, 1000, 390]) {
     await page.setViewportSize({ width, height: 1000 })
@@ -711,12 +795,12 @@ test('расчёт отдельно от результатов: одинако�
       }
       const firstText = textBounds(closedButton), secondText = textBounds(excessButton)
       return {
-        buttonsAligned: Math.abs(closed.y - excess.y) < 1 && reduction.top >= closed.bottom,
-        textAligned: Math.abs(firstText.y - secondText.y) < 0.5 && Math.abs(firstText.bottom - secondText.bottom) < 0.5,
+        buttonsStacked: excess.top >= closed.bottom && reduction.top >= excess.bottom,
+        textAligned: Math.abs(firstText.x - secondText.x) < 0.5,
         fontSizes: [closedButton, excessButton].map(button => getComputedStyle(button).fontSize),
         lineHeights: [closedButton, excessButton].map(button => getComputedStyle(button).lineHeight),
       }
-    })).toEqual({ buttonsAligned: true, textAligned: true, fontSizes: ['13px', '13px'], lineHeights: ['20px', '20px'] })
+    })).toEqual({ buttonsStacked: true, textAligned: true, fontSizes: ['12px', '12px'], lineHeights: ['19.2px', '19.2px'] })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   }
   await page.setViewportSize({ width: 1840, height: 1000 })

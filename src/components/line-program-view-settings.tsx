@@ -60,7 +60,12 @@ export function ProgramViewSettings({ api }: { api: GridApi | null }) {
   }
   return <>
     <button ref={trigger} type="button" className="journal-button program-view-trigger" title="Настроить вид программы линий" aria-label="Настроить вид программы линий" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => { setOpen(value => !value); setSearch('') }}><SlidersHorizontal size={15} aria-hidden="true" /><span className="hidden lg:inline">Настроить вид</span><ChevronDown className="hidden lg:block" size={12} /></button>
-    {open && createPortal(<div ref={panel} id={id} role="dialog" aria-label="Вид программы линий" className="journal-settings-panel program-view-panel" onContextMenu={event => event.stopPropagation()} onKeyDown={event => {
+    {open && createPortal(<div ref={panel} id={id} role="dialog" aria-label="Вид программы линий" className="journal-settings-panel program-view-panel" onContextMenu={event => event.stopPropagation()} onClickCapture={event => {
+      // WebKit leaves pointer-clicked buttons unfocused. Keep keyboard events
+      // inside this panel after changing tabs, themes or other button settings.
+      const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('button') : null
+      if (button && event.currentTarget.contains(button)) button.focus({ preventScroll: true })
+    }} onKeyDown={event => {
       event.stopPropagation()
       if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); close(true) }
       if (event.key === 'Tab' && panel.current) {

@@ -59,13 +59,15 @@ test('appearance updates all live tables, preserves the assignment draft and per
   await expect.poll(async () => (await row.boundingBox())!.height).toBeGreaterThan(before!.height)
   await panel(page).getByRole('switch', { name: 'Вертикальные границы', exact: true }).check()
   await panel(page).getByRole('tab', { name: 'Темы', exact: true }).click()
+  await expect(panel(page).getByRole('tab', { name: 'Темы', exact: true })).toBeFocused()
   await panel(page).getByRole('radio', { name: /Нейтральная/ }).click()
   await panel(page).screenshot({ path: '/private/tmp/ag-grid-refinements-20261019/program-settings-theme.png' })
   await expect(overview(page)).toHaveAttribute('data-program-theme', 'balham')
   await expect(page.locator('[data-program-grid="joints"]')).toHaveAttribute('data-program-density', 'spacious')
   await expect(all.getByTestId('line-program-readonly-joint')).toHaveCount(1)
   await expect(all.getByRole('button', { name: 'F2', exact: true })).toBeVisible()
-  await panel(page).press('Escape')
+  await page.keyboard.press('Escape')
+  await expect(panel(page)).toBeHidden()
   await expect(settings(page)).toBeFocused()
   await page.getByRole('button', { name: /Назначения линии/, exact: false }).filter({ hasText: /Назначения линии/ }).click()
   await expect(editor.getByRole('combobox', { name: 'F2 · РК', exact: true })).toHaveValue('да')
@@ -95,7 +97,7 @@ test('searchable column settings synchronize with the header chooser and stay wi
   await expect(overview(page).getByRole('columnheader', { name: 'Клейм', exact: true })).toHaveCount(0)
   await panel(page).getByRole('button', { name: 'Показать все', exact: true }).click()
   await expect(overview(page).getByRole('columnheader', { name: 'Клейм', exact: true })).toBeVisible()
-  await panel(page).press('Escape')
+  await page.keyboard.press('Escape')
   await overview(page).getByRole('columnheader', { name: 'Линия', exact: true }).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Выбрать столбцы', exact: true }).click()
   const chooser = page.getByRole('dialog', { name: 'Выбрать столбцы', exact: true })
@@ -115,6 +117,112 @@ test('searchable column settings synchronize with the header chooser and stay wi
   await panel(page).getByRole('tab', { name: 'Оформление', exact: true }).click()
   await panel(page).getByRole('combobox', { name: 'Плотность таблиц' }).click()
   await panel(page).getByRole('option', { name: /Компактно/ }).click()
-  await panel(page).press('Escape')
+  await page.keyboard.press('Escape')
   await expect(settings(page)).toBeFocused()
+})
+
+test('light sketch styles affect summary rows only; compact rows shrink and stamp actions keep their scope', async ({ page }) => {
+  const errors: string[] = [], appearanceCalls: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await withLineProgramFixture(db => db.query("update weld_joints set has_rk='да',has_pvk='да' where project_title=$1", [project]))
+  await page.reload()
+  const card = page.getByTestId('line-program-card')
+  await card.getByRole('button', { name: `Расчёт линии ${line}`, exact: true }).click()
+  const stamps = page.locator('[data-program-grid="stamps"]')
+  const stamp = page.getByTestId('line-program-stamp').first()
+  const state = stamp.getByTestId('stamp-control-state-compact').locator('summary')
+  await expect(state.locator('[data-program-state="good"]')).toContainText('Годен:')
+  await expect(state.locator('[data-program-state="good"]')).toHaveCSS('color', 'rgb(4, 120, 87)')
+  await expect(state.locator('[data-program-state="incomplete"]')).toHaveCSS('color', 'rgb(146, 64, 14)')
+  await expect(state.locator('[data-program-state="rejected"]')).toHaveCSS('color', 'rgb(190, 18, 60)')
+  await expect(state).toHaveCSS('flex-direction', 'column')
+  // Values measured in the current browser sketch: 12/11 px, 400/550/500 weights.
+  await expect(state).toHaveCSS('font-size', '12px')
+  await expect(state).toHaveCSS('font-weight', '400')
+  await expect(state).toHaveCSS('line-height', '18px')
+  await expect(card.getByTestId('line-name')).toHaveCSS('font-size', '12px')
+  await expect(card.getByTestId('line-name')).toHaveCSS('font-weight', '550')
+  await expect(card.getByTestId('line-name').locator('..').locator('span').last()).toHaveCSS('font-weight', '500')
+  await expect(stamp.getByTestId('line-program-welder-name')).toHaveCSS('font-size', '11px')
+  await expect(stamp.locator('[data-program-slice="all"]').first()).toHaveCSS('font-family', /Inter.*-apple-system/)
+  await expect(stamp.locator('[data-program-slice="all"]').first()).toHaveCSS('font-variant-numeric', 'normal')
+
+  await expect(card.getByTestId('line-name')).toHaveCSS('color', 'rgb(57, 125, 168)')
+  await expect(stamp.locator('[data-program-slice="all"]').first()).toHaveCSS('text-decoration-line', 'none')
+  await expect(stamp.getByTestId('program-stamp-calculation').getByRole('button', { name: 'Расчёт закрыт', exact: true })).toBeVisible()
+  await expect(stamp.getByTestId('program-demand-breakdown')).toContainText('РК - УЗК: 0')
+  await page.waitForLoadState('networkidle')
+  const beforeLine = (await card.boundingBox())!.height, beforeStamp = (await stamp.boundingBox())!.height
+  await card.screenshot({ path: '/private/tmp/line-program-light-20261020/line-comfortable.png' })
+  await stamps.screenshot({ path: '/private/tmp/line-program-light-20261020/stamps-comfortable.png' })
+  page.on('request', request => { if (request.url().includes('/_serverFn/')) appearanceCalls.push(request.url()) })
+  const density = async (name: string) => {
+    await settings(page).click()
+    await panel(page).getByRole('tab', { name: 'Оформление', exact: true }).click()
+    await panel(page).getByRole('combobox', { name: 'Плотность таблиц' }).click()
+    await panel(page).getByRole('option', { name: new RegExp(name) }).click()
+    await page.keyboard.press('Escape')
+  }
+  await density('Компактно')
+  await expect.poll(async () => (await card.boundingBox())!.height).toBeLessThan(beforeLine)
+  await expect.poll(async () => (await stamp.boundingBox())!.height).toBeLessThan(beforeStamp)
+  await expect.poll(async () => (await stamp.boundingBox())!.height).toBeLessThanOrEqual(68)
+  await expect.poll(async () => (await card.boundingBox())!.height).toBeLessThan(70)
+  await expect(overview(page)).toHaveAttribute('data-program-density', 'compact')
+  console.info('Light summary heights:', { line: [beforeLine, (await card.boundingBox())!.height], stamp: [beforeStamp, (await stamp.boundingBox())!.height] })
+  await expect.poll(() => stamp.evaluate(row => [...row.querySelectorAll('.program-stamp-cell')].flatMap(cell => {
+    const bounds = cell.getBoundingClientRect(), parent = cell.closest('.ag-cell')!.getBoundingClientRect()
+    return bounds.top >= parent.top && bounds.bottom <= parent.bottom + 1 && cell.scrollWidth <= cell.clientWidth ? [] : [{
+      column: cell.closest('.ag-cell')!.getAttribute('col-id'), top: bounds.top - parent.top, bottom: bounds.bottom - parent.bottom,
+      contentWidth: cell.scrollWidth, width: cell.clientWidth,
+    }]
+  }))).toEqual([])
+  await stamps.screenshot({ path: '/private/tmp/line-program-light-20261020/stamps-compact.png' })
+  for (const theme of ['Классическая', 'Нейтральная', 'Светлая']) {
+    await settings(page).click()
+    await panel(page).getByRole('tab', { name: 'Темы', exact: true }).click()
+    await panel(page).getByRole('radio', { name: new RegExp(theme) }).click()
+    await page.keyboard.press('Escape')
+    await expect(panel(page)).toBeHidden()
+    await expect(state).toHaveCSS('flex-direction', theme === 'Светлая' ? 'column' : 'row')
+    await expect(overview(page).locator('.ag-root-wrapper').first()).toHaveCSS('border-width', '1px')
+    for (const side of ['left', 'right']) {
+      await expect(overview(page).locator('.ag-root-wrapper').first()).toHaveCSS(`border-${side}-color`, 'rgb(203, 213, 225)')
+    }
+    for (const side of ['top', 'bottom']) {
+      await expect(overview(page).locator('.ag-root-wrapper').first()).toHaveCSS(`border-${side}-color`, 'rgb(226, 232, 240)')
+    }
+    await expect.poll(() => card.getByRole('progressbar').evaluateAll(bars => bars.every(bar => {
+      const button = bar.closest('button')!, style = getComputedStyle(button)
+      return Math.abs(bar.getBoundingClientRect().width - button.clientWidth + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)) < 1
+    }))).toBe(true)
+    if (theme !== 'Светлая') {
+      await expect(state.locator('[data-program-state="good"]')).not.toContainText('Годен:')
+      await expect(stamp.locator('[data-program-stamp-assignments]')).toHaveCount(0)
+    }
+  }
+  await density('Комфортно')
+  await expect.poll(async () => (await card.boundingBox())!.height).toEqual(beforeLine)
+  await expect.poll(async () => (await stamp.boundingBox())!.height).toEqual(beforeStamp)
+  expect(appearanceCalls).toEqual([])
+  await state.click()
+  await expect(stamp.getByTestId('stamp-control-state')).toBeVisible()
+  await state.click()
+  const chosenStamp = await stamp.getAttribute('data-stamp')
+  await stamp.locator('[data-program-stamp-assignments]').click()
+  const editor = page.getByRole('dialog', { name: `Назначения · ${line}`, exact: true })
+  await expect(editor).toBeVisible()
+  await expect(editor.getByText(`Клеймо ${chosenStamp}`, { exact: false }).first()).toBeVisible()
+  await expect(editor.locator('[data-program-grid="assignments"] .ag-cell').first()).toHaveCSS('color', 'rgb(71, 85, 105)')
+  await editor.getByRole('button', { name: 'Вернуться к просмотру', exact: true }).click()
+  for (const width of [1000, 390]) {
+    await page.setViewportSize({ width, height: 1000 })
+    if (width === 390 && await page.getByRole('button', { name: 'Скрыть меню', exact: true }).count()) {
+      await page.getByRole('button', { name: 'Скрыть меню', exact: true }).click()
+      await expect(page.locator('[data-app-sidebar]')).toHaveCSS('width', '64px')
+    }
+    await expect(stamp.getByTestId('program-stamp-results').locator('[data-program-stamp-assignments]')).toBeVisible()
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  }
+  expect(errors).toEqual([])
 })

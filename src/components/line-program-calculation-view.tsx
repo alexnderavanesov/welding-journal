@@ -1,5 +1,6 @@
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { ProgramGrid } from './line-program-grid'
+import { useProgramAppearance } from './line-program-appearance'
 import { useProgramSessionState } from './line-program-grid-session'
 import { PROGRAM_DEMAND_LABELS, PROGRAM_SLICE_LABELS } from '@/lib/line-program-labels'
 import type { ProgramReportNavigation } from './line-program-context-menu'
@@ -27,6 +28,12 @@ type Props = { overview?: LineProgramOverview; onEdit?: () => void; onOpenReport
 const link = programLinkClass
 
 export function LineCalculation({ overview, onEdit, line, targetStamp, targetKind, targetSelection, enabled = true, onOpenReportRows, command, onCommandHandled, onOpenScopeMenu }: Props) {
+  const { appearance } = useProgramAppearance()
+  // Three readable summary lines need room for their labels and numbers.
+  // Keep stable column identities, saved state and the other themes' widths.
+  const columns = useMemo(() => appearance.theme === 'quartz' ? stampColumns.map(column =>
+    column.colId === 'state' ? { ...column, minWidth: 154 } : column.colId === 'calculation' ? { ...column, minWidth: 220 } : column
+  ) : stampColumns, [appearance.theme])
   const draftCount = useProgramDraftCount(line.id)
   const initial = targetSelection ?? { stamp: targetStamp || undefined, kind: targetKind, slice: 'all' as const }
   const [selection, setSelection] = useProgramSessionState<ProgramSelection>(`scope:${line.id}`, initial)
@@ -159,7 +166,7 @@ export function LineCalculation({ overview, onEdit, line, targetStamp, targetKin
 
     </div> : null}
     {configured ? <div hidden={view !== 'groups'}><StampGridContext.Provider value={{ blocks, choose, collapse, filteredScope, execute, registerContainer, stampButtons, unassignedButton }}>
-      <ProgramGrid kind="stamps" sessionKey={`stamps:${line.id}`} label="Расчёт по клеймам" contextLabel={`Линия ${line.line} · клейма`} rows={displayRows} columns={stampColumns} getId={stamp => programScopeKey(stampScope(stamp))}
+      <ProgramGrid kind="stamps" sessionKey={`stamps:${line.id}`} label="Расчёт по клеймам" contextLabel={`Линия ${line.line} · клейма`} rows={displayRows} columns={columns} getId={stamp => programScopeKey(stampScope(stamp))}
         detailRenderer={StampDetail} isExpanded={stamp => !!blocks.get(programScopeKey(stampScope(stamp)))?.open}
 
         onRowClick={stamp => { const scope = stampScope(stamp), block = blocks.get(programScopeKey(scope)); block?.open ? collapse(block.selection) : choose(filteredScope(scope)) }}
@@ -167,7 +174,7 @@ export function LineCalculation({ overview, onEdit, line, targetStamp, targetKin
           onToggle: () => block?.open ? collapse(block.selection) : choose(filteredScope(scope)), onSelect: value => choose({ ...value, stamp: scope.stamp, unassigned: scope.unassigned }),
           onAssignments: () => execute({ action: 'assignments', selection: scope }), onCalculation: (selection, explain) => execute({ action: 'calculation', selection, explain }) }) }}
         rowAttributes={stamp => ({ 'data-testid': stamp.scope === 'unassigned' ? 'line-program-unassigned' : 'line-program-stamp', 'data-stamp': stamp.scope === 'unassigned' ? undefined : stamp.stamp, 'data-full-control-by-rejection': stamp.fullControlRequired ? 'true' : undefined })}
-        getRowClass={({ data }) => data ? `${data.scope === 'unassigned' ? 'program-stamp-unassigned' : ''} ${blocks.get(programScopeKey(stampScope(data)))?.open ? 'program-stamp-open' : ''} ${data.fullControlRequired ? 'program-stamp-rejected' : ''}` : ''} />
+        getRowClass={({ data, node }) => data ? `${data.scope === 'unassigned' ? 'program-stamp-unassigned' : ''} ${blocks.get(programScopeKey(stampScope(data)))?.open ? 'program-stamp-open' : ''} ${data.fullControlRequired ? 'program-stamp-rejected' : ''} ${node.sourceRowIndex % 2 === 1 ? 'program-stamp-alternate' : ''}` : ''} />
     </StampGridContext.Provider></div> : null}
     {configured && blocks.has('all:') ? <div hidden={view !== 'all' || !blocks.get('all:')?.open} data-testid="line-program-all-joints" data-scope="all:"><ScopeHost scopeKey="all:" register={registerContainer} /></div> : null}
     {blocks.size > 0 && configured ? <LineJointPage workspaces={workspaces} onOpenReportRows={onOpenReportRows} line={query.data!.line} enabled={enabled && workspaces.some(block => block.open)} assignmentRequest={assignmentRequest} onAssignmentRequestHandled={handled => setAssignmentRequest(current => current === handled ? undefined : current)} /> : null}
@@ -201,6 +208,7 @@ const StampGridContext = createContext<StampGridContextValue>(null!)
 const stampScope = (stamp: StampRow): ProgramSelection => ({ stamp: stamp.scope === 'unassigned' ? undefined : stamp.stamp, unassigned: stamp.scope === 'unassigned', slice: 'all' })
 function StampCell({ data: stamp, colDef }: ICellRendererParams<StampRow>) {
   const { blocks, choose, collapse, filteredScope, execute, stampButtons, unassignedButton } = useContext(StampGridContext)
+  const light = useProgramAppearance().appearance.theme === 'quartz'
   if (!stamp) return null
       const unassigned = stamp.scope === 'unassigned', code = unassigned ? undefined : stamp.stamp
       const scope = { stamp: code, unassigned, slice: 'all' as const }, scopeKey = programScopeKey(scope)
@@ -216,33 +224,36 @@ function StampCell({ data: stamp, colDef }: ICellRendererParams<StampRow>) {
       const selectStamp = () => active ? collapse(block!.selection) : choose(filteredScope({ stamp: code, unassigned, slice: 'all' }))
       const select = (value: ProgramSelection) => choose({ ...value, stamp: code, unassigned })
 
-  const content: Record<string, () => React.ReactNode> = { stamp: () => <><div className="flex min-w-0 items-center gap-1"><button ref={element => { if (unassigned) unassignedButton.current = element; else if (element) stampButtons.current.set(code!, element); else stampButtons.current.delete(code!) }} type="button" title={unassigned ? 'Стыки без назначенного сварщика' : stamp.welderName || 'ФИО не указано'} className={`${programDisclosureClass} min-w-0 text-sky-800 hover:bg-slate-50`} aria-label={scopeLabel} aria-expanded={active} onClick={selectStamp}>{active ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}<span className="truncate" title={unassigned ? 'Клеймо не назначено' : code}>{unassigned ? 'Клеймо не назначено' : code}</span></button><button type="button" className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-500 hover:bg-sky-50 hover:text-sky-800" title="Расчёт" aria-label={`Расчёт · ${scopeLabel}`} aria-haspopup="dialog" disabled={unassigned} onClick={() => execute({ action: 'calculation', selection: scope })}><Calculator aria-hidden className="h-3.5 w-3.5" /></button></div>{!unassigned ? <span data-testid="line-program-welder-name" className="block truncate pl-[1.625rem] text-xs leading-4 text-slate-500" title={stamp.welderName || 'ФИО не указано'}>{stamp.welderName || 'ФИО не указано'}</span> : null}{active ? <ScopeCaption scope={block!.selection} /> : null}</>,
+  const content: Record<string, () => React.ReactNode> = { stamp: () => <><div className="flex min-w-0 items-center gap-1"><button ref={element => { if (unassigned) unassignedButton.current = element; else if (element) stampButtons.current.set(code!, element); else stampButtons.current.delete(code!) }} type="button" title={unassigned ? 'Стыки без назначенного сварщика' : stamp.welderName || 'ФИО не указано'} className={`${programDisclosureClass} min-w-0 text-sky-800 hover:bg-slate-50`} aria-label={scopeLabel} aria-expanded={active} onClick={selectStamp}>{active ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}<span className="truncate" title={unassigned ? 'Клеймо не назначено' : code}>{unassigned ? 'Клеймо не назначено' : code}</span></button><button type="button" className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-500 hover:bg-sky-50 hover:text-sky-800" title="Расчёт" aria-label={`Расчёт · ${scopeLabel}`} aria-haspopup="dialog" disabled={unassigned} onClick={() => execute({ action: 'calculation', selection: scope })}><Calculator aria-hidden className="h-3.5 w-3.5" /></button></div>{!unassigned ? <span data-testid="line-program-welder-name" className="block truncate pl-[1.625rem] text-xs leading-4 text-slate-500" title={stamp.welderName || 'ФИО не указано'}>{stamp.welderName || 'ФИО не указано'}</span> : null}{light && unassigned ? <span data-testid="line-program-welder-name" className="block truncate pl-[1.625rem] text-xs leading-4 text-slate-500">Сварщик не назначен</span> : null}{active ? <ScopeCaption scope={block!.selection} /> : null}</>,
 count: () => <><button type="button" className={link} title="Учитываемые физические соединения, включая ещё не сваренные. Это не число записей журнала и не процентная база." data-program-slice="all" onClick={() => select({ slice: 'all' })}>{stamp.count}</button></>,
 state: () => <><ProgramControlState state={stamp} compact /></>,
 quota: () => <><div>{kinds.map(kind => <div key={kind} data-testid={'program-demand-row-' + kind} className="min-h-6 text-xs">{kind === 'common' || stamp[kind].required || stamp[kind].covered ? unassigned && stamp[kind].percent < 100 ? <p className="text-slate-500">{PROGRAM_DEMAND_LABELS[kind]}: расчёт после сварки и назначения клейма</p> : <Quota kind={kind} demand={stamp[kind]} choose={slice => select({ kind, slice })} /> : null}</div>)}</div></>,
 assigned: () => <><div>{kinds.map(kind => <div key={kind} className="min-h-6 text-xs"><button type="button" className={link + ' max-w-full flex-wrap text-left leading-5 tabular-nums'} title={stamp[kind].accounting ? formatProgramAssignmentAccounting(stamp[kind].accounting.assignments) : undefined} data-program-slice="assigned" data-program-kind={kind} onClick={() => select({ kind, slice: 'assigned' })}>{PROGRAM_DEMAND_LABELS[kind]}: <span className="whitespace-nowrap">назначено {stamp[kind].assigned}</span></button></div>)}</div></>,
 missing: () => <>
           {planning || unassigned && !stamp.common.required && !stamp.pvk.required ? <span className="text-slate-400">—</span> : <button type="button" aria-label={`К назначению: ${needed}`} title="Сумма достижимой потребности РК/УЗК и ПВК, не число разных стыков." data-program-slice="missing" onClick={() => select({ slice: 'missing' })} className={`min-h-6 min-w-6 rounded text-left text-sm font-semibold tabular-nums underline decoration-dotted underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 ${needed ? 'text-amber-900 hover:text-amber-950' : 'text-slate-600 hover:text-slate-800'}`}>{needed}</button>}
-          {needed > 0 ? <div data-testid="program-demand-breakdown" aria-label="К назначению по методам" title="Сумма мест потребности по методам и клеймам, не число разных стыков." className="flex flex-wrap gap-x-2 text-xs font-normal">{kinds.map(kind => <div key={kind}>{stamp[kind].missing ? <button type="button" className={programLinkClass} data-program-slice="missing" data-program-kind={kind} onClick={() => select({ kind, slice: 'missing' })}>{PROGRAM_DEMAND_LABELS[kind]}: {stamp[kind].missing}</button> : <span className="inline-flex min-h-6 items-center text-slate-600">{PROGRAM_DEMAND_LABELS[kind]}: 0</span>}</div>)}</div> : null}
+          {needed > 0 || light && !planning && !(unassigned && !stamp.common.required && !stamp.pvk.required) ? <div data-testid="program-demand-breakdown" aria-label="К назначению по методам" title="Сумма мест потребности по методам и клеймам, не число разных стыков." className="flex flex-wrap gap-x-2 text-xs font-normal">{kinds.map(kind => <div key={kind}>{stamp[kind].missing ? <button type="button" className={programLinkClass} data-program-slice="missing" data-program-kind={kind} onClick={() => select({ kind, slice: 'missing' })}>{PROGRAM_DEMAND_LABELS[kind]}: {stamp[kind].missing}</button> : <span className="inline-flex min-h-6 items-center text-slate-600">{PROGRAM_DEMAND_LABELS[kind]}: 0</span>}</div>)}</div> : null}
         </>,
 calculation: () => <>
-          <div className="grid min-h-12 grid-rows-[minmax(1.5rem,auto)_minmax(1.5rem,auto)] text-xs">
-            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-[13px] leading-5">
+          <div className="program-stamp-calculation-lines grid min-h-12 grid-rows-[minmax(1.5rem,auto)_minmax(1.5rem,auto)] text-xs">
+            <div className="program-stamp-calculation-primary flex min-w-0 flex-wrap items-baseline gap-x-2 text-[13px] leading-5">
               {calculationStatus ? <button type="button" aria-label={calculationStatus === 'Закрыт' ? 'Расчёт закрыт' : calculationStatus} title={calculationStatus === 'Закрыт' ? 'Закрыт расчёт назначений, а не контроль: ожидания и негодные результаты остаются видны отдельно.' : undefined} className={`min-h-6 min-w-6 rounded text-left font-semibold underline decoration-dotted underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 ${calculationStatus === 'Закрыт' ? 'text-emerald-800 hover:text-emerald-950' : 'text-slate-600 hover:text-slate-800'}`} data-program-slice={planning || unassigned ? 'all' : 'covered'} onClick={() => select({ slice: planning || unassigned ? 'all' : 'covered' })}>{calculationStatus}</button> : null}
-              {calculationStatus && excess ? <span aria-hidden="true" className="text-slate-400">·</span> : null}
+              {calculationStatus && excess ? <span aria-hidden="true" className="program-stamp-calculation-separator text-slate-400">·</span> : null}
               {excess ? <button type="button" className="min-h-6 min-w-6 rounded whitespace-nowrap font-semibold text-rose-700 underline decoration-dotted underline-offset-4 hover:text-rose-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500" data-program-slice="excess" onClick={() => select({ slice: 'excess' })}>Лишнее: {excess}</button> : null}
               {!calculationStatus && !excess && !stamp.reducible ? <span className="text-slate-400">—</span> : null}
+              {light && !excess ? <span data-program-zero="excess">Лишнее: 0</span> : null}
             </div>
-            <div className="flex items-center">
+            <div className="program-stamp-calculation-reduction flex items-center">
               {stamp.reducible > 0 ? <button type="button" className="min-h-6 min-w-6 rounded text-left text-amber-900 hover:bg-amber-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500" title="Назначения «да» с жёлтой рамкой: можно снять вместе без нарушения нормы" data-program-slice="reduction" onClick={() => select({ slice: 'reduction' })}>Возможное сокращение: {stamp.reducible}</button> : null}
+              {light && !stamp.reducible ? <span data-program-zero="reduction">Возможное сокращение: 0</span> : null}
             </div>
           </div>
         </>,
 results: () => <><div className="flex flex-col items-start text-xs">
           <button type="button" className="min-h-6 min-w-6 rounded text-[13px] text-slate-600 underline decoration-dotted underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500" data-program-slice="results" onClick={() => select({ slice: 'results' })}>Результаты</button>
+          {light ? <button type="button" className={link} data-program-stamp-assignments aria-label={`Открыть назначения · ${scopeLabel}`} onClick={() => execute({ action: 'assignments', selection: scope })}>Назначения</button> : null}
           {fullControlByRejection ? <span title={`Для этого сварщика требуется 100% контроля ${PROGRAM_DEMAND_LABELS.common} по браку`} className="whitespace-nowrap rounded bg-rose-50 px-1 py-0.5 text-[11px] font-medium text-rose-700">100% по браку</span> : null}
         </div></> }
-  return <div className="w-full" data-testid={colDef?.colId === 'missing' ? 'program-assignment-demand' : colDef?.colId === 'calculation' ? 'program-stamp-calculation' : colDef?.colId === 'results' ? 'program-stamp-results' : undefined}>{content[colDef!.colId!]?.()}</div>
+  return <div className="program-stamp-cell w-full" data-testid={colDef?.colId === 'missing' ? 'program-assignment-demand' : colDef?.colId === 'calculation' ? 'program-stamp-calculation' : colDef?.colId === 'results' ? 'program-stamp-results' : undefined}>{content[colDef!.colId!]?.()}</div>
 }
 function StampDetail({ data }: ICellRendererParams<StampRow>) {
   const { registerContainer } = useContext(StampGridContext)

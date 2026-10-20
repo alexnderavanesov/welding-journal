@@ -224,7 +224,7 @@ test('спокойная иерархия: расчёт в модальном о
   const headings = program.getByRole('grid', { name: 'Расчёт по клеймам' }).locator('.ag-header').first().getByRole('columnheader')
   await expect(headings).toHaveText(['Клеймо', 'Соединений', 'Состояние', 'Зачтено / нужно', 'Назначения', 'К назначению', 'Расчёт', 'Результаты'])
   await expect(program.getByTestId('line-program-summary')).toHaveCount(0)
-  await expect(stamp).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+  await expect(stamp).toHaveCSS('background-color', 'rgb(237, 246, 253)')
   await stamp.getByTestId('stamp-control-state-compact').locator('summary').click()
   const controls = stamp.getByTestId('stamp-control-state')
   for (const label of ['Годен:', 'Не годен:']) {
@@ -260,7 +260,7 @@ test('спокойная иерархия: расчёт в модальном о
   await expect(program.getByTestId('line-program-readonly-joint')).toHaveCount(5)
   // Clicking the stamp leaves the pointer over its intentionally retained hover highlight.
   await page.mouse.move(0, 0)
-  await expect(stamp).toHaveCSS('background-color', 'rgb(238, 246, 253)')
+  await expect(stamp).toHaveCSS('background-color', 'rgb(237, 246, 253)')
   for (const width of [1000, 1800]) {
     await page.setViewportSize({ width, height: 1000 })
     for (const collapsed of [false, true]) {
@@ -555,7 +555,7 @@ test('возможное сокращение: счётчик равен рам�
   await withE2eDatabase(async db => expect((await db.query("select has_rk,rk_request,rk_result,rk_conclusion from weld_joints where line_program_id=$1 and joint='F4'", [id])).rows[0]).toEqual({ has_rk: 'отменен', rk_request: 'RK-F4', rk_result: 'годен', rk_conclusion: 'CONCLUSION-F4' }))
 })
 
-test('мягкая красная строка только у клейм с требованием 100% по браку', async ({ page }) => {
+test('светлые строки клейм сохраняют явную отметку требования 100% по браку', async ({ page }) => {
   const cases = [
     { name: 'UNIFIED-REJECTION-MIXED', percent: 30, both: false },
     { name: 'UNIFIED-REJECTION-ALL', percent: 30, both: true },
@@ -592,7 +592,7 @@ test('мягкая красная строка только у клейм с т�
     for (const [row, highlight] of [[a, item.percent < 100], [b, item.both && item.percent < 100]] as const) {
       if (highlight) {
         await expect(row).toHaveAttribute('data-full-control-by-rejection', 'true')
-        await expect(row).toHaveCSS('background-color', 'rgba(255, 241, 242, 0.3)')
+        await expect(row).toHaveCSS('background-color', await row.getAttribute('data-stamp') === 'UNIFIED-A' ? 'rgb(237, 246, 253)' : 'rgb(245, 250, 255)')
         await expect(row.getByText('100% по браку', { exact: true })).toBeVisible()
       } else {
         await expect(row).not.toHaveAttribute('data-full-control-by-rejection')
@@ -602,7 +602,7 @@ test('мягкая красная строка только у клейм с т�
     await a.getByRole('button', { name: 'Клеймо UNIFIED-A', exact: true }).click()
     await page.mouse.move(0, 0)
     await expect(card.locator('[data-testid="stamp-joints-container"][data-stamp="UNIFIED-A"]').getByTestId('program-stamp-guide')).toHaveCount(0)
-    await expect(a).toHaveCSS('background-color', item.percent < 100 ? 'rgba(255, 241, 242, 0.3)' : 'rgb(238, 246, 253)')
+    await expect(a).toHaveCSS('background-color', 'rgb(237, 246, 253)')
     if (item.name.endsWith('-ALL')) await program.screenshot({ path: 'outputs/line-program-rejection-highlights.png' })
   }
   // Initial all-lines key plus one full/page read for each of the three searches.
@@ -719,9 +719,9 @@ test('единый блок общего НК и ПВК, простой оста
         values: [...el.querySelectorAll('[data-metric-value]:not([data-quota-value])')].map(node => getComputedStyle(node).fontSize),
         quotas: [...el.querySelectorAll('[data-quota-value]')].map(node => getComputedStyle(node).fontSize),
       }))
-      expect([...new Set(typography.labels)]).toEqual([compact ? '13px' : '14px'])
-      expect([...new Set(typography.values)]).toEqual([compact ? '14px' : '18px'])
-      expect([...new Set(typography.quotas)]).toEqual([compact ? '14px' : '16px'])
+      expect([...new Set(typography.labels)]).toEqual([compact ? '12px' : '14px'])
+      expect([...new Set(typography.values)].sort()).toEqual(compact ? ['12px', '13px'] : ['18px'])
+      expect([...new Set(typography.quotas)]).toEqual([compact ? '12px' : '16px'])
       const weights = await measured.evaluate(el => ({
         labels: [...el.querySelectorAll('[data-metric-label]')].map(node => getComputedStyle(node).fontWeight),
         values: [...el.querySelectorAll('[data-metric-value]:not([data-quota-value])')].map(node => getComputedStyle(node).fontWeight),
@@ -731,7 +731,7 @@ test('единый блок общего НК и ПВК, простой оста
       expect([...new Set(weights.labels)]).toEqual(['400'])
       expect([...new Set(weights.values)]).toEqual([compact ? '400' : '500'])
       expect([...new Set(weights.quotas)]).toEqual(['400'])
-      expect([...new Set(weights.quotaColors)]).toEqual([compact ? 'rgb(51, 65, 85)' : 'rgb(71, 85, 105)'])
+      expect([...new Set(weights.quotaColors)]).toEqual([compact ? 'rgb(72, 124, 150)' : 'rgb(71, 85, 105)'])
       const quota = compact ? measured : parent.getByTestId('program-quota-summary')
       const common = quota.getByRole('button', { name: 'РК - УЗК · зачтено / нужно 3 / 7', exact: true })
       const pvk = quota.getByRole('button', { name: 'ПВК · зачтено / нужно 5 / 7', exact: true })
@@ -1240,10 +1240,19 @@ test('оформление программы как у журнала: белы
       await expect(page.getByRole('main')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
       await expect(page.locator('[data-scroll-top-boundary]')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
       await expect(toolbar).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+      const frame = program.locator('[data-program-grid="lines"] .ag-root-wrapper').first()
+      await expect(frame).toHaveCSS('border-width', '1px')
+      await expect(frame).toHaveCSS('border-style', 'solid')
+      for (const side of ['left', 'right']) await expect(frame).toHaveCSS(`border-${side}-color`, 'rgb(203, 213, 225)')
+      for (const side of ['top', 'bottom']) await expect(frame).toHaveCSS(`border-${side}-color`, 'rgb(226, 232, 240)')
+      await expect(frame.locator('.ag-header').first()).toHaveCSS('border-bottom', '1px solid rgb(226, 232, 240)')
       const show = page.getByRole('button', { name: 'Показать', exact: true }), create = program.getByRole('button', { name: 'Новая линия', exact: true })
       for (const control of [show, create, program.getByLabel('Поиск программы линий')]) await expect(control).toHaveCSS('height', '40px')
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-      if (width === 1600) await page.screenshot({ path: `outputs/line-program-white-${collapsed ? 'collapsed' : 'expanded'}.png` })
+      if (width === 1600) {
+        await page.screenshot({ path: `outputs/line-program-white-${collapsed ? 'collapsed' : 'expanded'}.png` })
+        await frame.screenshot({ path: '/private/tmp/line-program-borders-20261020/overview.png' })
+      }
     }
   }
   await expect(program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]').first()).toHaveClass(/program-line-needs-work/)
@@ -1332,7 +1341,10 @@ test('планирование до сварки: группа без клейм
   expect(await unstamped.evaluate(element => element.nextElementSibling)).toBeNull()
   const aggregateColor = await unstamped.evaluate(element => getComputedStyle(element).backgroundColor)
   const stampColor = await program.getByTestId('line-program-stamp').first().evaluate(element => getComputedStyle(element).backgroundColor)
-  expect(aggregateColor).not.toBe(stampColor)
+  // The light sketch uses the same blue stripe for these nonadjacent rows;
+  // the unassigned scope stays explicit in its title and welder caption.
+  expect(aggregateColor).toBe(stampColor)
+  await expect(unstamped.getByTestId('line-program-welder-name')).toHaveText('Сварщик не назначен')
   await program.getByRole('button', { name: 'Клеймо не назначено', exact: true }).click()
   await expect(program.getByTestId('line-program-readonly-joint')).toHaveCount(2)
   await expect(program.getByRole('button', { name: 'Назначения без клейма', exact: true })).toBeVisible()
@@ -1578,8 +1590,8 @@ test('просмотр отдельно от назначений: размер�
   expect(Math.abs(excessBox!.y + excessBox!.height / 2 - remainingBox!.y - remainingBox!.height / 2)).toBeLessThanOrEqual(1)
   await card.getByRole('button', { name: `Расчёт линии ${name}` }).click()
   for (const group of [card.getByTestId('line-program-stamp')]) {
-    await expect(group.getByRole('button', { name: 'Расчёт закрыт', exact: true, includeHidden: true })).toHaveCSS('color', 'rgb(6, 95, 70)')
-    await expect(group.getByRole('button', { name: 'Лишнее: 3', exact: true, includeHidden: true })).toHaveCSS('font-weight', '600')
+    await expect(group.getByRole('button', { name: 'Расчёт закрыт', exact: true, includeHidden: true })).toHaveCSS('color', 'rgb(4, 120, 87)')
+    await expect(group.getByRole('button', { name: 'Лишнее: 3', exact: true, includeHidden: true })).toHaveCSS('font-weight', '400')
   }
   const stamp = card.getByRole('button', { name: 'Клеймо UNIFIED-A', exact: true })
   await stamp.scrollIntoViewIfNeeded()

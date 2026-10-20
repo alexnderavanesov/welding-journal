@@ -8,6 +8,10 @@
 
 - Never create a commit unless the user explicitly asks for one. Leave changes uncommitted for the user to review and commit.
 
+## Retired prototype
+
+- User clarification (2026-10-20): the line-program sketch at `http://127.0.0.1:4318/#program` has served its purpose. Keep its server stopped; do not restart or maintain it unless the user asks. Preserve its source as historical reference.
+
 ## Context transfer command
 
 - The user-defined command **«Передай контекст в новый чат»** means: prepare a current handoff and create one new ordinary local chat in this same project, checkout directory, and current branch. It is not a built-in slash command. Defining, quoting, or discussing the command does not invoke it; a direct user invocation authorizes creating the chat, not implementing the pending work.

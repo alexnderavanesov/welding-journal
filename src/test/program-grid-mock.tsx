@@ -12,10 +12,10 @@ export function ProgramGrid<T>(props: ComponentProps<typeof RealProgramGrid<T>>)
     {props.toolbar}
     <div role="table" aria-label={props.label}>
       <div role="rowgroup" data-testid={props.kind === 'assignments' ? 'assignment-table-header' : undefined}><div role="row">{props.columns.filter(column => !column.hide).map(column => <div role="columnheader" key={column.colId}>{column.headerName}</div>)}</div></div>
-      {(props.virtual || props.kind === 'joints' ? props.rows.slice(0, 50) : props.rows).map(data => {
+      {(props.virtual || props.kind === 'joints' ? props.rows.slice(0, 50) : props.rows).map((data, sourceRowIndex) => {
         const id = props.getId(data), expanded = props.isExpanded?.(data)
         if (expanded) visited.current.add(id)
-        return <div key={id} {...props.rowAttributes?.(data)} className={typeof props.getRowClass === 'function' ? String(props.getRowClass({ data } as any) ?? '') : undefined} onContextMenu={event => props.onRowMenu?.(event, data)} onClick={event => { if (isProgramRowClick(event.target)) { event.stopPropagation(); props.onRowClick?.(data) } }}>
+        return <div key={id} {...props.rowAttributes?.(data)} className={typeof props.getRowClass === 'function' ? String(props.getRowClass({ data, node: { sourceRowIndex } } as any) ?? '') : undefined} onContextMenu={event => props.onRowMenu?.(event, data)} onClick={event => { if (isProgramRowClick(event.target)) { event.stopPropagation(); props.onRowClick?.(data) } }}>
           <div role="row">{props.columns.filter(column => !column.hide).map(colDef => {
             const Cell = colDef.cellRenderer as ComponentType<any> | undefined
             return <div role="cell" key={colDef.colId}>{Cell ? <Cell data={data} colDef={colDef} /> : null}</div>

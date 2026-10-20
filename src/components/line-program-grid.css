@@ -1,8 +1,18 @@
 /* Program-only presentation; the journal and document grids use their own theme. */
 /* Include pagination in the exclusion: otherwise the browser can anchor to
    that footer and move the page after AG finishes measuring a switched tab. */
-[data-testid="line-program"] { overflow-anchor: none; }
+[data-testid="line-program"] { overflow-anchor: none; --program-frame-color: #cbd5e1; }
 .program-ag-grid { min-width: 0; background: #fff; overflow-anchor: none; }
+/* AG forwards ancestor theme values into nested grids. Reset the public
+   wrapper token here so only the overview and workspace draw outer frames. */
+.program-ag-grid:not([data-program-grid="lines"]) { --ag-wrapper-border: none; }
+/* Match the visible outer sides to the persistent top edge. Nested wrappers
+   remain borderless; keep the existing top/bottom separators unchanged. */
+.program-ag-grid .ag-root-wrapper { border-inline-color: var(--program-frame-color); }
+.program-ag-grid .ag-row.ag-full-width-row:not(.ag-row-group) { border-bottom: 0; }
+/* AG reserves 1px after the measured detail content. Use it as the separator
+   before the next line instead of leaving a white strip below the workspace. */
+.program-ag-grid .ag-row.ag-full-width-row:has(.program-line-detail-space) { border-bottom: 1px solid var(--program-frame-color); }
 .program-grid-toolbar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 42px; padding: 6px 12px; background: #f7fafc; border-block: 1px solid #e2e8f0; color: #64748b; }
 .program-grid-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; border: 1px solid #dce5ed; border-radius: 7px; padding: 4px 10px; background: white; color: #536b80; font-size: 12px; white-space: nowrap; }
 .program-grid-button:hover { background: #f0f7fd; border-color: #bae0f5; }
@@ -42,18 +52,21 @@
 .program-ag-grid .ag-row:is(.program-line-neutral, .program-line-needs-work, .program-line-finished) { background: #edf6fd; box-shadow: none; }
 .program-ag-grid .ag-row:where(:not(.ag-full-width-row, .program-joint-good, .program-joint-rejected)):hover { background: #f0f7fd; }
 .program-ag-grid .ag-row:is(.program-line-neutral, .program-line-needs-work, .program-line-finished):hover { background: #e5f1fb; }
-.program-line-workspace { overflow: clip; background: white; border: 1px solid #d6e3ee; border-left: 4px solid #94bfdc; border-radius: 10px; }
+.program-line-workspace { overflow: clip; background: white; border: 1px solid var(--program-frame-color); border-radius: 10px; }
 .program-line-heading { padding: 20px 22px 18px; background: white; }
 .program-line-heading-top { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 14px; }
-.program-line-eyebrow { color: #94a3b8; font-size: 10px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; margin-bottom: 4px; }
-.program-line-heading h2 { margin: 0; font-size: 24px; line-height: 1.35; font-weight: 600; color: #365c78; overflow-wrap: anywhere; }
+/* Whole-pixel line boxes keep the workspace's bottom edge as crisp as its
+   top and sides, including when the last stamp is collapsed. */
+.program-line-eyebrow { color: #94a3b8; font-size: 10px; line-height: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; margin-bottom: 4px; }
+.program-line-heading h2 { margin: 0; font-size: 24px; line-height: 32px; font-weight: 600; color: #365c78; overflow-wrap: anywhere; }
 .program-line-heading p { margin: 5px 0 0; font-size: 13px; color: #8297ac; }
 .program-line-heading-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .program-line-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; margin-top: 16px; font-size: 13px; color: #8294a8; }
 .program-line-summary strong { margin-left: 7px; font-weight: 600; color: #536f88; font-variant-numeric: tabular-nums; }
 .program-line-summary button { min-width: 28px; min-height: 28px; border-radius: 4px; padding: 3px 0; }
 .program-line-summary button:hover { color: #0369a1; background: #f0f9ff; }
-.program-line-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; padding: 10px 16px; border-block: 1px solid #e2e8f0; background: #fafdff; }
+/* The following table paints the shared lower edge, avoiding a doubled rule. */
+.program-line-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; padding: 10px 16px; border-top: 1px solid #e2e8f0; background: #fafdff; }
 .program-line-tab { min-height: 32px; padding: 6px 12px; border-radius: 7px; font-size: 13px; color: #7c91a7; }
 .program-line-tab.is-active { background: #eaf5ff; color: #137db4; font-weight: 600; }
 .program-line-tab:hover { background: #f0f7fd; }
@@ -70,9 +83,18 @@
 .program-ag-grid .ag-row:is(.program-line-neutral, .program-line-needs-work, .program-line-finished) { border-bottom-color: #dce7f0; }
 .program-grid-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 12px; color: #536f88; background: #f7fafd; font-size: 12px; }
 .program-grid-groups button { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border: 1px solid #dce5ed; border-radius: 5px; background: #fff; }
-.program-sticky-context { margin: 0 !important; position: fixed; top: 0; height: 36px; z-index: 26; display: flex; align-items: center; padding: 0 14px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; background: #edf6fd; color: #536f88; border-bottom: 1px solid #e2e8f0; font-size: 12px; font-weight: 600; pointer-events: none; }
-.program-sticky-context[hidden] { display: none; }
+/* The workspace supplies the side edges; duplicating them on the context title
+   makes a 2px seam. The independent top rule spans the recessed gutters too. */
+.program-sticky-context { margin: 0 !important; position: fixed; top: 0; height: 36px; z-index: 26; display: flex; align-items: center; padding: 0 15px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; background: #edf6fd; color: #536f88; border: 0; border-top: 1px solid var(--program-frame-color); font-size: 12px; font-weight: 600; pointer-events: none; }
+.program-sticky-frame { margin: 0 !important; position: fixed; top: 0; height: 1px; z-index: 27; background: var(--program-frame-color); pointer-events: none; }
+.program-sticky-context[hidden], .program-sticky-frame[hidden] { display: none; }
 .program-ag-grid .program-stuck-control { position: fixed !important; top: var(--program-sticky-top); left: var(--program-sticky-left); width: var(--program-sticky-width); translate: none; z-index: 25; clip-path: inset(0 var(--program-sticky-clip-right, 0px) 0 var(--program-sticky-clip-left, 0px)); box-shadow: 0 1px 3px #203a2814; }
+/* The wrapper's top border scrolls away. Paint an inner edge over the
+   pinned header cells without changing their height or column alignment. */
+/* Keep the same thin gray edge when nested columns enter or leave the
+   pinned position. The context title uses this color for its outer frame. */
+.program-ag-grid .program-stuck-control::after,
+.program-ag-grid:is([data-program-grid="stamps"], [data-program-grid="joints"]) .ag-grid-pinned-top-rows:not(.program-stuck-control)::after { content: ''; position: absolute; inset: 0 0 auto; height: 1px; background: var(--program-frame-color); z-index: 10; pointer-events: none; }
 /* Only labels fade slightly: the header background stays opaque so scrolled
    rows never bleed through. Controls follow scrolling without positional lag. */
 @keyframes program-header-arrival { from { opacity: .78; } to { opacity: 1; } }
@@ -87,6 +109,25 @@
 .program-ag-grid .ag-cell-focus { border-color: transparent !important; outline: none; }
 .program-ag-grid .ag-cell:focus-visible { box-shadow: none; }
 html[data-program-keyboard="true"] .program-ag-grid .ag-cell:focus-visible { box-shadow: inset 0 0 0 1px #7dd3fc; }
+/* Native controls keep their own focus, separate from row selection and
+   the dashed/amber assignment hints. One shadow avoids stacked focus rings. */
+.program-ag-grid[data-program-grid="assignments"] .program-assignment-select { --program-field-border: #e2e8f0; --program-field-inset: 0 0 #0000; }
+.program-ag-grid[data-program-grid="assignments"] .program-assignment-select[data-program-dirty] { --program-field-border: #0ea5e9; }
+.program-ag-grid[data-program-grid="assignments"] .program-assignment-select[data-program-required]:not([data-program-dirty]),
+.program-ag-grid[data-program-grid="assignments"] .program-assignment-select[data-removal-candidate] { --program-field-border: #fbbf24; --program-field-inset: inset 0 0 0 1px #fde68a; }
+.program-ag-grid[data-program-grid="assignments"] .program-assignment-select:is(:focus, .ring-2) { outline: none; border-color: var(--program-field-border); box-shadow: var(--program-field-inset), 0 0 0 2px #bae6fd; }
+/* A pointer-edited field already has a dashed draft border. Do not leave an
+   outer blue band after its native menu closes; retain keyboard focus cues. */
+html:not([data-program-keyboard="true"]) .program-ag-grid[data-program-grid="assignments"] .program-assignment-select[data-program-dirty] { box-shadow: var(--program-field-inset); }
+.program-ag-grid[data-program-grid="assignments"] .program-assignment-checkbox { width: 16px; height: 16px; border-radius: 4px; border-color: #cbd5e1; color: #0284c7; cursor: pointer; }
+.program-ag-grid[data-program-grid="assignments"] .program-assignment-checkbox:is(:checked, :indeterminate) { border-color: #0284c7; }
+.program-ag-grid[data-program-grid="assignments"] .program-assignment-checkbox:focus { outline: none; box-shadow: none; }
+.program-ag-grid[data-program-grid="assignments"] .program-assignment-checkbox:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
+.program-ag-grid[data-program-grid="assignments"] .program-assignment-checkbox:disabled { opacity: .45; cursor: default; }
+@media (forced-colors: active) {
+  .program-ag-grid[data-program-grid="assignments"] .program-assignment-select:is(:focus, .ring-2) { outline: 2px solid Highlight; outline-offset: 2px; }
+}
+
 /* Popups live outside clipped detail/grid containers. Keep all styling scoped
    to this program so journal filters and ordinary form controls are untouched. */
 .program-grid-popup.ag-filter-menu { z-index: 160; width: 284px; min-width: 240px; max-width: calc(100vw - 24px); padding: 0; border: 1px solid #dce5ed; border-radius: 10px; background: #fff; color: #475569; font-size: 13px; box-shadow: 0 8px 28px #1e3a5f24; }
@@ -136,6 +177,78 @@ html[data-program-keyboard="true"] .program-ag-grid .ag-cell:focus-visible { box
 .program-ag-grid[data-program-vertical-borders="true"] .ag-cell { border-right-color: #dce5ed !important; }
 .program-ag-grid[data-program-theme="alpine"] .ag-row:is(.program-line-neutral, .program-line-needs-work, .program-line-finished) { background: #eaf2f9; }
 .program-ag-grid[data-program-theme="balham"] .ag-row:is(.program-line-neutral, .program-line-needs-work, .program-line-finished) { background: #f5f7f3; }
+
+/* Light theme: match the sketch only in the line and stamp summary cells.
+   Detail workspaces, joint rows, assignment editors and other themes retain
+   their own presentation. Heights remain measured by AG Grid for long text. */
+.program-ag-grid[data-program-theme="quartz"]:is([data-program-grid="lines"], [data-program-grid="stamps"]) {
+  --program-summary-blue: #397da8;
+  --program-summary-font: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --program-summary-muted: #9eacba;
+  --program-summary-good: #047857;
+  --program-summary-warning: #92400e;
+  --program-summary-rejected: #be123c;
+}
+.program-ag-grid[data-program-theme="quartz"] :is(.program-line-identity, .program-line-actions, [data-testid="line-card-metrics"], .program-stamp-cell) { font-family: var(--program-summary-font); font-feature-settings: normal; font-variant-numeric: normal; letter-spacing: normal; }
+.program-ag-grid[data-program-theme="quartz"] :is([data-testid="line-card-metrics"], .program-stamp-cell) .tabular-nums { font-variant-numeric: normal; }
+/* Block layout avoids extra baseline space below metric contents. */
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] [data-testid="line-card-metrics"] { display: flex; flex-direction: column; align-items: flex-start; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] .program-line-caption { font-size: 11px; line-height: 16.5px; min-height: 33px; margin-top: 3px; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] .ag-cell[col-id="stamps"] [data-metric-value] { font-size: 13px; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] .program-control-values button { padding-block: 0; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] .program-line-identity [data-testid="line-name"] { color: var(--program-summary-blue); font-size: 12px; line-height: 19.2px; font-weight: 550; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] .program-line-identity [data-testid="line-name"] + span { padding-inline: 4px; background: transparent; color: var(--program-summary-blue); font-size: 11px; line-height: 13.2px; font-weight: 500; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] .program-line-identity [data-testid="line-description"] { color: var(--program-summary-muted); font-size: 11px; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] [data-line-metric] { color: var(--program-summary-blue); font-size: 12px; max-width: 100%; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] [data-metric-value] { color: var(--program-summary-blue); font-size: 12px; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] [data-testid="line-card-metrics"] [data-quota-value] { color: #487c96; font-size: 12px; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] [data-testid="line-card-metrics"] [role="progressbar"] { height: 3px; background: #e9eef4; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] [data-testid="line-card-metrics"] [role="progressbar"] > span { background: #82b5a2; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] [data-program-slice="missing"] [data-metric-value]:not(.text-slate-700),
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] [data-program-slice="reduction"] [data-metric-value] { color: var(--program-summary-warning); }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] [data-program-slice="excess"] [data-metric-value] { color: var(--program-summary-rejected); }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] [data-testid="line-missing-breakdown"] { color: var(--program-summary-muted); font-size: 11px; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] .program-control-values { color: var(--program-summary-blue); gap: 2px; font-size: 12px; line-height: 19.2px; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] .program-line-actions > .program-grid-button { background: #edf7ff; border-color: #e2f0fa; color: var(--program-summary-blue); }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"] .program-line-actions button[aria-label="Настроить"] { height: 26px; width: 34px; border: 1px solid #dee7ef; border-radius: 6px; background: white; color: #8297ac; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"][data-program-density="compact"] .program-line-identity > button { padding-block: 1px; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="lines"][data-program-density="compact"] .program-line-caption { min-height: 16.5px; margin-top: 1px; }
+
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] .ag-row:is([data-testid="line-program-stamp"], [data-testid="line-program-unassigned"]) { background: #edf6fd; box-shadow: none; }
+/* Source parity excludes master/detail rows, so disclosure cannot recolour a neighbour. */
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] .ag-row.program-stamp-alternate:is([data-testid="line-program-stamp"], [data-testid="line-program-unassigned"]) { background: #f5faff; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] .ag-row:is([data-testid="line-program-stamp"], [data-testid="line-program-unassigned"]):hover { background: #e5f1fb; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] .program-stamp-cell { color: var(--program-summary-blue); font-size: 12px; line-height: 18px; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] .program-stamp-cell button { color: var(--program-summary-blue); font-size: 12px; font-weight: 400; line-height: 19.2px; text-decoration: none; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] .program-stamp-cell button:hover { text-decoration: underline; text-underline-offset: 3px; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] .program-stamp-cell button[aria-haspopup="dialog"] { width: 34px; height: 26px; border: 1px solid #dee7ef; border-radius: 6px; background: white; color: #8297ac; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] .program-stamp-cell [data-testid="line-program-welder-name"] { color: var(--program-summary-muted); font-size: 11px; line-height: 16.5px; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] .program-stamp-state { flex-direction: column; align-items: flex-start; gap: 2px; font-size: 12px; line-height: 18px; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] .program-stamp-state > [data-program-state] { max-width: 100%; white-space: normal; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] [data-program-state="good"] { color: var(--program-summary-good); }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] [data-program-state="incomplete"] { color: var(--program-summary-warning); }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] [data-program-state="rejected"] { color: var(--program-summary-rejected); }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] .program-stamp-state-chevron { display: none; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] [data-testid="program-assignment-demand"] > button { color: var(--program-summary-warning); font-weight: 400; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] [data-testid="program-demand-breakdown"] { flex-direction: column; gap: 0; color: var(--program-summary-muted); }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] [data-testid="program-demand-breakdown"] :is(button, span) { color: var(--program-summary-muted); font-size: 11px; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] .program-stamp-calculation-lines { display: flex; flex-direction: column; align-items: flex-start; gap: 0; font-size: 12px; line-height: 19.2px; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] .program-stamp-calculation-primary { display: contents; font-size: inherit; line-height: inherit; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] .program-stamp-calculation-separator { display: none; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] .program-stamp-cell button:is([aria-label="Расчёт закрыт"], [aria-label="Без расчётной группы"]) { color: var(--program-summary-good); }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] .program-stamp-cell [data-program-slice="excess"],
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] [data-program-zero="excess"] { color: var(--program-summary-rejected); }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] .program-stamp-cell [data-program-slice="reduction"],
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"] [data-program-zero="reduction"] { color: var(--program-summary-warning); }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"][data-program-density="compact"] .program-stamp-cell button { min-height: 20px; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"][data-program-density="compact"] .program-stamp-state { gap: 0; }
+.program-ag-grid[data-program-theme="quartz"][data-program-grid="stamps"][data-program-density="compact"] [data-testid="program-demand-breakdown"] span { min-height: 20px; }
+/* Density insets belong to the renderer's block, inside AG's measured
+   wrapper. Changing only cell padding leaves cached auto heights unchanged. */
+.program-ag-grid[data-program-theme="quartz"] .ag-row:is([data-testid="line-program-card"], [data-testid="line-program-stamp"], [data-testid="line-program-unassigned"]) .ag-cell-auto-height { padding-block: 0; }
+.program-ag-grid[data-program-theme="quartz"] .ag-cell-auto-height :is(.program-line-identity, [data-testid="line-card-metrics"], .program-stamp-cell) { padding-block: 6px; }
+.program-ag-grid[data-program-theme="quartz"][data-program-density="compact"] .ag-cell-auto-height :is(.program-line-identity, [data-testid="line-card-metrics"], .program-stamp-cell) { padding-block: 2px; }
+.program-ag-grid[data-program-theme="quartz"][data-program-density="spacious"] .ag-cell-auto-height :is(.program-line-identity, [data-testid="line-card-metrics"], .program-stamp-cell) { padding-block: 12px; }
 /* Native column chooser, including those inside assignment dialogs. */
 .program-grid-popup.ag-dialog { width: min(352px, calc(100vw - 24px)) !important; min-width: 0 !important; max-width: calc(100vw - 24px) !important; height: 430px !important; min-height: 0 !important; max-height: calc(100vh - 24px) !important; border: 1px solid #dce5ed; border-radius: 10px; background: #fff; color: #475569; font-size: 13px; box-shadow: 0 8px 28px #1e3a5f24; overflow: hidden; }
 .program-grid-popup .ag-panel-title-bar { min-height: 42px; padding: 10px 14px; background: #f8fafc; border-bottom: 1px solid #e5ebf1; font-size: 13px; }
