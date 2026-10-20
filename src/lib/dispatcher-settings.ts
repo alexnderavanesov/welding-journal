@@ -13,8 +13,6 @@ import {
   CONTROL_HISTORY_REASON,
   TECHNOLOGY_CARD_REASON,
   JOINT_CORE_DATA_REASON,
-  LNK_RESULT_COMPLETENESS_REASON,
-  PSTO_RESULT_COMPLETENESS_REASON,
 } from '@/lib/dispatcher-check-reasons'
 import { isSystemDispatcherWarningTask, type DispatcherTask } from '@/lib/dispatcher-types'
 import { getSystemRule } from './system-rule-catalog'
@@ -53,8 +51,6 @@ export type DispatcherSettingId =
   | 'welder-stamp-expiry'
   | 'welder-dls-expiry'
   | 'check-joint-core-data'
-  | 'check-lnk-result-completeness'
-  | 'check-psto-result-completeness'
   | 'check-control-history'
   | 'check-technology-card'
 
@@ -110,9 +106,7 @@ export const DISPATCHER_SETTING_CODES: Record<DispatcherSettingId, string> = {
   'welder-dls-expiry': 'ДЗ-05',
   'line-psto-presence': 'СП-10',
   'check-joint-core-data': 'СП-03',
-  'check-lnk-result-completeness': 'СП-11',
-  'check-psto-result-completeness': 'СП-11',
-  'check-control-history': 'СП-12',
+  'check-control-history': 'СП-11',
 }
 
 export const DISPATCHER_SETTING_TASK_TYPE_LABELS: Record<DispatcherSettingId, string> = {
@@ -143,8 +137,6 @@ export const DISPATCHER_SETTING_TASK_TYPE_LABELS: Record<DispatcherSettingId, st
   'welder-stamp-expiry': 'Срок НАКС заканчивается',
   'welder-dls-expiry': 'Срок ДЛС заканчивается',
   'check-joint-core-data': 'Проверить основные данные стыка',
-  'check-lnk-result-completeness': 'Дозаполнить результат ЛНК',
-  'check-psto-result-completeness': 'Дозаполнить ПСТО/ТВМТ',
   'check-control-history': 'Проверить историю контроля',
 }
 
@@ -263,8 +255,8 @@ export const DISPATCHER_SETTING_HELP: Record<DispatcherSettingId, { meaning: str
     example: 'Дата сварки заполнена, но клейма пустые, или в группе клейма_1 заполнен только корень без заполнения и облицовки.',
   },
   'check-lnk-request-date-order': {
-    meaning: 'Проверяет формат всех дат основного ЛНК, НК до ТО и дубль-контроля, целостность заявки и календарную логику: у заявки должны быть имя и дата, контроль не раньше сварки, затем заявка и заключение в правильном порядке.',
-    example: 'В дате РК записан текст, у заявки заполнено только имя, контроль выполнен раньше сварки либо заключение датировано раньше заявки. Диспетчер соберет точные причины в СП-04.',
+    meaning: 'Проверяет формат дат основного ЛНК, НК до ТО и дубль-контроля и календарную логику: контроль не раньше сварки, затем заявка и заключение в правильном порядке. Названия и даты обязательны при сохранении документов.',
+    example: 'В дате РК записан текст, контроль выполнен раньше сварки либо заключение датировано раньше заявки. Диспетчер соберет точные причины в СП-04.',
   },
   'check-lnk-vik-date-order': {
     meaning: 'Следит, чтобы ВИК был оформлен не позже других видов ЛНК.',
@@ -275,24 +267,16 @@ export const DISPATCHER_SETTING_HELP: Record<DispatcherSettingId, { meaning: str
     example: 'РК заполнен как "годен", а ВИК по стыку еще ожидает НК. Диспетчер покажет задачу дозаполнить ВИК.',
   },
   'check-psto-request-date-order': {
-    meaning: 'Проверяет формат дат, целостность заявок, календарную и этапную логику основного и повторных циклов: сварка -> заявка ПСТО -> ПСТО -> заявка ТВМТ -> ТВМТ -> следующий цикл.',
-    example: 'В дате ПСТО записан текст, у заявки нет имени или даты, ТВМТ раньше ПСТО либо повторный цикл создан без негодной ТВМТ. Диспетчер соберет точные причины в СП-04.',
+    meaning: 'Проверяет формат дат, календарную и этапную логику основного и повторных циклов: сварка -> заявка ПСТО -> ПСТО -> заявка ТВМТ -> ТВМТ -> следующий цикл.',
+    example: 'В дате ПСТО записан текст или ТВМТ выполнена раньше ПСТО — СП-04; повторный цикл без негодной ТВМТ — СП-10.',
   },
   'check-joint-core-data': {
     meaning: 'Находит уже сохраненные стыки с некорректной датой сварки, ГИ, ПИ или отмены ПСТО, будущей датой сварки, пустыми группой материалов, типом соединения или способом сварки при заполненной сварке либо неверной структурой номера.',
     example: 'В дате ГИ записано 31.02, дата сварки находится в будущем, обязательное поле не заполнено либо номер стыка не начинается с настроенного индекса S/F. СП-03 объединит причины в одной задаче.',
   },
-  'check-lnk-result-completeness': {
-    meaning: 'Проверяет, что у каждого итогового результата ЛНК заполнены дата контроля и заключение.',
-    example: 'По РК сохранен результат «годен», но заключение пустое. СП-11 перечислит метод и недостающие поля.',
-  },
-  'check-psto-result-completeness': {
-    meaning: 'Проверяет все циклы стыка: у итогового ПСТО должны быть дата и диаграмма, а у итоговой ТВМТ - дата и заключение.',
-    example: 'В повторном цикле ПСТО нет диаграммы или у ТВМТ не указано заключение. СП-11 объединит все недостающие реквизиты в одну задачу на стык.',
-  },
   'check-control-history': {
     meaning: 'Находит сохраненный результат или заключение при выключенном назначении соответствующего контроля.',
-    example: 'Назначение РК очищено, но заключение РК осталось. СП-12 попросит вернуть назначение, выбрать «отменен» или удалить результат через отчет.',
+    example: 'Назначение РК очищено, но заключение РК осталось. СП-11 попросит вернуть назначение, выбрать «отменен» или удалить результат через отчет.',
   },
   'line-control-presence': {
     meaning: 'Один С/У закрывает одно место общей нормы. Два обязательных РК/УЗК/послойной замены на одном стыке дают СП-01, включая 100%-ные линии. Соседние стыки могут иметь разные методы. Неполная программа даёт обязательный СП-01 без переключателя.',
@@ -463,14 +447,6 @@ export const DISPATCHER_SETTING_ACTION_HELP: Record<DispatcherSettingId, Dispatc
     ACTION_DESCRIPTION,
   ],
   'check-joint-core-data': [
-    ACTION_CHAIN,
-    ACTION_DESCRIPTION,
-  ],
-  'check-lnk-result-completeness': [
-    ACTION_CHAIN,
-    ACTION_DESCRIPTION,
-  ],
-  'check-psto-result-completeness': [
     ACTION_CHAIN,
     ACTION_DESCRIPTION,
   ],
@@ -692,8 +668,6 @@ function getCheckTaskSettingId(reason?: string): DispatcherSettingId {
   if (reason === LNK_VIK_REQUIRED_REASON) return 'check-lnk-vik-required'
   if (reason === PSTO_REQUEST_DATE_ORDER_REASON) return 'check-psto-request-date-order'
   if (reason === JOINT_CORE_DATA_REASON) return 'check-joint-core-data'
-  if (reason === LNK_RESULT_COMPLETENESS_REASON) return 'check-lnk-result-completeness'
-  if (reason === PSTO_RESULT_COMPLETENESS_REASON) return 'check-psto-result-completeness'
   if (reason === CONTROL_HISTORY_REASON) return 'check-control-history'
   if (reason === 'повторный стык уже заварен' || reason === 'повторный стык содержит данные') return 'repeated-obsolete-check'
   if (reason === UNOFFICIAL_REJECTED_WITH_COIL_REASON) return 'chain-consistency'

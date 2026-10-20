@@ -80,7 +80,9 @@ export function useReportSwitchReset({
   defaultPstoRequestNaming,
   defaultPstoConclusionNaming,
 }: ReportSwitchResetInput) {
-  const previousReportRef = useRef<ActiveReport>('weldingJournal')
+  // Opening a report directly is not a report switch. A synthetic first switch
+  // would cancel the settings page's scroll to its rule link.
+  const previousReportRef = useRef<ActiveReport>(activeReport)
 
   useEffect(() => {
     let frameId: number | null = null

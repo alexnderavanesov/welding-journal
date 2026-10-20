@@ -6,10 +6,8 @@ import {
   getDispatcherTaskScopeLabel,
 } from '@/lib/dispatcher-task-actions-model'
 import type { LineConsistencyTask, PercentageLineControlTask, RepeatedJointCheckTask, WeldRow } from '@/lib/dispatcher-types'
-import {
-  LNK_RESULT_COMPLETENESS_REASON,
-  PSTO_RESULT_COMPLETENESS_REASON,
-} from '@/lib/dispatcher-check-reasons'
+import { LNK_VIK_DATE_ORDER_REASON } from '@/lib/lnk-chronology-checks'
+import { PSTO_REQUEST_DATE_ORDER_REASON } from '@/lib/psto-chronology-checks'
 
 describe('dispatcher task action model', () => {
   it('marks unofficiality unavailable with duplicates but leaves official restoration available', () => {
@@ -29,12 +27,12 @@ describe('dispatcher task action model', () => {
     expect(getDispatcherTaskScopeLabel(task)).toBe('Линия и клеймо')
   })
 
-  it('routes LNK and PSTO completeness checks to their own reports', () => {
-    expect(getDispatcherTaskActionSpecs(checkTask(LNK_RESULT_COMPLETENESS_REASON))[0]).toMatchObject({
+  it('routes LNK and PSTO chronology checks to their own reports', () => {
+    expect(getDispatcherTaskActionSpecs(checkTask(LNK_VIK_DATE_ORDER_REASON))[0]).toMatchObject({
       id: 'open-lnk',
       label: 'Исправить в ЛНК',
     })
-    expect(getDispatcherTaskActionSpecs(checkTask(PSTO_RESULT_COMPLETENESS_REASON))[0]).toMatchObject({
+    expect(getDispatcherTaskActionSpecs(checkTask(PSTO_REQUEST_DATE_ORDER_REASON))[0]).toMatchObject({
       id: 'open-psto',
       label: 'Исправить в ПСТО',
     })

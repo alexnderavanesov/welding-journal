@@ -12,8 +12,6 @@ import { PSTO_REQUEST_DATE_ORDER_REASON, isPstoChronologyCheckReason } from '@/l
 import {
   CONTROL_HISTORY_REASON,
   JOINT_CORE_DATA_REASON,
-  LNK_RESULT_COMPLETENESS_REASON,
-  PSTO_RESULT_COMPLETENESS_REASON,
 } from '@/lib/dispatcher-check-reasons'
 import {
   UNOFFICIAL_REJECTED_WITH_COIL_REASON,
@@ -65,8 +63,6 @@ export function getRepeatedJointTaskTitle(task: DispatcherTask) {
   if (reason === LNK_VIK_REQUIRED_REASON) return { joint: task.sourceJoint, type: 'Дозаполнить ВИК' }
   if (reason === PSTO_REQUEST_DATE_ORDER_REASON) return { joint: task.sourceJoint, type: 'Проверить даты ПСТО' }
   if (reason === JOINT_CORE_DATA_REASON) return { joint: task.sourceJoint, type: 'Проверить основные данные стыка' }
-  if (reason === LNK_RESULT_COMPLETENESS_REASON) return { joint: task.sourceJoint, type: 'Дозаполнить результат ЛНК' }
-  if (reason === PSTO_RESULT_COMPLETENESS_REASON) return { joint: task.sourceJoint, type: 'Дозаполнить результат ПСТО' }
   if (reason === CONTROL_HISTORY_REASON) return { joint: task.sourceJoint, type: 'Проверить историю контроля' }
   if (reason === 'проверить целостность цепочки') return { joint: task.sourceJoint, type: 'Проверить целостность цепочки' }
   if (reason === 'проверить целостность катушки') return { joint: task.sourceJoint, type: 'Проверить целостность цепочки' }

@@ -4,8 +4,6 @@ import {
   CONTROL_HISTORY_REASON,
   TECHNOLOGY_CARD_REASON,
   JOINT_CORE_DATA_REASON,
-  LNK_RESULT_COMPLETENESS_REASON,
-  PSTO_RESULT_COMPLETENESS_REASON,
 } from '@/lib/dispatcher-check-reasons'
 import {
   DEFAULT_DISPATCHER_SETTINGS,
@@ -71,8 +69,6 @@ const contracts: DispatcherRuleContract[] = [
   reminderContract('welder-dls-expiry', 'dls'),
   lineContract('line-psto-presence', 'pstoPresence'),
   rowContract('check-joint-core-data', checkTask(JOINT_CORE_DATA_REASON), [1]),
-  rowContract('check-lnk-result-completeness', checkTask(LNK_RESULT_COMPLETENESS_REASON), [1]),
-  rowContract('check-psto-result-completeness', checkTask(PSTO_RESULT_COMPLETENESS_REASON), [1]),
   rowContract('check-control-history', checkTask(CONTROL_HISTORY_REASON), [1]),
 ]
 

@@ -25,8 +25,6 @@ import {
 import {
   CONTROL_HISTORY_REASON,
   JOINT_CORE_DATA_REASON,
-  LNK_RESULT_COMPLETENESS_REASON,
-  PSTO_RESULT_COMPLETENESS_REASON,
 } from '@/lib/dispatcher-check-reasons'
 
 const row = { id: 1, joint: 'F1' } as WeldRow
@@ -82,8 +80,6 @@ describe('dispatcher settings', () => {
       [makeCheckTask(LNK_VIK_REQUIRED_REASON), 'check-lnk-vik-required'],
       [makeCheckTask(PSTO_REQUEST_DATE_ORDER_REASON), 'check-psto-request-date-order'],
       [makeCheckTask(JOINT_CORE_DATA_REASON), 'check-joint-core-data'],
-      [makeCheckTask(LNK_RESULT_COMPLETENESS_REASON), 'check-lnk-result-completeness'],
-      [makeCheckTask(PSTO_RESULT_COMPLETENESS_REASON), 'check-psto-result-completeness'],
       [makeCheckTask(CONTROL_HISTORY_REASON), 'check-control-history'],
       [makeCheckTask('повторный стык уже заварен'), 'repeated-obsolete-check'],
       [makeCheckTask('повторный стык содержит данные'), 'repeated-obsolete-check'],

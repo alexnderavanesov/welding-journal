@@ -10,8 +10,6 @@ import { PSTO_REQUEST_DATE_ORDER_REASON } from '@/lib/psto-chronology-checks'
 import {
   CONTROL_HISTORY_REASON,
   JOINT_CORE_DATA_REASON,
-  LNK_RESULT_COMPLETENESS_REASON,
-  PSTO_RESULT_COMPLETENESS_REASON,
 } from '@/lib/dispatcher-check-reasons'
 import { getJointStatusLabel } from '@/lib/lnk-status'
 import { formatDisplayDate } from '@/lib/date-format'
@@ -139,8 +137,6 @@ export function isBlockingRepeatedJointCheckTask(task: RepeatedJointCheckTask) {
     !isLnkChronologyReason(task.reason) &&
     task.reason !== PSTO_REQUEST_DATE_ORDER_REASON &&
     task.reason !== JOINT_CORE_DATA_REASON &&
-    task.reason !== LNK_RESULT_COMPLETENESS_REASON &&
-    task.reason !== PSTO_RESULT_COMPLETENESS_REASON &&
     task.reason !== CONTROL_HISTORY_REASON &&
     !isIncompleteWeldStampGroupReason(task.reason)
   )
@@ -483,8 +479,6 @@ function dedupeRepeatedJointCheckTasks(tasks: RepeatedJointCheckTask[]) {
       isLnkChronologyReason(task.reason) ||
       task.reason === PSTO_REQUEST_DATE_ORDER_REASON ||
       task.reason === JOINT_CORE_DATA_REASON ||
-      task.reason === LNK_RESULT_COMPLETENESS_REASON ||
-      task.reason === PSTO_RESULT_COMPLETENESS_REASON ||
       task.reason === CONTROL_HISTORY_REASON ||
       isIncompleteWeldStampGroupReason(task.reason) ||
       task.reason === COIL_CHAIN_INTEGRITY_REASON

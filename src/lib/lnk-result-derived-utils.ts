@@ -1,4 +1,5 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getDocumentRequisiteErrors } from '@/lib/document-requisites'
 import { buildLayeredControlAssignment } from '@/lib/layered-control-rules'
 import { getLnkResultRestrictionReason, formatLnkResultRuleReason } from '@/lib/lnk-result-policy'
 import { getDateInputValidationReason } from '@/lib/date-format'
@@ -187,7 +188,13 @@ export function getLnkResultSaveBlockReason({
   if (hasNonEmptyRows) {
     const reasons = [getDateInputValidationReason(draft.controlDate, 'Дата контроля', { required: true }),
       systemDocumentCreationPlan ? systemDocumentCreationPlan.error :
-        getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName).trim() ? '' : 'Укажите наименование заключения.'].filter(Boolean)
+        getRequestNameFromNaming(draft.conclusionNaming, nextConclusionName).trim() ? '' : 'Укажите наименование заключения.',
+      ...(method ? selectedRows.flatMap(row => isFinalLnkResultValue(getEffectiveLnkResultDraftValueForRow(row, draft))
+        ? getDocumentRequisiteErrors({ name: row[method.requestKey], date: row[method.requestDateKey],
+          nameLabel: `наименование заявки ${method.code}`, dateLabel: `Дата заявки ${method.code}` })
+          .map(message => `Стык ${row.joint || row.id}: ${message}`)
+        : []) : []),
+    ].filter(Boolean)
     if (reasons.length) return reasons.join('\n')
   }
 

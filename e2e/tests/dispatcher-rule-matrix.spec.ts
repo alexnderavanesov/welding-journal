@@ -9,6 +9,7 @@ test('все ДЗ: реальные правила → сервер → PostgreS
   })
   expect(stderr).toBe('')
   const result = JSON.parse(stdout.trim())
-  expect(result).toMatchObject({ settings: 30, persistedRuleChains: 28, reminderRules: 2, mandatoryProgramRule: true, mandatoryResultRules: 2, virtualFieldStatementsPerPage: 1, removedFactsCleared: true, actualityRestoresContinuations: true, actualityMismatchBothRecoveryPaths: true })
+  // Completeness diagnostics stay retired; history protection is now СП-11.
+  expect(result).toMatchObject({ settings: 28, persistedRuleChains: 26, reminderRules: 2, mandatoryProgramRule: true, mandatoryResultRules: 2, virtualFieldStatementsPerPage: 1, removedFactsCleared: true, actualityRestoresContinuations: true, actualityMismatchBothRecoveryPaths: true, historyRuleRenumbered: true })
   console.log('Dispatcher PostgreSQL matrix:', result)
 })

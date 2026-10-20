@@ -168,12 +168,11 @@ export function getDispatcherTaskActionSpecs(
   if (
     settingId === 'check-lnk-request-date-order' ||
     settingId === 'check-lnk-vik-date-order' ||
-    settingId === 'check-lnk-vik-required' ||
-    settingId === 'check-lnk-result-completeness'
+    settingId === 'check-lnk-vik-required'
   ) {
     return [action('open-lnk', 'Исправить в ЛНК', 'primary'), action('show-task', 'Показать в отчете')]
   }
-  if (settingId === 'check-psto-request-date-order' || settingId === 'check-psto-result-completeness') {
+  if (settingId === 'check-psto-request-date-order') {
     return [action('open-psto', 'Исправить в ПСТО', 'primary'), action('show-task', 'Показать в отчете')]
   }
   if (settingId === 'check-welder-stamp') {

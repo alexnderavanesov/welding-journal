@@ -65,6 +65,8 @@ export function buildRepeatPstoResultCycle({
   saveCheckSettings?: SaveCheckSettings
 }): PstoRepeatCycleWrite {
   const cycle = requireCurrentRepeatCycle(row, 'waiting-psto')
+  assertDocumentRequisites({ name: cycle.pstoRequest, date: cycle.pstoRequestDate,
+    nameLabel: 'наименование заявки повторной ПСТО', dateLabel: 'Дата заявки повторной ПСТО' })
   assertDocumentRequisites({ name: diagramName, date: pstoDate, nameLabel: 'наименование диаграммы повторной ПСТО', dateLabel: 'Дата повторной ПСТО' })
   const date = parseDateLikeToIso(pstoDate)!
   const name = diagramName.trim()
@@ -134,6 +136,8 @@ export function buildRepeatTvmtResultCycle({
   saveCheckSettings?: SaveCheckSettings
 }): PstoRepeatCycleWrite {
   const cycle = requireCurrentRepeatCycle(row, 'waiting-tvmt')
+  assertDocumentRequisites({ name: cycle.tvmtRequest, date: cycle.tvmtRequestDate,
+    nameLabel: 'наименование заявки ТВМТ', dateLabel: 'Дата заявки ТВМТ' })
   assertDocumentRequisites({ name: conclusionName, date: controlDate, nameLabel: 'наименование заключения ТВМТ', dateLabel: 'Дата ТВМТ' })
   const date = parseDateLikeToIso(controlDate)!
   const normalizedResult = normalizeTvmtResult(result)

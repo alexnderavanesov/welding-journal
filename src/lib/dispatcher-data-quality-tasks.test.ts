@@ -8,10 +8,8 @@ import {
   buildIncompleteWelderStampGroupTasks,
   buildJointCoreDataCheckTasks,
   buildLnkChronologyCheckTasks,
-  buildLnkResultCompletenessCheckTasks,
   buildPrimaryLnkStageDebtSystemWarnings,
   buildPstoChronologyCheckTasks,
-  buildPstoResultCompletenessCheckTasks,
   buildWelderStampCompatibilityCheckTasks,
 } from '@/lib/repeated-joint-check-tasks'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -362,111 +360,6 @@ describe('dispatcher data quality tasks', () => {
     expect(tasks[0].details).toContain('при заполненной дате сварки не указан способ сварки')
   })
 
-  it('aggregates missing LNK result fields by method in one DЗ-32 task', () => {
-    const tasks = buildLnkResultCompletenessCheckTasks([
-      row({
-        vikResult: 'годен',
-        vikConclusionDate: '',
-        vikConclusion: '',
-        rkResult: 'ремонт',
-        rkConclusionDate: '2026-07-02',
-        rkConclusion: '',
-      }),
-    ])
-
-    expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-11')
-    expect(tasks[0].details).toContain('ВИК: не заполнены дата контроля и заключение')
-    expect(tasks[0].details).toContain('РК: не заполнено заключение')
-  })
-
-  it('keeps a cancelled good LNK result covered by DЗ-32', () => {
-    const tasks = buildLnkResultCompletenessCheckTasks([
-      row({ hasVik: 'отменен', vikResult: 'годен (отменен)', vikConclusionDate: '', vikConclusion: '' }),
-    ])
-
-    expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-11')
-    expect(tasks[0].details).toContain('ВИК: не заполнены дата контроля и заключение')
-  })
-
-  it('aggregates missing PSTO result fields in one DЗ-33 task', () => {
-    const tasks = buildPstoResultCompletenessCheckTasks([
-      row({ pstoResult: 'проведено', pstoDate: '', heatTreatmentDiagram: '' }),
-    ])
-
-    expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-11')
-    expect(tasks[0].details).toContain('дата ПСТО и диаграмма термообработки')
-  })
-
-  it('keeps cancelled completed PSTO history covered by DЗ-33', () => {
-    const tasks = buildPstoResultCompletenessCheckTasks([
-      row({
-        pstoRequired: 'отменен',
-        pstoResult: 'проведено (отменен)',
-        pstoDate: '2026-07-02',
-        heatTreatmentDiagram: '',
-      }),
-    ])
-
-    expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-11')
-    expect(tasks[0].details).toContain('основной цикл ПСТО: не заполнено диаграмма термообработки')
-  })
-
-  it('checks PSTO and TVMT completeness in repeat cycles through the same DЗ-33 task', () => {
-    const tasks = buildPstoResultCompletenessCheckTasks([
-      row({
-        pstoRequired: 'да',
-        pstoRequest: 'ПСТО-1',
-        pstoResult: 'проведено',
-        pstoDate: '2026-07-02',
-        heatTreatmentDiagram: 'Диаграмма-1',
-        tvmtRequest: 'ТВМТ-1',
-        tvmtResult: 'не годен',
-        tvmtConclusionDate: '2026-07-03',
-        tvmtConclusion: 'ТВМТ-1',
-        pstoRepeatCycles: [{
-          id: 2,
-          weldJointId: 1,
-          sequence: 2,
-          pstoRequest: 'ПСТО-2',
-          pstoResult: 'проведено',
-          pstoDate: '',
-          heatTreatmentDiagram: '',
-          tvmtRequest: 'ТВМТ-2',
-          tvmtResult: 'годен',
-          tvmtConclusionDate: '',
-          tvmtConclusion: '',
-        }],
-      }),
-    ])
-
-    expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-11')
-    expect(tasks[0].details).toContain('повторный цикл #2 ПСТО')
-    expect(tasks[0].details).toContain('повторный цикл #2 ТВМТ')
-  })
-
-  it('does not include NK duplicate controls in PSTO cycle completeness', () => {
-    const tasks = buildPstoResultCompletenessCheckTasks([
-      row({
-        duplicateControls: [{
-          id: 10,
-          weldJointId: 1,
-          method: 'РК',
-          result: 'годен',
-          controlDate: '',
-          conclusion: '',
-          conclusionDate: '',
-        }],
-      }),
-    ])
-
-    expect(tasks).toEqual([])
-  })
-
   it('matches ZВ-27 exactly for DЗ-34 and ignores requests or accounting fields without physical history', () => {
     const tasks = buildControlHistoryCheckTasks([
       row({ id: 1, hasRk: '', rkResult: 'годен' }),
@@ -476,7 +369,7 @@ describe('dispatcher data quality tasks', () => {
     ])
 
     expect(tasks).toHaveLength(1)
-    expect(tasks.map(getDispatcherTaskCode)).toEqual(['СП-12'])
+    expect(tasks.map(getDispatcherTaskCode)).toEqual(['СП-11'])
     expect(tasks.map((task) => task.row.id)).toEqual([1])
     expect(tasks[0].details).toContain('РК')
   })
@@ -487,7 +380,7 @@ describe('dispatcher data quality tasks', () => {
     ])
 
     expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-12')
+    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-11')
     expect(tasks[0].details).toContain('РК')
   })
 

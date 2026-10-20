@@ -13,7 +13,7 @@ import {
 
 describe('save check and dispatcher links', () => {
   it('adds the technology-card reminder without restoring obsolete guards', () => {
-    expect(Object.keys(DEFAULT_DISPATCHER_SETTINGS)).toHaveLength(30)
+    expect(Object.keys(DEFAULT_DISPATCHER_SETTINGS)).toHaveLength(28)
     expect(DISPATCHER_SETTING_CODES['check-technology-card']).toBe('ДЗ-06')
     expect(Object.values(DISPATCHER_SETTING_CODES)).not.toContain('ДЗ-16')
     expect(Object.values(DISPATCHER_SETTING_CODES)).not.toContain('ДЗ-17')
@@ -57,14 +57,6 @@ describe('save check and dispatcher links', () => {
       'dateFormat',
       'weldDateNotFuture',
     ])
-    expect(getSaveCheckSettingIdsForDispatcher('check-lnk-result-completeness')).toEqual([
-      'lnkResultControlDateRequired',
-      'lnkResultConclusionRequired',
-    ])
-    expect(getSaveCheckSettingIdsForDispatcher('check-psto-result-completeness')).toEqual([
-      'pstoResultDateRequired',
-      'pstoResultDiagramRequired',
-    ])
     expect(getSaveCheckSettingIdsForDispatcher('check-control-history')).toEqual([
       'controlHistoryProtection',
     ])
@@ -82,10 +74,10 @@ describe('save check and dispatcher links', () => {
     expect(new Set(keys).size).toBe(keys.length)
   })
 
-  it('links every stored-data save check and leaves only the operation-only rename guard unpaired', () => {
+  it('links every stored-data save check and leaves result completeness independent of dispatcher diagnostics', () => {
     const unlinked = Object.keys(SAVE_CHECK_SETTING_CODES)
       .filter((id) => getDispatcherSettingIdsForSaveCheck(id as keyof typeof SAVE_CHECK_SETTING_CODES).length === 0)
 
-    expect(unlinked).toEqual(['officialArchive', 'manualJointName', 'systemJointRenameProtection'])
+    expect(unlinked).toEqual(['officialArchive', 'lnkResultControlDateRequired', 'lnkResultConclusionRequired', 'pstoResultDateRequired', 'pstoResultDiagramRequired', 'manualJointName', 'systemJointRenameProtection'])
   })
 })

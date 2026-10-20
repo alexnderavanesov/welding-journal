@@ -64,7 +64,10 @@ for (const final of ['original', 'renamed-repair', 'mixed-actuality'] as const) 
     const workspace = page.getByRole('dialog', { name: 'Диспетчер задач', exact: true })
     await workspace.getByRole('textbox', { name: 'Поиск задач диспетчера' }).fill('СП-09')
     await workspace.getByRole('button', { name: 'Найти', exact: true }).click()
-    const open = workspace.getByRole('button', { name: 'Проверить отмену ошибочной катушки', exact: true })
+    // A stale snapshot from the preceding SQL fixture can remain visible while
+    // refreshing. Act on this fixture's chain, never an unrelated deleted one.
+    const open = workspace.getByRole('article').filter({ hasText: lineName })
+      .getByRole('button', { name: 'Проверить отмену ошибочной катушки', exact: true })
     await open.click()
     const dialog = page.getByRole('dialog', { name: 'Отменить ошибочно внесённую катушку', exact: true })
     if (final === 'mixed-actuality') {

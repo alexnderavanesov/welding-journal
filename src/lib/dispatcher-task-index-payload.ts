@@ -2,7 +2,9 @@ import type { JointChainContinuation, RepeatedJointTask } from '@/lib/dispatcher
 
 // Increment when dispatcher rules change in a way that requires existing rows
 // to be recalculated without a corresponding database mutation.
-export const DISPATCHER_TASK_CALCULATION_VERSION = 72
+// Rebuild persisted pages and row codes after renumbering history protection to SP-11.
+// The former SP-11 document-completeness diagnostics remain retired.
+export const DISPATCHER_TASK_CALCULATION_VERSION = 74
 export const DISPATCHER_TASK_PAGE_SIZE = 100
 
 type DispatcherTaskIndexPayload = {

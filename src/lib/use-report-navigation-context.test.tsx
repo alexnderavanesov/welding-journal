@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ActiveReport } from '@/lib/home-state'
 import { useReportNavigationContext } from '@/lib/use-report-navigation-context'
+import { buildWeldColumnValueFilter } from '@/lib/weld-column-choice-filter'
 import type { WeldFilters } from '@/server/weld-contracts'
 
 type HookProps = {
@@ -53,6 +54,31 @@ describe('useReportNavigationContext', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+  })
+
+  it.each([
+    ['weldingJournal', '/journal', 'setColumnFilters'],
+    ['lnk', '/lnk', 'setLnkFilters'],
+    ['heatTreatment', '/psto', 'setHeatTreatmentFilters'],
+  ] as const)('restores the renamed history rule in saved %s filters without losing other context', (report, path, setter) => {
+    const setters = {
+      setColumnFilters: vi.fn(), setHeatTreatmentFilters: vi.fn(), setLnkFilters: vi.fn(),
+      setSelectedWeldingJournalIds: vi.fn(), setSelectedHeatTreatmentIds: vi.fn(), setSelectedLnkIds: vi.fn(),
+    }
+    window.history.replaceState({ __TSR_key: 'saved-rule' }, '', path)
+    window.sessionStorage.setItem('welding-report-navigation:v1:saved-rule', JSON.stringify({
+      version: 1, report,
+      filters: { dispatcherTasks: buildWeldColumnValueFilter(['СП-12', 'СП-04']), line: 'СП-12' },
+      selectedRowIds: [12, 14], scrollPosition: { left: 84, top: 420 },
+    }))
+    renderHook(() => useReportNavigationContext({ ...createHookProps(report), ...setters }))
+    act(() => vi.runAllTimers())
+    expect(setters[setter]).toHaveBeenCalledWith({
+      dispatcherTasks: buildWeldColumnValueFilter(['СП-11', 'СП-04']), line: 'СП-12',
+    })
+    expect(setters[report === 'weldingJournal' ? 'setSelectedWeldingJournalIds' :
+      report === 'lnk' ? 'setSelectedLnkIds' : 'setSelectedHeatTreatmentIds']).toHaveBeenCalledWith(new Set([12, 14]))
+    expect(window.scrollTo).toHaveBeenCalledWith({ left: 84, top: 420, behavior: 'auto' })
   })
 
   it('restores report filters, selection, and scroll on browser Back and Forward entries', () => {
@@ -316,7 +342,7 @@ describe('useReportNavigationContext', () => {
       __weldingReportContext: {
         version: 1,
         report: 'lnk',
-        filters: { status: 'неофициальный', line: '330-D03' },
+        filters: { status: 'неофициальный', line: '330-D03', dispatcherTasks: ' сп-12 ' },
         selectedRowIds: [41],
         scrollPosition: { left: 0, top: 0 },
       },
@@ -331,6 +357,7 @@ describe('useReportNavigationContext', () => {
     expect(setters.setLnkFilters).toHaveBeenCalledWith({
       officiality: 'неофициальный',
       line: '330-D03',
+      dispatcherTasks: 'СП-11',
     })
     expect(setters.setSelectedLnkIds).toHaveBeenCalledWith(new Set([41]))
   })

@@ -79,7 +79,7 @@ describe('user guide content', () => {
     expect(content).toContain('старые выключенные ЗВ-20/ДЗ-17 правило не отключают')
     expect(content).not.toContain('Отключать только если по проекту действует отдельное решение')
     expect(JSON.stringify(REFERENCE_GUIDE_SECTIONS_2)).toContain('даже если в Excel изменен только диаметр')
-    expect(JSON.stringify(WORK_GUIDE_SECTIONS)).toContain('Все правила перенумерованы: 12 обязательных СП, 2 отключаемые ЗВ и 6 отключаемых ДЗ')
+    expect(JSON.stringify(WORK_GUIDE_SECTIONS)).toContain('Действуют: 11 обязательных СП, 2 отключаемые ЗВ и 6 отключаемых ДЗ')
   })
   it('explains the release waiting page and avoids automatic retry of a save', () => {
     const content = JSON.stringify(WORK_GUIDE_SECTIONS)

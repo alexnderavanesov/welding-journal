@@ -108,10 +108,10 @@ describe('settings system rule catalog', () => {
     expect(mocks.settingsPassword).toHaveBeenCalledTimes(3)
   })
 
-  it('opens twelve mandatory rules and eight optional guards/reminders without data requests', async () => {
+  it('opens eleven mandatory rules and eight optional guards/reminders without data requests', async () => {
     const client = mount()
     const rules = screen.getAllByRole('article')
-    expect(rules).toHaveLength(12)
+    expect(rules).toHaveLength(11)
     expect(screen.getByRole('heading', { name: 'СП-07 · Допустимые результаты ЛНК' })).toBeVisible()
     for (const rule of rules) expect(within(rule).queryByRole('checkbox')).not.toBeInTheDocument()
     expect(screen.getAllByRole('tab')).toHaveLength(5)

@@ -501,7 +501,6 @@ export function validateServerWeldRecords({
     const workflowStageReason = getSystemWorkflowStageTransitionReason(record, previous, context)
     if (workflowStageReason) throw new Error(`${prefix}${workflowStageReason}`)
     const systemDocumentReason = getSystemDocumentIntegrityReason(record, previous)
-    if (systemDocumentReason) throw new Error(`${prefix}${systemDocumentReason}`)
     const formReason = getWeldFormSaveBlockReason(
       record,
       { ...previous, programChainState: previous ? trustedChainStates.get(previous.id) : undefined } as WeldInput,
@@ -518,7 +517,7 @@ export function validateServerWeldRecords({
       record,
       previous,
     )
-    const validationReasons = [...new Set([formReason, resultCompletenessReason].filter(Boolean))]
+    const validationReasons = [...new Set([systemDocumentReason, formReason, resultCompletenessReason].filter(Boolean))]
     if (validationReasons.length) throw new Error(`${prefix}${validationReasons.join('\n')}`)
 
     if (shouldValidateOfficialStampCompatibilityForSave(record, previous)) {
@@ -541,26 +540,25 @@ export function getSystemDocumentIntegrityReason(
   record: WeldInput,
   previous: WeldJoint | undefined,
 ) {
+  const errors: string[] = []
   for (const method of LNK_METHODS) {
+    const hasOutcomeTrace = isFinalLnkResultValue(record[method.resultKey]) ||
+      hasText(record[method.conclusionDateKey]) ||
+      hasText(record[method.conclusionKey])
+    const outcomeOrRequestChanged = [method.requestKey, method.requestDateKey, method.resultKey,
+      method.conclusionDateKey, method.conclusionKey].some(key => hasChangedOptionalField(record, previous, key))
+    if (!hasText(record[method.requestKey]) && hasOutcomeTrace && outcomeOrRequestChanged) {
+      errors.push(`Результат, дату контроля или заключение ${method.code} нельзя сохранять без заявки ЛНК.`)
+    }
     const reason = getRequestDocumentIntegrityReason({
       record,
       previous,
       nameKey: method.requestKey,
       dateKey: method.requestDateKey,
       label: `заявки ${method.code}`,
+      requiredByOutcome: hasOutcomeTrace && outcomeOrRequestChanged,
     })
-    if (reason) return reason
-
-    const hasOutcomeTrace = isFinalLnkResultValue(record[method.resultKey]) ||
-      hasText(record[method.conclusionDateKey]) ||
-      hasText(record[method.conclusionKey])
-    const outcomeOrRequestChanged = hasChangedOptionalField(record, previous, method.requestKey) ||
-      hasChangedOptionalField(record, previous, method.resultKey) ||
-      hasChangedOptionalField(record, previous, method.conclusionDateKey) ||
-      hasChangedOptionalField(record, previous, method.conclusionKey)
-    if (!hasText(record[method.requestKey]) && hasOutcomeTrace && outcomeOrRequestChanged) {
-      return `Результат, дату контроля или заключение ${method.code} нельзя сохранять без заявки ЛНК.`
-    }
+    if (reason) errors.push(reason)
   }
 
   const pstoRequestReason = getRequestDocumentIntegrityReason({
@@ -569,8 +567,11 @@ export function getSystemDocumentIntegrityReason(
     nameKey: 'pstoRequest',
     dateKey: 'pstoRequestDate',
     label: 'заявки ПСТО',
+    requiredByOutcome: (isCompletedPstoValue(record.pstoResult) || hasText(record.pstoDate) || hasText(record.heatTreatmentDiagram)) &&
+      (['pstoRequest', 'pstoRequestDate', 'pstoResult', 'pstoDate', 'heatTreatmentDiagram'] as const)
+        .some(key => hasChangedOptionalField(record, previous, key)),
   })
-  if (pstoRequestReason) return pstoRequestReason
+  if (pstoRequestReason) errors.push(pstoRequestReason)
 
   const tvmtRequestReason = getRequestDocumentIntegrityReason({
     record,
@@ -578,8 +579,11 @@ export function getSystemDocumentIntegrityReason(
     nameKey: 'tvmtRequest',
     dateKey: 'tvmtRequestDate',
     label: 'заявки ТВМТ',
+    requiredByOutcome: (Boolean(normalizeTvmtResult(record.tvmtResult)) || hasText(record.tvmtConclusionDate) || hasText(record.tvmtConclusion)) &&
+      (['tvmtRequest', 'tvmtRequestDate', 'tvmtResult', 'tvmtConclusionDate', 'tvmtConclusion'] as const)
+        .some(key => hasChangedOptionalField(record, previous, key)),
   })
-  if (tvmtRequestReason) return tvmtRequestReason
+  if (tvmtRequestReason) errors.push(tvmtRequestReason)
 
   const hasTvmtResult = Boolean(normalizeTvmtResult(record.tvmtResult))
   const hadTvmtResult = Boolean(normalizeTvmtResult(previous?.tvmtResult))
@@ -590,14 +594,14 @@ export function getSystemDocumentIntegrityReason(
     (hasText(record.tvmtConclusionDate) || hasText(record.tvmtConclusion)) &&
     (tvmtDateChanged || tvmtConclusionChanged || hadTvmtResult)
   ) {
-    return 'Дату или заключение ТВМТ нельзя оставить без результата ТВМТ.'
+    errors.push('Дату или заключение ТВМТ нельзя оставить без результата ТВМТ.')
   }
   if (hasTvmtResult && (!hadTvmtResult || tvmtDateChanged || tvmtConclusionChanged || hasChangedOptionalField(record, previous, 'tvmtResult'))) {
-    return getDocumentRequisiteErrors({ name: record.tvmtConclusion, date: record.tvmtConclusionDate,
-      nameLabel: 'заключение ТВМТ', dateLabel: 'Дата ТВМТ' }).join('\n')
+    errors.push(...getDocumentRequisiteErrors({ name: record.tvmtConclusion, date: record.tvmtConclusionDate,
+      nameLabel: 'заключение ТВМТ', dateLabel: 'Дата ТВМТ' }))
   }
 
-  return ''
+  return [...new Set(errors)].join('\n')
 }
 
 function getRequestDocumentIntegrityReason({
@@ -606,17 +610,23 @@ function getRequestDocumentIntegrityReason({
   nameKey,
   dateKey,
   label,
+  requiredByOutcome = false,
 }: {
   record: WeldInput
   previous: WeldJoint | undefined
   nameKey: WeldFieldKey
   dateKey: WeldFieldKey
   label: string
+  requiredByOutcome?: boolean
 }) {
   const hasName = hasText(record[nameKey])
   const hadName = hasText(previous?.[nameKey as keyof WeldJoint])
   const nameChanged = hasChangedOptionalField(record, previous, nameKey)
   const dateChanged = hasChangedOptionalField(record, previous, dateKey)
+  if (requiredByOutcome) {
+    return getDocumentRequisiteErrors({ name: record[nameKey], date: record[dateKey],
+      nameLabel: `наименование ${label}`, dateLabel: `Дата ${label}` }).join('\n')
+  }
   if (hasText(record[dateKey]) && !hasName && (nameChanged || dateChanged)) {
     return `Дату ${label} нельзя указать без наименования заявки.`
   }

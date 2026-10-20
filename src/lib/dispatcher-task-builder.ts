@@ -84,9 +84,7 @@ export function buildVisibleDispatcherTasks({
         includeIncompleteStampChecks: isDispatcherSettingEnabled('check-incomplete-stamps', dispatcherSettings),
         includeJointCoreDataChecks: isDispatcherSettingEnabled('check-joint-core-data', dispatcherSettings),
         includeLineConsistencyTasks: isAnyDispatcherSettingEnabled(LINE_CONSISTENCY_DISPATCHER_SETTING_IDS, dispatcherSettings),
-        includeLnkResultCompletenessChecks: isDispatcherSettingEnabled('check-lnk-result-completeness', dispatcherSettings),
         includePercentageLineControlTasks: isAnyDispatcherSettingEnabled(PERCENTAGE_LINE_DISPATCHER_SETTING_IDS, dispatcherSettings),
-        includePstoResultCompletenessChecks: isDispatcherSettingEnabled('check-psto-result-completeness', dispatcherSettings),
         includeWelderStampCompatibilityChecks: isDispatcherSettingEnabled('check-welder-stamp', dispatcherSettings),
       }), ...(technologyCardReview && isDispatcherSettingEnabled('check-technology-card', dispatcherSettings)
         ? buildTechnologyCardTasks(rows, technologyCardReview) : [])].filter(

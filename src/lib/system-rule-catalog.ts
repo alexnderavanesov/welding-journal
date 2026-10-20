@@ -1,4 +1,4 @@
-export type SystemRuleCode = 'СП-01' | 'СП-02' | 'СП-03' | 'СП-04' | 'СП-05' | 'СП-06' | 'СП-07' | 'СП-08' | 'СП-09' | 'СП-10' | 'СП-11' | 'СП-12'
+export type SystemRuleCode = 'СП-01' | 'СП-02' | 'СП-03' | 'СП-04' | 'СП-05' | 'СП-06' | 'СП-07' | 'СП-08' | 'СП-09' | 'СП-10' | 'СП-11'
 
 export type SystemRuleCatalogEntry = {
   code: SystemRuleCode
@@ -98,18 +98,11 @@ const entries: SystemRuleCatalogEntry[] = [
     examples: ['Наличие выполненной ПСТО у соседнего стыка не освобождает новый стык от условий запуска.'], aliases: [],
   },
   {
-    code: 'СП-11', title: 'Полнота результатов и документов',
-    condition: 'У фактических результатов, заявок, заключений или диаграмм не хватает необходимых реквизитов.',
-    effect: 'Новый или исправляемый результат требует название документа и фактическую дату; в дубль-контроле обязательны обе даты. Старая неполная запись остаётся фактом и видна в СП-11; несвязанное редактирование разрешено. Перед переносом этапа и операциями с документом дозаполните реквизиты. Порядок дат проверяется отдельно по СП-04.',
-    correction: 'Откройте указанный результат или документ и довнесите достоверные реквизиты.',
-    examples: ['У результата РК нет номера заключения: результат остается фактом, а оформление — незавершенным.'], aliases: [],
-  },
-  {
-    code: 'СП-12', title: 'Сохранность истории контроля',
+    code: 'СП-11', title: 'Сохранность истории контроля',
     condition: 'Изменение назначения или удаление данных разрушает сохраненные результаты, документы либо зависимые этапы.',
     effect: 'Недопустимое изменение блокируется. Старая противоречивая история остается видимой и исправляется предусмотренными действиями, а не выключением защиты.',
     correction: 'Откройте соответствующий процесс и исправьте назначение, результат или документ с учетом зависимостей.',
-    examples: ['Нельзя очистить назначение РК, оставив его заключение и результат.'], aliases: [],
+    examples: ['Нельзя очистить назначение РК, оставив его заключение и результат.'], aliases: ['СП-12'],
   },
 ]
 
@@ -120,7 +113,7 @@ const RULE_ANCHORS: Record<SystemRuleCode, string> = {
   'СП-01': 'line-program', 'СП-02': 'welder-qualification', 'СП-03': 'welding-completeness',
   'СП-04': 'chronology', 'СП-05': 'method-sequence', 'СП-06': 'stage-sequence',
   'СП-07': 'lnk-results', 'СП-08': 'repair-control', 'СП-09': 'joint-chains',
-  'СП-10': 'psto-cycles', 'СП-11': 'document-completeness', 'СП-12': 'control-history',
+  'СП-10': 'psto-cycles', 'СП-11': 'control-history',
 }
 const LEGACY_RULE_ANCHORS: Record<string, SystemRuleCode> = {
   'system-rule-sp-01': 'СП-06', 'system-rule-sp-02': 'СП-01', 'system-rule-sp-03': 'СП-08',
@@ -135,8 +128,7 @@ const LEGACY_SETTING_ANCHORS: Partial<Record<SystemRuleCode, readonly string[]>>
   'СП-05': ['save-check-setting-lnkResultVikDateBeforeOther', 'save-check-setting-lnkResultVikRequiredBeforeOther', 'dispatcher-setting-check-lnk-vik-date-order', 'dispatcher-setting-check-lnk-vik-required'],
   'СП-09': ['save-check-setting-systemJointRenameProtection', ...['repeated-create', 'repeated-create-official-from-unofficial', 'repeated-coil', 'repeated-delete', 'repeated-rename', 'repeated-obsolete-check', 'chain-consistency'].map(id => `dispatcher-setting-${id}`)],
   'СП-10': ['dispatcher-setting-line-psto-presence'],
-  'СП-11': ['lnkResultControlDateRequired', 'lnkResultConclusionRequired', 'pstoResultDateRequired', 'pstoResultDiagramRequired'].map(id => `save-check-setting-${id}`).concat(['dispatcher-setting-check-lnk-result-completeness', 'dispatcher-setting-check-psto-result-completeness']),
-  'СП-12': ['save-check-setting-controlHistoryProtection', 'dispatcher-setting-check-control-history'],
+  'СП-11': ['save-check-setting-controlHistoryProtection', 'dispatcher-setting-check-control-history'],
 }
 
 export const LNK_RESULT_POLICY_GUIDE_ROWS = [

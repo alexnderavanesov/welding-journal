@@ -43,7 +43,7 @@ export type SaveCheckSettings = Record<SaveCheckSettingId, boolean>
 export const OPTIONAL_SAVE_CHECK_SETTING_IDS: ReadonlySet<SaveCheckSettingId> = new Set(['officialArchive', 'manualJointName'])
 
 // Incomplete welding metadata still creates SP-03. Document requisites are
-// mandatory on new/corrected results; SP-11 retains legacy diagnostics.
+// mandatory on new/corrected results independently of dispatcher diagnostics.
 const COMPLETENESS_SAVE_SETTING_IDS: ReadonlySet<SaveCheckSettingId> = new Set([
   'requiredRootStampWithWeldDate', 'requiredMaterialGroupWithWeldDate',
   'requiredConnectionTypeWithWeldDate', 'requiredWeldingMethodWithWeldDate',
@@ -84,14 +84,14 @@ export const SAVE_CHECK_SETTING_CODES: Record<SaveCheckSettingId, string> = {
   officialDiameter: 'СП-02', officialThickness: 'СП-02', officialDls: 'СП-02',
   requiredRootStampWithWeldDate: 'СП-03', requiredMaterialGroupWithWeldDate: 'СП-03',
   requiredConnectionTypeWithWeldDate: 'СП-03', requiredWeldingMethodWithWeldDate: 'СП-03',
-  dateFormat: '', weldDateNotFuture: 'СП-04', lnkResultControlDateRequired: 'СП-11',
+  dateFormat: '', weldDateNotFuture: 'СП-04', lnkResultControlDateRequired: '',
   lnkResultControlDateFormat: '', lnkResultDateAfterWeldDate: 'СП-04',
   lnkResultRequestDateOrder: 'СП-04', lnkResultVikDateBeforeOther: 'СП-05',
-  lnkResultVikRequiredBeforeOther: 'СП-05', lnkResultConclusionRequired: 'СП-11',
-  pstoResultDateRequired: 'СП-11', pstoResultDateFormat: '',
+  lnkResultVikRequiredBeforeOther: 'СП-05', lnkResultConclusionRequired: '',
+  pstoResultDateRequired: '', pstoResultDateFormat: '',
   pstoResultDateAfterWeldDate: 'СП-04', pstoResultRequestDateOrder: 'СП-04',
-  pstoResultDiagramRequired: 'СП-11', manualJointName: 'ЗВ-02',
-  controlHistoryProtection: 'СП-12', systemJointRenameProtection: 'СП-09',
+  pstoResultDiagramRequired: '', manualJointName: 'ЗВ-02',
+  controlHistoryProtection: 'СП-11', systemJointRenameProtection: 'СП-09',
 }
 
 const SAVE_CHECK_REASON_CODE_PATTERN = /^(?:ЗВ|СП)-\d+\s·\s/

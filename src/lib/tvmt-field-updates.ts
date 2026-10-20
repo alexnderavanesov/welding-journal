@@ -126,6 +126,8 @@ export function buildPrimaryTvmtResultRows({
     if (!canAddPrimaryTvmtResult(record)) {
       throw new Error(`Стык ${formatJoint(record)}: результат ТВМТ сейчас недоступен.`)
     }
+    assertDocumentRequisites({ name: record.tvmtRequest, date: record.tvmtRequestDate,
+      nameLabel: 'наименование заявки ТВМТ', dateLabel: 'Дата заявки ТВМТ' })
     if (saveCheckSettings.pstoResultRequestDateOrder) {
       assertDateNotBeforePsto(record, date, 'Дата ТВМТ')
       const requestDate = parseDateLikeToIso(record.tvmtRequestDate)

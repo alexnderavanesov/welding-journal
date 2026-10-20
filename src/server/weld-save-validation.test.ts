@@ -261,7 +261,7 @@ describe('validateServerWeldRecords', () => {
       } as unknown as WeldInput],
       previousRows: new Map([[previous.id, previous]]),
       context,
-    })).toThrow('СП-12')
+    })).toThrow('СП-11')
   })
 
   it('locks stored weld rows before merging a scoped workflow update', async () => {

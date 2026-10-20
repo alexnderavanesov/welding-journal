@@ -11,6 +11,7 @@ import { normalizePreHeatTreatmentLnkWorkflowPayload } from '@/server/pre-heat-t
 import { normalizePstoCycleWorkflowPayload } from '@/server/psto-repeat-workflow'
 import { buildLnkConclusionCorrectionRows } from '@/lib/lnk-result-correction-updates'
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { getPstoLineIdentityKey } from '@/lib/psto-line-assignment'
 
 const context = {
   controlProcessSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
@@ -47,6 +48,57 @@ describe('required document requisites, agreed 11 October', () => {
     const legacy = { id: 1, tvmtResult: 'годен', tvmtConclusion: '', tvmtConclusionDate: '' } as WeldJoint
     expect(getSystemDocumentIntegrityReason({ ...legacy, tvmtConclusion: 'ТВМТ-1' }, legacy)).toMatch(/дат/i)
     expect(getSystemDocumentIntegrityReason({ ...legacy, responsible: 'Иванов' }, legacy)).toBe('')
+  })
+  it.each(['psto', 'tvmt'] as const)('rejects clearing the %s request while retaining its result', stage => {
+    const stored = { id: 41, joint: 'F41', projectTitle: 'P', subtitleCode: 'S', line: 'L', pstoRequired: 'да',
+      pstoRequest: 'ПСТО-41', pstoRequestDate: '2026-08-01', pstoResult: 'проведено', pstoDate: '2026-08-02', heatTreatmentDiagram: 'Диаграмма-41',
+      ...(stage === 'tvmt' ? { tvmtRequest: 'ТВМТ-41', tvmtRequestDate: '2026-08-03', tvmtResult: 'годен', tvmtConclusionDate: '2026-08-04', tvmtConclusion: 'ТВМТ-41' } : {}),
+    } as WeldJoint
+    const records = mergeWeldRecordsWithPrevious([{ id: stored.id,
+      ...(stage === 'psto' ? { pstoRequest: null, pstoRequestDate: null } : { tvmtRequest: null, tvmtRequestDate: null }),
+    }], new Map([[stored.id, stored]]))
+    expect(() => validateServerWeldRecords({ records, previousRows: new Map([[stored.id, stored]]), context }))
+      .toThrow(/заявк/i)
+  })
+  it('requires complete request requisites when a new result is added to a legacy incomplete request', () => {
+    const stored = { ...previous, vikRequestDate: null } as WeldJoint
+    const previousRows = new Map([[stored.id, stored]])
+    const records = mergeWeldRecordsWithPrevious([{ id: stored.id, vikResult: 'годен', vikConclusion: 'ВИК-1', vikConclusionDate: '2026-09-02' }], previousRows)
+    expect(() => validateServerWeldRecords({ records, previousRows, context })).toThrow(/дат.*заявк|заявк.*дат/i)
+  })
+  it('rejects a new PSTO result without its request even when result requisites are complete', () => {
+    const stored = { id: 42, joint: 'F42', projectTitle: 'P', subtitleCode: 'S', line: 'L', pstoRequired: 'да' } as WeldJoint
+    const previousRows = new Map([[stored.id, stored]])
+    const records = mergeWeldRecordsWithPrevious([{ id: stored.id, pstoResult: 'проведено', pstoDate: '2026-08-02', heatTreatmentDiagram: 'Диаграмма-42' }], previousRows)
+    expect(() => validateServerWeldRecords({ records, previousRows, context: { ...context,
+      controlProcessSettings: { ...context.controlProcessSettings, preHeatTreatmentLnkEnabled: false },
+      pstoLineAssignments: new Map([[getPstoLineIdentityKey(stored), { rowCount: 1, assignedCount: 1 }]]),
+    } })).toThrow(/заявк/i)
+  })
+  it.each(['vik', 'rk', 'uzk', 'pvk'] as const)('requires both conclusion requisites for a new %s result after a partial merge', method => {
+    const stored = { ...previous, vikResult: 'годен', vikConclusion: 'ВИК-1', vikConclusionDate: '2026-09-02',
+      [`has${method[0].toUpperCase()}${method.slice(1)}`]: 'да', [`${method}Request`]: `${method}-1`, [`${method}RequestDate`]: '2026-09-01',
+      [`${method}Result`]: null,
+    } as WeldJoint
+    const previousRows = new Map([[stored.id, stored]])
+    const records = mergeWeldRecordsWithPrevious([{ id: stored.id, [`${method}Result`]: 'годен',
+      [`${method}Conclusion`]: '', [`${method}ConclusionDate`]: '',
+    }], previousRows)
+    expect(() => validateServerWeldRecords({ records, previousRows, context })).toThrow(/дат[\s\S]*заключени/i)
+  })
+  it('reports missing request and result requisites together', () => {
+    const stored = { id: 43, joint: 'F43', projectTitle: 'P', subtitleCode: 'S', line: 'L', pstoRequired: 'да' } as WeldJoint
+    let message = ''
+    try {
+      validateServerWeldRecords({ records: [{ ...stored, pstoResult: 'проведено' }], previousRows: new Map([[stored.id, stored]]), context: {
+        ...context, controlProcessSettings: { ...context.controlProcessSettings, preHeatTreatmentLnkEnabled: false },
+        pstoLineAssignments: new Map([[getPstoLineIdentityKey(stored), { rowCount: 1, assignedCount: 1 }]]),
+      } })
+    } catch (error) { message = (error as Error).message }
+    expect(message).toMatch(/дату заявки ПСТО/i)
+    expect(message).toMatch(/наименование заявки ПСТО/i)
+    expect(message).toMatch(/дату ПСТО/i)
+    expect(message).toMatch(/наименование диаграммы/i)
   })
   it('repairs a legacy unnamed LNK conclusion atomically and leaves its result/history intact', () => {
     const legacy = { ...previous, vikResult: 'ремонт', vikConclusion: null, vikConclusionDate: null, vikDefectDescription: 'Исторический дефект' } as WeldRow

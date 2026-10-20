@@ -6,7 +6,7 @@ import {
   JointDispatcherTasksPanel,
   JointDispatcherTasksSummary,
 } from '@/components/joint-dispatcher-tasks-panel'
-import { LNK_RESULT_COMPLETENESS_REASON } from '@/lib/dispatcher-check-reasons'
+import { LNK_VIK_DATE_ORDER_REASON } from '@/lib/lnk-chronology-checks'
 import type { LineConsistencyTask, RepeatedJointCheckTask, WeldRow } from '@/lib/dispatcher-types'
 
 describe('JointDispatcherTasksPanel', () => {
@@ -36,7 +36,7 @@ describe('JointDispatcherTasksPanel', () => {
     const onRunAction = vi.fn()
     render(<JointDispatcherTasksPanel row={current} tasks={[task]} onRunAction={onRunAction} />)
 
-    expect(screen.getByText('СП-11')).toBeInTheDocument()
+    expect(screen.getByText('СП-05')).toBeInTheDocument()
     expect(screen.getByText('Этот стык')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Исправить в ЛНК' }))
 
@@ -44,7 +44,7 @@ describe('JointDispatcherTasksPanel', () => {
       id: 'open-lnk',
       label: 'Исправить в ЛНК',
     }))
-    expect(screen.queryByText('Не заполнена дата заключения.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Дата РК раньше даты ВИК.')).not.toBeInTheDocument()
   })
 
   it('opens task details by clicking the task row instead of a separate info button', () => {
@@ -52,15 +52,15 @@ describe('JointDispatcherTasksPanel', () => {
     const task = checkTask(current)
     render(<JointDispatcherTasksPanel row={current} tasks={[task]} onRunAction={vi.fn()} />)
 
-    const rowButton = screen.getByRole('button', { name: 'Показать описание СП-11' })
+    const rowButton = screen.getByRole('button', { name: 'Показать описание СП-05' })
     const toggleIndicator = rowButton.querySelector('[data-joint-task-toggle-indicator]')
     expect(rowButton).toHaveAttribute('aria-expanded', 'false')
     expect(toggleIndicator).toHaveAttribute('data-expanded', 'false')
     expect(rowButton.firstElementChild).toBe(toggleIndicator)
     fireEvent.click(rowButton)
 
-    expect(screen.getByText('Не заполнена дата заключения.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Скрыть описание СП-11' })).toHaveAttribute(
+    expect(screen.getByText('Дата РК раньше даты ВИК.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Скрыть описание СП-05' })).toHaveAttribute(
       'aria-expanded',
       'true',
     )
@@ -79,7 +79,7 @@ describe('JointDispatcherTasksPanel', () => {
       />,
     )
 
-    const highlightedRow = screen.getByText('СП-11').closest('[data-highlighted="true"]')
+    const highlightedRow = screen.getByText('СП-05').closest('[data-highlighted="true"]')
     expect(highlightedRow).toHaveClass('bg-sky-50')
     expect(highlightedRow).not.toHaveClass(
       'shadow-[inset_2px_0_0_0_rgb(56_189_248_/_0.72)]',
@@ -117,7 +117,7 @@ describe('JointDispatcherTasksPanel', () => {
       <JointDispatcherTasksPanel row={current} tasks={[task]} onRunAction={vi.fn()} />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Другие действия СП-11' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Другие действия СП-05' }))
 
     const menu = screen.getByRole('menu')
     expect(menu).toHaveClass('fixed')
@@ -164,8 +164,8 @@ describe('JointDispatcherTasksPanel', () => {
 
     expect(screen.getByText('СП · 2')).toBeInTheDocument()
     expect(screen.queryByText('ДЗ · 1')).not.toBeInTheDocument()
-    expect(screen.getAllByText(/^(СП-06|СП-11)$/).map((item) => item.textContent))
-      .toEqual(['СП-06', 'СП-11'])
+    expect(screen.getAllByText(/^(СП-06|СП-05)$/).map((item) => item.textContent))
+      .toEqual(['СП-05', 'СП-06'])
 
     fireEvent.click(screen.getByRole('button', { name: 'Создать заявку НК до ТО' }))
     expect(onRunAction).toHaveBeenCalledWith(current, systemWarning, expect.objectContaining({
@@ -211,13 +211,13 @@ describe('JointDispatcherTasksPanel', () => {
       <JointDispatcherTasksPanel
         row={current}
         tasks={[task]}
-        fallbackCodes="СП-11, СП-02"
+        fallbackCodes="СП-05, СП-02"
         onRunAction={vi.fn()}
       />,
     )
 
     expect(screen.getByText('СП · 2')).toBeInTheDocument()
-    expect(screen.getByText('СП-11')).toBeInTheDocument()
+    expect(screen.getByText('СП-05')).toBeInTheDocument()
     expect(screen.getByText('СП-02')).toBeInTheDocument()
   })
 
@@ -241,12 +241,12 @@ describe('JointDispatcherTasksPanel', () => {
     const current = row()
     const tasks = Array.from({ length: 4 }, (_, index) => ({
       ...checkTask(current),
-      key: `check:lnk-completeness:${index}`,
+      key: `check:lnk-order:${index}`,
     }))
 
     render(<JointDispatcherTasksPanel row={current} tasks={tasks} onRunAction={vi.fn()} />)
 
-    expect(screen.getAllByText('СП-11')).toHaveLength(4)
+    expect(screen.getAllByText('СП-05')).toHaveLength(4)
   })
 
   it('opens the dedicated action view from the compact summary', () => {
@@ -270,15 +270,15 @@ describe('JointDispatcherTasksPanel', () => {
 function checkTask(current: WeldRow): RepeatedJointCheckTask {
   return {
     kind: 'check',
-    key: 'check:lnk-completeness',
+    key: 'check:lnk-order',
     row: current,
     sourceRow: current,
     sourceJoint: 'S1',
     targetJoint: 'S1',
     baseJoint: 'S1',
     suffix: 'R',
-    reason: LNK_RESULT_COMPLETENESS_REASON,
-    details: 'Не заполнена дата заключения.',
+    reason: LNK_VIK_DATE_ORDER_REASON,
+    details: 'Дата РК раньше даты ВИК.',
   }
 }
 

@@ -181,6 +181,23 @@ test('старый безымянный результат: совместное
   )).rows[0])).toEqual({ vik_result: 'ремонт', vik_conclusion: 'ИСТОРИЯ-912', vik_conclusion_date: '2026-09-03' })
 })
 
+test('старая заявка без даты не позволяет внести новый результат НК', async ({ page }) => {
+  await seed([{ joint: 'F915', diameter: 159, method: 'ВИК' }])
+  await withE2eDatabase(db => db.query('update weld_joints set vik_request_date=null where project_title=$1 and joint=$2', [project, 'F915']))
+  const snapshot = () => withE2eDatabase(async db => (await db.query(
+    'select vik_request,vik_request_date,vik_result,vik_conclusion,vik_conclusion_date from weld_joints where project_title=$1 and joint=$2', [project, 'F915'],
+  )).rows[0])
+  const before = await snapshot()
+  const dialog = await openResults(page, 'F915', 'vikRequest')
+  await dialog.getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
+  await dialog.getByLabel('Дата контроля', { exact: true }).fill('2026-09-03')
+  const footer = dialog.getByRole('group', { name: 'Сохранение результата', exact: true })
+  await expect(footer.getByRole('button', { name: 'Сохранить результат', exact: true })).toBeDisabled()
+  await expect(footer).toContainText('дату заявки ВИК')
+  await dialog.getByRole('button', { name: 'Отмена', exact: true }).click()
+  expect(await snapshot()).toEqual(before)
+})
+
 test('дубль-контроль требует название и обе независимые даты', async ({ page }) => {
   await seed([{ joint: 'F913', diameter: 159, method: 'ВИК' }])
   await page.goto('/lnk')
@@ -294,6 +311,9 @@ test('РК: все причины выбранных стыков, смена в
   for (const joint of ['F907R2', 'F908']) {
     await dialog.getByRole('checkbox', { name: `Выбрать стык ${line} ${joint}`, exact: true }).check()
   }
+  // A native checkbox is checked before the controlled selection finishes its
+  // render. Wait for all three rows before testing a separate hover interaction.
+  await expect(dialog.getByText(/^Заявка:.*· Выбрано: 3$/)).toBeVisible()
   const common = dialog.getByRole('group', { name: 'Результат для всех выбранных', exact: true })
   await checkReason(page, common, 'ремонт', ['меньше 89 мм', 'два ремонта'])
   await expect(common.getByRole('button', { name: 'вырез', exact: true })).toBeEnabled()

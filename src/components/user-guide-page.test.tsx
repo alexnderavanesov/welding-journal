@@ -64,7 +64,7 @@ describe('UserGuidePage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Все правила' }))
 
-    expect((await screen.findAllByText(/СП-12 заблокирует весь импорт/)).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText(/СП-11 заблокирует весь импорт/)).length).toBeGreaterThan(0)
     expect(screen.queryByText(/может очистить заявку, результат, заключение и дату/)).not.toBeInTheDocument()
   })
 

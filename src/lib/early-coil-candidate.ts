@@ -87,9 +87,7 @@ export function evaluateEarlyCoilCandidate(
     includeIncompleteStampChecks: false,
     includeJointCoreDataChecks: false,
     includeLineConsistencyTasks: false,
-    includeLnkResultCompletenessChecks: false,
     includePercentageLineControlTasks: false,
-    includePstoResultCompletenessChecks: false,
     includeWelderStampCompatibilityChecks: false,
     systemIndexSettings: settings,
   }).find((task) => task.kind === 'create' && task.row.id === sourceRow.id)

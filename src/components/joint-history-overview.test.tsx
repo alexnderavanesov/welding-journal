@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { JointHistoryOverview } from '@/components/joint-history-overview'
-import { LNK_RESULT_COMPLETENESS_REASON } from '@/lib/dispatcher-check-reasons'
+import { LNK_VIK_DATE_ORDER_REASON } from '@/lib/lnk-chronology-checks'
 import type { RepeatedJointCheckTask, RepeatedJointCreateTask, WeldRow } from '@/lib/dispatcher-types'
 
 describe('JointHistoryOverview', () => {
@@ -202,8 +202,8 @@ describe('JointHistoryOverview', () => {
       targetJoint: 'F9',
       baseJoint: 'F9',
       suffix: 'R',
-      reason: LNK_RESULT_COMPLETENESS_REASON,
-      details: 'Не заполнена дата заключения.',
+      reason: LNK_VIK_DATE_ORDER_REASON,
+      details: 'Дата РК раньше даты ВИК.',
     }
 
     const onOpenTasks = vi.fn()

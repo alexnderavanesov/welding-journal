@@ -4,7 +4,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { getPrimaryPstoStartBlockReason, requiresPreHeatTreatmentLnk, getRejectedPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
 import { buildPreHeatTreatmentRequestWrites, buildPreHeatTreatmentResultWrite, getPreHeatTreatmentRequestBlockReason } from '@/lib/pre-heat-treatment-control-updates'
 import { buildRepeatedJointDraft } from '@/lib/repeated-joint-draft'
-import { buildLnkChronologyCheckTasks, buildLnkResultCompletenessCheckTasks } from '@/lib/repeated-joint-check-tasks'
+import { buildLnkChronologyCheckTasks } from '@/lib/repeated-joint-check-tasks'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
 const fresh = { id: 6620, joint: 'F1', line: '330-P42/P59-06-000', pstoRequired: 'да', hasVik: 'да', preHeatTreatmentLnkExempt: true, pstoResult: 'ожидает заявку' } as WeldRow
@@ -50,10 +50,9 @@ describe('uniform pre-TO requirements', () => {
     const row = { ...fresh, preHeatTreatmentLnkEnabled: false, weldDate: '2026-09-20',
       preHeatTreatmentControls: [{ id: 1, weldJointId: fresh.id, method: 'ВИК', requestName: 'Старая заявка', requestDate: '2026-09-01', result: 'годен' }],
     }
-    expect(buildLnkResultCompletenessCheckTasks([row])).toEqual([])
     expect(buildLnkChronologyCheckTasks([row])).toEqual([])
     expect(row.preHeatTreatmentControls).toHaveLength(1)
-    expect(buildLnkResultCompletenessCheckTasks([{ ...row, preHeatTreatmentLnkEnabled: true }])).toHaveLength(1)
+    expect(buildLnkChronologyCheckTasks([{ ...row, preHeatTreatmentLnkEnabled: true }])).toHaveLength(1)
   })
 
   it('allows historical request backfill but keeps chronology checks', () => {

@@ -17,7 +17,8 @@ import {
   replaceScopedDispatcherTaskIndexRows,
 } from '@/server/dispatcher-task-index'
 import { DISPATCHER_TASK_INDEX_STAGE_BATCH_SIZE } from '@/server/dispatcher-task-index-staging'
-import { buildLnkResultCompletenessCheckTasks, buildLnkResultRuleCheckTasks, buildPrimaryLnkStageDebtSystemWarnings } from '@/lib/repeated-joint-check-tasks'
+import { buildLnkResultRuleCheckTasks, buildPrimaryLnkStageDebtSystemWarnings } from '@/lib/repeated-joint-check-tasks'
+import { buildRepeatedJointTasks } from '@/lib/repeated-joint-tasks'
 import { buildDispatcherTaskCodeIndexRows } from '@/lib/dispatcher-task-row-codes'
 import { mergeDispatcherTaskCodesIntoRows } from '@/server/weld-read'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -27,7 +28,7 @@ import { getDispatcherTaskActionSpecs } from '@/lib/dispatcher-task-actions-mode
 import { getDispatcherTaskCode } from '@/lib/dispatcher-settings'
 
 describe('prepareDispatcherReportRows', () => {
-  it.each(['годен (отменен)', 'годен · назначение отменено'])('keeps historical pre-TO completion debt in the row index and virtual field: %s', result => {
+  it.each(['годен (отменен)', 'годен · назначение отменено'])('does not publish historical pre-TO incompleteness in the row index or virtual field: %s', result => {
     const rows: WeldRow[] = [
       { id: 1, joint: 'F1', line: 'L', preHeatTreatmentLnkEnabled: true, preHeatTreatmentControls: [
         { id: 10, weldJointId: 1, method: 'ВИК', result, conclusionName: null, conclusionDate: '2026-09-01' },
@@ -36,14 +37,13 @@ describe('prepareDispatcherReportRows', () => {
         { id: 20, weldJointId: 2, method: 'ВИК', result: 'ожидает НК' },
       ] },
     ]
-    const tasks = buildLnkResultCompletenessCheckTasks(rows)
+    const tasks = buildRepeatedJointTasks(rows)
     const index = buildDispatcherTaskCodeIndexRows(tasks, rows)
-    expect(index).toEqual([{ rowId: 1, taskKey: 'code:СП-11', code: 'СП-11' }])
-    expect(mergeDispatcherTaskCodesIntoRows(rows, index, []).map(row => row.dispatcherTasks)).toEqual(['СП-11', ''])
+    expect(index.map(row => row.code)).not.toContain('СП-11')
+    expect(mergeDispatcherTaskCodesIntoRows(rows, index, []).map(row => row.dispatcherTasks).join(',')).not.toContain('СП-11')
     const compact = compactDispatcherTasksForTransport(tasks)
-    expect(compact).toHaveLength(1)
-    expect(getDispatcherTaskCode(compact[0]!)).toBe('СП-11')
-    expect(compact[0]).toMatchObject({ details: expect.stringContaining('ВИК до ТО: не заполнено заключение') })
+    expect(compact.map(getDispatcherTaskCode)).not.toContain('СП-11')
+    expect(rows[0]!.preHeatTreatmentControls![0]).toMatchObject({ result, conclusionName: null, conclusionDate: '2026-09-01' })
   })
 
   it('persists SP-05 in the virtual field and keeps LNK navigation after page compaction', () => {

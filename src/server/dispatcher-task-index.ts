@@ -36,6 +36,7 @@ import {
   type DispatcherTaskIndexRow,
 } from '@/lib/dispatcher-task-row-codes'
 import {
+  DISPATCHER_TASK_CALCULATION_VERSION,
   isDispatcherTaskIndexPayloadCurrent,
   parseDispatcherTaskIndexPayload,
   serializeDispatcherTaskIndexPayload,
@@ -126,16 +127,20 @@ export async function getDispatcherTaskIndexSnapshot(
     : await readDispatcherTaskIndexState({ scheduleRefresh: options.scheduleRefresh })
 
   const taskPayload = parseDispatcherTaskIndexPayload(state.repeatedTasks)
-  const repeatedJointTasks = taskPayload.tasks
-  const welderStampExpiryTasks = parseJsonArray<WelderStampExpiryTask>(state.welderStampExpiryTasks)
-  const taskFilterOptions = await listDispatcherTaskFilterOptions(db, taskPayload)
+  // A stale data snapshot is useful, but tasks from a different rule catalogue
+  // cannot be interpreted safely (a removed reason could become another СП).
+  // Keep the normal asynchronous refresh and expose no old-version results.
+  const currentRules = taskPayload.version === DISPATCHER_TASK_CALCULATION_VERSION
+  const repeatedJointTasks = currentRules ? taskPayload.tasks : []
+  const welderStampExpiryTasks = currentRules ? parseJsonArray<WelderStampExpiryTask>(state.welderStampExpiryTasks) : []
+  const taskFilterOptions = currentRules ? await listDispatcherTaskFilterOptions(db, taskPayload) : []
 
   return {
-    duplicateKeys: parseJsonArray<string>(state.duplicateKeys),
+    duplicateKeys: currentRules ? parseJsonArray<string>(state.duplicateKeys) : [],
     repeatedJointTasks,
-    repeatedJointTaskCount: taskPayload.totalTaskCount,
-    repeatedJointTaskPageCount: taskPayload.totalPageCount,
-    repeatedJointTasksTruncated: taskPayload.tasksTruncated,
+    repeatedJointTaskCount: currentRules ? taskPayload.totalTaskCount : 0,
+    repeatedJointTaskPageCount: currentRules ? taskPayload.totalPageCount : 0,
+    repeatedJointTasksTruncated: currentRules && taskPayload.tasksTruncated,
     sourceRevision: state.sourceRevision,
     computedRevision: state.computedRevision,
     isFresh: isDispatcherTaskIndexFresh(state),

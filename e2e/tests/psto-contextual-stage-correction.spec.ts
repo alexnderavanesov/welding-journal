@@ -1,4 +1,3 @@
-import { revealLnkColumn } from './lnk-grid-helpers'
 import { documentGridRow } from '../document-grid'
 import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Locator, type Page } from '@playwright/test'
@@ -781,7 +780,7 @@ test('весь комплект без названий: перенос запр
   for (const field of RECORDED_CONTROL_FIELDS) expect(kept.row[field], field).toEqual(sibling.row[field])
 })
 
-test('СП-11 восстанавливается из старого кэша для исторического результата до ТО без имени, но не для ожидания', async ({ page }) => {
+test('обновление старого кэша убирает прежнюю диагностику полноты и сохраняет неполную историю до ТО', async ({ page }) => {
   const fixture = await seed('beforeHeatTreatment')
   await withE2eDatabase(db => db.query(`update pre_heat_treatment_controls
     set conclusion_name=null,result=case when weld_joint_id=$1 then 'годен (отменен)' else 'ожидает НК' end
@@ -793,29 +792,43 @@ test('СП-11 восстанавливается из старого кэша д
   ])
   await markDispatcherTaskIndexDirty(requireDb())
   await dispatcher.ensureDispatcherTaskIndexFresh()
+  const before = await snapshot(fixture.moved.id)
   // Simulate an otherwise current cache from the previous application version:
   // no source revision bump, no explicit dirty flag to mask version invalidation.
   await withE2eDatabase(async db => {
     await db.query(`update dispatcher_task_index_state
-      set repeated_tasks=jsonb_set(repeated_tasks::jsonb,'{version}',to_jsonb($1::int))::text`, [DISPATCHER_TASK_CALCULATION_VERSION - 1])
-    await db.query("delete from dispatcher_row_tasks where weld_joint_id=any($1::int[]) and code='СП-11'", [[fixture.moved.id, fixture.kept.id]])
+      set repeated_tasks=jsonb_set(repeated_tasks::jsonb,'{version}',to_jsonb($1::int))::text`, [72])
+    await db.query("insert into dispatcher_row_tasks (weld_joint_id,task_key,code) values ($1,'code:СП-11','СП-11') on conflict do nothing", [fixture.moved.id])
+    const obsolete = { kind: 'check', key: 'obsolete-sp11', row: fixture.moved, sourceRow: fixture.moved,
+      sourceJoint: fixture.moved.joint, targetJoint: fixture.moved.joint, baseJoint: fixture.moved.joint,
+      suffix: 'R', reason: 'дозаполнить результат ЛНК', details: 'Старая диагностика СП-11' }
+    const stalePage = await db.query(`update dispatcher_task_pages set tasks=(tasks::jsonb || $1::jsonb)::text,task_count=task_count+1
+      where (scope_key,page_number)=(select scope_key,page_number from dispatcher_task_pages order by scope_key,page_number limit 1)`, [JSON.stringify([obsolete])])
+    expect(stalePage.rowCount).toBe(1)
   })
+  const pending = await dispatcher.getDispatcherTaskIndexSnapshot({ scheduleRefresh: false })
+  expect(pending).toMatchObject({ isFresh: false, repeatedJointTasks: [], repeatedJointTaskCount: 0, taskFilterOptions: [] })
   await dispatcher.ensureDispatcherTaskIndexFresh()
   const persisted = await withE2eDatabase(async db => ({
     tasks: (await db.query("select weld_joint_id from dispatcher_row_tasks where weld_joint_id=any($1::int[]) and code='СП-11' order by weld_joint_id", [[fixture.moved.id, fixture.kept.id]])).rows,
     version: (await db.query("select (repeated_tasks::jsonb->>'version')::int as version from dispatcher_task_index_state")).rows[0]?.version,
   }))
-  expect(persisted).toEqual({ tasks: [{ weld_joint_id: fixture.moved.id }], version: DISPATCHER_TASK_CALCULATION_VERSION })
+  expect(persisted).toEqual({ tasks: [], version: DISPATCHER_TASK_CALCULATION_VERSION })
+  const stalePages = await withE2eDatabase(db => db.query("select count(*)::int as count from dispatcher_task_pages where tasks like '%obsolete-sp11%'"))
+  expect(stalePages.rows[0]?.count).toBe(0)
+  const after = await snapshot(fixture.moved.id)
+  expect(after.controls).toEqual(before.controls)
+  for (const field of RECORDED_CONTROL_FIELDS) expect(after.row[field], field).toEqual(before.row[field])
   const virtual = await read.attachDispatcherTaskCodesToPage([fixture.moved, fixture.kept])
-  expect(virtual.map(row => String((row as { dispatcherTasks?: string }).dispatcherTasks).includes('СП-11'))).toEqual([true, false])
+  expect(virtual.map(row => String((row as { dispatcherTasks?: string }).dispatcherTasks).includes('СП-11'))).toEqual([false, false])
   await page.goto('/lnk')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(SOURCE)
-  // Use the operator-facing task view rather than relying on an expanded
-  // dispatcher column in the default report layout.
-  await revealLnkColumn(page, 'jointNextAction')
-  await page.locator(`.ag-row[row-id="${fixture.moved.id}"]`).getByRole('button', { name: /Открыть картину стыка/ }).click()
+  // The pinned joint name opens the same picture without scrolling the
+  // actions column underneath another pinned column.
+  await expect(page.locator('[data-lnk-grid] .journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
+  await page.locator('[data-lnk-grid]').getByRole('button', { name: String(fixture.moved.joint), exact: true }).click()
   await page.getByRole('button', { name: /Открыть задачи по стыку:/ }).click()
-  await expect(page.getByRole('region', { name: 'Требует действия', exact: true })).toContainText('СП-11')
+  await expect(page.getByRole('region', { name: 'Требует действия', exact: true })).not.toContainText('СП-11')
 })
 
 const RECORDED_CONTROL_FIELDS = [

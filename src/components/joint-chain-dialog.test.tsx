@@ -3,7 +3,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { JointChainDialog } from '@/components/joint-chain-dialog'
-import { LNK_RESULT_COMPLETENESS_REASON } from '@/lib/dispatcher-check-reasons'
+import { LNK_VIK_DATE_ORDER_REASON } from '@/lib/lnk-chronology-checks'
 import type {
   PercentageLineControlTask,
   RepeatedJointCheckTask,
@@ -442,15 +442,15 @@ describe('JointChainDialog', () => {
     const rows = [row({ id: 1, joint: 'F48' })]
     const task: RepeatedJointCheckTask = {
       kind: 'check',
-      key: 'check:F48:lnk-completeness',
+      key: 'check:F48:lnk-order',
       row: rows[0]!,
       sourceRow: rows[0]!,
       sourceJoint: 'F48',
       targetJoint: 'F48',
       baseJoint: 'F48',
       suffix: 'R',
-      reason: LNK_RESULT_COMPLETENESS_REASON,
-      details: 'Не заполнена дата заключения.',
+      reason: LNK_VIK_DATE_ORDER_REASON,
+      details: 'Дата РК раньше даты ВИК.',
     }
 
     renderDialog({
@@ -461,7 +461,7 @@ describe('JointChainDialog', () => {
     })
 
     expect(screen.getByRole('tab', { name: /Требует действия.*1/ })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByText('СП-11').closest('[data-highlighted="true"]')).toBeInTheDocument()
+    expect(screen.getByText('СП-05').closest('[data-highlighted="true"]')).toBeInTheDocument()
   })
 
   it('opens a line task in the line picture and reveals the highlighted row', () => {

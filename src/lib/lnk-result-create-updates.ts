@@ -70,6 +70,10 @@ export function buildLnkResultRows({
     const result = resultById[record.id] ?? ''
     assertUnofficialLnkGoodResultAllowed(record, result, record[method.resultKey], method.code)
     const shouldClearResult = result === LNK_EMPTY_RESULT_VALUE
+    if (!shouldClearResult) {
+      assertDocumentRequisites({ name: record[method.requestKey], date: record[method.requestDateKey],
+        nameLabel: `наименование заявки ${method.code}`, dateLabel: `Дата заявки ${method.code}` })
+    }
     let proposedRecord = {
       ...record,
       [method.resultKey]: shouldClearResult ? null : result,

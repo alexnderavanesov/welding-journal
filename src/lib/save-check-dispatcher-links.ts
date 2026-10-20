@@ -18,18 +18,14 @@ export const SAVE_CHECK_DISPATCHER_LINKS = [
   ['requiredWeldingMethodWithWeldDate', 'check-joint-core-data'],
   ['dateFormat', 'check-joint-core-data'],
   ['weldDateNotFuture', 'check-joint-core-data'],
-  ['lnkResultControlDateRequired', 'check-lnk-result-completeness'],
   ['lnkResultControlDateFormat', 'check-lnk-request-date-order'],
   ['lnkResultDateAfterWeldDate', 'check-lnk-request-date-order'],
   ['lnkResultRequestDateOrder', 'check-lnk-request-date-order'],
   ['lnkResultVikDateBeforeOther', 'check-lnk-vik-date-order'],
   ['lnkResultVikRequiredBeforeOther', 'check-lnk-vik-required'],
-  ['lnkResultConclusionRequired', 'check-lnk-result-completeness'],
-  ['pstoResultDateRequired', 'check-psto-result-completeness'],
   ['pstoResultDateFormat', 'check-psto-request-date-order'],
   ['pstoResultDateAfterWeldDate', 'check-psto-request-date-order'],
   ['pstoResultRequestDateOrder', 'check-psto-request-date-order'],
-  ['pstoResultDiagramRequired', 'check-psto-result-completeness'],
   ['controlHistoryProtection', 'check-control-history'],
 ] as const satisfies readonly SaveCheckDispatcherLink[]
 

@@ -124,7 +124,7 @@ describe('getWeldFormSaveBlockReason', () => {
     const draft = { id: 1, joint: 'S1', hasVik: null, vikRequest: 'Заявка-001', vikResult: 'годен' } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'СП-12 · ВИК: выберите «отменен» либо очистите/удалите результат НК в отчете ЛНК.',
+      'СП-11 · ВИК: выберите «отменен» либо очистите/удалите результат НК в отчете ЛНК.',
     )
   })
 
@@ -174,7 +174,7 @@ describe('getWeldFormSaveBlockReason', () => {
         ...DEFAULT_SAVE_CHECK_SETTINGS,
         controlHistoryProtection: false,
       }),
-    ).toContain('СП-12')
+    ).toContain('СП-11')
   })
 
   it('allows cancelled LNK availability with existing method report history', () => {

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { eq, inArray, like } from 'drizzle-orm'
+import { eq, inArray, like, sql } from 'drizzle-orm'
 import { createDispatcherRuleFixtures } from '../src/test/dispatcher-rule-fixtures'
 import { DEFAULT_DISPATCHER_SETTINGS, DISPATCHER_SETTING_CODES, getDispatcherTaskCode, getDispatcherTaskSettingId } from '../src/lib/dispatcher-settings'
 import type { RepeatedJointTask } from '../src/lib/dispatcher-types'
 import { PROJECT_SETTING_KEYS } from '../src/lib/project-settings-remote'
+import { DISPATCHER_TASK_CALCULATION_VERSION } from '../src/lib/dispatcher-task-index-payload'
 
 // This script never prepares a schema and must never run against user data.
 const url = new URL(process.env.DATABASE_URL ?? '')
@@ -15,7 +16,7 @@ const [{ requireDb }, schema, dispatcher, dirty, read] = await Promise.all([
   import('../src/server/dispatcher-task-index-dirty'), import('../src/server/weld-read'),
 ])
 const db = requireDb()
-const { weldJoints, welderStamps, dispatcherRowTasks, dispatcherTaskPages, appSettings } = schema
+const { weldJoints, welderStamps, dispatcherRowTasks, dispatcherTaskPages, dispatcherTaskIndexState, appSettings } = schema
 assert.equal((await db.select({ id: weldJoints.id }).from(weldJoints).where(like(weldJoints.projectTitle, 'MATRIX %'))).length, 0)
 const fixtures = createDispatcherRuleFixtures()
 const previousSettings = await db.select().from(appSettings).where(eq(appSettings.key, PROJECT_SETTING_KEYS.dispatcher))
@@ -96,6 +97,36 @@ try {
     assert.deepEqual(persisted.filter((row) => row.code === code && scopeIds.has(row.weldJointId)).map((row) => row.weldJointId).sort((a, b) => a - b), expectedIds, `${code}: persisted row index`)
     assert.deepEqual(visible.filter((row) => scopeIds.has(row.id) && row.dispatcherTasks.split(', ').includes(code)).map((row) => row.id).sort((a, b) => a - b), expectedIds, `${code}: virtual dispatcherTasks`)
   }
+  // Simulate version 73 with the previous history-protection code. Source
+  // revisions stay current: the rule-version bump alone must rebuild the index.
+  const historyIds = fixtures.find(fixture => fixture.settingId === 'check-control-history')!.expectedRowIds.map(id => idMap.get(id)!)
+  assert(historyIds.length > 0)
+  const historyBefore = await db.select().from(weldJoints).where(inArray(weldJoints.id, historyIds))
+  const [currentState] = await db.select().from(dispatcherTaskIndexState)
+  const oldPayload = JSON.parse(currentState.repeatedTasks.replaceAll('СП-11', 'СП-12'))
+  oldPayload.version = 73
+  assert(DISPATCHER_TASK_CALCULATION_VERSION > oldPayload.version)
+  await db.update(dispatcherTaskIndexState).set({ repeatedTasks: JSON.stringify(oldPayload) })
+  await db.update(dispatcherRowTasks).set({
+    code: 'СП-12', taskKey: sql`replace(${dispatcherRowTasks.taskKey}, 'СП-11', 'СП-12')`,
+  }).where(eq(dispatcherRowTasks.code, 'СП-11'))
+  const pending = await dispatcher.getDispatcherTaskIndexSnapshot({ scheduleRefresh: false })
+  assert.equal(pending.isFresh, false)
+  assert.deepEqual(pending.repeatedJointTasks, [])
+  await dispatcher.ensureDispatcherTaskIndexFresh()
+  const renumbered = await db.select().from(dispatcherRowTasks).where(inArray(dispatcherRowTasks.weldJointId, historyIds))
+  assert(renumbered.every(row => row.code !== 'СП-12'))
+  for (const id of historyIds) assert(renumbered.some(row => row.weldJointId === id && row.code === 'СП-11'))
+  const newSnapshot = await dispatcher.getDispatcherTaskIndexSnapshot({ scheduleRefresh: false })
+  assert.equal(newSnapshot.isFresh, true)
+  assert(newSnapshot.taskFilterOptions.some(option => option.value === 'СП-11'))
+  assert(!newSnapshot.taskFilterOptions.some(option => option.value === 'СП-12'))
+  const historyVisible = await read.attachDispatcherTaskCodesToPage(historyIds.map(id => ({ id }))) as Array<{ id: number; dispatcherTasks: string }>
+  for (const row of historyVisible) {
+    assert(row.dispatcherTasks.split(', ').includes('СП-11'))
+    assert(!row.dispatcherTasks.split(', ').includes('СП-12'))
+  }
+  assert.deepEqual(await db.select().from(weldJoints).where(inArray(weldJoints.id, historyIds)), historyBefore)
   for (const id of programWarningIds) {
     assert(persisted.some((row) => row.weldJointId === id && row.code === 'СП-01'), 'Incomplete/conflicting program must enter the persisted row index')
     assert(visible.find((row) => row.id === id)?.dispatcherTasks.includes('СП-01'), 'SP-02 must appear in the SQL-backed virtual field')
@@ -174,7 +205,7 @@ try {
   assert(!remaining.some((page) => (JSON.parse(page.tasks) as Array<{ row: { id: number } }>).some((task) => fixtureIds.includes(task.row.id))))
   console.log(JSON.stringify({ settings: fixtures.length, persistedRuleChains: fixtures.filter((fixture) => fixture.rows.length).length,
     reminderRules: 2, mandatoryProgramRule: true, mandatoryResultRules: resultRuleIds.length, fixtureJoints: fixtureIds.length, refreshStatements, virtualFieldStatementsPerPage: 1, removedFactsCleared: true,
-    actualityRestoresContinuations: true, actualityMismatchBothRecoveryPaths: true, continuationRefreshStatements }))
+    actualityRestoresContinuations: true, actualityMismatchBothRecoveryPaths: true, continuationRefreshStatements, historyRuleRenumbered: true }))
 } finally {
   if (fixtureIds.length) await db.delete(weldJoints).where(inArray(weldJoints.id, fixtureIds))
   if (stampIds.length) await db.delete(welderStamps).where(inArray(welderStamps.id, stampIds))

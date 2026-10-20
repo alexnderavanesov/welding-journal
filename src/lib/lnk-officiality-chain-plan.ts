@@ -70,9 +70,7 @@ const TASK_OPTIONS = {
   includeIncompleteStampChecks: false,
   includeJointCoreDataChecks: false,
   includeLineConsistencyTasks: false,
-  includeLnkResultCompletenessChecks: false,
   includePercentageLineControlTasks: false,
-  includePstoResultCompletenessChecks: false,
   includeWelderStampCompatibilityChecks: false,
 } as const
 

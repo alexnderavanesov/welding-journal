@@ -416,7 +416,8 @@ export function getLnkResultRemovalBlockReason(
 }
 
 function formatLnkChronologyIssueSaveBlockReason(issue: LnkChronologyIssue) {
-  return issue.kind.endsWith('-invalid') ? issue.message : `${getLnkChronologyRuleCode(issue.kind)} · ${issue.message}`
+  const code = getLnkChronologyRuleCode(issue.kind)
+  return issue.kind.endsWith('-invalid') || !code ? issue.message : `${code} · ${issue.message}`
 }
 
 export function getLnkChronologyIssueIdentity(issue: LnkChronologyIssue) {

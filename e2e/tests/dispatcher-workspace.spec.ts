@@ -3,7 +3,7 @@ import type { SQL } from 'drizzle-orm'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import pg from 'pg'
 
-import { serializeDispatcherTaskIndexPayload } from '../../src/lib/dispatcher-task-index-payload'
+import { DISPATCHER_TASK_CALCULATION_VERSION, serializeDispatcherTaskIndexPayload } from '../../src/lib/dispatcher-task-index-payload'
 import type { RepeatedJointTask } from '../../src/lib/dispatcher-types'
 import { lockWeldJointWritesForDispatcherReplacement } from '../../src/server/dispatcher-task-index'
 import { DISPATCHER_INDEX_LOCK_ID, DISPATCHER_REFRESH_LOCK_ID } from '../../src/server/dispatcher-task-index-constants'
@@ -27,6 +27,40 @@ test.afterEach(async ({ page }) => {
     `)
     await client.query('commit')
   })
+})
+
+test('обновление правил: до пересчёта нет старой СП-11 и ложного пустого результата', async ({ page }) => {
+  await seedTaskPages()
+  const oldTask = { kind: 'check', key: 'obsolete-completeness', row: { id: 1, joint: 'F1' },
+    sourceJoint: 'F1', targetJoint: 'F1', baseJoint: 'F1', suffix: 'R',
+    reason: 'дозаполнить результат ЛНК', details: 'Старая диагностика СП-11' } as RepeatedJointTask
+  const payload = JSON.parse(serializeDispatcherTaskIndexPayload([oldTask], [], {
+    taskFilterOptions: [{ value: 'СП-11', count: 1 }],
+  }))
+  payload.version = 72 // The release that still calculated document-completeness diagnostics.
+  await withE2eDatabase(db => db.query('update dispatcher_task_index_state set repeated_tasks=$1 where id=1', [JSON.stringify(payload)]))
+  const panel = page.getByLabel('Диспетчер задач', { exact: true })
+  const dialog = page.getByRole('dialog', { name: 'Диспетчер задач', exact: true })
+  // Hold only the calculation lock, not reads, to observe the real cold-start UI
+  // deterministically. No sleeps or mocked snapshot/refresh responses.
+  await withE2eDatabase(async db => {
+    await db.query('begin')
+    await db.query('select pg_advisory_xact_lock($1)', [DISPATCHER_REFRESH_LOCK_ID])
+    try {
+      await page.goto('/lnk')
+      await expect(panel.getByText('Пересчёт…', { exact: true })).toBeVisible()
+      await expect(panel).not.toContainText('Старая диагностика СП-11')
+      await expect(panel).not.toContainText('0 задач')
+    } finally {
+      await db.query('rollback')
+    }
+  })
+  await expect(panel.getByText('Пересчёт…', { exact: true })).toBeHidden()
+  await panel.getByRole('button', { name: 'Открыть диспетчер' }).click()
+  await expect(dialog.getByLabel('Очередь задач диспетчера')).toBeVisible()
+  await expect(dialog).not.toContainText('Старая диагностика СП-11')
+  const state = await withE2eDatabase(db => db.query("select (repeated_tasks::jsonb->>'version')::int as version from dispatcher_task_index_state where id=1"))
+  expect(state.rows[0]?.version).toBe(DISPATCHER_TASK_CALCULATION_VERSION)
 })
 
 for (const compression of [true, false]) test(`рабочее окно находит задачу № 5001 без технической пагинации (сжатие: ${compression})`, async ({ page }) => {

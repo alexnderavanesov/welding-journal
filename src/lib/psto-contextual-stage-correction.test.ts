@@ -3,7 +3,7 @@ import { DEFAULT_CONTROL_PROCESS_SETTINGS } from './control-process-settings'
 import type { WeldRow } from './dispatcher-types'
 import type { LnkControlStage, PreHeatTreatmentControlRecord } from './lnk-control-stage'
 import { LNK_METHODS } from './lnk-report-config'
-import { buildLnkResultCompletenessCheckTasks } from './repeated-joint-check-tasks'
+import { buildRepeatedJointTasks } from './repeated-joint-tasks'
 import { getDispatcherTaskCode } from './dispatcher-settings'
 import {
   buildPstoContextualStageCorrection as build,
@@ -215,12 +215,7 @@ describe('contextual PSTO stage correction', () => {
       freeze(row)
       expect(reason(row, target, settings, indices)).toContain('наименование заключения')
       expect(() => build(row, target, settings, indices)).toThrow('наименование заключения')
-      const completionTasks = buildLnkResultCompletenessCheckTasks([row])
-      expect(completionTasks).toHaveLength(1)
-      expect(getDispatcherTaskCode(completionTasks[0]!)).toBe('СП-11')
-      for (const method of LNK_METHODS) {
-        expect(completionTasks[0]!.details).toContain(`${method.code}${target === 'primary' ? ' до ТО' : ''}: не заполнено заключение`)
-      }
+      expect(buildRepeatedJointTasks([row]).map(getDispatcherTaskCode)).not.toContain('СП-11')
     })
 
     it.each([
@@ -233,7 +228,7 @@ describe('contextual PSTO stage correction', () => {
       expect(() => build(freeze(row), target, settings, indices)).toThrow(message!)
     })
 
-    it.each(['годен (отменен)', 'годен · назначение отменено'])('retains SP-11 for historical unnamed results: %s', result => {
+    it.each(['годен (отменен)', 'годен · назначение отменено'])('preserves historical unnamed results without SP-11: %s', result => {
       const row = withPackageChange(target, 'ВИК', 'conclusionName', null)
       // A single historical method: do not ask cancelled VIK to authorize new
       // downstream methods. That prerequisite is intentionally not relaxed.
@@ -246,12 +241,8 @@ describe('contextual PSTO stage correction', () => {
         }
         row.rkExposureConfirmedDiameter = null
       } else row.preHeatTreatmentControls = [{ ...row.preHeatTreatmentControls![0], result }]
-      const beforeTasks = buildLnkResultCompletenessCheckTasks([row])
-      expect(beforeTasks).toHaveLength(1)
       expect(() => build(freeze(row), target, settings, indices)).toThrow('наименование заключения')
-      const afterTasks = buildLnkResultCompletenessCheckTasks([row])
-      expect(afterTasks).toHaveLength(1)
-      expect(getDispatcherTaskCode(afterTasks[0]!)).toBe('СП-11')
+      expect(buildRepeatedJointTasks([row]).map(getDispatcherTaskCode)).not.toContain('СП-11')
       expect(target === 'beforeHeatTreatment' ? row.vikResult : row.preHeatTreatmentControls![0].result).toBe(result)
     })
 

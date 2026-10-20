@@ -1350,7 +1350,7 @@ describe('existing rows report import preview', () => {
     })
 
     expect(preview.validRecords).toEqual([])
-    expect(preview.errors[0]?.message).toContain('СП-12')
+    expect(preview.errors[0]?.message).toContain('СП-11')
     expect(preview.errors[0]?.message).toContain('РК')
     expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining([
       'hasRk',

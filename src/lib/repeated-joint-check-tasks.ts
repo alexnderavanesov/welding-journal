@@ -1,4 +1,3 @@
-import { normalizeControlResultText } from '@/lib/report-value-utils'
 import { FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
 import {
   LNK_METHODS,
@@ -27,22 +26,16 @@ import { DEFAULT_SAVE_CHECK_SETTINGS, normalizeSaveCheckSettings, type SaveCheck
 import {
   CONTROL_HISTORY_REASON,
   JOINT_CORE_DATA_REASON,
-  LNK_RESULT_COMPLETENESS_REASON,
-  PSTO_RESULT_COMPLETENESS_REASON,
 } from '@/lib/dispatcher-check-reasons'
 import { getControlAvailabilityReportHistoryIssues } from '@/lib/weld-form-save-reasons'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS, type SystemIndexSettings } from '@/lib/system-index-settings'
 import type { DataListSettings } from '@/lib/data-list-settings'
 import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
 import {
-  getPreHeatTreatmentControls,
   getPrimaryLnkStageDebt,
   hasPrimaryLnkResultTrace,
   type PrimaryLnkStageDebt,
 } from '@/lib/lnk-control-stage'
-import { buildPstoCycleTimeline, type PstoRepeatCycleRecord } from '@/lib/psto-cycle'
-import { normalizeTvmtResult } from '@/lib/tvmt-cycle'
-import { isFinalLnkResultValue } from '@/lib/lnk-status'
 import {
   getLnkChronologyRootCauseActions,
   getPstoChronologyRootCauseActions,
@@ -50,7 +43,6 @@ import {
   type WorkflowRootCauseAction,
 } from '@/lib/workflow-root-cause-actions'
 import { getPstoTvmtWorkflowLabel } from '@/lib/tvmt-cycle'
-import { isPreHeatTreatmentStageEnabled } from '@/lib/pre-heat-treatment-policy'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { getLnkChronologyRuleCode, getPstoChronologyRuleCode } from './chronology-rule-code'
 import type { SystemRuleCode } from './system-rule-catalog'
@@ -149,7 +141,11 @@ export function buildLnkChronologyCheckTasks(
   rows: WeldRow[],
   systemIndexSettings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
 ): RepeatedJointCheckTask[] {
-  return groupIssuesByRowAndReason(getDispatcherLnkChronologyIssues(rows).map(issue => ({ ...issue, systemWarningCode: getLnkChronologyRuleCode(issue.kind) }))).map((group) => {
+  const issues = getDispatcherLnkChronologyIssues(rows).flatMap(issue => {
+    const systemWarningCode = getLnkChronologyRuleCode(issue.kind)
+    return systemWarningCode ? [{ ...issue, systemWarningCode }] : []
+  })
+  return groupIssuesByRowAndReason(issues).map((group) => {
     const row = group.row
     return { ...createJointChainCheckTask(
       row,
@@ -166,7 +162,11 @@ export function buildPstoChronologyCheckTasks(
   rows: WeldRow[],
   systemIndexSettings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
 ): RepeatedJointCheckTask[] {
-  return groupIssuesByRowAndReason(getDispatcherPstoChronologyIssues(rows).map(issue => ({ ...issue, systemWarningCode: getPstoChronologyRuleCode(issue.kind) }))).map((group) => {
+  const issues = getDispatcherPstoChronologyIssues(rows).flatMap(issue => {
+    const systemWarningCode = getPstoChronologyRuleCode(issue.kind)
+    return systemWarningCode ? [{ ...issue, systemWarningCode }] : []
+  })
+  return groupIssuesByRowAndReason(issues).map((group) => {
     const row = group.row
     return { ...createJointChainCheckTask(
       row,
@@ -260,82 +260,6 @@ function formatMissingRequiredWeldFields({
     case 7: return 'не указаны группа материалов, тип соединения и способ сварки'
     default: return null
   }
-}
-
-export function buildLnkResultCompletenessCheckTasks(
-  rows: WeldRow[],
-  systemIndexSettings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
-): RepeatedJointCheckTask[] {
-  return rows.flatMap((row) => {
-    const methodIssues: Array<{ code: string; missing: string[] }> = LNK_METHODS.flatMap((method) => {
-      if (!isFinalLnkResultValue(row[method.resultKey])) return []
-      const missing: string[] = []
-      if (!hasText(row[method.conclusionDateKey])) missing.push('дата контроля')
-      if (!hasText(row[method.conclusionKey])) missing.push('заключение')
-      return missing.length > 0 ? [{ code: method.code, missing }] : []
-    })
-    methodIssues.push(...(isPreHeatTreatmentStageEnabled(row) ? getPreHeatTreatmentControls(row) : []).flatMap((control) => {
-      if (!isFinalLnkResultValue(control.result)) return []
-      const missing: string[] = []
-      if (!hasText(control.conclusionDate)) missing.push('дата контроля')
-      if (!hasText(control.conclusionName)) missing.push('заключение')
-      return missing.length > 0 ? [{ code: `${control.method} до ТО`, missing }] : []
-    }))
-    if (methodIssues.length === 0) return []
-
-    const joint = String(row.joint ?? '').trim() || `ID ${row.id}`
-    const details = methodIssues.map((issue) => `${issue.code}: ${formatMissingRequiredFields(issue.missing)}`).join('; ')
-    const key = methodIssues.map((issue) => `${issue.code}:${issue.missing.join(',')}`).join('|')
-    return [createJointChainCheckTask(
-      row,
-      `${getJointChainConsistencyKey(row, systemIndexSettings) ?? row.id}:lnk-result-completeness:${row.id}:${key}`,
-      LNK_RESULT_COMPLETENESS_REASON,
-      `Стык ${joint}: ${details}. Дозаполни сохраненный результат в отчете ЛНК.`,
-      systemIndexSettings,
-    )]
-  })
-}
-
-export function buildPstoResultCompletenessCheckTasks(
-  rows: WeldRow[],
-  systemIndexSettings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
-): RepeatedJointCheckTask[] {
-  return rows.flatMap((row) => {
-    const cycles = buildPstoCycleTimeline(row, getPstoRepeatCycles(row))
-    const issues = cycles.flatMap((cycle) => {
-      const cycleLabel = cycle.sequence === 1 ? 'основной цикл' : `повторный цикл #${cycle.sequence}`
-      const result: Array<{ label: string; missing: string[] }> = []
-      if (hasRealPstoResult(cycle.pstoResult)) {
-        const missing: string[] = []
-        if (!hasText(cycle.pstoDate)) missing.push('дата ПСТО')
-        if (!hasText(cycle.heatTreatmentDiagram)) missing.push('диаграмма термообработки')
-        if (missing.length > 0) result.push({ label: `${cycleLabel} ПСТО`, missing })
-      }
-      if (normalizeTvmtResult(cycle.tvmtResult)) {
-        const missing: string[] = []
-        if (!hasText(cycle.tvmtConclusionDate)) missing.push('дата ТВМТ')
-        if (!hasText(cycle.tvmtConclusion)) missing.push('заключение ТВМТ')
-        if (missing.length > 0) result.push({ label: `${cycleLabel} ТВМТ`, missing })
-      }
-      return result
-    })
-    if (issues.length === 0) return []
-
-    const joint = String(row.joint ?? '').trim() || `ID ${row.id}`
-    const details = issues
-      .map((issue) => `${issue.label}: ${formatMissingRequiredFields(issue.missing)}`)
-      .join('; ')
-    const key = issues
-      .map((issue) => `${issue.label}:${issue.missing.join(',')}`)
-      .join('|')
-    return [createJointChainCheckTask(
-      row,
-      `${getJointChainConsistencyKey(row, systemIndexSettings) ?? row.id}:psto-result-completeness:${row.id}:${key}`,
-      PSTO_RESULT_COMPLETENESS_REASON,
-      `Стык ${joint}: ${details}. Дозаполни результат в отчете ПСТО.`,
-      systemIndexSettings,
-    )]
-  })
 }
 
 export function buildControlHistoryCheckTasks(
@@ -542,17 +466,4 @@ function groupIssuesByRowAndReason<T extends { kind: string; reason: string; mes
     groups.set(groupKey, group)
   }
   return [...groups.values()]
-}
-
-function hasRealPstoResult(value: unknown) {
-  const result = normalizeControlResultText(value)
-  return result === 'проведено' || result === 'проведено (отменен)' || result === 'да'
-}
-
-function getPstoRepeatCycles(row: WeldRow) {
-  return ((row as WeldRow & { pstoRepeatCycles?: PstoRepeatCycleRecord[] }).pstoRepeatCycles ?? [])
-}
-
-function formatMissingRequiredFields(fields: string[]) {
-  return `${fields.length === 1 ? 'не заполнено' : 'не заполнены'} ${fields.join(' и ')}`
 }

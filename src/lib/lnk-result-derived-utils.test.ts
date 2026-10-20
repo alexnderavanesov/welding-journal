@@ -331,7 +331,7 @@ describe('getLnkResultSaveBlockReason', () => {
     })
   })
 
-  it('allows saving a VIK result for an old request without a request date', () => {
+  it('requires completing an old request date before saving a new VIK result', () => {
     const row = {
       ...baseRow,
       vikRequestDate: '',
@@ -354,7 +354,7 @@ describe('getLnkResultSaveBlockReason', () => {
         nextConclusionName: 'Заключение-ВИК',
         selectedRows: [row],
       }),
-    ).toBe('')
+    ).toContain('дату заявки ВИК')
     expect(() =>
       buildLnkResultRows({
         records: [row],
@@ -363,7 +363,11 @@ describe('getLnkResultSaveBlockReason', () => {
         resultById: { 1: 'годен' },
         conclusionName: 'Заключение-ВИК',
       }),
-    ).not.toThrow()
+    ).toThrow('дату заявки ВИК')
+    expect(() => buildLnkResultRows({ records: [{ ...row, vikRequestDate: '2026-07-03' }],
+      methodKey: 'vikRequest', controlDate: '2026-07-04', resultById: { 1: 'годен' }, conclusionName: 'Заключение-ВИК',
+    })).not.toThrow()
+    expect(row.vikRequestDate).toBe('')
   })
 
   it('rejects an arbitrary LNK date even when an old setting disabled ZV-14', () => {

@@ -4,6 +4,7 @@ import { getActiveReportFromPath } from '@/lib/app-report-routes'
 import type { ActiveReport } from '@/lib/home-state'
 import { getPageScrollPosition, restorePageScrollPosition, type PageScrollPosition } from '@/lib/page-scroll-position'
 import { migrateLegacyWeldFieldRecordKeys } from '@/lib/weld-fields'
+import { buildWeldColumnValueFilter, parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
 import type { WeldFilters } from '@/server/weld-contracts'
 
 const REPORT_NAVIGATION_HISTORY_KEY = '__weldingReportContext'
@@ -275,9 +276,9 @@ function getReportNavigationSnapshot(historyState: unknown): ReportNavigationSna
   return {
     version: REPORT_NAVIGATION_HISTORY_VERSION,
     report: value.report,
-    filters: migrateLegacyWeldFieldRecordKeys(Object.fromEntries(
+    filters: restoreReportFilters(Object.fromEntries(
       Object.entries(value.filters).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-    )) as WeldFilters,
+    )),
     selectedRowIds: Array.from(new Set(
       value.selectedRowIds.map(Number).filter((rowId) => Number.isInteger(rowId) && rowId > 0),
     )),
@@ -286,6 +287,20 @@ function getReportNavigationSnapshot(historyState: unknown): ReportNavigationSna
       top: Math.max(0, top),
     },
   }
+}
+
+function restoreReportFilters(saved: Record<string, string>): WeldFilters {
+  const filters = migrateLegacyWeldFieldRecordKeys(saved)
+  const value = filters.dispatcherTasks
+  if (!value) return filters
+  const renameHistoryRule = (code: string) => code.trim().toUpperCase() === 'СП-12' ? 'СП-11' : code
+  const choice = parseWeldColumnChoiceFilter(value)
+  if (choice?.values.some(code => renameHistoryRule(code) !== code)) {
+    filters.dispatcherTasks = buildWeldColumnValueFilter(choice.values.map(renameHistoryRule))
+  } else if (!choice) {
+    filters.dispatcherTasks = renameHistoryRule(value)
+  }
+  return filters
 }
 
 function restoreReportSnapshot({

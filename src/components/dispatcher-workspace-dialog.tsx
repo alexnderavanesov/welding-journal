@@ -169,7 +169,7 @@ export function DispatcherWorkspaceDialog({
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
               <h2 className="text-lg font-semibold tracking-tight text-slate-900">Диспетчер задач</h2>
               <span data-dispatcher-badge className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
-                {formatTaskCount(totalTaskCount)}
+                {isRefreshing && totalTaskCount === 0 ? 'Пересчёт…' : formatTaskCount(totalTaskCount)}
               </span>
             </div>
           </div>
@@ -303,8 +303,8 @@ export function DispatcherWorkspaceDialog({
                   />
               </section>
             ) : (!searchOnServer || (!isRefreshing && !searchQuery.isPending && !searchQuery.isError)) ? (
-              <div className="rounded-md border border-slate-200 bg-white p-6 text-sm text-slate-600">
-                {hasMoreTasks && !searchOnServer ? 'В загруженной части задачи не найдены. Загрузите следующую порцию или воспользуйтесь поиском.' : 'Задачи не найдены. Измените запрос или выбранное правило.'}
+              <div className="rounded-md border border-slate-200 bg-white p-6 text-sm text-slate-600" role={isRefreshing ? 'status' : undefined}>
+                {isRefreshing ? 'Идёт пересчёт диспетчера. Дождитесь обновления списка.' : hasMoreTasks && !searchOnServer ? 'В загруженной части задачи не найдены. Загрузите следующую порцию или воспользуйтесь поиском.' : 'Задачи не найдены. Измените запрос или выбранное правило.'}
                 {taskBatchError ? (
                   <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-red-700" role="alert">
                     {taskBatchError}

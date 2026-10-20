@@ -430,6 +430,8 @@ function validatePreHeatTreatmentResultDate(
   settings: SaveCheckSettings,
 ) {
   if (!date) return
+  assertDocumentRequisites({ name: control.requestName, date: control.requestDate,
+    nameLabel: 'наименование заявки НК до ТО', dateLabel: 'Дата заявки НК до ТО' })
   if (settings.lnkResultDateAfterWeldDate) assertNotBeforeWeld(row, date, 'Дата НК до ТО')
   if (settings.lnkResultRequestDateOrder) {
     assertNotBefore(

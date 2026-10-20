@@ -27,7 +27,8 @@ describe.each(Object.entries(entryPoints))('LNK %s result policy', (_name, write
   })
 
   it.each(['vikRequest', 'pvkRequest'] as const)('permits a small-diameter repair but never cutout for %s', (methodKey) => {
-    const row = { id: 1, joint: 'F1', d1: 159, d2: 57, vikResult: 'годен' } as WeldRow
+    const row = { id: 1, joint: 'F1', d1: 159, d2: 57, vikResult: 'годен',
+      [methodKey]: 'Заявка НК', [`${methodKey}Date`]: '2026-08-19' } as WeldRow
     expect(() => write(row, methodKey, 'ремонт')).not.toThrow()
     expect(() => write(row, methodKey, 'вырез')).toThrow(/СП-07.*вырез/)
     expect(() => write({ ...row, joint: 'F1R2' }, methodKey, 'ремонт')).toThrow(/СП-07.*два ремонта/)
@@ -35,7 +36,8 @@ describe.each(Object.entries(entryPoints))('LNK %s result policy', (_name, write
   })
 
   it.each(['rkRequest', 'uzkRequest'] as const)('enforces Dmin and official repair limit for %s', (methodKey) => {
-    const row = { id: 1, joint: 'F1', d1: 159, d2: 57, vikResult: 'годен' } as WeldRow
+    const row = { id: 1, joint: 'F1', d1: 159, d2: 57, vikResult: 'годен',
+      [methodKey]: 'Заявка НК', [`${methodKey}Date`]: '2026-08-19' } as WeldRow
     expect(() => write(row, methodKey, 'ремонт')).toThrow(/СП-07.*меньше 89 мм/)
     expect(() => write(row, methodKey, 'вырез')).not.toThrow()
     expect(() => write({ ...row, d2: 89 }, methodKey, 'ремонт')).not.toThrow()

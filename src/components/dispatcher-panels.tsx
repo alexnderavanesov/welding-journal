@@ -84,7 +84,7 @@ export function DispatcherTaskPanel({
               </span>
               <span className="shrink-0 text-sm font-semibold text-slate-900">Диспетчер</span>
               <span data-dispatcher-badge className="shrink-0 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">
-                {formatTaskCount(totalTaskCount)}
+                {isRefreshing && totalTaskCount === 0 ? 'Пересчёт…' : formatTaskCount(totalTaskCount)}
               </span>
               <span className="hidden min-w-0 text-xs leading-snug text-slate-500 2xl:inline">
                 {isRefreshing ? 'Выполняется фоновый пересчёт…' : 'Изменения выполняются только после подтверждения.'}

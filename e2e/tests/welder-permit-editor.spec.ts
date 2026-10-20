@@ -112,8 +112,15 @@ async function create(page: Page, code: string, groups: string[]) {
 test('реальный ввод НАКС/ДЛС: 1/2/3 группы, способы, открытие конкретного допуска, ПКМ, отмена, повторное сохранение', async ({ page }) => {
   test.setTimeout(120_000)
   const errors: string[] = [], calls: string[] = []
+  const pendingCalls = new Set<Request>()
   page.on('pageerror', error => errors.push(error.message))
-  page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
+  page.on('request', request => {
+    if (!request.url().includes('/_serverFn/')) return
+    calls.push(rpcName(request.url()))
+    pendingCalls.add(request)
+  })
+  page.on('requestfinished', request => pendingCalls.delete(request))
+  page.on('requestfailed', request => pendingCalls.delete(request))
   await page.goto('/welder-stamps')
   for (const [index, code] of codes.slice(0, 3).entries()) {
     const groups = ['М01', 'М05', 'М11'].slice(0, index + 1)
@@ -149,11 +156,14 @@ test('реальный ввод НАКС/ДЛС: 1/2/3 группы, спосо�
     expect(after.naks_permits[0].materialGroups.split(', ').sort()).toEqual(groups)
     await page.getByText(code, { exact: true }).first().click()
   }
-  await page.waitForLoadState('networkidle')
+  // A previous navigation may already have reached networkidle while a later
+  // save is still refreshing tasks. Focus intentionally coalesces with that
+  // refresh; test an idle focus only after the current RPCs have finished.
+  await expect.poll(() => pendingCalls.size).toBe(0)
   const beforeIdle = [...calls]
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
   await expect.poll(() => calls.length).toBe(beforeIdle.length + 1)
-  await page.waitForLoadState('networkidle')
+  await expect.poll(() => pendingCalls.size).toBe(0)
   expect(calls.slice(beforeIdle.length)).toHaveLength(1)
   expect(calls.at(-1)).toMatch(/^getDispatcherTaskVersion/)
   expect(calls.filter(name => name.startsWith('saveWelderStampRecords'))).toHaveLength(6)

@@ -384,7 +384,8 @@ export function getPstoChronologyIssueIdentity(issue: PstoChronologyIssue) {
 }
 
 function formatPstoChronologyIssueSaveBlockReason(issue: PstoChronologyIssue) {
-  return issue.kind.endsWith('-invalid') ? issue.message : `${getPstoChronologyRuleCode(issue.kind)} · ${issue.message}`
+  const code = getPstoChronologyRuleCode(issue.kind)
+  return issue.kind.endsWith('-invalid') || !code ? issue.message : `${code} · ${issue.message}`
 }
 
 function hasFinalPstoResult(value: unknown) {

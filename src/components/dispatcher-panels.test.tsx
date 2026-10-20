@@ -193,6 +193,15 @@ describe('DispatcherTaskPanel', () => {
     expect(onLoadMoreTasks).not.toHaveBeenCalled()
   })
 
+  it('does not report zero tasks while the previous rule version is recalculating', () => {
+    const props = { tasks: [], groups: [], stickyLeft: 0, handlers: createHandlers(vi.fn()) }
+    const { rerender } = render(<DispatcherTaskPanel {...props} isRefreshing />)
+    expect(screen.getByLabelText('Диспетчер задач')).toHaveTextContent('Пересчёт…')
+    expect(screen.queryByText('0 задач')).not.toBeInTheDocument()
+    rerender(<DispatcherTaskPanel {...props} isRefreshing={false} />)
+    expect(screen.queryByLabelText('Диспетчер задач')).not.toBeInTheDocument()
+  })
+
   it('offers retry after a batch request fails', () => {
     const { task, group } = createTaskGroup()
     const onRetryTaskBatch = vi.fn()
@@ -211,6 +220,24 @@ describe('DispatcherTaskPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку' }))
     expect(onRetryTaskBatch).toHaveBeenCalledOnce()
+  })
+
+  it('distinguishes a temporarily empty recalculation from a completed empty result', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const view = (isRefreshing: boolean) => (
+      <QueryClientProvider client={client}>
+        <DispatcherWorkspaceDialog tasks={[]} groups={[]} totalTaskCount={0} computedRevision={7}
+          taskFilterOptions={[]} isRefreshing={isRefreshing} hasMoreTasks={false} isTaskBatchLoading={false}
+          handlers={createHandlers(vi.fn())} onClose={vi.fn()} />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(view(true))
+    expect(screen.getByText('Идёт пересчёт диспетчера. Дождитесь обновления списка.')).toBeInTheDocument()
+    expect(screen.queryByText('Задачи не найдены. Измените запрос или выбранное правило.')).not.toBeInTheDocument()
+    rerender(view(false))
+    expect(screen.queryByText('Идёт пересчёт диспетчера. Дождитесь обновления списка.')).not.toBeInTheDocument()
+    expect(screen.getByText('Задачи не найдены. Измените запрос или выбранное правило.')).toBeInTheDocument()
+    expect(serverSearch).not.toHaveBeenCalled()
   })
 
   it('opens an LNK-sized workspace with a task queue, search, and the same task actions', () => {

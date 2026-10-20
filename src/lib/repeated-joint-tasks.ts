@@ -18,9 +18,7 @@ import {
   buildIncompleteWelderStampGroupTasks,
   buildJointCoreDataCheckTasks,
   buildLnkChronologyCheckTasks,
-  buildLnkResultCompletenessCheckTasks,
   buildPstoChronologyCheckTasks,
-  buildPstoResultCompletenessCheckTasks,
   buildPrimaryLnkStageDebtSystemWarnings,
   buildWelderStampCompatibilityCheckTasks,
 } from '@/lib/repeated-joint-check-tasks'
@@ -77,9 +75,7 @@ type BuildRepeatedJointTasksOptions = {
   includeIncompleteStampChecks?: boolean
   includeJointCoreDataChecks?: boolean
   includeLineConsistencyTasks?: boolean
-  includeLnkResultCompletenessChecks?: boolean
   includePercentageLineControlTasks?: boolean
-  includePstoResultCompletenessChecks?: boolean
   includeWelderStampCompatibilityChecks?: boolean
   controlProcessSettings?: ControlProcessSettings
   saveCheckSettings?: SaveCheckSettings
@@ -101,9 +97,7 @@ export function buildRepeatedJointTasks(
     includeIncompleteStampChecks = true,
     includeJointCoreDataChecks = true,
     includeLineConsistencyTasks = true,
-    includeLnkResultCompletenessChecks = true,
     includePercentageLineControlTasks = true,
-    includePstoResultCompletenessChecks = true,
     includeWelderStampCompatibilityChecks = true,
   } = options
   const systemIndexSettings = options.systemIndexSettings ?? DEFAULT_SYSTEM_INDEX_SETTINGS
@@ -142,8 +136,6 @@ export function buildRepeatedJointTasks(
     ...(includeJointCoreDataChecks
       ? buildJointCoreDataCheckTasks(rows, systemIndexSettings)
       : []),
-    ...(includeLnkResultCompletenessChecks ? buildLnkResultCompletenessCheckTasks(rows, systemIndexSettings) : []),
-    ...(includePstoResultCompletenessChecks ? buildPstoResultCompletenessCheckTasks(rows, systemIndexSettings) : []),
     ...(includeControlHistoryChecks ? buildControlHistoryCheckTasks(rows, systemIndexSettings) : []),
     ...(includeWelderStampCompatibilityChecks
       ? buildWelderStampCompatibilityCheckTasks(

@@ -57,8 +57,6 @@ export function createDispatcherRuleFixtures(): DispatcherRuleFixture[] {
     ['welder-dls-expiry', [], []],
     ['line-psto-presence', [{ pstoRequired: 'да' }, { pstoRequired: null }]],
     ['check-joint-core-data', [{ materialGroup: null }]],
-    ['check-lnk-result-completeness', [{ vikResult: 'годен', vikConclusionDate: null, vikConclusion: null }]],
-    ['check-psto-result-completeness', [{ pstoRequired: 'да', pstoResult: 'проведено', pstoDate: null }]],
     ['check-control-history', [{ hasRk: null, rkResult: 'годен' }]],
     ['check-technology-card', [{ technologyCardNumber: 'Старая неизвестная ТК' }]],
   ]

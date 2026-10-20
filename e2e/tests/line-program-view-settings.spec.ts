@@ -126,7 +126,7 @@ test('light sketch styles affect summary rows only; compact rows shrink and stam
   page.on('pageerror', error => errors.push(error.message))
   await withLineProgramFixture(db => db.query("update weld_joints set has_rk='да',has_pvk='да' where project_title=$1", [project]))
   await page.reload()
-  const card = page.getByTestId('line-program-card')
+  const card = page.getByTestId('line-program-card').filter({ hasText: line })
   await card.getByRole('button', { name: `Расчёт линии ${line}`, exact: true }).click()
   const stamps = page.locator('[data-program-grid="stamps"]')
   const stamp = page.getByTestId('line-program-stamp').first()

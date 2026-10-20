@@ -34,9 +34,7 @@ export function isAuthorizedSystemRepeatedJointRename(
     includeIncompleteStampChecks: false,
     includeJointCoreDataChecks: false,
     includeLineConsistencyTasks: false,
-    includeLnkResultCompletenessChecks: false,
     includePercentageLineControlTasks: false,
-    includePstoResultCompletenessChecks: false,
     includeWelderStampCompatibilityChecks: false,
   }).some(
     (task): task is RepeatedJointRenameTask =>
