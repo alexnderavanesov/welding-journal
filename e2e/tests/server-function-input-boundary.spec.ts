@@ -2,37 +2,45 @@ import { expect, test } from '@playwright/test'
 import { rpcName, serializeRpcPayload } from '../rpc'
 
 test('RPC rejects injected response state in an invalid read request, including document-style Accept', async ({ page }) => {
-  const summaryRequest = page.waitForRequest(request =>
-    rpcName(request.url()).startsWith('getWeldReportSummary_'))
-  await page.goto('/journal')
-  const request = await summaryRequest
-  await page.waitForLoadState('networkidle')
-  const sameOriginHeaders = { origin: new URL(request.url()).origin, 'sec-fetch-site': 'same-origin' }
-  const url = new URL(request.url())
-  // Deliberately invalid public data exercises the error path. The harmless
-  // marker must never become an HTTP response body or a reflected HTML page.
-  const marker = '<p>LOCAL-AUDIT-INJECTED-RESPONSE</p>'
-  url.searchParams.set('payload', await serializeRpcPayload({
-    data: null,
-    result: { body: marker, status: 200, headers: { 'content-type': 'text/html' } },
-    error: null,
-    method: 'POST',
-  }))
-  const variants: Record<string, string>[] = [
-    { accept: 'text/html' },
-    { accept: 'application/json', 'x-tsr-serverFn': 'true' },
-  ]
-  for (const headers of variants) {
-    const response = await page.request.get(url.href, { headers: { ...sameOriginHeaders, ...headers } })
-    expect(response.headers()['content-type'] ?? '').not.toContain('text/html')
-    const body = await response.text()
-    expect(body).not.toContain('LOCAL-AUDIT-INJECTED-RESPONSE')
-    expect(body).toContain('Неизвестный вид отчета.')
+  // Exercise both the retained GET reports and the journal's new POST boundary.
+  for (const [path, name, error] of [
+    ['/lnk', 'getWeldReportSummary_', 'Неизвестный вид отчета.'],
+    ['/journal', 'readJournalGrid_', 'Некорректная выборка сварочного журнала.'],
+  ]) {
+    const pending = page.waitForRequest(request => rpcName(request.url()).startsWith(name))
+    await page.goto(path)
+    const request = await pending
+    await page.waitForLoadState('networkidle')
+    const sameOriginHeaders = { origin: new URL(request.url()).origin, 'sec-fetch-site': 'same-origin' }
+    // Deliberately invalid public data exercises the real error path. The
+    // marker must never become an HTTP response body or reflected HTML page.
+    const marker = '<p>LOCAL-AUDIT-INJECTED-RESPONSE</p>'
+    const payload = await serializeRpcPayload({
+      data: null,
+      result: { body: marker, status: 200, headers: { 'content-type': 'text/html' } },
+      error: null, method: 'POST',
+    })
+    for (const headers of [
+      { accept: 'text/html' },
+      { accept: 'application/json', 'x-tsr-serverFn': 'true' },
+    ] as Record<string, string>[]) {
+      const url = new URL(request.url())
+      if (request.method() === 'GET') url.searchParams.set('payload', payload)
+      const response = await page.request.fetch(url.href, {
+        method: request.method(),
+        headers: { ...sameOriginHeaders, ...headers, ...(request.method() === 'POST' ? { 'content-type': 'application/json' } : {}) },
+        ...(request.method() === 'POST' ? { data: payload } : {}),
+      })
+      expect(response.headers()['content-type'] ?? '').not.toContain('text/html')
+      const body = await response.text()
+      expect(body).not.toContain('LOCAL-AUDIT-INJECTED-RESPONSE')
+      expect(body).toContain(error)
+    }
+    const healthy = await page.request.fetch(request.url(), {
+      method: request.method(), headers: { ...sameOriginHeaders, 'x-tsr-serverFn': 'true', 'content-type': 'application/json' },
+      ...(request.method() === 'POST' ? { data: request.postData()! } : {}),
+    })
+    expect(healthy.ok()).toBe(true)
+    expect(await healthy.text()).toContain('result')
   }
-  // The same real read endpoint remains usable after malformed requests.
-  const healthy = await page.request.get(request.url(), {
-    headers: { ...sameOriginHeaders, 'x-tsr-serverFn': 'true' },
-  })
-  expect(healthy.ok()).toBe(true)
-  expect(await healthy.text()).toContain('result')
 })

@@ -28,14 +28,9 @@ const IN_PLACE_REPORT_PREPARATION_KEYS = [
   ]),
 ] as const
 
-export function prepareReportRows(
+function prepareReportControlRows(
   sourceRows: unknown[] | undefined,
   duplicateControls: DuplicateControlRecord[] = [],
-  finalStatusSourceRows?: WeldRow[],
-  finalStatusSourceContext?: FinalStatusRowsContext,
-  otherSettings?: ReportWdiSettings,
-  preserveStoredRepairStatus = false,
-  preserveCancelledPstoResult = false,
 ) {
   const duplicateControlsByWeldId = new Map<number, DuplicateControlRecord[]>()
   for (const control of duplicateControls) {
@@ -43,7 +38,7 @@ export function prepareReportRows(
     current.push(control)
     duplicateControlsByWeldId.set(control.weldJointId, current)
   }
-  const rows = (sourceRows ?? []).map((row): WeldRow => {
+  return (sourceRows ?? []).map((row): WeldRow => {
     const sourceRow = row as WeldRow
     const normalizedRow = clearDisabledLnkRequests(withAutoVikForWeldDate(normalizeRowPstoRequest(sourceRow)))
     const withPendingLnk = withPendingLnkResults(normalizedRow)
@@ -54,6 +49,25 @@ export function prepareReportRows(
       duplicateControls: duplicateControlsByWeldId.get(Number(prepared.id)) ?? sourceRow.duplicateControls ?? [],
     }
   })
+}
+
+/** Server journal pages already have revision-checked final statuses and WDI.
+ * Only decorate controls; a partial page must not rebuild chain statuses that
+ * its caller would immediately discard. Other reports keep their full path. */
+export function prepareJournalPageRows(sourceRows: unknown[]) {
+  return prepareReportControlRows(sourceRows)
+}
+
+export function prepareReportRows(
+  sourceRows: unknown[] | undefined,
+  duplicateControls: DuplicateControlRecord[] = [],
+  finalStatusSourceRows?: WeldRow[],
+  finalStatusSourceContext?: FinalStatusRowsContext,
+  otherSettings?: ReportWdiSettings,
+  preserveStoredRepairStatus = false,
+  preserveCancelledPstoResult = false,
+) {
+  const rows = prepareReportControlRows(sourceRows, duplicateControls)
   const finalStatusRows = finalStatusSourceRows ?? rows
   const finalStatusContext = finalStatusSourceContext ?? buildFinalStatusRowsContext(finalStatusRows)
   const preparedRows = rows.map((row, index) => {

@@ -58,6 +58,7 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
     let correction = Number.parseFloat(sidebar.style.getPropertyValue('--sidebar-viewport-x')) || 0
     let frameId: number | null = null
     let delayedAlignmentId: number | null = null
+    let lastPageX = window.scrollX, lastViewportX = window.visualViewport?.offsetLeft ?? 0
 
     const alignToViewport = () => {
       frameId = null
@@ -73,18 +74,28 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
       if (frameId !== null) return
       frameId = window.requestAnimationFrame(alignToViewport)
     }
+    const onPageScroll = () => {
+      if (activeReport !== 'weldingJournal') { scheduleAlignment(); return }
+      // The journal contains horizontal table scrolling. A vertical page scroll
+      // does not change the sidebar's horizontal position.
+      // Avoid forcing layout after AG has just committed new virtual rows.
+      const pageX = window.scrollX, viewportX = window.visualViewport?.offsetLeft ?? 0
+      if (pageX === lastPageX && viewportX === lastViewportX) return
+      lastPageX = pageX; lastViewportX = viewportX
+      scheduleAlignment()
+    }
 
     alignToViewport()
-    window.addEventListener('scroll', scheduleAlignment, { passive: true })
+    window.addEventListener('scroll', onPageScroll, { passive: true })
     window.addEventListener('resize', scheduleAlignment)
-    window.visualViewport?.addEventListener('scroll', scheduleAlignment, { passive: true })
+    window.visualViewport?.addEventListener('scroll', onPageScroll, { passive: true })
     window.visualViewport?.addEventListener('resize', scheduleAlignment)
     sidebar.addEventListener('scroll', scheduleAlignment, { passive: true })
     delayedAlignmentId = window.setTimeout(scheduleAlignment, 300)
     return () => {
-      window.removeEventListener('scroll', scheduleAlignment)
+      window.removeEventListener('scroll', onPageScroll)
       window.removeEventListener('resize', scheduleAlignment)
-      window.visualViewport?.removeEventListener('scroll', scheduleAlignment)
+      window.visualViewport?.removeEventListener('scroll', onPageScroll)
       window.visualViewport?.removeEventListener('resize', scheduleAlignment)
       sidebar.removeEventListener('scroll', scheduleAlignment)
       if (frameId !== null) window.cancelAnimationFrame(frameId)

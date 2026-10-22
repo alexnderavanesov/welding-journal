@@ -1,6 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 
 const project = 'E2E плавная прокрутка'
 test.afterEach(async ({ page }) => {
@@ -9,7 +8,7 @@ test.afterEach(async ({ page }) => {
 })
 
 async function seed(count: number) {
-  await withE2eDatabase(db => db.query(`insert into weld_joints
+  await withLineProgramFixture(db => db.query(`insert into weld_joints
     (project_title,subtitle_code,line,joint,connection_type,material_group,welding_method,
      d1,t1,d2,t2,has_vik,weld_date,element_1,element_2,responsible)
     select $1,'SCROLL','SCROLL-'||n,'F'||(9800+n),'С17','М01','РД',159,8,159,8,'да','2026-07-01',
@@ -102,8 +101,7 @@ for (const count of [74, 150]) test(`горизонтальный скролл: 
   // Other files may leave their own fixtures in the shared disposable DB.
   await page.getByPlaceholder('Поиск по отчету').fill('SCROLL-')
   await expect(page.getByText(`Записей: ${count} ·`, { exact: false })).toBeVisible()
-  await page.getByRole('combobox', { name: 'Размер порции строк' }).selectOption('300')
-  await expect(page.getByText(`Загружено: ${count} из ${count}`, { exact: true })).toBeVisible()
+  await expect(page.getByText(`Найдено: ${count}`, { exact: true })).toBeVisible()
   await page.waitForLoadState('networkidle')
   const table = page.locator('[data-welding-journal-grid]')
   await expect(table.locator('.ag-grid-scrolling-rows .ag-row[row-index="0"]')).toBeVisible()
@@ -160,7 +158,7 @@ for (const count of [74, 150]) test(`горизонтальный скролл: 
   expect(measured.maxRows).toBeGreaterThan(0)
   expect(measured.maxRows).toBeLessThan(60)
   await expect.poll(() => journalHasNoVisibleGaps(table)).toBe(true)
-  await expect(page.getByText(`Загружено: ${count} из ${count}`, { exact: true })).toBeVisible()
+  await expect(page.getByText(`Найдено: ${count}`, { exact: true })).toBeVisible()
   expect(calls).toEqual([])
   expect(errors).toEqual([])
 })
@@ -168,7 +166,7 @@ for (const count of [74, 150]) test(`горизонтальный скролл: 
 for (const [path, report] of [['/journal', 'weldingJournal'], ['/lnk', 'lnk'], ['/psto', 'heatTreatment']]) {
   test(`${path}: колесо в обе стороны, дальние столбцы, фильтр и изменение ширины`, async ({ page }) => {
     await seed(74)
-    await withE2eDatabase(db => db.query("update weld_joints set psto_required='да' where project_title=$1", [project]))
+    await withLineProgramFixture(db => db.query("update weld_joints set psto_required='да' where project_title=$1", [project]))
     await page.addInitScript(key => localStorage.setItem(`welding-report-view:v1:${key}`, JSON.stringify({
       activePreset: 'custom', hiddenFieldKeys: [], customHiddenFieldKeys: [], collapsedSections: [], savedViews: [],
     })), report)
@@ -177,7 +175,7 @@ for (const [path, report] of [['/journal', 'weldingJournal'], ['/lnk', 'lnk'], [
     page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(request.url()) })
     await page.goto(path)
     await page.getByPlaceholder('Поиск по отчету').fill(project)
-    await expect(page.getByText('Загружено: 74 из 74', { exact: true })).toBeVisible()
+    await expect(page.getByText(path === '/journal' ? 'Найдено: 74' : 'Загружено: 74 из 74', { exact: true })).toBeVisible()
     // The initial dispatcher refresh can complete after the first rows render
     // and legitimately refetch them. Finish setup before measuring scroll RPCs.
     await page.waitForLoadState('networkidle')

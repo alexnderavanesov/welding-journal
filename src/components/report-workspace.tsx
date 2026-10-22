@@ -34,7 +34,7 @@ export function ReportWorkspace({
   const workspaceBackgroundClass = isWideTableReport || activeReport === 'percentageLines' ? 'bg-white' : 'bg-[#f4f7f9]'
 
   return (
-    <main className={`relative min-h-screen ${workspaceBackgroundClass}`} onContextMenuCapture={event => { if (isAgGridWeldReport(activeReport)) event.preventDefault() }}>
+    <main data-journal-workspace={activeReport === 'weldingJournal' ? '' : undefined} className={`relative min-h-screen ${workspaceBackgroundClass}`} onContextMenuCapture={event => { if (isAgGridWeldReport(activeReport)) event.preventDefault() }}>
       <AppSidebar
         activeReport={activeReport}
         collapsed={navCollapsed}

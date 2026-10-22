@@ -6,7 +6,7 @@ import { requireDb } from '@/db'
 import { weldJoints } from '@/db/schema'
 import { getLnkResultRestrictionReasons } from '@/lib/lnk-result-policy'
 import { getDispatcherTaskIndexSnapshot } from '@/server/dispatcher-task-index'
-import { listWeldingJournalPage } from '@/server/weld-read'
+import { readJournalGrid } from '@/server/journal-grid'
 import { deleteWeldJoint } from '@/server/weld-mutations'
 import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
 import { withE2eDatabase } from '../database'
@@ -92,7 +92,7 @@ async function expectNoChainCodes() {
   const persisted = await withE2eDatabase(async db => (await db.query(`select t.code from dispatcher_row_tasks t
     join weld_joints w on w.id=t.weld_joint_id where w.project_title=$1 and t.code in ('СП-07','СП-09')`, [project])).rows)
   expect(persisted).toEqual([])
-  const report = await listWeldingJournalPage({ data: { search: project, pageSize: 100 } })
+  const report = await readJournalGrid({ columnFilters: { search: project }, groupBy: [], route: [], start: 0, end: 100 })
   expect(report.rows.length).toBeGreaterThanOrEqual(3)
   for (const row of report.rows) expect(row.dispatcherTasks ?? '').not.toMatch(/СП-07|СП-09/)
 }

@@ -24,10 +24,12 @@ for (const path of ['/journal', '/lnk', '/psto']) {
     const errors: string[] = []
     const rpcCalls: string[] = []
     const pendingRpc = new Set<Request>()
+    let lastRpc = 0
     page.on('pageerror', (error) => errors.push(error.message))
-    page.on('request', (request) => { if (request.url().includes('/_serverFn/')) { rpcCalls.push(rpcName(request.url())); pendingRpc.add(request) } })
-    page.on('requestfinished', request => pendingRpc.delete(request))
-    page.on('requestfailed', request => pendingRpc.delete(request))
+    page.on('request', (request) => { if (request.url().includes('/_serverFn/')) { lastRpc = Date.now(); rpcCalls.push(rpcName(request.url())); pendingRpc.add(request) } })
+    const settled = (request: Request) => { if (pendingRpc.delete(request)) lastRpc = Date.now() }
+    page.on('requestfinished', settled)
+    page.on('requestfailed', settled)
     await page.goto(path)
     await page.waitForLoadState('networkidle')
     const panel = page.getByLabel('Диспетчер задач', { exact: true })
@@ -40,10 +42,13 @@ for (const path of ['/journal', '/lnk', '/psto']) {
     // networkidle can precede hydration, and a repeated call reuses that state.
     // Wait for the actual fresh snapshot and its report invalidation instead.
     await expect(panel).toContainText('Изменения выполняются только после подтверждения.')
-    await expect.poll(() => pendingRpc.size).toBe(0)
+    // Publication schedules journal refresh after 80ms; the other reports
+    // coalesce mutations for 500ms. An empty in-flight set between those
+    // stages is not a settled startup and must not enter the toggle measure.
+    await expect.poll(() => pendingRpc.size === 0 && Date.now() - lastRpc > 600).toBe(true)
     expect(rpcCalls.filter(name => name.startsWith('getDispatcherTaskSnapshot_'))).toHaveLength(1)
     expect(rpcCalls.filter(name => name.startsWith('refreshDispatcherTaskSnapshot_')).length).toBeLessThanOrEqual(1)
-    expect(rpcCalls.filter(name => /^list(WeldingJournal|LnkReport|HeatTreatmentReport)Page_/.test(name)).length).toBeLessThanOrEqual(2)
+    expect(rpcCalls.filter(name => /^(?:readJournalGrid|list(?:LnkReport|HeatTreatmentReport)Page)_/.test(name)).length).toBeLessThanOrEqual(2)
     const beforeToggleRequests = [...rpcCalls]
 
     for (const width of [1600, 1000]) {

@@ -53,11 +53,11 @@ test.beforeEach(async ({ page }) => {
 async function open(page: Page, search = PROJECT) {
   await page.goto('/journal')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(search)
-  await expect(page.getByText(`Загружено: ${search === PROJECT ? 25 : 1} из ${search === PROJECT ? 25 : 1}`, { exact: true })).toBeVisible()
+  await expect(page.getByText(`Найдено: ${search === PROJECT ? 25 : 1}`, { exact: true })).toBeVisible()
   await page.locator('.ag-header-cell[col-id="line"]').click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Сгруппировать загруженные по «Линия»', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Сгруппировать по «Линия»', exact: true }).click()
 }
-const group = (page: Page, line: string) => page.locator('.ag-row-group').filter({ has: page.getByRole('button', { name: new RegExp(`^(Развернуть|Свернуть) группу ${line}$`) }) })
+const group = (page: Page, line: string) => page.locator('.ag-row-group:not(.ag-opacity-zero)').filter({ has: page.getByRole('button', { name: new RegExp(`^(Развернуть|Свернуть) группу ${line}$`) }) })
 
 test('physical totals, dates and chain results stay in their columns; error takes priority', async ({ page }, info) => {
   const errors: string[] = []
@@ -97,7 +97,7 @@ test('physical totals, dates and chain results stay in their columns; error take
   expect(errors).toEqual([])
 })
 
-test('nested totals deduplicate physical connections; selection, keyboard and repeated toggles send no RPC', async ({ page }) => {
+test('nested totals deduplicate physical connections; selection and keyboard retain full totals with bounded server requests', async ({ page }) => {
   const calls: string[] = []
   page.on('request', request => { const name = rpcName(request.url()); if (name) calls.push(name) })
   await open(page)
@@ -110,11 +110,11 @@ test('nested totals deduplicate physical connections; selection, keyboard and re
     await target.locator('[col-id="line"]').press('F2')
     await expect(target.getByRole('button', { name: 'Развернуть группу SUMMARY-REPAIR' })).toBeVisible()
   }
-  await target.getByRole('checkbox').check()
+  await target.getByRole('checkbox').click()
   await expect(page.getByText('Выбрано: 4', { exact: true })).toBeVisible()
   await expect(target.locator('[data-group-summary="joint"]')).toHaveText('2')
   await page.locator('.ag-header-cell[col-id="projectTitle"]').click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Сгруппировать загруженные по «Проект»', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Сгруппировать по «Проект»', exact: true }).click()
   await page.getByRole('button', { name: 'Группировка: Проект', exact: true }).press('Alt+ArrowLeft')
   const root = page.locator('.ag-row-group.ag-row-level-0')
   await expect(root.locator('[data-group-summary="joint"]')).toHaveText('18')
@@ -124,7 +124,8 @@ test('nested totals deduplicate physical connections; selection, keyboard and re
   await root.locator('[col-id="line"]').press('Enter')
   await expect(target.getByRole('checkbox')).toBeChecked()
   await page.waitForLoadState('networkidle')
-  expect(calls.slice(before)).toEqual([])
+  expect(calls.slice(before).filter(name => name.startsWith('listWeldingJournalPage'))).toEqual([])
+  expect(calls.slice(before).filter(name => name.startsWith('readJournalGrid')).length).toBeLessThanOrEqual(25)
 })
 
 test('filtering to the last repair keeps physical WDI but does not claim a complete chain', async ({ page }) => {
@@ -135,7 +136,7 @@ test('filtering to the last repair keeps physical WDI but does not claim a compl
   await page.locator('.ag-header-cell[col-id="joint"] .ag-header-cell-filter-button').click()
   await page.getByRole('dialog', { name: 'Фильтр: Стык' }).getByRole('checkbox', { name: /^S2R2/ }).check()
   await page.keyboard.press('Escape')
-  await expect(page.getByText('Загружено: 1 из 1', { exact: true })).toBeVisible()
+  await expect(page.getByText('Найдено: 1', { exact: true })).toBeVisible()
   await expect(group(page, 'SUMMARY-REPAIR').locator('[data-group-summary="joint"]')).toHaveText('1')
   await expect(group(page, 'SUMMARY-REPAIR').locator('[data-group-summary="wdi"]')).toHaveText('8')
   await expect(group(page, 'SUMMARY-REPAIR').locator('[data-group-summary="finalStatus"]')).toHaveText('неполная цепочка')
@@ -148,7 +149,7 @@ test('rejected filter selects joint records regardless of the previous group res
   await page.locator('.ag-header-cell[col-id="finalStatus"] .ag-header-cell-filter-button').click()
   await filter.getByRole('checkbox', { name: /^не годен\s+10$/ }).check()
   await page.keyboard.press('Escape')
-  await expect(page.getByText('Загружено: 10 из 10', { exact: true })).toBeVisible()
+  await expect(page.getByText('Найдено: 10', { exact: true })).toBeVisible()
   for (const line of ['SUMMARY-REPAIR', 'SUMMARY-COIL', 'SUMMARY-WELD', 'SUMMARY-REQUEST', 'SUMMARY-NK']) {
     const target = group(page, line)
     await expect(target.locator('[data-group-summary="finalStatus"]')).toHaveText(line === 'SUMMARY-COIL' ? 'заменены катушкой' : 'не годен')
@@ -164,7 +165,7 @@ test('rejected filter selects joint records regardless of the previous group res
   await page.locator('.ag-header-cell[col-id="finalStatus"] .ag-header-cell-filter-button').click()
   await filter.getByRole('button', { name: 'Сбросить фильтр', exact: true }).click()
   await page.keyboard.press('Escape')
-  await expect(page.getByText('Загружено: 25 из 25', { exact: true })).toBeVisible()
+  await expect(page.getByText('Найдено: 25', { exact: true })).toBeVisible()
   await expect(group(page, 'SUMMARY-REPAIR').locator('[data-group-summary="finalStatus"]')).toHaveText('годен')
 })
 

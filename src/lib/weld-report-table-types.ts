@@ -8,6 +8,7 @@ import type { WeldTableSection } from './weld-table-sections'
 import type { WeldSort } from '@/server/weld-contracts'
 
 export type WeldTableProps = {
+  journalServer?: import('./use-journal-server-query').JournalServerSource
   rows: WeldRow[]
   rowsReady?: boolean
   queryIdentity?: string

@@ -33,7 +33,7 @@ for (const path of ['/journal', '/lnk', '/psto']) {
     const gate = new Promise<void>(resolve => { release = resolve })
     let requests = 0
     await page.route('**/_serverFn/**', async route => {
-      if (rpcName(route.request().url()).startsWith('getWeldReportSummary_')) {
+      if (rpcName(route.request().url()).startsWith(path === '/journal' ? 'getJournalReportSummary_' : 'getWeldReportSummary_')) {
         requests++
         await gate
       }
@@ -73,8 +73,8 @@ test('late search response cannot replace the newer selection or its summary', a
   let blocked = false
   await page.route('**/_serverFn/**', async route => {
     const request = route.request()
-    if (rpcName(request.url()).startsWith('listWeldingJournalPage_') &&
-      new URL(request.url()).searchParams.get('payload')?.includes(first)) {
+    if (rpcName(request.url()).startsWith('readJournalGrid_') &&
+      request.postData()?.includes(first)) {
       blocked = true
       await gate
     }
@@ -99,7 +99,7 @@ test('late search response cannot replace the newer selection or its summary', a
 
 test('summary failure does not hide the found rows or prevent opening their cards', async ({ page }) => {
   await page.route('**/_serverFn/**', async route => {
-    if (rpcName(route.request().url()).startsWith('getWeldReportSummary_')) {
+    if (rpcName(route.request().url()).startsWith('getJournalReportSummary_')) {
       await route.fulfill({ status: 503, contentType: 'text/plain', body: 'Summary temporarily unavailable' })
     } else await route.continue()
   })
@@ -121,7 +121,7 @@ test('fast typing is coalesced and does not request every intermediate search', 
   await page.waitForLoadState('networkidle')
   const requests: string[] = []
   page.on('request', request => {
-    if (rpcName(request.url()).startsWith('listWeldingJournalPage_')) requests.push(request.url())
+    if (rpcName(request.url()).startsWith('readJournalGrid_')) requests.push(request.postData() ?? '')
   })
   await search.fill('')
   await search.pressSequentially(second, { delay: 8 })
@@ -131,7 +131,7 @@ test('fast typing is coalesced and does not request every intermediate search', 
   await expect(result).toBeVisible()
   await expect(summary(page)).toContainText(/Записей: 1(?:\s|·|$)/)
   expect(requests).toHaveLength(1)
-  expect(new URL(requests[0]).searchParams.get('payload')).toContain(second)
+  expect(requests[0]).toContain(second)
 })
 
 test('failed background refresh after saving shows an explicit retry and keeps the saved change', async ({ page }) => {
@@ -158,7 +158,7 @@ test('failed background refresh after saving shows an explicit retry and keeps t
       refreshStatuses.push(response.status())
       await publicationGate
       await route.fulfill({ response })
-    } else if (blocked && name.startsWith('listWeldingJournalPage_')) {
+    } else if (blocked && name.startsWith('readJournalGrid_')) {
       failedReads++
       await route.fulfill({ status: 503, contentType: 'text/plain', body: 'Rows temporarily unavailable' })
     } else await route.continue()
@@ -251,6 +251,9 @@ async function withPausedDispatcherPublishers(run: () => Promise<void>) {
 
 test('task-filter totals follow active/background publications without a fact revision change', () => withPausedDispatcherPublishers(async () => {
   const { getWeldReportSummary } = await import('../../src/server/weld-read')
+  const { readJournalGrid, countJournalGridSelection } = await import('../../src/server/journal-grid')
+  const { summarizeJournalGridRange } = await import('../../src/server/journal-grid-range')
+  const { readJournalFilterPage } = await import('../../src/server/journal-filter-options')
   const request = { report: 'lnk' as const, search: first,
     columnFilters: { __dispatcherTaskFilter: JSON.stringify({ mode: 'codes', codes: ['E2E-PUB'] }) } }
   const sourceRevision = () => withE2eDatabase(async db => (await db.query('select source_revision from derived_calculation_state where id=1')).rows[0].source_revision)
@@ -264,11 +267,17 @@ test('task-filter totals follow active/background publications without a fact re
   })
   try {
     expect((await getWeldReportSummary({ data: request })).total).toBe(0)
+    const gridRequest = { columnFilters: { ...request.columnFilters, search: first }, groupBy: [], route: [], start: 0, end: 100 }
+    const empty = await readJournalGrid(gridRequest)
+    expect(empty.rowCount).toBe(0)
     const revision = await sourceRevision()
     for (const [tasks, state] of [
       ['dispatcher_row_tasks', 'dispatcher_task_index_state'],
       ['dispatcher_background_row_tasks', 'dispatcher_background_task_index_state'],
     ]) {
+      // The task facet depends on publication even without a task row filter.
+      const taskFacet = { fieldKey: 'dispatcherTasks' as const, search: first }
+      const previousTaskOptions = await readJournalFilterPage(taskFacet)
       // Simulate atomic index publication, not a business-fact change. The
       // synthetic code isolates this test from actual missing-field warnings.
       await withE2eDatabase(async db => {
@@ -278,7 +287,21 @@ test('task-filter totals follow active/background publications without a fact re
         await db.query('commit')
       })
       expect(await sourceRevision()).toBe(revision)
+      expect((await readJournalFilterPage(taskFacet)).revision).not.toBe(previousTaskOptions.revision)
+      await expect(readJournalFilterPage({ ...taskFacet, revision: previousTaskOptions.revision })).rejects.toThrow('Данные журнала изменились')
       expect((await getWeldReportSummary({ data: request })).total).toBe(1)
+      const found = await readJournalGrid(gridRequest)
+      expect(found.rowCount).toBe(1)
+      expect(found.rows.map(row => row.id)).toEqual([original.id])
+      const grouped = { ...gridRequest, groupBy: ['line' as const], revision: found.revision }
+      expect((await readJournalGrid(grouped)).rows[0].journalGroup?.recordCount).toBe(1)
+      const range = { ...gridRequest, revision: found.revision, anchor: 'line', parts: [{ route: [], start: 0, end: 1, columns: ['joint' as const] }] }
+      expect((await summarizeJournalGridRange(range)).count).toBe(1)
+      const facet = { columnFilters: gridRequest.columnFilters, fieldKey: 'joint' as const, revision: found.revision }
+      expect((await readJournalFilterPage(facet)).total).toBe(1)
+      await expect(readJournalGrid({ ...gridRequest, revision: empty.revision })).rejects.toThrow('Данные журнала изменились')
+      const counts = await countJournalGridSelection({ ...gridRequest, ids: [original.id], routes: [], revision: found.revision })
+      expect(counts.total).toBe(1)
       await withE2eDatabase(async db => {
         await db.query('begin')
         await db.query(`delete from ${tasks} where weld_joint_id=$1 and task_key='e2e-publication'`, [original.id])
@@ -287,6 +310,11 @@ test('task-filter totals follow active/background publications without a fact re
       })
       expect(await sourceRevision()).toBe(revision)
       expect((await getWeldReportSummary({ data: request })).total).toBe(0)
+      expect((await readJournalGrid(gridRequest)).rowCount).toBe(0)
+      await expect(readJournalGrid(grouped)).rejects.toThrow('Данные журнала изменились')
+      await expect(summarizeJournalGridRange(range)).rejects.toThrow('Данные журнала изменились')
+      await expect(readJournalFilterPage(facet)).rejects.toThrow('Данные журнала изменились')
+      await expect(countJournalGridSelection({ ...gridRequest, snapshot: counts.snapshot, routes: [], revision: found.revision })).rejects.toThrow('Данные журнала изменились')
     }
   } finally {
     await withE2eDatabase(async db => {

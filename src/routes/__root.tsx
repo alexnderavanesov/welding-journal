@@ -7,9 +7,10 @@ import { SecurityProvider } from '@/lib/security-context'
 import appCss from '@/styles.css?url'
 import companyFavicon from '@/assets/company-favicon.png?url&no-inline'
 import companyFaviconIco from '@/assets/company-favicon.ico?url&no-inline'
+import developmentFavicon from '@/assets/development-favicon.svg?url&no-inline'
 
-// Keep development tabs distinct from the deployed application.
-const developmentFavicon = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect x="1" y="1" width="30" height="30" rx="6" fill="#92949f"/><text x="16" y="25" text-anchor="middle" fill="white" font-family="Arial,sans-serif" font-size="25" font-weight="600">1</text></svg>')
+// Keep development tabs distinct; use a file URL because Safari can ignore
+// data-URL favicons. All browsers receive the same asset.
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({

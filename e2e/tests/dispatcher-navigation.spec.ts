@@ -1,20 +1,18 @@
 import { expect, test } from '@playwright/test'
-import { withE2eDatabase } from '../database'
+import { withLineProgramFixture } from '../line-program-fixtures'
 
 const project = 'E2E dispatcher navigation'
 
 test.afterEach(async () => {
-  await withE2eDatabase(async (client) => {
+  await withLineProgramFixture(async (client) => {
     await client.query('delete from weld_joints where project_title = $1', [project])
-    await client.query('update dispatcher_task_index_state set source_revision = source_revision + 1, full_rebuild = true where id = 1')
   })
 })
 
 test('задача линии открывает программу ПСТО из другого отчета; Назад и Вперед сохраняют контекст', async ({ page }) => {
-  await withE2eDatabase(async (client) => {
+  await withLineProgramFixture(async (client) => {
     await client.query(`insert into weld_joints (project_title, subtitle_code, line, joint, has_vik, psto_required, weld_date)
       values ($1, 'NAV', 'NAV-LINE', 'NAV1', 'да', 'да', '2026-07-01'), ($1, 'NAV', 'NAV-LINE', 'NAV2', 'да', null, '2026-07-01')`, [project])
-    await client.query('update dispatcher_task_index_state set source_revision = source_revision + 1, full_rebuild = true where id = 1')
   })
   await page.goto('/journal')
   const search = page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' })

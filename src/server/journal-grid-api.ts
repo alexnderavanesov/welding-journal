@@ -1,0 +1,36 @@
+import { createServerFn } from '@tanstack/react-start'
+import type { JournalSelectionCountRequest } from '@/lib/journal-selection-counts'
+import type { JournalGridRequest, JournalGridQuery, JournalRangeRequest, JournalRevision } from '@/lib/journal-server-grid'
+
+export const readJournalGrid = createServerFn({ method: 'POST' })
+  .validator((data: JournalGridRequest) => data)
+  .handler(async ({ data }) => (await import('./journal-grid')).readJournalGrid(data))
+export const selectJournalGridRows = createServerFn({ method: 'POST' })
+  .validator((data: JournalGridQuery & { route: string[]; revision: JournalRevision }) => data)
+  .handler(async ({ data }) => (await import('./journal-grid')).selectJournalGridRows(data))
+export const summarizeJournalGridRange = createServerFn({ method: 'POST' })
+  .validator((data: JournalRangeRequest) => data)
+  .handler(async ({ data }) => (await import('./journal-grid-range')).summarizeJournalGridRange(data, (await import('@tanstack/react-start/server')).getRequest().signal))
+export const copyJournalGridRange = createServerFn({ method: 'POST' })
+  .validator((data: JournalRangeRequest) => data)
+  .handler(async ({ data }) => (await import('./journal-grid-range')).copyJournalGridRange(data, (await import('@tanstack/react-start/server')).getRequest().signal))
+export const countJournalGridSelection = createServerFn({ method: 'POST' })
+  .validator((data: JournalSelectionCountRequest) => data)
+  .handler(async ({ data }) => (await import('./journal-grid')).countJournalGridSelection(data))
+
+// Large journal choices travel in request bodies, not GET URLs.
+export const listJournalReportRows = createServerFn({ method: 'POST' })
+  .validator((data: import('./weld-contracts').WeldPageRequest) => data)
+  .handler(async ({ data }) => (await import('./weld-read')).listWeldingJournalPage({ data }))
+export const getJournalReportSummary = createServerFn({ method: 'POST' })
+  .validator((data: import('./weld-contracts').WeldReportSummaryRequest) => data)
+  .handler(async ({ data }) => (await import('./weld-read')).getWeldReportSummary({ data: { ...data, report: 'weldingJournal' } }))
+export const listJournalFilterOptions = createServerFn({ method: 'POST' })
+  .validator((data: import('./weld-contracts').WeldColumnFilterOptionsRequest) => data)
+  .handler(async ({ data }) => (await import('./weld-read')).listWeldColumnFilterOptions({ data: { ...data, report: 'weldingJournal' } }))
+export const readJournalFilterPage = createServerFn({ method: 'POST' })
+  .validator((data: import('@/lib/journal-filter-options').JournalFilterRequest) => data)
+  .handler(async ({ data }) => (await import('./journal-filter-options')).readJournalFilterPage(data))
+export const selectJournalFilterValues = createServerFn({ method: 'POST' })
+  .validator((data: import('@/lib/journal-filter-options').JournalFilterRequest) => data)
+  .handler(async ({ data }) => (await import('./journal-filter-options')).selectJournalFilterValues(data))

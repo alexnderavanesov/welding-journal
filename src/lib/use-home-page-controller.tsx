@@ -1,3 +1,4 @@
+import { useJournalServerQuery } from './use-journal-server-query'
 import { createLnkDialogNavigation } from '@/lib/lnk-dialog-navigation'
 import { usePreHeatTreatmentResultEditActions } from '@/lib/use-pre-heat-treatment-result-edit-actions'
 import { getDuplicateControlRequisiteErrors } from '@/lib/document-requisites'
@@ -269,9 +270,10 @@ import {
 import {
 	getWeldJointById,
 	listWeldJointRowsByIds,
-	listWeldFinalStatusContextKeys, listWeldingJournalPage,
+	listWeldFinalStatusContextKeys,
 	WELD_PAGE_ALL_SIZE
 } from '@/server/weld-read-api'
+import { listJournalReportRows } from '@/server/journal-grid-api'
 import {
 	WORKFLOW_REGISTRY_MAX_LOADED_ROWS,
 	WORKFLOW_REGISTRY_PAGE_SIZE,
@@ -1807,12 +1809,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     () => buildDispatcherTaskServerFilters(activeColumnFilters),
     [activeColumnFilters],
   )
-  const weldPageQuery = useWeldPageQuery({
-    enabled: isServerPagedTab,
+  const legacyWeldPageQuery = useWeldPageQuery({
+    enabled: isServerPagedTab && activeReport !== 'weldingJournal',
     report: isServerPagedTab ? activeReport : 'weldingJournal',
     columnFilters: isServerPagedTab ? dispatcherTaskServerFilters : {},
     sort: isServerPagedTab ? activeReportSort : null,
   })
+  const journalPageQuery = useJournalServerQuery({ enabled: activeReport === 'weldingJournal', columnFilters: dispatcherTaskServerFilters, sort: activeReportSort })
+  const weldPageQuery = activeReport === 'weldingJournal' ? journalPageQuery : legacyWeldPageQuery
   const reportOutputContext = `${activeReport}:${weldPageQuery.requestedIdentity}`
   const reportOutputScopeRef = useRef({ identity: reportOutputContext, ready: weldPageQuery.rowsReady, generation: 0 })
   const reportOutputGeneration = reportOutputScopeRef.current.generation +
@@ -1824,7 +1828,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     }
   }, [reportOutputGeneration])
   const basePagedReportRows = useReportRows(
-    weldPageQuery.rows,
+    activeReport === 'weldingJournal' ? undefined : weldPageQuery.rows,
     [],
     undefined,
     finalStatusContextQuery.isEnabled && isRemoteFinalStatusContextReady ? remoteFinalStatusContext : undefined,
@@ -1832,7 +1836,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     true,
     activeReport === 'heatTreatment',
   )
-  const pagedReportRows = basePagedReportRows
+  const pagedReportRows = activeReport === 'weldingJournal' ? weldPageQuery.rows : basePagedReportRows
   const tableTaskContext = useDispatcherTaskContext(pagedReportRows, taskContextRevision, isServerPagedTab && needsTaskContext)
   const tableAdviceTasks = needsTaskContext ? tableTaskContext.tasks : snapshotAdviceTasks
   const tableTasksByRow = useDispatcherTasksByRow(pagedReportRows, tableAdviceTasks)
@@ -1851,9 +1855,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const tableActionRows = useMemo(() => {
     if (isServerPagedTab && !weldPageQuery.rowsReady) return []
     const byId = new Map((visibleRows as WeldRow[]).map((row) => [row.id, row]))
-    for (const row of pagedReportRows) byId.set(row.id, { ...byId.get(row.id), ...row })
+    for (const row of pagedReportRows) {
+      const base = byId.get(row.id)
+      byId.set(row.id, activeReport === 'weldingJournal' && (!base || base === row) ? row : { ...base, ...row })
+    }
     return [...byId.values()]
-  }, [isServerPagedTab, weldPageQuery.rowsReady, visibleRows, pagedReportRows])
+  }, [activeReport, isServerPagedTab, weldPageQuery.rowsReady, visibleRows, pagedReportRows])
   const {
     openAllLnkResultRegistry,
     openSelectedLnkResultRegistry,
@@ -1964,7 +1971,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     includeSort: boolean
   }) => {
     const filters = splitReportQuickSearch(columnFilters)
-    const result = await listWeldingJournalPage({
+    const result = await listJournalReportRows({
       data: {
         page: 1,
         pageSize: WELD_PAGE_ALL_SIZE,
@@ -5463,7 +5470,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     documentGenerationFinalStatusContext: remoteFinalStatusContext,
     welderStamps,
     welderStampsRegistryProps: { ...welderStampsRegistryProps, onTasksVisibilityChange: setAreWelderTasksVisible },
-    weldTableProps,
+    weldTableProps: activeReport === 'weldingJournal' ? { ...weldTableProps, journalServer: journalPageQuery.source } : weldTableProps,
     reportExportFieldsRef,
     onOpenPercentageLineStampRows: openPercentageLineStampRows,
     onOpenReportRowIds: openReportRowIds,

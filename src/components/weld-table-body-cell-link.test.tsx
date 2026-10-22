@@ -6,11 +6,12 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldField } from '@/lib/weld-fields'
 import { LAYERED_CONTROL_WAITING_LABEL } from '@/lib/layered-control-documents'
 
+describe.each([false, true])('cell workflow links (journal=%s)', journalTooltips => {
 describe('WeldTableBodyCell background', () => {
   it.each(['Vik', 'Pvk'] as const)('shows a compact, non-clickable waiting state in the %s cell and removes it on cancellation', (method) => {
     const onOpenDocument = vi.fn()
     const field = { key: `layered${method}Documents`, dbName: '__layered', label: 'Послойный', kind: 'text', group: 'Документы', virtual: true } satisfies WeldField
-    const draw = (row: WeldRow) => <WeldTableBodyCell
+    const draw = (row: WeldRow) => <WeldTableBodyCell journalTooltips={journalTooltips}
       row={row} field={field} displayValue="" isEditableCell={false}
       isResultField={false} onOpenDocument={onOpenDocument}
     />
@@ -33,7 +34,7 @@ describe('WeldTableBodyCell LNK request link', () => {
     const onOpenDocument = vi.fn()
     const row = { id: 1, [fieldKey]: 'ПСТО-17', systemDocumentIds: { [fieldKey]: 17 } } as WeldRow
     const field = { key: fieldKey, dbName: fieldKey, label: fieldKey, kind: 'text', group: 'Контроль' } satisfies WeldField
-    const draw = (displayValue: string) => <WeldTableBodyCell
+    const draw = (displayValue: string) => <WeldTableBodyCell journalTooltips={journalTooltips}
       row={row} field={field} displayValue={displayValue}
       isEditableCell={false} isResultField={false}
       onOpenDocument={onOpenDocument}
@@ -57,7 +58,7 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <WeldTableBodyCell
+      <WeldTableBodyCell journalTooltips={journalTooltips}
         row={row}
         field={field}
         displayValue={row.joint}
@@ -84,7 +85,7 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <WeldTableBodyCell
+      <WeldTableBodyCell journalTooltips={journalTooltips}
         row={row}
         field={field}
         displayValue={row.finalStatus}
@@ -113,7 +114,7 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <WeldTableBodyCell
+      <WeldTableBodyCell journalTooltips={journalTooltips}
         row={row}
         field={field}
         displayValue={row.joint}
@@ -142,7 +143,7 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <WeldTableBodyCell
+      <WeldTableBodyCell journalTooltips={journalTooltips}
         row={row}
         field={field}
         displayValue={row.joint}
@@ -187,7 +188,7 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <WeldTableBodyCell
+      <WeldTableBodyCell journalTooltips={journalTooltips}
         row={row}
         field={field}
         displayValue={row.controlBasisSummary}
@@ -222,7 +223,7 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <WeldTableBodyCell
+      <WeldTableBodyCell journalTooltips={journalTooltips}
         row={row}
         field={field}
         displayValue={row[fieldKey]}
@@ -257,7 +258,7 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <WeldTableBodyCell
+      <WeldTableBodyCell journalTooltips={journalTooltips}
         row={row}
         field={field}
         displayValue={row.vikConclusion}
@@ -292,7 +293,7 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <WeldTableBodyCell
+      <WeldTableBodyCell journalTooltips={journalTooltips}
         row={row}
         field={field}
         displayValue={row.vikResult}
@@ -334,7 +335,7 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <WeldTableBodyCell
+      <WeldTableBodyCell journalTooltips={journalTooltips}
         row={row}
         field={field}
         displayValue="Пора до ТО"
@@ -374,7 +375,7 @@ describe('WeldTableBodyCell LNK request link', () => {
     } satisfies WeldField
 
     render(
-      <WeldTableBodyCell
+      <WeldTableBodyCell journalTooltips={journalTooltips}
         row={row}
         field={field}
         displayValue={row.layeredVikDocuments}
@@ -389,4 +390,6 @@ describe('WeldTableBodyCell LNK request link', () => {
     expect(onOpenDocument).toHaveBeenNthCalledWith(1, row, 'layeredVikEdgesDocument')
     expect(onOpenDocument).toHaveBeenNthCalledWith(2, row, 'layeredVikLayersDocument')
   })
+})
+
 })

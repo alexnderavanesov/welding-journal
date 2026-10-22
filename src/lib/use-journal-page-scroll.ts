@@ -5,10 +5,10 @@ const ease = (progress: number) => progress * progress * (3 - 2 * progress)
 const wholePixels = (value: number) => Math.trunc(value + Math.sign(value) * 1e-7)
 
 /** Carry one continuous movement from the page heading into the native grid. */
-export function useJournalPageScroll(frame: RefObject<HTMLDivElement | null>, stickyOffset = 0) {
+export function useJournalPageScroll(frame: RefObject<HTMLDivElement | null>, stickyOffset = 0, enabled = true) {
   useEffect(() => {
     const element = frame.current
-    if (!element) return
+    if (!element || !enabled) return
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
     let attached = false, scheduled = 0, pendingY = 0, pendingX = 0
     let inputs: { x: number; y: number; start: number; progress: number }[] = []
@@ -105,5 +105,5 @@ export function useJournalPageScroll(frame: RefObject<HTMLDivElement | null>, st
       window.removeEventListener('keydown', cancelMovement, true)
       window.removeEventListener('blur', cancelMovement)
     }
-  }, [frame, stickyOffset])
+  }, [frame, stickyOffset, enabled])
 }

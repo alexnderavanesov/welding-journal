@@ -1,0 +1,70 @@
+/* The paint tile belongs to the viewport only. Its horizontal updates must not
+   invalidate inherited styles in every rendered cell, especially in WebKit. */
+@property --journal-gap-image { syntax: "*"; inherits: false; initial-value: none; }
+/* Keep native document wheel handling. Older WebKit blocks even ordinary
+   scrolling with root `none`/`contain` plus AG's non-passive wheel listener
+   (WebKit 281300). `chain` suppresses elastic bounce without blocking chaining;
+   engines without it keep native boundary behaviour. No wheel interception. */
+html:has([data-journal-workspace]) { overscroll-behavior-y: auto; overscroll-behavior-y: chain; }
+[data-journal-workspace] { min-height: 100dvh; overflow-anchor: none; }
+[data-journal-workspace] > div { padding-top: 12px; }
+[data-journal-workspace] [data-scroll-top-boundary] { padding-bottom: 12px; }
+.journal-page-track { position: relative; min-height: 180px; }
+.journal-page-stage { position: sticky; top: 0; display: flex; flex-direction: column; height: calc(100dvh - 240px); min-height: 180px; }
+.journal-server-section .journal-grid-frame { flex: 1 1 0; min-height: 0; height: auto; }
+.journal-server-section .journal-footer { flex: none; height: 30px; min-height: 30px; border-radius: 0 0 6px 6px; gap: 12px; }
+.journal-server-section .journal-footer-right { gap: 14px; }
+.journal-server-section .journal-range-summary { display: flex; gap: 14px; align-items: center; }
+/* Vertical input belongs to the document. Keep AG's horizontal scrollbar and
+   programmatic vertical scroll (keyboard navigation and range dragging). */
+.journal-server-section .ag-grid-viewport { overflow-y: hidden; }
+/* Existing rows cover this static viewport-sized tile themselves. It also
+   survives frames where the compositor has moved beyond prepared row pixels.
+   Short/empty results have no tile; result fades never reveal it through text. */
+.journal-server-section .journal-grid-frame:not([data-grid-result-revealing]) .ag-grid-viewport[data-journal-scrollable] {
+  background-image: var(--journal-gap-image, none);
+  background-repeat: repeat-y;
+}
+.journal-server-section .journal-grid-frame:not([data-grid-result-revealing]) .ag-grid-viewport[data-journal-scrollable] .ag-grid-scrolling-rows { background-color: transparent; }
+/* This is a direct scroll-position mapping, not a time-based transition.
+   The compositor moves existing row pixels while JS keeps virtualization up
+   to date. Unsupported browsers retain the existing document-scroll adapter. */
+.journal-server-section [data-journal-native-scroll] {
+  animation: journal-document-scroll 1s linear both;
+  animation-timeline: scroll(root block);
+}
+@keyframes journal-document-scroll {
+  from { transform: translateY(0); }
+  to { transform: translateY(calc(-1 * var(--journal-scroll-distance))); }
+}
+/* Keep AG's scroll partner measurable. display:none makes FakeVScrollComp
+   retry visibility every 10ms, restarting the wait after each 100ms timeout.
+   It is already absolutely positioned and aria-hidden, so an invisible,
+   non-interactive partner takes no table space and needs no retry timers. */
+.journal-server-section .ag-body-vertical-scroll { opacity: 0 !important; visibility: visible !important; pointer-events: none; }
+.journal-server-section .ag-body-horizontal-scroll { background: #f7f9fc; }
+.journal-server-section .ag-body-horizontal-scroll-viewport { scrollbar-color: #a6b2c3 #f7f9fc; scrollbar-width: thin; }
+.journal-server-checkbox { display: flex; height: 100%; width: 100%; margin: 0; align-items: center; justify-content: center; }
+.journal-server-section .ag-cell[col-id="ag-Grid-SelectionColumn"] { text-overflow: clip; }
+.journal-server-section .journal-server-selected { background: #e8f2fd !important; }
+/* Mouse menu commands keep a keyboard return point without painting it as a
+   selection. Real cell ranges remain visible; keyboard input restores focus. */
+.journal-server-section [data-journal-pointer-menu] .ag-cell-focus:not(.ag-cell-range-selected) { border-color: transparent !important; }
+.journal-server-task-panels { max-height: 32dvh; overflow: auto; }
+
+.journal-server-section .journal-grid-frame { position: relative; }
+.journal-grid-frame[data-journal-updating] .ag-grid-scrolling-rows { pointer-events: none; }
+.journal-update-notice { position: absolute; right: 16px; top: 100px; z-index: 3; padding: 5px 10px; border: 1px solid #dbe5ef; border-radius: 5px; background: #f8fafcf2; color: #64748b; font-size: 12px; pointer-events: none; }
+.journal-loading-cell { display: flex; align-items: center; height: 100%; width: 100%; }
+.journal-loading-cell > span { display: block; height: 14px; max-width: 100%; border-radius: 4px; background: color-mix(in srgb, var(--ag-foreground-color, #64748b) 14%, transparent); }
+.journal-load-error { display: flex; flex-wrap: wrap; gap: 8px; max-width: calc(100% - 32px); pointer-events: auto; color: #9f1239; border-color: #fecdd3; background: #fff1f2; }
+.journal-load-error button { text-decoration: underline; cursor: pointer; }
+.journal-cell-tooltip { position: fixed; z-index: 10000; width: 320px; max-width: calc(100vw - 24px); padding: 12px 14px; border: 1px solid #dbe5ef; border-radius: 10px; background: #fff; box-shadow: 0 8px 28px #0f172a1f; color: #475569; font-size: 12px; line-height: 1.5; pointer-events: none; }
+.journal-cell-tooltip strong { display: block; margin-bottom: 5px; font-size: 13px; font-weight: 600; color: #0f172a; }
+.journal-cell-tooltip p { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
+/* Animate only surviving rows during a group toggle. Do not enable AG's row
+   removal animation: it retains obsolete focusable rows after query changes. */
+.journal-server-section .journal-group-motion .ag-row { transition: transform 120ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .journal-server-section .journal-group-motion .ag-row { transition: none; }
+}

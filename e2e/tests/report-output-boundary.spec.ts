@@ -142,8 +142,8 @@ test('1000 строк: разрешённая широкая печать цел
   const sampling = await sampleLocalAuditResources(browser)
   try {
     await page.goto('/journal')
-    const filteredRows = page.waitForResponse(response => rpcName(response.url()).startsWith('listWeldingJournalPage_') &&
-      Boolean(new URL(response.url()).searchParams.get('payload')?.includes('ALLOWED-PRINT-')))
+    const filteredRows = page.waitForResponse(response => rpcName(response.url()).startsWith('readJournalGrid_') &&
+      Boolean(response.request().postData()?.includes('ALLOWED-PRINT-')))
     await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('ALLOWED-PRINT-')
     await (await filteredRows).finished()
     await expect(page.getByText('ALLOWED-PRINT-F0001', { exact: true })).toBeVisible()

@@ -20,6 +20,20 @@ function setup() {
 }
 
 describe('explicit exact-selection context menus', () => {
+  it('keeps journal group navigation open across block loads, but closes on regrouping or stale data', () => {
+    const initial = { rowsReady: true, queryIdentity: 'A', customQueryIdentity: 'A:line', selectedIds,
+      rows: rows.slice(0, 10), getItems: () => [] }
+    const { result, rerender } = renderHook(props => useWeldTableContextMenu(props), { initialProps: initial })
+    const menu = { ...position, heading: 'Group', items: [{ type: 'label' as const, id: 'group', label: 'Expand' }] }
+    act(() => result.current.openCustom(menu))
+    rerender({ ...initial, rows })
+    expect(result.current.menu).toEqual(menu)
+    rerender({ ...initial, rows, customQueryIdentity: 'A:project' })
+    expect(result.current.menu).toBeNull()
+    act(() => result.current.openCustom(menu))
+    rerender({ ...initial, rowsReady: false, customQueryIdentity: 'A:project' })
+    expect(result.current.menu).toBeNull()
+  })
   it('coalesces repeated opens into one exact batch and never offers a partial action', async () => {
     const { result, pending, loadRowsByIds, getItems, onSelect } = setup()
     expect(loadRowsByIds).not.toHaveBeenCalled()

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CustomFilterDisplayProps } from 'ag-grid-react'
@@ -9,20 +9,21 @@ import { JOURNAL_SERVER_FILTER } from './welding-journal-grid-filter'
 import { JournalFilterContext } from './welding-journal-grid-context'
 import type { AgGridWeldReport } from '@/lib/weld-report-grid-profile'
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), close: vi.fn(), model: vi.fn() }))
+const mocks = vi.hoisted(() => ({ load: vi.fn(), page: vi.fn(), select: vi.fn(), close: vi.fn(), model: vi.fn() }))
 vi.mock('@/server/weld-read-api', () => ({ listWeldColumnFilterOptions: mocks.load }))
-vi.mock('ag-grid-react', () => ({ useGridFilterDisplay: (callbacks: { afterGuiAttached: (params: { hidePopup: () => void }) => void }) => {
-  useEffect(() => { callbacks.afterGuiAttached({ hidePopup: mocks.close }) }, [])
+vi.mock('@/server/journal-grid-api', () => ({ listJournalFilterOptions: mocks.load, readJournalFilterPage: mocks.page, selectJournalFilterValues: mocks.select }))
+vi.mock('ag-grid-react', () => ({ useGridFilterDisplay: (callbacks: { afterGuiAttached: (params: { hidePopup: () => void }) => void; afterGuiDetached?: () => void }) => {
+  useEffect(() => { callbacks.afterGuiAttached({ hidePopup: () => { mocks.close(); callbacks.afterGuiDetached?.() } }) }, [])
 } }))
 const clients: QueryClient[] = []
 afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear()); vi.clearAllMocks() })
 
-function setup(field: WeldFieldKey, initial: string[] = [], report: AgGridWeldReport = 'weldingJournal') {
+function setup(field: WeldFieldKey, initial: string[] = [], report: AgGridWeldReport = 'weldingJournal', deferModelChanges = false) {
   const change = vi.fn(), client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client)
   const Filter = JOURNAL_SERVER_FILTER.component
   function Test() {
     const [filters, setFilters] = useState<Record<string, string>>({ line: 'L1', ...(initial.length ? { [field]: buildWeldColumnValueFilter(initial) } : {}) })
-    return <QueryClientProvider client={client}><JournalFilterContext.Provider value={{ report, columnFilters: filters, onColumnFiltersChange: next => { change(next); setFilters(next) } }}>
+    return <QueryClientProvider client={client}><JournalFilterContext.Provider value={{ report, deferModelChanges, columnFilters: filters, onColumnFiltersChange: next => { change(next); setFilters(next) } }}>
       <Filter {...({ column: { getColId: () => field, getColDef: () => ({ headerName: 'Дата' }) }, onModelChange: mocks.model } as unknown as CustomFilterDisplayProps)} />
     </JournalFilterContext.Provider></QueryClientProvider>
   }
@@ -90,4 +91,75 @@ describe('journal grid date hierarchy', () => {
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' })
     expect(mocks.close).toHaveBeenCalledOnce()
   })
+})
+
+
+it('updates journal filter choices without purging AG stores before the prepared result', async () => {
+  mocks.load.mockResolvedValue([{ value: '2026-10-01', label: '2026-10-01', count: 2 }])
+  const change = setup('weldDate', [], 'weldingJournal', true)
+  await screen.findByRole('checkbox', { name: 'Год 2026' })
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Год 2026' }))
+  expect(parseWeldColumnChoiceFilter(change.mock.lastCall![0].weldDate)?.values).toEqual(['2026-10-01'])
+  expect(mocks.model).not.toHaveBeenCalled()
+})
+
+it('keeps small lists instantaneous and searches displayed numeric labels locally', async () => {
+  mocks.page.mockResolvedValue({ options: [{ value: '12.5', label: '12.5', count: 2 }, { value: '3', label: '3', count: 1 }], total: 2, revision: 7 })
+  const change = setup('wdi')
+  await screen.findByRole('checkbox', { name: /12,5/ })
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: '12.5' } })
+  expect(screen.getAllByRole('checkbox')).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: 'Выбрать найденные' }))
+  expect(parseWeldColumnChoiceFilter(change.mock.lastCall![0].wdi)?.values).toEqual(['12.5'])
+  expect(mocks.page).toHaveBeenCalledOnce(); expect(mocks.select).not.toHaveBeenCalled()
+})
+it('renders common lists in small portions while keeping full local search and selection', async () => {
+  mocks.page.mockResolvedValue({ options: Array.from({length:350},(_,i)=>({value:`J${i}`,label:`J${i}`,count:1})), total:350, revision:7 })
+  const change = setup('joint')
+  await screen.findByRole('checkbox', {name:/J0/})
+  expect(screen.getAllByRole('checkbox')).toHaveLength(150)
+  fireEvent.click(screen.getByRole('button', {name:/Ещё значения/}))
+  expect(screen.getAllByRole('checkbox')).toHaveLength(300)
+  fireEvent.change(screen.getByRole('textbox'), {target:{value:'J349'}})
+  expect(screen.getAllByRole('checkbox')).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', {name:'Выбрать найденные'}))
+  expect(parseWeldColumnChoiceFilter(change.mock.lastCall![0].joint)?.values).toEqual(['J349'])
+  expect(mocks.page).toHaveBeenCalledOnce(); expect(mocks.select).not.toHaveBeenCalled()
+})
+it('loads another page on the first More click and selects all remote matches, including unseen ones', async () => {
+  mocks.page.mockImplementation(async ({ data }) => ({ options: [{ value: data.start ? 'J002' : 'J001', label: data.start ? 'J002' : 'J001', count: 1 }], total: 1000, next: data.start ? 2 : 1, revision: 7 }))
+  mocks.select.mockResolvedValue({ revision: 7, values: ['J001', 'J002', 'J999'] })
+  const change = setup('joint')
+  await screen.findByRole('checkbox', { name: /J001/ })
+  fireEvent.click(screen.getByRole('button', { name: /Ещё значения/ }))
+  await screen.findByRole('checkbox', { name: /J002/ })
+  expect(mocks.page.mock.lastCall![0].data.start).toBe(1)
+  fireEvent.click(screen.getByRole('button', { name: 'Выбрать найденные' }))
+  await waitFor(() => expect(parseWeldColumnChoiceFilter(change.mock.lastCall?.[0].joint ?? '')?.values).toEqual(['J001', 'J002', 'J999']))
+  expect(mocks.select.mock.lastCall![0].data).toMatchObject({ fieldKey: 'joint', revision: 7, match: '' })
+})
+it('ignores a late Select Found result after the search changes', async () => {
+  mocks.page.mockResolvedValue({ options: [{ value: 'J001', label: 'J001', count: 1 }], total: 1000, next: 1, revision: 7 })
+  let finish!: (value: unknown) => void
+  mocks.select.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+  const change = setup('joint')
+  await screen.findByRole('checkbox', { name: /J001/ })
+  fireEvent.click(screen.getByRole('button', { name: 'Выбрать найденные' }))
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'other' } })
+  await act(async () => finish({ values: ['J001', 'J999'], revision: 7 }))
+  expect(change).not.toHaveBeenCalled()
+  expect(mocks.select.mock.lastCall![0].signal.aborted).toBe(true)
+})
+it('cancels pending Select Found when Escape closes a retained filter popup', async () => {
+  mocks.page.mockResolvedValue({ options: [{ value: 'J001', label: 'J001', count: 1 }], total: 1000, next: 1, revision: 7 })
+  let finish!: (value: unknown) => void
+  mocks.select.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+  const change = setup('joint')
+  await screen.findByRole('checkbox', { name: /J001/ })
+  fireEvent.click(screen.getByRole('button', { name: 'Выбрать найденные' }))
+  fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' })
+  await act(async () => finish({ values: ['J001', 'J999'], revision: 7 }))
+  expect(mocks.close).toHaveBeenCalledOnce()
+  expect(change).not.toHaveBeenCalled()
+  expect(mocks.select.mock.lastCall![0].signal.aborted).toBe(true)
 })

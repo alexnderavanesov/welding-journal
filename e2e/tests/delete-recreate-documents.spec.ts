@@ -10,8 +10,9 @@ import { loadRemoteGeneratedDocument, loadRemoteGeneratedDocumentRows, loadRemot
 import { syncPreHeatTreatmentDocumentsInTransaction } from '@/server/pre-heat-treatment-system-documents'
 import { syncSystemDocumentsForWeldChangesInTransaction, upsertSourcedSystemDocumentInTransaction } from '@/server/system-document-index'
 import { withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
+import { readJournalGrid } from '@/server/journal-grid'
 
 const project = 'E2E delete and recreate with shared history'
 type Target = { id: number; version: string }
@@ -30,7 +31,7 @@ test.afterAll(async () => withE2eDatabase(async db => {
 test.afterEach(() => cleanupLineProgramProjects([project]))
 
 async function seed() {
-  const { ids, manualIds } = await withE2eDatabase(async db => {
+  const { ids, manualIds } = await withLineProgramFixture(async db => {
     const { rows } = await db.query<{ id: number }>(`insert into weld_joints
       (project_title,subtitle_code,line,joint,weld_date,connection_type,officiality,revision_actuality,
         has_vik,vik_request,vik_request_date,vik_result,vik_conclusion,vik_conclusion_date,
@@ -66,17 +67,29 @@ async function seed() {
       sourcePositions: ids.map(id => ({ kind: 'pstoCycle', weldJointId: id, relationId: id, sequence: 1 })),
     })
   })
-  const targets = await withE2eDatabase(async db => (await db.query<Target>(
-    'select id,xmin::text as version from weld_joints where id=any($1::int[]) order by id', [ids])).rows)
-  return { ids, manualIds, targets }
+  return { ids, manualIds }
 }
 
 for (const mode of ['single', 'bulk', 'import'] as const) test(`${mode}: удаление и новый стык с тем же номером не портят общие документы и не наследуют старую историю`, async ({ page }) => {
-  const { ids, manualIds, targets } = await seed()
+  const { ids, manualIds } = await seed()
+  const journalQuery = { columnFilters: { search: project }, groupBy: [], route: [], start: 0, end: 100 }
+  const before = await readJournalGrid(journalQuery)
+  expect(before.rowCount).toBe(2)
+  expect((await readJournalGrid({ ...journalQuery, groupBy: ['line'] })).rows[0].journalGroup?.summary.joints).toBe(2)
+  // Opening the report may publish freshly calculated statuses. Delete the
+  // versions visible after that refresh, as the operator does in the journal.
+  const targets = await withE2eDatabase(async db => (await db.query<Target>(
+    'select id,xmin::text as version from weld_joints where id=any($1::int[]) order by id', [ids])).rows)
   const otherBefore = await withE2eDatabase(async db => (await db.query('select * from weld_joints where id=$1', [ids[1]])).rows[0])
   if (mode === 'single') await deleteWeldJoint({ data: targets[0] })
   else if (mode === 'bulk') await deleteWeldJoints({ data: { targets: [targets[0]] } })
   else await replaceWeldJoints({ data: { records: [], deleteIds: [ids[0]], expectedVersions: [targets[0]] } })
+
+  await expect(readJournalGrid({ ...journalQuery, revision: before.revision })).rejects.toThrow('Данные журнала изменились')
+  const remaining = await readJournalGrid(journalQuery)
+  expect(remaining.rowCount).toBe(1)
+  expect(remaining.rows.map(row => row.id)).toEqual([ids[1]])
+  expect((await readJournalGrid({ ...journalQuery, groupBy: ['line'] })).rows[0].journalGroup?.summary.joints).toBe(1)
 
   expect(await withE2eDatabase(async db => (await db.query('select * from weld_joints where id=$1', [ids[1]])).rows[0])).toEqual(otherBefore)
   // Replay of an old delete must not affect another ID, including a future namesake.
@@ -84,6 +97,9 @@ for (const mode of ['single', 'bulk', 'import'] as const) test(`${mode}: уда�
   const fresh = await createWeldJoint({ data: { projectTitle: project, subtitleCode: 'DOC-DELETE', line: 'DOC-DELETE',
     joint: 'F201', connectionType: 'СШ', officiality: 'действующий', revisionActuality: 'актуальная' } })
   expect(fresh.id).not.toBe(ids[0])
+  const recreated = await readJournalGrid(journalQuery)
+  expect(recreated.rowCount).toBe(2)
+  expect(recreated.rows.map(row => row.id).sort((a, b) => a - b)).toEqual([ids[1], fresh.id].sort((a, b) => a - b))
   expect(fresh.vikConclusion).toBeNull()
   expect(fresh.pstoRequest).toBeNull()
   const state = await withE2eDatabase(async db => ({

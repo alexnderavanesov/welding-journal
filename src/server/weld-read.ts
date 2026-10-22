@@ -1324,7 +1324,7 @@ export async function listColumnFilterOptions(data: ReturnType<typeof normalizeW
       const value = reportTextSql(column)
       const rows = await requireDb().select({ value, count: count() }).from(weldJoints).where(where).groupBy(sql`1`)
       return normalizeWeldColumnFilterOptions(data.fieldKey,
-        rows.map(row => ({ value: row.value, count: Number(row.count), label: row.value || '(пусто)' })))
+        rows.map(row => ({ value: row.value, count: Number(row.count), label: row.value || '(пусто)' })), data.report === 'weldingJournal')
   }
   const calculated = !isReportSourceColumnFilter(data.fieldKey, data.report) ||
     !canPaginateReportSource(columnFilters, data.report) || data.fieldKey === 'wdi' || Boolean(columnFilters.wdi)
@@ -1572,7 +1572,7 @@ export function buildDerivedReportCacheKey(
   filters: WeldFilters & { columnFilters?: Record<string, string> },
   extra: Record<string, unknown> = {},
 ) {
-  return buildDerivedCalculationCacheKey(namespace, {
+  const key = buildDerivedCalculationCacheKey(namespace, {
     report,
     search: filters.search ?? '',
     projectTitle: filters.projectTitle ?? '',
@@ -1588,6 +1588,10 @@ export function buildDerivedReportCacheKey(
     columnFilters: filters.columnFilters ?? {},
     ...extra,
   })
+  // Journal checkbox choices can contain thousands of exact values. PostgreSQL
+  // indexes the cache key; keep its size independent of the selection size.
+  return report === 'weldingJournal' && key.length > 512
+    ? buildDerivedCalculationCacheKey(namespace, { sha256: createHash('sha256').update(key).digest('hex') }) : key
 }
 
 export function buildReportKindWhere(report: Exclude<WeldReportKind, 'weldingJournal'>) {
@@ -1726,8 +1730,9 @@ export function canPaginateReportSource(columnFilters: Record<string, string>, r
 export function normalizeWeldColumnFilterOptions(
   fieldKey: WeldFieldKey,
   options: readonly WeldColumnFilterOption[],
+  reuseLabelCollator = false,
 ) {
-  if (!CONTROL_ASSIGNMENT_FIELD_KEYS.has(fieldKey)) return sortColumnFilterOptions([...options])
+  if (!CONTROL_ASSIGNMENT_FIELD_KEYS.has(fieldKey)) return sortColumnFilterOptions([...options], reuseLabelCollator)
 
   const counts = new Map<string, number>()
   for (const option of options) {
@@ -1739,15 +1744,19 @@ export function normalizeWeldColumnFilterOptions(
       value,
       count,
       label: value || '(пусто)',
-    })),
+    })), reuseLabelCollator,
   )
 }
 
-export function sortColumnFilterOptions(options: WeldColumnFilterOption[]) {
+// Opted into only by journal scalar facets. The collation and stable tie order
+// are unchanged; large option lists no longer construct a collator per compare.
+const JOURNAL_FILTER_COLLATOR = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' })
+export function sortColumnFilterOptions(options: WeldColumnFilterOption[], reuseLabelCollator = false) {
   return [...options].sort((left, right) => {
     if (left.value === '') return -1
     if (right.value === '') return 1
-    return left.label.localeCompare(right.label, 'ru', { numeric: true, sensitivity: 'base' })
+    return reuseLabelCollator ? JOURNAL_FILTER_COLLATOR.compare(left.label, right.label)
+      : left.label.localeCompare(right.label, 'ru', { numeric: true, sensitivity: 'base' })
   })
 }
 

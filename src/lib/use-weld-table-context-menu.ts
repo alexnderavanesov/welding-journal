@@ -11,6 +11,8 @@ type Intent = { position: Position; rowId?: number; fieldKey?: WeldFieldKey }
 type Options = {
   rowsReady: boolean
   queryIdentity: string
+  /** Navigation-only group menus can survive unrelated lazy block loads. */
+  customQueryIdentity?: string
   selectedIds: ReadonlySet<number>
   rows: readonly WeldRow[]
   loadRowsByIds?: (ids: number[]) => Promise<WeldRow[]>
@@ -22,7 +24,8 @@ const unavailable = async (): Promise<WeldRow[]> => { throw new Error('Не уд
 /** One explicit exact-selection request; never hydrate a report in the background. */
 export function useWeldTableContextMenu(options: Options) {
   const intent = useRef<Intent | null>(null)
-  const [stored, setStored] = useState<{ scope: object; menu: ContextActionMenuState } | null>(null)
+  const [stored, setStored] = useState<{ scope: object; menu: ContextActionMenuState; custom?: boolean } | null>(null)
+  const customScope = useMemo(() => ({}), [options.customQueryIdentity, options.rowsReady])
   const resolve = useStableEventCallback((rows: WeldRow[]) => {
     const request = intent.current
     if (!request || isModalDialogOpen() || (request.position.anchorElement && !request.position.anchorElement.isConnected)) { close(); return }
@@ -47,8 +50,11 @@ export function useWeldTableContextMenu(options: Options) {
     setStored(null)
   })
   // The same guard hides an existing menu immediately, including row versions.
-  const menu = stored?.scope === action.scope && options.rowsReady ? stored.menu : null
-  useEffect(() => { close() }, [action.scope, close])
+  const menu = stored?.scope === (stored?.custom ? customScope : action.scope) && options.rowsReady ? stored.menu : null
+  useEffect(() => {
+    if (stored?.custom && stored.scope === customScope) return
+    close()
+  }, [action.scope, customScope, close])
   useEffect(() => {
     if (!menu) return
     // Report backgrounds can be frozen while portals are open. Observe only
@@ -89,7 +95,8 @@ export function useWeldTableContextMenu(options: Options) {
   const openCustom = useStableEventCallback((custom: NonNullable<ContextActionMenuState>) => {
     if (!options.rowsReady || isModalDialogOpen()) return
     close()
-    setStored({ scope: action.scope, menu: custom })
+    setStored(options.customQueryIdentity === undefined ? { scope: action.scope, menu: custom }
+      : { scope: customScope, menu: custom, custom: true })
   })
   return { menu, close, openRow, openSelection, openCustom, selectionAvailable }
 }

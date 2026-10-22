@@ -42,7 +42,8 @@ export type ContextActionMenuState = {
 
 type ContextActionMenuProps = {
   menu: ContextActionMenuState
-  autoFocus?: boolean
+  /** Panel focus captures keyboard input without preselecting a command. */
+  autoFocus?: boolean | 'panel'
   closeOnEscapeWithModal?: boolean
   /** Applied to both panels, including submenus portalled outside the parent. */
   panelClassName?: string
@@ -77,7 +78,9 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
   }, [menu, panelClassName, openSubmenuId])
 
   useLayoutEffect(() => {
-    if (menu && autoFocus) menuPanelRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true })
+    if (!menu || !autoFocus) return
+    const target = autoFocus === 'panel' ? menuPanelRef.current : menuPanelRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')
+    target?.focus({ preventScroll: true })
   }, [menu, autoFocus])
 
   useEffect(() => {
@@ -207,6 +210,14 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
       <div
         ref={menuPanelRef}
         data-testid="context-action-menu"
+        tabIndex={autoFocus === 'panel' ? -1 : undefined}
+        onKeyDown={event => {
+          if (autoFocus === 'panel' && event.target === event.currentTarget && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
+            event.preventDefault()
+            const buttons = event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
+            ;(event.key === 'ArrowDown' ? buttons[0] : buttons[buttons.length - 1])?.focus({ preventScroll: true })
+          }
+        }}
         className={`absolute min-w-0 rounded-lg border border-slate-200 bg-white py-1.5 shadow-xl shadow-slate-900/12 ${panelClassName}`}
         style={{
           left: Math.max(viewportPadding, menuLeft),
@@ -214,6 +225,7 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
           width: menuWidth,
           maxHeight: maxMenuHeight,
           overflowY: panelClassName || stackSubmenus || menuHeight > maxMenuHeight ? 'auto' : undefined,
+          outline: autoFocus === 'panel' ? 'none' : undefined,
         }}
         onMouseDown={(event) => event.stopPropagation()}
       >

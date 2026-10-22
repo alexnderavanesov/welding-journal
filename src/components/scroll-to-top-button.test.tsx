@@ -6,6 +6,7 @@ import { ScrollToTopButton } from '@/components/scroll-to-top-button'
 describe('ScrollToTopButton', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('appears after page scrolling and smoothly returns to the top', () => {
@@ -55,5 +56,26 @@ describe('ScrollToTopButton', () => {
     right = window.innerWidth + 500
     fireEvent.resize(window)
     expect(screen.getByRole('button', { name: 'Вернуться в начало страницы' })).toHaveStyle({ right: '16px' })
+  })
+
+  it('does not remeasure the journal gutter during vertical scroll, including a late boundary', () => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+    let y = 0, x = 0
+    vi.spyOn(window, 'scrollY', 'get').mockImplementation(() => y)
+    vi.spyOn(window, 'scrollX', 'get').mockImplementation(() => x)
+    const { rerender } = render(<><ScrollToTopButton stableHorizontalBoundary /></>)
+    // The route can finish its Suspense render after the fixed button mounts.
+    rerender(<><ScrollToTopButton stableHorizontalBoundary /><div data-scroll-top-boundary /></>)
+    const boundary = document.querySelector('[data-scroll-top-boundary]')!
+    const measure = vi.spyOn(boundary, 'getBoundingClientRect').mockReturnValue({ right: window.innerWidth - 40, width: 500 } as DOMRect)
+    y = 600; fireEvent.scroll(window)
+    expect(screen.getByRole('button', { name: 'Вернуться в начало страницы' })).toHaveStyle({ right: '56px' })
+    measure.mockClear()
+    for (let i = 0; i < 10; i++) { y += 20; fireEvent.scroll(window) }
+    expect(measure).not.toHaveBeenCalled()
+    x = 20; fireEvent.scroll(window)
+    expect(measure).toHaveBeenCalledTimes(1)
+    fireEvent.resize(window)
+    expect(measure).toHaveBeenCalledTimes(2)
   })
 })

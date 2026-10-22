@@ -2,7 +2,7 @@ import { documentGridRow } from '../document-grid'
 import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
 
 const PROJECT = 'E2E contextual PSTO correction'
@@ -65,7 +65,7 @@ function control(method: typeof METHODS[number]): Control {
 }
 
 async function seed(stage: Stage) {
-  return withE2eDatabase(async db => {
+  return withLineProgramFixture(async db => {
     const lines = (await db.query<{ id: number; line: string }>(`insert into line_programs
       (project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
       values ($1,'CTX',$2,'II','A',100,100),($1,'CTX',$3,'II','A',100,100) returning id,line`, [PROJECT, SOURCE, TARGET])).rows
@@ -132,7 +132,7 @@ async function snapshot(id: number) {
 async function clearOptionalNames(id: number, stage: Stage) {
   // Retain the named, shared VIK document and the sibling weld. The other three
   // results have facts/dates but no document, and must not acquire invented names.
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     if (stage === 'primary') await db.query('update weld_joints set rk_conclusion=null,uzk_conclusion=null,pvk_conclusion=null where id=$1', [id])
     else await db.query("update pre_heat_treatment_controls set conclusion_name=null where weld_joint_id=$1 and method<>'ВИК'", [id])
   })
@@ -842,7 +842,7 @@ const RECORDED_CONTROL_FIELDS = [
 ]
 
 async function addRecordedHistory(id: number, withRepair: boolean) {
-  return withE2eDatabase(async db => {
+  return withLineProgramFixture(async db => {
     // Fact chronology: pre-control ends 05.09, PSTO 07.09, TVMT 08.09,
     // primary VIK 09.09, other primary methods 10.09. Historical spellings and
     // descriptions are deliberate: changing only the line must not clean them.

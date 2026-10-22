@@ -4,6 +4,7 @@ import type { MouseEvent } from 'react'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import type { RepeatedJointTask, WeldRow } from '@/lib/dispatcher-types'
 import { buildJointNextActions, type JointNextAction } from '@/lib/joint-next-actions'
+import { journalNextAction } from '@/lib/journal-next-action-cache'
 
 export function JointNextActionTableCell({
   row,
@@ -13,6 +14,7 @@ export function JointNextActionTableCell({
   controlProcessSettings,
   onRun,
   onOpenOverview,
+  journalTooltips = false,
 }: {
   row: WeldRow
   dispatcherTasks: readonly RepeatedJointTask[]
@@ -21,11 +23,15 @@ export function JointNextActionTableCell({
   controlProcessSettings?: Pick<ControlProcessSettings, 'preHeatTreatmentLnkEnabled' | 'allowPrimaryLnkBeforePreviousStagesComplete'>
   onRun: (row: WeldRow, action: JointNextAction) => void
   onOpenOverview: (row: WeldRow) => void
+  journalTooltips?: boolean
 }) {
   if (tasksPending || tasksError) return <button type="button" data-joint-next-action-cell="true"
-    className="h-[52px] px-2.5 text-left text-xs text-slate-500" title={tasksError ?? 'Действия загружаются'}
+    className="h-[52px] px-2.5 text-left text-xs text-slate-500" title={journalTooltips ? undefined : tasksError ?? 'Действия загружаются'}
+    data-journal-tip-title={journalTooltips ? 'Следующий шаг' : undefined}
+    data-journal-tip-body={journalTooltips ? tasksError ?? 'Действия загружаются' : undefined}
     onClick={() => onOpenOverview(row)}>{tasksError ? 'Не удалось загрузить действия. Открыть картину стыка' : 'Загружаем действия…'}</button>
-  const action = buildJointNextActions(row, dispatcherTasks, controlProcessSettings)[0]
+  const action = journalTooltips ? journalNextAction(row, dispatcherTasks, controlProcessSettings)
+    : buildJointNextActions(row, dispatcherTasks, controlProcessSettings)[0]
   if (!action) return null
   const Icon = action.tone === 'success'
     ? CheckCircle2
@@ -51,7 +57,9 @@ export function JointNextActionTableCell({
     <div
       data-joint-next-action-cell="true"
       className="flex h-[52px] min-w-0 cursor-pointer items-center gap-2 px-2.5"
-      title={`${action.title}\n${action.description}\nОткрыть картину стыка`}
+      title={journalTooltips ? undefined : `${action.title}\n${action.description}\nОткрыть картину стыка`}
+      data-journal-tip-title={journalTooltips ? action.title : undefined}
+      data-journal-tip-body={journalTooltips ? `${action.description}\nНажмите, чтобы открыть картину стыка.` : undefined}
       onClick={handleOverviewClick}
     >
       <Icon className={`h-4 w-4 shrink-0 ${actionClass}`} />
@@ -63,7 +71,9 @@ export function JointNextActionTableCell({
         type="button"
         onClick={handleOverviewClick}
         aria-label={`Открыть картину стыка ${String(row.joint ?? '').trim() || row.id}`}
-        title="Картина стыка"
+        title={journalTooltips ? undefined : 'Картина стыка'}
+        data-journal-tip-title={journalTooltips ? 'Картина стыка' : undefined}
+        data-journal-tip-body={journalTooltips ? 'Открыть историю и следующие действия.' : undefined}
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-slate-200 bg-white/80 text-slate-500 hover:border-sky-300 hover:bg-white hover:text-sky-800"
       >
         <Info className="h-3.5 w-3.5" />
@@ -72,7 +82,9 @@ export function JointNextActionTableCell({
         type="button"
         onClick={handleActionClick}
         aria-label={action.buttonLabel ? `Выполнить: ${action.title}` : 'Открыть картину стыка'}
-        title={action.buttonLabel ? `${action.buttonLabel}: ${action.title}` : 'Открыть картину стыка'}
+        title={journalTooltips ? undefined : action.buttonLabel ? `${action.buttonLabel}: ${action.title}` : 'Открыть картину стыка'}
+        data-journal-tip-title={journalTooltips ? action.buttonLabel ?? 'Картина стыка' : undefined}
+        data-journal-tip-body={journalTooltips ? action.title : undefined}
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-slate-200 bg-white/80 text-slate-600 hover:border-sky-300 hover:bg-white hover:text-sky-800"
       >
         <ArrowRight className="h-3.5 w-3.5" />

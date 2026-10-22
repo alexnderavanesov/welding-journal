@@ -93,6 +93,7 @@ async function motionFrames(page: Page, toggle: Locator, detailSelector: string)
 function expectMotion(samples: Sample[], direction: 'open' | 'close') {
   const maximum = Math.max(...samples.map(sample => sample.height))
   const intermediate = samples.filter(sample => sample.height > 2 && sample.height < maximum - 2)
+  if (intermediate.length < 4) console.log('DISCLOSURE_SAMPLES', JSON.stringify({ direction, samples }))
   expect(intermediate.length).toBeGreaterThanOrEqual(4)
   const changes = samples.slice(1).map((sample, i) => sample.height - samples[i].height)
   expect(changes.every(change => direction === 'open' ? change >= -2 : change <= 2)).toBe(true)
@@ -120,7 +121,11 @@ test('line, stamp and history reveal and collapse through intermediate heights; 
   expectMotion(await motionFrames(page, stamp, stampSelector), 'close')
   expectMotion(await motionFrames(page, stamp, stampSelector), 'open')
   const joint = detail.getByRole('button', { name: 'F1', exact: true })
-  await joint.click(); await settle(page)
+  await joint.click()
+  // AG attaches the detail after the click. An empty motion marker list can
+  // still mean "not mounted yet", so wait for the history before settling.
+  await expect(detail.getByLabel('История контроля F1', { exact: true })).toBeVisible()
+  await settle(page)
   expectMotion(await motionFrames(page, joint, '.program-joint-history'), 'close')
   expectMotion(await motionFrames(page, joint, '.program-joint-history'), 'open')
   // Reverse while closing without waiting for its animation or double-clicking.

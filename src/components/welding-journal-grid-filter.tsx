@@ -9,13 +9,23 @@ import { buildWeldColumnValueFilter, groupWeldDateTimeFilterOptions, normalizeWe
 import { DATE_TIME_WELD_FIELD_KEYS, FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
 import { journalFilterValueLabel } from '@/lib/welding-journal-grid-state'
 import { GridDateFilterOptions, GridFilterValue, GridValueFilterPanel } from './grid-value-filter'
+import { JournalPagedGridFilter } from './journal-paged-grid-filter'
+import { listJournalFilterOptions } from '@/server/journal-grid-api'
 import { listWeldColumnFilterOptions } from '@/server/weld-read-api'
 
 // Server filtering remains authoritative, including hidden navigation filters and
 // historical date/assignment semantics. AG Grid must not filter just the loaded page.
 export const JOURNAL_SERVER_FILTER = { component: JournalGridFilter, doesFilterPass: () => true }
 
-function JournalGridFilter({ column, onModelChange }: CustomFilterDisplayProps) {
+function JournalGridFilter(props: CustomFilterDisplayProps) {
+  const table = useJournalFilter()
+  const key = props.column.getColId() as WeldFieldKey
+  // Preserve the full year/month/day tree and exact time leaves. Ordinary
+  // high-cardinality value lists use bounded remote pages only in the journal.
+  return table.report === 'weldingJournal' && FIELD_BY_KEY.get(key)?.kind !== 'date' && !DATE_TIME_WELD_FIELD_KEYS.has(key)
+    ? <JournalPagedGridFilter {...props} /> : <LegacyJournalGridFilter {...props} />
+}
+function LegacyJournalGridFilter({ column, onModelChange }: CustomFilterDisplayProps) {
   const table = useJournalFilter()
   const fieldKey = column.getColId() as WeldFieldKey
   const [visible, setVisible] = useState(false)
@@ -38,7 +48,7 @@ function JournalGridFilter({ column, onModelChange }: CustomFilterDisplayProps) 
   const query = useQuery({
     queryKey: ['weld-column-filter-options', table.report, fieldKey, request],
     enabled: visible,
-    queryFn: ({ signal }) => listWeldColumnFilterOptions({ signal, data: {
+    queryFn: ({ signal }) => (table.report === 'weldingJournal' ? listJournalFilterOptions : listWeldColumnFilterOptions)({ signal, data: {
       report: table.report, fieldKey, search: request.search, columnFilters: request.columnFilters,
     } }),
     staleTime: 15_000, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
@@ -62,7 +72,7 @@ function JournalGridFilter({ column, onModelChange }: CustomFilterDisplayProps) 
     const filters = { ...table.columnFilters }
     if (value) filters[fieldKey] = value
     else delete filters[fieldKey]
-    onModelChange(value ? { value } : null)
+    if (!table.deferModelChanges) onModelChange(value ? { value } : null)
     table.onColumnFiltersChange(filters)
   }
   const toggleValues = (values: string[]) => {

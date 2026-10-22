@@ -26,12 +26,13 @@ export class JournalPlainCell implements ICellRendererComp<WeldRow> {
 }
 
 export function JournalCell({ data, column, value }: ICellRendererParams<WeldRow>) {
-  const { table, getActionRow, canEditCell } = useJournalGrid()
+  const { table, getActionRow, canEditCell, journalServer } = useJournalGrid()
   const field = FIELD_BY_KEY.get(column?.getColId() as WeldFieldKey)
   if (!data || !field) return null
   const row = getActionRow(data)
   const ready = table.rowsReady !== false
   return <WeldTableBodyCell row={row} field={field} displayValue={value}
+    journalTooltips={journalServer}
     isEditableCell={ready && canEditCell(row, field.key)}
     isResultField={RESULT_FIELD_KEYS.has(field.key)}
     onEdit={ready ? table.onEdit : undefined} onOpenDocument={ready ? table.onOpenDocument : undefined}
@@ -40,27 +41,27 @@ export function JournalCell({ data, column, value }: ICellRendererParams<WeldRow
     controlBasisEditorEnabled={table.controlBasisEditorEnabled} />
 }
 
-export function JournalActions({ data }: ICellRendererParams<WeldRow>) {
-  const { table, getActionRow, openMenu } = useJournalGrid()
-  if (!data) return null
+export function JournalActions({ data, node }: ICellRendererParams<WeldRow>) {
+  const { table, getActionRow, openMenu, journalServer } = useJournalGrid()
+  if (!data || node.group) return null
   const row = getActionRow(data)
   return <div className="flex h-full items-center justify-center gap-1">
-    <button type="button" className="journal-icon-button" title="Редактировать" aria-label="Редактировать" disabled={table.rowsReady === false || !table.onEdit} onClick={() => table.onEdit?.(row)}><Edit2 size={14} /></button>
-    <button type="button" className="journal-icon-button" title="Удалить" aria-label="Удалить" disabled={table.rowsReady === false || !table.onDelete} onClick={() => table.onDelete?.(row.id)}><Trash2 size={14} /></button>
-    <button type="button" className="journal-icon-button" title="Действия со стыком" aria-label="Действия со стыком" disabled={table.rowsReady === false} onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); openMenu(row, { x: rect.left, y: rect.bottom, anchorElement: event.currentTarget }) }}><MoreHorizontal size={16} /></button>
+    <button type="button" className="journal-icon-button" title={journalServer ? undefined : 'Редактировать'} aria-label="Редактировать" disabled={table.rowsReady === false || !table.onEdit} onClick={() => table.onEdit?.(row)}><Edit2 size={14} /></button>
+    <button type="button" className="journal-icon-button" title={journalServer ? undefined : 'Удалить'} aria-label="Удалить" disabled={table.rowsReady === false || !table.onDelete} onClick={() => table.onDelete?.(row.id)}><Trash2 size={14} /></button>
+    <button type="button" className="journal-icon-button" title={journalServer ? undefined : 'Действия со стыком'} aria-label="Действия со стыком" disabled={table.rowsReady === false} onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); openMenu(row, { x: rect.left, y: rect.bottom, anchorElement: event.currentTarget }) }}><MoreHorizontal size={16} /></button>
   </div>
 }
 
-export function JournalExtraCell({ data, column }: ICellRendererParams<WeldRow>) {
+export function JournalExtraCell({ data, column, node }: ICellRendererParams<WeldRow>) {
   const { table, getActionRow } = useJournalGridExtras()
   const extra = table.extraColumns?.find(item => item.key === column?.getColId())
-  return data && extra ? <div inert={table.rowsReady === false} className={`journal-grid-extra h-full ${table.rowsReady === false ? 'opacity-50' : ''}`}>{extra.renderCell(getActionRow(data))}</div> : null
+  return data && !node.group && extra ? <div inert={table.rowsReady === false} className={`journal-grid-extra h-full ${table.rowsReady === false ? 'opacity-50' : ''}`}>{extra.renderCell(getActionRow(data))}</div> : null
 }
 
-export function JournalReportActions({ data }: ICellRendererParams<WeldRow>) {
+export function JournalReportActions({ data, node }: ICellRendererParams<WeldRow>) {
   const { table, getActionRow } = useJournalGridExtras()
   const { openMenu } = useJournalGrid()
-  if (!data || !table.rowActions) return null
+  if (!data || node.group || !table.rowActions) return null
   const row = getActionRow(data)
   return <div className="flex h-full items-center justify-center gap-1">
     <WeldTableRowActions row={row} rowActions={table.rowActions} disabled={table.rowsReady === false} />

@@ -3,6 +3,8 @@ services:
     image: postgres:18
     container_name: welding-tracker-postgres
     restart: unless-stopped
+    # Parallel PostgreSQL queries need more shared memory than Docker's 64 MiB default.
+    shm_size: "1gb"
     environment:
       POSTGRES_USER: welding
       POSTGRES_PASSWORD: welding

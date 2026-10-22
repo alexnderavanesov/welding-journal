@@ -7,7 +7,8 @@ import { createWeldJoint, updateWeldJoint } from '@/server/weld-mutations'
 import { importWeldJoints, massFillWeldJoints, replaceWeldJoints } from '@/server/weld-import'
 import { changeCard } from '@/server/technology-cards'
 import { ensureDispatcherTaskIndexFresh } from '@/server/dispatcher-task-index'
-import { attachDispatcherTaskCodesToPage, listWeldingJournalPage } from '@/server/weld-read'
+import { attachDispatcherTaskCodesToPage } from '@/server/weld-read'
+import { readJournalGrid } from '@/server/journal-grid'
 import { buildDispatcherTaskServerFilters } from '@/lib/dispatcher-task-row-codes'
 import type { WeldInput } from '@/lib/weld-fields'
 import { DEFAULT_DATA_LIST_SETTINGS } from '@/lib/data-list-settings'
@@ -421,7 +422,8 @@ test('стык, импорт, массовое заполнение, замен�
   await ensureDispatcherTaskIndexFresh()
   const virtual = await virtualTasks(old.id)
   expect(String(virtual[0].dispatcherTasks)).toContain('ДЗ-06')
-  const filtered = () => listWeldingJournalPage({ data: { columnFilters: buildDispatcherTaskServerFilters({ dispatcherTasks: 'ДЗ-06', projectTitle: project }) } })
+  const filtered = () => readJournalGrid({ columnFilters: buildDispatcherTaskServerFilters({ dispatcherTasks: 'ДЗ-06', projectTitle: project }),
+    groupBy: [], route: [], start: 0, end: 100 })
   expect((await filtered()).rows.map(row => row.id)).toEqual([old.id])
   expect((await saved(old.id)).technology_card_number).toBeNull()
   await updateWeldJoint({ data: { id: old.id, expectedVersion: (await saved(old.id)).version, responsible: 'Несвязанная правка' } })

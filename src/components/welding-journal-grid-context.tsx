@@ -7,13 +7,14 @@ import type { AgGridWeldReport } from '@/lib/weld-report-grid-profile'
 
 type CellTable = Pick<WeldTableProps, 'rowsReady' | 'onEdit' | 'onDelete' | 'onOpenDocument' | 'onOpenLnkRequest' | 'onOpenLnkResult' | 'onOpenJoint' | 'onOpenJointOverview' | 'controlBasisEditorEnabled'>
 export type JournalGridContextValue = {
+  journalServer: boolean
   table: CellTable
   getActionRow: (row: WeldRow) => WeldRow
   canEditCell: (row: WeldRow, fieldKey: WeldFieldKey) => boolean
   openMenu: (row: WeldRow, position: { x: number; y: number; anchorElement?: Element }, fieldKey?: WeldFieldKey) => void
 }
 export const JournalGridContext = createContext<JournalGridContextValue | null>(null)
-export const JournalFilterContext = createContext<(Pick<WeldTableProps, 'columnFilters' | 'onColumnFiltersChange'> & { report: AgGridWeldReport }) | null>(null)
+export const JournalFilterContext = createContext<(Pick<WeldTableProps, 'columnFilters' | 'onColumnFiltersChange'> & { report: AgGridWeldReport; deferModelChanges?: boolean }) | null>(null)
 export const JournalExtrasContext = createContext<{
   table: Pick<WeldTableProps, 'rowsReady' | 'extraColumns' | 'rowActions'>
   getActionRow: JournalGridContextValue['getActionRow']
@@ -22,7 +23,7 @@ export const JournalExtrasContext = createContext<{
 // Cell rendering depends on data/permissions, not search drafts, selected IDs,
 // report totals or filter options. Stable event callbacks still call the latest
 // workflow with its current selection; an absent handler stays absent.
-export function useJournalCellContext(props: CellTable, getActionRow: JournalGridContextValue['getActionRow'], canEditCell: JournalGridContextValue['canEditCell'], openMenu: JournalGridContextValue['openMenu']) {
+export function useJournalCellContext(props: CellTable & Pick<WeldTableProps, 'journalServer'>, getActionRow: JournalGridContextValue['getActionRow'], canEditCell: JournalGridContextValue['canEditCell'], openMenu: JournalGridContextValue['openMenu']) {
   const edit = useStableEventCallback(props.onEdit)
   const remove = useStableEventCallback(props.onDelete)
   const document = useStableEventCallback(props.onOpenDocument)
@@ -38,10 +39,11 @@ export function useJournalCellContext(props: CellTable, getActionRow: JournalGri
   const onOpenJoint = props.onOpenJoint ? joint : undefined
   const onOpenJointOverview = props.onOpenJointOverview ? overview : undefined
   return useMemo<JournalGridContextValue>(() => ({
+    journalServer: Boolean(props.journalServer),
     table: { rowsReady: props.rowsReady, controlBasisEditorEnabled: props.controlBasisEditorEnabled,
       onEdit, onDelete, onOpenDocument, onOpenLnkRequest, onOpenLnkResult, onOpenJoint, onOpenJointOverview },
     getActionRow, canEditCell, openMenu,
-  }), [props.rowsReady, props.controlBasisEditorEnabled,
+  }), [Boolean(props.journalServer), props.rowsReady, props.controlBasisEditorEnabled,
     onEdit, onDelete, onOpenDocument, onOpenLnkRequest, onOpenLnkResult, onOpenJoint, onOpenJointOverview,
     getActionRow, canEditCell, openMenu])
 }

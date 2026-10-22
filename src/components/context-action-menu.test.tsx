@@ -5,6 +5,21 @@ import { ContextActionMenu, type ContextActionMenuState } from '@/components/con
 import { buildWorkflowContextMenuItems } from '@/lib/workflow-context-menu-items'
 
 describe('ContextActionMenu', () => {
+  it('can focus the panel without highlighting a command; arrows enter the available commands', () => {
+    render(<ContextActionMenu autoFocus="panel" onClose={vi.fn()} menu={{ x: 20, y: 20, items: [
+      { id: 'disabled', label: 'Недоступно', disabled: true, onSelect: vi.fn() },
+      { id: 'expand', label: 'Развернуть', onSelect: vi.fn() },
+      { id: 'all', label: 'Развернуть все', onSelect: vi.fn() },
+    ] }} />)
+    const panel = screen.getByTestId('context-action-menu')
+    expect(panel).toHaveFocus()
+    expect(panel.querySelector('button:focus')).toBeNull()
+    fireEvent.keyDown(panel, { key: 'ArrowDown' })
+    expect(screen.getByRole('button', { name: 'Развернуть' })).toHaveFocus()
+    panel.focus()
+    fireEvent.keyDown(panel, { key: 'ArrowUp' })
+    expect(screen.getByRole('button', { name: 'Развернуть все' })).toHaveFocus()
+  })
   afterEach(() => {
     document.querySelectorAll('[data-modal-dialog="true"]').forEach((node) => node.remove())
     vi.unstubAllGlobals()

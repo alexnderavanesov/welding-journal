@@ -40,6 +40,7 @@ export function getJointNextActionTableColumns({
     collapsible: true,
     renderCell: (row) => (
       <JointNextActionTableCell
+        journalTooltips={activeReport === 'weldingJournal'}
         row={row}
         dispatcherTasks={dispatcherTasksByRow ? dispatcherTasksByRow.get(row.id) ?? [] : dispatcherTasks}
         tasksPending={dispatcherTasksPending}

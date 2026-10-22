@@ -10,6 +10,7 @@ process.env.WELDING_ENV_LOADED = '1'
 const E2E_PORT = Number(process.env.E2E_PORT || 3100)
 const E2E_BASE_URL = `http://127.0.0.1:${E2E_PORT}`
 const useProductionBuild = process.env.E2E_USE_PRODUCTION_BUILD === '1'
+const browser = process.env.E2E_BROWSER === 'webkit' ? 'webkit' : 'chromium'
 
 export default defineConfig({
   testDir: './e2e/tests',
@@ -26,8 +27,10 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1600, height: 1000 } },
+      name: browser,
+      use: { ...devices[browser === 'webkit' ? 'Desktop Safari' : 'Desktop Chrome'], viewport: { width: 1600, height: 1000 },
+        ...(browser === 'chromium' && process.env.E2E_CHROME === '1' ? { channel: 'chrome' } : {}),
+        ...(process.env.E2E_DEVICE_SCALE_FACTOR ? { deviceScaleFactor: Number(process.env.E2E_DEVICE_SCALE_FACTOR) } : {}) },
     },
   ],
   webServer: {

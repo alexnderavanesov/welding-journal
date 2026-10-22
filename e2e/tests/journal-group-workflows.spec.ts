@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { editJournalJoint, journalRow, revealJournalColumn } from '../journal-grid'
 import { rpcName } from '../rpc'
 
@@ -17,14 +17,14 @@ test.afterEach(async ({ page }) => {
 async function openProject(page: Page, project: string, count: number) {
   await page.goto('/journal')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
-  await expect(page.getByText(`Загружено: ${Math.min(100, count)} из ${count}`, { exact: true })).toBeVisible()
+  await expect(page.getByText(`Найдено: ${count}`, { exact: true })).toBeVisible()
   await page.waitForLoadState('networkidle')
 }
 
 async function groupBy(page: Page, field: string) {
   await revealJournalColumn(page, field)
   await page.locator(`.ag-header-cell[col-id="${field}"]`).click({ button: 'right' })
-  await page.getByRole('menuitem', { name: /^Сгруппировать загруженные по/ }).click()
+  await page.getByRole('menuitem', { name: /^Сгруппировать по/ }).click()
 }
 
 async function sortJoint(page: Page, direction: 'По возрастанию' | 'По убыванию') {
@@ -70,11 +70,11 @@ async function currentPreviewJoints(page: Page) {
   return joints
 }
 
-test('свёрнутая группа: выбор первых 100 сохраняет точные ID после подгрузки, сортировки и фильтра', async ({ page }) => {
+test('свёрнутая группа: выбор полной группы из 100 сохраняет точные ID после прокрутки, сортировки и фильтра', async ({ page }) => {
   test.setTimeout(120_000)
-  const seeded = await withE2eDatabase(async db => (await db.query<{ id: number; joint: string }>(`insert into weld_joints
+  const seeded = await withLineProgramFixture(async db => (await db.query<{ id: number; joint: string }>(`insert into weld_joints
     (project_title,subtitle_code,line,joint,connection_type,officiality,isometry)
-    select $1,'GROUP','GROUP-SELECTION','F'||lpad(n::text,4,'0'),'СШ','действующий',
+    select $1,'GROUP',case when n<=100 then 'GROUP-SELECTION-A' else 'GROUP-SELECTION-B' end,'F'||lpad(n::text,4,'0'),'СШ','действующий',
       case when n % 2 = 1 then 'ODD' else 'EVEN' end from generate_series(1,250) n returning id,joint`, [SELECTION_PROJECT])).rows)
   const selected = seeded.filter(row => Number(row.joint.slice(1)) <= 100)
   const errors: string[] = []
@@ -85,22 +85,18 @@ test('свёрнутая группа: выбор первых 100 сохран�
   })
   await openProject(page, SELECTION_PROJECT, 250)
   await sortJoint(page, 'По возрастанию')
-  await groupBy(page, 'projectTitle')
-  const group = page.locator('.ag-row-group.ag-row-level-0:not(.ag-opacity-zero)')
+  await groupBy(page, 'line')
+  const group = page.locator('.ag-row-group.ag-row-level-0:not(.ag-opacity-zero)').filter({ has: page.getByRole('button', { name: /^(Развернуть|Свернуть) группу GROUP-SELECTION-A$/ }) })
   await expect(group.locator('[data-group-summary="joint"]')).toHaveText('100')
-  await group.getByRole('checkbox').check()
+  await group.getByRole('checkbox').click()
   await expect(page.getByLabel('Статистика выделения')).toContainText('Выбрано: 100')
-  await page.getByRole('button', { name: 'Загрузить ещё', exact: true }).click()
-  await expect(page.getByText('Загружено: 200 из 250', { exact: true })).toBeVisible()
-  await expect(group.locator('[data-group-summary="joint"]')).toHaveText('200')
-  await expect(group.getByRole('checkbox')).toBeChecked({ indeterminate: true })
-  await expect(page.getByLabel('Статистика выделения')).toContainText('Выбрано: 100')
+  await expect(page.getByRole('button', { name: 'Загрузить ещё', exact: true })).toHaveCount(0)
   await sortJoint(page, 'По убыванию')
-  await expect(page.getByText('Загружено: 100 из 250', { exact: true })).toBeVisible()
-  await expect(group.getByRole('checkbox')).not.toBeChecked()
+  await expect(page.getByText('Найдено: 250', { exact: true })).toBeVisible()
+  await expect(group.getByRole('checkbox')).toBeChecked()
   await filterIsometry(page, 'ODD')
-  await expect(page.getByText('Загружено: 100 из 125', { exact: true })).toBeVisible()
-  await expect(group.getByRole('checkbox')).toBeChecked({ indeterminate: true })
+  await expect(page.getByText('Найдено: 125', { exact: true })).toBeVisible()
+  await expect(group.getByRole('checkbox')).toBeChecked()
   await expect(page.getByLabel('Статистика выделения')).toContainText('Выбрано: 100')
   // Bring selected rows to the top again without scrolling near the page end
   // and accidentally loading another page.
@@ -142,7 +138,7 @@ test('свёрнутая группа: выбор первых 100 сохран�
   await expect(menu).toContainText('Выбрано стыков: 100')
   await page.getByRole('button', { name: 'Фильтр выбранных (100)', exact: true }).click()
   expect(selectionRequests).toHaveLength(2)
-  await expect(page.getByText('Загружено: 50 из 50', { exact: true })).toBeVisible()
+  await expect(page.getByText('Найдено: 50', { exact: true })).toBeVisible()
   // This actual group command must keep all originally selected IDs, including
   // the 50 hidden by the isometry filter, and exclude every newly loaded ID.
   await saveView(page, 'Проверка выбранных')
@@ -184,7 +180,7 @@ test('свёрнутая группа: выбор первых 100 сохран�
 })
 
 test('личный вид: перезапись и удаление согласованно сохраняют поля, порядок, закрепление и группировку', async ({ page }) => {
-  await withE2eDatabase(db => db.query(`insert into weld_joints (project_title,subtitle_code,line,joint)
+  await withLineProgramFixture(db => db.query(`insert into weld_joints (project_title,subtitle_code,line,joint)
     values ($1,'VIEW','GROUP-VIEW','F0001')`, [VIEW_PROJECT]))
   await openProject(page, VIEW_PROJECT, 1)
   await saveView(page, 'Рабочая смена')
@@ -247,7 +243,7 @@ test('личный вид: перезапись и удаление соглас
 })
 
 test('сохранение поля группировки и фильтра: стык уходит из выборки и появляется в новой группе с тем же ID', async ({ page }) => {
-  const rows = await withE2eDatabase(async db => {
+  const rows = await withLineProgramFixture(async db => {
     const { rows: [line] } = await db.query(`insert into line_programs
       (project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
       values ($1,'GROUP','GROUP-EDIT','II','Б(а)',10,10) returning id`, [EDIT_PROJECT])
@@ -264,7 +260,7 @@ test('сохранение поля группировки и фильтра: с
   await groupBy(page, 'isometry')
   await filterIsometry(page, 'GROUP-A')
   await sortJoint(page, 'По убыванию')
-  await expect(page.getByText('Загружено: 2 из 2', { exact: true })).toBeVisible()
+  await expect(page.getByText('Найдено: 2', { exact: true })).toBeVisible()
   const groupA = page.locator('.ag-row-group:not(.ag-opacity-zero)').filter({ has: page.getByText('GROUP-A', { exact: true }) })
   await expect(groupA.locator('[data-group-summary="joint"]')).toHaveText('2')
   await groupA.locator('.ag-group-contracted').click()
@@ -274,16 +270,25 @@ test('сохранение поля группировки и фильтра: с
   await editor.getByRole('textbox', { name: 'Изометрия', exact: true }).fill('GROUP-B')
   await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
   await expect(editor).toBeHidden()
-  await expect(page.getByText('Загружено: 1 из 1', { exact: true })).toBeVisible()
+  await expect(page.getByText('Найдено: 1', { exact: true })).toBeVisible()
   await expect(groupA.locator('[data-group-summary="joint"]')).toHaveText('1')
   await expect(journalRow(page, edited.id)).toHaveCount(0)
+  // Reopening a recently used filter after Save must not retain its pre-save
+  // counts for the query cache's staleTime, even when its own condition is active.
+  await revealJournalColumn(page, 'isometry')
+  await page.locator('.ag-header-cell[col-id="isometry"] .ag-header-cell-filter-button').click()
+  const refreshedFilter = page.getByRole('dialog', { name: 'Фильтр: Изометрия', exact: true })
+  await refreshedFilter.getByLabel('Найти значение фильтра').fill('')
+  await expect(refreshedFilter.getByRole('checkbox', { name: /^GROUP-A\s+1$/ })).toBeVisible()
+  await expect(refreshedFilter.getByRole('checkbox', { name: /^GROUP-B\s+2$/ })).toBeVisible()
+  await page.keyboard.press('Escape')
   await expect(page.getByTestId('context-action-menu')).toHaveCount(0)
   if (await groupA.getAttribute('aria-expanded') === 'false') await groupA.locator('.ag-group-contracted').click()
   await editJournalJoint(page, remaining.id)
   await expect(editor.getByRole('textbox', { name: 'Стык', exact: true })).toHaveValue('F0001')
   await editor.getByRole('button', { name: 'Отмена', exact: true }).click()
   await filterIsometry(page, null)
-  await expect(page.getByText('Загружено: 3 из 3', { exact: true })).toBeVisible()
+  await expect(page.getByText('Найдено: 3', { exact: true })).toBeVisible()
   const groupB = page.locator('.ag-row-group:not(.ag-opacity-zero)').filter({ has: page.getByText('GROUP-B', { exact: true }) })
   await expect(groupA.locator('[data-group-summary="joint"]')).toHaveText('1')
   await expect(groupB.locator('[data-group-summary="joint"]')).toHaveText('2')

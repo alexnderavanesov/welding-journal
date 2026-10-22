@@ -9,6 +9,7 @@ export function useGridResultMotion(frame: RefObject<HTMLElement | null>, option
   const cancel = useCallback(() => {
     cancelAnimationFrame(scheduled.current); scheduled.current = 0
     animation.current?.cancel(); animation.current = null
+    frame.current?.removeAttribute('data-grid-result-revealing')
   }, [])
   useLayoutEffect(() => {
     const media = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null
@@ -24,8 +25,9 @@ export function useGridResultMotion(frame: RefObject<HTMLElement | null>, option
       const body = frame.current?.querySelector<HTMLElement>('.ag-grid-scrolling-container')
       if (!body?.isConnected || body.closest('[hidden]') || typeof body.animate !== 'function') return
       const next = body.animate([{ opacity }, { opacity: 1 }], { duration, easing: 'ease-out' })
+      if (frame.current?.closest('.journal-server-section')) frame.current.setAttribute('data-grid-result-revealing', '')
       animation.current = next
-      next.onfinish = () => { if (animation.current === next) animation.current = null }
+      next.onfinish = () => { if (animation.current === next) { animation.current = null; frame.current?.removeAttribute('data-grid-result-revealing') } }
     })
   }, [frame, duration, opacity, cancel])
   return useMemo(() => ({ reveal, cancel }), [reveal, cancel])

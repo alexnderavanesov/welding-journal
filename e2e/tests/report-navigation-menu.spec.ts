@@ -1,19 +1,19 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { withE2eDatabase } from '../database'
+import { withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
 
 let groupJointId: number | undefined
 test.afterEach(async () => {
   if (groupJointId !== undefined) {
-    await withE2eDatabase(client => client.query('delete from weld_joints where id=$1', [groupJointId]))
+    await withLineProgramFixture(client => client.query('delete from weld_joints where id=$1', [groupJointId]))
     groupJointId = undefined
   }
 })
 
 test.beforeEach(async () => {
   // Navigation needs an existing registry entry; don't depend on another test creating it.
-  await withE2eDatabase(client => client.query("insert into line_programs (project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent) values ('E2E проект','E2E-001','E2E-L1','II','A',30,10) on conflict do nothing"))
+  await withLineProgramFixture(client => client.query("insert into line_programs (project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent) values ('E2E проект','E2E-001','E2E-L1','II','A',30,10) on conflict do nothing"))
 })
 
 function jointRow(page: Page, joint = 'F1') {
@@ -32,8 +32,9 @@ async function findProject(page: Page) {
     // Await the actual filtered page before opening a close-on-scroll menu.
     const response = page.waitForResponse(response => {
       const url = new URL(response.url())
-      return /^list(WeldingJournal|LnkReport|HeatTreatmentReport)Page_/.test(rpcName(response.url())) &&
-        !!url.searchParams.get('payload')?.includes('E2E проект') && response.ok()
+      const payload = response.request().postData() ?? url.searchParams.get('payload') ?? ''
+      return /^(readJournalGrid_|list(LnkReport|HeatTreatmentReport)Page_)/.test(rpcName(response.url())) &&
+        payload.includes('E2E проект') && response.ok()
     })
     await search.fill('E2E проект')
     await (await response).finished()
@@ -102,7 +103,7 @@ test('ПКМ: переходы раскрываются одной кнопко�
 })
 
 test('групповые переходы сохраняют счетчики и запрет открытия разных линий', async ({ page }) => {
-  await withE2eDatabase(async (client) => {
+  await withLineProgramFixture(async (client) => {
     const result = await client.query(`
       insert into weld_joints (
         project_title, subtitle_code, line, isometry, joint, psto_required,

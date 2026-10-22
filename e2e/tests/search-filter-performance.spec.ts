@@ -111,8 +111,8 @@ test('200k search: first rows, totals, save and dispatcher readiness are measure
 
     const search = async (page: Page, client: number, term: string, action: string) => {
       const start = now(), before = clients[client].calls.length
-      const response = page.waitForResponse(response => /^list(WeldingJournal|LnkReport|HeatTreatmentReport)Page_/.test(rpcName(response.url()))
-        && !!new URL(response.url()).searchParams.get('payload')?.includes(term) && response.ok())
+      const response = page.waitForResponse(response => /^(readJournalGrid_|list(LnkReport|HeatTreatmentReport)Page_)/.test(rpcName(response.url()))
+        && (response.request().postData() ?? new URL(response.url()).searchParams.get('payload') ?? '').includes(term) && response.ok())
       await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(term)
       await (await response).finished()
       await expect(page.getByRole('button', { name: term, exact: true })).toBeVisible()

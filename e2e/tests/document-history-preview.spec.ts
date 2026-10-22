@@ -261,7 +261,7 @@ test('request names open the exact document in grouped journal and LNK; missing 
     await expect(page.getByRole('button', { name: 'F001', exact: true })).toBeVisible()
     if (route === '/journal') {
       await page.locator('.ag-header-cell[col-id="line"]').click({ button: 'right' })
-      await page.getByRole('menuitem', { name: /Сгруппировать загруженные по «Линия»/ }).click()
+      await page.getByRole('menuitem', { name: /Сгруппировать по «Линия»/ }).click()
       await page.locator('[data-welding-journal-grid] .ag-row-group .ag-group-contracted').click()
     }
     for (const title of [systemTitle, secondTitle]) {

@@ -207,6 +207,7 @@ export function getWeldTableBodyCellTooltip({
 }
 
 type WeldTableBodyCellProps = {
+  journalTooltips?: boolean
   row: WeldRow
   field: WeldField
   displayValue: unknown
@@ -222,6 +223,7 @@ type WeldTableBodyCellProps = {
 }
 
 export const WeldTableBodyCell = memo(function WeldTableBodyCell({
+  journalTooltips = false,
   row,
   field,
   displayValue,
@@ -257,6 +259,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
     row,
     fieldKey,
     visibleValue,
+    journal: journalTooltips,
     canOpenDocument: Boolean(onOpenDocument),
     canOpenLnkRequest: Boolean(onOpenLnkRequest),
     canOpenLnkResult: Boolean(onOpenLnkResult),
@@ -272,11 +275,13 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
   }`
 
   return (
-    <div data-weld-field-key={field.key} className="journal-grid-value">
+    <div data-weld-field-key={field.key} className="journal-grid-value"
+      data-journal-tip-title={journalTooltips && field.key === 'joint' ? `Стык ${String(visibleValue ?? '')}` : undefined}
+      data-journal-tip-body={journalTooltips && field.key === 'joint' ? 'Нажмите, чтобы открыть картину стыка, хронологию и следующий шаг.' : undefined}>
       {layeredDocumentTypes.length > 0 ? (
         <div className="flex h-[52px] flex-col items-stretch justify-center gap-0.5 px-2 py-1">
           {layeredWaitingLabel ? (
-            <span title={layeredWaitingLabel} className="text-center text-[11px] font-medium leading-4 text-amber-800">
+            <span title={journalTooltips ? undefined : layeredWaitingLabel} className="text-center text-[11px] font-medium leading-4 text-amber-800">
               {layeredWaitingLabel}
             </span>
           ) : null}
@@ -289,7 +294,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
               <button
                 key={type}
                 type="button"
-                title={title}
+                title={journalTooltips ? undefined : title}
                 className="h-[21px] truncate border-0 bg-transparent px-1 text-center text-[12px] font-medium leading-[21px] text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-900"
                 onClick={(event) => {
                   event.stopPropagation()
@@ -373,6 +378,7 @@ function getWeldTableCellLinkState({
   canOpenDocument,
   canOpenLnkRequest,
   canOpenLnkResult,
+  journal = false,
 }: {
   row: WeldRow
   fieldKey: WeldFieldKey
@@ -380,6 +386,7 @@ function getWeldTableCellLinkState({
   canOpenDocument: boolean
   canOpenLnkRequest: boolean
   canOpenLnkResult: boolean
+  journal?: boolean
 }) {
   const hasVisibleValue = Boolean(visibleValue)
   const isJsrDocumentLink = fieldKey === 'jsrDocument' && Boolean(row.jsrDocumentId) && hasVisibleValue
@@ -387,11 +394,12 @@ function getWeldTableCellLinkState({
     fieldKey === 'checklistDocument' && Boolean(row.checklistDocumentId) && hasVisibleValue
   const isZniDocumentLink =
     fieldKey === 'zniDocument' && Boolean(row.zniDocumentId) && hasVisibleValue
-  const generatedDocumentType = (
-    Object.entries(GENERATED_DOCUMENT_PROFILES) as Array<
-      [GeneratedDocumentType, (typeof GENERATED_DOCUMENT_PROFILES)[GeneratedDocumentType]]
-    >
-  ).find(([, profile]) => profile.fieldKey === fieldKey)?.[0]
+  // Field capabilities do not depend on the row. Journal virtualization should
+  // not rediscover the document/result profiles for every entering cell.
+  const metadata = journal ? journalFieldMetadata(fieldKey) : undefined
+  const generatedDocumentType = metadata ? metadata.generatedDocumentType : generatedTypeForField(fieldKey)
+  const preHeatTreatmentField = metadata ? metadata.preHeatTreatmentField : getPreHeatTreatmentReportField(fieldKey)
+  const defectDescriptionField = metadata ? metadata.defectDescriptionField : getLnkDefectDescriptionDescriptor(fieldKey)
   const generatedDocumentProfile = generatedDocumentType
     ? GENERATED_DOCUMENT_PROFILES[generatedDocumentType]
     : null
@@ -400,9 +408,7 @@ function getWeldTableCellLinkState({
       row[generatedDocumentProfile.idKey] &&
       hasVisibleValue,
   )
-  const preHeatTreatmentField = getPreHeatTreatmentReportField(fieldKey)
-  const defectDescriptionField = getLnkDefectDescriptionDescriptor(fieldKey)
-  const systemDocumentType = hasVisibleValue ? getSystemDocumentTypeForField(fieldKey) : null
+  const systemDocumentType = hasVisibleValue ? metadata ? metadata.systemDocumentType : getSystemDocumentTypeForField(fieldKey) : null
   const isLnkRequestCardLink =
     hasVisibleValue && canOpenLnkRequest && !canOpenDocument && (
       LNK_REQUEST_NAME_FIELD_KEYS.has(fieldKey) || PRE_HEAT_TREATMENT_REQUEST_FIELD_KEYS.has(fieldKey)
@@ -416,7 +422,7 @@ function getWeldTableCellLinkState({
     canOpenLnkResult &&
     !defectDescriptionField &&
     Boolean(
-      getLnkResultMethodForField(fieldKey) ||
+      (metadata ? metadata.lnkResultMethod : getLnkResultMethodForField(fieldKey)) ||
       (preHeatTreatmentField &&
         preHeatTreatmentField.valueKey !== 'requestName' &&
         preHeatTreatmentField.valueKey !== 'requestDate'),
@@ -436,6 +442,23 @@ function getWeldTableCellLinkState({
     generatedDocumentType,
     systemDocumentType,
   }
+}
+
+function generatedTypeForField(fieldKey: WeldFieldKey) {
+  return (Object.entries(GENERATED_DOCUMENT_PROFILES) as Array<
+    [GeneratedDocumentType, (typeof GENERATED_DOCUMENT_PROFILES)[GeneratedDocumentType]]
+  >).find(([, profile]) => profile.fieldKey === fieldKey)?.[0]
+}
+function readFieldMetadata(fieldKey: WeldFieldKey) {
+  return { generatedDocumentType: generatedTypeForField(fieldKey), preHeatTreatmentField: getPreHeatTreatmentReportField(fieldKey),
+    defectDescriptionField: getLnkDefectDescriptionDescriptor(fieldKey), systemDocumentType: getSystemDocumentTypeForField(fieldKey),
+    lnkResultMethod: getLnkResultMethodForField(fieldKey) }
+}
+const journalMetadata = new Map<WeldFieldKey, ReturnType<typeof readFieldMetadata>>()
+function journalFieldMetadata(field: WeldFieldKey) {
+  let metadata = journalMetadata.get(field)
+  if (!metadata) { metadata = readFieldMetadata(field); journalMetadata.set(field, metadata) }
+  return metadata
 }
 
 function getDocumentLabel({

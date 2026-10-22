@@ -23,7 +23,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => { await cleanupLineProgramProjects([project]) })
 
 for (const [path, pageRpc] of [
-  ['/journal', 'listWeldingJournalPage'], ['/lnk', 'listLnkReportPage'], ['/psto', 'listHeatTreatmentReportPage'],
+  ['/journal', 'readJournalGrid'], ['/lnk', 'listLnkReportPage'], ['/psto', 'listHeatTreatmentReportPage'],
 ]) test(`${path}: фильтр не мигает и сохраняет фокус при выборе всех и очистке`, async ({ page }) => {
   const requests: string[] = []
   const errors: string[] = []
@@ -46,11 +46,12 @@ for (const [path, pageRpc] of [
     }
     await route.continue()
   })
+  const facetRpc = path === '/journal' ? 'readJournalFilterPage' : 'listWeldColumnFilterOptions'
   const count = (name: string) => requests.filter((value) => value.startsWith(name + '_')).length
   try {
     await page.goto(path!)
     await page.getByPlaceholder('Поиск по отчету').fill(project)
-    await expect(page.getByText('Загружено: 100 из 120', { exact: true })).toBeVisible()
+    await expect(page.getByText(path === '/journal' ? 'Найдено: 120' : 'Загружено: 100 из 120', { exact: true })).toBeVisible()
     // goto's networkidle can precede hydration. Wait after our own rows and
     // summary exist, so initial dispatcher publication is outside the measure.
     await page.waitForLoadState('networkidle')
@@ -69,7 +70,7 @@ for (const [path, pageRpc] of [
     })
     const initial = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY, height: document.documentElement.scrollHeight }))
     const initialMenu = (await dialog.boundingBox())!
-    const initialOptionsRequests = count('listWeldColumnFilterOptions')
+    const initialOptionsRequests = count(facetRpc)
     const initialPageRequests = count(pageRpc!)
     blockNextPage = true
 
@@ -88,7 +89,7 @@ for (const [path, pageRpc] of [
     await expect(search).toBeFocused()
     await expect(choice()).toBeChecked()
     expect(count(pageRpc!)).toBe(initialPageRequests + 1)
-    expect(count('listWeldColumnFilterOptions')).toBe(initialOptionsRequests)
+    expect(count(facetRpc)).toBe(initialOptionsRequests)
 
     await dialog.getByRole('button', { name: 'Сбросить фильтр', exact: true }).click()
     await page.waitForLoadState('networkidle')
@@ -97,7 +98,7 @@ for (const [path, pageRpc] of [
     await expect(dialog).toBeVisible()
     await expect(choice()).not.toBeChecked()
     expect(await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }))).toEqual({ x: initial.x, y: initial.y })
-    expect(count('listWeldColumnFilterOptions')).toBe(initialOptionsRequests)
+    expect(count(facetRpc)).toBe(initialOptionsRequests)
     expect(documentLoads).toBe(1)
     expect(errors).toEqual([])
   } finally {
