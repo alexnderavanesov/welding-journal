@@ -201,5 +201,6 @@ export function useDocumentGridSession<T>(
     }
   }, [frame])
   useEffect(() => () => { capture(); cancelAnimationFrame(scheduled.current) }, [capture])
-  return { capture, restore, bodyScrollEnd, rememberRows, groupOpened, isGroupOpen, initialRowCount: initialRowCount.current }
+  const isRestoring = useCallback(() => Boolean(pending.current), [])
+  return { capture, restore, bodyScrollEnd, rememberRows, groupOpened, isGroupOpen, isRestoring, initialRowCount: initialRowCount.current }
 }

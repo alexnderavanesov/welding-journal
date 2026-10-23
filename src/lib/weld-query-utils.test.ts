@@ -1,8 +1,8 @@
-import { type InfiniteData, QueryClient } from '@tanstack/react-query'
+import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
+import { subscribeWeldPageRefresh } from './weld-page-refresh'
 import { DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY } from '@/lib/dispatcher-accepted-warning-query'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import type { WeldPageResult } from '@/server/weld-contracts'
 import {
   DISPATCHER_TASK_REFRESH_QUERY_KEY,
   DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
@@ -18,9 +18,7 @@ import {
   WELD_DOCUMENT_GENERATION_QUERY_KEY,
   WELD_FINAL_STATUS_CONTEXT_QUERY_KEY,
   WELD_FORM_SUGGESTIONS_QUERY_KEY,
-  WELD_JOINT_PAGES_QUERY_KEY,
   WELD_REPORT_CONTEXT_QUERY_KEY,
-  WELD_REPORT_SUMMARY_QUERY_KEY,
   WELD_ROWS_BY_IDS_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 
@@ -32,6 +30,8 @@ describe('weld query cache updates', () => {
     const pending = new Promise<void>(() => {})
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries').mockReturnValue(pending)
 
+    const refreshed = vi.fn()
+    const unsubscribe = subscribeWeldPageRefresh(queryClient, refreshed)
     const notification = scheduleWeldDataRefresh(queryClient, {
       upsertRows: [{ id: 1, joint: 'F2' }],
     })
@@ -39,7 +39,8 @@ describe('weld query cache updates', () => {
     expect(notification).toBeUndefined()
     expect(queryClient.getQueryData<WeldRow[]>(WELD_COMPLETE_SNAPSHOT_QUERY_KEY)?.[0].joint).toBe('F2')
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: STATISTICS_SERVER_QUERY_KEY })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_REPORT_SUMMARY_QUERY_KEY, refetchType: 'none' })
+    expect(refreshed).toHaveBeenCalledOnce()
+    unsubscribe()
     queryClient.clear()
   })
 
@@ -87,9 +88,6 @@ describe('weld query cache updates', () => {
     expect(invalidateSpy).not.toHaveBeenCalledWith(
       expect.objectContaining({ queryKey: WELD_COMPLETE_SNAPSHOT_QUERY_KEY }),
     )
-    expect(invalidateSpy).not.toHaveBeenCalledWith(
-      expect.objectContaining({ queryKey: WELD_JOINT_PAGES_QUERY_KEY }),
-    )
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_REPORT_CONTEXT_QUERY_KEY })
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: LNK_WORKFLOW_QUERY_KEY,
@@ -130,41 +128,6 @@ describe('weld query cache updates', () => {
     expect(queryClient.getQueryData<WeldRow[]>(WELD_COMPLETE_SNAPSHOT_QUERY_KEY)?.map((row) => row.id)).toEqual([2])
   })
 
-  it('patches only rows that are already loaded in paged reports', () => {
-    const queryClient = createQueryClient()
-    const queryKey = [...WELD_JOINT_PAGES_QUERY_KEY, 'weldingJournal', {}, 100]
-    const cachedData: InfiniteData<WeldPageResult> = {
-      pages: [{
-        rows: [{ id: 1, joint: 'S1' }, { id: 2, joint: 'S2' }] as WeldRow[],
-        total: 2,
-        page: 1,
-        pageSize: 100,
-        hasMore: false,
-      }, {
-        rows: [{ id: 4, joint: 'S4' }] as WeldRow[],
-        page: 2,
-        pageSize: 100,
-        hasMore: false,
-      }],
-      pageParams: [1, 2],
-    }
-    const unchangedPage = cachedData.pages[1]
-    const unchangedRows = unchangedPage.rows
-    queryClient.setQueryData<InfiniteData<WeldPageResult>>(queryKey, cachedData)
-
-    scheduleWeldDataRefresh(queryClient, {
-      upsertRows: [{ id: 1, joint: 'S1R1' }, { id: 3, joint: 'S3' }],
-      deleteIds: [2],
-    })
-
-    const result = queryClient.getQueryData<InfiniteData<WeldPageResult>>(queryKey)
-    const page = result?.pages[0]
-    expect(page?.rows.map((row) => [row.id, row.joint])).toEqual([[1, 'S1R1']])
-    expect(page?.total).toBe(1)
-    expect(result?.pages[1]).toBe(unchangedPage)
-    expect(result?.pages[1].rows).toBe(unchangedRows)
-    expect(result?.pages[1].total).toBeUndefined()
-  })
 
   it('patches loaded report contexts immediately after a workflow correction', () => {
     const queryClient = createQueryClient()
@@ -252,17 +215,7 @@ describe('weld query cache updates', () => {
       refetchType: 'none',
     })
   })
-  it('marks summary results stale after a mutation without fabricating totals or fetching inactive filters', async () => {
-    const queryClient = createQueryClient()
-    const key = [...WELD_REPORT_SUMMARY_QUERY_KEY, 'weldingJournal', { line: '=L1' }]
-    const queryFn = vi.fn(async () => ({ total: 8, acceptedWdiTotal: 12 }))
-    await queryClient.fetchQuery({ queryKey: key, queryFn })
-    scheduleWeldDataRefresh(queryClient, { deleteIds: [1], upsertRows: [{ id: 2, joint: 'F2' }] })
-    expect(queryClient.getQueryData(key)).toEqual({ total: 8, acceptedWdiTotal: 12 })
-    expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true)
-    expect(queryFn).toHaveBeenCalledTimes(1)
-    queryClient.clear()
-  })
+
 })
 
 function createQueryClient() {

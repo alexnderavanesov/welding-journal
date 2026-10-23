@@ -1,3 +1,7 @@
+import { gridHeaderKeyboard } from '@/lib/grid-header-keyboard'
+import './grid-keyboard.css'
+import { useJournalResizeBuffer } from '@/lib/use-journal-resize-buffer'
+import { useJournalScrollPlaceholder } from '@/lib/use-journal-scroll-placeholder'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type MouseEvent, type KeyboardEvent } from 'react'
 import { AgGridProvider, AgGridReact, type AgGridReactProps } from 'ag-grid-react'
 import {
@@ -194,6 +198,23 @@ function Grid<T>(props: Props<T>) {
   const compactOverview = appearance.theme === 'quartz' && (kind === 'lines' || kind === 'stamps')
   const densityOffset = appearance.density === 'compact' ? compactOverview ? -20 : -8 : appearance.density === 'spacious' ? 12 : 0
   const rowHeight = props.rowHeight ?? ((kind === 'assignments' ? 72 : kind === 'stamps' ? 88 : kind === 'lines' ? 76 : 44) + densityOffset)
+  useJournalResizeBuffer(api, virtual || kind === 'joints')
+  useJournalScrollPlaceholder(root, api, virtual || kind === 'joints', rowHeight, appearance.theme, false, true)
+  const popupColumn = useRef<string | null>(null)
+  const postProcessPopup = useStableEventCallback((params: PostProcessPopupParams) => {
+    popupColumn.current = params.column?.getColId() ?? null
+    programPopup(params)
+  })
+  useEffect(() => {
+    if (!popupParent || !api) return
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape' || !popupColumn.current || api.isDestroyed()) return
+      event.preventDefault(); event.stopPropagation()
+      api.hideColumnFilter(); api.hidePopupMenu(); api.hideColumnChooser(); api.setFocusedHeader(popupColumn.current)
+    }
+    popupParent.addEventListener('keydown', escape, true)
+    return () => popupParent.removeEventListener('keydown', escape, true)
+  }, [popupParent, api])
   const getRowHeight = useCallback(({ node }: { node: IRowNode<T> }) => node.group ? 36 : undefined, [])
   const columnMenu = useCallback<NonNullable<AgGridReactProps<T>['getColumnMenuItems']>>(params => {
     if (kind !== 'lines' || !params.api.getRowGroupColumns().length || params.source !== 'columnMenu') return params.defaultItems
@@ -226,7 +247,17 @@ function Grid<T>(props: Props<T>) {
   return <div ref={root} data-program-grid={kind} data-program-grid-context={props.contextLabel ?? label}
     data-program-density={appearance.density} data-program-theme={appearance.theme} data-program-vertical-borders={appearance.verticalBorders}
     className={`program-ag-grid grid-result-motion ${kind === 'joints' ? 'program-ag-grid-windowed' : virtual ? 'program-ag-grid-virtual' : 'program-ag-grid-page'}`}
-    onContextMenu={rowMenu} onKeyDownCapture={rowMenu}
+    onContextMenu={rowMenu} onKeyDownCapture={event => {
+      if (!(event.target instanceof Element) || event.target.closest('[data-program-grid]') !== root.current) return
+      if (api && gridHeaderKeyboard(event, api, { openFilter: id => { popupColumn.current = id } })) return
+      if (kind === 'assignments' && event.key === ' ' && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+        && !event.target.closest('button, a, input, textarea, select, [contenteditable=true]')) {
+        const id = event.target.closest('.ag-row[row-id]')?.getAttribute('row-id')
+        const checkbox = id ? root.current?.querySelector<HTMLInputElement>(`.ag-row[row-id="${CSS.escape(id)}"] .program-assignment-checkbox`) : null
+        if (checkbox) { event.preventDefault(); event.stopPropagation(); if (!event.repeat && !checkbox.disabled) checkbox.click(); return }
+      }
+      rowMenu(event)
+    }}
     onKeyDown={event => {
       if ((event.key === 'ContextMenu' || event.key === 'F10' && event.shiftKey) && event.target instanceof Element && event.target.closest('.ag-header, .ag-menu, .program-grid-toolbar')) event.stopPropagation()
     }}>
@@ -241,7 +272,7 @@ function Grid<T>(props: Props<T>) {
         suppressGroupRowsSticky={kind === 'joints'}
         masterDetail={!!props.detailRenderer} detailCellRenderer={props.detailRenderer ? detailMotion.renderer : undefined} detailRowAutoHeight
         keepDetailRows keepDetailRowsCount={100} getRowClass={rowClasses}
-        suppressCellFocus={false} suppressFocusAfterRefresh postProcessPopup={programPopup} getColumnMenuItems={columnMenu}
+        suppressCellFocus={false} suppressFocusAfterRefresh postProcessPopup={postProcessPopup} getColumnMenuItems={columnMenu}
         popupParent={popupParent}
         onGridReady={({ api: grid }) => {
           restoring.current = true

@@ -49,7 +49,7 @@ function AppRoute() {
           onActiveReportChange={changeActiveReport}
         />
       </Suspense>
-      <ScrollToTopButton resetKey={pathname} stableHorizontalBoundary={pathname === '/journal'} />
+      <ScrollToTopButton resetKey={pathname} stableHorizontalBoundary={['/journal', '/lnk', '/psto', '/documents'].includes(pathname)} />
     </>
   )
 }

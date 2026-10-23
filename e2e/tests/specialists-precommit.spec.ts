@@ -347,10 +347,9 @@ for (const removal of ['layered removal', 'duplicate pruning', 'weld deletion'] 
       await page.goto('/lnk')
       // In the full suite other projects occupy the first virtualized page.
       // Reach this fixture through the same report search an operator uses.
-      const filtered = page.waitForResponse(response => response.url().includes('/_serverFn/') &&
-        rpcName(response.url()).startsWith('listLnkReportPage_') && Boolean(new URL(response.url()).searchParams.get('payload')?.includes(project)))
       await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
-      await (await filtered).finished()
+      await expect(page.getByText('Найдено: 2', { exact: true })).toBeVisible()
+      await expect(page.locator('[data-lnk-grid] .journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
       const row = page.locator(`.ag-row[row-id="${removedWeld}"]`)
       const joint = row.getByRole('button', { name: 'F998001', exact: true })
       await joint.scrollIntoViewIfNeeded()

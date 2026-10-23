@@ -40,10 +40,10 @@ const PROFILES = {
     settingsLabel: 'Настройка вида журнала', storageKey: 'welding-journal-ag-grid:v1', pageRpc: 'readJournalGrid',
     accumulatedProject: 'E2E AG accumulated rows' },
   lnk: { prefix: 'AG ЛНК', project: 'E2E AG lnk', route: '/lnk', grid: '[data-lnk-grid]',
-    settingsLabel: 'Настройка вида ЛНК', storageKey: 'lnk-ag-grid:v1', pageRpc: 'listLnkReportPage',
+    settingsLabel: 'Настройка вида ЛНК', storageKey: 'lnk-ag-grid:v1', pageRpc: 'readJournalGrid',
     accumulatedProject: 'E2E AG accumulated LNK rows' },
   heatTreatment: { prefix: 'AG ПСТО', project: 'E2E AG psto', route: '/psto', grid: '[data-psto-grid]',
-    settingsLabel: 'Настройка вида ПСТО и ТВМТ', storageKey: 'psto-ag-grid:v1', pageRpc: 'listHeatTreatmentReportPage',
+    settingsLabel: 'Настройка вида ПСТО и ТВМТ', storageKey: 'psto-ag-grid:v1', pageRpc: 'readJournalGrid',
     accumulatedProject: 'E2E AG accumulated PSTO rows' },
 } as const
 
@@ -58,8 +58,8 @@ export function registerWeldGridContract(report: GridReport) {
   const noteField = isPsto ? 'pstoNote' : 'lnkNote'
   const PROJECT = profile.project
   const editHeading = isWorkflow ? isPsto ? 'Примечание ПСТО' : 'Примечание ЛНК' : 'Редактирование стыка'
-  const loaded = (visible: number, total: number) => isWorkflow ? `Загружено: ${visible} из ${total}` : `Найдено: ${total}`
-  const groupLabel = (field: string) => `Сгруппировать${isWorkflow ? ' загруженные' : ''} по «${field}»`
+  const loaded = (_visible: number, total: number) => `Найдено: ${total}`
+  const groupLabel = (field: string) => `Сгруппировать по «${field}»`
   const name = (description: string) => `${profile.prefix}: ${description}`
 
   test.beforeEach(async ({ page }) => {
@@ -111,7 +111,7 @@ export function registerWeldGridContract(report: GridReport) {
     const count = (name: string) => calls.filter(value => value.startsWith(name + '_')).length
     await page.goto(profile.route)
     await expect(page.locator(`${profile.grid} .ag-root`)).toBeVisible()
-    await expect(page.locator(`${profile.grid} .journal-loaded-count`)).toHaveText(isWorkflow ? /Загружено: \d+ из \d+/ : /Найдено: \d+/)
+    await expect(page.locator(`${profile.grid} .journal-loaded-count`)).toHaveText(/Найдено: \d+/)
     // The fixture starts a real dispatcher publication. Do not classify its
     // late, legitimate page refresh as a request caused by the next search.
     await expect.poll(() => withE2eDatabase(async db => (await db.query(
@@ -126,13 +126,13 @@ export function registerWeldGridContract(report: GridReport) {
     await expect(page.getByText(loaded(100, 250), { exact: true })).toBeVisible()
     await waitForGridRows(page)
     await page.waitForLoadState('networkidle')
-    expect(count(isWorkflow ? 'listWeldColumnFilterOptions' : 'readJournalFilterPage')).toBe(0)
+    expect(count('readJournalFilterPage')).toBe(0)
     // A dispatcher publication may finish after networkidle and refresh the old,
     // unfiltered scope while the operator types. Inspect actual request scopes:
     // still at most two startup reads and exactly one read for this search.
     const startupPages = pageRequests.filter(request => !(request.search ?? request.columnFilters?.search))
     expect(startupPages.length).toBeLessThanOrEqual(2)
-    expect(startupPages.every(request => isWorkflow ? request.page === 1 : request.start === 0)).toBe(true)
+    expect(startupPages.every(request => request.start === 0)).toBe(true)
     expect(pageRequests.filter(request => (request.search ?? request.columnFilters?.search) === PROJECT)).toHaveLength(1)
     expect(pageRequests).toHaveLength(startupPages.length + 1)
     expect(await page.locator('.ag-grid-scrolling-rows .ag-row').count()).toBeGreaterThan(5)
@@ -147,14 +147,15 @@ export function registerWeldGridContract(report: GridReport) {
     await filter.getByLabel('Найти значение фильтра').fill('AG-0250')
     await expect(filter.getByRole('checkbox')).toHaveCount(1)
     await filter.getByRole('checkbox').check()
+    await expect.poll(() => filter.evaluate(element => element.contains(document.activeElement))).toBe(true)
     await expect(page.getByText(loaded(1, 1), { exact: true })).toBeVisible()
     await waitForGridRows(page)
     await expect(page.getByRole('button', { name: 'F2250', exact: true })).toBeVisible()
     await expect(filter).toBeVisible()
-    expect(count(isWorkflow ? 'listWeldColumnFilterOptions' : 'readJournalFilterPage')).toBe(1)
+    expect(count('readJournalFilterPage')).toBe(1)
     await page.keyboard.press('Escape')
     await page.getByRole('button', { name: 'Сбросить', exact: true }).click()
-    await expect(page.getByText(isWorkflow ? /Загружено: 100 из/ : /Найдено:/)).toBeVisible()
+    await expect(page.getByText(/Найдено:/)).toBeVisible()
     await waitForGridRows(page)
     expect(errors).toEqual([])
   })
@@ -279,8 +280,7 @@ export function registerWeldGridContract(report: GridReport) {
     await page.keyboard.press('ControlOrMeta+c')
     await expect.poll(() => page.evaluate(async () => (await navigator.clipboard.readText()).replaceAll('\r\n', '\n'))).toBe('WDI\n45,6\n45,6')
     await page.waitForLoadState('networkidle')
-    if (isWorkflow) expect(calls).toEqual([])
-    else {
+    {
       expect(calls.filter(name => name.startsWith('summarizeJournalGridRange')).length).toBeLessThanOrEqual(2)
       expect(calls.filter(name => name.startsWith('copyJournalGridRange'))).toHaveLength(1)
       expect(calls.every(name => /^(summarizeJournalGridRange|copyJournalGridRange)_/.test(name))).toBe(true)
@@ -362,237 +362,37 @@ export function registerWeldGridContract(report: GridReport) {
     expect((await motion.read()).length).toBe(6)
   })
 
-  // The journal uses document scrolling, covered by journal-server-grid.spec.ts.
-  if (isWorkflow) {
-  test(name('прокрутка оставляет только шапку, подгружает одну порцию и сохраняет выбор'), async ({ page }, info) => {
-    await page.goto(profile.route)
-    await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(PROJECT)
-    await expect(page.getByText(loaded(100, 250), { exact: true })).toBeVisible()
-    await waitForGridRows(page)
-    await page.locator('.ag-grid-scrolling-rows .ag-row[row-index="0"]').getByRole('checkbox').check()
-    await expect(page.getByText('Выбрано: 1', { exact: true })).toBeVisible()
-    await page.locator('.ag-grid-viewport').hover()
-    await page.mouse.wheel(0, 700)
-    await expect.poll(() => page.locator('.journal-grid-frame').evaluate(element => element.getBoundingClientRect().top)).toBeLessThan(2)
-    expect((await page.locator('[data-journal-toolbar]').boundingBox())!.y).toBeLessThan(0)
-    await page.mouse.wheel(0, 500)
-    await expect.poll(() => page.locator('.ag-grid-viewport').evaluate(element => element.scrollTop)).toBeGreaterThan(0)
-    expect((await page.locator('.ag-header').boundingBox())!.y).toBeGreaterThanOrEqual(-1)
-    await page.screenshot({ path: info.outputPath('journal-header-only.png') })
-    await page.locator('.ag-grid-viewport').evaluate(element => { element.scrollTop = element.scrollHeight })
-    await expect(page.getByText(loaded(200, 250), { exact: true })).toBeVisible()
-    await waitForGridRows(page)
-    await page.waitForLoadState('networkidle')
-    await expect(page.getByText(loaded(200, 250), { exact: true })).toBeVisible()
-    await waitForGridRows(page)
-    await expect(page.getByText('Выбрано: 1', { exact: true })).toBeVisible()
-    await page.locator('.ag-grid-viewport').evaluate(element => { element.scrollTop = 0 })
-    await expect(page.locator('.ag-grid-scrolling-rows .ag-row[row-index="0"]').getByRole('checkbox')).toBeChecked()
-    // Horizontal scrolling does not load another server page or unpin the identity.
-    const line = page.locator('.ag-grid-scrolling-rows .ag-row[row-index="0"] [col-id="line"]')
-    const left = (await line.boundingBox())!.x
-    await page.locator('.ag-body-horizontal-scroll-viewport').evaluate(element => { element.scrollLeft = 3000 })
-    expect((await line.boundingBox())!.x).toBe(left)
-    await page.waitForLoadState('networkidle')
-    await expect(page.getByText(loaded(200, 250), { exact: true })).toBeVisible()
-    await waitForGridRows(page)
-    // Returning to page top re-enables the toolbar handoff for the next gesture.
-    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
-    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
-    await page.locator('.ag-grid-viewport').hover()
-    await page.mouse.wheel(0, 700)
-    await expect.poll(() => page.locator('.journal-grid-frame').evaluate(e => e.getBoundingClientRect().top)).toBeLessThan(2)
-  })
-
-  test(name('верхняя панель уходит постепенно, без скачка при передаче прокрутки строкам'), async ({ page }, info) => {
+  // The former synthetic wheel handoff belonged to the retired client-page
+  // adapter. Every profile now uses the same native document scroll contract.
+  test(name('native document scroll retains selection and reads only visible blocks'), async ({ page }) => {
     await page.goto(profile.route)
     await page.getByRole('searchbox').fill(PROJECT)
     await expect(page.getByText(loaded(100, 250), { exact: true })).toBeVisible()
     await waitForGridRows(page)
-    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
-    const viewport = page.locator('.ag-grid-viewport')
-    const initialBox = (await viewport.boundingBox())!
-    // hover() scrolls the tall viewport into view itself and hides part of the
-    // heading before the gesture. Move the pointer without changing the page.
-    await page.mouse.move(initialBox.x + initialBox.width / 2, initialBox.y + 140)
-    expect(await page.evaluate(() => scrollY)).toBe(0)
-    await page.evaluate(() => {
-      const state = { active: true, samples: [] as { page: number; rows: number; time: number }[] }
-      const sample = () => {
-        state.samples.push({ page: scrollY, rows: document.querySelector('.ag-grid-viewport')!.scrollTop, time: performance.now() })
-        if (state.active) requestAnimationFrame(sample)
-      }
-      Object.assign(window, { journalTransition: state }); sample()
-    })
-    const headingHeight = await page.locator('.journal-grid-frame').evaluate(element => element.getBoundingClientRect().top)
-    await page.mouse.wheel(0, headingHeight + 60)
-    // Wait for the sampler to observe the completed movement. The live DOM can
-    // already be at 60px while its latest RAF sample still contains 59px.
-    await expect.poll(() => page.evaluate(() => {
-      const state = (window as unknown as { journalTransition: { samples: { page: number; rows: number }[] } }).journalTransition
-      const last = state.samples.at(-1)
-      return last ? last.page + last.rows : 0
-    })).toBeCloseTo(headingHeight + 60, 0)
-    const samples = await page.evaluate(() => {
-      const state = (window as unknown as { journalTransition: { active: boolean; samples: { page: number; rows: number; time: number }[] } }).journalTransition
-      state.active = false
-      return state.samples
-    })
-    const intermediate = new Set(samples.filter(s => s.page > 0 && s.page < headingHeight - 1).map(s => s.page))
-    await info.attach('heading-transition.json', { body: JSON.stringify({ headingHeight, samples }), contentType: 'application/json' })
-    // A healthy steady-grid FPS does not prove this: the old bridge moved the
-    // entire heading and the remaining wheel distance in a single frame.
-    expect(intermediate.size).toBeGreaterThanOrEqual(3)
-    const offsets = samples.map(s => s.page + s.rows)
-    const maxStep = Math.max(...offsets.slice(1).map((value, i) => value - offsets[i]))
-    console.info(`${profile.prefix} heading transition:`, JSON.stringify({ headingHeight, intermediatePositions: intermediate.size, maxStep, distance: offsets.at(-1) }))
-    expect(maxStep).toBeLessThan(headingHeight * .65)
-    expect(offsets.at(-1)).toBeCloseTo(headingHeight + 60, 0)
-    // One uninterrupted native gesture must continue into rows. Merely toggling
-    // overflow at the boundary leaves Chromium's gesture latched to the page.
-    await viewport.evaluate(element => { element.scrollTop = 0 })
-    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
-    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
-    const box = (await viewport.boundingBox())!
-    const cdp = await page.context().newCDPSession(page)
-    await cdp.send('Input.synthesizeScrollGesture', { x: box.x + box.width / 2, y: box.y + 140, yDistance: -800, speed: 1200, gestureSourceType: 'mouse' })
-    await cdp.detach()
-    await expect.poll(() => page.evaluate(() => scrollY + document.querySelector('.ag-grid-viewport')!.scrollTop)).toBeGreaterThanOrEqual(798)
-    expect(await page.evaluate(() => scrollY + document.querySelector('.ag-grid-viewport')!.scrollTop)).toBeLessThanOrEqual(802)
-  })
-
-  test(name('непрерывный жест сразу становится штатным после ухода панели, без движения вверх'), async ({ page }, info) => {
-    await page.goto(profile.route)
-    await page.getByRole('searchbox').fill(PROJECT)
-    await expect(page.getByText(loaded(100, 250), { exact: true })).toBeVisible()
-    await waitForGridRows(page)
+    const first = page.getByRole('button', { name: 'F2001', exact: true }).locator('xpath=ancestor::*[@role="row"]')
+    await first.getByRole('checkbox').check()
     await page.waitForLoadState('networkidle')
-    const calls: string[] = []
-    page.on('request', request => { const name = rpcName(request.url()); if (name) calls.push(name) })
-    await page.evaluate(() => {
-      window.scrollTo({ top: 0, behavior: 'instant' })
-      const events: { top: number; prevented: boolean; time: number }[] = []
-      Object.assign(window, { journalHandoffEvents: events })
-      window.addEventListener('wheel', event => {
-        events.push({ top: document.querySelector('.journal-grid-frame')!.getBoundingClientRect().top,
-          prevented: event.defaultPrevented, time: performance.now() })
-      }, { passive: true })
+    const blocks: Array<{ start: number; end: number }> = []
+    page.on('request', request => {
+      if (rpcName(request.url()).startsWith('readJournalGrid_')) blocks.push((deserializeRpcPayload(request.postData()!) as { data: { start: number; end: number } }).data)
     })
     const viewport = page.locator('.ag-grid-viewport')
     const box = (await viewport.boundingBox())!
-    const cdp = await page.context().newCDPSession(page)
-    try {
-      // The previous test checked distance after the gesture ended. It missed
-      // a bridge which kept intercepting every input while the gesture continued.
-      await cdp.send('Input.synthesizeScrollGesture', {
-        x: box.x + box.width / 2, y: box.y + 140,
-        yDistance: -1600, speed: 1000, gestureSourceType: 'mouse',
-      })
-      await expect.poll(() => page.evaluate(() => scrollY + document.querySelector('.ag-grid-viewport')!.scrollTop)).toBeGreaterThanOrEqual(1598)
-      const events = await page.evaluate(() => (window as unknown as {
-        journalHandoffEvents: { top: number; prevented: boolean; time: number }[]
-      }).journalHandoffEvents)
-      const afterBoundary = events.filter(event => event.top <= 1)
-      await info.attach('continuous-handoff.json', { body: JSON.stringify(events), contentType: 'application/json' })
-      expect(afterBoundary.length).toBeGreaterThan(20)
-      expect(afterBoundary.filter(event => event.prevented)).toHaveLength(0)
-      // Native input and the finite tail must conserve the gesture distance.
-      expect(await page.evaluate(() => scrollY + document.querySelector('.ag-grid-viewport')!.scrollTop)).toBeLessThanOrEqual(1602)
-      expect(calls).toEqual([])
-      // A brief reversal must not be needed to unlock smooth downward scrolling.
-      const before = await viewport.evaluate(element => element.scrollTop)
-      await cdp.send('Input.synthesizeScrollGesture', {
-        x: box.x + box.width / 2, y: 250, yDistance: 12, speed: 300, gestureSourceType: 'mouse',
-      })
-      await cdp.send('Input.synthesizeScrollGesture', {
-        x: box.x + box.width / 2, y: 250, yDistance: -300, speed: 800, gestureSourceType: 'mouse',
-      })
-      await expect.poll(() => viewport.evaluate(element => element.scrollTop)).toBeGreaterThanOrEqual(before + 286)
-    } finally { await cdp.detach() }
-  })
-
-  test(name('мелкие движения трекпада не теряются при уходе верхней панели'), async ({ page }) => {
-    await page.goto(profile.route)
-    await page.getByRole('searchbox').fill(PROJECT)
-    await expect(page.getByText(loaded(100, 250), { exact: true })).toBeVisible()
-    await waitForGridRows(page)
+    await page.mouse.move(box.x + box.width / 2, Math.min(800, box.y + 140))
+    await page.mouse.wheel(0, 800)
+    await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(500)
+    await expect.poll(() => viewport.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+    // The frame's one-pixel top border remains visible above its sticky header.
+    await expect.poll(() => page.locator('.ag-header').evaluate(element => Math.abs(element.getBoundingClientRect().top))).toBeLessThanOrEqual(1)
+    await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }))
+    await expect(page.getByRole('button', { name: 'F2250', exact: true })).toBeVisible()
+    expect(blocks.length).toBeGreaterThan(0)
+    expect(blocks.length).toBeLessThanOrEqual(3)
+    expect(blocks.every(block => block.end - block.start <= 100)).toBe(true)
+    expect(await page.locator('.ag-grid-scrolling-rows .ag-row').count()).toBeLessThan(60)
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
-    const movement = await page.locator('.ag-grid-viewport').evaluate(async viewport => {
-      const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
-      await frame(); await frame()
-      const start = window.scrollY + viewport.scrollTop
-      // Chromium rounds individual JS scrollBy(0.2) calls to zero. Trackpad
-      // momentum still has to accumulate across frames and reach the boundary.
-      for (let index = 0; index < 25; index++) {
-        viewport.dispatchEvent(new WheelEvent('wheel', { deltaY: .2, bubbles: true, cancelable: true }))
-        await frame()
-      }
-      // Include the final short motion tail, not only the input delivery period.
-      await new Promise(resolve => setTimeout(resolve, 150))
-      return window.scrollY + viewport.scrollTop - start
-    })
-    expect(movement).toBeGreaterThanOrEqual(4)
-    expect(movement).toBeLessThanOrEqual(6)
-    await page.locator('.ag-grid-viewport').evaluate(viewport => {
-      const frame = document.querySelector('.journal-grid-frame')!
-      const remaining = frame.getBoundingClientRect().top
-      viewport.dispatchEvent(new WheelEvent('wheel', { deltaX: 8, deltaY: remaining + 40, bubbles: true, cancelable: true }))
-    })
-    await expect.poll(() => page.locator('.ag-grid-viewport').evaluate(viewport => viewport.scrollTop)).toBe(40)
-    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
-    const handoff = await page.locator('.ag-grid-viewport').evaluate(viewport => ({
-      top: document.querySelector('.journal-grid-frame')!.getBoundingClientRect().top,
-      rows: viewport.scrollTop, horizontal: viewport.scrollLeft,
-    }))
-    expect(handoff.top).toBeLessThanOrEqual(1)
-    expect(handoff.rows).toBeGreaterThanOrEqual(39)
-    expect(handoff.rows).toBeLessThanOrEqual(41)
-    expect(handoff.horizontal).toBe(8)
-    // After the movement settles the listener is gone: the next event is native.
-    expect(await page.locator('.ag-grid-viewport').evaluate(viewport => viewport.dispatchEvent(
-      new WheelEvent('wheel', { deltaY: 10, bubbles: true, cancelable: true }),
-    ))).toBe(true)
+    await expect(first.getByRole('checkbox')).toBeChecked()
   })
-
-  test(name('уход панели можно остановить, уменьшение движения отключает анимацию'), async ({ page }) => {
-    await page.goto(profile.route)
-    await page.getByRole('searchbox').fill(PROJECT)
-    await expect(page.getByText(loaded(100, 250), { exact: true })).toBeVisible()
-    await waitForGridRows(page)
-    const viewport = page.locator('.ag-grid-viewport')
-    for (const intent of ['reverse', 'reverse-handoff', 'pointer', 'key'] as const) {
-      const result = await viewport.evaluate(async (element, intent) => {
-        window.scrollTo({ top: 0, behavior: 'instant' }); element.scrollTop = 0
-        await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-        const distance = Math.max(300, Math.ceil(document.querySelector('.journal-grid-frame')!.getBoundingClientRect().top * 1.5))
-        element.dispatchEvent(new WheelEvent('wheel', { deltaY: distance, bubbles: true, cancelable: true }))
-        await new Promise(resolve => setTimeout(resolve, intent === 'reverse-handoff' ? 85 : 40))
-        const before = scrollY + element.scrollTop
-        const top = document.querySelector('.journal-grid-frame')!.getBoundingClientRect().top
-        if (intent === 'reverse' || intent === 'reverse-handoff') element.dispatchEvent(new WheelEvent('wheel', { deltaY: -20, bubbles: true, cancelable: true }))
-        if (intent === 'pointer') element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
-        if (intent === 'key') element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', bubbles: true }))
-        await new Promise(resolve => setTimeout(resolve, 150))
-        return { before, after: scrollY + element.scrollTop, top }
-      }, intent)
-      expect(result.before).toBeGreaterThan(0)
-      if (intent === 'reverse-handoff') expect(result.top).toBeLessThanOrEqual(1)
-      expect(result.after).toBe(result.before)
-    }
-    await page.emulateMedia({ reducedMotion: 'reduce' })
-    const reduced = await viewport.evaluate(async element => {
-      window.scrollTo({ top: 0, behavior: 'instant' }); element.scrollTop = 0
-      const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
-      await frame(); await frame()
-      const distance = document.querySelector('.journal-grid-frame')!.getBoundingClientRect().top + 40
-      element.dispatchEvent(new WheelEvent('wheel', { deltaY: distance, bubbles: true, cancelable: true }))
-      await frame()
-      return { distance, actual: scrollY + element.scrollTop }
-    })
-    expect(reduced.actual).toBe(reduced.distance)
-  })
-
-  }
 
   test(name('только своё ПКМ, русский заголовок, Escape и стабильный фильтр с колесом'), async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 })
@@ -633,6 +433,7 @@ export function registerWeldGridContract(report: GridReport) {
     await expect(filter).toBeVisible()
     await filter.getByLabel('Найти значение фильтра').fill('AG-0250')
     await filter.getByRole('checkbox').check()
+    await expect.poll(() => filter.evaluate(element => element.contains(document.activeElement))).toBe(true)
     await expect(page.getByText(loaded(1, 1), { exact: true })).toBeVisible()
     await waitForGridRows(page)
     await expect(filter).toBeVisible()
@@ -647,7 +448,7 @@ export function registerWeldGridContract(report: GridReport) {
     await expect(page.getByRole('button', { name: 'Сбросить', exact: true })).toHaveCount(0)
   })
 
-  test(name('resize, порция, компактная панель и однократный Escape из редактирования'), async ({ page }) => {
+  test(name('resize, автоматическая загрузка, компактная панель и однократный Escape из редактирования'), async ({ page }) => {
     await page.goto(profile.route)
     await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(PROJECT)
     await expect(page.getByText(loaded(100, 250), { exact: true })).toBeVisible()
@@ -675,13 +476,7 @@ export function registerWeldGridContract(report: GridReport) {
     await page.mouse.down(); await page.mouse.move(handle.x + 90, handle.y + handle.height / 2, { steps: 6 }); await page.mouse.up()
     await expect.poll(async () => (await page.locator('.ag-header-cell[col-id="line"]').boundingBox())!.width).toBeGreaterThan(width + 50)
     const size = page.getByRole('combobox', { name: 'Размер порции строк' })
-    if (isWorkflow) {
-    expect(await size.evaluate(e => parseFloat(getComputedStyle(e).paddingRight))).toBeGreaterThanOrEqual(28)
-    await expect(size).not.toHaveCSS('background-image', 'none')
-    await size.selectOption('300')
-    await expect(page.getByText(loaded(250, 250), { exact: true })).toBeVisible()
-    await waitForGridRows(page)
-    } else await expect(size).toHaveCount(0)
+    await expect(size).toHaveCount(0)
     // The journal retains its full editor/suggestions; PSTO has a dedicated note editor.
     if (isWorkflow) await revealColumn(page, noteField)
     await page.locator(`.ag-row[row-index="0"] [col-id="${isWorkflow ? noteField : 'subtitleCode'}"]`).click()
@@ -713,7 +508,6 @@ export function registerWeldGridContract(report: GridReport) {
     await page.getByRole('button', { name: 'Настроить вид' }).click()
     await showAllColumns(page)
     await page.keyboard.press('Escape')
-    if (isWorkflow) await page.getByRole('combobox', { name: 'Размер порции строк' }).selectOption('300')
     await expect(page.getByText(loaded(250, 250), { exact: true })).toBeVisible()
     await waitForGridRows(page)
     await page.waitForLoadState('networkidle')
@@ -789,7 +583,7 @@ export function registerWeldGridContract(report: GridReport) {
   })
 
 
-  test(name(`меню столбца сортирует весь отчёт, группирует ${isWorkflow ? 'загруженные строки' : 'всю выборку'} и открывает настройки`), async ({ page }) => {
+  test(name('меню столбца сортирует весь отчёт, группирует всю выборку и открывает настройки'), async ({ page }) => {
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
     await page.goto(profile.route)
@@ -805,7 +599,7 @@ export function registerWeldGridContract(report: GridReport) {
     await expect(page.getByRole('button', { name: 'Группировка: Проект', exact: true })).toBeVisible()
     const group = page.locator('.ag-row-group').first()
     await expect(group).toContainText(PROJECT)
-    await expect(group).toContainText(isWorkflow ? '100 лин.' : '250 лин.')
+    await expect(group).toContainText('250 лин.')
     await group.locator('.ag-group-contracted').click()
     await expect(page.getByRole('button', { name: 'F2250', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Снять все группировки', exact: true }).click()
@@ -839,7 +633,7 @@ export function registerWeldGridContract(report: GridReport) {
     const selectAll = page.locator('.ag-header-cell').filter({ has: page.getByRole('checkbox') })
     await selectAll.focus()
     await page.keyboard.press('F2')
-    await expect(page.getByLabel('Статистика выделения')).toContainText(isWorkflow ? 'Выбрано: 100' : 'Выбрано: 250')
+    await expect(page.getByLabel('Статистика выделения')).toContainText('Выбрано: 250')
     await page.keyboard.press('Enter')
     await expect(page.getByLabel('Статистика выделения')).not.toContainText('Выбрано:')
     const line = first.locator('[col-id="line"]')
@@ -1150,10 +944,8 @@ export function registerWeldGridContract(report: GridReport) {
     expect(chipsBox.x + chipsBox.width).toBeLessThan(searchBox.x)
     expect(Math.abs(chipsBox.y + chipsBox.height / 2 - searchBox.y - searchBox.height / 2)).toBeLessThan(2)
     await page.waitForLoadState('networkidle')
-    if (isWorkflow) expect(calls.slice(before)).toEqual([])
-    else {
+    {
       // Each of the two server-grouping changes may request its first block.
-      // Client reports still regroup the loaded page without any RPC.
       const reads = calls.slice(before)
       expect(reads.length).toBeGreaterThan(0)
       expect(reads.length).toBeLessThanOrEqual(2)
@@ -1161,16 +953,16 @@ export function registerWeldGridContract(report: GridReport) {
     }
     const parent = page.locator('.ag-row.ag-row-group.ag-row-level-0').first()
     const selectAll = page.locator('.ag-header-cell').getByRole('checkbox')
-    if (isWorkflow) await selectAll.check(); else await selectAll.click()
-    await expect(page.getByLabel('Статистика выделения')).toContainText(isWorkflow ? 'Выбрано: 100' : 'Выбрано: 250')
+    await selectAll.click()
+    await expect(page.getByLabel('Статистика выделения')).toContainText('Выбрано: 250')
     await expect(parent.getByRole('checkbox')).toBeChecked()
-    if (isWorkflow) await selectAll.uncheck(); else await selectAll.click()
+    await selectAll.click()
     // Server selection is asynchronous. Wait for the clear to finish before
     // testing F2; the old count of 250 must not satisfy its later assertion.
     await expect(page.getByLabel('Статистика выделения')).not.toContainText('Выбрано:')
     await expect(parent.getByRole('checkbox')).toBeEnabled()
     await parent.getByRole('checkbox').press('F2')
-    await expect(page.getByLabel('Статистика выделения')).toContainText(isWorkflow ? 'Выбрано: 100' : 'Выбрано: 250')
+    await expect(page.getByLabel('Статистика выделения')).toContainText('Выбрано: 250')
     await expect(parent).toHaveAttribute('aria-expanded', 'false')
     await expect(parent.getByRole('checkbox')).toBeFocused()
     await expect(parent.getByRole('checkbox')).toBeEnabled()
@@ -1184,7 +976,7 @@ export function registerWeldGridContract(report: GridReport) {
     // Expansion can replace a virtual row; wait for the connected row.
     await expect(parent).toHaveCSS('background-color', chipColors[0])
     await expect(child).toHaveCSS('background-color', chipColors[1])
-    if (isWorkflow) await child.getByRole('checkbox').check(); else await child.getByRole('checkbox').click()
+    await child.getByRole('checkbox').click()
     await expect(page.getByLabel('Статистика выделения')).toContainText('Выбрано: 1')
     await expect(parent.getByRole('checkbox')).toBeChecked({ indeterminate: true })
     await child.locator('.ag-group-contracted').click()
@@ -1195,8 +987,8 @@ export function registerWeldGridContract(report: GridReport) {
     await expect(parent.getByRole('checkbox')).not.toBeChecked()
     await expect(child.getByRole('checkbox')).not.toBeChecked()
     await parent.getByRole('checkbox').press('Space')
-    await expect(page.getByLabel('Статистика выделения')).toContainText(isWorkflow ? 'Выбрано: 100' : 'Выбрано: 250')
-    if (isWorkflow) await selectAll.uncheck(); else await selectAll.click()
+    await expect(page.getByLabel('Статистика выделения')).toContainText('Выбрано: 250')
+    await selectAll.click()
     await chips.getByRole('button', { name: 'Группировка: Линия', exact: true }).press('Alt+ArrowLeft')
     await expect(chips.getByRole('button', { name: /^Группировка:/ })).toHaveText(['Линия', 'Проект'])
     expect(await layout()).toEqual(initial)
@@ -1251,10 +1043,16 @@ export function registerWeldGridContract(report: GridReport) {
     await alignedDispatcher()
     await page.setViewportSize({ width: 1000, height: 900 })
     await alignedDispatcher()
-    if (!isWorkflow) await expect.poll(async () => {
-      const box = (await page.locator('[data-journal-footer]').boundingBox())!
-      return Math.round(box.y + box.height)
-    }).toBe(888)
+    // The existing journal layout uses 12px; LNK/PSTO retain their 20px
+    // page padding. The shared dock must preserve each report's actual gap.
+    const bottomGap = isWorkflow ? 20 : 12
+    await expect.poll(async () => {
+      return page.evaluate(bottom => {
+        const footer = document.querySelector('[data-journal-footer]')!.getBoundingClientRect()
+        const frame = document.querySelector('.journal-grid-frame')!.getBoundingClientRect()
+        return Math.round(footer.bottom) === bottom && Math.abs(frame.bottom - footer.top) <= 1
+      }, 900 - bottomGap)
+    }).toBe(true)
     const narrow = await layout()
     for (const [id, name] of [['line', 'Линия'], ['projectTitle', 'Проект'], ['subtitleCode', 'Шифр'], ['groupName', 'Группа трубопровода']]) {
       await revealColumn(page, id)
@@ -1266,11 +1064,15 @@ export function registerWeldGridContract(report: GridReport) {
     expect(await chips.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true)
     await page.setViewportSize({ width: 1600, height: 1000 })
     // Document scrolling resizes the sticky stage in ResizeObserver + rAF.
-    // Compare drag geometry only after the new viewport height has reached it.
-    if (!isWorkflow) await expect.poll(async () => {
-      const box = (await page.locator('[data-journal-footer]').boundingBox())!
-      return Math.round(box.y + box.height)
-    }).toBe(988)
+    // The footer is docked independently, so also wait for the grid's lower
+    // edge before comparing drag geometry after the viewport resize.
+    await expect.poll(async () => {
+      return page.evaluate(bottom => {
+        const footer = document.querySelector('[data-journal-footer]')!.getBoundingClientRect()
+        const frame = document.querySelector('.journal-grid-frame')!.getBoundingClientRect()
+        return Math.round(footer.bottom) === bottom && Math.abs(frame.bottom - footer.top) <= 1
+      }, 1000 - bottomGap)
+    }).toBe(true)
     const beforeWideDrag = await layout()
     const longLabel = chips.getByRole('button', { name: 'Группировка: Группа трубопровода', exact: true })
     await longLabel.dragTo(chips.getByRole('button', { name: 'Группировка: Линия', exact: true }))
@@ -1339,7 +1141,7 @@ export function registerWeldGridContract(report: GridReport) {
     const before = calls.length
     for (const id of ['projectTitle', 'line']) {
       await page.locator(`.ag-header-cell[col-id="${id}"]`).click({ button: 'right' })
-      await page.getByRole('menuitem', { name: isWorkflow ? /^Сгруппировать загруженные по/ : /^Сгруппировать по/ }).click()
+      await page.getByRole('menuitem', { name: /^Сгруппировать по/ }).click()
     }
     const root = page.locator('.ag-row.ag-row-group.ag-row-level-0')
     const line = (name: string) => page.locator('.ag-row.ag-row-group.ag-row-level-1:not(.ag-opacity-zero)')
@@ -1370,8 +1172,7 @@ export function registerWeldGridContract(report: GridReport) {
     await expect(joint).toHaveCount(0)
     await expect(line('AG-0002')).toHaveAttribute('aria-expanded', 'true')
     await page.waitForLoadState('networkidle')
-    if (isWorkflow) await page.locator('.ag-grid-viewport').evaluate(viewport => { viewport.scrollTop = 1000 })
-    else {
+    {
       // The journal's user scroll surface is the document. Open the menu once
       // the synchronized viewport has reached that position, not mid-scroll.
       await page.evaluate(() => window.scrollTo(0, document.querySelector('.journal-page-track')!.getBoundingClientRect().top + scrollY + 1000))
@@ -1394,8 +1195,7 @@ export function registerWeldGridContract(report: GridReport) {
     await expect(page.getByText(loaded(100, 250), { exact: true })).toBeVisible()
     await waitForGridRows(page)
     await page.waitForLoadState('networkidle')
-    if (isWorkflow) expect(calls.slice(before)).toEqual([])
-    else {
+    {
       // Two expand-all operations and one distant scroll may read visible
       // stores, including stores purged by collapse. They must not enumerate
       // all 250 leaf groups or request the complete report in a single block.
@@ -1429,7 +1229,7 @@ export function registerWeldGridContract(report: GridReport) {
     for (const id of ['projectTitle', 'groupName', 'line', 'weldingMethod']) {
       await revealColumn(page, id)
       await page.locator(`.ag-header-cell[col-id="${id}"]`).click({ button: 'right' })
-      await page.getByRole('menuitem', { name: isWorkflow ? /^Сгруппировать загруженные по/ : /^Сгруппировать по/ }).click()
+      await page.getByRole('menuitem', { name: /^Сгруппировать по/ }).click()
     }
     const chips = page.getByRole('list', { name: 'Порядок группировок' })
     const groupRows = page.locator('.ag-row.ag-row-group:not(.ag-row-selected)')
@@ -1504,7 +1304,7 @@ export function registerWeldGridContract(report: GridReport) {
     expect(errors).toEqual([])
   })
 
-  if (isWorkflow) test(name('5000 накопленных строк — диапазон, отмена расчёта и ограниченный DOM без запросов'), async ({ page }, info) => {
+  if (isWorkflow) test(name('5000 строк на сервере — полный диапазон, отмена расчёта и ограниченные DOM и запросы'), async ({ page }, info) => {
     test.skip(process.env.AUDIT_JOURNAL_GRID !== '1', 'Explicit local browser performance run')
     test.setTimeout(120_000)
     const project = profile.accumulatedProject
@@ -1517,14 +1317,6 @@ export function registerWeldGridContract(report: GridReport) {
     await page.getByRole('searchbox').fill(project)
     await expect(page.getByText(loaded(100, 5000), { exact: true })).toBeVisible()
     await waitForGridRows(page)
-    await page.getByRole('combobox', { name: 'Размер порции строк' }).selectOption('1000')
-    await expect(page.getByText(loaded(1000, 5000), { exact: true })).toBeVisible()
-    await waitForGridRows(page)
-    for (let loaded = 2000; loaded <= 5000; loaded += 1000) {
-      await page.getByRole('button', { name: 'Загрузить ещё', exact: true }).click()
-      await expect(page.getByText(`Загружено: ${loaded} из 5000`, { exact: true })).toBeVisible()
-      await waitForGridRows(page)
-    }
     await page.getByRole('button', { name: 'Настроить вид' }).click()
     await showAllColumns(page)
     await page.keyboard.press('Escape')
@@ -1553,7 +1345,13 @@ export function registerWeldGridContract(report: GridReport) {
     await expect(stats).toContainText('Количество: 1')
     await expect(stats).toContainText('Сумма: 215')
     await page.waitForLoadState('networkidle')
-    expect(calls.slice(before)).toEqual([])
+    const rangeCalls = calls.slice(before)
+    expect(rangeCalls.some(name => name.startsWith('summarizeJournalGridRange'))).toBe(true)
+    expect(rangeCalls.length).toBeLessThanOrEqual(8)
+    // Ctrl+Shift+Down also reveals the last, previously unloaded block. Its
+    // visible next-step cells need a bounded dispatcher context, not a rebuild.
+    expect(rangeCalls.filter(name => name.startsWith('getDispatcherTaskContext_')).length).toBeLessThanOrEqual(2)
+    expect(rangeCalls.every(name => /^(readJournalGrid|summarizeJournalGridRange|getDispatcherTaskContext)_/.test(name))).toBe(true)
     const rendered = await page.locator('.ag-grid-scrolling-rows .ag-row').count()
     expect(rendered).toBeLessThan(60)
     console.info(`${profile.prefix} accumulated rows:`, JSON.stringify({ rows: 5000, rangeTotalMs: Math.round(duration), renderedRows: rendered, extraRpc: calls.length - before }))

@@ -12,6 +12,28 @@ vi.mock('@/server/journal-grid-api', () => ({
   countJournalGridSelection: vi.fn(), copyJournalGridRange: vi.fn(),
   selectJournalGridRows: vi.fn(), summarizeJournalGridRange: vi.fn(),
 }))
+it('keeps counters unchanged when the owning workflow refuses a whole selection', async () => {
+  vi.useFakeTimers()
+  let datasource!: IServerSideDatasource<WeldRow>
+  const selected = new Set([1]), onSelect = vi.fn(() => false)
+  const api = { isDestroyed: () => false, setGridOption: (_key: string, value: IServerSideDatasource<WeldRow>) => { datasource = value },
+    clearCellSelection: vi.fn(), getRowGroupColumns: () => [], getCellRanges: () => [], forEachNode: () => {} } as unknown as GridApi<WeldRow>
+  const source: JournalServerSource = { identity: 'limited-selection', columnFilters: {}, sort: null, rowsChanged: vi.fn(),
+    load: vi.fn().mockResolvedValue({ rows: [], rowCount: 6000, revision: 1 }) }
+  vi.mocked(selectJournalGridRows).mockResolvedValue({ ids: Array.from({ length: 6000 }, (_, index) => index + 1), revision: 1 })
+  vi.mocked(countJournalGridSelection).mockResolvedValue({ counts: {}, total: 1, snapshot: 'selected-one' })
+  const view = renderHook(() => useJournalServerGrid({ api, source, selected, onSelect, anchor: 'line', ready: true, total: 6000 }))
+  try {
+    await act(async () => datasource.getRows({ request: { rowGroupCols: [], groupKeys: [], startRow: 0, endRow: 100 },
+      success: vi.fn(), fail: vi.fn() } as unknown as IServerSideGetRowsParams<WeldRow>))
+    await act(async () => vi.advanceTimersByTimeAsync(120))
+    expect(view.result.current.selectionContext!.selectedTotal).toBe(1)
+    await act(async () => view.result.current.selectionContext!.toggle())
+    expect(onSelect).toHaveBeenCalledWith(new Set(Array.from({ length: 6000 }, (_, index) => index + 1)))
+    expect(view.result.current.selectionContext!.ids).toBe(selected)
+    expect(view.result.current.selectionContext!.selectedTotal).toBe(1)
+  } finally { view.unmount(); vi.useRealTimers() }
+})
 it('selects a complete local query synchronously without selection/count RPCs', async () => {
   vi.useFakeTimers()
   let datasource!: IServerSideDatasource<WeldRow>

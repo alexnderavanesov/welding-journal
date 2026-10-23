@@ -73,7 +73,10 @@ export function GridFilterValue({ option, selectedValues, onToggleValues, ariaLa
   const checked = option.values.length > 0 && selectedCount === option.values.length
   const partial = selectedCount > 0 && !checked
   return <label className={`journal-filter-option ${checked ? 'is-selected' : ''}`}>
-    <input type="checkbox" aria-label={ariaLabel} checked={checked} ref={input => { if (input) input.indeterminate = partial }} onChange={() => onToggleValues(option.values)} />
+    <input type="checkbox" aria-label={ariaLabel} checked={checked} ref={input => { if (input) input.indeterminate = partial }}
+      // Pointer activation does not focus checkboxes in every browser. Keep
+      // subsequent keyboard commands inside this filter after choosing a value.
+      onClick={event => event.currentTarget.focus({ preventScroll: true })} onChange={() => onToggleValues(option.values)} />
     <span className="journal-filter-check" aria-hidden="true">{partial ? <Minus size={12} /> : <Check size={12} />}</span>
     <span className="min-w-0 flex-1 truncate" title={option.label}>{option.displayLabel || option.label || '(Пусто)'}</span>
     <span className="journal-count">{option.count}</span>

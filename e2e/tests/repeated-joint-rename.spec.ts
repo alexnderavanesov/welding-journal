@@ -40,7 +40,7 @@ test('recalculates R/W counters for the whole remaining chain in one user action
     { id: ids.get('S991R2'), joint: EXPECTED_JOINTS[2], note: 'second-note', conclusion: 'Conclusion S991R2' },
   ])
 
-  await expect(page.getByRole('status')).toContainText('Цепочка исправлена: переименовано стыков - 2')
+  await expect(page.getByRole('status').filter({ hasText: 'Цепочка исправлена' })).toContainText('Цепочка исправлена: переименовано стыков - 2')
   await page.reload()
   const renamedRow = journalRow(page, ids.get('S991R1'))
   await renamedRow.getByRole('button', { name: 'S991W1', exact: true }).click()

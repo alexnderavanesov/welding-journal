@@ -174,14 +174,25 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
     }
     const onModelChanged = () => { preserveAnchor = true; schedule() }
     const onWindowResize = () => { preserveAnchor = true; schedule() }
-    const onRootResize = new ResizeObserver(schedule)
+    const observedHeights = new WeakMap<Element, number>()
+    const heightChanged = (entries: ResizeObserverEntry[]) => entries.reduce((changed, entry) => {
+      const previous = observedHeights.get(entry.target), height = entry.contentRect.height
+      observedHeights.set(entry.target, height)
+      return changed || previous !== height
+    }, false)
+    // Horizontal dragging does not change the vertical scroll geometry. Wrapped
+    // content still reports a real height change through the body/header observers.
+    const onRootResize = new ResizeObserver(entries => { if (heightChanged(entries)) schedule() })
     onRootResize.observe(element)
-    const onContentResize = new ResizeObserver(onModelChanged)
+    const onContentResize = new ResizeObserver(entries => { if (heightChanged(entries)) onModelChanged() })
     onContentResize.observe(body); onContentResize.observe(header)
     if (horizontalScrollbar) onContentResize.observe(horizontalScrollbar)
     // AG Grid can update explicit model height before a box resize, particularly
     // after a filter. Only the body style is relevant, not every virtual cell.
-    const contentMutation = new MutationObserver(onModelChanged)
+    let bodyHeight = body.style.height
+    const contentMutation = new MutationObserver(() => {
+      if (body.style.height !== bodyHeight) { bodyHeight = body.style.height; onModelChanged() }
+    })
     contentMutation.observe(body, { attributes: true, attributeFilter: ['style'] })
     // Sticky AG headers normally consume wheel events to scroll their viewport.
     // Let the browser handle vertical wheel input on the common page instead;

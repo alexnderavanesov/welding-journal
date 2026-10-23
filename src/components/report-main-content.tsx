@@ -138,7 +138,7 @@ export function ReportMainContent({
   }
 
   return <Suspense fallback={<ReportSectionFallback label="Загружаем таблицу" />}>
-    <WeldReportGrid {...weldTableProps} report={activeReport} reportTaskPanels={reportTaskPanels} renderSummary={journalSummary} reportExportFieldsRef={reportExportFieldsRef} />
+    <WeldReportGrid {...weldTableProps} journalServer={weldTableProps.journalServer!} report={activeReport} reportTaskPanels={reportTaskPanels} renderSummary={journalSummary} reportExportFieldsRef={reportExportFieldsRef} />
   </Suspense>
 }
 

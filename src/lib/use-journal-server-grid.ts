@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { writeDeferredTextToClipboard } from './clipboard'
 import { flushSync } from 'react-dom'
 import type { GridApi, IRowNode, IServerSideDatasource, RowGroupOpenedEvent } from 'ag-grid-community'
 import { countJournalGridSelection, copyJournalGridRange, selectJournalGridRows, summarizeJournalGridRange } from '@/server/journal-grid-api'
@@ -15,7 +16,7 @@ import { journalCopyRanges } from './journal-copy-ranges'
 
 export function useJournalServerGrid(options: {
   source?: JournalServerSource; api: GridApi<WeldRow> | null; selected: ReadonlySet<number>;
-  onSelect?: (ids: Set<number>) => void; onError?: (message: string) => void; onReplace?: () => void; onReplaced?: () => void; total?: number; anchor: string; ready: boolean
+  onSelect?: (ids: Set<number>) => boolean | void; onError?: (message: string) => void; onReplace?: () => void; onReplaced?: () => void; total?: number; anchor: string; ready: boolean
 }) {
   const { source, api } = options
   const current = useRef(options); current.current = options
@@ -55,7 +56,7 @@ export function useJournalServerGrid(options: {
       if (api && !api.isDestroyed()) cacheBudget.current.trim(api)
     }, 180)
   })
-  const query = (): JournalGridQuery => ({ columnFilters: current.current.source!.columnFilters,
+  const query = (): JournalGridQuery => ({ report: current.current.source!.report, columnFilters: current.current.source!.columnFilters,
     sort: current.current.source!.sort, groupBy: current.current.api?.getRowGroupColumns().map(column => column.getColId() as WeldFieldKey) ?? [] })
   const reportError = (error: unknown) => current.current.onError?.(error instanceof Error ? error.message : String(error))
   const selectionScope = () => JSON.stringify([current.current.source?.identity, revision.current, query().groupBy])
@@ -304,6 +305,9 @@ export function useJournalServerGrid(options: {
     const group = journalGroup(row)
     const commit = (next: Set<number>, branch: readonly string[], wholeBranch: boolean, rootTotal?: number) => {
       const previous = current.current.selected, scope = selectionScope()
+      // The owning report may refuse a selection (for example its existing
+      // workflow limit). Never publish optimistic counters for a refused set.
+      if (current.current.onSelect?.(next) === false) return
       const delta = next.size - previous.size
       const descendants: Record<string, number> = {}
       if (wholeBranch) current.current.api?.forEachNode(node => {
@@ -331,7 +335,6 @@ export function useJournalServerGrid(options: {
           selectedTotal: rootTotal ?? (exact ? (previous.size ? value.selectedTotal : 0) + delta : value.selectedTotal),
           basis: exact || rootTotal !== undefined ? { scope, selected: next } : undefined }
       })
-      current.current.onSelect?.(next)
     }
     if (row && !group) {
       const next = new Set(selected); if (next.has(row.id)) next.delete(row.id); else next.add(row.id)
@@ -387,9 +390,7 @@ export function useJournalServerGrid(options: {
       if (current.current.source?.identity !== identity || JSON.stringify(getRange(true)) !== JSON.stringify(data)) throw new Error('Выборка или диапазон изменились. Повторите копирование.')
       return value
     })
-    const write = typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write
-      ? navigator.clipboard.write([new ClipboardItem({ 'text/plain': text.then(value => new Blob([value], { type: 'text/plain' })) })])
-      : text.then(value => navigator.clipboard.writeText(value))
+    const write = writeDeferredTextToClipboard(text)
     void write.catch(error => {
       if (!controller.signal.aborted) {
         // Permission can fail before the deferred item is ready. Stop the

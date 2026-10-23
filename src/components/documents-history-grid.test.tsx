@@ -4,19 +4,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ColDef, ColumnState, FilterModel, IRowNode, IServerSideDatasource, IServerSideGetRowsParams, SelectionChangedEvent } from 'ag-grid-community'
 import { DocumentsHistoryGrid, type DocumentsHistoryGridProps } from './documents-history-grid'
 import type { DocumentHistoryGridResult, DocumentHistoryGroupRow } from '@/lib/document-history-grid'
-import { DOCUMENT_GRID_DEFAULT_APPEARANCE, normalizeDocumentGridColumns, writeDocumentGridState } from '@/lib/document-history-grid-state'
+import { DOCUMENT_GRID_ACTIONS_COLUMN, DOCUMENT_GRID_DEFAULT_APPEARANCE, normalizeDocumentGridColumns, writeDocumentGridState } from '@/lib/document-history-grid-state'
 
 const grid = vi.hoisted(() => ({ props: null as unknown as { serverSideDatasource: IServerSideDatasource; onGridReady: (event: { api: unknown }) => void; alwaysShowVerticalScroll: boolean; defaultColDef: unknown; initialState: { filter: { filterModel: FilterModel } }; columnDefs: ColDef[]; onModelUpdated: () => void; onSortChanged: (event: { source: string }) => void; onRowGroupOpened: (event: { node: IRowNode<Row | DocumentHistoryGroupRow> }) => void; onSelectionChanged: (event: SelectionChangedEvent<Row | DocumentHistoryGroupRow>) => void; groupRowRendererParams: { innerRenderer: ComponentType<{ data?: Row | DocumentHistoryGroupRow; node: IRowNode<Row | DocumentHistoryGroupRow> }> } },
   groups: [] as IRowNode<Row | DocumentHistoryGroupRow>[],
   rows: [] as IRowNode<Row | DocumentHistoryGroupRow>[],
-  api: { isDestroyed: () => false, getCellRanges: vi.fn(() => []), forEachNode: vi.fn(), setNodesSelected: vi.fn(), getColumnState: vi.fn<() => ColumnState[]>(() => []), applyColumnState: vi.fn(), setColumnsVisible: vi.fn(), refreshServerSide: vi.fn(), getFilterModel: vi.fn<() => FilterModel>(() => ({})), setFilterModel: vi.fn(), refreshHeader: vi.fn(), hidePopupMenu: vi.fn(), hideColumnFilter: vi.fn(), getFirstDisplayedRowIndex: () => 0, getDisplayedRowAtIndex: vi.fn(), getAllDisplayedColumns: vi.fn(() => ['title']), getColumn: vi.fn(), getRowNode: vi.fn(), getFocusedCell: vi.fn(), ensureIndexVisible: vi.fn(), ensureColumnVisible: vi.fn(), setFocusedCell: vi.fn() },
+  api: { addEventListener: vi.fn(), removeEventListener: vi.fn(), setGridOption: vi.fn(), getGridOption: vi.fn(), clearCellSelection: vi.fn(), isDestroyed: () => false, getCellRanges: vi.fn(() => []), forEachNode: vi.fn(), setNodesSelected: vi.fn(), getColumnState: vi.fn<() => ColumnState[]>(() => []), applyColumnState: vi.fn(), setColumnsVisible: vi.fn(), refreshServerSide: vi.fn(), getFilterModel: vi.fn<() => FilterModel>(() => ({})), setFilterModel: vi.fn(), refreshHeader: vi.fn(), hidePopupMenu: vi.fn(), hideColumnFilter: vi.fn(), getFirstDisplayedRowIndex: () => 0, getDisplayedRowAtIndex: vi.fn(), getAllDisplayedColumns: vi.fn(() => ['title']), getColumn: vi.fn(), getRowNode: vi.fn(), getFocusedCell: vi.fn(), ensureIndexVisible: vi.fn(), ensureColumnVisible: vi.fn(), setFocusedCell: vi.fn() },
 }))
 vi.mock('./document-history-grid-config', () => ({ DOCUMENT_GRID_MODULES: [], DOCUMENT_GRID_LOCALE: {}, DOCUMENT_GRID_THEMES: { quartz: {}, alpine: {}, balham: {} } }))
 vi.mock('./document-history-grid-filter', async () => {
   const { createContext } = await import('react')
   return { DOCUMENT_HISTORY_SERVER_FILTER: {}, DocumentGridFilterContext: createContext(null) }
 })
-vi.mock('@/lib/use-journal-page-scroll', () => ({ useJournalPageScroll: () => undefined }))
+vi.mock('@/lib/use-journal-document-scroll', () => ({ useJournalDocumentScroll: () => undefined }))
 vi.mock('ag-grid-react', () => ({
   AgGridProvider: ({ children }: { children: React.ReactNode }) => children,
   AgGridReact: (props: typeof grid.props) => {
@@ -147,10 +147,11 @@ describe('document grid server lifecycle', () => {
     writeDocumentGridState(initial.viewId, { columns: [], appearance: DOCUMENT_GRID_DEFAULT_APPEARANCE,
       views: [{ id: 'changed', name: 'Изменённый вид', columns: saved, appearance: DOCUMENT_GRID_DEFAULT_APPEARANCE, filters: {}, search: '' }] })
     render(<DocumentsHistoryGrid {...initial} />)
+    grid.api.applyColumnState.mockClear()
     fireEvent.click(screen.getByRole('button', { name: 'Настроить вид' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Мои виды' }))
     fireEvent.click(screen.getByRole('button', { name: /Изменённый вид Фильтров/ }))
-    expect(grid.api.applyColumnState).toHaveBeenCalledExactlyOnceWith({ state: normalizeDocumentGridColumns(saved, initial.columns), applyOrder: true })
+    expect(grid.api.applyColumnState).toHaveBeenCalledExactlyOnceWith({ state: normalizeDocumentGridColumns(saved, [...initial.columns, DOCUMENT_GRID_ACTIONS_COLUMN]), applyOrder: true })
   })
 
   it('applies changed and cleared saved-view filters and registry search without repeating an unchanged filter', async () => {
@@ -158,6 +159,7 @@ describe('document grid server lifecycle', () => {
     writeDocumentGridState(initial.viewId, { columns: [], appearance: DOCUMENT_GRID_DEFAULT_APPEARANCE,
       views: [{ id: 'changed', name: 'Другой отбор', columns: [], appearance: DOCUMENT_GRID_DEFAULT_APPEARANCE, filters: { title: 'same', line: 'new' }, search: 'сохранённый поиск' }] })
     render(<DocumentsHistoryGrid {...initial} />)
+    grid.api.applyColumnState.mockClear()
     fireEvent.click(screen.getByRole('button', { name: 'Настроить вид' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Мои виды' }))
     fireEvent.click(screen.getByRole('button', { name: /Другой отбор Фильтров/ }))
@@ -171,6 +173,7 @@ describe('document grid server lifecycle', () => {
     writeDocumentGridState(initial.viewId, { columns: [], appearance: DOCUMENT_GRID_DEFAULT_APPEARANCE,
       views: [{ id: 'navigation', name: 'Весь вид', columns: [], appearance: DOCUMENT_GRID_DEFAULT_APPEARANCE, filters: { title: 'same' }, search: '' }] })
     render(<DocumentsHistoryGrid {...initial} />)
+    grid.api.applyColumnState.mockClear()
     fireEvent.click(screen.getByRole('button', { name: 'Настроить вид' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Мои виды' }))
     fireEvent.click(screen.getByRole('button', { name: /Весь вид Фильтров/ }))
@@ -190,7 +193,7 @@ describe('document grid server lifecycle', () => {
     expect(grid.props.serverSideDatasource).toBe(datasource)
     expect(grid.api.refreshServerSide).not.toHaveBeenCalled()
   })
-  it('restores native filter state on mount and uses one reload path for filter changes, reset and source refresh', () => {
+  it('restores native filter state on mount and uses one prepared reload for filter changes, reset and source refresh', async () => {
     const initial = props({ columnFilters: { title: 'saved', stage: 'external-only' } })
     const view = render(<DocumentsHistoryGrid {...initial} />)
     expect(grid.props.initialState.filter.filterModel).toEqual({ title: { value: 'saved' } })
@@ -198,13 +201,13 @@ describe('document grid server lifecycle', () => {
     expect(grid.api.refreshServerSide).not.toHaveBeenCalled()
     grid.api.getFilterModel.mockReturnValue({ title: { value: 'saved' } })
     const changed = { ...initial, columnFilters: { title: 'changed', stage: 'external-only' } }
-    view.rerender(<DocumentsHistoryGrid {...changed} />)
+    await act(async () => view.rerender(<DocumentsHistoryGrid {...changed} />))
     expect(grid.api.setFilterModel).toHaveBeenCalledExactlyOnceWith({ title: { value: 'changed' } })
     expect(grid.api.refreshServerSide).not.toHaveBeenCalled()
     grid.api.getFilterModel.mockReturnValue({ title: { value: 'changed' } })
-    view.rerender(<DocumentsHistoryGrid {...changed} sourceRevision={1} />)
+    await act(async () => view.rerender(<DocumentsHistoryGrid {...changed} sourceRevision={1} />))
     expect(grid.api.refreshServerSide).toHaveBeenCalledExactlyOnceWith({ purge: true })
-    view.rerender(<DocumentsHistoryGrid {...changed} sourceRevision={1} columnFilters={{}} />)
+    await act(async () => view.rerender(<DocumentsHistoryGrid {...changed} sourceRevision={1} columnFilters={{}} />))
     expect(grid.api.setFilterModel).toHaveBeenLastCalledWith({})
     expect(grid.api.refreshServerSide).toHaveBeenCalledTimes(1)
     expect(grid.api.refreshHeader).not.toHaveBeenCalled()
@@ -226,13 +229,14 @@ describe('document grid server lifecycle', () => {
     view.rerender(<DocumentsHistoryGrid {...initial} columnFilters={{ title: 'new scope' }} />)
     expect(grid.api.refreshHeader).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Изменить выбранные' })).toBeDisabled()
-    const second = request()
+    // The old store remains until the prepared root succeeds.
+    expect(grid.api.setFilterModel).not.toHaveBeenCalled()
     await act(async () => old.resolve({ rows: [{ id: 1 }], rowCount: 1, total: 1, matchingSelectedIds: [1] }))
     expect(first.success).not.toHaveBeenCalled(); expect(first.fail).toHaveBeenCalledTimes(1)
     expect(selection).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Изменить выбранные' })).toBeDisabled()
     await act(async () => fresh.reject(new Error('local read unavailable')))
-    expect(second.fail).toHaveBeenCalledTimes(1)
+    expect(grid.api.setFilterModel).not.toHaveBeenCalled()
     expect(screen.getByRole('alert')).toHaveTextContent('local read unavailable')
     expect(screen.getByRole('button', { name: 'Изменить выбранные' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Повторить' })).toBeEnabled()
@@ -247,7 +251,8 @@ describe('document grid server lifecycle', () => {
     view.rerender(<DocumentsHistoryGrid {...initial} selectedDocuments={[{ id: 1 }, { id: 2 }]} />)
     expect(screen.getByRole('button', { name: 'Изменить выбранные' })).toBeEnabled()
     await act(async () => second.resolve({ rows: [{ id: 1, version: 2 }], rowCount: 200, total: 200, matchingSelectedIds: [1] }))
-    expect(selection).toHaveBeenLastCalledWith([{ id: 1, version: 2 }, { id: 2 }])
+    // Block refreshes never rewrite the ID-only selection; action hydration owns snapshots.
+    expect(selection).not.toHaveBeenCalled()
   })
   it('keeps column defaults stable and preserves an explicit visibility change across appearance updates', () => {
     render(<DocumentsHistoryGrid {...props({ columns: [{ key: 'title', label: 'Документ', minWidth: 200, required: true }, { key: 'stage', label: 'Этап', minWidth: 100 }], initialVisibleColumnKeys: ['title', 'stage'] })} />)
@@ -360,7 +365,7 @@ describe('document grid server lifecycle', () => {
     view.unmount()
     expect(layer.isConnected).toBe(false)
   })
-  it('coalesces identical pending blocks while keeping distinct selections isolated', async () => {
+  it('coalesces blocks across selection changes because row reads carry no selection payload', async () => {
     const first = pending<DocumentHistoryGridResult<Row>>(), second = pending<DocumentHistoryGridResult<Row>>()
     const loadRows = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
     const initial = props({ loadRows }), view = render(<DocumentsHistoryGrid {...initial} />)
@@ -368,7 +373,7 @@ describe('document grid server lifecycle', () => {
     expect(loadRows).toHaveBeenCalledTimes(1)
     view.rerender(<DocumentsHistoryGrid {...initial} selectedDocuments={[{ id: 1 }, { id: 2 }]} />)
     const c = request()
-    expect(loadRows).toHaveBeenCalledTimes(2)
+    expect(loadRows).toHaveBeenCalledTimes(1)
     await act(async () => first.resolve({ rows: [], rowCount: 0, total: 0, matchingSelectedIds: [1] }))
     await act(async () => second.resolve({ rows: [], rowCount: 0, total: 0, matchingSelectedIds: [1, 2] }))
     expect(a.success).toHaveBeenCalledTimes(1); expect(b.success).toHaveBeenCalledTimes(1); expect(c.success).toHaveBeenCalledTimes(1)
@@ -396,58 +401,36 @@ describe('document grid server lifecycle', () => {
     expect(selection).toHaveBeenCalledTimes(1)
     expect(loadRows).toHaveBeenCalledTimes(1)
   })
-  it('selects only loaded descendants of nested groups without fetching, keeps outside IDs and separates checkbox keys from expansion', async () => {
-    const group = (id: string, parent: IRowNode<Row | DocumentHistoryGroupRow> | null, rowIndex: number) => ({
-      id, group: true, level: parent ? parent.level + 1 : 0, rowIndex, key: id, parent,
-      data: { id, __group: true, groupKey: id, groupLabel: id, childCount: 500 }, isSelected: () => false, setExpanded: vi.fn(),
-    } as unknown as IRowNode<Row | DocumentHistoryGroupRow>)
-    const top = group('Верхняя', null, 0), nested = group('Вложенная', top, 1), empty = group('Не загружена', null, 2)
-    const leaf = (id: number, parent: IRowNode<Row | DocumentHistoryGroupRow>) => ({ data: { id }, parent, isSelected: () => false } as IRowNode<Row | DocumentHistoryGroupRow>)
-    const first = leaf(1, top), second = leaf(2, nested)
-    let nodes = [top, nested, empty, first, second]
-    grid.groups = [top, nested, empty]
-    grid.api.forEachNode.mockImplementation(callback => nodes.forEach(callback))
-    grid.api.getDisplayedRowAtIndex.mockImplementation(index => grid.groups[index])
-    const selection = vi.fn(), loadRows = vi.fn().mockResolvedValue({ rows: [], rowCount: 3, total: 500 })
+  it('selects an unloaded group in one ID request and keeps choices outside it', async () => {
+    const top = { id: 'top', group: true, level: 0, rowIndex: 0, key: 'TOP', parent: null,
+      data: { id: 'top', __group: true, groupKey: '["value","TOP"]', groupLabel: 'TOP', childCount: 3, ordinal: 0, selectedCount: 1 },
+      isSelected: () => false, setExpanded: vi.fn() } as unknown as IRowNode<Row | DocumentHistoryGroupRow>
+    grid.groups = [top]
+    grid.api.forEachNode.mockImplementation(callback => callback(top))
+    grid.api.getRowNode.mockImplementation(id => id === 'top' ? top : undefined)
+    grid.api.getColumnState.mockReturnValue([{ colId: 'line', rowGroup: true, rowGroupIndex: 0 }])
+    const loadRows = vi.fn(async (request: { idsOnly?: boolean; countRoutes?: string[][] }) => ({
+      rows: [], rowCount: 1, total: 3, revision: 'a'.repeat(32), ...(request.idsOnly ? { ids: [1, 2, 3] } : {}),
+      ...(request.countRoutes ? { counts: { '[]': 1, '["[\\"value\\",\\"TOP\\"]"]': 1 } } : {}),
+    }))
+    const selection = vi.fn()
     function SelectionView() {
-      const [selected, setSelected] = useState<Row[]>([{ id: 900 }, { id: 1 }])
+      const [selected, setSelected] = useState<Array<{ id: string | number }>>([{ id: 900 }, { id: 1 }])
       return <DocumentsHistoryGrid {...props({ loadRows, selectedDocuments: selected, onSelectionChange: rows => { selection(rows); setSelected(rows) } })} />
     }
-    const view = render(<SelectionView />)
-    request(); await act(async () => undefined)
-    const topBox = screen.getByRole('checkbox', { name: 'Выбрать загруженные документы группы Верхняя' })
-    const nestedBox = screen.getByRole('checkbox', { name: 'Выбрать загруженные документы группы Вложенная' })
-    expect(topBox).toBePartiallyChecked(); expect(nestedBox).not.toBeChecked()
-    expect(screen.getByRole('checkbox', { name: /группы Не загружена/ })).toBeDisabled()
-    fireEvent.keyDown(topBox, { key: 'F2' })
-    expect(selection).toHaveBeenLastCalledWith([{ id: 900 }, { id: 1 }, { id: 2 }])
-    expect(topBox).toBeChecked(); expect(nestedBox).toBeChecked()
-    expect(selection).toHaveBeenCalledTimes(1)
-    expect(top.setExpanded).not.toHaveBeenCalled()
-    fireEvent.keyDown(nestedBox, { key: 'Enter' })
-    expect(selection).toHaveBeenLastCalledWith([{ id: 900 }, { id: 1 }])
-    expect(topBox).toBePartiallyChecked(); expect(nestedBox).not.toBeChecked()
-    expect(nested.setExpanded).not.toHaveBeenCalled()
-    expect(selection).toHaveBeenCalledTimes(2)
-    fireEvent.keyDown(topBox.closest('.ag-row-group')!, { key: 'Enter' })
-    expect(top.setExpanded).toHaveBeenCalledWith(true, expect.anything(), true)
-    fireEvent.click(topBox)
-    expect(topBox).toBeChecked()
-    expect(selection).toHaveBeenCalledTimes(3)
-    // A collapsed/evicted store contributes no cached leaves but cannot erase selection.
-    nodes = [top, nested, empty]
-    act(() => grid.props.onModelUpdated())
-    await waitFor(() => expect(topBox).toBeDisabled())
-    expect(screen.getByText('Выбрано: 3')).toBeInTheDocument()
-    // Loading new descendants does not inherit the earlier group selection.
-    nodes = [top, nested, empty, first, second, leaf(3, nested)]
-    act(() => grid.props.onModelUpdated())
-    await waitFor(() => expect(topBox).toBePartiallyChecked())
-    expect(screen.getByText('Выбрано: 3')).toBeInTheDocument()
-    expect(loadRows).toHaveBeenCalledTimes(1)
-    expect(grid.api.refreshServerSide).not.toHaveBeenCalled()
-    view.unmount()
+    render(<SelectionView />)
+    await act(async () => { request() })
+    const checkbox = screen.getByRole('checkbox', { name: 'Выбрать все документы группы TOP' })
+    expect(checkbox).not.toBeDisabled()
+    await act(async () => fireEvent.click(checkbox))
+    expect(selection).toHaveBeenLastCalledWith([{ id: 900 }, { id: 1 }, { id: 2 }, { id: 3 }])
+    expect(loadRows.mock.calls.filter(([request]) => request.idsOnly)).toHaveLength(1)
+    expect(checkbox).toBeChecked()
+    await act(async () => fireEvent.click(checkbox))
+    expect(selection).toHaveBeenLastCalledWith([{ id: 900 }])
+    expect(loadRows.mock.calls.filter(([request]) => request.idsOnly)).toHaveLength(1)
   })
+
   it('reveals only the successful current user sort, cancels superseded animation and respects reduced motion', async () => {
     const loadRows = vi.fn().mockResolvedValue({ rows: [], rowCount: 300, total: 300 })
     const view = render(<DocumentsHistoryGrid {...props({ loadRows })} />)
@@ -497,14 +480,14 @@ describe('document grid server lifecycle', () => {
     const frame = async () => { await act(async () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))) }
     await act(async () => { request() }); await frame()
     expect(animate).not.toHaveBeenCalled()
-    view.rerender(<DocumentsHistoryGrid {...initial} columnFilters={{ title: 'new filter' }} />)
+    await act(async () => view.rerender(<DocumentsHistoryGrid {...initial} columnFilters={{ title: 'new filter' }} />))
     const filtered = request()
     await act(async () => undefined)
     // Delivery never waits for the animation frame or its duration.
     expect(filtered.success).toHaveBeenCalledExactlyOnceWith({ rowData: [], rowCount: 300 })
     await frame()
     expect(animate).toHaveBeenCalledTimes(1)
-    view.rerender(<DocumentsHistoryGrid {...initial} />)
+    await act(async () => view.rerender(<DocumentsHistoryGrid {...initial} />))
     expect(cancel).toHaveBeenCalledTimes(1)
     await act(async () => { request() }); await frame()
     expect(animate).toHaveBeenCalledTimes(2)

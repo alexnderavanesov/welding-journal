@@ -1588,9 +1588,9 @@ export function buildDerivedReportCacheKey(
     columnFilters: filters.columnFilters ?? {},
     ...extra,
   })
-  // Journal checkbox choices can contain thousands of exact values. PostgreSQL
+  // Report checkbox choices can contain thousands of exact values. PostgreSQL
   // indexes the cache key; keep its size independent of the selection size.
-  return report === 'weldingJournal' && key.length > 512
+  return key.length > 512
     ? buildDerivedCalculationCacheKey(namespace, { sha256: createHash('sha256').update(key).digest('hex') }) : key
 }
 

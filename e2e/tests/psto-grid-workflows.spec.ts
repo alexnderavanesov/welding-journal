@@ -61,12 +61,12 @@ test.beforeEach(async ({ page }) => {
 async function open(page: Page, search = PROJECT) {
   await page.goto('/psto')
   await page.getByRole('searchbox').fill(search)
-  await expect(page.getByText(`Загружено: ${search === PROJECT ? 8 : 1} из ${search === PROJECT ? 8 : 1}`, { exact: true })).toBeVisible()
+  await expect(page.getByText(`Найдено: ${search === PROJECT ? 8 : 1}`, { exact: true })).toBeVisible()
   await expect(page.locator('[data-psto-grid] .ag-row:not(.ag-row-group)')).toHaveCount(search === PROJECT ? 8 : 1)
 }
 async function groupLines(page: Page) {
   await page.locator('.ag-header-cell[col-id="line"]').click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Сгруппировать загруженные по «Линия»', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Сгруппировать по «Линия»', exact: true }).click()
 }
 const group = (page: Page, line: string) => page.locator('.ag-row-group').filter({ has: page.getByRole('button', { name: new RegExp(`^(Развернуть|Свернуть) группу ${line}$`) }) })
 
@@ -79,7 +79,8 @@ test('ПСТО: физические группы, текущий повтор, 
   await expect(repair.locator('[data-group-summary="joint"]')).toHaveText('1')
   await expect(repair.locator('[data-group-summary="pstoResult"]')).toHaveText('проведено')
   await expect(repair.locator('[data-group-summary="tvmtResult"]')).toHaveText('годен')
-  await repair.getByRole('checkbox').check()
+  await repair.getByRole('checkbox').click()
+  await expect(repair.getByRole('checkbox')).toBeChecked()
   await expect(page.getByLabel('Статистика выделения')).toContainText('Выбрано: 3')
   await expect(group(page, 'PGRID-REPEAT').locator('[data-group-summary="tvmtResult"]')).toHaveText('годен')
   await expect(group(page, 'PGRID-CANCEL').locator('[data-group-summary="pstoResult"]')).toHaveText('проведено · назначение отменено')
@@ -105,7 +106,7 @@ test('ПСТО: фильтр текущего результата выбира�
   await page.locator('.ag-header-cell[col-id="joint"] .ag-header-cell-filter-button').click()
   await page.getByRole('dialog', { name: 'Фильтр: Стык' }).getByRole('checkbox', { name: /^S800001R2\s/ }).check()
   await page.keyboard.press('Escape')
-  await expect(page.getByText('Загружено: 1 из 1', { exact: true })).toBeVisible()
+  await expect(page.getByText('Найдено: 1', { exact: true })).toBeVisible()
   const repair = group(page, 'PGRID-REPAIR')
   await expect(repair.locator('[data-group-summary="joint"]')).toHaveText('1')
   await expect(repair.locator('[data-group-summary="wdi"]')).toHaveText('10')
@@ -160,6 +161,8 @@ test('ПСТО: ссылка текущего цикла открывает ег
 test('ПСТО: скрытие всех сохраняет обязательные поля, группы и текущий экспорт', async ({ page }) => {
   await open(page)
   await groupLines(page)
+  // Wait for the requested server grouping before measuring appearance-only traffic.
+  await expect(group(page, 'PGRID-REPAIR')).toBeVisible()
   const calls: string[] = []
   await page.waitForLoadState('networkidle')
   page.on('request', request => { const name = rpcName(request.url()); if (name) calls.push(name) })
@@ -169,7 +172,7 @@ test('ПСТО: скрытие всех сохраняет обязательн�
   await panel.getByRole('button', { name: 'Скрыть все', exact: true }).click()
   await panel.getByRole('button', { name: 'Закрыть настройки вида' }).click()
   await expect(group(page, 'PGRID-REPAIR').locator('[col-id="line"]')).toContainText('PGRID-REPAIR')
-  expect(calls.filter(name => /listFiltered|listHeatTreatmentReportPage/.test(name))).toEqual([])
+  expect(calls.filter(name => /listFiltered|listHeatTreatmentReportPage|readJournalGrid/.test(name))).toEqual([])
   await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
   await page.getByRole('button', { name: 'Текущая версия', exact: true }).click()
   const preview = page.getByRole('dialog', { name: 'Предпросмотр отчёта', exact: true }).frameLocator('iframe')

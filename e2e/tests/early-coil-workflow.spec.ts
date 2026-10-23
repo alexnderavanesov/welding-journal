@@ -530,7 +530,7 @@ test('moves an accepted coil chain through its base and preserves each row workf
   await expect(saveChainMove).toBeEnabled()
   await saveChainMove.click()
   await expect(editor).toBeHidden()
-  await expect(page.getByRole('status')).toContainText('Цепочка стыка перенесена · записей: 3')
+  await expect(page.getByRole('status').filter({ hasText: 'Цепочка стыка перенесена' })).toContainText('Цепочка стыка перенесена · записей: 3')
 
   await expect.poll(loadChainLineMoveState).toEqual({
     acceptedDecisionContextHasTargetLine: true,

@@ -1,17 +1,16 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Bookmark, Check, ChevronDown, Columns3, Filter, Palette, RotateCcw, Search, SlidersHorizontal, Trash2, X } from 'lucide-react'
-import type { DocumentHistoryColumnDefinition, DocumentHistoryColumnKey } from '@/lib/document-history-columns'
-import type { DocumentGridAppearance, DocumentGridView } from '@/lib/document-history-grid-state'
+import type { DocumentGridAppearance, DocumentGridView, DocumentGridColumnDefinition } from '@/lib/document-history-grid-state'
 import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
 import { isModalDialogOpen } from '@/lib/modal-layer'
 import { GridAppearanceSwitch, GridDensitySelect, GridThemeChoices } from './grid-view-settings-controls'
 import './welding-journal-grid.css'
 
 export type DocumentsGridToolbarProps = {
-  columns: readonly DocumentHistoryColumnDefinition[]
+  columns: readonly DocumentGridColumnDefinition[]
   visibleColumnKeys: ReadonlySet<string>
   filteredColumnKeys?: ReadonlySet<string>
-  onColumnVisibilityChange: (key: DocumentHistoryColumnKey, visible: boolean) => void
+  onColumnVisibilityChange: (key: DocumentGridColumnDefinition['key'], visible: boolean) => void
   onShowAllColumns: () => void
   onHideAllColumns: () => void
   appearance: DocumentGridAppearance

@@ -21,8 +21,8 @@ function JournalGridFilter(props: CustomFilterDisplayProps) {
   const table = useJournalFilter()
   const key = props.column.getColId() as WeldFieldKey
   // Preserve the full year/month/day tree and exact time leaves. Ordinary
-  // high-cardinality value lists use bounded remote pages only in the journal.
-  return table.report === 'weldingJournal' && FIELD_BY_KEY.get(key)?.kind !== 'date' && !DATE_TIME_WELD_FIELD_KEYS.has(key)
+  // high-cardinality lists use bounded remote pages in every server-backed report.
+  return (table.report === 'weldingJournal' || table.deferModelChanges) && FIELD_BY_KEY.get(key)?.kind !== 'date' && !DATE_TIME_WELD_FIELD_KEYS.has(key)
     ? <JournalPagedGridFilter {...props} /> : <LegacyJournalGridFilter {...props} />
 }
 function LegacyJournalGridFilter({ column, onModelChange }: CustomFilterDisplayProps) {
@@ -48,7 +48,7 @@ function LegacyJournalGridFilter({ column, onModelChange }: CustomFilterDisplayP
   const query = useQuery({
     queryKey: ['weld-column-filter-options', table.report, fieldKey, request],
     enabled: visible,
-    queryFn: ({ signal }) => (table.report === 'weldingJournal' ? listJournalFilterOptions : listWeldColumnFilterOptions)({ signal, data: {
+    queryFn: ({ signal }) => (table.report === 'weldingJournal' || table.deferModelChanges ? listJournalFilterOptions : listWeldColumnFilterOptions)({ signal, data: {
       report: table.report, fieldKey, search: request.search, columnFilters: request.columnFilters,
     } }),
     staleTime: 15_000, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,

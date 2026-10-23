@@ -8,6 +8,7 @@ export type ProgramReportNavigation = (ids: number[], report: 'weldingJournal' |
 
 export function useProgramContextMenu(onAssignments: (id: number) => void, onNavigate?: ProgramReportNavigation, busy = false) {
   const [menu, setMenu] = useState<ContextActionMenuState>(null)
+  const [pointerMenu, setPointerMenu] = useState(false)
   const trigger = useRef<HTMLElement | null>(null)
   const { openDocument, preview } = useProgramDocumentPreview()
   const close = () => {
@@ -25,6 +26,7 @@ export function useProgramContextMenu(onAssignments: (id: number) => void, onNav
     if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]')) return
     event.preventDefault(); event.stopPropagation()
     if (busy) return
+    setPointerMenu('clientX' in event)
     trigger.current = document.activeElement instanceof HTMLElement && event.currentTarget.contains(document.activeElement)
       ? document.activeElement
       : event.target instanceof Element ? event.target.closest<HTMLElement>('button, a[href], [tabindex]') : null
@@ -44,5 +46,5 @@ export function useProgramContextMenu(onAssignments: (id: number) => void, onNav
       ] as const).map(([report, label]) => ({ id: report, label, onSelect: () => onNavigate([row.id], report, `Стык ${row.joint} из программы линии ${row.line}.`) }))] : []),
     ] })
   }
-  return { open, menu: <><ContextActionMenu menu={menu} autoFocus closeOnEscapeWithModal onClose={close} />{preview}</> }
+  return { open, menu: <><ContextActionMenu menu={menu} autoFocus={pointerMenu ? 'panel' : true} closeOnEscapeWithModal onClose={close} />{preview}</> }
 }

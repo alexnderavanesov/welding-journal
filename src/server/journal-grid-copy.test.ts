@@ -1,6 +1,8 @@
 import { expect, it, vi } from 'vitest'
 import type { JournalRangeRequest } from '@/lib/journal-server-grid'
-import { copyJournalGridRange } from './journal-grid-range'
+import { copyJournalGridRange, journalRangeValue } from './journal-grid-range'
+import type { JournalGridRow } from '@/lib/journal-server-grid'
+import { loadOtherSettings } from '@/lib/other-settings'
 
 vi.mock('@/db', () => ({ requireDb: vi.fn() }))
 vi.mock('./weld-read', () => ({ getReportOrderBy: vi.fn() }))
@@ -21,4 +23,12 @@ it('keeps headers for distinct copied ranges without repeating them for store se
     { route: [], start: 2, end: 3, columns: ['wdi'], includeHeader: true },
   ] } as JournalRangeRequest
   expect(await copyJournalGridRange(input)).toBe('Стык\r\n10\r\n11\r\nWDI\r\n3')
+})
+
+it('copies the configured RK exposure label using server settings', () => {
+  const row = { id: 1, d1: 57, d2: 57, connectionType: 'С17', rkExposureConfirmedDiameter: 57, lnkDefectDescription: '1: ДНО' } as JournalGridRow
+  const settings = { ...loadOtherSettings(), rkExposureTable: { fileName: 'Настройка.xlsx', uploadedAt: '2026-10-22', entries: [
+    { diameter: 57, options: [{ label: 'Особая схема', values: ['1'], isDefault: true, note: '' }] },
+  ] } }
+  expect(journalRangeValue(row, 'rkExposureScheme', 'line', [], 'lnk', settings)).toBe('Особая схема')
 })

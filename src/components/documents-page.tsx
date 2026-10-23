@@ -1,3 +1,4 @@
+import { generatedDocumentGridValue, systemDocumentGridValue, formatDocumentDate as formatDate, formatDocumentUpdatedAt as formatGeneratedDocumentDate, formatDocumentWdi as formatWdi } from '@/lib/document-history-values'
 import { DocumentSpecialistCell, DocumentSpecialistAssignmentDialog, type SpecialistDocument } from './document-specialist-assignment'
 import { specialistHistoryColumns } from '@/lib/document-history-columns'
 import { getSpecialistDocumentProfile } from '@/lib/document-specialists'
@@ -258,30 +259,6 @@ function getCurrentMonthRange() {
     from: toInputDate(new Date(now.getFullYear(), now.getMonth(), 1)),
     to: toInputDate(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
   }
-}
-
-function parseDate(value: unknown) {
-  const raw = String(value ?? '').trim()
-  if (!raw) return null
-
-  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (isoMatch) {
-    return new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]))
-  }
-
-  const displayMatch = raw.match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
-  if (displayMatch) {
-    return new Date(Number(displayMatch[3]), Number(displayMatch[2]) - 1, Number(displayMatch[1]))
-  }
-
-  const parsed = new Date(raw)
-  return Number.isNaN(parsed.getTime()) ? null : parsed
-}
-
-function formatDate(value: unknown) {
-  const parsed = parseDate(value)
-  if (!parsed) return String(value ?? '').trim()
-  return `${String(parsed.getDate()).padStart(2, '0')}.${String(parsed.getMonth() + 1).padStart(2, '0')}.${parsed.getFullYear()}`
 }
 
 function getCellValue(row: WeldRow, key: string) {
@@ -1322,6 +1299,7 @@ function GeneratedDocumentsPanel({
     navigationRequest ? getDocumentNavigationColumnFilters(navigationRequest) : undefined)
   const [navigationDocumentId, setNavigationDocumentId] = useState<number | null>(navigationRequest?.documentId ?? null)
   const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
+  const [keyboardMenu, setKeyboardMenu] = useState(false)
   const [openingRowsDocumentId, setOpeningRowsDocumentId] = useState<number | null>(null)
   const [specialistDocuments, setSpecialistDocuments] = useState<SpecialistDocument[] | null>(null)
   const [specialistRole, setSpecialistRole] = useState<'first' | 'second' | undefined>()
@@ -1338,10 +1316,10 @@ function GeneratedDocumentsPanel({
   }, [navigationRequest])
   const [gridSearch, setGridSearch] = useState('')
   const loadRows = (request: DocumentHistoryGridRequest) => loadGeneratedDocumentHistoryGrid({
-    ...request, search: request.search ?? gridSearch, types: [...historyTypes], columnFilters,
-    ...(navigationDocumentId === null ? {} : { documentId: navigationDocumentId }),
+    ...request, search: request.search ?? gridSearch, types: [...historyTypes], columnFilters: request.selectionOnly ? {} : columnFilters,
+    ...(request.selectionOnly || navigationDocumentId === null ? {} : { documentId: navigationDocumentId }),
   })
-  const { selectedDocuments, setSelectedDocuments, sourceRevision, refresh, selectionError, selectionPending } =
+  const { selectedDocuments, setSelectedDocuments, resolveDocuments, sourceRevision, refresh, selectionError, selectionPending } =
     useDocumentGridController(historyStorageKey, loadRows, JSON.stringify([columnFilters, navigationDocumentId, gridSearch]))
   const hasActiveFilters = hasDocumentHistoryFilters(columnFilters)
   useDocumentEscapeKey({
@@ -1407,8 +1385,10 @@ function GeneratedDocumentsPanel({
     setIsDownloadingArchive(true)
     setOpenRowsError(null)
     try {
+      const documents = await resolveDocuments()
+      if (!documents) return
       await downloadGeneratedDocumentArchive(
-        selectedDocuments.map((documentRecord) => ({
+        documents.map((documentRecord) => ({
           record: documentRecord,
           createDocumentBlob: () => createDocumentBlob(documentRecord),
         })),
@@ -1421,21 +1401,7 @@ function GeneratedDocumentsPanel({
     }
   }
 
-  const getCellValue = (key: DocumentHistoryColumnKey, record: StoredGeneratedDocument): string | number => {
-    switch (key) {
-      case 'title': return record.title
-      case 'stage': return record.stage ?? '-'
-      case 'project': return record.projects.join(', ') || '-'
-      case 'subtitle': return record.subtitleCodes.join(', ') || '-'
-      case 'line': return record.lines.join(', ') || '-'
-      case 'period': return singleDate ? formatDate(record.periodFrom ?? record.periodTo) : `${formatDate(record.periodFrom)} - ${formatDate(record.periodTo)}`
-      case 'rowCount': return record.rowCount
-      case 'wdi': return formatWdi(record.wdiTotal)
-      case 'updatedAt': return formatGeneratedDocumentDate(record.updatedAt)
-      case 'specialistFirst': case 'specialistSecond': return record.specialists?.[key === 'specialistFirst' ? 'first' : 'second']?.name || 'Не назначен'
-      default: return ''
-    }
-  }
+  const getCellValue = (key: DocumentHistoryColumnKey, record: StoredGeneratedDocument) => generatedDocumentGridValue(key, record, singleDate)
   const renderCell = (key: DocumentHistoryColumnKey, documentRecord: StoredGeneratedDocument) => {
     switch (key) {
       case 'title': return <DocumentTitleButton title={documentRecord.title} onClick={() => void openDocumentRecord(documentRecord)} />
@@ -1470,10 +1436,11 @@ function GeneratedDocumentsPanel({
       selectedDocuments={selectedDocuments} onSelectionChange={setSelectedDocuments} selectionDisabled={selectionPending || Boolean(selectionError)}
       onSelectionPendingChange={pending => { if (pending) setContextMenu(null) }} onTotalChange={setTotalDocuments} onSearchChange={setGridSearch}
       toolbarActions={<>
-        {getSpecialistDocumentProfile(documentType) ? <Button variant="outline" size="sm" disabled={!selectedDocuments.length} onClick={() => { setSpecialistRole(undefined); setSpecialistDocuments(selectedDocuments) }}><UsersRound className="mr-1 h-4 w-4" />Назначить специалистов ({selectedDocuments.length})</Button> : null}
+        {getSpecialistDocumentProfile(documentType) ? <Button variant="outline" size="sm" disabled={!selectedDocuments.length} onClick={() => { setSpecialistRole(undefined); void resolveDocuments().then(documents => { if (documents) setSpecialistDocuments(documents) }) }}><UsersRound className="mr-1 h-4 w-4" />Назначить специалистов ({selectedDocuments.length})</Button> : null}
         <Button variant="outline" size="sm" disabled={!selectedDocuments.length || isDownloadingArchive} onClick={() => void downloadSelectedArchive()}><Archive className="mr-1 h-4 w-4" />{isDownloadingArchive ? 'Готовим архив…' : `Архив (${selectedDocuments.length})`}</Button>
       </>}
       onRowContextMenu={(documentRecord, event) => {
+        setKeyboardMenu(Boolean(event.keyboard))
                   const bulkItems = selectedDocuments.some(selected => selected.id === documentRecord.id) && selectedDocuments.length > 1
                     ? [
                         { id: 'download-selected-archive', label: `Скачать выбранные архивом (${selectedDocuments.length})`, icon: Archive, onSelect: () => downloadSelectedArchive() },
@@ -1495,7 +1462,7 @@ function GeneratedDocumentsPanel({
                       }] : []),
                       ...(onRepeat ? [{ id: 'repeat-document', label: 'Повторить с параметрами', icon: SlidersHorizontal, onSelect: () => onRepeat(documentRecord) }] : []),
                       { type: 'separator', id: 'open-separator' },
-                      { id: 'copy-cells', label: 'Копировать ячейки', icon: Copy, description: 'Ctrl+C · выбранные ячейки загруженных документов', onSelect: event.copyCells },
+                      { id: 'copy-cells', label: 'Копировать ячейки', icon: Copy, description: 'Ctrl+C · ячейки всего выбранного диапазона', onSelect: event.copyCells },
                       { id: 'open-document', label: 'Предпросмотр', icon: FileText, onSelect: () => openDocumentRecord(documentRecord) },
                       { id: 'download-document', label: 'Скачать Excel', icon: Download, onSelect: () => downloadDocumentRecord(documentRecord) },
                       ...(allowDelete ? [
@@ -1507,7 +1474,7 @@ function GeneratedDocumentsPanel({
       }} />
     {totalDocuments === 0 && !hasActiveFilters && onCreate ? <div className="p-3 text-center"><Button variant="outline" size="sm" onClick={onCreate}><FileSpreadsheet className="mr-2 h-4 w-4" />Перейти к формированию</Button></div> : null}
     {previewRequest ? <HistoryDocumentPreview request={previewRequest} onClose={closePreview} /> : null}
-    <ContextActionMenu menu={contextMenu} panelClassName="journal-context-menu" autoFocus onClose={() => setContextMenu(null)} />
+    <ContextActionMenu menu={contextMenu} panelClassName="journal-context-menu" autoFocus={keyboardMenu ? true : 'panel'} onClose={() => setContextMenu(null)} />
     {specialistDocuments ? <DocumentSpecialistAssignmentDialog documents={specialistDocuments} onlyRole={specialistRole} onClose={() => { setSpecialistDocuments(null); setSpecialistRole(undefined) }} /> : null}
   </section>
 }
@@ -1551,6 +1518,7 @@ function SystemDocumentsPanel({
   const [specialistDocuments, setSpecialistDocuments] = useState<SpecialistDocument[] | null>(null)
   const [isDownloadingArchive, setIsDownloadingArchive] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
+  const [keyboardMenu, setKeyboardMenu] = useState(false)
   const [navigationTarget, setNavigationTarget] = useState(() => navigationRequest
     ? {
         documentId: navigationRequest.documentId ?? null,
@@ -1602,12 +1570,11 @@ function SystemDocumentsPanel({
 
   const [gridSearch, setGridSearch] = useState('')
   const loadRows = (request: DocumentHistoryGridRequest) => loadSystemDocumentHistoryGrid({
-    ...request, search: request.search ?? gridSearch, type: documentType, columnFilters: effectiveColumnFilters,
-    ...(navigationTarget?.documentId ? { documentId: navigationTarget.documentId } : {}),
+    ...request, search: request.search ?? gridSearch, type: documentType, columnFilters: request.selectionOnly ? {} : effectiveColumnFilters,
+    ...(!request.selectionOnly && navigationTarget?.documentId ? { documentId: navigationTarget.documentId } : {}),
   })
-  const { selectedDocuments, setSelectedDocuments, sourceRevision, refresh, selectionError, selectionPending } =
+  const { selectedDocuments, setSelectedDocuments, resolveDocuments, sourceRevision, refresh, selectionError, selectionPending } =
     useDocumentGridController(historyStorageKey, loadRows, JSON.stringify([effectiveColumnFilters, navigationTarget?.documentId, gridSearch]))
-  const downloadableSelectedDocuments = selectedDocuments.filter(document => availableTemplateIds.has(getSystemDocumentTemplateId(document)))
   const methodOptionsQuery = useQuery({
     queryKey: [...GENERATED_DOCUMENT_HISTORY_QUERY_KEY, 'grid-method-counts', historyStorageKey, effectiveColumnFilters, navigationTarget?.documentId, gridSearch],
     queryFn: () => loadSystemDocumentHistoryFilterOptions({ type: documentType, fieldKey: 'method', columnFilters: getDocumentHistoryFiltersWithoutKey(effectiveColumnFilters, 'method'), gridSearch, ...(navigationTarget?.documentId ? { documentId: navigationTarget.documentId } : {}) }),
@@ -1638,12 +1605,13 @@ function SystemDocumentsPanel({
     }
   }
 
-  const openDocumentOperation = async (action: DocumentOperationRequest['action'], documents: SystemDocumentSummary[]) => {
-    if (!documents.length || action === 'merge' && documents.length < 2 || !(await requireEditPassword(action === 'split' ? 'изменение разделения выбранных документов' : action === 'merge' ? 'объединение выбранных документов' : 'переименование выбранных документов'))) return
+  const openDocumentOperation = async (action: DocumentOperationRequest['action'], selection: readonly { id: string | number }[]) => {
+    const documents = await resolveDocuments(selection)
+    if (!documents || !documents.length || action === 'merge' && documents.length < 2 || !(await requireEditPassword(action === 'split' ? 'изменение разделения выбранных документов' : action === 'merge' ? 'объединение выбранных документов' : 'переименование выбранных документов'))) return
     setDocumentOperation({ action, documents: [...documents] })
   }
 
-  const documentOperationItems = (selection: SystemDocumentSummary[], suffix = ''): ContextActionMenuItem[] => [
+  const documentOperationItems = (selection: readonly { id: string | number }[], suffix = ''): ContextActionMenuItem[] => [
     { id: 'merge-documents', label: `Объединить${suffix}`, icon: Merge, disabled: selection.length < 2,
       description: selection.length < 2 ? 'Отметьте минимум два документа. Несовместимые документы объединить нельзя.' : 'Все выбранные документы → один. Сначала проверка совместимости, состава и имени.', onSelect: () => openDocumentOperation('merge', selection) },
     { id: 'split-documents', label: `Изменить разделение${suffix}`, icon: Rows3, disabled: !selection.length,
@@ -1662,9 +1630,13 @@ function SystemDocumentsPanel({
     downloadSystemDocument({ reference: documentRecord, summary: documentRecord, welderStamps }),
   )
   const downloadSelectedArchive = async () => {
-    if (downloadableSelectedDocuments.length === 0 || isDownloadingArchive) return
+    if (!selectedDocuments.length || isDownloadingArchive) return
     setIsDownloadingArchive(true)
     await runAction(async () => {
+      const documents = await resolveDocuments()
+      if (!documents) return
+      const downloadableSelectedDocuments = documents.filter(document => availableTemplateIds.has(getSystemDocumentTemplateId(document)))
+      if (!downloadableSelectedDocuments.length) throw new Error('Для выбранных документов нет шаблонов Excel.')
       await downloadGeneratedDocumentArchive(
         downloadableSelectedDocuments.map((documentRecord) => ({
           record: {
@@ -1685,20 +1657,7 @@ function SystemDocumentsPanel({
     setIsDownloadingArchive(false)
   }
 
-  const getCellValue = (key: DocumentHistoryColumnKey, record: SystemDocumentSummary): string | number => {
-    switch (key) {
-      case 'title': return record.title
-      case 'method': return getSystemDocumentMethodCodes(record).join(', ') || '-'
-      case 'stage': return getSystemDocumentStageLabel(record)
-      case 'project': return record.projects.join(', ') || '-'
-      case 'subtitle': return record.subtitleCodes.join(', ') || '-'
-      case 'line': return record.lines.join(', ') || '-'
-      case 'rowCount': return record.rowCount
-      case 'date': return formatDate(record.date) || '-'
-      case 'specialistFirst': case 'specialistSecond': return record.specialists?.[key === 'specialistFirst' ? 'first' : 'second']?.name || 'Не назначен'
-      default: return ''
-    }
-  }
+  const getCellValue = systemDocumentGridValue
   const renderCell = (key: DocumentHistoryColumnKey, documentRecord: SystemDocumentSummary) => {
     switch (key) {
       case 'title': return <DocumentTitleButton title={documentRecord.title} disabled={!hasTemplateForDocument(documentRecord)} onClick={() => openDocumentRecord(documentRecord)} />
@@ -1799,16 +1758,17 @@ function SystemDocumentsPanel({
       toolbarActions={
               <button type="button" aria-label={`Действия с документами, выбрано: ${selectedDocuments.length}`} aria-haspopup="menu" aria-expanded={contextMenu?.heading === 'Действия с документами'}
                 className="journal-button"
-                onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); setContextMenu({ x: rect.right - Math.min(320, window.innerWidth - 16), y: rect.bottom + 4, anchorElement: event.currentTarget,
+                onClick={event => { setKeyboardMenu(event.detail === 0); const rect = event.currentTarget.getBoundingClientRect(); setContextMenu({ x: rect.right - Math.min(320, window.innerWidth - 16), y: rect.bottom + 4, anchorElement: event.currentTarget,
                   heading: 'Действия с документами', description: selectedDocuments.length ? `Выбрано: ${selectedDocuments.length} · только отмеченные документы` : 'Сначала отметьте нужные документы в списке.',
-                  items: [...(documentType.endsWith('Conclusion') ? [{ id: 'assign-specialists', label: 'Назначить специалистов', icon: UsersRound, description: 'Назначить, заменить или очистить роли в отмеченных документах.', disabled: !selectedDocuments.length, onSelect: () => { setSpecialistRole(undefined); setSpecialistDocuments(selectedDocuments) } }] : []), ...documentOperationItems(selectedDocuments), { type: 'separator', id: 'archive-separator' },
-                    { id: 'download-selected-archive', label: isDownloadingArchive ? 'Готовим архив…' : 'Скачать выбранные архивом', icon: Archive, disabled: !downloadableSelectedDocuments.length || isDownloadingArchive,
-                      description: `Доступен Excel: ${downloadableSelectedDocuments.length} из ${selectedDocuments.length}. Для скачивания нужен шаблон.`, onSelect: () => downloadSelectedArchive() }],
+                  items: [...(documentType.endsWith('Conclusion') ? [{ id: 'assign-specialists', label: 'Назначить специалистов', icon: UsersRound, description: 'Назначить, заменить или очистить роли в отмеченных документах.', disabled: !selectedDocuments.length, onSelect: () => { setSpecialistRole(undefined); void resolveDocuments().then(documents => { if (documents) setSpecialistDocuments(documents) }) } }] : []), ...documentOperationItems(selectedDocuments), { type: 'separator', id: 'archive-separator' },
+                    { id: 'download-selected-archive', label: isDownloadingArchive ? 'Готовим архив…' : 'Скачать выбранные архивом', icon: Archive, disabled: !selectedDocuments.length || isDownloadingArchive,
+                      description: 'Документы без доступного шаблона Excel не входят в архив.', onSelect: () => downloadSelectedArchive() }],
                 }) }}>
                 Действия{selectedDocuments.length > 0 ? <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] tabular-nums">{selectedDocuments.length}</span> : null}<ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
               </button>
       }
       onRowContextMenu={(documentRecord, event) => {
+        setKeyboardMenu(Boolean(event.keyboard))
         const templateAvailable = hasTemplateForDocument(documentRecord)
         const isSelected = selectedDocuments.some(document => document.id === documentRecord.id)
         const isBulkSelectionContext = isSelected && selectedDocuments.length > 1
@@ -1816,9 +1776,9 @@ function SystemDocumentsPanel({
                       ? [
                           {
                             id: 'download-selected-archive',
-                            label: `Скачать выбранные архивом (${downloadableSelectedDocuments.length}/${selectedDocuments.length})`,
+                            label: `Скачать выбранные архивом (${selectedDocuments.length})`,
                             icon: Archive,
-                            disabled: downloadableSelectedDocuments.length === 0,
+                            disabled: !selectedDocuments.length,
                             onSelect: () => downloadSelectedArchive(),
                           },
                           { type: 'separator' as const, id: 'bulk-separator' },
@@ -1839,13 +1799,13 @@ function SystemDocumentsPanel({
                         }] : []),
                         ...documentOperationItems(isSelected ? selectedDocuments : [documentRecord], isSelected ? ` (${selectedDocuments.length})` : ''),
                         { type: 'separator', id: 'open-separator' },
-                      { id: 'copy-cells', label: 'Копировать ячейки', icon: Copy, description: 'Ctrl+C · выбранные ячейки загруженных документов', onSelect: event.copyCells },
+                      { id: 'copy-cells', label: 'Копировать ячейки', icon: Copy, description: 'Ctrl+C · ячейки всего выбранного диапазона', onSelect: event.copyCells },
                         { id: 'open-document', label: 'Предпросмотр', icon: FileText, disabled: !templateAvailable, onSelect: () => openDocumentRecord(documentRecord) },
                         { id: 'download-document', label: 'Скачать Excel', icon: Download, disabled: !templateAvailable, onSelect: () => downloadDocumentRecord(documentRecord) },
                       ],
                     })
       }} />
-    <ContextActionMenu menu={contextMenu} panelClassName="journal-context-menu" autoFocus onClose={() => setContextMenu(null)} />
+    <ContextActionMenu menu={contextMenu} panelClassName="journal-context-menu" autoFocus={keyboardMenu ? true : 'panel'} onClose={() => setContextMenu(null)} />
     {specialistDocuments ? <DocumentSpecialistAssignmentDialog documents={specialistDocuments} onlyRole={specialistRole} onClose={() => { setSpecialistDocuments(null); setSpecialistRole(undefined) }} /> : null}
     {documentOperation ? <DocumentOperationDialog documents={documentOperation.documents} action={documentOperation.action} onClose={() => setDocumentOperation(null)} onApplied={() => onRenamed()} /> : null}
     {previewRequest ? <HistoryDocumentPreview request={previewRequest} onClose={closePreview} /> : null}
@@ -1860,19 +1820,6 @@ function DocumentTitleButton({ title, disabled = false, onClick }: { title: stri
 
 function DocumentHistoryError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return <div role="alert" className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-200 bg-rose-50 p-3 text-sm text-rose-700"><span>{message}</span><button type="button" className="rounded border border-rose-200 bg-white px-2 py-1" onClick={onRetry}>Обновить историю</button></div>
-}
-
-function formatGeneratedDocumentDate(value: string) {
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleString('ru-RU', {
-    timeZone: 'Europe/Moscow',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 function DocumentDimensionCell({ values }: { values: string[] }) {
@@ -1918,10 +1865,6 @@ function DocumentHistoryActionButton({
       {children}
     </button>
   )
-}
-
-function formatWdi(value: number | undefined) {
-  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value) || 0)
 }
 
 function formatJointCount(count: number) {

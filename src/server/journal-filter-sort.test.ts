@@ -10,7 +10,8 @@ it('bounds large journal cache keys while preserving exact filter identity and o
   expect(buildDerivedReportCacheKey('summary', 'weldingJournal', { columnFilters: { line: 'L', joint } })).toBe(key)
   expect(buildDerivedReportCacheKey('summary', 'weldingJournal', { columnFilters: { line: 'Other', joint } })).not.toBe(key)
   expect(buildDerivedReportCacheKey('other', 'weldingJournal', { columnFilters: { line: 'L', joint } })).not.toBe(key)
-  expect(buildDerivedReportCacheKey('summary', 'lnk', { columnFilters: { joint } })).toContain(joint)
+  expect(buildDerivedReportCacheKey('summary', 'lnk', { columnFilters: { joint } }).length).toBeLessThan(200)
+  expect(buildDerivedReportCacheKey('summary', 'lnk', { columnFilters: { joint, line: 'L' } })).not.toBe(key)
 })
 it('retains Russian/numeric order, stable ties, empty values and counts without mutating input', () => {
   const labels = ['', 'Линия-10', 'Линия-2', 'Линия-02', 'линия-2', 'е', 'ё', 'Е', 'Ё', 'A-10', 'A-2', 'А-2', '3,5', '3.5', '№ 12', '№ 2', 'é', 'é']

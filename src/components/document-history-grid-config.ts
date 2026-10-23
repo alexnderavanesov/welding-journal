@@ -18,8 +18,8 @@ export const DOCUMENT_GRID_LOCALE = {
   sortAscending: 'По возрастанию', sortDescending: 'По убыванию', sortUnSort: 'Сбросить сортировку', resetColumns: 'Сбросить столбцы',
   columnFilter: 'Фильтр столбца', columnChooser: 'Выбрать столбцы', chooseColumns: 'Выбрать столбцы',
   ariaLabelColumnMenu: 'Меню столбца', ariaLabelColumnFilter: 'Фильтр столбца', ariaLabelContextMenu: 'Действия с документом',
-  ariaRowToggleSelection: 'Пробел — выбрать или снять выбор документа', ariaRowSelectionDisabled: 'Выбор группы недоступен',
-  ariaRowSelect: 'Выбрать документ', ariaRowDeselect: 'Снять выбор документа', ariaHeaderSelection: 'Выбрать загруженные документы',
+  ariaRowToggleSelection: 'Пробел — выбрать или снять выбор документа', ariaRowSelectionDisabled: 'Выбор пока недоступен',
+  ariaRowSelect: 'Выбрать документ', ariaRowDeselect: 'Снять выбор документа', ariaHeaderSelection: 'Выбрать все документы',
   ariaSortableColumn: 'Enter — изменить сортировку', ariaColumnMenu: 'Меню столбца', ariaFilterColumn: 'Открыть фильтр',
   ariaChecked: 'выбран', ariaUnchecked: 'не выбран', ariaIndeterminate: 'частично выбран',
 }

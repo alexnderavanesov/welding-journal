@@ -1,5 +1,9 @@
 import type { ColumnState } from 'ag-grid-community'
 import type { DocumentHistoryColumnDefinition } from './document-history-columns'
+export type DocumentGridColumnDefinition = Omit<DocumentHistoryColumnDefinition, 'key'> & {
+  key: DocumentHistoryColumnDefinition['key'] | '__actions'
+}
+export const DOCUMENT_GRID_ACTIONS_COLUMN: DocumentGridColumnDefinition = { key: '__actions', label: 'Действия', minWidth: 90 }
 
 export type DocumentGridAppearance = {
   density: 'compact' | 'comfortable' | 'spacious'
@@ -24,11 +28,11 @@ export function documentGridRowHeight(appearance: Pick<DocumentGridAppearance, '
 export const DOCUMENT_GRID_GROUP_FIELDS = new Set(['project', 'subtitle', 'line', 'method', 'stage', 'specialistFirst', 'specialistSecond'])
 const prefix = 'welding-journal:documents:grid:v1:'
 
-export function normalizeDocumentGridColumns(value: unknown, available: readonly DocumentHistoryColumnDefinition[]): ColumnState[] {
+export function normalizeDocumentGridColumns(value: unknown, available: readonly DocumentGridColumnDefinition[]): ColumnState[] {
   if (!Array.isArray(value)) return []
   const allowed = new Map(available.map(column => [column.key as string, column]))
   const seen = new Set<string>()
-  return value.flatMap(item => {
+  const columns = value.flatMap(item => {
     if (!item || typeof item !== 'object' || !allowed.has(item.colId) || seen.has(item.colId)) return []
     seen.add(item.colId)
     return [{
@@ -36,12 +40,15 @@ export function normalizeDocumentGridColumns(value: unknown, available: readonly
       hide: allowed.get(item.colId)?.required ? false : item.hide === true,
       width: Number.isFinite(item.width) ? Math.max(80, Math.min(1600, item.width)) : undefined,
       pinned: item.pinned === 'left' || item.pinned === 'right' ? item.pinned : null,
-      sort: item.sort === 'asc' || item.sort === 'desc' ? item.sort : null,
-      sortIndex: Number.isInteger(item.sortIndex) && item.sortIndex >= 0 ? item.sortIndex : null,
+      sort: item.colId !== '__actions' && (item.sort === 'asc' || item.sort === 'desc') ? item.sort : null,
+      sortIndex: item.colId !== '__actions' && Number.isInteger(item.sortIndex) && item.sortIndex >= 0 ? item.sortIndex : null,
       rowGroup: DOCUMENT_GRID_GROUP_FIELDS.has(item.colId) && item.rowGroup === true,
       rowGroupIndex: DOCUMENT_GRID_GROUP_FIELDS.has(item.colId) && Number.isInteger(item.rowGroupIndex) && item.rowGroupIndex >= 0 ? item.rowGroupIndex : null,
     } satisfies ColumnState]
   })
+  // Earlier views omitted the fixed action column. Preserve its former default.
+  if (allowed.has('__actions') && !seen.has('__actions')) columns.push({ colId: '__actions', hide: false, width: 205, pinned: 'right', sort: null, sortIndex: null, rowGroup: false, rowGroupIndex: null })
+  return columns
 }
 
 function appearance(value: unknown): DocumentGridAppearance {
@@ -53,7 +60,7 @@ function appearance(value: unknown): DocumentGridAppearance {
   }
 }
 
-export function readDocumentGridState(viewId: string, columns: readonly DocumentHistoryColumnDefinition[]): DocumentGridState {
+export function readDocumentGridState(viewId: string, columns: readonly DocumentGridColumnDefinition[]): DocumentGridState {
   const fallback = { columns: [], appearance: { ...DOCUMENT_GRID_DEFAULT_APPEARANCE }, views: [] }
   try {
     if (typeof window === 'undefined') return fallback
@@ -74,15 +81,4 @@ export function readDocumentGridState(viewId: string, columns: readonly Document
 
 export function writeDocumentGridState(viewId: string, state: DocumentGridState) {
   try { window.localStorage.setItem(prefix + viewId, JSON.stringify(state)) } catch { /* Keep the working in-memory view when browser storage is unavailable. */ }
-}
-
-/** Removing server blocks is a cache event, never a change to the operator's selection. */
-export function reconcileDocumentGridSelection<T extends { id: string | number }>(
-  selected: readonly T[], matchingIds: readonly (string | number)[] | undefined, loaded: readonly T[],
-  requestedIds: readonly (string | number)[] = selected.map(row => row.id),
-): T[] {
-  const matching = matchingIds ? new Set(matchingIds.map(String)) : null
-  const requested = new Set(requestedIds.map(String))
-  const snapshots = new Map(loaded.map(row => [String(row.id), row]))
-  return selected.filter(row => !matching || !requested.has(String(row.id)) || matching.has(String(row.id))).map(row => snapshots.get(String(row.id)) ?? row)
 }

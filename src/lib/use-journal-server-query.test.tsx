@@ -5,12 +5,48 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { useJournalServerQuery } from './use-journal-server-query'
 import type { JournalGridResult } from './journal-server-grid'
 
-const mocks = vi.hoisted(() => ({ read: vi.fn(), summary: vi.fn(), subscribe: vi.fn(() => () => {}) }))
+const mocks = vi.hoisted(() => ({ read: vi.fn(), summary: vi.fn(), subscribe: vi.fn((_client: unknown, _listener: () => void) => () => {}) }))
 vi.mock('@/server/journal-grid-api', () => ({ readJournalGrid: mocks.read, getJournalReportSummary: mocks.summary }))
 vi.mock('@/server/weld-read-api', () => ({ getWeldReportSummary: mocks.summary }))
 vi.mock('./weld-page-refresh', () => ({ subscribeWeldPageRefresh: mocks.subscribe }))
 const resultAt = (revision: number): JournalGridResult => ({ rows: [], rowCount: 200000, revision })
 const block = { groupBy: [], route: [], start: 0, end: 100 }
+it('blocks stale actions immediately while coalescing repeated mutation refresh notifications', async () => {
+  vi.useFakeTimers()
+  const { result, unmount } = renderHook(() => useJournalServerQuery({ report: 'lnk', enabled: true, columnFilters: {}, sort: null }), { wrapper })
+  try {
+    await act(async () => { await result.current.source.load(block) })
+    expect(result.current.rowsReady).toBe(true)
+    const source = result.current.source.identity
+    act(() => { for (let n = 0; n < 3; n++) mocks.subscribe.mock.lastCall![1]() })
+    expect(result.current.rowsReady).toBe(false)
+    expect(result.current.source.identity).toBe(source)
+    await act(async () => { vi.advanceTimersByTime(80) })
+    expect(result.current.source.identity).not.toBe(source)
+    await act(async () => { await result.current.source.load(block) })
+    expect(result.current.rowsReady).toBe(true)
+    expect(mocks.read).toHaveBeenCalledTimes(2)
+  } finally { unmount(); vi.useRealTimers() }
+})
+it('isolates report rows, late replies, revisions and the LNK request count on report switches', async () => {
+  let finish!: (value: JournalGridResult) => void
+  mocks.read.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const { result, rerender } = renderHook(({ report }: { report: 'lnk' | 'heatTreatment' }) =>
+    useJournalServerQuery({ report, enabled: true, columnFilters: {}, sort: null }), { wrapper, initialProps: { report: 'lnk' } })
+  const old = result.current.source.load(block).catch(error => error)
+  rerender({ report: 'heatTreatment' })
+  await act(async () => { finish(resultAt(1)); expect((await old).name).toBe('AbortError') })
+  expect(mocks.summary).not.toHaveBeenCalled()
+  await act(async () => { await result.current.source.load(block) })
+  expect(mocks.read.mock.lastCall?.[0].data).toMatchObject({ report: 'heatTreatment', revision: undefined })
+  expect(mocks.summary.mock.lastCall?.[0].data.report).toBe('heatTreatment')
+  mocks.summary.mockResolvedValue({ total: 123, availableRequestCount: 17 })
+  rerender({ report: 'lnk' })
+  await act(async () => { await result.current.source.load(block) })
+  expect(result.current.availableRequestCount).toBe(17)
+  expect(result.current.totalCount).toBe(123)
+  expect(mocks.summary.mock.lastCall?.[0].data.report).toBe('lnk')
+})
 function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>
 }

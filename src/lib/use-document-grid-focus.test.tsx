@@ -37,17 +37,17 @@ afterEach(() => {
 })
 
 describe('document grid focus restoration', () => {
-  it('returns to the title cell after the real context menu autofocus and Escape', async () => {
+  it.each([true, 'panel'] as const)('returns to the title cell after context menu autofocus %s and Escape', async autoFocus => {
     const { cell, api } = setup()
     function Menu() {
       const [open, setOpen] = useState(true)
-      return <ContextActionMenu autoFocus menu={open ? {
+      return <ContextActionMenu autoFocus={autoFocus} panelClassName="journal-context-menu" menu={open ? {
         x: 0, y: 0, anchorElement: cell,
         items: [{ id: 'download', label: 'Скачать', onSelect: () => {} }],
       } : null} onClose={() => setOpen(false)} />
     }
     const menu = render(<Menu />)
-    expect(menu.getByRole('button', { name: 'Скачать' })).toHaveFocus()
+    expect(autoFocus === 'panel' ? menu.getByTestId('context-action-menu') : menu.getByRole('button', { name: 'Скачать' })).toHaveFocus()
     // Let the body observer record the open portal before closing it.
     await act(async () => {})
     fireEvent.keyDown(window, { key: 'Escape' })

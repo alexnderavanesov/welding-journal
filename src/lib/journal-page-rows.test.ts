@@ -33,6 +33,15 @@ function source(count: number, settings: OtherSettings) {
 const oldPagePreparation = (rows: WeldRow[], settings: OtherSettings) =>
   prepareReportRows(rows, [], undefined, undefined, settings, true).map((row, index) => ({ ...row, finalStatus: rows[index].finalStatus }))
 
+it.each(['lnk', 'heatTreatment'] as const)('preserves %s preparation, primary facts and authoritative status without partial-chain recalculation', report => {
+  const settings = DEFAULT_OTHER_SETTINGS, rows = source(120, settings)
+  const expected = prepareReportRows(rows, [], undefined, undefined, settings, true, report === 'heatTreatment')
+    .map((row, index) => ({ ...row, finalStatus: rows[index].finalStatus, wdi: rows[index].wdi }))
+  const status = vi.spyOn(fields, 'calculateFinalStatusInRows')
+  expect(prepareJournalPageRows(rows, report)).toEqual(expected)
+  expect(status).not.toHaveBeenCalled()
+})
+
 it.each(['manual', 'formula', 'table'] as const)('preserves every prepared field and authoritative status/WDI in %s mode', mode => {
   const settings: OtherSettings = { ...DEFAULT_OTHER_SETTINGS, wdiCalculationMode: mode, wdiTable: {
     fileName: 'fixture', uploadedAt: '', diameters: [57, 108], thicknesses: [4, 8], values: [[2, 3], [4, 5]],

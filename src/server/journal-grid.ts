@@ -11,7 +11,10 @@ import { alias } from 'drizzle-orm/pg-core'
 import { requireDb } from '@/db'
 import { derivedCalculationState, weldJoints, weldJointProgramStates } from '@/db/schema'
 import { FIELD_BY_KEY, isVirtualWeldField, type WeldFieldKey } from '@/lib/weld-fields'
-import { type JournalGridRequest, type JournalGridQuery, type JournalGridResult, type JournalGridRow, type JournalRevision, isJournalRevision } from '@/lib/journal-server-grid'
+import { type JournalGridRequest, type JournalGridQuery, type JournalGridResult, type JournalGridRow, type JournalRevision, isJournalRevision, journalReport } from '@/lib/journal-server-grid'
+import { LNK_METHODS } from '@/lib/report-config'
+import { buildPstoCurrentReportValueSql } from './psto-report-current-values'
+import { attachHeatTreatmentControlRelations } from './heat-treatment-control-relations'
 import { createWeldGroupSummarizer } from '@/lib/weld-group-summary'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { parseDispatcherTaskIndexPayload } from '@/lib/dispatcher-task-index-payload'
@@ -24,12 +27,13 @@ import { assertSecurityScope } from './security-functions'
 import { ensureDispatcherTaskIndexFresh, isDispatcherTaskIndexFresh } from './dispatcher-task-index'
 import { buildCalculatedReportValueSql } from './report-calculated-values-sql'
 import { applyCurrentSystemWdi, getWeldColumn, loadServerOtherSettings, WELD_TABLE_SELECT } from './weld-server-shared'
-import { attachReportPageMetadata, buildReportQueryWhere, getReportOrderBy, normalizeWeldPageRequest } from './weld-read'
+import { attachDuplicateControlsToPage, attachReportPageMetadata, buildServerReportRows, buildReportQueryWhere, getReportOrderBy, normalizeWeldPageRequest } from './weld-read'
 import { compactWeldRowsForTransport, buildNumberArrayMatch } from './weld-request-utils'
 import { loadProgramSystemIndexSettings } from './line-program'
 
 const changed = () => new Error('Данные журнала изменились. Обновите таблицу и повторите действие.')
 export function normalizeJournalGridRequest(input: JournalGridRequest): JournalGridRequest {
+  journalReport(input?.report)
   if (!input || !Array.isArray(input.groupBy) || !Array.isArray(input.route)
     || input.route.length > input.groupBy.length || input.route.some(value => typeof value !== 'string')
     || new Set(input.groupBy).size !== input.groupBy.length
@@ -87,7 +91,7 @@ export async function journalReadContext(input: JournalGridRequest, publicationF
   const identity = await journalReadIdentity(input, publicationField)
   const { request } = identity
   const [settings, systemSettings] = await Promise.all([loadServerOtherSettings(), loadProgramSystemIndexSettings(requireDb())])
-  const base = buildReportQueryWhere('weldingJournal', splitReportQuickSearch(request.columnFilters), settings)
+  const base = buildReportQueryWhere(journalReport(request.report), splitReportQuickSearch(request.columnFilters), settings)
   const context = { ...identity, settings, systemSettings, base }
   return { ...context, where: journalRouteWhere(context, request.route) }
 }
@@ -95,10 +99,13 @@ export async function assertJournalContextRevision(context: JournalReadIdentity)
   await assertJournalRevision(context.revision, context.request.columnFilters, context.publicationField)
 }
 type ValueContext = Pick<JournalReadContext, 'settings' | 'request' | 'base'>
-export function journalValueSql(key: WeldFieldKey, context: Pick<JournalReadContext, 'settings'>): SQLWrapper {
-  return journalControlValueSql(key) ?? buildCalculatedReportValueSql('weldingJournal', key, context.settings) ?? getWeldColumn(key) ?? sql`null`
+export function journalValueSql(key: WeldFieldKey, context: Pick<JournalReadContext, 'settings'> & Partial<Pick<JournalReadContext, 'request'>>): SQLWrapper {
+  const report = journalReport(context.request?.report)
+  // Current PSTO cycle values take precedence over primary-cycle journal labels.
+  return (report === 'heatTreatment' ? buildPstoCurrentReportValueSql(key) : undefined)
+    ?? journalControlValueSql(key) ?? buildCalculatedReportValueSql(report, key, context.settings) ?? getWeldColumn(key) ?? sql`null`
 }
-export function journalGroupSql(key: WeldFieldKey, context: Pick<JournalReadContext, 'settings'>): SQL {
+export function journalGroupSql(key: WeldFieldKey, context: Pick<JournalReadContext, 'settings'> & Partial<Pick<JournalReadContext, 'request'>>): SQL {
   const value = journalValueSql(key, context)
   return FIELD_BY_KEY.get(key)?.kind === 'number' ? sql`coalesce((${value})::double precision::text, '')` : sql`coalesce(${value}::text, '')`
 }
@@ -134,7 +141,7 @@ export async function readJournalPage(context: JournalReadContext): Promise<Jour
   // revision always gets a new count; the caller still checks it after reading.
   // A filter may contain thousands of exact values. Keep retained keys bounded
   // too, rather than retaining another large filter string for every route.
-  const countKey = createHash('sha256').update(JSON.stringify([revision,
+  const countKey = createHash('sha256').update(JSON.stringify([revision, journalReport(request.report),
     Object.entries(request.columnFilters).sort(([a], [b]) => a.localeCompare(b)), request.groupBy, request.route])).digest('hex')
   const [total, rows] = await Promise.all([
     journalCounts(countKey, async () => {
@@ -150,10 +157,12 @@ export async function readJournalLeafRows(context: JournalReadContext, ids?: num
   const query = requireDb().select(WELD_TABLE_SELECT).from(weldJoints)
     .where(ids ? and(where, buildNumberArrayMatch(weldJoints.id, ids)) : where)
     .orderBy(...(ids ? [sql`array_position(${sql.param(ids)}::int[], ${weldJoints.id})`]
-      : getReportOrderBy('weldingJournal', request.sort ?? undefined, context.settings)))
+      : getReportOrderBy(journalReport(request.report), request.sort ?? undefined, context.settings)))
   const rows = await (ids ? query : query.limit(request.end - request.start).offset(request.start))
   const hydrated = await attachReportPageMetadata(applyCurrentSystemWdi(rows, context.settings), { dispatcherState: context.dispatcher })
-  const prepared = prepareJournalPageRows(hydrated)
+  const report = journalReport(request.report)
+  const prepared = prepareJournalPageRows(report === 'weldingJournal' ? hydrated
+    : buildServerReportRows(hydrated, report, { preserveSourceOrder: true }), report)
   return compactWeldRowsForTransport(prepared)
 }
 
@@ -195,7 +204,8 @@ async function readGroups(context: JournalReadContext): Promise<JournalGridResul
     or ${legacyKeys.length ? sql`jsonb_build_array(coalesce(${weldJoints.projectTitle}, ''), coalesce(${weldJoints.subtitleCode}, ''), coalesce(${weldJoints.line}, ''), coalesce(${weldJoints.joint}, '')) in (select value from jsonb_array_elements(${JSON.stringify(legacyKeys.map(key => JSON.parse(key)))}::jsonb))` : sql`false`}
   )`) : undefined
   const extras = extraWhere ? await readSummaryRows(context, extraWhere) : []
-  const summarize = createWeldGroupSummarizer([...members, ...extras], context.systemSettings)
+  const summarize = createWeldGroupSummarizer([...members, ...extras], context.systemSettings,
+    { lnk: request.report === 'lnk', heatTreatment: request.report === 'heatTreatment' })
   const byGroup = new Map<string, WeldRow[]>()
   for (const row of members) {
     const key = String((row as WeldRow & { groupKey: string }).groupKey)
@@ -208,12 +218,21 @@ async function readGroups(context: JournalReadContext): Promise<JournalGridResul
   }) }
 }
 
+// Narrow stage facts, rather than full cards/document attachments, are enough
+// for the existing independent LNK/PSTO physical-connection summarizers.
+const stageFields = [...new Set([
+  ...LNK_METHODS.flatMap(method => [method.enabledKey, method.resultKey, method.requestKey, method.requestDateKey]),
+  'pstoRequired', 'pstoRequest', 'pstoRequestDate', 'pstoDate', 'pstoResult', 'heatTreatmentDiagram',
+  'tvmtRequest', 'tvmtRequestDate', 'tvmtResult', 'tvmtConclusion', 'tvmtConclusionDate',
+] as const)]
+const stageProjection = Object.fromEntries(stageFields.map(key => [key, weldJoints[key]]))
 async function readSummaryRows(context: JournalReadContext, where: SQL): Promise<WeldRow[]> {
+  const report = journalReport(context.request.report)
   const root = alias(weldJoints, 'journal_root')
   const rootState = alias(weldJointProgramStates, 'journal_root_state')
   const key = context.request.groupBy[context.request.route.length]
   const records = await requireDb().select({
-    row: { id: weldJoints.id, projectTitle: weldJoints.projectTitle, subtitleCode: weldJoints.subtitleCode,
+    row: { ...(report === 'weldingJournal' ? {} : stageProjection), id: weldJoints.id, projectTitle: weldJoints.projectTitle, subtitleCode: weldJoints.subtitleCode,
       line: weldJoints.line, joint: weldJoints.joint, officiality: weldJoints.officiality,
       weldDate: weldJoints.weldDate, finalStatus: weldJoints.finalStatus, wdi: sql<number>`${journalValueSql('wdi', context)}`,
       groupKey: journalGroupSql(key, context) },
@@ -224,12 +243,15 @@ async function readSummaryRows(context: JournalReadContext, where: SQL): Promise
     .leftJoin(root, eq(root.id, weldJointProgramStates.physicalRootId))
     .leftJoin(rootState, eq(rootState.weldJointId, root.id)).where(where)
   const links = new Map(parseDispatcherTaskIndexPayload(context.dispatcher.repeatedTasks).chainContinuations.map(link => [link.sourceRowId, link]))
-  return records.map(({ row, state, root: source, replaced }) => ({ ...row,
+  const rows = records.map(({ row, state, root: source, replaced }) => ({ ...row,
     ...(state ? { programChainState: state } : {}),
     ...(state?.physicalRootId == null ? {} : { groupPhysicalRoot: { id: state.physicalRootId, exists: Boolean(source), replaced: Boolean(replaced),
       wdi: source ? isSystemWdiMode(context.settings) ? calculateWdi(source, context.settings) : journalNumericValue(source.wdi) : null } }),
     ...(links.has(row.id) ? { chainContinuation: links.get(row.id) } : {}),
   })) as unknown as WeldRow[]
+  if (report === 'weldingJournal') return rows
+  const hydrated = await attachHeatTreatmentControlRelations(await attachDuplicateControlsToPage(rows))
+  return prepareJournalPageRows(hydrated, report)
 }
 export async function selectJournalGridRows(input: JournalGridQuery & { route: string[]; revision: JournalRevision }) {
   const context = await journalReadContext({ ...input, start: 0, end: 100 })
@@ -247,7 +269,7 @@ export async function countJournalGridSelection(input: JournalSelectionCountRequ
     || input.snapshot !== undefined && typeof input.snapshot !== 'string'
     || !Array.isArray(input.routes) || input.routes.some(route => !Array.isArray(route) || route.length > input.groupBy.length || route.some(key => typeof key !== 'string'))) throw new Error('Некорректный выбор стыков.')
   const context = await journalReadContext({ ...input, route: [], start: 0, end: 100 })
-  const scope = JSON.stringify([context.request.groupBy, Object.entries(context.request.columnFilters).sort(([a], [b]) => a.localeCompare(b))])
+  const scope = JSON.stringify([journalReport(context.request.report), context.request.groupBy, Object.entries(context.request.columnFilters).sort(([a], [b]) => a.localeCompare(b))])
   let snapshot = input.snapshot
   let value = snapshot ? selectionSnapshots.get(snapshot) : undefined
   if (value && (value.scope !== scope || value.revision !== context.revision)) value = undefined

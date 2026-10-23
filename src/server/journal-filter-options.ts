@@ -5,6 +5,7 @@ import type { WeldColumnFilterOption } from './weld-contracts'
 import { listColumnFilterOptions, normalizeWeldColumnFilterOptionsRequest } from './weld-read'
 import { assertJournalContextRevision, journalReadIdentity } from './journal-grid'
 import { createJournalSnapshotCache } from './journal-snapshot-cache'
+import { journalReport } from '@/lib/journal-server-grid'
 
 type FacetSnapshot = { options: WeldColumnFilterOption[]; search: string[] }
 const facets = createJournalSnapshotCache<FacetSnapshot>({ bytes: 64 * 1024 * 1024, entries: 16,
@@ -13,8 +14,8 @@ const PAGE = 150
 async function readSnapshot(input: JournalFilterRequest) {
   if (!input || !FIELD_BY_KEY.has(input.fieldKey) || input.match !== undefined && typeof input.match !== 'string'
     || input.start !== undefined && (!Number.isSafeInteger(input.start) || input.start < 0)) throw new Error('Некорректный запрос значений фильтра.')
-  const data = normalizeWeldColumnFilterOptionsRequest({ report: 'weldingJournal', fieldKey: input.fieldKey, search: input.search, columnFilters: input.columnFilters })
-  const context = await journalReadIdentity({ columnFilters: { ...data.columnFilters, ...(data.search ? { search: data.search } : {}) },
+  const data = normalizeWeldColumnFilterOptionsRequest({ report: journalReport(input.report), fieldKey: input.fieldKey, search: input.search, columnFilters: input.columnFilters })
+  const context = await journalReadIdentity({ report: data.report, columnFilters: { ...data.columnFilters, ...(data.search ? { search: data.search } : {}) },
     groupBy: [], route: [], start: 0, end: 100, revision: input.revision }, data.fieldKey)
   const key = createHash('sha256').update(JSON.stringify([context.revision, context.dispatcher.computedRevision, context.dispatcher.computedAt, data])).digest('hex')
   const snapshot = await facets.load(key, async () => {

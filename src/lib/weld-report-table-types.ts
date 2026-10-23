@@ -18,17 +18,7 @@ export type WeldTableProps = {
   duplicateRows?: WeldRow[]
   duplicateKeyOverrides?: ReadonlySet<string>
   columnFilters: Record<string, string>
-  manualPagination?: {
-    totalCount: number | undefined
-    summaryStatus?: 'pending' | 'ready' | 'error'
-    rowsLoading?: boolean
-    firstItemNumber: number
-    lastItemNumber: number
-    pageSize: number
-    hasMore: boolean
-    onLoadMore: () => void
-    onPageSizeChange: (pageSize: number) => void
-  }
+  totalCount?: number
   onColumnFiltersChange: (filters: Record<string, string>) => void
   sort?: WeldSort | null
   onSortChange?: (sort: WeldSort | null) => void

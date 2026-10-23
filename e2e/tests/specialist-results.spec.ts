@@ -48,7 +48,7 @@ for (const stage of ['beforeHeatTreatment', 'psto'] as const) test(`new ${stage}
   })
   await page.goto(isPre ? '/lnk' : '/psto')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
-  const loadedRows = page.getByText('Загружено: 2 из 2', { exact: true })
+  const loadedRows = page.getByText('Найдено: 2', { exact: true })
   await expect(loadedRows).toBeVisible()
   // Initial dispatcher publication persists finalStatus and changes rowVersion.
   // This scenario tests specialist creation, so open its draft only after the

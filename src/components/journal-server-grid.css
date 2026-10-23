@@ -11,6 +11,11 @@ html:has([data-journal-workspace]) { overscroll-behavior-y: auto; overscroll-beh
 [data-journal-workspace] [data-scroll-top-boundary] { padding-bottom: 12px; }
 .journal-page-track { position: relative; min-height: 180px; }
 .journal-page-stage { position: sticky; top: 0; display: flex; flex-direction: column; height: calc(100dvh - 240px); min-height: 180px; }
+.journal-page-stage[data-journal-docked-footer] { padding-bottom: var(--journal-footer-height); }
+.journal-page-stage[data-journal-docked-footer] > :is(.journal-footer, .document-grid-footer) {
+  position: fixed; left: var(--journal-footer-left); bottom: var(--journal-footer-bottom);
+  width: var(--journal-footer-width); z-index: 2;
+}
 .journal-server-section .journal-grid-frame { flex: 1 1 0; min-height: 0; height: auto; }
 .journal-server-section .journal-footer { flex: none; height: 30px; min-height: 30px; border-radius: 0 0 6px 6px; gap: 12px; }
 .journal-server-section .journal-footer-right { gap: 14px; }

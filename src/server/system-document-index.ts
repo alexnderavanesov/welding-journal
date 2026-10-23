@@ -57,6 +57,7 @@ import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { syncProgramChainStates } from './line-program-chain-state'
 import type { DocumentHistoryGridRequest, DocumentHistoryGridResult } from '@/lib/document-history-grid'
 import { buildDocumentHistoryGridSql, documentHistoryTextSort, normalizeDocumentHistoryGridResult, withDocumentHistoryGridSearch } from './document-history-grid'
+import { systemDocumentGridValue } from '@/lib/document-history-values'
 
 const BASE_HISTORY_SELECT = {
   id: weldJoints.id,
@@ -219,7 +220,7 @@ export async function loadIndexedSystemDocumentHistoryGrid(
       request, idKind: 'system', sortExpressions,
       defaultOrder: sql`"date" desc, "title" desc, "documentId" desc`,
     }))
-    return normalizeDocumentHistoryGridResult(result.rows[0], request, 'system', record => toIndexedSystemDocumentHistorySummary(record, request.type))
+    return normalizeDocumentHistoryGridResult(result.rows[0], request, 'system', record => toIndexedSystemDocumentHistorySummary(record, request.type), systemDocumentGridValue)
   })
 }
 

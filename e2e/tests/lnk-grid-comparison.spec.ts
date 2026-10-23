@@ -24,7 +24,7 @@ for (const [route, report] of [['/lnk', 'lnk'], ['/psto', 'heatTreatment']] as c
     await page.getByRole('searchbox').fill(project)
     const grid = page.locator(`[data-weld-report-grid="${report}"]`)
     await expect(grid).toBeVisible()
-    await expect(page.getByText('Загружено: 74 из 74', { exact: true })).toBeVisible()
+    await expect(page.getByText('Найдено: 74', { exact: true })).toBeVisible()
     await page.waitForLoadState('networkidle')
     const target = grid.locator('.ag-grid-viewport')
     await target.hover()

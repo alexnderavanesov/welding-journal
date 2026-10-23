@@ -128,14 +128,14 @@ export const getWeldReportSummary = createServerFn({ method: 'GET' })
     return server.getWeldReportSummary({ data })
   })
 
-export const listLnkReportPage = createServerFn({ method: 'GET' })
+export const listLnkReportPage = createServerFn({ method: 'POST' })
   .validator((data: WeldPageRequest | undefined) => data)
   .handler(async ({ data }): Promise<WeldPageResult> => {
     const server = await import('@/server/weld-read')
     return server.listLnkReportPage({ data })
   })
 
-export const listHeatTreatmentReportPage = createServerFn({ method: 'GET' })
+export const listHeatTreatmentReportPage = createServerFn({ method: 'POST' })
   .validator((data: WeldPageRequest | undefined) => data)
   .handler(async ({ data }): Promise<WeldPageResult> => {
     const server = await import('@/server/weld-read')

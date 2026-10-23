@@ -4,6 +4,14 @@ vi.mock('./weld-read', () => ({ listColumnFilterOptions: mocks.list, normalizeWe
 vi.mock('./journal-grid', () => ({ journalReadIdentity: mocks.context, assertJournalContextRevision: mocks.revision }))
 import { readJournalFilterPage, selectJournalFilterValues } from './journal-filter-options'
 let revision = 0
+it('keeps facets of different reports separate at the same revision', async () => {
+  mocks.list.mockImplementation(async ({ report }) => [{ value: report, label: report, count: 1 }])
+  for (const report of ['weldingJournal', 'lnk', 'heatTreatment'] as const) {
+    expect((await readJournalFilterPage({ report, fieldKey: 'joint' })).options[0].value).toBe(report)
+    expect(mocks.context.mock.lastCall?.[0].report).toBe(report)
+  }
+  expect(mocks.list).toHaveBeenCalledTimes(3)
+})
 beforeEach(() => {
   vi.clearAllMocks(); revision++
   mocks.context.mockResolvedValue({ revision, dispatcher: { computedRevision: revision, computedAt: 'now' } })

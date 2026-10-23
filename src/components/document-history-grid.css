@@ -86,3 +86,7 @@
 @media (prefers-reduced-motion: reduce) {
   .document-grid-popup-layer .ag-menu { animation: none; }
 }
+
+/* The document owns vertical movement; registry navigation stays above the stage. */
+.document-history-grid.journal-server-section .document-grid-footer { min-height: 30px; height: 30px; flex: none; padding: 0 12px; }
+.document-history-grid.journal-server-section .document-grid-footer > button { padding: 2px 8px; }

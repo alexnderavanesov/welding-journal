@@ -1,7 +1,13 @@
 import type { WeldRow } from './dispatcher-types'
 import type { WeldFieldKey } from './weld-fields'
 import type { WeldGroupSummary } from './weld-group-summary'
-import type { WeldSort } from '@/server/weld-contracts'
+import type { WeldReportKind, WeldSort } from '@/server/weld-contracts'
+
+export function journalReport(report?: WeldReportKind): WeldReportKind {
+  if (report === undefined) return 'weldingJournal'
+  if (report === 'weldingJournal' || report === 'lnk' || report === 'heatTreatment') return report
+  throw new Error('Неизвестный вид отчёта.')
+}
 
 // Ordinary reads use the fact revision; task-dependent reads also pin the
 // active/background dispatcher publication without changing stored data.
@@ -11,6 +17,7 @@ export const isJournalRevision = (value: unknown): value is JournalRevision =>
     : typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)
 
 export type JournalGridQuery = {
+  report?: WeldReportKind
   columnFilters: Record<string, string>
   sort?: WeldSort | null
   groupBy: WeldFieldKey[]
@@ -32,8 +39,8 @@ export type JournalGroup = {
 export type JournalGridRow = WeldRow & { journalGroup?: JournalGroup }
 export type JournalGridResult = { rows: JournalGridRow[]; rowCount: number; revision: JournalRevision }
 export type JournalRouteLayout = { route: string[]; ordinal: number; rowCount: number }
-export type JournalRangePart = { route: string[]; start: number; end: number; columns: WeldFieldKey[]; includeHeader?: boolean }
-export type JournalVisualRange = { first: number; last: number; columns: WeldFieldKey[]; includeHeader?: boolean }
+export type JournalRangePart<Field extends string = WeldFieldKey> = { route: string[]; start: number; end: number; columns: Field[]; includeHeader?: boolean }
+export type JournalVisualRange<Field extends string = WeldFieldKey> = { first: number; last: number; columns: Field[]; includeHeader?: boolean }
 export type JournalRangeRequest = JournalGridQuery & { revision: JournalRevision; parts: JournalRangePart[]; anchor: string }
 export function journalGroup(row: unknown): JournalGroup | undefined {
   return (row as JournalGridRow | undefined)?.journalGroup
@@ -42,11 +49,11 @@ export const journalRouteKey = (route: readonly string[]) => JSON.stringify(rout
 
 /** Map visual row intervals to server stores, including only expanded children.
  * No visit to unloaded row nodes, and no array sized to the database. */
-export function journalRangeParts(
-  ranges: JournalVisualRange[],
+export function journalRangeParts<Field extends string>(
+  ranges: JournalVisualRange<Field>[],
   rootCount: number,
   expanded: JournalRouteLayout[],
-): JournalRangePart[] {
+): JournalRangePart<Field>[] {
   const children = new Map<string, JournalRouteLayout[]>()
   for (const item of expanded) {
     if (!item.route.length) continue
@@ -70,7 +77,7 @@ export function journalRangeParts(
   if (ranges.some(range => range.first < 0 || range.last >= visual)) {
     throw new Error('Дождитесь загрузки раскрытых групп.')
   }
-  const parts: JournalRangePart[] = []
+  const parts: JournalRangePart<Field>[] = []
   for (const range of ranges) {
     let includeHeader = range.includeHeader
     for (const segment of segments) {

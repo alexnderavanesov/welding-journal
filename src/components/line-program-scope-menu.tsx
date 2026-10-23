@@ -18,6 +18,7 @@ type SectionFilter = 'all' | 'missing' | 'excess' | 'reduction' | 'approved' | '
 /** One menu for the whole page; opening it does not fetch or expand anything. */
 export function useProgramScopeMenu(onReport: (request: ProgramReportRequest) => void) {
   const [menu, setMenu] = useState<ContextActionMenuState>(null)
+  const [pointerMenu, setPointerMenu] = useState(false)
   const trigger = useRef<HTMLElement | null>(null)
   const close = () => { setMenu(null); if (trigger.current?.isConnected) trigger.current.focus({ preventScroll: true }) }
   const show = (event: ProgramScopeMenuEvent, content: Omit<NonNullable<ContextActionMenuState>, 'x' | 'y'>) => {
@@ -25,6 +26,7 @@ export function useProgramScopeMenu(onReport: (request: ProgramReportRequest) =>
     if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return
     if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]')) return
     event.preventDefault(); event.stopPropagation()
+    setPointerMenu('clientX' in event)
     trigger.current = (event.target instanceof Element ? event.target.closest<HTMLElement>('button') : null)
       ?? event.currentTarget.querySelector<HTMLElement>('button[aria-expanded]')
       ?? event.currentTarget.querySelector<HTMLElement>('button')
@@ -77,5 +79,5 @@ export function useProgramScopeMenu(onReport: (request: ProgramReportRequest) =>
       ['additional', 'Дополнительные стыки'], ['configuration', 'Нужна настройка'],
     ] as const).map(([filter, label]) => ({ id: filter, label, onSelect: () => options.onSelect(filter) }))] })
   }
-  return { open, openSection, menu: <ContextActionMenu menu={menu} autoFocus onClose={close} /> }
+  return { open, openSection, menu: <ContextActionMenu menu={menu} autoFocus={pointerMenu ? 'panel' : true} onClose={close} /> }
 }

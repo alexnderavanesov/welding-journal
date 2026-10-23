@@ -5,6 +5,7 @@ import { LNK_METHODS } from '@/lib/report-config'
 import { FIELD_BY_KEY, isVirtualWeldField, type WeldFieldKey } from '@/lib/weld-fields'
 import { buildPstoCurrentReportValueSql, buildReportHasRejectedLnkSql } from './psto-report-current-values'
 import { cancelledLnkResultSql, reportResultSql, reportTextSql } from './report-filter-text-sql'
+import type { WeldReportKind } from './weld-contracts'
 
 /** Journal display preparation changes control labels without changing stored facts.
  * Group keys must use those same labels, including waiting and cancelled controls. */
@@ -42,7 +43,9 @@ export function journalControlValueSql(key: WeldFieldKey): SQLWrapper | undefine
 // Aggregate/copy them directly, without hydrating complete cards for each row.
 const preparedFields = new Set<string>(['hasVik', 'pstoRequired', 'pstoRequest', 'pstoResult', 'finalStatus',
   ...LNK_METHODS.flatMap(method => [method.enabledKey, method.requestKey, method.requestDateKey, method.resultKey])])
-export function isJournalScalarField(key: WeldFieldKey) {
+const pstoDisplayFields = new Set(['pstoRequest', 'pstoRequestDate', 'pstoDate', 'heatTreatmentDiagram', 'pstoResult', 'pstoNote',
+  'tvmtRequest', 'tvmtRequestDate', 'tvmtResult', 'tvmtConclusionDate', 'tvmtConclusion', 'pstoControlBasis', 'pstoCancellationDate'])
+export function isJournalScalarField(key: WeldFieldKey, report: WeldReportKind = 'weldingJournal') {
   const field = FIELD_BY_KEY.get(key)
-  return Boolean(field && !isVirtualWeldField(field) && !preparedFields.has(key))
+  return Boolean(field && !isVirtualWeldField(field) && !preparedFields.has(key) && !(report === 'heatTreatment' && pstoDisplayFields.has(key)))
 }

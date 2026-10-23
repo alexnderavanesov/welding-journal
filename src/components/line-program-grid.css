@@ -1,3 +1,4 @@
+@property --journal-gap-image { syntax: "*"; inherits: false; initial-value: none; }
 /* Program-only presentation; the journal and document grids use their own theme. */
 /* Include pagination in the exclusion: otherwise the browser can anchor to
    that footer and move the page after AG finishes measuring a switched tab. */
@@ -269,3 +270,9 @@ html:not([data-program-keyboard="true"]) .program-ag-grid[data-program-grid="ass
 .program-view-trigger { flex-shrink: 0; height: 36px; }
 @media (max-width: 1023px) { .program-view-trigger { width: 36px; padding-inline: 0; } }
 .program-view-panel button:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
+
+/* Static background for temporarily unpainted virtual rows; no shimmer or new controls. */
+.program-ag-grid-windowed > .program-grid-frame .ag-grid-viewport,
+.program-ag-grid-virtual > .program-grid-frame .ag-grid-viewport { background-image: var(--journal-gap-image, none); background-repeat: repeat-y; }
+.program-ag-grid-windowed[data-grid-result-revealing] > .program-grid-frame .ag-grid-viewport,
+.program-ag-grid-virtual[data-grid-result-revealing] > .program-grid-frame .ag-grid-viewport { background-image: none; }

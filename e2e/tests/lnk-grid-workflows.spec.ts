@@ -57,12 +57,12 @@ test.beforeEach(async ({ page }) => {
 async function open(page: Page, search = project) {
   await page.goto('/lnk')
   await page.getByRole('searchbox').fill(search)
-  await expect(page.getByText(`Загружено: ${search === project ? 7 : 1} из ${search === project ? 7 : 1}`, { exact: true })).toBeVisible()
+  await expect(page.getByText(`Найдено: ${search === project ? 7 : 1}`, { exact: true })).toBeVisible()
   await expect(page.locator('[data-lnk-grid] .journal-grid-frame')).toHaveAttribute('aria-busy','false')
 }
 async function groupLines(page: Page) {
   await page.locator('.ag-header-cell[col-id="line"]').click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Сгруппировать загруженные по «Линия»', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Сгруппировать по «Линия»', exact: true }).click()
 }
 const group = (page: Page, line: string) => page.locator('.ag-row-group').filter({ has: page.getByRole('button', { name: new RegExp(`^(Развернуть|Свернуть) группу ${line}$`) }) })
 
@@ -71,7 +71,8 @@ test('ЛНК: физические итоги методов и этапов, и
   await groupLines(page)
   await expect(group(page,'LG-REPAIR').locator('[data-group-summary="joint"]')).toHaveText('1')
   await expect(group(page,'LG-REPAIR').locator('[data-group-summary="wdi"]')).toHaveText('10')
-  await group(page,'LG-REPAIR').getByRole('checkbox').check()
+  await group(page,'LG-REPAIR').getByRole('checkbox').click()
+  await expect(group(page,'LG-REPAIR').getByRole('checkbox')).toBeChecked()
   await expect(page.getByLabel('Статистика выделения')).toContainText('Выбрано: 2')
   for (const field of ['vikResult','rkResult','uzkResult','pvkResult','preVikResult','preRkResult','preUzkResult','prePvkResult']) {
     await revealLnkColumn(page,field)

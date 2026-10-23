@@ -1,20 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SYSTEM_DOCUMENT_HISTORY_COLUMNS } from './document-history-columns'
-import { DOCUMENT_GRID_DEFAULT_APPEARANCE, normalizeDocumentGridColumns, readDocumentGridState, reconcileDocumentGridSelection, writeDocumentGridState } from './document-history-grid-state'
+import { DOCUMENT_GRID_ACTIONS_COLUMN, DOCUMENT_GRID_DEFAULT_APPEARANCE, normalizeDocumentGridColumns, readDocumentGridState, writeDocumentGridState } from './document-history-grid-state'
 
 afterEach(() => { localStorage.clear(); vi.restoreAllMocks() })
-describe('document grid selection across server blocks', () => {
-  it('keeps selected documents outside the loaded block and refreshes available snapshots', () => {
-    const original = [{ id: 'one', version: 1 }, { id: 'two', version: 1 }]
-    expect(reconcileDocumentGridSelection(original, ['one', 'two'], [{ id: 'two', version: 2 }])).toEqual([{ id: 'one', version: 1 }, { id: 'two', version: 2 }])
-    expect(reconcileDocumentGridSelection(original, undefined, [])).toEqual(original)
-  })
-  it('prunes only documents excluded by the whole-query result, preserving a selection made while the request ran', () => {
-    expect(reconcileDocumentGridSelection([{ id: 1 }, { id: 2 }, { id: 3 }], [2], [], [1, 2])).toEqual([{ id: 2 }, { id: 3 }])
-    expect(reconcileDocumentGridSelection([{ id: 1 }, { id: 2 }], [], [], [1, 2])).toEqual([])
-  })
-})
 describe('document grid personal state', () => {
+  it('restores action-column layout while excluding actions from data sorting and grouping', () => {
+    const available = [...SYSTEM_DOCUMENT_HISTORY_COLUMNS, DOCUMENT_GRID_ACTIONS_COLUMN]
+    const columns = normalizeDocumentGridColumns([{ colId: '__actions', width: 310, pinned: 'left', hide: true, sort: 'asc', sortIndex: 0, rowGroup: true, rowGroupIndex: 0 }, { colId: 'title' }], available)
+    expect(columns[0]).toMatchObject({ colId: '__actions', width: 310, pinned: 'left', hide: true, sort: null, sortIndex: null, rowGroup: false, rowGroupIndex: null })
+    expect(normalizeDocumentGridColumns([{ colId: 'title' }], available).at(-1)).toMatchObject({ colId: '__actions', width: 205, pinned: 'right', hide: false })
+  })
   it('keeps state isolated between registries and preserves grouping, sort and hidden columns', () => {
     writeDocumentGridState('system:lnkConclusion:lnk', { columns: [{ colId: 'line', hide: true, rowGroup: true, rowGroupIndex: 0, sort: 'asc' }], appearance: { ...DOCUMENT_GRID_DEFAULT_APPEARANCE, density: 'compact' }, views: [] })
     expect(readDocumentGridState('system:lnkConclusion:lnk', SYSTEM_DOCUMENT_HISTORY_COLUMNS)).toMatchObject({ columns: [{ colId: 'line', hide: true, rowGroup: true, sort: 'asc' }], appearance: { density: 'compact' } })

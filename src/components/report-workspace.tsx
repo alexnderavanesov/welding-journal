@@ -43,7 +43,7 @@ export function ReportWorkspace({
       />
 
       <div
-        className={`min-w-0 ${workspaceBackgroundClass} pt-5 transition-[padding-left] duration-200 ${isAgGridWeldReport(activeReport) ? 'pr-4' : 'pr-6'} ${
+        className={`report-workspace-content min-w-0 ${workspaceBackgroundClass} pt-5 ${isAgGridWeldReport(activeReport) ? 'pr-4' : 'pr-6'} ${
           isAgGridWeldReport(activeReport) ? (navCollapsed ? 'pl-[72px]' : 'pl-[200px] lg:pl-[280px]') : (navCollapsed ? 'pl-20' : 'pl-52 lg:pl-72')
         }`}
       >

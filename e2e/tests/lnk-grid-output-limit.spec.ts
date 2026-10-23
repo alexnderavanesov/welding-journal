@@ -35,7 +35,7 @@ test('ЛНК: текущий вид печатает 1000, отказывает 
     await expect(preview.frameLocator('iframe').locator('tbody tr')).toHaveCount(100)
   }
   await search.fill(project)
-  await expect(page.getByText('Загружено: 100 из 1001', { exact: true })).toBeVisible()
+  await expect(page.getByText('Найдено: 1001', { exact: true })).toBeVisible()
   await showCurrent()
   await expect(preview.getByRole('button', { name: 'Печать / Сохранить PDF' })).toBeDisabled()
   await expect(preview.getByRole('status')).toContainText('В отчёте 1001 строк')
@@ -56,7 +56,7 @@ test('ЛНК: текущий вид печатает 1000, отказывает 
   expect(rows.some(row => row[1] === 'F901001')).toBe(true)
   await page.keyboard.press('Escape')
   await search.fill('LNK-PRINT-ALLOWED')
-  await expect(page.getByText('Загружено: 100 из 1000', { exact: true })).toBeVisible()
+  await expect(page.getByText('Найдено: 1000', { exact: true })).toBeVisible()
   await showCurrent()
   await expect(preview.getByRole('button', { name: 'Печать / Сохранить PDF' })).toBeEnabled()
   await preview.getByRole('button', { name: 'Печать / Сохранить PDF' }).click()

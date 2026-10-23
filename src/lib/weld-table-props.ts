@@ -37,7 +37,7 @@ type CreateWeldTablePropsOptions = {
   duplicateRows?: WeldTableProps['duplicateRows']
   duplicateKeyOverrides?: WeldTableProps['duplicateKeyOverrides']
   columnFilters: WeldTableProps['columnFilters']
-  manualPagination?: WeldTableProps['manualPagination']
+  totalCount?: WeldTableProps['totalCount']
   onColumnFiltersChange: WeldTableProps['onColumnFiltersChange']
   sort?: WeldTableProps['sort']
   onSortChange?: WeldTableProps['onSortChange']
@@ -80,7 +80,7 @@ export function createWeldTableProps({
   duplicateRows,
   duplicateKeyOverrides,
   columnFilters,
-  manualPagination,
+  totalCount,
   onColumnFiltersChange,
   sort,
   onSortChange,
@@ -121,7 +121,7 @@ export function createWeldTableProps({
     duplicateRows,
     duplicateKeyOverrides,
     columnFilters,
-    manualPagination,
+    totalCount,
     onColumnFiltersChange,
     sort,
     onSortChange,

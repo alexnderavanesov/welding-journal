@@ -8,6 +8,7 @@ import { buildGeneratedDocumentBatchAssignmentPlans } from '@/lib/generated-docu
 import { resolveGeneratedDocumentNamePattern } from '@/lib/generated-document-naming'
 import {
   GENERATED_DOCUMENT_TYPES,
+  LAYERED_CONTROL_DOCUMENT_TYPES,
   getGeneratedDocumentProfile,
   isGeneratedDocumentType,
   isLayeredControlDocumentType,
@@ -49,6 +50,7 @@ import {
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { DOCUMENT_VERSION_SELECT } from './document-version'
 import type { DocumentHistoryGridRequest, DocumentHistoryGridResult } from '@/lib/document-history-grid'
+import { generatedDocumentGridValue } from '@/lib/document-history-values'
 import { buildDocumentHistoryGridSql, documentHistoryTextSort, normalizeDocumentHistoryGridRequest, normalizeDocumentHistoryGridResult, withDocumentHistoryGridSearch } from './document-history-grid'
 
 export type { GeneratedDocumentType } from '@/lib/generated-document-types'
@@ -194,8 +196,13 @@ export async function loadRemoteGeneratedDocumentHistoryGrid(
     columnFilters: data.columnFilters, filterKeys: GENERATED_DOCUMENT_HISTORY_FILTER_KEYS,
     request: data, idKind: 'generated', sortExpressions,
     defaultOrder: sql`"updatedAt" desc, "id" desc`,
+    // Ordinary registries show a period separator even without dates; layered
+    // registries show one date and leave the cell empty when none is available.
+    populatedExpressions: { period: sql`case when "type" = any(${sql.param([...LAYERED_CONTROL_DOCUMENT_TYPES])}::text[])
+      then coalesce("periodFrom", "periodTo")::text else '-' end` },
   }))
-  return normalizeDocumentHistoryGridResult(result.rows[0], data, 'generated', toRemoteGeneratedDocumentHistoryRow)
+  return normalizeDocumentHistoryGridResult(result.rows[0], data, 'generated', toRemoteGeneratedDocumentHistoryRow,
+    (key, row) => generatedDocumentGridValue(key, row, isLayeredControlDocumentType(row.type)))
 }
 
 export async function loadRemoteGeneratedDocumentHistory(

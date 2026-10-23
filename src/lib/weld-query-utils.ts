@@ -2,15 +2,10 @@ import type { InfiniteData, QueryClient } from '@tanstack/react-query'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { sortWeldSnapshotRows } from '@/lib/weld-snapshot'
 import { DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY } from '@/lib/dispatcher-accepted-warning-query'
-import type { WeldPageResult } from '@/server/weld-contracts'
-import {
-  invalidateWeldPageQueries,
-  WELD_JOINT_PAGES_QUERY_KEY,
-  WELD_REPORT_SUMMARY_QUERY_KEY,
-} from '@/lib/weld-page-refresh'
+import { invalidateWeldPageQueries } from '@/lib/weld-page-refresh'
 
 export const WELD_JOINTS_QUERY_KEY = ['weld-joints'] as const
-export { invalidateWeldPageQueries, WELD_JOINT_PAGES_QUERY_KEY, WELD_REPORT_SUMMARY_QUERY_KEY }
+export { invalidateWeldPageQueries }
 export const WELD_REPORT_CONTEXT_QUERY_KEY = ['weld-report-context'] as const
 export const LNK_WORKFLOW_QUERY_KEY = [...WELD_JOINTS_QUERY_KEY, 'lnk-workflow'] as const
 export const LNK_WORKFLOW_SUMMARY_QUERY_KEY = [...LNK_WORKFLOW_QUERY_KEY, 'summary'] as const
@@ -51,7 +46,7 @@ type WeldInvalidationOptions = {
  * Applies returned rows synchronously and schedules background refreshes.
  * Saving is already complete: callers must not await this void notification.
  * A workflow that needs fresh details must separately await its scoped query
- * (or refreshActiveLoadedWeldPages), not every dependent screen.
+ * rather than waiting for every dependent screen.
  */
 export function scheduleWeldDataRefresh(
   queryClient: QueryClient,
@@ -60,7 +55,6 @@ export function scheduleWeldDataRefresh(
 ): void {
   if (change) {
     updateCompleteWeldSnapshot(queryClient, change)
-    updateLoadedWeldPages(queryClient, change)
     updateLoadedWeldReportContexts(queryClient, change)
     updateLoadedLnkWorkflowRows(queryClient, change)
     updateLoadedPstoWorkflowRows(queryClient, change)
@@ -86,7 +80,7 @@ export function scheduleWeldDataRefresh(
   void queryClient.invalidateQueries({ queryKey: DUPLICATE_CONTROL_REGISTRY_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: GENERATED_DOCUMENT_HISTORY_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY, refetchType: 'none' })
-  void invalidateWeldPageQueries(queryClient, { deferActiveRefresh: Boolean(change) })
+  void invalidateWeldPageQueries(queryClient)
   void queryClient.invalidateQueries({ queryKey: WELD_REPORT_CONTEXT_QUERY_KEY })
   void queryClient.invalidateQueries({
     queryKey: LNK_WORKFLOW_QUERY_KEY,
@@ -141,50 +135,6 @@ function updateLoadedWeldRowLists(
         return [{ ...row, ...patch, id } as WeldRow]
       })
       return changed ? rows : current
-    },
-  )
-}
-
-export function updateLoadedWeldPages(queryClient: QueryClient, change: WeldCacheChange) {
-  const deleteIds = new Set((change.deleteIds ?? []).map(Number))
-  const upsertRows = new Map(
-    (change.upsertRows ?? [])
-      .filter((row) => Number.isInteger(Number(row.id)))
-      .map((row) => [Number(row.id), row]),
-  )
-
-  queryClient.setQueriesData<InfiniteData<WeldPageResult>>(
-    { queryKey: WELD_JOINT_PAGES_QUERY_KEY },
-    (current) => {
-      if (!current) return current
-      const loadedIds = new Set(current.pages.flatMap((page) => page.rows.map((row) => Number(row.id))))
-      const removedCount = [...deleteIds].filter((id) => loadedIds.has(id)).length
-      let changed = removedCount > 0
-      const pages = current.pages.map((page) => {
-        let pageChanged = false
-        const rows = page.rows.flatMap((row) => {
-          const id = Number(row.id)
-          if (deleteIds.has(id)) {
-            pageChanged = true
-            return []
-          }
-          const patch = upsertRows.get(id)
-          if (!patch) return [row]
-          changed = true
-          pageChanged = true
-          return [{ ...row, ...patch, id } as WeldRow]
-        })
-        return !pageChanged
-          ? page
-          : {
-              ...page,
-              rows,
-              ...(page.total === undefined
-                ? {}
-                : { total: Math.max(0, page.total - removedCount) }),
-            }
-      })
-      return changed ? { ...current, pages } : current
     },
   )
 }

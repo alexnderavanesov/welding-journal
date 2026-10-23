@@ -8,17 +8,18 @@ import { buildCurrentSystemDocumentName } from '../../src/lib/system-document-ty
 import { REBUILD_DOCUMENT_LIMIT } from '../../src/lib/system-document-rebuild-batch'
 
 const project = 'E2E bounded document packets'
+const unrelatedProject = `${project} unrelated`
 let setting: { value: string; updated_at: Date } | undefined
 let template: { constructor_config: string | null; updated_at: Date } | undefined
 let touchedTemplate = false
 async function indexSeededRequests() {
   // Raw SQL fixtures bypass normal save/index synchronization. Materialize the
   // same scoped indexes explicitly; do not rely on a once-per-database cold init.
-  const [{ requireDb }, { weldJoints }, { eq }, { syncSystemDocumentsForWeldChangesInTransaction }] = await Promise.all([
+  const [{ requireDb }, { weldJoints }, { inArray }, { syncSystemDocumentsForWeldChangesInTransaction }] = await Promise.all([
     import('../../src/db'), import('../../src/db/schema'), import('drizzle-orm'), import('../../src/server/system-document-index'),
   ])
   await requireDb().transaction(async tx => {
-    const rows = await tx.select().from(weldJoints).where(eq(weldJoints.projectTitle, project))
+    const rows = await tx.select().from(weldJoints).where(inArray(weldJoints.projectTitle, [project, unrelatedProject]))
     await syncSystemDocumentsForWeldChangesInTransaction(tx, rows, new Map())
   })
 }
@@ -34,7 +35,7 @@ test.afterEach(async () => {
       touchedTemplate = false
     }
   })
-  await cleanupLineProgramProjects([project])
+  await cleanupLineProgramProjects([project, unrelatedProject])
 })
 
 test('each packet is atomic: completed work survives later failure/cancel; retry finishes without reprocessing new documents', async ({ page }, info) => {
@@ -50,6 +51,10 @@ test('each packet is atomic: completed work survives later failure/cancel; retry
     await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,officiality,revision_actuality,has_vik,vik_request,vik_request_date)
       select $1,'BATCH','L'||(n%2),'F'||n,'2026-09-01','действующий','актуальная','да',($2::text[])[(n-1)/2+1],'2026-09-02'
       from generate_series(1,$3::integer) n`, [project, names, names.length * 2])
+    // Keep an unrelated document in the registry even in an isolated run.
+    // The operator must select the intended documents across several viewports.
+    await db.query(`insert into weld_joints(project_title,line,joint,weld_date,officiality,revision_actuality,has_vik,vik_request,vik_request_date)
+      values($1,'OTHER','F1','2026-09-01','действующий','актуальная','да','Unrelated packet request','2026-09-02')`, [unrelatedProject])
   })
   const calls: string[] = [], errors: string[] = []
   await indexSeededRequests()

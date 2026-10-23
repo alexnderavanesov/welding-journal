@@ -2,9 +2,9 @@ import { expect, test } from '@playwright/test'
 import { rpcName, serializeRpcPayload } from '../rpc'
 
 test('RPC rejects injected response state in an invalid read request, including document-style Accept', async ({ page }) => {
-  // Exercise both the retained GET reports and the journal's new POST boundary.
+  // Exercise both summary and row POST boundaries used by the reports.
   for (const [path, name, error] of [
-    ['/lnk', 'getWeldReportSummary_', 'Неизвестный вид отчета.'],
+    ['/lnk', 'getJournalReportSummary_', 'Неизвестный вид отчета.'],
     ['/journal', 'readJournalGrid_', 'Некорректная выборка сварочного журнала.'],
   ]) {
     const pending = page.waitForRequest(request => rpcName(request.url()).startsWith(name))

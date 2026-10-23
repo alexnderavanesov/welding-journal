@@ -5,24 +5,26 @@ import { journalGroup, journalRouteKey } from './journal-server-grid'
 // Full joint cards are expensive; expanded group metadata must remain so that
 // purging an old leaf store never collapses it or changes visual row positions.
 export const JOURNAL_LEAF_CACHE_BUDGET = 2000
-export function createJournalCacheBudget(limit = JOURNAL_LEAF_CACHE_BUDGET) {
+export function createJournalCacheBudget<Row = WeldRow>(limit = JOURNAL_LEAF_CACHE_BUDGET,
+  groupRoute: (node: IRowNode<Row>) => string[] | undefined = node => journalGroup(node.data)?.route) {
   let clock = 0
   const loads = new Map<string, { count: number; used: number }>()
   return {
     clear() { loads.clear() },
     loaded(route: string[], count: number) { loads.set(journalRouteKey(route), { count, used: ++clock }) },
-    trim(api: GridApi<WeldRow>) {
+    trim(api: GridApi<Row>) {
       if (api.isDestroyed() || !api.getRowGroupColumns().length) return 0
       const first = api.getFirstDisplayedRowIndex() - 100, last = api.getLastDisplayedRowIndex() + 100
       const focus = api.getFocusedCell()?.rowIndex
       const endpoints = (api.getCellRanges() ?? []).flatMap(range => [range.startRow?.rowIndex, range.endRow?.rowIndex])
-      const stores = new Map<string, { route: string[]; parent: IRowNode<WeldRow>; cards: number }>()
+      const stores = new Map<string, { route: string[]; parent: IRowNode<Row>; cards: number }>()
       let cards = 0
       api.forEachNode(node => {
-        const group = journalGroup(node.parent?.data)
-        if (node.group || !node.data || node.stub || !group || !node.parent) return
-        const key = journalRouteKey(group.route)
-        const store = stores.get(key) ?? { route: group.route, parent: node.parent, cards: 0 }
+        if (node.group || !node.data || node.stub || !node.parent) return
+        const route = groupRoute(node.parent)
+        if (!route) return
+        const key = journalRouteKey(route)
+        const store = stores.get(key) ?? { route, parent: node.parent, cards: 0 }
         store.cards++; cards++; stores.set(key, store)
       })
       for (const key of loads.keys()) if (!stores.has(key)) loads.delete(key)

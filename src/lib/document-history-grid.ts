@@ -9,6 +9,12 @@ export type DocumentHistoryGridRequest = {
   selectedIds?: Array<string | number>
   /** Restore exact selections without loading unrelated registry rows (maximum 10000 IDs). */
   selectionOnly?: boolean
+  /** Full membership only: no document cards or composition are transported. */
+  idsOnly?: boolean
+  /** Pin a read/copy sequence to the same registry contents. */
+  revision?: string
+  cells?: { columns: string[]; summary?: boolean }
+  countRoutes?: string[][]
 }
 
 export type DocumentHistoryGroupRow = {
@@ -17,6 +23,8 @@ export type DocumentHistoryGroupRow = {
   groupKey: string
   groupLabel: string
   childCount: number
+  ordinal: number
+  selectedCount: number
   [column: string]: string | number | boolean
 }
 
@@ -27,6 +35,12 @@ export type DocumentHistoryGridResult<T> = {
   /** All documents matching the filters/search, independent of the expanded route. */
   total: number
   matchingSelectedIds?: Array<string | number>
+  ids?: Array<string | number>
+  selectedCount?: number
+  revision?: string
+  cells?: Array<Array<string | number>>
+  summary?: { count: number; numericCount: number; sum: number; average: number | null }
+  counts?: Record<string, number>
 }
 
 export const DOCUMENT_HISTORY_GRID_BLOCK_LIMIT = 500

@@ -15,6 +15,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import type { ActiveReport } from '@/lib/home-state'
+import './app-sidebar.css'
 
 type AppSidebarProps = {
   activeReport: ActiveReport
@@ -43,13 +44,13 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
   const settingsItem = { report: 'settings' as const, label: 'Настройки', icon: Settings }
   const guideItem = { report: 'userGuide' as const, label: 'Руководство пользователя', icon: BookOpenText }
   const itemClassName = (isActive: boolean, muted = false) =>
-    `flex items-center gap-3 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${
+    `app-sidebar-item flex items-center text-left text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${
       isActive
         ? 'bg-sky-50 text-sky-700'
         : muted
           ? 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'
           : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
-    } ${collapsed ? 'mx-auto h-10 w-10 shrink-0 justify-center rounded-xl p-0' : 'w-full rounded-lg px-3 py-2.5'}`
+    } ${collapsed ? 'rounded-xl' : 'rounded-lg'}`
 
   useLayoutEffect(() => {
     const sidebar = sidebarRef.current
@@ -75,7 +76,7 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
       frameId = window.requestAnimationFrame(alignToViewport)
     }
     const onPageScroll = () => {
-      if (activeReport !== 'weldingJournal') { scheduleAlignment(); return }
+      if (!['weldingJournal', 'lnk', 'heatTreatment', 'documents'].includes(activeReport)) { scheduleAlignment(); return }
       // The journal contains horizontal table scrolling. A vertical page scroll
       // does not change the sidebar's horizontal position.
       // Avoid forcing layout after AG has just committed new virtual rows.
@@ -106,23 +107,24 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
   const sidebar = (
     <aside
       ref={sidebarRef}
-      className={`fixed inset-y-0 left-0 z-30 flex h-screen flex-col overflow-x-clip border-r border-slate-100 bg-white px-3 py-5 transition-[width,box-shadow] duration-200 [backface-visibility:hidden] ${
+      className={`app-sidebar fixed inset-y-0 left-0 z-30 flex h-screen flex-col overflow-x-clip border-r border-slate-100 bg-white py-5 [backface-visibility:hidden] ${
         isHorizontallyScrolled ? 'shadow-[10px_0_24px_-20px_rgba(15,23,42,0.7)]' : ''
       } ${
-        collapsed ? 'w-16' : 'w-48 lg:w-64 lg:px-4'
+        collapsed ? 'w-16' : 'w-48 lg:w-64'
       }`}
       data-app-sidebar="true"
+      data-collapsed={collapsed}
       style={{ transform: 'translate3d(var(--sidebar-viewport-x, 0px), 0, 0)' }}
     >
-      <div className={`mb-3 flex shrink-0 items-start ${collapsed ? 'justify-center [&>div]:sr-only' : 'justify-between gap-3'}`}>
-        <div className="text-lg font-semibold tracking-tight">Сварка</div>
+      <div className="app-sidebar-header mb-3 shrink-0">
+        <div className="app-sidebar-brand text-lg font-semibold tracking-tight">Сварка</div>
         <Button
           variant="ghost"
           size="icon"
           onClick={() => onCollapsedChange(!collapsed)}
           aria-label={collapsed ? 'Раскрыть меню' : 'Скрыть меню'}
           title={collapsed ? 'Раскрыть меню' : 'Скрыть меню'}
-          className="h-9 w-9 shrink-0"
+          className="app-sidebar-toggle h-9 w-9 shrink-0"
         >
           {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
         </Button>
@@ -140,8 +142,8 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
               onClick={() => onReportChange(item.report)}
               title={item.label}
             >
-              <Icon className="h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-              <span className={collapsed ? 'sr-only' : ''}>{item.label}</span>
+              <Icon className="app-sidebar-icon h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+              <span className="app-sidebar-label"><span>{item.label}</span></span>
             </button>
           )
         })}
@@ -159,8 +161,8 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
               onClick={() => onReportChange(settingsItem.report)}
               title={settingsItem.label}
             >
-              <Icon className="h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-              <span className={collapsed ? 'sr-only' : ''}>{settingsItem.label}</span>
+              <Icon className="app-sidebar-icon h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+              <span className="app-sidebar-label"><span>{settingsItem.label}</span></span>
             </button>
           )
         })()}
@@ -176,8 +178,8 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
               onClick={() => onReportChange(guideItem.report)}
               title={guideItem.label}
             >
-              <Icon className="h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-              <span className={collapsed ? 'sr-only' : ''}>{guideItem.label}</span>
+              <Icon className="app-sidebar-icon h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+              <span className="app-sidebar-label"><span>{guideItem.label}</span></span>
             </button>
           )
         })()}

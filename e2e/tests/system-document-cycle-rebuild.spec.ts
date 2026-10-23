@@ -227,14 +227,18 @@ test('active history refresh is coalesced and reopening does not restore stale n
   await dialog.getByRole('button', { name: 'Остановиться / закрыть' }).click()
   await expect(page.getByText('Cached history L1', { exact: true })).toBeVisible()
   await expect(page.getByText('Cached history L2', { exact: true })).toBeVisible()
-  // One active block reload and one exact-selection snapshot refresh share the
-  // invalidation; neither a second block reload nor per-document requests are needed.
+  // Refresh the active block once. Retained selection contains IDs only;
+  // its current cards are hydrated lazily when the next action is opened.
+  expect(historyRequests).toHaveLength(before + 1)
+  expect(historyRequests[before].selectionOnly).toBeUndefined()
+  await page.getByRole('button', { name: /^Действия с документами, выбрано:/ }).click()
+  await page.getByRole('button', { name: 'Изменить разделение', exact: true }).click()
+  const reopened = page.getByRole('dialog', { name: 'Изменить разделение', exact: true })
+  await expect(reopened.getByRole('textbox', { name: /^Название:/ }).first()).toHaveValue('Cached history L1')
   expect(historyRequests).toHaveLength(before + 2)
-  const refreshed = historyRequests.slice(before)
-  expect(refreshed.filter(request => !request.selectionOnly)).toHaveLength(1)
-  expect(refreshed.filter(request => request.selectionOnly)).toHaveLength(1)
-  expect(refreshed.find(request => request.selectionOnly)?.selectedIds).toHaveLength(1)
-  for (const request of refreshed) expect(request.endRow - request.startRow).toBe(100)
+  expect(historyRequests[before + 1]).toMatchObject({ selectionOnly: true })
+  expect(historyRequests[before + 1].selectedIds).toHaveLength(1)
+  for (const request of historyRequests.slice(before)) expect(request.endRow - request.startRow).toBe(100)
   expect(calls.filter(n => n === 'getDocumentOperationComposition')).toHaveLength(0)
 })
 

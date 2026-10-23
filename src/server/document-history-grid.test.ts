@@ -55,7 +55,8 @@ describe('document registry grid SQL', () => {
     const query = compile(normalize({ startRow: 100, endRow: 200, sortModel: [{ colId: 'rowCount', sort: 'desc' }, { colId: 'date', sort: 'asc' }] }))
     expect(query.sql).toContain('"rowCount" desc nulls last, nullif("date", \'\')::date asc nulls last, "documentId" desc')
     expect(query.sql).toMatch(/limit \$\d+ offset \$\d+/)
-    expect(query.params.slice(-2)).toEqual([100, 100])
+    const limits = query.sql.match(/limit \$(\d+) offset \$(\d+)/)!
+    expect(limits.slice(1).map(index => query.params[Number(index) - 1])).toEqual([100, 100])
     expect(query.sql).toContain('(select count(*)::integer from "filtered_documents") as "total"')
   })
 
@@ -122,7 +123,7 @@ describe('document registry grid result', () => {
   it('prunes IDs only against all-query matches, preserves original order and distinguishes omitted selection', () => {
     const raw = { rows: [{ documentId: 2 }], rowCount: 1, total: 500, matchingSelectedIds: [2, 4] }
     const result = normalizeDocumentHistoryGridResult(raw, normalize({ selectedIds: ['system-document:4', 'system-document:3', 'system-document:2'] }), 'system', row => ({ id: row.documentId }))
-    expect(result).toEqual({ rows: [{ id: 2 }], rowCount: 1, total: 500, matchingSelectedIds: ['system-document:4', 'system-document:2'] })
+    expect(result).toMatchObject({ rows: [{ id: 2 }], rowCount: 1, total: 500, matchingSelectedIds: ['system-document:4', 'system-document:2'] })
     expect(normalizeDocumentHistoryGridResult(raw, normalize(), 'system', row => row)).not.toHaveProperty('matchingSelectedIds')
   })
 

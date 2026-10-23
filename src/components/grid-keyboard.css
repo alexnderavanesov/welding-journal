@@ -1,0 +1,5 @@
+/* Safari can retain pointer focus styling when our captured arrow handler
+   moves focus between headers. Paint the actual focus, including after a click. */
+:is(.journal-grid-frame, .document-grid-frame, .program-grid-frame) :is(.ag-header-cell, .ag-header-group-cell):focus {
+  box-shadow: inset var(--ag-focus-shadow);
+}

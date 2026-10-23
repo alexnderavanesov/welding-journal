@@ -175,7 +175,7 @@ for (const [path, report] of [['/journal', 'weldingJournal'], ['/lnk', 'lnk'], [
     page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(request.url()) })
     await page.goto(path)
     await page.getByPlaceholder('Поиск по отчету').fill(project)
-    await expect(page.getByText(path === '/journal' ? 'Найдено: 74' : 'Загружено: 74 из 74', { exact: true })).toBeVisible()
+    await expect(page.getByText('Найдено: 74', { exact: true })).toBeVisible()
     // The initial dispatcher refresh can complete after the first rows render
     // and legitimately refetch them. Finish setup before measuring scroll RPCs.
     await page.waitForLoadState('networkidle')

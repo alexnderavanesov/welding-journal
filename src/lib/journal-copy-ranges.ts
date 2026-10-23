@@ -4,14 +4,14 @@ import type { WeldFieldKey } from './weld-fields'
 /** Match AG clipboard semantics: merge ranges only when every selected row has
  * the same selected columns; otherwise export each range with its own header.
  * Work on interval boundaries, never enumerate the potentially 200000 rows. */
-export function journalCopyRanges(ranges: JournalVisualRange[], columnOrder: WeldFieldKey[]): JournalVisualRange[] {
-  const events = new Map<number, Map<WeldFieldKey, number>>()
+export function journalCopyRanges<Field extends string = WeldFieldKey>(ranges: JournalVisualRange<Field>[], columnOrder: Field[]): JournalVisualRange<Field>[] {
+  const events = new Map<number, Map<Field, number>>()
   for (const range of ranges) for (const [point, delta] of [[range.first, 1], [range.last + 1, -1]]) {
-    const changes = events.get(point) ?? new Map<WeldFieldKey, number>()
+    const changes = events.get(point) ?? new Map<Field, number>()
     for (const column of new Set(range.columns)) changes.set(column, (changes.get(column) ?? 0) + delta)
     events.set(point, changes)
   }
-  const active = new Map<WeldFieldKey, number>()
+  const active = new Map<Field, number>()
   let signature: string | undefined
   const points = [...events.keys()].sort((a, b) => a - b)
   for (const point of points) {
@@ -29,7 +29,7 @@ export function journalCopyRanges(ranges: JournalVisualRange[], columnOrder: Wel
   // Preserve AG's first-encounter row order, including a later range above the
   // first one. Removing covered intervals prevents duplicate cells at overlaps.
   let covered: { first: number; last: number }[] = []
-  const result: JournalVisualRange[] = []
+  const result: JournalVisualRange<Field>[] = []
   for (const range of ranges) {
     let first = range.first
     for (const interval of covered) {

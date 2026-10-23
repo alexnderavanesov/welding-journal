@@ -68,13 +68,6 @@ export function writeJournalGridStorage(value: JournalGridStorage, storageKey = 
   try { localStorage.setItem(storageKey, JSON.stringify(value)) } catch { /* Private/full storage: keep the current session usable. */ }
 }
 
-export function mergeJournalSelection(previous: ReadonlySet<number>, loadedIds: readonly number[], selectedIds: readonly number[]) {
-  const result = new Set(previous)
-  for (const id of loadedIds) result.delete(id)
-  for (const id of selectedIds) result.add(id)
-  return result
-}
-
 export function journalClipboardValue(row: WeldRow, fieldKey: WeldFieldKey, value: unknown): string {
   const field = FIELD_BY_KEY.get(fieldKey)
   if (fieldKey === 'finalStatus') return formatFinalStatusDisplay(row, value)

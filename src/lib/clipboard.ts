@@ -1,3 +1,14 @@
+/** Reserve access during the gesture, while server-backed text is still loading. */
+export async function writeDeferredTextToClipboard(text: Promise<string>): Promise<void> {
+  if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+    const blob = text.then(value => new Blob([value], { type: 'text/plain' }))
+    // Permission can fail before the browser consumes the deferred item.
+    void blob.catch(() => {})
+    return navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })])
+  }
+  return text.then(value => navigator.clipboard.writeText(value))
+}
+
 export async function copyTextToClipboard(value: string) {
   const text = String(value ?? '').trim()
   if (!text) return false

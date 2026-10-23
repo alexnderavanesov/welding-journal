@@ -1,22 +1,13 @@
 import { journalGroup } from '@/lib/journal-server-grid'
 import { createContext, useCallback, useContext, useSyncExternalStore } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import type { GetGroupRowAggParams, ICellRendererComp, ICellRendererParams } from 'ag-grid-community'
+import type { ICellRendererComp, ICellRendererParams } from 'ag-grid-community'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import type { createWeldGroupSummarizer, WeldGroupSummary } from '@/lib/weld-group-summary'
+import type { WeldGroupSummary } from '@/lib/weld-group-summary'
 import type { LnkGroupResultField } from '@/lib/weld-group-lnk-summary'
 
 export const JournalGroupAnchor = createContext('line')
 const number = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
-export function aggregateJournalGroup(params: GetGroupRowAggParams<WeldRow>, summarize: ReturnType<typeof createWeldGroupSummarizer>) {
-  const rows = params.nodes.flatMap(node => node.group ? (node.aggData?.__summary as WeldGroupSummary | undefined)?.rows ?? [] : node.data ? [node.data] : [])
-  const summary = summarize(rows)
-  return { __summary: summary, line: summary.lines, joint: summary.joints, wdi: summary.wdi,
-    weldDate: summary.weldDate, projectTitle: summary.projectTitle, subtitleCode: summary.subtitleCode, finalStatus: summary.status,
-    ...(summary.pstoResult ? { pstoResult: summary.pstoResult.status, tvmtResult: summary.tvmtResult?.status } : {}),
-    ...Object.fromEntries(Object.entries(summary.lnkResults ?? {}).map(([field, stage]) => [field, stage.status])) }
-}
-
 export function JournalGroupCell({ node, column }: ICellRendererParams<WeldRow>) {
   const anchor = useContext(JournalGroupAnchor)
   const subscribe = useCallback((update: () => void) => {
@@ -25,20 +16,15 @@ export function JournalGroupCell({ node, column }: ICellRendererParams<WeldRow>)
   }, [node])
   const expanded = useSyncExternalStore(subscribe, () => Boolean(node.expanded), () => false)
   const serverGroup = journalGroup(node.data)
-  const summary = serverGroup?.summary ?? node.aggData?.__summary as WeldGroupSummary | undefined
+  const summary = serverGroup?.summary
   if (!summary) return null
   const field = column?.getColId()
-  const title = serverGroup ? 'Итог полной группы с текущими фильтрами.' : 'Итог группы по загруженным строкам с текущими фильтрами.'
+  const title = 'Итог полной группы с текущими фильтрами.'
   const value = groupValue(summary, field)
   const stage = field === 'pstoResult' ? summary.pstoResult : field === 'tvmtResult' ? summary.tvmtResult : summary.lnkResults?.[field as LnkGroupResultField]
   const result = field === 'finalStatus' ? summary : stage
-  const detail = serverGroup && field !== 'joint' ? '' : field === 'joint' ? jointGroupDetail(summary, serverGroup?.recordCount ?? (summary as WeldGroupSummary).rows.length)
-    : field === 'line' ? `Различных линий: ${summary.lines}. Линии разных проектов и шифров считаются отдельно.`
-    : field === 'wdi' ? `Сумма WDI физических соединений без повторов ремонта.${summary.missingWdi ? ` Нет WDI у ${summary.missingWdi} соединений; сумма неполная.` : ''}`
-    : field === 'weldDate' ? `Ранняя и поздняя даты сварки всех строк группы.${summary.missingDates ? ` Без даты: ${summary.missingDates}.` : ''}`
-    : field === 'finalStatus' ? `Ошибка имеет высший приоритет, включая историю. Затем: сварка, ремонт, заявка, НК. Оставшийся брак: ${summary.rejected}.${summary.partialChains ? ` Частично представленных или неоднозначных цепочек: ${summary.partialChains}.` : ''}`
-    : stage ? `${summary.lnkResults ? 'Этот метод и этап каждого физического соединения.' : 'Текущий цикл каждого физического соединения.'} Ошибка этапа, включая историю, имеет высший приоритет; затем раннее ожидание. Оставшийся брак: ${stage.rejected}. ${Object.entries(stage.counts).map(([status, count]) => `${status}: ${count}`).join('; ')}.${stage.partialChains ? ` Частично представленных или неоднозначных цепочек: ${stage.partialChains}.` : ''}` : ''
-  if (field === anchor) return <div className="journal-group-identity" style={{ paddingLeft: Math.min(node.level, 4) * 10 }} title={serverGroup ? undefined : `${node.rowGroupColumn?.getColDef().headerName ?? 'Группа'}: ${node.key || '(Пусто)'}. ${title} ${detail}`} data-journal-tip-title={serverGroup && field === 'joint' ? 'Стыки группы' : undefined} data-journal-tip-body={serverGroup && field === 'joint' ? `${title} ${detail}` : undefined}>
+  const detail = field === 'joint' ? jointGroupDetail(summary, serverGroup.recordCount) : ''
+  if (field === anchor) return <div className="journal-group-identity" style={{ paddingLeft: Math.min(node.level, 4) * 10 }} data-journal-tip-title={field === 'joint' ? 'Стыки группы' : undefined} data-journal-tip-body={field === 'joint' ? `${title} ${detail}` : undefined}>
     <button type="button" className={`journal-group-toggle ${expanded ? 'ag-group-expanded' : 'ag-group-contracted'}`} aria-label={`${expanded ? 'Свернуть' : 'Развернуть'} группу ${node.key || '(Пусто)'}`} aria-expanded={expanded} onClick={() => node.setExpanded(!node.expanded)}>
       {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
     </button>
@@ -46,7 +32,7 @@ export function JournalGroupCell({ node, column }: ICellRendererParams<WeldRow>)
     {field === 'line' && node.rowGroupColumn?.getColId() !== 'line' || field === 'joint' ? <span className="ag-group-child-count">{field === 'line' ? `${summary.lines} лин.` : `${summary.joints} ст.`}</span> : null}
   </div>
   if (!value) return null
-  return <div data-group-summary={field} className={`journal-group-summary ${result ? `journal-group-status-${result.status === 'ошибка' || result.status === 'не годен' ? 'bad' : result.status === 'годен' || result.status === 'проведено' ? 'good' : 'pending'}` : ''}`} title={serverGroup ? undefined : `${title} ${detail}`} data-journal-tip-title={serverGroup && field === 'joint' ? 'Стыки группы' : undefined} data-journal-tip-body={serverGroup && field === 'joint' ? `${title} ${detail}` : undefined}>
+  return <div data-group-summary={field} className={`journal-group-summary ${result ? `journal-group-status-${result.status === 'ошибка' || result.status === 'не годен' ? 'bad' : result.status === 'годен' || result.status === 'проведено' ? 'good' : 'pending'}` : ''}`} data-journal-tip-title={field === 'joint' ? 'Стыки группы' : undefined} data-journal-tip-body={field === 'joint' ? `${title} ${detail}` : undefined}>
     <span>{value}</span>
     {result && result.status !== 'не годен' && result.rejected > 0 ? <small className="journal-group-rejected">не годен: {result.rejected}</small> : null}
     {result && result.errors > 0 ? <small>{result.errors}</small> : null}

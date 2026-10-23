@@ -459,10 +459,10 @@ test('document grid browser: restores a child block beneath a distant root group
   expect(restoredIds.map(String).sort()).toEqual([firstId, lastId].map(String).sort())
   await page.waitForLoadState('networkidle')
   const reloaded = requests.slice(beforeReturn)
-  expect(reloaded.filter(request => request.selectionOnly)).toHaveLength(1)
+  expect(reloaded.filter(request => request.selectionOnly)).toHaveLength(0)
   expect(reloaded.some(request => !request.selectionOnly && request.groupKeys.length === 0 && request.startRow === 200)).toBe(true)
   expect(reloaded.some(request => !request.selectionOnly && request.groupKeys[0] === '["value","LINE-250"]' && request.startRow === 100)).toBe(true)
-  const blocks = reloaded.filter(request => !request.selectionOnly)
+  const blocks = reloaded.filter(request => !request.selectionOnly && !request.countRoutes)
   expect(blocks.length).toBeGreaterThan(0)
   const allowedBlocks = new Set([
     JSON.stringify([[], 0]), JSON.stringify([[], 200]),
@@ -521,7 +521,9 @@ for (const kind of ['generated', 'system'] as const) test(`document grid browser
     const row = grid.locator('.ag-row[row-id^="document:"]')
     await expect(row).toHaveCount(1)
     await expect(row.locator('.ag-cell[col-id="title"]')).toHaveText(`${prefix}002`)
-    await expect(grid.getByText('Выбрано: 1', { exact: true })).toHaveCount(0)
+    await expect(grid.getByText('Выбрано: 1', { exact: true })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(grid.getByText('Выбрано: 0', { exact: true })).toBeVisible()
     await expect(grid.locator('.document-grid-toolbar-actions')).not.toHaveAttribute('disabled', '')
     await row.getByRole('checkbox').check()
     release()
@@ -716,6 +718,88 @@ scaleTest('document grid real 200k: bounded SQL, browser blocks, DOM and memory 
   }
 })
 
+test('document checkbox at a clipped lower row responds to the first pointer click', async ({ page }, info) => {
+  await page.goto('/documents')
+  const grid = page.locator('[data-document-history-grid]')
+  await expect(grid.getByText('Найдено: 250', { exact: true })).toBeVisible()
+  await page.evaluate(() => window.scrollTo({ top: 1200, behavior: 'instant' }))
+  const row = grid.locator('.ag-row[row-index="30"]')
+  await expect(row).toBeVisible()
+  const checkbox = row.getByRole('checkbox')
+  const measurements: unknown[] = []
+  try {
+    // Larger offsets cover the checkbox itself with the scrollbar gutter;
+    // here only the row edge is hidden, and the actual input remains clickable.
+    for (const clipped of [4, 10]) {
+      await row.evaluate((element, clipped) => {
+        const viewport = element.closest('[data-document-history-grid]')!.querySelector('.ag-grid-viewport')!
+        const bottom = viewport.getBoundingClientRect().top + viewport.clientHeight
+        window.scrollBy({ top: element.getBoundingClientRect().bottom - bottom - clipped, behavior: 'instant' })
+      }, clipped)
+      await expect.poll(() => row.evaluate(element => {
+        const viewport = element.closest('[data-document-history-grid]')!.querySelector('.ag-grid-viewport')!
+        return Math.round(element.getBoundingClientRect().bottom - viewport.getBoundingClientRect().top - viewport.clientHeight)
+      })).toBe(clipped)
+      const rect = (await checkbox.boundingBox())!
+      const point = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
+      expect(await checkbox.evaluate((element, point) => document.elementFromPoint(point.x, point.y) === element, point)).toBe(true)
+      const before = await checkbox.isChecked()
+      measurements.push({ clipped, point, before })
+      await page.mouse.click(point.x, point.y)
+      measurements.push({ clipped, after: await checkbox.boundingBox(), checked: await checkbox.isChecked() })
+      await expect(checkbox).toBeChecked({ checked: !before })
+      await expect(grid.getByText(`Выбрано: ${before ? 0 : 1}`, { exact: true })).toBeVisible()
+    }
+  } finally {
+    await info.attach('clipped-checkbox-clicks', { body: JSON.stringify(measurements), contentType: 'application/json' })
+  }
+})
+
+test('document actions column supports resizing, unpinning, hiding, saved views and reset without data requests', async ({ page }) => {
+  await page.goto('/documents')
+  const grid = page.locator('[data-document-history-grid="generated:weldingJournal"]')
+  await expect(grid.getByText('Найдено: 250', { exact: true })).toBeVisible()
+  await page.waitForLoadState('networkidle')
+  const requests = observeDocumentRequests(page)
+  const actions = grid.locator('.ag-header-cell[col-id="__actions"]')
+  const width = () => actions.evaluate(e => e.getBoundingClientRect().width)
+  const handle = await actions.locator('.ag-header-cell-resize').boundingBox()
+  if (!handle) throw Error('Actions resize handle is missing')
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(handle.x + handle.width / 2 - 70, handle.y + handle.height / 2, { steps: 8 })
+  await page.mouse.up()
+  await expect.poll(width).toBeGreaterThan(250)
+  const savedWidth = await width()
+  await openDocumentGridColumnMenu(page, '__actions')
+  await page.getByRole('menuitem', { name: 'Закрепить столбец', exact: true }).hover()
+  await page.getByRole('menuitemcheckbox', { name: 'Не закреплять', exact: true }).click()
+  const state = () => page.evaluate(() => JSON.parse(localStorage.getItem('welding-journal:documents:grid:v1:generated:weldingJournal')!).columns.find((c: { colId: string }) => c.colId === '__actions'))
+  await expect.poll(async () => (await state()).pinned).toBeNull()
+  await grid.getByRole('button', { name: 'Настроить вид', exact: true }).click()
+  const settings = page.getByRole('dialog', { name: 'Настройка вида документов', exact: true })
+  await settings.getByRole('checkbox', { name: 'Действия', exact: true }).uncheck()
+  await expect(actions).toHaveCount(0)
+  await settings.getByRole('tab', { name: 'Мои виды', exact: true }).click()
+  await settings.getByRole('textbox', { name: 'Название вида документов' }).fill('Без кнопок')
+  await settings.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await page.keyboard.press('Escape')
+  expect(requests.dataCalls()).toEqual([])
+  await page.reload()
+  await expect(grid.getByText('Найдено: 250', { exact: true })).toBeVisible()
+  await expect(actions).toHaveCount(0)
+  expect(await state()).toMatchObject({ hide: true, pinned: null, width: savedWidth })
+  await openDocumentGridColumnMenu(page, 'title')
+  await page.getByRole('menuitem', { name: 'Сбросить столбцы', exact: true }).click()
+  await expect(actions).toBeVisible()
+  expect(await state()).toMatchObject({ hide: false, pinned: 'right', width: 205 })
+  await grid.getByRole('button', { name: 'Настроить вид', exact: true }).click()
+  await settings.getByRole('tab', { name: 'Мои виды', exact: true }).click()
+  await settings.getByRole('button', { name: /Без кнопок Фильтров/ }).click()
+  await expect(actions).toHaveCount(0)
+  expect(await state()).toMatchObject({ hide: true, pinned: null, width: savedWidth })
+})
+
 test('document grid browser: resized and hidden columns survive appearance, selection, reload and a saved view without appearance RPCs', async ({ page }, info) => {
   const calls: string[] = []
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
@@ -841,7 +925,7 @@ test('document grid browser: resized and hidden columns survive appearance, sele
   await expect(grid.getByRole('button', { name: 'Настроить вид', exact: true })).toBeFocused()
 })
 
-test('document grid parity: F2/Enter toggle row and loaded-header selection once; keyboard and column menus restore focus without layout RPCs', async ({ page }) => {
+test('document grid parity: F2/Enter toggle row and full-header selection once; keyboard and column menus restore focus without layout RPCs', async ({ page }) => {
   const requests = observeDocumentRequests(page)
   await page.setViewportSize({ width: 1600, height: 1000 })
   await page.goto('/documents')
@@ -866,14 +950,14 @@ test('document grid parity: F2/Enter toggle row and loaded-header selection once
     await expect(checkbox).not.toBeChecked()
     await expect(grid.getByText('Выбрано: 0', { exact: true })).toBeVisible()
   }
-  const all = grid.getByRole('checkbox', { name: 'Выбрать загруженные документы', exact: true })
+  const all = grid.getByRole('checkbox', { name: 'Выбрать все документы', exact: true })
   const selectionHeader = grid.locator('.ag-header-cell[col-id^="ag-Grid-SelectionColumn"]')
   expect(await checkboxPaint(all)).toEqual(await checkboxPaint(checkbox))
   for (const target of [selectionHeader, all]) {
     await target.focus()
     await target.press('F2')
     await expect(all).toBeChecked()
-    await expect(grid.getByText('Выбрано: 100', { exact: true })).toBeVisible()
+    await expect(grid.getByText('Выбрано: 250', { exact: true })).toBeVisible()
     expect(await checkboxPaint(all)).toEqual(await checkboxPaint(checkbox))
     // Presentation checks focus both inputs; restore the intended key target.
     await target.focus()
@@ -925,7 +1009,7 @@ test('document grid parity: F2/Enter toggle row and loaded-header selection once
   await expect(projectHeader).toBeVisible()
   await expect(grid.locator('.ag-header-cell[col-id="title"] .journal-column-pin')).toHaveAttribute('title', /Закреплён слева/)
   await page.waitForLoadState('networkidle')
-  expect(requests.dataCalls()).toHaveLength(beforeLocalActions)
+  expect(requests.dataCalls()).toHaveLength(beforeLocalActions + 1)
   expect(requests.blocks.every(request => !request.selectionOnly && request.endRow - request.startRow <= 100)).toBe(true)
 })
 
@@ -961,13 +1045,13 @@ test('document grid parity: group chips reorder by keyboard and drag, group menu
   await settled(['project', 'line'])
   const lineChip = chips.getByRole('button', { name: 'Группировка: Линия', exact: true })
   const from = (await projectChip.boundingBox())!, to = (await lineChip.boundingBox())!
-  const beforeDrag = requests.blocks.length
+  const beforeDrag = requests.blocks.filter(request => !request.countRoutes).length
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
   await page.mouse.down()
   await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 })
   await expect(page.locator('.journal-grouping-drag-preview')).toContainText('Проект')
   await expect(levels).toHaveText(['Проект', 'Линия'])
-  expect(requests.blocks).toHaveLength(beforeDrag)
+  expect(requests.blocks.filter(request => !request.countRoutes)).toHaveLength(beforeDrag)
   await page.mouse.up()
   await expect(page.locator('.journal-grouping-drag-preview')).toHaveCount(0)
   await expect(levels).toHaveText(['Линия', 'Проект'])
@@ -982,7 +1066,7 @@ test('document grid parity: group chips reorder by keyboard and drag, group menu
 
   const group = grid.locator('.ag-full-width-row.ag-row-group').filter({ hasText: 'LINE-A' })
   await expect(group).toContainText('124')
-  await expect(group.getByRole('checkbox', { name: 'Выбрать загруженные документы группы LINE-A', exact: true })).toBeDisabled()
+  await expect(group.getByRole('checkbox', { name: 'Выбрать все документы группы LINE-A', exact: true })).toBeEnabled()
   await group.click({ button: 'right' })
   await expect(page.getByText('Группа: LINE-A', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Развернуть', exact: true })).toBeEnabled()
@@ -1011,7 +1095,7 @@ test('document grid parity: group chips reorder by keyboard and drag, group menu
   await expect(grid.locator(`.ag-row[row-id="${selectedId}"]`).getByRole('checkbox')).toBeChecked()
   await expect(grid.getByText('Найдено: 250', { exact: true })).toBeVisible()
   await page.waitForLoadState('networkidle')
-  const blocks = requests.blocks.filter(request => !request.selectionOnly)
+  const blocks = requests.blocks.filter(request => !request.selectionOnly && !request.countRoutes)
   expect(blocks.length).toBeGreaterThan(0)
   expect(blocks.length).toBeLessThanOrEqual(12)
   expect(blocks.every(request => request.startRow === 0 && request.endRow <= 100)).toBe(true)
@@ -1120,7 +1204,7 @@ test('document grid parity: date filter exposes year/month/day with immediate ex
   await info.attach('document-date-filter-reloads', { body: JSON.stringify(reloads, null, 2), contentType: 'application/json' })
 })
 
-test('document grid parity: clipboard copies cached cells from leaf, header and group focus without loading the rest of the registry', async ({ page, context }) => {
+test('document grid parity: clipboard copies complete ranges from leaf, header and group focus in bounded requests', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   const requests = observeDocumentRequests(page)
   await page.setViewportSize({ width: 1600, height: 1000 })
@@ -1130,7 +1214,7 @@ test('document grid parity: clipboard copies cached cells from leaf, header and 
   await expect(grid.getByText('Загружено: 100', { exact: true })).toBeVisible()
   await revealGridColumn(page, 'project')
   const cell = grid.locator('.ag-row[row-index="0"] .ag-cell[col-id="project"]')
-  const expected = `${project}\tGRID\n${project}\tGRID`
+  const expected = `Проект\tШифр\n${project}\tGRID\n${project}\tGRID`
   const copy = async (text: string) => {
     // A sentinel makes a missing shortcut handler fail even after a previous
     // successful copy of the same range.
@@ -1154,22 +1238,23 @@ test('document grid parity: clipboard copies cached cells from leaf, header and 
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(expected)
   await expect(grid.getByText('Выбрано: 0', { exact: true })).toBeVisible()
 
-  // Ctrl+A describes all 250 logical rows. Copying from a header must still use
-  // only the 100 cached documents, without requesting missing blocks or actions.
+  // Ctrl+A describes all 250 logical rows. Copying from a header includes
+  // all 250 documents, with bounded cell requests and no extra cached cards.
   await cell.click()
   await page.keyboard.press('ControlOrMeta+a')
   await projectHeader.focus()
   await page.evaluate(() => navigator.clipboard.writeText('not copied'))
   await page.keyboard.press('ControlOrMeta+c')
-  await expect.poll(async () => (await page.evaluate(() => navigator.clipboard.readText())).split('\n').length).toBe(100)
+  await expect.poll(async () => (await page.evaluate(() => navigator.clipboard.readText())).split('\n').length).toBe(251)
   const copied = await page.evaluate(() => navigator.clipboard.readText())
   const titles = [...copied.matchAll(/GRID-DOC-\d{3}/g)].map(match => match[0])
-  expect(titles).toHaveLength(100)
-  expect(new Set(titles).size).toBe(100)
+  expect(titles).toHaveLength(250)
+  expect(new Set(titles).size).toBe(250)
   expect(copied).not.toContain('Скачать Excel')
   await expect(grid.getByText('Загружено: 100', { exact: true })).toBeVisible()
   await page.waitForLoadState('networkidle')
-  expect(requests.dataCalls()).toHaveLength(beforeCopy)
+  expect(requests.blocks.slice(beforeCopy - 1).filter(request => request.cells && !request.cells.summary)).not.toHaveLength(0)
+  expect(requests.blocks.every(request => request.cells?.summary || request.endRow - request.startRow <= 500)).toBe(true)
 
   await openDocumentGridColumnMenu(page, 'line')
   await page.getByRole('menuitem', { name: /Сгруппировать по «Линия»/ }).click()
@@ -1188,7 +1273,7 @@ test('document grid parity: clipboard copies cached cells from leaf, header and 
   await copy(expected)
   await expect(grid.getByText('Выбрано: 0', { exact: true })).toBeVisible()
   await page.waitForLoadState('networkidle')
-  expect(requests.dataCalls()).toHaveLength(beforeGroupCopy)
+  expect(requests.dataCalls()).toHaveLength(beforeGroupCopy + 1)
 })
 
 test('document grid appearance: vertical separators preserve focus and range borders; unused row width carries stripes, selection and hover', async ({ page }, info) => {
@@ -1204,7 +1289,7 @@ test('document grid appearance: vertical separators preserve focus and range bor
   // Keep a real wide-viewport gap between the remaining data and pinned actions.
   // Change columns through the operator's controls, rather than injecting CSS.
   for (const checkbox of await settings.getByRole('checkbox').all()) {
-    if (await checkbox.isEnabled() && await checkbox.getAttribute('aria-label') !== 'Проект') await checkbox.uncheck()
+    if (await checkbox.isEnabled() && !['Проект', 'Действия'].includes(await checkbox.getAttribute('aria-label') ?? '')) await checkbox.uncheck()
   }
   await settings.getByRole('checkbox', { name: 'Проект', exact: true }).check()
   await settings.getByRole('tab', { name: 'Оформление', exact: true }).click()
@@ -1291,13 +1376,14 @@ test('document grid appearance: vertical separators preserve focus and range bor
   await page.screenshot({ path: info.outputPath('documents-row-gap-focus-and-selection.png') })
 })
 
-test('document grid groups: checkboxes select only loaded descendants, preserve outside IDs and keyboard intent without loading future rows', async ({ page }, info) => {
+test('document grid groups: checkboxes select all descendants, preserve outside IDs and keyboard intent without loading future cards', async ({ page }, info) => {
   const documents = await read('generated', { endRow: 300, sortModel: [{ colId: 'title', sort: 'asc' }] })
   const outside = documents.rows.find(row => row.title === 'GRID-DOC-002')!
   const lineA = await read('generated', { rowGroupCols: ['line', 'project'], groupKeys: ['["value","LINE-A"]', JSON.stringify(['value', project])], sortModel: [{ colId: 'title', sort: 'asc' }] })
   expect(lineA.rows).toHaveLength(100)
   expect(lineA.rowCount).toBe(124)
-  const expected = [...lineA.rows.map(row => String(row.id)), String(outside.id)].sort()
+  const allLineA = await read('generated', { rowGroupCols: ['line', 'project'], groupKeys: ['["value","LINE-A"]', JSON.stringify(['value', project])], endRow: 300 })
+  const expected = [...allLineA.rows.map(row => String(row.id)), String(outside.id)].sort()
   const requests = observeDocumentRequests(page)
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await page.addInitScript(() => {
@@ -1340,23 +1426,23 @@ test('document grid groups: checkboxes select only loaded descendants, preserve 
   for (const [key, label] of [['line', 'Линия'], ['project', 'Проект']]) {
     await openDocumentGridColumnMenu(page, key)
     await page.getByRole('menuitem', { name: `Сгруппировать по «${label}»`, exact: true }).click()
-    await expect.poll(() => requests.blocks.filter(request => !request.selectionOnly).at(-1)?.rowGroupCols).toContain(key)
+    await expect.poll(() => requests.blocks.filter(request => !request.selectionOnly && !request.idsOnly && !request.countRoutes && !request.cells).at(-1)?.rowGroupCols).toContain(key)
     await settled()
   }
   await expect.poll(async () => (await reveals()).length).toBe(3)
   const parent = grid.locator('.ag-full-width-row.ag-row-group').filter({ hasText: 'LINE-A' })
   const child = grid.locator('.ag-full-width-row.ag-row-group').filter({ hasText: project })
-  const parentCheckbox = parent.getByRole('checkbox', { name: 'Выбрать загруженные документы группы LINE-A', exact: true })
-  const childCheckbox = child.getByRole('checkbox', { name: `Выбрать загруженные документы группы ${project}`, exact: true })
-  const allCheckbox = grid.getByRole('checkbox', { name: 'Выбрать загруженные документы', exact: true })
+  const parentCheckbox = parent.getByRole('checkbox', { name: 'Выбрать все документы группы LINE-A', exact: true })
+  const childCheckbox = child.getByRole('checkbox', { name: `Выбрать все документы группы ${project}`, exact: true })
+  const allCheckbox = grid.getByRole('checkbox', { name: 'Выбрать все документы', exact: true })
   const wrapper = (checkbox: Locator) => checkbox.locator('xpath=ancestor::*[contains(@class,"ag-checkbox-input-wrapper")][1]')
-  await expect(parentCheckbox).toBeDisabled()
-  await expect(wrapper(parentCheckbox)).toHaveClass(/ag-disabled/)
-  await expect(allCheckbox).toBeDisabled()
-  await expect(wrapper(allCheckbox)).toHaveClass(/ag-disabled/)
+  await expect(parentCheckbox).toBeEnabled()
+  await expect(wrapper(parentCheckbox)).not.toHaveClass(/ag-disabled/)
+  await expect(allCheckbox).toBeEnabled()
+  await expect(wrapper(allCheckbox)).not.toHaveClass(/ag-disabled/)
   await parent.locator('.ag-group-contracted').click()
-  await expect(childCheckbox).toBeDisabled()
-  await expect(parentCheckbox).toBeDisabled()
+  await expect(childCheckbox).toBeEnabled()
+  await expect(parentCheckbox).toBeEnabled()
   await child.locator('.ag-group-contracted').click()
   const firstLeaf = grid.locator(`.ag-row[row-id="document:${lineA.rows[0].id}"]`)
   await expect(firstLeaf).toBeVisible()
@@ -1364,7 +1450,7 @@ test('document grid groups: checkboxes select only loaded descendants, preserve 
   await expect(childCheckbox).toBeEnabled()
   await expect(parent.locator('.ag-group-value')).toHaveCSS('overflow', 'visible')
   await expect(child.locator('.ag-group-value')).toHaveCSS('overflow', 'visible')
-  await expect(parentCheckbox).toHaveAttribute('title', 'Только загруженные документы группы: 100')
+  await expect(parentCheckbox).toHaveAttribute('title', 'Все документы группы: 124, включая незагруженные')
   await settled()
   await firstLeaf.locator('.ag-cell[col-id="title"]').hover()
   await expect(page.getByRole('tooltip')).toHaveText(String(lineA.rows[0].title))
@@ -1378,14 +1464,14 @@ test('document grid groups: checkboxes select only loaded descendants, preserve 
   const groupTitles = await grid.locator('.ag-full-width-row.ag-row-group [title]').evaluateAll(elements => elements.map(element => element.getAttribute('title')))
   expect(groupTitles.join('\n')).not.toMatch(/\["(?:value|empty|multiple)"/)
   const beforeSelection = requests.dataCalls().length
-  await parentCheckbox.check()
+  await parentCheckbox.click()
   await expect(parentCheckbox).toBeChecked()
   await expect(childCheckbox).toBeChecked()
   await expect.poll(selectedIds).toEqual(expected)
   const assertCheckedAppearance = async () => {
     const native = await checkboxPaint(firstLeaf.getByRole('checkbox'))
     expect(native.inputOpacity).toBe('0')
-    for (const checkbox of [allCheckbox, parentCheckbox, childCheckbox]) {
+    for (const checkbox of [parentCheckbox, childCheckbox]) {
       await expect(wrapper(checkbox)).toHaveClass(/ag-checked/)
       expect(await checkboxPaint(checkbox)).toEqual(native)
     }
@@ -1423,13 +1509,14 @@ test('document grid groups: checkboxes select only loaded descendants, preserve 
     await expect(parent.locator('.ag-group-expanded')).toBeVisible()
     await expect(child.locator('.ag-group-expanded')).toBeVisible()
   }
-  await parentCheckbox.check()
+  await parentCheckbox.click()
   await expect.poll(selectedIds).toEqual(expected)
   await settled()
-  expect(requests.dataCalls()).toHaveLength(beforeSelection)
+  expect(requests.blocks.filter(request => request.idsOnly).length).toBeGreaterThan(0)
+  expect(requests.blocks.filter(request => !request.cells && !request.idsOnly && !request.countRoutes && !request.selectionOnly).every(request => request.endRow - request.startRow <= 100)).toBe(true)
   await parent.locator('.ag-group-expanded').click()
   await expect(child).toHaveCount(0)
-  await expect(parentCheckbox).toBeDisabled()
+  await expect(parentCheckbox).toBeEnabled()
   await expect.poll(selectedIds).toEqual(expected)
   await parent.locator('.ag-group-contracted').click()
   await expect(child).toBeVisible()
@@ -1446,13 +1533,13 @@ test('document grid groups: checkboxes select only loaded descendants, preserve 
   await page.mouse.wheel(0, 20_000)
   const lastLeaf = grid.locator('.ag-row[row-id^="document:"]').filter({ has: page.getByRole('button', { name: 'GRID-DOC-247', exact: true }) })
   await expect(lastLeaf).toBeInViewport()
-  await expect(lastLeaf.getByRole('checkbox')).not.toBeChecked()
-  await expect(parentCheckbox).toHaveJSProperty('indeterminate', true)
-  await expect(childCheckbox).toHaveJSProperty('indeterminate', true)
-  await expect(parentCheckbox).toHaveAttribute('title', 'Только загруженные документы группы: 124')
+  await expect(lastLeaf.getByRole('checkbox')).toBeChecked()
+  await expect(parentCheckbox).toBeChecked()
+  await expect(childCheckbox).toBeChecked()
+  await expect(parentCheckbox).toHaveAttribute('title', 'Все документы группы: 124, включая незагруженные')
   await expect.poll(selectedIds).toEqual(expected)
   await settled()
-  const furtherLoads = requests.blocks.slice(beforeFurtherLoad).filter(request => !request.selectionOnly)
+  const furtherLoads = requests.blocks.slice(beforeFurtherLoad).filter(request => !request.selectionOnly && !request.idsOnly && !request.countRoutes && !request.cells)
   expect(furtherLoads).toHaveLength(1)
   expect(furtherLoads[0]).toMatchObject({ startRow: 100, endRow: 200, rowGroupCols: ['line', 'project'], groupKeys: ['["value","LINE-A"]', JSON.stringify(['value', project])] })
   expect(await reveals()).toHaveLength(3)
@@ -1460,7 +1547,7 @@ test('document grid groups: checkboxes select only loaded descendants, preserve 
   await page.screenshot({ path: info.outputPath('documents-group-loaded-checkboxes.png') })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await grid.locator('.ag-header-cell[col-id="title"] .ag-header-cell-label').click()
-  await expect.poll(() => requests.blocks.filter(request => !request.selectionOnly).at(-1)?.sortModel).toContainEqual({ colId: 'title', sort: 'desc' })
+  await expect.poll(() => requests.blocks.filter(request => !request.selectionOnly && !request.idsOnly && !request.countRoutes && !request.cells).at(-1)?.sortModel).toContainEqual({ colId: 'title', sort: 'desc' })
   await settled()
   expect(await reveals()).toHaveLength(3)
   await expect.poll(selectedIds).toEqual(expected)
@@ -1595,8 +1682,71 @@ test('document grid numeric selection uses decimal commas and hide all preserves
   await cell.click()
   await expect(grid.getByText('Количество: 1', { exact: true })).toBeVisible()
   await page.keyboard.press('ControlOrMeta+c')
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(',')
   const text = await page.evaluate(() => navigator.clipboard.readText())
   expect(text).toContain(',')
   expect(text).not.toContain('.')
   expect(before).toContain(',')
+})
+
+test('document transfer: full IDs, selected group counts, complete range summaries and stale-read protection', async () => {
+  for (const kind of ['generated', 'system'] as const) {
+    const first = await read(kind)
+    expect(first.revision).toMatch(/^[a-f0-9]{32}$/)
+    const selected = await read(kind, { idsOnly: true, revision: first.revision })
+    expect(selected.rows).toEqual([])
+    expect(selected.ids).toHaveLength(250)
+    const route = ['["value","LINE-A"]']
+    const grouped = await read(kind, { idsOnly: true, rowGroupCols: ['line'], groupKeys: route, revision: first.revision })
+    expect(grouped.ids).toHaveLength(124)
+    expect(grouped.rows).toEqual([])
+    const counted = await read(kind, { rowGroupCols: ['line'], selectedIds: grouped.ids, countRoutes: [[], route, ['["value","LINE-B"]']], revision: first.revision, cells: { columns: ['title'], summary: true } })
+    expect(counted.counts).toEqual({ '[]': 124, [JSON.stringify(route)]: 124, '["[\\"value\\",\\"LINE-B\\"]"]': 0 })
+    const summary = await read(kind, { startRow: 0, endRow: 250, cells: { columns: ['title', 'rowCount'], summary: true }, revision: first.revision })
+    expect(summary.rows).toEqual([])
+    expect(summary.summary).toEqual({ count: 500, numericCount: 250, sum: 261, average: 261 / 250 })
+    // A filter hides the first selection but action hydration still resolves its exact identities.
+    const hidden = await read(kind, { search: 'no matching document', selectionOnly: true, selectedIds: grouped.ids!.slice(0, 2) })
+    expect(hidden.rows).toHaveLength(2)
+    await expect(read(kind, { idsOnly: true, revision: '0'.repeat(32) })).rejects.toThrow('Данные реестра изменились')
+    const id = Number(String(selected.ids![0]).replace('system-document:', ''))
+    await withE2eDatabase(async db => { await db.query('update generated_documents set title=title || $1 where id=$2', [' changed', id]) })
+    await expect(read(kind, { startRow: 100, endRow: 200, revision: first.revision })).rejects.toThrow('Данные реестра изменились')
+  }
+})
+
+test('document transfer: full selection and clipboard include unloaded documents and retain hidden choices', async ({ page, context, browserName }) => {
+  if (browserName === 'chromium') await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  else await page.addInitScript(() => {
+    // WebKit's automation does not grant native clipboard permissions. Exercise
+    // range loading/cancellation here; native clipboard remains Chrome coverage.
+    let clipboard = ''
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: async (value: string) => { clipboard = value }, readText: async () => clipboard,
+    } })
+  })
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  const requests = observeDocumentRequests(page)
+  await page.goto('/documents')
+  const grid = page.locator('[data-document-history-grid="generated:weldingJournal"]')
+  await expect(grid.getByText('Найдено: 250', { exact: true })).toBeVisible()
+  const checkbox = grid.getByRole('checkbox', { name: 'Выбрать все документы', exact: true })
+  await checkbox.click()
+  await expect(grid.getByText('Выбрано: 250', { exact: true })).toBeVisible()
+  await expect(checkbox).toBeChecked()
+  expect(requests.blocks.filter(request => request.idsOnly)).toHaveLength(1)
+  const search = grid.getByRole('textbox', { name: 'Поиск документов', exact: true })
+  await search.fill('no matching document')
+  await expect(grid.getByText('Найдено: 0', { exact: true })).toBeVisible()
+  await expect(grid.getByText('Выбрано: 250', { exact: true })).toBeVisible()
+  await search.fill('')
+  await expect(grid.getByText('Найдено: 250', { exact: true })).toBeVisible()
+  await grid.locator('.ag-row[row-index="0"] .ag-cell[col-id="title"]').click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.keyboard.press('ControlOrMeta+c')
+  await expect.poll(async () => (await page.evaluate(() => navigator.clipboard.readText())).match(/GRID-DOC-\d{3}/g)?.length).toBe(250)
+  const text = await page.evaluate(() => navigator.clipboard.readText())
+  expect(text.split('\n')[0]).toContain('Документ')
+  expect(text).not.toContain('Скачать Excel')
+  await expect(grid.getByText('Загружено: 100', { exact: true })).toBeVisible()
 })

@@ -6,6 +6,7 @@ import type { ColumnResizedEvent, GridApi } from 'ag-grid-community'
 export function useJournalScrollPlaceholder(
   frame: RefObject<HTMLDivElement | null>, api: GridApi | null, enabled: boolean,
   rowHeight: number, theme: string, stripes: boolean,
+  scrollableOnly = false,
 ) {
   useEffect(() => {
     const viewport = frame.current?.querySelector<HTMLElement>('.ag-grid-viewport')
@@ -14,6 +15,9 @@ export function useJournalScrollPlaceholder(
     const paint = () => {
       raf = 0
       if (resizing || scrolling || api.isDestroyed()) return
+      if (scrollableOnly && viewport.scrollHeight <= viewport.clientHeight + 1) {
+        viewport.style.removeProperty('--journal-gap-image'); return
+      }
       const width = viewport.clientWidth, scrollLeft = viewport.scrollLeft
       if (!width) return
       const left = api.getDisplayedLeftColumns().reduce((sum, column) => sum + column.getActualWidth(), 0)
@@ -58,6 +62,7 @@ export function useJournalScrollPlaceholder(
     const resized = (event: ColumnResizedEvent) => { resizing = event.finished === false; if (!resizing) schedule() }
     const events = ['displayedColumnsChanged', 'virtualColumnsChanged', 'gridSizeChanged'] as const
     for (const name of events) api.addEventListener(name, schedule)
+    if (scrollableOnly) api.addEventListener('modelUpdated', schedule)
     api.addEventListener('columnResized', resized)
     api.addEventListener('bodyScroll', horizontal)
     api.addEventListener('bodyScrollEnd', stopped)
@@ -66,11 +71,12 @@ export function useJournalScrollPlaceholder(
       cancelAnimationFrame(raf)
       if (!api.isDestroyed()) {
         for (const name of events) api.removeEventListener(name, schedule)
+        if (scrollableOnly) api.removeEventListener('modelUpdated', schedule)
         api.removeEventListener('columnResized', resized)
         api.removeEventListener('bodyScroll', horizontal)
         api.removeEventListener('bodyScrollEnd', stopped)
       }
       viewport.style.removeProperty('--journal-gap-image')
     }
-  }, [api, enabled, frame, rowHeight, stripes, theme])
+  }, [api, enabled, frame, rowHeight, stripes, theme, scrollableOnly])
 }

@@ -33,7 +33,7 @@ for (const path of ['/journal', '/lnk', '/psto']) {
     const gate = new Promise<void>(resolve => { release = resolve })
     let requests = 0
     await page.route('**/_serverFn/**', async route => {
-      if (rpcName(route.request().url()).startsWith(path === '/journal' ? 'getJournalReportSummary_' : 'getWeldReportSummary_')) {
+      if (rpcName(route.request().url()).startsWith('getJournalReportSummary_')) {
         requests++
         await gate
       }

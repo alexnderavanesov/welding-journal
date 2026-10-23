@@ -28,8 +28,8 @@ export function JournalPagedGridFilter({ column, onModelChange }: CustomFilterDi
   const filter = table.columnFilters[fieldKey] ?? ''
   const choice = useMemo(() => parseWeldColumnChoiceFilter(filter), [filter])
   const selected = useMemo(() => new Set(choice?.kind === 'values' ? normalizeWeldColumnFilterChoiceValues(fieldKey, choice.values) : []), [choice, fieldKey])
-  const request = useMemo(() => ({ fieldKey, ...splitReportQuickSearch(buildWeldColumnFilterOptionsRequestFilters(table.columnFilters, fieldKey)) }), [table.columnFilters, fieldKey])
-  const key = ['weld-column-filter-options', 'weldingJournal', fieldKey, request, 'paged'] as const
+  const request = useMemo(() => ({ report: table.report, fieldKey, ...splitReportQuickSearch(buildWeldColumnFilterOptionsRequestFilters(table.columnFilters, fieldKey)) }), [table.report, table.columnFilters, fieldKey])
+  const key = ['weld-column-filter-options', table.report, fieldKey, request, 'paged'] as const
   const settings = { staleTime: 15_000, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false } as const
   const first = useQuery({ ...settings, queryKey: [...key, 'first'], enabled: visible,
     queryFn: ({ signal }) => readJournalFilterPage({ signal, data: request }) })

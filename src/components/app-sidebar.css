@@ -1,0 +1,50 @@
+/* Animate only the sidebar. Resize the report once per toggle: animating its
+   padding resizes AG Grid every frame and stalls the menu, especially in Safari. */
+.app-sidebar {
+  --sidebar-duration: 260ms;
+  --sidebar-easing: cubic-bezier(.22, .61, .36, 1);
+  transition-duration: var(--sidebar-duration);
+  transition-timing-function: var(--sidebar-easing);
+  --sidebar-padding: 12px;
+  --sidebar-label-width: 111px;
+  padding-inline: var(--sidebar-padding);
+  transition-property: width, padding-inline, box-shadow;
+}
+@media (min-width: 1024px) {
+  .app-sidebar { --sidebar-padding: 16px; --sidebar-label-width: 167px; }
+}
+.app-sidebar-header { position: relative; height: 36px; }
+.app-sidebar-brand {
+  max-width: calc(100% - 40px);
+  white-space: nowrap; overflow: hidden;
+  transition: opacity 140ms ease;
+}
+.app-sidebar-toggle {
+  position: absolute; top: 0; right: 0;
+  transition: right var(--sidebar-duration) var(--sidebar-easing), background-color 150ms;
+}
+.app-sidebar-item {
+  width: 100%; min-height: 40px; padding: 10px 12px; gap: 12px;
+  overflow: clip;
+  transition: padding-inline var(--sidebar-duration) var(--sidebar-easing),
+    gap var(--sidebar-duration) var(--sidebar-easing), border-radius var(--sidebar-duration),
+    background-color 150ms, color 150ms;
+}
+/* The text always uses its final expanded width. Only its surrounding opening
+   changes size, so words never rewrap while the sidebar is moving. */
+.app-sidebar-label {
+  display: grid; grid-template-rows: 1fr; flex: none;
+  width: var(--sidebar-label-width); overflow: clip;
+  transition: width var(--sidebar-duration) var(--sidebar-easing),
+    grid-template-rows var(--sidebar-duration) var(--sidebar-easing), opacity 140ms ease;
+}
+.app-sidebar-label > span { width: var(--sidebar-label-width); min-height: 0; overflow: hidden; }
+.app-sidebar[data-collapsed="true"] { padding-inline: 11.5px; }
+.app-sidebar[data-collapsed="true"] .app-sidebar-item { padding-inline: 10px; gap: 0; }
+.app-sidebar[data-collapsed="true"] .app-sidebar-label { width: 0; grid-template-rows: 0fr; opacity: 0; }
+.app-sidebar[data-collapsed="true"] .app-sidebar-brand { opacity: 0; }
+.app-sidebar[data-collapsed="true"] .app-sidebar-toggle { right: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar, .app-sidebar-item,
+  .app-sidebar-label, .app-sidebar-brand, .app-sidebar-toggle { transition: none; }
+}

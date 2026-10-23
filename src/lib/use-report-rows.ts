@@ -11,6 +11,7 @@ import { LNK_METHODS } from '@/lib/report-config'
 import type { OtherSettings } from '@/lib/other-settings'
 import { isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
 import { isControlCancelledValue } from '@/lib/control-availability-values'
+import type { WeldReportKind } from '@/server/weld-contracts'
 
 type ReportWdiSettings = Pick<OtherSettings, 'wdiCalculationMode' | 'wdiTable'> &
   Partial<Pick<OtherSettings, 'wdiCalculationRules'>>
@@ -54,8 +55,12 @@ function prepareReportControlRows(
 /** Server journal pages already have revision-checked final statuses and WDI.
  * Only decorate controls; a partial page must not rebuild chain statuses that
  * its caller would immediately discard. Other reports keep their full path. */
-export function prepareJournalPageRows(sourceRows: unknown[]) {
-  return prepareReportControlRows(sourceRows)
+export function prepareJournalPageRows(sourceRows: unknown[], report: WeldReportKind = 'weldingJournal') {
+  const rows = prepareReportControlRows(sourceRows)
+  // PSTO's display accessor needs the primary fact even after cancellation;
+  // current-cycle decoration belongs to that accessor, not to stored facts.
+  return report === 'heatTreatment' ? rows.map((row, index) => isControlCancelledValue(row.pstoRequired)
+    ? { ...row, pstoResult: (sourceRows[index] as WeldRow).pstoResult } : row) : rows
 }
 
 export function prepareReportRows(

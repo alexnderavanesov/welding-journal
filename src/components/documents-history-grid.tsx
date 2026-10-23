@@ -1,22 +1,28 @@
+import { gridHeaderKeyboard } from '@/lib/grid-header-keyboard'
+import './grid-keyboard.css'
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AgGridProvider, AgGridReact } from 'ag-grid-react'
-import type { ColDef, GridApi, IRowNode, IServerSideDatasource, RowSelectionOptions, SelectionColumnDef, GetColumnMenuItemsParams, DefaultMenuItem, MenuItemDef } from 'ag-grid-community'
+import type { ColDef, GridApi, IRowNode, IServerSideDatasource, RowSelectionOptions, SelectionColumnDef, GetColumnMenuItemsParams, DefaultMenuItem, MenuItemDef, SuppressMouseEventHandlingParams } from 'ag-grid-community'
 import { ChevronDown, ChevronUp, ChevronsDown, ChevronsUp } from 'lucide-react'
 import { ContextActionMenu, type ContextActionMenuState } from './context-action-menu'
 import { positionGridPopup } from './grid-popup-position'
 import { DocumentsGridToolbar } from './documents-grid-toolbar'
 import { DocumentGridCheckbox } from './document-grid-checkbox'
+import { JournalLoadingCell } from './journal-loading-cell'
 import { JournalColumnHeading } from './welding-journal-column-heading'
 import { JournalGroupingControls } from './welding-journal-grouping-controls'
-import { documentGridClipboardText } from '@/lib/document-grid-clipboard'
+import { useDocumentGridQuery } from '@/lib/use-document-grid-query'
 import { selectDocumentGridRowRange, type DocumentGridRowRangeState } from '@/lib/document-grid-row-range'
 import { documentGridGroupSelection, mergeLoadedDocumentGridSelection, toggleLoadedDocumentGridSelection, type DocumentGridGroupSelection, type LoadedDocumentGridRow } from '@/lib/document-grid-selection'
 import type { DocumentHistoryColumnDefinition, DocumentHistoryColumnKey } from '@/lib/document-history-columns'
 import type { DocumentHistoryGridRequest, DocumentHistoryGridResult, DocumentHistoryGroupRow } from '@/lib/document-history-grid'
-import { DOCUMENT_GRID_GROUP_FIELDS, documentGridRowHeight, normalizeDocumentGridColumns, readDocumentGridState, reconcileDocumentGridSelection, writeDocumentGridState, type DocumentGridAppearance, type DocumentGridState } from '@/lib/document-history-grid-state'
-import { useGridRangeSummary } from '@/lib/use-grid-range-summary'
+import { DOCUMENT_GRID_ACTIONS_COLUMN, type DocumentGridColumnDefinition, DOCUMENT_GRID_GROUP_FIELDS, documentGridRowHeight, normalizeDocumentGridColumns, readDocumentGridState, writeDocumentGridState, type DocumentGridAppearance, type DocumentGridState } from '@/lib/document-history-grid-state'
+import { useJournalResizeBuffer } from '@/lib/use-journal-resize-buffer'
+import { useJournalScrollPlaceholder } from '@/lib/use-journal-scroll-placeholder'
 import { formatJournalNumber } from '@/lib/welding-journal-grid-state'
-import { useJournalPageScroll } from '@/lib/use-journal-page-scroll'
+import { useJournalDocumentScroll } from '@/lib/use-journal-document-scroll'
+import { useJournalGroupMotion } from './use-journal-group-motion'
+import './journal-server-grid.css'
 import { isModalDialogOpen } from '@/lib/modal-layer'
 import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
 import { documentGridErrorMessage, readDocumentGridSession } from '@/lib/document-history-grid-session'
@@ -28,11 +34,13 @@ import { useGridResultMotion } from './use-grid-result-motion'
 import './document-history-grid.css'
 import './welding-journal-ui.css'
 
-const isNumericColumn = (key: string) => key === 'wdi' || key === 'rowCount'
 const CELL_SELECTION = { suppressMultiRanges: false }
+const blockIdentity = (request: DocumentHistoryGridRequest) => JSON.stringify([
+  request.startRow, request.endRow, request.rowGroupCols, request.groupKeys, request.sortModel, request.search ?? '',
+])
 
 type DocumentRow = { id: string | number }
-type Position = { x: number; y: number; clientX: number; clientY: number; anchorElement?: Element; copyCells: () => void }
+type Position = { x: number; y: number; clientX: number; clientY: number; anchorElement?: Element; copyCells: () => void; keyboard?: boolean }
 export type DocumentsHistoryGridProps<T extends DocumentRow> = {
   viewId: string
   columns: readonly DocumentHistoryColumnDefinition[]
@@ -45,8 +53,8 @@ export type DocumentsHistoryGridProps<T extends DocumentRow> = {
   loadFilterOptions: (field: DocumentHistoryColumnKey, search: string, gridSearch: string) => Promise<{ options: DocumentGridFilterOption[]; hasMore: boolean }>
   columnFilters: Record<string, string>
   onColumnFilterChange: (key: DocumentHistoryColumnKey, value: string) => void
-  selectedDocuments: T[]
-  onSelectionChange: (documents: T[]) => void
+  selectedDocuments: DocumentRow[]
+  onSelectionChange: (documents: DocumentRow[]) => void
   onRowContextMenu: (document: T, position: Position) => void
   toolbarActions?: ReactNode
   sourceRevision?: string | number
@@ -61,7 +69,7 @@ export type DocumentsHistoryGridProps<T extends DocumentRow> = {
 const SelectionHeaderContext = createContext({ checked: false, mixed: false, disabled: true, toggle: () => undefined as void })
 function SelectionHeader() {
   const state = useContext(SelectionHeaderContext)
-  return <DocumentGridCheckbox aria-label="Выбрать загруженные документы" title="Только загруженные документы, включая документы внутри групп" checked={state.checked} disabled={state.disabled}
+  return <DocumentGridCheckbox aria-label="Выбрать все документы" title="Все документы по текущим условиям, включая незагруженные" checked={state.checked} disabled={state.disabled}
     indeterminate={state.mixed} onChange={state.toggle} />
 }
 const GroupSelectionContext = createContext({ groups: new Map<string, DocumentGridGroupSelection>(), disabled: true, toggle: (_id: string) => undefined as void })
@@ -71,8 +79,8 @@ function GroupLabel({ data, node }: { data?: DocumentRow | DocumentHistoryGroupR
   const state = node.id ? selection.groups.get(node.id) : undefined
   const loaded = state?.loaded ?? 0, selected = state?.selected ?? 0
   return <span className="document-grid-group-label">
-    <DocumentGridCheckbox className="document-grid-group-checkbox" aria-label={`Выбрать загруженные документы группы ${label ?? ''}`}
-      title={loaded ? `Только загруженные документы группы: ${loaded}` : 'Раскройте группу, чтобы загрузить документы для выбора'}
+    <DocumentGridCheckbox className="document-grid-group-checkbox" aria-label={`Выбрать все документы группы ${label ?? ''}`}
+      title={`Все документы группы: ${loaded}, включая незагруженные`}
       checked={loaded > 0 && selected === loaded} disabled={selection.disabled || !loaded}
       indeterminate={selected > 0 && selected < loaded}
       onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}
@@ -94,16 +102,13 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   type Row = T | DocumentHistoryGroupRow
   const current = useRef(props); current.current = props
   const [api, setApi] = useState<GridApi<Row> | null>(null)
-  const summaryColumns = useMemo(() => new Set<string>(props.columns.map(column => column.key)), [props.columns])
-  const rangeValue = useCallback((node: IRowNode<Row>, key: string) => node.group || isGroup(node.data) || !node.data ? undefined
-    : api?.getCellValue({ rowNode: node, colKey: key, useFormatter: false }), [api])
-  const { summary: rangeSummary, update: updateRangeSummary } = useGridRangeSummary(api, summaryColumns, rangeValue, isNumericColumn)
   const apiRef = useRef<GridApi<Row> | null>(null)
   const rowRange = useRef<DocumentGridRowRangeState>({ anchorId: null, endId: null })
   const resetRowRange = useCallback(() => { rowRange.current = { anchorId: null, endId: null } }, [])
   const filterModel = useMemo(() => Object.fromEntries(props.columns.filter(column => props.columnFilters[column.key])
     .map(column => [column.key, { value: props.columnFilters[column.key] }])), [props.columns, props.columnFilters])
   const initialGridState = useRef({ filter: { filterModel } })
+  const pageTrack = useRef<HTMLDivElement>(null), pageStage = useRef<HTMLDivElement>(null)
   const frame = useRef<HTMLDivElement>(null), popupColumn = useRef<string | null>(null)
   const [popupParent] = useState(() => typeof document === 'undefined' ? undefined : document.createElement('div'))
   useLayoutEffect(() => {
@@ -112,7 +117,8 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     document.body.append(popupParent)
     return () => popupParent.remove()
   }, [popupParent])
-  const [settings, setSettings] = useState<DocumentGridState>(() => readDocumentGridState(props.viewId, props.columns))
+  const viewColumns = useMemo(() => [...props.columns, DOCUMENT_GRID_ACTIONS_COLUMN], [props.columns])
+  const [settings, setSettings] = useState<DocumentGridState>(() => readDocumentGridState(props.viewId, viewColumns))
   const settingsRef = useRef(settings); settingsRef.current = settings
   const [initialSession] = useState(() => readDocumentGridSession(props.viewId))
   const positionScope = JSON.stringify([Object.entries(props.columnFilters).sort(([a], [b]) => a.localeCompare(b)),
@@ -122,8 +128,11 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   const restoring = useRef(false), restoringSelection = useRef(false)
   const [settingsOpen, setSettingsOpen] = useState(false), [openColumnsRequest, setOpenColumnsRequest] = useState(0)
   const [groupMenu, setGroupMenu] = useState<ContextActionMenuState>(null)
+  const [keyboardMenu, setKeyboardMenu] = useState(false)
   const [searchText, setSearchText] = useState(initialSearch), [search, setSearch] = useState(initialSearch)
   const [total, setTotal] = useState(0), [error, setError] = useState(''), [loading, setLoading] = useState(true)
+  const [refreshAttempt, setRefreshAttempt] = useState(0)
+  const [loadedGroups, setLoadedGroups] = useState<Array<{ id: string; data: DocumentHistoryGroupRow; route: string[] }>>([])
   const [loadedRows, setLoadedRows] = useState<LoadedDocumentGridRow<T>[]>([])
   const [resolvedIdentity, setResolvedIdentity] = useState<string | null>(null)
   const [navigationHeight, setNavigationHeight] = useState(0)
@@ -132,10 +141,20 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   const resultMotion = useGridResultMotion(frame)
   const pendingResultReveal = useRef<{ generation: number; scope: string } | null>(null)
   const searchRef = useRef(search); searchRef.current = search
-  const identity = JSON.stringify([props.columnFilters, search, props.sourceRevision])
+  const sortModel = settings.columns.filter(column => column.sort).sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0)).map(column => ({ colId: column.colId, sort: column.sort! }))
+  const sourceIdentity = JSON.stringify([props.columnFilters, search, props.sourceRevision, refreshAttempt])
+  const identity = JSON.stringify([sourceIdentity, sortModel])
   useEffect(resetRowRange, [identity, positionScope, resetRowRange])
   const selectionPending = resolvedIdentity !== identity || Boolean(props.selectionDisabled)
   const selectionPendingRef = useRef(selectionPending); selectionPendingRef.current = selectionPending
+  const fullQuery = useDocumentGridQuery<T>({ api, scope: identity + positionScope, ready: !selectionPending, total,
+    selected: props.selectedDocuments, select: props.onSelectionChange, load: props.loadRows, search, columns: props.columns,
+    value: (key, row) => current.current.getCellValue?.(key as DocumentHistoryColumnKey, row) ?? String((row as Record<string, unknown>)[key] ?? ''), error: setError })
+  selectionPendingRef.current = selectionPending || fullQuery.selecting
+  const rangeSummary = fullQuery.summary, updateRangeSummary = fullQuery.updateRange
+  useJournalResizeBuffer(api, true)
+  useJournalScrollPlaceholder(frame, api, true, documentGridRowHeight(settings.appearance), settings.appearance.theme, settings.appearance.stripes)
+
   const identityRef = useRef(identity)
   const requestScopeRef = useRef(positionScope)
   if (identityRef.current !== identity || requestScopeRef.current !== positionScope) {
@@ -144,7 +163,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; requestGeneration.current++ } }, [])
   useEffect(() => { const timer = setTimeout(() => setSearch(searchText.trim()), 250); return () => clearTimeout(timer) }, [searchText])
   useEffect(() => { props.onSearchChange?.(search) }, [search])
-  useEffect(() => { current.current.onSelectionPendingChange?.(selectionPending) }, [selectionPending])
+  useEffect(() => { current.current.onSelectionPendingChange?.(selectionPending || fullQuery.selecting) }, [selectionPending, fullQuery.selecting])
   useEffect(() => {
     const navigation = document.querySelector<HTMLElement>('[data-documents-navigation]')
     if (!navigation) return
@@ -160,32 +179,26 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     window.addEventListener('resize', measure)
     return () => { observer.disconnect(); window.removeEventListener('resize', measure) }
   }, [])
-  useEffect(() => {
-    const viewport = frame.current?.querySelector<HTMLElement>('.ag-grid-viewport')
-    if (!viewport) return
-    // At the bottom, a further downward wheel must not move the page header
-    // underneath the sticky navigation. Upward movement at the top can still
-    // return to the page heading using native scroll chaining.
-    const direction = (event: WheelEvent) => { viewport.style.overscrollBehaviorY = event.deltaY < 0 && viewport.scrollTop <= 0 ? 'auto' : 'contain' }
-    viewport.style.overscrollBehaviorY = 'contain'
-    viewport.addEventListener('wheel', direction, { capture: true, passive: true })
-    return () => { viewport.removeEventListener('wheel', direction, true) }
-  }, [api])
-  useJournalPageScroll(frame, navigationHeight)
+  const groupMotion = useJournalGroupMotion(frame, true, positionScope)
+  const expandAll = useRef(false)
+  const groupingSignature = JSON.stringify(settings.columns.filter(column => column.rowGroup).sort((a, b) => (a.rowGroupIndex ?? 0) - (b.rowGroupIndex ?? 0)).map(column => column.colId))
+  useEffect(() => { expandAll.current = false }, [groupingSignature])
   const focus = useDocumentGridFocus(api, frame)
+  const prepared = useRef<{ generation: number; request: DocumentHistoryGridRequest; result: DocumentHistoryGridResult<T> } | null>(null)
   const requests = useRef(new Map<string, Promise<DocumentHistoryGridResult<T>>>())
   const fetchRows = useCallback((request: DocumentHistoryGridRequest) => {
-    const generation = requestGeneration.current, key = JSON.stringify([generation, request.startRow, request.endRow, request.rowGroupCols, request.groupKeys, request.sortModel, request.search, request.selectedIds])
+    const generation = requestGeneration.current, key = JSON.stringify([generation, request.startRow, request.endRow, request.rowGroupCols, request.groupKeys, request.sortModel, request.search, request.selectedIds, request.revision])
     const existing = requests.current.get(key)
     if (existing) return existing
     if (inFlight.current.generation !== generation) inFlight.current = { generation, count: 0 }
     inFlight.current.count++
     if (mounted.current) { setLoading(true); setError('') }
-    const promise = current.current.loadRows(request).then(result => {
+    const ready = prepared.current
+    const preparedMatches = ready?.generation === generation && blockIdentity(ready.request) === blockIdentity(request)
+    if (preparedMatches) prepared.current = null
+    const promise = (preparedMatches ? Promise.resolve(ready!.result) : current.current.loadRows(request)).then(result => {
       if (!mounted.current || generation !== requestGeneration.current) throw new Error('Stale grid request')
-      const previous = current.current.selectedDocuments
-      const next = reconcileDocumentGridSelection(previous, result.matchingSelectedIds, result.rows.filter((row): row is T => !isGroup(row)), request.selectedIds)
-      if (next.length !== previous.length || next.some((row, index) => row !== previous[index])) current.current.onSelectionChange(next)
+      fullQuery.accept(result, request.groupKeys)
       setResolvedIdentity(identityRef.current)
       setTotal(result.total); current.current.onTotalChange?.(result.total)
       return result
@@ -207,10 +220,11 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     return fetchRows({ startRow, endRow: startRow + 100, groupKeys: route,
       rowGroupCols: columns.filter(column => column.rowGroup).sort((a, b) => (a.rowGroupIndex ?? 0) - (b.rowGroupIndex ?? 0)).map(column => column.colId),
       sortModel: columns.filter(column => column.sort).sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0)).map(column => ({ colId: column.colId, sort: column.sort! })),
-      search: searchRef.current, selectedIds: current.current.selectedDocuments.map(row => row.id),
+      search: searchRef.current, revision: fullQuery.revision.current,
     })
   }, [fetchRows])
   const position = useDocumentGridSession(api, frame, props.viewId, positionScope, search, initialSession, props.highlightedDocumentId != null, { load: loadPositionBlock, getRowId: rowId })
+  useJournalDocumentScroll(pageTrack, pageStage, frame, api, true, navigationHeight, position.isRestoring)
   const positionRef = useRef(position); positionRef.current = position
 
   const saveSettings = useCallback((next: DocumentGridState) => {
@@ -219,7 +233,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   const captureColumns = useCallback(() => {
     const grid = apiRef.current
     if (!grid || grid.isDestroyed() || restoring.current) return
-    const known = new Set(current.current.columns.map(column => column.key as string))
+    const known = new Set([...current.current.columns.map(column => column.key as string), '__actions'])
     const columns = grid.getColumnState().filter(column => known.has(column.colId))
     if (JSON.stringify(columns) !== JSON.stringify(settingsRef.current.columns)) saveSettings({ ...settingsRef.current, columns })
   }, [saveSettings])
@@ -247,7 +261,13 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     restoringSelection.current = true
     try {
       const select: IRowNode<Row>[] = [], deselect: IRowNode<Row>[] = [], loaded: LoadedDocumentGridRow<T>[] = []
+      const groups: typeof loadedGroups = []
       grid.forEachNode(node => {
+        if (node.id && isGroup(node.data)) {
+          const route: string[] = []
+          for (let item: IRowNode<Row> | null = node; item && item.level >= 0; item = item.parent) if (isGroup(item.data)) route.unshift(item.data.groupKey)
+          groups.push({ id: node.id, data: node.data, route })
+        }
         if (!node.data || node.group || isGroup(node.data)) return
         const groupIds: string[] = []
         for (let parent = node.parent; parent && parent.level >= 0; parent = parent.parent) if (parent.group && parent.id) groupIds.push(parent.id)
@@ -257,6 +277,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
       })
       if (select.length) grid.setNodesSelected({ nodes: select, newValue: true, source: 'api' })
       if (deselect.length) grid.setNodesSelected({ nodes: deselect, newValue: false, source: 'api' })
+      setLoadedGroups(previous => previous.length === groups.length && previous.every((group, index) => group.data === groups[index].data) ? previous : groups)
       setLoadedRows(previous => previous.length === loaded.length && previous.every((row, index) => row.document === loaded[index].document
         && row.groupIds.length === loaded[index].groupIds.length && row.groupIds.every((id, level) => id === loaded[index].groupIds[level])) ? previous : loaded)
     }
@@ -268,24 +289,11 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     if (!selectionSyncFrame.current) selectionSyncFrame.current = requestAnimationFrame(syncSelection)
   }, [syncSelection])
   useEffect(() => { syncSelection() }, [props.selectedDocuments, syncSelection])
-  const toggleLoaded = useCallback(() => {
-    if (selectionPendingRef.current) return
-    resetRowRange()
-    current.current.onSelectionChange(toggleLoadedDocumentGridSelection(current.current.selectedDocuments, getLoadedRows()))
-  }, [getLoadedRows, resetRowRange])
+  const toggleAll = useCallback(() => { resetRowRange(); void fullQuery.toggle() }, [resetRowRange, fullQuery.toggle])
   const toggleGroup = useCallback((id: string) => {
-    const grid = apiRef.current
-    if (selectionPendingRef.current || !grid || grid.isDestroyed()) return
-    resetRowRange()
-    const loaded: T[] = []
-    grid.forEachNode(node => {
-      if (!node.data || node.group || isGroup(node.data)) return
-      for (let parent = node.parent; parent && parent.level >= 0; parent = parent.parent) {
-        if (parent.id === id) { loaded.push(node.data); break }
-      }
-    })
-    if (loaded.length) current.current.onSelectionChange(toggleLoadedDocumentGridSelection(current.current.selectedDocuments, loaded))
-  }, [resetRowRange])
+    const node = apiRef.current?.getRowNode(id)
+    if (node) { resetRowRange(); void fullQuery.toggle(node) }
+  }, [resetRowRange, fullQuery.toggle])
   const datasource = useMemo<IServerSideDatasource<Row>>(() => ({
     getRows: params => {
       const generation = requestGeneration.current, scope = positionScopeRef.current
@@ -294,7 +302,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
         startRow: params.request.startRow ?? 0, endRow: params.request.endRow ?? 100,
         rowGroupCols: params.request.rowGroupCols.map(column => column.id), groupKeys: params.request.groupKeys,
         sortModel: params.request.sortModel.map(item => ({ colId: item.colId, sort: item.sort })),
-        search: searchRef.current, selectedIds: current.current.selectedDocuments.map(row => row.id),
+        search: searchRef.current, revision: fullQuery.revision.current,
       }
       void fetchRows(request).then(result => {
         if (!mounted.current || generation !== requestGeneration.current || scope !== positionScopeRef.current) { params.fail(); return }
@@ -312,27 +320,54 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     },
   }), [fetchRows, scheduleSelectionSync, resultMotion.reveal])
   const firstIdentity = useRef(identity)
+  const firstSourceIdentity = useRef(sourceIdentity)
   const firstScope = useRef(positionScope)
   useEffect(() => {
     if (!api || api.isDestroyed() || firstIdentity.current === identity && firstScope.current === positionScope) return
     const reload = firstIdentity.current !== identity
+    const sourceChanged = firstSourceIdentity.current !== sourceIdentity
+    firstSourceIdentity.current = sourceIdentity
     firstIdentity.current = identity
     firstScope.current = positionScope
     resultMotion.cancel()
     pendingResultReveal.current = { generation: requestGeneration.current, scope: positionScope }
-    // Sorting/grouping already reloads SSRM through AG's native change event.
-    // Filters/search/source changes keep their single existing reload path.
+    // Native grouping keeps its existing reload path. Search, filters and
+    // controlled sorting prepare their replacement before changing AG's store.
     if (!reload) return
-    const applied = api.getFilterModel()
-    const changed = Object.keys(applied).length !== Object.keys(filterModel).length
-      || Object.entries(filterModel).some(([key, model]) => JSON.stringify(applied[key]) !== JSON.stringify(model))
-    // Updating the model supplies AG's native filter indicator and one SSRM
-    // reload. Keep the current popup/header alive for multiple choices.
-    if (changed) api.setFilterModel(filterModel)
-    else api.refreshServerSide({ purge: true })
+    const generation = requestGeneration.current
+    const columns = api.getColumnState()
+    const nativeSort = columns.filter(column => column.sort).sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0)).map(column => ({ colId: column.colId, sort: column.sort! }))
+    // Restoring a view may have already applied its native sort. Its pending
+    // datasource request owns that change; do not issue a second root read.
+    if (!sourceChanged && JSON.stringify(nativeSort) === JSON.stringify(sortModel)) return
+    const request: DocumentHistoryGridRequest = { startRow: 0, endRow: 100, groupKeys: [], search,
+      rowGroupCols: columns.filter(column => column.rowGroup).sort((a, b) => (a.rowGroupIndex ?? 0) - (b.rowGroupIndex ?? 0)).map(column => column.colId),
+      sortModel,
+    }
+    // Keep the current rows until the first replacement block is ready. The
+    // old rows are inert while their filter identity differs from the toolbar.
+    setLoading(true); setError('')
+    void current.current.loadRows(request).then(result => {
+      if (!mounted.current || generation !== requestGeneration.current || api.isDestroyed()) return
+      prepared.current = { generation, request, result }
+      const currentSort = api.getColumnState().filter(column => column.sort).sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0)).map(column => ({ colId: column.colId, sort: column.sort! }))
+      const sortChanged = JSON.stringify(currentSort) !== JSON.stringify(request.sortModel)
+      const applied = api.getFilterModel()
+      const changed = Object.keys(applied).length !== Object.keys(filterModel).length
+        || Object.entries(filterModel).some(([key, model]) => JSON.stringify(applied[key]) !== JSON.stringify(model))
+      if (sortChanged) {
+        restoring.current = true
+        api.applyColumnState({ state: request.sortModel.map((item, sortIndex) => ({ ...item, sortIndex })), defaultState: { sort: null, sortIndex: null } })
+        restoring.current = false
+      }
+      if (changed) api.setFilterModel(filterModel)
+      else if (!sortChanged) api.refreshServerSide({ purge: true })
+    }).catch(failure => {
+      if (mounted.current && generation === requestGeneration.current) { setError(documentGridErrorMessage(failure)); setLoading(false) }
+    })
   }, [api, identity, positionScope, filterModel, resultMotion.cancel])
 
-  const defaultColDef = useMemo<ColDef<Row>>(() => ({ sortable: true, resizable: true, suppressHeaderMenuButton: true, suppressMovable: false, lockPinned: true, wrapHeaderText: true }), [])
+  const defaultColDef = useMemo<ColDef<Row>>(() => ({ loadingCellRenderer: JournalLoadingCell, sortable: true, resizable: true, suppressHeaderMenuButton: true, suppressMovable: false, lockPinned: true, wrapHeaderText: true }), [])
   const columnDefs = useMemo<ColDef<Row>[]>(() => [
     ...props.columns.map(column => ({
       colId: column.key, headerName: column.label, initialWidth: Math.max(column.minWidth, column.key === 'title' ? 320 : 130), minWidth: column.key === 'title' ? 180 : column.key === 'rowCount' ? column.minWidth : 90, maxWidth: 1600,
@@ -352,9 +387,10 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
       cellRenderer: (params: { data?: Row; node: { group: boolean; id?: string } }) => !params.data || params.node.group || isGroup(params.data) ? null
         : <div className={`document-grid-cell ${column.align === 'end' ? 'is-numeric' : ''}`} onDoubleClick={event => event.stopPropagation()}>
           {current.current.renderCell(column.key, params.data)}</div>,
-      tooltipValueGetter: params => params.node?.group || isGroup(params.data) ? '' : String(params.value ?? ''),
+      tooltipValueGetter: column.key === 'title' ? params => params.node?.group || isGroup(params.data) ? '' : String(params.value ?? '') : undefined,
     } satisfies ColDef<Row>)),
-    { colId: '__actions', lockVisible: true, headerName: 'Действия', width: 205, minWidth: 205, maxWidth: 205, resizable: false, pinned: 'right', lockPinned: true, sortable: false, filter: false, suppressMovable: true,
+    { colId: '__actions', headerName: 'Действия', initialWidth: 205, minWidth: DOCUMENT_GRID_ACTIONS_COLUMN.minWidth, maxWidth: 1600, initialPinned: 'right', sortable: false, filter: false,
+      headerComponentParams: { innerHeaderComponent: JournalColumnHeading },
       cellRenderer: (params: { data?: Row; node: { group: boolean } }) => !params.data || params.node.group || isGroup(params.data) ? null : <div className="document-grid-actions" onDoubleClick={event => event.stopPropagation()}>{current.current.renderActions(params.data)}</div> },
   ], [props.columns, props.initialVisibleColumnKeys])
   const selection = useMemo<RowSelectionOptions<Row>>(() => ({ mode: 'multiRow', headerCheckbox: false, enableClickSelection: false,
@@ -362,11 +398,20 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   }), [])
   const selectedSet = useMemo(() => new Set(props.selectedDocuments.map(row => String(row.id))), [props.selectedDocuments])
   const selectedLoaded = loadedRows.filter(row => selectedSet.has(String(row.document.id))).length
-  const groupSelection = useMemo(() => ({ groups: documentGridGroupSelection(loadedRows, selectedSet), disabled: selectionPending, toggle: toggleGroup }), [loadedRows, selectedSet, selectionPending, toggleGroup])
+  const groupSelection = useMemo(() => {
+    const groups = documentGridGroupSelection(loadedRows, selectedSet)
+    for (const { id, data, route } of loadedGroups) {
+      const local = groups.get(id)
+      groups.set(id, { loaded: data.childCount, selected: local?.loaded === data.childCount
+        ? local.selected : fullQuery.counts[JSON.stringify(route)] ?? local?.selected ?? 0 })
+    }
+    return { groups, disabled: selectionPending || fullQuery.selecting, toggle: toggleGroup }
+  }, [loadedGroups, loadedRows, selectedSet, selectionPending, fullQuery.selecting, fullQuery.counts, toggleGroup])
+  const selectedTotal = loadedRows.length === total ? selectedLoaded : fullQuery.counts['[]'] ?? 0
   const groupings = settings.columns.filter(column => column.rowGroup).sort((a, b) => (a.rowGroupIndex ?? 0) - (b.rowGroupIndex ?? 0))
   const changeAppearance = (appearance: DocumentGridAppearance) => saveSettings({ ...settingsRef.current, appearance })
-  const changeColumnVisible = (key: DocumentHistoryColumnKey, visible: boolean) => {
-    const columns = api?.getColumnState().filter(column => props.columns.some(item => item.key === column.colId)) ?? settingsRef.current.columns
+  const changeColumnVisible = (key: DocumentGridColumnDefinition['key'], visible: boolean) => {
+    const columns = api?.getColumnState().filter(column => viewColumns.some(item => item.key === column.colId)) ?? settingsRef.current.columns
     const next = columns.some(column => column.colId === key) ? columns.map(column => column.colId === key ? { ...column, hide: !visible } : column) : [...columns, { colId: key, hide: !visible }]
     restoring.current = true
     saveSettings({ ...settingsRef.current, columns: next })
@@ -377,7 +422,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     if (!api) return
     restoring.current = true
     api.resetColumnState()
-    api.applyColumnState({ state: props.columns.map(column => ({ colId: column.key, hide: false, rowGroup: false, rowGroupIndex: null, sort: null, sortIndex: null, pinned: column.key === 'title' ? 'left' as const : null })) })
+    api.applyColumnState({ state: viewColumns.map(column => ({ colId: column.key, hide: false, rowGroup: false, rowGroupIndex: null, sort: null, sortIndex: null, pinned: column.key === 'title' ? 'left' as const : column.key === '__actions' ? 'right' as const : null })) })
     restoring.current = false; captureColumns()
   }
   const clearFilters = () => { setSearchText(''); setSearch(''); for (const key of Object.keys(props.columnFilters)) props.onColumnFilterChange(key as DocumentHistoryColumnKey, '') }
@@ -406,33 +451,45 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     setSearchText(view.search); setSearch(view.search)
     // Native state has service fields that stored views omit. Reapplying an
     // equivalent sort/group state can rebuild SSRM and reset the viewport.
-    const columns = normalizeDocumentGridColumns(api.getColumnState(), props.columns)
-    if (JSON.stringify(columns) !== JSON.stringify(normalizeDocumentGridColumns(view.columns, props.columns))) {
+    const columns = normalizeDocumentGridColumns(api.getColumnState(), viewColumns)
+    if (JSON.stringify(columns) !== JSON.stringify(normalizeDocumentGridColumns(view.columns, viewColumns))) {
       restoring.current = true; api.applyColumnState({ state: view.columns, applyOrder: true }); restoring.current = false
     }
     saveSettings({ ...settings, columns: view.columns, appearance: view.appearance }); setSettingsOpen(false)
   }
+  const requestSort = (colId: string, sort: 'asc' | 'desc' | null, multi = false) => {
+    saveSettings({ ...settingsRef.current, columns: settingsRef.current.columns.map(column => column.colId === colId
+      ? { ...column, sort, sortIndex: sort ? multi ? column.sortIndex ?? settingsRef.current.columns.filter(item => item.sort).length : 0 : null }
+      : multi ? column : { ...column, sort: null, sortIndex: null }) })
+  }
+  const progressSort = (target: Element, multi = false) => {
+    if (target.closest('button, input, .ag-header-cell-filter-button, .ag-header-cell-menu-button, .ag-header-cell-resize')) return false
+    const id = target.closest('.ag-header-cell')?.getAttribute('col-id')
+    const column = id ? api?.getColumn(id) : null
+    if (!column?.isSortable()) return false
+    if (column.isMoving()) return true
+    api?.setFocusedHeader(column)
+    const previous = settingsRef.current.columns.find(item => item.colId === id)?.sort
+    requestSort(id!, previous === 'asc' ? 'desc' : previous === 'desc' ? null : 'asc', multi)
+    return true
+  }
   const getColumnMenuItems = ({ column }: GetColumnMenuItemsParams<Row>): Array<DefaultMenuItem | MenuItemDef<Row>> => {
     const items: Array<DefaultMenuItem | MenuItemDef<Row>> = []
-    if (column?.isSortable()) items.push('sortAscending', 'sortDescending', 'sortUnSort', 'separator')
-    if (column && !column.getColId().startsWith('ag-Grid-SelectionColumn') && column.getColId() !== '__actions') items.push('pinSubMenu', 'separator', 'autoSizeThis')
+    if (column?.isSortable()) items.push(...(['asc', 'desc', null] as const).map(sort => ({
+      name: sort === 'asc' ? 'По возрастанию' : sort === 'desc' ? 'По убыванию' : 'Сбросить сортировку',
+      action: () => requestSort(column.getColId(), sort),
+    })), 'separator')
+    if (column && !column.getColId().startsWith('ag-Grid-SelectionColumn')) items.push('pinSubMenu', 'separator', 'autoSizeThis')
     items.push('autoSizeAll')
-    const definition = props.columns.find(item => item.key === column?.getColId())
+    const definition = viewColumns.find(item => item.key === column?.getColId())
     if (definition && !definition.required) items.push('separator', { name: 'Скрыть столбец', icon: '<span class="ag-icon ag-icon-eye-slash" aria-hidden="true"></span>', action: () => changeColumnVisible(definition.key, false) })
     if (column?.getColDef().enableRowGroup) items.push('separator', column.isRowGroupActive() ? 'rowUnGroup' : 'rowGroup')
     items.push('separator', { name: 'Выбрать столбцы', icon: '<span class="ag-icon ag-icon-columns" aria-hidden="true"></span>', action: () => setOpenColumnsRequest(value => value + 1) },
       { name: 'Сбросить столбцы', icon: '<span class="ag-icon ag-icon-cancel" aria-hidden="true"></span>', action: resetColumns })
     return items
   }
-  const copyCells = useCallback(() => {
-    if (!api || api.isDestroyed()) return
-    const text = documentGridClipboardText(api, current.current.columns.map(column => column.key), (key, row) => {
-      if (isGroup(row)) return ''
-      return current.current.getCellValue?.(key as DocumentHistoryColumnKey, row) ?? String((row as Record<string, unknown>)[key] ?? '')
-    })
-    if (text) void navigator.clipboard.writeText(text).catch(() => setError('Не удалось скопировать ячейки. Разрешите доступ к буферу обмена и повторите.'))
-  }, [api])
-  const openGroupMenu = (node: IRowNode<Row>, anchor: Element, x: number, y: number) => {
+  const copyCells = fullQuery.copy
+  const openGroupMenu = (node: IRowNode<Row>, anchor: Element, x: number, y: number, keyboard = false) => {
     if (!api || api.isDestroyed() || !node.group || !isGroup(node.data)) return
     const focusGroup = (target: IRowNode<Row>) => {
       const column = api.getAllDisplayedColumns()[0]
@@ -443,9 +500,9 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
       if (api.isDestroyed()) return
       let target = node
       if (all && !expanded) while (target.parent && target.parent.level >= 0) target = target.parent
-    // A group command must neither
-      // fetch groups outside the current cache.
+      api.clearCellSelection(); groupMotion.begin()
       if (all) {
+        expandAll.current = expanded
         const groups: IRowNode<Row>[] = []
         api.forEachNode(candidate => { if (candidate.group) groups.push(candidate) })
         groups.sort((left, right) => expanded ? left.level - right.level : right.level - left.level)
@@ -455,8 +512,9 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
       focusGroup(target)
     }
     focusGroup(node)
+    setKeyboardMenu(keyboard)
     setGroupMenu({ x, y, anchorElement: anchor, heading: `Группа: ${node.data.groupLabel}`,
-      description: 'Группировка всего реестра. Общие команды раскрывают только загруженные группы.', items: [
+      description: 'Группировка всего реестра. «Развернуть все» действует и на следующие загружаемые группы.', items: [
         { id: 'group-collapse', label: 'Свернуть', icon: ChevronUp, disabled: !node.expanded, onSelect: () => expand(false) },
         { id: 'group-expand', label: 'Развернуть', icon: ChevronDown, disabled: Boolean(node.expanded), onSelect: () => expand(true) },
         { type: 'separator', id: 'group-all-separator' },
@@ -464,11 +522,11 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
         { id: 'group-expand-all', label: 'Развернуть все', icon: ChevronsDown, onSelect: () => expand(true, true) },
       ] })
   }
-  const openDocumentMenu = (node: IRowNode<Row>, anchor: Element, x: number, y: number) => {
+  const openDocumentMenu = (node: IRowNode<Row>, anchor: Element, x: number, y: number, keyboard = false) => {
     if (selectionPendingRef.current || !node.data || node.group || isGroup(node.data)) return
     if (node.rowIndex != null) api?.setFocusedCell(node.rowIndex, anchor.closest('.ag-cell')?.getAttribute('col-id') ?? 'title')
     focus.remember()
-    current.current.onRowContextMenu(node.data, { x, y, clientX: x, clientY: y, anchorElement: anchor, copyCells })
+    current.current.onRowContextMenu(node.data, { x, y, clientX: x, clientY: y, anchorElement: anchor, copyCells, keyboard })
   }
   const filterContext = useMemo(() => ({ viewId: props.viewId, search, columnFilters: props.columnFilters,
     sourceRevision: props.filterSourceRevision ?? props.sourceRevision,
@@ -476,17 +534,21 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     change: (field: DocumentHistoryColumnKey, value: string) => current.current.onColumnFilterChange(field, value),
   }), [props.viewId, search, props.columnFilters, props.filterSourceRevision, props.sourceRevision])
   const selectionColumn = useMemo<SelectionColumnDef>(() => ({ pinned: 'left', lockPinned: true, width: 46, minWidth: 46, maxWidth: 46,
-    resizable: false, suppressMovable: true, suppressHeaderMenuButton: true, headerComponent: SelectionHeader }), [])
+    resizable: false, suppressMovable: true, suppressHeaderMenuButton: true, headerComponent: SelectionHeader,
+    // The checkbox owns pointer focus. Focusing its clipped row on mousedown
+    // can move the input before mouseup and discard an otherwise valid click.
+    cellRendererParams: { suppressMouseEventHandling: ({ event }: SuppressMouseEventHandlingParams) => event.target instanceof Element && !!event.target.closest('.ag-selection-checkbox') },
+  }), [])
   const groupRenderer = useMemo(() => ({ suppressCount: false, innerRenderer: GroupLabel }), [])
   const rowClassRules = useMemo(() => ({ 'document-grid-highlight': (params: { data?: Row }) => Boolean(params.data && !isGroup(params.data) && (current.current.highlightRow?.(params.data) || String(params.data.id) === String(current.current.highlightedDocumentId))) }), [])
-  return <DocumentGridFilterContext.Provider value={filterContext}><GroupSelectionContext.Provider value={groupSelection}><SelectionHeaderContext.Provider value={{ checked: loadedRows.length > 0 && selectedLoaded === loadedRows.length, mixed: selectedLoaded > 0 && selectedLoaded < loadedRows.length, disabled: selectionPending || !loadedRows.length, toggle: toggleLoaded }}>
-    <div data-document-history-grid={props.viewId} onContextMenuCapture={event => event.preventDefault()} className={`document-history-grid ${settings.appearance.wrapText ? 'document-grid-wrap' : ''} ${settings.appearance.stripes ? 'document-grid-stripes' : ''} ${settings.appearance.verticalLines ? 'document-grid-lines' : ''}`}>
-      <DocumentsGridToolbar columns={props.columns}
+  return <DocumentGridFilterContext.Provider value={filterContext}><GroupSelectionContext.Provider value={groupSelection}><SelectionHeaderContext.Provider value={{ checked: total > 0 && selectedTotal === total, mixed: selectedTotal > 0 && selectedTotal < total, disabled: selectionPending || fullQuery.selecting || !total, toggle: toggleAll }}>
+    <div data-document-history-grid={props.viewId} onContextMenuCapture={event => event.preventDefault()} className={`document-history-grid journal-server-section ${settings.appearance.wrapText ? 'document-grid-wrap' : ''} ${settings.appearance.stripes ? 'document-grid-stripes' : ''} ${settings.appearance.verticalLines ? 'document-grid-lines' : ''}`}>
+      <DocumentsGridToolbar columns={viewColumns}
         filteredColumnKeys={new Set(Object.keys(props.columnFilters).filter(key => Boolean(props.columnFilters[key])))}
-        visibleColumnKeys={new Set(props.columns.filter(column => column.required || !(settings.columns.find(item => item.colId === column.key)?.hide ?? !props.initialVisibleColumnKeys.includes(column.key))).map(column => column.key))}
+        visibleColumnKeys={new Set(viewColumns.filter(column => column.required || !(settings.columns.find(item => item.colId === column.key)?.hide ?? (column.key !== '__actions' && !props.initialVisibleColumnKeys.includes(column.key)))).map(column => column.key))}
         onColumnVisibilityChange={changeColumnVisible}
-        onShowAllColumns={() => { api?.setColumnsVisible(props.columns.map(column => column.key), true); captureColumns() }}
-        onHideAllColumns={() => { api?.setColumnsVisible(props.columns.filter(column => !column.required).map(column => column.key), false); captureColumns() }}
+        onShowAllColumns={() => { api?.setColumnsVisible(viewColumns.map(column => column.key), true); captureColumns() }}
+        onHideAllColumns={() => { api?.setColumnsVisible(viewColumns.filter(column => !column.required).map(column => column.key), false); captureColumns() }}
         appearance={settings.appearance} onAppearanceChange={changeAppearance} onResetColumns={resetColumns}
         savedViews={settings.views}
         onSaveView={name => {
@@ -494,7 +556,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
           if (!title) return false
           const existing = settingsRef.current.views.find(view => view.name.toLocaleLowerCase('ru') === title.toLocaleLowerCase('ru'))
           const snapshot = { id: existing?.id ?? crypto.randomUUID(), name: title,
-            columns: api?.getColumnState().filter(column => props.columns.some(item => item.key === column.colId)) ?? [],
+            columns: api?.getColumnState().filter(column => viewColumns.some(item => item.key === column.colId)) ?? [],
             appearance: { ...settingsRef.current.appearance }, filters: { ...props.columnFilters }, search }
           saveSettings({ ...settingsRef.current, views: existing ? settingsRef.current.views.map(view => view.id === existing.id ? snapshot : view) : [...settingsRef.current.views, snapshot] })
           return true
@@ -503,12 +565,19 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
         search={searchText} onSearchChange={setSearchText}
         groupingControls={<JournalGroupingControls scope="documents" groups={groupings.map(group => ({ id: group.colId, label: props.columns.find(column => column.key === group.colId)?.label ?? group.colId }))}
           onChange={ids => api?.setRowGroupColumns(ids)} />}
-        actions={props.toolbarActions} actionsDisabled={selectionPending}
+        actions={props.toolbarActions} actionsDisabled={selectionPending || fullQuery.selecting}
         hasFilters={Object.values(props.columnFilters).some(Boolean) || Boolean(search)} onClearFilters={clearFilters}
         settingsOpen={settingsOpen} onSettingsOpenChange={setSettingsOpen} openColumnsRequest={openColumnsRequest} />
-      {error ? <div role="alert" className="document-grid-error">{error}<button type="button" onClick={() => api?.refreshServerSide({ purge: true })}>Повторить</button></div> : null}
-      <div ref={frame} className={`document-grid-frame grid-result-motion journal-grid-frame journal-theme-${settings.appearance.theme}`} style={{ height: `calc(100dvh - ${navigationHeight + 72}px)` }}
+      {error ? <div role="alert" className="document-grid-error">{error}<button type="button" onClick={() => setRefreshAttempt(value => value + 1)}>Повторить</button></div> : null}
+      <div ref={pageTrack} className="journal-page-track">
+      <div ref={pageStage} className="journal-page-stage" style={{ top: navigationHeight }}>
+      <div ref={frame} data-journal-updating={selectionPending ? '' : undefined} className={`document-grid-frame grid-result-motion journal-grid-frame journal-theme-${settings.appearance.theme}`}
+      onPointerDownCapture={event => {
+        if (event.button === 2 && event.target instanceof Element && event.target.closest('.ag-cell')) { event.preventDefault(); event.stopPropagation() }
+      }}
       onClickCapture={event => {
+        if (event.target instanceof Element && progressSort(event.target, event.shiftKey)) { event.preventDefault(); event.stopPropagation(); return }
+        if (selectionPending && event.target instanceof Element && event.target.closest('.ag-row')) { event.preventDefault(); event.stopPropagation(); return }
         if (!(event.target instanceof Element) || !event.target.closest('.ag-selection-checkbox')) return
         const element = event.target.closest<HTMLElement>('.ag-row[row-index]')
         const node = element ? api?.getDisplayedRowAtIndex(Number(element.getAttribute('row-index'))) : undefined
@@ -534,6 +603,9 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
       }} onKeyDownCapture={event => {
         if (isModalDialogOpen() || isContextActionMenuOpen()) return
         if (!(event.target instanceof Element)) return
+        if (event.key === 'Enter' && progressSort(event.target, event.shiftKey)) { event.preventDefault(); event.stopPropagation(); return }
+        if (selectionPending && event.target.closest('.ag-row') && !['Escape', 'Tab'].includes(event.key)) { event.preventDefault(); event.stopPropagation(); return }
+        if (api && gridHeaderKeyboard(event, api, { toggleSelection: toggleAll, openFilter: id => { popupColumn.current = id } })) return
         if (event.target.closest('.ag-menu, .ag-popup')) {
           if (event.key === 'Escape') {
             event.preventDefault(); event.stopPropagation(); api?.hideColumnFilter(); api?.hidePopupMenu()
@@ -551,7 +623,12 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
           && !event.target.closest('button, a, input:not([type=checkbox]), textarea, [contenteditable=true]')) {
           if (selectionPendingRef.current) { event.preventDefault(); event.stopPropagation(); return }
           if (event.shiftKey) { event.preventDefault(); event.stopPropagation(); selectRowRange(node.id, event.metaKey || event.ctrlKey); return }
-          rowRange.current = { anchorId: node.id, endId: null }
+          event.preventDefault(); event.stopPropagation()
+          if (!event.repeat) { rowRange.current = { anchorId: node.id, endId: null }; current.current.onSelectionChange(toggleLoadedDocumentGridSelection(current.current.selectedDocuments, [node.data])) }
+          return
+        }
+        if (event.key === ' ' && group && node && !event.target.closest('button, input, a, textarea, [contenteditable=true]')) {
+          event.preventDefault(); event.stopPropagation(); if (!event.repeat) void fullQuery.toggle(node); return
         }
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c'
           && !event.target.closest('input:not([type=checkbox]), textarea, [contenteditable=true]')
@@ -566,8 +643,8 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
         if (node && (event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10')) {
           event.preventDefault(); event.stopPropagation()
           const anchor = group ?? cell!, rect = anchor.getBoundingClientRect()
-          if (group) openGroupMenu(node, anchor, rect.left, rect.bottom)
-          else openDocumentMenu(node, anchor, rect.left, rect.bottom)
+          if (group) openGroupMenu(node, anchor, rect.left, rect.bottom, true)
+          else openDocumentMenu(node, anchor, rect.left, rect.bottom, true)
           return
         }
         if (cell && colId === '__actions' && event.key === 'Tab') {
@@ -610,9 +687,9 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
           alwaysShowVerticalScroll
           cacheBlockSize={100} maxBlocksInCache={5} maxConcurrentDatasourceRequests={2} blockLoadDebounceMillis={80} purgeClosedRowNodes
           serverSideInitialRowCount={position.initialRowCount}
-          serverSideSortAllLevels serverSideEnableClientSideSort={false} suppressAggFuncInHeader suppressGroupChangesColumnVisibility
+          serverSideSortAllLevels suppressServerSideFullWidthLoadingRow serverSideEnableClientSideSort={false} suppressAggFuncInHeader suppressGroupChangesColumnVisibility
           groupDisplayType="groupRows" groupDefaultExpanded={0}
-          isServerSideGroupOpenByDefault={params => position.isGroupOpen(params.rowNode)}
+          isServerSideGroupOpenByDefault={params => expandAll.current || position.isGroupOpen(params.rowNode)}
           groupRowRendererParams={groupRenderer}
           rowSelection={selection} selectionColumnDef={selectionColumn}
           rowHeight={documentGridRowHeight(settings.appearance)}
@@ -625,17 +702,17 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
             restoring.current = false; setApi(event.api); captureColumns()
           }}
           onModelUpdated={() => {
-            scheduleSelectionSync(); position.restore(); updateRangeSummary()
+            scheduleSelectionSync(); position.restore(); updateRangeSummary(); fullQuery.countSelection(); fullQuery.trim()
           }}
           onFirstDataRendered={position.restore} onBodyScrollEnd={position.bodyScrollEnd} onGridPreDestroyed={position.capture}
-          onRowGroupOpened={event => position.groupOpened(event.node)} onCellFocused={focus.remember}
+          onRowGroupOpened={event => { api?.clearCellSelection(); groupMotion.begin(); position.groupOpened(event.node) }} onCellFocused={focus.remember}
           onSelectionChanged={event => {
             if (restoringSelection.current || event.source === 'rowDataChanged' || event.source.startsWith('api')) return
             if (selectionPendingRef.current) { syncSelection(); return }
             const selected = new Set((event.selectedNodes ?? []).flatMap(node => node.data && !node.group && !isGroup(node.data) ? [String(node.data.id)] : []))
             current.current.onSelectionChange(mergeLoadedDocumentGridSelection(current.current.selectedDocuments, getLoadedRows(), selected))
           }}
-          onColumnMoved={event => { if (event.finished) captureColumns() }} onColumnResized={event => { if (event.finished) captureColumns() }}
+          onColumnMoved={event => { if (event.finished) captureColumns() }} onColumnResized={event => { fullQuery.trim(); if (event.finished) captureColumns() }}
           onColumnPinned={captureColumns} onColumnVisible={() => { captureColumns(); updateRangeSummary() }} onColumnRowGroupChanged={captureColumns}
           onSortChanged={captureColumns}
           getColumnMenuItems={getColumnMenuItems}
@@ -645,13 +722,15 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
           popupParent={popupParent}
         />
       </div>
-      <ContextActionMenu menu={groupMenu} panelClassName="journal-context-menu" autoFocus onClose={() => { setGroupMenu(null); requestAnimationFrame(focus.restore) }} />
+      <ContextActionMenu menu={groupMenu} panelClassName="journal-context-menu" autoFocus={keyboardMenu ? true : 'panel'} onClose={() => { setGroupMenu(null); requestAnimationFrame(focus.restore) }} />
       <div className="document-grid-footer" aria-live="polite"><span>Найдено: {total}</span><span>Загружено: {loadedRows.length}</span><span>Выбрано: {props.selectedDocuments.length}</span>{loading ? <span>Загрузка…</span> : null}
+        {fullQuery.rangeState || fullQuery.copying ? <span role="status">{fullQuery.copying ? 'Копируем…' : fullQuery.rangeState}</span> : null}
         {rangeSummary.average !== null ? <span>Среднее: {formatJournalNumber(rangeSummary.average)}</span> : null}
         {rangeSummary.count > 0 ? <span>Количество: {rangeSummary.count}</span> : null}
         {rangeSummary.numericCount > 0 ? <span>Сумма: {formatJournalNumber(rangeSummary.sum)}</span> : null}
         {props.selectedDocuments.length ? <button type="button" onClick={() => { resetRowRange(); props.onSelectionChange([]) }}>Снять выбор</button> : null}
       </div>
+      </div></div>
     </div>
   </SelectionHeaderContext.Provider></GroupSelectionContext.Provider></DocumentGridFilterContext.Provider>
 }

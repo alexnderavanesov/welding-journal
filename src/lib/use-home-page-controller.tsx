@@ -40,7 +40,6 @@ import {
 import { useDispatcherAcceptedWarnings } from '@/lib/use-dispatcher-accepted-warnings'
 import { useDispatcherTaskUiState } from '@/lib/use-dispatcher-task-ui-state'
 import { prepareReportRows, useReportRows } from '@/lib/use-report-rows'
-import { useWeldPageQuery } from '@/lib/use-weld-page-query'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
 import { useReportRequestDerivedState } from '@/lib/use-report-request-derived-state'
@@ -1809,34 +1808,18 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     () => buildDispatcherTaskServerFilters(activeColumnFilters),
     [activeColumnFilters],
   )
-  const legacyWeldPageQuery = useWeldPageQuery({
-    enabled: isServerPagedTab && activeReport !== 'weldingJournal',
-    report: isServerPagedTab ? activeReport : 'weldingJournal',
-    columnFilters: isServerPagedTab ? dispatcherTaskServerFilters : {},
-    sort: isServerPagedTab ? activeReportSort : null,
-  })
-  const journalPageQuery = useJournalServerQuery({ enabled: activeReport === 'weldingJournal', columnFilters: dispatcherTaskServerFilters, sort: activeReportSort })
-  const weldPageQuery = activeReport === 'weldingJournal' ? journalPageQuery : legacyWeldPageQuery
-  const reportOutputContext = `${activeReport}:${weldPageQuery.requestedIdentity}`
-  const reportOutputScopeRef = useRef({ identity: reportOutputContext, ready: weldPageQuery.rowsReady, generation: 0 })
+  const reportGridQuery = useJournalServerQuery({ enabled: isServerPagedTab, report: isServerPagedTab ? activeReport : 'weldingJournal', columnFilters: dispatcherTaskServerFilters, sort: activeReportSort })
+  const reportOutputContext = `${activeReport}:${reportGridQuery.requestedIdentity}`
+  const reportOutputScopeRef = useRef({ identity: reportOutputContext, ready: reportGridQuery.rowsReady, generation: 0 })
   const reportOutputGeneration = reportOutputScopeRef.current.generation +
     (reportOutputScopeRef.current.identity === reportOutputContext ? 0 : 1)
-  reportOutputScopeRef.current = { identity: reportOutputContext, ready: weldPageQuery.rowsReady, generation: reportOutputGeneration }
+  reportOutputScopeRef.current = { identity: reportOutputContext, ready: reportGridQuery.rowsReady, generation: reportOutputGeneration }
   const assertCurrentReportOutput = useCallback(() => {
     if (reportOutputScopeRef.current.generation !== reportOutputGeneration || !reportOutputScopeRef.current.ready) {
       throw new Error('Выборка изменилась. Дождитесь загрузки строк и повторите действие.')
     }
   }, [reportOutputGeneration])
-  const basePagedReportRows = useReportRows(
-    activeReport === 'weldingJournal' ? undefined : weldPageQuery.rows,
-    [],
-    undefined,
-    finalStatusContextQuery.isEnabled && isRemoteFinalStatusContextReady ? remoteFinalStatusContext : undefined,
-    otherSettings,
-    true,
-    activeReport === 'heatTreatment',
-  )
-  const pagedReportRows = activeReport === 'weldingJournal' ? weldPageQuery.rows : basePagedReportRows
+  const pagedReportRows = reportGridQuery.rows
   const tableTaskContext = useDispatcherTaskContext(pagedReportRows, taskContextRevision, isServerPagedTab && needsTaskContext)
   const tableAdviceTasks = needsTaskContext ? tableTaskContext.tasks : snapshotAdviceTasks
   const tableTasksByRow = useDispatcherTasksByRow(pagedReportRows, tableAdviceTasks)
@@ -1853,14 +1836,14 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     [pagedReportRows],
   )
   const tableActionRows = useMemo(() => {
-    if (isServerPagedTab && !weldPageQuery.rowsReady) return []
+    if (isServerPagedTab && !reportGridQuery.rowsReady) return []
     const byId = new Map((visibleRows as WeldRow[]).map((row) => [row.id, row]))
     for (const row of pagedReportRows) {
       const base = byId.get(row.id)
-      byId.set(row.id, activeReport === 'weldingJournal' && (!base || base === row) ? row : { ...base, ...row })
+      byId.set(row.id, isServerPagedTab && (!base || base === row) ? row : { ...base, ...row })
     }
     return [...byId.values()]
-  }, [activeReport, isServerPagedTab, weldPageQuery.rowsReady, visibleRows, pagedReportRows])
+  }, [isServerPagedTab, reportGridQuery.rowsReady, visibleRows, pagedReportRows])
   const {
     openAllLnkResultRegistry,
     openSelectedLnkResultRegistry,
@@ -1909,7 +1892,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     const refreshDocumentAssignments = () => {
       if (lnkWorkflowRowsQuery.isEnabled) void lnkWorkflowRowsQuery.refetch()
       if (pstoWorkflowRowsQuery.isEnabled) void pstoWorkflowRowsQuery.refetch()
-      if (isServerPagedTab) void weldPageQuery.refetch()
+      if (isServerPagedTab) void reportGridQuery.refetch()
     }
     window.addEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, refreshDocumentAssignments)
     return () => window.removeEventListener(GENERATED_DOCUMENT_STORAGE_EVENT, refreshDocumentAssignments)
@@ -1919,36 +1902,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     lnkWorkflowRowsQuery.refetch,
     pstoWorkflowRowsQuery.isEnabled,
     pstoWorkflowRowsQuery.refetch,
-    weldPageQuery.refetch,
+    reportGridQuery.refetch,
   ])
-  const activeReportManualPagination = useMemo(
-    () =>
-      isServerPagedTab
-        ? {
-            totalCount: weldPageQuery.totalCount,
-            summaryStatus: weldPageQuery.summaryStatus,
-            rowsLoading: !weldPageQuery.rowsReady,
-            firstItemNumber: weldPageQuery.firstItemNumber,
-            lastItemNumber: weldPageQuery.lastItemNumber,
-            pageSize: weldPageQuery.pageSize,
-            hasMore: weldPageQuery.hasMore,
-            onLoadMore: weldPageQuery.loadMore,
-            onPageSizeChange: weldPageQuery.setPageSize,
-          }
-        : undefined,
-    [
-      isServerPagedTab,
-      weldPageQuery.firstItemNumber,
-      weldPageQuery.hasMore,
-      weldPageQuery.lastItemNumber,
-      weldPageQuery.loadMore,
-      weldPageQuery.pageSize,
-      weldPageQuery.setPageSize,
-      weldPageQuery.totalCount,
-      weldPageQuery.summaryStatus,
-      weldPageQuery.rowsReady,
-    ],
-  )
   const shouldBuildFilteredVisibleRows =
     activeReport === 'weldingJournal' || isImportDialogOpen || isLnkShowMenuOpen || isPstoShowMenuOpen
   const filteredVisibleRows = useMemo(
@@ -2004,7 +1959,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const generateDocumentFromCurrentFilter = async (
     type: 'weldingJournal' | 'checklist' | 'zni',
   ) => {
-    if (!weldPageQuery.rowsReady) {
+    if (!reportGridQuery.rowsReady) {
       setMessage('Дождитесь загрузки строк текущей выборки.')
       return
     }
@@ -2131,7 +2086,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   } = useReportOutputActions({
     activeReport,
     outputContext: `${reportOutputContext}:${reportOutputGeneration}`,
-    currentRowsReady: weldPageQuery.rowsReady,
+    currentRowsReady: reportGridQuery.rowsReady,
     reportExportFieldsRef,
     loadLnkRows: loadLnkOutputRows,
     loadPstoRows: loadPstoOutputRows,
@@ -3484,7 +3439,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
 
   const weldTableProps = createWeldTableProps({
     activeReport,
-    rowsReady: !isServerPagedTab || weldPageQuery.rowsReady,
+    rowsReady: !isServerPagedTab || reportGridQuery.rowsReady,
     queryIdentity: `${reportOutputContext}:${reportOutputGeneration}`,
     loadContextMenuRows: ids => listWeldJointRowsByIds({ data: { ids } }),
     onContextMenuError: setMessage,
@@ -3493,7 +3448,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     duplicateRows: tableActionRows,
     duplicateKeyOverrides: tableDuplicateKeys,
     columnFilters: activeColumnFilters,
-    manualPagination: activeReportManualPagination,
+    totalCount: isServerPagedTab ? reportGridQuery.totalCount : undefined,
     onColumnFiltersChange: activeFiltersSetter,
     sort: activeReportSort,
     onSortChange: setActiveReportSort,
@@ -3603,10 +3558,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   )
   const reportSelectionReady = useMemo(() => {
     const availableIds = new Set(tableActionRows.map((row) => row.id))
-    return weldPageQuery.rowsReady && [...activeSelectedRowIds].every((id) => availableIds.has(id))
-  }, [weldPageQuery.rowsReady, activeSelectedRowIds, tableActionRows])
+    return reportGridQuery.rowsReady && [...activeSelectedRowIds].every((id) => availableIds.has(id))
+  }, [reportGridQuery.rowsReady, activeSelectedRowIds, tableActionRows])
   const createLnkRequestAction = useReportSelectionAction({
-    rowsReady: activeReport === 'lnk' && weldPageQuery.rowsReady,
+    rowsReady: activeReport === 'lnk' && reportGridQuery.rowsReady,
     isModalOpen: isReportModalOpen || Boolean(editing) || Boolean(heatTreatmentFieldEditing) ||
       Boolean(chainRecord) || Boolean(coilCorrectionTarget) || Boolean(chainActuality) || Boolean(documentGenerationRequest),
     queryIdentity: `${reportOutputContext}:${reportOutputGeneration}`,
@@ -3784,7 +3739,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onExtendLnkRequest: () => openExtendLnkRequestModal(),
     onOpenLnkRequestRegistry: () => openLnkRequestRegistry(),
     lnkRequestPending: lnkRequestMutation.isPending,
-    lnkAvailability: !weldPageQuery.rowsReady ? 'loading' : lnkWorkflowSummaryQuery.data !== undefined ? 'ready' : lnkWorkflowSummaryQuery.isError ? 'error' : 'loading',
+    lnkAvailability: !reportGridQuery.rowsReady ? 'loading' : lnkWorkflowSummaryQuery.data !== undefined ? 'ready' : lnkWorkflowSummaryQuery.isError ? 'error' : 'loading',
     onAddLnkResult: () => runReportSelectionAction(openAddLnkWorkflowResultFromHeader),
     lnkResultDisabled:
       !reportSelectionReady || lnkResultMutation.isPending ||
@@ -4356,30 +4311,30 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     (pstoWorkflowRowsQuery.isEnabled ? pstoWorkflowRowsQuery.error : null) ??
     (pstoWorkflowSummaryQuery.isEnabled ? pstoWorkflowSummaryQuery.error : null) ??
     (finalStatusContextQuery.isEnabled ? finalStatusContextQuery.error : null)
-  const reportLoadError = reportContextLoadError ?? (isServerPagedTab ? weldPageQuery.error : null)
+  const reportLoadError = reportContextLoadError ?? (isServerPagedTab ? reportGridQuery.error : null)
   const reportLoadErrorMessage = reportLoadError instanceof Error ? reportLoadError.message : null
   const reportSummaryBarProps = {
     ...createReportSummaryBarProps({
       activeReport,
       left: stickyLeft,
-      isLoading: isServerPagedTab ? weldPageQuery.isLoading : false,
-      summaryStatus: isServerPagedTab ? weldPageQuery.summaryStatus : undefined,
-      summaryError: weldPageQuery.summaryError instanceof Error ? weldPageQuery.summaryError.message : undefined,
-      onRetrySummary: isServerPagedTab ? weldPageQuery.retrySummary : undefined,
-      rowsError: isServerPagedTab && weldPageQuery.error instanceof Error ? weldPageQuery.error.message : undefined,
-      onRetryRows: isServerPagedTab ? () => { void weldPageQuery.refetch() } : undefined,
+      isLoading: isServerPagedTab ? reportGridQuery.isLoading : false,
+      summaryStatus: isServerPagedTab ? reportGridQuery.summaryStatus : undefined,
+      summaryError: reportGridQuery.summaryError instanceof Error ? reportGridQuery.summaryError.message : undefined,
+      onRetrySummary: isServerPagedTab ? reportGridQuery.retrySummary : undefined,
+      rowsError: isServerPagedTab && reportGridQuery.error instanceof Error ? reportGridQuery.error.message : undefined,
+      onRetryRows: isServerPagedTab ? () => { void reportGridQuery.refetch() } : undefined,
       weldingRows: activeReport === 'weldingJournal' ? filteredVisibleRows : rows,
-      weldingRowCount: activeReport === 'weldingJournal' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
+      weldingRowCount: activeReport === 'weldingJournal' && isServerPagedTab ? reportGridQuery.totalCount : undefined,
       acceptedWdiTotal:
-        activeReport === 'weldingJournal' && isServerPagedTab ? weldPageQuery.acceptedWdiTotal : filteredAcceptedWdiTotal,
+        activeReport === 'weldingJournal' && isServerPagedTab ? reportGridQuery.acceptedWdiTotal : filteredAcceptedWdiTotal,
       heatTreatmentRows: activeReport === 'heatTreatment' ? filteredVisibleRows : heatTreatmentRows,
-      heatTreatmentRowCount: activeReport === 'heatTreatment' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
+      heatTreatmentRowCount: activeReport === 'heatTreatment' && isServerPagedTab ? reportGridQuery.totalCount : undefined,
       selectedHeatTreatmentRowCount: selectedHeatTreatmentIds.size,
       lnkRows: activeReport === 'lnk' ? filteredVisibleRows : lnkRows,
-      lnkRowCount: activeReport === 'lnk' && isServerPagedTab ? weldPageQuery.totalCount : undefined,
+      lnkRowCount: activeReport === 'lnk' && isServerPagedTab ? reportGridQuery.totalCount : undefined,
       availableLnkRequestRows: activeReport === 'lnk' ? filteredAvailableLnkRequestRowsForSummary : availableLnkRequestRows,
       availableLnkRequestRowCount:
-        activeReport === 'lnk' && isServerPagedTab ? weldPageQuery.availableRequestCount : undefined,
+        activeReport === 'lnk' && isServerPagedTab ? reportGridQuery.availableRequestCount : undefined,
       welderStamps,
       filteredWelderStamps,
     }),
@@ -5470,7 +5425,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     documentGenerationFinalStatusContext: remoteFinalStatusContext,
     welderStamps,
     welderStampsRegistryProps: { ...welderStampsRegistryProps, onTasksVisibilityChange: setAreWelderTasksVisible },
-    weldTableProps: activeReport === 'weldingJournal' ? { ...weldTableProps, journalServer: journalPageQuery.source } : weldTableProps,
+    weldTableProps: isServerPagedTab ? { ...weldTableProps, journalServer: reportGridQuery.source } : weldTableProps,
     reportExportFieldsRef,
     onOpenPercentageLineStampRows: openPercentageLineStampRows,
     onOpenReportRowIds: openReportRowIds,

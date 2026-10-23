@@ -41,6 +41,15 @@ it('still prepares row settings for actual grid reads', async () => {
   expect(mocks.system).toHaveBeenCalledOnce()
   expect(mocks.where).toHaveBeenCalledOnce()
 })
+it.each(['lnk', 'heatTreatment'] as const)('uses %s membership for every server-grid workflow', async report => {
+  await journalReadContext({ ...input, report })
+  expect(mocks.where).toHaveBeenCalledWith(report, expect.any(Object), expect.any(Object))
+})
+it('rejects an unknown report before reading the database', async () => {
+  await expect(journalReadIdentity({ ...input, report: 'documents' as never })).rejects.toThrow('Неизвестный вид')
+  expect(mocks.read).not.toHaveBeenCalled()
+  expect(mocks.ensure).not.toHaveBeenCalled()
+})
 it('rejects revoked access before reading any cached identity', async () => {
   mocks.access.mockRejectedValueOnce(new Error('denied'))
   await expect(journalReadIdentity(input)).rejects.toThrow('denied')

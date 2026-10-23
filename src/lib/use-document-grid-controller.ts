@@ -30,77 +30,53 @@ export function useDocumentGridController<T extends { id: string | number }>(
     queryKey, queryFn: async () => (client.getQueryData<number>(queryKey) ?? 0) + 1, initialData: 0,
     staleTime: Infinity, gcTime: 0, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
   })
-  const [selectedDocuments, setDocuments] = useState<T[]>([])
+  // Retain only identities. Selecting a whole registry must not load or persist its cards.
+  const [selectedDocuments, setDocuments] = useState<Array<{ id: string | number }>>(() => readSelection(viewId).map(id => ({ id })))
   const [selectionError, setSelectionError] = useState<string | null>(null)
   const [selectionPending, setSelectionPending] = useState(false)
-  const loadRef = useRef(loadRows)
-  loadRef.current = loadRows
-  const selectionRef = useRef<T[]>([])
-  const [initialIds] = useState(() => readSelection(viewId))
-  const pendingIds = useRef(initialIds)
+  const loadRef = useRef(loadRows); loadRef.current = loadRows
+  const selectionRef = useRef(selectedDocuments); selectionRef.current = selectedDocuments
   const editRevision = useRef(0)
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; editRevision.current++ } }, [])
+  useEffect(() => { editRevision.current++; setSelectionPending(false); setSelectionError(null) }, [viewId, scopeKey, revision.data])
 
-  const setSelectedDocuments = useCallback((documents: T[]) => {
+  const setSelectedDocuments = useCallback((documents: readonly { id: string | number }[]) => {
     editRevision.current++
-    pendingIds.current = []
-    const distinct = [...new Map(documents.map(document => [document.id, document])).values()]
+    const distinct = [...new Set(documents.map(document => document.id))].map(id => ({ id }))
     selectionRef.current = distinct
-    setDocuments(distinct)
+    setDocuments(distinct); setSelectionError(null); setSelectionPending(false)
     try {
-      // Import the old ID-only state; never persist document snapshots or versions.
       window.sessionStorage.setItem(`${STORAGE_PREFIX}${viewId}`, JSON.stringify({ selectedDocumentIds: distinct.map(document => document.id) }))
     } catch { /* Selection remains usable when storage is unavailable. */ }
   }, [viewId])
 
-  useEffect(() => {
-    const restoring = pendingIds.current.length > 0
-    const ids = pendingIds.current.length ? pendingIds.current : selectionRef.current.map(document => document.id)
-    if (!ids.length) { setSelectionPending(false); setSelectionError(null); return }
-    let disposed = false
-    const selectionRevision = editRevision.current
-    // Keep every batch on the same scope, even if a render replaces loadRef
-    // before this effect's cleanup cancels the old request sequence.
-    const load = loadRef.current
-    setSelectionError(null)
-    setSelectionPending(true)
-    void (async () => {
-      const rows: T[] = []
-      // The server limit bounds each response, not the operator's selection.
-      // Hydrate sequentially and publish once; a later failure leaves the last
-      // complete selection untouched and keeps actions behind the error gate.
+  const resolveDocuments = useCallback(async (selection: readonly { id: string | number }[] = selectionRef.current): Promise<T[] | null> => {
+    const generation = ++editRevision.current, load = loadRef.current
+    const ids = [...new Set(selection.map(row => row.id))], rows: T[] = []
+    const active = () => mounted.current && editRevision.current === generation
+    setSelectionPending(true); setSelectionError(null)
+    let snapshot: string | undefined
+    try {
       for (let start = 0; start < ids.length; start += SELECTION_HYDRATION_BATCH_SIZE) {
-        if (disposed || restoring && editRevision.current !== selectionRevision) return rows
-        const result = await load({ ...EMPTY_REQUEST, selectedIds: ids.slice(start, start + SELECTION_HYDRATION_BATCH_SIZE), selectionOnly: true })
-        if (disposed) return rows
+        const result = await load({ ...EMPTY_REQUEST, selectedIds: ids.slice(start, start + SELECTION_HYDRATION_BATCH_SIZE), selectionOnly: true, revision: snapshot })
+        if (!active()) return null
+        snapshot = result.revision
         rows.push(...result.rows.filter((row): row is T => !isDocumentHistoryGroupRow(row)))
       }
-      return rows
-    })().then(rows => {
-      if (disposed) return
-      if (restoring) {
-        // A restore must never re-add IDs deselected/chosen by the operator while it was in flight.
-        if (editRevision.current === selectionRevision) setSelectedDocuments(rows)
-      } else {
-        // A block can refresh one selected snapshot before this whole-selection response.
-        // Merge fresh snapshots for IDs still selected, preserving new explicit choices.
-        const requested = new Set(ids)
-        const refreshed = new Map(rows.map(row => [row.id, row]))
-        setSelectedDocuments(selectionRef.current.flatMap(row => requested.has(row.id)
-          ? refreshed.has(row.id) ? [refreshed.get(row.id)!] : []
-          : [row]))
+      const byId = new Map(rows.map(row => [row.id, row]))
+      if (rows.length !== ids.length || byId.size !== ids.length || ids.some(id => !byId.has(id))) {
+        throw new Error('Часть выбранных документов больше недоступна. Обновите выбор перед действием.')
       }
-      setSelectionPending(false)
-    }).catch(() => {
-      if (!disposed) {
-        setSelectionPending(false)
-        setSelectionError('Не удалось обновить выбранные документы. Обновите историю перед действием.')
-      }
-    })
-    return () => { disposed = true }
-  }, [viewId, scopeKey, revision.data, setSelectedDocuments])
+      return ids.map(id => byId.get(id)!)
+    } catch (error) {
+      if (active()) setSelectionError(error instanceof Error ? error.message : 'Не удалось загрузить выбранные документы. Повторите действие.')
+      return null
+    } finally { if (active()) setSelectionPending(false) }
+  }, [])
 
   return {
-    selectedDocuments, setSelectedDocuments, selectionError, selectionPending,
+    selectedDocuments, setSelectedDocuments, resolveDocuments, selectionError, selectionPending,
     sourceRevision: revision.data,
     refresh: () => { void client.invalidateQueries({ queryKey }) },
   }
