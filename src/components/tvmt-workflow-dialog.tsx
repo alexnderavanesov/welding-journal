@@ -82,6 +82,7 @@ import { WORKFLOW_CANDIDATE_PAGE_SIZE } from '@/server/weld-contracts'
 export type TvmtWorkflowDialogProps = {
   mode: TvmtWorkflowRowMode
   rows: WeldRow[]
+  isContextReady?: boolean
   initialSelectedIds: ReadonlySet<number>
   onCandidateSearchChange?: (search: string) => void
   onCandidateSelectionChange?: (rowIds: number[]) => void
@@ -112,6 +113,7 @@ const TVMT_CONCLUSION_SEQUENCE_ID = getSystemDocumentTemplateId({
 export function TvmtWorkflowDialog({
   mode,
   rows,
+  isContextReady = true,
   initialSelectedIds,
   onCandidateSearchChange,
   onCandidateSelectionChange,
@@ -152,17 +154,12 @@ export function TvmtWorkflowDialog({
     [initialSelectedIds],
   )
   useEffect(() => {
+    if (!isContextReady || !appliedInitialSelectionRef.current) return
     onCandidateSelectionChange?.([...selectedIds])
-  }, [onCandidateSelectionChange, selectedIds])
-  const loadedInitialRowsSignature = useMemo(
-    () => rows
-      .flatMap((row) => initialSelectedIds.has(row.id) ? [row.id] : [])
-      .sort((left, right) => left - right)
-      .join(','),
-    [initialSelectedIds, rows],
-  )
+  }, [isContextReady, onCandidateSelectionChange, selectedIds])
   useEffect(() => {
-    const contextKey = `${mode}:${initialSelectionSignature}:${loadedInitialRowsSignature}`
+    if (!isContextReady) return
+    const contextKey = `${mode}:${initialSelectionSignature}`
     if (appliedInitialSelectionRef.current === contextKey) return
 
     const nextRequestKey = mode === 'result'
@@ -172,7 +169,7 @@ export function TvmtWorkflowDialog({
     setSelectedIds(getInitialSelectedIds(mode, rows, initialSelectedIds, nextRequestKey, requestOptions))
     setRowsViewMode('all')
     appliedInitialSelectionRef.current = contextKey
-  }, [initialSelectedIds, initialSelectionSignature, loadedInitialRowsSignature, mode, requestOptions, rows])
+  }, [initialSelectedIds, initialSelectionSignature, isContextReady, mode, requestOptions, rows])
   const { data: sequences } = useQuery({
     queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
     queryFn: loadSystemDocumentSequences,
@@ -183,8 +180,9 @@ export function TvmtWorkflowDialog({
   })
   const selectedRequest = requestOptions.find((option) => option.key === requestKey) ?? null
   useEffect(() => {
+    if (!isContextReady) return
     onCandidateRequestChange?.(mode === 'result' ? selectedRequest : null)
-  }, [mode, onCandidateRequestChange, selectedRequest])
+  }, [isContextReady, mode, onCandidateRequestChange, selectedRequest])
   const requestRows = useMemo(() => {
     if (mode !== 'result') return rows
     if (!selectedRequest) return []
@@ -323,7 +321,7 @@ export function TvmtWorkflowDialog({
       onSaved([], [], (error as Error).message)
     },
   })
-  const effectiveSaveBlockReason = getSaveBlockReason({
+  const effectiveSaveBlockReason = !isContextReady ? 'Загрузка выбранных стыков…' : getSaveBlockReason({
     mode,
     selectedRowsCount: selectedRows.length,
     requestSelected: Boolean(selectedRequest),

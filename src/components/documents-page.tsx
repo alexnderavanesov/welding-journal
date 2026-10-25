@@ -8,6 +8,7 @@ import {
   type SetStateAction,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -43,6 +44,7 @@ import { DocumentsHistoryGrid } from '@/components/documents-history-grid'
 import { useDocumentGridController } from '@/lib/use-document-grid-controller'
 import type { DocumentHistoryGridRequest } from '@/lib/document-history-grid'
 import { HistoryDocumentPreview, type HistoryDocumentPreviewRequest } from '@/components/history-document-preview'
+import { attachPreviewZoom, previewZoomAnchor } from '@/lib/preview-zoom'
 import { ReportNotificationToast } from '@/components/report-notification-toast'
 import { Button } from '@/components/ui/button'
 import { useConfirmAction } from '@/lib/confirm-action-context'
@@ -1115,6 +1117,7 @@ export function DocumentsPage({
                       previewedRows={previewRows.length}
                       totalRows={journalRows.length}
                       scale={previewScale}
+                      onScaleChange={setPreviewScale}
                       fullscreen={isPreviewFullscreen}
                     />
                   ) : (
@@ -1256,13 +1259,16 @@ export function DocumentsPage({
               onOpenJointHistory?.(documentRows[0].id)
             }}
             createDocumentBlob={async (documentRecord) => {
-              const documentRows = await loadGeneratedDocumentRows(documentRecord.id)
+              const [documentRows, template] = await Promise.all([
+                loadGeneratedDocumentRows(documentRecord.id),
+                loadDocumentTemplate(activeGeneratedDocumentType),
+              ])
               if (documentRows.length === 0) throw new Error('В документе больше нет стыков.')
               return createCurrentGeneratedDocumentBlob({
                 type: activeGeneratedDocumentType,
                 rows: documentRows,
                 welderStamps,
-                template: activeDocumentTemplate,
+                template: template ?? null,
               })
             }}
           />
@@ -1988,14 +1994,34 @@ function SpreadsheetDocumentPreview({
   previewedRows,
   totalRows,
   scale,
+  onScaleChange,
   fullscreen,
 }: {
   preview: DocumentTemplateWorkbookPreview
   previewedRows: number
   totalRows: number
   scale: number
+  onScaleChange: (scale: number) => void
   fullscreen: boolean
 }) {
+  const viewport = useRef<HTMLDivElement>(null), paper = useRef<HTMLDivElement>(null)
+  const currentScale = useRef(scale), anchor = useRef<ReturnType<typeof previewZoomAnchor> | null>(null)
+  useLayoutEffect(() => {
+    currentScale.current = scale
+    if (anchor.current) { viewport.current?.scrollBy(anchor.current()); anchor.current = null }
+  }, [scale])
+  useEffect(() => {
+    const target = viewport.current, sheet = paper.current
+    if (!target || !sheet) return
+    return attachPreviewZoom(target, {
+      min: DOCUMENT_PREVIEW_MIN_SCALE, max: DOCUMENT_PREVIEW_MAX_SCALE, getScale: () => currentScale.current,
+      onZoom: (next, point) => {
+        if (next === currentScale.current) return
+        anchor.current = previewZoomAnchor(sheet, point, next / currentScale.current)
+        onScaleChange(next)
+      },
+    })
+  }, [onScaleChange])
   const cellsByRow = new Map<number, typeof preview.cells>()
   for (const cell of preview.cells) {
     const rowCells = cellsByRow.get(cell.row) ?? []
@@ -2006,8 +2032,9 @@ function SpreadsheetDocumentPreview({
 
   return (
     <>
-      <div className={`${fullscreen ? 'min-h-0 flex-1 max-h-none' : 'max-h-[620px]'} min-w-0 overflow-auto bg-slate-100/80 p-3`}>
+      <div ref={viewport} data-template-preview-viewport title="Масштаб: Ctrl/Cmd + колесо или жест на тачпаде" className={`${fullscreen ? 'min-h-0 flex-1 max-h-none' : 'max-h-[620px]'} min-w-0 overflow-auto bg-slate-100/80 p-3`}>
         <div
+          ref={paper}
           className="w-max overflow-hidden rounded border border-slate-300 bg-white shadow-sm"
           style={{ minWidth: `${Math.round(totalColumnWidth * scale)}px` }}
         >
@@ -2064,7 +2091,7 @@ function SpreadsheetDocumentPreview({
 }
 
 function getSpreadsheetPreviewCellStyle(
-  style: DocumentTemplateWorkbookPreview['cells'][number]['style'],
+  { centerAcrossSelection: _centerAcrossSelection, ...style }: DocumentTemplateWorkbookPreview['cells'][number]['style'],
   scale: number,
 ): CSSProperties {
   return {

@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useWorkflowQuerySelection } from '@/lib/use-workflow-query-selection'
 
 import {
   LNK_WORKFLOW_REQUEST_SUMMARY_QUERY_KEY,
@@ -63,8 +64,9 @@ export function useLnkWorkflowRowsQuery({
     [normalizedRequest],
   )
   const isCandidateQuery = normalizedRequest?.scope.endsWith('Candidates') ?? false
-  return useQuery({
-    queryKey: [...LNK_WORKFLOW_ROWS_QUERY_KEY, queryIdentity],
+  const initialSelection = useWorkflowQuerySelection(isCandidateQuery ? queryIdentity : null, normalizedRequest?.includeRowIds)
+  const query = useQuery({
+    queryKey: [...LNK_WORKFLOW_ROWS_QUERY_KEY, isCandidateQuery ? { ...queryIdentity, initialSelection } : queryIdentity],
     queryFn: () => listLnkWorkflowRows({ data: normalizedRequest! }),
     enabled: normalizedRequest !== null,
     staleTime: isCandidateQuery ? 0 : WORKFLOW_STALE_TIME,
@@ -79,6 +81,12 @@ export function useLnkWorkflowRowsQuery({
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   })
+  return {
+    ...query,
+    // Cached/placeholder rows can be displayed, but cannot prune a draft.
+    isContextReady: normalizedRequest !== null && query.isSuccess &&
+      !query.isPlaceholderData && !query.isFetching,
+  }
 }
 
 export function getLnkWorkflowRowsQueryIdentity(

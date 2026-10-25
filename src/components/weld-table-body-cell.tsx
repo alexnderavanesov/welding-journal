@@ -279,9 +279,9 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
       data-journal-tip-title={journalTooltips && field.key === 'joint' ? `Стык ${String(visibleValue ?? '')}` : undefined}
       data-journal-tip-body={journalTooltips && field.key === 'joint' ? 'Нажмите, чтобы открыть картину стыка, хронологию и следующий шаг.' : undefined}>
       {layeredDocumentTypes.length > 0 ? (
-        <div className="flex h-[52px] flex-col items-stretch justify-center gap-0.5 px-2 py-1">
+        <div className="journal-layered-documents flex h-[52px] flex-col items-stretch justify-center gap-0.5 px-2 py-1">
           {layeredWaitingLabel ? (
-            <span title={journalTooltips ? undefined : layeredWaitingLabel} className="text-center text-[11px] font-medium leading-4 text-amber-800">
+            <span title={journalTooltips ? undefined : layeredWaitingLabel} className="line-clamp-2 min-w-0 text-center text-[11px] font-medium leading-4 text-amber-800">
               {layeredWaitingLabel}
             </span>
           ) : null}
@@ -295,9 +295,10 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
                 key={type}
                 type="button"
                 title={journalTooltips ? undefined : title}
-                className="h-[21px] truncate border-0 bg-transparent px-1 text-center text-[12px] font-medium leading-[21px] text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-900"
+                className="min-w-0 shrink-0 truncate border-0 bg-transparent px-1 text-center text-[12px] font-medium leading-[15px] text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-900"
                 onClick={(event) => {
                   event.stopPropagation()
+                  event.currentTarget.focus({ preventScroll: true })
                   onOpenDocument?.(row, profile.fieldKey as WeldFieldKey)
                 }}
               >
@@ -345,6 +346,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
           className={contentClass}
           onClick={(event) => {
             event.stopPropagation()
+            event.currentTarget.focus({ preventScroll: true })
             onOpenDocument?.(row, field.key as WeldFieldKey)
           }}
         >

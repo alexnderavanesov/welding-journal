@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { ProgramGrid } from './line-program-grid'
 import { useProgramAppearance } from './line-program-appearance'
@@ -133,7 +134,7 @@ export function LineCalculation({ overview, onEdit, line, targetStamp, targetKin
       onAssignments: () => execute({ action: 'assignments', selection: scope }), onCalculation: (selection, explain) => execute({ action: 'calculation', selection, explain }) })
   }
   const scopeActions = (<div data-testid="program-scope-actions" className="ml-auto flex min-w-0 flex-wrap items-center gap-2">
-        {view === 'groups' && openGroups.length > 1 ? <select aria-label="Область действий" className="h-8 max-w-full shrink-0 rounded-lg border border-slate-200 bg-white pl-3 pr-9 text-xs text-slate-700" value={programScopeKey(actionScope)} onChange={event => setSelection(openGroups.find(block => block.key === event.target.value)?.selection ?? { slice: 'all' })}><option value="all:">Вся линия</option>{openGroups.map(block => <option key={block.key} value={block.key}>{block.selection.unassigned ? 'Без клейма' : `Клеймо ${block.selection.stamp}`}</option>)}</select> : null}
+        {view === 'groups' && openGroups.length > 1 ? <Select aria-label="Область действий" className="w-auto h-8 max-w-full shrink-0 rounded-lg border border-slate-200 bg-white pl-3 pr-9 text-xs text-slate-700" value={programScopeKey(actionScope)} onChange={event => setSelection(openGroups.find(block => block.key === event.target.value)?.selection ?? { slice: 'all' })}><option value="all:">Вся линия</option>{openGroups.map(block => <option key={block.key} value={block.key}>{block.selection.unassigned ? 'Без клейма' : `Клеймо ${block.selection.stamp}`}</option>)}</Select> : null}
         <button type="button" disabled={!!actionScope.unassigned} title={actionScope.unassigned ? 'Отдельный расчёт без клейма недоступен. Выберите «Все стыки линии» для общего расчёта.' : undefined} className={`${programScopeActionClass} disabled:cursor-not-allowed disabled:opacity-40`} onClick={() => execute({ action: 'calculation', selection: actionScope })}>Расчёт {actionLabel}</button>
         <button type="button" className={programScopePrimaryActionClass} onClick={() => execute({ action: 'assignments', selection: actionScope })}>Назначения {actionLabel}{draftCount ? <span className="rounded bg-white/80 px-1.5 text-xs">черновик: {draftCount}</span> : null}</button>
       </div>)

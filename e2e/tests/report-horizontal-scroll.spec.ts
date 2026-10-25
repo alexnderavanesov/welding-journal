@@ -47,6 +47,17 @@ async function checkJournalHorizontalNavigation(page: Page, calls: string[], rep
   await expect(firstRow).toHaveCount(1)
   await expect(firstRow).toBeVisible()
   await expect(firstRow.getByRole('checkbox')).toBeEnabled()
+  const transparentScrollbarAtBottom = () => grid.evaluate(element => {
+    const rows = element.querySelector('.ag-grid-viewport')!.getBoundingClientRect()
+    const barElement = element.querySelector('.ag-body-horizontal-scroll')!
+    const bar = barElement.getBoundingClientRect()
+    const footer = element.querySelector('[data-journal-footer]')!.getBoundingClientRect()
+    const overlays = barElement.classList.contains('ag-scrollbar-invisible')
+    const transparent = [barElement, ...barElement.children].every(node => getComputedStyle(node).backgroundColor === 'rgba(0, 0, 0, 0)')
+    return transparent && bar.height > 0 && bar.bottom <= footer.top + 1
+      && (overlays ? Math.abs(bar.bottom - rows.bottom) <= 1 : bar.top >= rows.bottom - 1)
+  })
+  await expect.poll(transparentScrollbarAtBottom).toBe(true)
   const noVisibleGaps = () => journalHasNoVisibleGaps(grid)
   const line = grid.locator('.ag-grid-scrolling-rows .ag-row[row-index="0"] [col-id="line"]')
   const pinnedLeft = (await line.boundingBox())!.x
@@ -79,6 +90,7 @@ async function checkJournalHorizontalNavigation(page: Page, calls: string[], rep
   for (const width of [1100, 1920]) {
     await page.setViewportSize({ width, height: 1000 })
     await expect.poll(noVisibleGaps).toBe(true)
+    await expect.poll(transparentScrollbarAtBottom).toBe(true)
   }
   await grid.locator('.ag-header-cell[col-id="line"] .ag-header-cell-filter-button').click()
   const filter = page.getByRole('dialog', { name: 'Фильтр: Линия', exact: true })
@@ -86,6 +98,15 @@ async function checkJournalHorizontalNavigation(page: Page, calls: string[], rep
   await page.keyboard.press('Escape')
   await expect(filter).toBeHidden()
   await expect.poll(noVisibleGaps).toBe(true)
+  await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight))
+  await expect.poll(transparentScrollbarAtBottom).toBe(true)
+  const lastRow = grid.locator('.ag-grid-scrolling-rows .ag-row[row-index="73"]')
+  await expect(lastRow).toBeVisible()
+  await expect.poll(async () => {
+    const row = (await lastRow.boundingBox())!
+    const body = (await viewport.boundingBox())!
+    return row.y + row.height - (body.y + body.height)
+  }).toBeLessThanOrEqual(1)
 }
 
 for (const count of [74, 150]) test(`горизонтальный скролл: ${count} стыков, медленное движение без перестройки на каждом столбце`, async ({ page }, testInfo) => {
@@ -164,7 +185,7 @@ for (const count of [74, 150]) test(`горизонтальный скролл: 
 })
 
 for (const [path, report] of [['/journal', 'weldingJournal'], ['/lnk', 'lnk'], ['/psto', 'heatTreatment']]) {
-  test(`${path}: колесо в обе стороны, дальние столбцы, фильтр и изменение ширины`, async ({ page }) => {
+  test(`${path}: колесо в обе стороны, дальние столбцы, фильтр и изменение ширины`, async ({ page }, testInfo) => {
     await seed(74)
     await withLineProgramFixture(db => db.query("update weld_joints set psto_required='да' where project_title=$1", [project]))
     await page.addInitScript(key => localStorage.setItem(`welding-report-view:v1:${key}`, JSON.stringify({
@@ -180,6 +201,9 @@ for (const [path, report] of [['/journal', 'weldingJournal'], ['/lnk', 'lnk'], [
     // and legitimately refetch them. Finish setup before measuring scroll RPCs.
     await page.waitForLoadState('networkidle')
     await checkJournalHorizontalNavigation(page, calls, report)
+    const bar = (await page.locator('.ag-body-horizontal-scroll').boundingBox())!
+    await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2)
+    await page.screenshot({ path: testInfo.outputPath('transparent-scrollbar.png') })
     expect(errors).toEqual([])
   })
 }

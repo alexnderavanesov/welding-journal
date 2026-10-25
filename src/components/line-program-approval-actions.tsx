@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select'
 import type { ProgramApprovalOption } from '@/lib/program-approval-actions'
 
 export function ProgramApprovalActions({ approve, revoke, disabled, draft, onAction }: {
@@ -16,10 +17,10 @@ export function ProgramApprovalActions({ approve, revoke, disabled, draft, onAct
       return [{ id: `${action}:${kind}`, action, items, label }]
     })
   })
-  const style = 'h-6 max-w-full rounded-md border border-sky-200 bg-white px-2 py-0 text-xs text-sky-800 disabled:opacity-40'
+  const style = 'h-6 w-auto max-w-full rounded-md border border-sky-200 bg-white px-2 py-0 text-xs text-sky-800 disabled:opacity-40'
   const title = draft ? 'Сначала сохраните или отмените черновик назначений. Согласование применяется к сохранённому контролю.' : 'Меняет только согласование. Назначения и документы остаются без изменений.'
-  return groups.length > 1 ? <select aria-label="Согласование выбранных стыков" title={title} disabled={disabled || draft} value="" className={style} onChange={event => { const group = groups.find(item => item.id === event.target.value); if (group) onAction(group.action, group.items) }}>
+  return groups.length > 1 ? <Select aria-label="Согласование выбранных стыков" title={title} disabled={disabled || draft} value="" className={style} onChange={event => { const group = groups.find(item => item.id === event.target.value); if (group) onAction(group.action, group.items) }}>
     <option value="" disabled>Согласование · {count([...approve, ...revoke])}</option>
     {groups.map(group => <option key={group.id} value={group.id}>{group.label} · {count(group.items)}</option>)}
-  </select> : <button type="button" title={title} disabled={disabled || draft} className={style} onClick={() => onAction(groups[0].action, groups[0].items)}>{groups[0].label} · {count(groups[0].items)}</button>
+  </Select> : <button type="button" title={title} disabled={disabled || draft} className={style} onClick={() => onAction(groups[0].action, groups[0].items)}>{groups[0].label} · {count(groups[0].items)}</button>
 }

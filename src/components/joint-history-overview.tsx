@@ -352,7 +352,12 @@ function HistoryLine({
               <button
                 key={`${document.fieldKey}:${document.name}`}
                 type="button"
-                onClick={() => onOpenDocument?.(document.row, document.fieldKey)}
+                onClick={event => {
+                  // Safari does not focus buttons on a mouse click by default.
+                  // The preview must restore focus to this document on close.
+                  event.currentTarget.focus({ preventScroll: true })
+                  onOpenDocument?.(document.row, document.fieldKey)
+                }}
                 className="inline-flex max-w-full items-center gap-1 text-left text-xs font-medium text-sky-700 hover:text-sky-900 hover:underline"
                 title={document.name}
               >

@@ -49,6 +49,7 @@ async function renderDialog(
     <QueryClientProvider client={queryClient}>
       <PstoRepeatWorkflowDialog
         mode={mode}
+        isContextReady={currentRows.length > 0}
         rows={currentRows}
         initialSelectedIds={currentSelectedIds}
         onClose={vi.fn()}
@@ -157,6 +158,20 @@ describe('PstoRepeatWorkflowDialog', async () => {
     ))
     expect(screen.getByRole('checkbox', { name: /F2/ })).toBeChecked()
     expect(screen.queryByRole('checkbox', { name: /F1/ })).not.toBeInTheDocument()
+  })
+
+  it('keeps manual selection when search drops and returns initially selected rows', async () => {
+    const first = makeFailedTvmtRow()
+    const second = makeFailedTvmtRow({ id: 2, joint: 'F2' })
+    const view = await renderDialog('request', [first, second], new Set([1]))
+    const checkbox = (joint: string) => screen.getByRole('checkbox', { name: new RegExp(`Выбрать стык .* ${joint}$`) })
+    fireEvent.click(checkbox('F1'))
+    fireEvent.click(checkbox('F2'))
+    view.rerenderWithRows([second])
+    await waitFor(() => expect(checkbox('F2')).toBeChecked())
+    view.rerenderWithRows([first, second])
+    expect(checkbox('F1')).not.toBeChecked()
+    expect(checkbox('F2')).toBeChecked()
   })
 
   it('restores the selected PSTO row when report data loads after the dialog opens', async () => {

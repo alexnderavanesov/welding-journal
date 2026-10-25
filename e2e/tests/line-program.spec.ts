@@ -145,7 +145,7 @@ async function confirmQuickAction(page: Page) {
   await expect(editor.getByText('Назначения сохранены · стыков: 1')).toBeVisible()
 }
 
-test('карточки не переносят название, страницы компактны, редактор отдельный, стрелка внутри отчёта', async ({ page }) => {
+test('карточки не переносят название, страницы компактны, редактор отдельный, стрелка в боковом меню', async ({ page }) => {
   const longName = '330-FG-05-000 (Тех.решение) — проверка длинного названия линии без переноса'
   await withLineProgramFixture(async (client) => {
     await client.query(`insert into line_programs (project_title, subtitle_code, line, category, group_name, weld_control_percent, pvk_control_percent)
@@ -179,9 +179,16 @@ test('карточки не переносят название, страниц�
   await expect(toolbar.getByLabel('Поиск программы линий')).toBeVisible()
   const up = page.getByRole('button', { name: 'Вернуться в начало страницы' })
   await expect(up).toBeVisible()
-  const arrowBox = (await up.boundingBox())!
-  const reportBox = (await page.locator('[data-scroll-top-boundary]').boundingBox())!
-  expect(arrowBox.x + arrowBox.width).toBeLessThan(reportBox.x + reportBox.width)
+  for (const collapsed of [false, true]) {
+    if (collapsed) await page.getByRole('button', { name: 'Скрыть меню', exact: true }).click()
+    await expect.poll(async () => {
+      const arrowBox = (await up.boundingBox())!
+      const sidebarBox = (await page.locator('[data-app-sidebar]').boundingBox())!
+      const reportBox = (await page.locator('[data-scroll-top-boundary]').boundingBox())!
+      return arrowBox.x >= sidebarBox.x && arrowBox.x + arrowBox.width <= sidebarBox.x + sidebarBox.width
+        && arrowBox.x + arrowBox.width < reportBox.x
+    }).toBe(true)
+  }
   await up.click()
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
   await program.getByRole('button', { name: 'Новая линия', exact: true }).click()

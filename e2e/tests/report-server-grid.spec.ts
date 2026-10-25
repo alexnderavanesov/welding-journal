@@ -70,6 +70,26 @@ test('server report scopes keep membership, counts, stages, ranges and facets in
     }
     const all = await call<{ids:number[]}>(page,'selectJournalGridRows',{...query,route:[],revision})
     expect(all.ids).toHaveLength(count)
+    const rangeSelection = { ...query, revision, anchor: 'line', parts: [
+      { route: [], start: 90, end: 110, columns: ['wdi'] },
+      { route: [], start: 95, end: 105, columns: ['joint'] },
+    ] }
+    const selectedRange = await call<{ids: number[]}>(page, 'selectJournalGridRange', rangeSelection)
+    expect(new Set(selectedRange.ids)).toEqual(new Set(all.ids.slice(90, 110)))
+    const descending = await call<{ids: number[]}>(page, 'selectJournalGridRange', {
+      ...rangeSelection, sort: { fieldKey: 'joint', direction: 'desc' }, parts: [{ route: [], start: 0, end: 3, columns: ['joint'] }],
+    })
+    expect(descending.ids).toEqual(all.ids.slice(-3).reverse())
+    const groupedRange = await call<{ids: number[]}>(page, 'selectJournalGridRange', {
+      ...rangeSelection, groupBy: ['line'], sort: { fieldKey: 'line', direction: 'desc' },
+      parts: [{ route: [], start: 0, end: 1, columns: ['wdi'] }, { route: ['TRANSFER-B'], start: 0, end: 2, columns: ['joint'] }],
+    })
+    const groupB = await call<{ids: number[]}>(page, 'selectJournalGridRows', { ...query, groupBy: ['line'], route: ['TRANSFER-B'], revision })
+    expect(new Set(groupedRange.ids)).toEqual(new Set(groupB.ids))
+    await expect(call(page, 'selectJournalGridRange', { ...rangeSelection,
+      parts: [{ route: [], start: count - 1, end: count + 1, columns: ['wdi'] }],
+    })).rejects.toThrow('Диапазон больше')
+
     const selected = await call<{total:number;snapshot:string}>(page,'countJournalGridSelection',{...query,ids:all.ids,routes:[],revision})
     expect(selected.total).toBe(count)
     if(report==='lnk') lnkSnapshot=selected.snapshot
@@ -123,10 +143,37 @@ test(`${report} selects the full filtered report and keeps actions for hidden se
   await all.click()
   await expect(all).toBeChecked()
   await expect(grid.getByText(`Выбрано: ${selectedCount}`,{exact:true})).toBeVisible()
+  await expect(grid.getByLabel('Статистика выделения')).toContainText(`Стыков: ${selectedCount}`)
+  await expect(grid.getByLabel('Статистика выделения')).toContainText('Сварка: 01.10.2026')
   await page.getByRole('searchbox').fill('NO SUCH TRANSFER JOINT')
   await expect(page.getByText('Найдено: 0',{exact:true})).toBeVisible()
   await expect(grid.getByText(`Выбрано: ${selectedCount}`,{exact:true})).toBeVisible()
   await expect(grid.getByRole('button',{name:'Действия',exact:true})).toBeEnabled()
-  await grid.getByRole('button',{name:'Снять выбор',exact:true}).click()
+  await expect(grid.getByLabel('Статистика выделения')).toContainText(`Стыков: ${selectedCount}`)
+  await expect(grid.getByRole('button',{name:'Снять выбор',exact:true})).toHaveCount(0)
+  await page.getByRole('searchbox').fill(count > 5000 ? 'F000' : PROJECT)
+  await expect(page.getByText(`Найдено: ${selectedCount}`,{exact:true})).toBeVisible()
+  await expect(all).toBeChecked()
+  await all.click()
   await expect(grid.getByText(`Выбрано: ${selectedCount}`,{exact:true})).toHaveCount(0)
+})
+
+for (const [report, route, count] of [['lnk', '/lnk', total], ['heatTreatment', '/psto', total / 2]] as const)
+test(`${report} Shift+Space adds the area to existing selection`, async ({ page }) => {
+  if (report === 'heatTreatment') {
+    await page.goto(route)
+    await page.getByRole('searchbox').fill(PROJECT)
+    await expect(page.getByText(`Найдено: ${count}`, { exact: true })).toBeVisible()
+  }
+  const grid = page.locator(`[data-weld-report-grid="${report}"]`)
+  const row = (index: number) => grid.locator(`.ag-row[row-index="${index}"]`)
+  await row(0).getByRole('checkbox').check()
+  await row(1).locator('[col-id="wdi"]').click()
+  await row(3).locator('[col-id="wdi"]').click({ modifiers: ['Shift'] })
+  await page.keyboard.press('Shift+Space')
+  await expect(grid.getByText('Выбрано: 4', { exact: true })).toBeVisible()
+  await expect(grid.getByLabel('Статистика выделения')).toContainText('По области')
+  await expect(grid.getByLabel('Статистика выделения')).toContainText('Стыков: 3')
+  for (const index of [0, 1, 2, 3]) await expect(row(index).getByRole('checkbox')).toBeChecked()
+  await expect(row(4).getByRole('checkbox')).not.toBeChecked()
 })

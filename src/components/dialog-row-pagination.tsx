@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 const DIALOG_ROW_PAGE_SIZE_OPTIONS = [25, 50, 100] as const
@@ -39,15 +40,15 @@ export function DialogRowPagination({
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-2">
           <span className="text-slate-500">На странице</span>
-          <select
+          <Select
             value={pageSize}
             onChange={(event) => onPageSizeChange(Number(event.target.value))}
-            className="h-8 min-w-20 rounded-md border border-slate-200 bg-white pl-3 pr-8 text-xs font-medium text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+            className="w-auto h-8 min-w-20 rounded-md border border-slate-200 bg-white pl-3 pr-8 text-xs font-medium text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
           >
             {DIALOG_ROW_PAGE_SIZE_OPTIONS.map((option) => (
               <option key={option} value={option}>{option}</option>
             ))}
-          </select>
+          </Select>
         </label>
 
         <div className="flex h-8 items-center overflow-hidden rounded-md border border-slate-200 bg-white">

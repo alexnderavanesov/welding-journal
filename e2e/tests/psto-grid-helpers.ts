@@ -19,7 +19,7 @@ export async function revealPstoColumn(page: Page, colId: string) {
   const steps = await viewport.evaluate(element => Math.ceil(element.scrollWidth / Math.max(element.clientWidth / 2, 1)) + 1)
   for (let step = 0; step <= steps; step++) {
     if (await header.count()) {
-      await header.scrollIntoViewIfNeeded()
+      await header.evaluate(element => element.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'instant' }))
       return
     }
     await viewport.evaluate(async element => {

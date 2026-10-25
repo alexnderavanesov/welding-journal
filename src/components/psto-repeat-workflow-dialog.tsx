@@ -84,6 +84,7 @@ import { WORKFLOW_CANDIDATE_PAGE_SIZE } from '@/server/weld-contracts'
 export type PstoRepeatWorkflowDialogProps = {
   mode: PstoRepeatWorkflowRowMode
   rows: WeldRow[]
+  isContextReady?: boolean
   initialSelectedIds: ReadonlySet<number>
   onCandidateSearchChange?: (search: string) => void
   onCandidateSelectionChange?: (rowIds: number[]) => void
@@ -100,6 +101,7 @@ export type PstoRepeatWorkflowDialogProps = {
 export function PstoRepeatWorkflowDialog({
   mode,
   rows,
+  isContextReady = true,
   initialSelectedIds,
   onCandidateSearchChange,
   onCandidateSelectionChange,
@@ -132,8 +134,9 @@ export function PstoRepeatWorkflowDialog({
   )
   const selectedRequest = requestOptions.find((option) => option.key === requestKey) ?? null
   useEffect(() => {
+    if (!isContextReady) return
     onCandidateRequestChange?.(mode === 'result' ? selectedRequest : null)
-  }, [mode, onCandidateRequestChange, selectedRequest])
+  }, [isContextReady, mode, onCandidateRequestChange, selectedRequest])
   const [selectedIds, setSelectedIds, selectionWarning] = useWorkflowSelectionState(() =>
     getInitialSelectedIds(mode, rows, initialSelectedIds, selectedRequest),
   )
@@ -142,17 +145,12 @@ export function PstoRepeatWorkflowDialog({
     [initialSelectedIds],
   )
   useEffect(() => {
+    if (!isContextReady || !appliedInitialSelectionRef.current) return
     onCandidateSelectionChange?.([...selectedIds])
-  }, [onCandidateSelectionChange, selectedIds])
-  const loadedInitialRowsSignature = useMemo(
-    () => rows
-      .flatMap((row) => initialSelectedIds.has(row.id) ? [row.id] : [])
-      .sort((left, right) => left - right)
-      .join(','),
-    [initialSelectedIds, rows],
-  )
+  }, [isContextReady, onCandidateSelectionChange, selectedIds])
   useEffect(() => {
-    const contextKey = `${mode}:${initialSelectionSignature}:${loadedInitialRowsSignature}`
+    if (!isContextReady) return
+    const contextKey = `${mode}:${initialSelectionSignature}`
     if (appliedInitialSelectionRef.current === contextKey) return
 
     const nextRequestKey = mode === 'result'
@@ -163,7 +161,7 @@ export function PstoRepeatWorkflowDialog({
     setSelectedIds(getInitialSelectedIds(mode, rows, initialSelectedIds, nextRequest))
     setRowsViewMode('all')
     appliedInitialSelectionRef.current = contextKey
-  }, [initialSelectedIds, initialSelectionSignature, loadedInitialRowsSignature, mode, requestOptions, rows])
+  }, [initialSelectedIds, initialSelectionSignature, isContextReady, mode, requestOptions, rows])
   const { data: sequences } = useQuery({
     queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
     queryFn: loadSystemDocumentSequences,
@@ -293,7 +291,7 @@ export function PstoRepeatWorkflowDialog({
     },
     onError: (error) => onSaved([], [], (error as Error).message),
   })
-  const saveBlockReason = mode === 'result' && !selectedRequest
+  const saveBlockReason = !isContextReady ? 'Загрузка выбранных стыков…' : mode === 'result' && !selectedRequest
       ? 'Выберите заявку ПСТО.'
       : selectedRows.length === 0
         ? 'Выберите хотя бы один доступный стык.'

@@ -14,6 +14,7 @@ export function useJournalDocumentScroll(
   enabled: boolean,
   topInset = 0,
   isRestoring?: () => boolean,
+  bottomCover?: HTMLElement,
 ) {
   useEffect(() => {
     const track = trackRef.current, stage = stageRef.current, frame = frameRef.current
@@ -75,8 +76,14 @@ export function useJournalDocumentScroll(
           const values = { '--journal-footer-height': `${footer.offsetHeight}px`, '--journal-footer-left': `${trackRect.left}px`,
             '--journal-footer-width': `${trackRect.width}px`, '--journal-footer-bottom': `${bottomInset}px` }
           for (const [key, value] of Object.entries(values)) if (stage.style.getPropertyValue(key) !== value) stage.style.setProperty(key, value)
+          if (bottomCover) {
+            for (const key of ['--journal-footer-left', '--journal-footer-width', '--journal-footer-bottom'] as const) {
+              if (bottomCover.style.getPropertyValue(key) !== values[key]) bottomCover.style.setProperty(key, values[key])
+            }
+          }
         }
         stage.toggleAttribute('data-journal-docked-footer', docked)
+        bottomCover?.toggleAttribute('data-journal-docked-footer', docked)
       }
       // Measure layout, not transformed overflow. A previous row translation
       // can remain in scrollHeight after grouping a long list into short groups
@@ -180,6 +187,8 @@ export function useJournalDocumentScroll(
       if (!api.isDestroyed()) api.removeEventListener('modelUpdated', schedule)
       track.style.removeProperty('height'); stage.style.removeProperty('height')
       stage.removeAttribute('data-journal-docked-footer')
+      bottomCover?.removeAttribute('data-journal-docked-footer')
+      for (const key of ['left', 'width', 'bottom']) bottomCover?.style.removeProperty(`--journal-footer-${key}`)
       for (const key of ['height', 'left', 'width', 'bottom']) stage.style.removeProperty(`--journal-footer-${key}`)
       viewport.removeAttribute('data-journal-scrollable')
       if (nativeMotion) {
@@ -188,5 +197,5 @@ export function useJournalDocumentScroll(
         rows!.style.removeProperty('translate')
       }
     }
-  }, [api, enabled, frameRef, stageRef, trackRef, topInset, isRestoring])
+  }, [api, enabled, frameRef, stageRef, trackRef, topInset, isRestoring, bottomCover])
 }

@@ -17,7 +17,11 @@ export async function revealLnkColumn(page: Page, colId: string) {
   })
   const steps = await viewport.evaluate(element => Math.ceil(element.scrollWidth / Math.max(element.clientWidth / 2, 1)) + 1)
   for (let step = 0; step <= steps; step++) {
-    if (await header.count()) { await header.scrollIntoViewIfNeeded(); return }
+    if (await header.count()) {
+      // Minimal scrolling can leave the cell action behind pinned columns.
+      await header.evaluate(element => element.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'instant' }))
+      return
+    }
     await viewport.evaluate(async element => {
       element.scrollLeft += Math.max(element.clientWidth / 2, 1)
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))

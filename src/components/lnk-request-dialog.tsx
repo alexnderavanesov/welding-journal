@@ -80,6 +80,7 @@ export type LnkRequestDialogProps = {
   readyRows: WeldRow[]
   selectedIds: ReadonlySet<number>
   isPending: boolean
+  isContextReady?: boolean
   saveCheckSettings: SaveCheckSettings
   controlProcessSettings: ControlProcessSettings
   onClose: () => void
@@ -129,6 +130,7 @@ export function LnkRequestDialog({
   readyRows,
   selectedIds,
   isPending,
+  isContextReady = true,
   saveCheckSettings,
   controlProcessSettings,
   onClose,
@@ -291,7 +293,7 @@ export function LnkRequestDialog({
     }
     onRunRootCauseAction?.(action)
   }
-  const createDisabledReason = submitMode === 'create'
+  const createDisabledReason = !isContextReady ? 'Загрузка выбранных стыков…' : submitMode === 'create'
     ? getLnkRequestCreateDisabledReason({
         selectedRowsCount,
         selectedMethodKeysCount: selectedMethodKeys.length,

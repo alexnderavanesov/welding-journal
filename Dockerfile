@@ -29,6 +29,8 @@ COPY vendor ./vendor
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store pnpm install --frozen-lockfile
 
 COPY . .
+# Vite embeds the browser license during the build; a runtime variable is too late.
+ARG VITE_AG_GRID_LICENSE_KEY
 RUN pnpm build
 
 FROM pnpm-base AS runtime

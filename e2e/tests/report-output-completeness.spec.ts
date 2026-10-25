@@ -110,6 +110,7 @@ test('a very large report fails visibly while a narrowed current report still op
         'да', 'нет', 'ожидает заявку'
       from generate_series(1, 10001) as series
     `)
+    await invalidateDerivedIndexes(client)
   })
 
   await page.goto('/lnk')
@@ -120,6 +121,10 @@ test('a very large report fails visibly while a narrowed current report still op
 
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('E2E-OUTPUT-10001')
   await expect(page.getByText('E2E-OUTPUT-10001', { exact: true })).toBeVisible()
+  // Old rows can remain visible while a refreshed dispatcher/filter context is
+  // pending. Current-report export deliberately refuses that stale context.
+  await expect(page.getByLabel('Диспетчер задач', { exact: true })).toContainText('Изменения выполняются только после подтверждения.')
+  await expect(page.locator('.journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
   await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
   await page.getByRole('button', { name: 'Текущая версия', exact: true }).click()
   const popup = page.getByRole('dialog', { name: 'Предпросмотр отчёта' }).frameLocator('iframe')
@@ -179,7 +184,10 @@ for (const [path, options] of [
       const frame = modal.frameLocator('iframe')
       await expect(frame.getByRole('heading', { level: 1 })).toBeVisible()
       await expect(modal.getByRole('button', { name: 'Печать / Сохранить PDF' })).toBeEnabled()
-      expect(await modal.locator('iframe').getAttribute('sandbox')).not.toContain('allow-scripts')
+      // Parent-owned wheel handlers need this flag in WebKit; document scripts
+      // remain forbidden by CSP (execution/network are tested in preview-layout).
+      expect(await modal.locator('iframe').getAttribute('sandbox')).not.toContain('allow-top-navigation')
+      await expect(frame.locator('meta[http-equiv="Content-Security-Policy"]').first()).toHaveAttribute('content', /script-src 'none'/)
       const before = calls.length
       const paginated = await modal.getByRole('button', { name: 'Далее', exact: true }).count() > 0
       if (option === 'Текущая версия') expect(paginated).toBe(true)

@@ -46,6 +46,7 @@ async function renderDialog(
     <QueryClientProvider client={queryClient}>
       <TvmtWorkflowDialog
         mode={mode}
+        isContextReady={currentRows.length > 0}
         rows={currentRows}
         initialSelectedIds={currentSelectedIds}
         onClose={vi.fn()}
@@ -105,6 +106,20 @@ describe('TvmtWorkflowDialog', async () => {
         documentDate: '2026-08-28',
       }),
     }))
+  })
+
+  it('keeps manual selection when search drops and returns initially selected rows', async () => {
+    const first = makeRow()
+    const second = makeRow({ id: 2, joint: 'F2' })
+    const view = await renderDialog('request', [first, second], new Set([1]))
+    const checkbox = (joint: string) => screen.getByRole('checkbox', { name: new RegExp(`Выбрать стык .* ${joint}$`) })
+    fireEvent.click(checkbox('F1'))
+    fireEvent.click(checkbox('F2'))
+    view.rerenderWithRows([second])
+    await waitFor(() => expect(checkbox('F2')).toBeChecked())
+    view.rerenderWithRows([first, second])
+    expect(checkbox('F1')).not.toBeChecked()
+    expect(checkbox('F2')).toBeChecked()
   })
 
   it('restores the selected TVMT row when report data loads after the dialog opens', async () => {

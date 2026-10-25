@@ -27,6 +27,8 @@ import {
   type StoredDocumentTemplate,
   type WeldingJournalTemplateContext,
   normalizeDocumentTemplateConstructorConfig,
+  normalizeDocumentTemplateStageField,
+  type DocumentTemplateId,
   type DocumentTemplateConstructorConfig,
   type DocumentTemplateCellBinding,
   getConstructorBindingParts,
@@ -42,7 +44,7 @@ import {
   cloneCellStyle,
   enableAutoRowHeight,
   expandWorksheetRef,
-  preserveTemplateWorkbookXml,
+  writeTemplateWorkbook,
   getWorksheetCellRowRange,
   assertRepeatBlockMergesAreContained,
   snapshotWorksheetRowBlock,
@@ -180,7 +182,7 @@ export async function createWeldingJournalBlobFromTemplate(
       workbook,
       worksheet,
       records,
-      normalizeDocumentTemplateConstructorConfig(constructorConfig),
+      normalizeDocumentTemplateConstructorConfig(constructorConfig, template.id),
       context,
     )
   }
@@ -218,7 +220,7 @@ export async function createWeldingJournalBlobFromTemplate(
     for (const markerCell of repeatedCells) {
       const targetAddress = XLSX.utils.encode_cell({ r: targetRow, c: markerCell.column })
       const originalCell = worksheet[markerCell.address]
-      const value = replaceTemplateMarkers(markerCell.source, record, recordIndex, context)
+      const value = replaceTemplateMarkers(markerCell.source, record, recordIndex, context, template.id)
       worksheet[targetAddress] = {
         ...originalCell,
         t: typeof value === 'number' ? 'n' : 's',
@@ -231,8 +233,7 @@ export async function createWeldingJournalBlobFromTemplate(
   })
 
   expandWorksheetRef(worksheet, markerRow + Math.max(records.length - 1, 0), Math.max(range.e.c, ...repeatedCells.map((cell) => cell.column)))
-  const workbookData = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', cellStyles: true }) as ArrayBuffer
-  const preservedWorkbookData = preserveTemplateWorkbookXml(template.fileData, workbookData, {
+  const preservedWorkbookData = writeTemplateWorkbook(template.fileData, workbook, {
     markerRow,
     recordCount: records.length,
     sheetIndex: workbook.SheetNames.indexOf(sheetName),
@@ -437,16 +438,21 @@ async function createWeldingJournalBlobFromConstructor(
     )
   }
 
-  const workbookData = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', cellStyles: true }) as ArrayBuffer
-  const preservedWorkbookData =
-    repeatRowStartIndex === undefined
-      ? workbookData
-      : preserveTemplateWorkbookXml(template.fileData, workbookData, {
-          markerRow: repeatRowStartIndex,
-          markerRowCount: repeatBlockHeight,
-          recordCount: repeatUnits.length,
-          sheetIndex: workbook.SheetNames.indexOf(config.sheetName),
-        })
+  const outputRecordCount = repeatBindings.length ? Math.max(repeatUnits.length, 1) : 1
+  const extraRows = (outputRecordCount - 1) * repeatBlockHeight
+  const autoFitCells = aggregateBindings.map(binding => {
+    const cell = XLSX.utils.decode_cell(binding.cell)
+    if (repeatRowEndIndex !== undefined && cell.r > repeatRowEndIndex) cell.r += extraRows
+    return XLSX.utils.encode_cell(cell)
+  })
+  const preservedWorkbookData = writeTemplateWorkbook(template.fileData, workbook, {
+    // Without repeated fields the form has no inserted rows.
+    markerRow: repeatBindings.length ? repeatRowStartIndex! : initialRange.e.r + 1,
+    markerRowCount: repeatBlockHeight,
+    recordCount: outputRecordCount,
+    sheetIndex: workbook.SheetNames.indexOf(config.sheetName),
+    autoFitCells,
+  })
   return new Blob([preservedWorkbookData], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
 }
 
@@ -802,20 +808,20 @@ function getPrimaryMarkerRow(markerCells: TemplateMarkerCell[]) {
   })[0][0]
 }
 
-function replaceTemplateMarkers(source: string, record: WeldInput, recordIndex: number, context: WeldingJournalTemplateContext) {
+function replaceTemplateMarkers(source: string, record: WeldInput, recordIndex: number, context: WeldingJournalTemplateContext, templateId: DocumentTemplateId) {
   const singleMarker = source.match(/^\s*\{\{\s*([^{}]+?)\s*\}\}\s*$/)
-  if (singleMarker) return getTemplateFieldValue(singleMarker[1], record, recordIndex, context)
+  if (singleMarker) return getTemplateFieldValue(singleMarker[1], record, recordIndex, context, templateId)
 
   return source.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_match, fieldName: string) =>
-    String(getTemplateFieldValue(fieldName, record, recordIndex, context) ?? ''),
+    String(getTemplateFieldValue(fieldName, record, recordIndex, context, templateId) ?? ''),
   )
 }
 
-function getTemplateFieldValue(fieldName: string, record: WeldInput, recordIndex: number, context: WeldingJournalTemplateContext) {
+function getTemplateFieldValue(fieldName: string, record: WeldInput, recordIndex: number, context: WeldingJournalTemplateContext, templateId: DocumentTemplateId) {
   const marker = parseTemplateMarkerToken(fieldName)
   const mappedKey = TEMPLATE_FIELD_ALIASES.get(normalizeTemplateFieldName(marker.fieldName))
   if (!mappedKey) return ''
-  return formatTemplateFieldValue(getTemplateFieldValueByKey(mappedKey, record, recordIndex, context), marker.fallback)
+  return formatTemplateFieldValue(getTemplateFieldValueByKey(normalizeDocumentTemplateStageField(mappedKey, templateId), record, recordIndex, context), marker.fallback)
 }
 
 function getTemplateFieldValueByKey(

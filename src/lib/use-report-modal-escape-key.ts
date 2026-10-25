@@ -240,6 +240,7 @@ export function shouldDeferModalEscape() {
     document.querySelector('[data-confirm-action-dialog="true"]') ||
     document.querySelector('[data-workflow-result-tooltip="true"]') ||
     document.querySelector('[data-specialist-listbox]') ||
+    document.querySelector('[data-select-listbox]') ||
     document.querySelector('[data-dispatcher-action-menu="true"]') ||
     isContextActionMenuOpen(),
   )

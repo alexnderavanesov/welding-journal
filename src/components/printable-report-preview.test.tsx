@@ -5,50 +5,20 @@ import { PrintableReportPreview } from './printable-report-preview'
 beforeEach(() => vi.spyOn(window, 'scrollTo').mockImplementation(() => {}))
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
-it('fits only the screen page proportionally on resize and preserves manual zoom and full print HTML', () => {
-  const callbacks = new Set<() => void>()
-  const disconnect = vi.fn()
-  vi.stubGlobal('ResizeObserver', class {
-    constructor(private callback: () => void) {}
-    observe() { callbacks.add(this.callback) }
-    disconnect() { callbacks.delete(this.callback); disconnect() }
-  })
-  const template = { title: 'Excel page', html: '<div data-document-preview-page>Preview</div>',
-    navigation: null, printRestriction: '', buildPrintHtml: vi.fn(() => '<p>Original full print</p>'), scale: 'auto' as const }
-  const props = { report: null, busy: false, error: '', onClose: vi.fn(), onRetry: vi.fn() }
-  const { rerender, unmount } = render(<PrintableReportPreview {...props} templateDocument={template} />)
-  const iframe = screen.getByTitle('Excel page') as HTMLIFrameElement
-  // JSDOM does not lay out srcDoc, so supply the real shell's sizing contract.
-  const doc = iframe.contentDocument!
-  doc.body.style.padding = '16px'
-  doc.body.innerHTML = template.html
-  const paper = doc.querySelector<HTMLElement>('[data-document-preview-page]')!
-  let viewportWidth = 1460, pageWidth = 1250
-  Object.defineProperty(doc.documentElement, 'clientWidth', { get: () => viewportWidth })
-  Object.defineProperty(paper, 'offsetWidth', { get: () => pageWidth })
+it('keeps Escape inside the document working after the parent updates its close callback', () => {
+  const originalClose = vi.fn(), currentClose = vi.fn()
+  const props = { report: { title: 'Document' }, busy: false, error: '', onRetry: vi.fn() }
+  const { rerender } = render(<PrintableReportPreview {...props} onClose={originalClose} />)
+  const iframe = screen.getByTitle('Document') as HTMLIFrameElement
   fireEvent.load(iframe)
-  expect(Number(paper.style.zoom)).toBeCloseTo((1460 - 32) / 1250)
-  expect(paper.style.width).toBe('')
-  const resize = () => act(() => callbacks.forEach(callback => callback()))
-  viewportWidth = 600; resize()
-  expect(Number(paper.style.zoom)).toBeCloseTo((600 - 32) / 1250)
-  pageWidth = 240; resize()
-  expect(Number(paper.style.zoom)).toBe(1.5)
-  viewportWidth = 0; resize()
-  expect(Number(paper.style.zoom)).toBe(1.5)
-
-  rerender(<PrintableReportPreview {...props} templateDocument={{ ...template, scale: 75 }} />)
-  expect(Number(paper.style.zoom)).toBe(0.75)
-  expect(callbacks.size).toBe(0)
-  viewportWidth = 900; resize()
-  expect(Number(paper.style.zoom)).toBe(0.75)
-  expect(iframe.srcdoc).toBe(template.html)
-  fireEvent.click(screen.getByRole('button', { name: 'Печать / Сохранить PDF' }))
-  expect((screen.getByTitle('Полный отчёт для печати') as HTMLIFrameElement).srcdoc).toBe('<p>Original full print</p>')
-  expect(template.buildPrintHtml).toHaveBeenCalledOnce()
-  unmount()
-  expect(callbacks.size).toBe(0)
-  expect(disconnect).toHaveBeenCalled()
+  iframe.focus()
+  rerender(<PrintableReportPreview {...props} onClose={currentClose} />)
+  const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+  iframe.contentDocument!.body.dispatchEvent(event)
+  expect(event.defaultPrevented).toBe(true)
+  expect(currentClose).toHaveBeenCalledOnce()
+  expect(originalClose).not.toHaveBeenCalled()
+  expect(iframe).toHaveFocus()
 })
 
 it.each([1001, 10000])('blocks button and keyboard printing of %i rows without preparing a full document', count => {

@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select'
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, RefreshCw, Search, Trash2, X } from 'lucide-react'
@@ -213,7 +214,7 @@ export function AcceptedWarningsSettingsPanel({
 
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold text-slate-600">Период принятия</span>
-            <select
+            <Select
               value={period}
               onChange={(event) => {
                 setPeriod(event.target.value as DispatcherAcceptedWarningPeriod)
@@ -224,12 +225,12 @@ export function AcceptedWarningsSettingsPanel({
               {PERIOD_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
-            </select>
+            </Select>
           </label>
 
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold text-slate-600">Порядок</span>
-            <select
+            <Select
               value={sort}
               onChange={(event) => {
                 setSort(event.target.value as DispatcherAcceptedWarningSort)
@@ -240,7 +241,7 @@ export function AcceptedWarningsSettingsPanel({
               {SORT_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
-            </select>
+            </Select>
           </label>
         </div>
 

@@ -37,7 +37,11 @@ it('previews with blocked popups, prints only the report and closes from inside 
   const frame = await screen.findByTitle('Сводка по линиям') as HTMLIFrameElement
   expect(frame.srcdoc).toContain('<td>L1</td>')
   expect(frame.srcdoc).not.toContain('id="print-report"')
-  expect(frame.getAttribute('sandbox')).not.toContain('allow-scripts')
+  // WebKit needs script-enabled frames for parent-owned wheel handlers;
+  // document scripts remain forbidden by the first CSP in the frame.
+  expect(frame.srcdoc).toContain("script-src 'none'")
+  expect(frame.srcdoc).toContain("form-action 'none'")
+  expect(frame.getAttribute('sandbox')).not.toContain('allow-top-navigation')
   const print = vi.spyOn(frame.contentWindow!, 'print').mockImplementation(() => {})
   vi.spyOn(frame.contentWindow!, 'focus').mockImplementation(() => {})
   fireEvent.load(frame)

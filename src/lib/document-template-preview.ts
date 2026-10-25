@@ -209,6 +209,7 @@ export function getPreviewCellStyle(style: unknown): DocumentTemplatePreviewCell
     fontStyle: font.italic ? 'italic' : undefined,
     textDecoration: textDecoration || undefined,
     textAlign: normalizePreviewHorizontalAlignment(alignment.horizontal),
+    centerAcrossSelection: alignment.horizontal === 'centerContinuous' || undefined,
     verticalAlign: normalizePreviewVerticalAlignment(alignment.vertical),
     whiteSpace: alignment.wrapText ? 'pre-line' : 'normal',
     borderTop: getPreviewBorder(border.top),
@@ -225,9 +226,14 @@ export function getPreviewWorkbookXmlStyles(fileData: ArrayBuffer, sheetIndex: n
     const sheetXml = readCfbText(cfb, getWorksheetPath(cfb, sheetIndex))
     if (!stylesXml || !sheetXml) return new Map<string, DocumentTemplatePreviewCellStyle>()
 
-    const fonts = extractXmlCollection(stylesXml, 'fonts', 'font').map(parsePreviewFont)
-    const fills = extractXmlCollection(stylesXml, 'fills', 'fill').map(parsePreviewFill)
-    const borders = extractXmlCollection(stylesXml, 'borders', 'border').map(parsePreviewBorder)
+    const themeXml = readCfbText(cfb, 'xl/theme/theme1.xml') ?? ''
+    const theme = ['lt1', 'dk1', 'lt2', 'dk2', 'accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6', 'hlink', 'folHlink'].map(name => {
+      const color = themeXml.match(new RegExp(`<a:${name}>([\\s\\S]*?)</a:${name}>`))?.[1]
+      return color?.match(/(?:lastClr|val)="([0-9A-Fa-f]{6})"/)?.[1]
+    })
+    const fonts = extractXmlCollection(stylesXml, 'fonts', 'font').map(xml => parsePreviewFont(xml, theme))
+    const fills = extractXmlCollection(stylesXml, 'fills', 'fill').map(xml => parsePreviewFill(xml, theme))
+    const borders = extractXmlCollection(stylesXml, 'borders', 'border').map(xml => parsePreviewBorder(xml, theme))
     const cellFormats = extractXmlCollection(stylesXml, 'cellXfs', 'xf').map((xf) =>
       parsePreviewCellFormat(xf, fonts, fills, borders),
     )
@@ -245,13 +251,13 @@ export function getPreviewWorkbookXmlStyles(fileData: ArrayBuffer, sheetIndex: n
   }
 }
 
-function parsePreviewFont(xml: string): DocumentTemplatePreviewCellStyle {
+function parsePreviewFont(xml: string, theme: (string | undefined)[]): DocumentTemplatePreviewCellStyle {
   const fontName = getXmlElementAttribute(xml, 'name', 'val')
   const fontSize = Number(getXmlElementAttribute(xml, 'sz', 'val'))
   const underline = /<u\b/.test(xml)
   const strike = /<strike\b/.test(xml)
   return compactPreviewCellStyle({
-    color: getPreviewXmlColor(xml.match(/<color\b[^>]*\/?>/)?.[0]),
+    color: getPreviewXmlColor(xml.match(/<color\b[^>]*\/?>/)?.[0], theme),
     fontFamily: fontName || undefined,
     fontSize: Number.isFinite(fontSize) ? fontSize : undefined,
     fontWeight: /<b\b/.test(xml) ? 700 : undefined,
@@ -260,21 +266,21 @@ function parsePreviewFont(xml: string): DocumentTemplatePreviewCellStyle {
   })
 }
 
-function parsePreviewFill(xml: string): DocumentTemplatePreviewCellStyle {
+function parsePreviewFill(xml: string, theme: (string | undefined)[]): DocumentTemplatePreviewCellStyle {
   const patternFill = xml.match(/<patternFill\b[^>]*(?:\/>|>[\s\S]*?<\/patternFill>)/)?.[0]
   const patternType = patternFill ? parseXmlAttributes(patternFill).get('patternType') : undefined
   if (!patternFill || patternType === 'none') return {}
   return compactPreviewCellStyle({
-    backgroundColor: getPreviewXmlColor(patternFill.match(/<fgColor\b[^>]*\/?>/)?.[0]),
+    backgroundColor: getPreviewXmlColor(patternFill.match(/<fgColor\b[^>]*\/?>/)?.[0], theme),
   })
 }
 
-function parsePreviewBorder(xml: string): DocumentTemplatePreviewCellStyle {
+function parsePreviewBorder(xml: string, theme: (string | undefined)[]): DocumentTemplatePreviewCellStyle {
   return compactPreviewCellStyle({
-    borderTop: getPreviewXmlBorder(xml, 'top'),
-    borderRight: getPreviewXmlBorder(xml, 'right'),
-    borderBottom: getPreviewXmlBorder(xml, 'bottom'),
-    borderLeft: getPreviewXmlBorder(xml, 'left'),
+    borderTop: getPreviewXmlBorder(xml, 'top', theme),
+    borderRight: getPreviewXmlBorder(xml, 'right', theme),
+    borderBottom: getPreviewXmlBorder(xml, 'bottom', theme),
+    borderLeft: getPreviewXmlBorder(xml, 'left', theme),
   })
 }
 
@@ -292,17 +298,18 @@ function parsePreviewCellFormat(
     ...(fills[Number(attrs.get('fillId') ?? 0)] ?? {}),
     ...(borders[Number(attrs.get('borderId') ?? 0)] ?? {}),
     textAlign: normalizePreviewHorizontalAlignment(alignment.get('horizontal')),
+    centerAcrossSelection: alignment.get('horizontal') === 'centerContinuous' || undefined,
     verticalAlign: normalizePreviewVerticalAlignment(alignment.get('vertical')),
     whiteSpace: alignment.get('wrapText') === '1' || alignment.get('wrapText') === 'true' ? 'pre-line' : undefined,
   })
 }
 
-function getPreviewXmlBorder(xml: string, side: 'top' | 'right' | 'bottom' | 'left') {
+function getPreviewXmlBorder(xml: string, side: 'top' | 'right' | 'bottom' | 'left', theme: (string | undefined)[]) {
   const tag = xml.match(new RegExp(`<${side}\\b[^>]*(?:\\/>|>[\\s\\S]*?<\\/${side}>)`))?.[0]
   if (!tag) return undefined
   const style = parseXmlAttributes(tag).get('style')
   if (!style) return undefined
-  const color = getPreviewXmlColor(tag.match(/<color\b[^>]*\/?>/)?.[0]) ?? '#cbd5e1'
+  const color = getPreviewXmlColor(tag.match(/<color\b[^>]*\/?>/)?.[0], theme) ?? '#000000'
   const width = style.toLowerCase().includes('thick') ? 3 : style.toLowerCase().includes('medium') ? 2 : 1
   const lineStyle =
     style.toLowerCase().includes('dash') || style.toLowerCase().includes('dot')
@@ -313,12 +320,25 @@ function getPreviewXmlBorder(xml: string, side: 'top' | 'right' | 'bottom' | 'le
   return `${width}px ${lineStyle} ${color}`
 }
 
-function getPreviewXmlColor(tag: string | undefined) {
+function getPreviewXmlColor(tag: string | undefined, theme: (string | undefined)[] = []) {
   if (!tag) return undefined
   const attrs = parseXmlAttributes(tag)
   const rgb = attrs.get('rgb')
   if (rgb) return normalizePreviewRgb(rgb)
-  const indexed = Number(attrs.get('indexed'))
+  const color = attrs.has('theme') ? theme[Number(attrs.get('theme'))] : undefined
+  if (color) {
+    const tint = Math.max(-1, Math.min(1, Number(attrs.get('tint') || 0)))
+    // Excel tint adjusts HSL luminance, keeping hue/saturation (not RGB channels).
+    const channels = [0, 2, 4].map(i => parseInt(color.slice(i, i + 2), 16) / 255)
+    const min = Math.min(...channels), max = Math.max(...channels), light = (max + min) / 2, delta = max - min
+    const saturation = delta ? delta / (1 - Math.abs(2 * light - 1)) : 0
+    const nextLight = tint < 0 ? light * (1 + tint) : light + (1 - light) * tint
+    const chroma = (1 - Math.abs(2 * nextLight - 1)) * saturation
+    return '#' + channels.map(value => {
+      return Math.round(255 * (nextLight + (delta ? (value - light) * chroma / delta : 0))).toString(16).padStart(2, '0')
+    }).join('')
+  }
+  const indexed = attrs.has('indexed') ? Number(attrs.get('indexed')) : NaN
   if (Number.isFinite(indexed)) return PREVIEW_INDEXED_COLORS[indexed]
   return undefined
 }
@@ -351,6 +371,8 @@ const PREVIEW_INDEXED_COLORS: Record<number, string> = {
   7: '#00FFFF',
   8: '#000000',
   9: '#FFFFFF',
+  64: '#000000',
+  65: '#FFFFFF',
 }
 
 function getPreviewColor(value: unknown) {
@@ -360,7 +382,7 @@ function getPreviewColor(value: unknown) {
 
 function getPreviewBorder(value: unknown) {
   if (!isObjectRecord(value) || typeof value.style !== 'string') return undefined
-  const color = getPreviewColor(value.color) ?? '#cbd5e1'
+  const color = getPreviewColor(value.color) ?? '#000000'
   const borderStyle = value.style.toLowerCase()
   const width = borderStyle.includes('thick') ? 3 : borderStyle.includes('medium') ? 2 : 1
   const lineStyle =
@@ -373,6 +395,7 @@ function getPreviewBorder(value: unknown) {
 }
 
 function normalizePreviewHorizontalAlignment(value: unknown): DocumentTemplatePreviewCellStyle['textAlign'] {
+  if (value === 'centerContinuous') return 'center'
   if (value === 'center' || value === 'right' || value === 'left') return value
   return undefined
 }

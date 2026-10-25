@@ -282,8 +282,10 @@ export function registerWeldGridContract(report: GridReport) {
     await page.waitForLoadState('networkidle')
     {
       expect(calls.filter(name => name.startsWith('summarizeJournalGridRange')).length).toBeLessThanOrEqual(2)
+      // Joint/WDI/date statistics are separate from numeric cell statistics.
+      expect(calls.filter(name => name.startsWith('summarizeJournalGridArea')).length).toBeLessThanOrEqual(2)
       expect(calls.filter(name => name.startsWith('copyJournalGridRange'))).toHaveLength(1)
-      expect(calls.every(name => /^(summarizeJournalGridRange|copyJournalGridRange)_/.test(name))).toBe(true)
+      expect(calls.every(name => /^(summarizeJournalGridRange|summarizeJournalGridArea|copyJournalGridRange)_/.test(name))).toBe(true)
     }
   })
 
@@ -604,8 +606,16 @@ export function registerWeldGridContract(report: GridReport) {
     await expect(page.getByRole('button', { name: 'F2250', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Снять все группировки', exact: true }).click()
     await expect(page.locator('.ag-row-group')).toHaveCount(0)
+    await expect(page.locator('.journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
+    // Ungrouping briefly has no rows: a wheel during that phase reaches the
+    // temporary page bottom before the leaf response creates the scroll range.
+    await expect.poll(() => page.locator('.ag-grid-viewport').evaluate(el => el.scrollHeight - el.clientHeight)).toBeGreaterThan(1000)
+    await waitForGridRows(page)
     await page.locator('.ag-grid-viewport').hover()
-    await page.mouse.wheel(0, 500)
+    // The toolbar height depends on wrapped workflow controls. Scroll beyond
+    // its measured bottom rather than assuming a fixed 500px is sufficient.
+    const toolbarBottom = isWorkflow ? await page.locator('[data-journal-toolbar]').evaluate(element => element.getBoundingClientRect().bottom) : 0
+    await page.mouse.wheel(0, Math.max(500, toolbarBottom + 100))
     if (isWorkflow) await expect.poll(() => page.locator('[data-journal-toolbar]').evaluate(element => element.getBoundingClientRect().bottom)).toBeLessThan(1)
     await header.click({ button: 'right' })
     await page.getByRole('menuitem', { name: 'Выбрать столбцы', exact: true }).click()

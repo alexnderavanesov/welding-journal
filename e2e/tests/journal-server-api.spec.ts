@@ -83,6 +83,13 @@ test('exact server ranges, overlap, grouping and bounded transport at the target
   expect(selected.ids).toHaveLength(Math.min(total,1000))
   const allSelected = await call<{ ids:number[] }>(page,'selectJournalGridRows',{ ...query, route:[],revision:root.revision })
   expect(allSelected.ids).toHaveLength(total)
+  const expectedSummary = {
+    records: total, joints: total, wdi: total, missingWdi: 0, weldDate: '01.10.2026', missingDates: 0,
+  }
+  expect(await call(page, 'summarizeJournalGridSelection', { ids: allSelected.ids })).toEqual(expectedSummary)
+  const rangeSelection = await call<{ ids: number[] }>(page, 'selectJournalGridRange', range)
+  expect(new Set(rangeSelection.ids)).toEqual(new Set(allSelected.ids))
+  expect(await call(page, 'summarizeJournalGridArea', range)).toEqual(expectedSummary)
   const selectionCounts = await call<{total:number;counts:Record<string,number>;snapshot:string;complete:boolean}>(page,'countJournalGridSelection',{ ...query,groupBy:['line'],revision:root.revision,
     ids:allSelected.ids,routes:[['API-000']] })
   expect(selectionCounts).toMatchObject({ total, counts: { '["API-000"]': Math.min(total,1000) }, complete: true, snapshot: expect.any(String) })
@@ -121,6 +128,7 @@ test('exact server ranges, overlap, grouping and bounded transport at the target
   expect((await call<JournalGridResult>(page, 'readJournalGrid', one)).rowCount).toBe(1)
   await withLineProgramFixture(db => db.query('update weld_joints set wdi=2, joint=$2 where id=$1',[root.rows[0].id, 'S999999']))
   await expect(call(page,'summarizeJournalGridRange',range)).rejects.toThrow('Данные журнала изменились')
+  await expect(call(page,'selectJournalGridRange',range)).rejects.toThrow('Данные журнала изменились')
   await expect(call(page, 'countJournalGridSelection', tokenRequest)).rejects.toThrow('Данные журнала изменились')
   await expect(call(page, 'readJournalFilterPage', facet)).rejects.toThrow('Данные журнала изменились')
   if (after) {

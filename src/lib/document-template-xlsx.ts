@@ -288,6 +288,36 @@ type WorkbookXmlPreservationContext = {
   markerRowCount?: number
   recordCount: number
   sheetIndex: number
+  /** Filled summary cells, using their final Excel addresses after row insertion. */
+  autoFitCells?: string[]
+}
+
+/** Only the filled sheet is compacted: its original column XML is restored below. */
+export function writeTemplateWorkbook(
+  templateData: ArrayBuffer,
+  workbook: XLSXTypes.WorkBook,
+  context: WorkbookXmlPreservationContext,
+) {
+  const sheet = workbook.Sheets[workbook.SheetNames[context.sheetIndex]]
+  const columns = sheet['!cols']
+  let lastColumn = sheet['!ref'] ? XLSX.utils.decode_range(sheet['!ref']).e.c : 0
+  for (const merge of sheet['!merges'] ?? []) lastColumn = Math.max(lastColumn, merge.e.c)
+  let canCompact = false
+  if (columns && columns.length > lastColumn + 1) {
+    const templateCfb = XLSX.CFB.read(new Uint8Array(templateData), { type: 'array' })
+    // Legacy .xls has no worksheet XML to restore; leave all its columns intact.
+    canCompact = /<cols\b/.test(readCfbText(templateCfb, getWorksheetPath(templateCfb, context.sheetIndex)) ?? '')
+  }
+  let generated: ArrayBuffer
+  try {
+    // SheetJS expands a compact default-column range into up to 16,384 entries.
+    // Keep widths needed by row auto-height; untouched sheets retain all columns.
+    if (canCompact) sheet['!cols'] = columns!.slice(0, lastColumn + 1)
+    generated = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', cellStyles: true }) as ArrayBuffer
+  } finally {
+    if (columns) sheet['!cols'] = columns
+  }
+  return preserveTemplateWorkbookXml(templateData, generated, context)
 }
 
 export function preserveTemplateWorkbookXml(
@@ -311,7 +341,7 @@ export function preserveTemplateWorkbookXml(
 
     const templateSheetPath = getWorksheetPath(templateCfb, context.sheetIndex)
     const generatedSheetPath = getWorksheetPath(generatedCfb, context.sheetIndex)
-    copyCfbFile(templateCfb, generatedCfb, getWorksheetRelationshipsPath(templateSheetPath))
+    copyCfbFile(templateCfb, generatedCfb, getWorksheetRelationshipsPath(templateSheetPath), getWorksheetRelationshipsPath(generatedSheetPath))
     const templateSheetXml = readCfbText(templateCfb, templateSheetPath)
     const generatedSheetXml = readCfbText(generatedCfb, generatedSheetPath)
     if (templateSheetXml && generatedSheetXml) {
@@ -337,6 +367,23 @@ export function preserveTemplateWorkbookXml(
       sanitizeGeneratedWorkbookDefinedNames(generatedCfb, patchedSheetXml, context.sheetIndex)
     }
 
+    // SheetJS rewrites the whole workbook. Restoring its shared style table also
+    // requires restoring styles and drawing links on the unfilled sheets.
+    // Keep generated cell values (their shared-string references may differ).
+    const sheetCount = readCfbText(templateCfb, 'xl/workbook.xml')?.match(/<sheet\b/g)?.length ?? 0
+    const stylesXml = readCfbText(templateCfb, 'xl/styles.xml')
+    for (let sheetIndex = 0; sheetIndex < sheetCount; sheetIndex++) {
+      if (sheetIndex === context.sheetIndex) continue
+      const sourcePath = getWorksheetPath(templateCfb, sheetIndex), targetPath = getWorksheetPath(generatedCfb, sheetIndex)
+      const sourceXml = readCfbText(templateCfb, sourcePath), targetXml = readCfbText(generatedCfb, targetPath)
+      if (!sourceXml || !targetXml) continue
+      const styles = extractCellStyleMap(sourceXml)
+      fillMissingMergedCellStyles(sourceXml, stylesXml, styles)
+      writeCfbText(generatedCfb, targetPath, preserveWorksheetPresentationElements(sourceXml,
+        applyTemplateCellStyles(targetXml, styles, { markerRow: 0, recordCount: 1, sheetIndex })))
+      copyCfbFile(templateCfb, generatedCfb, getWorksheetRelationshipsPath(sourcePath), getWorksheetRelationshipsPath(targetPath))
+    }
+
     return XLSX.CFB.write(generatedCfb, { type: 'array', fileType: 'zip' }) as ArrayBuffer
   } catch (error) {
     const detail = error instanceof Error ? `: ${error.message}` : ''
@@ -351,13 +398,13 @@ export type CfbContainer = {
   FileIndex: Array<{ content: Uint8Array; size: number }>
 }
 
-function copyCfbFile(sourceCfb: CfbContainer, targetCfb: CfbContainer, path: string) {
+function copyCfbFile(sourceCfb: CfbContainer, targetCfb: CfbContainer, path: string, targetPath = path) {
   const sourceIndex = findCfbFileIndex(sourceCfb, path)
-  const targetIndex = findCfbFileIndex(targetCfb, path)
+  const targetIndex = findCfbFileIndex(targetCfb, targetPath)
   if (sourceIndex < 0) return
   const content = new Uint8Array(sourceCfb.FileIndex[sourceIndex].content)
   if (targetIndex < 0) {
-    XLSX.CFB.utils.cfb_add(targetCfb as never, path.replace(/^\/+/, ''), content)
+    XLSX.CFB.utils.cfb_add(targetCfb as never, targetPath.replace(/^\/+/, ''), content)
     return
   }
   targetCfb.FileIndex[targetIndex].content = content
@@ -480,6 +527,24 @@ function findCfbFileIndex(cfb: CfbContainer, path: string) {
 }
 
 export function getWorksheetPath(cfb: CfbContainer, sheetIndex: number) {
+  // Excel can reorder tabs without renaming sheet1.xml/sheet2.xml. Follow the
+  // workbook relationship rather than pairing values with another tab's style.
+  const sheet = readCfbText(cfb, 'xl/workbook.xml').match(/<sheet\b[^>]*>/g)?.[Math.max(0, sheetIndex)]
+  const id = sheet ? parseXmlAttributes(sheet).get('r:id') : undefined
+  if (id) {
+    const link = readCfbText(cfb, 'xl/_rels/workbook.xml.rels').match(/<Relationship\b[^>]*>/g)
+      ?.map(parseXmlAttributes).find(attrs => attrs.get('Id') === id && attrs.get('TargetMode') !== 'External')
+    const target = link?.get('Target')
+    if (target) {
+      const parts = target.startsWith('/') ? [] : ['xl']
+      for (const part of target.split('/')) {
+        if (part === '..') parts.pop()
+        else if (part && part !== '.') parts.push(part)
+      }
+      const path = parts.join('/')
+      if (findCfbFileIndex(cfb, path) >= 0) return path
+    }
+  }
   const worksheetPaths = cfb.FullPaths
     .map((fullPath) => fullPath.replace(/^Root Entry\//, ''))
     .filter((path) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(path))
@@ -595,6 +660,8 @@ function updatePrintAreaFormula(
 }
 
 const worksheetPresentationElementOrder = [
+  'cols',
+  'sheetData',
   'printOptions',
   'pageMargins',
   'pageSetup',
@@ -620,8 +687,26 @@ function preserveWorksheetPresentationElements(
   templateSheetXml: string,
   generatedSheetXml: string,
 ) {
+  // fitToWidth/Height in pageSetup only take effect when sheetPr activates
+  // fitToPage. SheetJS drops this child during generation; retain it without
+  // replacing unrelated generated sheet properties.
+  const pagePropertiesPattern = createWorksheetElementPattern('pageSetUpPr')
+  const pageProperties = templateSheetXml.match(pagePropertiesPattern)?.[0]
+  if (pageProperties) {
+    const sheetPropertiesPattern = createWorksheetElementPattern('sheetPr')
+    const existing = generatedSheetXml.match(sheetPropertiesPattern)?.[0]
+    const properties = existing ?? '<sheetPr/>'
+    const updated = pagePropertiesPattern.test(properties) ? properties.replace(pagePropertiesPattern, pageProperties)
+      : properties.endsWith('/>') ? properties.replace(/\/>$/, `>${pageProperties}</sheetPr>`)
+        : properties.replace('</sheetPr>', `${pageProperties}</sheetPr>`)
+    generatedSheetXml = existing ? generatedSheetXml.replace(sheetPropertiesPattern, updated)
+      : generatedSheetXml.replace(/(<worksheet\b[^>]*>)/, `$1${updated}`)
+  }
   const templateElements = [
     ...extractWorksheetElements(templateSheetXml, [
+      // SheetJS expands default column ranges through XFD. Keep the original
+      // compact ranges and exact widths/styles; generation only inserts rows.
+      'cols',
       'printOptions',
       'pageMargins',
       'pageSetup',
@@ -871,7 +956,7 @@ function applyStylesToWorksheetRow(
 function ensureGeneratedMultilineCellWrapping(
   sheetXml: string,
   stylesXml: string,
-  { markerRow, markerRowCount = 1, recordCount }: WorkbookXmlPreservationContext,
+  { markerRow, markerRowCount = 1, recordCount, autoFitCells = [] }: WorkbookXmlPreservationContext,
 ) {
   const generatedStartRow = markerRow + 1
   const generatedEndRow =
@@ -880,6 +965,7 @@ function ensureGeneratedMultilineCellWrapping(
   if (!cellFormats.length) return { sheetXml, stylesXml }
 
   const wrappedStyleIds = new Map<number, number>()
+  const summaryCells = new Set(autoFitCells)
   const nextFormats = [...cellFormats]
   const nextSheetXml = sheetXml.replace(/<c\b[^>]*(?:\/>|>[\s\S]*?<\/c>)/g, (cellXml) => {
     const openingTag = cellXml.match(/^<c\b[^>]*>/)?.[0]
@@ -887,7 +973,7 @@ function ensureGeneratedMultilineCellWrapping(
     const attrs = parseXmlAttributes(openingTag)
     const cellRef = attrs.get('r')
     const decoded = cellRef ? decodeCellReference(cellRef) : null
-    if (!decoded || decoded.row < generatedStartRow || decoded.row > generatedEndRow) return cellXml
+    if (!decoded || (!summaryCells.has(cellRef!) && (decoded.row < generatedStartRow || decoded.row > generatedEndRow))) return cellXml
     if (!extractWorksheetCellText(cellXml).includes('\n')) return cellXml
 
     const sourceStyleId = Number(attrs.get('s') ?? 0)
@@ -946,7 +1032,7 @@ function cellFormatWrapsText(cellFormat: string) {
 function applyGeneratedRowAutoHeights(
   sheetXml: string,
   stylesXml: string,
-  { markerRow, markerRowCount = 1, recordCount }: WorkbookXmlPreservationContext,
+  { markerRow, markerRowCount = 1, recordCount, autoFitCells = [] }: WorkbookXmlPreservationContext,
 ) {
   const generatedStartRow = markerRow + 1
   const generatedEndRow =
@@ -955,19 +1041,45 @@ function applyGeneratedRowAutoHeights(
   const mergeColumnSpans = extractWorksheetMergeColumnSpans(sheetXml)
   const cellFormats = extractXmlCollection(stylesXml, 'cellXfs', 'xf')
   const fonts = extractXmlCollection(stylesXml, 'fonts', 'font')
+  const summaryCells = new Set(autoFitCells)
+  const summaryRows = new Set(autoFitCells.map(address => decodeCellReference(address)?.row))
+  const rowHeights = new Map<number, number>()
+  for (const tag of sheetXml.match(/<row\b[^>]*>/g) ?? []) {
+    const attrs = parseXmlAttributes(tag)
+    rowHeights.set(Number(attrs.get('r')), Number(attrs.get('ht') ?? 15))
+  }
+  const mergedRowSpace = new Map<string, number>()
+  for (const tag of sheetXml.match(/<mergeCell\b[^>]*\/?>/g) ?? []) {
+    const [startRef, endRef] = parseXmlAttributes(tag).get('ref')?.split(':') ?? []
+    const start = startRef ? decodeCellReference(startRef) : null
+    const end = endRef ? decodeCellReference(endRef) : null
+    if (!start || !end || !summaryCells.has(startRef)) continue
+    let height = 0
+    for (let row = start.row + 1; row <= end.row; row++) height += rowHeights.get(row) ?? 15
+    mergedRowSpace.set(startRef, height)
+  }
 
   return sheetXml.replace(/<row\b[^>]*(?:\/>|>[\s\S]*?<\/row>)/g, (rowXml) => {
     const openingTag = rowXml.match(/^<row\b[^>]*>/)?.[0]
     if (!openingTag) return rowXml
     const rowNumber = Number(parseXmlAttributes(openingTag).get('r'))
-    if (!Number.isFinite(rowNumber) || rowNumber < generatedStartRow || rowNumber > generatedEndRow) return rowXml
+    const isRepeatRow = rowNumber >= generatedStartRow && rowNumber <= generatedEndRow
+    if (!Number.isFinite(rowNumber) || (!isRepeatRow && !summaryRows.has(rowNumber))) return rowXml
 
     let requiredHeight = 0
-    for (const cellXml of rowXml.match(/<c\b[^>]*(?:\/>|>[\s\S]*?<\/c>)/g) ?? []) {
+    const rowCells = rowXml.match(/<c\b[^>]*(?:\/>|>[\s\S]*?<\/c>)/g) ?? []
+    const cellsByColumn = new Map<number, string>()
+    for (const cellXml of rowCells) {
+      const address = parseXmlAttributes(cellXml.match(/^<c\b[^>]*>/)?.[0] ?? '').get('r')
+      const cell = address ? decodeCellReference(address) : null
+      if (cell) cellsByColumn.set(cell.column, cellXml)
+    }
+    for (const cellXml of rowCells) {
       const cellOpeningTag = cellXml.match(/^<c\b[^>]*>/)?.[0]
       if (!cellOpeningTag) continue
       const attrs = parseXmlAttributes(cellOpeningTag)
       const cellRef = attrs.get('r')
+      if (!isRepeatRow && !summaryCells.has(cellRef ?? '')) continue
       const decoded = cellRef ? decodeCellReference(cellRef) : null
       if (!decoded) continue
       const text = extractWorksheetCellText(cellXml)
@@ -975,7 +1087,17 @@ function applyGeneratedRowAutoHeights(
       const styleId = Number(attrs.get('s') ?? 0)
       const wrapsText = text.includes('\n') || cellFormatWrapsText(cellFormats[styleId] ?? '')
       if (!wrapsText) continue
-      const columnSpan = mergeColumnSpans.get(cellRef ?? '') ?? 1
+      let columnSpan = mergeColumnSpans.get(cellRef ?? '') ?? 1
+      // Excel's "center across selection" uses adjacent empty cells without a merge.
+      // Counting only the first column would make real summary rows far too tall.
+      if (columnSpan === 1 && /horizontal="centerContinuous"/.test(cellFormats[styleId] ?? '')) {
+        for (let column = decoded.column + 1; cellsByColumn.has(column); column++) {
+          const adjacent = cellsByColumn.get(column)!
+          const adjacentStyle = Number(parseXmlAttributes(adjacent.match(/^<c\b[^>]*>/)?.[0] ?? '').get('s') ?? 0)
+          if (extractWorksheetCellText(adjacent) || !/horizontal="centerContinuous"/.test(cellFormats[adjacentStyle] ?? '')) break
+          columnSpan++
+        }
+      }
       const availableCharacters = Array.from(
         { length: columnSpan },
         (_, index) => columnWidths.get(decoded.column + index) ?? 12,
@@ -986,11 +1108,14 @@ function applyGeneratedRowAutoHeights(
       )
       const fontSize = getCellFormatFontSize(cellFormats[styleId] ?? '', fonts)
       const lineHeight = Math.max(fontSize * 1.25, 15)
-      requiredHeight = Math.max(requiredHeight, lineCount * lineHeight + 3)
+      requiredHeight = Math.max(requiredHeight, lineCount * lineHeight + 3 - (mergedRowSpace.get(cellRef ?? '') ?? 0))
     }
 
     const clearedOpeningTag = removeXmlAttribute(removeXmlAttribute(openingTag, 'ht'), 'customHeight')
-    if (requiredHeight <= 18) return rowXml.replace(openingTag, clearedOpeningTag)
+    // Summary rows belong to the form: grow them only when filled text needs it.
+    // Keep intentional whitespace and the heights of unrelated template rows.
+    if (!isRepeatRow && requiredHeight <= (rowHeights.get(rowNumber) ?? 15)) return rowXml
+    if (isRepeatRow && requiredHeight <= 18) return rowXml.replace(openingTag, clearedOpeningTag)
     const existingHeight = Number(parseXmlAttributes(openingTag).get('ht') ?? 0)
     const calculatedHeight = Math.min(Math.max(requiredHeight, existingHeight, 18), 409)
     const fittedOpeningTag = setXmlAttribute(

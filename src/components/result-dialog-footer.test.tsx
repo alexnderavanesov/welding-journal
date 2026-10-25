@@ -3,6 +3,18 @@ import { describe, expect, it, vi } from 'vitest'
 import { ResultDialogFooter } from '@/components/result-dialog-footer'
 
 describe('ResultDialogFooter', () => {
+  it('disables saving while current rows load even when draft validation has already passed', () => {
+    const onSave = vi.fn()
+    const props = { onSave, onClose: vi.fn(), isSaveDisabled: false }
+    const view = render(<ResultDialogFooter {...props} saveBlockReason="Загрузка выбранных стыков…" />)
+    const save = screen.getByRole('button', { name: 'Сохранить результат' })
+    expect(save).toBeDisabled()
+    fireEvent.click(save)
+    expect(onSave).not.toHaveBeenCalled()
+    view.rerender(<ResultDialogFooter {...props} saveBlockReason={null} />)
+    fireEvent.click(save)
+    expect(onSave).toHaveBeenCalledOnce()
+  })
   it('keeps the server error visible when the draft also has a validation error', () => {
     render(<ResultDialogFooter saveBlockReason="Укажите дату контроля" saveError="Сервер недоступен" isSaveDisabled onSave={vi.fn()} onClose={vi.fn()} />)
     expect(screen.getByRole('alert')).toHaveTextContent('Укажите дату контроля')

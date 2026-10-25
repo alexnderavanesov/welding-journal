@@ -4,7 +4,7 @@ import type { GridApi } from 'ag-grid-community'
 import { useJournalDocumentScroll } from './use-journal-document-scroll'
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); document.body.replaceChildren() })
-function mount(pageTop = 0, nativeMotion = false, trailingSpace?: number) {
+function mount(pageTop = 0, nativeMotion = false, trailingSpace?: number, withBottomCover = false) {
   vi.stubGlobal('CSS', { supports: () => nativeMotion })
   let resized!: ResizeObserverCallback
   vi.stubGlobal('ResizeObserver', class { constructor(callback: ResizeObserverCallback) { resized = callback } observe() {} disconnect() {} })
@@ -16,6 +16,7 @@ function mount(pageTop = 0, nativeMotion = false, trailingSpace?: number) {
   scroll.mockClear()
   document.body.innerHTML = '<div id="track"><div id="stage"><div id="frame"><div class="ag-grid-viewport"><div class="ag-grid-scrollable-area"><div class="ag-grid-scrolling-rows"><div class="ag-grid-scrolling-container"></div></div></div></div></div><div class="journal-footer"></div></div></div>'
   Object.defineProperty(document.querySelector('.journal-footer'), 'offsetHeight', { get: () => 30 })
+  const bottomCover = withBottomCover ? document.body.appendChild(document.createElement('div')) : undefined
   const track = document.querySelector<HTMLDivElement>('#track')!
   vi.spyOn(track, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, 200 - window.scrollY, 1000, parseFloat(track.style.height) || 500))
   if (trailingSpace !== undefined) {
@@ -33,8 +34,8 @@ function mount(pageTop = 0, nativeMotion = false, trailingSpace?: number) {
   let modelUpdated!: () => void
   const api = { isDestroyed: () => false, getRowGroupColumns: () => [], addEventListener: (_name: string, callback: () => void) => { modelUpdated = callback }, removeEventListener: vi.fn() } as unknown as GridApi
   const hook = renderHook(() => useJournalDocumentScroll({ current: track }, { current: document.querySelector<HTMLDivElement>('#stage') },
-    { current: document.querySelector<HTMLDivElement>('#frame') }, api, true))
-  return { ...hook, track, viewport, scroll, documentHeight, modelUpdated: () => modelUpdated(), extent: (next: number) => { extent = next },
+    { current: document.querySelector<HTMLDivElement>('#frame') }, api, true, 0, undefined, bottomCover))
+  return { ...hook, track, viewport, scroll, documentHeight, bottomCover, modelUpdated: () => modelUpdated(), extent: (next: number) => { extent = next },
     resized: (target: Element, width: number, height: number) => resized([{ target, contentRect: { width, height } } as ResizeObserverEntry], {} as ResizeObserver) }
 }
 
@@ -61,6 +62,25 @@ it('anchors the footer to the report width and releases it in a viewport too sho
   expect(stage.hasAttribute('data-journal-docked-footer')).toBe(false)
   view.unmount()
   expect(stage.style.getPropertyValue('--journal-footer-height')).toBe('')
+})
+
+it('keeps the detached bottom cover aligned on resize and releases it with the footer', () => {
+  const view = mount(0, false, 22, true)
+  const cover = view.bottomCover!
+  expect(cover.parentElement).toBe(document.body)
+  expect(cover.hasAttribute('data-journal-docked-footer')).toBe(true)
+  expect(cover.style.getPropertyValue('--journal-footer-bottom')).toBe('22px')
+  vi.mocked(view.track.getBoundingClientRect).mockImplementation(() => new DOMRect(64, 200, 800, parseFloat(view.track.style.height)))
+  view.resized(view.track, 800, 500)
+  vi.mocked(requestAnimationFrame).mock.calls.at(-1)![0](0)
+  expect(cover.style.getPropertyValue('--journal-footer-left')).toBe('64px')
+  expect(cover.style.getPropertyValue('--journal-footer-width')).toBe('800px')
+  vi.stubGlobal('innerHeight', 300)
+  window.dispatchEvent(new Event('resize'))
+  vi.mocked(requestAnimationFrame).mock.calls.at(-1)![0](0)
+  expect(cover.hasAttribute('data-journal-docked-footer')).toBe(false)
+  view.unmount()
+  expect(cover.style.getPropertyValue('--journal-footer-bottom')).toBe('')
 })
 
 it('uses the reduced content height after grouping, excluding the previous translated row overflow', () => {

@@ -388,11 +388,11 @@ export function LnkRequestManagerDialog({
                 <option key={method.code} value={method.code}>{method.code}</option>
               ))}
             </Select>
-            <div className="grid grid-cols-3 rounded-md border border-slate-200 bg-white p-1 text-xs" role="group" aria-label="Фильтр заявок">
+            <div className="grid grid-cols-3 rounded-md border border-slate-200 bg-white p-1 text-xs" role="group" aria-label="Доступность дополнения заявок">
               {([
                 ['all', 'Все'],
-                ['open', 'Открытые'],
-                ['fixed', 'Закрытые'],
+                ['open', 'Доступные'],
+                ['fixed', 'Недоступные'],
               ] as const).map(([value, label]) => (
                 <button
                   key={value}
@@ -488,7 +488,7 @@ export function LnkRequestManagerDialog({
                     <p className="mt-1 text-sm leading-5 text-slate-500">
                       {selectedOption?.disabledReason ?? (
                         selectedOption
-                          ? 'Заявку можно дополнить новыми позициями до появления результата или заключения.'
+                          ? 'Можно добавить новые позиции, даже если по другим уже есть результаты. Прежние результаты и заключения сохраняются.'
                           : 'Загружаем актуальный состав и состояние заявки...'
                       )}
                     </p>
@@ -650,7 +650,7 @@ function RequestStatusBadge({ isFixed, compact = false }: { isFixed: boolean | n
     >
       {isFixed === null ? <LoaderCircle className="mr-1 h-3 w-3 animate-spin" /> : null}
       {isFixed ? <LockKeyhole className="mr-1 h-3 w-3" /> : null}
-      {isFixed === null ? 'Загрузка' : isFixed ? 'Закрыта' : 'Открыта'}
+      {isFixed === null ? 'Загрузка' : isFixed ? 'Недоступно' : 'Можно дополнить'}
     </span>
   )
 }

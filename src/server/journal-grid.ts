@@ -6,6 +6,7 @@ import { DERIVED_CALCULATION_REVISION_FLOOR } from '@/lib/derived-calculation-ca
 import { createHash, randomUUID } from 'node:crypto'
 import { createJournalSnapshotCache } from './journal-snapshot-cache'
 import type { JournalSelectionCountRequest, JournalSelectionCountResult } from '@/lib/journal-selection-counts'
+import type { JournalSelectionSummary } from '@/lib/journal-selection-summary'
 import { and, count, eq, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { requireDb } from '@/db'
@@ -109,6 +110,12 @@ export function journalGroupSql(key: WeldFieldKey, context: Pick<JournalReadCont
   const value = journalValueSql(key, context)
   return FIELD_BY_KEY.get(key)?.kind === 'number' ? sql`coalesce((${value})::double precision::text, '')` : sql`coalesce(${value}::text, '')`
 }
+export function journalGroupOrder(field: WeldFieldKey, context: JournalReadContext) {
+  const value = journalGroupSql(field, context)
+  const orderValue = FIELD_BY_KEY.get(field)?.kind === 'number' ? sql`nullif(${value}, '')::double precision` : value
+  return context.request.sort?.fieldKey === field && context.request.sort.direction === 'desc'
+    ? sql`${orderValue} desc nulls last` : sql`${orderValue} asc nulls last`
+}
 export function journalRouteWhere(context: ValueContext, route: string[]) {
   return and(context.base, ...route.map((key, index) => sql`${journalGroupSql(context.request.groupBy[index], context)} = ${key}`))!
 }
@@ -172,16 +179,30 @@ async function readGroups(context: JournalReadContext): Promise<JournalGridResul
   const value = journalGroupSql(field, context)
   const nextField = request.groupBy[request.route.length + 1]
   const children = nextField ? sql`count(distinct ${journalGroupSql(nextField, context)})` : sql`count(*)`
-  const orderValue = FIELD_BY_KEY.get(field)?.kind === 'number' ? sql`nullif(${value}, '')::double precision` : value
-  const order = request.sort?.fieldKey === field && request.sort.direction === 'desc' ? sql`${orderValue} desc nulls last` : sql`${orderValue} asc nulls last`
   const groups = await requireDb().select({ key: sql<string>`${value}`, childCount: sql<number>`${children}::int`,
     recordCount: sql<number>`count(*)::int`, total: sql<number>`count(*) over()::int` })
-    .from(weldJoints).where(where).groupBy(value).orderBy(order).limit(request.end - request.start).offset(request.start)
+    .from(weldJoints).where(where).groupBy(value).orderBy(journalGroupOrder(field, context)).limit(request.end - request.start).offset(request.start)
   if (!groups.length) {
     const [row] = await requireDb().select({ total: sql<number>`count(distinct ${value})::int` }).from(weldJoints).where(where)
     return { rows: [], rowCount: Number(row?.total ?? 0), revision }
   }
   const members = await readSummaryRows(context, and(where, sql`${value} = any(${sql.param(groups.map(group => group.key))}::text[])`)!)
+  const extras = await readSummaryContext(context, members)
+  const summarize = createWeldGroupSummarizer([...members, ...extras], context.systemSettings,
+    { lnk: request.report === 'lnk', heatTreatment: request.report === 'heatTreatment' })
+  const byGroup = new Map<string, WeldRow[]>()
+  for (const row of members) {
+    const key = String((row as WeldRow & { groupKey: string }).groupKey)
+    const rows = byGroup.get(key) ?? []; rows.push(row); byGroup.set(key, rows)
+  }
+  return { revision, rowCount: Number(groups[0].total), rows: groups.map((group, index) => {
+    const { rows: _rows, ...summary } = summarize(byGroup.get(group.key) ?? [])
+    return { id: 0, journalGroup: { key: group.key, route: [...request.route, group.key], ordinal: request.start + index,
+      childCount: Number(group.childCount), recordCount: Number(group.recordCount), summary } } as JournalGridRow
+  }) }
+}
+
+async function readSummaryContext(context: JournalReadContext, members: WeldRow[]) {
   // Bring in only the identity context used by the old physical summarizer.
   // In particular, a namesake or legacy root can be outside this group/page.
   const memberIds = new Set(members.map(row => row.id))
@@ -203,19 +224,7 @@ async function readGroups(context: JournalReadContext): Promise<JournalGridResul
     ${contextIds.size ? buildNumberArrayMatch(weldJoints.id, [...contextIds]) : sql`false`}
     or ${legacyKeys.length ? sql`jsonb_build_array(coalesce(${weldJoints.projectTitle}, ''), coalesce(${weldJoints.subtitleCode}, ''), coalesce(${weldJoints.line}, ''), coalesce(${weldJoints.joint}, '')) in (select value from jsonb_array_elements(${JSON.stringify(legacyKeys.map(key => JSON.parse(key)))}::jsonb))` : sql`false`}
   )`) : undefined
-  const extras = extraWhere ? await readSummaryRows(context, extraWhere) : []
-  const summarize = createWeldGroupSummarizer([...members, ...extras], context.systemSettings,
-    { lnk: request.report === 'lnk', heatTreatment: request.report === 'heatTreatment' })
-  const byGroup = new Map<string, WeldRow[]>()
-  for (const row of members) {
-    const key = String((row as WeldRow & { groupKey: string }).groupKey)
-    const rows = byGroup.get(key) ?? []; rows.push(row); byGroup.set(key, rows)
-  }
-  return { revision, rowCount: Number(groups[0].total), rows: groups.map((group, index) => {
-    const { rows: _rows, ...summary } = summarize(byGroup.get(group.key) ?? [])
-    return { id: 0, journalGroup: { key: group.key, route: [...request.route, group.key], ordinal: request.start + index,
-      childCount: Number(group.childCount), recordCount: Number(group.recordCount), summary } } as JournalGridRow
-  }) }
+  return extraWhere ? readSummaryRows(context, extraWhere) : []
 }
 
 // Narrow stage facts, rather than full cards/document attachments, are enough
@@ -235,7 +244,7 @@ async function readSummaryRows(context: JournalReadContext, where: SQL): Promise
     row: { ...(report === 'weldingJournal' ? {} : stageProjection), id: weldJoints.id, projectTitle: weldJoints.projectTitle, subtitleCode: weldJoints.subtitleCode,
       line: weldJoints.line, joint: weldJoints.joint, officiality: weldJoints.officiality,
       weldDate: weldJoints.weldDate, finalStatus: weldJoints.finalStatus, wdi: sql<number>`${journalValueSql('wdi', context)}`,
-      groupKey: journalGroupSql(key, context) },
+      groupKey: key ? journalGroupSql(key, context) : sql<string>`''` },
     state: weldJointProgramStates,
     root: { id: root.id, wdi: root.wdi, connectionType: root.connectionType, d1: root.d1, d2: root.d2, t1: root.t1, t2: root.t2 },
     replaced: rootState.replacedByCoil,
@@ -258,6 +267,26 @@ export async function selectJournalGridRows(input: JournalGridQuery & { route: s
   const rows = await requireDb().select({ id: weldJoints.id }).from(weldJoints).where(context.where).orderBy(weldJoints.id)
   await assertJournalContextRevision(context)
   return { ids: rows.map(row => row.id), revision: context.revision }
+}
+
+export async function summarizeJournalGridSelection(input: { ids: number[] }, signal?: AbortSignal): Promise<JournalSelectionSummary> {
+  if (!input || !Array.isArray(input.ids) || input.ids.some(id => !Number.isSafeInteger(id) || id <= 0)) {
+    throw new Error('Некорректный выбор стыков.')
+  }
+  signal?.throwIfAborted()
+  // Checkbox selection survives report filters. Read the exact selected IDs,
+  // including unloaded/hidden rows, without applying the current report scope.
+  const context = await journalReadContext({ report: 'weldingJournal', columnFilters: {}, groupBy: [], route: [], start: 0, end: 100 })
+  const ids = [...new Set(input.ids)]
+  const members = ids.length ? await readSummaryRows(context, buildNumberArrayMatch(weldJoints.id, ids)) : []
+  signal?.throwIfAborted()
+  if (members.length !== ids.length) throw new Error('Часть выбранных стыков удалена или недоступна. Обновите таблицу и повторите выбор.')
+  const extras = await readSummaryContext(context, members)
+  signal?.throwIfAborted()
+  const { joints, wdi, missingWdi, weldDate, missingDates } = createWeldGroupSummarizer([...members, ...extras], context.systemSettings)(members)
+  await assertJournalContextRevision(context)
+  signal?.throwIfAborted()
+  return { records: members.length, joints, wdi, missingWdi, weldDate, missingDates }
 }
 
 type SelectionSnapshot = { scope: string; revision: JournalRevision; total: number; counts: Record<string, number>; complete: boolean; bytes: number }

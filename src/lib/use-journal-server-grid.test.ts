@@ -10,7 +10,7 @@ import { countJournalGridSelection, selectJournalGridRows, summarizeJournalGridR
 
 vi.mock('@/server/journal-grid-api', () => ({
   countJournalGridSelection: vi.fn(), copyJournalGridRange: vi.fn(),
-  selectJournalGridRows: vi.fn(), summarizeJournalGridRange: vi.fn(),
+  selectJournalGridRange: vi.fn(), selectJournalGridRows: vi.fn(), summarizeJournalGridRange: vi.fn(),
 }))
 it('keeps counters unchanged when the owning workflow refuses a whole selection', async () => {
   vi.useFakeTimers()

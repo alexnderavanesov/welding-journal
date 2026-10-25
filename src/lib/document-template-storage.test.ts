@@ -1136,6 +1136,57 @@ describe('document template storage', () => {
     expect(worksheet.B2?.v).toBe('Петров Владислав\n(ABC1)\nИванов Иван\n(ABC3)')
   })
 
+  it.each(['none', 'unused', 'repeat'])('fits bound summary text above and below repeated rows (block=%s), keeping the form styles', async block => {
+    const repeat = block === 'repeat'
+    const template = createXlsxTemplate([[''], ['Стык'], ['Подпись'], ['']], {
+      style: { alignment: { wrapText: true }, font: { sz: 12 } },
+      styledCells: ['A1', 'A4'], columns: [{ wch: 12 }], rowInfo: { hpt: 16 },
+    })
+    template.constructorConfig = {
+      version: 1, sheetName: 'Шаблон', ...(block !== 'none' ? { repeatRow: 2 } : {}),
+      bindings: [
+        { cell: 'A1', mode: 'summary', field: 'projectTitle' },
+        { cell: 'A4', mode: 'summary', field: 'subtitleCode' },
+        ...(repeat ? [{ cell: 'A2', mode: 'row', field: 'joint' } as const] : []),
+      ],
+    }
+    const data = await readBlobAsArrayBuffer(await createWeldingJournalBlobFromTemplate(template, [
+      { projectTitle: 'Название проекта из нескольких слов', subtitleCode: 'Шифр\nвторая строка', joint: 'F1' },
+      { projectTitle: 'Название проекта из нескольких слов', subtitleCode: 'Шифр\nвторая строка', joint: 'F2' },
+    ]))
+    const sheet = XLSX.read(data, { type: 'array', cellStyles: true }).Sheets.Шаблон
+    expect(sheet.A1.v).toBe('Название проекта из нескольких слов')
+    expect(sheet['!rows']?.[0].hpt).toBeGreaterThan(16)
+    const lastRow = repeat ? 5 : 4
+    expect(sheet[`A${lastRow}`].v).toBe('Шифр\nвторая строка')
+    expect(sheet['!rows']?.[lastRow - 1].hpt).toBeGreaterThanOrEqual(33)
+    expect(sheet[`A${repeat ? 4 : 3}`].v).toBe('Подпись')
+    expect(readXlsxFileText(data, 'xl/styles.xml')).toContain('wrapText="1"')
+  })
+
+  it('fits summary text centered across empty columns without adding oversized whitespace', async () => {
+    const template = createXlsxTemplate([['', '', '', '']], {
+      style: { alignment: { wrapText: true, horizontal: 'centerContinuous' } },
+      styledCells: ['A1', 'B1', 'C1', 'D1'], columns: Array(4).fill({ wch: 10 }), rowInfo: { hpt: 16 },
+    })
+    template.constructorConfig = { version: 1, sheetName: 'Шаблон', bindings: [{ cell: 'A1', mode: 'summary', field: 'projectTitle' }] }
+    const data = await readBlobAsArrayBuffer(await createWeldingJournalBlobFromTemplate(template, [{ projectTitle: 'Строка шире одной ячейки' }]))
+    expect(XLSX.read(data, { type: 'array', cellStyles: true }).Sheets.Шаблон['!rows']?.[0].hpt).toBe(18)
+  })
+
+  it('keeps tall summary rows and accounts for vertical merges when fitting their text', async () => {
+    const template = createXlsxTemplate([[''], [''], ['']], {
+      style: { alignment: { wrapText: true } }, columns: [{ wch: 30 }],
+      rowInfo: { hpt: 60 }, merges: ['A1:A2'],
+    })
+    template.constructorConfig = { version: 1, sheetName: 'Шаблон', bindings: [{ cell: 'A1', mode: 'summary', field: 'projectTitle' }] }
+    const data = await readBlobAsArrayBuffer(await createWeldingJournalBlobFromTemplate(template, [{ projectTitle: 'Раз\nДва\nТри\nЧетыре\nПять' }]))
+    const sheet = XLSX.read(data, { type: 'array', cellStyles: true }).Sheets.Шаблон
+    expect(sheet['!rows']?.[0].hpt).toBe(63) // 5 × 15 + 3, less the second merged row's 15pt.
+    const short = await readBlobAsArrayBuffer(await createWeldingJournalBlobFromTemplate(template, [{ projectTitle: 'Коротко' }]))
+    expect(XLSX.read(short, { type: 'array', cellStyles: true }).Sheets.Шаблон['!rows']?.[0].hpt).toBe(60)
+  })
+
   it('wraps multiline constructor values, fits row height and copies example-row borders', async () => {
     const template = createXlsxTemplate([
       ['№', 'Стык', 'Сварщики', 'Способ'],
@@ -1546,6 +1597,24 @@ describe('document template storage', () => {
     expect(firstGeneratedCell?.style.borderBottom).toBe('1px solid #000000')
     expect(secondGeneratedCell).toMatchObject({ value: 'LIN-2', columnSpan: 2 })
     expect(preview.columnWidths[0]).toBeGreaterThan(preview.columnWidths[1])
+  })
+
+  it.each([false, true])('retains fit-to-page activation and print dimensions after filling (constructor: %s)', async constructor => {
+    const template = createXlsxTemplate([['Title'], ['{{Стык}}']])
+    if (constructor) template.constructorConfig = { version: 1, sheetName: 'Шаблон', repeatRow: 2, bindings: [{ cell: 'A2', mode: 'row', field: 'joint' }] }
+    const cfb = XLSX.CFB.read(new Uint8Array(template.fileData), { type: 'array' })
+    const path = 'xl/worksheets/sheet1.xml'
+    const xml = readCfbText(cfb, path).replace(/<sheetPr\b[^>]*(?:\/>|>[\s\S]*?<\/sheetPr>)/, '')
+      .replace(/(<worksheet\b[^>]*>)/, '$1<sheetPr><pageSetUpPr fitToPage="1" autoPageBreaks="0"/></sheetPr>')
+      .replace('</worksheet>', '<pageSetup paperSize="8" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>')
+    writeCfbText(cfb, path, xml)
+    template.fileData = XLSX.CFB.write(cfb, { type: 'array', fileType: 'zip' }) as ArrayBuffer
+    const data = await readBlobAsArrayBuffer(await createWeldingJournalBlobFromTemplate(template, [{ joint: 'S1' }, { joint: 'S2' }]))
+    const filled = readXlsxFileText(data, path)
+    expect(filled).toContain('<pageSetUpPr fitToPage="1" autoPageBreaks="0"/>')
+    expect(filled).toContain('<pageSetup paperSize="8" orientation="landscape" fitToWidth="1" fitToHeight="0"/>')
+    expect(filled.indexOf('<sheetPr')).toBeLessThan(filled.indexOf('<dimension'))
+    expect(XLSX.read(data, { type: 'array' }).Sheets['Шаблон'].A3.v).toBe('S2')
   })
 
   it('keeps template drawing and image parts in a generated constructor workbook', async () => {

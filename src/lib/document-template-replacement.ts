@@ -42,7 +42,7 @@ export async function analyzeDocumentTemplateReplacement(
   mapping: DocumentTemplateReplacementMapping = {},
 ): Promise<DocumentTemplateReplacementAnalysis> {
   const currentConfig = currentTemplate.constructorConfig
-    ? normalizeDocumentTemplateConstructorConfig(currentTemplate.constructorConfig)
+    ? normalizeDocumentTemplateConstructorConfig(currentTemplate.constructorConfig, currentTemplate.id)
     : undefined
   const bindingCount = currentConfig?.bindings.length ?? 0
   const candidateSheetNames = parsedTemplate.sheetNames ?? []

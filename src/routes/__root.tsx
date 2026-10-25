@@ -7,6 +7,7 @@ import { SecurityProvider } from '@/lib/security-context'
 import appCss from '@/styles.css?url'
 import companyFavicon from '@/assets/company-favicon.png?url&no-inline'
 import companyFaviconIco from '@/assets/company-favicon.ico?url&no-inline'
+import companyFaviconSvg from '@/assets/company-favicon.svg?url&no-inline'
 import developmentFavicon from '@/assets/development-favicon.svg?url&no-inline'
 
 // Keep development tabs distinct; use a file URL because Safari can ignore
@@ -26,6 +27,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         : [
           { rel: 'icon', href: companyFaviconIco, type: 'image/x-icon', sizes: '16x16 32x32 48x48' },
           { rel: 'icon', href: companyFavicon, type: 'image/png', sizes: '64x64' },
+          { rel: 'icon', href: companyFaviconSvg, type: 'image/svg+xml', sizes: 'any' },
         ]),
     ],
   }),

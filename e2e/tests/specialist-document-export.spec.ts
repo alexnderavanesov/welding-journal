@@ -1,4 +1,5 @@
 import { documentGridRow } from '../document-grid'
+import { previewSheetText } from '../document-sheet'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { eq } from 'drizzle-orm'
@@ -98,7 +99,8 @@ async function readDownloadedSignatures(page: Page, title: string, expectedNames
   await page.getByRole('button', { name: title, exact: true }).click({ button: 'right' })
   await page.getByRole('button', { name: 'Предпросмотр', exact: true }).click()
   const preview = page.getByRole('dialog', { name: 'Предпросмотр документа', exact: true })
-  for (const value of expectedNames) await expect(preview.frameLocator('iframe').getByText(value, { exact: true })).toBeVisible()
+  const text = await previewSheetText(preview)
+  for (const value of expectedNames) expect(text).toContain(value)
   const downloading = page.waitForEvent('download')
   await preview.getByRole('button', { name: 'Скачать Excel', exact: true }).click()
   const download = await downloading

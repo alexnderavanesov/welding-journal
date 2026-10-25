@@ -90,3 +90,12 @@
 /* The document owns vertical movement; registry navigation stays above the stage. */
 .document-history-grid.journal-server-section .document-grid-footer { min-height: 30px; height: 30px; flex: none; padding: 0 12px; }
 .document-history-grid.journal-server-section .document-grid-footer > button { padding: 2px 8px; }
+/* A body-level layer stays outside the sticky stage's scrolling/clipping tree.
+   Cover both registry borders as well as the inset during native scrolling. */
+.document-grid-bottom-cover { display: none; }
+.document-grid-bottom-cover[data-journal-docked-footer] {
+  display: block; position: fixed; bottom: 0; z-index: 31;
+  left: calc(var(--journal-footer-left) - 2px); width: calc(var(--journal-footer-width) + 4px);
+  height: var(--journal-footer-bottom); background: #f4f7f9;
+  border-top: 1px solid #cbdde6; pointer-events: none;
+}

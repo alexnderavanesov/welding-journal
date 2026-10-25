@@ -9,12 +9,13 @@ export function useJournalScrollPlaceholder(
   scrollableOnly = false,
 ) {
   useEffect(() => {
-    const viewport = frame.current?.querySelector<HTMLElement>('.ag-grid-viewport')
-    if (!enabled || !api || !viewport) return
-    let raf = 0, resizing = false, scrolling = false
+    const root = frame.current
+    const viewport = root?.querySelector<HTMLElement>('.ag-grid-viewport')
+    if (!enabled || !api || !root || !viewport) return
+    let raf = 0, resizing = false, pointerResizing = false, scrolling = false
     const paint = () => {
       raf = 0
-      if (resizing || scrolling || api.isDestroyed()) return
+      if (resizing || pointerResizing || scrolling || api.isDestroyed()) return
       if (scrollableOnly && viewport.scrollHeight <= viewport.clientHeight + 1) {
         viewport.style.removeProperty('--journal-gap-image'); return
       }
@@ -60,6 +61,18 @@ export function useJournalScrollPlaceholder(
     // Existing rows cover the placeholder while their widths change. Avoid
     // decoding/rasterising a new SVG at every drag step (particularly in WebKit).
     const resized = (event: ColumnResizedEvent) => { resizing = event.finished === false; if (!resizing) schedule() }
+    // Public AG events arrive asynchronously, after the first width change.
+    // Hold the existing tile from pointerdown, including a cancelled gesture.
+    const pointerStart = (event: PointerEvent) => {
+      if (event.button === 0 && event.target instanceof Element
+        && event.target.closest('.ag-header-cell-resize, .ag-header-group-cell-resize')) pointerResizing = true
+    }
+    const pointerEnd = () => {
+      if (!pointerResizing) return
+      pointerResizing = false; resizing = false; schedule()
+    }
+    root.addEventListener('pointerdown', pointerStart, true)
+    for (const name of ['pointerup', 'pointercancel', 'blur']) window.addEventListener(name, pointerEnd)
     const events = ['displayedColumnsChanged', 'virtualColumnsChanged', 'gridSizeChanged'] as const
     for (const name of events) api.addEventListener(name, schedule)
     if (scrollableOnly) api.addEventListener('modelUpdated', schedule)
@@ -69,6 +82,8 @@ export function useJournalScrollPlaceholder(
     schedule()
     return () => {
       cancelAnimationFrame(raf)
+      root.removeEventListener('pointerdown', pointerStart, true)
+      for (const name of ['pointerup', 'pointercancel', 'blur']) window.removeEventListener(name, pointerEnd)
       if (!api.isDestroyed()) {
         for (const name of events) api.removeEventListener(name, schedule)
         if (scrollableOnly) api.removeEventListener('modelUpdated', schedule)

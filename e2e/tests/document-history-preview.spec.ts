@@ -8,10 +8,13 @@ import { readFile } from 'node:fs/promises'
 import { expect, test, type Page, type Request } from '@playwright/test'
 import * as XLSX from 'xlsx'
 import { withE2eDatabase } from '../database'
-import { captureFullReportPrint } from '../report-print-capture'
+import { downloadPreviewExcel, previewSheetText } from '../document-sheet'
 import { rpcName } from '../rpc'
+import { auditSqlCount } from '../audit-sql'
 import { createDocumentTemplateFileStore, resolveDocumentTemplateStorageDirectory } from '../../src/server/document-template-files'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
+import { withSignatureSheetArtwork } from '../../src/test/fixtures/template-preview-workbook'
+import { readHistoryDocumentWorkbook } from '../../src/lib/history-document-preview'
 
 const project = 'E2E history preview'
 const manualTitle = 'E2E-PREVIEW-JSR', systemTitle = 'E2E-PREVIEW-LNK'
@@ -19,6 +22,8 @@ const store = createDocumentTemplateFileStore(resolveDocumentTemplateStorageDire
 let fileKey = ''
 
 // Reproduce a populated application whose document index is already initialized.
+test.setTimeout(120_000)
+
 test.beforeAll(async () => { await loadSystemDocumentSummaries('lnkRequest') })
 
 test.beforeEach(async () => {
@@ -30,7 +35,7 @@ test.beforeEach(async () => {
   sheet['!rows'] = [{ hpt: 30 }]
   XLSX.utils.book_append_sheet(book, sheet, 'Бланк')
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['Подписи — конец документа']]), 'Подписи')
-  const data = XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+  const data = await withSignatureSheetArtwork(XLSX.write(book, { type: 'array', bookType: 'xlsx' }))
   fileKey = `e2e-history-preview/${randomUUID()}.xlsx`
   await store.set(fileKey, data)
   await withE2eDatabase(async db => {
@@ -71,73 +76,56 @@ async function chooseProject(page: Page) {
   await expect(filter).toBeHidden()
 }
 
-test('history preview: manual and system documents, all sheets, full print/download, bounded reads, Escape order', async ({ page }, info) => {
+test('history preview: manual/system documents, every sheet, full Excel, selection and Escape', async ({ page }, info) => {
   const errors: string[] = [], calls: string[] = []
-  const pending = new Set<Request>()
   page.on('pageerror', error => errors.push(error.message))
-  page.on('request', request => { if (request.url().includes('/_serverFn/')) { calls.push(rpcName(request.url())); pending.add(request) } })
-  page.on('requestfinished', request => pending.delete(request))
-  page.on('requestfailed', request => pending.delete(request))
+  page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   await page.goto('/documents')
   for (const [view, title, rowRpc] of [['ЖСР', manualTitle, 'getRemoteGeneratedDocumentRows'], ['Заявка ЛНК', systemTitle, 'getSystemDocumentRows']]) {
     await page.getByRole('button', { name: view, exact: true }).click()
     await chooseProject(page)
     const { checkbox, titleCell } = await documentGridRow(page, title)
-    await expect(page.getByRole('button', { name: title, exact: true })).toHaveCount(1)
     const titleButton = titleCell.getByRole('button', { name: title, exact: true })
-    await expect(titleButton).toBeVisible()
-    await expect(page.getByTitle('Открыть актуальный Excel', { exact: true })).toHaveCount(0)
-    await expect(page.getByTitle('Открыть Excel', { exact: true })).toHaveCount(0)
     await checkbox.check()
-    const beforeOpen = calls.length
-    if (view === 'ЖСР') await titleButton.click()
-    else {
-      await titleButton.click({ button: 'right' })
-      await page.getByRole('button', { name: 'Предпросмотр', exact: true }).click()
-    }
+    const before = calls.length
+    await titleButton.click()
     const modal = page.getByRole('dialog', { name: 'Предпросмотр документа', exact: true })
-    const frame = modal.frameLocator('iframe')
-    await expect(frame.getByText('Шаблон — готовый документ')).toBeVisible()
-    const heading = frame.locator('td').filter({ hasText: 'Шаблон — готовый документ' })
-    await expect(heading).toHaveAttribute('colspan', '3')
-    await expect.poll(() => heading.locator('..').evaluate(row => row.getBoundingClientRect().height)).toBeGreaterThanOrEqual(39)
-    expect(calls.slice(beforeOpen).filter(name => name.startsWith(rowRpc))).toHaveLength(1)
-    await expect.poll(() => pending.size).toBe(0)
-    const localStart = calls.length
+    expect(await previewSheetText(modal)).toContain('Шаблон — готовый документ')
+    const file = await downloadPreviewExcel(page, modal)
+    expect(file.workbook.SheetNames).toEqual(['Бланк', 'Подписи'])
+    expect(file.workbook.Sheets.Бланк.A127.v).toBe('F125')
+    expect(calls.slice(before).filter(name => name.startsWith(rowRpc))).toHaveLength(1)
+    const local = calls.length
     await modal.getByRole('button', { name: 'Далее', exact: true }).click()
-    await expect(frame.getByText('F125', { exact: true })).toBeVisible()
+    await expect(modal.frameLocator('iframe').getByText('F125', { exact: true })).toBeVisible()
     await modal.getByLabel('Лист документа').selectOption('1')
-    await expect(frame.getByText('Подписи — конец документа')).toBeVisible()
-    await modal.getByLabel('Масштаб документа').selectOption('75')
-    await captureFullReportPrint(page)
-    await modal.getByRole('button', { name: 'Печать / Сохранить PDF' }).click()
-    await expect.poll(() => page.evaluate(() => JSON.parse(document.body.dataset.fullPrint ?? '{}').lastRow)).toBe('Подписи — конец документа')
-    const downloadEvent = page.waitForEvent('download')
-    await modal.getByRole('button', { name: 'Скачать Excel' }).click()
-    const download = await downloadEvent
-    const book = XLSX.read(await readFile((await download.path())!), { type: 'buffer' })
-    expect(book.SheetNames).toEqual(['Бланк', 'Подписи'])
-    expect(book.Sheets['Бланк'].A127.v).toBe('F125')
-    await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
-    await expect.poll(() => pending.size).toBe(0)
-    expect(calls.slice(localStart).filter(name => !name.startsWith('getDispatcherTaskVersion'))).toEqual([])
+    await expect(modal.frameLocator('iframe').getByText('Подписи — конец документа')).toBeVisible()
+    const signature = modal.frameLocator('iframe').locator('[data-cell-address="A1"]')
+    await expect(signature).toHaveCSS('color', 'rgb(0, 128, 0)')
+    await expect(signature).toHaveCSS('border-bottom-width', '2px')
+    const logo = modal.frameLocator('iframe').getByRole('img', { name: 'Логотип подписей' })
+    await expect(logo).toBeVisible()
+    await expect.poll(() => logo.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+    const downloaded = await readHistoryDocumentWorkbook(file.bytes.buffer.slice(file.bytes.byteOffset, file.bytes.byteOffset + file.bytes.byteLength) as ArrayBuffer)
+    expect(downloaded.sheets[1].images).toHaveLength(1)
+    expect(downloaded.sheets[1].styles.get('1:1')).toMatchObject({ color: '#008000', borderBottom: '2px solid #000000' })
     await modal.getByLabel('Лист документа').selectOption('0')
-    // The iframe is rewritten asynchronously on a sheet change. A screenshot
-    // taken before it is ready only captures the empty loading surface.
-    await expect(frame.getByText('Шаблон — готовый документ')).toBeVisible()
-    await expect(modal.getByRole('button', { name: 'Печать / Сохранить PDF' })).toBeEnabled()
-    await page.screenshot({ path: info.outputPath(`${view === 'ЖСР' ? 'manual' : 'system'}-preview.png`) })
-    await frame.locator('body').press('Escape')
-    await expect(modal).toBeHidden()
-    await expect(titleCell).toBeFocused()
-    await expect(checkbox).toBeChecked()
-    await expect(page.locator('[data-document-history-grid] .ag-header-cell[col-id="project"] .ag-header-cell-filter-button')).toHaveClass(/ag-filter-active/)
+    await modal.getByLabel('Масштаб листа').selectOption('75')
+    expect(calls.slice(local).filter(name => !name.startsWith('getDispatcherTaskVersion'))).toEqual([])
+    await page.screenshot({ path: info.outputPath(view === 'ЖСР' ? 'manual-sheet.png' : 'system-sheet.png') })
+    await modal.getByLabel('Масштаб листа').click()
+    await expect(modal.getByRole('listbox')).toBeVisible()
+    await page.keyboard.press('Escape'); await expect(modal.getByRole('listbox')).toHaveCount(0)
+    await expect(modal).toBeVisible()
+    await page.keyboard.press('Escape'); await expect(modal).toBeHidden()
+    await expect(titleCell).toBeFocused(); await expect(checkbox).toBeChecked()
+    await titleButton.click()
+    expect((await downloadPreviewExcel(page, modal)).text).toBe(file.text)
     await page.keyboard.press('Escape')
-    await expect(checkbox).not.toBeChecked()
-    await expect(page.locator('[data-document-history-grid] .ag-header-cell[col-id="project"] .ag-header-cell-filter-button')).toHaveClass(/ag-filter-active/)
+    await expect(titleCell).toBeFocused(); await expect(checkbox).toBeChecked()
+    await page.keyboard.press('Escape'); await expect(checkbox).not.toBeChecked()
     await page.keyboard.press('Escape')
     await expect(page.locator('[data-document-history-grid] .ag-header-cell[col-id="project"] .ag-header-cell-filter-button')).not.toHaveClass(/ag-filter-active/)
-    await expect(await revealDocumentColumn(page, 'project')).toBeVisible()
   }
   expect(errors).toEqual([])
 })
@@ -179,10 +167,100 @@ test('navigation stays visible and clickable when scrolling history; Formation p
   await expect.poll(() => navigation.evaluate(element => Math.round(element.getBoundingClientRect().top))).toBe(0)
   await expect(page.getByRole('button', { name: 'ЖСР', exact: true })).toBeInViewport()
   await expect(page.getByRole('tab', { name: 'Формирование', exact: true })).toBeInViewport()
+  const footer = page.locator('.document-grid-footer')
+  const geometry = () => footer.evaluate(element => {
+    const rect = element.getBoundingClientRect()
+    const coverElement = document.querySelector('.document-grid-bottom-cover')!
+    const cover = getComputedStyle(coverElement)
+    const section = element.closest('section')!.getBoundingClientRect()
+    return { top: rect.top, bottom: rect.bottom, height: parseFloat(cover.height), viewport: innerHeight,
+      coverLeft: parseFloat(cover.left), coverRight: parseFloat(cover.left) + parseFloat(cover.width),
+      sectionLeft: section.left, sectionRight: section.right,
+      outsideScrollTree: coverElement.parentElement === document.body,
+      coverPosition: cover.position, coverBottom: cover.bottom, coverBackground: cover.backgroundColor }
+  })
+  const first = await geometry()
+  expect(first.outsideScrollTree).toBe(true)
+  expect(first.coverPosition).toBe('fixed')
+  expect(first.coverBottom).toBe('0px')
+  expect(first.coverBackground).toBe('rgb(244, 247, 249)')
+  expect(Math.abs(first.bottom + first.height - first.viewport)).toBeLessThanOrEqual(1)
+  // The outer registry border must not continue below the fixed footer.
+  expect(first.coverLeft).toBeLessThanOrEqual(first.sectionLeft)
+  expect(first.coverRight).toBeGreaterThanOrEqual(first.sectionRight)
+  const beforeScroll = await page.evaluate(() => scrollY)
+  await page.mouse.wheel(0, -200)
+  await expect.poll(() => page.evaluate(() => scrollY)).toBeLessThan(beforeScroll)
+  await expect.poll(async () => (await geometry()).top).toBe(first.top)
+  // Inspect painted pixels, not only the footer's settled layout rectangle.
+  for (const delta of [400, -180, 9000, -240]) {
+    await page.mouse.wheel(0, delta)
+    // Screenshot clipping uses document coordinates. Wait for the native wheel
+    // animation to finish so its scroll offset cannot move during capture.
+    // This checks painted content after scrolling; geometry above also checks docking.
+    await page.evaluate(async () => {
+      let previous = scrollY, stable = 0
+      for (let frame = 0; frame < 120; frame++) {
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+        stable = scrollY === previous ? stable + 1 : 0
+        previous = scrollY
+        if (stable >= 4) return
+      }
+      throw new Error('Document scrolling did not settle before screenshot')
+    })
+    const current = await geometry()
+    const clip = {
+      x: Math.floor(current.sectionLeft), y: Math.ceil(current.bottom) + 2,
+      width: Math.ceil(current.sectionRight) - Math.floor(current.sectionLeft),
+      height: current.viewport - Math.ceil(current.bottom) - 2,
+    }
+    // Use the emulated viewport, not the native Chrome window surface: on
+    // macOS CDP can return only 713px of an 800px viewport during scrolling.
+    // Read the strip from a full viewport image, never a document-relative clip.
+    const band = await page.screenshot({ scale: 'css' })
+    const strayPixels = await page.evaluate(async ({ encoded, clip }) => {
+      const image = new Image()
+      image.src = `data:image/png;base64,${encoded}`
+      await image.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = image.width; canvas.height = image.height
+      const context = canvas.getContext('2d')!
+      context.drawImage(image, 0, 0)
+      const scale = image.width / 1200
+      if (image.height < (clip.y + clip.height) * scale) throw new Error(`Incomplete viewport screenshot: ${image.width}×${image.height}`)
+      const pixels = context.getImageData(clip.x * scale, clip.y * scale, clip.width * scale, clip.height * scale).data
+      let stray = 0
+      for (let i = 0; i < pixels.length; i += 4) {
+        if (pixels[i] !== 244 || pixels[i + 1] !== 247 || pixels[i + 2] !== 249) stray++
+      }
+      return stray
+    }, { encoded: band.toString('base64'), clip })
+    if (strayPixels) {
+      await info.attach(`footer-band-${delta}`, { body: band, contentType: 'image/png' })
+      console.info('FOOTER_BAND', JSON.stringify({ delta, current, after: await geometry() }))
+    }
+    expect(strayPixels, `Table pixels below the footer after wheel ${delta}`).toBe(0)
+  }
   await page.screenshot({ path: info.outputPath('sticky-documents.png') })
   await page.getByRole('tab', { name: 'Формирование', exact: true }).click()
+  await expect(page.locator('.document-grid-bottom-cover')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Открыть на весь экран', exact: true })).toBeVisible()
   await expect(page.getByRole('dialog')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Открыть на весь экран', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Закрыть полноэкранный просмотр', exact: true })).toBeVisible()
+  const sheetViewport = page.locator('[data-template-preview-viewport]')
+  await expect(sheetViewport).toBeVisible()
+  const zoomButton = page.getByTitle('Вписать лист по ширине', { exact: true })
+  const initialZoom = await zoomButton.textContent()
+  await sheetViewport.hover()
+  await page.keyboard.down('Control'); await page.mouse.wheel(0, -100); await page.keyboard.up('Control')
+  await expect(zoomButton).not.toHaveText(initialZoom!)
+  await page.getByRole('button', { name: 'Уменьшить масштаб', exact: true }).click()
+  await zoomButton.click()
+  await expect(sheetViewport).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: 'Открыть на весь экран', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Формирование', exact: true })).toHaveAttribute('aria-selected', 'true')
 })
 
 
@@ -239,7 +317,7 @@ test('report conclusion and joint picture open template preview inline; Escape k
   await expect(modal.frameLocator('iframe').getByText('Шаблон — готовый документ')).toBeVisible()
   await expect(page.getByRole('dialog')).toHaveCount(1)
   expect(calls.slice(before).filter(name => name.startsWith('getSystemDocumentRows_'))).toHaveLength(1)
-  await modal.frameLocator('iframe').locator('body').press('Escape')
+  await page.keyboard.press('Escape')
   await expect(modal).toBeHidden()
   expect(context.pages()).toHaveLength(1)
   expect(errors).toEqual([])
@@ -274,10 +352,9 @@ test('request names open the exact document in grouped journal and LNK; missing 
       if (title === secondTitle) {
         await expect(frame.getByText('F002', { exact: true })).toBeVisible()
         await expect(frame.getByText('F003', { exact: true })).toHaveCount(0)
-        await expect(modal.getByRole('button', { name: 'Далее', exact: true })).toHaveCount(0)
+        await expect(modal.getByLabel('Лист документа')).toHaveValue('0')
       } else {
-        await modal.getByRole('button', { name: 'Далее', exact: true }).click()
-        await expect(frame.getByText('F125', { exact: true })).toBeVisible()
+        expect((await downloadPreviewExcel(page, modal)).text).toContain('F125')
       }
       await expect(page.getByRole('dialog')).toHaveCount(1)
       await page.keyboard.press('Escape')
@@ -457,110 +534,182 @@ test('line-program document portal isolates the underlying joint menu while load
   expect(errors).toEqual([])
 })
 
-test('history preview: automatic width fits and centres the sheet; manual scale and resize stay local', async ({ page }, info) => {
-  const original = await store.get(fileKey)
-  if (!original) throw new Error('Missing isolated preview template')
-  const book = XLSX.read(original, { type: 'array', cellStyles: true })
-  book.Sheets['Бланк']['!cols'] = [{ wpx: 350 }, { wpx: 400 }, { wpx: 500 }]
-  book.Sheets['Подписи']['!cols'] = [{ wpx: 300 }]
-  const data = XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
-  await store.set(fileKey, data)
-  await withE2eDatabase(db => db.query('update document_templates set file_size=$2 where blob_key=$1', [fileKey, data.byteLength]))
-
-  const calls: string[] = [], errors: string[] = [], pending = new Set<Request>()
-  page.on('request', request => {
-    if (request.url().includes('/_serverFn/')) { calls.push(rpcName(request.url())); pending.add(request) }
-  })
-  page.on('requestfinished', request => pending.delete(request))
-  page.on('requestfailed', request => pending.delete(request))
-  page.on('pageerror', error => errors.push(error.message))
-  await page.setViewportSize({ width: 1600, height: 1000 })
+test('reopening gets fresh data/template; closing and reopening during loading ignores the old result', async ({ page }) => {
   await page.goto('/documents')
-  await chooseProject(page)
-  const { titleCell } = await documentGridRow(page, `${manualTitle}-24`)
-  await titleCell.getByRole('button', { name: `${manualTitle}-24`, exact: true }).click()
-  const modal = page.getByRole('dialog', { name: 'Предпросмотр документа', exact: true })
-  const frame = modal.frameLocator('iframe'), previewPage = frame.locator('[data-document-preview-page]')
-  const scale = modal.getByRole('combobox', { name: 'Масштаб документа', exact: true })
-  await expect(frame.getByText('Шаблон — готовый документ', { exact: true })).toBeVisible()
-  await expect(scale).toHaveValue('auto')
-  await expect(scale.locator('option[value="auto"]')).toHaveText('Авто')
-  expect(await scale.locator('option').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))).toEqual(['auto', '50', '75', '100', '125', '150'])
-  const geometry = () => previewPage.evaluate(element => {
-    const doc = element.ownerDocument, win = doc.defaultView!
-    const table = element.querySelector('table')!
-    const rect = table.getBoundingClientRect(), viewportWidth = doc.documentElement.clientWidth
-    return {
-      viewportWidth, scrollWidth: doc.documentElement.scrollWidth,
-      naturalWidth: table.offsetWidth, width: rect.width,
-      left: rect.left + win.scrollX, right: viewportWidth - rect.right - win.scrollX,
-      zoom: Number(getComputedStyle(element).zoom), scrollX: win.scrollX,
+  const row = await documentGridRow(page, manualTitle), title = row.titleCell.getByRole('button', { name: manualTitle, exact: true })
+  const modal = page.getByRole('dialog', { name: 'Предпросмотр документа' })
+  await row.checkbox.check(); await title.click()
+  const first = await downloadPreviewExcel(page, modal)
+  expect(first.text).toContain('F001')
+  await page.keyboard.press('Escape')
+  await withE2eDatabase(db => db.query("update weld_joints set joint='F999' where project_title=$1 and joint='F001'", [project]))
+  await title.click()
+  await expect(modal.getByRole('button', { name: 'Далее', exact: true })).toBeVisible()
+  await modal.getByRole('button', { name: 'Далее', exact: true }).click()
+  await expect(modal.frameLocator('iframe').getByText('F999', { exact: true })).toBeVisible()
+  const changed = await downloadPreviewExcel(page, modal)
+  expect(changed.text).toContain('F999'); expect(changed.text).not.toContain('F001')
+  await page.keyboard.press('Escape')
+  const template = XLSX.read((await store.get(fileKey))!, { type: 'array', cellStyles: true })
+  template.Sheets.Бланк.A1.v = 'Обновлённый бланк документа'
+  await store.set(fileKey, XLSX.write(template, { type: 'array', bookType: 'xlsx', cellStyles: true }))
+  await title.click()
+  expect(await previewSheetText(modal)).toContain('Обновлённый бланк документа')
+  const revised = await downloadPreviewExcel(page, modal)
+  expect(revised.text).toContain('Обновлённый бланк документа'); expect(revised.text).toContain('F999')
+  await page.keyboard.press('Escape')
+  let waiting = false, delivered = false, release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/_serverFn/**', async route => {
+    if (waiting || !rpcName(route.request().url()).startsWith('getRemoteGeneratedDocumentRows')) return route.continue()
+    const response = await route.fetch()
+    waiting = true
+    await gate
+    await route.fulfill({ response }).catch(() => {})
+    delivered = true
+  })
+  await title.click(); await expect.poll(() => waiting).toBe(true)
+  await page.keyboard.press('Escape'); await expect(modal).toBeHidden()
+  await withE2eDatabase(db => db.query("update weld_joints set joint='F998' where project_title=$1 and joint='F999'", [project]))
+  await title.click()
+  await expect(modal.getByRole('button', { name: 'Далее', exact: true })).toBeVisible()
+  await modal.getByRole('button', { name: 'Далее', exact: true }).click()
+  await expect(modal.frameLocator('iframe').getByText('F998', { exact: true })).toBeVisible()
+  release()
+  await expect.poll(() => delivered).toBe(true)
+  await expect(modal.frameLocator('iframe').getByText('F999', { exact: true })).toHaveCount(0)
+  expect((await downloadPreviewExcel(page, modal)).text).toContain('F998')
+  await page.keyboard.press('Escape'); await expect(modal).toBeHidden()
+  await expect(row.titleCell).toBeFocused(); await expect(row.checkbox).toBeChecked()
+})
+
+test('document opening: bounded SQL/RPC for 1 and 125 joints, precise page readiness and repeated cleanup', async ({ page }, info) => {
+  await withE2eDatabase(db => db.query('update weld_joints set line=$1 where project_title=$2', ['OPENING-COUNT', project]))
+  const calls: string[] = [], errors: string[] = [], workers: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
+  page.on('worker', worker => { if (worker.url().includes('pdf.worker')) workers.push(worker.url()) })
+  await page.goto('/documents')
+  const row = await documentGridRow(page, manualTitle)
+  const title = row.titleCell.getByRole('button', { name: manualTitle, exact: true })
+  const modal = page.getByRole('dialog', { name: 'Предпросмотр документа' })
+  const measurements: { joints: number; firstPageMs: number; sql?: number; requests: string[] }[] = []
+  for (const joints of [1, 125, 125, 125]) {
+    await withE2eDatabase(async db => {
+      await db.query('delete from generated_document_weld_joints where document_id=(select id from generated_documents where title=$1)', [manualTitle])
+      await db.query(`insert into generated_document_weld_joints(document_id,weld_joint_id)
+        select (select id from generated_documents where title=$1),w.id from weld_joints w where w.project_title=$2 order by w.id limit $3`, [manualTitle, project, joints])
+    })
+    const sqlBefore = await auditSqlCount(), before = calls.length
+    // Record inside the browser on animation frames, independently of Playwright's assertion polling.
+    await page.evaluate(() => {
+      const state = { start: performance.now(), firstPageMs: 0 }
+      ;(window as typeof window & { sheetOpening: typeof state }).sheetOpening = state
+      const check = () => {
+        const frame = document.querySelector<HTMLIFrameElement>('[data-sheet-preview] iframe')
+        if (frame?.contentDocument?.querySelector('[data-document-preview-page]')?.textContent?.includes('Шаблон — готовый документ')) {
+          requestAnimationFrame(() => { state.firstPageMs = performance.now() - state.start })
+        } else if (performance.now() - state.start < 40000) requestAnimationFrame(check)
+      }
+      requestAnimationFrame(check)
+    })
+    await title.click()
+    await expect.poll(() => page.evaluate(() => (window as typeof window & { sheetOpening: { firstPageMs: number } }).sheetOpening.firstPageMs), { timeout: 40000 }).toBeGreaterThan(0)
+    const firstPageMs = await page.evaluate(() => (window as typeof window & { sheetOpening: { firstPageMs: number } }).sheetOpening.firstPageMs)
+    const sqlAfter = await auditSqlCount(), requests = calls.slice(before)
+    expect(requests.filter(name => name.startsWith('getRemoteGeneratedDocumentRows'))).toHaveLength(1)
+    expect(requests.filter(name => name.startsWith('getRemoteDocumentTemplate'))).toHaveLength(1)
+    const file = await downloadPreviewExcel(page, modal)
+    expect(file.text).toContain('F001')
+    if (joints === 125) expect(file.text).toContain('F125')
+    measurements.push({ joints, firstPageMs: Math.round(firstPageMs), sql: sqlAfter === undefined || sqlBefore === undefined ? undefined : sqlAfter - sqlBefore, requests })
+    await page.keyboard.press('Escape')
+    await expect(modal).toBeHidden()
+    await expect(page.locator('[data-sheet-preview] iframe')).toHaveCount(0)
+  }
+  if (measurements[0].sql !== undefined) {
+    expect(Math.max(...measurements.map(item => item.sql!))).toBeLessThanOrEqual(20)
+    expect(measurements[1].sql!).toBeLessThanOrEqual(measurements[0].sql! + 2)
+  }
+  expect(workers).toHaveLength(0); expect(errors).toEqual([])
+  console.log('DOCUMENT_OPENING_AUDIT', JSON.stringify(measurements))
+  await info.attach('document-opening-audit', { body: JSON.stringify(measurements, null, 2), contentType: 'application/json' })
+})
+
+test('oversized documents keep paged viewing and complete Excel without starting PDF', async ({ page }) => {
+  const original = await store.get(fileKey)
+  const book = XLSX.read(original!, { type: 'array' })
+  book.Sheets.Бланк.A1002 = { t: 's', v: 'Конец большого документа' }; book.Sheets.Бланк['!ref'] = 'A1:C1002'
+  await store.set(fileKey, XLSX.write(book, { type: 'array', bookType: 'xlsx' }))
+  const pdfCalls: string[] = []
+  page.on('request', request => { if (request.url().includes('/api/document-preview')) pdfCalls.push(request.url()) })
+  await page.goto('/documents')
+  const row = await documentGridRow(page, manualTitle)
+  await row.titleCell.getByRole('button', { name: manualTitle, exact: true }).click()
+  const modal = page.getByRole('dialog', { name: 'Предпросмотр документа' })
+  await expect(modal.frameLocator('iframe').getByText('Шаблон — готовый документ')).toBeVisible()
+  await expect(modal.getByRole('button', { name: /Вид для печати|Скачать PDF|Печать PDF/ })).toHaveCount(0)
+  const pending = page.waitForEvent('download'); await modal.getByRole('button', { name: 'Скачать Excel' }).click()
+  const full = XLSX.read(await readFile((await (await pending).path())!), { type: 'buffer' })
+  expect(Object.values(full.Sheets.Бланк).some(cell => (cell as { v?: string }).v === 'Конец большого документа')).toBe(true)
+  expect(pdfCalls).toEqual([])
+  await page.keyboard.press('Escape'); await expect(modal).toBeHidden()
+})
+
+test('fast sheet: zoom, scrolling, resize, keyboard and Excel stay local without PDF', async ({ page }, info) => {
+  const calls: string[] = [], pdfCalls: string[] = [], workers: string[] = [], errors: string[] = []
+  page.on('request', request => {
+    if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url()))
+    if (request.url().includes('/api/document-preview')) pdfCalls.push(request.method())
+  })
+  page.on('worker', worker => { if (worker.url().includes('pdf.worker')) workers.push(worker.url()) })
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/documents')
+  const row = await documentGridRow(page, manualTitle)
+  const before = calls.length
+  await row.titleCell.getByRole('button', { name: manualTitle, exact: true }).click()
+  const modal = page.getByRole('dialog', { name: 'Предпросмотр документа' }), frame = modal.frameLocator('iframe')
+  await expect(frame.getByText('Шаблон — готовый документ')).toBeVisible()
+  expect(pdfCalls).toEqual([]); expect(workers).toEqual([])
+  await modal.getByRole('button', { name: 'Далее', exact: true }).click()
+  await expect(frame.getByText('F125', { exact: true })).toBeVisible()
+  await modal.getByLabel('Лист документа').selectOption('1')
+  await expect(frame.getByText('Подписи — конец документа')).toBeVisible()
+  await modal.getByLabel('Лист документа').selectOption('0')
+  const zoom = modal.getByLabel('Масштаб листа')
+  await zoom.selectOption('100')
+  const box = (await modal.locator('iframe').boundingBox())!
+  await page.mouse.move(box.x + 150, box.y + 100)
+  await page.mouse.wheel(0, 200)
+  await expect.poll(() => modal.locator('iframe').evaluate((element: HTMLIFrameElement) => element.contentWindow!.scrollY)).toBeGreaterThan(0)
+  await page.keyboard.down('Control'); await page.mouse.wheel(0, -100); await page.keyboard.up('Control')
+  await expect.poll(async () => Number(await zoom.inputValue())).toBeGreaterThan(100)
+  const afterWheel = Number(await zoom.inputValue())
+  await frame.locator('body').evaluate(element => {
+    for (const [type, scale] of [['gesturestart', 1], ['gesturechange', 1.2], ['gestureend', 1.2]] as const) {
+      const event = new Event(type, { bubbles: true, cancelable: true }); Object.assign(event, { scale, clientX: 300, clientY: 300 }); element.dispatchEvent(event)
     }
   })
-  const fitsWithSmallSymmetricMargins = async () => {
-    const value = await geometry()
-    return value.scrollWidth <= value.viewportWidth + 1 && value.left >= 0 && value.right >= 0
-      && Math.abs(value.left - value.right) <= 2 && value.width >= value.viewportWidth - 80
+  await expect.poll(async () => Number(await zoom.inputValue())).toBeGreaterThan(afterWheel)
+  await zoom.selectOption('auto')
+  for (const width of [1920, 1280, 800, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    const bounds = (await modal.boundingBox())!
+    expect(bounds.width).toBeLessThanOrEqual(width >= 768 ? Math.min(1440, width * .92) + 1 : width - 30)
+    await expect(modal.getByRole('button', { name: 'Закрыть предпросмотр' })).toBeInViewport()
+    await expect(modal.getByRole('button', { name: 'Скачать Excel' })).toBeInViewport()
   }
-  await expect.poll(fitsWithSmallSymmetricMargins).toBe(true)
-  const wideAuto = await geometry()
-  expect(wideAuto.naturalWidth).toBeGreaterThanOrEqual(1200)
-  expect(wideAuto.naturalWidth).toBeLessThanOrEqual(1300)
-  expect(wideAuto.zoom).toBeGreaterThan(1)
-  expect(wideAuto.zoom).toBeLessThanOrEqual(1.5)
-  // A srcdoc frame can keep Playwright's aggregate lifecycle from reaching
-  // networkidle even after every request ends. Use actual RPC completion and
-  // the loaded preview state; any later RPC still fails the exact count below.
-  await expect.poll(() => pending.size).toBe(0)
-  await expect(modal.getByRole('button', { name: 'Печать / Сохранить PDF', exact: true })).toBeEnabled()
-  const localStart = calls.length
-  await page.screenshot({ path: info.outputPath('document-preview-auto-wide.png') })
-
-  // Resizing must reuse the parsed page and adjust its DOM scale, rather than
-  // replacing the iframe document or requesting the stored rows again.
-  await previewPage.evaluate(element => { (element as HTMLElement).dataset.e2eResizeIdentity = 'same-preview-page' })
-  await page.setViewportSize({ width: 900, height: 850 })
-  await expect.poll(fitsWithSmallSymmetricMargins).toBe(true)
-  await expect(previewPage).toHaveAttribute('data-e2e-resize-identity', 'same-preview-page')
-  const narrowAuto = await geometry()
-  expect(narrowAuto.zoom).toBeLessThan(wideAuto.zoom)
-  expect(narrowAuto.zoom).toBeLessThan(1)
-  expect(narrowAuto.naturalWidth).toBe(wideAuto.naturalWidth)
-  await page.screenshot({ path: info.outputPath('document-preview-auto-narrow.png') })
-
-  await scale.selectOption('100')
-  await expect.poll(async () => (await geometry()).zoom).toBe(1)
-  const narrowManual = await geometry()
-  expect(Math.abs(narrowManual.width - wideAuto.naturalWidth)).toBeLessThanOrEqual(1)
-  expect(narrowManual.scrollWidth).toBeGreaterThan(narrowManual.viewportWidth + 250)
-  await frame.locator('html').evaluate(element => element.ownerDocument.defaultView!.scrollTo({ left: element.scrollWidth, top: 0 }))
-  await expect.poll(async () => (await geometry()).scrollX).toBeGreaterThan(100)
-  await expect(frame.locator('tr').nth(2).locator('td').last()).toBeInViewport()
-
-  await page.setViewportSize({ width: 1600, height: 1000 })
-  await expect(scale).toHaveValue('100')
-  await expect.poll(async () => {
-    const value = await geometry()
-    return value.zoom === 1 && Math.abs(value.width - wideAuto.naturalWidth) <= 1
-      && value.scrollWidth <= value.viewportWidth + 1 && value.left > 0 && Math.abs(value.left - value.right) <= 2
-  }).toBe(true)
-  const wideManual = await geometry()
-  await scale.selectOption('auto')
-  await modal.getByRole('combobox', { name: 'Лист документа', exact: true }).selectOption('1')
-  await expect(frame.getByText('Подписи — конец документа', { exact: true })).toBeVisible()
-  await expect.poll(async () => (await geometry()).zoom).toBe(1.5)
-  const shortSheet = await geometry()
-  expect(shortSheet.scrollWidth).toBeLessThanOrEqual(shortSheet.viewportWidth + 1)
-  expect(Math.abs(shortSheet.left - shortSheet.right)).toBeLessThanOrEqual(2)
-  await modal.getByRole('combobox', { name: 'Лист документа', exact: true }).selectOption('0')
-  await expect(frame.getByText('Шаблон — готовый документ', { exact: true })).toBeVisible()
-  await expect.poll(fitsWithSmallSymmetricMargins).toBe(true)
-  await expect.poll(() => pending.size).toBe(0)
-  await expect(modal.getByRole('button', { name: 'Печать / Сохранить PDF', exact: true })).toBeEnabled()
-  expect(calls.slice(localStart)).toEqual([])
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await modal.screenshot({ path: info.outputPath('fast-sheet.png') })
+  await frame.locator('body').click()
+  await page.keyboard.press('Control+p')
+  await expect(modal.getByRole('button', { name: 'Скачать Excel' })).toBeFocused()
+  expect((await downloadPreviewExcel(page, modal)).text).toContain('F125')
+  expect(calls.slice(before).filter(name => name.startsWith('getRemoteGeneratedDocumentRows'))).toHaveLength(1)
+  expect(calls.slice(before).filter(name => name.startsWith('getRemoteDocumentTemplate'))).toHaveLength(1)
+  expect(pdfCalls).toEqual([]); expect(workers).toEqual([])
+  await expect(modal.getByRole('button', { name: /Вид для печати|Скачать PDF|Печать PDF/ })).toHaveCount(0)
+  await frame.locator('body').click()
+  await page.keyboard.press('Escape'); await expect(modal).toBeHidden()
   expect(errors).toEqual([])
-  await info.attach('document-preview-scale-geometry', { body: JSON.stringify({ wideAuto, narrowAuto, narrowManual, wideManual, shortSheet }, null, 2), contentType: 'application/json' })
-  await frame.locator('body').press('Escape')
-  await expect(modal).toBeHidden()
-  await expect(titleCell).toBeFocused()
 })

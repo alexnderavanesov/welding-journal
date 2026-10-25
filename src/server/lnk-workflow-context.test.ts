@@ -66,7 +66,9 @@ describe('LNK modal workflow queries', () => {
     expect(query.sql).toContain('union all')
     expect(query.sql).toContain('count(distinct row_id)')
     expect(query.sql).toContain('group by name, request_date')
-    expect(query.sql).toContain('select distinct on (name, request_date)')
+    expect(query.sql).not.toContain('completed_positions')
+    expect(query.sql).not.toContain('vik_result')
+    expect(query.sql).not.toContain('vik_conclusion')
     expect(query.sql).not.toContain('material_full_name_1')
     expect(query.sql).not.toContain('welding_electrodes_certificate_number')
   })
@@ -81,9 +83,6 @@ describe('LNK modal workflow queries', () => {
         positionCount: 3,
         methodCodes: ['РК', 'ВИК'],
         searchText: 'линия 1 f1 f2',
-        completedRowId: 17,
-        completedJoint: 'F2',
-        completedMethodCode: 'РК',
       },
       {
         name: 'Заявка А',
@@ -93,9 +92,6 @@ describe('LNK modal workflow queries', () => {
         positionCount: 0,
         methodCodes: null,
         searchText: null,
-        completedRowId: null,
-        completedJoint: null,
-        completedMethodCode: null,
       },
     ])
 
@@ -106,7 +102,7 @@ describe('LNK modal workflow queries', () => {
       positionCount: 3,
       methodCodes: ['ВИК', 'РК'],
       searchText: 'линия 1 f1 f2',
-      disabledReason: 'Заявка закрыта для дополнения: по стыку F2, РК уже внесен результат или заключение.',
+      disabledReason: null,
     })])
   })
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   analyzeLnkRequestExtensionTargets,
   buildLnkRequestExtensionRows,
+  getLnkRequestExtensionDisabledReason,
   getLnkRequestExtensionOptions,
   normalizeLnkRequestExtensionRequest,
 } from '@/lib/lnk-request-extension'
@@ -35,7 +36,7 @@ describe('lnk request extension', () => {
     expect(options[0].searchText).toContain('f1')
   })
 
-  it('locks the entire request after a result or conclusion appears in any position', () => {
+  it('allows extending a request with completed positions without changing their facts', () => {
     const [withResult] = getLnkRequestExtensionOptions([
       weld({ vikRequest: 'Заявка-001', vikRequestDate: '2026-08-14', vikResult: 'годен' }),
       weld({ id: 2, joint: 'F2', hasRk: 'да', rkRequest: 'Заявка-001', rkRequestDate: '2026-08-14', rkResult: 'ожидает НК' }),
@@ -44,8 +45,29 @@ describe('lnk request extension', () => {
       weld({ vikRequest: 'Заявка-002', vikRequestDate: '2026-08-15', vikResult: 'ожидает НК', vikConclusion: 'Заключение-1' }),
     ])
 
-    expect(withResult.disabledReason).toContain('Заявка закрыта для дополнения')
-    expect(withConclusion.disabledReason).toContain('результат или заключение')
+    expect(withResult.disabledReason).toBeNull()
+    expect(withConclusion.disabledReason).toBeNull()
+  })
+
+  it.each([
+    { vikResult: 'годен' },
+    { vikResult: 'ремонт' },
+    { vikResult: 'вырез' },
+    { vikConclusion: 'Заключение-1' },
+    { vikConclusionDate: '2026-08-15' },
+  ])('keeps the server request guard open for existing facts %j', (facts) => {
+    const identity = { name: 'Заявка-001', date: '2026-08-14' }
+    expect(getLnkRequestExtensionDisabledReason([
+      weld({ vikRequest: identity.name, vikRequestDate: identity.date, ...facts }),
+    ], identity)).toBeNull()
+  })
+
+  it('still rejects missing request identities and invalid dates', () => {
+    const row = weld({ vikRequest: 'Заявка-001', vikRequestDate: '2026-08-14', vikResult: 'годен' })
+    expect(getLnkRequestExtensionDisabledReason([row], { name: 'Заявка-001', date: '2026-08-15' }))
+      .toContain('больше не существует')
+    expect(getLnkRequestExtensionOptions([{ ...row, vikRequestDate: null }])[0].disabledReason)
+      .toContain('корректная дата')
   })
 
   it('accepts assigned and additional methods, and reports every ineligible position', () => {

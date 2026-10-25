@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select'
 import { type ChangeEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -1833,7 +1834,7 @@ function WdiRuleConstructorRow({
   return (
     <div className="grid grid-cols-[180px_repeat(3,minmax(0,1fr))] gap-3 border-b border-slate-100 px-3 py-3 last:border-b-0">
       <div className="flex items-center text-sm font-semibold text-slate-800">{title}</div>
-      <select
+      <Select
         value={rule.diameter}
         onChange={(event) => onChange('diameter', event.target.value)}
         className={selectClassName}
@@ -1841,8 +1842,8 @@ function WdiRuleConstructorRow({
       >
         <option value="min">Dmin</option>
         <option value="max">Dmax</option>
-      </select>
-      <select
+      </Select>
+      <Select
         value={rule.thickness}
         onChange={(event) => onChange('thickness', event.target.value)}
         className={selectClassName}
@@ -1851,8 +1852,8 @@ function WdiRuleConstructorRow({
         <option value="linked">T выбранного диаметра</option>
         <option value="min">Tmin независимо</option>
         <option value="max">Tmax независимо</option>
-      </select>
-      <select
+      </Select>
+      <Select
         value={rule.equalDiameterThickness}
         disabled={rule.thickness !== 'linked'}
         onChange={(event) => onChange('equalDiameterThickness', event.target.value)}
@@ -1861,7 +1862,7 @@ function WdiRuleConstructorRow({
       >
         <option value="min">Tmin</option>
         <option value="max">Tmax</option>
-      </select>
+      </Select>
     </div>
   )
 }
@@ -1881,7 +1882,7 @@ function WdiRecalculationPreviewDialog({
 }) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || isRecalculating) return
+      if (event.key !== 'Escape' || isRecalculating || document.querySelector('[data-select-listbox]')) return
       event.preventDefault()
       onClose()
     }
@@ -3279,7 +3280,7 @@ function DocumentTemplateReplacementDialog({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape' || isSaving) return
+      if (event.key !== 'Escape' || isSaving || document.querySelector('[data-select-listbox]')) return
       event.preventDefault()
       event.stopPropagation()
       onClose()
@@ -3339,7 +3340,7 @@ function DocumentTemplateReplacementDialog({
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px_150px_auto] sm:items-end">
           <label className="space-y-1.5">
             <span className="block text-xs font-semibold uppercase text-slate-500">Лист нового Excel</span>
-            <select
+            <Select
               value={sheetName}
               onChange={(event) => {
                 setSheetName(event.target.value)
@@ -3350,7 +3351,7 @@ function DocumentTemplateReplacementDialog({
               {analysis.candidateSheetNames.map((candidateSheetName) => (
                 <option key={candidateSheetName} value={candidateSheetName}>{candidateSheetName}</option>
               ))}
-            </select>
+            </Select>
           </label>
           <label className="space-y-1.5">
             <span className="block text-xs font-semibold uppercase text-slate-500">Сдвиг строк</span>
@@ -3511,16 +3512,16 @@ function WeldingJournalTemplateOptionsPanel({
         </div>
         <label className="flex shrink-0 items-center gap-2 text-sm text-slate-600">
           <span>Разделять по</span>
-          <select
+          <Select
             value={options.splitMode}
             disabled={disabled}
             onChange={(event) => onChange('splitMode', event.target.value as WeldingJournalTemplateOptions['splitMode'])}
-            className="h-9 min-w-36 rounded-md border-slate-200 bg-white py-1 pl-3 pr-8 text-sm font-medium text-slate-800 disabled:bg-slate-100 disabled:text-slate-400"
+            className="w-auto h-9 min-w-36 rounded-md border-slate-200 bg-white py-1 pl-3 pr-8 text-sm font-medium text-slate-800 disabled:bg-slate-100 disabled:text-slate-400"
           >
             {WELDING_JOURNAL_DOCUMENT_SPLIT_MODES.map((mode) => (
               <option key={mode.value} value={mode.value}>{mode.label}</option>
             ))}
-          </select>
+          </Select>
         </label>
       </div>
       {disabled ? <div className="mt-2 text-xs text-slate-500">Загрузите шаблон, чтобы сохранить эти настройки.</div> : null}
@@ -3959,7 +3960,7 @@ function RequestNamingSettingsCard({
                     <span className="flex h-7 w-7 items-center justify-center rounded bg-slate-100 text-xs font-semibold text-slate-500">
                       {index + 1}
                     </span>
-                  <select
+                  <Select
                     value={part.type}
                     onChange={(event) => {
                       const nextType = event.target.value as RequestNamingPatternPart['type']
@@ -3970,18 +3971,18 @@ function RequestNamingSettingsCard({
                           : { type: 'text', value: '' },
                       )
                     }}
-                    className="h-9 min-w-0 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                    className="w-auto h-9 min-w-0 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
                     aria-label={`Тип части ${index + 1}`}
                   >
                     <option value="field">Поле</option>
                     <option value="text">Текст</option>
-                  </select>
+                  </Select>
 
                     {part.type === 'field' ? (
-                      <select
+                      <Select
                         value={part.field}
                         onChange={(event) => updatePart(part.id, { field: event.target.value as RequestNamingPatternField })}
-                        className="h-9 min-w-0 rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                        className="w-auto h-9 min-w-0 rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-700 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
                         aria-label={`Поле части ${index + 1}`}
                       >
                         {availableFields.map((field) => (
@@ -3989,7 +3990,7 @@ function RequestNamingSettingsCard({
                             {field.label}
                           </option>
                         ))}
-                      </select>
+                      </Select>
                     ) : (
                       <input
                         type="text"

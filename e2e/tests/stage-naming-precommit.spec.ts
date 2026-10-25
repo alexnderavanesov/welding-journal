@@ -14,6 +14,7 @@ import { assertSafeE2eDatabaseUrl, withE2eDatabase } from '../database'
 import { openDocumentOperation, confirmDocumentOperation } from '../document-operation-ui'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
+import { previewSheetText } from '../document-sheet'
 
 // Author-only precommit regressions. The main runner owns the disposable DB,
 // server and template directory; this file must never bootstrap any of them.
@@ -181,7 +182,9 @@ async function installNumberTemplate() {
     expect((await db.query("select id from document_templates where id='lnkRequest'")).rows).toHaveLength(0)
   })
   const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([['Номер документа', 'Название', 'Стык'], ['', '', '']]), 'Номер')
+  const sheet = XLSX.utils.aoa_to_sheet([['Номер документа', 'Название', 'Стык'], ['', '', '']])
+  sheet['!cols'] = [{ wch: 22 }, { wch: 80 }, { wch: 15 }]
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Номер')
   const data = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
   fileKey = `e2e-stage-naming/${randomUUID()}.xlsx`
   await store().set(fileKey, data)
@@ -196,30 +199,17 @@ async function installNumberTemplate() {
   ]))
 }
 
-async function assertPrintedNumber(page: Page, title: string) {
+async function assertPreviewNumber(page: Page, title: string) {
   await page.goto('/documents')
   await page.getByRole('button', { name: 'Заявка ЛНК', exact: true }).click()
   await page.getByRole('button', { name: title, exact: true }).click({ button: 'right' })
   await page.getByRole('button', { name: 'Предпросмотр', exact: true }).click()
   const modal = page.getByRole('dialog', { name: 'Предпросмотр документа', exact: true })
-  const frame = modal.frameLocator('iframe')
-  await expect(frame.getByText('1233', { exact: true })).toBeVisible()
-  await expect(frame.getByText('012', { exact: true })).toHaveCount(0)
-  await page.evaluate(() => {
-    document.addEventListener('load', event => {
-      const printFrame = event.target
-      if (!(printFrame instanceof HTMLIFrameElement) || printFrame.title !== 'Полный отчёт для печати') return
-      printFrame.contentWindow!.print = () => {
-        const last = [...printFrame.contentDocument!.querySelectorAll('tbody tr')].at(-1)
-        document.body.dataset.stageNamingPrint = JSON.stringify([...last?.querySelectorAll('td') ?? []].map(cell => cell.textContent?.trim()))
-        printFrame.contentWindow!.dispatchEvent(new Event('afterprint'))
-      }
-    }, true)
-  })
-  await modal.getByRole('button', { name: 'Печать / Сохранить PDF' }).click()
-  // Check the number cell itself, not a row substring: the unchanged title
-  // also contains 1233 and would hide a misprinted 012 in column A.
-  await expect.poll(() => page.evaluate(() => JSON.parse(document.body.dataset.stageNamingPrint ?? '[]'))).toEqual(['1233', title, 'PRIMARY'])
+  const text = await previewSheetText(modal)
+  // Exact cell text checks the number: the unchanged title also
+  // contains 1233 and must not hide a misprinted 012 in column A.
+  await expect(modal.frameLocator('iframe').getByText('1233', { exact: true })).toBeVisible()
+  expect(text).not.toMatch(/\b012\b/)
   const downloaded = page.waitForEvent('download')
   await modal.getByRole('button', { name: 'Скачать Excel' }).click()
   const workbook = XLSX.read(await readFile((await (await downloaded).path())!), { type: 'buffer' })
@@ -227,7 +217,7 @@ async function assertPrintedNumber(page: Page, title: string) {
   expect(workbook.Sheets['Номер'].B2?.v).toBe(title)
 }
 
-test('changing only pre-TO formula cannot reinterpret an old primary 1233 as 012 in preview, print or Excel', async ({ page }) => {
+test('changing only pre-TO formula cannot reinterpret an old primary 1233 as 012 in preview or Excel', async ({ page }) => {
   const pattern = `${project}-НК-{{№}}`, title = `${project}-НК-1233`
   await writeRules({ lnkRequest: { systemPattern: pattern }, lnkRequestBeforeHeatTreatment: { systemPattern: pattern } })
   await seedPrimaryRequest(title)
@@ -235,7 +225,7 @@ test('changing only pre-TO formula cannot reinterpret an old primary 1233 as 012
   const before = await facts()
   const reference = { type: 'lnkRequest' as const, title, date }
   expect(getSystemDocumentNumber(reference, await readRequestConclusionSettings(requireDb()))).toBe('1233')
-  await assertPrintedNumber(page, title)
+  await assertPreviewNumber(page, title)
   const beforeCounters = await counters()
   const beforeRules = await readRequestConclusionSettings(requireDb())
 
@@ -254,7 +244,7 @@ test('changing only pre-TO formula cannot reinterpret an old primary 1233 as 012
   // Literal expected number comes from the document issued before this edit,
   // not from the parser/allocator under test. The old union-MIN returned 012.
   expect(getSystemDocumentNumber(reference, afterRules)).toBe('1233')
-  await assertPrintedNumber(page, title)
+  await assertPreviewNumber(page, title)
   expect(await facts()).toEqual(before)
   expect(await counters()).toEqual(beforeCounters)
 })

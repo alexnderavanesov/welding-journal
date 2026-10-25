@@ -35,7 +35,7 @@ export function GridDensitySelect({ value, onChange, label = 'Плотность
     } else if (open && ['Enter', ' '].includes(event.key)) { event.preventDefault(); select(active) }
     else if (event.key === 'Tab') setOpen(false)
   }}>
-    <button ref={trigger} type="button" role="combobox" aria-label={label} aria-expanded={open} aria-controls={`${id}-options`} aria-activedescendant={open ? `${id}-${active}` : undefined} className="journal-button" onClick={() => { setActive(DENSITIES.findIndex(item => item.value === value)); setOpen(!open) }}>{DENSITIES.find(item => item.value === value)?.label}<ChevronDown size={14} /></button>
+    <button ref={trigger} type="button" role="combobox" aria-label={label} aria-expanded={open} aria-controls={`${id}-options`} aria-activedescendant={open ? `${id}-${active}` : undefined} className="journal-button" onClick={() => { trigger.current?.focus({ preventScroll: true }); setActive(DENSITIES.findIndex(item => item.value === value)); setOpen(!open) }}>{DENSITIES.find(item => item.value === value)?.label}<ChevronDown size={14} /></button>
     {open ? <div id={`${id}-options`} role="listbox" aria-label={label} className="journal-density-options">{DENSITIES.map((item, index) => <button key={item.value} id={`${id}-${index}`} type="button" role="option" tabIndex={-1} aria-selected={value === item.value} data-active={active === index} onMouseEnter={() => setActive(index)} onClick={() => select(index)}><span><strong>{item.label}</strong><small>{item.description}</small></span>{value === item.value ? <Check size={15} /> : null}</button>)}</div> : null}
   </div></div>
 }

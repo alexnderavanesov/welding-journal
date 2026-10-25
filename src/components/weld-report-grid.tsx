@@ -1,4 +1,5 @@
 import { WORKFLOW_SELECTION_LIMIT } from '@/lib/workflow-selection-limit'
+import { JournalSelectionSummary } from './journal-selection-summary'
 import { gridHeaderKeyboard } from '@/lib/grid-header-keyboard'
 import './grid-keyboard.css'
 import { useJournalServerGrid } from '@/lib/use-journal-server-grid'
@@ -471,7 +472,7 @@ function ReportGrid(props: WeldReportGridProps) {
           }
           if (!rowsReady && event.target instanceof Element && event.target.closest('.ag-row')
             && !['Escape', 'Tab'].includes(event.key)) { event.preventDefault(); event.stopPropagation(); return }
-          if (props.selectable && event.key === ' ' && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+          if (props.selectable && event.key === ' ' && !event.altKey && !event.ctrlKey && !event.metaKey
             && event.target instanceof Element && !event.target.closest('button, a, input, textarea, select, [contenteditable], .ag-menu')) {
             const cell = event.target.closest('.ag-cell')
             const row = cell?.closest('[row-index]')
@@ -481,7 +482,10 @@ function ReportGrid(props: WeldReportGridProps) {
               // too, so holding Space cannot toggle twice or scroll the page.
               event.preventDefault(); event.stopPropagation()
               const node = api?.getDisplayedRowAtIndex(Number(row.getAttribute('row-index')))
-              if (!event.repeat && node?.data && !serverGrid.selectionContext?.pending) serverGrid.selectionContext?.toggle(node.data)
+              if (!event.repeat && !serverGrid.selectionContext?.pending) {
+                if (event.shiftKey) serverGrid.selectRange()
+                else if (node?.data) serverGrid.selectionContext?.toggle(node.data)
+              }
               return
             }
           }
@@ -597,23 +601,25 @@ function ReportGrid(props: WeldReportGridProps) {
       <div data-journal-footer className="journal-footer rounded-b-xl border border-t-0 border-slate-200 bg-slate-50 px-3 text-xs text-slate-500">
         <span className="journal-loaded-count">{props.totalCount === undefined ? 'Подсчёт…' : `Найдено: ${props.totalCount}`}</span>
         <div className="journal-footer-right">
-        <div className="journal-range-summary" aria-label="Статистика выделения" title="Выбрано — стыков галочками; количество — непустых ячеек всего диапазона. Среднее и сумма — числовые поля, включая незагруженные строки.">
+        <div className="journal-range-summary" aria-label="Статистика выделения" title="Выбрано — записей галочками. Стыков, WDI и Сварка считаются по области, если она выделена, иначе по выбранным. После разделителя — статистика ячеек области, включая незагруженные строки.">
           {selectedRowIds.size > 0 ? <div className="flex items-center gap-2" aria-label={report !== 'weldingJournal' ? 'Действия с выбранными стыками' : undefined}>
             <span>Выбрано: {selectedRowIds.size}</span>
-            {report !== 'weldingJournal' && props.getContextMenuItems ? <>
+            {report !== 'weldingJournal' && props.getContextMenuItems ?
               <button type="button" data-journal-selection-actions className="journal-input text-sky-700 disabled:opacity-50" disabled={!rowMenu.selectionAvailable}
                 onClick={event => {
                   const anchorElement = event.currentTarget
                   const rect = anchorElement.getBoundingClientRect()
                   rowMenu.openSelection({ x: rect.left, y: rect.bottom + 4, anchorElement, closeOnScroll: false })
                 }}>Действия</button>
-              <button type="button" className="journal-input" onClick={() => props.onSelectedRowIdsChange?.(new Set())}>Снять выбор</button>
-            </> : null}
+              : null}
           </div> : null}
+          <JournalSelectionSummary ids={selectedRowIds} identity={props.journalServer?.identity} ready={rowsReady} range={serverGrid.summaryRange} />
+          {serverGrid.rangeState || rangeSummary.count > 0 ? <div className="journal-cell-range-summary" aria-label="Статистика ячеек" data-separated={Boolean(selectedRowIds.size || serverGrid.summaryRange)}>
           {serverGrid.rangeState ? <span role="status">{serverGrid.rangeState}</span> : null}
           {!serverGrid.rangeState && rangeSummary.average !== null ? <span>Среднее: {formatJournalNumber(rangeSummary.average)}</span> : null}
           {!serverGrid.rangeState && rangeSummary.count > 0 ? <span>Количество: {rangeSummary.count}</span> : null}
           {!serverGrid.rangeState && rangeSummary.numericCount > 0 ? <span>Сумма: {formatJournalNumber(rangeSummary.sum)}</span> : null}
+          </div> : null}
         </div>
         </div>
       </div>

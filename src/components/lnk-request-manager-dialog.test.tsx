@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { LnkRequestManagerDialog } from '@/components/lnk-request-manager-dialog'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import type { LnkRequestExtensionOption } from '@/lib/lnk-request-extension'
+import { getLnkRequestExtensionOptions, type LnkRequestExtensionOption } from '@/lib/lnk-request-extension'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 
 const openRequest: LnkRequestExtensionOption = {
@@ -19,15 +19,15 @@ const openRequest: LnkRequestExtensionOption = {
 }
 
 const fixedRequest: LnkRequestExtensionOption = {
-  key: '["Заявка-002","2026-08-15"]',
+  key: '["Заявка-002","2023-08-15"]',
   name: 'Заявка-002',
-  date: '2026-08-15',
-  label: 'Заявка-002 · 15.08.2026',
+  date: '2023-08-15',
+  label: 'Заявка-002 · 15.08.2023',
   rowCount: 1,
   positionCount: 1,
   methodCodes: ['РК'],
   searchText: 'линия-2 f2',
-  disabledReason: 'Заявка закрыта для дополнения: уже внесен результат или заключение.',
+  disabledReason: 'У заявки отсутствует корректная дата, поэтому проверить хронологию добавляемых стыков нельзя.',
 }
 
 function renderDialog(overrides: Partial<Parameters<typeof LnkRequestManagerDialog>[0]> = {}) {
@@ -96,11 +96,11 @@ describe('LnkRequestManagerDialog', () => {
 
     expect(screen.getByRole('heading', { name: 'Редактирование заявок ЛНК' })).toBeInTheDocument()
     expect(dialog).toHaveClass('max-w-[1480px]', 'h-[calc(100dvh-1rem)]')
-    expect(screen.getAllByText('Открыта').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Можно дополнить').length).toBeGreaterThan(0)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Закрытые' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Недоступные' }))
     expect(screen.queryByRole('button', { name: /Заявка-001/ })).not.toBeInTheDocument()
-    expect(screen.getByText('Закрыта')).toBeInTheDocument()
+    expect(screen.getByText('Недоступно')).toBeInTheDocument()
     expect(dialog).toHaveClass('h-[calc(100dvh-1rem)]')
 
     fireEvent.click(screen.getByRole('button', { name: /Заявка-002/ }))
@@ -135,16 +135,20 @@ describe('LnkRequestManagerDialog', () => {
       rkResult: 'годен',
     } as WeldRow
 
-    renderDialog({
+    const [request] = getLnkRequestExtensionOptions([{ ...row, vikRequestDate: openRequest.date, rkRequestDate: openRequest.date }])
+    const { onAddPositions } = renderDialog({
       requestName: fixedRequest.name,
-      requestDate: fixedRequest.date,
-      requestRows: [row],
+      requestDate: openRequest.date,
+      requestOptions: [request],
+      requestRows: [{ ...row, vikRequestDate: openRequest.date, rkRequestDate: openRequest.date }],
       requestMethods: [vikMethod, rkMethod],
       requestNameDraft: fixedRequest.name,
     })
 
     expect(screen.getByRole('button', { name: 'ВИК' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'РК' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить позиции' }))
+    expect(onAddPositions).toHaveBeenCalledWith(request)
     fireEvent.click(screen.getByRole('button', { name: 'Дополнительные действия с заявкой' }))
     expect(screen.getByRole('button', { name: 'Удалить выбранную заявку' })).toBeDisabled()
     expect(screen.getByText(/Удаление недоступно: по стыку F2, РК/)).toBeInTheDocument()

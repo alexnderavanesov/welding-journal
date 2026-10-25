@@ -19,7 +19,7 @@ export function useWindowEscapeKey(
     if (!enabled) return
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape') return
+      if (event.key !== 'Escape' || document.querySelector('[data-select-listbox]')) return
       onEscapeRef.current(event)
     }
 

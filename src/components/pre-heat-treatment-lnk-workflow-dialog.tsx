@@ -104,6 +104,7 @@ export type PreHeatTreatmentLnkWorkflowDialogProps = {
   embedded?: boolean
   mode: PreHeatTreatmentLnkWorkflowRowMode
   rows: WeldRow[]
+  isContextReady?: boolean
   initialSelectedIds: ReadonlySet<number>
   initialMethodCode?: PreHeatTreatmentLnkMethodCode
   initialRequestSubmitMode?: LnkRequestComposerMode
@@ -164,6 +165,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
   embedded = false,
   mode,
   rows,
+  isContextReady = true,
   initialSelectedIds,
   initialMethodCode,
   initialRequestSubmitMode = 'create',
@@ -222,17 +224,12 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     [initialSelectedIds],
   )
   useEffect(() => {
+    if (!isContextReady || !appliedInitialSelectionRef.current) return
     onCandidateSelectionChange?.([...selectedIds])
-  }, [onCandidateSelectionChange, selectedIds])
-  const loadedInitialRowsSignature = useMemo(
-    () => rows
-      .flatMap((row) => initialSelectedIds.has(row.id) ? [row.id] : [])
-      .sort((left, right) => left - right)
-      .join(','),
-    [initialSelectedIds, rows],
-  )
+  }, [isContextReady, onCandidateSelectionChange, selectedIds])
   useEffect(() => {
-    const contextKey = `${mode}:${initialMethodCode ?? ''}:${initialSelectionSignature}:${loadedInitialRowsSignature}`
+    if (!isContextReady) return
+    const contextKey = `${mode}:${initialMethodCode ?? ''}:${initialSelectionSignature}`
     if (appliedInitialSelectionRef.current === contextKey) return
 
     const nextSelectedMethods = getInitialRequestMethods(mode, rows, initialSelectedIds, initialMethodCode)
@@ -250,7 +247,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
         )))
       : new Set())
     appliedInitialSelectionRef.current = contextKey
-  }, [initialMethodCode, initialSelectedIds, initialSelectionSignature, loadedInitialRowsSignature, mode, rows])
+  }, [initialMethodCode, initialSelectedIds, initialSelectionSignature, isContextReady, mode, rows])
   const { data: sequences } = useQuery({
     queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
     queryFn: loadSystemDocumentSequences,
@@ -286,15 +283,16 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     : 'Выберите заявку НК до ТО.'
   const selectedRequest = requestOptions.find((option) => option.key === requestKey) ?? null
   useEffect(() => {
+    if (!isContextReady) return
     onCandidateFilterChange?.({
       methodCodes: mode === 'request'
         ? [...selectedMethods]
         : resultMethod ? [resultMethod] : [],
       request: mode === 'result' ? selectedRequest : null,
     })
-  }, [mode, onCandidateFilterChange, resultMethod, selectedMethods, selectedRequest])
+  }, [isContextReady, mode, onCandidateFilterChange, resultMethod, selectedMethods, selectedRequest])
   useEffect(() => {
-    if (mode !== 'result' || !resultMethod) return
+    if (!isContextReady || mode !== 'result' || !resultMethod) return
     if (requestOptions.some((option) => option.key === requestKey)) return
     const initialKeys = new Set(rows.flatMap((row) => {
       if (!initialSelectedIds.has(row.id)) return []
@@ -308,10 +306,11 @@ export function PreHeatTreatmentLnkWorkflowDialog({
         ? requestOptions[0]?.key ?? ''
         : ''
     setRequestKey(nextKey)
-  }, [initialSelectedIds, mode, requestKey, requestOptions, resultMethod, rows, saveCheckSettings])
+  }, [initialSelectedIds, isContextReady, mode, requestKey, requestOptions, resultMethod, rows, saveCheckSettings])
 
   useEffect(() => {
     if (
+      !isContextReady ||
       mode !== 'result' ||
       !resultMethod ||
       !selectedRequest ||
@@ -326,7 +325,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
         ? [row.id]
         : []
     })))
-  }, [initialSelectedIds, mode, resultMethod, rows, saveCheckSettings, selectedRequest])
+  }, [initialSelectedIds, isContextReady, mode, resultMethod, rows, saveCheckSettings, selectedRequest])
 
   const sourceRows = useMemo(() => {
     if (mode === 'request') return rows
@@ -544,7 +543,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     onError: (error) => onSaved([], [], (error as Error).message),
   })
 
-  const saveBlockReason = getSaveBlockReason({
+  const saveBlockReason = !isContextReady ? 'Загрузка выбранных стыков…' : getSaveBlockReason({
     mode,
     selectedMethodsCount: selectedMethods.size,
     resultMethod,

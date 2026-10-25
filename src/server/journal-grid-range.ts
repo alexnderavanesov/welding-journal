@@ -13,7 +13,7 @@ import type { OtherSettings } from '@/lib/other-settings'
 import { getRkExposureSchemeState } from '@/lib/rk-exposure'
 import { mergeJournalRangeSpans } from '@/lib/journal-range-summary'
 import { getReportOrderBy } from './weld-read'
-import { assertJournalContextRevision, journalReadContext, journalRouteWhere, journalValueSql, readJournalLeafRows, readJournalPage, type JournalReadContext } from './journal-grid'
+import { assertJournalContextRevision, assertJournalRevision, journalGroupOrder, journalGroupSql, journalReadContext, journalRouteWhere, journalValueSql, readJournalLeafRows, readJournalPage, summarizeJournalGridSelection, type JournalReadContext } from './journal-grid'
 import { buildNumberArrayMatch } from './weld-request-utils'
 
 function validate(input: JournalRangeRequest) {
@@ -39,6 +39,52 @@ export function mergeJournalRangeParts(parts: JournalRangePart[]): JournalRangeP
     result.push(...rectangles.values())
   }
   return result
+}
+/** Select records, not cells: overlaps and selected parent groups count once.
+ * Read only IDs; one query per leaf span or two per group span, never per joint. */
+export async function selectJournalGridRange(input: JournalRangeRequest, signal?: AbortSignal) {
+  validate(input)
+  signal?.throwIfAborted()
+  const context = await journalReadContext({ ...input, route: [], start: 0, end: 100 })
+  const parts = mergeJournalRangeParts(input.parts.map(part => ({ ...part, columns: ['id'] })))
+    .sort((a, b) => a.route.length - b.route.length)
+  const ids = new Set<number>(), covered = new Set<string>()
+  for (const part of parts) {
+    signal?.throwIfAborted()
+    // A header selects all its filtered descendants, even when collapsed.
+    if (part.route.some((_, index) => covered.has(JSON.stringify(part.route.slice(0, index + 1))))) continue
+    const where = journalRouteWhere(context, part.route)
+    if (part.route.length === input.groupBy.length) {
+      const rows = await requireDb().select({ id: weldJoints.id }).from(weldJoints).where(where)
+        .orderBy(...getReportOrderBy(journalReport(context.request.report), context.request.sort ?? undefined, context.settings))
+        .limit(part.end - part.start).offset(part.start)
+      if (rows.length !== part.end - part.start) throw new Error('Диапазон больше текущей выборки. Обновите журнал.')
+      for (const row of rows) ids.add(row.id)
+    } else {
+      const field = input.groupBy[part.route.length], value = journalGroupSql(field, context)
+      const groups = await requireDb().select({ key: sql<string>`${value}` }).from(weldJoints).where(where)
+        .groupBy(value).orderBy(journalGroupOrder(field, context)).limit(part.end - part.start).offset(part.start)
+      if (groups.length !== part.end - part.start) throw new Error('Диапазон больше текущей выборки. Обновите журнал.')
+      signal?.throwIfAborted()
+      const rows = await requireDb().select({ id: weldJoints.id }).from(weldJoints)
+        .where(and(where, sql`${value} = any(${sql.param(groups.map(group => group.key))}::text[])`))
+      for (const row of rows) ids.add(row.id)
+      for (const group of groups) covered.add(JSON.stringify([...part.route, group.key]))
+    }
+  }
+  signal?.throwIfAborted()
+  await assertJournalContextRevision(context)
+  signal?.throwIfAborted()
+  return { ids: [...ids], revision: context.revision }
+}
+export async function summarizeJournalGridArea(input: JournalRangeRequest, signal?: AbortSignal) {
+  const { ids } = await selectJournalGridRange(input, signal)
+  const summary = await summarizeJournalGridSelection({ ids }, signal)
+  // Selection and physical-chain aggregation must describe the same revision,
+  // including dispatcher publication when the range uses a task filter.
+  await assertJournalRevision(input.revision, input.columnFilters)
+  signal?.throwIfAborted()
+  return summary
 }
 export function journalRangeValue(row: JournalGridRow, key: WeldFieldKey, anchor: string, groupBy: WeldFieldKey[] = [], report: WeldReportKind = 'weldingJournal', settings?: OtherSettings): unknown {
   const group = journalGroup(row)

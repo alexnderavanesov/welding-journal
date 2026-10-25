@@ -17,3 +17,7 @@ db_dump*.bak
 *.log
 *.tmp
 .DS_Store
+playwright-report
+test-results
+e2e
+docs

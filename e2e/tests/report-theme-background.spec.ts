@@ -40,6 +40,15 @@ for (const route of ['/journal', '/lnk', '/psto', '/documents']) {
         await page.evaluate(() => scrollTo(0, 137))
         await expect.poll(() => viewport.evaluate(el => getComputedStyle(el).backgroundImage)).not.toBe('none')
         await expect(grid.locator('.journal-loading-cell')).toHaveCount(0)
+        // Compare settled pixels: theme/reveal transitions can still change
+        // text colors after the rows have loaded. Leave scroll timelines alone.
+        await viewport.evaluate(async element => {
+          await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+          await Promise.all(element.getAnimations({ subtree: true })
+            .filter(animation => animation.timeline === document.timeline
+              && animation.effect?.getComputedTiming().iterations !== Infinity)
+            .map(animation => animation.finished.catch(() => {})))
+        })
         const clip = await viewport.evaluate(el => {
           const box = el.getBoundingClientRect()
           const rows = [...el.querySelectorAll('.ag-grid-scrolling-rows .ag-row:not(.ag-row-group)')]

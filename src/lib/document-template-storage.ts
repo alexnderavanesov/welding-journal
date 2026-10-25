@@ -58,7 +58,7 @@ export async function updateDocumentTemplateConstructor(
     data: {
       id: templateId,
       expectedVersion,
-      constructorConfig: normalizeDocumentTemplateConstructorConfig(constructorConfig),
+      constructorConfig: normalizeDocumentTemplateConstructorConfig(constructorConfig, templateId),
     },
   })
   if (!saved) return null
@@ -135,7 +135,7 @@ function fromRemoteDocumentTemplate(
   return {
     ...remote,
     constructorConfig: remote.constructorConfig
-      ? normalizeDocumentTemplateConstructorConfig(remote.constructorConfig)
+      ? normalizeDocumentTemplateConstructorConfig(remote.constructorConfig, remote.id)
       : undefined,
     fileData: base64ToArrayBuffer(remote.fileDataBase64),
   }

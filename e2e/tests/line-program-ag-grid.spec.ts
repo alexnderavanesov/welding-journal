@@ -40,9 +40,13 @@ async function selectFilterValue(page: Page, column: Locator, value: string) {
     })).toBe(true)
   }
   await filter.getByRole('checkbox', { name: 'Выбрать все', exact: true }).uncheck()
-  await filter.getByRole('textbox').fill('__no_such_value__')
+  const search = filter.getByRole('textbox')
+  await search.click()
+  await expect(search).toBeFocused()
+  await search.fill('__no_such_value__')
+  await expect(search).toHaveValue('__no_such_value__')
   await expect(filter.getByText('Нет совпадений', { exact: true })).toBeVisible()
-  await filter.getByRole('textbox').fill(value)
+  await search.fill(value)
   await filter.getByRole('checkbox', { name: value, exact: true }).check()
   await filter.getByRole('button', { name: 'Применить', exact: true }).click()
 }

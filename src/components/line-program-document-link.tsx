@@ -40,7 +40,7 @@ export function useProgramDocumentPreview() {
 export function ProgramDocumentLink({ document, children }: { document: ProgramDocument; children: ReactNode }) {
   const { openDocument, preview } = useProgramDocumentPreview()
   return <>
-    <button type="button" onClick={() => openDocument(document)} title="Открыть предпросмотр документа" className="max-w-full break-words rounded text-left text-sky-700 underline decoration-dotted underline-offset-4 hover:text-sky-900 focus-visible:outline-sky-500">{children}</button>
+    <button type="button" onClick={event => { event.currentTarget.focus({ preventScroll: true }); openDocument(document) }} title="Открыть предпросмотр документа" className="max-w-full break-words rounded text-left text-sky-700 underline decoration-dotted underline-offset-4 hover:text-sky-900 focus-visible:outline-sky-500">{children}</button>
     {preview}
   </>
 }

@@ -34,7 +34,11 @@ async function seed() {
 async function createPerson(page: Page, name: string, thermist = false) {
   await page.getByRole('button', { name: 'Добавить специалиста', exact: true }).click()
   await page.getByLabel('ФИО', { exact: true }).fill(name)
-  if (thermist) await page.getByLabel('Тип специалиста', { exact: true }).selectOption('thermist')
+  if (thermist) {
+    await page.getByLabel('Тип специалиста', { exact: true }).click()
+    await page.getByRole('listbox').getByRole('option', { name: 'Термист', exact: true }).click()
+    await expect(page.getByLabel('Тип специалиста', { exact: true })).toHaveValue('thermist')
+  }
   await page.getByLabel('№ квалификационного удостоверения', { exact: true }).fill('УД-123')
   if (!thermist) for (const method of ['ВИК', 'ТВМТ']) await page.getByLabel(method, { exact: true }).check()
   await page.getByRole('button', { name: 'Сохранить специалиста', exact: true }).click()

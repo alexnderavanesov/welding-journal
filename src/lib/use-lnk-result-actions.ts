@@ -7,11 +7,12 @@ import {
 import type { UseLnkResultActionsOptions } from '@/lib/lnk-report-action-types'
 import {
   canSelectLnkResultRow,
+  getLnkRowRequestNames,
   getLnkRowRequestDocumentIdentities,
 } from '@/lib/report-modal-rows'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
-import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
+import { getLnkRequestDocumentIdentities, type RequestDocumentIdentity } from '@/lib/request-document-identity'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 
 export function useLnkResultActions({
@@ -29,6 +30,47 @@ export function useLnkResultActions({
   function openAddLnkResultModal() {
     setPreservedOrderIds(null)
     setDraft(createDefaultLnkResultDraft(defaultConclusionNaming))
+    setIsModalOpen(true)
+  }
+
+  const getCommonLnkRequests = (selectedRows: WeldRow[]) => {
+    if (selectedRows.length === 0) return []
+    const [firstRow, ...restRows] = selectedRows
+    const firstRequests = getLnkRequestDocumentIdentities([firstRow])
+    const common = new Set(firstRequests.map((request) => request.key))
+    for (const selectedRow of restRows) {
+      const keys = new Set(getLnkRequestDocumentIdentities([selectedRow]).map((request) => request.key))
+      for (const key of [...common]) {
+        if (!keys.has(key)) common.delete(key)
+      }
+    }
+    return firstRequests.filter((request) => common.has(request.key))
+  }
+
+  function openAddLnkResultModalForRows(selectedRows: WeldRow[]) {
+    if (selectedRows.length === 0) {
+      openAddLnkResultModal()
+      return
+    }
+    if (selectedRows.length === 1) {
+      openAddLnkResultModalForRow(selectedRows[0])
+      return
+    }
+    if (selectedRows.some((selectedRow) => getLnkRowRequestNames(selectedRow).length === 0)) {
+      setMessage('Для части выбранных стыков нет заявки ЛНК')
+      return
+    }
+
+    const commonRequests = getCommonLnkRequests(selectedRows)
+    const request = commonRequests.length === 1 ? commonRequests[0] : null
+    setPreservedOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
+    setDraft({
+      ...createDefaultLnkResultDraft(defaultConclusionNaming),
+      requestName: request?.name ?? '',
+      requestDate: request?.date ?? '',
+      rowIds: new Set(selectedRows.map((selectedRow) => selectedRow.id)),
+      search: '',
+    })
     setIsModalOpen(true)
   }
 
@@ -160,6 +202,7 @@ export function useLnkResultActions({
     openAddLnkResultModal,
     openAddLnkResultModalForMethod,
     openAddLnkResultModalForRow,
+    openAddLnkResultModalForRows,
     setLnkResultRows,
     toggleAllLnkResultRows,
     toggleLnkResultRow,

@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select'
 import { useMemo, useRef, useState } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { BellRing, Search, X } from 'lucide-react'
@@ -177,15 +178,15 @@ export function DispatcherWorkspaceDialog({
             <X className="h-5 w-5" />
           </Button>
         </div>
-        <select
+        <Select
           aria-label="Правило диспетчера"
-          className="mx-4 my-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm lg:hidden"
+          className="w-auto mx-4 my-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm lg:hidden"
           value={selectedCode ?? ''}
           onChange={(event) => chooseCode(event.target.value || null)}
         >
           <option value="">Все задачи</option>
           {codeOptions.map((option) => <option key={option.code} value={option.code}>{option.code} · {option.label}</option>)}
-        </select>
+        </Select>
         <div className="flex min-h-0 flex-1">
           <aside className="hidden w-[304px] shrink-0 overflow-y-auto border-r border-slate-200 bg-[#f8fcfe] p-3 xl:w-[328px] lg:block" aria-label="Правила диспетчера">
             <div className="rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm">

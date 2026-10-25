@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx'
 import { readHistoryDocumentWorkbook } from './history-document-preview'
+import { templatePreviewWorkbook, templateSizingWorkbook } from '../test/fixtures/template-preview-workbook'
 
 function file(sheet: XLSX.WorkSheet, additional?: XLSX.WorkSheet) {
   const book = XLSX.utils.book_new()
@@ -10,20 +11,51 @@ function file(sheet: XLSX.WorkSheet, additional?: XLSX.WorkSheet) {
 }
 
 describe('history workbook preview', () => {
-  it('centres the screen page without changing Excel column widths or the print shell', async () => {
+  it('trims empty tails, ignores hidden wrapped text and preserves merge outlines', async () => {
+    const preview = await readHistoryDocumentWorkbook(await templateSizingWorkbook())
+    expect(preview.sheets[0].range).toEqual({ s: { r: 0, c: 0 }, e: { r: 2, c: 3 } })
+    const doc = new DOMParser().parseFromString(preview.page(0, 0, 0, 'Sizing'), 'text/html')
+    expect(doc.body.textContent).not.toContain('Скрытый длинный')
+    const merged = doc.querySelector<HTMLElement>('[data-cell-address="A1"]')!
+    expect(merged.style.borderBottom).toBe('1px solid rgb(0, 0, 0)')
+    expect(merged.style.borderRight).toBe('1px solid rgb(0, 0, 0)')
+  })
+  it('uses workbook theme colours and tint for borders instead of a generic screen grid', async () => {
+    const zip = XLSX.CFB.read(new Uint8Array(await templateSizingWorkbook()), { type: 'array' })
+    const entry = zip.FileIndex[zip.FullPaths.findIndex((path: string) => path.endsWith('/xl/styles.xml'))]
+    entry.content = new TextEncoder().encode(new TextDecoder().decode(entry.content as Uint8Array).replaceAll('indexed="64"', 'theme="4" tint="0.89999084444715716"'))
+    entry.size = entry.content.length
+    const themeEntry = zip.FileIndex[zip.FullPaths.findIndex((path: string) => path.endsWith('/xl/theme/theme1.xml'))]
+    themeEntry.content = new TextEncoder().encode(new TextDecoder().decode(themeEntry.content as Uint8Array).replace(/<a:accent1>[\s\S]*?<\/a:accent1>/, '<a:accent1><a:srgbClr val="0E2841"/></a:accent1>'))
+    themeEntry.size = themeEntry.content.length
+    const preview = await readHistoryDocumentWorkbook(XLSX.CFB.write(zip, { type: 'array', fileType: 'zip' }) as ArrayBuffer)
+    expect(preview.page(0, 0, 0, 'Theme')).toContain('border-bottom:1px solid #dceaf7')
+  })
+  it('renders Excel overflow and center-across without expanding columns, crossing occupied cells or losing wrap rules', async () => {
+    const workbook = await readHistoryDocumentWorkbook(await templatePreviewWorkbook())
+    for (const html of [workbook.page(0, 0, 0, 'Акт')]) {
+      const document = new DOMParser().parseFromString(html, 'text/html')
+      const cell = (address: string) => document.querySelector<HTMLElement>(`[data-cell-address="${address}"]`)!
+      expect(cell('A1').style.textAlign).toBe('center')
+      expect(cell('A1').querySelector<HTMLElement>('.excel-overflow')?.style.width).toBe('394px')
+      expect(cell('A2').querySelector<HTMLElement>('.excel-overflow')?.style.width).toBe('714px')
+      expect(cell('J2').textContent).toBe('Годен')
+      expect(cell('A3').style.whiteSpace).toBe('pre-wrap')
+      expect(cell('A3').querySelector('.excel-overflow')).toBeNull()
+      expect(cell('A4').querySelector('.excel-overflow')).toBeNull()
+      expect(document.querySelector('table')?.style.width).toBe('800px')
+    }
+  })
+  it('centres the screen page without changing Excel column widths or the workbook', async () => {
     const sheet = XLSX.utils.aoa_to_sheet([['One', 'Two']])
     sheet['!cols'] = [{ wpx: 190 }, { wpx: 230 }]
     const workbook = await readHistoryDocumentWorkbook(file(sheet))
-    const fullPrint = workbook.print('Document')
     const html = workbook.page(0, 0, 0, 'Document', 75)
     expect(html).toContain('data-document-preview-page style="zoom:0.75"')
     expect(html).toContain('width:max-content;margin:0 auto')
-    expect(html).toContain('@media screen{html{scrollbar-gutter:stable}')
+    expect(html).toContain('html{scrollbar-gutter:stable}')
     expect(html).toContain('<table style="width:420px">')
     expect(html).not.toContain('<script')
-    expect(fullPrint).not.toContain('data-document-preview-page')
-    expect(fullPrint).not.toContain('@media screen')
-    expect(workbook.print('Document')).toBe(fullPrint)
   })
 
   it('preserves merges, formatted values, sizes and OOXML cell styling; escapes content', async () => {
@@ -57,22 +89,13 @@ describe('history workbook preview', () => {
     expect(html).not.toContain('<script>')
   })
 
-  it('bounds a 10000 × 111 preview and reaches its last cell without allowing partial printing', async () => {
+  it('bounds a 10000 × 111 preview and reaches its last cell', async () => {
     const sheet = { '!ref': 'A1:DG10000', A1: { t: 's', v: 'First' }, DG10000: { t: 's', v: 'Last' } } satisfies XLSX.WorkSheet
     const preview = await readHistoryDocumentWorkbook(file(sheet))
     const first = preview.page(0, 0, 0, 'Large')
-    expect(first.match(/<td/g)).toHaveLength(4000)
+    expect(first.match(/<td/g)).toHaveLength(11100)
     expect(first).not.toContain('>Last<')
-    expect(preview.page(0, 99, 2, 'Large')).toContain('>Last<')
-    expect(preview.printRestriction).toContain('10000 строк Excel')
-    expect(() => preview.print('Large')).toThrow('10000 строк Excel')
-  })
-
-  it('prints the entire allowed 1000 × 111 sheet, not just the current page', async () => {
-    const preview = await readHistoryDocumentWorkbook(file({ '!ref': 'A1:DG1000', DG1000: { t: 's', v: 'End' } }))
-    expect(preview.printRestriction).toBe('')
-    expect(preview.print('Allowed').match(/<td/g)).toHaveLength(111000)
-    expect(preview.print('Allowed')).toContain('>End<')
+    expect(preview.page(0, 99, 0, 'Large')).toContain('>Last<')
   })
 
   it('keeps merged text on a page boundary and supports all sheets including empty ones', async () => {
@@ -84,6 +107,6 @@ describe('history workbook preview', () => {
     expect(last).toContain('>Merged<')
     expect(last).toContain('rowspan="1"')
     expect(preview.page(1, 0, 0, 'Empty')).toContain('Лист пустой')
-    expect(preview.print('All').match(/class="sheet"/g)).toHaveLength(2)
+    expect(preview.sheets).toHaveLength(2)
   })
 })

@@ -14,7 +14,7 @@ function mount() {
   viewport.className = 'ag-grid-viewport'; frame.append(viewport); document.body.append(frame)
   Object.defineProperty(viewport, 'clientWidth', { value: 800 })
   const listeners = new Map<string, (event?: unknown) => void>()
-  const columns = [0, 1, 2, 3, 4].map(i => ({ getPinned: () => null, getActualWidth: () => 200, getLeft: () => i * 200, getColId: () => String(i) }))
+  const columns = [0, 1, 2, 3, 4].map(i => ({ getPinned: () => null, getActualWidth: (): number => 200, getLeft: () => i * 200, getColId: () => String(i) }))
   const api = {
     isDestroyed: () => false, getDisplayedLeftColumns: () => [], getDisplayedRightColumns: () => [],
     getAllDisplayedVirtualColumns: () => columns,
@@ -26,7 +26,7 @@ function mount() {
   const fire = (name: string, event?: unknown) => listeners.get(name)?.(event)
   const tile = () => viewport.style.getPropertyValue('--journal-gap-image')
   flush()
-  return { ...hook, viewport, flush, fire, tile, pending, listeners }
+  return { ...hook, frame, viewport, columns, flush, fire, tile, pending, listeners }
 }
 
 it('keeps the decoded tile during horizontal or diagonal scrolling and updates it after the gesture', () => {
@@ -61,4 +61,20 @@ it('waits for both scrolling and column dragging to finish and does no work for 
   view.fire('columnResized', { finished: true }); view.flush()
   expect(view.tile()).not.toBe(initial)
   view.unmount()
+})
+
+it.each(['pointerup', 'pointercancel', 'blur'])('holds the tile before AG delivers its first resize event and releases on %s', endEvent => {
+  const view = mount(), initial = view.tile()
+  const handle = document.createElement('span')
+  handle.className = 'ag-header-cell-resize'; view.frame.append(handle)
+  handle.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+  // AG updates column geometry before notifying public event listeners.
+  view.columns[0].getActualWidth = () => 230
+  view.fire('virtualColumnsChanged'); view.flush()
+  expect(view.tile()).toBe(initial)
+  window.dispatchEvent(new Event(endEvent)); view.flush()
+  expect(view.tile()).not.toBe(initial)
+  view.unmount()
+  window.dispatchEvent(new Event(endEvent))
+  expect(view.pending.size).toBe(0)
 })

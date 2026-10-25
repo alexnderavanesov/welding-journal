@@ -8,6 +8,22 @@ import { usePstoReportModalSyncEffects } from '@/lib/use-psto-report-modal-sync-
 import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '@/lib/control-process-settings'
 
 describe('report modal context loading', () => {
+  it('keeps PSTO result selection when the candidate search does not match it', () => {
+    const row = { id: 8, joint: 'F8', pstoRequired: 'да', pstoRequest: 'R', pstoRequestDate: '2026-09-01', pstoResult: 'ожидает ПСТО' } as WeldRow
+    const { result } = renderHook(() => {
+      const [draft, setDraft] = useState(() => ({ ...createDefaultPstoResultDraft(), rowIds: new Set([8]), search: 'other joint', requestName: 'R', requestDate: '2026-09-01' }))
+      usePstoReportModalSyncEffects({
+        availablePstoRequestRows: [], heatTreatmentRows: [row], isPstoRowsContextReady: true,
+        isPstoRequestModalOpen: false, isPstoResultManagerOpen: false, isPstoResultModalOpen: true,
+        managedPstoResultRows: [], pstoResultRequestOptions: [],
+        setManagedPstoDiagramDrafts: () => undefined, setPstoResultDraft: setDraft,
+        setSelectedHeatTreatmentIds: () => undefined,
+      })
+      return draft
+    })
+    expect([...result.current.rowIds]).toEqual([8])
+    expect(result.current.requestName).toBe('R')
+  })
   it('does not loop when an open LNK result receives equivalent context arrays', () => {
     const { result } = renderHook(() => {
       const [draft, setDraft] = useState(() => createDefaultLnkResultDraft())

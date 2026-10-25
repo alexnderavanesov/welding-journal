@@ -4,10 +4,10 @@ import { createLnkDialogNavigation } from './lnk-dialog-navigation'
 import { useHomeLnkController } from './use-home-lnk-controller'
 import type { WeldRow } from './dispatcher-types'
 
-function setup(canLeaveResultEditor: () => boolean = () => true) {
+function setup(canLeaveResultEditor: () => boolean = () => true, tableRows: WeldRow[] = []) {
   const actions = {
     closeLnkResultManager: vi.fn(), openLnkResultManager: vi.fn(),
-    openAddLnkResultModal: vi.fn(), openAddLnkResultModalForRow: vi.fn(),
+    openAddLnkResultModalForRows: vi.fn(), openAddLnkResultModal: vi.fn(), openAddLnkResultModalForRow: vi.fn(),
     openCreateLnkRequestModal: vi.fn(), openCreateLnkRequestModalForRow: vi.fn(),
     openCreateLnkRequestModalForRows: vi.fn(), openExtendLnkRequestModalForRows: vi.fn(),
     openLnkRequestRegistry: vi.fn(), setMessage: vi.fn(), setSelectedLnkIds: vi.fn(),
@@ -22,8 +22,8 @@ function setup(canLeaveResultEditor: () => boolean = () => true) {
         canLeaveResultEditor,
         closePreHeatTreatmentResultRegistryState: controller.closePreHeatTreatmentResultRegistry,
         controlProcessSettings: settings,
-        lnkRows: [{ id: 1, joint: 'F1' }] as WeldRow[],
-        tableActionRows: [], selectedLnkIds: new Set([1]),
+        lnkRows: tableRows.length ? tableRows : [{ id: 1, joint: 'F1' }] as WeldRow[],
+        tableActionRows: tableRows, selectedLnkIds: new Set(tableRows.length ? tableRows.map(row => row.id) : [1]),
         preHeatTreatmentResultCorrectionMutation: { isPending: false },
       }),
     }
@@ -32,6 +32,25 @@ function setup(canLeaveResultEditor: () => boolean = () => true) {
 }
 
 describe('LNK dialog navigation', () => {
+  it('passes the complete primary selection from the header into the same bulk result action', () => {
+    const rows = [1, 2].map(id => ({ id, pstoRequired: 'нет', hasVik: 'да', vikRequest: 'R', vikRequestDate: '2026-09-01', vikResult: 'ожидает НК' }) as WeldRow)
+    const { result, actions } = setup(() => true, rows)
+    act(() => result.current.navigation.openAddLnkWorkflowResultFromHeader())
+    expect(actions.openAddLnkResultModalForRows).toHaveBeenCalledWith(rows)
+    expect(actions.openAddLnkResultModal).not.toHaveBeenCalled()
+  })
+
+  it('keeps multiple rows on a stage switch and still opens an empty editor without primary requests', () => {
+    const rows = [1, 2].map(id => ({ id, vikRequest: 'R', vikRequestDate: '2026-09-01' }) as WeldRow)
+    const selected = setup(() => true, rows)
+    act(() => selected.result.current.navigation.switchLnkWorkflowStage('result', 'primary', [1, 2]))
+    expect(selected.actions.openAddLnkResultModalForRows).toHaveBeenCalledWith(rows)
+    const empty = setup()
+    act(() => empty.result.current.navigation.switchLnkWorkflowStage('result', 'primary', [1]))
+    expect(empty.actions.openAddLnkResultModal).toHaveBeenCalled()
+    expect(empty.actions.openAddLnkResultModalForRows).not.toHaveBeenCalled()
+  })
+
   it('refuses stage/new-workflow transitions before changing any editor state when result edits are pending', () => {
     const guard = vi.fn(() => false)
     const { result, actions } = setup(guard)

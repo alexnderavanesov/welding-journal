@@ -1,0 +1,52 @@
+import { expect, test } from '@playwright/test'
+
+test('specialist dropdown uses the application popup, keyboard selection and nested Escape', async ({ page }, info) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/references')
+  await page.getByRole('tab', { name: 'Специалисты', exact: true }).click()
+  await page.getByRole('button', { name: 'Добавить специалиста', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Добавление специалиста', exact: true })
+  const select = dialog.getByRole('combobox', { name: 'Тип специалиста', exact: true })
+  await select.click()
+  const popup = dialog.getByRole('listbox')
+  await expect(popup).toBeVisible()
+  await expect(popup.getByRole('option')).toHaveCount(2)
+  await page.screenshot({ path: info.outputPath('specialist-select.png') })
+  await page.keyboard.press('Escape')
+  await expect(popup).toHaveCount(0)
+  await expect(dialog).toBeVisible()
+  await select.click()
+  await popup.getByRole('option', { name: 'Термист', exact: true }).click()
+  await expect(select).toHaveValue('thermist')
+  await expect(dialog.getByText('Назначено автоматически')).toBeVisible()
+  await select.press('ArrowDown')
+  await select.press('Home')
+  await select.press('Enter')
+  await expect(select).toHaveValue('inspector')
+  await expect(dialog.getByRole('checkbox', { name: 'ВИК', exact: true })).toBeVisible()
+  await select.click()
+  await page.keyboard.press('Tab')
+  await expect(popup).toHaveCount(0)
+  await expect(dialog.getByLabel('№ квалификационного удостоверения', { exact: true })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('journal summary keeps a long WDI total visible before grouping at wide and narrow widths', async ({ page }, info) => {
+  await page.goto('/journal')
+  const summary = page.locator('.journal-summary > div > span')
+  await expect(summary).toContainText('Записей:')
+  // Layout-only fixture, without changing records or the production summary.
+  await summary.evaluate(element => { element.textContent = 'Записей: 200000 · WDI годных: 1983333,75' })
+  for (const width of [1600, 1000]) {
+    await page.setViewportSize({ width, height: 1000 })
+    const sizes = await summary.evaluate(element => ({ scroll: element.scrollWidth, width: element.clientWidth, right: element.getBoundingClientRect().right }))
+    expect(sizes.scroll).toBeLessThanOrEqual(sizes.width + 1)
+    const grouping = await page.locator('.journal-grouping').boundingBox()
+    expect(grouping!.x).toBeGreaterThan(sizes.right)
+  }
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  await page.locator('[data-journal-toolbar]').screenshot({ path: info.outputPath('journal-wdi-toolbar.png') })
+})

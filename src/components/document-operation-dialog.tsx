@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select'
 import { useEffect, useId, useRef, useState } from 'react'
 import { CheckCheck, ChevronDown, FileText, ListTree, Merge, Search } from 'lucide-react'
 import { LargeDialogShell } from './large-dialog-shell'
@@ -179,7 +180,7 @@ export function DocumentOperationDialog({ documents, action, onClose, onApplied 
                       <BufferedDocumentNameInput value={pendingSystemName ? '' : groupName(group)} onCommit={value => editName(group, value)} aria-label={`Название: ${group.label}`} placeholder={pendingSystemName ? 'Рассчитается при проверке' : 'Введите название документа'} disabled={locked || structureDirty} maxLength={2000} />
                     </label>
                     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"><span className="text-slate-500">{namingMode === 'system' ? 'По системному шаблону' : 'Введено вручную'}</span>{namingMode !== 'system' ? <button type="button" className="text-sky-700 underline-offset-4 hover:underline disabled:opacity-50" disabled={locked || structureDirty} onClick={() => editName(group, '', 'system')}>Вернуть системное имя</button> : null}</div>
-                    {merge ? <label className="mt-3 block text-xs text-slate-500">Или использовать имя исходного документа<select aria-label={`Имя исходного документа: ${group.label}`} className="mt-1 block h-9 w-full min-w-0 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs text-slate-700" value="" disabled={locked || structureDirty} onChange={e => editName(group, e.target.value)}><option value="">Выберите исходный документ</option>{sources.map(source => <option key={source.id} value={source.title}>{source.title}</option>)}</select></label> : null}
+                    {merge ? <label className="mt-3 block text-xs text-slate-500">Или использовать имя исходного документа<Select aria-label={`Имя исходного документа: ${group.label}`} className="mt-1 block h-9 w-full min-w-0 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs text-slate-700" value="" disabled={locked || structureDirty} onChange={e => editName(group, e.target.value)}><option value="">Выберите исходный документ</option>{sources.map(source => <option key={source.id} value={source.title}>{source.title}</option>)}</Select></label> : null}
                     {group.error ? <p className="mt-2 rounded-md bg-rose-50 px-2 py-1.5 text-xs text-rose-700">{dirty ? 'Предыдущая проверка: ' : ''}{group.error}</p> : null}
                   </div>
                 </div>

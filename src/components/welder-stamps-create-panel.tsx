@@ -1,3 +1,4 @@
+import { AutocompleteInput } from '@/components/ui/autocomplete-input'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Archive, CalendarDays, Check, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -56,7 +57,6 @@ export function WelderStampsCreatePanel({
   const naksStampOptions = Array.from(new Set(records.map((record) => normalizeNaksStamp(record.naksStamp)).filter(Boolean))).sort(
     (left, right) => left.localeCompare(right, 'ru'),
   )
-  const naksStampDatalistId = `welder-naks-stamps-${editingId ?? 'new'}`
 
   useEffect(() => {
     const permitId =
@@ -155,18 +155,14 @@ export function WelderStampsCreatePanel({
       <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm shadow-slate-100 md:grid-cols-2 xl:grid-cols-3">
         <label className="space-y-1.5 text-sm font-medium text-slate-700">
           <span>Клеймо НАКС</span>
-          <Input
+          <AutocompleteInput
+            options={naksStampOptions}
             value={draft.naksStamp}
-            onChange={(event) => handleNaksStampChange(event.target.value)}
+            onValueChange={handleNaksStampChange}
             maxLength={4}
-            list={naksStampDatalistId}
             placeholder="A123"
           />
-          <datalist id={naksStampDatalistId}>
-            {naksStampOptions.map((stamp) => (
-              <option key={stamp} value={stamp} />
-            ))}
-          </datalist>
+
         </label>
         <label className="space-y-1.5 text-sm font-medium text-slate-700">
           <span>ФИО сварщика</span>

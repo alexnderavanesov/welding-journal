@@ -215,9 +215,6 @@ import {
 import { withOfficialJoint } from '@/lib/report-control-state'
 import { getLnkRowRequestNames } from '@/lib/report-modal-rows'
 import {
-	getLnkRequestDocumentIdentities
-} from '@/lib/request-document-identity'
-import {
 	getArchivedOfficialStampValuesForRecord,
 	getOfficialStampCompatibilitySaveBlockReason,
 	shouldValidateOfficialStampCompatibilityForSave,
@@ -1140,9 +1137,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   )
   const isLnkRowsContextReady = isRemoteFinalStatusContextReady &&
     lnkWorkflowRowsRequest !== null &&
-    lnkWorkflowRowsQuery.data !== undefined
+    lnkWorkflowRowsQuery.isContextReady
   const isPstoRowsContextReady = pstoWorkflowRowsRequest !== null &&
-    pstoWorkflowRowsQuery.data !== undefined &&
+    pstoWorkflowRowsQuery.isContextReady &&
     isRemoteFinalStatusContextReady
   const dispatcherTaskSnapshot = useDispatcherTaskSnapshot({
     dismissedRepeatedJointTaskKeys,
@@ -1587,6 +1584,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     closeAddLnkResultModal,
     openAddLnkResultModal,
     openAddLnkResultModalForMethod,
+    openAddLnkResultModalForRows: openLnkResultModalForRows,
     openAddLnkResultModalForRow,
     setLnkResultRows,
     toggleAllLnkResultRows,
@@ -1613,7 +1611,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     lnkRows,
     draft: lnkResultDraft,
     selectedRows: selectedLnkResultRows,
-    saveBlockReason: lnkResultSaveBlockReason,
+    saveBlockReason: isLnkRowsContextReady ? lnkResultSaveBlockReason : 'Загрузка выбранных стыков…',
     nextConclusionName: nextLnkConclusionName,
     nextConclusionNumber: nextLnkConclusionNumber,
     requestConclusionSettings,
@@ -1876,6 +1874,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     openExtendLnkRequestModalForRows,
     openAddLnkResultModal,
     openAddLnkResultModalForRow,
+    openAddLnkResultModalForRows: openLnkResultModalForRows,
     closeLnkResultManager,
     openLnkResultManager,
     closePreHeatTreatmentResultRegistryState,
@@ -2704,20 +2703,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     )
   }
 
-  const getCommonLnkRequests = (selectedRows: WeldRow[]) => {
-    if (selectedRows.length === 0) return []
-    const [firstRow, ...restRows] = selectedRows
-    const firstRequests = getLnkRequestDocumentIdentities([firstRow])
-    const common = new Set(firstRequests.map((request) => request.key))
-    for (const selectedRow of restRows) {
-      const keys = new Set(getLnkRequestDocumentIdentities([selectedRow]).map((request) => request.key))
-      for (const key of [...common]) {
-        if (!keys.has(key)) common.delete(key)
-      }
-    }
-    return firstRequests.filter((request) => common.has(request.key))
-  }
-
   const areRowsOnSameLine = (selectedRows: WeldRow[]) => {
     if (selectedRows.length <= 1) return true
     const first = selectedRows[0]
@@ -2784,29 +2769,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       : activeReport === 'heatTreatment'
         ? setSelectedHeatTreatmentIds
         : setSelectedWeldingJournalIds
-
-  const openLnkResultModalForRows = (selectedRows: WeldRow[]) => {
-    if (selectedRows.length <= 1) {
-      openAddLnkResultModalForRow(selectedRows[0])
-      return
-    }
-    if (selectedRows.some((selectedRow) => getLnkRowRequestNames(selectedRow).length === 0)) {
-      setMessage('Для части выбранных стыков нет заявки ЛНК')
-      return
-    }
-
-    const commonRequests = getCommonLnkRequests(selectedRows)
-    const request = commonRequests.length === 1 ? commonRequests[0] : null
-    setPreservedLnkOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
-    setLnkResultDraft({
-      ...createDefaultLnkResultDraft(defaultLnkConclusionNaming),
-      requestName: request?.name ?? '',
-      requestDate: request?.date ?? '',
-      rowIds: new Set(selectedRows.map((selectedRow) => selectedRow.id)),
-      search: '',
-    })
-    setIsLnkResultModalOpen(true)
-  }
 
   const openPstoResultModalForRows = (selectedRows: WeldRow[]) => {
     setSelectedHeatTreatmentIds(new Set(selectedRows.map((selectedRow) => selectedRow.id)))
@@ -3736,7 +3698,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onPstoWorkflowMenuOpenChange: setIsPstoWorkflowMenuOpen,
     onCreateLnkRequest: () => void createLnkRequestAction.run(),
     createLnkRequestDisabled: createLnkRequestAction.disabled,
-    onExtendLnkRequest: () => openExtendLnkRequestModal(),
+    onExtendLnkRequest: () => runReportSelectionAction(() => openExtendLnkRequestModalForRows(
+      tableActionRows.filter((row) => selectedLnkIds.has(row.id)),
+    )),
     onOpenLnkRequestRegistry: () => openLnkRequestRegistry(),
     lnkRequestPending: lnkRequestMutation.isPending,
     lnkAvailability: !reportGridQuery.rowsReady ? 'loading' : lnkWorkflowSummaryQuery.data !== undefined ? 'ready' : lnkWorkflowSummaryQuery.isError ? 'error' : 'loading',
@@ -4758,7 +4722,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       selectedRows: selectedPstoResultRows,
       filteredRequestOptions: filteredPstoResultRequestOptions,
       availableRequestOptions: pstoResultAvailableRequestOptions,
-      saveBlockReason: pstoResultSaveBlockReason,
+      saveBlockReason: isPstoRowsContextReady ? pstoResultSaveBlockReason : 'Загрузка выбранных стыков…',
       isSaving: pstoResultMutation.isPending,
       saveError: pstoResultMutation.isError ? pstoResultMutation.error.message : null,
       rootCauseActions: pstoResultRootCauseActions,
@@ -4891,6 +4855,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     tvmtWorkflow: tvmtWorkflowMode
       ? {
           mode: tvmtWorkflowMode,
+          isContextReady: isPstoRowsContextReady,
           rows: heatTreatmentRows,
           initialSelectedIds: selectedHeatTreatmentIds,
           onCandidateSearchChange: setTvmtCandidateSearch,
@@ -4911,6 +4876,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     repeatWorkflow: pstoRepeatWorkflowMode
       ? {
           mode: pstoRepeatWorkflowMode,
+          isContextReady: isPstoRowsContextReady,
           rows: heatTreatmentRows,
           initialSelectedIds: selectedHeatTreatmentIds,
           onCandidateSearchChange: setPstoRepeatCandidateSearch,
@@ -4953,6 +4919,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       requestDate: lnkRequestDraft.requestDate,
       requestExtensionOptions: lnkRequestExtensionOptions,
       requestOptionsHasMore: lnkWorkflowRequestSummaryQuery.data?.hasMore ?? false,
+      isContextReady: isLnkRowsContextReady,
       initialMode: lnkRequestComposerMode,
       initialRequestKey: lnkRequestTargetKey,
       initialSelectedMethods: lnkRequestDraft.methods,
@@ -5236,7 +5203,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       systemDocumentCreationPlan: lnkResultSystemDocumentCreationPlan,
       saveCheckSettings,
       controlProcessSettings,
-      saveBlockReason: lnkResultSaveBlockReason,
+      saveBlockReason: isLnkRowsContextReady ? lnkResultSaveBlockReason : 'Загрузка выбранных стыков…',
       isSaving: lnkResultMutation.isPending,
       saveError: lnkResultMutation.isError ? lnkResultMutation.error.message : null,
       rootCauseActions: lnkResultRootCauseActions,
@@ -5300,6 +5267,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     preHeatTreatmentWorkflow: preHeatTreatmentLnkWorkflowMode && controlProcessSettings.preHeatTreatmentLnkEnabled
       ? {
           mode: preHeatTreatmentLnkWorkflowMode,
+          isContextReady: isLnkRowsContextReady,
           rows: lnkRows,
           initialSelectedIds: selectedLnkIds,
           initialMethodCode: preHeatTreatmentLnkInitialMethodCode,

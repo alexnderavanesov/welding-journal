@@ -37,7 +37,7 @@ type LnkDialogNavigationOptions = Pick<ReturnType<typeof useHomeLnkController>,
   | 'openCreateLnkRequestModalForRows'
   | 'openExtendLnkRequestModalForRows'
 > &
-  Pick<ReturnType<typeof useLnkResultActions>, 'openAddLnkResultModal' | 'openAddLnkResultModalForRow'> &
+  Pick<ReturnType<typeof useLnkResultActions>, 'openAddLnkResultModal' | 'openAddLnkResultModalForRow' | 'openAddLnkResultModalForRows'> &
   Pick<ReturnType<typeof useManagedLnkResultActions>, 'closeLnkResultManager' | 'openLnkResultManager'> & {
   closePreHeatTreatmentResultRegistryState: ReturnType<typeof useHomeLnkController>['closePreHeatTreatmentResultRegistry']
   controlProcessSettings: { preHeatTreatmentLnkEnabled: boolean }
@@ -69,6 +69,7 @@ export function createLnkDialogNavigation({
   openExtendLnkRequestModalForRows,
   openAddLnkResultModal,
   openAddLnkResultModalForRow,
+  openAddLnkResultModalForRows,
   closeLnkResultManager,
   openLnkResultManager,
   closePreHeatTreatmentResultRegistryState,
@@ -165,14 +166,11 @@ export function createLnkDialogNavigation({
         }
         return
       }
-      if (
-        selectedRows.length === 1 &&
-        getLnkRowRequestNames(selectedRows[0]!).length > 0
-      ) {
-        openAddLnkResultModalForRow(selectedRows[0]!)
-        return
+      if (selectedRows.length > 0 && selectedRows.every(row => getLnkRowRequestNames(row).length > 0)) {
+        openAddLnkResultModalForRows(selectedRows)
+      } else {
+        openAddLnkResultModal()
       }
-      openAddLnkResultModal()
     })
   }
   const openCreateLnkWorkflowRequestForRow = (row: WeldRow) => {
@@ -221,7 +219,7 @@ export function createLnkDialogNavigation({
       openPreHeatTreatmentLnkWorkflow('result')
       return
     }
-    openAddLnkResultModal()
+    openAddLnkResultModalForRows(selectedRows)
   }
   return {
     openAllLnkResultRegistry,

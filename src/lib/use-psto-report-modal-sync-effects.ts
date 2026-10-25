@@ -7,7 +7,6 @@ import {
   canSelectPstoResultRow,
   filterPstoRowsByRequestName,
 } from '@/lib/report-modal-rows'
-import { filterPstoResultRows } from '@/lib/report-row-utils'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { PstoResultDraftState } from '@/lib/report-draft-state'
 import {
@@ -73,12 +72,10 @@ export function usePstoReportModalSyncEffects({
       )
       const requestName = keepsCurrentRequest ? current.requestName : ''
       const requestDate = keepsCurrentRequest ? current.requestDate : ''
-      const availableRows = filterPstoResultRows(
-        requestName
-          ? filterPstoRowsByRequestName(heatTreatmentRows, requestName, requestDate)
-          : heatTreatmentRows,
-        current.search,
-      )
+      // Search controls the visible candidates, not the accumulated selection.
+      const availableRows = requestName
+        ? filterPstoRowsByRequestName(heatTreatmentRows, requestName, requestDate)
+        : heatTreatmentRows
       const availableIds = new Set(
         availableRows
           .filter((row) => canSelectPstoResultRow(row, requestName, requestDate))

@@ -17,7 +17,7 @@ import {
   weldJoints,
   type WeldJoint,
 } from '@/db/schema'
-import { getDateInputValidationReason } from '@/lib/date-format'
+import { getLnkRequestExtensionIdentityDisabledReason } from '@/lib/lnk-request-extension'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { ALL_LNK_FIELD_METHODS, LNK_METHODS } from '@/lib/lnk-report-config'
 import { PRE_HEAT_TREATMENT_LNK_METHODS } from '@/lib/lnk-control-stage'
@@ -126,9 +126,6 @@ type LnkWorkflowRequestSummaryRow = {
   positionCount: number | string
   methodCodes: string[] | null
   searchText: string | null
-  completedRowId: number | string | null
-  completedJoint: string | null
-  completedMethodCode: string | null
 }
 
 export async function listLnkWorkflowRows(
@@ -224,23 +221,13 @@ export function buildLnkWorkflowRequestSummaryQuery(
   const request = options ? normalizeLnkWorkflowRequestSummaryRequest(options) : null
   const primaryMethodCodes = new Set<string>(LNK_METHODS.map((method) => method.code))
   const reportWhere = and(buildReportKindWhere('lnk'), additionalWhere) ?? sql`false`
-  const positionQueries = ALL_LNK_FIELD_METHODS.map((method, index) => sql`
+  const positionQueries = ALL_LNK_FIELD_METHODS.map((method) => sql`
     select
       ${weldJoints.id} as row_id,
       btrim(coalesce(${weldJoints[method.requestKey]}::text, '')) as name,
       btrim(coalesce(${weldJoints[method.requestDateKey]}::text, '')) as request_date,
       ${method.code}::text as method_code,
-      ${index}::integer as method_order,
       ${primaryMethodCodes.has(method.code)}::boolean as is_primary,
-      (
-        (
-          btrim(coalesce(${weldJoints[method.resultKey]}::text, '')) <> ''
-          and lower(btrim(coalesce(${weldJoints[method.resultKey]}::text, '')))
-            not in ('ожидает нк', 'ожидает', 'ожидает заявку')
-        )
-        or btrim(coalesce(${weldJoints[method.conclusionDateKey]}::text, '')) <> ''
-        or btrim(coalesce(${weldJoints[method.conclusionKey]}::text, '')) <> ''
-      ) as completed,
       ${weldJoints.projectTitle} as project_title,
       ${weldJoints.subtitleCode} as subtitle_code,
       ${weldJoints.line} as line,
@@ -311,17 +298,6 @@ export function buildLnkWorkflowRequestSummaryQuery(
         ) as search_text
       from ${positionsSource}
       group by name, request_date
-    ),
-    completed_positions as (
-      select distinct on (name, request_date)
-        name,
-        request_date,
-        row_id,
-        joint,
-        method_code
-      from ${positionsSource}
-      where is_primary and completed
-      order by name, request_date, row_id, method_order
     )
     select
       summary.name,
@@ -330,14 +306,8 @@ export function buildLnkWorkflowRequestSummaryQuery(
       summary.row_count as "rowCount",
       summary.position_count as "positionCount",
       summary.method_codes as "methodCodes",
-      summary.search_text as "searchText",
-      completed.row_id as "completedRowId",
-      completed.joint as "completedJoint",
-      completed.method_code as "completedMethodCode"
+      summary.search_text as "searchText"
     from request_summaries summary
-    left join completed_positions completed
-      on completed.name = summary.name
-      and completed.request_date = summary.request_date
     order by summary.request_date desc, summary.name asc
     ${resultLimit ? sql`limit ${resultLimit}` : sql``}
   `
@@ -359,14 +329,7 @@ export function buildLnkWorkflowRequestDocumentSummary(
     return identity ? [identity] : []
   })).map((identity) => {
     const row = rowsByIdentity.get(identity.key)!
-    const completedRowId = Number(row.completedRowId)
-    const completedJoint = String(row.completedJoint ?? '').trim()
-    const completedMethodCode = String(row.completedMethodCode ?? '').trim()
-    const disabledReason = getDateInputValidationReason(identity.date, 'Дата заявки ЛНК')
-      ? 'У заявки отсутствует корректная дата, поэтому проверить хронологию добавляемых стыков нельзя.'
-      : Number.isInteger(completedRowId) && completedRowId > 0
-        ? `Заявка закрыта для дополнения: по стыку ${completedJoint || `№${completedRowId}`}, ${completedMethodCode} уже внесен результат или заключение.`
-        : null
+    const disabledReason = getLnkRequestExtensionIdentityDisabledReason(identity)
     const methodCodes = [...new Set((row.methodCodes ?? []).map((code) => String(code).trim()).filter(Boolean))]
       .sort((left, right) => (methodOrder.get(left) ?? Number.MAX_SAFE_INTEGER) - (methodOrder.get(right) ?? Number.MAX_SAFE_INTEGER))
     return {

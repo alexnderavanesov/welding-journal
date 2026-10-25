@@ -3,7 +3,7 @@ import { ChevronDown } from 'lucide-react'
 import { Select } from './ui/select'
 import { cn } from '@/lib/utils'
 
-/** Native keyboard behaviour, with a reserved arrow gutter and shared dialog styling. */
+/** Shared dropdown with a reserved arrow gutter and calculation-dialog styling. */
 export function ProgramCalculationSelect({ label, ariaLabel, value, title, onChange, children, className }: {
   label: string; ariaLabel: string; value: string; title?: string
   onChange: (value: string) => void; children: ReactNode; className?: string

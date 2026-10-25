@@ -6,7 +6,6 @@ import {
 } from '@tanstack/react-router'
 import { lazy, Suspense, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { ScrollToTopButton } from '@/components/scroll-to-top-button'
 import { getActiveReportFromPath, getAppReportPath } from '@/lib/app-report-routes'
 import { getJournalSelectionTokenFromUrl } from '@/lib/journal-selection-handoff'
 import {
@@ -49,7 +48,6 @@ function AppRoute() {
           onActiveReportChange={changeActiveReport}
         />
       </Suspense>
-      <ScrollToTopButton resetKey={pathname} stableHorizontalBoundary={['/journal', '/lnk', '/psto', '/documents'].includes(pathname)} />
     </>
   )
 }

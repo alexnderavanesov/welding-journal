@@ -58,6 +58,7 @@ async function renderDialogRows(
     <QueryClientProvider client={queryClient}>
       <PreHeatTreatmentLnkWorkflowDialog
         mode={mode}
+        isContextReady={rows.length > 0}
         rows={rows}
         initialSelectedIds={initialSelectedIds}
         initialMethodCode={initialMethodCode}
@@ -143,6 +144,20 @@ describe('PreHeatTreatmentLnkWorkflowDialog', async () => {
     expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeChecked()
     expect(screen.getByRole('button', { name: 'Создать заявку до ТО' })).toBeEnabled()
     expect(screen.queryByText(/Дубль-1/)).not.toBeInTheDocument()
+  })
+
+  it('keeps manual selection when search drops and returns initially selected rows', async () => {
+    const first = makeRow()
+    const second = makeRow({ id: 2, joint: 'F2' })
+    const view = await renderDialogRows('request', [first, second], new Set([1]))
+    const checkbox = (joint: string) => screen.getByRole('checkbox', { name: new RegExp(`Выбрать стык .* ${joint}$`) })
+    fireEvent.click(checkbox('F1'))
+    fireEvent.click(checkbox('F2'))
+    view.rerenderWithRows([second])
+    await waitFor(() => expect(checkbox('F2')).toBeChecked())
+    view.rerenderWithRows([first, second])
+    expect(checkbox('F1')).not.toBeChecked()
+    expect(checkbox('F2')).toBeChecked()
   })
 
   it('restores the exact pre-TO method and row when report data loads after the dialog opens', async () => {

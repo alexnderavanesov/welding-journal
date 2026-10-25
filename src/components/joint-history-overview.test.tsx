@@ -17,6 +17,7 @@ describe('JointHistoryOverview', () => {
     expect(screen.queryByText(/ПСТО: ожидает ПСТО/)).not.toBeInTheDocument()
     expect(screen.getByText('ТВМТ: не годен')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'P2' }))
+    expect(screen.getByRole('button', { name: 'P2' })).toHaveFocus()
     expect(onOpenDocument).toHaveBeenCalledWith(expect.objectContaining({ pstoRequest: 'P2' }), 'pstoRequest')
   })
   it('uses the compact PSTO label and opens the standard weld editor', () => {

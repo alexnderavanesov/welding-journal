@@ -23,26 +23,15 @@ const CONCURRENT_PSTO_PROJECT = 'E2E конкурентная линия'
 const CONCURRENT_PSTO_SUBTITLE = 'E2E-010'
 const CONCURRENT_PSTO_LINE = 'E2E-L10'
 const LNK_REPORT_VIEW_STORAGE_KEY = 'welding-report-view:v1:lnk'
-const CONTROL_PROCESS_SETTINGS_KEY = 'control-processes'
-
-type ControlProcessSettingsSnapshot = {
-  value: string
-  updatedAt: Date
-}
-
-let controlProcessSettingsSnapshot: ControlProcessSettingsSnapshot | null | undefined
 const testSpecialistIds: number[] = []
 
 test.afterEach(async () => {
   if (testSpecialistIds.length) await withE2eDatabase(db => db.query('delete from specialists where id=any($1::int[])', [testSpecialistIds.splice(0)]))
-  if (controlProcessSettingsSnapshot === undefined) return
-  const snapshot = controlProcessSettingsSnapshot
-  controlProcessSettingsSnapshot = undefined
-  await restoreControlProcessSettings(snapshot)
 })
 
 test('переключение этапа ЛНК сохраняет оболочку окна', async ({ page }) => {
   await page.goto('/lnk')
+  await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(JOINT)
   await expect(page.getByText(JOINT, { exact: true }).first()).toBeVisible()
 
   await runNextAction(page, 'Создать заявку НК до ТО')
@@ -80,6 +69,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   }
 
   await page.goto('/lnk')
+  await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(JOINT)
   await expect(page.getByText(JOINT, { exact: true }).first()).toBeVisible()
 
   await runNextAction(page, 'Создать заявку НК до ТО')
@@ -1020,6 +1010,17 @@ async function runNextAction(page: Page, title: string, joint = JOINT) {
     : await lnkActionRow(page, joint)
   const button = row.getByRole('button', { name: `Выполнить: ${title}`, exact: true })
   await expect(button).toBeVisible({ timeout: 15_000 })
+  // Buffered rows can exist below the visible table. Scroll its document owner
+  // before clicking: automatic scrollIntoView moves both AG's inner viewport
+  // and the page, racing their scroll-position synchronisation.
+  await button.evaluate(element => window.scrollBy({
+    top: element.getBoundingClientRect().top - window.innerHeight / 2,
+    behavior: 'instant',
+  }))
+  await expect.poll(() => button.evaluate(element => {
+    const rect = element.getBoundingClientRect()
+    return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))
+  })).toBe(true)
   await button.click()
 }
 
@@ -1358,22 +1359,6 @@ async function seedStageSynchronizationLines() {
         '[{"id":"e2e-naks-8","weldType":"РД","materialGroups":"M01","diameterFrom":"1","diameterTo":"1000","thicknessFrom":"1","thicknessTo":"100","validFrom":"2026-01-01","validTo":"2026-12-31","note":"","archived":false}]'
       )
     `)
-  })
-}
-
-
-async function restoreControlProcessSettings(snapshot: ControlProcessSettingsSnapshot | null) {
-  await withE2eDatabase(async (client) => {
-    if (!snapshot) {
-      await client.query('delete from app_settings where key = $1', [CONTROL_PROCESS_SETTINGS_KEY])
-      return
-    }
-    await client.query(`
-      insert into app_settings (key, value, updated_at)
-      values ($1, $2, $3)
-      on conflict (key) do update
-      set value = excluded.value, updated_at = excluded.updated_at
-    `, [CONTROL_PROCESS_SETTINGS_KEY, snapshot.value, snapshot.updatedAt])
   })
 }
 

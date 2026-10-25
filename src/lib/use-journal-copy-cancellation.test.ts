@@ -8,7 +8,7 @@ import { copyJournalGridRange } from '@/server/journal-grid-api'
 
 vi.mock('@/server/journal-grid-api', () => ({
   countJournalGridSelection: vi.fn(), copyJournalGridRange: vi.fn(),
-  selectJournalGridRows: vi.fn(), summarizeJournalGridRange: vi.fn(),
+  selectJournalGridRange: vi.fn(), selectJournalGridRows: vi.fn(), summarizeJournalGridRange: vi.fn(),
 }))
 
 it.each(['unmount', 'query', 'regroup'].flatMap(reason => ['writeText', 'ClipboardItem'].map(clipboard => ({ reason, clipboard }))))(

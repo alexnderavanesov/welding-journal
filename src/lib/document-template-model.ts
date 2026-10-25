@@ -16,6 +16,8 @@ import {
 import { type SystemDocumentTemplateContext } from '@/lib/system-document-types'
 
 import { decodeCellReference } from '@/lib/document-template-xlsx'
+import { LNK_METHODS } from '@/lib/lnk-report-config'
+import { supportsDocumentNumberStages } from '@/lib/system-document-sequence-id'
 
 export type {
   DocumentTemplateNameConfig,
@@ -153,9 +155,23 @@ export type DocumentTemplateConstructorConfig = {
   nameConfig?: DocumentTemplateNameConfig
 }
 
+const LNK_STAGE_FIELD_ALIASES = new Map<string, string>(
+  LNK_METHODS.map(method => [method.preDefectDescriptionKey, method.defectDescriptionKey]),
+)
+
+/** In shared LNK templates the server supplies the current document's stage.
+ * Keep old bindings/Excel markers readable without rewriting stored templates.
+ * General documents continue to address both stages independently. */
+export function normalizeDocumentTemplateStageField<T>(field: T, templateId?: DocumentTemplateId): T {
+  if (!templateId || !supportsDocumentNumberStages(templateId) || typeof field !== 'string') return field
+  return (LNK_STAGE_FIELD_ALIASES.get(field) ?? field) as T
+}
+
 export function normalizeDocumentTemplateConstructorConfig(
   config: DocumentTemplateConstructorConfig,
+  templateId?: DocumentTemplateId,
 ): DocumentTemplateConstructorConfig {
+  const normalizeField = <T,>(field: T) => normalizeDocumentTemplateStageField(migrateLegacyOfficialityField(field), templateId)
   const repeatRow = config.repeatRow && config.repeatRow > 0 ? Math.floor(config.repeatRow) : undefined
   const repeatRowEnd =
     repeatRow === undefined
@@ -173,11 +189,11 @@ export function normalizeDocumentTemplateConstructorConfig(
   const normalizeBindingForRepeatMode = (binding: DocumentTemplateCellBinding) => {
     const normalizedFieldBinding: DocumentTemplateCellBinding = {
       ...binding,
-      field: migrateLegacyOfficialityField(binding.field),
+      field: normalizeField(binding.field),
       parts: binding.parts?.map((part) => ({
         ...part,
-        field: migrateLegacyOfficialityField(part.field),
-        compareField: migrateLegacyOfficialityField(part.compareField),
+        field: normalizeField(part.field),
+        compareField: normalizeField(part.compareField),
       })),
     }
     const insideRepeatBlock = isInsideRepeatBlock(normalizedFieldBinding)
@@ -199,12 +215,12 @@ export function normalizeDocumentTemplateConstructorConfig(
     repeatRow,
     repeatRowEnd,
     repeatMode,
-    repeatGroupBy: repeatMode === 'groups' ? migrateLegacyOfficialityField(config.repeatGroupBy) : undefined,
+    repeatGroupBy: repeatMode === 'groups' ? normalizeField(config.repeatGroupBy) : undefined,
     nameConfig: config.nameConfig
       ? {
           parts: config.nameConfig.parts.map((part) => ({
             ...part,
-            field: migrateLegacyOfficialityField(part.field),
+            field: normalizeField(part.field),
           })),
         }
       : undefined,
@@ -341,6 +357,7 @@ export type DocumentTemplatePreviewCellStyle = {
   textAlign?: 'left' | 'center' | 'right'
   verticalAlign?: 'top' | 'middle' | 'bottom'
   whiteSpace?: 'normal' | 'pre-line'
+  centerAcrossSelection?: boolean
   borderTop?: string
   borderRight?: string
   borderBottom?: string

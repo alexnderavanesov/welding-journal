@@ -647,13 +647,13 @@ function StatisticsReports({
             <div className="mt-3 flex flex-wrap items-end gap-3">
               <label className="grid min-w-[220px] gap-1 text-xs font-medium text-slate-600">
                 Проект
-                <select
+                <Select
                   value={projectFilter}
                   onChange={(event) => {
                     setProjectFilter(event.target.value)
                     setSelectedSubtitles([])
                   }}
-                  className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                  className="w-auto h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100"
                 >
                   <option value="">Все проекты</option>
                   {projectOptions.map((project) => (
@@ -661,7 +661,7 @@ function StatisticsReports({
                       {project.label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
 
               <div className="min-w-0 flex-1 basis-[420px]">

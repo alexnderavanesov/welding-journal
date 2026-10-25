@@ -121,6 +121,11 @@ test('реальный ввод НАКС/ДЛС: 1/2/3 группы, спосо�
   })
   page.on('requestfinished', request => pendingCalls.delete(request))
   page.on('requestfailed', request => pendingCalls.delete(request))
+  // Chromium can omit a terminal request event for a fetch interrupted by
+  // reload (the trace keeps status/time=-1). Idle focus concerns the current
+  // document only. Reset at navigation commit, before its hydration RPCs start;
+  // retain the full call history and every save/count assertion below.
+  page.on('framenavigated', frame => { if (frame === page.mainFrame()) pendingCalls.clear() })
   await page.goto('/welder-stamps')
   for (const [index, code] of codes.slice(0, 3).entries()) {
     const groups = ['М01', 'М05', 'М11'].slice(0, index + 1)
@@ -156,6 +161,19 @@ test('реальный ввод НАКС/ДЛС: 1/2/3 группы, спосо�
     expect(after.naks_permits[0].materialGroups.split(', ').sort()).toEqual(groups)
     await page.getByText(code, { exact: true }).first().click()
   }
+  // The former browser datalist now uses our popup, retaining NAKS lookup and free text.
+  await page.getByRole('button', { name: 'Добавить клеймо', exact: true }).click()
+  const suggestionDialog = page.getByRole('dialog')
+  const stampInput = suggestionDialog.getByRole('combobox', { name: 'Клеймо НАКС', exact: true })
+  await stampInput.click()
+  await suggestionDialog.getByRole('listbox').getByRole('option', { name: codes[0], exact: true }).click()
+  await expect(stampInput).toHaveValue(codes[0])
+  await expect(suggestionDialog.getByLabel('ФИО сварщика', { exact: true })).toHaveValue(`Аудит ${codes[0]}`)
+  await stampInput.fill('NEW1')
+  await expect(stampInput).toHaveValue('NEW1')
+  await expect(suggestionDialog.getByRole('listbox')).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(suggestionDialog).toBeHidden()
   // A previous navigation may already have reached networkidle while a later
   // save is still refreshing tasks. Focus intentionally coalesces with that
   // refresh; test an idle focus only after the current RPCs have finished.

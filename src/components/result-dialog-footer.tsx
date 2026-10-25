@@ -27,6 +27,7 @@ export function ResultDialogFooter({
   onClose,
   onSave,
 }: ResultDialogFooterProps) {
+  const disabled = isSaveDisabled || isSaving || Boolean(saveBlockReason)
   const visibleReason = [
     saveBlockReason && (saveBlockReasonVariant === 'danger' ? `Сохранение заблокировано: ${saveBlockReason}` : saveBlockReason),
     saveError && `Не удалось сохранить: ${saveError}`,
@@ -58,10 +59,10 @@ export function ResultDialogFooter({
           <span title={saveBlockReason || (isSaving ? 'Сохраняем…' : 'Можно сохранить результат')}>
             <Button
               onClick={onSave}
-              disabled={isSaveDisabled || isSaving}
+              disabled={disabled}
               aria-busy={isSaving}
               className={
-                isSaveDisabled || isSaving
+                disabled
                   ? 'min-w-48 pointer-events-none border border-slate-200 bg-slate-100 text-slate-400 shadow-none opacity-100'
                   : 'min-w-48 border border-transparent'
               }

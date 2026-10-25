@@ -111,6 +111,14 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   const pageTrack = useRef<HTMLDivElement>(null), pageStage = useRef<HTMLDivElement>(null)
   const frame = useRef<HTMLDivElement>(null), popupColumn = useRef<string | null>(null)
   const [popupParent] = useState(() => typeof document === 'undefined' ? undefined : document.createElement('div'))
+  const [bottomCover] = useState(() => typeof document === 'undefined' ? undefined : document.createElement('div'))
+  useEffect(() => {
+    if (!bottomCover) return
+    bottomCover.className = 'document-grid-bottom-cover'
+    bottomCover.setAttribute('aria-hidden', 'true')
+    document.body.append(bottomCover)
+    return () => bottomCover.remove()
+  }, [bottomCover])
   useLayoutEffect(() => {
     if (!popupParent) return
     popupParent.className = 'document-grid-popup-layer'
@@ -224,7 +232,7 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     })
   }, [fetchRows])
   const position = useDocumentGridSession(api, frame, props.viewId, positionScope, search, initialSession, props.highlightedDocumentId != null, { load: loadPositionBlock, getRowId: rowId })
-  useJournalDocumentScroll(pageTrack, pageStage, frame, api, true, navigationHeight, position.isRestoring)
+  useJournalDocumentScroll(pageTrack, pageStage, frame, api, true, navigationHeight, position.isRestoring, bottomCover)
   const positionRef = useRef(position); positionRef.current = position
 
   const saveSettings = useCallback((next: DocumentGridState) => {
@@ -728,7 +736,6 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
         {rangeSummary.average !== null ? <span>Среднее: {formatJournalNumber(rangeSummary.average)}</span> : null}
         {rangeSummary.count > 0 ? <span>Количество: {rangeSummary.count}</span> : null}
         {rangeSummary.numericCount > 0 ? <span>Сумма: {formatJournalNumber(rangeSummary.sum)}</span> : null}
-        {props.selectedDocuments.length ? <button type="button" onClick={() => { resetRowRange(); props.onSelectionChange([]) }}>Снять выбор</button> : null}
       </div>
       </div></div>
     </div>

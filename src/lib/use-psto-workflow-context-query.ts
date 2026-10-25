@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useWorkflowQuerySelection } from '@/lib/use-workflow-query-selection'
 
 import {
   PSTO_WORKFLOW_REQUEST_OPTIONS_QUERY_KEY,
@@ -63,8 +64,9 @@ export function usePstoWorkflowRowsQuery({
     [normalizedRequest],
   )
   const isCandidateQuery = normalizedRequest?.scope.endsWith('Candidates') ?? false
-  return useQuery({
-    queryKey: [...PSTO_WORKFLOW_ROWS_QUERY_KEY, queryIdentity],
+  const initialSelection = useWorkflowQuerySelection(isCandidateQuery ? queryIdentity : null, normalizedRequest?.includeRowIds)
+  const query = useQuery({
+    queryKey: [...PSTO_WORKFLOW_ROWS_QUERY_KEY, isCandidateQuery ? { ...queryIdentity, initialSelection } : queryIdentity],
     queryFn: () => listPstoWorkflowRows({ data: normalizedRequest! }),
     enabled: normalizedRequest !== null,
     staleTime: isCandidateQuery ? 0 : WORKFLOW_STALE_TIME,
@@ -77,6 +79,12 @@ export function usePstoWorkflowRowsQuery({
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   })
+  return {
+    ...query,
+    // Cached/placeholder rows can be displayed, but cannot prune a draft.
+    isContextReady: normalizedRequest !== null && query.isSuccess &&
+      !query.isPlaceholderData && !query.isFetching,
+  }
 }
 
 export function getPstoWorkflowRowsQueryIdentity(

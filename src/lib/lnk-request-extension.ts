@@ -18,7 +18,6 @@ import {
   isEnabledControlValue,
   isPendingLnkResultValue,
 } from '@/lib/report-value-utils'
-import { hasCompletedLnkRequestPosition } from '@/lib/report-control-state'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { getPrimaryLnkRequestAccess } from '@/lib/lnk-control-stage'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
@@ -92,7 +91,6 @@ export function getLnkRequestExtensionOptions(rows: WeldRow[]): LnkRequestExtens
     positionCount: number
     methodCodes: Set<string>
     searchValues: Set<string>
-    completedPosition?: ReturnType<typeof getLnkRequestPositions>[number]
   }>()
 
   for (const row of rows) {
@@ -112,9 +110,6 @@ export function getLnkRequestExtensionOptions(rows: WeldRow[]): LnkRequestExtens
         const text = String(value ?? '').trim()
         if (text) summary.searchValues.add(text.toLocaleLowerCase('ru'))
       }
-      if (!summary.completedPosition && hasCompletedLnkRequestPosition(row, method)) {
-        summary.completedPosition = { row, method }
-      }
       summaries.set(identity.key, summary)
     }
   }
@@ -127,7 +122,7 @@ export function getLnkRequestExtensionOptions(rows: WeldRow[]): LnkRequestExtens
       positionCount: summary?.positionCount ?? 0,
       methodCodes: [...(summary?.methodCodes ?? [])],
       searchText: [...(summary?.searchValues ?? [])].join(' '),
-      disabledReason: getLnkRequestExtensionIdentityDisabledReason(identity, summary?.completedPosition),
+      disabledReason: getLnkRequestExtensionIdentityDisabledReason(identity),
     }
   })
 }
@@ -136,12 +131,11 @@ export function getLnkRequestExtensionDisabledReason(
   rows: WeldInput[],
   identity: Pick<RequestDocumentIdentity, 'name' | 'date'>,
 ) {
-  const positions = getLnkRequestPositions(rows, identity)
-  if (positions.length === 0) return 'Заявка больше не существует. Обновите список заявок.'
-  return getLnkRequestExtensionIdentityDisabledReason(
-    identity,
-    positions.find(({ row, method }) => hasCompletedLnkRequestPosition(row, method)),
-  )
+  const exists = rows.some((row) => LNK_METHODS.some((method) =>
+    isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], identity),
+  ))
+  if (!exists) return 'Заявка больше не существует. Обновите список заявок.'
+  return getLnkRequestExtensionIdentityDisabledReason(identity)
 }
 
 export function analyzeLnkRequestExtensionTargets({
@@ -249,30 +243,13 @@ export function buildLnkRequestExtensionRows({
   return [...updatedById.values()]
 }
 
-function getLnkRequestPositions(
-  rows: WeldInput[],
-  identity: Pick<RequestDocumentIdentity, 'name' | 'date'>,
-) {
-  return rows.flatMap((row) =>
-    LNK_METHODS.flatMap((method) =>
-      isSameRequestDocument(row[method.requestKey], row[method.requestDateKey], identity)
-        ? [{ row, method }]
-        : [],
-    ),
-  )
-}
-
-function getLnkRequestExtensionIdentityDisabledReason(
+export function getLnkRequestExtensionIdentityDisabledReason(
   identity: Pick<RequestDocumentIdentity, 'date'>,
-  completedPosition?: ReturnType<typeof getLnkRequestPositions>[number],
 ) {
-  if (getDateInputValidationReason(identity.date, 'Дата заявки ЛНК')) {
+  if (!parseDateLikeToIso(identity.date) || getDateInputValidationReason(identity.date, 'Дата заявки ЛНК')) {
     return 'У заявки отсутствует корректная дата, поэтому проверить хронологию добавляемых стыков нельзя.'
   }
-  if (!completedPosition) return null
-
-  const joint = String(completedPosition.row.joint ?? '').trim() || `№${completedPosition.row.id}`
-  return `Заявка закрыта для дополнения: по стыку ${joint}, ${completedPosition.method.code} уже внесен результат или заключение.`
+  return null
 }
 
 function getLnkRequestExtensionTargetReason(

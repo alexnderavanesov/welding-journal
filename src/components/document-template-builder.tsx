@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select'
 import { useCallback, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import {
   AlertTriangle,
@@ -49,11 +50,13 @@ import {
   isLayeredControlDocumentType,
 } from '@/lib/generated-document-types'
 import { isSystemDocumentTemplateId } from '@/lib/system-document-template-types'
-import { getSpecialistTemplateFields } from '@/lib/document-specialists'
+import { getSpecialistTemplateFields, SPECIALIST_TEMPLATE_FIELDS } from '@/lib/document-specialists'
 import { WELD_FIELDS, isVirtualWeldField, type WeldInput } from '@/lib/weld-fields'
 import { STAMP_NAME_TEMPLATE_FIELDS } from '@/lib/welder-stamp-names'
 import { CONTROL_BASIS_SUMMARY_FIELD_KEY } from '@/lib/control-assignment-basis'
 import { PRE_HEAT_TREATMENT_DEFECT_DESCRIPTION_FIELD_KEYS } from '@/lib/pre-heat-treatment-report-fields'
+import { normalizeDocumentTemplateStageField } from '@/lib/document-template-model'
+import { supportsDocumentNumberStages } from '@/lib/system-document-sequence-id'
 
 type DocumentTemplateBuilderProps = {
   template: StoredDocumentTemplate
@@ -109,6 +112,11 @@ const BASE_FIELD_OPTIONS: TemplateFieldOption[] = [
     kind: field.kind === 'number' ? 'number' as const : 'text' as const,
   })),
 ]
+
+const TEMPLATE_FIELD_LABELS = new Map<DocumentTemplateFieldKey, string>(
+  [...SPECIALIST_TEMPLATE_FIELDS, ...SYSTEM_DOCUMENT_FIELDS, ...BASE_FIELD_OPTIONS]
+    .map(field => [field.key, field.label]),
+)
 
 const NUMERIC_TEMPLATE_FIELD_KEYS = new Set(
   BASE_FIELD_OPTIONS.filter((field) => field.kind === 'number').map((field) => field.key),
@@ -191,7 +199,7 @@ function getBindingParts(binding: DocumentTemplateCellBinding | undefined): Docu
 
 function formatTemplateBindingSummary(binding: DocumentTemplateCellBinding) {
   const labels = getBindingParts(binding).map((part) =>
-    [...SYSTEM_DOCUMENT_FIELDS, ...BASE_FIELD_OPTIONS].find((field) => field.key === part.field)?.label ?? part.field,
+    TEMPLATE_FIELD_LABELS.get(part.field) ?? part.field,
   )
   if (!labels.length) return 'Поле не выбрано'
   return labels.join(' + ')
@@ -199,7 +207,7 @@ function formatTemplateBindingSummary(binding: DocumentTemplateCellBinding) {
 
 function getInitialDraft(template: StoredDocumentTemplate): DocumentTemplateConstructorConfig {
   const normalized = template.constructorConfig
-    ? normalizeDocumentTemplateConstructorConfig(template.constructorConfig)
+    ? normalizeDocumentTemplateConstructorConfig(template.constructorConfig, template.id)
     : {
         version: 1 as const,
         sheetName: template.sheetNames?.[0] ?? '',
@@ -333,6 +341,7 @@ export function pasteDocumentTemplateCellBinding(
   preview: DocumentTemplateWorkbookPreview | null,
   copiedBinding: DocumentTemplateCellBinding,
   targetCell: string,
+  templateId?: StoredDocumentTemplate['id'],
 ): DocumentTemplateConstructorConfig {
   const copied = cloneDocumentTemplateCellBinding(copiedBinding)
   let nextBinding: DocumentTemplateCellBinding
@@ -358,9 +367,10 @@ export function pasteDocumentTemplateCellBinding(
     ],
   }
 
-  return !config.repeatRow && nextBinding.mode === 'row'
+  const result = !config.repeatRow && nextBinding.mode === 'row'
     ? includeTemplateCellInRepeatBlock(nextConfig, preview, targetCell)
     : nextConfig
+  return templateId ? normalizeDocumentTemplateConstructorConfig(result, templateId) : result
 }
 
 export function getUnavailableDocumentTemplatePasteFields(
@@ -369,8 +379,9 @@ export function getUnavailableDocumentTemplatePasteFields(
   copiedBinding: DocumentTemplateCellBinding,
   targetCell: string,
   availableFields: ReadonlySet<DocumentTemplateFieldKey>,
+  templateId?: StoredDocumentTemplate['id'],
 ) {
-  const candidate = pasteDocumentTemplateCellBinding(config, preview, copiedBinding, targetCell)
+  const candidate = pasteDocumentTemplateCellBinding(config, preview, copiedBinding, targetCell, templateId)
   const pastedBinding = candidate.bindings.find((binding) => binding.cell === targetCell)
   if (!pastedBinding) return []
 
@@ -531,7 +542,8 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
     const fieldOptions = (supportsCurrentDocumentFields
       ? [...getSpecialistTemplateFields(template.id).map(field => ({ key: field.key, label: field.label, group: 'Специалисты документа', kind: 'text' as const })), ...SYSTEM_DOCUMENT_FIELDS, ...BASE_FIELD_OPTIONS]
       : BASE_FIELD_OPTIONS
-    ).filter((field) => field.key !== '__groupIndex' || draft.repeatMode === 'groups')
+    ).filter((field) => (field.key !== '__groupIndex' || draft.repeatMode === 'groups')
+      && normalizeDocumentTemplateStageField(field.key, template.id) === field.key)
     const groups = new Map<string, TemplateFieldOption[]>()
     for (const field of fieldOptions) {
       const values = groups.get(field.group) ?? []
@@ -620,14 +632,12 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
       clipboard.binding,
       cell,
       availableTemplateFields,
+      template.id,
     )
     if (!unavailableFields.length) return null
-    const labels = unavailableFields.map((field) =>
-      [...SYSTEM_DOCUMENT_FIELDS, ...BASE_FIELD_OPTIONS]
-        .find((option) => option.key === field)?.label ?? field,
-    )
+    const labels = unavailableFields.map((field) => TEMPLATE_FIELD_LABELS.get(field) ?? field)
     return `Для этого шаблона недоступны поля: ${labels.join(', ')}.`
-  }, [availableTemplateFields, draft, preview])
+  }, [availableTemplateFields, draft, preview, template.id])
 
   const pasteCellBinding = useCallback((cell: string, clipboard: DocumentTemplateCellClipboardPayload) => {
     const pasteIssue = getCellPasteIssue(cell, clipboard)
@@ -636,8 +646,8 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
       return
     }
     setSelectedCell(cell)
-    setDraft((current) => pasteDocumentTemplateCellBinding(current, preview, clipboard.binding, cell))
-  }, [getCellPasteIssue, preview])
+    setDraft((current) => pasteDocumentTemplateCellBinding(current, preview, clipboard.binding, cell, template.id))
+  }, [getCellPasteIssue, preview, template.id])
 
   const removeCellBinding = useCallback((cell: string) => {
     setSelectedCell(cell)
@@ -934,7 +944,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
         <div className="min-h-0 overflow-auto bg-slate-100/70 p-4">
           <div className="mb-3 flex items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2">
             <label className="text-xs font-semibold uppercase text-slate-500">Лист</label>
-            <select
+            <Select
               value={draft.sheetName}
               onChange={(event) => {
                 setSelectedCell('')
@@ -948,16 +958,20 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                   bindings: [],
                 }))
               }}
-              className="h-9 rounded-md border-slate-300 py-1 text-sm"
+              className="w-auto h-9 rounded-md border-slate-300 py-1 text-sm"
             >
               {(preview?.sheetNames ?? template.sheetNames ?? []).map((sheetName) => (
                 <option key={sheetName} value={sheetName}>
                   {sheetName}
                 </option>
               ))}
-            </select>
+            </Select>
             <span className="text-xs text-slate-500">Выберите ячейку и укажите, какие данные в нее выводить.</span>
           </div>
+
+          {supportsDocumentNumberStages(template.id) ? (
+            <p className="mb-3 text-xs text-slate-600">Поля НК заполняются по этапу текущего документа: «Основной» или «До ТО». Один шаблон используется для обоих этапов.</p>
+          ) : null}
 
           {isLoading ? (
             <div className="rounded-md border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Открываю Excel...</div>
@@ -1133,7 +1147,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
               </div>
               <label className="mt-3 block">
                 <span className="text-xs font-semibold text-slate-600">Создавать блок для</span>
-                <select
+                <Select
                   value={repeatTarget}
                   onChange={(event) =>
                     setDraft((current) =>
@@ -1151,7 +1165,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                       {option.label}
                     </option>
                   ))}
-                </select>
+                </Select>
                 <span className="mt-1 block text-xs leading-5 text-slate-500">
                   {REPEAT_TARGET_OPTIONS.find((option) => option.value === repeatTarget)?.description}
                 </span>
@@ -1245,7 +1259,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
 
                   <div>
                     <div className="text-xs font-semibold uppercase text-slate-500">Если значение пустое</div>
-                    <select
+                    <Select
                       value={selectedBinding.emptyMode ?? 'blank'}
                       onChange={(event) =>
                         updateSelectedBinding({ emptyMode: event.target.value as DocumentTemplateCellBinding['emptyMode'] })
@@ -1255,7 +1269,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                       <option value="blank">Оставить пусто</option>
                       <option value="np">Написать «н/п»</option>
                       <option value="custom">Свой текст</option>
-                    </select>
+                    </Select>
                     {selectedBinding.emptyMode === 'custom' ? (
                       <input
                         value={selectedBinding.emptyText ?? ''}
@@ -1268,7 +1282,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
 
                   <div>
                     <div className="text-xs font-semibold uppercase text-slate-500">Если значение заполнено</div>
-                    <select
+                    <Select
                       value={selectedBinding.filledMode ?? 'value'}
                       onChange={(event) =>
                         updateSelectedBinding({ filledMode: event.target.value as DocumentTemplateCellBinding['filledMode'] })
@@ -1277,7 +1291,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
                     >
                       <option value="value">Оставить рассчитанное значение</option>
                       <option value="custom">Написать свой текст</option>
-                    </select>
+                    </Select>
                     {selectedBinding.filledMode === 'custom' ? (
                       <input
                         value={selectedBinding.filledText ?? ''}
@@ -1460,7 +1474,7 @@ function DocumentTemplateNameEditor({
                 <span className="flex h-7 w-7 items-center justify-center rounded bg-slate-100 text-xs font-semibold text-slate-600">
                   {index + 1}
                 </span>
-                <select
+                <Select
                   value={part.type}
                   onChange={(event) =>
                     updatePart(
@@ -1474,10 +1488,10 @@ function DocumentTemplateNameEditor({
                 >
                   <option value="field">Поле</option>
                   <option value="text">Текст</option>
-                </select>
+                </Select>
 
                 {part.type === 'field' ? (
-                  <select
+                  <Select
                     value={part.field ?? ''}
                     onChange={(event) =>
                       updatePart(index, {
@@ -1497,7 +1511,7 @@ function DocumentTemplateNameEditor({
                         ))}
                       </optgroup>
                     ))}
-                  </select>
+                  </Select>
                 ) : (
                   <input
                     value={part.text ?? ''}
@@ -1675,7 +1689,7 @@ function CellPartsEditor({
               </div>
             </div>
 
-            <select
+            <Select
               value={part.field}
               onChange={(event) => {
                 const field = event.target.value as DocumentTemplateFieldKey
@@ -1702,7 +1716,7 @@ function CellPartsEditor({
                   ))}
                 </optgroup>
               ))}
-            </select>
+            </Select>
 
             {isNumericTemplateField(part.field) ? (
               <details className="mt-2 rounded border border-sky-200 bg-sky-50/60">
@@ -1712,7 +1726,7 @@ function CellPartsEditor({
                 <div className="space-y-3 border-t border-sky-200 bg-white p-2">
                   <label className="block">
                     <span className="text-[11px] font-medium text-slate-500">Минимум или максимум</span>
-                    <select
+                    <Select
                       value={part.numericOperation ?? 'none'}
                       onChange={(event) => {
                         const numericOperation =
@@ -1731,13 +1745,13 @@ function CellPartsEditor({
                       <option value="none">Не сравнивать</option>
                       <option value="min">Минимальное из двух полей</option>
                       <option value="max">Максимальное из двух полей</option>
-                    </select>
+                    </Select>
                   </label>
 
                   {part.numericOperation ? (
                     <label className="block">
                       <span className="text-[11px] font-medium text-slate-500">Второе числовое поле</span>
-                      <select
+                      <Select
                         value={part.compareField ?? ''}
                         onChange={(event) =>
                           updatePart(index, { compareField: event.target.value as DocumentTemplateFieldKey })
@@ -1753,7 +1767,7 @@ function CellPartsEditor({
                             ))}
                           </optgroup>
                         ))}
-                      </select>
+                      </Select>
                     </label>
                   ) : null}
 

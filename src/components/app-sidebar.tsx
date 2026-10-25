@@ -14,6 +14,7 @@ import {
 import { useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
+import { ScrollToTopButton } from '@/components/scroll-to-top-button'
 import type { ActiveReport } from '@/lib/home-state'
 import './app-sidebar.css'
 
@@ -148,7 +149,10 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
           )
         })}
       </nav>
-      <nav className="mt-auto shrink-0 space-y-2 border-t border-slate-100 pb-7 pt-3 lg:pb-10" aria-label="Настройки и помощь">
+      <div className="mb-3 mt-auto h-10 shrink-0">
+        <ScrollToTopButton resetKey={activeReport} />
+      </div>
+      <nav className="shrink-0 space-y-2 border-t border-slate-100 pb-7 pt-3 lg:pb-10" aria-label="Настройки и помощь">
         {(() => {
           const Icon = settingsItem.icon
           const isActive = activeReport === settingsItem.report

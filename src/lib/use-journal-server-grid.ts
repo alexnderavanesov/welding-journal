@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { writeDeferredTextToClipboard } from './clipboard'
 import { flushSync } from 'react-dom'
 import type { GridApi, IRowNode, IServerSideDatasource, RowGroupOpenedEvent } from 'ag-grid-community'
-import { countJournalGridSelection, copyJournalGridRange, selectJournalGridRows, summarizeJournalGridRange } from '@/server/journal-grid-api'
+import { countJournalGridSelection, copyJournalGridRange, selectJournalGridRange, selectJournalGridRows, summarizeJournalGridRange } from '@/server/journal-grid-api'
 import { FIELD_BY_KEY, type WeldFieldKey } from './weld-fields'
 import type { WeldRow } from './dispatcher-types'
 import { journalGroup, journalRangeParts, journalRouteKey, type JournalGridQuery, type JournalRangeRequest, type JournalRouteLayout, type JournalGridResult, type JournalRevision } from './journal-server-grid'
@@ -13,6 +13,7 @@ import type { JournalSelectionContextValue } from '@/components/journal-server-s
 import { createJournalCacheBudget, JOURNAL_LEAF_CACHE_BUDGET } from './journal-cache-budget'
 import { readJournalLocalSelection } from './journal-local-selection'
 import { journalCopyRanges } from './journal-copy-ranges'
+import type { JournalSummaryRange } from './journal-selection-summary'
 
 export function useJournalServerGrid(options: {
   source?: JournalServerSource; api: GridApi<WeldRow> | null; selected: ReadonlySet<number>;
@@ -31,6 +32,7 @@ export function useJournalServerGrid(options: {
   const lastMembership = useRef<{ identity: string; revision: JournalRevision; groups: string; route: string; ids: ReadonlySet<number> } | null>(null)
   const [summary, setSummary] = useState(EMPTY_JOURNAL_RANGE_SUMMARY)
   const [rangeState, setRangeState] = useState('')
+  const [summaryRange, setSummaryRange] = useState<JournalSummaryRange>(null)
   const [copying, setCopying] = useState(false)
   const copyRequest = useRef<AbortController | null>(null)
   const [selection, setSelection] = useState<{ counts: Record<string, number>; selectedTotal: number;
@@ -60,12 +62,13 @@ export function useJournalServerGrid(options: {
     sort: current.current.source!.sort, groupBy: current.current.api?.getRowGroupColumns().map(column => column.getColId() as WeldFieldKey) ?? [] })
   const reportError = (error: unknown) => current.current.onError?.(error instanceof Error ? error.message : String(error))
   const selectionScope = () => JSON.stringify([current.current.source?.identity, revision.current, query().groupBy])
-  const getRange = (forCopy = false): JournalRangeRequest | null => {
+  const getRange = (mode: 'summary' | 'copy' | 'selection' = 'summary'): JournalRangeRequest | null => {
     const { api, source, anchor, ready } = current.current
     if (!source || !api || api.isDestroyed() || revision.current === undefined || !ready) return null
     const ranges = (api.getCellRanges() ?? []).flatMap(range => range.startRow && range.endRow ? [{
       first: Math.min(range.startRow.rowIndex, range.endRow.rowIndex), last: Math.max(range.startRow.rowIndex, range.endRow.rowIndex),
-      columns: range.columns.filter(column => column.isVisible() && FIELD_BY_KEY.has(column.getColId() as WeldFieldKey)).map(column => column.getColId() as WeldFieldKey),
+      columns: mode === 'selection' ? ['id' as const]
+        : range.columns.filter(column => column.isVisible() && FIELD_BY_KEY.has(column.getColId() as WeldFieldKey)).map(column => column.getColId() as WeldFieldKey),
     }] : [])
     if (!ranges.some(range => range.columns.length)) return null
     // An unopened store initially occupies one loading row, regardless of its
@@ -83,7 +86,7 @@ export function useJournalServerGrid(options: {
       throw new Error('Дождитесь загрузки раскрытых групп.')
     }
     const populated = ranges.filter(range => range.columns.length)
-    const parts = journalRangeParts(forCopy ? journalCopyRanges(populated,
+    const parts = journalRangeParts(mode === 'copy' ? journalCopyRanges(populated,
       api.getAllDisplayedColumns().map(column => column.getColId() as WeldFieldKey)) : populated, count, expanded)
     if (parts.some(part => !stores.get(journalRouteKey(part.route))?.lastRowIndexKnown)) {
       throw new Error('Дождитесь загрузки раскрытых групп.')
@@ -96,8 +99,15 @@ export function useJournalServerGrid(options: {
     try { data = getRange() } catch (error) {
       rangeSignature.current = ''
       clearTimeout(timer.current); rangeRequest.current?.abort()
-      setSummary(EMPTY_JOURNAL_RANGE_SUMMARY); setRangeState((error as Error).message); return
+      const message = (error as Error).message
+      setSummaryRange(previous => previous?.error === message ? previous : { request: null, error: message })
+      setSummary(EMPTY_JOURNAL_RANGE_SUMMARY); setRangeState(message); return
     }
+    // Physical totals depend on row membership, not how many columns are marked.
+    const nextRange: JournalSummaryRange = data?.parts.length ? { request: { ...data,
+      parts: data.parts.map(part => ({ ...part, columns: ['id'] })),
+    } } : null
+    setSummaryRange(previous => JSON.stringify(previous) === JSON.stringify(nextRange) ? previous : nextRange)
     const signature = JSON.stringify(data)
     if (rangeSignature.current === signature) return
     rangeSignature.current = signature
@@ -215,7 +225,7 @@ export function useJournalServerGrid(options: {
     setCopying(false)
     const requests = new Set<AbortController>()
     rangeSignature.current = ''; countCache.current = null; countRequest.current?.abort(); countRequest.current = null; rangeRequest.current?.abort()
-    setSummary(EMPTY_JOURNAL_RANGE_SUMMARY); setRangeState('')
+    setSummary(EMPTY_JOURNAL_RANGE_SUMMARY); setRangeState(''); setSummaryRange(null)
     const identity = source.identity
     const datasource: IServerSideDatasource<WeldRow> = {
       getRows: params => {
@@ -377,9 +387,35 @@ export function useJournalServerGrid(options: {
       setSelecting(false); updateCounts()
     })
   })
+  const selectRange = useStableEventCallback(() => {
+    if (selectionRequest.current) return
+    let data: JournalRangeRequest | null
+    try { data = getRange('selection') } catch (error) { reportError(error); return }
+    if (!data?.parts.length) return
+    const controller = new AbortController(); selectionRequest.current = controller
+    const selected = current.current.selected, identity = current.current.source?.identity
+    const signature = JSON.stringify(data)
+    setSelecting(true)
+    void selectJournalGridRange({ data, signal: controller.signal }).then(result => {
+      if (controller.signal.aborted) return
+      // Never apply a positional result to a changed range/query or resurrect
+      // selection cleared while the request was in flight.
+      if (current.current.source?.identity !== identity || current.current.selected !== selected
+        || JSON.stringify(getRange('selection')) !== signature) {
+        throw new Error('Выборка или выделение изменились. Повторите Shift+Пробел.')
+      }
+      const remove = result.ids.length > 0 && result.ids.every(id => selected.has(id))
+      const next = new Set(selected)
+      for (const id of result.ids) { if (remove) next.delete(id); else next.add(id) }
+      if (next.size !== selected.size) current.current.onSelect?.(next)
+    }).catch(error => { if (!controller.signal.aborted) reportError(error) }).finally(() => {
+      if (selectionRequest.current !== controller) return
+      selectionRequest.current = null; setSelecting(false); updateCounts()
+    })
+  })
   const copy = useStableEventCallback(() => {
     let data: JournalRangeRequest | null
-    try { data = getRange(true) } catch (error) { reportError(error); return }
+    try { data = getRange('copy') } catch (error) { reportError(error); return }
     if (!data?.parts.length) return
     if (copyRequest.current) return
     const controller = new AbortController(); copyRequest.current = controller
@@ -387,7 +423,7 @@ export function useJournalServerGrid(options: {
     const identity = current.current.source?.identity
     const text = copyJournalGridRange({ data, signal: controller.signal }).then(value => {
       controller.signal.throwIfAborted()
-      if (current.current.source?.identity !== identity || JSON.stringify(getRange(true)) !== JSON.stringify(data)) throw new Error('Выборка или диапазон изменились. Повторите копирование.')
+      if (current.current.source?.identity !== identity || JSON.stringify(getRange('copy')) !== JSON.stringify(data)) throw new Error('Выборка или диапазон изменились. Повторите копирование.')
       return value
     })
     const write = writeDeferredTextToClipboard(text)
@@ -423,7 +459,7 @@ export function useJournalServerGrid(options: {
       // Background counters must not swallow the next key or checkbox click.
       pending: selecting || !options.ready, toggle }
   }, [source?.identity, api, options.selected, selection, selecting, options.total, options.ready, toggle])
-  return { summary, rangeState: copying ? 'Копируем…' : rangeState, updateRange, modelUpdated, groupOpened, copy, selectionContext, trimCache,
+  return { summary, summaryRange, rangeState: copying ? 'Копируем…' : rangeState, updateRange, modelUpdated, groupOpened, copy, selectRange, selectionContext, trimCache,
     resetLayout: () => {
       copyRequest.current?.abort(); copyRequest.current = null; setCopying(false)
       selectionRequest.current?.abort(); selectionRequest.current = null; setSelecting(false)
