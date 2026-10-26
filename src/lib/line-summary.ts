@@ -147,7 +147,9 @@ function getActualLineRows(
         current.set(rootId!, row)
       }
     }
-    representatives.push(...current.values())
+    // A single line can contain the full dataset. Spreading it into function
+    // arguments exceeds the engine's argument limit before statistics render.
+    for (const row of current.values()) representatives.push(row)
   }
   return representatives
 }

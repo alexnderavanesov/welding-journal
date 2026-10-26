@@ -5,11 +5,13 @@ import { RK_EXPOSURE_CUSTOM_SCHEME_LABEL, RK_EXPOSURE_REVIEW_LABEL } from '@/lib
 import { reportTextSql } from './report-filter-text-sql'
 
 function rkDescriptionSqlParts(value: SQLWrapper) {
-  const line = reportTextSql(sql`"rk_line"`)
+  const line = sql`"rk_line"`
   const colon = sql`position(':' in ${line})`
-  const coordinate = reportTextSql(sql`case when ${colon} = 0 then ${line} else left(${line}, ${colon} - 1) end`)
+  const coordinate = reportTextSql(sql`split_part(${line}, ':', 1)`)
   const description = reportTextSql(sql`case when ${colon} = 0 then '' else substring(${line} from ${colon} + 1) end`)
-  const source = sql`regexp_split_to_table(coalesce(${value}::text, ''), E'\\r?\\n') with ordinality as "rk_lines"("rk_line", "rk_position")`
+  // Trimming each line also removes CR from CRLF, exactly as /\r?\n/ followed
+  // by String.trim, without running a regular expression for every joint.
+  const source = sql`unnest(string_to_array(coalesce(${value}::text, ''), E'\\n')) with ordinality as "rk_lines"("rk_line", "rk_position")`
   return { coordinate, description, source }
 }
 
@@ -35,18 +37,12 @@ export function buildRkExposureSchemeSql(table: RkExposureTableSettings | null):
   const customOrEmpty = sql<string>`case when cardinality(${coordinates}) > 0 then ${RK_EXPOSURE_CUSTOM_SCHEME_LABEL} else '' end`
   const diameter = sql`case when upper(${reportTextSql(weldJoints.connectionType)}) like 'У%'
     then least(${weldJoints.d1}, ${weldJoints.d2}) else greatest(${weldJoints.d1}, ${weldJoints.d2}) end`
-  // The first entry also applies below its first boundary, matching the UI.
-  // A balanced decision tree needs log2(N) comparisons per joint, rather than
-  // walking a large uploaded table again for each of 200,000 joints.
-  const entryIndex = (dimension: SQLWrapper) => {
-    const locate = (first: number, last: number): SQL => {
-      if (first === last) return sql`${first}`
-      const middle = Math.ceil((first + last) / 2)
-      return sql`case when ${dimension} < ${table.entries[middle].diameter}
-        then ${locate(first, middle - 1)} else ${locate(middle, last)} end`
-    }
-    return sql`(case when ${dimension} is null then null else ${locate(0, table.entries.length - 1)} end)::integer`
-  }
+  // PostgreSQL searches the sorted thresholds directly. Keep the configuration
+  // in one array parameter: a generated CASE tree made JIT compilation grow
+  // with table size. The first entry also applies below its first boundary.
+  const boundaries = table.entries.map(entry => entry.diameter)
+  const entryIndex = (dimension: SQLWrapper) => sql`case when ${dimension} is null then null
+    else greatest(0, width_bucket(${dimension}::numeric, ${sql.param(boundaries)}::numeric[]) - 1) end`
   // Bind the options once as jsonb, then inspect only the selected entry's
   // options. Flattening every option into CASE made large tables much slower.
   const options = JSON.stringify(table.entries.map(entry => entry.options.map(option => ({
@@ -60,7 +56,8 @@ export function buildRkExposureSchemeSql(table: RkExposureTableSettings | null):
   // OFFSET 0 keeps the scalar projection from being flattened: parse a defect
   // description once, not once per configured option. Table parameters grow
   // linearly rather than duplicating the diameter CASE for every option.
-  return sql<string>`(select case when ${currentEntry} <> ${confirmedEntry} then ${RK_EXPOSURE_REVIEW_LABEL}
+  return sql<string>`(select case when (${sql.param(boundaries)}::numeric[])[${currentEntry} + 1]
+    <> (${sql.param(boundaries)}::numeric[])[${confirmedEntry} + 1] then ${RK_EXPOSURE_REVIEW_LABEL}
     else coalesce(${configured}, ${customOrEmpty}) end
     from (select ${entryIndex(diameter)} as "current_entry",
       ${entryIndex(weldJoints.rkExposureConfirmedDiameter)} as "confirmed_entry",

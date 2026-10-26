@@ -219,6 +219,9 @@ export async function loadIndexedSystemDocumentHistoryGrid(
       columnFilters: request.columnFilters, filterKeys: SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS,
       request, idKind: 'system', sortExpressions,
       defaultOrder: sql`"date" desc, "title" desc, "documentId" desc`,
+      // This indexed row reads only generated_documents. Its existing xmin
+      // token changes with metadata, specialists and membership touches too.
+      revisionValue: sql`"documentId"::text || ':' || "documentVersion"`,
     }))
     return normalizeDocumentHistoryGridResult(result.rows[0], request, 'system', record => toIndexedSystemDocumentHistorySummary(record, request.type), systemDocumentGridValue)
   })
@@ -2097,6 +2100,9 @@ function buildIndexedSystemDocumentHistoryBaseQuery(
             )
           : inArray(generatedDocuments.type, storageTypes)}
       ) as "document_record"
+      -- Parse stored metadata once per document. Inlining this projection
+      -- repeated text-to-jsonb parsing for every displayed/filter field.
+      offset 0
     ) as "document_source"
   `
 }

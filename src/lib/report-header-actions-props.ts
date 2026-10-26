@@ -8,6 +8,7 @@ type CreateReportHeaderActionsPropsOptions = {
   onCreateWeldJoint: () => void
   onOpenLineProgram?: () => void
   importDisabled: boolean
+  currentReportDisabled?: boolean
   isWeldingJournalShowMenuOpen: boolean
   onToggleWeldingJournalShowMenu: () => void
   isWeldingJournalGenerateMenuOpen: boolean
@@ -78,6 +79,7 @@ export function createReportHeaderActionsProps({
   onCreateWeldJoint,
   onOpenLineProgram,
   importDisabled,
+  currentReportDisabled,
   isWeldingJournalShowMenuOpen,
   onToggleWeldingJournalShowMenu,
   isWeldingJournalGenerateMenuOpen,
@@ -147,6 +149,7 @@ export function createReportHeaderActionsProps({
     onOpenImportDialog,
     onCreateWeldJoint,
     importDisabled,
+    currentReportDisabled,
     isWeldingJournalShowMenuOpen,
     onToggleWeldingJournalShowMenu,
     isWeldingJournalGenerateMenuOpen,

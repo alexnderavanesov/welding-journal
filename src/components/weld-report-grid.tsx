@@ -86,10 +86,9 @@ function ReportGrid(props: WeldReportGridProps) {
   const pageStage = useRef<HTMLDivElement>(null)
   useJournalDocumentScroll(pageTrack, pageStage, frame, api, true)
   useJournalResizeBuffer(api, true)
-  const resultMotion = useGridResultMotion(frame, { opacity: .84, duration: 150 })
+  const resultMotion = useGridResultMotion(frame, { opacity: .84, duration: 150, ready: rowsReady })
   const resultScope = useMemo(() => JSON.stringify([props.queryIdentity, columnFilters, sort]), [props.queryIdentity, columnFilters, sort])
   const groupMotion = useJournalGroupMotion(frame, true, resultScope)
-  useEffect(() => { if (!rowsReady) resultMotion.cancel() }, [rowsReady, resultMotion])
   const focus = useJournalGridFocus(api, frame)
   const [pointerMenu, setPointerMenu] = useState(false)
   const setMenuInput = (pointer: boolean) => {

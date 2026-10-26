@@ -28,6 +28,13 @@ test('статистика: план 9 из 11, затем 11 → 9 → 10, фи
     const before = calls.filter(name => name.startsWith('getStatisticsServerResult_')).length
     await page.getByRole('button', { name: 'Полинейная сводка', exact: true }).click()
     await page.getByRole('button', { name: 'Стыки', exact: true }).click()
+    const grid = page.locator('[data-statistics-grid="lines"]')
+    await grid.locator('.ag-header-cell[col-id="projectTitle"] .ag-header-cell-filter-button').click()
+    const filter = page.locator('.ag-filter').filter({ visible: true })
+    await filter.getByRole('checkbox', { name: 'Выбрать все', exact: true }).uncheck()
+    await filter.getByRole('textbox').fill(project)
+    await filter.getByRole('checkbox', { name: project, exact: true }).check()
+    await filter.getByRole('button', { name: 'Применить', exact: true }).click()
     await expect(page.getByText(`${completed} из ${count}`, { exact: true })).toBeVisible()
     await expect(page.getByText('По датам сварки, без оценки годности НК', { exact: true })).toBeVisible()
     const after = calls.filter(name => name.startsWith('getStatisticsServerResult_')).length

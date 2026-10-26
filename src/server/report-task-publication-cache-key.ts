@@ -24,6 +24,7 @@ export type ReportTaskPublicationCacheIdentity = {
 export async function getReportTaskPublicationCacheIdentity(
   columnFilters: Readonly<Record<string, string>> = {},
   fieldKey?: string,
+  db?: Pick<ReturnType<typeof requireDb>, 'execute'>,
 ): Promise<ReportTaskPublicationCacheIdentity> {
   if (fieldKey !== DISPATCHER_TASKS_FIELD_KEY &&
       !String(columnFilters[DISPATCHER_TASKS_FIELD_KEY] ?? '').trim() &&
@@ -32,7 +33,7 @@ export async function getReportTaskPublicationCacheIdentity(
   // One statement gives both singleton states the same database snapshot.
   // Format timestamps in SQL: Date objects collapse in stableSerialize, and
   // JS millisecond conversion would discard PostgreSQL microsecond precision.
-  const result = await requireDb().execute<ReportTaskPublicationFingerprint>(sql`
+  const result = await (db ?? requireDb()).execute<ReportTaskPublicationFingerprint>(sql`
     select
       ${dispatcherTaskIndexState.computedRevision} as "activeComputedRevision",
       to_char(${dispatcherTaskIndexState.computedAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "activeComputedAt",

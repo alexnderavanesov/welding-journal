@@ -220,6 +220,10 @@ export function useDispatcherTaskSnapshot({
       DISPATCHER_TASK_SNAPSHOT_QUERY_KEY,
       (current) => canPublishDispatcherSnapshot(refreshed, current) ? refreshed : current,
     )
+    // Publishing changes computedAt and therefore the observed refresh key.
+    // Its old-key effect may never run; explicit refresh owns this notification.
+    // Grid subscribers coalesce it with an automatic refresh notification.
+    if (refreshed.isFresh) void invalidateWeldPageQueries(queryClient)
     return refreshed.isFresh ? refreshed.computedRevision : undefined
   }
   useDispatcherActivityCheck({ enabled: enabled && activityEnabled, workspaceOpen, check: async () => {

@@ -1,16 +1,52 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { useReportOutputActions } from '@/lib/use-report-output-actions'
+import { getReportOutputBuilder } from './report-output-definition'
+import type { WeldField } from './weld-fields'
 import type { ActiveReport } from '@/lib/home-state'
 import { FIELD_BY_KEY, VISIBLE_FIELDS, type WeldInput } from '@/lib/weld-fields'
 import { DEFAULT_JOURNAL_APPEARANCE, writeJournalGridStorage } from './welding-journal-grid-state'
 
+const stamp = '2026-10-25T18:30:00.000Z'
+const snapshot = (rows: WeldInput[] = [], generatedAt = stamp, report: 'weldingJournal' | 'lnk' | 'heatTreatment' = 'weldingJournal', fields = VISIBLE_FIELDS) => ({
+  report: { ...getReportOutputBuilder({ report, fieldKeys: fields.map(field => field.key) })(rows).report, generatedAt },
+  generatedAt, sourceRows: rows.length, truncated: false, onDownloadExcel: rows.length ? vi.fn(async () => {}) : undefined,
+})
+
 function params(activeReport: ActiveReport = 'weldingJournal') {
-  return { activeReport, activeTitle: 'Отчёт', reportExportFieldsRef: { current: () => VISIBLE_FIELDS }, loadLnkRows: vi.fn(async () => []),
-    loadPstoRows: vi.fn(async () => []), loadWeldingJournalRows: vi.fn<() => Promise<WeldInput[]>>(async () => []),
+  return { activeReport, activeTitle: 'Отчёт', reportExportFieldsRef: { current: () => VISIBLE_FIELDS }, loadLnkRows: vi.fn(async () => snapshot() as never),
+    loadPstoRows: vi.fn(async () => snapshot() as never), loadWeldingJournalRows: vi.fn<(kind: string, fields?: WeldField[]) => Promise<ReturnType<typeof snapshot>>>(async () => snapshot()),
     setIsLnkShowMenuOpen: vi.fn(), setIsPstoShowMenuOpen: vi.fn(), setIsWeldingJournalShowMenuOpen: vi.fn(), setMessage: vi.fn() }
 }
 afterEach(() => vi.restoreAllMocks())
+
+it('retains a prepared snapshot and its time while rows refresh, then reads anew on reopening', async () => {
+  const p = params()
+  let finish!: (value: ReturnType<typeof snapshot>) => void
+  p.loadWeldingJournalRows.mockReturnValueOnce(new Promise(done => { finish = done }))
+  const { result, rerender } = renderHook(({ ready }) => useReportOutputActions({ ...p, currentRowsReady: ready, outputContext: 'same-selection' }), {
+    initialProps: { ready: true },
+  })
+  let opening!: Promise<void>
+  act(() => { opening = result.current.openWeldingJournalCurrentReport() })
+  rerender({ ready: false })
+  await act(async () => { finish(snapshot([{ joint: 'BEFORE' }])); await opening })
+  const shown = result.current.reportPreviewProps!.report
+  const download = result.current.reportPreviewProps!.onDownloadExcel
+  rerender({ ready: true })
+  act(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
+  expect(result.current.reportPreviewProps!.report).toBe(shown)
+  expect(result.current.reportPreviewProps!.onDownloadExcel).toBe(download)
+  expect(result.current.reportPreviewProps!.generatedAt).toBe(stamp)
+  expect(p.loadWeldingJournalRows).toHaveBeenCalledTimes(1)
+  act(() => result.current.reportPreviewProps!.onClose())
+  const freshTime = '2026-10-25T18:31:00.000Z'
+  p.loadWeldingJournalRows.mockResolvedValueOnce(snapshot([{ joint: 'AFTER' }], freshTime))
+  await act(async () => result.current.openWeldingJournalCurrentReport())
+  expect(result.current.reportPreviewProps!.generatedAt).toBe(freshTime)
+  expect(result.current.reportPreviewProps!.report?.tables?.[0].rows[0]).toContain('AFTER')
+  expect(p.loadWeldingJournalRows).toHaveBeenCalledTimes(2)
+})
 
 it('exports LNK live field order with independent method/stage values without changing source facts', async () => {
   const p = params('lnk')
@@ -18,7 +54,7 @@ it('exports LNK live field order with independent method/stage values without ch
     preHeatTreatmentControls: [{ id: 11, weldJointId: 1, method: 'РК', requestName: 'PRE', result: 'вырез', conclusionDate: '2026-09-02' }] }
   const fields = ['preRkResult', 'joint', 'rkResult', 'vikResult', 'preRkConclusionDate'].map(key => FIELD_BY_KEY.get(key as never)!)
   const readFields = vi.fn(report => report === 'lnk' ? fields : null)
-  const { result } = renderHook(() => useReportOutputActions({ ...p, reportExportFieldsRef: { current: readFields }, loadLnkRows: async () => [source as never] }))
+  const { result } = renderHook(() => useReportOutputActions({ ...p, reportExportFieldsRef: { current: readFields }, loadLnkRows: async (_kind, fields) => snapshot([source], stamp, 'lnk', fields as typeof VISIBLE_FIELDS) }))
   await act(async () => { await result.current.openLnkCurrentReport() })
   expect(readFields).toHaveBeenCalledExactlyOnceWith('lnk')
   expect(result.current.reportPreviewProps?.report?.tables?.[0]).toMatchObject({ columns: fields.map(field => field.label),
@@ -42,7 +78,7 @@ it('exports PSTO visible fields in screen order with current repeat values, with
     pstoRepeatCycles: [{ id: 21, weldJointId: 1, sequence: 2, pstoRequest: 'NEW', pstoRequestDate: '2026-10-18', pstoResult: 'проведено', tvmtResult: 'годен' }] }
   const fields = ['tvmtResult', 'joint', 'pstoRequest', 'pstoRequestDate'].map(key => FIELD_BY_KEY.get(key as never)!)
   const readFields = vi.fn(report => report === 'heatTreatment' ? fields : null)
-  const { result } = renderHook(() => useReportOutputActions({ ...p, reportExportFieldsRef: { current: readFields }, loadPstoRows: async () => [source as never] }))
+  const { result } = renderHook(() => useReportOutputActions({ ...p, reportExportFieldsRef: { current: readFields }, loadPstoRows: async (_kind, fields) => snapshot([source], stamp, 'heatTreatment', fields as typeof VISIBLE_FIELDS) }))
   await act(async () => { await result.current.openPstoCurrentReport() })
   expect(readFields).toHaveBeenCalledExactlyOnceWith('heatTreatment')
   expect(result.current.reportPreviewProps?.report?.tables?.[0]).toMatchObject({ columns: fields.map(field => field.label), rows: [['годен', 'S1', 'NEW', '18.10.2026']] })
@@ -67,13 +103,13 @@ it('captures live journal columns even when persisting their order fails, before
   writeJournalGridStorage({ ...stored, columns: [{ colId: 'line' }, { colId: 'joint' }] })
   const p = params()
   let visible = [FIELD_BY_KEY.get('line')!, FIELD_BY_KEY.get('joint')!]
-  let resolve!: (rows: WeldInput[]) => void
+  let resolve!: (rows: ReturnType<typeof snapshot>) => void
   p.loadWeldingJournalRows.mockReturnValueOnce(new Promise(done => { resolve = done }))
   const { result } = renderHook(() => useReportOutputActions({ ...p, reportExportFieldsRef: { current: () => visible } }))
   let opening!: Promise<void>
   act(() => { opening = result.current.openWeldingJournalCurrentReport() })
   visible = [FIELD_BY_KEY.get('projectTitle')!]
-  await act(async () => { resolve([{ line: 'LIVE', joint: 'F001', projectTitle: 'HIDDEN' } as WeldInput]); await opening })
+  await act(async () => { resolve(snapshot([{ line: 'LIVE', joint: 'F001', projectTitle: 'HIDDEN' } as WeldInput], stamp, 'weldingJournal', p.loadWeldingJournalRows.mock.calls[0][1] as typeof VISIBLE_FIELDS)); await opening })
   expect(result.current.reportPreviewProps?.report?.tables?.[0].columns).toEqual(['Линия', 'Стык'])
   expect(result.current.reportPreviewProps?.report?.tables?.[0].rows).toEqual([['LIVE', 'F001']])
 })
@@ -108,8 +144,9 @@ it.each([
   expect(result.current.reportPreviewProps).toBeNull()
   expect(p[loader]).not.toHaveBeenCalled()
   await act(async () => { await result.current[action]() })
-  expect(p[loader]).toHaveBeenCalledExactlyOnceWith(kind)
+  expect(p[loader]).toHaveBeenCalledExactlyOnceWith(...(kind === 'current' ? [kind, VISIBLE_FIELDS] : [kind]))
   expect(result.current.reportPreviewProps?.report?.emptyMessage).toBeTruthy()
+  expect(result.current.reportPreviewProps?.report?.generatedAt).toBe(result.current.reportPreviewProps?.generatedAt)
   expect(result.current.reportPreviewProps?.onDownloadExcel).toBeUndefined()
   expect(result.current.reportPreviewProps?.error).toBe('')
   rerender()
@@ -120,7 +157,7 @@ it.each([
 
 it('keeps all 501 rows and date formatting, without generating Excel on open', async () => {
   const p = params()
-  p.loadWeldingJournalRows.mockResolvedValue(Array.from({ length: 501 }, (_, i) => ({ joint: 'F' + (i + 1), weldDate: '2026-09-29' }) as WeldInput))
+  p.loadWeldingJournalRows.mockResolvedValue(snapshot(Array.from({ length: 501 }, (_, i) => ({ joint: 'F' + (i + 1), weldDate: '2026-09-29' }) as WeldInput)))
   const { result } = renderHook(() => useReportOutputActions(p))
   await act(async () => { await result.current.openWeldingJournalCurrentReport() })
   const report = result.current.reportPreviewProps?.report
@@ -132,7 +169,7 @@ it('keeps all 501 rows and date formatting, without generating Excel on open', a
 
 it('opens loading immediately, coalesces duplicate clicks and ignores closed responses', async () => {
   const p = params()
-  let resolve!: (rows: WeldInput[]) => void
+  let resolve!: (rows: ReturnType<typeof snapshot>) => void
   p.loadWeldingJournalRows.mockReturnValueOnce(new Promise(done => { resolve = done }))
   const { result } = renderHook(() => useReportOutputActions(p))
   act(() => { void result.current.openWeldingJournalCurrentReport(); void result.current.openWeldingJournalCurrentReport() })
@@ -141,7 +178,7 @@ it('opens loading immediately, coalesces duplicate clicks and ignores closed res
   act(() => result.current.reportPreviewProps?.onClose())
   await act(async () => { await result.current.openWeldingJournalWaitingWeldReport() })
   const title = result.current.reportPreviewProps?.report?.title
-  await act(async () => resolve([{ joint: 'OLD' } as WeldInput]))
+  await act(async () => resolve(snapshot([{ joint: 'OLD' } as WeldInput])))
   expect(result.current.reportPreviewProps?.report?.title).toBe(title)
   expect(p.loadWeldingJournalRows).toHaveBeenCalledTimes(2)
 })
@@ -174,9 +211,9 @@ it.each([
 
 it.each(['resolve', 'reject'] as const)('ignores an old export %s after filter A → B → A without replacing the new snapshot', async (outcome) => {
   const p = params()
-  let resolve!: (rows: WeldInput[]) => void, reject!: (reason: Error) => void
+  let resolve!: (rows: ReturnType<typeof snapshot>) => void, reject!: (reason: Error) => void
   p.loadWeldingJournalRows.mockReturnValueOnce(new Promise((done, fail) => { resolve = done; reject = fail }))
-  p.loadWeldingJournalRows.mockResolvedValueOnce([{ joint: 'NEW-A' } as WeldInput])
+  p.loadWeldingJournalRows.mockResolvedValueOnce(snapshot([{ joint: 'NEW-A' } as WeldInput]))
   const { result, rerender } = renderHook(({ context }) => useReportOutputActions({ ...p, outputContext: context }), {
     initialProps: { context: 'filter-A' },
   })
@@ -187,15 +224,15 @@ it.each(['resolve', 'reject'] as const)('ignores an old export %s after filter A
   expect(result.current.reportPreviewProps).toBeNull()
   rerender({ context: 'filter-A' })
   await act(async () => { await result.current.openWeldingJournalCurrentReport() })
-  const snapshot = result.current.reportPreviewProps?.report
+  const shown = result.current.reportPreviewProps?.report
   const download = result.current.reportPreviewProps?.onDownloadExcel
-  expect(snapshot?.tables?.[0].rows[0]).toContain('NEW-A')
+  expect(shown?.tables?.[0].rows[0]).toContain('NEW-A')
   await act(async () => {
-    if (outcome === 'resolve') resolve([{ joint: 'OLD-A' } as WeldInput])
+    if (outcome === 'resolve') resolve(snapshot([{ joint: 'OLD-A' } as WeldInput]))
     else reject(new Error('Old filter export failed'))
     await oldOpening
   })
-  expect(result.current.reportPreviewProps?.report).toBe(snapshot)
+  expect(result.current.reportPreviewProps?.report).toBe(shown)
   expect(result.current.reportPreviewProps?.onDownloadExcel).toBe(download)
   expect(result.current.reportPreviewProps?.error).toBe('')
   expect(p.loadWeldingJournalRows).toHaveBeenCalledTimes(2)

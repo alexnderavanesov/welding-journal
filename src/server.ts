@@ -1,4 +1,5 @@
 import defaultEntry from '@tanstack/react-start/server-entry'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createReleaseRequestGate } from './server/release-request-gate'
 
 const releaseGate = createReleaseRequestGate(async () => {
@@ -67,7 +68,12 @@ function clientClosedResponse() {
 }
 
 function isTransportAborted(request: Request) {
-  return request.signal.aborted && isTransportCancellation(request.signal.reason)
+  if (request.signal.aborted) return isTransportCancellation(request.signal.reason)
+  // srvx creates its signal lazily. A socket closed while the release gate was
+  // pending may predate that listener; use the transport's actual close state.
+  // A normally completed IncomingMessage can be destroyed without being aborted.
+  const node = (request as Request & { runtime?: { node?: { req?: IncomingMessage; res?: ServerResponse } } }).runtime?.node
+  return node?.req?.aborted === true || node?.res?.destroyed === true && node.res.writableEnded === false
 }
 
 function isTransportCancellation(reason: unknown) {

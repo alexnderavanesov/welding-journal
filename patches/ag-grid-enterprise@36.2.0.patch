@@ -1,0 +1,62 @@
+diff --git a/dist/package/main.cjs.js b/dist/package/main.cjs.js
+index ca48c74cd62d11a24c0574944e4ee3c8a3b47587..311fcce6916a7fa9eedd7d1cdfcf0b5b28277792 100644
+--- a/dist/package/main.cjs.js
++++ b/dist/package/main.cjs.js
+@@ -6457,11 +6457,13 @@ var AgVirtualList = class extends import_ag_stack14.AgTabGuardComp {
+     if (this.isScrolling) {
+       return;
+     }
++    const focusedElement = this.getGui().ownerDocument.activeElement;
+     this.isScrolling = true;
+     this.ensureIndexVisible(rowNumber);
+     (0, import_ag_stack14._requestAnimationFrame)(this.beans, () => {
+       this.isScrolling = false;
+-      if (!this.isAlive()) {
++      // A newer focus action wins over this delayed list restoration.
++      if (!this.isAlive() || this.getGui().ownerDocument.activeElement !== focusedElement) {
+         return;
+       }
+       const renderedRow = this.renderedRows.get(rowNumber);
+@@ -29417,9 +29419,10 @@ var SetFilter = class extends import_ag_grid_community103.ProvidedFilter {
+     if (rowIndex == null) {
+       return Promise.resolve();
+     }
++    const focusedElement = this.getGui().ownerDocument.activeElement;
+     return new Promise((res) => {
+       window.setTimeout(() => {
+-        if (this.isAlive()) {
++        if (this.isAlive() && this.getGui().ownerDocument.activeElement === focusedElement) {
+           this.virtualList.focusRow(rowIndex);
+         }
+         res();
+diff --git a/dist/package/main.esm.mjs b/dist/package/main.esm.mjs
+index 333e610ea40b34a8a0354c68ee900cca03529cdc..218fe5f1267a0b1c654c35203be7b366622a671f 100644
+--- a/dist/package/main.esm.mjs
++++ b/dist/package/main.esm.mjs
+@@ -6649,11 +6649,13 @@ var AgVirtualList = class extends __agSuperclass_AgTabGuardComp {
+     if (this.isScrolling) {
+       return;
+     }
++    const focusedElement = this.getGui().ownerDocument.activeElement;
+     this.isScrolling = true;
+     this.ensureIndexVisible(rowNumber);
+     _requestAnimationFrame(this.beans, () => {
+       this.isScrolling = false;
+-      if (!this.isAlive()) {
++      // A newer focus action wins over this delayed list restoration.
++      if (!this.isAlive() || this.getGui().ownerDocument.activeElement !== focusedElement) {
+         return;
+       }
+       const renderedRow = this.renderedRows.get(rowNumber);
+@@ -29899,9 +29901,10 @@ var SetFilter = class extends __agSuperclass_ProvidedFilter2 {
+     if (rowIndex == null) {
+       return Promise.resolve();
+     }
++    const focusedElement = this.getGui().ownerDocument.activeElement;
+     return new Promise((res) => {
+       window.setTimeout(() => {
+-        if (this.isAlive()) {
++        if (this.isAlive() && this.getGui().ownerDocument.activeElement === focusedElement) {
+           this.virtualList.focusRow(rowIndex);
+         }
+         res();

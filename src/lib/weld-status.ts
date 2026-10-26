@@ -126,6 +126,7 @@ export function getFinalStatusErrorReason(record: WeldInput) {
 }
 
 export function normalizeResultStatus(value: unknown) {
+  if (value == null || value === '') return null
   const text = String(value ?? '').trim().toLowerCase().replace(/ · назначение отменено$/, '')
   if (text === 'да') return 'годен'
   if (text === 'проведено') return 'годен'

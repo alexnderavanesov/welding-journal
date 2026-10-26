@@ -8,7 +8,7 @@ export function getReportRowCount(report: PrintableReport) {
 }
 
 export function getReportPrintRestriction(report: PrintableReport) {
-  const rows = getReportRowCount(report)
+  const rows = report.preview?.totalRows ?? getReportRowCount(report)
   return rows > REPORT_PRINT_ROW_LIMIT
     ? `В отчёте ${rows} строк. Печать в приложении доступна до ${REPORT_PRINT_ROW_LIMIT} строк. Скачайте Excel для печати или уточните фильтры.`
     : ''

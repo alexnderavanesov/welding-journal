@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import * as matching from '@/lib/technology-card-matching'
 import { DEFAULT_DATA_LIST_SETTINGS } from '@/lib/data-list-settings'
 import { createTechnologyCardReview } from '@/lib/technology-card-review'
 import { buildTechnologyCardTasks } from '@/lib/technology-card-tasks'
@@ -14,6 +15,48 @@ const row: WeldRow = { id: 10, joint: 'F10', weldDate: '2026-10-01', weldingMeth
 const review = (cards = [card]) => createTechnologyCardReview({ cards, names: [{ name: 'Старое название', cardId: 1 }, { name: card.name, cardId: 1 }] }, DEFAULT_DATA_LIST_SETTINGS)
 
 describe('DZ-06 technology cards', () => {
+  it('reuses equivalent applicability checks but observes every changed input and a new snapshot', () => {
+    const spy = vi.spyOn(matching, 'checkTechnologyCardApplicability')
+    try {
+      const check = review()
+      const stored = { ...row, technologyCardNumber: card.name }
+      const first = check(stored)
+      for (let i = 0; i < 200; i++) expect(check({ ...stored })).toEqual(first)
+      expect(spy).toHaveBeenCalledTimes(1)
+      for (const change of [{ technologyCardNumber: 'Неизвестная' }, { weldingMethod: 'РД' }, { connectionType: 'У19' },
+        { materialGroup: 'М03' }, { d1: 1 }, { d2: 1 }, { t1: 1 }, { t2: 1 }, { pstoRequired: 'неизвестно' }]) {
+        Object.assign(stored, row, { technologyCardNumber: card.name, pstoRequired: undefined }, change)
+        expect(check(stored)).toEqual(review()(stored))
+        expect(check(stored).status).not.toBe('valid')
+      }
+      expect(review([{ ...card, diameterFrom: 100 }])({ ...row, technologyCardNumber: card.name }).status).toBe('mismatch')
+      expect(createTechnologyCardReview({ cards: [card], names: [{ name: card.name, cardId: card.id }] },
+        { ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: [] })({ ...row, technologyCardNumber: card.name }).status).toBe('mismatch')
+      first.cards.length = 0
+      expect(check({ ...row, technologyCardNumber: card.name }).cards).toHaveLength(1)
+    } finally { spy.mockRestore() }
+  })
+
+  it('does not equate invalid numeric names with string identifiers', () => {
+    const numericName = { ...card, name: '123' }
+    const check = createTechnologyCardReview({ cards: [numericName], names: [{ name: '123', cardId: card.id }] }, DEFAULT_DATA_LIST_SETTINGS)
+    expect(check({ ...row, technologyCardNumber: '123' }).status).toBe('valid')
+    expect(check({ ...row, technologyCardNumber: 123 as never }).status).toBe('single')
+  })
+
+  it('bounds retained applicability profiles without skipping checks beyond the bound', () => {
+    const spy = vi.spyOn(matching, 'checkTechnologyCardApplicability')
+    try {
+      const check = review()
+      for (let i = 0; i < 520; i++) check({ ...row, technologyCardNumber: card.name, d1: i + 1 })
+      expect(spy).toHaveBeenCalledTimes(520)
+      check({ ...row, technologyCardNumber: card.name, d1: 1 })
+      expect(spy).toHaveBeenCalledTimes(520)
+      check({ ...row, technologyCardNumber: card.name, d1: 520 })
+      expect(spy).toHaveBeenCalledTimes(521)
+    } finally { spy.mockRestore() }
+  })
+
   it('explains none / one / several / incomplete / unknown without modifying saved facts', () => {
     const before = structuredClone(row)
     expect(review([])(row).status).toBe('none')

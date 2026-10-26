@@ -415,6 +415,7 @@ function normalizeValue(value: unknown) {
 }
 
 function normalizeResult(value: unknown) {
+  if (value == null || value === '') return ''
   return normalizeValue(value).toLocaleLowerCase('ru-RU')
 }
 

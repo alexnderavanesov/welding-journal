@@ -39,16 +39,33 @@ function cycleExecutionWhere(cycle: { [Key in keyof CycleSqlFields]: SQLWrapper 
 }
 
 /** One definition of current-cycle identity for values and the cycle summary. */
-export function buildPstoCurrentCycleQuery(primaryColumns: SQL, repeatColumns: SQL) {
-  return sql`select * from (
-    select ${primaryColumns}, 1 as "sequence", 0 as "id", ${cycleExecutionWhere(weldJoints)} as "performed"
-    union all
-    select ${repeatColumns}, ${pstoRepeatCycles.sequence}, ${pstoRepeatCycles.id}, ${cycleExecutionWhere(pstoRepeatCycles)}
-    from ${pstoRepeatCycles}
-    where ${pstoRepeatCycles.weldJointId} = ${weldJoints.id} and ${pstoRepeatCycles.sequence} >= 2
-  ) as "psto_display_cycles"
-  order by case when ${isActive()} then false else "psto_display_cycles"."performed" end desc,
-    "psto_display_cycles"."sequence" desc, "psto_display_cycles"."id" desc limit 1`
+export function buildPstoCurrentCycleQuery(
+  keys: readonly (typeof CYCLE_FIELD_KEYS)[number][],
+  primaryOverride: Partial<Record<(typeof CYCLE_FIELD_KEYS)[number], SQL>> = {},
+) {
+  const repeat = (key: string) => sql`${sql.identifier('psto_selected_repeat')}.${sql.identifier(key)}`
+  const useRepeat = sql`"psto_cycle_choice"."use_repeat"`
+  const primaryPerformed = cycleExecutionWhere(weldJoints)
+  // Look up at most one repeat; joints without repeats use their primary
+  // columns directly instead of sorting a union of cycles for every field.
+  // An inactive request-only repeat cannot displace performed primary history.
+  return sql`select ${sql.join(keys.map(key => sql`case when ${useRepeat} then ${repeat(key)}
+      else ${primaryOverride[key] ?? textValue(weldJoints[key])} end as ${sql.identifier(key)}`), sql`, `)},
+    case when ${useRepeat} then ${repeat('sequence')} else 1 end as "sequence",
+    case when ${useRepeat} then ${repeat('id')} else 0 end as "id",
+    case when ${useRepeat} then ${repeat('performed')} else ${primaryPerformed} end as "performed"
+    from (select 1) as "psto_primary"
+    left join lateral (
+      select ${sql.join(keys.map(key => sql`${textValue(pstoRepeatCycles[key])} as ${sql.identifier(key)}`), sql`, `)},
+        ${pstoRepeatCycles.sequence} as "sequence", ${pstoRepeatCycles.id} as "id",
+        ${cycleExecutionWhere(pstoRepeatCycles)} as "performed"
+      from ${pstoRepeatCycles}
+      where ${pstoRepeatCycles.weldJointId} = ${weldJoints.id} and ${pstoRepeatCycles.sequence} >= 2
+      order by case when ${isActive()} then false else ${cycleExecutionWhere(pstoRepeatCycles)} end desc,
+        ${pstoRepeatCycles.sequence} desc, ${pstoRepeatCycles.id} desc limit 1
+    ) as "psto_selected_repeat" on true
+    cross join lateral (select (${repeat('id')} is not null and
+      (${isActive()} or ${repeat('performed')} or not ${primaryPerformed})) as "use_repeat" offset 0) as "psto_cycle_choice"`
 }
 
 export function buildReportHasRejectedLnkSql() {
@@ -75,9 +92,8 @@ export function buildPstoCurrentReportValueSql(fieldKey: WeldFieldKey): SQL<stri
       or ${reportResultSql(weldJoints.pstoResult)} in ('ожидает', 'ожидает заявку'))
     then case when ${textValue(weldJoints.pstoRequest)} <> '' then 'ожидает' else 'ожидает заявку' end
     else ${textValue(weldJoints.pstoResult)} end` : textValue(weldJoints[cycleKey])
-  const currentValue = sql<string>`(select "psto_current_value"."value" from (${buildPstoCurrentCycleQuery(
-    sql`${primaryValue} as "value"`, sql`${textValue(pstoRepeatCycles[cycleKey])} as "value"`,
-  )}) as "psto_current_value")`
+  const currentValue = sql<string>`(select "psto_current_value".${sql.identifier(cycleKey)}
+    from (${buildPstoCurrentCycleQuery([cycleKey], { [cycleKey]: primaryValue })}) as "psto_current_value")`
   if (fieldKey !== 'pstoResult') return currentValue
 
   const value = sql`"psto_display_current"."value"`
@@ -87,8 +103,8 @@ export function buildPstoCurrentReportValueSql(fieldKey: WeldFieldKey): SQL<stri
     when ${isCancelled()} then case
       when ${normalizedResult} in ('проведено', 'да', 'проведено (отменен)') then 'проведено · назначение отменено'
       else 'отменен' end
-    when ${isActive()} and ${hasRejectedLnk}
-      and ${normalizedResult} not in ('проведено', 'проведено (отменен)', 'отменен') then 'нет потребности'
+    when ${isActive()} and case when ${normalizedResult} in ('проведено', 'проведено (отменен)', 'отменен')
+      then false else ${hasRejectedLnk} end then 'нет потребности'
     else ${value} end
-    from (select ${currentValue} as "value") as "psto_display_current")`
+    from (select ${currentValue} as "value" offset 0) as "psto_display_current")`
 }

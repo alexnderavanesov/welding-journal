@@ -586,8 +586,15 @@ scaleTest('document grid real 200k: bounded SQL, browser blocks, DOM and memory 
         statements = []
         const start = performance.now(), result = await read(kind, { ...scenario.request, search })
         const bytes = Buffer.byteLength(JSON.stringify(result))
-        expect(result.total).toBe(2000)
+        // Selected-only reads use explicit IDs independently of the current
+        // search. Their registry total includes the 250 ordinary fixture
+        // documents; only the returned selection must remain exactly scoped.
+        expect(result.total).toBe(scenario.request.selectionOnly ? 2250 : 2000)
         expect(result.rows).toHaveLength(scenario.expected)
+        if (scenario.request.selectionOnly) {
+          expect(new Set(result.rows.map(row => row.id))).toEqual(new Set(scenario.request.selectedIds))
+          expect(result.rowCount).toBe(scenario.expected)
+        }
         expect(statements).toHaveLength(kind === 'generated' ? 2 : 5)
         expect(statements.filter(statement => statement.includes('"block_rows" as materialized'))).toHaveLength(1)
         expect(bytes).toBeLessThan(1_000_000)
@@ -640,6 +647,9 @@ scaleTest('document grid real 200k: bounded SQL, browser blocks, DOM and memory 
         await expect(grid.locator('.document-grid-footer').getByText('Загрузка…', { exact: true })).toBeHidden()
         await expect(grid.locator('.ag-row-loading')).toHaveCount(0)
         await page.waitForLoadState('networkidle')
+        // Network idle can precede AG's outgoing-row teardown. Require those
+        // hidden rows to be removed, then measure the steady viewport/cache.
+        await expect(grid.locator('.ag-row.ag-opacity-zero[row-id^="document:"]')).toHaveCount(0)
         await cdp.send('HeapProfiler.collectGarbage')
         const heap = await cdp.send('Runtime.getHeapUsage')
         const dom = await cdp.send('Memory.getDOMCounters')
@@ -1712,6 +1722,23 @@ test('document transfer: full IDs, selected group counts, complete range summari
     const id = Number(String(selected.ids![0]).replace('system-document:', ''))
     await withE2eDatabase(async db => { await db.query('update generated_documents set title=title || $1 where id=$2', [' changed', id]) })
     await expect(read(kind, { startRow: 100, endRow: 200, revision: first.revision })).rejects.toThrow('Данные реестра изменились')
+  }
+})
+
+test('system registry revision covers metadata and parent touches outside the visible block', async () => {
+  const all = await read('system', { idsOnly: true })
+  const id = Number(String(all.ids!.at(-1)).replace('system-document:', ''))
+  for (const assignment of [
+    `source_metadata=jsonb_set(source_metadata::jsonb,'{label}',to_jsonb('Обновлённая подпись'::text))::text`,
+    `specialists=jsonb_build_object('first',jsonb_build_object('name','Другой специалист'))`,
+    // A parent touch also protects link-only changes; the visible fields and
+    // the wall-clock timestamp need not differ for the editor token to change.
+    'updated_at=updated_at',
+  ]) {
+    const snapshot = await read('system')
+    await expect(read('system', { revision: snapshot.revision })).resolves.toMatchObject({ total: 250 })
+    await withE2eDatabase(db => db.query(`update generated_documents set ${assignment} where id=$1`, [id]))
+    await expect(read('system', { revision: snapshot.revision, selectedIds: [all.ids!.at(-1)!], selectionOnly: true })).rejects.toThrow('Данные реестра изменились')
   }
 })
 

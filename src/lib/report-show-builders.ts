@@ -103,9 +103,9 @@ export function buildCurrentReport(
   })
 }
 
-export function buildWeldingJournalCurrentReport(rows: WeldInput[], fields: WeldField[]) {
+export function buildWeldingJournalCurrentReport(rows: WeldInput[], fields: WeldField[], prepared = false) {
   return buildCurrentReport(
-    buildWeldingJournalRows(rows),
+    prepared ? rows : buildWeldingJournalRows(rows),
     fields,
     'Сварочный журнал: текущая версия',
     'welding-journal-current.xlsx',
@@ -124,9 +124,9 @@ export function buildLnkCurrentReport(rows: WeldInput[], fields: WeldField[]) {
   return buildCurrentReport(displayed, fields, 'ЛНК: текущая версия', 'lnk-current.xlsx')
 }
 
-export function buildWeldingJournalWaitingWeldReport(rows: WeldInput[]) {
+export function buildWeldingJournalWaitingWeldReport(rows: WeldInput[], prepared = false) {
   return buildTabularReport({
-    rows: buildWeldingJournalRowsByStatus(rows, 'ожидает сварку'),
+    rows: prepared ? rows.filter(row => row.finalStatus === 'ожидает сварку') : buildWeldingJournalRowsByStatus(rows, 'ожидает сварку'),
     fields: WELDING_JOURNAL_WAITING_WELD_FIELDS,
     sheetName: 'Ожидает сварку',
     title: 'Сварочный журнал: ожидает сварку',
@@ -179,9 +179,9 @@ export function buildWeldingJournalCancelledAcceptedReport(rows: WeldInput[]) {
   })
 }
 
-export function buildWeldingJournalSystemReport(rows: WeldInput[]) {
+export function buildWeldingJournalSystemReport(rows: WeldInput[], prepared = false) {
   return buildTabularReport({
-    rows: buildWeldingJournalRows(rows),
+    rows: prepared ? rows : buildWeldingJournalRows(rows),
     fields: WELDING_JOURNAL_SYSTEM_FIELDS,
     sheetName: 'Системная версия',
     title: 'Сварочный журнал: системная версия',

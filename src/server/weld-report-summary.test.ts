@@ -20,7 +20,7 @@ vi.mock('@/server/weld-server-shared', async importOriginal => ({
 }))
 
 import { WELD_TABLE_SELECT } from './weld-server-shared'
-import { getWeldReportSummary, listColumnFilterOptions, listReportPage, normalizeWeldColumnFilterOptionsRequest, normalizeWeldPageRequest } from './weld-read'
+import { getWeldReportSummary, listColumnFilterOptions, listReportPage, normalizeWeldColumnFilterOptionsRequest, normalizeWeldPageRequest, readReportOutputSnapshot, visitReportOutput } from './weld-read'
 import { DEFAULT_OTHER_SETTINGS } from '@/lib/other-settings'
 
 describe('independent report rows and summaries', () => {
@@ -135,6 +135,15 @@ describe('independent report rows and summaries', () => {
     await expect(getWeldReportSummary({ data: { report: 'lnk' } })).rejects.toThrow('Нет доступа')
     expect(mocks.query).not.toHaveBeenCalled()
     expect(mocks.read).not.toHaveBeenCalled()
+  })
+
+  it('rejects unauthorized preview and full-file reads before reading data or producing rows', async () => {
+    mocks.security.mockRejectedValue(new Error('Нет доступа'))
+    const consume = vi.fn()
+    await expect(readReportOutputSnapshot({ report: 'lnk' })).rejects.toThrow('Нет доступа')
+    await expect(visitReportOutput({ report: 'lnk' }, consume)).rejects.toThrow('Нет доступа')
+    expect(mocks.query).not.toHaveBeenCalled()
+    expect(consume).not.toHaveBeenCalled()
   })
 
   it('reads WDI settings inside the revision-guarded calculation, not before it', async () => {

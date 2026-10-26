@@ -1,4 +1,3 @@
-import { editJournalJoint } from '../journal-grid'
 import { setTimeout as pause } from 'node:timers/promises'
 import { expect, test, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
@@ -84,14 +83,55 @@ const coldFacts = () => withE2eDatabase(async db => ({
   links: (await db.query(`select count(*)::int n,md5(string_agg(md5(to_jsonb(a)::text),'' order by document_id,weld_joint_id)) hash from generated_document_weld_joints a`)).rows[0],
 }))
 
+async function waitForCurrentRows(page: Page, joint: string) {
+  const grid = page.locator('.journal-grid-frame')
+  const retry = page.getByRole('button', { name: 'Повторить загрузку строк', exact: true })
+  // Continuous writes can invalidate both the initial read and its single
+  // automatic retry. Exercise the operator's explicit read-only recovery;
+  // never retry a mutation or silently accept another kind of load failure.
+  for (let attempt = 0; ; attempt++) {
+    await expect.poll(async () => await retry.isVisible()
+      || await grid.getAttribute('aria-busy') === 'false'
+        && await grid.getByRole('button', { name: joint, exact: true }).isVisible()).toBe(true)
+    if (!await retry.isVisible()) return
+    await expect(page.getByText('Не удалось обновить строки', { exact: true }))
+      .toHaveAttribute('title', 'Данные журнала изменились. Обновите таблицу и повторите действие.')
+    expect(attempt, 'Explicit stale-read retries stay bounded').toBeLessThan(3)
+    console.log(JSON.stringify({ phase: 'mixed stale rows explicitly refreshed', attempt: attempt + 1 }))
+    await retry.click()
+  }
+}
+
 async function openEditor(page: Page) {
-  await editJournalJoint(page, writerJoint)
   const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const grid = page.locator('[data-welding-journal-grid]')
+    await waitForCurrentRows(page, writerJoint)
+    let refreshed = false
+    const onResponse = (response: import('@playwright/test').Response) => {
+      if (rpcName(response.url()).startsWith('readJournalGrid_') && response.ok()) refreshed = true
+    }
+    const before = await getWriter()
+    page.on('response', onResponse)
+    try {
+      await grid.getByRole('button', { name: writerJoint, exact: true }).click({ button: 'right' })
+      await page.getByRole('button', { name: 'Редактировать стык', exact: true }).click({ timeout: 5000 })
+      break
+    } catch (error) {
+      // A genuinely replaced snapshot must invalidate its menu. Reopen only
+      // after an observed grid refresh, never retry an uncertain save or hide
+      // a still-visible/broken menu. The target's stored facts stay unchanged.
+      if (attempt === 2 || !refreshed || await editor.isVisible()
+        || await page.getByRole('button', { name: 'Редактировать стык', exact: true }).isVisible()) throw error
+      expect(await getWriter()).toEqual(before)
+      console.log(JSON.stringify({ phase: 'mixed stale menu reopened', attempt: attempt + 1 }))
+    } finally { page.off('response', onResponse) }
+  }
   await editor.getByRole('button', { name: 'Стык', exact: true }).first().click()
   return editor
 }
 
-test('200k, five browser clients, mixed reads/writes/import/documents under hard 2 CPU / 2 GiB', async ({ browser }, info) => {
+test('200k, five browser clients, mixed reads/writes/import/documents under explicit local resource limits', async ({ browser }, info) => {
   test.skip(process.env.AUDIT_MIXED_LOAD !== '1', 'Separate opt-in, freshly built container and disposable database')
   const roles = ['reports', 'program-dispatcher', 'writer', 'import', 'documents-permits']
   const contexts = await Promise.all(roles.map(() => browser.newContext({ baseURL: 'http://127.0.0.1:3100', viewport: { width: 1600, height: 1000 } })))
@@ -152,7 +192,7 @@ test('200k, five browser clients, mixed reads/writes/import/documents under hard
         const page = pages[0]
         await page.goto(round % 2 ? '/lnk' : '/journal')
         await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('F001')
-        await expect(page.getByRole('button', { name: writerJoint, exact: true })).toBeVisible()
+        await waitForCurrentRows(page, writerJoint)
         await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
         await page.getByRole('button', { name: 'Текущая версия', exact: true }).click()
         const preview = page.getByRole('dialog', { name: 'Предпросмотр отчёта', exact: true })
@@ -301,7 +341,9 @@ test('200k, five browser clients, mixed reads/writes/import/documents under hard
     await pages[1].screenshot({ path: info.outputPath('mixed-final-program.png') })
   } finally {
     for (const client of telemetry) {
-      console.log(JSON.stringify({ phase: 'mixed client', ...await client.summary() }))
+      const summary = await client.summary()
+      console.log(JSON.stringify({ phase: 'mixed client', ...summary }))
+      await info.attach(`requests-${summary.role}`, { body: JSON.stringify(client.calls), contentType: 'application/json' })
     }
     const resources = await stopSampling?.()
     console.log(JSON.stringify({ phase: 'mixed resources', ...resources }))
@@ -326,7 +368,8 @@ test('200k, five browser clients, mixed reads/writes/import/documents under hard
     if (resources) {
       expect(resources.errors).toEqual([])
       expect(resources.lastCgroup['memory.events']).toMatch(/oom_kill 0/)
-      expect(Number(resources.lastCgroup['memory.peak'])).toBeLessThan(2 * 1024 ** 3)
+      expect(Number(resources.lastCgroup['memory.max'])).toBe(Number(process.env.AUDIT_CONTAINER_MEMORY_MIB || 2048) * 1024 ** 2)
+      expect(Number(resources.lastCgroup['memory.peak'])).toBeLessThan(Number(resources.lastCgroup['memory.max']))
       // Original fixture has whole 200-row lines. Summaries must not hydrate
       // the 200k-row journal at once, even during overlapping invalidations.
       expect(resources.server.resources.reads.weld_joints_join_line_programs.maxRows).toBeLessThanOrEqual(10_000)

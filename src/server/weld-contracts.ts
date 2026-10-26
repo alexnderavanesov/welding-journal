@@ -1,3 +1,5 @@
+import type { PrintableReport } from '@/lib/printable-report'
+import type { ReportOutputKind } from '@/lib/report-output-definition'
 import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 import type {
   PstoWeldLineMoveDisposition,
@@ -37,6 +39,8 @@ export const WORKFLOW_CANDIDATE_PAGE_SIZE = 500
 export type WeldPageSize = (typeof WELD_PAGE_SIZE_OPTIONS)[number] | typeof WELD_PAGE_ALL_SIZE
 export type WeldReportKind = 'weldingJournal' | 'lnk' | 'heatTreatment'
 export type WeldReportContextKind = Exclude<WeldReportKind, 'weldingJournal'>
+export type ReportOutputSnapshot = { report: PrintableReport; generatedAt: string; sourceRows: number; truncated: boolean }
+export type ReportOutputRequest = { report: WeldReportKind; kind?: ReportOutputKind; fieldKeys?: string[]; columnFilters?: Record<string, string>; sort?: WeldSort | null }
 
 export const LNK_WORKFLOW_ROW_SCOPES = [
   'requestCandidates',

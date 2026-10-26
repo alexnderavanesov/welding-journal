@@ -16,14 +16,23 @@ it('blocks stale actions immediately while coalescing repeated mutation refresh 
   const { result, unmount } = renderHook(() => useJournalServerQuery({ report: 'lnk', enabled: true, columnFilters: {}, sort: null }), { wrapper })
   try {
     await act(async () => { await result.current.source.load(block) })
+    expect(result.current.rowsReady).toBe(false)
+    act(() => result.current.source.rowsChanged([{ id: 1 }]))
     expect(result.current.rowsReady).toBe(true)
     const source = result.current.source.identity
+    const selection = result.current.selectionIdentity
     act(() => { for (let n = 0; n < 3; n++) mocks.subscribe.mock.lastCall![1]() })
+    // A queued update from the old AG model must not re-enable actions during
+    // the refresh debounce, before a new query identity has been assigned.
+    act(() => result.current.source.rowsChanged([{ id: 1 }]))
     expect(result.current.rowsReady).toBe(false)
     expect(result.current.source.identity).toBe(source)
     await act(async () => { vi.advanceTimersByTime(80) })
     expect(result.current.source.identity).not.toBe(source)
+    expect(result.current.selectionIdentity).toBe(selection)
     await act(async () => { await result.current.source.load(block) })
+    expect(result.current.rowsReady).toBe(false)
+    act(() => result.current.source.rowsChanged([{ id: 1 }]))
     expect(result.current.rowsReady).toBe(true)
     expect(mocks.read).toHaveBeenCalledTimes(2)
   } finally { unmount(); vi.useRealTimers() }
@@ -43,6 +52,7 @@ it('isolates report rows, late replies, revisions and the LNK request count on r
   mocks.summary.mockResolvedValue({ total: 123, availableRequestCount: 17 })
   rerender({ report: 'lnk' })
   await act(async () => { await result.current.source.load(block) })
+  act(() => result.current.source.rowsChanged(resultAt(1).rows))
   expect(result.current.availableRequestCount).toBe(17)
   expect(result.current.totalCount).toBe(123)
   expect(mocks.summary.mock.lastCall?.[0].data.report).toBe('lnk')
@@ -101,6 +111,7 @@ it('pins blocks to one revision, and starts a fresh snapshot when regrouping rep
   await act(async () => { await result.current.source.load({ ...block,groupBy:['line'],route:['L'] }) })
   expect(mocks.read.mock.calls[3][0].data.revision).toBe(2)
   expect(mocks.summary).toHaveBeenCalledTimes(2)
+  act(() => result.current.source.rowsChanged([]))
   expect(result.current.rowsReady).toBe(true)
 })
 it('does not publish a response from a replaced filter', async () => {
@@ -131,6 +142,7 @@ it('does not carry a summary error into a new filter or explicit retry', async (
   expect(result.current.summaryStatus).toBe('pending')
   expect(result.current.summaryError).toBeUndefined()
   await act(async () => { await result.current.source.load(block) })
+  act(() => result.current.source.rowsChanged(resultAt(1).rows))
   expect(result.current.summaryStatus).toBe('ready')
   expect(mocks.summary).toHaveBeenCalledTimes(3)
 })
@@ -212,5 +224,6 @@ it('keeps a real block failure visible across neighbouring successes and clears 
   expect(result.current.source.error).toBeNull()
   expect(result.current.error).toBeNull()
   await act(async () => { await result.current.source.load(block) })
+  act(() => result.current.source.rowsChanged(resultAt(1).rows))
   expect(result.current.rowsReady).toBe(true)
 })

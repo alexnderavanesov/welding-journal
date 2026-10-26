@@ -1,5 +1,5 @@
 import { buildWeldColumnFilterOptionsFromRows, projectPstoReportDisplayValues } from '../../src/server/report-filter-reference.test-helper'
-import { buildReportQueryWhere, buildServerReportRows, listReportPage, listColumnFilterOptions, normalizeWeldPageRequest, normalizeWeldColumnFilterOptionsRequest, getWeldReportSummary } from '../../src/server/weld-read'
+import { buildReportQueryWhere, buildServerReportRows, listReportPage, listColumnFilterOptions, normalizeWeldPageRequest, normalizeWeldColumnFilterOptionsRequest, getWeldReportSummary, readReportOutputSnapshot } from '../../src/server/weld-read'
 import { LNK_METHODS } from '../../src/lib/report-config'
 import type { WeldFieldKey } from '../../src/lib/weld-fields'
 import type { WeldJoint } from '../../src/db/schema'
@@ -80,7 +80,10 @@ test('SQL preserves pre-TO facts, cancellation, no-need, text parsing and litera
   }
   const field = 'preRkResult' as const
   const expression = buildCalculatedReportValueSql('lnk', field, DEFAULT_OTHER_SETTINGS)!
-  for (const filter of ['рем', '=ГОДЕН', '%', '_', '\\', buildWeldColumnValueFilter(['годен', '']), buildWeldColumnValueFilter(['ГОДЕН'])]) {
+  for (const filter of ['рем', '=ГОДЕН', '%', '_', '\\', buildWeldColumnValueFilter(['годен', '']), buildWeldColumnValueFilter(['ГОДЕН']),
+    buildWeldColumnValueFilter([...Array.from({ length: 200 }, (_, i) => `Other ${i}`), 'ремонт', '']),
+    '__column_choice_filter__:' + encodeURIComponent(JSON.stringify({ kind: 'values', values: [] })),
+  ]) {
     const filtered = await db.select({ id: weldJoints.id }).from(weldJoints).where(sql`${where} and ${buildCalculatedFilterWhere(expression, filter)}`)
     const projected = rows.map(row => ({ ...row, [field]: getPreHeatTreatmentReportValue({ ...row, preHeatTreatmentLnkEnabled: true } as WeldRow, field) }))
     assert.deepEqual(filtered.map(row => row.id).sort((a,b) => a-b), filterWeldRowsByColumns(projected, { [field]: filter }).map(row => row.id).sort((a,b) => a-b), filter)
@@ -140,6 +143,34 @@ test('current cycle SQL summary matches active/inactive, sparse repeats and stag
   }
 })
 
+test('RK scheme boundaries compare diameters, retain duplicate-boundary options and parse CRLF literally', async () => {
+  const table = { fileName: 'boundary fixture', uploadedAt: '', entries: [
+    { diameter: 100, options: [{ label: 'Below', values: ['0', '120'], isDefault: true, note: '' }] },
+    { diameter: 100, options: [{ label: 'At 100', values: ['0', '120'], isDefault: true, note: '' }] },
+    { diameter: 200, options: [{ label: 'At 200', values: ['0', '120'], isDefault: true, note: '' }] },
+  ] }
+  const cases = [
+    { d1: 99, d2: null, confirmed: 100, type: 'С17', expected: 'Below' },
+    { d1: 100, d2: null, confirmed: 99, type: 'С17', expected: 'At 100' },
+    { d1: 100, d2: null, confirmed: 200, type: 'С17', expected: 'Требуется проверить' },
+    { d1: null, d2: null, confirmed: 100, type: 'С17', expected: 'Пользовательская схема' },
+    { d1: 199.999, d2: null, confirmed: 100, type: 'С17', expected: 'At 100' },
+    { d1: 200, d2: null, confirmed: 199.999, type: 'С17', expected: 'Требуется проверить' },
+    { d1: 245, d2: 99, confirmed: 99, type: 'У19', expected: 'Below' },
+    { d1: 200, d2: null, confirmed: null, type: 'С17', expected: 'At 200' },
+  ]
+  await withLineProgramFixture(async db => {
+    for (const [index, item] of cases.entries()) await db.query(`insert into weld_joints
+      (project_title,line,joint,connection_type,d1,d2,rk_exposure_confirmed_diameter,lnk_defect_description)
+      values($1,'RK-BOUNDARY',$2,$3,$4,$5,$6,$7)`,
+    [project, `BOUNDARY-${index}`, item.type, item.d1, item.d2, item.confirmed, '\ufeff0 : A: B\r\n : ignored\r\n 120 : ДНО\r\n'])
+  })
+  const values = await requireDb().select({ joint: weldJoints.joint,
+    value: buildCalculatedReportValueSql('lnk', 'rkExposureScheme', { ...DEFAULT_OTHER_SETTINGS, rkExposureTable: table }) as ReturnType<typeof sql<string>>,
+  }).from(weldJoints).where(sql`${weldJoints.projectTitle} = ${project} and ${weldJoints.line} = 'RK-BOUNDARY'`)
+  for (const [index, item] of cases.entries()) expect(values.find(row => row.joint === `BOUNDARY-${index}`)?.value).toBe(item.expected)
+})
+
 
 test('all main-method fields and calculated families select the same IDs before pagination', async () => {
   const db = requireDb(), where = eq(weldJoints.projectTitle, project)
@@ -180,6 +211,9 @@ test('page, summary, facets and full output share selection and preserve factual
       expect(page.hasMore).toBe(false)
       const output = await listReportPage(report, normalizeWeldPageRequest({ ...request, pageSize: 'all' }))
       expect(output.rows.map(row => row.id)).toEqual(expected)
+      const snapshot = await readReportOutputSnapshot({ report, sort: request.sort, fieldKeys: ['joint', 'pstoRequest', 'tvmtResult'],
+        columnFilters: { projectTitle: `=${project}`, ...columnFilters } })
+      expect((snapshot.report.tables?.[0]?.rows ?? []).map(row => row[0])).toEqual(expected.map(id => stored.find(row => row.id === id)!.joint))
       const totals = await getWeldReportSummary({ data: { ...request, report } })
       expect(totals.total).toBe(expected.length)
       const facets = await listColumnFilterOptions(normalizeWeldColumnFilterOptionsRequest({

@@ -94,7 +94,7 @@ test('special LNK output previews in a modal and contains rows beyond the candid
   await expect(currentPopup.getByText('E2E-OUTPUT-501', { exact: true })).toBeVisible()
 })
 
-test('a very large report fails visibly while a narrowed current report still opens', async ({ page }) => {
+test('a very large report limits only preview and exports every row; narrowed current report still opens', async ({ page }) => {
   test.setTimeout(120_000)
   await withE2eDatabase(async (client) => {
     await client.query(`
@@ -116,7 +116,12 @@ test('a very large report fails visibly while a narrowed current report still op
   await page.goto('/lnk')
   await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
   await page.getByRole('button', { name: 'Ожидание заявки', exact: true }).click()
-  await expect(page.getByText(/Для вывода найдено более 10 000 строк/)).toBeVisible()
+  const modal = page.getByRole('dialog', { name: 'Предпросмотр отчёта' })
+  await expect(modal.getByText(/Предпросмотр ограничен первыми 2000 строками/)).toBeVisible()
+  const workbook = await captureReportExcel(page, modal)
+  const sheet = workbook.Sheets[workbook.SheetNames[0]]
+  expect(Object.values(sheet).some(cell => cell?.v === 'E2E-OUTPUT-10001')).toBe(true)
+  expect(Number(sheet['!ref']?.match(/(\d+)$/)?.[1])).toBeGreaterThan(10001)
   await page.getByRole('button', { name: 'Закрыть предпросмотр' }).click()
 
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('E2E-OUTPUT-10001')

@@ -9,7 +9,7 @@ const clock = () => performance.now()
 const elapsed = (start: number) => Math.round(clock() - start)
 
 test('200k: first complete lines and independent search before the full summary finishes', async ({ browser }, info) => {
-  test.skip(process.env.AUDIT_LINE_SEARCH_LOAD !== '1', 'Opt-in fresh isolated database and 2 CPU / 2 GiB server')
+  test.skip(process.env.AUDIT_LINE_SEARCH_LOAD !== '1', 'Opt-in fresh isolated database and explicitly resource-limited server')
   test.setTimeout(900_000)
   const totalLines = await withE2eDatabase(async db => {
     expect((await db.query('select count(*)::int n from weld_joints')).rows[0].n).toBe(1)

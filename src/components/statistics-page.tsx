@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode, type RefCallback } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   Activity,
   ArrowUpRight,
@@ -20,6 +20,8 @@ import {
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ReadOnlyGrid } from './read-only-grid'
+import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { LineProgramPage } from '@/components/line-program-page'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -40,6 +42,7 @@ import {
   type StatisticsUnit,
 } from '@/lib/statistics-summary'
 import type { LineSummary, LineSummaryRow } from '@/lib/line-summary'
+import { summarizeLineGridRows, summarizeWelderGridRows } from '@/lib/statistics-grid-summary'
 import {
   type PercentageLineNavigationOutcome,
   type PercentageLineNavigationRequest,
@@ -73,7 +76,6 @@ import { buildWeldingDynamicsJointTypeTable } from '@/lib/statistics-welding-dyn
 import { cn } from '@/lib/utils'
 import { useStatisticsServerQuery } from '@/lib/use-statistics-server-query'
 import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
-import { useWindowTableVirtualization } from '@/lib/use-window-table-virtualization'
 
 type StatisticsPageProps = {
   fixedTab?: StatisticsTab | 'percentageLines'
@@ -241,6 +243,17 @@ const jointFilterOptions: Array<[WelderStatisticsJointFilter, string]> = [
   ['s', 'S база'],
 ]
 
+// Tag the grid projection with its source so a new server response can never
+// export rows retained from an earlier period/unit. Detail expansion is ignored.
+function useStatisticsGridRows<T>(source: T[]) {
+  const [view, setView] = useState<{ source: T[]; rows: T[] } | null>(null)
+  const onRowsChange = useCallback((rows: T[]) => {
+    setView(current => current?.source === source && current.rows.length === rows.length &&
+      current.rows.every((row, index) => row === rows[index]) ? current : { source, rows })
+  }, [source])
+  return [view?.source === source ? view.rows : source, onRowsChange, source.length === 0 || view?.source === source] as const
+}
+
 function createDefaultStatisticsTimeSettings(): Record<StatisticsTab, StatisticsTimeSettings> {
   const currentPeriod = getDefaultStatisticsPeriod()
   const currentPeriodSettings = (): StatisticsTimeSettings => ({
@@ -342,8 +355,8 @@ function StatisticsReports({
   const periodTo = allPeriod ? '' : period.to
   const statisticsQuery = useStatisticsServerQuery({
     tab: activeTab,
-    projectFilter,
-    selectedSubtitles,
+    projectFilter: activeTab === 'lineSummary' ? '' : projectFilter,
+    selectedSubtitles: activeTab === 'lineSummary' ? [] : selectedSubtitles,
     from: periodFrom,
     to: periodTo,
     unit,
@@ -372,6 +385,11 @@ function StatisticsReports({
   const weldingDynamics = statisticsQuery.data?.weldingDynamics ?? EMPTY_WELDING_DYNAMICS
   const welderSummary = statisticsQuery.data?.welderSummary ?? EMPTY_WELDER_SUMMARY
   const lineSummary = statisticsQuery.data?.lineSummary ?? EMPTY_LINE_SUMMARY
+  const [visibleWelderRows, onWelderRowsChange, welderViewReady] = useStatisticsGridRows(welderSummary.rows)
+  const [visibleLineRows, onLineRowsChange, lineViewReady] = useStatisticsGridRows(lineSummary.rows)
+  const reportReady = calculationReady && (activeTab === 'welders' ? welderViewReady : activeTab === 'lineSummary' ? lineViewReady : true)
+  const visibleWelderSummary = useMemo(() => summarizeWelderGridRows(welderSummary, visibleWelderRows), [welderSummary, visibleWelderRows])
+  const visibleLineSummary = useMemo(() => summarizeLineGridRows(lineSummary, visibleLineRows), [lineSummary, visibleLineRows])
   const generalProgressSummary = statisticsQuery.data?.generalProgressSummary ?? EMPTY_LINE_SUMMARY
   const generalStateRowIds = statisticsQuery.data?.generalStateRowIds ?? EMPTY_STATISTICS_STATE_ROW_IDS
   const lnkMethods = useMemo(() => {
@@ -385,7 +403,7 @@ function StatisticsReports({
   const unofficialValue = statisticsQuery.data?.unofficialValue ?? 0
   const lnkWaitingRequests = summary.methods.reduce((total, method) => total + method.waitingRequest, 0)
   const unitLabel = unit === 'joints' ? 'стыков' : 'WDI'
-  const scopeLabel = getScopeLabel(projectFilter, selectedSubtitles, projectOptions, subtitleOptions)
+  const scopeLabel = activeTab === 'lineSummary' ? 'по фильтрам столбцов таблицы' : getScopeLabel(projectFilter, selectedSubtitles, projectOptions, subtitleOptions)
   const periodDescription =
     activeTab === 'general'
       ? 'Стыки отбираются по дате сварки, а их годность и состояние показываются на текущий момент.'
@@ -397,12 +415,12 @@ function StatisticsReports({
   const periodLabel = getStatisticsPeriodLabel(allPeriod, periodFrom, periodTo)
   const printableReport = useMemo(
     () =>
-      calculationReady ? buildStatisticsPrintableReport({
+      reportReady ? buildStatisticsPrintableReport({
         activeTab,
         dynamics: weldingDynamics,
         dynamicsTableGrouping: weldingDynamicsTableGrouping,
         jointFilter,
-        lineSummary,
+        lineSummary: visibleLineSummary,
         lnkMethods,
         periodLabel,
         periodDescription,
@@ -411,14 +429,14 @@ function StatisticsReports({
         unofficialCount,
         unofficialValue,
         unit,
-        welderSummary,
+        welderSummary: visibleWelderSummary,
       }) : null,
     [
-      calculationReady,
+      reportReady,
       activeTab,
       allPeriod,
       jointFilter,
-      lineSummary,
+      visibleLineSummary,
       lnkMethods,
       periodFrom,
       periodDescription,
@@ -429,15 +447,15 @@ function StatisticsReports({
       unofficialCount,
       unofficialValue,
       unit,
-      welderSummary,
+      visibleWelderSummary,
       weldingDynamics,
       weldingDynamicsTableGrouping,
     ],
   )
   return (
-    <section className="w-full max-w-full min-w-0 space-y-4 pb-8">
+    <section data-page-scroll-root className="w-full max-w-full min-w-0 space-y-4 pb-8">
       {previewProps ? <PrintableReportPreview {...previewProps} /> : null}
-      <div className="sticky top-0 z-40 rounded-md border border-slate-200 bg-white/95 px-3 py-2.5 shadow-sm backdrop-blur-sm">
+      <div data-statistics-toolbar className="sticky top-0 z-40 rounded-md border border-slate-200 bg-white/95 px-3 py-2.5 shadow-sm backdrop-blur-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
             {!fixedTab ? (
@@ -516,10 +534,11 @@ function StatisticsReports({
               variant="outline"
               size="sm"
               className="h-9 gap-2 rounded-md border-sky-200 bg-white text-sky-800 hover:bg-sky-50"
-              disabled={!calculationReady}
+              disabled={!reportReady}
               aria-describedby={!calculationReady ? calculationStatusId : undefined}
-              onClick={() => {
-                if (!calculationReady || !printableReport) return
+              onClick={event => {
+                if (!reportReady || !printableReport) return
+                event.currentTarget.focus({ preventScroll: true })
                 // Preview, print and Excel retain the same immutable snapshot,
                 // even if the underlying query refreshes while the modal is open.
                 const report = printableReport
@@ -644,6 +663,7 @@ function StatisticsReports({
               ) : null}
             </div>
 
+            {activeTab !== 'lineSummary' ? (
             <div className="mt-3 flex flex-wrap items-end gap-3">
               <label className="grid min-w-[220px] gap-1 text-xs font-medium text-slate-600">
                 Проект
@@ -716,6 +736,7 @@ function StatisticsReports({
                 </div>
               </div>
             </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -867,10 +888,12 @@ function StatisticsReports({
           jointFilter={welderJointFilter}
           onOpenRows={onOpenWeldRowIds}
           summary={welderSummary}
+          visibleSummary={visibleWelderSummary}
+          onRowsChange={onWelderRowsChange}
           unit={unit}
         />
       ) : (
-        <LineSummaryPanel onOpenRows={onOpenWeldRowIds} summary={lineSummary} unit={lineSummaryUnit} />
+        <LineSummaryPanel onOpenRows={onOpenWeldRowIds} sourceRows={lineSummary.rows} summary={visibleLineSummary} onRowsChange={onLineRowsChange} unit={lineSummaryUnit} />
       )}
       </div>
     </section>
@@ -2427,12 +2450,16 @@ const WELDER_GROUP_BREAKDOWN_TOOLTIP =
 function WeldersStatisticsPanel({
   jointFilter,
   onOpenRows,
-  summary,
+  summary: sourceSummary,
+  visibleSummary: summary,
+  onRowsChange,
   unit,
 }: {
   jointFilter: WelderStatisticsJointFilter
   onOpenRows?: StatisticsPageProps['onOpenWeldRowIds']
   summary: WelderStatisticsSummary
+  visibleSummary: WelderStatisticsSummary
+  onRowsChange: (rows: WelderStatisticsRow[]) => void
   unit: StatisticsUnit
 }) {
   const controlled = summary.good + summary.rejected
@@ -2447,7 +2474,7 @@ function WeldersStatisticsPanel({
   const rejectedRowIds = mergeStatisticRowIds(summary.rows.map((row) => row.rejectedRowIds))
   const filteredRows = useMemo(() => {
     const query = stampSearch.trim().toLowerCase()
-    return summary.rows
+    return sourceSummary.rows
       .filter(
         (row) =>
           !query ||
@@ -2470,15 +2497,15 @@ function WeldersStatisticsPanel({
         }
         return right.total - left.total || left.stamp.localeCompare(right.stamp, 'ru', { numeric: true })
       })
-  }, [quickFilter, sortMode, stampSearch, summary.rows])
-  const toggleExpandedStamp = (stamp: string) => {
+  }, [quickFilter, sortMode, stampSearch, sourceSummary.rows])
+  const toggleExpandedStamp = useCallback((stamp: string) => {
     setExpandedStamps((current) => {
       const next = new Set(current)
       if (next.has(stamp)) next.delete(stamp)
       else next.add(stamp)
       return next
     })
-  }
+  }, [])
 
   return (
     <div className="space-y-4">
@@ -2574,51 +2601,15 @@ function WeldersStatisticsPanel({
         </div>
       </div>
 
-      <WelderRankingPanel onOpenRows={onOpenRows} rows={filteredRows} sortMode={sortMode} unit={unit} />
+      <WelderRankingPanel onOpenRows={onOpenRows} rows={summary.rows} sortMode={sortMode} unit={unit} />
 
       <Panel
         title="Отчет по сварщикам"
         subtitle="Считаются только фактические клейма. Если у внутреннего клейма есть связанное клеймо НАКС, в отчете показывается НАКС."
       >
-        {summary.rows.length > 0 ? (
-          <div className="overflow-hidden rounded-md border border-slate-200">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] table-fixed border-collapse text-sm">
-                <colgroup>
-                  <col className="w-[19%]" /><col className="w-[13.5%]" /><col className="w-[13.5%]" /><col className="w-[14%]" /><col className="w-[13.5%]" /><col className="w-[13.5%]" /><col className="w-[13%]" />
-                </colgroup>
-                <thead className="sticky top-0 z-20 bg-slate-100 text-slate-700">
-                  <tr>
-                    <WelderHeaderCell className="sticky left-0 z-30 bg-slate-100">Клеймо</WelderHeaderCell>
-                    <WelderHeaderCell align="right">Всего</WelderHeaderCell>
-                    <WelderHeaderCell align="right">Годен</WelderHeaderCell>
-                    <WelderHeaderCell align="right">Ожидает заявку</WelderHeaderCell>
-                    <WelderHeaderCell align="right">Ожидает НК</WelderHeaderCell>
-                    <WelderHeaderCell align="right">Не годен</WelderHeaderCell>
-                    <WelderHeaderCell align="right">% брака</WelderHeaderCell>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRows.map((row) => (
-                    <WelderStatisticsTableRow
-                      key={row.stamp}
-                      expanded={expandedStamps.has(row.stamp)}
-                      jointFilter={jointFilter}
-                      onOpenRows={onOpenRows}
-                      onToggle={() => toggleExpandedStamp(row.stamp)}
-                      row={row}
-                      unit={unit}
-                    />
-                  ))}
-                </tbody>
-              </table>
-              {filteredRows.length === 0 ? (
-                <div className="border-t border-slate-100 bg-slate-50 p-5 text-sm text-slate-500">
-                  По текущему поиску и фильтрам ничего не найдено.
-                </div>
-              ) : null}
-            </div>
-          </div>
+        {sourceSummary.rows.length > 0 ? (
+          <WelderStatisticsGrid rows={filteredRows} onRowsChange={onRowsChange} expandedStamps={expandedStamps}
+            jointFilter={jointFilter} onOpenRows={onOpenRows} onToggle={toggleExpandedStamp} unit={unit} />
         ) : (
           <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
             За выбранный период нет стыков с заполненными фактическими клеймами.
@@ -2687,109 +2678,55 @@ function getWelderRankingValue(row: WelderStatisticsRow, mode: 'total' | 'averag
   return row.total
 }
 
-function WelderStatisticsTableRow({
-  expanded,
-  jointFilter,
-  onOpenRows,
-  onToggle,
-  row,
-  unit,
-}: {
-  expanded: boolean
+const welderGridRowId = ({ data }: { data: WelderStatisticsRow }) => data.stamp
+
+function WelderStatisticsGrid({ rows, expandedStamps, jointFilter, onOpenRows, onToggle, onRowsChange, unit }: {
+  rows: WelderStatisticsRow[]
+  expandedStamps: ReadonlySet<string>
   jointFilter: WelderStatisticsJointFilter
   onOpenRows?: StatisticsPageProps['onOpenWeldRowIds']
-  onToggle: () => void
-  row: WelderStatisticsRow
+  onToggle: (stamp: string) => void
+  onRowsChange: (rows: WelderStatisticsRow[]) => void
   unit: StatisticsUnit
 }) {
-  const controlled = row.good + row.rejected
-  const expandedCellClass = expanded ? 'border-t-2 border-sky-200 bg-sky-50/60' : ''
-  return (
-    <>
-      <tr
-        className={cn(
-          'cursor-pointer border-t border-slate-100 transition-colors odd:bg-white even:bg-slate-50/60 hover:bg-sky-50',
-          expanded ? 'bg-sky-50/70 hover:bg-sky-50/70' : '',
-        )}
-        onClick={onToggle}
-      >
-        <td className={cn('sticky left-0 z-10 px-4 py-3', expanded ? 'border-l-2 bg-sky-50' : 'bg-inherit', expandedCellClass)}>
-          <div className="flex items-center gap-2">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 shadow-sm">
-              {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            </span>
-            <div className="min-w-0">
-              <div className="font-semibold text-slate-900">{row.stamp}</div>
-              {row.welderName ? <div className="mt-1 text-xs font-medium leading-4 text-slate-500">{row.welderName}</div> : null}
-            </div>
-            {onOpenRows && row.rowIds.length > 0 ? (
-              <button type="button" className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded text-sky-600 hover:bg-sky-100" title={`Открыть стыки сварщика ${row.stamp}`} onClick={(event) => { event.stopPropagation(); onOpenRows(row.rowIds, `Показаны стыки сварщика ${row.stamp}: ${row.rowIds.length}.`) }}><ArrowUpRight className="h-4 w-4" /></button>
-            ) : null}
-          </div>
-        </td>
-        <>
-            <WelderBodyCell className={expandedCellClass}>
-              <WelderValueWithSplit
-                f={row.fTotal}
-                jointFilter={jointFilter}
-                s={row.sTotal}
-                total={row.total}
-                unit={unit}
-              />
-            </WelderBodyCell>
-            <WelderBodyCell className={cn(expandedCellClass, 'text-emerald-700')}>
-              <WelderValueWithSplit
-                f={row.fGood}
-                jointFilter={jointFilter}
-                s={row.sGood}
-                total={row.good}
-                unit={unit}
-              />
-            </WelderBodyCell>
-            <WelderBodyCell className={expandedCellClass}>
-              <WelderValueWithSplit
-                f={row.fWaitingRequest}
-                jointFilter={jointFilter}
-                s={row.sWaitingRequest}
-                total={row.waitingRequest}
-                unit={unit}
-              />
-            </WelderBodyCell>
-            <WelderBodyCell className={expandedCellClass}>
-              <WelderValueWithSplit
-                f={row.fWaitingControl}
-                jointFilter={jointFilter}
-                s={row.sWaitingControl}
-                total={row.waitingControl}
-                unit={unit}
-              />
-            </WelderBodyCell>
-            <WelderBodyCell className={cn(expandedCellClass, 'text-rose-700')}>
-              <WelderValueWithSplit
-                f={row.fRejected}
-                jointFilter={jointFilter}
-                s={row.sRejected}
-                total={row.rejected}
-                unit={unit}
-              />
-            </WelderBodyCell>
-            <WelderBodyCell className={cn(expandedCellClass, expanded ? 'border-r-2' : '')}>
-              <div className="flex items-center justify-end gap-2">
-                <span>{formatPercent(row.defectPercent)}</span>
-                <span className="text-xs font-normal text-slate-400">из {formatStatisticValue(controlled, unit)}</span>
-              </div>
-            </WelderBodyCell>
-          </>
-      </tr>
-      {expanded ? (
-        <tr className="bg-sky-50/60">
-          <td colSpan={7} className="border-x-2 border-b-2 border-sky-200 p-2.5">
-            <WelderStatisticsDetails jointFilter={jointFilter} onOpenRows={onOpenRows} row={row} unit={unit} />
-          </td>
-        </tr>
-      ) : null}
-    </>
-  )
+  const columns = useMemo<ColDef<WelderStatisticsRow>[]>(() => {
+    const metric = (headerName: string, key: 'total' | 'good' | 'waitingRequest' | 'waitingControl' | 'rejected', f: 'fTotal' | 'fGood' | 'fWaitingRequest' | 'fWaitingControl' | 'fRejected', s: 'sTotal' | 'sGood' | 'sWaitingRequest' | 'sWaitingControl' | 'sRejected'): ColDef<WelderStatisticsRow> => ({
+      colId: key, headerName, initialFlex: 1, minWidth: 125,
+      cellClass: `statistics-cell statistics-number ${key === 'good' ? 'text-emerald-700' : key === 'rejected' ? 'text-rose-700' : ''}`,
+      valueGetter: ({ data }) => data?.[key],
+      cellRenderer: ({ data }: ICellRendererParams<WelderStatisticsRow>) => data &&
+        <WelderValueWithSplit total={data[key]} f={data[f]} s={data[s]} jointFilter={jointFilter} unit={unit} />,
+    })
+    return ([{
+      colId: 'stamp', headerName: 'Клеймо', pinned: 'left', minWidth: 200, initialFlex: 1.4,
+      cellClass: 'statistics-cell', autoHeight: true, valueGetter: ({ data }) => data?.stamp,
+      cellRenderer: ({ data }: ICellRendererParams<WelderStatisticsRow>) => data && <div className="flex w-full items-center gap-2">
+        <button type="button" aria-expanded={expandedStamps.has(data.stamp)} aria-label={`Подробности сварщика ${data.stamp}`}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => onToggle(data.stamp)}>
+          {expandedStamps.has(data.stamp) ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+          <span className="min-w-0"><span className="block font-semibold text-slate-900">{data.stamp}</span>
+          {data.welderName ? <span className="mt-1 block text-xs text-slate-500">{data.welderName}</span> : null}</span>
+        </button>
+        {onOpenRows && data.rowIds.length > 0 ? <button type="button" className="shrink-0 rounded p-1 text-sky-600 hover:bg-sky-100"
+          title={`Открыть стыки сварщика ${data.stamp}`} onClick={() => onOpenRows(data.rowIds, `Показаны стыки сварщика ${data.stamp}: ${data.rowIds.length}.`)}><ArrowUpRight className="h-4 w-4" /></button> : null}
+      </div>,
+    }, metric('Всего', 'total', 'fTotal', 'sTotal'), metric('Годен', 'good', 'fGood', 'sGood'),
+      metric('Ожидает заявку', 'waitingRequest', 'fWaitingRequest', 'sWaitingRequest'),
+      metric('Ожидает НК', 'waitingControl', 'fWaitingControl', 'sWaitingControl'),
+      metric('Не годен', 'rejected', 'fRejected', 'sRejected'), {
+        colId: 'defect', headerName: '% брака', minWidth: 135, initialFlex: 1, cellClass: 'statistics-cell statistics-number',
+        valueGetter: ({ data }) => data?.defectPercent,
+        cellRenderer: ({ data }: ICellRendererParams<WelderStatisticsRow>) => data && <div>{formatPercent(data.defectPercent)} <span className="text-xs text-slate-400">из {formatStatisticValue(data.good + data.rejected, unit)}</span></div>,
+      }] satisfies ColDef<WelderStatisticsRow>[]).map(column => ({ ...column, sortable: false }))
+  }, [expandedStamps, jointFilter, onOpenRows, onToggle, unit])
+  const detail = useMemo(() => ({ data }: ICellRendererParams<WelderStatisticsRow>) => data &&
+    <div className="statistics-detail"><WelderStatisticsDetails row={data} jointFilter={jointFilter} onOpenRows={onOpenRows} unit={unit} /></div>,
+    [jointFilter, onOpenRows, unit])
+  return <div data-statistics-grid="welders">
+    <ReadOnlyGrid label="Отчет по сварщикам" columnFilters onDisplayedRowsChange={onRowsChange} pageScroll rowData={rows} columnDefs={columns}
+      getRowId={welderGridRowId} rowHeight={76} masterDetail detailCellRenderer={detail} expandedIds={expandedStamps}
+      onRowClicked={({ data, node, event }) => { if (!node.detail && data && event?.target instanceof Element && !event.target.closest('button, a, .statistics-detail')) onToggle(data.stamp) }} />
+  </div>
 }
 
 function WelderStatisticsDetails({ jointFilter, onOpenRows, row, unit }: { jointFilter: WelderStatisticsJointFilter; onOpenRows?: StatisticsPageProps['onOpenWeldRowIds']; row: WelderStatisticsRow; unit: StatisticsUnit }) {
@@ -2974,49 +2911,25 @@ function WelderValueWithSplit({
   )
 }
 
-function WelderHeaderCell({ children, align = 'left', className }: { children: ReactNode; align?: 'left' | 'right'; className?: string }) {
-  return <th className={cn('px-4 py-3 font-semibold', align === 'right' ? 'text-right' : 'text-left', className)}>{children}</th>
-}
-
-function WelderBodyCell({ children, className }: { children: ReactNode; className?: string }) {
-  return <td className={cn('px-4 py-3 text-right font-medium text-slate-700', className)}>{children}</td>
-}
-
 
 function LineSummaryPanel({
   onOpenRows,
   summary,
+  sourceRows,
+  onRowsChange,
   unit,
 }: {
   onOpenRows?: StatisticsPageProps['onOpenWeldRowIds']
   summary: LineSummary
+  sourceRows: LineSummaryRow[]
+  onRowsChange: (rows: LineSummaryRow[]) => void
   unit: StatisticsUnit
 }) {
-  const [lineSearch, setLineSearch] = useState('')
-  const [showLineDetails, setShowLineDetails] = useState(false)
-  const [statusFilter, setStatusFilter] = useState<'all' | 'remaining' | 'completed'>('all')
-  const [sortMode, setSortMode] = useState<'remaining' | 'progress' | 'line'>('remaining')
-  const unitColumnLabel = unit === 'wdi' ? 'WDI' : 'стыков'
   const completedLines = summary.rows.filter((row) => row.remaining <= 0)
   const remainingLines = summary.rows.filter((row) => row.remaining > 0)
   const completedLineRowIds = mergeStatisticRowIds(completedLines.map((row) => row.rowIds))
   const remainingRowIds = mergeStatisticRowIds(remainingLines.map((row) => row.remainingRowIds))
   const completedRowIds = mergeStatisticRowIds(summary.rows.map((row) => row.completedRowIds))
-  const filteredRows = useMemo(() => {
-    const query = lineSearch.trim().toLowerCase()
-    return summary.rows
-      .filter((row) => !query || [row.line, row.projectTitle, row.subtitleCode].some((value) => value.toLowerCase().includes(query)))
-      .filter((row) => statusFilter === 'all' || (statusFilter === 'remaining' ? row.remaining > 0 : row.remaining <= 0))
-      .sort((left, right) => {
-        if (sortMode === 'line') return left.line.localeCompare(right.line, 'ru', { numeric: true })
-        if (sortMode === 'progress') {
-          const leftProgress = left.total > 0 ? left.completed / left.total : 0
-          const rightProgress = right.total > 0 ? right.completed / right.total : 0
-          return leftProgress - rightProgress || right.remaining - left.remaining
-        }
-        return right.remaining - left.remaining || right.total - left.total || left.line.localeCompare(right.line, 'ru', { numeric: true })
-      })
-  }, [lineSearch, sortMode, statusFilter, summary.rows])
 
   return (
     <div className="space-y-4">
@@ -3081,75 +2994,12 @@ function LineSummaryPanel({
         />
       </div>
 
-      <LineRemainderRankingPanel onOpenRows={onOpenRows} rows={filteredRows} unit={unit} />
-
       <Panel
         title="Полинейная сводка"
         subtitle="Список линий по проекту/шифру. История цепочки до годного результата и строки «не актуален» по изм. не учитываются."
       >
-        <div className="mb-3 flex flex-wrap items-end gap-3">
-          <label className="relative min-w-[260px] flex-1">
-            <span className="sr-only">Поиск по линии, проекту или шифру</span>
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input value={lineSearch} onChange={(event) => setLineSearch(event.target.value)} placeholder="Линия, проект или шифр" className="h-10 rounded-md border-slate-200 bg-white pl-9 text-sm" />
-            {lineSearch.trim() ? <button type="button" className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Очистить поиск" onClick={() => setLineSearch('')}><X className="h-4 w-4" /></button> : null}
-          </label>
-          <WelderToolbarSegments label="Показать" options={[["all", "Все"], ["remaining", "С остатком"], ["completed", "Сваренные"]]} value={statusFilter} onChange={(value) => setStatusFilter(value as typeof statusFilter)} />
-          <WelderToolbarSegments label="Сортировка" options={[["remaining", "По остатку"], ["progress", "По готовности"], ["line", "По линии"]]} value={sortMode} onChange={(value) => setSortMode(value as typeof sortMode)} />
-          <Button variant="outline" size="sm" className="h-10 gap-2 rounded-md border-slate-200 bg-white text-slate-600 hover:bg-slate-50" title={showLineDetails ? 'Скрыть параметры линии' : 'Показать параметры линии'} onClick={() => setShowLineDetails((current) => !current)}><Settings2 className="h-4 w-4" />Параметры</Button>
-        </div>
-
-        {summary.rows.length > 0 ? (
-          <div className="overflow-hidden rounded-md border border-slate-200">
-            <div className="overflow-x-auto">
-              <table className={cn('w-full table-fixed border-collapse text-sm', showLineDetails ? 'min-w-[1120px]' : 'min-w-[820px]')}>
-                <colgroup>
-                  {showLineDetails ? (
-                    <>
-                      <col className="w-[12%]" />
-                      <col className="w-[13%]" />
-                      <col className="w-[16%]" />
-                      <col className="w-[8%]" />
-                      <col className="w-[8%]" />
-                      <col className="w-[9%]" />
-                      <col className="w-[20%]" />
-                      <col className="w-[14%]" />
-                    </>
-                  ) : (
-                    <>
-                      <col className="w-[17%]" />
-                      <col className="w-[18%]" />
-                      <col className="w-[25%]" />
-                      <col className="w-[24%]" />
-                      <col className="w-[16%]" />
-                    </>
-                  )}
-                </colgroup>
-                <thead className="sticky top-0 z-20 bg-slate-100 text-slate-700">
-                  <tr>
-                    <LineHeaderCell>Проект</LineHeaderCell>
-                    <LineHeaderCell>Шифр</LineHeaderCell>
-                    <LineHeaderCell>Линия</LineHeaderCell>
-                    {showLineDetails ? (
-                      <>
-                        <LineHeaderCell>Группа трубопровода</LineHeaderCell>
-                        <LineHeaderCell>Категория трубопровода</LineHeaderCell>
-                        <LineHeaderCell align="right">Контроль швов, (%)</LineHeaderCell>
-                      </>
-                    ) : null}
-                    <LineHeaderCell align="right">Выполнение, {unitColumnLabel}</LineHeaderCell>
-                    <LineHeaderCell align="right">Остаток {unitColumnLabel}</LineHeaderCell>
-                  </tr>
-                </thead>
-                <LineSummaryTableBody onOpenRows={onOpenRows} rows={filteredRows} showLineDetails={showLineDetails} unit={unit} />
-              </table>
-              {filteredRows.length === 0 ? (
-                <div className="border-t border-slate-100 bg-slate-50 p-5 text-sm text-slate-500">
-                  По текущему поиску и фильтрам ничего не найдено.
-                </div>
-              ) : null}
-            </div>
-          </div>
+        {sourceRows.length > 0 ? (
+          <LineSummaryGrid onOpenRows={onOpenRows} rows={sourceRows} onRowsChange={onRowsChange} unit={unit} />
         ) : (
           <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
             В выбранном срезе нет актуальных линий для сводки.
@@ -3160,131 +3010,36 @@ function LineSummaryPanel({
   )
 }
 
-function LineRemainderRankingPanel({ onOpenRows, rows, unit }: { onOpenRows?: StatisticsPageProps['onOpenWeldRowIds']; rows: LineSummaryRow[]; unit: StatisticsUnit }) {
-  const visibleRows = [...rows].filter((row) => row.remaining > 0).sort((left, right) => right.remaining - left.remaining || right.total - left.total).slice(0, 10)
-  const maxTotal = Math.max(1, ...visibleRows.map((row) => row.total))
-  return (
-    <Panel
-      title="Линии с наибольшим остатком"
-      subtitle="Первые 10 линий по незавершенному объему. Длина полосы показывает масштаб линии, янтарная часть - текущий остаток."
-      headerAction={<div className="flex items-center gap-3 text-xs text-slate-500"><span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-sky-200" />Выполнено</span><span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-amber-300" />Остаток</span></div>}
-    >
-      {visibleRows.length > 0 ? (
-        <div className="space-y-2">
-          {visibleRows.map((row, index) => {
-            const completedPercent = row.total > 0 ? (row.completed / row.total) * 100 : 0
-            const remainingPercent = row.total > 0 ? (row.remaining / row.total) * 100 : 0
-            const content = <><span className="w-6 shrink-0 text-center text-xs font-medium tabular-nums text-slate-400">{index + 1}</span><span className="w-48 shrink-0 truncate text-sm font-semibold text-slate-800" title={`${row.projectTitle} · ${row.subtitleCode} · ${row.line}`}>{row.line}</span><span className="h-7 min-w-0 flex-1 rounded bg-slate-100"><span className="flex h-full overflow-hidden rounded" style={{ width: `${Math.max(3, (row.total / maxTotal) * 100)}%` }}><span className="h-full bg-sky-200" style={{ width: `${completedPercent}%` }} /><span className="h-full bg-amber-300" style={{ width: `${remainingPercent}%` }} /></span></span><span className="w-28 shrink-0 text-right text-xs tabular-nums text-slate-600">остаток <strong className="text-amber-800">{formatStatisticValue(row.remaining, unit)}</strong></span>{row.rowIds.length > 0 ? <ArrowUpRight className="h-4 w-4 shrink-0 text-sky-600" /> : null}</>
-            return onOpenRows && row.rowIds.length > 0 ? <button key={row.key} type="button" className="flex w-full items-center gap-2 rounded-md border border-transparent px-2 py-1.5 text-left hover:border-sky-100 hover:bg-sky-50/50" title={`Открыть стыки линии ${row.line}`} onClick={() => onOpenRows(row.rowIds, `Показаны стыки линии ${row.line}: ${row.rowIds.length}.`)}>{content}</button> : <div key={row.key} className="flex items-center gap-2 px-2 py-1.5">{content}</div>
-          })}
-        </div>
-      ) : <div className="rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 p-5 text-sm text-emerald-800">По текущему срезу и фильтрам линий с остатком нет.</div>}
-    </Panel>
-  )
-}
+const lineGridRowId = ({ data }: { data: LineSummaryRow }) => data.key
 
-function LineSummaryTableBody({
-  onOpenRows,
-  rows,
-  showLineDetails,
-  unit,
-}: {
+function LineSummaryGrid({ onOpenRows, rows, onRowsChange, unit }: {
   onOpenRows?: StatisticsPageProps['onOpenWeldRowIds']
   rows: LineSummaryRow[]
-  showLineDetails: boolean
+  onRowsChange: (rows: LineSummaryRow[]) => void
   unit: StatisticsUnit
 }) {
-  const {
-    bodyRef,
-    bottomSpacerHeight,
-    measureRow,
-    rowIndexes,
-    topSpacerHeight,
-    visibleRows,
-  } = useWindowTableVirtualization({
-    rows,
-    estimateRowHeight: 76,
-  })
-  const columnCount = showLineDetails ? 8 : 5
-
-  return (
-    <tbody ref={bodyRef}>
-      <LineSummaryVirtualSpacer colSpan={columnCount} height={topSpacerHeight} />
-      {visibleRows.map((row, visibleIndex) => (
-        <LineSummaryTableRow
-          key={row.key}
-          row={row}
-          rowIndex={rowIndexes[visibleIndex] ?? visibleIndex}
-          measureRow={measureRow}
-          onOpenRows={onOpenRows}
-          showLineDetails={showLineDetails}
-          unit={unit}
-        />
-      ))}
-      <LineSummaryVirtualSpacer colSpan={columnCount} height={bottomSpacerHeight} />
-    </tbody>
-  )
-}
-
-function LineSummaryVirtualSpacer({
-  colSpan,
-  height,
-}: {
-  colSpan: number
-  height: number
-}) {
-  if (height <= 0) return null
-  return (
-    <tr aria-hidden="true">
-      <td colSpan={colSpan} style={{ height, padding: 0, border: 0 }} />
-    </tr>
-  )
-}
-
-function LineSummaryTableRow({
-  onOpenRows,
-  row,
-  rowIndex,
-  measureRow,
-  showLineDetails,
-  unit,
-}: {
-  onOpenRows?: StatisticsPageProps['onOpenWeldRowIds']
-  row: LineSummaryRow
-  rowIndex: number
-  measureRow?: RefCallback<HTMLTableRowElement>
-  showLineDetails: boolean
-  unit: StatisticsUnit
-}) {
-  return (
-    <tr
-      ref={measureRow}
-      data-index={rowIndex}
-      className={cn(
-        'border-t border-slate-100',
-        rowIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50/60',
-      )}
-    >
-      <LineBodyCell align="left">{row.projectTitle}</LineBodyCell>
-      <LineBodyCell align="left">{row.subtitleCode}</LineBodyCell>
-      <LineBodyCell align="left" className="font-semibold text-slate-900">
-        <div className="flex items-center gap-2"><span className="min-w-0 flex-1 break-words">{row.line}</span>{onOpenRows && row.rowIds.length > 0 ? <button type="button" className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-sky-600 hover:bg-sky-50" title={`Открыть стыки линии ${row.line}`} onClick={() => onOpenRows(row.rowIds, `Показаны стыки линии ${row.line}: ${row.rowIds.length}.`)}><ArrowUpRight className="h-4 w-4" /></button> : null}</div>
-      </LineBodyCell>
-      {showLineDetails ? (
-        <>
-          <LineBodyCell align="left">{row.groupName}</LineBodyCell>
-          <LineBodyCell align="left">{row.category}</LineBodyCell>
-          <LineBodyCell>{row.weldControlPercent}</LineBodyCell>
-        </>
-      ) : null}
-      <LineBodyCell>
-        <LineCompletionCell row={row} unit={unit} />
-      </LineBodyCell>
-      <LineBodyCell>
-        <LineValueWithSplit total={row.remaining} f={row.remainingF} s={row.remainingS} unit={unit} />
-      </LineBodyCell>
-    </tr>
-  )
+  const columns = useMemo<ColDef<LineSummaryRow>[]>(() => ([
+    { field: 'projectTitle', headerName: 'Проект', initialFlex: 1, minWidth: 145 },
+    { field: 'subtitleCode', headerName: 'Шифр', initialFlex: 1, minWidth: 145 },
+    { field: 'line', headerName: 'Линия', initialFlex: 1.3, minWidth: 190,
+      cellRenderer: ({ data }: ICellRendererParams<LineSummaryRow>) => data && <div className="flex items-center gap-2">
+        <span className="min-w-0 flex-1 break-words font-semibold">{data.line}</span>
+        {onOpenRows && data.rowIds.length > 0 ? <button type="button" className="shrink-0 rounded p-1 text-sky-600 hover:bg-sky-50" title={`Открыть стыки линии ${data.line}`} onClick={() => onOpenRows(data.rowIds, `Показаны стыки линии ${data.line}: ${data.rowIds.length}.`)}><ArrowUpRight className="h-4 w-4" /></button> : null}
+      </div>,
+    },
+    { field: 'groupName', headerName: 'Группа трубопровода', minWidth: 110, initialFlex: .6 },
+    { field: 'category', headerName: 'Категория трубопровода', minWidth: 110, initialFlex: .6 },
+    { field: 'weldControlPercent', headerName: 'Контроль швов, (%)', minWidth: 115, initialFlex: .6 },
+    { colId: 'completed', headerName: `Выполнение, ${unit === 'joints' ? 'стыки' : 'WDI'}`, minWidth: 220, initialFlex: 1.3,
+      valueGetter: ({ data }) => data?.completed,
+      cellRenderer: ({ data }: ICellRendererParams<LineSummaryRow>) => data && <LineCompletionCell row={data} unit={unit} /> },
+    { colId: 'remaining', headerName: `Остаток ${unit === 'joints' ? 'стыки' : 'WDI'}`, minWidth: 150, initialFlex: 1,
+      valueGetter: ({ data }) => data?.remaining,
+      cellRenderer: ({ data }: ICellRendererParams<LineSummaryRow>) => data && <LineValueWithSplit total={data.remaining} f={data.remainingF} s={data.remainingS} unit={unit} /> },
+  ] satisfies ColDef<LineSummaryRow>[]).map(column => ({ ...column, cellClass: 'statistics-cell', wrapText: true, autoHeight: true })), [onOpenRows, unit])
+  return <div data-statistics-grid="lines">
+    <ReadOnlyGrid label="Полинейная сводка" columnFilters onDisplayedRowsChange={onRowsChange} pageScroll rowData={rows} columnDefs={columns} rowHeight={76} getRowId={lineGridRowId} />
+  </div>
 }
 
 function LineValueWithSplit({ total, f, s, unit }: { total: number; f: number; s: number; unit: StatisticsUnit }) {
@@ -3307,38 +3062,6 @@ function LineCompletionCell({ row, unit }: { row: LineSummaryRow; unit: Statisti
       <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-sky-300" style={{ width: `${Math.min(100, Math.max(0, percent))}%` }} /></div>
       <div className="mt-1 flex justify-end gap-1 text-[10px] text-slate-500"><span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">F {formatStatisticValue(row.completedF, unit)}/{formatStatisticValue(row.totalF, unit)}</span><span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">S {formatStatisticValue(row.completedS, unit)}/{formatStatisticValue(row.totalS, unit)}</span></div>
     </div>
-  )
-}
-
-function LineHeaderCell({
-  children,
-  align = 'left',
-  title,
-}: {
-  children: ReactNode
-  align?: 'left' | 'right'
-  title?: string
-}) {
-  return (
-    <th className={cn('px-3 py-3 font-semibold', align === 'right' ? 'text-right' : 'text-left')} title={title}>
-      {children}
-    </th>
-  )
-}
-
-function LineBodyCell({
-  children,
-  align = 'right',
-  className,
-}: {
-  children: ReactNode
-  align?: 'left' | 'right'
-  className?: string
-}) {
-  return (
-    <td className={cn('px-3 py-3 align-top font-medium text-slate-700', align === 'right' ? 'text-right' : 'text-left', className)}>
-      {children}
-    </td>
   )
 }
 

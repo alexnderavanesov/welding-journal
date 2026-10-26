@@ -1,7 +1,19 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { buildPrintableReportHtml } from '@/lib/printable-report'
 
 describe('printable report', () => {
+  it('retains the snapshot time when rebuilding a page or printing later', () => {
+    const report = { title: 'Snapshot', generatedAt: '2026-10-25T10:00:00.000Z' }
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-10-25T11:00:00.000Z'))
+      const first = buildPrintableReportHtml(report)
+      vi.setSystemTime(new Date('2026-10-25T12:00:00.000Z'))
+      expect(buildPrintableReportHtml(report)).toBe(first)
+      expect(first).toContain(new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(report.generatedAt)))
+    } finally { vi.useRealTimers() }
+  })
+
   it('compacts only runs of genuinely empty print cells, preserving every column, value and row kind', () => {
     const columns = Array.from({ length: 111 }, (_, i) => `Column ${i}`)
     const rows = Array.from({ length: 120 }, (_, i) => columns.map((_, column) => column === 0 ? `S${i}` : column === 55 ? 0 : column === 110 ? '<last>\nстрока' : ''))

@@ -7,48 +7,66 @@ import { E2E_DATABASE_URL, assertSafeE2eDatabaseUrl } from './database'
 import { rpcName } from './rpc'
 
 const exec = promisify(execFile)
+// Grid blocks and summaries use POST for reads and may outlive their document.
+// Keep the allowlist exact: an aborted mutation has an unknown outcome.
+const isReportRead = (request: Request) => /^(?:readJournalGrid|getJournalReportSummary|getDispatcherTaskContext|readReportOutputSnapshot)(?:_|$)/.test(rpcName(request.url()))
+const isNavigationRead = (request: Request) => request.method() === 'GET' || isReportRead(request)
+  || rpcName(request.url()).startsWith('refreshDispatcherTaskSnapshot')
 export function observeMixedClient(context: BrowserContext, role: string) {
   const calls: Array<{ name: string; milliseconds: number; bytes: number; status: number }> = []
   const errors: string[] = [], expectedFailures: string[] = [], pending = new Map<Request, number>()
   const injectedNetworkFailures = new WeakSet<Request>()
   const navigationReads = new Map<Page, Set<Request>>()
+  const navigations = new Map<Page, Request>()
   const abandonedOnNavigation: string[] = []
   const sizes: Promise<void>[] = []
   let peakInFlight = 0, rpcStarted = 0
   context.on('page', page => {
     page.on('pageerror', error => errors.push(error.message))
     page.on('crash', () => errors.push('page crashed'))
-    page.on('domcontentloaded', () => {
+    page.on('framenavigated', frame => {
+      const navigation = navigations.get(page)
+      if (frame !== page.mainFrame() || !navigation
+        || frame.url().split('#')[0] !== navigation.url().split('#')[0]) return
       // Chromium can close an old document's fetch socket on hard navigation
       // without emitting requestfailed/loadingFailed (covered by a real browser
-      // regression). Retire only reads captured BEFORE that navigation started,
-      // never writes, same-document navigation, or the new document's requests.
+      // regression). The old document can start reads while navigation is
+      // waiting for headers. Retire those at the main-frame commit, BEFORE
+      // the new document runs scripts; never retire writes or live new reads.
       for (const request of navigationReads.get(page) ?? []) {
         if (pending.delete(request)) abandonedOnNavigation.push(rpcName(request.url()))
       }
       navigationReads.delete(page)
+      navigations.delete(page)
     })
   })
   context.on('request', request => {
     if (request.isNavigationRequest() && request.frame() === request.frame().page().mainFrame()) {
       const page = request.frame().page(), reads = navigationReads.get(page) ?? new Set<Request>()
       for (const old of pending.keys()) {
-        if (old.frame().page() === page && (old.method() === 'GET' || rpcName(old.url()).startsWith('refreshDispatcherTaskSnapshot'))) reads.add(old)
+        if (old.frame().page() === page && isNavigationRead(old)) reads.add(old)
       }
       navigationReads.set(page, reads)
+      navigations.set(page, request)
     }
     if (!request.url().includes('/_serverFn/')) return
+    // Before frame commit, a fetch still belongs to the departing document.
+    if (isNavigationRead(request)) navigationReads.get(request.frame().page())?.add(request)
     rpcStarted++
     pending.set(request, performance.now()); peakInFlight = Math.max(peakInFlight, pending.size)
   })
   context.on('requestfailed', request => {
+    if (request.isNavigationRequest()) {
+      const page = request.frame().page()
+      if (navigations.get(page) === request) { navigations.delete(page); navigationReads.delete(page) }
+    }
     if (!pending.delete(request)) return
     const failure = `${rpcName(request.url())}: ${request.failure()?.errorText}`
     // Only the exact request explicitly marked by the fault injector is exempt.
     // Earlier cancelled reads must neither consume that exemption nor cause a
     // genuine first write failure to be silently accepted.
     if (injectedNetworkFailures.delete(request) && request.failure()?.errorText === 'net::ERR_FAILED') expectedFailures.push(failure)
-    else if (request.failure()?.errorText === 'net::ERR_ABORTED' && request.method() === 'GET') expectedFailures.push(failure)
+    else if (request.failure()?.errorText === 'net::ERR_ABORTED' && (request.method() === 'GET' || isReportRead(request))) expectedFailures.push(failure)
     else errors.push(failure)
   })
   context.on('requestfinished', request => {

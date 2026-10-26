@@ -19,6 +19,7 @@ type WeldingJournalHeaderActionsProps = {
   onGenerateChecklistDocument: () => void
   onGenerateZniDocument: () => void
   onOpenCurrentReport: () => void
+  currentReportDisabled?: boolean
   onOpenWaitingWeldReport: () => void
   onOpenWaitingRequestReport: () => void
   onOpenWaitingControlReport: () => void
@@ -39,6 +40,7 @@ export function WeldingJournalHeaderActions({
   onGenerateChecklistDocument,
   onGenerateZniDocument,
   onOpenCurrentReport,
+  currentReportDisabled,
   onOpenWaitingWeldReport,
   onOpenWaitingRequestReport,
   onOpenWaitingControlReport,
@@ -57,7 +59,7 @@ export function WeldingJournalHeaderActions({
         onToggle={onToggleShowMenu}
         widthClassName="w-64"
         items={[
-          { label: 'Текущая версия', onClick: onOpenCurrentReport },
+          { label: 'Текущая версия', onClick: onOpenCurrentReport, disabled: currentReportDisabled },
           { label: 'Системная версия', onClick: onOpenSystemReport },
           { label: 'Ожидает сварку', onClick: onOpenWaitingWeldReport },
           { label: 'Ожидает заявки', onClick: onOpenWaitingRequestReport },
@@ -107,6 +109,7 @@ type HeatTreatmentHeaderActionsProps = {
   isShowMenuOpen: boolean
   onToggleShowMenu: () => void
   onOpenCurrentReport: () => void
+  currentReportDisabled?: boolean
   onOpenWaitingRequestReport: () => void
   onOpenResultsReport: () => void
   availability?: WorkflowAvailability
@@ -135,6 +138,7 @@ export function HeatTreatmentHeaderActions({
   isShowMenuOpen,
   onToggleShowMenu,
   onOpenCurrentReport,
+  currentReportDisabled,
   onOpenWaitingRequestReport,
   onOpenResultsReport,
   availability = 'ready',
@@ -328,7 +332,7 @@ export function HeatTreatmentHeaderActions({
         widthClassName="w-56"
         buttonClassName={REPORT_WORKFLOW_BUTTON_CLASS}
         items={[
-          { label: 'Текущая версия', onClick: onOpenCurrentReport },
+          { label: 'Текущая версия', onClick: onOpenCurrentReport, disabled: currentReportDisabled },
           { label: 'Ожидает заявку ПСТО', onClick: onOpenWaitingRequestReport },
           { label: 'Результаты ПСТО', onClick: onOpenResultsReport },
         ]}
@@ -356,6 +360,7 @@ type LnkHeaderActionsProps = {
   isShowMenuOpen: boolean
   onToggleShowMenu: () => void
   onOpenCurrentReport: () => void
+  currentReportDisabled?: boolean
   onOpenToRequestReport: () => void
   onOpenWaitingNkReport: () => void
   onOpenConclusionsReport: () => void
@@ -382,6 +387,7 @@ export function LnkHeaderActions({
   isShowMenuOpen,
   onToggleShowMenu,
   onOpenCurrentReport,
+  currentReportDisabled,
   onOpenToRequestReport,
   onOpenWaitingNkReport,
   onOpenConclusionsReport,
@@ -531,7 +537,7 @@ export function LnkHeaderActions({
         onToggle={toggleShowMenu}
         buttonClassName={REPORT_WORKFLOW_BUTTON_CLASS}
         items={[
-          { label: 'Текущая версия', onClick: onOpenCurrentReport },
+          { label: 'Текущая версия', onClick: onOpenCurrentReport, disabled: currentReportDisabled },
           { label: 'Ожидание заявки', onClick: onOpenToRequestReport },
           { label: 'Ожидание НК', onClick: onOpenWaitingNkReport },
           { label: 'Показать заключения', onClick: onOpenConclusionsReport },

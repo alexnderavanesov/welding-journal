@@ -30,6 +30,24 @@ assert(resourceContainer ? file === '/audit-counts/counts.json'
   : file?.startsWith(join(tmpdir(), 'welding-e2e-sql-')) && file.endsWith('/counts.json'))
 const counts = { statements: 0, operations: {} }
 const dispatcherCalculations = []
+// Explicit local diagnostic run only; the normal timing run has no profiler.
+// Capture through the first substantial calculation, excluding later idle time.
+if (process.env.AUDIT_CPU_PROFILE === '1') {
+  const profiler = new Session()
+  profiler.connect()
+  const post = (method) => new Promise((resolve, reject) => profiler.post(method, (error, value) => error ? reject(error) : resolve(value)))
+  await post('Profiler.enable')
+  await post('Profiler.start')
+  const finish = async metrics => {
+    if (metrics.milliseconds < 1_000) return
+    channel('welding.dispatcher.full-calculation').unsubscribe(finish)
+    try {
+      const { profile } = await post('Profiler.stop')
+      writeFileSync(file.replace(/counts\.json$/, 'dispatcher.cpuprofile'), JSON.stringify(profile))
+    } finally { profiler.disconnect() }
+  }
+  channel('welding.dispatcher.full-calculation').subscribe(finish)
+}
 channel('welding.dispatcher.full-calculation').subscribe(metrics => {
   dispatcherCalculations.push(metrics)
   if (dispatcherCalculations.length > 20) dispatcherCalculations.shift()

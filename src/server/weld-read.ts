@@ -1,4 +1,11 @@
 import { createHash } from 'node:crypto'
+import { getReportOutputBuilder } from '@/lib/report-output-definition'
+import { REPORT_PREVIEW_ROW_LIMIT } from '@/lib/report-preview-limit'
+import type { TabularReportData } from '@/lib/tabular-report'
+import type { PrintableReport } from '@/lib/printable-report'
+import { prepareJournalPageRows } from '@/lib/use-report-rows'
+import { splitReportQuickSearch } from '@/lib/report-quick-search'
+import type { ReportOutputRequest, ReportOutputSnapshot } from './weld-contracts'
 import { buildCalculatedReportValueSql } from './report-calculated-values-sql'
 import { buildCalculatedFilterWhere, reportTextSql } from './report-filter-text-sql'
 // This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
@@ -19,6 +26,7 @@ appSettings,
 dispatcherAcceptedWarnings,
 dispatcherBackgroundRowTasks,
 dispatcherRowTasks,
+dispatcherTaskIndexState,
 duplicateControls,
 generatedDocuments,
 generatedDocumentWeldJoints,
@@ -722,14 +730,89 @@ export async function getWeldReportSummary({ data: input }: { data: WeldReportSu
   )
 }
 
+/** Preview and download each own a coherent transaction. The preview keeps a
+ * bounded prefix; downloading starts a new snapshot and visits every batch. */
+export async function readReportOutputSnapshot(input: ReportOutputRequest): Promise<ReportOutputSnapshot> {
+  const build = getReportOutputBuilder(input)
+  const report: PrintableReport = build([]).report
+  let kept = 0, truncated = false
+  const snapshot = await visitReportOutput(input, async content => {
+    for (const table of content.report.tables ?? []) {
+      const remaining = REPORT_PREVIEW_ROW_LIMIT - kept
+      const rows = table.rows.slice(0, remaining)
+      if (rows.length) {
+        if (!report.tables?.length) report.tables = [{ ...table, rows: [] }]
+        report.tables[0].rows.push(...rows)
+        kept += rows.length
+      }
+      if (table.rows.length > remaining) truncated = true
+    }
+    return !truncated
+  })
+  // Current/system reports have exactly one row per source joint. Other modes
+  // may expand one joint into several methods; never present source count as file rows.
+  const direct = !input.kind || input.kind === 'current' || input.kind === 'system'
+  const totalRows = direct ? snapshot.sourceRows : truncated ? undefined : kept
+  report.generatedAt = snapshot.generatedAt
+  report.meta = [{ label: totalRows === undefined ? 'Строк в предпросмотре' : 'Строк', value: String(totalRows ?? kept) }]
+  report.preview = { truncated, sourceRows: snapshot.sourceRows, totalRows, freshExcel: true }
+  return { ...snapshot, report, truncated }
+}
+
+export async function visitReportOutput(
+  input: ReportOutputRequest,
+  consume: (content: { report: PrintableReport; exportData: TabularReportData }) => Promise<boolean | void>,
+  signal?: AbortSignal,
+) {
+  await assertSecurityScope('entry')
+  const build = getReportOutputBuilder(input)
+  const kind = input.kind ?? 'current'
+  const report = input.report === 'weldingJournal' && (kind === 'waitingRequest' || kind === 'waitingControl') ? 'lnk' : input.report
+  const filters = kind === 'current' ? input.columnFilters ?? {}
+    : kind === 'waitingWeld' || kind === 'waitingRepair' ? { finalStatus: kind === 'waitingWeld' ? '=ожидает сварку' : '=ожидает ремонт' } : {}
+  const data = normalizeWeldPageRequest({ ...splitReportQuickSearch(filters), sort: kind === 'current' ? input.sort ?? undefined : undefined,
+    page: 1, pageSize: WELD_PAGE_ALL_SIZE, includeTotals: false })
+  signal?.throwIfAborted()
+  assertCurrentDispatcherStatuses(await ensureDispatcherTaskIndexFresh())
+  return requireDb().transaction(async db => {
+    const [state] = await db.select({ dispatcher: dispatcherTaskIndexState, generatedAt: sql<string>`transaction_timestamp()::text` })
+      .from(dispatcherTaskIndexState).where(eq(dispatcherTaskIndexState.id, 1))
+    assertCurrentDispatcherStatuses(state?.dispatcher)
+    const settings = await loadServerOtherSettings(db)
+    const where = buildReportQueryWhere(report, data, settings)
+    const [countRow] = await db.select({ total: count() }).from(weldJoints).where(where)
+    // A transaction-local cursor preserves order and snapshot across batches,
+    // avoiding growing OFFSET scans and retaining all identifiers in JS.
+    const selection = db.select({ id: weldJoints.id }).from(weldJoints).where(where)
+      .orderBy(...getReportOrderBy(report, data.sort, settings))
+    await db.execute(sql`declare report_output_cursor no scroll cursor for ${selection}`)
+    try {
+      for (;;) {
+        signal?.throwIfAborted()
+        const ids = (await db.execute<{ id: number }>(sql`fetch forward 1000 from report_output_cursor`)).rows.map(row => row.id)
+        if (!ids.length) break
+        const facts = await db.select(WELD_TABLE_SELECT).from(weldJoints).where(buildNumberArrayMatch(weldJoints.id, ids))
+        const byId = new Map(facts.map(row => [row.id, row]))
+        const rows = ids.map(id => byId.get(id)!)
+        const hydrated = await attachReportPageMetadata(applyCurrentSystemWdi(rows, settings), { dispatcherState: state.dispatcher, db })
+        const prepared = prepareJournalPageRows(buildServerReportRows(hydrated, report, { preserveSourceOrder: true }), report)
+        const content = build(compactWeldRowsForTransport(await attachJournalGroupContext(prepared, settings, db)))
+        signal?.throwIfAborted()
+        if (await consume({ report: content.report, exportData: content.exportData! }) === false) break
+      }
+    } finally { await db.execute(sql`close report_output_cursor`) }
+    return { sourceRows: Number(countRow.total), generatedAt: new Date(state.generatedAt).toISOString() }
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
+}
+
 export async function listReportPage(report: WeldReportKind, data: ReturnType<typeof normalizeWeldPageRequest>): Promise<WeldPageResult> {
   const db = requireDb()
   const includeTotals = data.includeTotals !== false
   const { dispatcherState, otherSettings } = await getReportReadContext(data, report === 'weldingJournal' && includeTotals)
   const where = buildReportQueryWhere(report, data, otherSettings)
   if (data.pageSize === WELD_PAGE_ALL_SIZE) {
-    // Preserve the existing output guard's source scope. Changing the output
-    // limit policy belongs to the separately agreed output/print-limit plan.
+    // Legacy contextual/bulk consumers retain their operation guard. Report
+    // preview and complete Excel downloads use the bounded visitor above.
     const source = { ...data, columnFilters: getWeldColumnFilterOptionSourceFilters(data.columnFilters, isSystemWdiMode(otherSettings)) }
     await assertReportOutputWithinLimit(report === 'weldingJournal' ? buildWhere(source)
       : and(buildReportKindWhere(report), buildReportSourceWhere(source, report)))
@@ -842,10 +925,10 @@ export function buildReportQueryWhere(
 
 export const MAX_REPORT_OUTPUT_ROWS = 10_000
 
-export async function assertReportOutputWithinLimit(where: SQL | undefined) {
+export async function assertReportOutputWithinLimit(where: SQL | undefined, db: Pick<ReturnType<typeof requireDb>, 'select'> = requireDb()) {
   // OFFSET scans at most the fixed safety threshold and returns one tiny row;
   // do this before hydrating report rows, related controls, or browser output.
-  const overflow = await requireDb()
+  const overflow = await db
     .select({ id: weldJoints.id })
     .from(weldJoints)
     .where(where)
@@ -1023,12 +1106,12 @@ function buildHeatTreatmentStagedLnkReadyWhere() {
   ) ?? sql`false`
 }
 
-export async function attachDuplicateControlsToPage<Row extends DuplicateControlCarrier>(rows: Row[]) {
+export async function attachDuplicateControlsToPage<Row extends DuplicateControlCarrier>(rows: Row[], database?: Pick<ReturnType<typeof requireDb>, 'select'>) {
   if (rows.length === 0) return rows
   const ids = [...new Set(rows.map((row) => Number(row.id)).filter(Number.isFinite))]
   if (ids.length === 0) return rows
 
-  const db = requireDb()
+  const db = database ?? requireDb()
   const controls = await db
     .select()
     .from(duplicateControls)
@@ -1053,11 +1136,12 @@ export function mergeDuplicateControlsIntoRows<Row extends DuplicateControlCarri
 
 export async function attachDispatcherTaskCodesToPage<Row extends { id: number }>(
   rows: Row[],
+  database?: Pick<ReturnType<typeof requireDb>, 'execute'>,
 ) {
   if (rows.length === 0) return rows
   const ids = [...new Set(rows.map((row) => Number(row.id)).filter(Number.isFinite))]
   if (ids.length === 0) return rows
-  const result = await requireDb().execute<DispatcherTaskCodeRow & { source: 'active' | 'background' }>(sql`
+  const result = await (database ?? requireDb()).execute<DispatcherTaskCodeRow & { source: 'active' | 'background' }>(sql`
     select ${dispatcherRowTasks.weldJointId} as "rowId", ${dispatcherRowTasks.code} as "code", 'active' as "source"
     from ${dispatcherRowTasks}
     where ${buildNumberArrayMatch(dispatcherRowTasks.weldJointId, ids)}
@@ -1079,6 +1163,7 @@ export async function attachReportPageMetadata<Row extends DuplicateControlCarri
   options: {
     dispatcherState?: DispatcherTaskIndexState
     includeJointWorkflowMetadata?: boolean
+    db?: Pick<ReturnType<typeof requireDb>, 'select' | 'execute'>
   } = {},
 ) {
   const includeJointWorkflowMetadata = options.includeJointWorkflowMetadata ?? true
@@ -1091,12 +1176,20 @@ export async function attachReportPageMetadata<Row extends DuplicateControlCarri
     rowsWithDispatcherTasks,
     rowsWithHeatTreatmentControls,
     rowsWithEarlyCoilDecisions,
-  ] = await Promise.all([
-    attachDuplicateControlsToPage(rows),
-    loadGeneratedDocumentAssignments(rows),
-    attachDispatcherTaskCodesToPage(rows),
-    attachHeatTreatmentControlRelations(rows),
-    includeJointWorkflowMetadata ? attachEarlyCoilDecisionMetadataToPage(rows) : Promise.resolve(rows),
+  ] = options.db ? [
+    // A snapshot transaction has a single pg connection. Keep pooled reads
+    // parallel for other callers, but execute snapshot reads sequentially.
+    await attachDuplicateControlsToPage(rows, options.db),
+    await loadGeneratedDocumentAssignments(rows, options.db),
+    await attachDispatcherTaskCodesToPage(rows, options.db),
+    await attachHeatTreatmentControlRelations(rows, options.db),
+    includeJointWorkflowMetadata ? await attachEarlyCoilDecisionMetadataToPage(rows, options.db) : rows,
+  ] as const : await Promise.all([
+    attachDuplicateControlsToPage(rows, options.db),
+    loadGeneratedDocumentAssignments(rows, options.db),
+    attachDispatcherTaskCodesToPage(rows, options.db),
+    attachHeatTreatmentControlRelations(rows, options.db),
+    includeJointWorkflowMetadata ? attachEarlyCoilDecisionMetadataToPage(rows, options.db) : Promise.resolve(rows),
   ])
   const rowsWithGeneratedDocuments = applyGeneratedDocumentFields(
     rowsWithHeatTreatmentControls,
@@ -1135,11 +1228,11 @@ export function mergeJointChainContinuationMetadataIntoRows<Row extends { id: nu
 
 type EarlyCoilDecisionMetadata = { earlyCoilDecisionAccepted?: true }
 
-export async function attachEarlyCoilDecisionMetadataToPage<Row extends { id: number }>(rows: Row[]) {
+export async function attachEarlyCoilDecisionMetadataToPage<Row extends { id: number }>(rows: Row[], database?: Pick<ReturnType<typeof requireDb>, 'select'>) {
   if (rows.length === 0) return rows as Array<Row & EarlyCoilDecisionMetadata>
   const ids = [...new Set(rows.map((row) => Number(row.id)).filter((id) => Number.isInteger(id) && id > 0))]
   if (ids.length === 0) return rows as Array<Row & EarlyCoilDecisionMetadata>
-  const warnings = await requireDb()
+  const warnings = await (database ?? requireDb())
     .select({ key: dispatcherAcceptedWarnings.key })
     .from(dispatcherAcceptedWarnings)
     .where(and(

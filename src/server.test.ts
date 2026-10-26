@@ -1,4 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
+import { IncomingMessage, ServerResponse } from 'node:http'
+import { Socket } from 'node:net'
+
+// Exercise Nitro's actual lazy-signal adapter, not a pre-aborted native Request.
+const nitroRequire = createRequire(import.meta.resolve('nitro'))
+const { NodeRequest } = await import(pathToFileURL(nitroRequire.resolve('srvx/node')).href)
 
 const mocks = vi.hoisted(() => ({ fetch: vi.fn(), gate: vi.fn() }))
 vi.mock('@tanstack/react-start/server-entry', () => ({ default: { fetch: mocks.fetch } }))
@@ -6,6 +14,19 @@ vi.mock('./server/release-request-gate', () => ({ createReleaseRequestGate: () =
 import entry from './server'
 
 describe('server request cancellation boundary', () => {
+  it('recognizes a socket closed before srvx first creates its lazy AbortSignal', async () => {
+    const req = new IncomingMessage(new Socket())
+    req.method = 'POST'; req.url = '/_serverFn/save'; req.headers = { host: 'local' }
+    req.on('error', () => {})
+    const res = new ServerResponse(req)
+    const request = new NodeRequest({ req, res })
+    req.destroy(); res.destroy()
+    await new Promise(resolve => setImmediate(resolve))
+    res.emit('close')
+    expect(request.signal.aborted).toBe(false) // listener was installed after close
+    expect((await entry.fetch(request)).status).toBe(499)
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
   beforeEach(() => { vi.resetAllMocks(); mocks.gate.mockResolvedValue(null) })
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
   it('forwards successful responses and handler options unchanged', async () => {

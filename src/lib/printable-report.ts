@@ -30,6 +30,8 @@ export type PrintableReportTable = {
 
 export type PrintableReport = {
   title: string
+  generatedAt?: string
+  preview?: { truncated: boolean; sourceRows: number; totalRows?: number; freshExcel: boolean }
   subtitle?: string
   meta?: Array<{ label: string; value: string }>
   metrics?: PrintableReportMetric[]
@@ -42,7 +44,7 @@ export function buildPrintableReportHtml(report: PrintableReport, options: { emb
   const generatedAt = new Intl.DateTimeFormat('ru-RU', {
     dateStyle: 'short',
     timeStyle: 'short',
-  }).format(new Date())
+  }).format(new Date(report.generatedAt ?? Date.now()))
   const title = escapeHtml(report.title)
   const subtitle = report.subtitle ? `<p class="report-subtitle">${escapeHtml(report.subtitle)}</p>` : ''
   const meta = renderMeta(report.meta ?? [], generatedAt)

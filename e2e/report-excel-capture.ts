@@ -10,13 +10,14 @@ export async function captureReportExcel(page: Page, modal: Locator, path?: stri
     value: card.querySelector('.metric-value')!.textContent!,
     detail: card.querySelector('.metric-detail')?.textContent ?? '',
   })))
+  const freshDownload = await modal.getByText(/Excel содержит всю выборку/).count() > 0
   const pending = page.waitForEvent('download')
   const sqlBefore = await auditSqlCount()
   await modal.getByRole('button', { name: 'Скачать Excel', exact: true }).click()
   const download = await pending
   expect(await download.failure()).toBeNull()
   const sqlAfter = await auditSqlCount()
-  if (sqlBefore !== undefined && sqlAfter !== undefined) expect(sqlAfter - sqlBefore).toBe(0)
+  if (!freshDownload && sqlBefore !== undefined && sqlAfter !== undefined) expect(sqlAfter - sqlBefore).toBe(0)
   if (path) await download.saveAs(path)
   const workbook = XLSX.read(await readFile((await download.path())!), { type: 'buffer', cellStyles: true, cellNF: true })
   const summary = workbook.Sheets[workbook.SheetNames[0]]

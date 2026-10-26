@@ -217,9 +217,11 @@ test('repeated cached disclosure keeps intermediate frames after twenty cycles',
   await settle(page)
   const retainedGrids = await detail.locator('.ag-root').elementHandles()
   const observations: { cycle: number; direction: string; intermediate: number; rowIntermediate: number; maximum: number; gap: number }[] = []
+  const frameSeries: Array<{ cycle: number; direction: string; samples: Sample[] }> = []
   for (let cycle = 0; cycle < 20; cycle++) {
     for (const direction of ['close', 'open'] as const) {
       const samples = await motionFrames(page, toggle, selector)
+      frameSeries.push({ cycle, direction, samples })
       const maximum = Math.max(...samples.map(sample => sample.height))
       observations.push({ cycle, direction, maximum, intermediate: samples.filter(sample => sample.height > 2 && sample.height < maximum - 2).length,
         rowIntermediate: samples.filter(sample => sample.rowHeight > 2 && sample.rowHeight < maximum - 2).length,
@@ -227,6 +229,8 @@ test('repeated cached disclosure keeps intermediate frames after twenty cycles',
     }
   }
   await writeFile(testInfo.outputPath('disclosure-frames.json'), JSON.stringify(observations, null, 2))
+  // Keep the trajectory too: counts alone cannot locate an intermittent pause.
+  await writeFile(testInfo.outputPath('disclosure-samples.json'), JSON.stringify(frameSeries))
   console.log(JSON.stringify({ workflow: 'twenty repeated disclosure cycles', observations }))
   expect(await Promise.all(retainedGrids.map(element => element.evaluate(node => node.isConnected)))).toEqual(retainedGrids.map(() => true))
   expect(observations.filter(item => item.intermediate < 4 || item.rowIntermediate < 4)).toEqual([])

@@ -22,10 +22,10 @@ function setup() {
   vi.stubGlobal('Animation', class {})
   Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate })
   let motion!: ReturnType<typeof useGridResultMotion>
-  function Harness({ hidden = false }: { hidden?: boolean }) {
+  function Harness({ hidden = false, ready = true }: { hidden?: boolean; ready?: boolean }) {
     const frame = useRef<HTMLDivElement>(null)
-    motion = useGridResultMotion(frame)
-    return <div ref={frame} hidden={hidden}><header>Header</header><div className="ag-grid-scrolling-container"><button>Result</button></div></div>
+    motion = useGridResultMotion(frame, { ready })
+    return <div ref={frame} hidden={hidden} aria-busy={!ready}><header>Header</header><div className="ag-grid-scrolling-container"><button>Result</button></div></div>
   }
   const view = render(<StrictMode><Harness /></StrictMode>)
   return { view, Harness, motion, animate, animations, media, listeners }
@@ -45,6 +45,25 @@ it('coalesces rapid results and cancels old animations through forty replacement
   expect(animate).toHaveBeenLastCalledWith([{ opacity: .84 }, { opacity: 1 }], { duration: 150, easing: 'ease-out' })
   act(() => motion.cancel())
   expect(animations.at(-1)!.cancel).toHaveBeenCalledOnce()
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it('waits for the committed ready state without polling and can cancel a pending reveal', async () => {
+  const { view, Harness, motion, animate } = setup()
+  view.rerender(<StrictMode><Harness ready={false} /></StrictMode>)
+  act(() => motion.reveal())
+  await act(() => vi.advanceTimersByTimeAsync(100))
+  expect(animate).not.toHaveBeenCalled()
+  expect(vi.getTimerCount()).toBe(0)
+  view.rerender(<StrictMode><Harness ready /></StrictMode>)
+  await act(() => vi.advanceTimersByTimeAsync(16))
+  expect(animate).toHaveBeenCalledOnce()
+  expect((animate.mock.instances[0] as unknown as HTMLElement).closest('[aria-busy]')).toHaveAttribute('aria-busy', 'false')
+  view.rerender(<StrictMode><Harness ready={false} /></StrictMode>)
+  act(() => { motion.reveal(); motion.cancel() })
+  view.rerender(<StrictMode><Harness ready /></StrictMode>)
+  await act(() => vi.advanceTimersByTimeAsync(100))
+  expect(animate).toHaveBeenCalledOnce()
   expect(vi.getTimerCount()).toBe(0)
 })
 

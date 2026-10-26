@@ -13,7 +13,7 @@ import {
   type SaveGeneratedDocumentInput,
 } from '@/server/generated-documents'
 import { GENERATED_DOCUMENT_STORAGE_EVENT } from '@/lib/document-storage-events'
-import { createZip } from '@/lib/weld-export-zip'
+import { createZipBlob } from '@/lib/weld-export-zip'
 
 export type StoredGeneratedDocument = RemoteGeneratedDocument
 
@@ -98,8 +98,7 @@ export async function downloadGeneratedDocumentArchive(
       content: await blob.arrayBuffer(),
     })
   }
-  const zip = createZip(files)
-  downloadBlob(new Blob([zip], { type: 'application/zip' }), archiveFileName)
+  downloadBlob(createZipBlob(files), archiveFileName)
 }
 
 function notifyGeneratedDocumentStorageChanged() {

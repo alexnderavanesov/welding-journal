@@ -1,7 +1,17 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { prepareFullReportPrint } from './print-full-report'
+import { prepareFullReportPrint, prepareHtmlDocumentPrint } from './print-full-report'
 
 afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks() })
+it('protects print documents while allowing parent-owned completion handlers in WebKit', () => {
+  const dispose = prepareHtmlDocumentPrint(() => '<html><head><script>bad()</script></head><body>Report</body></html>', vi.fn(), vi.fn())
+  const frame = document.querySelector('iframe')!
+  expect(frame.getAttribute('sandbox')).toBe('allow-same-origin allow-modals allow-scripts')
+  expect(frame.srcdoc).toContain("script-src 'none'")
+  expect(frame.srcdoc).toContain("default-src 'none'")
+  expect(frame.srcdoc.indexOf('Content-Security-Policy')).toBeLessThan(frame.srcdoc.indexOf('<script>'))
+  dispose()
+})
+
 it('rejects oversized reports before generating HTML or creating any iframe', () => {
   const done = vi.fn(), error = vi.fn(), create = vi.spyOn(document, 'createElement')
   const dispose = prepareFullReportPrint({ title: 'Large', tables: [{ title: '', columns: ['A'], rows: Array.from({ length: 1001 }, () => ['A']) }] }, done, error)

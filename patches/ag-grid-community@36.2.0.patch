@@ -1,0 +1,30 @@
+diff --git a/dist/package/main.cjs.js b/dist/package/main.cjs.js
+index c7d091f7bb6113b197b47e74b6dd8ea72381289c..3d38fb67be2271d6a6de069f9480e5cd3b6333cf 100644
+--- a/dist/package/main.cjs.js
++++ b/dist/package/main.cjs.js
+@@ -33469,7 +33469,10 @@ var NavigationService = class extends BeanStub {
+       focusIndex: scrollIndex,
+       focusColumn: gridCell.column
+     });
++    const focusedCell = this.beans.focusSvc.getFocusedCell();
+     setTimeout(() => {
++      // A later keyboard, mouse or API focus action owns the destination now.
++      if (!this.isAlive() || this.beans.focusSvc.getFocusedCell() !== focusedCell) return;
+       const focusIndex = this.getNextFocusIndexForAutoHeight(gridCell, up);
+       this.navigateTo({
+         scrollIndex,
+diff --git a/dist/package/main.esm.mjs b/dist/package/main.esm.mjs
+index 7f85621467cbcd173ce0d66793e314e8568456fa..26890d07f23d05a083ff59dfd8498239d55f3dd3 100644
+--- a/dist/package/main.esm.mjs
++++ b/dist/package/main.esm.mjs
+@@ -33186,7 +33186,10 @@ var NavigationService = class extends BeanStub {
+       focusIndex: scrollIndex,
+       focusColumn: gridCell.column
+     });
++    const focusedCell = this.beans.focusSvc.getFocusedCell();
+     setTimeout(() => {
++      // A later keyboard, mouse or API focus action owns the destination now.
++      if (!this.isAlive() || this.beans.focusSvc.getFocusedCell() !== focusedCell) return;
+       const focusIndex = this.getNextFocusIndexForAutoHeight(gridCell, up);
+       this.navigateTo({
+         scrollIndex,

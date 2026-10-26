@@ -2,6 +2,8 @@ import { createServerFn } from '@tanstack/react-start'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFormSuggestion } from '@/lib/weld-form-suggestions'
 import type {
+  ReportOutputRequest,
+  ReportOutputSnapshot,
   DocumentGenerationDataRequest,
   DocumentGenerationDataResult,
   WeldColumnFilterOption,
@@ -78,6 +80,13 @@ export const listWeldJointSnapshotPage = createServerFn({ method: 'GET' })
   .handler(async ({ data }): Promise<WeldSnapshotPageResult> => {
     const server = await import('@/server/weld-read')
     return server.listWeldJointSnapshotPage({ data })
+  })
+
+export const readReportOutputSnapshot = createServerFn({ method: 'POST' })
+  .validator((data: ReportOutputRequest) => data)
+  .handler(async ({ data }): Promise<ReportOutputSnapshot> => {
+    const server = await import('@/server/weld-read')
+    return server.readReportOutputSnapshot(data)
   })
 
 export const listWeldReportContextRows = createServerFn({ method: 'GET' })

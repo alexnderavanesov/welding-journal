@@ -53,20 +53,20 @@ describe('PSTO server selection uses the displayed current cycle', () => {
     expect(canPaginateReportSource(columnFilters, 'heatTreatment')).toBe(true)
     expect(canPaginateReportSource(columnFilters, 'lnk')).toBe(false)
     const query = dialect.sqlToQuery(buildReportSourceWhere({ columnFilters }, 'heatTreatment')!)
-    expect(query.sql).toContain('"psto_display_cycles"')
+    expect(query.sql).toContain('"psto_selected_repeat"')
     expect(query.params).toEqual(expect.arrayContaining(['годен', '2026-10-02', 'повтор']))
     const lnkQuery = dialect.sqlToQuery(buildReportSourceWhere({ columnFilters }, 'lnk')!)
-    expect(lnkQuery.sql).not.toContain('"psto_display_cycles"')
+    expect(lnkQuery.sql).not.toContain('"psto_selected_repeat"')
     expect(lnkQuery.sql).toContain('"weld_joints"."psto_note"')
   })
 
   it.each(['asc', 'desc'] as const)('sorts current dates in SQL %s with empty repeat dates last', direction => {
     const query = dialect.sqlToQuery(sql.join(getReportOrderBy('heatTreatment', { fieldKey: 'pstoDate', direction }), sql`, `))
-    expect(query.sql).toContain('"psto_display_cycles"')
+    expect(query.sql).toContain('"psto_selected_repeat"')
     expect(query.sql).toContain('nullif(')
     expect(query.sql).toContain(`${direction} nulls last`)
     for (const report of ['weldingJournal', 'lnk'] as const) {
-      expect(dialect.sqlToQuery(sql.join(getReportOrderBy(report, { fieldKey: 'pstoDate', direction }))).sql).not.toContain('"psto_display_cycles"')
+      expect(dialect.sqlToQuery(sql.join(getReportOrderBy(report, { fieldKey: 'pstoDate', direction }))).sql).not.toContain('"psto_selected_repeat"')
     }
   })
 
@@ -95,7 +95,7 @@ describe('PSTO server selection uses the displayed current cycle', () => {
     expect(mocks.query).toHaveBeenCalledTimes(1)
     expect(mocks.attach).not.toHaveBeenCalled()
     const [config, params] = mocks.query.mock.calls[0]
-    expect(config.text).toContain('"psto_display_cycles"')
+    expect(config.text).toContain('"psto_selected_repeat"')
     expect(config.text).toContain('group by 1')
     expect(params).toContain('Линия')
     expect(params).not.toContain('собственный фильтр')
@@ -106,7 +106,7 @@ describe('PSTO server selection uses the displayed current cycle', () => {
       pstoCycleSummary: 'Повтор #2', pstoDate: '=2026-10-02', pstoNote: '=заметка',
     } }, DEFAULT_OTHER_SETTINGS))
     expect(query.sql).toContain('"summary_cycle"')
-    expect(query.sql).toContain('"psto_display_cycles"')
+    expect(query.sql).toContain('"psto_selected_repeat"')
     expect(query.sql).toContain('"psto_note"')
     expect(query.params).toEqual(expect.arrayContaining(['повтор #2', '2026-10-02', 'заметка']))
   })

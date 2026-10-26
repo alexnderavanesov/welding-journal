@@ -1,4 +1,18 @@
-export function createZip(files: Array<{ path: string; content: string | ArrayBuffer | Uint8Array }>) {
+type ZipFile = { path: string; content: string | ArrayBuffer | Uint8Array }
+
+export function createZip(files: ZipFile[]) {
+  return concatBytes(createZipParts(files))
+}
+
+/** Download directly from the parts instead of allocating another full archive
+ * between the source documents and the browser's immutable Blob. */
+export function createZipBlob(files: ZipFile[]) {
+  return new Blob(createZipParts(files).map(part => part.buffer instanceof ArrayBuffer
+    ? new Uint8Array(part.buffer, part.byteOffset, part.byteLength)
+    : new Uint8Array(part)), { type: 'application/zip' })
+}
+
+function createZipParts(files: ZipFile[]) {
   const encoder = new TextEncoder()
   const localParts: Uint8Array[] = []
   const centralParts: Uint8Array[] = []
@@ -53,7 +67,7 @@ export function createZip(files: Array<{ path: string; content: string | ArrayBu
   endView.setUint32(12, centralSize, true)
   endView.setUint32(16, centralOffset, true)
 
-  return concatBytes([...localParts, ...centralParts, end])
+  return [...localParts, ...centralParts, end]
 }
 
 function encodeZipContent(content: string | ArrayBuffer | Uint8Array) {
@@ -83,10 +97,13 @@ const crcTable = new Uint32Array(
   }),
 )
 
-function crc32(bytes: Uint8Array) {
-  let crc = 0xffffffff
+export function updateZipCrc32(crc: number, bytes: Uint8Array) {
   for (const byte of bytes) {
     crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8)
   }
-  return (crc ^ 0xffffffff) >>> 0
+  return crc >>> 0
+}
+
+function crc32(bytes: Uint8Array) {
+  return (updateZipCrc32(0xffffffff, bytes) ^ 0xffffffff) >>> 0
 }

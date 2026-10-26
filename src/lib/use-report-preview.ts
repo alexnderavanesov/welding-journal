@@ -44,6 +44,7 @@ export function useReportPreview(context?: unknown) {
   const retry = useCallback(() => { if (loader.current) void run(loader.current) }, [run])
   return { open, previewProps: state && state.context === context ? {
     report: state.content?.report ?? null, onDownloadExcel: state.content?.onDownloadExcel,
+    generatedAt: state.content?.report.generatedAt,
     busy: state.busy, error: state.error, onClose: close, onRetry: retry,
   } : null }
 }

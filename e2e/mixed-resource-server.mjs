@@ -10,6 +10,10 @@ assert.equal(process.env.AUDIT_SQL_COUNTS, '1')
 assert.equal(process.env.E2E_USE_PRODUCTION_BUILD, '1')
 const name = 'welding-mixed-resource-20261009'
 const image = 'welding-journal:mixed-audit-20261009'
+const memoryMiB = Number(process.env.AUDIT_CONTAINER_MEMORY_MIB || 2048)
+const cpus = Number(process.env.AUDIT_CONTAINER_CPUS || 2)
+assert([2048, 4096].includes(memoryMiB), 'Choose an explicit supported local memory budget')
+assert([2, 4].includes(cpus), 'Choose an explicit supported local CPU budget')
 const counts = process.env.AUDIT_SQL_COUNTS_FILE
 assert(counts && basename(counts) === 'counts.json')
 const directory = realpathSync(dirname(counts))
@@ -38,7 +42,7 @@ process.once('SIGINT', stop)
 process.once('SIGTERM', stop)
 // No repository, .env, production credentials, or working database mounted.
 id = docker(['create', '--pull=never', '--name', name, '--label', 'welding.local-audit=mixed-20261009',
-  '--memory', '2048m', '--memory-swap', '2048m', '--cpus', '2', '--pids-limit', '128', '--read-only',
+  '--memory', `${memoryMiB}m`, '--memory-swap', `${memoryMiB}m`, '--cpus', String(cpus), '--pids-limit', '128', '--read-only',
   '--tmpfs', '/tmp:rw,size=64m', '-p', '127.0.0.1:3100:3000', '-w', '/app',
   '--mount', `type=bind,source=${resolve('e2e/audit-server.mjs')},target=/app/audit-server.mjs,readonly`,
   '--mount', `type=bind,source=${directory},target=/audit-counts`,
@@ -47,12 +51,13 @@ id = docker(['create', '--pull=never', '--name', name, '--label', 'welding.local
   '-e', 'DATABASE_POOL_MAX=5', '-e', 'DOCUMENT_TEMPLATE_STORAGE_PATH=/tmp/templates',
   '-e', 'AUDIT_RESOURCE_CONTAINER=1', '-e', 'AUDIT_SQL_COUNTS_FILE=/audit-counts/counts.json',
   ...(['1', 'peak'].includes(process.env.AUDIT_HEAP_PROFILE) ? ['-e', `AUDIT_HEAP_PROFILE=${process.env.AUDIT_HEAP_PROFILE}`] : []),
+  ...(process.env.AUDIT_CPU_PROFILE === '1' ? ['-e', 'AUDIT_CPU_PROFILE=1'] : []),
   '-e', 'E2E_USE_PRODUCTION_BUILD=1', image, 'node', 'audit-server.mjs']).trim()
 try {
   const metadata = JSON.parse(docker(['inspect', id]))[0]
-  assert.equal(metadata.HostConfig.Memory, 2 * 1024 ** 3)
+  assert.equal(metadata.HostConfig.Memory, memoryMiB * 1024 ** 2)
   assert.equal(metadata.HostConfig.MemorySwap, metadata.HostConfig.Memory)
-  assert.equal(metadata.HostConfig.NanoCpus, 2e9)
+  assert.equal(metadata.HostConfig.NanoCpus, cpus * 1e9)
   console.error(JSON.stringify({ mixedContainer: id, imageId: metadata.Image, memoryBytes: metadata.HostConfig.Memory,
     memoryAndSwapBytes: metadata.HostConfig.MemorySwap, nanoCpus: metadata.HostConfig.NanoCpus, heap: 'Node default' }))
   const child = spawn('docker', ['start', '--attach', id], { stdio: 'inherit', detached: true })

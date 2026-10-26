@@ -62,11 +62,23 @@ function excelFile(name: string, headers: string[], rows: unknown[][]) {
 }
 
 async function expectHighlighted(dialog: Locator, id: number, labels: string[]) {
-  const headers = await dialog.locator('table thead th').allTextContents()
+  const grid = dialog.locator('[data-import-preview-grid]')
+  const rowId = await grid.locator('[col-id="id"]').getByTitle(String(id), { exact: true }).evaluate(element => element.closest('.ag-row')?.getAttribute('row-id'))
+  expect(rowId).toBeTruthy()
+  const viewport = grid.locator('.ag-grid-viewport')
   for (const label of labels) {
-    const index = headers.findIndex(value => value.trim() === label)
-    expect(index, `Import preview contains ${label}`).toBeGreaterThanOrEqual(0)
-    await expect(dialog.locator(`#import-preview-id-${id} td`).nth(index), `${label} is highlighted with the other errors`)
+    const header = grid.getByRole('columnheader', { name: label, exact: true })
+    await viewport.evaluate(async element => { element.scrollLeft = 0; await new Promise(requestAnimationFrame) })
+    const steps = await viewport.evaluate(element => Math.ceil(element.scrollWidth / Math.max(element.clientWidth / 2, 1)) + 1)
+    for (let step = 0; step < steps && !await header.count(); step++) {
+      await viewport.evaluate(async element => {
+        element.scrollLeft += Math.max(element.clientWidth / 2, 1)
+        await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+      })
+    }
+    await expect(header, `Import preview contains ${label}`).toBeVisible()
+    const columnId = await header.getAttribute('col-id')
+    await expect(grid.locator(`[row-id="${rowId}"] [col-id="${columnId}"]`), `${label} is highlighted with the other errors`)
       .toHaveClass(/bg-amber-50/)
   }
 }

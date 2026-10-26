@@ -39,6 +39,7 @@ export default defineConfig({
       : `pnpm exec vite dev --host 127.0.0.1 --port ${E2E_PORT}`,
     url: `${E2E_BASE_URL}/lnk`,
     reuseExistingServer: false,
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },
     timeout: 120_000,
     env: {
       ...process.env,

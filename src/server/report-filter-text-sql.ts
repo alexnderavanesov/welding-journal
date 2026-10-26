@@ -1,4 +1,4 @@
-import { or, sql, type SQLWrapper } from 'drizzle-orm'
+import { sql, type SQLWrapper } from 'drizzle-orm'
 import { parseWeldColumnChoiceFilter, normalizeWeldColumnChoiceValue } from '@/lib/weld-column-choice-filter'
 
 // String.trim's whitespace set; btrim's default only removes ASCII spaces.
@@ -13,7 +13,7 @@ export function buildCalculatedFilterWhere(value: SQLWrapper, filter: string) {
   const choice = parseWeldColumnChoiceFilter(filter)
   if (choice) {
     const values = [...new Set(choice.values.map(normalizeWeldColumnChoiceValue))]
-    return or(...values.map(item => sql`${reportTextSql(value)} = ${item}`)) ?? sql`false`
+    return sql`${reportTextSql(value)} = any(${sql.param(values)}::text[])`
   }
   const query = filter.trim().toLowerCase()
   if (query.startsWith('=')) return sql`${normalized} = ${query.slice(1).trim().replace(/^["']|["']$/g, '')}`

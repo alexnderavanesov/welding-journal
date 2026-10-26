@@ -10,7 +10,7 @@ import type { JournalSelectionSummary } from '@/lib/journal-selection-summary'
 import { and, count, eq, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { requireDb } from '@/db'
-import { derivedCalculationState, weldJoints, weldJointProgramStates } from '@/db/schema'
+import { derivedCalculationState, dispatcherTaskIndexState, weldJoints, weldJointProgramStates } from '@/db/schema'
 import { FIELD_BY_KEY, isVirtualWeldField, type WeldFieldKey } from '@/lib/weld-fields'
 import { type JournalGridRequest, type JournalGridQuery, type JournalGridResult, type JournalGridRow, type JournalRevision, isJournalRevision, journalReport } from '@/lib/journal-server-grid'
 import { LNK_METHODS } from '@/lib/report-config'
@@ -33,6 +33,7 @@ import { compactWeldRowsForTransport, buildNumberArrayMatch } from './weld-reque
 import { loadProgramSystemIndexSettings } from './line-program'
 
 const changed = () => new Error('Данные журнала изменились. Обновите таблицу и повторите действие.')
+type JournalReadDb = Pick<ReturnType<typeof requireDb>, 'select' | 'execute'>
 export function normalizeJournalGridRequest(input: JournalGridRequest): JournalGridRequest {
   journalReport(input?.report)
   if (!input || !Array.isArray(input.groupBy) || !Array.isArray(input.route)
@@ -47,21 +48,24 @@ export function normalizeJournalGridRequest(input: JournalGridRequest): JournalG
   const filters = normalizeWeldPageRequest({ columnFilters: input.columnFilters, sort: input.sort ?? undefined })
   return { ...input, columnFilters: filters.columnFilters, sort: filters.sort, groupBy: [...input.groupBy], route: [...input.route] }
 }
-export async function journalRevision(columnFilters: Record<string, string> = {}, publicationField?: string) {
-  const [row] = await requireDb().select({ revision: derivedCalculationState.sourceRevision }).from(derivedCalculationState).where(eq(derivedCalculationState.id, 1))
+export async function journalRevision(columnFilters: Record<string, string> = {}, publicationField?: string, database?: JournalReadDb) {
+  const [row] = await (database ?? requireDb()).select({ revision: derivedCalculationState.sourceRevision }).from(derivedCalculationState).where(eq(derivedCalculationState.id, 1))
   let revision = Number(row?.revision ?? 0)
   // The first summary read initializes the shared cache generation. Do that
   // before pinning journal rows, or a cold database invalidates its own first
   // block when the asynchronous summary arrives. Warm reads stay read-only.
   if (revision < DERIVED_CALCULATION_REVISION_FLOOR) {
+    // Snapshot reads are read-only; their caller initializes the generation
+    // before entering the transaction, never on another pooled connection.
+    if (database) throw changed()
     revision = (await readCacheSnapshotCoalesced('journal-grid:revision')).sourceRevision
   }
-  const publication = await getReportTaskPublicationCacheIdentity(columnFilters, publicationField)
+  const publication = await getReportTaskPublicationCacheIdentity(columnFilters, publicationField, database)
   return publication.taskPublication
     ? createHash('sha256').update(JSON.stringify([revision, publication])).digest('hex') : revision
 }
-export async function assertJournalRevision(revision: JournalRevision, columnFilters: Record<string, string> = {}, publicationField?: string) {
-  if (await journalRevision(columnFilters, publicationField) !== revision) throw changed()
+export async function assertJournalRevision(revision: JournalRevision, columnFilters: Record<string, string> = {}, publicationField?: string, database?: JournalReadDb) {
+  if (await journalRevision(columnFilters, publicationField, database) !== revision) throw changed()
 }
 export type JournalReadIdentity = {
   request: JournalGridRequest
@@ -70,6 +74,7 @@ export type JournalReadIdentity = {
   dispatcher: Awaited<ReturnType<typeof ensureDispatcherTaskIndexFresh>>
 }
 export type JournalReadContext = JournalReadIdentity & {
+  db?: JournalReadDb
   settings: Awaited<ReturnType<typeof loadServerOtherSettings>>
   systemSettings: Awaited<ReturnType<typeof loadProgramSystemIndexSettings>>
   base: SQL
@@ -96,8 +101,8 @@ export async function journalReadContext(input: JournalGridRequest, publicationF
   const context = { ...identity, settings, systemSettings, base }
   return { ...context, where: journalRouteWhere(context, request.route) }
 }
-export async function assertJournalContextRevision(context: JournalReadIdentity) {
-  await assertJournalRevision(context.revision, context.request.columnFilters, context.publicationField)
+export async function assertJournalContextRevision(context: JournalReadIdentity, database?: JournalReadDb) {
+  await assertJournalRevision(context.revision, context.request.columnFilters, context.publicationField, database)
 }
 type ValueContext = Pick<JournalReadContext, 'settings' | 'request' | 'base'>
 export function journalValueSql(key: WeldFieldKey, context: Pick<JournalReadContext, 'settings'> & Partial<Pick<JournalReadContext, 'request'>>): SQLWrapper {
@@ -128,18 +133,25 @@ export async function readJournalGrid(input: JournalGridRequest): Promise<Journa
   const context = await journalReadContext(input)
   const { request, revision } = context
   const key = createHash('sha256').update(JSON.stringify([revision, request])).digest('hex')
-  let pending = request.route.length < request.groupBy.length ? groupPages.get(key) : undefined
-  if (!pending) {
-    pending = readJournalPage(context)
-    if (request.route.length < request.groupBy.length) {
-      groupPages.set(key, pending)
-      while (groupPages.size > 32) groupPages.delete(groupPages.keys().next().value!)
-      void pending.catch(() => { if (groupPages.get(key) === pending) groupPages.delete(key) })
+  // Count, cards and relations must share one snapshot. Rechecking the live
+  // revision after independent reads starved even an initial page while other
+  // users kept saving. This snapshot does not lock writers; later blocks and
+  // actions still reject its revision after a concurrent change.
+  return requireDb().transaction(async db => {
+    const [dispatcher] = await db.select().from(dispatcherTaskIndexState).where(eq(dispatcherTaskIndexState.id, 1))
+    if (!isDispatcherTaskIndexFresh(dispatcher)) throw changed()
+    await assertJournalContextRevision(context, db)
+    let pending = request.route.length < request.groupBy.length ? groupPages.get(key) : undefined
+    if (!pending) {
+      pending = readJournalPage({ ...context, dispatcher, db })
+      if (request.route.length < request.groupBy.length) {
+        groupPages.set(key, pending)
+        while (groupPages.size > 32) groupPages.delete(groupPages.keys().next().value!)
+        void pending.catch(() => { if (groupPages.get(key) === pending) groupPages.delete(key) })
+      }
     }
-  }
-  const result = await pending
-  await assertJournalContextRevision(context)
-  return result
+    return pending
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 export async function readJournalPage(context: JournalReadContext): Promise<JournalGridResult> {
   const { request, revision, where } = context
@@ -150,23 +162,24 @@ export async function readJournalPage(context: JournalReadContext): Promise<Jour
   // too, rather than retaining another large filter string for every route.
   const countKey = createHash('sha256').update(JSON.stringify([revision, journalReport(request.report),
     Object.entries(request.columnFilters).sort(([a], [b]) => a.localeCompare(b)), request.groupBy, request.route])).digest('hex')
-  const [total, rows] = await Promise.all([
-    journalCounts(countKey, async () => {
-      const [row] = await requireDb().select({ total: count() }).from(weldJoints).where(where)
+  const loadCount = () => journalCounts(countKey, async () => {
+      const [row] = await (context.db ?? requireDb()).select({ total: count() }).from(weldJoints).where(where)
       return Number(row?.total ?? 0)
-    }),
-    readJournalLeafRows(context),
-  ])
+    })
+  // A transaction owns one pg connection; do not queue concurrent queries on it.
+  const [total, rows] = context.db
+    ? [await loadCount(), await readJournalLeafRows(context)]
+    : await Promise.all([loadCount(), readJournalLeafRows(context)])
   return { rows, rowCount: total, revision }
 }
 export async function readJournalLeafRows(context: JournalReadContext, ids?: number[]): Promise<JournalGridRow[]> {
   const { request, where } = context
-  const query = requireDb().select(WELD_TABLE_SELECT).from(weldJoints)
+  const query = (context.db ?? requireDb()).select(WELD_TABLE_SELECT).from(weldJoints)
     .where(ids ? and(where, buildNumberArrayMatch(weldJoints.id, ids)) : where)
     .orderBy(...(ids ? [sql`array_position(${sql.param(ids)}::int[], ${weldJoints.id})`]
       : getReportOrderBy(journalReport(request.report), request.sort ?? undefined, context.settings)))
   const rows = await (ids ? query : query.limit(request.end - request.start).offset(request.start))
-  const hydrated = await attachReportPageMetadata(applyCurrentSystemWdi(rows, context.settings), { dispatcherState: context.dispatcher })
+  const hydrated = await attachReportPageMetadata(applyCurrentSystemWdi(rows, context.settings), { dispatcherState: context.dispatcher, db: context.db })
   const report = journalReport(request.report)
   const prepared = prepareJournalPageRows(report === 'weldingJournal' ? hydrated
     : buildServerReportRows(hydrated, report, { preserveSourceOrder: true }), report)
@@ -179,11 +192,11 @@ async function readGroups(context: JournalReadContext): Promise<JournalGridResul
   const value = journalGroupSql(field, context)
   const nextField = request.groupBy[request.route.length + 1]
   const children = nextField ? sql`count(distinct ${journalGroupSql(nextField, context)})` : sql`count(*)`
-  const groups = await requireDb().select({ key: sql<string>`${value}`, childCount: sql<number>`${children}::int`,
+  const groups = await (context.db ?? requireDb()).select({ key: sql<string>`${value}`, childCount: sql<number>`${children}::int`,
     recordCount: sql<number>`count(*)::int`, total: sql<number>`count(*) over()::int` })
     .from(weldJoints).where(where).groupBy(value).orderBy(journalGroupOrder(field, context)).limit(request.end - request.start).offset(request.start)
   if (!groups.length) {
-    const [row] = await requireDb().select({ total: sql<number>`count(distinct ${value})::int` }).from(weldJoints).where(where)
+    const [row] = await (context.db ?? requireDb()).select({ total: sql<number>`count(distinct ${value})::int` }).from(weldJoints).where(where)
     return { rows: [], rowCount: Number(row?.total ?? 0), revision }
   }
   const members = await readSummaryRows(context, and(where, sql`${value} = any(${sql.param(groups.map(group => group.key))}::text[])`)!)
@@ -240,7 +253,7 @@ async function readSummaryRows(context: JournalReadContext, where: SQL): Promise
   const root = alias(weldJoints, 'journal_root')
   const rootState = alias(weldJointProgramStates, 'journal_root_state')
   const key = context.request.groupBy[context.request.route.length]
-  const records = await requireDb().select({
+  const records = await (context.db ?? requireDb()).select({
     row: { ...(report === 'weldingJournal' ? {} : stageProjection), id: weldJoints.id, projectTitle: weldJoints.projectTitle, subtitleCode: weldJoints.subtitleCode,
       line: weldJoints.line, joint: weldJoints.joint, officiality: weldJoints.officiality,
       weldDate: weldJoints.weldDate, finalStatus: weldJoints.finalStatus, wdi: sql<number>`${journalValueSql('wdi', context)}`,
@@ -259,7 +272,7 @@ async function readSummaryRows(context: JournalReadContext, where: SQL): Promise
     ...(links.has(row.id) ? { chainContinuation: links.get(row.id) } : {}),
   })) as unknown as WeldRow[]
   if (report === 'weldingJournal') return rows
-  const hydrated = await attachHeatTreatmentControlRelations(await attachDuplicateControlsToPage(rows))
+  const hydrated = await attachHeatTreatmentControlRelations(await attachDuplicateControlsToPage(rows, context.db), context.db)
   return prepareJournalPageRows(hydrated, report)
 }
 export async function selectJournalGridRows(input: JournalGridQuery & { route: string[]; revision: JournalRevision }) {

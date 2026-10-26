@@ -117,6 +117,10 @@ overrides:
   postcss-selector-parser@<7.1.6: 7.1.6
   undici@>=7.0.0 <7.30.1: 7.30.1
 
+patchedDependencies:
+  ag-grid-community@36.2.0: 514d39c6af0c9bedf880ff02b6c2a04c1e0736e294b943349547a18ff643e99b
+  ag-grid-enterprise@36.2.0: 71e70ec6eb6d1c3916be4e590cee510cb402414ebb3e43ec0d2f032d2ee92ee4
+
 importers:
 
   .:
@@ -135,10 +139,10 @@ importers:
         version: 3.14.9(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       ag-grid-community:
         specifier: 36.2.0
-        version: 36.2.0
+        version: 36.2.0(patch_hash=514d39c6af0c9bedf880ff02b6c2a04c1e0736e294b943349547a18ff643e99b)
       ag-grid-enterprise:
         specifier: 36.2.0
-        version: 36.2.0
+        version: 36.2.0(patch_hash=71e70ec6eb6d1c3916be4e590cee510cb402414ebb3e43ec0d2f032d2ee92ee4)
       ag-grid-react:
         specifier: 36.2.0
         version: 36.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -3701,14 +3705,14 @@ snapshots:
 
   ag-charts-types@14.2.0: {}
 
-  ag-grid-community@36.2.0:
+  ag-grid-community@36.2.0(patch_hash=514d39c6af0c9bedf880ff02b6c2a04c1e0736e294b943349547a18ff643e99b):
     dependencies:
       ag-charts-types: 14.2.0
       ag-stack: 36.2.0
 
-  ag-grid-enterprise@36.2.0:
+  ag-grid-enterprise@36.2.0(patch_hash=71e70ec6eb6d1c3916be4e590cee510cb402414ebb3e43ec0d2f032d2ee92ee4):
     dependencies:
-      ag-grid-community: 36.2.0
+      ag-grid-community: 36.2.0(patch_hash=514d39c6af0c9bedf880ff02b6c2a04c1e0736e294b943349547a18ff643e99b)
       ag-stack: 36.2.0
     optionalDependencies:
       ag-charts-community: 14.2.0
@@ -3716,7 +3720,7 @@ snapshots:
 
   ag-grid-react@36.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
     dependencies:
-      ag-grid-community: 36.2.0
+      ag-grid-community: 36.2.0(patch_hash=514d39c6af0c9bedf880ff02b6c2a04c1e0736e294b943349547a18ff643e99b)
       prop-types: 15.8.1
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)

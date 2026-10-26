@@ -22,6 +22,7 @@ import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppStatisticsRouteImport } from './routes/_app.statistics'
 import { Route as AppUserGuideRouteImport } from './routes/_app.user-guide'
 import { Route as AppWelderStampsRouteImport } from './routes/_app.welder-stamps'
+import { Route as ApiReportExcelRouteImport } from './routes/api/report-excel'
 import { Route as ApiMaintenanceDispatcherRefreshRouteImport } from './routes/api/maintenance/dispatcher-refresh'
 
 const IndexRoute = IndexRouteImport.update({
@@ -88,6 +89,11 @@ const AppWelderStampsRoute = AppWelderStampsRouteImport.update({
   path: '/welder-stamps',
   getParentRoute: () => AppRoute,
 } as any)
+const ApiReportExcelRoute = ApiReportExcelRouteImport.update({
+  id: '/api/report-excel',
+  path: '/api/report-excel',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiMaintenanceDispatcherRefreshRoute =
   ApiMaintenanceDispatcherRefreshRouteImport.update({
     id: '/api/maintenance/dispatcher-refresh',
@@ -108,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/statistics': typeof AppStatisticsRoute
   '/user-guide': typeof AppUserGuideRoute
   '/welder-stamps': typeof AppWelderStampsRoute
+  '/api/report-excel': typeof ApiReportExcelRoute
   '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
 }
 export interface FileRoutesByTo {
@@ -123,6 +130,7 @@ export interface FileRoutesByTo {
   '/statistics': typeof AppStatisticsRoute
   '/user-guide': typeof AppUserGuideRoute
   '/welder-stamps': typeof AppWelderStampsRoute
+  '/api/report-excel': typeof ApiReportExcelRoute
   '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
 }
 export interface FileRoutesById {
@@ -140,6 +148,7 @@ export interface FileRoutesById {
   '/_app/statistics': typeof AppStatisticsRoute
   '/_app/user-guide': typeof AppUserGuideRoute
   '/_app/welder-stamps': typeof AppWelderStampsRoute
+  '/api/report-excel': typeof ApiReportExcelRoute
   '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
 }
 export interface FileRouteTypes {
@@ -157,6 +166,7 @@ export interface FileRouteTypes {
     | '/statistics'
     | '/user-guide'
     | '/welder-stamps'
+    | '/api/report-excel'
     | '/api/maintenance/dispatcher-refresh'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -172,6 +182,7 @@ export interface FileRouteTypes {
     | '/statistics'
     | '/user-guide'
     | '/welder-stamps'
+    | '/api/report-excel'
     | '/api/maintenance/dispatcher-refresh'
   id:
     | '__root__'
@@ -188,12 +199,14 @@ export interface FileRouteTypes {
     | '/_app/statistics'
     | '/_app/user-guide'
     | '/_app/welder-stamps'
+    | '/api/report-excel'
     | '/api/maintenance/dispatcher-refresh'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  ApiReportExcelRoute: typeof ApiReportExcelRoute
   ApiMaintenanceDispatcherRefreshRoute: typeof ApiMaintenanceDispatcherRefreshRoute
 }
 
@@ -290,6 +303,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWelderStampsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/api/report-excel': {
+      id: '/api/report-excel'
+      path: '/api/report-excel'
+      fullPath: '/api/report-excel'
+      preLoaderRoute: typeof ApiReportExcelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/maintenance/dispatcher-refresh': {
       id: '/api/maintenance/dispatcher-refresh'
       path: '/api/maintenance/dispatcher-refresh'
@@ -333,6 +353,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  ApiReportExcelRoute: ApiReportExcelRoute,
   ApiMaintenanceDispatcherRefreshRoute: ApiMaintenanceDispatcherRefreshRoute,
 }
 export const routeTree = rootRouteImport

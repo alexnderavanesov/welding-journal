@@ -5,6 +5,20 @@ import { PrintableReportPreview } from './printable-report-preview'
 beforeEach(() => vi.spyOn(window, 'scrollTo').mockImplementation(() => {}))
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
+it('cancels an unfinished file request when the preview closes', async () => {
+  let signal: AbortSignal | undefined
+  const download = vi.fn((requestSignal?: AbortSignal) => {
+    signal = requestSignal
+    return new Promise<void>(resolve => requestSignal!.addEventListener('abort', () => resolve(), { once: true }))
+  })
+  const { unmount } = render(<PrintableReportPreview report={{ title: 'Журнал' }} busy={false} error="" onClose={vi.fn()} onRetry={vi.fn()} onDownloadExcel={download} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Скачать Excel' }))
+  expect(signal?.aborted).toBe(false)
+  await act(async () => unmount())
+  expect(signal?.aborted).toBe(true)
+  expect(download).toHaveBeenCalledOnce()
+})
+
 it('keeps Escape inside the document working after the parent updates its close callback', () => {
   const originalClose = vi.fn(), currentClose = vi.fn()
   const props = { report: { title: 'Document' }, busy: false, error: '', onRetry: vi.fn() }

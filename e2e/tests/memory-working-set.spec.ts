@@ -1,14 +1,17 @@
 import { expect, test } from '@playwright/test'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
-import { observeMixedClient } from '../mixed-resource-telemetry'
+import { observeMixedClient, sampleMixedResources } from '../mixed-resource-telemetry'
 import { editJournalJoint } from '../journal-grid'
 
 const project = 'E2E ordinary latency'
-test('ordinary journal, editor, line section and detail before/after memory optimization', async ({ page, context }) => {
+test('ordinary journal, editor, line section and detail before/after memory optimization', async ({ page, context, browser }) => {
   test.skip(process.env.AUDIT_ORDINARY_LATENCY !== '1', 'Isolated before/after measurement, same resource-limited image')
   const telemetry = observeMixedClient(context, 'ordinary')
   page.on('pageerror', error => telemetry.errors.push(error.message))
   const samples: Array<{ action: string; round: number; milliseconds: number }> = []
+  const retained: Array<{ round: number; heapBytes: number; nodes: number; listeners: number }> = []
+  const cdp = await context.newCDPSession(page)
+  const stopResources = await sampleMixedResources(browser)
   try {
     await withLineProgramFixture(async db => {
       await db.query(`insert into line_programs(project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
@@ -58,10 +61,18 @@ test('ordinary journal, editor, line section and detail before/after memory opti
         const rows = page.locator('[data-testid="line-program-detail"][data-line="LAT-01"]').getByTestId('line-program-readonly-joint')
         await expect(rows.first()).toBeVisible(); expect(await rows.count()).toBeLessThanOrEqual(50)
       })
+      await cdp.send('HeapProfiler.collectGarbage')
+      const heap = await cdp.send('Runtime.getHeapUsage'), dom = await cdp.send('Memory.getDOMCounters')
+      retained.push({ round, heapBytes: heap.usedSize, nodes: dom.nodes, listeners: dom.jsEventListeners })
     }
     expect(telemetry.errors).toEqual([])
   } finally {
-    console.log(JSON.stringify({ phase: 'ordinary latency', samples, rpc: await telemetry.summary() }))
+    const resources = await stopResources()
+    await cdp.detach()
+    console.log(JSON.stringify({ phase: 'ordinary latency', samples, retained, rpc: await telemetry.summary(),
+      memoryPeak: resources.lastCgroup['memory.peak'], memoryEvents: resources.lastCgroup['memory.events'], browserPeakMiB: resources.browserProcessSumPeakMiB }))
+    expect(resources.errors).toEqual([])
+    expect(resources.lastCgroup['memory.events']).toMatch(/oom_kill 0/)
     await cleanupLineProgramProjects([project])
   }
 })

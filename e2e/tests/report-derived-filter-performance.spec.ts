@@ -48,6 +48,42 @@ test('derived filter benchmark: scopes, cold/warm cache, five readers and DB tra
   // An explicit local snapshot can be used for an apples-to-apples baseline.
   const api: typeof import('../../src/server/weld-read') = process.env.REPORT_FILTER_READ_MODULE
     ? await import(pathToFileURL(process.env.REPORT_FILTER_READ_MODULE).href) : await import('../../src/server/weld-read')
+  if (process.env.AUDIT_REPORT_FILTERS_PLANS === '1') {
+    // Isolate database work from card hydration and dispatcher setup. The
+    // fixture and all settings are synthetic and belong to this disposable DB.
+    const { requireDb } = await import('../../src/db')
+    const { weldJoints } = await import('../../src/db/schema')
+    const { sql, asc } = await import('drizzle-orm')
+    const { DEFAULT_OTHER_SETTINGS } = await import('../../src/lib/other-settings')
+    const { buildCalculatedReportValueSql } = await import('../../src/server/report-calculated-values-sql')
+    const table = { fileName: 'cost profile', uploadedAt: '', entries: Array.from({ length: 300 }, (_, i) => ({
+      diameter: i + 1, options: Array.from({ length: 4 }, (_, j) => ({
+        label: j === 0 ? 'Три снимка' : `Вариант ${j}`, values: j === 0 ? ['0', '120', '240'] : [String(j)],
+        isDefault: j === 0, note: '',
+      })),
+    })) }
+    const plans: Record<string, unknown> = {}
+    try {
+      for (const field of ['pstoCycleSummary', 'pstoRequest', 'pstoDate', 'pstoResult', 'tvmtResult',
+        'preVikResult', 'preRkResult', 'preRkExposureScheme', 'controlBasisSummary', 'rkExposureScheme'] as const) {
+        const report = field.startsWith('psto') || field.startsWith('tvmt') ? 'heatTreatment' : 'lnk'
+        const settings = { ...DEFAULT_OTHER_SETTINGS, rkExposureTable: table }
+        const value = buildCalculatedReportValueSql(report, field, settings)!
+        const query = requireDb().select({ value: sql`${value}::text`, count: sql`count(*)` }).from(weldJoints)
+          .where(sql`${weldJoints.projectTitle} = ${project}`).groupBy(sql`1`)
+        const explained = await requireDb().execute(sql`explain (analyze, buffers, format json) ${query}`)
+        plans[field] = explained.rows
+        console.info('FILTER DATABASE COST:', field, JSON.stringify(explained.rows).match(/Execution Time[^,}]+/)?.[0])
+      }
+      const pageQuery = requireDb().select({ id: weldJoints.id }).from(weldJoints)
+        .where(api.buildReportQueryWhere('heatTreatment', { projectTitle: project, columnFilters: { pstoCycleSummary: 'Повтор' } }, DEFAULT_OTHER_SETTINGS))
+        .orderBy(asc(weldJoints.isometry)).limit(101)
+      plans.cyclePage = (await requireDb().execute(sql`explain (analyze, buffers, format json) ${pageQuery}`)).rows
+      await info.attach('filter-query-plans', { body: JSON.stringify(plans, null, 2), contentType: 'application/json' })
+      if (process.env.REPORT_FILTER_METRICS_PATH) await writeFile(process.env.REPORT_FILTER_METRICS_PATH, JSON.stringify(plans, null, 2))
+    } finally { await cleanupLineProgramProjects([project]) }
+    return
+  }
   const { ensureDispatcherTaskIndexFresh, isDispatcherTaskIndexFresh } = await import('../../src/server/dispatcher-task-index')
   expect(isDispatcherTaskIndexFresh(await ensureDispatcherTaskIndexFresh())).toBe(true)
   const measures: Array<Record<string, unknown>> = []
@@ -208,7 +244,7 @@ test('derived filter benchmark: scopes, cold/warm cache, five readers and DB tra
               values: j === 0 ? ['0', '120', '240'] : [String(j)], isDefault: j === 0, note: '' })),
           })),
         } })
-        for (let repeat = 0; repeat < (size === 3 ? 3 : 1); repeat++) await measure(`configured-scheme:${size}:${repeat}`, () =>
+        for (let repeat = 0; repeat < 3; repeat++) await measure(`configured-scheme:${size}:${repeat}`, () =>
           page('lnk', {}, { rkExposureScheme: value('Три снимка') }), true)
         for (let repeat = 0; repeat < 20; repeat++) await measure(`configured-scheme:${size}:warm:${repeat}`, () =>
           page('lnk', {}, { rkExposureScheme: value('Три снимка') }), false)

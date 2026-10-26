@@ -10,6 +10,7 @@ export type ReportHeaderActionsProps = {
   onCreateWeldJoint: () => void
   onOpenLineProgram?: () => void
   importDisabled: boolean
+  currentReportDisabled?: boolean
   isWeldingJournalShowMenuOpen: boolean
   onToggleWeldingJournalShowMenu: () => void
   isWeldingJournalGenerateMenuOpen: boolean
@@ -80,6 +81,7 @@ export function ReportHeaderActions({
   onCreateWeldJoint,
   onOpenLineProgram,
   importDisabled,
+  currentReportDisabled,
   isWeldingJournalShowMenuOpen,
   onToggleWeldingJournalShowMenu,
   isWeldingJournalGenerateMenuOpen,
@@ -170,6 +172,7 @@ export function ReportHeaderActions({
           tvmtPending={tvmtPending}
           isShowMenuOpen={isPstoShowMenuOpen}
           onToggleShowMenu={onTogglePstoShowMenu}
+          currentReportDisabled={currentReportDisabled}
           onOpenCurrentReport={onOpenPstoCurrentReport}
           onOpenWaitingRequestReport={onOpenPstoWaitingRequestReport}
           onOpenResultsReport={onOpenPstoResultsReport}
@@ -196,6 +199,7 @@ export function ReportHeaderActions({
           duplicateControlPending={duplicateControlPending}
           isShowMenuOpen={isLnkShowMenuOpen}
           onToggleShowMenu={onToggleLnkShowMenu}
+          currentReportDisabled={currentReportDisabled}
           onOpenCurrentReport={onOpenLnkCurrentReport}
           onOpenToRequestReport={onOpenLnkToRequestReport}
           onOpenWaitingNkReport={onOpenLnkWaitingNkReport}
@@ -215,6 +219,7 @@ export function ReportHeaderActions({
           onGenerateWeldingJournalDocument={onGenerateWeldingJournalDocument}
           onGenerateChecklistDocument={onGenerateChecklistDocument}
           onGenerateZniDocument={onGenerateZniDocument}
+          currentReportDisabled={currentReportDisabled}
           onOpenCurrentReport={onOpenWeldingJournalCurrentReport}
           onOpenWaitingWeldReport={onOpenWeldingJournalWaitingWeldReport}
           onOpenWaitingRequestReport={onOpenWeldingJournalWaitingRequestReport}

@@ -25,8 +25,7 @@ import {
 	type WeldingJournalOutputRowsKind,
 } from '@/lib/use-report-output-actions'
 import {
-	loadCompleteReportOutputRows,
-	loadFilteredCurrentReportOutputRows,
+	loadReportOutputSnapshot,
 } from '@/lib/report-output-source'
 import { useReportModalEscapeKey } from '@/lib/use-report-modal-escape-key'
 import { useWorkflowRootCauseEscapeKey } from '@/lib/use-workflow-root-cause-escape-key'
@@ -39,7 +38,7 @@ import {
 } from '@/lib/dispatcher-task-row-codes'
 import { useDispatcherAcceptedWarnings } from '@/lib/use-dispatcher-accepted-warnings'
 import { useDispatcherTaskUiState } from '@/lib/use-dispatcher-task-ui-state'
-import { prepareReportRows, useReportRows } from '@/lib/use-report-rows'
+import { useReportRows } from '@/lib/use-report-rows'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { usePreparedReportRows } from '@/lib/use-prepared-report-rows'
 import { useReportRequestDerivedState } from '@/lib/use-report-request-derived-state'
@@ -130,7 +129,6 @@ import {
 import type { ContextActionMenuItem } from '@/components/context-action-menu'
 import {
 	scheduleWeldDataRefresh,
-	WELD_FINAL_STATUS_CONTEXT_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 import { getReportModalOpenState } from '@/lib/report-modal-open-state'
 import {
@@ -163,8 +161,8 @@ import type { ReportImportRecord } from '@/lib/report-import-preview'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
 import { captureWeldRowDeletionTargets } from '@/lib/weld-row-deletion-targets'
 import {
-	type FinalStatusRowsContext,
 	type WeldFieldKey,
+	type WeldField,
 	type WeldInput,
 } from '@/lib/weld-fields'
 import {
@@ -266,7 +264,6 @@ import {
 import {
 	getWeldJointById,
 	listWeldJointRowsByIds,
-	listWeldFinalStatusContextKeys,
 	WELD_PAGE_ALL_SIZE
 } from '@/server/weld-read-api'
 import { listJournalReportRows } from '@/server/journal-grid-api'
@@ -1977,94 +1974,18 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const generateWeldingJournalDocument = () => void generateDocumentFromCurrentFilter('weldingJournal')
   const generateChecklistDocument = () => void generateDocumentFromCurrentFilter('checklist')
   const generateZniDocument = () => void generateDocumentFromCurrentFilter('zni')
-  const prepareLnkOutputRows = useCallback(
-    (sourceRows: WeldRow[], finalStatusContext: FinalStatusRowsContext = remoteFinalStatusContext, preserveSourceOrder = false) => buildLnkReportRows(
-      prepareReportRows(sourceRows, [], undefined, finalStatusContext, otherSettings),
-      preservedLnkOrderIds,
-      { preserveSourceOrder },
-    ),
-    [otherSettings, preservedLnkOrderIds, remoteFinalStatusContext],
-  )
-  const preparePstoOutputRows = useCallback(
-    (sourceRows: WeldRow[], finalStatusContext: FinalStatusRowsContext = remoteFinalStatusContext, preserveSourceOrder = false) => buildHeatTreatmentReportRows(
-      prepareReportRows(sourceRows, [], undefined, finalStatusContext, otherSettings, false, preserveSourceOrder),
-      { preserveSourceOrder },
-    ),
-    [otherSettings, remoteFinalStatusContext],
-  )
-  const loadRemoteFinalStatusContext = useCallback(async (): Promise<FinalStatusRowsContext> => {
-    const keys = await queryClient.fetchQuery({
-      queryKey: WELD_FINAL_STATUS_CONTEXT_QUERY_KEY,
-      queryFn: () => listWeldFinalStatusContextKeys(),
-      staleTime: 60_000,
-      retry: false,
-    })
-    return { rejectedUnofficialSameNameRepairKeys: new Set(keys) }
-  }, [queryClient])
-  const loadLnkOutputRows = useCallback(async (kind: LnkOutputRowsKind) => {
-    if (kind === 'current') assertCurrentReportOutput()
-    const sourceRows = kind === 'current'
-      ? await loadFilteredCurrentReportOutputRows({
-          report: 'lnk',
-          columnFilters: dispatcherTaskServerFilters,
-          sort: activeReportSort,
-        })
-      : await loadCompleteReportOutputRows(queryClient, 'lnk')
-    if (kind === 'current') assertCurrentReportOutput()
-    if (sourceRows.length === 0) return []
-    const finalStatusContext = await loadRemoteFinalStatusContext()
-    if (kind === 'current') assertCurrentReportOutput()
-    return prepareLnkOutputRows(sourceRows, finalStatusContext, kind === 'current')
-  }, [
-    assertCurrentReportOutput,
-    activeReportSort,
-    dispatcherTaskServerFilters,
-    loadRemoteFinalStatusContext,
-    prepareLnkOutputRows,
-    queryClient,
-  ])
-  const loadPstoOutputRows = useCallback(async (kind: PstoOutputRowsKind) => {
-    if (kind === 'current') assertCurrentReportOutput()
-    const sourceRows = kind === 'current'
-      ? await loadFilteredCurrentReportOutputRows({
-          report: 'heatTreatment',
-          columnFilters: dispatcherTaskServerFilters,
-          sort: activeReportSort,
-        })
-      : await loadCompleteReportOutputRows(queryClient, 'heatTreatment')
-    if (kind === 'current') assertCurrentReportOutput()
-    if (sourceRows.length === 0) return []
-    const finalStatusContext = await loadRemoteFinalStatusContext()
-    if (kind === 'current') assertCurrentReportOutput()
-    return preparePstoOutputRows(sourceRows, finalStatusContext, kind === 'current')
-  }, [
-    assertCurrentReportOutput,
-    activeReportSort,
-    dispatcherTaskServerFilters,
-    loadRemoteFinalStatusContext,
-    preparePstoOutputRows,
-    queryClient,
-  ])
-  const loadWeldingJournalOutputRows = useCallback(async (
-    kind: WeldingJournalOutputRowsKind,
-  ): Promise<WeldInput[]> => {
-    if (kind === 'current') return loadCurrentWeldingJournalRows()
-    if (kind === 'waitingRequest') return loadLnkOutputRows('waitingRequest')
-    if (kind === 'waitingControl') return loadLnkOutputRows('waitingNk')
-    if (kind === 'waitingWeld' || kind === 'waitingRepair') {
-      return loadWeldingJournalPageRows({
-        columnFilters: {
-          finalStatus: kind === 'waitingWeld' ? '=ожидает сварку' : '=ожидает ремонт',
-        },
-        includeSort: false,
-      })
-    }
-    return loadWeldingJournalPageRows({ columnFilters: {}, includeSort: false })
-  }, [
-    loadCurrentWeldingJournalRows,
-    loadLnkOutputRows,
-    loadWeldingJournalPageRows,
-  ])
+  const loadLnkOutputRows = useCallback((kind: LnkOutputRowsKind, fields?: WeldField[]) => loadReportOutputSnapshot({
+    report: 'lnk', kind, fieldKeys: fields?.map(field => field.key),
+    ...(kind === 'current' ? { columnFilters: dispatcherTaskServerFilters, sort: activeReportSort } : {}),
+  }), [dispatcherTaskServerFilters, activeReportSort])
+  const loadPstoOutputRows = useCallback((kind: PstoOutputRowsKind, fields?: WeldField[]) => loadReportOutputSnapshot({
+    report: 'heatTreatment', kind, fieldKeys: fields?.map(field => field.key),
+    ...(kind === 'current' ? { columnFilters: dispatcherTaskServerFilters, sort: activeReportSort } : {}),
+  }), [dispatcherTaskServerFilters, activeReportSort])
+  const loadWeldingJournalOutputRows = useCallback((kind: WeldingJournalOutputRowsKind, fields?: WeldField[]) => loadReportOutputSnapshot({
+    report: 'weldingJournal', kind, fieldKeys: fields?.map(field => field.key),
+    ...(kind === 'current' ? { columnFilters: dispatcherTaskServerFilters, sort: activeReportSort } : {}),
+  }), [dispatcherTaskServerFilters, activeReportSort])
   const reportExportFieldsRef = useRef<WeldReportExportFieldsRef['current']>(null)
   const {
     reportPreviewProps,
@@ -2084,7 +2005,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     openWeldingJournalWaitingWeldReport,
   } = useReportOutputActions({
     activeReport,
-    outputContext: `${reportOutputContext}:${reportOutputGeneration}`,
+    outputContext: `${activeReport}:${reportGridQuery.selectionIdentity}`,
     currentRowsReady: reportGridQuery.rowsReady,
     reportExportFieldsRef,
     loadLnkRows: loadLnkOutputRows,
@@ -3632,6 +3553,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     setPstoResultDraft,
   ])
   const reportHeaderActionsProps = createReportHeaderActionsProps({
+    currentReportDisabled: !reportGridQuery.rowsReady,
     onOpenLineProgram: () => { captureReportContext('percentageLines'); setChainRecord(null); setActiveReport('percentageLines') },
     activeReport,
     onOpenImportDialog: () => setIsImportDialogOpen(true),

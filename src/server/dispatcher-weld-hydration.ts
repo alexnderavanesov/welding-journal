@@ -1,4 +1,4 @@
-import { getTableColumns, sql } from 'drizzle-orm'
+import { Column, getTableColumns, sql } from 'drizzle-orm'
 import { weldJoints } from '@/db/schema'
 import { buildNumberArrayMatch } from './weld-request-utils'
 import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
@@ -6,6 +6,9 @@ import type { SystemDocumentSequenceTransaction } from './system-document-sequen
 type Row = typeof weldJoints.$inferSelect
 const columns = Object.entries(getTableColumns(weldJoints))
 const selection = sql.join(columns.map(([key, column]) => sql`${column} as ${sql.identifier(key)}`), sql`, `)
+// The base decoder returns its input unchanged. Most columns use that exact
+// implementation; retain all fields while decoding only real conversions.
+const decodedColumns = columns.filter(([, column]) => column.mapFromDriverValue !== Column.prototype.mapFromDriverValue)
 
 /** Flat, single-table hot path: keep every column and its schema decoder, but
  * avoid Drizzle's per-cell nested-join/path discovery for millions of cells.
@@ -22,7 +25,7 @@ export async function readDispatcherWeldBatch(
     where ${buildNumberArrayMatch(weldJoints.id, ids)}
   `)
   for (const row of result.rows) {
-    for (const [key, column] of columns) {
+    for (const [key, column] of decodedColumns) {
       const raw = row[key]
       if (raw !== null) row[key] = column.mapFromDriverValue(raw)
     }

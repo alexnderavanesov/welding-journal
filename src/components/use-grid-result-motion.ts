@@ -3,10 +3,12 @@ import './grid-result-motion.css'
 
 /** A short reveal of committed results. Never delays data, blocks input, or
  * animates a loading/scroll block. Callers decide when a query has completed. */
-export function useGridResultMotion(frame: RefObject<HTMLElement | null>, options: { duration?: number; opacity?: number } = {}) {
+export function useGridResultMotion(frame: RefObject<HTMLElement | null>, options: { duration?: number; opacity?: number; ready?: boolean } = {}) {
   const duration = options.duration ?? 150, opacity = options.opacity ?? .84
   const scheduled = useRef(0), animation = useRef<Animation | null>(null)
+  const ready = useRef(options.ready ?? true), pending = useRef(false)
   const cancel = useCallback(() => {
+    pending.current = false
     cancelAnimationFrame(scheduled.current); scheduled.current = 0
     animation.current?.cancel(); animation.current = null
     frame.current?.removeAttribute('data-grid-result-revealing')
@@ -19,6 +21,7 @@ export function useGridResultMotion(frame: RefObject<HTMLElement | null>, option
   }, [cancel])
   const reveal = useCallback(() => {
     cancel()
+    if (!ready.current) { pending.current = true; return }
     scheduled.current = requestAnimationFrame(() => {
       scheduled.current = 0
       if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
@@ -30,5 +33,12 @@ export function useGridResultMotion(frame: RefObject<HTMLElement | null>, option
       next.onfinish = () => { if (animation.current === next) { animation.current = null; frame.current?.removeAttribute('data-grid-result-revealing') } }
     })
   }, [frame, duration, opacity, cancel])
+  useLayoutEffect(() => {
+    // AG's committed cells can precede React's ready state by a frame. Wait for
+    // that commit without polling or animating a still-disabled report.
+    ready.current = options.ready ?? true
+    if (!ready.current) cancel()
+    else if (pending.current) reveal()
+  }, [options.ready, cancel, reveal])
   return useMemo(() => ({ reveal, cancel }), [reveal, cancel])
 }

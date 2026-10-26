@@ -342,6 +342,18 @@ for (const count of [50, 100, 120, 500]) test(`${count} joints under shared stam
     const beforeKeyboard = await page.evaluate(() => window.scrollY)
     await page.keyboard.press('PageDown')
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(beforeKeyboard + 100)
+    // This checks completed keyboard actions. AG Grid auto-height finishes
+    // PageDown asynchronously; its first scroll does not mark completion.
+    // Rapid overlapping commands are a separate upstream navigation case.
+    let previousPosition = '', stableSince = 0
+    await expect.poll(async () => {
+      const position = await page.evaluate(() => JSON.stringify([
+        window.scrollY, document.activeElement?.closest('.ag-row')?.getAttribute('row-index'),
+        document.activeElement?.getAttribute('col-id'),
+      ]))
+      if (position !== previousPosition) { previousPosition = position; stableSince = Date.now() }
+      return Date.now() - stableSince
+    }, { intervals: [50] }).toBeGreaterThanOrEqual(100)
     await page.keyboard.press('End')
     await expect.poll(() => b.getByRole('button', { name: 'F100', exact: true }).evaluate(element => {
       const box = element.getBoundingClientRect()

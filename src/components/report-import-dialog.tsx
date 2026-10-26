@@ -1,7 +1,7 @@
 import { AlertTriangle, CheckCircle2, Download, FileDown, FileSpreadsheet, Loader2, Upload } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import { useRef, useState } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { DialogHeader } from '@/components/dialog-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { Button } from '@/components/ui/button'
@@ -35,6 +35,9 @@ import type { WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welde
 import { WELD_IMPORT_MAX_ROWS } from '@/lib/weld-import-limits'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
 import { listWeldingJournalImportScope } from '@/server/weld-import-api'
+
+import { ReadOnlyGrid } from './read-only-grid'
+import type { ColDef, GridApi } from 'ag-grid-community'
 
 type PreviewRowLimit = 50 | 100 | 'all'
 
@@ -74,8 +77,11 @@ export function ReportImportDialog({
   const [errorsCollapsed, setErrorsCollapsed] = useState(false)
   const [showOnlyErrorRows, setShowOnlyErrorRows] = useState(false)
   const [activeErrorIndex, setActiveErrorIndex] = useState(-1)
+  const [previewFocus, setPreviewFocus] = useState<{ index: number; field?: string } | null>(null)
   const [readError, setReadError] = useState<string | null>(null)
   const [isReading, setIsReading] = useState(false)
+  const readGeneration = useRef(0)
+  useEffect(() => () => { readGeneration.current++ }, [open, activeReport])
 
   const importScopeQuery = useQuery({
     queryKey: ['welding-journal-import-scope', columnFilters],
@@ -96,6 +102,18 @@ export function ReportImportDialog({
       ? importScopeQuery.error.message
       : null
 
+  const { changedPreviewCellKeys, errorPreviewCellKeys, errorPreviewRowKeys, stickyPreviewColumns } = useMemo(() => ({
+    changedPreviewCellKeys: preview ? buildPreviewChangedCellKeys(preview) : new Map<string, Set<string>>(),
+    errorPreviewCellKeys: preview ? buildPreviewErrorCellKeys(preview) : new Map<string, Set<string>>(),
+    errorPreviewRowKeys: new Set(preview?.errors.map(getPreviewErrorRowKey)),
+    stickyPreviewColumns: preview ? getStickyPreviewColumns(preview) : [],
+  }), [preview])
+  const previewRecordsWithIndexes = useMemo(() => preview
+    ? preview.records.map((record, index) => ({ record, index })).filter(({ record, index }) =>
+        !showOnlyErrorRows || errorPreviewRowKeys.has(getPreviewRowKey(record, index)))
+    : [], [preview, showOnlyErrorRows, errorPreviewRowKeys])
+  const visiblePreviewRecords = useMemo(() => getVisiblePreviewRecords(previewRecordsWithIndexes, previewRowLimit), [previewRecordsWithIndexes, previewRowLimit])
+
   if (!open) return null
 
   const validCount = preview?.validRecords.length ?? 0
@@ -103,16 +121,6 @@ export function ReportImportDialog({
   const deleteCount = preview?.validRecords.filter((record) => record.deleteRequested).length ?? 0
   const errorRowCount = preview ? new Set(preview.errors.map((error) => error.id ? `id:${error.id}` : `row:${error.rowNumber}`)).size : 0
   const errorGroups = preview ? groupImportPreviewErrors(preview.errors) : []
-  const changedPreviewCellKeys = preview ? buildPreviewChangedCellKeys(preview) : new Map<string, Set<string>>()
-  const errorPreviewCellKeys = preview ? buildPreviewErrorCellKeys(preview) : new Map<string, Set<string>>()
-  const errorPreviewRowKeys = preview ? new Set(preview.errors.map(getPreviewErrorRowKey)) : new Set<string>()
-  const previewRecordsWithIndexes = preview
-    ? preview.records.map((record, index) => ({ record, index })).filter(({ record, index }) =>
-        !showOnlyErrorRows || errorPreviewRowKeys.has(getPreviewRowKey(record, index)),
-      )
-    : []
-  const visiblePreviewRecords = getVisiblePreviewRecords(previewRecordsWithIndexes, previewRowLimit)
-  const stickyPreviewColumns = preview ? getStickyPreviewColumns(preview) : []
   const isPreviewLimited = visiblePreviewRecords.length < previewRecordsWithIndexes.length
   const modeCopy = getImportModeCopy(mode, activeReport)
 
@@ -142,8 +150,10 @@ export function ReportImportDialog({
   }
 
   const resetImportState = () => {
+    readGeneration.current++
     setTemplateDownloaded(false)
     setPreview(null)
+    setPreviewFocus(null)
     setPreviewRowLimit(50)
     setErrorsCollapsed(false)
     setShowOnlyErrorRows(false)
@@ -160,6 +170,8 @@ export function ReportImportDialog({
 
   const handleFileChange = async (file: File | undefined) => {
     if (!file) return
+    const generation = ++readGeneration.current
+    setPreviewFocus(null)
     setIsReading(true)
     setReadError(null)
     try {
@@ -191,8 +203,12 @@ export function ReportImportDialog({
               welderStamps,
               welderStampSuspensions,
             })
+      // Switching modes or closing the dialog retires this read. Its records
+      // must never become eligible for a different import operation.
+      if (generation !== readGeneration.current) return
       const identities = [...new Map(nextPreview.records.filter((row) => !row.deleteRequested && String(row.line ?? '').trim()).map((row) => [getLineProgramIdentityKey(row), normalizeLineProgramIdentity(row)])).values()]
       const programs = identities.length ? await getLineProgramsForImport({ data: { identities } }) : []
+      if (generation !== readGeneration.current) return
       setPreviewPrograms(programs)
       setPreview(addLineProgramImportErrors(nextPreview, programs, rows))
       setPreviewRowLimit(50)
@@ -200,10 +216,12 @@ export function ReportImportDialog({
       setShowOnlyErrorRows(false)
       setActiveErrorIndex(-1)
     } catch (error) {
+      if (generation !== readGeneration.current) return
       setPreview(null)
+      setPreviewFocus(null)
       setReadError(error instanceof Error ? error.message : 'Не удалось прочитать файл импорта.')
     } finally {
-      setIsReading(false)
+      if (generation === readGeneration.current) setIsReading(false)
     }
   }
 
@@ -268,7 +286,7 @@ export function ReportImportDialog({
   }
 
   return (
-    <LargeDialogShell maxWidthClassName="max-w-[1440px]" maxHeightClassName="max-h-[94vh]" overlayClassName="z-[90] bg-slate-950/35">
+    <LargeDialogShell ariaLabel="Импорт данных" maxWidthClassName="max-w-[1440px]" maxHeightClassName="max-h-[94vh]" overlayClassName="z-[90] bg-slate-950/35">
       <DialogHeader
         title="Импорт данных"
         subtitle={`${getActiveReportTitle(activeReport)} · ${modeCopy.subtitle}`}
@@ -414,79 +432,10 @@ export function ReportImportDialog({
                   ) : null}
                 </div>
               </div>
-              <div className="max-h-[56vh] overflow-auto">
-                <table className="min-w-full border-separate border-spacing-0 text-sm">
-                  <thead className="sticky top-0 z-10 bg-slate-100 text-xs text-slate-600">
-                    <tr>
-                      {stickyPreviewColumns.includes('id') ? (
-                        <th
-                          className={cn(
-                            'whitespace-nowrap border-b border-slate-200 bg-slate-100 px-3 py-2 text-left font-semibold',
-                            getStickyPreviewColumnClass('id', stickyPreviewColumns, true),
-                          )}
-                          style={getStickyPreviewColumnStyle('id', stickyPreviewColumns)}
-                        >
-                          ID
-                        </th>
-                      ) : null}
-                      {preview.fields.map((field) => (
-                        <th
-                          key={field.key}
-                          className={cn(
-                            'whitespace-nowrap border-b border-slate-200 bg-slate-100 px-3 py-2 text-left font-semibold',
-                            getStickyPreviewColumnClass(field.key, stickyPreviewColumns, true),
-                          )}
-                          style={getStickyPreviewColumnStyle(field.key, stickyPreviewColumns)}
-                        >
-                          {field.label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visiblePreviewRecords.map(({ record, index }) => {
-                      const previewRowKey = getPreviewRowKey(record, index)
-                      return (
-                        <tr id={getPreviewRowDomId(record, index)} key={`${index}-${String(record.joint ?? '')}`} className="odd:bg-white even:bg-slate-50/70">
-                          {stickyPreviewColumns.includes('id') ? (
-                            <td
-                              className={getPreviewCellClass({
-                                isErrorCell: false,
-                                isChangedCell: false,
-                                isStickyCell: true,
-                                stickyClassName: getStickyPreviewColumnClass('id', stickyPreviewColumns, false),
-                              })}
-                              style={getStickyPreviewColumnStyle('id', stickyPreviewColumns)}
-                              title={formatPreviewValue(record.id)}
-                            >
-                              {formatPreviewValue(record.id)}
-                            </td>
-                          ) : null}
-                          {preview.fields.map((field) => {
-                            const isErrorCell = Boolean(errorPreviewCellKeys.get(previewRowKey)?.has(field.key))
-                            const isChangedCell = Boolean(changedPreviewCellKeys.get(previewRowKey)?.has(field.key))
-                            return (
-                              <td
-                                key={field.key}
-                                className={getPreviewCellClass({
-                                  isErrorCell,
-                                  isChangedCell,
-                                  isStickyCell: stickyPreviewColumns.includes(field.key),
-                                  stickyClassName: getStickyPreviewColumnClass(field.key, stickyPreviewColumns, false),
-                                })}
-                                style={getStickyPreviewColumnStyle(field.key, stickyPreviewColumns)}
-                                title={formatPreviewValue(record[field.key as WeldFieldKey])}
-                              >
-                                {formatPreviewValue(record[field.key as WeldFieldKey])}
-                              </td>
-                            )
-                          })}
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <ImportPreviewGrid
+                records={visiblePreviewRecords} fields={preview.fields} stickyColumns={stickyPreviewColumns}
+                changedCells={changedPreviewCellKeys} errorCells={errorPreviewCellKeys} focus={previewFocus}
+              />
             </div>
 
             <div className="min-w-0 rounded-md border border-slate-200">
@@ -541,7 +490,13 @@ export function ReportImportDialog({
                           id={`import-error-${errorIndex}`}
                           type="button"
                           key={`${error.rowNumber}-${error.title}-${errorIndex}`}
-                          onClick={() => document.getElementById(getPreviewErrorRowDomId(error))?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                          onClick={() => {
+                            const index = preview.records.findIndex((record, index) => getPreviewRowKey(record, index) === getPreviewErrorRowKey(error))
+                            if (index < 0) return
+                            setPreviewRowLimit('all')
+                            setActiveErrorIndex(errorIndex)
+                            setPreviewFocus({ index, field: error.fieldKeys?.[0] })
+                          }}
                           className={`rounded border px-3 py-2 text-left text-sm text-amber-900 ${activeErrorIndex === errorIndex ? 'border-amber-500 bg-amber-100 ring-2 ring-amber-200' : 'border-amber-200 bg-amber-50 hover:bg-amber-100'}`}
                         >
                           <div className="font-semibold">
@@ -737,42 +692,17 @@ function getStickyPreviewColumns(preview: ReportImportPreview) {
   return stickyColumns
 }
 
-function getStickyPreviewColumnClass(columnKey: string, stickyColumns: readonly string[], isHeader: boolean) {
-  if (!stickyColumns.includes(columnKey)) return ''
-  return cn(
-    'sticky overflow-hidden text-ellipsis border-r border-slate-200 shadow-[2px_0_0_rgba(226,232,240,0.75)]',
-    isHeader ? 'z-30 bg-slate-100' : 'z-20',
-  )
-}
-
-function getStickyPreviewColumnStyle(columnKey: string, stickyColumns: readonly string[]): CSSProperties | undefined {
-  const columnIndex = stickyColumns.indexOf(columnKey)
-  if (columnIndex === -1) return undefined
-  const left = stickyColumns
-    .slice(0, columnIndex)
-    .reduce((sum, key) => sum + (STICKY_PREVIEW_COLUMN_WIDTHS[key] ?? 140), 0)
-  const width = STICKY_PREVIEW_COLUMN_WIDTHS[columnKey] ?? 140
-  return {
-    left,
-    minWidth: width,
-    width,
-    maxWidth: width,
-  }
-}
-
 function getPreviewCellClass({
   isErrorCell,
   isChangedCell,
   isStickyCell,
-  stickyClassName,
 }: {
   isErrorCell: boolean
   isChangedCell: boolean
   isStickyCell: boolean
-  stickyClassName: string
 }) {
   return cn(
-    'whitespace-nowrap border-b px-3 py-2 text-slate-700',
+    'whitespace-nowrap border-b text-slate-700',
     isErrorCell
       ? 'border-amber-200 bg-amber-50 font-semibold text-amber-950 shadow-[inset_0_0_0_1px_rgba(245,158,11,0.28)]'
       : isChangedCell
@@ -780,7 +710,6 @@ function getPreviewCellClass({
         : isStickyCell
           ? 'border-slate-100 bg-white'
           : 'border-slate-100',
-    stickyClassName,
   )
 }
 
@@ -835,10 +764,65 @@ function getPreviewErrorRowKey(error: ReportImportPreviewError) {
   return error.id ? `id:${error.id}` : `row:${error.rowNumber}`
 }
 
-function getPreviewRowDomId(record: ReportImportRecord, index: number) {
-  return `import-preview-${getPreviewRowKey(record, index).replace(':', '-')}`
+type PreviewGridRow = { record: ReportImportRecord; index: number }
+const previewGridRowId = ({ data }: { data: PreviewGridRow }) => String(data.index)
+
+function ImportPreviewGrid({ records, fields, stickyColumns, changedCells, errorCells, focus }: {
+  records: PreviewGridRow[]
+  fields: ReportImportPreview['fields']
+  stickyColumns: string[]
+  changedCells: Map<string, Set<string>>
+  errorCells: Map<string, Set<string>>
+  focus: { index: number; field?: string } | null
+}) {
+  const api = useRef<GridApi<PreviewGridRow> | null>(null)
+  const completedFocus = useRef<typeof focus>(null)
+  const columns = useMemo<ColDef<PreviewGridRow>[]>(() => [
+    ...(stickyColumns.includes('id') ? [{ key: 'id', label: 'ID' }] : []), ...fields,
+  ].map(field => ({
+    colId: field.key, headerName: field.label,
+    pinned: stickyColumns.includes(field.key) ? 'left' : undefined,
+    initialWidth: STICKY_PREVIEW_COLUMN_WIDTHS[field.key] ?? 170, minWidth: 70,
+    valueGetter: ({ data }) => formatPreviewValue(data?.record[field.key as keyof ReportImportRecord]),
+    cellRenderer: ({ value, data }: { value: string; data?: PreviewGridRow }) => <ImportPreviewValue value={value}
+      focusRequest={data?.index === focus?.index && field.key === (focus?.field ?? fields[0]?.key) ? focus : null}
+      completedFocus={completedFocus} />,
+    cellClass: ({ data }) => getPreviewCellClass({
+      isErrorCell: !!data && !!errorCells.get(getPreviewRowKey(data.record, data.index))?.has(field.key),
+      isChangedCell: !!data && !!changedCells.get(getPreviewRowKey(data.record, data.index))?.has(field.key),
+      isStickyCell: stickyColumns.includes(field.key),
+    }),
+  })), [fields, stickyColumns, changedCells, errorCells, focus])
+  const reveal = () => {
+    const grid = api.current
+    if (!focus || !grid || grid.isDestroyed()) return
+    const node = grid.getRowNode(String(focus.index))
+    if (node?.rowIndex == null) return
+    grid.ensureIndexVisible(node.rowIndex, 'middle')
+    const column = focus.field ?? fields[0]?.key
+    if (column) { grid.ensureColumnVisible(column); grid.setFocusedCell(node.rowIndex, column) }
+  }
+  useEffect(reveal, [focus, records])
+  return <div data-import-preview-grid>
+    <ReadOnlyGrid label="Предпросмотр импорта" rowData={records} columnDefs={columns}
+      getRowId={previewGridRowId}
+      onGridReady={({ api: grid }) => { api.current = grid }} onRowDataUpdated={reveal} onFirstDataRendered={reveal}
+    />
+  </div>
 }
 
-function getPreviewErrorRowDomId(error: ReportImportPreviewError) {
-  return `import-preview-${getPreviewErrorRowKey(error).replace(':', '-')}`
+function ImportPreviewValue({ value, focusRequest, completedFocus }: {
+  value: string
+  focusRequest: { index: number; field?: string } | null
+  completedFocus: { current: { index: number; field?: string } | null }
+}) {
+  const element = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    if (!focusRequest || completedFocus.current === focusRequest) return
+    // The virtual row's React cell now exists. Logical AG focus alone may
+    // precede its DOM; one request must not steal focus when scrolling back.
+    const cell = element.current?.closest<HTMLElement>('.ag-cell')
+    if (cell) { cell.focus({ preventScroll: true }); completedFocus.current = focusRequest }
+  }, [focusRequest, completedFocus])
+  return <span ref={element} title={value}>{value}</span>
 }

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { preHeatTreatmentControls, pstoRepeatCycles, weldJoints } from '@/db/schema'
+import { preHeatTreatmentControls, weldJoints } from '@/db/schema'
 import { CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES } from '@/lib/control-availability-values'
 import { PRE_HEAT_TREATMENT_LNK_METHODS } from '@/lib/lnk-control-stage'
 import { buildNullableControlEnabledWhere } from './control-availability-sql'
@@ -14,10 +14,7 @@ export function buildPstoCycleSummarySql() {
   const active = buildNullableControlEnabledWhere(weldJoints.pstoRequired, CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES)
   const cancelled = sql`lower(${reportTextSql(weldJoints.pstoRequired)}) = 'отменен'`
   const keys = ['pstoRequest', 'pstoResult', 'tvmtRequest', 'tvmtResult'] as const
-  const selected = buildPstoCurrentCycleQuery(
-    sql.join(keys.map(key => sql`${reportTextSql(weldJoints[key])} as ${sql.identifier(key)}`), sql`, `),
-    sql.join(keys.map(key => sql`${reportTextSql(pstoRepeatCycles[key])} as ${sql.identifier(key)}`), sql`, `),
-  )
+  const selected = buildPstoCurrentCycleQuery(keys)
   const current = (key: string) => sql`${sql.identifier('summary_cycle')}.${sql.identifier(key)}`
   const result = reportResultSql(current('pstoResult'))
   const tvmtResult = reportResultSql(current('tvmtResult'))
@@ -37,13 +34,17 @@ export function buildPstoCycleSummarySql() {
   const list = (kind: 'missing' | 'pending') => sql<string>`concat_ws(', ', ${sql.join(methods.map(method => sql`
     case when ${method.enabled} and ${kind === 'missing' ? sql`${method.request} = ''` : sql`${method.result} <> 'годен'`}
       then ${method.code} end`), sql`, `)})`
-  const prerequisites = sql<string>`case when ${buildPreHeatTreatmentEnabledWhere()} then
-    case when ${rejected} <> '' then 'НК до ТО не годен: ' || ${rejected}
-      when ${active} and ${list('missing')} <> '' then 'ожидает заявку НК до ТО: ' || ${list('missing')}
-      when ${active} and ${list('pending')} <> '' then 'ожидает НК до ТО: ' || ${list('pending')} else '' end else '' end`
+  // Each list is evaluated once, and later prerequisites are read only if the
+  // preceding one is empty. Repeating a correlated expression in WHEN/THEN
+  // multiplied both execution and PostgreSQL JIT compilation work.
+  const prerequisites = sql<string>`case when ${buildPreHeatTreatmentEnabledWhere()} then coalesce(
+    'НК до ТО не годен: ' || nullif(${rejected}, ''),
+    case when ${active} then coalesce(
+      'ожидает заявку НК до ТО: ' || nullif(${list('missing')}, ''),
+      'ожидает НК до ТО: ' || nullif(${list('pending')}, '')) end, '') else '' end`
   const state = sql<string>`case
-    when ${current('pstoRequest')} = '' then case when ${current('sequence')} = 1 and ${prerequisites} <> ''
-      then ${prerequisites} else 'ожидает заявку ПСТО' end
+    when ${current('pstoRequest')} = '' then coalesce(
+      case when ${current('sequence')} = 1 then nullif(${prerequisites}, '') end, 'ожидает заявку ПСТО')
     when ${result} not in ('проведено', 'проведено (отменен)', 'да') then 'ожидает ПСТО'
     when ${current('tvmtRequest')} = '' then 'ожидает заявку ТВМТ'
     when ${tvmtResult} in ('годен', 'да') then 'цикл завершен'
@@ -51,7 +52,8 @@ export function buildPstoCycleSummarySql() {
       case when ${active} then 'требуется повторная ПСТО' else 'цикл завершен' end
     else 'ожидает ТВМТ' end`
   return sql<string>`(select case
-    when ${active} and ${buildReportHasRejectedLnkSql()} and ${result} not in ('проведено', 'проведено (отменен)', 'отменен')
+    when ${active} and case when ${result} in ('проведено', 'проведено (отменен)', 'отменен')
+      then false else ${buildReportHasRejectedLnkSql()} end
       then 'нет потребности'
     when not (${active}) and not ${current('performed')} then case when ${cancelled} then 'ПСТО отменено' else 'не требуется' end
     else (case when ${current('sequence')} >= 2 then 'Повтор #' || ${current('sequence')}::text else 'Основной' end)

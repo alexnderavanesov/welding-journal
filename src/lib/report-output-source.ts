@@ -1,49 +1,20 @@
-import type { QueryClient } from '@tanstack/react-query'
+import { readReportOutputSnapshot } from '@/server/weld-read-api'
+import type { ReportOutputRequest } from '@/server/weld-contracts'
 
-import { splitReportQuickSearch } from '@/lib/report-quick-search'
-import { WELD_REPORT_CONTEXT_QUERY_KEY } from '@/lib/weld-query-utils'
-import {
-  listHeatTreatmentReportPage,
-  listLnkReportPage,
-  listWeldReportContextRows,
-} from '@/server/weld-read-api'
-import { WELD_PAGE_ALL_SIZE, type WeldReportContextKind, type WeldSort } from '@/server/weld-contracts'
-
-/** Complete source for an explicitly requested report, without modal candidate limits. */
-export function loadCompleteReportOutputRows(
-  queryClient: QueryClient,
-  report: WeldReportContextKind,
-) {
-  return queryClient.fetchQuery({
-    queryKey: [...WELD_REPORT_CONTEXT_QUERY_KEY, report],
-    queryFn: () => listWeldReportContextRows({ data: { report } }),
-    staleTime: 60_000,
-    retry: false,
-  })
-}
-
-export async function loadFilteredCurrentReportOutputRows({
-  report,
-  columnFilters,
-  sort,
-}: {
-  report: WeldReportContextKind
-  columnFilters: Record<string, string>
-  sort: WeldSort | null
-}) {
-  const filters = splitReportQuickSearch(columnFilters)
-  const request = {
-    data: {
-      page: 1,
-      pageSize: WELD_PAGE_ALL_SIZE as typeof WELD_PAGE_ALL_SIZE,
-      includeTotals: false,
-      columnFilters: filters.columnFilters,
-      ...(filters.search ? { search: filters.search } : {}),
-      ...(sort ? { sort: { ...sort } } : {}),
-    },
-  }
-  const result = report === 'lnk'
-    ? await listLnkReportPage(request)
-    : await listHeatTreatmentReportPage(request)
-  return result.rows
+/** Capture filters, order and columns; a later download uses this selection on fresh data. */
+export async function loadReportOutputSnapshot(input: ReportOutputRequest) {
+  const request: ReportOutputRequest = { ...input, columnFilters: { ...input.columnFilters },
+    ...(input.sort ? { sort: { ...input.sort } } : {}), ...(input.fieldKeys ? { fieldKeys: [...input.fieldKeys] } : {}) }
+  const snapshot = await readReportOutputSnapshot({ data: request })
+  return { ...snapshot, onDownloadExcel: async (signal?: AbortSignal) => {
+    const response = await fetch('/api/report-excel', { method: 'POST', signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) })
+    if (!response.ok) throw new Error(await response.text())
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = response.headers.get('X-Report-Filename') || 'report.xlsx'
+    document.body.appendChild(link)
+    try { link.click() } finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000) }
+  } }
 }

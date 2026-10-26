@@ -1,75 +1,56 @@
-import { QueryClient } from '@tanstack/react-query'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WeldSort } from '@/server/weld-contracts'
-
-const serverMocks = vi.hoisted(() => ({
-  listWeldReportContextRows: vi.fn(),
-  listLnkReportPage: vi.fn(),
-  listHeatTreatmentReportPage: vi.fn(),
-}))
+const serverMocks = vi.hoisted(() => ({ readReportOutputSnapshot: vi.fn() }))
 vi.mock('@/server/weld-read-api', () => serverMocks)
+import { loadReportOutputSnapshot } from './report-output-source'
 
-import {
-  loadCompleteReportOutputRows,
-  loadFilteredCurrentReportOutputRows,
-} from '@/lib/report-output-source'
-
-describe('complete report output source', () => {
+describe('explicit report snapshots', () => {
   beforeEach(() => vi.clearAllMocks())
-
-  it('keeps every row beyond the 500-row modal limit and reuses the same report snapshot', async () => {
-    const rows = Array.from({ length: 501 }, (_, index) => ({ id: index + 1 }))
-    serverMocks.listWeldReportContextRows.mockResolvedValueOnce(rows)
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-
-    const first = await loadCompleteReportOutputRows(queryClient, 'lnk')
-    const second = await loadCompleteReportOutputRows(queryClient, 'lnk')
-
-    expect(first).toHaveLength(501)
-    expect(first[500]?.id).toBe(501)
-    expect(second).toBe(first)
-    expect(serverMocks.listWeldReportContextRows).toHaveBeenCalledTimes(1)
-    expect(serverMocks.listWeldReportContextRows).toHaveBeenCalledWith({ data: { report: 'lnk' } })
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers() })
+  it('keeps every row beyond modal limits and reads a fresh snapshot on each reopening', async () => {
+    const first = { report: { title: 'First' }, sourceRows: 501, truncated: false, generatedAt: '2026-10-25T18:00:00Z' }
+    const second = { ...first, sourceRows: 502, generatedAt: '2026-10-25T18:01:00Z' }
+    serverMocks.readReportOutputSnapshot.mockResolvedValueOnce(first).mockResolvedValueOnce(second)
+    expect(await loadReportOutputSnapshot({ report: 'lnk' })).toMatchObject(first)
+    expect(await loadReportOutputSnapshot({ report: 'lnk' })).toMatchObject(second)
+    expect(first.sourceRows).toBe(501)
+    expect(second.sourceRows).toBe(502)
+    expect(serverMocks.readReportOutputSnapshot).toHaveBeenCalledTimes(2)
   })
-
-  it('requests every matching current-report row with the active filters and sort', async () => {
-    const rows = [{ id: 7 }, { id: 501 }]
-    serverMocks.listLnkReportPage.mockResolvedValueOnce({ rows })
-
-    const result = await loadFilteredCurrentReportOutputRows({
-      report: 'lnk',
-      columnFilters: { search: ' F501 ', line: '=LINE-1' },
-      sort: { fieldKey: 'weldDate', direction: 'desc' },
-    })
-
-    expect(result).toBe(rows)
-    expect(serverMocks.listLnkReportPage).toHaveBeenCalledWith({
-      data: {
-        page: 1,
-        pageSize: 'all',
-        includeTotals: false,
-        columnFilters: { line: '=LINE-1' },
-        search: 'F501',
-        sort: { fieldKey: 'weldDate', direction: 'desc' },
-      },
-    })
-    expect(serverMocks.listWeldReportContextRows).not.toHaveBeenCalled()
-  })
-
-  it('captures filters and sort at opening instead of using objects later changed by the UI', async () => {
-    let resolve!: (value: { rows: { id: number }[] }) => void
-    serverMocks.listHeatTreatmentReportPage.mockReturnValueOnce(new Promise(done => { resolve = done }))
+  it('captures filters and sort before awaiting the server', async () => {
+    let resolve!: (value: unknown) => void
+    serverMocks.readReportOutputSnapshot.mockReturnValueOnce(new Promise(done => { resolve = done }))
     const columnFilters = { line: '=A', search: 'S1' }
     const sort: WeldSort = { fieldKey: 'joint', direction: 'desc' }
-    const loading = loadFilteredCurrentReportOutputRows({ report: 'heatTreatment', columnFilters, sort })
-    columnFilters.line = '=B'
-    columnFilters.search = 'S2'
-    sort.fieldKey = 'line'
-    resolve({ rows: [{ id: 1 }] })
-    expect(await loading).toEqual([{ id: 1 }])
-    expect(serverMocks.listHeatTreatmentReportPage).toHaveBeenCalledExactlyOnceWith({
-      data: { page: 1, pageSize: 'all', includeTotals: false, columnFilters: { line: '=A' },
-        search: 'S1', sort: { fieldKey: 'joint', direction: 'desc' } },
-    })
+    const loading = loadReportOutputSnapshot({ report: 'heatTreatment', columnFilters, sort })
+    columnFilters.line = '=B'; columnFilters.search = 'S2'; sort.fieldKey = 'line'
+    const snapshot = { report: { title: 'Snapshot' }, sourceRows: 1, truncated: false, generatedAt: '2026-10-25T18:00:00Z' }
+    resolve(snapshot)
+    expect(await loading).toMatchObject(snapshot)
+    expect(serverMocks.readReportOutputSnapshot).toHaveBeenCalledExactlyOnceWith({ data: {
+      report: 'heatTreatment', columnFilters: { line: '=A', search: 'S1' }, sort: { fieldKey: 'joint', direction: 'desc' },
+    } })
   })
+})
+
+it('downloads fresh files on demand with the captured filters, order and columns, independent of preview rows', async () => {
+  vi.useFakeTimers()
+  serverMocks.readReportOutputSnapshot.mockResolvedValue({ report: { title: 'Limited preview', tables: [] }, sourceRows: 200000, truncated: true, generatedAt: '2026-10-26T12:00:00Z' })
+  const fetch = vi.fn(async () => new Response('full workbook', { headers: { 'X-Report-Filename': 'welding-journal-current.xlsx' } }))
+  vi.stubGlobal('fetch', fetch)
+  const create = vi.fn(() => 'blob:full'), revoke = vi.fn()
+  vi.stubGlobal('URL', { createObjectURL: create, revokeObjectURL: revoke })
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  const fieldKeys = ['joint', 'line'], columnFilters = { line: '=A' }, sort: WeldSort = { fieldKey: 'joint', direction: 'desc' }
+  const output = await loadReportOutputSnapshot({ report: 'weldingJournal', fieldKeys, columnFilters, sort })
+  expect(fetch).not.toHaveBeenCalled()
+  fieldKeys.reverse(); columnFilters.line = '=B'; sort.direction = 'asc'
+  for (let repeat = 0; repeat < 2; repeat++) await output.onDownloadExcel()
+  expect(fetch).toHaveBeenCalledTimes(2)
+  for (const call of fetch.mock.calls) expect(JSON.parse((call as unknown as [string, RequestInit])[1].body as string)).toMatchObject({
+    fieldKeys: ['joint', 'line'], columnFilters: { line: '=A' }, sort: { fieldKey: 'joint', direction: 'desc' },
+  })
+  expect(click).toHaveBeenCalledTimes(2)
+  expect(document.querySelector('a[download]')).toBeNull()
+  vi.runAllTimers(); expect(revoke).toHaveBeenCalledTimes(2)
 })

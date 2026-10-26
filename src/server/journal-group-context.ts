@@ -11,11 +11,11 @@ import { buildNumberArrayMatch } from './weld-request-utils'
 
 // One indexed page-sized read. Never load a whole line or query from a group renderer.
 // Saved root IDs and replacement tombstones must survive filtering and renaming.
-export async function attachJournalGroupContext(rows: WeldRow[], settings: OtherSettings): Promise<WeldRow[]> {
+export async function attachJournalGroupContext(rows: WeldRow[], settings: OtherSettings, db: Pick<ReturnType<typeof requireDb>, 'select'> = requireDb()): Promise<WeldRow[]> {
   if (!rows.length) return rows
   const root = alias(weldJoints, 'journal_physical_root')
   const rootState = alias(weldJointProgramStates, 'journal_physical_root_state')
-  const records = await requireDb().select({
+  const records = await db.select({
     state: weldJointProgramStates,
     root: { id: root.id, wdi: root.wdi, connectionType: root.connectionType,
       d1: root.d1, d2: root.d2, t1: root.t1, t2: root.t2 },

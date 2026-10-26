@@ -220,8 +220,8 @@ test('load audit: all four document kinds over real HTTP preserve first and repe
     expect(resources.errors).toEqual([])
     if ('lastCgroup' in resources) {
       expect(resources.postmortem).toBe(false)
-      expect(resources.lastCgroup['memory.max']).toBe('2147483648')
-      expect(Number(resources.lastCgroup['memory.peak'])).toBeLessThan(2 * 1024 ** 3)
+      expect(Number(resources.lastCgroup['memory.max'])).toBe(Number(process.env.AUDIT_CONTAINER_MEMORY_MIB || 2048) * 1024 ** 2)
+      expect(Number(resources.lastCgroup['memory.peak'])).toBeLessThan(Number(resources.lastCgroup['memory.max']))
       expect(resources.lastCgroup['memory.events']).toMatch(/oom 0\n/)
       expect(resources.lastCgroup['memory.events']).toMatch(/oom_kill 0\n/)
     }

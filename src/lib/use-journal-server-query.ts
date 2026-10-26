@@ -21,8 +21,11 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
   const report = journalReport(options.report)
   const client = useQueryClient()
   const [generation, setGeneration] = useState(0)
-  const [state, setState] = useState<{ identity: string; rows: WeldRow[]; ready: boolean; error: Error | null; summary?: WeldReportSummaryResult; summaryError?: Error }>({ identity: '', rows: [], ready: false, error: null })
+  const [state, setState] = useState<{ identity: string; rows: WeldRow[]; ready: boolean; modelPending?: boolean; error: Error | null; summary?: WeldReportSummaryResult; summaryError?: Error }>({ identity: '', rows: [], ready: false, error: null })
   const filters = useMemo(() => JSON.stringify(Object.fromEntries(Object.entries(options.columnFilters).filter(([, value]) => value.trim()).sort(([a], [b]) => a.localeCompare(b)))), [options.columnFilters])
+  // User selection changes invalidate output; background row refreshes do not
+  // invalidate an independently prepared, coherent report snapshot.
+  const selectionIdentity = useMemo(() => JSON.stringify([report, options.enabled, filters, options.sort]), [report, options.enabled, filters, options.sort])
   const requestedIdentity = useMemo(() => JSON.stringify([report, options.enabled, filters, options.sort, generation]), [report, options.enabled, filters, options.sort, generation])
   // Only typing waits. Checkbox filters, sort and explicit refresh apply now,
   // also committing any search draft already typed by the user.
@@ -58,7 +61,7 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
       // Coalesce the reads, but disable actions on the saved row version now.
       // Otherwise a fast second command can open a menu during the debounce
       // and lose it when the replacement block arrives.
-      setState(previous => previous.ready ? { ...previous, ready: false } : previous)
+      setState(previous => previous.ready || previous.modelPending ? { ...previous, ready: false, modelPending: false } : previous)
       clearTimeout(timer); timer = setTimeout(() => { void refetch() }, 80)
     })
     return () => { unsubscribe(); clearTimeout(timer) }
@@ -86,7 +89,9 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
       if (revision.current?.identity === revisionScope && revision.current.value !== result.revision) throw new Error('Данные журнала изменились. Обновите таблицу и повторите действие.')
       revision.current = { identity: revisionScope, value: result.revision }
       // A successful neighbouring block must not hide an unresolved failure.
-      setState(previous => previous.identity === scope ? previous : { rows: [], identity: scope, ready: true, error: null })
+      // The response is not yet installed in AG Grid. Keep actions disabled
+      // until rowsChanged publishes the committed model, including empty groups.
+      setState(previous => previous.identity === scope ? previous : { rows: [], identity: scope, ready: false, modelPending: true, error: null })
       void loadSummary(scope, result.revision)
       return result
     } catch (error) {
@@ -104,14 +109,16 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
   }, [report, identity, options.enabled, options.sort, columnFilters, filters, loadSummary])
   const rowsChanged = useCallback((rows: WeldRow[]) => {
     if (current.current !== identity) return
-    setState(previous => previous.identity !== identity || previous.rows.length === rows.length && previous.rows.every((row, index) => row === rows[index]) ? previous : { ...previous, rows })
+    setState(previous => previous.identity !== identity || previous.error || !previous.ready && !previous.modelPending
+      || previous.ready && previous.rows.length === rows.length && previous.rows.every((row, index) => row === rows[index])
+      ? previous : { ...previous, rows, ready: true, modelPending: false })
   }, [identity])
   const error = state.identity === requestedIdentity ? state.error : null
   const summaryError = state.identity === requestedIdentity ? state.summaryError : undefined
   const source = useMemo<JournalServerSource>(() => ({ report, identity, columnFilters, sort: options.sort, load, rowsChanged, error, retry: refetch }), [report, identity, columnFilters, options.sort, load, rowsChanged, error, refetch])
   const ready = options.enabled && identity === requestedIdentity && state.identity === identity && state.ready
   return {
-    source, rows: ready ? state.rows : [], rowsReady: ready, requestedIdentity,
+    source, rows: ready ? state.rows : [], rowsReady: ready, requestedIdentity, selectionIdentity,
     totalCount: ready ? state.summary?.total : undefined,
     acceptedWdiTotal: ready ? state.summary?.acceptedWdiTotal : undefined,
     availableRequestCount: ready ? state.summary?.availableRequestCount : undefined,

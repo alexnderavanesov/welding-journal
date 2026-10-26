@@ -117,7 +117,7 @@ const MULTIPLE_LABELS: Record<string, string> = {
 }
 
 export function buildDocumentHistoryGridSql({
-  baseQuery, columnFilters, filterKeys, request, idKind, sortExpressions, defaultOrder, populatedExpressions = {},
+  baseQuery, columnFilters, filterKeys, request, idKind, sortExpressions, defaultOrder, populatedExpressions = {}, revisionValue,
 }: {
   baseQuery: SQL
   columnFilters: Record<string, string>
@@ -128,6 +128,9 @@ export function buildDocumentHistoryGridSql({
   defaultOrder: SQL
   /** Optional display expressions whose empty values are not populated cells. */
   populatedExpressions?: Record<string, SQL>
+  /** Only when this token covers every input of a registry row. Derived/manual
+   * histories keep hashing their complete values, including related welds. */
+  revisionValue?: SQL
 }) {
   const idColumn = sql.identifier(idKind === 'system' ? 'documentId' : 'id')
   const groups = request.groupKeys.map((key, index) => sql`${groupKeyExpression(request.rowGroupCols[index])} = ${key}::jsonb`)
@@ -194,7 +197,7 @@ export function buildDocumentHistoryGridSql({
       ${matchingSelection} as "matchingSelectedIds",
       (select count(*)::integer from "scoped_documents" where ${selectedWhere}) as "selectedCount",
       ${request.idsOnly ? sql`(select coalesce(jsonb_agg(${idColumn} order by ${idColumn}), '[]'::jsonb) from "scoped_documents")` : sql`null::jsonb`} as "ids",
-      (select md5(coalesce(string_agg(md5(to_jsonb("filtered_documents")::text), '' order by ${idColumn}), '')) from "filtered_documents") as "revision",
+      (select md5(coalesce(string_agg(md5(${revisionValue ?? sql`to_jsonb("filtered_documents")::text`}), '' order by ${idColumn}), '')) from "filtered_documents") as "revision",
       ${counts} as "counts",
       ${request.cells?.summary ? groupColumn ? sql`jsonb_build_object('count', 0, 'numericCount', 0, 'sum', 0)` : sql`(
         select jsonb_build_object('count', ${populatedCount},

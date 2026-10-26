@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 type ReportShowMenuItem = {
   label: string
   onClick: () => void
+  disabled?: boolean
 }
 
 export type ReportShowMenuProps = {
@@ -39,8 +40,15 @@ export function ReportShowMenu({
             <button
               key={item.label}
               type="button"
-              onClick={item.onClick}
-              className="flex min-h-10 w-full items-center rounded px-3 py-2 text-left text-sm font-normal leading-5 text-slate-800 hover:bg-sky-50 hover:text-sky-900"
+              onClick={event => {
+                // Safari does not focus buttons on mouse click. Capture the
+                // menu as the return target before opening a report dialog.
+                event.currentTarget.focus({ preventScroll: true })
+                item.onClick()
+              }}
+              disabled={item.disabled}
+              title={item.disabled ? 'Дождитесь загрузки строк текущей выборки.' : undefined}
+              className="flex min-h-10 w-full items-center rounded px-3 py-2 text-left text-sm font-normal leading-5 text-slate-800 hover:bg-sky-50 hover:text-sky-900 disabled:cursor-wait disabled:text-slate-400 disabled:hover:bg-transparent"
             >
               {item.label}
             </button>

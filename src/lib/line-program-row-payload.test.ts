@@ -34,3 +34,13 @@ it('shares repeated empty columns without truncating a large line or its history
   expect(unpackProgramRows(packed).rows).toStrictEqual(rows)
   expect(unpackProgramRows({ rows: [] }).rows).toEqual([])
 })
+
+it('keeps every ID and value at 200000 rows with linear transport size', () => {
+  const rows: WeldRow[] = Array.from({ length: 200000 }, (_, index) => ({ id: index + 1, joint: `F${index + 1}`, rkRequest: null, rkConclusion: null, uzkRequest: null, uzkConclusion: null, pvkRequest: null, pvkConclusion: null }))
+  const packed = packProgramRows(rows)
+  expect(JSON.stringify(packed).length).toBeLessThan(JSON.stringify(rows).length / 3)
+  const restored = unpackProgramRows(packed).rows
+  expect(restored.length).toBe(rows.length)
+  // Compare a single aggregate to keep the assertion's own memory bounded.
+  expect(restored.every((item, index) => Object.entries(rows[index]).every(([key, value]) => item[key as keyof WeldRow] === value))).toBe(true)
+})

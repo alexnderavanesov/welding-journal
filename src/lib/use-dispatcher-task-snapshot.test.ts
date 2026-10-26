@@ -11,6 +11,7 @@ import type { RepeatedJointTask } from '@/lib/dispatcher-types'
 import { getBusinessDateIso } from '@/lib/business-date'
 import { DISPATCHER_TASK_REFRESH_QUERY_KEY } from '@/lib/weld-query-utils'
 import { DISPATCHER_TASK_CALCULATION_VERSION } from '@/lib/dispatcher-task-index-payload'
+import { subscribeWeldPageRefresh } from '@/lib/weld-page-refresh'
 
 vi.mock('@/lib/business-date', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/business-date')>(),
@@ -128,14 +129,20 @@ describe('dispatcher task snapshot visibility', () => {
     serverMocks.getDispatcherTaskSnapshot.mockResolvedValueOnce(snapshot(true, 7)).mockResolvedValue(snapshot(computed, 8))
     serverMocks.getDispatcherTaskVersion.mockResolvedValue({ sourceRevision: 8, computedRevision: computed ? 8 : 7, computedAt: snapshot(true).computedAt,
       businessDate: '2026-09-23', computedForBusinessDate: '2026-09-23', calculationVersion: DISPATCHER_TASK_CALCULATION_VERSION })
-    serverMocks.refreshDispatcherTaskSnapshot.mockResolvedValue(snapshot(true, 8))
-    const { result, rerender } = mountActivitySnapshot()
+    // A real recalculation also changes computedAt, hence its refresh query key.
+    serverMocks.refreshDispatcherTaskSnapshot.mockResolvedValue({ ...snapshot(true, 8), computedAt: '2026-09-23T12:01:00.000Z' })
+    const { result, rerender, queryClient } = mountActivitySnapshot()
+    const refreshRows = vi.fn()
+    const unsubscribe = subscribeWeldPageRefresh(queryClient, refreshRows)
     await waitFor(() => expect(result.current.data?.sourceRevision).toBe(7))
     rerender({ open: true })
     await waitFor(() => expect(result.current.data?.computedRevision).toBe(8))
     expect(serverMocks.getDispatcherTaskVersion).toHaveBeenCalledOnce()
     expect(serverMocks.getDispatcherTaskSnapshot).toHaveBeenCalledTimes(2)
     expect(serverMocks.refreshDispatcherTaskSnapshot).toHaveBeenCalledTimes(computed ? 0 : 1)
+    await waitFor(() => expect(refreshRows).toHaveBeenCalled())
+    expect(refreshRows.mock.calls.length).toBeLessThanOrEqual(2) // notifications coalesce into one grid read
+    unsubscribe()
   })
 
   it('rechecks at a business-date boundary with no source mutations', async () => {

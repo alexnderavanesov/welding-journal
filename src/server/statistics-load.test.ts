@@ -25,7 +25,7 @@ beforeEach(() => {
 })
 
 describe('physical statistics bounded loading', () => {
-  it.each([1, 1000])('loads %i rows and saved cut facts in five reads without unrelated control histories', async count => {
+  it.each([1, 1000, 200000])('loads %i rows and saved cut facts in five reads without unrelated control histories', async count => {
     state.rows = Array.from({ length: count }, (_, index) => ({ id: index + 1, joint: `S${index + 1}`, line: 'L',
       weldDate: '2026-09-01', connectionType: 'С17', d1: '50.8', wdi: '999', weldControlPercent: '10' })) as WeldRow[]
     const result = await computeStatisticsServerResult({ tab: 'lineSummary', unit: 'wdi' })
@@ -40,5 +40,17 @@ describe('physical statistics bounded loading', () => {
     await computeStatisticsServerResult({ tab, unit: 'joints' })
     expect(state.tables).toHaveLength(tab === 'general' || tab === 'welders' ? 8 : 7)
     expect(state.tables.filter(table => table === weldJointProgramStates)).toHaveLength(tab === 'general' ? 1 : 0)
+  })
+  it('aggregates 200000 joints into 1000 welders without per-welder reads or losing their joint links', async () => {
+    state.rows = Array.from({ length: 200000 }, (_, index) => ({
+      id: index + 1, joint: `F${index + 1}`, line: `L${index % 1000}`, weldDate: '2026-09-01',
+      stamp1KFact: `G${index % 1000}`, stamp1ZFact: `G${index % 1000}`, stamp1OFact: `G${index % 1000}`,
+    })) as WeldRow[]
+    const result = await computeStatisticsServerResult({ tab: 'welders', unit: 'joints' })
+    expect(state.tables).toHaveLength(8)
+    expect(result.welderSummary.rows).toHaveLength(1000)
+    // Layer shares use fractional arithmetic (0.4 / 0.3 / 0.3).
+    expect(result.welderSummary.rows.reduce((sum, row) => sum + row.total, 0)).toBeCloseTo(200000, 6)
+    expect(result.welderSummary.rows.reduce((sum, row) => sum + row.rowIds.length, 0)).toBe(200000)
   })
 })

@@ -1,27 +1,14 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { expect, it } from 'vitest'
 import { buildTabularReport } from './tabular-report'
 import { FIELD_BY_KEY, type WeldInput } from './weld-fields'
 import { recordsToVisibleExportMatrix } from './weld-export-utils'
-const mocks = vi.hoisted(() => ({ xlsx: vi.fn(() => new Uint8Array([1, 2, 3])) }))
-vi.mock('@/lib/weld-export-xlsx-xml', () => ({ buildExportXlsxBytes: mocks.xlsx }))
-afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
-
-it('generates Excel only on demand from the exact preview rows and fields', async () => {
-  vi.useFakeTimers()
+it('provides the complete data and fields without starting a browser download', () => {
   const fields = [FIELD_BY_KEY.get('joint')!]
   const rows = [{ joint: '<F1>' }] as WeldInput[]
-  const create = vi.fn(() => 'blob:test'), revoke = vi.fn()
-  vi.stubGlobal('URL', { createObjectURL: create, revokeObjectURL: revoke })
-  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
   const content = buildTabularReport({ rows, fields, sheetName: 'Журнал', title: 'Журнал', filename: 'journal.xlsx', emptyMessage: 'Пусто' })
-  expect(mocks.xlsx).not.toHaveBeenCalled()
   expect(content.report.tables?.[0].rows).toEqual([['<F1>']])
-  await content.onDownloadExcel!()
-  expect(mocks.xlsx).toHaveBeenCalledExactlyOnceWith(rows, { fields, sheetName: 'Журнал' })
-  expect(click).toHaveBeenCalledOnce()
-  expect(document.querySelector('a[download]')).toBeNull()
-  vi.runAllTimers()
-  expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:test')
+  expect(content.exportData).toEqual({ rows, fields, sheetName: 'Журнал', filename: 'journal.xlsx' })
+  expect(content.exportData.rows).toBe(rows)
 })
 
 it('uses the agreed Russian values, calendar dates, Moscow timestamps and DNO in every output', () => {
