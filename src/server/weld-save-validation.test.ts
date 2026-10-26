@@ -514,7 +514,7 @@ describe('validateServerWeldRecords', () => {
       records: [record],
       previousRows: new Map(),
       context,
-    })).toThrow('ЗВ-02')
+    })).toThrow('ЗВ-01')
 
     expect(() => validateServerWeldRecords({
       records: [record],
@@ -537,7 +537,7 @@ describe('validateServerWeldRecords', () => {
       records: [record],
       previousRows: new Map([[previous.id, previous]]),
       context,
-    })).toThrow('ЗВ-02')
+    })).toThrow('ЗВ-01')
   })
 
   it('allows a validated system descendant of an indexed base', () => {

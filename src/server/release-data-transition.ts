@@ -3,9 +3,10 @@ import { appSettings } from '@/db/schema'
 import { DATA_RELEASE_KEY, DATA_RELEASE_VALUE, REQUIRED_SCHEMA_TIME, isCompletedTransition } from '@/lib/release-contract'
 import { backfillAcceptedWarningObjects } from './accepted-warning-backfill'
 import { LINE_PROGRAM_TRANSITION_KEY, transitionLinePrograms } from './line-program-transition'
+import { initializePstoLinePrograms } from './psto-program-transition'
 import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
 
-/** Caller owns ONE transaction for both transitions and the readiness marker. */
+/** Caller owns ONE transaction for all transitions and the readiness marker. */
 export async function prepareReleaseData(tx: SystemDocumentSequenceTransaction) {
   await tx.execute(sql`set local lock_timeout = '15s'`)
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${DATA_RELEASE_KEY}))`)
@@ -31,7 +32,8 @@ export async function prepareReleaseData(tx: SystemDocumentSequenceTransaction) 
     `Неоднозначные принятые исключения: ${preview.unresolved.length}. Оба перехода отменены; рабочие разделы остаются закрыты. Первые ключи: ${JSON.stringify(preview.unresolved.slice(0, 50))}`,
   )
   const warnings = await backfillAcceptedWarningObjects(tx, true)
+  const pstoPrograms = await initializePstoLinePrograms(tx)
   await tx.insert(appSettings).values({ key: DATA_RELEASE_KEY, value: DATA_RELEASE_VALUE })
     .onConflictDoUpdate({ target: appSettings.key, set: { value: DATA_RELEASE_VALUE, updatedAt: new Date() } })
-  return { skipped: false, transition, warnings }
+  return { skipped: false, transition, warnings, pstoPrograms }
 }

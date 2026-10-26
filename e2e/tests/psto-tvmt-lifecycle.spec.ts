@@ -1,3 +1,4 @@
+import { filterPstoExceptions } from './psto-exception-helpers'
 import { lnkRow as lnkGridRow, revealLnkColumn, lnkActionRow } from './lnk-grid-helpers'
 import { documentGridRow, openDocumentGridFilter, revealDocumentColumn } from '../document-grid'
 import { editJournalJoint } from '../journal-grid'
@@ -306,7 +307,7 @@ test('официальная отмена сохраняет выполненн�
 
   await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Программа ПСТО' })).toBeVisible()
-  await page.getByLabel('Поиск линий', { exact: true }).fill('E2E-L2')
+  await filterPstoExceptions(page, 'Линии программы ПСТО', 'line', 'E2E-L2')
   await expect(page.getByRole('dialog').getByText('E2E-L2', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Отменить ПСТО', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Отмена ПСТО' })).toBeVisible()
@@ -368,7 +369,7 @@ test('устаревшее удаление назначения: новая з�
     `, [line, joint])
   })
   await openPstoLineProgram(page, line)
-  await expect(page.getByRole('button', { name: 'Удалить назначение ПСТО', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Снять назначение', exact: true })).toBeVisible()
   const other = await page.context().newPage()
   try {
     await other.goto('/lnk')
@@ -379,9 +380,9 @@ test('устаревшее удаление назначения: новая з�
 
     let saves = 0
     page.on('request', request => { if (rpcName(request.url()) === 'savePstoLineAssignment') saves += 1 })
-    await page.getByRole('button', { name: 'Удалить назначение ПСТО', exact: true }).click()
+    await page.getByRole('button', { name: 'Снять назначение', exact: true }).click()
     await expect(page.getByText(/История линии изменилась/)).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Удалить назначение', exact: true })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Снять назначение', exact: true })).toBeDisabled()
     await expect(page.getByText(/будут удалены|Перенести завершенный НК/)).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath('stale-psto-removal.png') })
     await page.getByRole('button', { name: 'Перейти к отмене ПСТО', exact: true }).click()
@@ -400,7 +401,7 @@ test('позднее назначение ПСТО сохраняет факти
   await seedLateAssignmentJoint()
   await page.goto('/psto')
   await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()
-  await page.getByLabel('Поиск линий', { exact: true }).fill('E2E-L3')
+  await filterPstoExceptions(page, 'Линии программы ПСТО', 'line', 'E2E-L3')
   await expect(page.getByText('E2E-L3', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Назначить', exact: true }).click()
 
@@ -488,7 +489,7 @@ test('возобновление отмененной линии также мо
   await seedReactivationLine()
   await page.goto('/psto')
   await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()
-  await page.getByLabel('Поиск линий', { exact: true }).fill('E2E-L4')
+  await filterPstoExceptions(page, 'Линии программы ПСТО', 'line', 'E2E-L4')
   await expect(page.getByRole('dialog').getByText('E2E-L4', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Возобновить', exact: true }).click()
 
@@ -591,10 +592,12 @@ test('НК до ТО сохраняет этап и документы при с
   await expect(historyPicture.getByText(/На текущей линии этап не предусмотрен/)).toBeVisible()
   await expect(historyPicture.getByRole('button', { name: titles.conclusion, exact: true })).toBeVisible()
   await historyPicture.getByRole('button', { name: 'Закрыть', exact: true }).click()
-  await moveStageSyncKeepingHistory(page, STAGE_SYNC_SOURCE_LINE)
+  // The independent line program survives an empty line. Returning to it must
+  // restore its assignment without assigning the line again or moving old NK.
+  await moveStageSyncKeepingHistory(page, STAGE_SYNC_SOURCE_LINE, false, false)
   await openPstoLineProgram(page, STAGE_SYNC_SOURCE_LINE)
-  await page.getByRole('button', { name: 'Назначить', exact: true }).click()
-  await page.getByRole('button', { name: 'Назначить ПСТО', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Назначить', exact: true })).toHaveCount(0)
+  await expect(page.getByText('Назначена', { exact: true })).toBeVisible()
   await closePstoLineProgram(page)
   await expectVikStageEverywhere(page, { joint: STAGE_SYNC_JOINT, line: STAGE_SYNC_SOURCE_LINE,
     stage: 'beforeHeatTreatment', titles, completed: true })
@@ -715,7 +718,7 @@ type VikDocumentTitles = {
 
 type ExpectedVikStage = 'primary' | 'beforeHeatTreatment'
 
-async function moveStageSyncKeepingHistory(page: Page, targetLine: string, cancelFirst = false) {
+async function moveStageSyncKeepingHistory(page: Page, targetLine: string, cancelFirst = false, expectsPreview = true) {
   await openReport(page, 'Сварочный журнал', '/journal')
   await editJournalJoint(page, STAGE_SYNC_JOINT)
   const editor = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
@@ -727,15 +730,20 @@ async function moveStageSyncKeepingHistory(page: Page, targetLine: string, cance
     await input.fill(targetLine)
     await input.press('Tab')
     const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Перенос стыка на другую линию', exact: true }) })
-    await expect(dialog).toBeVisible()
-    await expect(dialog.getByRole('button', { name: 'Подтвердить перенос', exact: true })).toBeEnabled()
-    await expect(dialog.getByRole('button', { name: /Перенести.*НК|Оставить основной/ })).toHaveCount(0)
+    if (expectsPreview) {
+      await expect(dialog).toBeVisible()
+      await expect(dialog.getByRole('button', { name: 'Подтвердить перенос', exact: true })).toBeEnabled()
+      await expect(dialog.getByRole('button', { name: /Перенести.*НК|Оставить основной/ })).toHaveCount(0)
+    } else {
+      await expect.poll(() => calls.filter(name => name.startsWith('getPstoWeldLineMovePreview_')).length).toBe(1)
+      await expect(dialog).toHaveCount(0)
+    }
     if (cancelFirst) {
       await dialog.getByRole('button', { name: 'Вернуться к форме', exact: true }).click()
       await editor.getByRole('button', { name: 'Отмена', exact: true }).click()
       expect(calls.filter(name => name.startsWith('updateWeldJoint_'))).toHaveLength(0)
     } else {
-      await dialog.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
+      if (expectsPreview) await dialog.getByRole('button', { name: 'Подтвердить перенос', exact: true }).click()
       await expect(dialog).toBeHidden()
       await expect(editor.getByRole('button', { name: 'Сохранить', exact: true })).toBeEnabled()
       await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
@@ -787,7 +795,7 @@ async function openPstoLineProgram(page: Page, line: string) {
     has: page.getByRole('heading', { name: 'Программа ПСТО' }),
   })
   await expect(program).toBeVisible()
-  await program.getByLabel('Поиск линий', { exact: true }).fill(line)
+  await filterPstoExceptions(page, 'Линии программы ПСТО', 'line', line)
   await expect(program.getByText(line, { exact: true })).toBeVisible()
 }
 

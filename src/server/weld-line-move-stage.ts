@@ -18,6 +18,7 @@ import { loadControlProcessSettingsFromTransaction } from '@/server/control-proc
 import { type SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
 import { hasPstoLifecycleHistory, loadServerWeldValidationContext } from '@/server/weld-save-validation'
 import { and, sql } from 'drizzle-orm'
+import { getPstoChainDecision, getPstoProgramState } from '@/lib/psto-chain-policy'
 import { normalizePstoLineIdentityPart } from '@/lib/psto-line-assignment'
 import { removeSourcedSystemDocumentPositionsInTransaction } from '@/server/system-document-index'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
@@ -53,16 +54,8 @@ export async function preparePstoLineMoveRecordInTransaction({
   const targetLineState = targetIdentity.line
     ? validationContext.pstoLineAssignments.get(getPstoLineIdentityKey(targetIdentity))
     : undefined
-  const targetLineAssigned = Boolean(
-    targetLineState &&
-    targetLineState.rowCount > 0 &&
-    targetLineState.assignedCount === targetLineState.rowCount,
-  )
-  const targetLineCancelled = Boolean(
-    targetLineState &&
-    targetLineState.rowCount > 0 &&
-    targetLineState.cancelledCount === targetLineState.rowCount,
-  )
+  const targetLineAssigned = getPstoChainDecision(targetLineState, record.joint, validationContext.systemIndexSettings)?.required ?? getPstoProgramState(targetLineState) === 'assigned'
+  const targetLineCancelled = !targetLineAssigned && getPstoProgramState(targetLineState) === 'cancelled'
   const identityChanged = getPstoLineIdentityKey(previous) !== getPstoLineIdentityKey(targetIdentity)
   if (disposition !== undefined && !['keepPrimary', 'movePreHeatTreatmentToPrimary', 'movePrimaryToPreHeatTreatment'].includes(disposition)) {
     throw new Error('Смена этапа НК больше не поддерживается. Обновите окно: при смене линии все этапы сохраняются.')

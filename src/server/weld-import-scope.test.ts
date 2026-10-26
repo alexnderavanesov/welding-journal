@@ -54,7 +54,7 @@ describe('welding journal import scope query lifecycle', () => {
       rows: [],
       total: WELD_IMPORT_MAX_ROWS + 1,
       limitExceeded: true,
-      fullyAssignedPstoLineKeys: [],
+      pstoLinePolicies: [],
     })
 
     expect(testState.select).toHaveBeenCalledTimes(1)

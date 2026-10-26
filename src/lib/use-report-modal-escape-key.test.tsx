@@ -129,6 +129,21 @@ describe('useReportModalEscapeKey', () => {
     expect(onCloseRkExposureModal).not.toHaveBeenCalled()
   })
 
+  it('leaves Escape to the nested grid menu until it is closed', () => {
+    const onClosePstoLineProgram = vi.fn()
+    const menu = document.createElement('div')
+    menu.className = 'read-only-grid-popup'
+    document.body.append(menu)
+    renderHook(() => useReportModalEscapeKey(createOptions({
+      isPstoLineProgramOpen: true, onClosePstoLineProgram,
+    })))
+    pressEscape()
+    expect(onClosePstoLineProgram).not.toHaveBeenCalled()
+    menu.remove()
+    pressEscape()
+    expect(onClosePstoLineProgram).toHaveBeenCalledOnce()
+  })
+
   it('closes the active pre-TO workflow before an underlying report dialog', () => {
     const onClosePreHeatTreatmentWorkflow = vi.fn()
     const onCloseRkExposureModal = vi.fn()

@@ -15,6 +15,15 @@ vi.mock('@/server/psto-line-assignment', () => ({
   listPstoLineAssignmentPage: vi.fn(),
   savePstoLineAssignment: vi.fn(),
 }))
+// The dialog owns server filters; AG's popup geometry is covered in browser tests.
+const gridFilter = vi.hoisted(() => ({ change: (_field: string, _value: string) => {} }))
+vi.mock('@/components/psto-program-grid', async importOriginal => {
+  const original = await importOriginal<typeof import('@/components/psto-program-grid')>()
+  return { ...original, PstoProgramGrid: (props: Parameters<typeof original.PstoProgramGrid>[0]) => {
+    gridFilter.change = props.onFilterChange
+    return <original.PstoProgramGrid {...props} />
+  } }
+})
 vi.mock('@/components/specialist-transfer-confirmation', () => ({ useSpecialistTransferConfirmation: () => ({ ready: true, notice: null, confirmation: undefined }) }))
 
 const unassignedLine: PstoLineAssignmentSummary = {
@@ -148,7 +157,7 @@ function renderDialog() {
 
 describe('PstoLineProgramDialog', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     vi.mocked(listPstoLineAssignmentPage).mockResolvedValue(linePage([unassignedLine, assignedLine]))
     vi.mocked(getPstoLineRemovalPreview).mockImplementation(async ({ data }) => (
       data.line === unassignedLine.line ? cleanAssignmentPreview : removalPreview
@@ -165,15 +174,16 @@ describe('PstoLineProgramDialog', () => {
     expect(screen.queryByText(/дубл/i)).not.toBeInTheDocument()
   })
 
-  it('hides stale line actions while a new server search is pending', async () => {
+  it('disables stale line actions while a server column filter is pending', async () => {
     renderDialog()
     await screen.findByText('L-100')
 
-    fireEvent.change(screen.getByLabelText('Поиск линий'), { target: { value: 'L-200' } })
-
-    expect(screen.getByText('Загружаю линии...')).toBeInTheDocument()
-    expect(screen.queryByText('L-100')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Назначить' })).not.toBeInTheDocument()
+    vi.mocked(listPstoLineAssignmentPage).mockImplementationOnce(() => new Promise(() => {}))
+    act(() => gridFilter.change('line', 'L-200'))
+    await waitFor(() => expect(listPstoLineAssignmentPage).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ filters: { line: expect.stringContaining('L-200') } }),
+    })))
+    expect(screen.getByRole('button', { name: 'Назначить' })).toBeDisabled()
   })
 
   it('shows the full-line impact before assignment', async () => {
@@ -198,10 +208,10 @@ describe('PstoLineProgramDialog', () => {
     renderDialog()
     await screen.findByText('L-100')
     fireEvent.click(screen.getByRole('button', { name: 'Следующая страница линий' }))
-    await waitFor(() => expect(listPstoLineAssignmentPage).toHaveBeenCalledWith({
+    await waitFor(() => expect(listPstoLineAssignmentPage).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ page: 2 }),
-    }))
-    expect(screen.queryByText('L-100')).not.toBeInTheDocument()
+    })))
+    expect(screen.getByRole('button', { name: 'Назначить' })).toBeDisabled()
     await act(async () => finishPage({ ...linePage([assignedLine]), totalCount: 26, pageCount: 2, page: 2 }))
     expect(await screen.findByText('L-200')).toBeInTheDocument()
     expect(screen.getByText('2 из 2')).toBeInTheDocument()
@@ -287,7 +297,7 @@ describe('PstoLineProgramDialog', () => {
     fireEvent.click(await screen.findByRole('radio', { name: 'Весь основной НК → до ТО' }))
     fireEvent.click(screen.getByRole('button', { name: 'Отмена' }))
     expect(savePstoLineAssignment).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Назначить' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Назначить' }))
     expect(await screen.findByRole('radio', { name: 'Оставить основной НК' })).toBeChecked()
   })
 
@@ -329,10 +339,10 @@ describe('PstoLineProgramDialog', () => {
     }]))
     const { onRunProtectedDelete } = renderDialog()
     await screen.findByText('L-200')
-    fireEvent.click(screen.getByRole('button', { name: 'Удалить назначение ПСТО' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Снять назначение' }))
 
     expect(await screen.findByText(/История линии изменилась/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Удалить назначение' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Снять назначение' })).toBeDisabled()
     expect(screen.queryByText(/будут удалены|Перенести завершенный|Всем: перенести/)).not.toBeInTheDocument()
     expect(onRunProtectedDelete).not.toHaveBeenCalled()
     expect(savePstoLineAssignment).not.toHaveBeenCalled()
@@ -357,11 +367,11 @@ describe('PstoLineProgramDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Отменить ПСТО' }))
     expect(await screen.findByText(/История линии изменилась/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Отменить ПСТО на линии' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Перейти к удалению назначения' }))
-    expect(await screen.findByRole('heading', { name: 'Удаление назначения ПСТО' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Удалить назначение' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Перейти к снятию назначения' }))
+    expect(await screen.findByRole('heading', { name: 'Снятие назначения ПСТО' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Снять назначение' })).toBeEnabled()
     expect(screen.queryByRole('radio')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Удалить назначение' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Снять назначение' }))
     await waitFor(() => expect(savePstoLineAssignment).toHaveBeenCalledWith({
       data: expect.objectContaining({ action: 'remove' }),
     }))

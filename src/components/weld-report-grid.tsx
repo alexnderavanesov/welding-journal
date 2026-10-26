@@ -595,9 +595,10 @@ function ReportGrid(props: WeldReportGridProps) {
         {props.journalServer?.error ? <div className="journal-update-notice journal-load-error" role="alert">
           <span title={props.journalServer.error.message}>Не удалось загрузить строки.</span>
           <button type="button" onClick={props.journalServer.retry}>Повторить загрузку</button>
-        </div> : !rowsReady ? <div className="journal-update-notice" role="status">Обновление…</div> : null}
+        </div> : null}
       </div>
       <div data-journal-footer className="journal-footer rounded-b-xl border border-t-0 border-slate-200 bg-slate-50 px-3 text-xs text-slate-500">
+        {!rowsReady && !props.journalServer?.error ? <span className="journal-footer-update" role="status">Обновление…</span> : null}
         <span className="journal-loaded-count">{props.totalCount === undefined ? 'Подсчёт…' : `Найдено: ${props.totalCount}`}</span>
         <div className="journal-footer-right">
         <div className="journal-range-summary" aria-label="Статистика выделения" title="Выбрано — записей галочками. Стыков, WDI и Сварка считаются по области, если она выделена, иначе по выбранным. После разделителя — статистика ячеек области, включая незагруженные строки.">
@@ -612,7 +613,7 @@ function ReportGrid(props: WeldReportGridProps) {
                 }}>Действия</button>
               : null}
           </div> : null}
-          <JournalSelectionSummary ids={selectedRowIds} identity={props.journalServer?.identity} ready={rowsReady} range={serverGrid.summaryRange} />
+          <JournalSelectionSummary ids={selectedRowIds} identity={props.journalServer?.identity} ready={rowsReady} range={serverGrid.summaryRange} recoverRevision={props.journalServer?.recoverRevision} />
           {serverGrid.rangeState || rangeSummary.count > 0 ? <div className="journal-cell-range-summary" aria-label="Статистика ячеек" data-separated={Boolean(selectedRowIds.size || serverGrid.summaryRange)}>
           {serverGrid.rangeState ? <span role="status">{serverGrid.rangeState}</span> : null}
           {!serverGrid.rangeState && rangeSummary.average !== null ? <span>Среднее: {formatJournalNumber(rangeSummary.average)}</span> : null}

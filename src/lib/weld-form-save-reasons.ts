@@ -360,7 +360,9 @@ export function getWeldStampSaveBlockReason(
     }
     if (selectedOption.disabled) {
       const reason = selectedOption.reason ? `: ${selectedOption.reason}` : ''
-      return formatSaveCheckBlockReason(getStampSelectOptionSaveCheckSettingId(reason), `${FIELD_BY_KEY.get(fieldKey)?.label ?? 'поле клейма'} не подходит по реестру клейм${reason}.`)
+      const message = `${FIELD_BY_KEY.get(fieldKey)?.label ?? 'поле клейма'} не подходит по реестру клейм${reason}.`
+      const setting = getStampSelectOptionSaveCheckSettingId(reason)
+      return setting ? formatSaveCheckBlockReason(setting, message) : message
     }
   }
 
@@ -383,9 +385,9 @@ function getDateReasonSaveCheckSettingId(fieldKey: WeldFieldKey, reason: string)
   return 'dateFormat'
 }
 
-function getStampSelectOptionSaveCheckSettingId(reason: string): SaveCheckSettingId {
+function getStampSelectOptionSaveCheckSettingId(reason: string): SaveCheckSettingId | null {
   const normalizedReason = reason.toLocaleLowerCase('ru-RU')
-  if (normalizedReason.includes('клеймо в архив')) return 'officialArchive'
+  if (normalizedReason.includes('клеймо в архив')) return null
   if (normalizedReason.includes('длс')) return 'officialDls'
   if (normalizedReason.includes('отстран')) return 'officialSuspension'
   if (normalizedReason.includes('способ')) return 'officialWeldingMethod'

@@ -18,6 +18,7 @@ import {
   OFFICIAL_WELDER_STAMP_FIELD_KEYS,
 } from '@/lib/report-common-config'
 import { normalizeStampForCompare } from '@/lib/welder-stamp-compatibility-utils'
+import { formatDisplayDate } from '@/lib/date-format'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
 import { assertSecurityScope } from '@/server/security-functions'
 import {
@@ -208,6 +209,7 @@ export const saveWelderStampRecords = createServerFn({ method: 'POST' })
       await assertRemovedWelderStampAliasesAreUnused(tx, currentStampRows, preparedRecords)
 
       const currentRecords = currentStampRows.map(toWelderStampPayload)
+      await assertWelderStampArchiveDatesAreUnused(tx, currentRecords, preparedRecords)
       const impact = getWelderStampDispatcherImpact(currentRecords, preparedRecords)
       // A stale resubmission must still pass all revision/reference checks above.
       if (!impact.changed) return createRegistrySnapshot(currentStampRows, currentSuspensionRows)
@@ -284,6 +286,52 @@ function getWelderStampAliasSet(
   return new Set(records.flatMap((record) => fields
     .map((field) => normalizeStampForCompare(record[field]))
     .filter(Boolean)))
+}
+
+/** The exclusive registry lock serializes this check with weld saves/imports.
+ * One bounded query for the changed archives, across every joint and both sets
+ * of stamp fields. Unchanged legacy archives must not block unrelated edits.
+ */
+export async function assertWelderStampArchiveDatesAreUnused(
+  tx: SystemDocumentSequenceTransaction,
+  current: readonly WelderStampPayload[],
+  next: readonly WelderStampPayload[],
+) {
+  const previous = new Map(current.map(record => [record.id, record]))
+  const changed = next.filter(record => {
+    if (!record.archived) return false
+    const old = previous.get(record.id)
+    return !old?.archived || old.archivedAt !== record.archivedAt ||
+      normalizeStampForCompare(old.naksStamp) !== normalizeStampForCompare(record.naksStamp) ||
+      normalizeStampForCompare(old.internalStamp) !== normalizeStampForCompare(record.internalStamp)
+  })
+  const aliases = changed.flatMap(record => [
+    { stamp: normalizeStampForCompare(record.naksStamp), factual: false, date: record.archivedAt },
+    ...[...new Set([record.naksStamp, record.internalStamp].map(normalizeStampForCompare))]
+      .map(stamp => ({ stamp, factual: true, date: record.archivedAt })),
+  ]).filter(entry => entry.stamp)
+  if (!aliases.length) return
+  const fields = [
+    ...OFFICIAL_WELDER_STAMP_FIELD_KEYS.map(key => sql`(${weldJoints[key]}, false)`),
+    ...FACTUAL_WELDER_STAMP_FIELD_KEYS.map(key => sql`(${weldJoints[key]}, true)`),
+  ]
+  const conflicts = await tx.execute<{ stamp: string; date: string; joint: string; weldDate: string }>(sql`
+    with changed_archives as (
+      select * from unnest(${sql.param(aliases.map(entry => entry.stamp))}::text[],
+        ${sql.param(aliases.map(entry => entry.factual))}::boolean[],
+        ${sql.param(aliases.map(entry => entry.date))}::date[]) as a(stamp, factual, date)
+    )
+    select a.stamp, a.date::text, ${weldJoints.joint} as joint, ${weldJoints.weldDate}::text as "weldDate"
+    from ${weldJoints}
+    cross join lateral (values ${sql.join(fields, sql`, `)}) as used(stamp, factual)
+    join changed_archives a on a.factual = used.factual and a.stamp = upper(btrim(used.stamp))
+    where ${weldJoints.weldDate} >= a.date
+    limit 1
+  `)
+  const conflict = conflicts.rows[0]
+  if (conflict) throw new Error(`Нельзя архивировать клеймо ${conflict.stamp} с ${formatDisplayDate(conflict.date)}: ` +
+    `оно указано в стыке ${conflict.joint} с датой сварки ${formatDisplayDate(conflict.weldDate)}. ` +
+    'Дата архивации должна быть позже дат сварки всех стыков с этим клеймом, включая официальные и фактические поля.')
 }
 
 async function assertRemovedWelderStampAliasesAreUnused(

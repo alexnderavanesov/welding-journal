@@ -36,14 +36,16 @@ export function getControlBasisFieldByAssignmentKey(assignmentKey: WeldFieldKey)
 }
 
 export function formatControlBasisSummary(record: WeldInput, scope: ControlBasisScope = 'all') {
-  return CONTROL_ASSIGNMENT_BASIS_FIELDS
+  const parts: string[] = CONTROL_ASSIGNMENT_BASIS_FIELDS
     .filter((field) => scope === 'all' || field.scope === scope)
     .map((field) => {
       const value = String(record[field.basisKey] ?? '').trim()
       return value ? `${field.code}: ${value}` : ''
     })
     .filter(Boolean)
-    .join('; ')
+  const exceptionBasis = String(record.pstoExceptionBasis ?? '').trim()
+  if (scope !== 'lnk' && exceptionBasis) parts.push(`ПСТО: ${exceptionBasis}`)
+  return parts.join('; ')
 }
 
 export function withControlBasisSummary<T extends WeldInput>(record: T, scope: ControlBasisScope = 'all'): T {

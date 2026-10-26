@@ -297,7 +297,7 @@ export function buildWelderStampCompatibilityCheckTasks(
     matches.push(record)
     recordsByStamp.set(key, matches)
   }
-  const auditSettings = { ...normalizeSaveCheckSettings(saveCheckSettings), officialArchive: false }
+  const auditSettings = normalizeSaveCheckSettings(saveCheckSettings)
   // Owned by this synchronous calculation only. Registry, settings and
   // suspensions cannot leak across requests; every distinct use still runs the
   // original validator. Bound memory for a single unusually varied large line.
@@ -313,7 +313,7 @@ export function buildWelderStampCompatibilityCheckTasks(
       issues = getOfficialStampCompatibilityIssues(row, matchingRecords, {
         archiveValidationMode: 'audit',
         materialGroups: dataListSettings?.materialGroups,
-        // Archive is an optional administrative guard, not a qualification defect.
+        // Card archive controls selection and saving, not qualification tasks.
         saveCheckSettings: auditSettings,
         suspensions: welderStampSuspensions,
         weldingTypes: dataListSettings?.weldingTypes,

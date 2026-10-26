@@ -12,6 +12,49 @@ vi.mock('@/server/journal-grid-api', () => ({
   countJournalGridSelection: vi.fn(), copyJournalGridRange: vi.fn(),
   selectJournalGridRange: vi.fn(), selectJournalGridRows: vi.fn(), summarizeJournalGridRange: vi.fn(),
 }))
+it('disables selection until a changed grouping has committed its first block', async () => {
+  let datasource!: IServerSideDatasource<WeldRow>, fields: string[] = []
+  const api = { isDestroyed: () => false, setGridOption: (_key: string, value: IServerSideDatasource<WeldRow>) => { datasource = value },
+    clearCellSelection: vi.fn(), getRowGroupColumns: () => fields.map(id => ({ getColId: () => id })), getCellRanges: () => [], forEachNode: () => {},
+  } as unknown as GridApi<WeldRow>
+  const source: JournalServerSource = { identity: 'regroup', columnFilters: {}, sort: null, rowsChanged: vi.fn(),
+    load: vi.fn().mockResolvedValue({ rows: [], rowCount: 1, revision: 1 }) }
+  const view = renderHook(() => useJournalServerGrid({ api, source, selected: new Set<number>(), anchor: 'line', ready: true }))
+  const load = () => act(async () => datasource.getRows({ request: { rowGroupCols: fields.map(id => ({ id })), groupKeys: [], startRow: 0, endRow: 100 },
+    success: vi.fn(), fail: vi.fn() } as unknown as IServerSideGetRowsParams<WeldRow>))
+  try {
+    await load()
+    expect(view.result.current.selectionContext!.pending).toBe(false)
+    fields = ['line']
+    act(() => view.result.current.resetLayout())
+    expect(view.result.current.selectionContext!.pending).toBe(true)
+    await load()
+    expect(view.result.current.selectionContext!.pending).toBe(false)
+    act(() => view.result.current.resetLayout())
+    expect(view.result.current.selectionContext!.pending).toBe(false)
+  } finally { view.unmount() }
+})
+it('cancels obsolete counters as soon as sorting disables the current rows', async () => {
+  vi.useFakeTimers()
+  let datasource!: IServerSideDatasource<WeldRow>, fail!: (error: Error) => void
+  const onError = vi.fn(), selected = new Set([1])
+  const api = { isDestroyed: () => false, setGridOption: (_key: string, value: IServerSideDatasource<WeldRow>) => { datasource = value },
+    clearCellSelection: vi.fn(), getRowGroupColumns: () => [], getCellRanges: () => [], forEachNode: () => {},
+  } as unknown as GridApi<WeldRow>
+  const source: JournalServerSource = { identity: 'sorting', columnFilters: {}, sort: null, rowsChanged: vi.fn(),
+    load: vi.fn().mockResolvedValue({ rows: [], rowCount: 200000, revision: 1 }) }
+  const count = vi.mocked(countJournalGridSelection).mockReset().mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject }))
+  const view = renderHook(({ ready }) => useJournalServerGrid({ api, source, selected, anchor: 'line', ready, onError }), { initialProps: { ready: true } })
+  try {
+    await act(async () => datasource.getRows({ request: { rowGroupCols: [], groupKeys: [], startRow: 0, endRow: 100 }, success: vi.fn(), fail: vi.fn() } as unknown as IServerSideGetRowsParams<WeldRow>))
+    await act(async () => vi.advanceTimersByTimeAsync(120))
+    expect(count).toHaveBeenCalledOnce()
+    view.rerender({ ready: false })
+    await act(async () => fail(new Error('Данные журнала изменились. Обновите таблицу и повторите действие.')))
+    expect(onError).not.toHaveBeenCalled()
+    expect(count.mock.calls[0][0].signal?.aborted).toBe(true)
+  } finally { view.unmount(); vi.useRealTimers() }
+})
 it('keeps counters unchanged when the owning workflow refuses a whole selection', async () => {
   vi.useFakeTimers()
   let datasource!: IServerSideDatasource<WeldRow>

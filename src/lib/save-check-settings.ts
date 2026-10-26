@@ -8,7 +8,6 @@ const SAVE_CHECK_SETTINGS_STORAGE_KEY = 'welding-save-check-settings'
 
 export type SaveCheckSettingId =
   | 'officialRegistry'
-  | 'officialArchive'
   | 'officialNaksDate'
   | 'officialSuspension'
   | 'officialWeldingMethod'
@@ -40,7 +39,7 @@ export type SaveCheckSettingId =
 
 export type SaveCheckSettings = Record<SaveCheckSettingId, boolean>
 
-export const OPTIONAL_SAVE_CHECK_SETTING_IDS: ReadonlySet<SaveCheckSettingId> = new Set(['officialArchive', 'manualJointName'])
+export const OPTIONAL_SAVE_CHECK_SETTING_IDS: ReadonlySet<SaveCheckSettingId> = new Set(['manualJointName'])
 
 // Incomplete welding metadata still creates SP-03. Document requisites are
 // mandatory on new/corrected results independently of dispatcher diagnostics.
@@ -79,7 +78,7 @@ export type SaveCheckSettingGroup = {
 }
 
 export const SAVE_CHECK_SETTING_CODES: Record<SaveCheckSettingId, string> = {
-  officialRegistry: 'СП-02', officialArchive: 'ЗВ-01', officialNaksDate: 'СП-02',
+  officialRegistry: 'СП-02', officialNaksDate: 'СП-02',
   officialSuspension: 'СП-02', officialWeldingMethod: 'СП-02', officialMaterialGroup: 'СП-02',
   officialDiameter: 'СП-02', officialThickness: 'СП-02', officialDls: 'СП-02',
   requiredRootStampWithWeldDate: 'СП-03', requiredMaterialGroupWithWeldDate: 'СП-03',
@@ -90,7 +89,7 @@ export const SAVE_CHECK_SETTING_CODES: Record<SaveCheckSettingId, string> = {
   lnkResultVikRequiredBeforeOther: 'СП-05', lnkResultConclusionRequired: '',
   pstoResultDateRequired: '', pstoResultDateFormat: '',
   pstoResultDateAfterWeldDate: 'СП-04', pstoResultRequestDateOrder: 'СП-04',
-  pstoResultDiagramRequired: '', manualJointName: 'ЗВ-02',
+  pstoResultDiagramRequired: '', manualJointName: 'ЗВ-01',
   controlHistoryProtection: 'СП-11', systemJointRenameProtection: 'СП-09',
 }
 
@@ -100,19 +99,15 @@ export const SAVE_CHECK_SETTING_GROUPS: SaveCheckSettingGroup[] = [{
   id: 'optional-input', title: 'Защиты ввода',
   description: 'Организационные ограничения. Их отключение не отменяет обязательные системные правила.',
   items: [
-    { id: 'officialArchive', label: 'Использование архивного клейма',
-      description: 'Организационный запрет использования клейма после архивации. При отключении допуски и отстранения по СП-02 всё равно проверяются на дату сварки.',
-      example: 'Архивное клеймо с недействующим на дату сварки НАКС нельзя использовать даже при выключенной ЗВ-01.' },
     { id: 'manualJointName', label: 'Формат имени обычного стыка',
       description: 'Проверяет соответствие обычного имени настроенному шаблону. Отключение позволяет нумерацию заказчика, но не отменяет защиту реальных системных связей по СП-09.',
-      example: 'ЗВ-02 можно выключить для нумерации заказчика. Ремонт и катушка по-прежнему создаются предусмотренным процессом.' },
+      example: 'ЗВ-01 можно выключить для нумерации заказчика. Ремонт и катушка по-прежнему создаются предусмотренным процессом.' },
   ],
 }]
 export const SAVE_CHECK_SETTING_ITEMS: SaveCheckSettingItem[] = SAVE_CHECK_SETTING_GROUPS.flatMap(group => group.items)
 
 export const DEFAULT_SAVE_CHECK_SETTINGS: SaveCheckSettings = {
   officialRegistry: true,
-  officialArchive: true,
   officialNaksDate: true,
   officialSuspension: true,
   officialWeldingMethod: true,

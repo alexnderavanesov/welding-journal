@@ -148,8 +148,12 @@ describe('weld server module boundaries', () => {
     for (const source of [read('psto-line-assignment.ts'), modules.chainMove, modules.mutations, modules.lineMoveStage]) {
       expect(source).not.toMatch(/buildPrimaryToPreHeatTreatmentTransfer|buildPreHeatTreatmentToPrimaryTransfer/)
     }
-    expect(assignment).toContain("buildPstoContextualStageCorrection(next, 'beforeHeatTreatment'")
-    expect(assignment.indexOf('assertExpectedInteractiveWeldVersions(')).toBeLessThan(assignment.indexOf('buildPstoContextualStageCorrection(next'))
+    const transition = read('psto-assignment-transition.ts')
+    expect(transition).toContain('buildPstoContextualStageCorrection(row, target, processSettings, systemIndexSettings)')
+    for (const source of [assignment, read('psto-chain-exceptions.ts')]) {
+      expect(source.indexOf('assertExpectedInteractiveWeldVersions(')).toBeLessThan(source.indexOf('await applyPstoAssignmentRows('))
+    }
+    expect(transition).toContain('required === wasRequired')
     expect(modules.lineMoveStage).toContain("buildPstoContextualStageCorrection(record, 'primary'")
     expect(modules.lineMoveStage).toContain('!actuallyChanged || targetLineAssigned')
     for (const source of [modules.chainMove, modules.mutations]) {

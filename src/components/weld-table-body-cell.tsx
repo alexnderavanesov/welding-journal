@@ -1,3 +1,4 @@
+import { formatPstoDocumentDisplay } from '@/lib/psto-document-display'
 import { WeldTableValue } from '@/components/weld-table-value'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { DATE_TIME_WELD_FIELD_KEYS, getFinalStatusErrorReason, type WeldField, type WeldFieldKey } from '@/lib/weld-fields'
@@ -139,7 +140,7 @@ export function getWeldTableBodyCellTooltip({
   canOpenJointOverview?: boolean
   canOpenWeldEditor: boolean
 }) {
-  const visibleValue = fieldKey === 'finalStatus' ? formatFinalStatusDisplay(row, displayValue) : displayValue
+  const visibleValue = fieldKey === 'finalStatus' ? formatFinalStatusDisplay(row, displayValue) : formatPstoDocumentDisplay(row, fieldKey, displayValue)
   const finalStatusErrorReason =
     fieldKey === 'finalStatus' && String(displayValue ?? '').trim().toLowerCase() === 'ошибка'
       ? getFinalStatusErrorReason(row)
@@ -237,7 +238,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
   onOpenJointOverview,
   controlBasisEditorEnabled = false,
 }: WeldTableBodyCellProps) {
-  const visibleValue = field.key === 'finalStatus' ? formatFinalStatusDisplay(row, displayValue) : displayValue
+  const visibleValue = field.key === 'finalStatus' ? formatFinalStatusDisplay(row, displayValue) : formatPstoDocumentDisplay(row, field.key, displayValue)
   const fieldKey = field.key as WeldFieldKey
   const layeredWaitingLabel = getLayeredControlWaitingLabel(row, fieldKey)
   const layeredDocumentTypes = isLayeredControlCompositeFieldKey(fieldKey)

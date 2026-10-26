@@ -15,7 +15,7 @@ vi.mock('@/lib/report-import-preview', async (importOriginal) => {
 })
 
 vi.mock('@/server/weld-import-api', () => ({
-  listWeldingJournalImportScope: vi.fn().mockResolvedValue({ rows: [], total: 0, fullyAssignedPstoLineKeys: [], limitExceeded: false }),
+  listWeldingJournalImportScope: vi.fn().mockResolvedValue({ rows: [], total: 0, pstoLinePolicies: [], limitExceeded: false }),
 }))
 vi.mock('@/server/line-program', () => ({ getLineProgramsForImport: vi.fn().mockResolvedValue([]) }))
 
@@ -64,13 +64,13 @@ describe('ReportImportDialog save result', () => {
 
   it('keeps the preview open and shows a server rejection', async () => {
     const onClose = vi.fn()
-    const onImportRecords = vi.fn().mockRejectedValue(new Error('Импорт остановлен: строка 2. ЗВ-02.'))
+    const onImportRecords = vi.fn().mockRejectedValue(new Error('Импорт остановлен: строка 2. ЗВ-01.'))
     renderDialog({ onClose, onImportRecords })
 
     await uploadPreviewFile()
     fireEvent.click(screen.getByRole('button', { name: 'Импортировать 1 строк' }))
 
-    expect(await screen.findByText('Сохранение не выполнено. Импорт остановлен: строка 2. ЗВ-02.')).toBeInTheDocument()
+    expect(await screen.findByText('Сохранение не выполнено. Импорт остановлен: строка 2. ЗВ-01.')).toBeInTheDocument()
     expect(screen.getByText('Предпросмотр')).toBeInTheDocument()
     expect(onClose).not.toHaveBeenCalled()
   })

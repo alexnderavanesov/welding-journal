@@ -92,7 +92,7 @@ it('stops the server copy when clipboard permission is refused before the respon
   try {
     await act(async () => datasource.getRows({ request: { rowGroupCols: [], groupKeys: [], startRow: 0, endRow: 100 }, success: vi.fn(), fail: vi.fn() } as unknown as IServerSideGetRowsParams<WeldRow>))
     await act(async () => view.result.current.copy())
-    expect(onError).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('Clipboard permission denied'))
+    expect(onError).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('Браузер не разрешил копирование'))
     expect(vi.mocked(copyJournalGridRange).mock.calls[0][0].signal?.aborted).toBe(true)
     expect(view.result.current.rangeState).not.toBe('Копируем…')
   } finally {

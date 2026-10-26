@@ -42,109 +42,50 @@ import type { WelderStampDlsPermit, WelderStampNaksPermit } from '@/lib/welder-s
 export function buildWeldFormStampSelectOptions(
   records: WelderStampRecord[],
   draft?: WeldInput,
-  allowedArchivedOfficialStamps: readonly string[] = [],
   suspensions: readonly WelderStampSuspensionRecord[] = [],
   options: { saveCheckSettings?: SaveCheckSettings } = {},
 ): Partial<Record<WeldFieldKey, readonly StampSelectOption[]>> {
   const saveCheckSettings = normalizeSaveCheckSettings(options.saveCheckSettings ?? loadSaveCheckSettings())
-  const activeRecords = records.filter((record) => !record.archived)
-  const allowedArchivedStampValues = getExistingArchivedOfficialStampValues(
-    [
-      ...allowedArchivedOfficialStamps,
-      ...getArchivedOfficialStampValuesForRecord(draft, records),
-    ],
-    records,
-  )
-  const historicalArchivedStampValues = draft
-    ? getHistoricalArchivedOfficialStampValues(records, draft.weldDate)
-    : []
-  const officialOptions = uniqueStampValues([
-    ...(saveCheckSettings.officialArchive ? activeRecords : records).map((record) => record.naksStamp),
-    ...allowedArchivedStampValues,
-    ...historicalArchivedStampValues,
-  ]).map((value) => {
-    const stampRecords = records.filter(
-      (record) => normalizeStampForCompare(record.naksStamp) === normalizeStampForCompare(value),
-    )
-    const suspension = saveCheckSettings.officialSuspension && draft ? getSuspensionOverlapForStamp(suspensions, value, draft.weldDate) : null
-    const suspensionReason = suspension ? formatWelderStampSuspensionBlockReason(suspension) : ''
-    const archiveReason = saveCheckSettings.officialArchive && draft
-      ? getWelderStampCardArchiveSelectReason(value, stampRecords, draft.weldDate)
-      : null
-    const blockReason = suspensionReason
-      ? { reason: suspensionReason, hard: true }
-      : archiveReason
-        ? archiveReason
-        : draft
-          ? getOfficialStampSelectBlockReason(value, draft, records, saveCheckSettings)
-        : null
-    return {
-      value,
-      disabled: Boolean(blockReason?.hard),
-      reason: blockReason?.reason,
-    }
+  const selected = new Set(officialWelderStampFieldKeys.map(key => normalizeStampForCompare(draft?.[key])))
+  const officialRecords = groupStampRecords(records, record => record.naksStamp)
+  const officialOptions = uniqueStampValues(records.map(record => record.naksStamp)).flatMap(value => {
+    const stampRecords = officialRecords.get(normalizeStampForCompare(value))!
+    const suspension = draft ? getSuspensionOverlapForStamp(suspensions, value, draft.weldDate) : null
+    const archiveReason = draft ? getWelderStampCardArchiveSelectReason(stampRecords, draft.weldDate) : null
+    const availabilityReason = suspension
+      ? hardReason(formatWelderStampSuspensionBlockReason(suspension)) : archiveReason
+    // Keep a previously selected value visible with an explanation when the date
+    // changes, but do not offer unavailable stamps for a new selection.
+    if (availabilityReason?.hard && !selected.has(normalizeStampForCompare(value))) return []
+    const blockReason = availabilityReason ?? (draft
+      ? getOfficialStampSelectBlockReason(value, draft, stampRecords, saveCheckSettings) : null)
+    return [{ value, ...archiveLabel(value, stampRecords), disabled: Boolean(blockReason?.hard), reason: blockReason?.reason }]
   })
-  const factualOptions = uniqueStampValues(
-    activeRecords.flatMap((record) => {
-      const naksStamp = normalizeStampSelectValue(record.naksStamp)
-      if (naksStamp) return [naksStamp]
-
-      const internalStamp = normalizeStampSelectValue(record.internalStamp)
-      return internalStamp ? [internalStamp] : []
-    }),
-  ).map((value) => ({ value }))
+  const factualValue = (record: WelderStampRecord) => normalizeStampSelectValue(record.naksStamp) || normalizeStampSelectValue(record.internalStamp)
+  const factualRecords = groupStampRecords(records, factualValue)
+  const factualOptions = uniqueStampValues(records.map(factualValue)).map(value => ({
+    value, ...archiveLabel(value, factualRecords.get(normalizeStampForCompare(value))!),
+  }))
 
   return {
-    ...Object.fromEntries(officialWelderStampFieldKeys.map((fieldKey) => [fieldKey, officialOptions])),
-    ...Object.fromEntries(factualWelderStampFieldKeys.map((fieldKey) => [fieldKey, factualOptions])),
+    ...Object.fromEntries(officialWelderStampFieldKeys.map(fieldKey => [fieldKey, officialOptions])),
+    ...Object.fromEntries(factualWelderStampFieldKeys.map(fieldKey => [fieldKey, factualOptions])),
   }
 }
 
-function getHistoricalArchivedOfficialStampValues(records: WelderStampRecord[], weldDate: unknown) {
-  const archivedRecordsByStamp = new Map<string, WelderStampRecord[]>()
-
-  records.forEach((record) => {
-    if (!record.archived) return
-    const normalizedStamp = normalizeStampForCompare(record.naksStamp)
-    if (!normalizedStamp) return
-    const stampRecords = archivedRecordsByStamp.get(normalizedStamp) ?? []
-    stampRecords.push(record)
-    archivedRecordsByStamp.set(normalizedStamp, stampRecords)
-  })
-
-  return uniqueStampValues(
-    [...archivedRecordsByStamp.values()]
-      .filter((stampRecords) => getWelderStampArchiveCompatibility(stampRecords, weldDate) === 'historical')
-      .map((stampRecords) => stampRecords[0]?.naksStamp),
-  )
+function groupStampRecords(records: WelderStampRecord[], value: (record: WelderStampRecord) => string) {
+  const grouped = new Map<string, WelderStampRecord[]>()
+  for (const record of records) {
+    const key = normalizeStampForCompare(value(record))
+    const entries = grouped.get(key) ?? []
+    entries.push(record)
+    grouped.set(key, entries)
+  }
+  return grouped
 }
 
-export function getArchivedOfficialStampValuesForRecord(record: WeldInput | undefined, records: WelderStampRecord[]) {
-  if (!record) return []
-
-  const archivedStampSet = new Set(
-    records
-      .filter((stampRecord) => stampRecord.archived)
-      .map((stampRecord) => normalizeStampForCompare(stampRecord.naksStamp))
-      .filter(Boolean),
-  )
-
-  return uniqueStampValues(
-    officialWelderStampFieldKeys
-      .map((fieldKey) => record[fieldKey])
-      .filter((value) => archivedStampSet.has(normalizeStampForCompare(value))),
-  )
-}
-
-function getExistingArchivedOfficialStampValues(values: readonly string[], records: WelderStampRecord[]) {
-  const archivedStampSet = new Set(
-    records
-      .filter((stampRecord) => stampRecord.archived)
-      .map((stampRecord) => normalizeStampForCompare(stampRecord.naksStamp))
-      .filter(Boolean),
-  )
-
-  return uniqueStampValues(values.filter((value) => archivedStampSet.has(normalizeStampForCompare(value))))
+function archiveLabel(value: string, records: WelderStampRecord[]) {
+  return records.every(record => record.archived) ? { label: `${value} (в архиве)` } : {}
 }
 
 type SelectBlockReason = {
@@ -153,14 +94,13 @@ type SelectBlockReason = {
 }
 
 function getWelderStampCardArchiveSelectReason(
-  stamp: string,
   records: WelderStampRecord[],
   weldDate: unknown,
 ): SelectBlockReason | null {
   const compatibility = getWelderStampArchiveCompatibility(records, weldDate)
   if (compatibility === 'active' || compatibility === 'historical') return null
   if (compatibility === 'missing-weld-date') {
-    return softReason('клеймо в архиве: укажите дату сварки')
+    return null
   }
   if (compatibility === 'unknown-archive-date') {
     return hardReason('клеймо в архиве, дата архивации не указана')
@@ -170,11 +110,11 @@ function getWelderStampCardArchiveSelectReason(
   return hardReason(`клеймо в архиве с ${formatDisplayDate(archivedAt)}`)
 }
 
-function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, activeRecords: WelderStampRecord[], saveCheckSettings: SaveCheckSettings): SelectBlockReason | null {
-  const stampRecords = activeRecords.filter(
+function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, records: WelderStampRecord[], saveCheckSettings: SaveCheckSettings): SelectBlockReason | null {
+  const stampRecords = records.filter(
     (record) => normalizeStampForCompare(record.naksStamp) === normalizeStampForCompare(stamp),
   )
-  if (stampRecords.length === 0) return saveCheckSettings.officialRegistry ? hardReason('нет в активном реестре') : null
+  if (stampRecords.length === 0) return saveCheckSettings.officialRegistry ? hardReason('нет в реестре') : null
 
   const methods = parseOfficialStampWeldingMethods(draft.weldingMethod)
   if (splitWeldMaterialGroups(draft.materialGroup).length === 2) {

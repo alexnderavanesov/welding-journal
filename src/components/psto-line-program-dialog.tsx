@@ -1,18 +1,22 @@
-import { useEffect, useState } from 'react'
+import { getPstoProgramState } from '@/lib/psto-chain-policy'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import type { ColDef, ICellRendererParams } from 'ag-grid-community'
+import { PstoProgramGrid, PstoProgramStatus } from './psto-program-grid'
+import { PSTO_PROGRAM_LABELS } from '@/lib/psto-line-assignment'
+import { journalReadErrorMessage } from '@/lib/journal-read-error'
 import { tracePstoProgram } from '@/lib/psto-program-diagnostics'
 import { PstoProgramDiagnostics } from './psto-program-diagnostic-boundary'
+import { PstoChainExceptions } from './psto-chain-exceptions'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   ArrowLeft,
   Check,
   CheckCircle2,
-  ChevronRight,
   CircleSlash2,
   ListChecks,
   Loader2,
   RefreshCw,
-  Search,
 } from 'lucide-react'
 
 import { DialogHeader } from '@/components/dialog-header'
@@ -26,11 +30,9 @@ import { formatDateInputValue } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   type PstoLineAssignmentSummary,
-  type PstoLineAssignmentFilter,
   type PstoLineIdentity,
   type PstoLineRemovalPreview,
 } from '@/lib/psto-line-assignment'
-import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { usePagePagination } from '@/lib/use-page-pagination'
 import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
 import {
@@ -64,33 +66,33 @@ export function PstoLineProgramDialog({
   onSaved,
 }: PstoLineProgramDialogProps) {
   const queryClient = useQueryClient()
-  const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<PstoLineAssignmentFilter>('all')
+  const [filters, setFilters] = useState<Record<string, string>>({})
+  const [exceptionsOpen, setExceptionsOpen] = useState(false)
+  const [exceptionsBusy, setExceptionsBusy] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
-  const debouncedSearch = useDebouncedValue(search, 250)
   const [view, setView] = useState<PstoLineProgramView>({ type: 'list' })
   const [cancellationDate, setCancellationDate] = useState(() => formatDateInputValue(new Date()))
   const [cancellationBasis, setCancellationBasis] = useState('')
   const [transferRowIds, setTransferRowIds] = useState<Set<number>>(() => new Set())
   const linesQuery = useQuery({
-    queryKey: [...PSTO_LINE_ASSIGNMENTS_QUERY_KEY, { search: debouncedSearch, filter, page, pageSize }],
-    queryFn: async () => {
+    queryKey: [...PSTO_LINE_ASSIGNMENTS_QUERY_KEY, { filters, page, pageSize }],
+    queryFn: async ({ signal }) => {
       tracePstoProgram('query-start')
       try {
-        const result = await listPstoLineAssignmentPage({ data: { search: debouncedSearch, filter, page, pageSize } })
+        const result = await listPstoLineAssignmentPage({ signal, data: { filters, page, pageSize } })
         tracePstoProgram('query-ready')
         return result
       } catch (error) { tracePstoProgram('query-error', error); throw error }
     },
-    enabled: open,
+    enabled: open && !exceptionsOpen && view.type === 'list',
     staleTime: 10_000,
     placeholderData: keepPreviousData,
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   })
-  const lineResultsTransitioning = search !== debouncedSearch || linesQuery.isPlaceholderData
+  const lineResultsTransitioning = linesQuery.isPlaceholderData
   const previewMutation = useMutation({
     mutationFn: (identity: PstoLineIdentity) => getPstoLineRemovalPreview({ data: identity }),
   })
@@ -101,6 +103,7 @@ export function PstoLineProgramDialog({
       const rows = savedRows as WeldRow[]
       scheduleWeldDataRefresh(queryClient, { upsertRows: rows })
       await queryClient.invalidateQueries({ queryKey: PSTO_LINE_ASSIGNMENTS_QUERY_KEY })
+      await queryClient.invalidateQueries({ queryKey: ['psto-chain-exceptions'] })
       onSaved(
         rows,
         payload.action === 'assign'
@@ -123,8 +126,8 @@ export function PstoLineProgramDialog({
   useEffect(() => {
     if (!open) return
     tracePstoProgram('mounted')
-    setSearch('')
-    setFilter('all')
+    setFilters({})
+    setExceptionsOpen(false)
     setPage(1)
     setPageSize(25)
     setView({ type: 'list' })
@@ -151,7 +154,7 @@ export function PstoLineProgramDialog({
 
   if (!open) return null
 
-  const closeDisabled = previewMutation.isPending || saveMutation.isPending
+  const closeDisabled = previewMutation.isPending || saveMutation.isPending || exceptionsBusy
   const handleClose = () => {
     if (!closeDisabled) onClose()
   }
@@ -176,12 +179,12 @@ export function PstoLineProgramDialog({
     setView({ type: 'reactivate', line })
     previewMutation.mutate(toIdentity(line))
   }
-  const openRemove = (line: PstoLineAssignmentSummary) => {
+  const openRemove = (line: PstoLineAssignmentSummary, action: 'remove' | 'cancel') => {
     setTransferRowIds(new Set())
     previewMutation.reset()
     setCancellationDate(formatDateInputValue(new Date()))
     setCancellationBasis('')
-    setView({ type: line.historyRowCount > 0 ? 'cancel' : 'remove', line })
+    setView({ type: action, line })
     previewMutation.mutate(toIdentity(line))
   }
   const submitAssignment = () => {
@@ -239,14 +242,14 @@ export function PstoLineProgramDialog({
               ? 'Возобновление ПСТО'
               : view.type === 'cancel'
                 ? 'Отмена ПСТО'
-                : 'Удаление назначения ПСТО'}
+                : 'Снятие назначения ПСТО'}
         subtitle={view.type === 'list'
-          ? 'Назначение ведется для всей линии целиком.'
+          ? 'Программа линии и индивидуальные исключения для цепочек стыков.'
           : <LineIdentityText line={view.line} />}
         actions={view.type !== 'list' ? (
           <Button variant="outline" size="sm" onClick={goBack} disabled={closeDisabled}>
             <ArrowLeft className="mr-2 h-4 w-4" />
-            К линиям
+            Назад
           </Button>
         ) : undefined}
         onClose={handleClose}
@@ -254,37 +257,24 @@ export function PstoLineProgramDialog({
 
       {specialists.notice}
       {linesQuery.isError ? <PstoProgramDiagnostics /> : null}
-      {view.type === 'list' ? (
+      {view.type === 'list' && <nav aria-label="Разделы программы ПСТО" className="flex h-14 shrink-0 items-center gap-1 border-b border-sky-100 bg-sky-50/70 px-5">
+        {([false, true] as const).map(exceptions => <button key={String(exceptions)} type="button" disabled={closeDisabled} aria-pressed={exceptionsOpen === exceptions}
+          className={`h-9 rounded-md px-4 text-sm font-medium ${exceptionsOpen === exceptions ? 'bg-white text-sky-800 shadow-sm ring-1 ring-sky-100' : 'text-slate-600 hover:bg-white/70'}`}
+          onClick={() => setExceptionsOpen(exceptions)}>{exceptions ? 'Исключения' : 'Линии'}</button>)}
+      </nav>}
+      {view.type === 'list' && exceptionsOpen ? <PstoChainExceptions onBusyChange={setExceptionsBusy}
+        onRunProtectedEdit={onRunProtectedEdit} onRunProtectedDelete={onRunProtectedDelete} onSaved={onSaved} /> : view.type === 'list' ? (
         <LineListView
-          lines={linesQuery.data?.rows ?? []}
-          counts={linesQuery.data?.counts ?? EMPTY_PSTO_LINE_COUNTS}
-          totalCount={linesQuery.data?.totalCount ?? 0}
-          page={linesQuery.data?.page ?? page}
-          pageCount={linesQuery.data?.pageCount ?? 1}
-          pageSize={linesQuery.data?.pageSize ?? pageSize}
-          loading={linesQuery.isPending || lineResultsTransitioning}
-          fetching={linesQuery.isFetching}
-          error={(linesQuery.error as Error | null)?.message ?? ''}
-          search={search}
-          filter={filter}
-          onSearchChange={(value) => {
-            setSearch(value)
-            setPage(1)
-          }}
-          onFilterChange={(value) => {
-            setFilter(value)
-            setPage(1)
-          }}
-          onPreviousPage={() => setPage((current) => Math.max(1, current - 1))}
-          onNextPage={() => setPage((current) => Math.min(linesQuery.data?.pageCount ?? current, current + 1))}
-          onPageSizeChange={(value) => {
-            setPageSize(value)
-            setPage(1)
-          }}
-          onRefresh={() => void linesQuery.refetch()}
-          onAssign={openAssign}
-          onReactivate={openReactivate}
-          onRemove={openRemove}
+          lines={linesQuery.data?.rows ?? []} totalCount={linesQuery.data?.totalCount ?? 0}
+          page={linesQuery.data?.page ?? page} pageCount={linesQuery.data?.pageCount ?? 1} pageSize={pageSize}
+          loading={linesQuery.isFetching || lineResultsTransitioning}
+          error={linesQuery.error ? journalReadErrorMessage(linesQuery.error) : ''}
+          filters={filters} onFilterChange={(field, value) => { setFilters(old => { const next = { ...old }; if (value) next[field] = value; else delete next[field]; return next }); setPage(1) }}
+          onResetFilters={() => { setFilters({}); setPage(1) }}
+          onPreviousPage={() => setPage(current => Math.max(1, current - 1))}
+          onNextPage={() => setPage(current => Math.min(linesQuery.data?.pageCount ?? current, current + 1))}
+          onPageSizeChange={value => { setPageSize(value); setPage(1) }} onRefresh={() => void linesQuery.refetch()}
+          onAssign={openAssign} onReactivate={openReactivate} onRemove={line => openRemove(line, 'remove')} onCancelPsto={line => openRemove(line, 'cancel')}
         />
       ) : view.type === 'assign' || view.type === 'reactivate' ? (
         <AssignmentView
@@ -333,244 +323,65 @@ export function PstoLineProgramDialog({
   )
 }
 
-function LineListView({
-  lines,
-  counts,
-  totalCount,
-  page,
-  pageCount,
-  pageSize,
-  loading,
-  fetching,
-  error,
-  search,
-  filter,
-  onSearchChange,
-  onFilterChange,
-  onPreviousPage,
-  onNextPage,
-  onPageSizeChange,
-  onRefresh,
-  onAssign,
-  onReactivate,
-  onRemove,
-}: {
-  lines: PstoLineAssignmentSummary[]
-  counts: Record<PstoLineAssignmentFilter, number>
-  totalCount: number
-  page: number
-  pageCount: number
-  pageSize: number
+type LineActions = {
   loading: boolean
-  fetching: boolean
-  error: string
-  search: string
-  filter: PstoLineAssignmentFilter
-  onSearchChange: (value: string) => void
-  onFilterChange: (value: PstoLineAssignmentFilter) => void
-  onPreviousPage: () => void
-  onNextPage: () => void
-  onPageSizeChange: (value: number) => void
-  onRefresh: () => void
   onAssign: (line: PstoLineAssignmentSummary) => void
   onReactivate: (line: PstoLineAssignmentSummary) => void
   onRemove: (line: PstoLineAssignmentSummary) => void
-}) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col bg-slate-50">
-      <div className="border-b border-slate-200 bg-white px-5 py-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="relative min-w-[280px] flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input
-              aria-label="Поиск линий"
-              value={search}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Проект, шифр или линия"
-              className="pl-9"
-            />
-          </label>
-          <Button variant="outline" size="icon" onClick={onRefresh} aria-label="Обновить список линий">
-            <RefreshCw className={`h-4 w-4 ${fetching ? 'animate-spin' : ''}`} />
-          </Button>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-1 rounded-md border border-slate-200 bg-slate-50 p-1">
-          {([
-            ['all', 'Все'],
-            ['assigned', 'ПСТО назначена'],
-            ['cancelled', 'ПСТО отменена'],
-            ['unassigned', 'Без ПСТО'],
-            ['partial', 'Требуют выравнивания'],
-          ] as const).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={filter === value}
-              onClick={() => onFilterChange(value)}
-              className={`flex h-8 items-center gap-2 rounded px-3 text-xs font-medium transition-colors ${
-                filter === value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:bg-white/70'
-              }`}
-            >
-              {label}
-              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] tabular-nums text-slate-500">{counts[value]}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+  onCancelPsto: (line: PstoLineAssignmentSummary) => void
+}
+const LineActionsContext = createContext<LineActions | null>(null)
 
-      <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
-        {loading ? (
-          <div className="flex min-h-[280px] items-center justify-center text-sm text-slate-500">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Загружаю линии...
-          </div>
-        ) : error ? (
-          <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-            <p className="font-semibold">Не удалось загрузить программу ПСТО</p>
-            <p className="mt-1">{error}</p>
-          </div>
-        ) : lines.length === 0 ? (
-          <div className="flex min-h-[280px] items-center justify-center text-sm text-slate-500">
-            Линии по выбранным условиям не найдены.
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
-            <div className="grid min-w-[940px] grid-cols-[minmax(220px,1fr)_minmax(230px,1fr)_130px_300px] border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-[11px] font-semibold uppercase text-slate-500">
-              <span>Проект и шифр</span>
-              <span>Линия</span>
-              <span>Стыки</span>
-              <span>Назначение</span>
-            </div>
-            <div className="divide-y divide-slate-100">
-              {lines.map((line) => (
-                <LineListRow
-                  key={line.key}
-                  line={line}
-                  onAssign={onAssign}
-                  onReactivate={onReactivate}
-                  onRemove={onRemove}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <DialogRowPagination
-        totalCount={totalCount}
-        firstItemNumber={totalCount === 0 ? 0 : (page - 1) * pageSize + 1}
-        lastItemNumber={Math.min(page * pageSize, totalCount)}
-        page={page}
-        pageCount={pageCount}
-        pageSize={pageSize}
-        onPreviousPage={onPreviousPage}
-        onNextPage={onNextPage}
-        onPageSizeChange={onPageSizeChange}
-        itemLabel="линий"
-      />
-    </div>
-  )
+function LineActionCell({ data }: ICellRendererParams<PstoLineAssignmentSummary>) {
+  const { loading, onAssign, onReactivate, onRemove, onCancelPsto } = useContext(LineActionsContext)!
+  if (!data) return null
+  const state = getPstoProgramState(data), hasHistory = (data.removalHistoryRowCount ?? data.historyRowCount) > 0
+  return <div className="flex h-full items-center gap-1">
+    {state === 'assigned' ? <>
+      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={loading || hasHistory} title={hasHistory ? 'Уже есть данные ПСТО, ТВМТ или НК до ТО — используйте отмену.' : 'Снять ошибочное назначение без оформления отмены.'} onClick={() => onRemove(data)}>Снять назначение</Button>
+      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={loading || !hasHistory} title={hasHistory ? 'Изменить решение с сохранением документов и результатов.' : 'Работы ещё не начаты — используйте снятие назначения.'} onClick={() => onCancelPsto(data)}>Отменить ПСТО</Button>
+    </> : <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-sky-700" disabled={loading} onClick={() => state === 'cancelled' ? onReactivate(data) : onAssign(data)}>{state === 'cancelled' ? 'Возобновить' : state === 'mixed' ? 'На всю линию' : 'Назначить'}</Button>}
+  </div>
 }
 
-const EMPTY_PSTO_LINE_COUNTS: Record<PstoLineAssignmentFilter, number> = {
-  all: 0,
-  assigned: 0,
-  cancelled: 0,
-  unassigned: 0,
-  partial: 0,
-}
-
-function LineListRow({
-  line,
-  onAssign,
-  onReactivate,
-  onRemove,
+function LineListView({ lines, totalCount, page, pageCount, pageSize, loading, error, filters, onFilterChange, onResetFilters,
+  onPreviousPage, onNextPage, onPageSizeChange, onRefresh, onAssign, onReactivate, onRemove, onCancelPsto,
 }: {
-  line: PstoLineAssignmentSummary
-  onAssign: (line: PstoLineAssignmentSummary) => void
-  onReactivate: (line: PstoLineAssignmentSummary) => void
-  onRemove: (line: PstoLineAssignmentSummary) => void
+  lines: PstoLineAssignmentSummary[]; totalCount: number; page: number; pageCount: number; pageSize: number; loading: boolean; error: string
+  filters: Record<string, string>; onFilterChange: (field: string, value: string) => void; onResetFilters: () => void
+  onPreviousPage: () => void; onNextPage: () => void; onPageSizeChange: (value: number) => void; onRefresh: () => void
+  onAssign: (line: PstoLineAssignmentSummary) => void; onReactivate: (line: PstoLineAssignmentSummary) => void
+  onRemove: (line: PstoLineAssignmentSummary) => void; onCancelPsto: (line: PstoLineAssignmentSummary) => void
 }) {
-  const assigned = line.assignedCount === line.rowCount
-  const cancelled = line.cancelledCount === line.rowCount
-  const unassigned = line.assignedCount === 0 && line.cancelledCount === 0
-  return (
-    <div className="grid min-w-[940px] grid-cols-[minmax(220px,1fr)_minmax(230px,1fr)_130px_300px] items-center gap-y-1 px-4 py-3 text-sm hover:bg-slate-50/70">
-      <div className="min-w-0 pr-4">
-        <p className="truncate font-semibold text-slate-800">{line.projectTitle || 'Без проекта'}</p>
-        <p className="mt-0.5 truncate text-xs text-slate-500">Шифр: {line.subtitleCode || '—'}</p>
-      </div>
-      <div className="min-w-0 pr-4">
-        <p className="truncate font-medium text-slate-800">{line.line}</p>
-        {line.historyRowCount > 0 ? (
-          <p className="mt-0.5 truncate text-xs text-slate-500">
-            История: {line.historyRowCount} стыков · НК до ТО: {line.preControlCount} · повторов: {line.repeatCycleCount}
-          </p>
-        ) : null}
-      </div>
-      <div className="tabular-nums text-slate-700">
-        <span className="font-semibold">{line.rowCount}</span>
-        {!unassigned && !assigned && !cancelled ? (
-          <span className="ml-1 text-xs text-amber-700">({line.assignedCount} назначено · {line.cancelledCount} отменено)</span>
-        ) : null}
-      </div>
-      <div className="flex items-center justify-between gap-3">
-        <LineAssignmentStatus line={line} />
-        <div className="flex shrink-0 gap-1.5">
-          {cancelled ? (
-            <Button size="sm" variant="outline" onClick={() => onReactivate(line)}>
-              Возобновить
-              <ChevronRight className="ml-1 h-4 w-4" />
-            </Button>
-          ) : !assigned ? (
-            <Button size="sm" variant={unassigned ? 'outline' : 'default'} onClick={() => onAssign(line)}>
-              {unassigned ? 'Назначить' : 'На всю линию'}
-              <ChevronRight className="ml-1 h-4 w-4" />
-            </Button>
-          ) : null}
-          {assigned ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => onRemove(line)}
-              title={line.historyRowCount > 0 ? 'Официально отменить ПСТО на линии' : 'Удалить ошибочное назначение'}
-            >
-              <CircleSlash2 className="h-4 w-4" />
-              <span className="sr-only">{line.historyRowCount > 0 ? 'Отменить ПСТО' : 'Удалить назначение ПСТО'}</span>
-            </Button>
-          ) : null}
-        </div>
-      </div>
+  const columns = useMemo<ColDef<PstoLineAssignmentSummary>[]>(() => [
+    { headerName: 'Проект', field: 'projectTitle', initialFlex: 1, minWidth: 160 },
+    { headerName: 'Шифр', field: 'subtitleCode', initialWidth: 150 },
+    { headerName: 'Линия', field: 'line', initialWidth: 130 },
+    { headerName: 'ПСТО линии', field: 'programState', initialWidth: 155, cellRenderer: ({ data }: ICellRendererParams<PstoLineAssignmentSummary>) => {
+      if (!data) return null
+      const state = getPstoProgramState(data)
+      return <PstoProgramStatus value={PSTO_PROGRAM_LABELS[state]} />
+    } },
+    { headerName: 'Стыков', field: 'rowCount', initialWidth: 110 },
+    { headerName: 'Исключений', field: 'exceptionCount', initialWidth: 140 },
+    { headerName: 'Действия', colId: 'actions', filter: false, initialPinned: 'right', initialWidth: 300, cellRenderer: LineActionCell },
+  ], [])
+  return <div className="flex min-h-0 flex-1 flex-col bg-slate-50">
+    <div className="flex h-16 shrink-0 items-center gap-3 border-b border-sky-100 bg-sky-50/50 px-5">
+      <span className="text-sm font-semibold text-slate-800">Назначение ПСТО по линиям</span>
+      <Button size="sm" variant="ghost" className="ml-auto" disabled={!Object.keys(filters).length} onClick={onResetFilters}>Сбросить фильтры</Button>
     </div>
-  )
-}
-
-function LineAssignmentStatus({ line }: { line: PstoLineAssignmentSummary }) {
-  if (line.assignedCount === line.rowCount) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
-        <CheckCircle2 className="h-4 w-4" />
-        Назначена
-      </span>
-    )
-  }
-  if (line.cancelledCount === line.rowCount) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
-        <CircleSlash2 className="h-4 w-4" />
-        Отменена
-      </span>
-    )
-  }
-  if (line.assignedCount === 0 && line.cancelledCount === 0) {
-    return <span className="text-xs font-medium text-slate-500">Не назначена</span>
-  }
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700">
-      <AlertTriangle className="h-4 w-4" />
-      Частично
-    </span>
-  )
+    {error && <div role="alert" className="mx-5 mt-3 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}<Button variant="outline" size="sm" className="ml-3" onClick={onRefresh} aria-label="Обновить список линий">Повторить</Button></div>}
+    <div className="min-h-0 flex-1 overflow-hidden px-5 py-4 [&_.read-only-grid]:h-full [&_.read-only-grid]:min-h-0">
+      <LineActionsContext.Provider value={{ loading, onAssign, onReactivate, onRemove, onCancelPsto }}>
+        <PstoProgramGrid<PstoLineAssignmentSummary> label="Линии программы ПСТО" lines filters={filters} onFilterChange={onFilterChange}
+          rowData={lines} columnDefs={columns} loading={loading} getRowId={p => p.data.key} />
+      </LineActionsContext.Provider>
+    </div>
+    <DialogRowPagination totalCount={totalCount} firstItemNumber={totalCount ? (page - 1) * pageSize + 1 : 0}
+      lastItemNumber={Math.min(page * pageSize, totalCount)} page={page} pageCount={pageCount} pageSize={pageSize}
+      onPreviousPage={onPreviousPage} onNextPage={onNextPage} onPageSizeChange={onPageSizeChange} itemLabel="линий" />
+  </div>
 }
 
 function AssignmentView({
@@ -743,7 +554,7 @@ function RemovalView({
                   ? 'История линии изменилась: появились данные ПСТО, ТВМТ или НК до ТО. Удалить только назначение уже нельзя. Можно официально отменить ПСТО с сохранением всей истории.'
                   : 'История линии изменилась: данных ПСТО, ТВМТ и НК до ТО больше нет. Теперь можно удалить ошибочное назначение без официальной отмены.'}</p>
                 <Button variant="outline" size="sm" onClick={onUseCurrentAction}>
-                  {preview.historyRowCount > 0 ? 'Перейти к отмене ПСТО' : 'Перейти к удалению назначения'}
+                  {preview.historyRowCount > 0 ? 'Перейти к отмене ПСТО' : 'Перейти к снятию назначения'}
                 </Button>
               </div>
             ) : null}
@@ -812,7 +623,7 @@ function RemovalView({
                 ? 'Предпросмотр обнаружил изменение истории. Выберите предложенный способ снятия ПСТО либо вернитесь назад; документы автоматически не удаляются.'
                 : officialCancellation
                 ? `Отмена не удаляет историю. Перенос НК до ТО в основной выполняется только для явно выбранных стыков: ${rows.filter(row => transferRowIds.has(row.rowId) && row.stageCorrection?.targetStage === 'primary' && !row.stageCorrection.disabledReason).length}. Заявка или история ПСТО/ТВМТ запрещают перенос соответствующего стыка.`
-                : 'У линии нет документов и результатов. Будет удалено только ошибочное назначение ПСТО; другие данные стыков не изменятся.'}
+                : 'У стыков, чьё назначение изменится, нет данных ПСТО, ТВМТ и НК до ТО. Будет снято ошибочное назначение; основной НК и индивидуальные исключения сохранятся.'}
             </p>
           </div>
           <div className="flex shrink-0 gap-2">
@@ -823,7 +634,7 @@ function RemovalView({
               disabled={!preview || pending || actionOutdated || transferBlocked || (officialCancellation && !cancellationDate)}
             >
               {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CircleSlash2 className="mr-2 h-4 w-4" />}
-              {officialCancellation ? 'Отменить ПСТО на линии' : 'Удалить назначение'}
+              {officialCancellation ? 'Отменить ПСТО на линии' : 'Снять назначение'}
             </Button>
           </div>
         </div>

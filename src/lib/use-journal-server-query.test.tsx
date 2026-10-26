@@ -11,6 +11,25 @@ vi.mock('@/server/weld-read-api', () => ({ getWeldReportSummary: mocks.summary }
 vi.mock('./weld-page-refresh', () => ({ subscribeWeldPageRefresh: mocks.subscribe }))
 const resultAt = (revision: number): JournalGridResult => ({ rows: [], rowCount: 200000, revision })
 const block = { groupBy: [], route: [], start: 0, end: 100 }
+it.each(['success', 'failure'])('ignores a late %s from replaced grouping without losing the new revision', async outcome => {
+  let finish!: (value: JournalGridResult) => void, fail!: (error: Error) => void
+  mocks.read.mockImplementationOnce(() => new Promise((resolve, reject) => { finish = resolve; fail = reject }))
+  const { result } = renderHook(() => useJournalServerQuery({ enabled: true, columnFilters: {}, sort: null }), { wrapper })
+  const old = result.current.source.load(block).catch(error => error)
+  mocks.read.mockResolvedValue(resultAt(2))
+  await act(async () => { await result.current.source.load({ ...block, groupBy: ['line'] }) })
+  const identity = result.current.source.identity
+  await act(async () => {
+    if (outcome === 'success') finish(resultAt(1))
+    else fail(new Error('Данные журнала изменились. Обновите таблицу и повторите действие.'))
+    expect((await old).name).toBe('AbortError')
+  })
+  expect(result.current.source.identity).toBe(identity)
+  expect(result.current.error).toBeNull()
+  await act(async () => { await result.current.source.load({ ...block, groupBy: ['line'], route: ['A'] }) })
+  expect(mocks.read.mock.lastCall?.[0].data.revision).toBe(2)
+  expect(mocks.summary).toHaveBeenCalledTimes(1)
+})
 it('blocks stale actions immediately while coalescing repeated mutation refresh notifications', async () => {
   vi.useFakeTimers()
   const { result, unmount } = renderHook(() => useJournalServerQuery({ report: 'lnk', enabled: true, columnFilters: {}, sort: null }), { wrapper })
@@ -181,6 +200,31 @@ it('a failed block disables actions and a changed snapshot gets only one automat
   expect(result.current.source.error?.message).toContain('Данные журнала изменились')
 })
 
+it('coalesces expired counters and blocks, with a fresh recovery budget only after a healthy model is installed', async () => {
+  const { result } = renderHook(() => useJournalServerQuery({ enabled: true, columnFilters: {}, sort: null }), { wrapper })
+  const changed = new Error('Данные журнала изменились. Обновите таблицу и повторите действие.')
+  await act(async () => { await result.current.source.load(block) })
+  act(() => result.current.source.rowsChanged([{ id: 1 }]))
+  const first = result.current.source
+  act(() => {
+    expect(first.recoverRevision?.(changed)).toBe(true)
+    expect(first.recoverRevision?.(changed)).toBe(true)
+    first.rowsChanged([{ id: 1 }])
+  })
+  expect(result.current.rowsReady).toBe(false)
+  const next = result.current.source.identity
+  expect(JSON.parse(next).at(-1)).toBe(1)
+  mocks.read.mockResolvedValue(resultAt(2))
+  await act(async () => { await result.current.source.load(block) })
+  expect(result.current.rowsReady).toBe(false)
+  act(() => result.current.source.rowsChanged([{ id: 2 }]))
+  expect(result.current.rowsReady).toBe(true)
+  act(() => { expect(result.current.source.recoverRevision?.(changed)).toBe(true) })
+  expect(JSON.parse(result.current.source.identity).at(-1)).toBe(2)
+  expect(mocks.read).toHaveBeenCalledTimes(2)
+  expect(result.current.source.recoverRevision?.(new Error('Failed query'))).toBe(false)
+})
+
 it('applies checkbox filters and sort immediately, reusing summary across sort-only changes', async () => {
   const { result, rerender } = renderHook(({ line, direction }) => useJournalServerQuery({
     enabled:true,columnFilters:{line},sort:direction ? {fieldKey:'joint',direction} : null,
@@ -216,10 +260,10 @@ it('keeps a real block failure visible across neighbouring successes and clears 
   const { result } = renderHook(() => useJournalServerQuery({ enabled: true, columnFilters: {}, sort: null }), { wrapper })
   mocks.read.mockRejectedValueOnce(new Error('Connection lost'))
   await act(async () => { await expect(result.current.source.load(block)).rejects.toThrow('Connection lost') })
-  expect(result.current.source.error?.message).toBe('Connection lost')
+  expect(result.current.source.error?.message).toBe('Не удалось загрузить данные. Повторите загрузку таблицы.')
   await act(async () => { await result.current.source.load({ ...block, start: 100, end: 200 }) })
   expect(result.current.rowsReady).toBe(false)
-  expect(result.current.source.error?.message).toBe('Connection lost')
+  expect(result.current.source.error?.message).toBe('Не удалось загрузить данные. Повторите загрузку таблицы.')
   await act(async () => { result.current.source.retry?.() })
   expect(result.current.source.error).toBeNull()
   expect(result.current.error).toBeNull()

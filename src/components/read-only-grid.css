@@ -6,7 +6,19 @@
 .read-only-grid-page .ag-grid-viewport { overflow-y: hidden; }
 .read-only-grid-page .ag-body-vertical-scroll { display: none; }
 .read-only-grid .ag-cell { border-right: 1px solid #edf1f5; }
+/* The neighbouring header already draws its resize handle at this boundary. */
+.read-only-grid .ag-header .ag-grid-pinned-right-cells > .ag-grid-container-wrapper { border-left: 0; }
+.read-only-grid .ag-header .ag-grid-pinned-left-cells > .ag-grid-container-wrapper { border-right: 0; }
+/* Keep both resize hit areas at the pinned boundary, but draw its handle once. */
+.read-only-grid .ag-root.ag-body-horizontal-content-no-gap .ag-header-cell-first-right-pinned:not(.ag-column-first) .ag-header-cell-resize::after { display: none; }
 .read-only-grid .ag-row-odd:not(.ag-full-width-row) { background: #f8fafc; }
+/* AG fills unused space before right-pinned cells with a white ::after.
+   Keep the row's colour and separator after columns are narrowed or hidden. */
+.read-only-grid .ag-row:not(.ag-full-width-row)::after {
+  background-color: inherit;
+  background-image: var(--ag-internal-row-overlay-image), linear-gradient(var(--ag-internal-row-overlay-color), var(--ag-internal-row-overlay-color));
+  border-bottom: var(--ag-row-border);
+}
 .read-only-grid .statistics-cell { display: flex; align-items: center; white-space: normal; line-height: 1.35; }
 .read-only-grid .statistics-cell > .ag-cell-wrapper,
 .read-only-grid .statistics-cell .ag-cell-value { width: 100%; }
@@ -20,6 +32,10 @@
 .read-only-grid-popup-layer > * { pointer-events: auto; }
 .read-only-grid-popup.ag-filter-menu { width: 284px; min-width: 240px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); padding: 0; border: 1px solid #dce4ee; border-radius: 12px; background: #f9fafb; color: #475569; font-size: 12px; box-shadow: 0 10px 32px #0f172a1f; overflow: auto; }
 .read-only-grid-popup[data-filter-label]::before { content: attr(data-filter-label); display: block; padding: 10px 12px 6px; font-size: 13px; font-weight: 600; color: #1e293b; }
+.read-only-grid-popup:has(.journal-filter)::before { display: none; }
+.read-only-grid-popup:has(.journal-filter) { padding: 0; width: 310px; max-width: calc(100vw - 24px); border-radius: 12px; overflow: hidden; }
+.read-only-grid-popup .journal-filter { width: 100%; }
+.read-only-grid-popup .journal-filter-values { height: auto; }
 .read-only-grid-popup .ag-filter-body-wrapper { min-height: 0; padding: 0; }
 .read-only-grid-popup .ag-mini-filter { margin: 4px 12px 10px; }
 .read-only-grid-popup .ag-mini-filter input { height: 32px; min-height: 32px; padding: 5px 28px; border: 1px solid #dce4ee; border-radius: 6px; font-size: 12px; line-height: 20px; background: #fff; color: #475569; box-shadow: none; outline: none; }

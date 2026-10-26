@@ -518,7 +518,7 @@ describe('getWeldFormSaveBlockReason', () => {
     const malformedInitial = { id: 2, joint: 'F1R', responsible: '' } as WeldDraft
     const draft = { ...malformedInitial, responsible: 'Иванов' } as WeldInput
 
-    expect(getWeldFormSaveBlockReason(draft, malformedInitial)).toContain('ЗВ-02')
+    expect(getWeldFormSaveBlockReason(draft, malformedInitial)).toContain('ЗВ-01')
   })
 
   it('keeps an existing indexed base editable after the setting is disabled', () => {
@@ -531,7 +531,7 @@ describe('getWeldFormSaveBlockReason', () => {
   it('allows a new indexed base only when the project setting is enabled', () => {
     const draft = { joint: 'SB43' } as WeldInput
 
-    expect(getWeldFormSaveBlockReason(draft, {} as WeldDraft)).toContain('ЗВ-02')
+    expect(getWeldFormSaveBlockReason(draft, {} as WeldDraft)).toContain('ЗВ-01')
     expect(getWeldFormSaveBlockReason(draft, {} as WeldDraft, DEFAULT_SAVE_CHECK_SETTINGS, {
       systemIndexSettings: {
         ...DEFAULT_SYSTEM_INDEX_SETTINGS,
@@ -629,12 +629,12 @@ describe('getWeldFormSaveBlockReason', () => {
     })).toContain('СП-02')
   })
 
-  it('keeps archive and DLS option failures on their own save-check codes', () => {
+  it('keeps archive reasons uncoded and DLS on SP-02', () => {
     const draft = { joint: 'S1', stamp1K: 'ABC1' } as WeldInput
 
     expect(getWeldStampSaveBlockReason(draft, {
       stamp1K: [{ value: 'ABC1', disabled: true, reason: 'клеймо в архиве, дата архивации не указана' }],
-    })).toContain('ЗВ-01')
+    })).toContain('клеймо в архиве')
     expect(getWeldStampSaveBlockReason(draft, {
       stamp1K: [{ value: 'ABC1', disabled: true, reason: 'нет ДЛС на способ сварки РД' }],
     })).toContain('СП-02')

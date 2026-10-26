@@ -109,7 +109,7 @@ function WeldFormFieldComponent({
               title={option.disabled ? option.reason : undefined}
               className={option.disabled ? 'bg-slate-100 text-slate-400' : undefined}
             >
-              {option.value}
+              {option.label ?? option.value}
             </option>
           ))}
         </Select>

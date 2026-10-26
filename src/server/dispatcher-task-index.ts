@@ -96,6 +96,7 @@ import { getDispatcherScopeKey, visitDispatcherWeldRows } from './dispatcher-wel
 import { getFullRebuildCatchUpScopes } from './dispatcher-refresh-catchup'
 import { loadBoundedDispatcherDirtyScopes, MAX_SCOPED_REBUILD_SCOPES, parseDispatcherDirtyScopes } from './dispatcher-dirty-scope-selection'
 import { loadDispatcherDateScopes } from './dispatcher-date-scopes'
+import { overlayPstoProgramPolicies } from './psto-chain-policy'
 export { getDispatcherScopeKey } from './dispatcher-weld-rows'
 
 export { getFinalStatusPersistenceChanges } from '@/server/final-status-persistence'
@@ -541,6 +542,7 @@ export async function calculateFullDispatcherTasks(
       await attachHeatTreatmentControlRelationsInPlace(rows, tx, getControlProcessSettings(settingsRows)),
       duplicateRows.map(toDuplicateControlRecord),
     )
+    const pstoPolicies = await overlayPstoProgramPolicies(tx, rows, new Map())
     for (const row of prepared) if (scopeKeys.has(getDispatcherScopeKey(row))) preparedRows.push({ id: row.id, finalStatus: row.finalStatus })
     for (const scopeRows of groupDispatcherRowsByScope(prepared)) {
       metrics?.mark('chain-continuations')
@@ -552,6 +554,7 @@ export async function calculateFullDispatcherTasks(
       metrics?.mark('business-checks')
       const scopeTasks = buildVisibleDispatcherTasks({
         ...dispatcherTaskInput,
+        pstoPolicies,
         rows: scopeRows,
         includeWelderStampExpiryTasks: false,
       }).repeatedJointTasks
@@ -660,6 +663,7 @@ async function rebuildScopedDispatcherTaskIndex(
   const acceptedWarnings = await loadScopedAcceptedWarningKeys(tx, rows)
   const settingsRows = await tx.select().from(appSettings)
   const preparedRows = await prepareDispatcherReportRows(tx, rows, duplicateRows)
+  const pstoPolicies = await overlayPstoProgramPolicies(tx, rows, new Map())
   const technologyCardReview = await loadTechnologyCardReview(tx, settingsRows)
   const finalStatusChangeCount = await persistCalculatedFinalStatuses(tx, rows, preparedRows)
   if (finalStatusChangeCount > 0) await invalidateDerivedCalculationCache(tx, { preserveLineOverviews: true })
@@ -671,6 +675,7 @@ async function rebuildScopedDispatcherTaskIndex(
   }
   const dispatcherTaskInput = {
     technologyCardReview,
+    pstoPolicies,
     acceptedDispatcherWarningKeys,
     earlyCoilDecisionSourceRowIds: chainContinuationOptions.earlyCoilDecisionSourceRowIds,
     dismissedRepeatedJointTaskKeys: new Set<string>(),

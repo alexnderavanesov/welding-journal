@@ -14,7 +14,7 @@ describe('welder stamp import validation', () => {
       validateWelderStampFieldsForImport(records, {
         [officialStampField]: [{ value: 'ABC1' }],
       }),
-    ).toThrow(/СП-02.*активного реестра клейм/)
+    ).toThrow(/СП-02.*из реестра клейм/)
   })
 
   it('allows unknown official stamps when registry checking is disabled', () => {
@@ -26,7 +26,6 @@ describe('welder stamp import validation', () => {
         {
           [officialStampField]: [{ value: 'ABC1' }],
         },
-        [],
         {
           ...DEFAULT_SAVE_CHECK_SETTINGS,
           officialRegistry: false,

@@ -23,10 +23,11 @@ export function buildCalculatedReportValueSql(
   }
   if (fieldKey === 'rkExposureScheme') return buildRkExposureSchemeSql(settings.rkExposureTable)
   if (fieldKey === 'controlBasisSummary') {
-    if (report === 'heatTreatment') return sql`''::text`
-    return sql`concat_ws('; ', ${sql.join(CONTROL_ASSIGNMENT_BASIS_FIELDS.map(field => sql`
+    const pstoBasis = sql`case when ${reportTextSql(weldJoints.pstoExceptionBasis)} <> '' then 'ПСТО: ' || ${reportTextSql(weldJoints.pstoExceptionBasis)} end`
+    if (report === 'heatTreatment') return sql`coalesce(${pstoBasis}, '')`
+    return sql`concat_ws('; ', ${sql.join([...CONTROL_ASSIGNMENT_BASIS_FIELDS.map(field => sql`
       case when ${reportTextSql(weldJoints[field.basisKey])} <> ''
-        then ${field.code + ': '} || ${reportTextSql(weldJoints[field.basisKey])} end`), sql`, `)})`
+        then ${field.code + ': '} || ${reportTextSql(weldJoints[field.basisKey])} end`), ...(report === 'weldingJournal' ? [pstoBasis] : [])], sql`, `)})`
   }
   const preValue = buildPreControlReportValueSql(fieldKey)
   if (preValue) return preValue

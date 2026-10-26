@@ -14,6 +14,7 @@ import { createJournalCacheBudget, JOURNAL_LEAF_CACHE_BUDGET } from './journal-c
 import { readJournalLocalSelection } from './journal-local-selection'
 import { journalCopyRanges } from './journal-copy-ranges'
 import type { JournalSummaryRange } from './journal-selection-summary'
+import { journalReadErrorMessage } from './journal-read-error'
 
 export function useJournalServerGrid(options: {
   source?: JournalServerSource; api: GridApi<WeldRow> | null; selected: ReadonlySet<number>;
@@ -22,7 +23,10 @@ export function useJournalServerGrid(options: {
   const { source, api } = options
   const current = useRef(options); current.current = options
   const installedApi = useRef<GridApi<WeldRow> | null>(null)
+  const activeLoads = useRef(new Map<AbortController, string>())
   const revision = useRef<JournalRevision | undefined>(undefined)
+  const revisionGroups = useRef<string | null>(null)
+  const [groupingReady, setGroupingReady] = useState(false)
   const rootCount = useRef(0)
   const layouts = useRef(new Map<string, JournalRouteLayout>())
   const loadedRoutes = useRef<string[][]>([])
@@ -60,7 +64,7 @@ export function useJournalServerGrid(options: {
   })
   const query = (): JournalGridQuery => ({ report: current.current.source!.report, columnFilters: current.current.source!.columnFilters,
     sort: current.current.source!.sort, groupBy: current.current.api?.getRowGroupColumns().map(column => column.getColId() as WeldFieldKey) ?? [] })
-  const reportError = (error: unknown) => current.current.onError?.(error instanceof Error ? error.message : String(error))
+  const reportError = (error: unknown) => current.current.onError?.(journalReadErrorMessage(error))
   const selectionScope = () => JSON.stringify([current.current.source?.identity, revision.current, query().groupBy])
   const getRange = (mode: 'summary' | 'copy' | 'selection' = 'summary'): JournalRangeRequest | null => {
     const { api, source, anchor, ready } = current.current
@@ -99,7 +103,7 @@ export function useJournalServerGrid(options: {
     try { data = getRange() } catch (error) {
       rangeSignature.current = ''
       clearTimeout(timer.current); rangeRequest.current?.abort()
-      const message = (error as Error).message
+      const message = journalReadErrorMessage(error)
       setSummaryRange(previous => previous?.error === message ? previous : { request: null, error: message })
       setSummary(EMPTY_JOURNAL_RANGE_SUMMARY); setRangeState(message); return
     }
@@ -122,11 +126,19 @@ export function useJournalServerGrid(options: {
       void summarizeJournalGridRange({ data: request, signal: controller.signal }).then(value => {
         if (controller.signal.aborted || rangeSignature.current !== signature) return
         setSummary(value); setRangeState('')
-      }).catch(error => { if (!controller.signal.aborted) { setSummary(EMPTY_JOURNAL_RANGE_SUMMARY); setRangeState((error as Error).message) } })
+      }).catch(error => {
+        if (controller.signal.aborted || rangeSignature.current !== signature || !current.current.ready) return
+        if (current.current.source?.recoverRevision?.(error)) return
+        setSummary(EMPTY_JOURNAL_RANGE_SUMMARY); setRangeState(journalReadErrorMessage(error))
+      })
     }, 150)
   })
   const updateCounts = useStableEventCallback(() => {
     clearTimeout(countTimer.current)
+    if (!current.current.ready) {
+      countRequest.current?.abort(); countRequest.current = null; countCache.current = null
+      return
+    }
     countTimer.current = setTimeout(() => {
       const { api, source, selected, ready } = current.current
       if (!source || !api || api.isDestroyed() || revision.current === undefined || !ready) return
@@ -184,8 +196,9 @@ export function useJournalServerGrid(options: {
         updateCounts() // At most one request; coalesce routes arriving while it was running.
       }
       void count().catch(error => {
-        if (controller.signal.aborted || countCache.current !== cache) return
+        if (controller.signal.aborted || countCache.current !== cache || !current.current.ready || selectionScope() !== scope) return
         countRequest.current = null
+        if (current.current.source?.recoverRevision?.(error)) return
         reportError(error)
       })
     }, 80)
@@ -223,7 +236,8 @@ export function useJournalServerGrid(options: {
     if (!api || !source) return
     setSelecting(false)
     setCopying(false)
-    const requests = new Set<AbortController>()
+    const requests = new Map<AbortController, string>(); activeLoads.current = requests
+    clearTimeout(timer.current); clearTimeout(countTimer.current)
     rangeSignature.current = ''; countCache.current = null; countRequest.current?.abort(); countRequest.current = null; rangeRequest.current?.abort()
     setSummary(EMPTY_JOURNAL_RANGE_SUMMARY); setRangeState(''); setSummaryRange(null)
     const identity = source.identity
@@ -234,13 +248,17 @@ export function useJournalServerGrid(options: {
         // SSRM keeps a grid-wide request counter even after a store is destroyed.
         // Every request, including cancellation, must settle exactly once.
         if (current.current.source?.identity !== identity || api.isDestroyed()) { fail(); return }
-        const controller = new AbortController(); requests.add(controller)
         const request = { groupBy: params.request.rowGroupCols.map(column => column.id as WeldFieldKey),
           route: params.request.groupKeys, start: params.request.startRow ?? 0, end: params.request.endRow ?? 100 }
+        const groups = JSON.stringify(request.groupBy)
+        if (groups !== JSON.stringify(api.getRowGroupColumns().map(column => column.getColId()))) { fail(); return }
+        const controller = new AbortController(); requests.set(controller, groups)
         void current.current.source!.load(request, controller.signal).then(result => {
           if (controller.signal.aborted || current.current.source?.identity !== identity || api.isDestroyed()) { fail(); return }
           if (JSON.stringify(request.groupBy) !== JSON.stringify(api.getRowGroupColumns().map(column => column.getColId()))) { fail(); return }
           revision.current = result.revision
+          revisionGroups.current = groups
+          setGroupingReady(true)
           if (!request.route.length) rootCount.current = result.rowCount
           const layout = layouts.current.get(journalRouteKey(request.route))
           if (layout) layout.rowCount = result.rowCount
@@ -255,14 +273,16 @@ export function useJournalServerGrid(options: {
         })
           .finally(() => requests.delete(controller))
       },
-      destroy: () => { requests.forEach(controller => controller.abort()); requests.clear() },
+      destroy: () => { requests.forEach((_groups, controller) => controller.abort()); requests.clear() },
     }
     let disposed = false
     const groupBy = api.getRowGroupColumns().map(column => column.getColId() as WeldFieldKey)
     const install = (first?: JournalGridResult) => {
       if (disposed || api.isDestroyed() || current.current.source?.identity !== identity) return
       cancelAnimationFrame(frame.current); frame.current = 0
-      revision.current = first?.revision; rootCount.current = first?.rowCount ?? 0; layouts.current.clear(); loadedRoutes.current = []
+      revision.current = first?.revision; revisionGroups.current = first ? JSON.stringify(groupBy) : null
+      setGroupingReady(Boolean(first))
+      rootCount.current = first?.rowCount ?? 0; layouts.current.clear(); loadedRoutes.current = []
       localMembership.current.clear(); lastMembership.current = null
       cacheBudget.current.clear(); cachedCards.current = 0; clearTimeout(cacheTimer.current)
       api.clearCellSelection()
@@ -284,7 +304,7 @@ export function useJournalServerGrid(options: {
     }
     if (installedApi.current !== api) install()
     else {
-      const controller = new AbortController(); requests.add(controller)
+      const controller = new AbortController(); requests.set(controller, JSON.stringify(groupBy))
       void source.load({ groupBy, route: [], start: 0, end: 100 }, controller.signal).then(first => {
         if (controller.signal.aborted || disposed) return
         const sameGroups = JSON.stringify(groupBy) === JSON.stringify(api.getRowGroupColumns().map(column => column.getColId()))
@@ -297,6 +317,7 @@ export function useJournalServerGrid(options: {
     }
   }, [api, source?.identity])
   useEffect(updateCounts, [options.selected, options.ready, options.total, updateCounts])
+  useEffect(updateRange, [options.ready, updateRange])
   useEffect(() => () => { clearTimeout(timer.current); clearTimeout(countTimer.current); clearTimeout(cacheTimer.current); cancelAnimationFrame(frame.current); rangeRequest.current?.abort(); countRequest.current?.abort() }, [])
   const groupOpened = (event: RowGroupOpenedEvent<WeldRow>) => {
     const group = journalGroup(event.node.data)
@@ -457,10 +478,15 @@ export function useJournalServerGrid(options: {
       : rootExact && options.total !== undefined && selectedTotal === options.total ? true : undefined
     return { ids: options.selected, counts, selectedTotal, uniform,
       // Background counters must not swallow the next key or checkbox click.
-      pending: selecting || !options.ready, toggle }
-  }, [source?.identity, api, options.selected, selection, selecting, options.total, options.ready, toggle])
+      pending: selecting || !options.ready || !groupingReady, toggle }
+  }, [source?.identity, api, options.selected, selection, selecting, options.total, options.ready, groupingReady, toggle])
   return { summary, summaryRange, rangeState: copying ? 'Копируем…' : rangeState, updateRange, modelUpdated, groupOpened, copy, selectRange, selectionContext, trimCache,
     resetLayout: () => {
+      const groups = JSON.stringify(api?.getRowGroupColumns().map(column => column.getColId()) ?? [])
+      for (const [controller, requestedGroups] of activeLoads.current) if (requestedGroups !== groups) controller.abort()
+      // AG can repeat this event after installing the same grouping's rows.
+      // Keep that committed revision; only a genuinely different layout expires it.
+      if (revisionGroups.current !== groups) { revision.current = undefined; setGroupingReady(false) }
       copyRequest.current?.abort(); copyRequest.current = null; setCopying(false)
       selectionRequest.current?.abort(); selectionRequest.current = null; setSelecting(false)
       lastMembership.current = null; localMembership.current.clear(); api?.clearCellSelection()

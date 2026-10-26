@@ -148,7 +148,7 @@ export function getWelderStampArchiveCompatibility(
     .filter((value) => value > 0)
   if (archiveDateValues.length === 0) return 'unknown-archive-date'
 
-  return archiveDateValues.some((archiveDateValue) => weldDateValue <= archiveDateValue)
+  return archiveDateValues.some((archiveDateValue) => weldDateValue < archiveDateValue)
     ? 'historical'
     : 'after-archive'
 }

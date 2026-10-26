@@ -214,7 +214,6 @@ function getReportImportTemplateRules(_activeReport: ImportableReport) {
 function hasEnabledOfficialStampCheck(settings: SaveCheckSettings) {
   return (
     settings.officialRegistry ||
-    settings.officialArchive ||
     settings.officialNaksDate ||
     settings.officialSuspension ||
     settings.officialWeldingMethod ||

@@ -13,7 +13,7 @@ import { buildLnkRequestExtensionRows, getLnkRequestExtensionDisabledReason, nor
 import { buildLnkRequestManagerRows, buildLnkRequestPositionRemovalRow } from '@/lib/lnk-request-mutation-updates'
 import { buildPstoRequestManagerRows } from '@/lib/psto-report-mutation-updates'
 import { getLnkMethodByRequestKey, isFinalLnkResultValue } from '@/lib/lnk-status'
-import { normalizePstoLineIdentity } from '@/lib/psto-line-assignment'
+import { getPstoLineIdentityKey, normalizePstoLineIdentity } from '@/lib/psto-line-assignment'
 import { getCoilJointNames, normalizeJointChainPart, parseRepeatedJointName } from '@/lib/joint-chain'
 import { getCoilTransitionModeForSource } from '@/lib/joint-chain-transitions'
 import { getDuplicateJointKey } from '@/lib/repeated-joint-row-utils'
@@ -371,6 +371,9 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       record,
     ])
     const previousStored = previousRows.get(id)!
+    if (previousStored.pstoExceptionBasis && getPstoLineIdentityKey(previousStored) !== getPstoLineIdentityKey(record)) {
+      throw new Error('Исключение ПСТО переносится только вместе со всей цепочкой. Откройте перенос цепочки через базовый стык.')
+    }
     await assertJointChainIdentityChangesUseDedicatedMove(
       tx,
       [record],

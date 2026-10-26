@@ -1,12 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { saveDataListSettings } from './data-list-settings'
 import { saveOtherSettings } from './other-settings'
-import { DEFAULT_SAVE_CHECK_SETTINGS } from './save-check-settings'
+import { DEFAULT_SAVE_CHECK_SETTINGS, normalizeSaveCheckSettings } from './save-check-settings'
 import { FACTUAL_WELDER_STAMP_FIELD_KEYS, OFFICIAL_WELDER_STAMP_FIELD_KEYS } from './report-config'
 import type { WeldInput } from './weld-fields'
 import {
   buildWeldFormStampSelectOptions,
-  getArchivedOfficialStampValuesForRecord,
   getOfficialStampCompatibilityIssues,
   getOfficialStampCompatibilitySaveBlockReason,
 } from './welder-stamp-compatibility'
@@ -73,7 +72,32 @@ function suspensionRecord(value: string): WelderStampSuspensionRecord {
 }
 
 describe('welder stamp select options', () => {
-  it('keeps an archived official stamp available only for the joint where it was already selected', () => {
+  it.each(['', '2026-07-31', '2026-08-01', '2026-08-02'])('filters official choices on %s while keeping every factual welder', weldDate => {
+    const records = [stampRecord('LIVE', false), { ...stampRecord('ARCH', true), archivedAt: '2026-08-01' },
+      { ...stampRecord('', true), internalStamp: 'ВН-1', archivedAt: '2026-08-01' }]
+    const suspensions = [{ id: 1, naksStamp: 'LIVE', suspendedFrom: '2026-07-31', suspendedTo: '2026-08-01' }]
+    const options = buildWeldFormStampSelectOptions(records, { weldDate, weldingMethod: 'РАД' } as WeldInput, suspensions)
+    for (const key of OFFICIAL_WELDER_STAMP_FIELD_KEYS) {
+      const expected = weldDate === '' ? ['ARCH', 'LIVE'] : weldDate === '2026-07-31' ? ['ARCH'] : weldDate === '2026-08-01' ? [] : ['LIVE']
+      expect(options[key]?.map(option => option.value).sort()).toEqual(expected)
+    }
+    for (const key of FACTUAL_WELDER_STAMP_FIELD_KEYS) {
+      expect(options[key]?.map(option => option.value).sort()).toEqual(['ARCH', 'LIVE', 'ВН-1'])
+      expect(options[key]?.find(option => option.value === 'ARCH')).toEqual({ value: 'ARCH', label: 'ARCH (в архиве)' })
+      expect(options[key]?.find(option => option.value === 'ВН-1')).toEqual({ value: 'ВН-1', label: 'ВН-1 (в архиве)' })
+      expect(options[key]?.some(option => option.disabled)).toBe(false)
+    }
+  })
+
+  it('keeps a selected suspended stamp with its reason when the welding date changes', () => {
+    const draft = { stamp1K: 'LIVE', weldDate: '2026-07-31', weldingMethod: 'РАД' } as WeldInput
+    const options = buildWeldFormStampSelectOptions([stampRecord('LIVE', false)], draft,
+      [{ id: 1, naksStamp: 'LIVE', suspendedFrom: '2026-07-31', suspendedTo: '' }])
+    expect(options.stamp1K?.[0]).toMatchObject({ value: 'LIVE', disabled: true, reason: expect.stringContaining('отстранено') })
+    expect(draft.stamp1K).toBe('LIVE')
+  })
+
+  it('offers all archived official stamps when the weld date is empty', () => {
     const archivedStamp = stampRecord('ABC1', true)
     const activeStamp = stampRecord('XYZ9', false)
     const row = {
@@ -83,18 +107,15 @@ describe('welder stamp select options', () => {
       d2: '11',
     } as WeldInput
 
-    const allowedArchivedStamps = getArchivedOfficialStampValuesForRecord(row, [archivedStamp, activeStamp])
-    const optionsForExistingRow = buildWeldFormStampSelectOptions([archivedStamp, activeStamp], row, allowedArchivedStamps)
+    const optionsForExistingRow = buildWeldFormStampSelectOptions([archivedStamp, activeStamp], row)
     const optionsForNewRow = buildWeldFormStampSelectOptions([archivedStamp, activeStamp], { weldingMethod: 'РАД' } as WeldInput)
 
-    expect(allowedArchivedStamps).toEqual(['ABC1'])
     expect(optionsForExistingRow[officialStampField]?.find((option) => option.value === 'ABC1')).toMatchObject({
       value: 'ABC1',
       disabled: false,
     })
-    expect(optionsForNewRow[officialStampField]?.some((option) => option.value === 'ABC1')).toBe(false)
-    expect(getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp, activeStamp])).toContain('Корень_1')
-    expect(getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp, activeStamp])).toContain('находится в архиве')
+    expect(optionsForNewRow[officialStampField]?.some((option) => option.value === 'ABC1')).toBe(true)
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp, activeStamp])).toBeNull()
   })
 
   it('allows a historical weld before the whole stamp card archive date', () => {
@@ -134,7 +155,7 @@ describe('welder stamp select options', () => {
 
     const reason = getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp])
 
-    expect(reason).toContain('ЗВ-01')
+    expect(reason).toContain('архиве')
     expect(reason).toContain('архиве с 01.08.2026')
   })
 
@@ -194,7 +215,7 @@ describe('welder stamp select options', () => {
       weldDate: '15.07.2026',
     } as WeldInput
 
-    const options = buildWeldFormStampSelectOptions([activeStamp], row, [], [suspension])
+    const options = buildWeldFormStampSelectOptions([activeStamp], row, [suspension])
     const blockReason = getOfficialStampCompatibilitySaveBlockReason(row, [activeStamp], {
       suspensions: [suspension],
     })
@@ -215,7 +236,7 @@ describe('welder stamp select options', () => {
       d2: '11',
     } as WeldInput
 
-    expect(getOfficialStampCompatibilitySaveBlockReason(row, [])).toContain('активном реестре')
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [])).toContain('в реестре')
     expect(
       getOfficialStampCompatibilitySaveBlockReason(row, [], {
         saveCheckSettings: {
@@ -226,36 +247,21 @@ describe('welder stamp select options', () => {
     ).toContain('СП-02')
   })
 
-  it('allows disabling official archive compatibility in save checks', () => {
-    const archivedStamp = stampRecord('ABC1', true)
-    const row = {
-      [officialStampField]: 'ABC1',
-      weldingMethod: 'РАД',
-      d1: '11',
-      d2: '11',
-    } as WeldInput
-
-    expect(getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp])).toContain('ЗВ-01')
-    expect(getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp])).toContain('находится в архиве')
-    expect(
-      getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp], {
-        saveCheckSettings: {
-          ...DEFAULT_SAVE_CHECK_SETTINGS,
-          officialArchive: false,
-        },
-      }),
-    ).toBeNull()
-    const options = buildWeldFormStampSelectOptions([archivedStamp], row, [], [], {
-      saveCheckSettings: { ...DEFAULT_SAVE_CHECK_SETTINGS, officialArchive: false },
-    })
-    expect(options[officialStampField]).toContainEqual({ value: 'ABC1', disabled: false, reason: undefined })
+  it('ignores the removed archive toggle in legacy settings', () => {
+    const archivedStamp = { ...stampRecord('ABC1', true), archivedAt: '2026-08-01' }
+    const row = { [officialStampField]: 'ABC1', weldingMethod: 'РАД', weldDate: '2026-08-01' } as WeldInput
+    const settings = normalizeSaveCheckSettings({ ...DEFAULT_SAVE_CHECK_SETTINGS, officialArchive: false })
+    expect(settings).not.toHaveProperty('officialArchive')
+    const reason = getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp], { saveCheckSettings: settings })
+    expect(reason).toContain('находится в архиве')
+    expect(reason).not.toContain('ЗВ-')
   })
 
   it('keeps the archive check active when only the registry check is disabled', () => {
     const archivedStamp = stampRecord('ABC1', true)
     const row = {
       [officialStampField]: 'ABC1',
-      weldingMethod: 'РАД',
+      weldingMethod: 'РАД', weldDate: '2026-08-01',
       d1: '11',
       d2: '11',
     } as WeldInput
@@ -264,11 +270,10 @@ describe('welder stamp select options', () => {
       saveCheckSettings: {
         ...DEFAULT_SAVE_CHECK_SETTINGS,
         officialRegistry: false,
-        officialArchive: true,
       },
     })
 
-    expect(reason).toContain('ЗВ-01')
+    expect(reason).toContain('архиве')
     expect(reason).toContain('находится в архиве')
   })
 
@@ -450,10 +455,10 @@ describe('welder stamp select options', () => {
 
     expect(options[officialStampField]?.some((option) => option.value === 'ARCH1')).toBe(true)
     expect(options[officialStampField]?.find((option) => option.value === 'ARCH1')?.disabled).toBe(false)
-    expect(options[factualStampField]?.some((option) => option.value === 'ARCH1')).toBe(false)
+    expect(options[factualStampField]?.some((option) => option.value === 'ARCH1')).toBe(true)
   })
 
-  it('hides archived stamps without a historical weld date', () => {
+  it('shows archive without a date and hides unavailable official choices after archive', () => {
     const archivedStamp = {
       ...stampRecord('ARCH1', true),
       archivedAt: '2026-08-01',
@@ -465,7 +470,7 @@ describe('welder stamp select options', () => {
       { weldingMethod: 'РАД', weldDate: '05.08.2026' } as WeldInput,
     )
 
-    expect(withoutDate[officialStampField]?.some((option) => option.value === 'ARCH1')).toBe(false)
+    expect(withoutDate[officialStampField]?.some((option) => option.value === 'ARCH1')).toBe(true)
     expect(afterArchive[officialStampField]?.some((option) => option.value === 'ARCH1')).toBe(false)
   })
 
@@ -486,7 +491,7 @@ describe('welder stamp select options', () => {
       value: 'ARCH1',
       disabled: true,
     })
-    expect(getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp])).toContain('ЗВ-01')
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [archivedStamp])).toContain('архиве')
   })
 
   it('allows several official welders to cover a combined welding method as a team', () => {
@@ -1439,7 +1444,7 @@ describe('welder stamp select options', () => {
       officialDls: true,
     }
 
-    const options = buildWeldFormStampSelectOptions([activeStamp], row, [], [], { saveCheckSettings })
+    const options = buildWeldFormStampSelectOptions([activeStamp], row, [], { saveCheckSettings })
     const selectedOption = options.stamp1K?.find((option) => option.value === 'E0SM')
 
     expect(selectedOption?.disabled).toBe(false)
@@ -1656,7 +1661,7 @@ describe('welder stamp select options', () => {
       weldDate: '',
     } as WeldInput
 
-    const options = buildWeldFormStampSelectOptions([activeStamp], row, [], [], {
+    const options = buildWeldFormStampSelectOptions([activeStamp], row, [], {
       saveCheckSettings: {
         ...DEFAULT_SAVE_CHECK_SETTINGS,
         officialDls: true,

@@ -55,6 +55,7 @@ export async function cleanupLineProgramProjects(projects: string[]) {
         having bool_and(coalesce(w.project_title=any($1::text[]), false))
       )`, [projects])
     await db.query('delete from weld_joints where project_title=any($1::text[])', [projects])
+    await db.query('delete from psto_chain_exceptions where line_program_id in (select id from line_programs where project_title=any($1::text[]))', [projects])
     await db.query('delete from line_programs where project_title=any($1::text[])', [projects])
   })
 }

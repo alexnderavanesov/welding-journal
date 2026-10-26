@@ -668,6 +668,54 @@ test('unloaded and cancelled blocks show skeletons while the newest filter is lo
   await expect(page.getByRole('button', { name: 'S0251', exact: true })).toBeVisible()
 })
 
+for (const counter of ['countJournalGridSelection', 'summarizeJournalGridRange']) test(`grouped revision recovery: ${counter} refreshes once and preserves checked IDs`, async ({ page }) => {
+  await page.locator('.ag-header-cell[col-id="line"]').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: /Сгруппировать.*Линия/ }).click()
+  await page.getByRole('button', { name: 'Развернуть группу SERVER-A', exact: true }).click()
+  const checkbox = page.getByRole('checkbox', { name: 'Выбрать стык S0001', exact: true })
+  await expect(checkbox).toBeVisible()
+  await page.waitForLoadState('networkidle')
+  if (counter === 'summarizeJournalGridRange') {
+    await checkbox.click()
+    await page.waitForLoadState('networkidle')
+  }
+  let release!: () => void, started!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const pending = new Promise<void>(resolve => { started = resolve })
+  let held = false, blocks = 0
+  page.on('request', request => { if (rpcName(request.url()).startsWith('readJournalGrid')) blocks++ })
+  await page.route('**/_serverFn/**', async route => {
+    if (!held && rpcName(route.request().url()).startsWith(counter)) { held = true; started(); await gate }
+    await route.continue()
+  })
+  try {
+    if (counter === 'countJournalGridSelection') await checkbox.click()
+    else await checkbox.locator('xpath=ancestor::*[@role="row"][1]').locator('[col-id="wdi"]').click()
+    await pending
+    // A different operator saves while this exact grouped-view read is pending.
+    await withLineProgramFixture(db => db.query("update weld_joints set spool='REFRESH-CHECK' where project_title=$1 and joint='S0001'", [PROJECT]))
+    release()
+    await expect.poll(() => blocks).toBeGreaterThan(0)
+    await expect(page.locator('.journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
+    await page.waitForLoadState('networkidle')
+    await expect(page.getByText('Выбрано: 1', { exact: true })).toBeVisible()
+    await expect(page.locator('.journal-load-error')).toHaveCount(0)
+    await expect(page.getByText('Данные журнала изменились.', { exact: false })).toHaveCount(0)
+    await expect(page.getByText('Итоги недоступны.', { exact: false })).toHaveCount(0)
+    expect(blocks).toBeLessThanOrEqual(4)
+    // The old positional area is not silently reapplied to new rows.
+    await expect(page.locator('.ag-cell-range-selected')).toHaveCount(0)
+    const expand = page.getByRole('button', { name: 'Развернуть группу SERVER-A', exact: true })
+    if (await expand.isVisible()) await expand.click()
+    await expect(checkbox).toBeChecked()
+    await page.locator('.ag-header-cell[col-id="joint"]').click()
+    await expect(page.locator('.journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
+    await page.waitForLoadState('networkidle')
+    await expect(page.getByText('Выбрано: 1', { exact: true })).toBeVisible()
+    await expect(page.locator('.journal-load-error')).toHaveCount(0)
+  } finally { release() }
+})
+
 test('initial loading uses skeletons, real errors have one viewport notice, and retry recovers', async ({ page }) => {
   let release!: () => void
   let held = new Promise<void>(resolve => { release = resolve })
@@ -692,7 +740,7 @@ test('initial loading uses skeletons, real errors have one viewport notice, and 
     held = new Promise<void>(resolve => { release = resolve })
     await notice.getByRole('button', { name: 'Повторить загрузку', exact: true }).click()
     await expect(notice).toHaveCount(0)
-    await expect(page.locator('.journal-update-notice')).toHaveText('Обновление…')
+    await expect(page.locator('[data-journal-footer] .journal-footer-update')).toHaveText('Обновление…')
     release()
     await expect(page.locator('.journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
     await expect(page.getByRole('button', { name: 'S0001', exact: true })).toBeVisible()
@@ -791,7 +839,10 @@ for (const sorting of [false, true]) test(`${sorting ? 'sort' : 'filter'} keeps 
   await requested
   try {
     await expect(frame).toHaveAttribute('aria-busy', 'true')
-    await expect(frame.getByRole('status')).toHaveText('Обновление…')
+    const updating = page.locator('[data-journal-footer] .journal-footer-update')
+    await expect(updating).toHaveText('Обновление…')
+    await expect(updating).toBeInViewport()
+    await expect(frame.getByText('Обновление…', { exact: true })).toHaveCount(0)
     await expect(first.locator('[col-id="joint"]')).toHaveText('S0001')
     await expect(first.getByRole('button', { name: 'Редактировать', exact: true })).toBeDisabled()
     await expect(first.getByRole('checkbox')).toBeDisabled()

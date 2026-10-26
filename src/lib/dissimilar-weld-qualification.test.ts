@@ -71,7 +71,7 @@ describe('dissimilar weld qualifications', () => {
     expect(reason(swapped, [stamp()])).toContain('Материал 1: М05; D1 = 57')
     const issues = getOfficialStampCompatibilityIssues(swapped, [stamp()], { saveCheckSettings: checks })
     expect(issues.map(issue => issue.message).join(' ')).toContain('Материал 2: М01; D2 = 159')
-    expect(buildWeldFormStampSelectOptions([stamp()], swapped, [], [], { saveCheckSettings: checks }).stamp1K?.[0]).toMatchObject({ disabled: true, reason: expect.stringContaining('Материал 2: М01') })
+    expect(buildWeldFormStampSelectOptions([stamp()], swapped, [], { saveCheckSettings: checks }).stamp1K?.[0]).toMatchObject({ disabled: true, reason: expect.stringContaining('Материал 2: М01') })
     expect(buildWelderStampCompatibilityCheckTasks([{ ...swapped, id: 1 }], [stamp()])[0]?.reason).toBeDefined()
     expect(JSON.stringify(buildWelderStampCompatibilityCheckTasks([{ ...swapped, id: 1 }], [stamp()]))).toContain('Материал 2: М01')
   })
@@ -127,10 +127,10 @@ describe('dissimilar weld qualifications', () => {
     expect(reason(row, [s])).toContain('Материал 2: М05')
     s.naksPermits[1].archived = true
     expect(reason({ ...row, weldDate: null }, [s])).toBeNull()
-    expect(buildWeldFormStampSelectOptions([s], { ...row, weldDate: null }, [], [], { saveCheckSettings: checks }).stamp1K?.[0]).toMatchObject({
+    expect(buildWeldFormStampSelectOptions([s], { ...row, weldDate: null }, [], { saveCheckSettings: checks }).stamp1K?.[0]).toMatchObject({
       disabled: false, reason: expect.stringContaining('Материал 2: М05'),
     })
-    expect(buildWeldFormStampSelectOptions([s], { ...row, weldDate: null }, [], [], { saveCheckSettings: checks }).stamp1K?.[0].reason).toContain('укажите дату сварки')
+    expect(buildWeldFormStampSelectOptions([s], { ...row, weldDate: null }, [], { saveCheckSettings: checks }).stamp1K?.[0].reason).toContain('укажите дату сварки')
     expect(reason({ ...row, weldDate: '2026-05-01' }, [s])).toBeNull()
   })
   it.each([false, true])('server checks final merged groups/dimensions even with legacy disabled toggles (import=%s)', importMode => {

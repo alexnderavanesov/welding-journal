@@ -78,6 +78,6 @@ describe('save check and dispatcher links', () => {
     const unlinked = Object.keys(SAVE_CHECK_SETTING_CODES)
       .filter((id) => getDispatcherSettingIdsForSaveCheck(id as keyof typeof SAVE_CHECK_SETTING_CODES).length === 0)
 
-    expect(unlinked).toEqual(['officialArchive', 'lnkResultControlDateRequired', 'lnkResultConclusionRequired', 'pstoResultDateRequired', 'pstoResultDiagramRequired', 'manualJointName', 'systemJointRenameProtection'])
+    expect(unlinked).toEqual(['lnkResultControlDateRequired', 'lnkResultConclusionRequired', 'pstoResultDateRequired', 'pstoResultDiagramRequired', 'manualJointName', 'systemJointRenameProtection'])
   })
 })

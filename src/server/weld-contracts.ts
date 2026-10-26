@@ -1,3 +1,4 @@
+import type { ImportPstoLinePolicy } from '@/lib/psto-chain-policy'
 import type { PrintableReport } from '@/lib/printable-report'
 import type { ReportOutputKind } from '@/lib/report-output-definition'
 import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
@@ -337,7 +338,7 @@ export type WeldImportScopeResult = {
   rows: WeldRow[]
   total: number
   limitExceeded: boolean
-  fullyAssignedPstoLineKeys: string[]
+  pstoLinePolicies: ImportPstoLinePolicy[]
 }
 
 export type WeldColumnFilterOption = { value: string; count: number; label: string }

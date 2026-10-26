@@ -126,14 +126,14 @@ export function useWelderStampRegistryState({ enabled = true, setMessage }: Weld
 
   const weldFormStampSelectOptions = useMemo(
     () =>
-      buildWeldFormStampSelectOptions(welderStamps, undefined, [], welderStampSuspensions, {
+      buildWeldFormStampSelectOptions(welderStamps, undefined, welderStampSuspensions, {
         saveCheckSettings,
       }),
     [saveCheckSettings, welderStampSuspensions, welderStamps],
   )
   const getWeldFormStampSelectOptions = useMemo(
-    () => (draft: WeldInput, allowedArchivedOfficialStamps: readonly string[] = []) =>
-      buildWeldFormStampSelectOptions(welderStamps, draft, allowedArchivedOfficialStamps, welderStampSuspensions, {
+    () => (draft: WeldInput) =>
+      buildWeldFormStampSelectOptions(welderStamps, draft, welderStampSuspensions, {
         saveCheckSettings,
       }),
     [saveCheckSettings, welderStampSuspensions, welderStamps],
@@ -192,10 +192,18 @@ export function useWelderStampRegistryState({ enabled = true, setMessage }: Weld
     setEditingWelderStampId(record.id)
   }
 
-  function archiveWelderStampRecord(id: number) {
-    persistWelderStampRecords(setWelderStampRecordArchived(welderStamps, id, true))
-    if (editingWelderStampId === id) resetWelderStampForm()
-    setMessage('Клеймо добавлено в архив')
+  async function archiveWelderStampRecord(id: number) {
+    if (registrySavePendingRef.current) return
+    registrySavePendingRef.current = true
+    try {
+      await welderStampsMutation.mutateAsync(setWelderStampRecordArchived(welderStamps, id, true))
+      if (editingWelderStampId === id) resetWelderStampForm()
+      setMessage('Клеймо добавлено в архив')
+    } catch {
+      // Keep the card active until the server has checked every dated use.
+    } finally {
+      registrySavePendingRef.current = false
+    }
   }
 
   function restoreWelderStampRecord(id: number) {

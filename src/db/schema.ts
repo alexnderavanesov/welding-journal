@@ -73,6 +73,10 @@ export const linePrograms = pgTable('line_programs', {
   weldControlPercent: numericNumber('weld_control_percent'),
   pvkControlPercent: numericNumber('pvk_control_percent'),
   configurationIssue: text('configuration_issue'),
+  // Null only for legacy lines, until their first explicit PSTO program decision.
+  pstoAssignment: text('psto_assignment').$type<'assigned' | 'unassigned' | 'cancelled'>(),
+  pstoCancellationDate: date('psto_cancellation_date'),
+  pstoCancellationBasis: text('psto_cancellation_basis'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -82,6 +86,7 @@ export const linePrograms = pgTable('line_programs', {
     sql`lower(btrim(${table.line}))`,
   ),
   check('line_programs_line_required', sql`btrim(${table.line}) <> ''`),
+  check('line_programs_psto_assignment_check', sql`${table.pstoAssignment} in ('assigned', 'unassigned', 'cancelled')`),
   check('line_programs_percent_range', sql`${table.weldControlPercent} between 0 and 100`),
   check('line_programs_pvk_range', sql`${table.pvkControlPercent} between 0 and 100`),
   check('line_programs_pvk_limit', sql`${table.weldControlPercent} is null or ${table.pvkControlPercent} is null or
@@ -90,6 +95,25 @@ export const linePrograms = pgTable('line_programs', {
 ])
 
 export type LineProgram = typeof linePrograms.$inferSelect
+
+// Only active exceptions are used and written. Closure columns remain for the
+// already-applied 0050 schema; legacy closed decisions are ignored, never revived.
+export const pstoChainExceptions = pgTable('psto_chain_exceptions', {
+  id: serial('id').primaryKey(),
+  lineProgramId: integer('line_program_id').notNull().references(() => linePrograms.id, { onDelete: 'restrict' }),
+  rootJoint: text('root_joint').notNull(),
+  required: boolean('required').notNull(),
+  basis: text('basis').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  closedAt: timestamp('closed_at', { withTimezone: true }),
+  closeReason: text('close_reason'),
+}, table => [
+  uniqueIndex('psto_chain_exceptions_active_idx').on(table.lineProgramId, table.rootJoint).where(sql`${table.closedAt} is null`),
+  index('psto_chain_exceptions_history_idx').on(table.lineProgramId, table.createdAt, table.id),
+  check('psto_chain_exceptions_root_check', sql`${table.rootJoint} = lower(btrim(${table.rootJoint})) and ${table.rootJoint} <> ''`),
+  check('psto_chain_exceptions_basis_check', sql`btrim(${table.basis}) <> ''`),
+  check('psto_chain_exceptions_closure_check', sql`(${table.closedAt} is null) = (${table.closeReason} is null)`),
+])
 
 // Transition recovery data is isolated from settings and all ordinary read paths.
 export const lineProgramTransitionBackups = pgTable('line_program_transition_backups', {
@@ -110,6 +134,7 @@ export const weldJoints = pgTable(
     category: text('category'),
     pstoRequired: text('psto_required'),
     pstoControlBasis: text('psto_control_basis'),
+    pstoExceptionBasis: text('psto_exception_basis'),
     pstoCancellationDate: date('psto_cancellation_date'),
     preHeatTreatmentLnkExempt: boolean('pre_heat_treatment_lnk_exempt').default(false).notNull(),
     weldControlPercent: numericNumber('weld_control_percent'),

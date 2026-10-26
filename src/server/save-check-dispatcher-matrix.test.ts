@@ -80,7 +80,6 @@ function fixture(setting: SaveCheckSettingId) {
   if (setting.startsWith('official')) {
     const permit = context.welderStamps[0].naksPermits[0]
     if (setting === 'officialRegistry') context.welderStamps = []
-    if (setting === 'officialArchive') context.welderStamps[0].archived = true
     if (setting === 'officialNaksDate') permit.validTo = '2026-06-01'
     if (setting === 'officialSuspension') context.welderStampSuspensions = [{ id: 1, naksStamp: 'A1', suspendedFrom: '2026-06-01', suspendedTo: '2026-08-01' }]
     if (setting === 'officialWeldingMethod') permit.weldType = 'РАД'

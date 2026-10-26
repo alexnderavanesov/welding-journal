@@ -93,7 +93,7 @@ export function ReportImportDialog({
     refetchOnReconnect: false,
   })
   const rows = importScopeQuery.data?.rows ?? []
-  const fullyAssignedPstoLineKeys = importScopeQuery.data?.fullyAssignedPstoLineKeys ?? []
+  const pstoLinePolicies = importScopeQuery.data?.pstoLinePolicies ?? []
   const scopeTotal = importScopeQuery.data?.total ?? 0
   const scopeLimitExceeded = importScopeQuery.data?.limitExceeded === true
   const isScopeLoading = mode !== 'newRecords' && importScopeQuery.isFetching
@@ -181,7 +181,7 @@ export function ReportImportDialog({
               activeReport,
               file,
               rows,
-              fullyAssignedPstoLineKeys,
+              pstoLinePolicies,
               weldFormStampSelectOptions,
               welderStamps,
               welderStampSuspensions,
@@ -191,7 +191,7 @@ export function ReportImportDialog({
               activeReport,
               file,
               rows,
-              fullyAssignedPstoLineKeys,
+              pstoLinePolicies,
               weldFormStampSelectOptions,
               welderStamps,
               welderStampSuspensions,

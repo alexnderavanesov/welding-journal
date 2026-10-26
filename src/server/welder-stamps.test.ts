@@ -17,6 +17,7 @@ vi.mock('@tanstack/react-start', () => ({ createServerOnlyFn: (fn: unknown) => f
 
 import {
   assertRegistryRevision,
+  assertWelderStampArchiveDatesAreUnused,
   getRemovedWelderStampReferenceAliases,
   loadWelderStampRegistrySnapshot,
   saveWelderStampRecords,
@@ -69,6 +70,25 @@ function registryDatabase(options: { scopes?: Array<{ projectTitle: string; subt
 }
 
 describe('registry save invalidation', () => {
+  it.each([1, 1000])('uses one bounded archive-reference query for %i changed cards and none for unchanged cards', async count => {
+    const db = registryDatabase()
+    const records = Array.from({ length: count }, (_, index) => ({ ...db.records[0], id: index + 1 }))
+    const archived = records.map(record => ({ ...record, archived: true, archivedAt: '2026-08-01' }))
+    const tx = { execute: db.execute } as unknown as Parameters<typeof assertWelderStampArchiveDatesAreUnused>[0]
+    await assertWelderStampArchiveDatesAreUnused(tx, records, archived)
+    expect(db.execute).toHaveBeenCalledTimes(1)
+    const query = new PgDialect().sqlToQuery(db.execute.mock.calls[0][0])
+    expect(query.sql).toContain('limit 1')
+    expect(query.sql).toContain('"weld_date" >= a.date')
+    for (const suffix of ['1_k', '1_z', '1_o', '2_k', '2_z', '2_o']) {
+      expect(query.sql).toContain(`"stamp_${suffix}"`)
+      expect(query.sql).toContain(`"stamp_${suffix}_fact"`)
+    }
+    expect(query.sql).not.toMatch(/officiality|revision_actuality/)
+    await assertWelderStampArchiveDatesAreUnused(tx, archived, archived)
+    expect(db.execute).toHaveBeenCalledTimes(1)
+  })
+
   it('validates a no-op revision before skipping writes, including empty suspension resubmission', async () => {
     const db = registryDatabase()
     const snapshot = await loadWelderStampRegistrySnapshot()

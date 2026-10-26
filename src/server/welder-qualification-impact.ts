@@ -70,9 +70,9 @@ export async function loadWelderQualificationImpactScopes(
     materialGroups: dataLists.materialGroups,
     weldingTypes: dataLists.weldingTypes,
     suspensions: input.suspensions,
-    saveCheckSettings: { ...normalizeSaveCheckSettings(stored(PROJECT_SETTING_KEYS.saveCheck), {
+    saveCheckSettings: normalizeSaveCheckSettings(stored(PROJECT_SETTING_KEYS.saveCheck), {
       officialDlsFallback: other.requireDlsForOfficialStamps,
-    }), officialArchive: false },
+    }),
   }
   const before = recordsByAlias(input.before), after = recordsByAlias(input.after)
   const changed = profiles.rows.filter(profile => {

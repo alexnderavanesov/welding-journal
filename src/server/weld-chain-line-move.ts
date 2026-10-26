@@ -1,5 +1,6 @@
 // This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
 import { requireDb } from '@/db'
+import { movePstoChainException } from './psto-chain-policy'
 import { weldJoints, type WeldJoint } from '@/db/schema'
 import { isControlEnabledValue } from '@/lib/control-availability-values'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -103,7 +104,7 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
       throw new Error('Исходный стык изменился во время переноса. Вернитесь к форме и повторите действие.')
     }
 
-    const initialContext = await loadServerWeldValidationContext(tx, lockedScopeRows)
+    const initialContext = await loadServerWeldValidationContext(tx, [...lockedScopeRows, targetIdentity])
     const parsedSource = parseJointChainName(
       String(storedSource.joint ?? ''),
       initialContext.systemIndexSettings,
@@ -137,7 +138,7 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
       initialContext.systemIndexSettings,
     )
     const hasEarlyCoilDecision = await hasActiveEarlyCoilDecisionForSource(tx, storedSource.id)
-    if (chainRows.length <= 1 && !hasEarlyCoilDecision) {
+    if (chainRows.length <= 1 && !hasEarlyCoilDecision && !storedSource.pstoExceptionBasis) {
       throw new Error(`Цепочка ${rootJoint} уже изменилась. Вернитесь к форме и повторите перенос.`)
     }
 
@@ -170,6 +171,7 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
       targetIdentity,
       targetRows as WeldRow[],
     )
+    validationContext.pstoLineAssignments = await movePstoChainException(tx, storedSource, draftSource, targetRows, validationContext.pstoLineAssignments, initialContext.systemIndexSettings)
     const decisions = normalizeChainLineMoveDecisions(plan.decisions, new Set(previousRows.keys()))
     const [mergedSource] = mergeWeldRecordsWithPrevious([scopedData], previousRows)
     const records = chainRows.map((chainRow) => {
@@ -181,7 +183,6 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
 
     const validationPreviousRows = new Map<number, WeldJoint>()
     const transferredPreControlIds: number[] = []
-    let preservesLifecycleHistory = false
     for (let index = 0; index < records.length; index += 1) {
       const record = records[index]!
       const previousStored = previousRows.get(Number(record.id))!
@@ -195,7 +196,6 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
       })
       records[index] = prepared.record
       validationPreviousRows.set(Number(record.id), prepared.validationPrevious)
-      preservesLifecycleHistory ||= prepared.preservesLifecycleHistory
       transferredPreControlIds.push(...prepared.transferredPreControlIds)
     }
 
@@ -207,7 +207,7 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
       records,
       previousRows: validationPreviousRows,
       context: validationContext,
-      allowPstoLineLifecycleMove: preservesLifecycleHistory,
+      allowPstoLineLifecycleMove: true,
     })
     validateServerWeldRecords({
       records,
@@ -310,6 +310,7 @@ function withLockedTargetLineState(
 ) {
   const pstoLineAssignments = new Map(context.pstoLineAssignments)
   const key = getPstoLineIdentityKey(targetIdentity)
+  if (pstoLineAssignments.get(key)?.programState) return { ...context, pstoLineAssignments }
   if (targetRows.length === 0) {
     pstoLineAssignments.delete(key)
   } else {

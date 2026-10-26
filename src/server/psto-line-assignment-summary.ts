@@ -1,7 +1,8 @@
-import { sql } from 'drizzle-orm'
+import { sql, type SQL } from 'drizzle-orm'
 
 import type { requireDb } from '@/db'
 import {
+  linePrograms, pstoChainExceptions,
   preHeatTreatmentControls,
   pstoRepeatCycles,
   weldJoints,
@@ -9,12 +10,14 @@ import {
 import {
   getPstoLineIdentityKey,
   normalizePstoLineIdentity,
+  PSTO_LINE_TABLE_FIELDS, PSTO_PROGRAM_LABELS,
   type PstoLineAssignmentFilter,
   type PstoLineAssignmentPageRequest,
   type PstoLineAssignmentPageResult,
   type PstoLineAssignmentSummary,
 } from '@/lib/psto-line-assignment'
 import { CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES } from '@/lib/control-availability-values'
+import { parseWeldColumnChoiceFilter } from '@/lib/weld-column-choice-filter'
 
 const CONTROL_ENABLED_VALUES_SQL = sql.join(
   CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES.map((value) => sql`${value}`),
@@ -25,10 +28,13 @@ type PstoLineAssignmentSummarySqlRow = {
   projectTitle: string
   subtitleCode: string
   line: string
+  programState?: PstoLineAssignmentSummary['programState']
+  exceptionCount?: number | string
   rowCount: number | string
   assignedCount: number | string
   cancelledCount: number | string
   historyRowCount: number | string
+  removalHistoryRowCount?: number | string
   preControlCount: number | string
   repeatCycleCount: number | string
 }
@@ -60,9 +66,9 @@ export async function loadPstoLineAssignmentSummaries(
       "rowCount",
       "assignedCount",
       "cancelledCount",
-      "historyRowCount",
+      "historyRowCount", "removalHistoryRowCount",
       "preControlCount",
-      "repeatCycleCount"
+      "repeatCycleCount", "programState", "exceptionCount"
     from summaries
     order by "projectTitle", "subtitleCode", "line"
   `)
@@ -75,9 +81,7 @@ export async function loadPstoLineAssignmentSummaryPage(
   request: PstoLineAssignmentPageRequest | undefined,
 ): Promise<PstoLineAssignmentPageResult> {
   const data = normalizePstoLineAssignmentPageRequest(request)
-  const searchWhere = data.search
-    ? sql`lower(concat_ws(' ', "projectTitle", "subtitleCode", "line")) like ${`%${data.search.toLocaleLowerCase('ru-RU')}%`}`
-    : sql`true`
+  const searchWhere = tableWhere(data)
   const filterWhere = buildPstoLineAssignmentFilterWhere(data.filter)
   const requestedOffset = sql`(
     least(
@@ -95,13 +99,11 @@ export async function loadPstoLineAssignmentSummaryPage(
     summary_counts as (
       select
         count(*)::integer as "allCount",
-        (count(*) filter (where "assignedCount" = "rowCount"))::integer as "assignedCount",
-        (count(*) filter (where "cancelledCount" = "rowCount"))::integer as "cancelledCount",
-        (count(*) filter (where "assignedCount" = 0 and "cancelledCount" = 0))::integer as "unassignedCount",
+        (count(*) filter (where "programState" = 'assigned'))::integer as "assignedCount",
+        (count(*) filter (where "programState" = 'cancelled'))::integer as "cancelledCount",
+        (count(*) filter (where "programState" = 'unassigned'))::integer as "unassignedCount",
         (count(*) filter (where
-          "assignedCount" <> "rowCount"
-          and "cancelledCount" <> "rowCount"
-          and ("assignedCount" > 0 or "cancelledCount" > 0)
+          "programState" = 'mixed'
         ))::integer as "partialCount"
       from summaries
     ),
@@ -172,9 +174,44 @@ export function normalizePstoLineAssignmentPageRequest(
   return {
     search: String(request?.search ?? '').trim().slice(0, 200),
     filter,
-    page: Math.max(1, Math.floor(Number(request?.page)) || 1),
+    page: Number.isSafeInteger(request?.page) && request!.page! > 0 ? request!.page! : 1,
     pageSize,
+    filters: normalizeFilters(request?.filters),
   }
+}
+
+function normalizeFilters(filters: Record<string, string> = {}) {
+  return Object.fromEntries(Object.entries(filters).filter(([field, value]) => {
+    if (!PSTO_LINE_TABLE_FIELDS.includes(field as typeof PSTO_LINE_TABLE_FIELDS[number]) || typeof value !== 'string' || value.length > 100_000) throw new Error('Некорректный фильтр программы ПСТО.')
+    const parsed = parseWeldColumnChoiceFilter(value)
+    if (parsed && parsed.kind !== 'values') throw new Error('Выберите значения фильтра.')
+    return Boolean(value.trim())
+  }))
+}
+
+function fieldSql(field: string): SQL {
+  if (!PSTO_LINE_TABLE_FIELDS.includes(field as typeof PSTO_LINE_TABLE_FIELDS[number])) throw new Error('Неизвестный столбец программы ПСТО.')
+  if (field === 'programState') return sql`case "programState" ${sql.join(Object.entries(PSTO_PROGRAM_LABELS).map(([key, label]) => sql`when ${key} then ${label}`), sql` `)} end`
+  return sql`coalesce(${sql.identifier(field)}::text,'')`
+}
+
+function tableWhere(data: Required<PstoLineAssignmentPageRequest>, except?: string) {
+  const clauses: SQL[] = [data.search ? sql`strpos(lower(concat_ws(' ', "projectTitle", "subtitleCode", line)),lower(${data.search})) > 0` : sql`true`]
+  for (const [field, value] of Object.entries(data.filters)) {
+    if (field === except) continue
+    const column = fieldSql(field), parsed = parseWeldColumnChoiceFilter(value)
+    clauses.push(parsed?.kind === 'values' ? sql`${column} = any(${sql.param(parsed.values)}::text[])` : sql`strpos(lower(${column}),lower(${value})) > 0`)
+  }
+  return sql.join(clauses, sql` and `)
+}
+
+export async function loadPstoLineFilterOptions(db: PstoLineAssignmentSummaryExecutor, request: PstoLineAssignmentPageRequest, field: string, match: string, offset: number) {
+  const column = fieldSql(field), data = normalizePstoLineAssignmentPageRequest(request)
+  const result = await db.execute<{ value: string; count: number }>(sql`${buildPstoLineAssignmentSummaryCte()}
+    select ${column} as value, count(*)::integer as count from summaries
+    where ${tableWhere(data, field)} and ${buildPstoLineAssignmentFilterWhere(data.filter)} and strpos(lower(${column}),lower(${match})) > 0
+    group by 1 order by 1 limit 151 offset ${offset}`)
+  return { options: result.rows.slice(0, 150).map(row => ({ ...row, label: row.value || '(Пусто)' })), next: result.rows.length > 150 ? offset + 150 : undefined }
 }
 
 function buildPstoLineAssignmentSummaryCte() {
@@ -200,6 +237,7 @@ function buildPstoLineAssignmentSummaryCte() {
         btrim(coalesce(${weldJoints.subtitleCode}, '')) as subtitle_code,
         btrim(coalesce(${weldJoints.line}, '')) as line,
         ${weldJoints.pstoRequired} as psto_required,
+        nullif(btrim(coalesce(${weldJoints.pstoExceptionBasis}, '')), '') is not null as is_exception,
         (
           nullif(btrim(coalesce(${weldJoints.pstoRequest}, '')), '') is not null
           or ${weldJoints.pstoRequestDate} is not null
@@ -224,7 +262,7 @@ function buildPstoLineAssignmentSummaryCte() {
       left join pre_counts on pre_counts.weld_joint_id = ${weldJoints.id}
       left join repeat_counts on repeat_counts.weld_joint_id = ${weldJoints.id}
       where btrim(coalesce(${weldJoints.line}, '')) <> ''
-    ), summaries as (
+    ), raw_summaries as (
       select
         min(project_title) as "projectTitle",
         min(subtitle_code) as "subtitleCode",
@@ -237,22 +275,35 @@ function buildPstoLineAssignmentSummaryCte() {
           where lower(btrim(coalesce(psto_required, ''))) = 'отменен'
         ))::integer as "cancelledCount",
         (count(*) filter (where has_history))::integer as "historyRowCount",
+        (count(*) filter (where has_history and not is_exception))::integer as "removalHistoryRowCount",
         coalesce(sum(pre_control_count), 0)::integer as "preControlCount",
         coalesce(sum(repeat_cycle_count), 0)::integer as "repeatCycleCount"
       from line_rows
       group by project_key, subtitle_key, line_key
+    ), exception_counts as (
+      select ${pstoChainExceptions.lineProgramId} as program_id, count(*)::integer as exception_count
+      from ${pstoChainExceptions} where ${pstoChainExceptions.closedAt} is null group by ${pstoChainExceptions.lineProgramId}
+    ), summaries as (
+      select raw_summaries.*, coalesce(${linePrograms.pstoAssignment}, case
+        when "assignedCount" = "rowCount" then 'assigned'
+        when "cancelledCount" = "rowCount" then 'cancelled'
+        when "assignedCount" = 0 and "cancelledCount" = 0 then 'unassigned'
+        else 'mixed' end) as "programState", coalesce(exception_counts.exception_count, 0) as "exceptionCount"
+      from raw_summaries left join ${linePrograms} on
+        lower(btrim(${linePrograms.projectTitle})) = lower("projectTitle") and
+        lower(btrim(${linePrograms.subtitleCode})) = lower("subtitleCode") and
+        lower(btrim(${linePrograms.line})) = lower(raw_summaries."line")
+      left join exception_counts on exception_counts.program_id = ${linePrograms.id}
     )`
 }
 
 function buildPstoLineAssignmentFilterWhere(filter: PstoLineAssignmentFilter) {
-  if (filter === 'assigned') return sql`"assignedCount" = "rowCount"`
-  if (filter === 'cancelled') return sql`"cancelledCount" = "rowCount"`
-  if (filter === 'unassigned') return sql`"assignedCount" = 0 and "cancelledCount" = 0`
+  if (filter === 'assigned') return sql`"programState" = 'assigned'`
+  if (filter === 'cancelled') return sql`"programState" = 'cancelled'`
+  if (filter === 'unassigned') return sql`"programState" = 'unassigned'`
   if (filter === 'partial') {
     return sql`
-      "assignedCount" <> "rowCount"
-      and "cancelledCount" <> "rowCount"
-      and ("assignedCount" > 0 or "cancelledCount" > 0)
+      "programState" = 'mixed'
     `
   }
   return sql`true`
@@ -284,13 +335,17 @@ function mergePstoLineAssignmentSummaryRows(rows: PstoLineAssignmentSummarySqlRo
       assignedCount: 0,
       cancelledCount: 0,
       historyRowCount: 0,
+      removalHistoryRowCount: 0,
       preControlCount: 0,
       repeatCycleCount: 0,
     }
+    if (row.programState) current.programState = row.programState
+    if (row.exceptionCount !== undefined) current.exceptionCount = normalizeSummaryCount(row.exceptionCount)
     current.rowCount += normalizeSummaryCount(row.rowCount)
     current.assignedCount += normalizeSummaryCount(row.assignedCount)
     current.cancelledCount += normalizeSummaryCount(row.cancelledCount)
     current.historyRowCount += normalizeSummaryCount(row.historyRowCount)
+    current.removalHistoryRowCount! += normalizeSummaryCount(row.removalHistoryRowCount)
     current.preControlCount += normalizeSummaryCount(row.preControlCount)
     current.repeatCycleCount += normalizeSummaryCount(row.repeatCycleCount)
     summaries.set(key, current)

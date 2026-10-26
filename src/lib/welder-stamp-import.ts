@@ -16,11 +16,9 @@ function normalizeStampSelectValue(value: unknown) {
 export function validateWelderStampFieldsForImport(
   records: WeldInput[],
   stampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOption[]>>,
-  allowedOfficialStampValues: readonly string[] = [],
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
 ) {
   const entries = Object.entries(stampSelectOptions) as Array<[WeldFieldKey, readonly StampSelectOption[]]>
-  const allowedOfficialStampSet = new Set(allowedOfficialStampValues.map(normalizeStampSelectValue))
 
   records.forEach((record, index) => {
     const errors: string[] = []
@@ -30,14 +28,13 @@ export function validateWelderStampFieldsForImport(
 
       const value = normalizeStampSelectValue(record[fieldKey])
       if (!value) continue
-      if (allowedOfficialStampSet.has(value)) continue
 
       const isValid = options.some((option) => normalizeStampSelectValue(option.value) === value)
       if (!isValid) {
         const fieldLabel = formatWelderStampFieldKeyLabel(fieldKey)
         errors.push(formatSaveCheckBlockReason(
           'officialRegistry',
-          `Поле "${fieldLabel}" должно быть выбрано из активного реестра клейм. Значение "${value}" не найдено.`,
+          `Поле "${fieldLabel}" должно быть выбрано из реестра клейм. Значение "${value}" не найдено.`,
         ))
       }
     }

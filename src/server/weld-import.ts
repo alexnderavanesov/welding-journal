@@ -1,11 +1,13 @@
 // This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
 
+import { overlayPstoProgramPolicies } from './psto-chain-policy'
+import { getPstoProgramState, type ImportPstoLinePolicy } from '@/lib/psto-chain-policy'
 import { requireDb } from '@/db'
 import { markTechnologyCardsUsed } from '@/server/technology-card-registry'
 import { assertJointChainRowsCanBeDeleted } from './joint-chain-deletion'
 import { prepareLineProgramWeldRecords } from '@/server/line-program-registry'
 import {
-weldJoints
+weldJoints, linePrograms
 } from '@/db/schema'
 import {
 assertExistingRowsImportPayload,
@@ -133,12 +135,12 @@ export async function listWeldingJournalImportScope({
     return { total, rows: await attachHeatTreatmentControlRelations(applyCurrentSystemWdi(rows, otherSettings), tx) }
   }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
   if (scope.total > WELD_IMPORT_MAX_ROWS) {
-    return { rows: [], total: scope.total, limitExceeded: true, fullyAssignedPstoLineKeys: [] }
+    return { rows: [], total: scope.total, limitExceeded: true, pstoLinePolicies: [] }
   }
-  const [rows, fullyAssignedPstoLineKeys] = await Promise.all([
-    attachImportRepairRequirements(scope.rows), listFullyAssignedPstoLineKeys(db),
+  const [rows, pstoLinePolicies] = await Promise.all([
+    attachImportRepairRequirements(scope.rows), listImportPstoLinePolicies(db),
   ])
-  return { rows: compactWeldRowsForTransport(rows), total: scope.total, limitExceeded: false, fullyAssignedPstoLineKeys }
+  return { rows: compactWeldRowsForTransport(rows), total: scope.total, limitExceeded: false, pstoLinePolicies }
 }
 
 async function attachImportRepairRequirements<T extends { id: number }>(rows: T[]) {
@@ -149,7 +151,7 @@ async function attachImportRepairRequirements<T extends { id: number }>(rows: T[
   return rows.map(row => ({ ...row, programRepairRequirements: requirements.get(row.id) ?? [] }))
 }
 
-export async function listFullyAssignedPstoLineKeys(db: ReturnType<typeof requireDb>) {
+export async function listImportPstoLinePolicies(db: ReturnType<typeof requireDb>): Promise<ImportPstoLinePolicy[]> {
   const normalizedProjectTitle = sql<string>`lower(btrim(coalesce(${weldJoints.projectTitle}, '')))`
   const normalizedSubtitleCode = sql<string>`lower(btrim(coalesce(${weldJoints.subtitleCode}, '')))`
   const normalizedLine = sql<string>`lower(btrim(coalesce(${weldJoints.line}, '')))`
@@ -160,15 +162,19 @@ export async function listFullyAssignedPstoLineKeys(db: ReturnType<typeof requir
       line: normalizedLine,
       rowCount: sql<number>`count(*)::int`,
       assignedCount: sql<number>`count(*) filter (where lower(btrim(coalesce(${weldJoints.pstoRequired}, ''))) in (${CONTROL_ENABLED_VALUES_SQL}))::int`,
+      cancelledCount: sql<number>`count(*) filter (where lower(btrim(coalesce(${weldJoints.pstoRequired}, ''))) = 'отменен')::int`,
     })
     .from(weldJoints)
     .where(sql`btrim(coalesce(${weldJoints.line}, '')) <> ''`)
     .groupBy(normalizedProjectTitle, normalizedSubtitleCode, normalizedLine)
-  return rows.flatMap((row) => (
-    Number(row.rowCount) > 0 && Number(row.assignedCount) === Number(row.rowCount)
-      ? [getPstoLineIdentityKey(row)]
-      : []
-  ))
+  // Programs survive an empty line. Read them independently of the filtered
+  // import cards and keep chain decisions separate from the line baseline.
+  const programs = await db.select().from(linePrograms)
+  const policies = await overlayPstoProgramPolicies(db, rows, new Map(rows.map(row => [getPstoLineIdentityKey(row), row])),
+    new Map(programs.map(program => [getPstoLineIdentityKey(program), program])))
+  return [...policies].map(([key, policy]) => ({ key, state: getPstoProgramState(policy),
+    exceptions: [...(policy.exceptions ?? [])].map(([rootJoint, decision]) => ({ rootJoint, required: decision.required })),
+  }))
 }
 
 export async function massFillWeldJoints({

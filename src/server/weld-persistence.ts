@@ -67,6 +67,7 @@ export const WELD_BATCH_UPDATE_FIELD_KEYS = [
     .map((field) => field.key),
   'pstoRequired',
   'pstoControlBasis',
+  'pstoExceptionBasis',
   'pstoCancellationDate',
   'lineProgramId',
   'pvkControlPercent',
@@ -133,6 +134,7 @@ export function toDbInsert(
   }
   data.pstoRequired = normalizeControlAvailabilityStorageText(normalized.pstoRequired)
   data.pstoControlBasis = normalized.pstoControlBasis ?? null
+  data.pstoExceptionBasis = input.pstoExceptionBasis ?? null
   data.pstoCancellationDate = normalized.pstoCancellationDate ?? null
   data.lineProgramId = input.lineProgramId ?? null
   data.pvkControlPercent = input.pvkControlPercent ?? null

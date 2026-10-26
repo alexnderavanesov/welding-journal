@@ -13,7 +13,12 @@ const state = vi.hoisted(() => ({
 vi.mock('@/db', () => {
   const db = {
     transaction: state.transaction,
-    select: (projection: Record<string, unknown>) => {
+    select: (projection?: Record<string, unknown>) => {
+      // Independent PSTO program metadata is read separately from weld cards.
+      if (!projection) {
+        state.selects.push(['*'])
+        return { from: async () => [] }
+      }
       state.selects.push(Object.keys(projection))
       const rows = Object.hasOwn(projection, 'total') ? [{ total: state.total }] : state.rows.map(row => Object.fromEntries(Object.keys(projection).map(key => [key, row[key as keyof WeldRow]])))
       return { from: () => ({ where: (where: SQL | undefined) => { state.conditions.push(where); return ({

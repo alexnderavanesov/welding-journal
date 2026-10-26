@@ -46,15 +46,21 @@ export function getOfficialStampCompatibilitySaveBlockReason(
   options: OfficialStampCompatibilityOptions = {},
 ) {
   const issue = getOfficialStampCompatibilityIssues(record, welderStampRecords, options)[0]
-  return issue ? formatSaveCheckBlockReason(getOfficialStampIssueSaveCheckSettingId(issue.reason), formatOfficialStampCompatibilityIssue(issue)) : null
+  return issue ? formatIssueForSave(issue) : null
+}
+
+function formatIssueForSave(issue: OfficialStampCompatibilityIssue) {
+  const message = formatOfficialStampCompatibilityIssue(issue)
+  const setting = getOfficialStampIssueSaveCheckSettingId(issue.reason)
+  return setting ? formatSaveCheckBlockReason(setting, message) : message
 }
 
 function getOfficialStampIssueSaveCheckSettingId(
   reason: OfficialStampCompatibilityIssue['reason'],
-): SaveCheckSettingId {
+): SaveCheckSettingId | null {
   switch (reason) {
     case 'missing-registry': return 'officialRegistry'
-    case 'archived': return 'officialArchive'
+    case 'archived': return null
     case 'suspended': return 'officialSuspension'
     case 'missing-weld-type':
     case 'weld-type':
@@ -88,12 +94,7 @@ export function validateOfficialStampCompatibilityForImport(
 
     const rowLabel = normalizeStampSelectValue(record.joint) || `строка ${index + 1}`
     throw new Error(
-      `Импорт остановлен: ${rowLabel}. ${[...new Set(issues.map((issue) =>
-        formatSaveCheckBlockReason(
-          getOfficialStampIssueSaveCheckSettingId(issue.reason),
-          formatOfficialStampCompatibilityIssue(issue),
-        ),
-      ))].join(' ')}`,
+      `Импорт остановлен: ${rowLabel}. ${[...new Set(issues.map(formatIssueForSave))].join(' ')}`,
     )
   })
 }

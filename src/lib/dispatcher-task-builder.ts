@@ -20,6 +20,7 @@ import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import type { SaveCheckSettings } from './save-check-settings'
 import type { createTechnologyCardReview } from '@/lib/technology-card-review'
 import { buildTechnologyCardTasks } from '@/lib/technology-card-tasks'
+import type { PstoLinePolicy } from './psto-chain-policy'
 
 const PERCENTAGE_LINE_DISPATCHER_SETTING_IDS = [
   'percentage-missing',
@@ -36,6 +37,7 @@ const LINE_CONSISTENCY_DISPATCHER_SETTING_IDS = [
 ] satisfies DispatcherSettingId[]
 
 export type BuildVisibleDispatcherTasksInput = {
+  pstoPolicies?: ReadonlyMap<string, PstoLinePolicy>
   acceptedDispatcherWarningKeys: Set<string>
   dismissedRepeatedJointTaskKeys: Set<string>
   dispatcherReminderSettings: DispatcherReminderSettings
@@ -54,6 +56,7 @@ export type BuildVisibleDispatcherTasksInput = {
 }
 
 export function buildVisibleDispatcherTasks({
+  pstoPolicies,
   acceptedDispatcherWarningKeys,
   dismissedRepeatedJointTaskKeys,
   dispatcherReminderSettings,
@@ -74,6 +77,7 @@ export function buildVisibleDispatcherTasks({
   const earlyCoilDecisionSourceRowIds = preparedEarlyCoilIds ?? getEarlyCoilDecisionSourceRowIds(acceptedDispatcherWarningKeys)
   const repeatedJointTasks = includeRepeatedJointTasks
     ? [...buildRepeatedJointTasks(rows, welderStamps, welderStampSuspensions, {
+        pstoPolicies,
         dataListSettings,
         earlyCoilDecisionSourceRowIds,
         acceptedProgramControlKeys: acceptedDispatcherWarningKeys,

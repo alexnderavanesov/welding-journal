@@ -44,11 +44,14 @@ export type PstoLineAssignmentAction = 'assign' | 'remove' | 'cancel' | 'reactiv
 export type PstoLineAssignmentState = 'assigned' | 'cancelled' | 'unassigned' | 'mixed'
 
 export type PstoLineAssignmentSummary = PstoLineIdentity & {
+  programState?: PstoLineAssignmentState
+  exceptionCount?: number
   key: string
   rowCount: number
   assignedCount: number
   cancelledCount: number
   historyRowCount: number
+  removalHistoryRowCount?: number
   preControlCount: number
   repeatCycleCount: number
 }
@@ -60,7 +63,11 @@ export type PstoLineAssignmentPageRequest = {
   filter?: PstoLineAssignmentFilter
   page?: number
   pageSize?: number
+  filters?: Record<string, string>
 }
+
+export const PSTO_LINE_TABLE_FIELDS = ['projectTitle', 'subtitleCode', 'line', 'programState', 'rowCount', 'exceptionCount'] as const
+export const PSTO_PROGRAM_LABELS = { assigned: 'Назначена', cancelled: 'Отменена', unassigned: 'Не назначена', mixed: 'Не определено' } as const
 
 export type PstoLineAssignmentPageResult = {
   rows: PstoLineAssignmentSummary[]

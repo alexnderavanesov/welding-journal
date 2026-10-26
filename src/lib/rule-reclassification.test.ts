@@ -13,15 +13,15 @@ describe('agreed rule classification', () => {
     expect(stored.configurationIssue).toContain('СП-02:')
     expect(getLineProgramConfigurationIssue({ ...stored, configurationIssue: 'Проверить исходный документ' })).toBe('Проверить исходный документ')
   })
-  it('has eleven mandatory rules, two optional input guards and six reminders', () => {
+  it('has eleven mandatory rules, one optional input guards and six reminders', () => {
     expect(SYSTEM_RULE_CATALOG.map(rule => rule.code)).toEqual(Array.from({ length: 11 }, (_, index) => `СП-${String(index + 1).padStart(2, '0')}`))
-    expect(SAVE_CHECK_SETTING_ITEMS.map(item => getSaveCheckSettingCode(item.id))).toEqual(['ЗВ-01', 'ЗВ-02'])
+    expect(SAVE_CHECK_SETTING_ITEMS.map(item => getSaveCheckSettingCode(item.id))).toEqual(['ЗВ-01'])
     expect(DISPATCHER_SETTING_GROUPS.flatMap(group => group.items.map(item => getDispatcherSettingCode(item.id)))).toEqual(['ДЗ-01', 'ДЗ-02', 'ДЗ-03', 'ДЗ-04', 'ДЗ-05', 'ДЗ-06'])
   })
 
   it('does not let legacy toggles disable chronology, qualification or history protection', () => {
     const settings = normalizeSaveCheckSettings(Object.fromEntries(Object.keys(DEFAULT_SAVE_CHECK_SETTINGS).map(id => [id, false])))
-    expect(settings).toMatchObject({ officialNaksDate: true, officialSuspension: true, lnkResultDateAfterWeldDate: true, pstoResultDateAfterWeldDate: true, controlHistoryProtection: true, officialArchive: false, manualJointName: false })
+    expect(settings).toMatchObject({ officialNaksDate: true, officialSuspension: true, lnkResultDateAfterWeldDate: true, pstoResultDateAfterWeldDate: true, controlHistoryProtection: true, manualJointName: false })
     expect(isDispatcherSettingEnabled('percentage-missing', { ...DEFAULT_DISPATCHER_SETTINGS, 'percentage-missing': false })).toBe(true)
     expect(isDispatcherSettingEnabled('check-incomplete-stamps', { ...DEFAULT_DISPATCHER_SETTINGS, 'check-incomplete-stamps': false })).toBe(true)
   })

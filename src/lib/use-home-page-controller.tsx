@@ -213,7 +213,6 @@ import {
 import { withOfficialJoint } from '@/lib/report-control-state'
 import { getLnkRowRequestNames } from '@/lib/report-modal-rows'
 import {
-	getArchivedOfficialStampValuesForRecord,
 	getOfficialStampCompatibilitySaveBlockReason,
 	shouldValidateOfficialStampCompatibilityForSave,
 } from '@/lib/welder-stamp-compatibility'
@@ -4435,7 +4434,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       }).catch(() => { /* Snapshot errors already expose an explicit retry. */ })
     },
   })
-  const allowedArchivedOfficialStampsForEditing = getArchivedOfficialStampValuesForRecord(editing?.record, welderStamps)
   const activeRootCauseTarget = currentWorkflowRootCauseAction?.target
   const saveEditedWeld = (value: WeldInput) => {
     if (!editing) return
@@ -4457,7 +4455,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const reportWeldEditorProps = createReportWeldEditorProps({
     editing,
     suggestionRows: rows.length > 0 ? rows : undefined,
-    stampSelectOptions: (draft) => getWeldFormStampSelectOptions(draft, allowedArchivedOfficialStampsForEditing),
+    stampSelectOptions: (draft) => getWeldFormStampSelectOptions(draft),
     getExternalSaveBlockReason: (draft) => {
       const stampReason = shouldValidateOfficialStampCompatibilityForSave(draft, editing?.record)
         ? getOfficialStampCompatibilitySaveBlockReason(draft, welderStamps, {

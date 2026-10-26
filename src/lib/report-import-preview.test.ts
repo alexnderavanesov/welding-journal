@@ -19,6 +19,7 @@ import { FIELD_BY_KEY } from './weld-fields'
 import type { WelderStampRecord } from './welder-stamp-types'
 import { WELD_IMPORT_MAX_ROWS } from './weld-import-limits'
 import { getPstoLineIdentityKey } from './psto-line-assignment'
+import { buildWeldFormStampSelectOptions } from './welder-stamp-select-options'
 
 const REQUIRED_EXISTING_WELD_IDENTITY = {
   projectTitle: 'Проект',
@@ -96,7 +97,7 @@ describe('existing rows report import preview', () => {
       weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
     })
     expect(preview.validRecords).toEqual([])
-    expect(preview.errors[0]?.message).toContain('ЗВ-02')
+    expect(preview.errors[0]?.message).toContain('ЗВ-01')
     expect(preview.errors[0]?.message).toContain('СП-07')
     expect(preview.errors[0]?.message).toContain('По ВИК')
     expect(preview.errors[0]?.message).toContain('57 мм')
@@ -126,7 +127,7 @@ describe('existing rows report import preview', () => {
     })
     expect(preview.validRecords).toEqual([])
     expect(preview.errors[0]?.message).toContain('официального актуального')
-    expect(preview.errors[0]?.message).toContain('ЗВ-02')
+    expect(preview.errors[0]?.message).toContain('ЗВ-01')
     expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['hasRk', 'hasUzk', 'joint']))
   })
   it('reports removal of two mandatory repair methods together with an independent invalid joint', async () => {
@@ -140,7 +141,7 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords).toEqual([])
     expect(preview.errors[0]?.message).toContain('РК обязателен')
     expect(preview.errors[0]?.message).toContain('УЗК обязателен')
-    expect(preview.errors[0]?.message).toContain('ЗВ-02')
+    expect(preview.errors[0]?.message).toContain('ЗВ-01')
     expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['hasRk', 'hasUzk', 'joint']))
   })
   it('checks new T assignments in new-row import too', async () => {
@@ -183,7 +184,7 @@ describe('existing rows report import preview', () => {
     })
     expect(preview.validRecords).toEqual([])
     expect(preview.errors[0]?.message).toContain('РК не назначается на Т-стыки')
-    expect(preview.errors[0]?.message).toContain('ЗВ-02')
+    expect(preview.errors[0]?.message).toContain('ЗВ-01')
     expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['hasRk', 'joint']))
   })
 
@@ -219,7 +220,7 @@ describe('existing rows report import preview', () => {
     })
     expect(preview.validRecords).toEqual([])
     expect(preview.errors[0]?.message).toContain('нельзя снять назначение через «Пусто»')
-    expect(preview.errors[0]?.message).toContain('ЗВ-02')
+    expect(preview.errors[0]?.message).toContain('ЗВ-01')
     expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['hasRk', 'joint']))
   })
   it('reports assignment-history protection together with independent import field errors', async () => {
@@ -285,11 +286,11 @@ describe('existing rows report import preview', () => {
         line: 'Исходная линия',
         pstoRequest: 'Заявка ПСТО-001',
       } as WeldRow],
-      fullyAssignedPstoLineKeys: [getPstoLineIdentityKey({
+      pstoLinePolicies: [{ key: getPstoLineIdentityKey({
         projectTitle: 'Проект',
         subtitleCode: 'Шифр',
         line: 'Целевая линия',
-      })],
+      }), state: 'assigned', exceptions: [] }],
       weldFormStampSelectOptions: {},
       welderStamps: [],
       welderStampSuspensions: [],
@@ -297,6 +298,37 @@ describe('existing rows report import preview', () => {
 
     expect(preview.errors).toEqual([])
     expect(preview.validRecords).toEqual([{ id: 7, line: 'Целевая линия' }])
+  })
+
+  it('does not infer the target line program from its only visible exception', async () => {
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Линия'], [[7, 'F1', 'Целевая линия']]),
+      rows: [{ id: 7, joint: 'F1', line: 'Исходная линия', vikRequest: 'ВИК-1' },
+        { id: 8, joint: 'F2', line: 'Целевая линия', pstoRequired: 'да', pstoExceptionBasis: 'Только F2' }] as WeldRow[],
+      pstoLinePolicies: [],
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toEqual([{ id: 7, line: 'Целевая линия' }])
+  })
+
+  it.each([true, false])('checks the target chain exception separately from the line program (%s)', async required => {
+    const preview = await buildReportReplaceDataPreview({
+      activeReport: 'weldingJournal',
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Линия'], [[7, 'F1', 'Целевая линия']]),
+      rows: [{ id: 7, joint: 'F1', line: 'Исходная линия', vikRequest: 'ВИК-1' }] as WeldRow[],
+      pstoLinePolicies: [{ key: getPstoLineIdentityKey({ ...REQUIRED_EXISTING_WELD_IDENTITY, line: 'Целевая линия' }),
+        state: required ? 'unassigned' : 'assigned', exceptions: [{ rootJoint: 'f1', required }] }],
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    if (required) {
+      expect(preview.validRecords).toEqual([])
+      expect(preview.errors[0]?.message).toContain('с сохранением всех этапов контроля')
+    } else {
+      expect(preview.errors).toEqual([])
+      expect(preview.validRecords).toEqual([{ id: 7, line: 'Целевая линия' }])
+    }
   })
 
   it('directs a chain line move to the base-joint card instead of replacing rows by import', async () => {
@@ -349,11 +381,11 @@ describe('existing rows report import preview', () => {
         vikResult: 'годен',
         vikConclusion: 'Заключение ВИК-001',
       } as WeldRow],
-      fullyAssignedPstoLineKeys: [getPstoLineIdentityKey({
+      pstoLinePolicies: [{ key: getPstoLineIdentityKey({
         projectTitle: 'Проект',
         subtitleCode: 'Шифр',
         line: 'Целевая линия',
-      })],
+      }), state: 'assigned', exceptions: [] }],
       weldFormStampSelectOptions: {},
       welderStamps: [],
       welderStampSuspensions: [],
@@ -391,11 +423,11 @@ describe('existing rows report import preview', () => {
           conclusionDate: '2026-08-01',
         }],
       } as WeldRow],
-      fullyAssignedPstoLineKeys: [getPstoLineIdentityKey({
+      pstoLinePolicies: [{ key: getPstoLineIdentityKey({
         projectTitle: 'Проект',
         subtitleCode: 'Шифр',
         line: 'Целевая линия',
-      })],
+      }), state: 'assigned', exceptions: [] }],
       weldFormStampSelectOptions: {},
       welderStamps: [],
       welderStampSuspensions: [],
@@ -1232,7 +1264,7 @@ describe('existing rows report import preview', () => {
 
     expect(preview.validRecords).toEqual([])
     expect(preview.errors).toHaveLength(1)
-    expect(preview.errors[0]?.message).toContain('ЗВ-02')
+    expect(preview.errors[0]?.message).toContain('ЗВ-01')
     expect(preview.errors[0]?.message).toContain('кириллические символы')
     expect(preview.errors[0]?.message).toContain('Исправьте номер в карточке стыка')
     expect(preview.errors[0]?.fieldKeys).toEqual(['joint'])
@@ -1416,12 +1448,30 @@ describe('existing rows report import preview', () => {
 
     expect(preview.validRecords).toEqual([])
     expect(preview.errors).toHaveLength(1)
-    expect(preview.errors[0]?.message).toContain('ЗВ-02')
+    expect(preview.errors[0]?.message).toContain('ЗВ-01')
     expect(preview.errors[0]?.message).toContain('Поле "Тип соединения"')
     expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['joint', 'connectionType']))
   })
 
-  it('blocks mass fill of a joint that still uses an archived official stamp', async () => {
+  it.each([false, true])('checks archive against the merged row and reports overlapping field errors: %s', invalidConnection => {
+    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Тип соединения'], [[7, 'F1', invalidConnection ? 'НЕВЕРНО' : 'С17']])
+    return buildReportMassFillPreview({
+      activeReport: 'weldingJournal', file,
+      rows: [{ id: 7, joint: 'F1', stamp1K: 'ABC1', weldDate: '2026-08-01' } as WeldRow],
+      weldFormStampSelectOptions: { stamp1K: [{ value: 'ABC1' }] },
+      welderStamps: [{ ...buildWelderStampRecord('ABC1', true), archivedAt: '2026-08-01' }], welderStampSuspensions: [],
+    }).then(preview => {
+      expect(preview.errors[0]?.message).toContain('архиве')
+      expect(preview.errors[0]?.fieldKeys).toContain('stamp1K')
+      if (invalidConnection) {
+        expect(preview.errors[0]?.message).toContain('Тип соединения')
+        expect(preview.errors[0]?.fieldKeys).toContain('connectionType')
+      }
+      expect(preview.validRecords).toEqual([])
+    })
+  })
+
+  it('blocks mass fill of a dated joint using an archived official stamp without an archive date', async () => {
     const archivedStamp = buildWelderStampRecord('ABC1', true)
     const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'], [[7, 'F1', '09Г2С']])
     const preview = await buildReportMassFillPreview({
@@ -1430,10 +1480,10 @@ describe('existing rows report import preview', () => {
       rows: [{
         id: 7,
         joint: 'F1',
-        stamp1K: 'ABC1',
+        stamp1K: 'ABC1', weldDate: '2026-07-01',
         material1: null,
       } as WeldRow],
-      weldFormStampSelectOptions: { stamp1K: [] },
+      weldFormStampSelectOptions: buildWeldFormStampSelectOptions([archivedStamp]),
       welderStamps: [archivedStamp],
       welderStampSuspensions: [],
     })
@@ -1471,7 +1521,7 @@ describe('existing rows report import preview', () => {
         weldDate: '2026-07-31',
         material1: null,
       } as WeldRow],
-      weldFormStampSelectOptions: { stamp1K: [] },
+      weldFormStampSelectOptions: buildWeldFormStampSelectOptions([archivedStamp]),
       welderStamps: [archivedStamp],
       welderStampSuspensions: [],
     })
@@ -1508,7 +1558,7 @@ describe('existing rows report import preview', () => {
         weldDate: '2026-08-02',
         material1: null,
       } as WeldRow],
-      weldFormStampSelectOptions: { stamp1K: [] },
+      weldFormStampSelectOptions: buildWeldFormStampSelectOptions([archivedStamp]),
       welderStamps: [archivedStamp],
       welderStampSuspensions: [],
     })
@@ -1518,17 +1568,7 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords).toEqual([])
   })
 
-  it('allows mass fill with an archived official stamp when the archive check is disabled', async () => {
-    saveSaveCheckSettings({
-      ...DEFAULT_SAVE_CHECK_SETTINGS,
-      officialArchive: false,
-      officialWeldingMethod: false,
-      officialMaterialGroup: false,
-      officialNaksDate: false,
-      officialDiameter: false,
-      officialThickness: false,
-      officialDls: false,
-    })
+  it('allows mass fill with an archived official stamp when the weld date is empty', async () => {
     const archivedStamp = buildWelderStampRecord('ABC1', true)
     const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'], [[7, 'F1', '09Г2С']])
     const preview = await buildReportMassFillPreview({
@@ -1540,7 +1580,7 @@ describe('existing rows report import preview', () => {
         stamp1K: 'ABC1',
         material1: null,
       } as WeldRow],
-      weldFormStampSelectOptions: { stamp1K: [] },
+      weldFormStampSelectOptions: buildWeldFormStampSelectOptions([archivedStamp]),
       welderStamps: [archivedStamp],
       welderStampSuspensions: [],
     })

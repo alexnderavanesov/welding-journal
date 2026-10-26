@@ -579,7 +579,6 @@ function makeRow(overrides: Partial<WeldRow> = {}): WeldRow {
 function makeSaveCheckSettings() {
   return {
     officialRegistry: true,
-    officialArchive: true,
     officialNaksDate: true,
     officialSuspension: true,
     officialWeldingMethod: true,

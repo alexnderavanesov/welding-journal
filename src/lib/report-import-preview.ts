@@ -16,7 +16,6 @@ import { readFirstSheetRows } from '@/lib/weld-import-sheet-reader'
 import { withOfficialJoint } from '@/lib/report-control-state'
 import { getLnkResultRuleIssues } from '@/lib/lnk-result-policy'
 import { collectImportedWeldRecordPreparationErrors } from '@/lib/weld-journal-mutation-updates'
-import { getArchivedOfficialStampValuesForRecord } from '@/lib/welder-stamp-compatibility'
 import {
   MASS_FILL_ROW_ID_HEADER,
   REPLACE_DELETE_ROW_HEADER,
@@ -55,7 +54,7 @@ import {
   normalizePstoLineIdentity,
   hasPrimaryLnkHistoryBeforePstoAssignment,
 } from '@/lib/psto-line-assignment'
-import { isControlEnabledValue } from '@/lib/control-availability-values'
+import { getPstoChainRoot, type ImportPstoLinePolicy } from './psto-chain-policy'
 
 export type ReportImportPreviewError = {
   rowNumber: number
@@ -95,7 +94,7 @@ type BuildReportImportPreviewOptions = {
 
 type BuildReportMassFillPreviewOptions = BuildReportImportPreviewOptions & {
   rows: WeldRow[]
-  fullyAssignedPstoLineKeys?: readonly string[]
+  pstoLinePolicies?: readonly ImportPstoLinePolicy[]
 }
 
 export async function buildReportImportPreview({
@@ -139,7 +138,7 @@ export async function buildReportMassFillPreview({
   activeReport,
   file,
   rows,
-  fullyAssignedPstoLineKeys = [],
+  pstoLinePolicies = [],
   weldFormStampSelectOptions,
   welderStamps,
   welderStampSuspensions,
@@ -149,7 +148,7 @@ export async function buildReportMassFillPreview({
     activeReport,
     file,
     rows,
-    fullyAssignedPstoLineKeys,
+    pstoLinePolicies,
     weldFormStampSelectOptions,
     welderStamps,
     welderStampSuspensions,
@@ -160,7 +159,7 @@ export async function buildReportReplaceDataPreview({
   activeReport,
   file,
   rows,
-  fullyAssignedPstoLineKeys = [],
+  pstoLinePolicies = [],
   weldFormStampSelectOptions,
   welderStamps,
   welderStampSuspensions,
@@ -170,7 +169,7 @@ export async function buildReportReplaceDataPreview({
     activeReport,
     file,
     rows,
-    fullyAssignedPstoLineKeys,
+    pstoLinePolicies,
     weldFormStampSelectOptions,
     welderStamps,
     welderStampSuspensions,
@@ -182,7 +181,7 @@ async function buildExistingRowsImportPreview({
   activeReport,
   file,
   rows,
-  fullyAssignedPstoLineKeys = [],
+  pstoLinePolicies = [],
   weldFormStampSelectOptions,
   welderStamps,
   welderStampSuspensions,
@@ -207,7 +206,7 @@ async function buildExistingRowsImportPreview({
     if (lineRows) lineRows.push(row)
     else rowsByLineKey.set(key, [row])
   }
-  const fullyAssignedPstoLineKeySet = new Set(fullyAssignedPstoLineKeys)
+  const pstoPoliciesByLine = new Map(pstoLinePolicies.map(policy => [policy.key, policy]))
   const records: ReportImportRecord[] = []
   const validRecords: ReportImportRecord[] = []
   const errors: ReportImportPreviewError[] = []
@@ -321,7 +320,7 @@ async function buildExistingRowsImportPreview({
     })
     if (formBlockReason) {
       validationMessages.push(
-        formBlockReason.includes('ЗВ-02')
+        formBlockReason.includes('ЗВ-01')
           ? `${formBlockReason} Исправьте номер в карточке стыка: серое поле “Стык” не изменяется импортом.`
           : formBlockReason,
       )
@@ -336,7 +335,7 @@ async function buildExistingRowsImportPreview({
       candidate,
       existingRow,
       rowsByLineKey,
-      fullyAssignedPstoLineKeySet,
+      pstoPoliciesByLine,
       systemIndexSettings,
     )
     if (pstoLineMoveReason) {
@@ -359,7 +358,6 @@ async function buildExistingRowsImportPreview({
       records: [candidateForPrepare],
       skipManualJointNameValidation: true,
       skipLnkResultRuleValidation: true,
-      allowedArchivedOfficialStamps: getArchivedOfficialStampValuesForRecord(existingRow, welderStamps),
       weldFormStampSelectOptions,
       welderStamps,
       welderStampSuspensions,
@@ -426,7 +424,7 @@ function getImportPstoLineMoveBlockReason(
   candidate: ReportImportRecord,
   existingRow: WeldRow,
   rowsByLineKey: ReadonlyMap<string, WeldRow[]>,
-  fullyAssignedPstoLineKeys: ReadonlySet<string>,
+  pstoLinePolicies: ReadonlyMap<string, ImportPstoLinePolicy>,
   systemIndexSettings: SystemIndexSettings,
 ) {
   const sourceKey = getPstoLineIdentityKey(existingRow)
@@ -437,7 +435,7 @@ function getImportPstoLineMoveBlockReason(
   const parsedJoint = parseJointChainName(String(existingRow.joint ?? ''), systemIndexSettings)
   const rootJoint = parsedJoint.base || String(existingRow.joint ?? '').trim()
   const chainRows = getJointChainRows(rowsByLineKey.get(sourceKey) ?? [], existingRow, systemIndexSettings)
-  const belongsToChain = parsedJoint.segments.length > 0 || chainRows.length > 1
+  const belongsToChain = Boolean(existingRow.pstoExceptionBasis) || parsedJoint.segments.length > 0 || chainRows.length > 1
   if (belongsToChain) {
     const sourceIdentity = normalizePstoLineIdentity(existingRow)
     const projectOrSubtitleChanged = (
@@ -452,11 +450,10 @@ function getImportPstoLineMoveBlockReason(
       'в сварочном журнале: система перенесет все R/W/Y-стыки одной операцией.'
   }
 
-  const targetRows = rowsByLineKey.get(targetKey) ?? []
-  const targetAssignedCount = targetRows.filter((row) => isControlEnabledValue(row.pstoRequired)).length
-  const targetAssigned = fullyAssignedPstoLineKeys.has(targetKey) || (
-    targetRows.length > 0 && targetAssignedCount === targetRows.length
-  )
+  const policy = pstoLinePolicies.get(targetKey)
+  if (policy?.state === 'mixed') return 'Целевая линия содержит смешанное назначение ПСТО. Сначала уточните её программу.'
+  const exception = policy?.exceptions.find(item => item.rootJoint === getPstoChainRoot(candidate.joint, systemIndexSettings))
+  const targetAssigned = exception?.required ?? policy?.state === 'assigned'
   if (targetAssigned) {
     return hasPrimaryLnkHistoryBeforePstoAssignment(existingRow)
       ? 'Стык переносится на линию с ПСТО, но у него уже есть основной комплект ВИК/РК/УЗК/ПВК. Выполните перенос через карточку стыка с сохранением всех этапов контроля. Основной НК не заменяет НК до ТО. Удаление ошибочных документов выполняется отдельно.'

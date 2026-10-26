@@ -54,7 +54,7 @@ it('invalidates saved totals during a data refresh, retries errors explicitly an
   vi.mocked(summarizeJournalGridSelection).mockRejectedValueOnce(new Error('changed'))
   view.rerender({ identity: 'after', ready: true })
   await act(async () => vi.advanceTimersByTimeAsync(150))
-  expect(view.result.current.error).toBe('changed')
+  expect(view.result.current.error).toBe('Не удалось загрузить данные. Повторите загрузку таблицы.')
   await act(async () => vi.advanceTimersByTimeAsync(1000))
   expect(summarizeJournalGridSelection).toHaveBeenCalledTimes(2)
   act(() => view.result.current.retry())
@@ -66,6 +66,19 @@ it('invalidates saved totals during a data refresh, retries errors explicitly an
 
 const area = (end: number): JournalSummaryRange => ({ request: { columnFilters: {}, groupBy: [], revision: 1, anchor: 'line',
   parts: [{ route: [], start: 0, end, columns: ['id'] }] } })
+it('requests one shared refresh for an expired area instead of retrying old positions', async () => {
+  const changed = new Error('Данные журнала изменились. Обновите таблицу и повторите действие.')
+  const recover = vi.fn(() => true)
+  vi.mocked(summarizeJournalGridArea).mockRejectedValueOnce(changed)
+  const range = area(3), ids = new Set([99])
+  const view = renderHook(() => useJournalSelectionSummary(ids, 'current', true, range, recover))
+  await act(async () => vi.advanceTimersByTimeAsync(1000))
+  expect(recover).toHaveBeenCalledExactlyOnceWith(changed)
+  expect(view.result.current.error).toBeUndefined()
+  expect(summarizeJournalGridArea).toHaveBeenCalledOnce()
+  expect(summarizeJournalGridSelection).not.toHaveBeenCalled()
+  view.unmount()
+})
 it('prefers the area automatically, coalesces dragging, ignores checkbox changes and returns to checkbox totals', async () => {
   const ids = new Set([99])
   const view = renderHook(({ ids, range }) => useJournalSelectionSummary(ids, 'current', true, range), {

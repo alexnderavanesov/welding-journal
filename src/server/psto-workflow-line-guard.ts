@@ -1,4 +1,8 @@
 import { sql } from 'drizzle-orm'
+import { overlayPstoProgramPolicies } from './psto-chain-policy'
+import { loadProgramSystemIndexSettings } from './line-program'
+import { getPstoChainDecision, type PstoLinePolicy } from '@/lib/psto-chain-policy'
+import { DEFAULT_SYSTEM_INDEX_SETTINGS, type SystemIndexSettings } from '@/lib/system-index-settings'
 
 import { weldJoints } from '@/db/schema'
 import { isControlEnabledValue } from '@/lib/control-availability-values'
@@ -57,7 +61,9 @@ export async function assertPstoWorkflowLinesFullyAssigned(
         and lower(btrim(coalesce(${weldJoints.line}, ''))) = target.line
     )`)
 
-  const error = getPstoWorkflowLineAssignmentError(selectedRows, lineRows, options)
+  const policies = await overlayPstoProgramPolicies(tx, identities, new Map())
+  const settings = policies.size ? await loadProgramSystemIndexSettings(tx) : DEFAULT_SYSTEM_INDEX_SETTINGS
+  const error = getPstoWorkflowLineAssignmentError(selectedRows, lineRows, options, policies, settings)
   if (error) throw new Error(error)
 }
 
@@ -65,6 +71,8 @@ export function getPstoWorkflowLineAssignmentError(
   selectedRows: readonly PstoWorkflowLineRow[],
   lineRows: readonly PstoWorkflowLineRow[],
   options: { allowPerformedHistoryRows?: boolean } = {},
+  policies: ReadonlyMap<string, PstoLinePolicy> = new Map(),
+  settings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
 ) {
   const stateByLine = new Map<string, { rowCount: number; assignedCount: number; cancelledCount: number }>()
   for (const row of lineRows) {
@@ -88,6 +96,12 @@ export function getPstoWorkflowLineAssignmentError(
       options.allowPerformedHistoryRows &&
       hasPstoExecutionHistory(row as WeldInput, []),
     )
+    const policy = policies.get(getPstoLineIdentityKey(identity))
+    if (policy?.programState) {
+      const required = getPstoChainDecision(policy, row.joint, settings)?.required ?? policy.programState === 'assigned'
+      if (allowedPerformedHistoryRow || (required && isControlEnabledValue(row.pstoRequired))) continue
+      return `Для цепочки стыка ${formatJoint(row)} ПСТО не назначено. Проверьте программу ПСТО и исключения линии.`
+    }
     if (!state || state.rowCount === 0 || (state.assignedCount !== state.rowCount && !allowedPerformedHistoryRow)) {
       return `Линия ${formatLineIdentity(identity)} имеет частичное или отсутствующее назначение ПСТО. Сначала выровняйте ее в «Программе ПСТО».`
     }

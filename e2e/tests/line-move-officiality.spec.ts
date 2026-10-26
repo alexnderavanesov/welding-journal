@@ -2,14 +2,14 @@ import { revealLnkColumn } from './lnk-grid-helpers'
 import { journalRow, editJournalJoint } from '../journal-grid'
 import { expect, test, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
-import { cleanupLineProgramProjects } from '../line-program-fixtures'
+import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
 
 const project = 'E2E line move officiality', sourceLine = 'MOVE-UNOFFICIAL', targetLine = 'MOVE-NO-PSTO', joint = 'F781', stamp = 'E2MO'
 let dataListSnapshot: { value: string; updated_at: Date } | undefined
 test.afterEach(async () => {
   await cleanupLineProgramProjects([project])
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query('delete from welder_stamps where naks_stamp=$1', [stamp])
     await db.query("delete from app_settings where key='data-list'")
     if (dataListSnapshot) await db.query("insert into app_settings(key,value,updated_at) values ('data-list',$1,$2)", [dataListSnapshot.value, dataListSnapshot.updated_at])
@@ -17,7 +17,7 @@ test.afterEach(async () => {
 })
 
 async function seed() {
-  return withE2eDatabase(async db => {
+  return withLineProgramFixture(async db => {
     dataListSnapshot = (await db.query("select value,updated_at from app_settings where key='data-list'")).rows[0]
     await db.query(`insert into app_settings(key,value,updated_at) values ('data-list',$1,now())
       on conflict(key) do update set value=excluded.value,updated_at=now()`, [JSON.stringify({ weldingTypes: ['РД'], connectionTypes: ['С17'], materialGroups: ['M01'] })])
@@ -95,7 +95,7 @@ test('старый клиент не может перенести этап; с�
 test('сохранённый брак до ТО после смены линии виден и предлагает продолжение, а не скрытый годный стык', async ({ page }) => {
   const id = await seed(), errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query('update weld_joints set officiality=null where id=$1', [id])
     await db.query("update pre_heat_treatment_controls set result='ремонт' where weld_joint_id=$1", [id])
   })
@@ -116,7 +116,7 @@ test('сохранённый брак до ТО после смены линии
 
 test('возврат на линию ПСТО сохраняет ранее разделённые этапы и не переносит основной РК поверх истории', async ({ page }) => {
   const id = await seed()
-  await withE2eDatabase(async db => {
+  await withLineProgramFixture(async db => {
     await db.query(`update weld_joints set officiality=null,psto_required=null,has_rk='да',rk_request='BACK-RK',
       rk_request_date='2026-09-02',rk_result='ожидает НК' where id=$1`, [id])
     await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,psto_required,has_vik)

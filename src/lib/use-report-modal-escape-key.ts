@@ -242,6 +242,7 @@ export function shouldDeferModalEscape() {
     document.querySelector('[data-specialist-listbox]') ||
     document.querySelector('[data-select-listbox]') ||
     document.querySelector('[data-dispatcher-action-menu="true"]') ||
+    document.querySelector('.read-only-grid-popup') ||
     isContextActionMenuOpen(),
   )
 }

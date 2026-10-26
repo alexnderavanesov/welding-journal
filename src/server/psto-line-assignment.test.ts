@@ -1,9 +1,9 @@
+import { persistPstoLineAssignmentRows } from './psto-assignment-transition'
 import { describe, expect, it } from 'vitest'
 
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   normalizePstoLineAssignmentPayload,
-  persistPstoLineAssignmentRows,
 } from '@/server/psto-line-assignment'
 
 describe('PSTO line assignment payload', () => {

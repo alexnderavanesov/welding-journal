@@ -17,7 +17,7 @@ describe('rule settings navigation', () => {
   })
   it('resolves old rule links and new optional-rule/registry anchors to the proper visible panel', () => {
     expect(getRuleSettingsTab(getRuleSettingsTarget('#system-rule-sp-05'))).toBe('system')
-    expect(getRuleSettingsTab(getRuleSettingsTarget('#save-check-setting-officialArchive'))).toBe('input')
+    expect(getRuleSettingsTab(getRuleSettingsTarget('#save-check-setting-manualJointName'))).toBe('input')
     expect(getRuleSettingsTab(getRuleSettingsTarget('#dispatcher-setting-welder-stamp-expiry'))).toBe('tasks')
     expect(getRuleSettingsTab(getRuleSettingsTarget('#rules-accepted-exceptions'))).toBe('exceptions')
     expect(getRuleSettingsTab(getRuleSettingsTarget('#rules-dispatcher-background'))).toBe('parameters')

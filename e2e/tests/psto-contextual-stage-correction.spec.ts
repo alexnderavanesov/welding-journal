@@ -1,3 +1,4 @@
+import { filterPstoExceptions } from './psto-exception-helpers'
 import { documentGridRow } from '../document-grid'
 import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Locator, type Page } from '@playwright/test'
@@ -179,7 +180,7 @@ async function openAssignment(page: Page) {
   await page.goto('/psto')
   await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()
   const program = dialog(page, 'Программа ПСТО')
-  await program.getByLabel('Поиск линий', { exact: true }).fill(SOURCE)
+  await filterPstoExceptions(page, 'Линии программы ПСТО', 'line', SOURCE)
   await expect(program.getByText(SOURCE, { exact: true })).toBeVisible()
   await program.getByRole('button', { name: 'Назначить', exact: true }).click()
   const assignment = dialog(page, 'Назначение ПСТО')
@@ -204,7 +205,7 @@ async function openCancellation(page: Page) {
   await page.goto('/psto')
   await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()
   const program = dialog(page, 'Программа ПСТО')
-  await program.getByLabel('Поиск линий', { exact: true }).fill(SOURCE)
+  await filterPstoExceptions(page, 'Линии программы ПСТО', 'line', SOURCE)
   await expect(program.getByText(SOURCE, { exact: true })).toBeVisible()
   await program.getByRole('button', { name: 'Отменить ПСТО', exact: true }).click()
   const cancellation = dialog(page, 'Отмена ПСТО')
@@ -249,6 +250,61 @@ test('отмена ПСТО: явный перенос одного стыка �
   await expectSharedDocument(page, fixture, 'primary')
 })
 
+test('исключение ПСТО: включение, снятие и повторное включение сохраняют этапы; явный перенос работает в обе стороны', async ({ page }) => {
+  const fixture = await seed('primary')
+  await page.goto('/psto')
+  await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()
+  const program = dialog(page, 'Программа ПСТО')
+  await program.getByRole('button', { name: 'Исключения', exact: true }).click()
+  const add = async () => {
+    await program.getByRole('button', { name: 'Добавить исключение' }).click()
+    await filterPstoExceptions(page, 'Выбор цепочки для исключения ПСТО', 'line', SOURCE)
+    const candidate = program.locator('.ag-row').filter({ has: page.locator('[col-id="joint"]', { hasText: /^F881$/ }) })
+    await candidate.getByRole('button', { name: 'Выбрать цепочку' }).click()
+    await program.getByLabel('Основание исключения').fill('Техническое решение: отдельная термообработка')
+    const details = program.locator('summary').filter({ hasText: 'Этапы записанного НК' })
+    if (await details.count()) await details.click()
+  }
+  const save = async (remove = false) => {
+    await program.getByRole('button', { name: remove ? 'Убрать исключение' : 'Сохранить исключение', exact: true }).click()
+    await expect(program.getByRole('button', { name: 'Добавить исключение' })).toBeVisible()
+  }
+  const remove = async () => {
+    await filterPstoExceptions(page, 'Исключения ПСТО', 'line', SOURCE)
+    await program.getByRole('button', { name: 'Убрать исключение', exact: true }).click()
+    await expect(program.getByText('После снятия исключения', { exact: true })).toBeVisible()
+    const details = program.locator('summary').filter({ hasText: 'Этапы записанного НК' })
+    if (await details.count()) await details.click()
+  }
+  await add()
+  await expect(choices(program, 'F881').getByRole('radio', { name: 'Оставить основной НК', exact: true })).toBeChecked()
+  await choices(program, 'F881').getByRole('radio', { name: 'Весь основной НК → до ТО', exact: true }).check()
+  await save()
+  await expectPackage(fixture.moved.id, 'beforeHeatTreatment')
+  await expectSharedDocument(page, fixture, 'beforeHeatTreatment')
+
+  await page.goto('/psto')
+  await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()
+  await program.getByRole('button', { name: 'Исключения', exact: true }).click()
+
+  await remove()
+  await expect(choices(program, 'F881').getByRole('radio', { name: 'Оставить НК до ТО', exact: true })).toBeChecked()
+  await save(true)
+  await expectPackage(fixture.moved.id, 'beforeHeatTreatment')
+  await add()
+  await save()
+  await expectPackage(fixture.moved.id, 'beforeHeatTreatment')
+  await remove()
+  await choices(program, 'F881').getByRole('radio', { name: 'Весь НК до ТО → основной', exact: true }).check()
+  await save(true)
+  await expectPackage(fixture.moved.id, 'primary')
+  await expectPackage(fixture.kept.id, 'primary')
+  expect((await snapshot(fixture.kept.id)).row.psto_required).toBeNull()
+  expect((await snapshot(fixture.moved.id)).row.psto_exception_basis).toBeNull()
+  const shared = await withE2eDatabase(async db => (await db.query('select row_count,specialists from generated_documents where id=$1', [fixture.sourceDocumentId])).rows[0])
+  expect(shared).toEqual({ row_count: 2, specialists: historicalSpecialists })
+})
+
 test('возобновление после отмены: явный перенос одного стыка сохраняет специалистов, сосед с заявкой ПСТО остаётся KEEP', async ({ page }) => {
   const fixture = await seed('primary')
   const assignment = await openAssignment(page)
@@ -270,7 +326,7 @@ test('возобновление после отмены: явный перен�
   await page.goto('/psto')
   await page.locator('header').getByRole('button', { name: 'Программа ПСТО', exact: true }).click()
   const program = dialog(page, 'Программа ПСТО')
-  await program.getByLabel('Поиск линий', { exact: true }).fill(SOURCE)
+  await filterPstoExceptions(page, 'Линии программы ПСТО', 'line', SOURCE)
   await expect(program.getByText(SOURCE, { exact: true })).toBeVisible()
   await program.getByRole('button', { name: 'Отменить ПСТО', exact: true }).click()
   const cancellation = dialog(page, 'Отмена ПСТО')
@@ -923,7 +979,7 @@ test('хронология блокирует исправление этапа 
     await expect(group.getByText(/Перенос недоступен:/)).toBeVisible()
     await expect(group).toContainText(/дат|раньше|позже|ВИК/i)
   }
-  await assignment.getByRole('button', { name: 'К линиям', exact: true }).click()
+  await assignment.getByRole('button', { name: 'Назад', exact: true }).click()
   expect(await Promise.all([snapshot(fixture.moved.id), snapshot(fixture.kept.id)])).toEqual(before)
 })
 

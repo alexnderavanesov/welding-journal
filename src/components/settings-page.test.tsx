@@ -108,7 +108,7 @@ describe('settings system rule catalog', () => {
     expect(mocks.settingsPassword).toHaveBeenCalledTimes(3)
   })
 
-  it('opens eleven mandatory rules and eight optional guards/reminders without data requests', async () => {
+  it('opens eleven mandatory rules and seven optional guards/reminders without data requests', async () => {
     const client = mount()
     const rules = screen.getAllByRole('article')
     expect(rules).toHaveLength(11)
@@ -119,7 +119,7 @@ describe('settings system rule catalog', () => {
     expect(document.querySelectorAll('[id^="save-check-setting-"] input[type="checkbox"]')).toHaveLength(0)
     fireEvent.click(screen.getByRole('tab', { name: 'Защиты ввода' }))
     expect(screen.queryByRole('article')).not.toBeInTheDocument()
-    expect(within(screen.getByRole('tabpanel')).getAllByRole('checkbox')).toHaveLength(2)
+    expect(within(screen.getByRole('tabpanel')).getAllByRole('checkbox')).toHaveLength(1)
     fireEvent.click(screen.getByRole('tab', { name: 'Задачи диспетчера' }))
     expect(document.querySelectorAll('[id^="dispatcher-setting-"] input[type="checkbox"]')).toHaveLength(6)
     await act(async () => {
@@ -179,13 +179,13 @@ describe('settings system rule catalog', () => {
   it('navigates reciprocal ZV/SP/DZ links, revealing their explanations without changing settings', () => {
     mount()
     fireEvent.click(screen.getByRole('tab', { name: 'Защиты ввода' }))
-    fireEvent.click(within(screen.getByRole('tabpanel')).getByRole('button', { name: 'СП-02 · Допуск сварщиков' }))
+    fireEvent.click(within(screen.getByRole('tabpanel')).getByRole('button', { name: 'СП-09 · Целостность и продолжение цепочек' }))
     expect(screen.getByRole('tab', { name: 'Системные правила' })).toHaveAttribute('aria-selected', 'true')
-    const qualification = document.getElementById('system-rule-welder-qualification')!
-    expect(within(qualification).getByText(/Архив — организационный признак/)).toBeVisible()
-    fireEvent.click(within(qualification).getByRole('button', { name: 'ДЗ-04 · Срок действия НАКС' }))
+    const chains = document.getElementById('system-rule-joint-chains')!
+    expect(within(chains).getByText(/Свободный формат обычного имени/)).toBeVisible()
+    fireEvent.click(within(chains).getByRole('button', { name: 'ДЗ-03 · Проверить дубли стыков' }))
     expect(screen.getByRole('tab', { name: 'Задачи диспетчера' })).toHaveAttribute('aria-selected', 'true')
-    expect(document.getElementById('dispatcher-setting-help-welder-stamp-expiry')).toBeVisible()
+    expect(document.getElementById('dispatcher-setting-help-chain-duplicate')).toBeVisible()
     expect(mocks.settingsPassword).not.toHaveBeenCalled()
     expect(mocks.exceptions).not.toHaveBeenCalled()
   })

@@ -26,6 +26,7 @@ export const SYSTEM_FIELD_KEYS = new Set([
   'rkExposureScheme',
   'pstoRequired',
   'pstoControlBasis',
+  'pstoExceptionBasis',
   'pstoCancellationDate',
   'preHeatTreatmentLnkExempt',
   'preHeatTreatmentLnkEnabled',

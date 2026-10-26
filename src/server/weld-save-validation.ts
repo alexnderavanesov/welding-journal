@@ -95,6 +95,8 @@ import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { getLayeredControlSaveError } from '@/lib/layered-control-rules'
 import { buildProgramRepairRequirements, getProgramRepairAssignmentIssues } from '@/lib/line-program-repair-requirements'
 import { loadProgramRuleContext } from './line-program-rule-context'
+import { overlayPstoProgramPolicies } from './psto-chain-policy'
+import { applyPstoChainPolicy, getPstoProgramState, getPstoChainDecision, getPstoChainRoot, type PstoLinePolicy } from '@/lib/psto-chain-policy'
 
 type Db = ReturnType<typeof requireDb>
 type ValidationDb = Pick<Db, 'execute' | 'select'>
@@ -117,14 +119,7 @@ export type ServerWeldValidationContext = {
   pstoLineAssignments: ReadonlyMap<string, PstoLineAssignmentState>
 }
 
-export type PstoLineAssignmentState = {
-  rowCount: number
-  assignedCount: number
-  cancelledCount?: number
-  cancellationDate?: string
-  cancellationBasis?: string
-  basis?: string
-}
+export type PstoLineAssignmentState = PstoLinePolicy & { basis?: string }
 
 export async function loadServerWeldValidationContext(
   db: ValidationDb,
@@ -224,7 +219,7 @@ export async function loadServerWeldValidationContext(
       suspendedFrom: row.suspendedFrom ?? '',
       suspendedTo: row.suspendedTo ?? '',
     })),
-    pstoLineAssignments: new Map(pstoLineRows.map((row) => [
+    pstoLineAssignments: await overlayPstoProgramPolicies(db, lineScopeRows, new Map(pstoLineRows.map((row) => [
       getPstoLineIdentityKey(row),
       {
         rowCount: Number(row.rowCount) || 0,
@@ -233,7 +228,7 @@ export async function loadServerWeldValidationContext(
         cancellationDate: String(row.cancellationDate ?? '').trim(),
         cancellationBasis: String(row.cancellationBasis ?? '').trim(),
       },
-    ])),
+    ]))),
   }
 }
 
@@ -317,12 +312,11 @@ function applyPstoLineAssignments({
     const previousKey = previous ? getPstoLineIdentityKey(previous) : ''
     const identityChanged = Boolean(previous && targetKey !== previousKey)
     const lineState = targetIdentity.line ? context.pstoLineAssignments.get(targetKey) : undefined
-    const lineIsPartial = Boolean(
-      lineState &&
-      lineState.assignedCount !== lineState.rowCount &&
-      (lineState.cancelledCount ?? 0) !== lineState.rowCount &&
-      (lineState.assignedCount > 0 || (lineState.cancelledCount ?? 0) > 0),
-    )
+    const lineIsPartial = getPstoProgramState(lineState) === 'mixed'
+    if (previous?.pstoExceptionBasis && !allowPstoLineLifecycleMove && (identityChanged ||
+      getPstoChainRoot(previous.joint, context.systemIndexSettings) !== getPstoChainRoot(record.joint, context.systemIndexSettings))) {
+      throw buildPstoLineAssignmentError({ record, index, importMode, details: 'Стык входит в исключение ПСТО. Переносите всю цепочку через карточку базового стыка; переименование основания цепочки с исключением недоступно.' })
+    }
 
     if (lineIsPartial) {
       if (previous && !identityChanged) {
@@ -338,8 +332,9 @@ function applyPstoLineAssignments({
       })
     }
 
-    const targetAssigned = Boolean(lineState && lineState.rowCount > 0 && lineState.assignedCount === lineState.rowCount)
-    const targetCancelled = Boolean(lineState && lineState.rowCount > 0 && lineState.cancelledCount === lineState.rowCount)
+    const exception = getPstoChainDecision(lineState, record.joint, context.systemIndexSettings)
+    const targetAssigned = exception?.required ?? getPstoProgramState(lineState) === 'assigned'
+    const targetCancelled = !targetAssigned && getPstoProgramState(lineState) === 'cancelled'
     if (
       importMode &&
       identityChanged &&
@@ -371,9 +366,14 @@ function applyPstoLineAssignments({
       })
     }
 
-    record.pstoRequired = targetAssigned ? 'да' : targetCancelled ? 'отменен' : null
-    record.pstoCancellationDate = targetCancelled ? lineState?.cancellationDate || null : null
-    record.pstoControlBasis = targetCancelled ? lineState?.cancellationBasis || null : null
+    if (lineState?.programState) {
+      Object.assign(record, applyPstoChainPolicy(record as WeldRow, lineState, context.systemIndexSettings))
+    } else {
+      record.pstoRequired = targetAssigned ? 'да' : targetCancelled ? 'отменен' : null
+      record.pstoCancellationDate = targetCancelled ? lineState?.cancellationDate || null : null
+      record.pstoControlBasis = targetCancelled ? lineState?.cancellationBasis || null : null
+      record.pstoExceptionBasis = null
+    }
   })
 }
 
@@ -686,7 +686,7 @@ function hasChangedField(
 export function getSystemWorkflowStageTransitionReason(
   record: WeldInput,
   previous: WeldJoint | undefined,
-  context: Pick<ServerWeldValidationContext, 'controlProcessSettings' | 'pstoLineAssignments'>,
+  context: Pick<ServerWeldValidationContext, 'controlProcessSettings' | 'pstoLineAssignments'> & Partial<Pick<ServerWeldValidationContext, 'systemIndexSettings'>>,
 ) {
   record = {
     ...record,
@@ -700,7 +700,7 @@ export function getSystemWorkflowStageTransitionReason(
     (!isCompletedPstoValue(previous?.pstoResult) && isCompletedPstoValue(record.pstoResult))
   )
   if (startsPrimaryPsto) {
-    const lineReason = getFullyAssignedPstoLineReason(record, context.pstoLineAssignments)
+    const lineReason = getFullyAssignedPstoLineReason(record, context)
     if (lineReason) return lineReason
     const preControlReason = getPrimaryPstoStartBlockReason(record)
     if (preControlReason) return preControlReason
@@ -711,7 +711,7 @@ export function getSystemWorkflowStageTransitionReason(
     !normalizeTvmtResult(previous?.tvmtResult) && Boolean(normalizeTvmtResult(record.tvmtResult))
   )
   if (startsPrimaryTvmtRequest || startsPrimaryTvmtResult) {
-    const lineReason = getFullyAssignedPstoLineReason(record, context.pstoLineAssignments)
+    const lineReason = requiresPostHeatTreatmentCompletion(record) ? '' : getFullyAssignedPstoLineReason(record, context)
     if (lineReason) return lineReason
     const previousCycle = previous ? getCurrentPstoCycle(previous) : null
     if (previousCycle?.source !== 'primary') {
@@ -737,7 +737,7 @@ export function getSystemWorkflowStageTransitionReason(
       )
       if (!startsRequest && !startsResult) continue
       if (isControlEnabledValue(record.pstoRequired)) {
-        const lineReason = getFullyAssignedPstoLineReason(record, context.pstoLineAssignments)
+        const lineReason = getFullyAssignedPstoLineReason(record, context)
         if (lineReason) return lineReason
       }
       const stageAccess = (startsResult ? getPrimaryLnkStageAccess : getPrimaryLnkRequestAccess)(
@@ -753,11 +753,15 @@ export function getSystemWorkflowStageTransitionReason(
 
 function getFullyAssignedPstoLineReason(
   record: WeldInput,
-  lineAssignments: ServerWeldValidationContext['pstoLineAssignments'],
+  context: Pick<ServerWeldValidationContext, 'pstoLineAssignments'> & Partial<Pick<ServerWeldValidationContext, 'systemIndexSettings'>>,
 ) {
   const identity = normalizePstoLineIdentity(record)
   if (!identity.line) return 'Стык не привязан к линии. Назначение ПСТО выполняется для всей линии.'
-  const state = lineAssignments.get(getPstoLineIdentityKey(identity))
+  const state = context.pstoLineAssignments.get(getPstoLineIdentityKey(identity))
+  if (state?.programState) {
+    const required = getPstoChainDecision(state, record.joint, context.systemIndexSettings ?? DEFAULT_SYSTEM_INDEX_SETTINGS)?.required ?? state.programState === 'assigned'
+    return required && isControlEnabledValue(record.pstoRequired) ? '' : 'Для этой цепочки ПСТО не назначено. Проверьте программу ПСТО и исключения линии.'
+  }
   if (!state || state.rowCount === 0 || state.assignedCount !== state.rowCount) {
     const label = [identity.projectTitle, identity.subtitleCode, identity.line].filter(Boolean).join(' · ')
     return `Линия ${label} имеет частичное или отсутствующее назначение ПСТО. Сначала выровняйте ее в «Программе ПСТО».`

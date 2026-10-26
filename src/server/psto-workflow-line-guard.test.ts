@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
+import { weldJoints, linePrograms, pstoChainExceptions } from '@/db/schema'
+import { overlayPstoProgramPolicies } from './psto-chain-policy'
 
 import {
   assertPstoWorkflowLinesFullyAssigned,
@@ -6,7 +8,24 @@ import {
 } from '@/server/psto-workflow-line-guard'
 
 describe('PSTO workflow line guard', () => {
-  it('checks production-sized multi-line documents with one array-bound query', async () => {
+  it('loads active decisions in line batches even for 200000 joints, with no per-row or per-line exception query', async () => {
+    for (const [jointCount, lineCount, reads] of [[1, 1, 2], [200_000, 1, 2], [200_000, 1_001, 4]]) {
+      const programs = Array.from({ length: lineCount }, (_, index) => ({ id: index + 1, projectTitle: 'P', subtitleCode: 'S', line: `L${index}`, pstoAssignment: 'unassigned' }))
+      const records = Array.from({ length: jointCount }, (_, index) => ({ ...programs[index % lineCount], joint: `S${index}` }))
+      let offset = 0
+      const read = vi.fn(async (table: unknown) => {
+        if (table === linePrograms) { const batch = programs.slice(offset, offset + 500); offset += 500; return batch }
+        if (table === pstoChainExceptions) return [{ id: 1, lineProgramId: 1, rootJoint: 's3', required: true, basis: 'И-1' }]
+        throw new Error('Unexpected table')
+      })
+      const db = { select: () => ({ from: (table: unknown) => ({ where: () => read(table) }) }) }
+      const policies = await overlayPstoProgramPolicies(db as never, records, new Map())
+      expect(policies.size).toBe(lineCount)
+      expect([...policies.values()][0].exceptions?.get('s3')?.required).toBe(true)
+      expect(read).toHaveBeenCalledTimes(reads)
+    }
+  })
+  it('checks a large multi-line document with one weld read and batched program reads, never per joint', async () => {
     const selected = Array.from({ length: 1_001 }, (_, index) => ({
       id: index + 1,
       joint: `J${index + 1}`,
@@ -15,13 +34,13 @@ describe('PSTO workflow line guard', () => {
       line: `Line ${index + 1}`,
       pstoRequired: 'да',
     }))
-    const where = vi.fn(async () => selected)
+    const where = vi.fn(async (table: unknown) => table === weldJoints ? selected : [])
     const tx = {
-      select: () => ({ from: () => ({ where }) }),
+      select: () => ({ from: (table: unknown) => ({ where: () => where(table) }) }),
     }
 
     await expect(assertPstoWorkflowLinesFullyAssigned(tx as never, selected)).resolves.toBeUndefined()
-    expect(where).toHaveBeenCalledTimes(1)
+    expect(where).toHaveBeenCalledTimes(4) // 1 weld read + ceil(1001 / 500) program batches
   })
 
   it('allows a workflow only when every weld on the line has PSTO assigned', () => {

@@ -2,8 +2,8 @@ import { useJournalSelectionSummary } from '@/lib/use-journal-selection-summary'
 import { formatJournalNumber } from '@/lib/welding-journal-grid-state'
 import type { JournalSummaryRange } from '@/lib/journal-selection-summary'
 
-export function JournalSelectionSummary({ ids, identity, ready, range = null }: { ids: ReadonlySet<number>; identity?: string; ready: boolean; range?: JournalSummaryRange }) {
-  const { summary, error, retry } = useJournalSelectionSummary(ids, identity, ready, range)
+export function JournalSelectionSummary({ ids, identity, ready, range = null, recoverRevision }: { ids: ReadonlySet<number>; identity?: string; ready: boolean; range?: JournalSummaryRange; recoverRevision?: (error: unknown) => boolean }) {
+  const { summary, error, retry } = useJournalSelectionSummary(ids, identity, ready, range, recoverRevision)
   if (!range && !ids.size) return null
   const source = <span className="text-slate-500">{range ? 'По области' : 'По выбранным'}</span>
   if (error) return <>{source}<span role="status" title={error}>{range?.error ?? 'Итоги недоступны.'} {!range?.error ? <button type="button" className="underline" onClick={retry}>Повторить</button> : null}</span></>

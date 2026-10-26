@@ -95,13 +95,13 @@ export function getOfficialStampCompatibilityIssues(
         stamp,
         method: '',
         reason: 'missing-registry',
-        message: `Клеймо ${stamp} не найдено в активном реестре клейм.`,
+        message: `Клеймо ${stamp} не найдено в реестре клейм.`,
       })
       continue
     }
 
-    const archiveIssue = saveCheckSettings.officialArchive
-      ? getWelderStampCardArchiveIssue(fieldKey, stamp, stampRecords, record.weldDate, options.archiveValidationMode ?? 'save')
+    const archiveIssue = options.archiveValidationMode !== 'audit'
+      ? getWelderStampCardArchiveIssue(fieldKey, stamp, stampRecords, record.weldDate)
       : null
     if (archiveIssue) issues.push(archiveIssue)
 
@@ -197,21 +197,15 @@ function getWelderStampCardArchiveIssue(
   stamp: string,
   records: WelderStampRecord[],
   weldDate: unknown,
-  mode: 'save' | 'audit',
 ): OfficialStampCompatibilityIssue | null {
   const compatibility = getWelderStampArchiveCompatibility(records, weldDate)
-  if (compatibility === 'active' || compatibility === 'historical') return null
-  if (mode === 'audit' && (compatibility === 'missing-weld-date' || compatibility === 'unknown-archive-date')) {
-    return null
-  }
+  if (compatibility === 'active' || compatibility === 'historical' || compatibility === 'missing-weld-date') return null
 
   const archivedAt = getLatestWelderStampArchiveDate(records)
   const message =
-    compatibility === 'missing-weld-date'
-      ? `Клеймо ${stamp} находится в архиве. Укажите дату сварки, чтобы проверить, выполнялся ли стык до архивации.`
-      : compatibility === 'unknown-archive-date'
-        ? `Клеймо ${stamp} находится в архиве, дата архивации не указана.`
-        : `Клеймо ${stamp} находится в архиве с ${formatDisplayDate(archivedAt)} и не может использоваться для сварки после этой даты.`
+    compatibility === 'unknown-archive-date'
+      ? `Клеймо ${stamp} находится в архиве, дата архивации не указана.`
+      : `Клеймо ${stamp} находится в архиве с ${formatDisplayDate(archivedAt)} и не может использоваться для сварки в эту дату или позднее.`
 
   return {
     fieldKey,

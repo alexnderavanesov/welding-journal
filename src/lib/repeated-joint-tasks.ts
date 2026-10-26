@@ -50,6 +50,7 @@ import type { SaveCheckSettings } from './save-check-settings'
 import { buildProgramRepairTasks } from './line-program-repair-requirements'
 import { isRevisionNotActual } from './revision-actuality'
 import { buildChainActualityCheckTasks } from './chain-actuality-check'
+import type { PstoLinePolicy } from './psto-chain-policy'
 
 export { getJointChainConsistencyKey } from '@/lib/joint-chain-keys'
 export { isUnusedRepeatedJointDraft } from '@/lib/repeated-joint-task-helpers'
@@ -67,6 +68,7 @@ type ObsoleteRepeatedJointInfo = {
 type MatchingJointRowsIndex = Map<string, WeldRow[]>
 
 type BuildRepeatedJointTasksOptions = {
+  pstoPolicies?: ReadonlyMap<string, PstoLinePolicy>
   acceptedProgramControlKeys?: ReadonlySet<string>
   earlyCoilDecisionSourceRowIds?: ReadonlySet<number>
   dataListSettings?: DataListSettings
@@ -151,7 +153,7 @@ export function buildRepeatedJointTasks(
   ].filter((task) => !(task.reason === 'проверить целостность цепочки' && orphanGoodRenameRowIds.has(task.row.id)))
   const duplicateCheckTasks = buildDuplicateJointCheckTasks(rows, systemIndexSettings)
   const lineConsistencyTasks = [
-    ...buildLineConsistencyTasks(rows, options.acceptedProgramControlKeys, systemIndexSettings)
+    ...buildLineConsistencyTasks(rows, options.acceptedProgramControlKeys, systemIndexSettings, options.pstoPolicies)
       .filter((task) => includeLineConsistencyTasks || task.systemWarningCode === 'СП-01'),
     ...buildProgramRepairTasks(rows, options.acceptedProgramControlKeys ?? new Set(), systemIndexSettings),
   ]

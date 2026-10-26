@@ -99,7 +99,6 @@ type PrepareImportedWeldRecordsOptions = {
   records: WeldInput[]
   skipManualJointNameValidation?: boolean
   skipLnkResultRuleValidation?: boolean
-  allowedArchivedOfficialStamps?: readonly string[]
   weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
   welderStamps: WelderStampRecord[]
   welderStampSuspensions: WelderStampSuspensionRecord[]
@@ -129,7 +128,6 @@ function getImportedWeldRecordPreparationSteps({
   records,
   skipManualJointNameValidation = false,
   skipLnkResultRuleValidation = false,
-  allowedArchivedOfficialStamps = [],
   weldFormStampSelectOptions,
   welderStamps,
   welderStampSuspensions,
@@ -150,7 +148,6 @@ function getImportedWeldRecordPreparationSteps({
     () => validateWelderStampFieldsForImport(
       records,
       weldFormStampSelectOptions,
-      allowedArchivedOfficialStamps,
       saveCheckSettings,
     ),
     () => validateOfficialStampCompatibilityForImport(records, welderStamps, {

@@ -9,8 +9,14 @@ import {
 import { SAVE_CHECK_SETTING_HELP } from '@/lib/save-check-settings-help'
 
 describe('save check settings help', () => {
-  it('exposes only the two optional guards in the new numbering', () => {
-    expect(SAVE_CHECK_SETTING_ITEMS.map(item => SAVE_CHECK_SETTING_CODES[item.id])).toEqual(['ЗВ-01', 'ЗВ-02'])
+  it('drops the retired archive setting without changing the remaining name-format preference', () => {
+    const settings = normalizeSaveCheckSettings({ officialArchive: false, manualJointName: false })
+    expect(settings).not.toHaveProperty('officialArchive')
+    expect(settings.manualJointName).toBe(false)
+    expect(SAVE_CHECK_SETTING_CODES.manualJointName).toBe('ЗВ-01')
+  })
+  it('exposes only the one optional guards in the new numbering', () => {
+    expect(SAVE_CHECK_SETTING_ITEMS.map(item => SAVE_CHECK_SETTING_CODES[item.id])).toEqual(['ЗВ-01'])
   })
 
   it('discards the obsolete repair toggle even when legacy settings disabled it', () => {

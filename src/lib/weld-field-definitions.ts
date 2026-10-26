@@ -346,6 +346,8 @@ export type WeldInput = Partial<Record<Exclude<WeldFieldKey, 'id'>, WeldFieldVal
   id?: number
   /** Dedicated line-program and layered-control workflows; never ordinary form fields. */
   lineProgramId?: number | null
+  /** Read-only explanation of the active chain exception; shown in the existing basis summary. */
+  pstoExceptionBasis?: string | null
   pvkControlPercent?: number | null
   layeredControlAssigned?: boolean
   layeredControlRequest?: { assigned: true; confirmPvk: boolean }

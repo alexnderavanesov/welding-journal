@@ -195,7 +195,6 @@ describe('welding journal import template', () => {
     const withoutOfficialChecks = {
       ...DEFAULT_SAVE_CHECK_SETTINGS,
       officialRegistry: false,
-      officialArchive: false,
       officialNaksDate: false,
       officialSuspension: false,
       officialWeldingMethod: false,
@@ -214,7 +213,7 @@ describe('welding journal import template', () => {
     expect(getReportImportCellKind('weldingJournal', 'stamp1K')).toBe('checked')
     expect(getReportImportCellKind('weldingJournal', 'stamp1Z')).toBe('checked')
 
-    saveSaveCheckSettings({ ...withoutOfficialChecks, officialArchive: true })
+    saveSaveCheckSettings(withoutOfficialChecks)
     expect(getReportImportCellKind('weldingJournal', 'stamp1K')).toBe('checked')
     expect(getReportImportCellKind('weldingJournal', 'stamp2O')).toBe('checked')
   })
@@ -223,7 +222,6 @@ describe('welding journal import template', () => {
     saveSaveCheckSettings({
       ...DEFAULT_SAVE_CHECK_SETTINGS,
       officialRegistry: false,
-      officialArchive: false,
       officialNaksDate: false,
       officialSuspension: false,
       officialWeldingMethod: false,

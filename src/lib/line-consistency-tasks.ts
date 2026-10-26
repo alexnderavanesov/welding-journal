@@ -5,8 +5,10 @@ import { encodeIdentityKey } from '@/lib/identity-key'
 import { calculateLineProgram, getLineProgramRowDemand, isLineProgramCalculationRow, isLineProgramControlRow, parseLineProgramPercent } from '@/lib/line-program-calculation'
 import { programExcessEntries } from '@/lib/line-program-workspace'
 import { programApprovalKey } from './program-control-approval'
-import type { SystemIndexSettings } from './system-index-settings'
+import { DEFAULT_SYSTEM_INDEX_SETTINGS, type SystemIndexSettings } from './system-index-settings'
 import { buildProgramRepairRequirements } from './line-program-repair-requirements'
+import { applyPstoChainPolicy, type PstoLinePolicy } from './psto-chain-policy'
+import { getPstoLineIdentityKey } from './psto-line-assignment'
 
 type LineMetadataFieldKey = Exclude<LineConsistencyTask['fieldKey'], 'controlPresence' | 'pstoPresence'>
 
@@ -23,7 +25,8 @@ const LINE_CONSISTENCY_FIELDS: LineConsistencyField[] = [
   { key: 'category', label: 'Категория трубопровода', title: 'Проверить категорию трубопровода линии' },
 ]
 
-export function buildLineConsistencyTasks(rows: WeldRow[], accepted: ReadonlySet<string> = new Set(), settings?: SystemIndexSettings): LineConsistencyTask[] {
+export function buildLineConsistencyTasks(rows: WeldRow[], accepted: ReadonlySet<string> = new Set(), settings?: SystemIndexSettings,
+  pstoPolicies?: ReadonlyMap<string, PstoLinePolicy>): LineConsistencyTask[] {
   const lineGroups = new Map<string, WeldRow[]>()
   for (const row of rows) {
     const line = normalizeDisplayValue(row.line)
@@ -106,29 +109,35 @@ export function buildLineConsistencyTasks(rows: WeldRow[], accepted: ReadonlySet
       values: duplicateRows.slice(0, 8).map((row) => String(row.joint ?? row.id)),
       details: 'На одном стыке несколько взаимозаменяемых назначений РК/УЗК/послойной замены либо обычное «да» дублирует уже выполненный отменённый метод. Один стык закрывает только одно место общей потребности, в том числе при 100%. «Да» вместе с «дополнительный» допустимо. Выполненный контроль не снимается; автоматической отмены нет.',
     })
-    tasks.push(...buildPstoPresenceTasksForLine(groupRows, representativeRow, line))
+    tasks.push(...buildPstoPresenceTasksForLine(groupRows, representativeRow, line,
+      pstoPolicies?.get(getPstoLineIdentityKey(representativeRow)), settings))
   }
 
   return tasks
 }
 
-function buildPstoPresenceTasksForLine(groupRows: WeldRow[], representativeRow: WeldRow, line: string) {
-  if (groupRows.length < 2) return []
-
+function buildPstoPresenceTasksForLine(groupRows: WeldRow[], representativeRow: WeldRow, line: string,
+  policy?: PstoLinePolicy, settings = DEFAULT_SYSTEM_INDEX_SETTINGS) {
   const rowsWithPsto = groupRows.filter((row) => isControlEnabledValue(row.pstoRequired))
   const rowsCancelled = groupRows.filter((row) => isCancelledControlValue(row.pstoRequired))
   const rowsWithoutPsto = groupRows.filter((row) => (
     !isControlEnabledValue(row.pstoRequired) && !isCancelledControlValue(row.pstoRequired)
   ))
   const nonEmptyStates = [rowsWithPsto, rowsCancelled, rowsWithoutPsto].filter((rows) => rows.length > 0)
-  if (nonEmptyStates.length <= 1) return []
+  const canonical = Boolean(policy?.programState && policy.programState !== 'mixed')
+  const inconsistentRows = canonical ? groupRows.filter(row => {
+    const expected = applyPstoChainPolicy(row, policy!, settings)
+    return isControlEnabledValue(row.pstoRequired) !== isControlEnabledValue(expected.pstoRequired) ||
+      isCancelledControlValue(row.pstoRequired) !== isCancelledControlValue(expected.pstoRequired) ||
+      String(row.pstoExceptionBasis ?? '') !== String(expected.pstoExceptionBasis ?? '')
+  }) : [...rowsCancelled, ...rowsWithoutPsto]
+  if (canonical ? !inconsistentRows.length : nonEmptyStates.length <= 1) return []
   const projectTitle = normalizeDisplayValue(representativeRow.projectTitle)
   const subtitleCode = normalizeDisplayValue(representativeRow.subtitleCode)
   const detailsContext = [
     projectTitle ? `проект ${projectTitle}` : '',
     subtitleCode ? `шифр ${subtitleCode}` : '',
   ].filter(Boolean).join(', ')
-  const inconsistentRows = [...rowsCancelled, ...rowsWithoutPsto]
   const missingJoints = inconsistentRows
     .slice(0, 8)
     .map((row) => normalizeDisplayValue(row.joint) || `ID ${row.id}`)
@@ -151,7 +160,7 @@ function buildPstoPresenceTasksForLine(groupRows: WeldRow[], representativeRow: 
         rowsCancelled.length,
         rowsWithoutPsto.length,
       ])}`,
-      row: representativeRow,
+      row: canonical ? inconsistentRows[0] : representativeRow,
       line,
       projectTitle,
       subtitleCode,
@@ -159,7 +168,7 @@ function buildPstoPresenceTasksForLine(groupRows: WeldRow[], representativeRow: 
       fieldLabel: 'ПСТО',
       title: 'Проверить ПСТО по линии',
       values,
-      details: `На линии ${line}${detailsContext ? ` (${detailsContext})` : ''} встречаются разные состояния программы ПСТО: ${values.join(', ')}. Назначение или отмена должны действовать на всю связку Проект + Шифр + Линия. Проверьте стыки: ${missingJoints}${extraText}.`,
+      details: `На линии ${line}${detailsContext ? ` (${detailsContext})` : ''} ${canonical ? 'назначение стыков не соответствует программе ПСТО с учётом исключений цепочек' : 'встречаются несогласованные состояния программы ПСТО'}: ${values.join(', ')}. Проверьте программу линии и её исключения. Стыки: ${missingJoints}${extraText}.`,
     } satisfies LineConsistencyTask,
   ]
 }
