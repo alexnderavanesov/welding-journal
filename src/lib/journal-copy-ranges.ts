@@ -2,7 +2,7 @@ import type { JournalVisualRange } from './journal-server-grid'
 import type { WeldFieldKey } from './weld-fields'
 
 /** Match AG clipboard semantics: merge ranges only when every selected row has
- * the same selected columns; otherwise export each range with its own header.
+ * the same selected columns; otherwise copy each range in selection order.
  * Work on interval boundaries, never enumerate the potentially 200000 rows. */
 export function journalCopyRanges<Field extends string = WeldFieldKey>(ranges: JournalVisualRange<Field>[], columnOrder: Field[]): JournalVisualRange<Field>[] {
   const events = new Map<number, Map<Field, number>>()
@@ -21,7 +21,7 @@ export function journalCopyRanges<Field extends string = WeldFieldKey>(ranges: J
     }
     if (!active.size) continue
     const next = [...active.keys()].sort().join(',')
-    if (signature !== undefined && signature !== next) return ranges.map(range => ({ ...range, includeHeader: true }))
+    if (signature !== undefined && signature !== next) return ranges
     signature = next
   }
   const selected = new Set(ranges.flatMap(range => range.columns))
@@ -47,6 +47,5 @@ export function journalCopyRanges<Field extends string = WeldFieldKey>(ranges: J
     }
     covered = merged
   }
-  if (result.length) result[0].includeHeader = true
   return result
 }

@@ -6,28 +6,28 @@ import type { WeldFieldKey } from './weld-fields'
 const order: WeldFieldKey[] = ['joint', 'wdi', 'line']
 it('merges columns on the same rows in displayed column order', () => {
   expect(journalCopyRanges([{ first: 0, last: 1, columns: ['wdi'] }, { first: 0, last: 1, columns: ['joint'] }], order))
-    .toEqual([{ first: 0, last: 1, columns: ['joint', 'wdi'], includeHeader: true }])
+    .toEqual([{ first: 0, last: 1, columns: ['joint', 'wdi'] }])
 })
 it('deduplicates overlaps and preserves the first encountered row order', () => {
   expect(journalCopyRanges([{ first: 2, last: 3, columns: ['joint'] }, { first: 0, last: 4, columns: ['joint'] }], order))
-    .toEqual([{ first: 2, last: 3, columns: ['joint'], includeHeader: true },
+    .toEqual([{ first: 2, last: 3, columns: ['joint'] },
       { first: 0, last: 1, columns: ['joint'] }, { first: 4, last: 4, columns: ['joint'] }])
 })
-it('keeps distinct headers when rows have different selected columns', () => {
+it('keeps distinct ranges when rows have different selected columns', () => {
   const ranges: JournalVisualRange[] = [{ first: 0, last: 1, columns: ['joint'] }, { first: 1, last: 2, columns: ['wdi'] }]
-  expect(journalCopyRanges(ranges, order)).toEqual(ranges.map(range => ({ ...range, includeHeader: true })))
+  expect(journalCopyRanges(ranges, order)).toEqual(ranges)
 })
-it('keeps one header across store boundaries and a new header for the next range', () => {
+it('preserves values and column order across store boundaries and distinct ranges', () => {
   const ranges = journalCopyRanges([{ first: 0, last: 2, columns: ['joint'] }, { first: 3, last: 3, columns: ['wdi'] }], order)
   expect(journalRangeParts(ranges, 2, [{ route: ['A'], ordinal: 0, rowCount: 2 }])).toEqual([
-    { route: [], start: 0, end: 1, columns: ['joint'], includeHeader: true },
+    { route: [], start: 0, end: 1, columns: ['joint'] },
     { route: ['A'], start: 0, end: 2, columns: ['joint'] },
-    { route: [], start: 1, end: 2, columns: ['wdi'], includeHeader: true },
+    { route: [], start: 1, end: 2, columns: ['wdi'] },
   ])
 })
 it('represents huge overlapping ranges by a few intervals without allocating per row', () => {
   expect(journalCopyRanges([{ first: 0, last: 199999, columns: ['joint'] }, { first: 100, last: 199998, columns: ['joint'] }], order))
-    .toEqual([{ first: 0, last: 199999, columns: ['joint'], includeHeader: true }])
+    .toEqual([{ first: 0, last: 199999, columns: ['joint'] }])
   expect(journalCopyRanges([], order)).toEqual([])
 })
 it('matches an independent per-row clipboard oracle on small overlapping selections', () => {
@@ -47,12 +47,11 @@ it('matches an independent per-row clipboard oracle on small overlapping selecti
       range.columns.forEach(column => columns.add(column)); rowColumns.set(row, columns)
     }
     const merge = new Set([...rowColumns.values()].map(columns => [...columns].sort().join(','))).size === 1
-    const expected = merge ? [{ header: order.filter(column => rowColumns.values().next().value!.has(column)), rows: [...rowColumns.keys()] }]
-      : ranges.map(range => ({ header: range.columns, rows: Array.from({ length: range.last - range.first + 1 }, (_, i) => range.first + i) }))
-    const actual: { header: WeldFieldKey[]; rows: number[] }[] = []
+    const expected = merge ? [...rowColumns.keys()].map(row => ({ columns: order.filter(column => rowColumns.get(row)!.has(column)), row }))
+      : ranges.flatMap(range => Array.from({ length: range.last - range.first + 1 }, (_, i) => ({ columns: range.columns, row: range.first + i })))
+    const actual: { columns: WeldFieldKey[]; row: number }[] = []
     for (const range of journalCopyRanges(ranges, order)) {
-      if (range.includeHeader) actual.push({ header: range.columns, rows: [] })
-      for (let row = range.first; row <= range.last; row++) actual.at(-1)!.rows.push(row)
+      for (let row = range.first; row <= range.last; row++) actual.push({ columns: range.columns, row })
     }
     expect(actual, `seed ${seed}`).toEqual(expected)
   }

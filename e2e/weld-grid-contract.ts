@@ -278,7 +278,7 @@ export function registerWeldGridContract(report: GridReport) {
     await expect(stats).toContainText('Сумма: 91,2')
     await expect(stats).toContainText('Среднее: 45,6')
     await page.keyboard.press('ControlOrMeta+c')
-    await expect.poll(() => page.evaluate(async () => (await navigator.clipboard.readText()).replaceAll('\r\n', '\n'))).toBe('WDI\n45,6\n45,6')
+    await expect.poll(() => page.evaluate(async () => (await navigator.clipboard.readText()).replaceAll('\r\n', '\n'))).toBe('45,6\n45,6')
     await page.waitForLoadState('networkidle')
     {
       expect(calls.filter(name => name.startsWith('summarizeJournalGridRange')).length).toBeLessThanOrEqual(2)
@@ -300,7 +300,7 @@ export function registerWeldGridContract(report: GridReport) {
     await page.keyboard.press('Shift+ArrowRight')
     await page.keyboard.press('Shift+ArrowDown')
     await page.keyboard.press('ControlOrMeta+c')
-    await expect.poll(() => page.evaluate(async () => (await navigator.clipboard.readText()).replaceAll('\r\n', '\n'))).toBe(`Проект\tШифр\n${PROJECT}\tAG\n${PROJECT}\tAG`)
+    await expect.poll(() => page.evaluate(async () => (await navigator.clipboard.readText()).replaceAll('\r\n', '\n'))).toBe(`${PROJECT}\tAG\n${PROJECT}\tAG`)
     await projectCell.click()
     await page.keyboard.press('Tab')
     await expect(page.locator('.ag-cell-focus')).toHaveAttribute('col-id', isWorkflow ? 'jointNextAction' : 'subtitleCode')

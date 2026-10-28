@@ -21,8 +21,7 @@ function validate(input: JournalRangeRequest) {
     || input.parts.some(part => !Array.isArray(part.route) || part.route.length > input.groupBy.length
       || part.route.some(key => typeof key !== 'string') || !Number.isSafeInteger(part.start) || !Number.isSafeInteger(part.end)
       || part.start < 0 || part.end <= part.start || !Array.isArray(part.columns) || part.columns.length === 0
-      || part.columns.some(key => !FIELD_BY_KEY.has(key))
-      || part.includeHeader !== undefined && typeof part.includeHeader !== 'boolean') || typeof input.anchor !== 'string') throw new Error('Некорректный диапазон ячеек.')
+      || part.columns.some(key => !FIELD_BY_KEY.has(key))) || typeof input.anchor !== 'string') throw new Error('Некорректный диапазон ячеек.')
 }
 export function mergeJournalRangeParts(parts: JournalRangePart[]): JournalRangePart[] {
   const routes = new Map<string, JournalRangePart[]>()
@@ -176,8 +175,7 @@ export async function copyJournalGridRange(input: JournalRangeRequest, signal?: 
   signal?.throwIfAborted()
   const context = await journalReadContext({ ...input, route: [], start: 0, end: 100 })
   const chunks: string[] = []
-  for (const [index, part] of input.parts.entries()) {
-    if (index === 0 || part.includeHeader) chunks.push(part.columns.map(key => escapeCell(FIELD_BY_KEY.get(key)!.label)).join('\t'))
+  for (const part of input.parts) {
     for await (const rows of pages(context, part, signal)) {
       chunks.push(rows.map(row => part.columns.map(key => {
         const value = journalRangeValue(row, key, input.anchor, input.groupBy, journalReport(context.request.report), context.settings)

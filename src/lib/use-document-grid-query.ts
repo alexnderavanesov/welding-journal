@@ -192,13 +192,7 @@ export function useDocumentGridQuery<T extends Identity>(options: {
     if (!root || root.rowCount + expanded.reduce((sum, item) => sum + item.rowCount, 0) !== api.getDisplayedRowCount()) throw new Error('Дождитесь загрузки раскрытых групп.')
     const result = journalRangeParts(copy ? journalCopyRanges(selected, api.getAllDisplayedColumns().map(column => column.getColId())) : selected, root.rowCount, expanded)
     if (result.some(part => !stores.get(journalRouteKey(part.route))?.lastRowIndexKnown)) throw new Error('Дождитесь загрузки раскрытых групп.')
-    let header = false
-    return result.flatMap(part => {
-      header ||= Boolean(part.includeHeader)
-      if (part.route.length !== query().rowGroupCols.length) return []
-      const leaf = { ...part, includeHeader: header }; header = false
-      return [leaf]
-    })
+    return result.filter(part => part.route.length === query().rowGroupCols.length)
   }
   const updateRange = useStableEventCallback(() => {
     let ranges: JournalRangePart<string>[]
@@ -262,7 +256,7 @@ export function useDocumentGridQuery<T extends Identity>(options: {
     let ranges: JournalRangePart<string>[]
     try { ranges = parts(true) } catch (error) { current.current.error((error as Error).message); return }
     if (!ranges.length) return
-    const request = query(), { load, columns } = current.current
+    const request = query(), { load } = current.current
     copyingRanges.current = visualSignature()
     setCopying(true)
     try {
@@ -276,7 +270,6 @@ export function useDocumentGridQuery<T extends Identity>(options: {
           return /[\t\r\n"]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
         }
         for (const part of ranges) {
-          if (part.includeHeader) { if (lines.length) lines.push(''); lines.push(part.columns.map(key => quote(columns.find(column => column.key === key)?.label ?? key, 'title')).join('\t')) }
           for (let start = part.start; start < part.end; start += 500) {
             const result = await load({ ...request, groupKeys: part.route, startRow: start, endRow: Math.min(part.end, start + 500), cells: { columns: part.columns } })
             assertCurrent()

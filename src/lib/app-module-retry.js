@@ -1,9 +1,16 @@
-/** Also embedded before React starts. Keep this function self-contained. */
-export async function retryAppModules(extraUrls: string[] = [], reload = () => window.location.reload()) {
-  const urls = new Set<string>()
+// @ts-check
+/**
+ * Also embedded verbatim before React starts. Keep this JavaScript self-contained
+ * so server/client transforms cannot change the inline script's text.
+ * @param {string[]} extraUrls
+ * @param {() => void} reload
+ */
+export async function retryAppModules(extraUrls = [], reload = () => window.location.reload()) {
+  /** @type {Set<string>} */
+  const urls = new Set()
   const candidates = [...extraUrls,
-    ...Array.from(document.querySelectorAll<HTMLScriptElement>('script[type="module"][src]'), node => node.src),
-    ...Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="modulepreload"][href]'), node => node.href),
+    ...Array.from(document.querySelectorAll('script[type="module"][src]'), node => /** @type {HTMLScriptElement} */ (node).src),
+    ...Array.from(document.querySelectorAll('link[rel="modulepreload"][href]'), node => /** @type {HTMLLinkElement} */ (node).href),
     ...performance.getEntriesByType('resource').map(entry => entry.name),
   ]
   for (const value of candidates) {

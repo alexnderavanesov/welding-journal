@@ -16,13 +16,13 @@ vi.mock('./journal-grid', () => ({
   })) })),
 }))
 
-it('keeps headers for distinct copied ranges without repeating them for store segments', async () => {
+it('copies only values across distinct ranges and store segments without column headers', async () => {
   const input = { columnFilters: {}, groupBy: ['line'], revision: 1, anchor: 'line', parts: [
-    { route: [], start: 0, end: 1, columns: ['joint'], includeHeader: true },
+    { route: [], start: 0, end: 1, columns: ['joint'] },
     { route: [], start: 1, end: 2, columns: ['joint'] },
-    { route: [], start: 2, end: 3, columns: ['wdi'], includeHeader: true },
+    { route: [], start: 2, end: 3, columns: ['wdi'] },
   ] } as JournalRangeRequest
-  expect(await copyJournalGridRange(input)).toBe('Стык\r\n10\r\n11\r\nWDI\r\n3')
+  expect(await copyJournalGridRange(input)).toBe('10\r\n11\r\n3')
 })
 
 it('copies the configured RK exposure label using server settings', () => {

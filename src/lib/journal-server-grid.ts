@@ -39,8 +39,8 @@ export type JournalGroup = {
 export type JournalGridRow = WeldRow & { journalGroup?: JournalGroup }
 export type JournalGridResult = { rows: JournalGridRow[]; rowCount: number; revision: JournalRevision }
 export type JournalRouteLayout = { route: string[]; ordinal: number; rowCount: number }
-export type JournalRangePart<Field extends string = WeldFieldKey> = { route: string[]; start: number; end: number; columns: Field[]; includeHeader?: boolean }
-export type JournalVisualRange<Field extends string = WeldFieldKey> = { first: number; last: number; columns: Field[]; includeHeader?: boolean }
+export type JournalRangePart<Field extends string = WeldFieldKey> = { route: string[]; start: number; end: number; columns: Field[] }
+export type JournalVisualRange<Field extends string = WeldFieldKey> = { first: number; last: number; columns: Field[] }
 export type JournalRangeRequest = JournalGridQuery & { revision: JournalRevision; parts: JournalRangePart[]; anchor: string }
 export function journalGroup(row: unknown): JournalGroup | undefined {
   return (row as JournalGridRow | undefined)?.journalGroup
@@ -79,14 +79,12 @@ export function journalRangeParts<Field extends string>(
   }
   const parts: JournalRangePart<Field>[] = []
   for (const range of ranges) {
-    let includeHeader = range.includeHeader
     for (const segment of segments) {
       const first = Math.max(range.first, segment.visual)
       const last = Math.min(range.last, segment.visual + segment.length - 1)
       if (last < first) continue
       parts.push({ route: segment.route, start: segment.start + first - segment.visual,
-        end: segment.start + last - segment.visual + 1, columns: range.columns, ...(includeHeader ? { includeHeader: true } : {}) })
-      includeHeader = false
+        end: segment.start + last - segment.visual + 1, columns: range.columns })
     }
   }
   return parts

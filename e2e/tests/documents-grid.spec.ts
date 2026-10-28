@@ -1224,7 +1224,7 @@ test('document grid parity: clipboard copies complete ranges from leaf, header a
   await expect(grid.getByText('Загружено: 100', { exact: true })).toBeVisible()
   await revealGridColumn(page, 'project')
   const cell = grid.locator('.ag-row[row-index="0"] .ag-cell[col-id="project"]')
-  const expected = `Проект\tШифр\n${project}\tGRID\n${project}\tGRID`
+  const expected = `${project}\tGRID\n${project}\tGRID`
   const copy = async (text: string) => {
     // A sentinel makes a missing shortcut handler fail even after a previous
     // successful copy of the same range.
@@ -1255,7 +1255,7 @@ test('document grid parity: clipboard copies complete ranges from leaf, header a
   await projectHeader.focus()
   await page.evaluate(() => navigator.clipboard.writeText('not copied'))
   await page.keyboard.press('ControlOrMeta+c')
-  await expect.poll(async () => (await page.evaluate(() => navigator.clipboard.readText())).split('\n').length).toBe(251)
+  await expect.poll(async () => (await page.evaluate(() => navigator.clipboard.readText())).split('\n').length).toBe(250)
   const copied = await page.evaluate(() => navigator.clipboard.readText())
   const titles = [...copied.matchAll(/GRID-DOC-\d{3}/g)].map(match => match[0])
   expect(titles).toHaveLength(250)
@@ -1773,7 +1773,8 @@ test('document transfer: full selection and clipboard include unloaded documents
   await page.keyboard.press('ControlOrMeta+c')
   await expect.poll(async () => (await page.evaluate(() => navigator.clipboard.readText())).match(/GRID-DOC-\d{3}/g)?.length).toBe(250)
   const text = await page.evaluate(() => navigator.clipboard.readText())
-  expect(text.split('\n')[0]).toContain('Документ')
+  expect(text.split('\n')).toHaveLength(250)
+  expect(text.split('\n')[0]).not.toContain('Документ')
   expect(text).not.toContain('Скачать Excel')
   await expect(grid.getByText('Загружено: 100', { exact: true })).toBeVisible()
 })

@@ -313,7 +313,7 @@ test('expand all includes unloaded root blocks and nested levels without fetchin
   expect(reads.length).toBeLessThan(55)
   await page.getByRole('button', { name: 'E120B', exact: true }).locator('xpath=ancestor::*[@role="row"][1]').locator('[col-id="joint"]').click({ position: { x: 4, y: 4 } })
   await page.keyboard.press('ControlOrMeta+c')
-  await expect.poll(() => page.evaluate(async () => (await navigator.clipboard.readText()).trim().split(/\r?\n/).at(-1))).toBe('E120B')
+  await expect.poll(() => page.evaluate(async () => (await navigator.clipboard.readText()))).toBe('E120B')
   // A regroup resets expansion; a single command must reach new child levels.
   await page.evaluate(() => scrollTo(0, 0))
   await groupBy('subtitleCode')
@@ -624,7 +624,7 @@ test('range totals and clipboard include unloaded rows; scrolling loads bounded 
   await expect(page.getByText('Сумма: 350', { exact: true })).toBeVisible()
   await expect(page.getByText('Среднее: 1', { exact: true })).toBeVisible()
   await page.keyboard.press('ControlOrMeta+c')
-  await expect.poll(() => page.evaluate(async () => (await navigator.clipboard.readText()).replaceAll('\r\n', '\n'))).toBe('WDI\n' + Array(350).fill('1,000').join('\n'))
+  await expect.poll(() => page.evaluate(async () => (await navigator.clipboard.readText()).replaceAll('\r\n', '\n'))).toBe(Array(350).fill('1,000').join('\n'))
   await page.locator('.ag-grid-viewport').evaluate(element => { element.scrollTop = element.scrollHeight })
   await expect(page.getByRole('button', { name: 'S0350', exact: true })).toBeVisible()
   expect(requests.filter(name => name.startsWith('readJournalGrid')).length).toBeLessThanOrEqual(4)

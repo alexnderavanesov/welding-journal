@@ -71,7 +71,7 @@ it('does not cancel copying when the same range summary event arrives later', as
   act(() => { operation = result.current.copy() })
   act(() => result.current.updateRange())
   await act(async () => { complete({ rows: [], cells: [['A'], ['B']], rowCount: 2, total: 2, revision }); await operation })
-  expect(write).toHaveBeenCalledExactlyOnceWith('Документ\nA\nB')
+  expect(write).toHaveBeenCalledExactlyOnceWith('A\nB')
 })
 it.each(['scope', 'range', 'unmount'].flatMap(reason => ['writeText', 'ClipboardItem'].map(clipboard => ({ reason, clipboard }))))(
   'does not publish a late $clipboard response after $reason changes', async ({ reason, clipboard }) => {

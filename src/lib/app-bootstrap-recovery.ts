@@ -1,11 +1,14 @@
-import { retryAppModules } from './app-module-retry'
+import retryAppModulesSource from './app-module-retry.js?raw'
 
 export const APP_BOOTSTRAP_READY_EVENT = 'welding-journal:bootstrap-ready'
 
 // Runs before the entry module, so recovery does not depend on React loading.
 // No automatic reload: persistent network failures must not create a loop.
 export const APP_BOOTSTRAP_RECOVERY_SCRIPT = `(()=>{
-  const retryModules=${retryAppModules.toString()};
+  const retryModules=(()=>{
+    ${retryAppModulesSource.replace(/^export (?=async function retryAppModules\()/m, '')}
+    return retryAppModules;
+  })();
   const failed=(event)=>{
     const script=event.target;
     let ownModule=script instanceof HTMLScriptElement&&script.type==='module'&&script.src&&new URL(script.src).origin===location.origin;

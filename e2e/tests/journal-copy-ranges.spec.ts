@@ -35,23 +35,23 @@ async function copied(page: Page) {
   return page.evaluate(async () => (await navigator.clipboard.readText()).replaceAll('\r\n', '\n'))
 }
 
-test('separate ranges retain their own headers, including unloaded rows', async ({ page }) => {
+test('separate ranges copy only values, including unloaded rows', async ({ page }) => {
   await select(page, [{ first: 95, last: 105, columns: ['joint'] }, { first: 120, last: 121, columns: ['subtitleCode'] }])
   await expect(page.getByText('Количество: 13', { exact: true })).toBeVisible()
   await page.keyboard.press('ControlOrMeta+c')
-  await expect.poll(() => copied(page)).toBe('Стык\n' + Array.from({ length: 11 }, (_, i) => `C${String(i + 96).padStart(3, '0')}`).join('\n') + '\nШифр\nCOPY\nCOPY')
+  await expect.poll(() => copied(page)).toBe(Array.from({ length: 11 }, (_, i) => `C${String(i + 96).padStart(3, '0')}`).join('\n') + '\nCOPY\nCOPY')
 })
 test('compatible overlapping ranges copy each row once in first-selection order', async ({ page }) => {
   await select(page, [{ first: 2, last: 3, columns: ['joint'] }, { first: 0, last: 4, columns: ['joint'] }])
   await expect(page.getByText('Количество: 5', { exact: true })).toBeVisible()
   await page.keyboard.press('ControlOrMeta+c')
-  await expect.poll(() => copied(page)).toBe('Стык\nC003\nC004\nC001\nC002\nC005')
+  await expect.poll(() => copied(page)).toBe('C003\nC004\nC001\nC002\nC005')
 })
 test('same rows with different columns merge in displayed column order', async ({ page }) => {
   await select(page, [{ first: 0, last: 1, columns: ['subtitleCode'] }, { first: 0, last: 1, columns: ['joint'] }])
   await expect(page.getByText('Количество: 4', { exact: true })).toBeVisible()
   await page.keyboard.press('ControlOrMeta+c')
-  await expect.poll(() => copied(page)).toBe('Стык\tШифр\nC001\tCOPY\nC002\tCOPY')
+  await expect.poll(() => copied(page)).toBe('C001\tCOPY\nC002\tCOPY')
 })
 test('changing the filter cancels pending copy without replacing the clipboard', async ({ page }) => {
   let started = false, release!: () => void
