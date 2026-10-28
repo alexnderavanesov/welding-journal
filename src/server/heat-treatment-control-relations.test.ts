@@ -7,11 +7,20 @@ import {
   attachHeatTreatmentControlRelations,
   attachHeatTreatmentControlRelationsInPlace,
   attachPreHeatTreatmentControlRelations,
+  attachPstoRepeatCycleRelations,
 } from '@/server/heat-treatment-control-relations'
 import { attachDuplicateControlRelations } from '@/server/duplicate-control-relations'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 
 describe('server heat-treatment relation loading', () => {
+  it.each([1, 1000, 200000])('loads current-cycle history for %i document rows in one batched read', async count => {
+    const query = vi.fn(async () => [{ id: 7, weldJointId: count, sequence: 2, pstoRequest: 'REPEAT' }])
+    const rows = Array.from({ length: count }, (_, index) => ({ id: index + 1 }))
+    const result = await attachPstoRepeatCycleRelations(rows, createRelationDb(query) as never)
+    expect(query).toHaveBeenCalledTimes(1)
+    expect(result.at(-1)?.pstoRepeatCycles).toEqual([expect.objectContaining({ sequence: 2, pstoRequest: 'REPEAT' })])
+    expect(rows.at(-1)).not.toHaveProperty('pstoRepeatCycles')
+  })
   it('loads pre-TO controls in one array query instead of one query per weld', async () => {
     const query = vi.fn(async () => [])
     const db = createRelationDb(query)

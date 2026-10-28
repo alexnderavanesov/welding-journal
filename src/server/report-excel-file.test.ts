@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { inflateRawSync } from 'node:zlib'
 import * as XLSX from 'xlsx'
 import { getReportOutputBuilder } from '@/lib/report-output-definition'
 const mocks = vi.hoisted(() => ({ visit: vi.fn(), sheetRows: 1_048_575 }))
@@ -21,7 +22,9 @@ it('writes every batch, preserves numbers/text/formatting and deletes the comple
   mocks.visit.mockImplementation(async (req, consume) => {
     const build = getReportOutputBuilder(req)
     for (let start = 0; start < 3000; start += 1000) {
-      await consume(build(Array.from({ length: 1000 }, (_, i) => ({ joint: `00-${start + i}`, wdi: 1.25, weldDate: '2026-10-26' }))))
+      const content = build(Array.from({ length: 1000 }, (_, i) => ({ joint: `00-${start + i}`, wdi: 1.25, weldDate: '2026-10-26' })))
+      Object.defineProperty(content, 'report', { get: () => { throw new Error('Excel must not format a discarded preview') } })
+      await consume(content)
     }
     return { sourceRows: 3000, generatedAt: '2026-10-26T12:00:00.000Z' }
   })
@@ -81,4 +84,25 @@ it('propagates disk errors instead of completing a valid-looking truncated ZIP',
   await zip.write('<xml>data</xml>')
   await expect(zip.end()).rejects.toThrow('disk full')
   await zip.abort()
+})
+
+it.each([
+  { chunks: ['123', '456', '789'], crc: 0xcbf43926 },
+  { chunks: ['Стык ', 'α😀', ' / 01'], crc: 0x551f2414 },
+])('keeps the independent ZIP checksum across text chunks: $chunks', async ({ chunks, crc }) => {
+  const output: Buffer[] = []
+  const zip = new ReportZipWriter(async bytes => { output.push(Buffer.from(bytes)) })
+  await zip.start('known.txt')
+  for (const chunk of chunks) await zip.write(chunk)
+  await zip.end()
+  await zip.finish()
+  const bytes = Buffer.concat(output)
+  const directory = bytes.readUInt32LE(bytes.length - 6)
+  const compressedSize = bytes.readUInt32LE(directory + 20)
+  const dataStart = 30 + bytes.readUInt16LE(26)
+  const original = Buffer.from(chunks.join(''))
+  expect(inflateRawSync(bytes.subarray(dataStart, dataStart + compressedSize))).toEqual(original)
+  expect(bytes.readUInt32LE(directory + 16)).toBe(crc)
+  expect(bytes.readUInt32LE(dataStart + compressedSize + 4)).toBe(crc)
+  expect(bytes.readUInt32LE(directory + 24)).toBe(original.length)
 })

@@ -1,3 +1,5 @@
+import { splitPrintColumns, type PrintColumnPart } from './printable-report-columns'
+
 export type PrintableReportMetric = {
   label: string
   value: string
@@ -26,6 +28,8 @@ export type PrintableReportTable = {
   rowKinds?: Array<'total' | 'group' | 'detail'>
   /** Columns containing formatted numbers/percentages; identifiers remain text in Excel. */
   numericColumns?: number[]
+  /** Repeated identifiers for horizontal print parts, including hidden fields. */
+  printIdentity?: { columns: string[]; indexes: number[]; rows: Array<Array<string | number>> }
 }
 
 export type PrintableReport = {
@@ -40,7 +44,7 @@ export type PrintableReport = {
   emptyMessage?: string
 }
 
-export function buildPrintableReportHtml(report: PrintableReport, options: { embedded?: boolean; compactPrint?: boolean } = {}) {
+export function buildPrintableReportHtml(report: PrintableReport, options: { embedded?: boolean; compactPrint?: boolean; printLayout?: boolean } = {}) {
   const generatedAt = new Intl.DateTimeFormat('ru-RU', {
     dateStyle: 'short',
     timeStyle: 'short',
@@ -50,7 +54,9 @@ export function buildPrintableReportHtml(report: PrintableReport, options: { emb
   const meta = renderMeta(report.meta ?? [], generatedAt)
   const metrics = renderMetrics(report.metrics ?? [])
   const charts = (report.charts ?? []).map(renderChart).join('')
-  const tables = (report.tables ?? []).map(table => renderTable(table, options.compactPrint === true)).join('')
+  const tables = (report.tables ?? []).map((table, index) => options.printLayout
+    ? splitPrintColumns(table).map(part => renderTable(part.table, options.compactPrint === true, { ...part, index })).join('')
+    : renderTable(table, options.compactPrint === true)).join('')
   const hasContent = Boolean(metrics || charts || tables)
   const empty = hasContent
     ? ''
@@ -141,6 +147,8 @@ export function buildPrintableReportHtml(report: PrintableReport, options: { emb
     table { width: 100%; border-collapse: collapse; table-layout: auto; font-size: 12px; line-height: 1.4; }
     .wide-table { min-width: var(--table-min-width); }
     .compact-print { table-layout: fixed; }
+    .print-columns { width: 100%; table-layout: fixed; }
+    .print-columns td { white-space: pre-wrap; }
     .empty-cell-run { position: relative; }
     .empty-cell-run svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
     .empty-cell-run path { fill: none; stroke: #e6ebf0; stroke-width: 1; vector-effect: non-scaling-stroke; }
@@ -174,12 +182,14 @@ export function buildPrintableReportHtml(report: PrintableReport, options: { emb
       .metric-label { font-size: 10px; }
       .metric-value { font-size: 17px; }
       .metric-detail { font-size: 9px; }
-      table { font-size: 9px; }
+      table { font-size: 11px; }
       .wide-table { min-width: 0; table-layout: fixed; }
       .wide-table th, .wide-table td { padding: 4px; overflow-wrap: anywhere; }
       .section { break-inside: auto; }
       .chart, .metric { break-inside: avoid; }
       .table-wrap { overflow: visible; }
+      .print-continuation { break-before: page; page-break-before: always; }
+      .print-columns th, .print-columns td { padding: 3px 4px; overflow-wrap: anywhere; }
       h1 { font-size: 21px; }
     }
   </style>
@@ -252,23 +262,27 @@ function renderChart(chart: PrintableReportChart) {
   </section>`
 }
 
-function renderTable(table: PrintableReportTable, compactPrint: boolean) {
+function renderTable(table: PrintableReportTable, compactPrint: boolean, layout?: PrintColumnPart & { index: number }) {
   // Only the off-screen full-print frame uses fixed-width sparse cells. The
   // interactive preview and all populated values keep their existing markup.
-  const compact = compactPrint && table.columns.length > 8
+  const compact = compactPrint && (Boolean(layout) || table.columns.length > 8)
   const header = table.columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('')
   const rows = table.rows
     .map((row, index) => {
       const kind = table.rowKinds?.[index]
       const rowClass = kind ? ` class="table-row-${kind}"` : ''
-      return `<tr${rowClass}>${renderTableCells(row, compact)}</tr>`
+      return `<tr${rowClass}>${renderTableCells(row, compact, layout?.widths)}</tr>`
     })
     .join('')
-  return `<section class="section">
+  const width = layout?.widths.reduce((sum, value) => sum + value, 0) ?? 1
+  const colgroup = layout ? `<colgroup>${layout.widths.map(value => `<col style="width:${(value / width * 100).toFixed(4)}%" />`).join('')}</colgroup>` : ''
+  return `<section class="section${layout?.part ? ' print-continuation' : ''}">
     ${table.title ? `<h2 class="section-title">${escapeHtml(table.title)}</h2>` : ''}
+    ${layout && layout.parts > 1 ? `<p class="section-subtitle">Часть ${layout.part + 1} из ${layout.parts} по столбцам. Строки идут в том же порядке.</p>` : ''}
     ${table.subtitle ? `<p class="section-subtitle">${escapeHtml(table.subtitle)}</p>` : ''}
     <div class="table-wrap">
-      <table${table.columns.length > 8 ? ` class="wide-table${compact ? ' compact-print' : ''}" style="--table-min-width:${table.columns.length * 90}px"` : ''}>
+      <table${layout ? ` class="print-columns" data-print-table="${layout.index}" data-print-part="${layout.part}" data-source-columns="${layout.sources.join(',')}"` : table.columns.length > 8 ? ` class="wide-table${compact ? ' compact-print' : ''}" style="--table-min-width:${table.columns.length * 90}px"` : ''}>
+        ${colgroup}
         <thead><tr>${header}</tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -276,7 +290,7 @@ function renderTable(table: PrintableReportTable, compactPrint: boolean) {
   </section>`
 }
 
-function renderTableCells(row: Array<string | number>, compact: boolean) {
+function renderTableCells(row: Array<string | number>, compact: boolean, widths?: number[]) {
   const cells: string[] = []
   for (let index = 0; index < row.length; index++) {
     let end = index + 1
@@ -286,8 +300,10 @@ function renderTableCells(row: Array<string | number>, compact: boolean) {
       // Empty cells carry no text. One spanning cell plus vector grid lines
       // preserves their columns/borders without thousands of empty layout boxes.
       // SVG strokes print even when the browser disables background graphics.
-      const lines = Array.from({ length: span - 1 }, (_, i) => `M${i + 1} 0V1`).join('')
-      cells.push(`<td colspan="${span}" class="empty-cell-run"><svg aria-hidden="true" viewBox="0 0 ${span} 1" preserveAspectRatio="none"><path d="${lines}"/></svg></td>`)
+      const partWidths = widths?.slice(index, end) ?? Array<number>(span).fill(1)
+      let position = 0
+      const lines = partWidths.slice(0, -1).map(width => `M${position += width} 0V1`).join('')
+      cells.push(`<td colspan="${span}" class="empty-cell-run"><svg aria-hidden="true" viewBox="0 0 ${partWidths.reduce((a, b) => a + b, 0)} 1" preserveAspectRatio="none"><path d="${lines}"/></svg></td>`)
       index = end - 1
     } else cells.push(`<td>${escapeHtml(String(row[index]))}</td>`)
   }

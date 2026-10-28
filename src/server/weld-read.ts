@@ -135,6 +135,7 @@ loadGeneratedDocumentAssignments,
 import {
 attachHeatTreatmentControlRelations,
 attachPreHeatTreatmentControlRelations,
+attachPstoRepeatCycleRelations,
 } from '@/server/heat-treatment-control-relations'
 import { assertSecurityScope } from '@/server/security-functions'
 import {
@@ -568,34 +569,36 @@ export async function getDocumentGenerationData({
   if (data.subtitles.length > 0) clauses.push(inArray(weldJoints.subtitleCode, data.subtitles))
   if (data.lines.length > 0) clauses.push(inArray(weldJoints.line, data.lines))
 
-  const [rows, projectRows, subtitleRows, lineRows] = await Promise.all([
-    db
-      .select(WELD_TABLE_SELECT)
-      .from(weldJoints)
-      .where(and(...clauses))
-      .orderBy(asc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint)),
-    db.selectDistinct({ value: weldJoints.projectTitle }).from(weldJoints),
-    db.selectDistinct({ value: weldJoints.subtitleCode }).from(weldJoints),
-    db.selectDistinct({ value: weldJoints.line }).from(weldJoints),
-  ])
+  // Every relation belongs to the same source snapshot, even during edits or deletion.
+  return db.transaction(async (db) => {
+    const rows = await db
+        .select(WELD_TABLE_SELECT)
+        .from(weldJoints)
+        .where(and(...clauses))
+        .orderBy(asc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
+    const projectRows = await db.selectDistinct({ value: weldJoints.projectTitle }).from(weldJoints)
+    const subtitleRows = await db.selectDistinct({ value: weldJoints.subtitleCode }).from(weldJoints)
+    const lineRows = await db.selectDistinct({ value: weldJoints.line }).from(weldJoints)
 
-  return {
-    rows: compactWeldRowsForTransport(
-      await attachGeneratedDocumentFields(
-        await attachDuplicateControlsToPage(
-          await attachPreHeatTreatmentControlRelations(
-            applyCurrentSystemWdi(rows, await loadServerOtherSettings()),
-            db,
-          ),
+    return {
+      rows: compactWeldRowsForTransport(
+        await attachGeneratedDocumentFields(
+          await attachDuplicateControlsToPage(
+            await attachPstoRepeatCycleRelations(
+              await attachPreHeatTreatmentControlRelations(
+                applyCurrentSystemWdi(rows, await loadServerOtherSettings(db)), db,
+              ), db,
+            ), db,
+          ), db,
         ),
       ),
-    ),
-    scopeOptions: {
-      projects: getUniqueSortedTexts(projectRows.map((row) => row.value)),
-      subtitles: getUniqueSortedTexts(subtitleRows.map((row) => row.value)),
-      lines: getUniqueSortedTexts(lineRows.map((row) => row.value)),
-    },
-  }
+      scopeOptions: {
+        projects: getUniqueSortedTexts(projectRows.map((row) => row.value)),
+        subtitles: getUniqueSortedTexts(subtitleRows.map((row) => row.value)),
+        lines: getUniqueSortedTexts(lineRows.map((row) => row.value)),
+      },
+    }
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
 export async function getWeldDataUsageSummary(): Promise<WeldDataUsageSummary> {
@@ -741,7 +744,9 @@ export async function readReportOutputSnapshot(input: ReportOutputRequest): Prom
       const remaining = REPORT_PREVIEW_ROW_LIMIT - kept
       const rows = table.rows.slice(0, remaining)
       if (rows.length) {
-        if (!report.tables?.length) report.tables = [{ ...table, rows: [] }]
+        if (!report.tables?.length) report.tables = [{ ...table, rows: [],
+          printIdentity: table.printIdentity ? { ...table.printIdentity, rows: [] } : undefined }]
+        if (table.printIdentity) report.tables[0].printIdentity!.rows.push(...table.printIdentity.rows.slice(0, rows.length))
         report.tables[0].rows.push(...rows)
         kept += rows.length
       }
@@ -798,7 +803,7 @@ export async function visitReportOutput(
         const prepared = prepareJournalPageRows(buildServerReportRows(hydrated, report, { preserveSourceOrder: true }), report)
         const content = build(compactWeldRowsForTransport(await attachJournalGroupContext(prepared, settings, db)))
         signal?.throwIfAborted()
-        if (await consume({ report: content.report, exportData: content.exportData! }) === false) break
+        if (await consume(content) === false) break
       }
     } finally { await db.execute(sql`close report_output_cursor`) }
     return { sourceRows: Number(countRow.total), generatedAt: new Date(state.generatedAt).toISOString() }

@@ -129,25 +129,26 @@ export async function listPstoWorkflowRows(
   await assertSecurityScope('entry')
   const request = normalizePstoWorkflowRowsRequest(input)
   if (request.rowIds?.length === 0) return []
-
-  const selectedRowsOrder = request.limit && request.includeRowIds?.length
-    ? [buildIncludedRowsFirstOrder(weldJoints.id, request.includeRowIds)]
-    : []
-  const sourceQuery = requireDb()
-    .select(PSTO_WORKFLOW_ROW_SELECT)
-    .from(weldJoints)
-    .where(buildPstoWorkflowRowsWhere(request))
-    .orderBy(...selectedRowsOrder, ...getReportOrderBy('heatTreatment'))
-  const sourceRows = request.limit
-    ? await sourceQuery.limit(request.limit + (request.includeRowIds?.length ?? 0))
-    : await sourceQuery
-  const relatedRows = await attachHeatTreatmentControlRelations(sourceRows)
-  const reportRows = applyCurrentSystemWdi(
-    buildServerReportRows(relatedRows as unknown as WeldJoint[], 'heatTreatment'),
-    await loadServerOtherSettings(),
-  )
-  const scopedRows = filterPstoWorkflowRows(reportRows, request.scope, request.includeRowIds)
-  return compactWeldRowsForTransport(scopedRows)
+  return requireDb().transaction(async db => {
+    const selectedRowsOrder = request.limit && request.includeRowIds?.length
+      ? [buildIncludedRowsFirstOrder(weldJoints.id, request.includeRowIds)]
+      : []
+    const sourceQuery = db
+      .select(PSTO_WORKFLOW_ROW_SELECT)
+      .from(weldJoints)
+      .where(buildPstoWorkflowRowsWhere(request))
+      .orderBy(...selectedRowsOrder, ...getReportOrderBy('heatTreatment'))
+    const sourceRows = request.limit
+      ? await sourceQuery.limit(request.limit + (request.includeRowIds?.length ?? 0))
+      : await sourceQuery
+    const relatedRows = await attachHeatTreatmentControlRelations(sourceRows, db)
+    const reportRows = applyCurrentSystemWdi(
+      buildServerReportRows(relatedRows as unknown as WeldJoint[], 'heatTreatment'),
+      await loadServerOtherSettings(db),
+    )
+    const scopedRows = filterPstoWorkflowRows(reportRows, request.scope, request.includeRowIds)
+    return compactWeldRowsForTransport(scopedRows)
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
 export async function getPstoWorkflowSummary(): Promise<PstoWorkflowSummary> {

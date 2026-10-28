@@ -17,6 +17,7 @@ import { parseRkExposureDescription, type RkExposureLine } from '@/lib/rk-exposu
 import { isLayeredControlDocumentType } from '@/lib/generated-document-types'
 import { getLayeredControlDocumentProfile } from '@/lib/layered-control-documents'
 import { getSystemDocumentRowResult } from '@/lib/system-document-types'
+import { getCurrentPstoCycle } from '@/lib/tvmt-cycle'
 
 import {
   DOCUMENT_TEMPLATE_TYPES,
@@ -166,6 +167,17 @@ export async function createWeldingJournalBlobFromTemplate(
   records: WeldInput[],
   context: WeldingJournalTemplateContext = {},
 ) {
+  if (template.id === 'weldingJournal' || template.id === 'checklist' || template.id === 'zni') {
+    // Ordinary documents describe the current weld. System documents are
+    // already projected onto their own historical stage/cycle by their loader.
+    records = records.map(record => {
+      const cycle = getCurrentPstoCycle(record)
+      if (!cycle) return record
+      const { id: _cycleId, source: _source, sequence: _sequence, ...currentFields } = cycle
+      // Empty fields of a new repeat stay empty; never inherit primary facts.
+      return { ...record, ...currentFields }
+    })
+  }
   const XLSX = await loadXlsx()
   const workbook = XLSX.read(template.fileData, { type: 'array', cellStyles: true })
   const constructorConfig = template.constructorConfig

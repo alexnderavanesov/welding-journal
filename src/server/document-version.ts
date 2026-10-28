@@ -1,6 +1,6 @@
 import { sql, type SQL } from 'drizzle-orm'
 import { generatedDocuments } from '@/db/schema'
-import { LAYERED_CONTROL_DOCUMENT_TYPES } from '@/lib/generated-document-types'
+import { GENERATED_DOCUMENT_TYPES } from '@/lib/generated-document-types'
 import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
 
 // An editor token, not a persistent business revision or an export field.
@@ -15,8 +15,9 @@ export async function touchDocumentMembershipParents(tx: Pick<SystemDocumentSequ
 }
 
 /** Capture parents before FK cascades erase the links used to find them. */
-export async function touchLayeredDocumentParentsForWeldDeletion(tx: Pick<SystemDocumentSequenceTransaction, 'execute'>, weldIds: readonly number[]) {
-  await touchParentsForWelds(tx, weldIds, LAYERED_CONTROL_DOCUMENT_TYPES)
+export async function touchEditableDocumentParentsForWeldDeletion(tx: Pick<SystemDocumentSequenceTransaction, 'execute'>, weldIds: readonly number[]) {
+  // A removed membership invalidates both manual delete confirmations and layered editors.
+  await touchParentsForWelds(tx, weldIds, GENERATED_DOCUMENT_TYPES)
 }
 
 /** Run after system-index locks, before the cascade. Also covers old sourced

@@ -25,3 +25,14 @@ it.each([0, 1000, 2000])('keeps a report of %i rows intact', count => {
   const report = { title: 'Report', tables: [{ title: '', columns: ['A'], rows: Array.from({ length: count }, () => ['row']) }] }
   expect(limitReportPreview(report)).toBe(report)
 })
+
+
+it('bounds hidden print identity payloads with the preview rows', () => {
+  const rows = Array.from({ length: 2001 }, (_, i) => [i])
+  const identity = { columns: ['Линия', 'Стык'], indexes: [-1, -1], rows: rows.map(([i]) => ['L', `F${i}`]) }
+  const report = { title: 'Report', tables: [{ title: '', columns: ['Value'], rows, printIdentity: identity }] }
+  const table = limitReportPreview(report).tables![0]
+  expect(table.rows).toHaveLength(2000)
+  expect(table.printIdentity!.rows).toEqual(identity.rows.slice(0, 2000))
+  expect(identity.rows).toHaveLength(2001)
+})

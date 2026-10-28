@@ -76,6 +76,9 @@ for (const final of ['original', 'renamed-repair', 'mixed-actuality'] as const) 
       await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click()
       await page.keyboard.press('Escape')
       await expect(workspace).toBeHidden()
+      // The chain can be outside the first server block on a large database.
+      // Find its line through the operator's search before opening the picture.
+      await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(lineName)
       await page.locator(`.ag-row[row-id="${rootId}"]`).getByRole('button', { name: 'S1991', exact: true }).click()
       const picture = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Картина стыка S1991', exact: true }) })
       await picture.locator('aside').getByRole('button', { name: 'Вернуть актуальность цепочке', exact: true }).click()

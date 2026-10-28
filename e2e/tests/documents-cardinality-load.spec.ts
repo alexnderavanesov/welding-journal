@@ -1,11 +1,16 @@
 import { expect, test } from '@playwright/test'
 import pg from 'pg'
+import { readFile, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { withE2eDatabase } from '../database'
 import { buildWeldColumnValueFilter } from '../../src/lib/weld-table-filtering'
 import { isDocumentHistoryGroupRow, type DocumentHistoryGridRequest } from '../../src/lib/document-history-grid'
 import { loadRemoteGeneratedDocumentHistoryGrid, normalizeGeneratedDocumentHistoryGridRequest } from '../../src/server/generated-documents'
 import { loadIndexedSystemDocumentHistoryGrid, loadIndexedSystemDocumentHistoryFilterOptions, loadSystemDocumentSummaries } from '../../src/server/system-document-index'
 import { normalizeSystemDocumentHistoryGridRequest, normalizeSystemDocumentHistoryFilterOptionsRequest } from '../../src/server/system-documents'
+import { requireDb } from '../../src/db'
+import { deleteWeldJoint, deleteWeldJoints } from '../../src/server/weld-mutations'
+import { deleteEmptyGeneratedDocuments, loadGeneratedDocumentIdsForWeldDeletion } from '../../src/server/generated-document-cleanup'
 import { SYSTEM_DOCUMENT_TYPES, type SystemDocumentType } from '../../src/lib/system-document-types'
 
 const project = 'E2E independent document cardinality'
@@ -86,23 +91,30 @@ async function seed() {
   })
 }
 
-test('600k documents: independent registry cardinality, methods, stages, history and bounded browser blocks', async ({ page }, info) => {
+test(`${process.env.AUDIT_DOCUMENT_PLANS_ONLY === '1' ? 'PLAN DIAGNOSTIC ONLY: ' : ''}600k documents: independent registry cardinality, methods, stages, history and bounded browser blocks`, async ({ page }, info) => {
   test.skip(process.env.AUDIT_DOCUMENT_CARDINALITY !== '1', 'Requires a fresh owned disposable local database')
   test.setTimeout(1_200_000)
   await seed()
   const measurements: unknown[] = []
+  const plans: Array<{type:string;text:string;values:unknown[]}> = []
+  const plansOnly = process.env.AUDIT_DOCUMENT_PLANS_ONLY === '1'
+  if (plansOnly) expect(process.env.AUDIT_DOCUMENT_EXPLAIN).toBe('1')
   const read = (type: string, request: Partial<DocumentHistoryGridRequest> = {}) => manual.includes(type as typeof manual[number])
     ? loadRemoteGeneratedDocumentHistoryGrid(normalizeGeneratedDocumentHistoryGridRequest({ ...defaults, ...request, type: type as typeof manual[number], columnFilters }))
     : loadIndexedSystemDocumentHistoryGrid(normalizeSystemDocumentHistoryGridRequest({ ...defaults, ...request, type: type as SystemDocumentType, columnFilters }))
   for (const [type, total, search] of [['weldingJournal', 120000, 'J2-100000'], ['checklist', 20000, 'CL-20000'], ['zni', 20000, 'ZNI-20000'],
     ['lnkRequest', 140000, 'NK-100000'], ['lnkConclusion', 260000, 'RK-100000'],
     ['pstoRequest', 20000, 'REP-PSTOR-3-5000'], ['pstoConclusion', 20000, 'REP-PSTOC-3-5000']] as const) {
+    if (plansOnly && !['weldingJournal','lnkConclusion'].includes(type)) continue
     const first = await read(type, { endRow: 500 })
     expect(first.total).toBe(total)
     const original = pg.Client.prototype.query
     let statements = 0
+    let longestQuery = {text:'',values:[] as unknown[]}
     pg.Client.prototype.query = function (this: pg.Client, ...args: unknown[]) {
       statements++
+      const text = typeof args[0] === 'string' ? args[0] : (args[0] as {text?:string})?.text ?? ''
+      if (text.length > longestQuery.text.length) longestQuery = {text,values:Array.isArray(args[1]) ? args[1] : []}
       return (original as (...values: unknown[]) => unknown).apply(this, args)
     } as typeof original
     try {
@@ -112,7 +124,9 @@ test('600k documents: independent registry cardinality, methods, stages, history
         ['search', { search }],
         ...[10, 100, 500].map(n => [`selection-${n}`, { selectionOnly: true, selectedIds: first.rows.slice(0, n).map(row => row.id) }] as const),
       ] as Array<readonly [string, Partial<DocumentHistoryGridRequest>]>) {
+        if (plansOnly && path !== 'groups') continue
         statements = 0
+        longestQuery = {text:'',values:[]}
         const start = performance.now(), result = await read(type, request)
         const bytes = Buffer.byteLength(JSON.stringify(result))
         expect(result.total).toBe(path === 'search' ? 1 : total)
@@ -122,9 +136,42 @@ test('600k documents: independent registry cardinality, methods, stages, history
         if (path === 'groups') { expect(result.rowCount).toBe(2000); expect(result.rows.every(isDocumentHistoryGroupRow)).toBe(true) }
         measurements.push({ type, path, milliseconds: Math.round(performance.now() - start), statements, bytes, total })
         console.log(JSON.stringify({ phase: 'document cardinality read', ...measurements.at(-1) as object }))
+        if (path === 'groups' && ['weldingJournal','lnkConclusion'].includes(type)) plans.push({type,...longestQuery})
       }
     } finally { pg.Client.prototype.query = original }
   }
+  if (process.env.AUDIT_DOCUMENT_EXPLAIN === '1') {
+    for (const query of plans) {
+      expect(query.text.trim()).toMatch(/^(select|with)\b/i)
+      const plan = await withE2eDatabase(db => db.query('explain (analyze,buffers,format json) ' + query.text, query.values))
+      await writeFile(info.outputPath('document-plan-' + query.type + '.json'),JSON.stringify({query,plan:plan.rows},null,2))
+    }
+  }
+  if (process.env.AUDIT_DOCUMENT_COMPARE_PLANS) {
+    const comparison: unknown[] = []
+    for (const current of plans) {
+      const saved = JSON.parse(await readFile(resolve(process.env.AUDIT_DOCUMENT_COMPARE_PLANS, 'document-plan-' + current.type + '.json'), 'utf8'))
+      const previous = saved.query as typeof current
+      expect(previous.type).toBe(current.type)
+      expect(previous.text.trim()).toMatch(/^(select|with)\b/i)
+      expect(previous.values).toEqual(current.values)
+      await withE2eDatabase(async db => {
+        const before = await db.query(previous.text, previous.values)
+        const after = await db.query(current.text, current.values)
+        expect(after.rows).toEqual(before.rows)
+        for (const [iteration, query] of [previous, current, current, previous, previous, current].entries()) {
+          const result = await db.query('explain (analyze,buffers,format json) ' + query.text, query.values)
+          const plan = result.rows[0]['QUERY PLAN'][0]
+          const measurement = { type: current.type, variant: query === current ? 'current' : 'previous', iteration,
+            milliseconds: plan['Execution Time'], planning: plan['Planning Time'] }
+          comparison.push(measurement)
+          console.log(JSON.stringify({ phase: 'paired group query', ...measurement }))
+        }
+      })
+    }
+    await writeFile(info.outputPath('document-group-query-comparison.json'), JSON.stringify(comparison, null, 2))
+  }
+  if (plansOnly) return
   const stages = await loadIndexedSystemDocumentHistoryFilterOptions(normalizeSystemDocumentHistoryFilterOptionsRequest({ type: 'lnkRequest', fieldKey: 'stage', columnFilters }))
   expect(Object.fromEntries(stages.options.map(option => [option.value, option.count]))).toEqual({ 'Основной': 100000, 'До ТО': 20000, 'Цикл 1': 10000, 'Цикл 2': 5000, 'Цикл 3': 5000 })
   const errors: string[] = []
@@ -164,4 +211,52 @@ test('600k documents: independent registry cardinality, methods, stages, history
     console.log(JSON.stringify({ phase: 'document cardinality measurements', measurements }))
     await info.attach('document-cardinality', { body: JSON.stringify(measurements, null, 2), contentType: 'application/json' })
   }
+
+  // Measure the real cleanup on a complete registry, including the case where
+  // no documents need deleting. Roll back each probe before operator mutations.
+  const rollbackProbe = new Error('rollback document cleanup measurement')
+  const cleanupTargets = await withE2eDatabase(async db => (await db.query<{id:number}>(
+    "select id from weld_joints where project_title=$1 and isometry='1'",[project])).rows.map(row=>row.id))
+  for (let repeat = 0; repeat < 3; repeat++) {
+    const start = performance.now()
+    await expect(requireDb().transaction(async tx => {
+      const documentIds = await loadGeneratedDocumentIdsForWeldDeletion(tx,cleanupTargets)
+      await deleteEmptyGeneratedDocuments(tx,documentIds)
+      throw rollbackProbe
+    })).rejects.toBe(rollbackProbe)
+    console.log(JSON.stringify({ phase: '600k empty-document cleanup', repeat, milliseconds: Math.round(performance.now() - start) }))
+  }
+  const beforeDelete = await withE2eDatabase(async db => {
+    const targets = (await db.query<{ id: number; version: string }>(
+      "select id,xmin::text version from weld_joints where project_title=$1 and isometry in ('1','2') order by isometry::int", [project])).rows
+    expect(targets).toHaveLength(2)
+    const ids = targets.map(row => row.id)
+    const affected = (await db.query<{ id: number; survivors: number }>(`select a.document_id id,
+      count(*) filter(where not a.weld_joint_id=any($1::int[]))::int survivors
+      from generated_document_weld_joints a where a.document_id in
+        (select document_id from generated_document_weld_joints where weld_joint_id=any($1::int[])) group by a.document_id`, [ids])).rows
+    return { targets, affected }
+  })
+  for (const [index, target] of beforeDelete.targets.entries()) {
+    const start = performance.now()
+    if (index === 0) await deleteWeldJoint({ data: target })
+    else await deleteWeldJoints({ data: { targets: [target] } })
+    console.log(JSON.stringify({ phase: '600k registry joint deletion', mode: index ? 'bulk' : 'single', milliseconds: Math.round(performance.now() - start) }))
+  }
+  await withE2eDatabase(async db => {
+    const removed = beforeDelete.affected.filter(row => row.survivors === 0).map(row => row.id)
+    expect(removed.length).toBeGreaterThan(0)
+    expect((await db.query('select count(*)::int n from generated_documents')).rows[0].n).toBe(600000 - removed.length)
+    expect((await db.query('select id from generated_documents where id=any($1::int[])', [removed])).rows).toEqual([])
+    const surviving = (await db.query<{ id: number; survivors: number }>(`select document_id id,count(*)::int survivors
+      from generated_document_weld_joints where document_id=any($1::int[]) group by document_id order by document_id`,
+    [beforeDelete.affected.map(row => row.id)])).rows
+    expect(surviving).toEqual(beforeDelete.affected.filter(row => row.survivors > 0).sort((a, b) => a.id - b.id))
+    const positions = (await db.query<{ source_metadata: string }>(`select source_metadata from generated_documents
+      where id=any($1::int[]) and source_metadata is not null`, [surviving.map(row => row.id)])).rows
+    for (const { source_metadata } of positions) {
+      expect((JSON.parse(source_metadata).sourcePositions ?? []).some((position: { weldJointId: number }) =>
+        beforeDelete.targets.some(target => target.id === position.weldJointId))).toBe(false)
+    }
+  })
 })

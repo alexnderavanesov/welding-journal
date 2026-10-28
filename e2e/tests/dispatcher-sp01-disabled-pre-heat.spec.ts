@@ -8,6 +8,7 @@ import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dir
 import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
 import { attachDispatcherTaskCodesToPage } from '@/server/weld-read'
 import { withE2eDatabase } from '../database'
+import { cleanupLineProgramProjects } from '../line-program-fixtures'
 
 for (const report of ['/psto', '/lnk']) test(`СП-06 при выключенном НК до ТО из ${report}: индекс, переход к ТВМТ и закрытие предупреждения`, async ({ page }) => {
   test.setTimeout(120_000)
@@ -128,8 +129,10 @@ for (const report of ['/psto', '/lnk']) test(`СП-06 при выключенн�
     expect(await readStoredState(ids[0]!)).toEqual(afterConcurrentChange)
   } finally {
     await page.close()
+    // Remove this fixture's documents before cascading their joint links.
+    // Application cleanup deliberately preserves unrelated empty history.
+    await cleanupLineProgramProjects(['E2E SP disabled'])
     await withE2eDatabase(async (client) => {
-      if (ids.length) await client.query('delete from weld_joints where id = any($1::int[])', [ids])
       if (settingsChanged) {
         if (previousSetting) await client.query("update app_settings set value = $1, updated_at = $2 where key = 'control-processes'", [previousSetting.value, previousSetting.updated_at])
         else await client.query("delete from app_settings where key = 'control-processes'")

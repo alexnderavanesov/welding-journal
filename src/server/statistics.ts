@@ -154,76 +154,76 @@ export async function computeStatisticsServerResult(
     : undefined
   const rowSelect = getStatisticsRowSelect(data.tab)
   const needsControlHistory = data.tab !== 'lineSummary'
-  const [sourceRows, duplicateRows, preControlRows, repeatCycleRows, projectRows, subtitleRows, stampRows, settingsRows] = await Promise.all([
-    db
-      .select(rowSelect)
-      .from(weldJoints)
-      .where(scopeWhere)
-      .orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint)),
-    needsControlHistory ? db
-      .select({
-        id: duplicateControls.id,
-        weldJointId: duplicateControls.weldJointId,
-        method: duplicateControls.method,
-        result: duplicateControls.result,
-        controlDate: duplicateControls.controlDate,
-        conclusion: duplicateControls.conclusion,
-        conclusionDate: duplicateControls.conclusionDate,
-        updatedAt: duplicateControls.updatedAt,
-      })
-      .from(duplicateControls)
-      .innerJoin(weldJoints, eq(weldJoints.id, duplicateControls.weldJointId))
-      .where(scopeWhere)
-      .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id)) : Promise.resolve([]),
-    needsControlHistory ? db
-      .select({
-        id: preHeatTreatmentControls.id,
-        weldJointId: preHeatTreatmentControls.weldJointId,
-        method: preHeatTreatmentControls.method,
-        requestName: preHeatTreatmentControls.requestName,
-        requestDate: preHeatTreatmentControls.requestDate,
-        result: preHeatTreatmentControls.result,
-        conclusionDate: preHeatTreatmentControls.conclusionDate,
-        conclusionName: preHeatTreatmentControls.conclusionName,
-        defectDescription: preHeatTreatmentControls.defectDescription,
-        rkExposureConfirmedDiameter: preHeatTreatmentControls.rkExposureConfirmedDiameter,
-      })
-      .from(preHeatTreatmentControls)
-      .innerJoin(weldJoints, eq(weldJoints.id, preHeatTreatmentControls.weldJointId))
-      .where(scopeWhere)
-      .orderBy(asc(preHeatTreatmentControls.weldJointId), asc(preHeatTreatmentControls.id)) : Promise.resolve([]),
-    needsControlHistory ? db
-      .select({
-        id: pstoRepeatCycles.id,
-        weldJointId: pstoRepeatCycles.weldJointId,
-        sequence: pstoRepeatCycles.sequence,
-        pstoRequest: pstoRepeatCycles.pstoRequest,
-        pstoRequestDate: pstoRepeatCycles.pstoRequestDate,
-        pstoDate: pstoRepeatCycles.pstoDate,
-        heatTreatmentDiagram: pstoRepeatCycles.heatTreatmentDiagram,
-        pstoResult: pstoRepeatCycles.pstoResult,
-        pstoNote: pstoRepeatCycles.pstoNote,
-        tvmtRequest: pstoRepeatCycles.tvmtRequest,
-        tvmtRequestDate: pstoRepeatCycles.tvmtRequestDate,
-        tvmtResult: pstoRepeatCycles.tvmtResult,
-        tvmtConclusionDate: pstoRepeatCycles.tvmtConclusionDate,
-        tvmtConclusion: pstoRepeatCycles.tvmtConclusion,
-      })
-      .from(pstoRepeatCycles)
-      .innerJoin(weldJoints, eq(weldJoints.id, pstoRepeatCycles.weldJointId))
-      .where(scopeWhere)
-      .orderBy(asc(pstoRepeatCycles.weldJointId), asc(pstoRepeatCycles.sequence)) : Promise.resolve([]),
-    db.selectDistinct({ value: weldJoints.projectTitle }).from(weldJoints),
-    db.selectDistinct({ value: weldJoints.subtitleCode }).from(weldJoints).where(projectWhere),
-    data.tab === 'welders'
-      ? db.select().from(welderStamps).orderBy(asc(welderStamps.id))
-      : Promise.resolve([]),
-    db
-      .select()
-      .from(appSettings)
-      .where(inArray(appSettings.key, [PROJECT_SETTING_KEYS.systemIndex, PROJECT_SETTING_KEYS.other, PROJECT_SETTING_KEYS.controlProcesses])),
-  ])
-  if (data.tab === 'general' || data.tab === 'lineSummary') await attachProgramChainStates(sourceRows, db)
+  const { sourceRows, duplicateRows, preControlRows, repeatCycleRows, projectRows, subtitleRows, stampRows, settingsRows } = await db.transaction(async (db) => {
+    const sourceRows = await db
+        .select(rowSelect)
+        .from(weldJoints)
+        .where(scopeWhere)
+        .orderBy(desc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
+    const duplicateRows = needsControlHistory ? await db
+        .select({
+          id: duplicateControls.id,
+          weldJointId: duplicateControls.weldJointId,
+          method: duplicateControls.method,
+          result: duplicateControls.result,
+          controlDate: duplicateControls.controlDate,
+          conclusion: duplicateControls.conclusion,
+          conclusionDate: duplicateControls.conclusionDate,
+          updatedAt: duplicateControls.updatedAt,
+        })
+        .from(duplicateControls)
+        .innerJoin(weldJoints, eq(weldJoints.id, duplicateControls.weldJointId))
+        .where(scopeWhere)
+        .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id)) : []
+    const preControlRows = needsControlHistory ? await db
+        .select({
+          id: preHeatTreatmentControls.id,
+          weldJointId: preHeatTreatmentControls.weldJointId,
+          method: preHeatTreatmentControls.method,
+          requestName: preHeatTreatmentControls.requestName,
+          requestDate: preHeatTreatmentControls.requestDate,
+          result: preHeatTreatmentControls.result,
+          conclusionDate: preHeatTreatmentControls.conclusionDate,
+          conclusionName: preHeatTreatmentControls.conclusionName,
+          defectDescription: preHeatTreatmentControls.defectDescription,
+          rkExposureConfirmedDiameter: preHeatTreatmentControls.rkExposureConfirmedDiameter,
+        })
+        .from(preHeatTreatmentControls)
+        .innerJoin(weldJoints, eq(weldJoints.id, preHeatTreatmentControls.weldJointId))
+        .where(scopeWhere)
+        .orderBy(asc(preHeatTreatmentControls.weldJointId), asc(preHeatTreatmentControls.id)) : []
+    const repeatCycleRows = needsControlHistory ? await db
+        .select({
+          id: pstoRepeatCycles.id,
+          weldJointId: pstoRepeatCycles.weldJointId,
+          sequence: pstoRepeatCycles.sequence,
+          pstoRequest: pstoRepeatCycles.pstoRequest,
+          pstoRequestDate: pstoRepeatCycles.pstoRequestDate,
+          pstoDate: pstoRepeatCycles.pstoDate,
+          heatTreatmentDiagram: pstoRepeatCycles.heatTreatmentDiagram,
+          pstoResult: pstoRepeatCycles.pstoResult,
+          pstoNote: pstoRepeatCycles.pstoNote,
+          tvmtRequest: pstoRepeatCycles.tvmtRequest,
+          tvmtRequestDate: pstoRepeatCycles.tvmtRequestDate,
+          tvmtResult: pstoRepeatCycles.tvmtResult,
+          tvmtConclusionDate: pstoRepeatCycles.tvmtConclusionDate,
+          tvmtConclusion: pstoRepeatCycles.tvmtConclusion,
+        })
+        .from(pstoRepeatCycles)
+        .innerJoin(weldJoints, eq(weldJoints.id, pstoRepeatCycles.weldJointId))
+        .where(scopeWhere)
+        .orderBy(asc(pstoRepeatCycles.weldJointId), asc(pstoRepeatCycles.sequence)) : []
+    const projectRows = await db.selectDistinct({ value: weldJoints.projectTitle }).from(weldJoints)
+    const subtitleRows = await db.selectDistinct({ value: weldJoints.subtitleCode }).from(weldJoints).where(projectWhere)
+    const stampRows = data.tab === 'welders'
+        ? await db.select().from(welderStamps).orderBy(asc(welderStamps.id)) : []
+    const settingsRows = await db
+        .select()
+        .from(appSettings)
+        .where(inArray(appSettings.key, [PROJECT_SETTING_KEYS.systemIndex, PROJECT_SETTING_KEYS.other, PROJECT_SETTING_KEYS.controlProcesses]))
+    if (data.tab === 'general' || data.tab === 'lineSummary') await attachProgramChainStates(sourceRows, db)
+    return { sourceRows, duplicateRows, preControlRows, repeatCycleRows, projectRows, subtitleRows, stampRows, settingsRows }
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
   const otherSettings = normalizeOtherSettings(
     getStoredSetting(settingsRows, PROJECT_SETTING_KEYS.other) ?? DEFAULT_OTHER_SETTINGS,
   )

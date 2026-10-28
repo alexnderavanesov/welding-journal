@@ -3,6 +3,7 @@
 ## Agent usage and token cost
 
 - User clarification (2026-10-19): conserving tokens takes priority over finishing sooner. Work without sub-agents by default. If delegation would materially improve the result's quality, explain the concrete benefit and obtain the user's confirmation before starting an agent. Use agents to accelerate work only when the user explicitly requests that tradeoff. Earlier general permission to use agents does not override this rule.
+- Audit priority exception (user clarification, 2026-10-27): for pre-commit checks and especially systemic audits, correctness, depth and completeness take priority over token/resource cost and speed. Do not narrow the agreed coverage or stop early to conserve resources. The user selects the model and reasoning effort; flag a concrete reason to increase effort if one arises. This exception does not itself authorize sub-agents or change the production boundary.
 
 ## Git commits
 
@@ -57,6 +58,8 @@
 
 ## Validation and dispatcher rules
 
+- User clarification (2026-10-27): if an existing joint's official stamp no longer qualifies, allow unrelated corrections (including isometry, notes and factual stamps) while its weld date, qualification parameters and official stamps remain unchanged. Keep СП-02 visible. New joints and changes to those qualification inputs must still pass validation; preserve version/concurrency checks.
+- User clarification (2026-10-27): ordinary user templates for JSR / ЖСР, Checklist / чек-лист and ZNI / ЗНИ must use the current PSTO/TVMT cycle, selected by the same rule as the PSTO report, both on initial generation and later downloads. Empty fields in the current repeat must not fall back to the primary cycle. System requests/conclusions remain tied to their own historical cycle; do not rewrite stored history.
 - System-managed fields must never appear in the weld-joint create/edit form. Requests and request dates, LNK/PSTO results and conclusions, derived statuses, dispatcher data, service timestamps, and document assignments such as JSR, Checklist, and ZNI are changed only by their dedicated workflows and remain read-only in report tables. Add regression coverage whenever a new system-managed weld field is introduced.
 - Import, mass-fill, and replacement validation must check the final record after imported values are merged with the stored weld joint. A partial update must not bypass a save check.
 - When one import row has several simultaneously detectable field errors, report and highlight all of them together instead of stopping after the first field error. Add a regression test for combined errors whenever a new import validation can overlap another one.
@@ -74,6 +77,7 @@
 
 ## Full pre-commit audit
 
+- Systemic-audit closure (user clarification, 2026-10-28): the 27–28 October systemic audit is complete; see `docs/systemic-audit-2026-10-27.md`. Treat the single 303-second SQL episode as an anomaly that did not recur in repeated checks, not a confirmed application defect or mandatory fix. Preserve its evidence; do not continue its special investigation or the additional bulk-operation optimizations now. If a similar anomaly recurs during the next separately requested systemic audit, remind the user of this episode, present the new evidence and propose investigating the cause. Without recurrence, do not reopen this special investigation. This does not launch an audit, monitoring, a background queue or new limits; normal agreed future audit coverage remains in place.
 - Report output clarification (2026-10-26): the user prioritizes the downloaded file. Limit the preview only; never silently trim an Excel file to a preview/page limit, and allow the complete selected joint report beyond 10000 rows. The user explicitly chose fresh data at download time with the captured filters/order/columns, superseding the earlier requirement that Excel remain frozen with the preview. Preview/print retain their own snapshot. Keep document generation/mutation protections separate from file completeness. Implementation, measurements and verification scope: `docs/report-preview-and-full-excel-2026-10-26.md`.
 
 - Table migration follow-up (2026-10-26): the user subsequently selected and authorized import preview, welder statistics (preserving cards/chart) and line statistics. These migrations and the search/shutdown follow-ups are complete; see `docs/ag-grid-import-statistics-2026-10-26.md`. The later request for a full pre-commit check covers all uncommitted changes, not the separately deferred systemic audit. The older statement that the table list still needs discussion is superseded.

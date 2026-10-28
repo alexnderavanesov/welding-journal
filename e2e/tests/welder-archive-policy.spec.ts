@@ -1,11 +1,14 @@
 import { expect, test, type Page } from '@playwright/test'
 import { drizzle } from 'drizzle-orm/node-postgres'
+import * as schema from '../../src/db/schema'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { editJournalJoint } from '../journal-grid'
 import { deserializeRpcResponse, rpcName, serializeRpcData, siblingRpcUrl } from '../rpc'
 import type { WelderStampRegistrySnapshot } from '../../src/server/welder-stamps'
 import { getTodayIsoDate } from '../../src/lib/date-format'
+import { FACTUAL_WELDER_STAMP_FIELD_KEYS, OFFICIAL_WELDER_STAMP_FIELD_KEYS } from '../../src/lib/report-config'
+import { FIELD_BY_KEY } from '../../src/lib/weld-fields'
 
 const PROJECT = 'E2E archive policy'
 const ARCHIVED = 'EWA1', ACTIVE = 'EWA2'
@@ -87,6 +90,75 @@ test('списки: пустая дата, архив и отстранение 
   await expect(dialog).toBeHidden()
   await expect.poll(() => withE2eDatabase(async db => (await db.query('select stamp_1_k,stamp_1_k_fact,weld_date from weld_joints where id=$1', [id])).rows[0]))
     .toEqual({ stamp_1_k: ARCHIVED, stamp_1_k_fact: ARCHIVED, weld_date: null })
+})
+
+test('клейма: поиск по части, архив внизу и сохранение во всех 12 полях', async ({ page }, info) => {
+  const id = await seed(), errors: string[] = [], searchRequests: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.goto('/journal')
+  await editJournalJoint(page, id)
+  const dialog = page.getByRole('dialog')
+  const labels = [...OFFICIAL_WELDER_STAMP_FIELD_KEYS, ...FACTUAL_WELDER_STAMP_FIELD_KEYS].map(key => FIELD_BY_KEY.get(key)!.label)
+  expect(labels).toHaveLength(12)
+  let searching = false
+  page.on('request', request => {
+    if (searching && request.url().includes('/_serverFn/')) searchRequests.push(rpcName(request.url()))
+  })
+  for (const label of labels) {
+    const select = dialog.getByRole('combobox', { name: label, exact: true })
+    await select.click()
+    const search = dialog.getByRole('combobox', { name: `Поиск: ${label}`, exact: true })
+    const list = dialog.getByRole('listbox')
+    await expect(search).toBeFocused()
+    searching = true
+    await search.fill('wa')
+    await expect(list.getByRole('option')).toHaveText([ACTIVE, `${ARCHIVED} (в архиве)`])
+    await expect(select).toHaveValue('')
+    await search.fill('нет-такого-клейма')
+    await expect(dialog.getByText('Ничего не найдено')).toBeVisible()
+    await search.press('Enter')
+    await expect(select).toHaveValue('')
+    await search.fill('wa1')
+    await expect(list.getByRole('option')).toHaveText([`${ARCHIVED} (в архиве)`])
+    searching = false
+    await search.press('Enter')
+    await expect(select).toHaveValue(ARCHIVED)
+    await expect(select).toBeFocused()
+  }
+  expect(searchRequests).toEqual([])
+  const first = dialog.getByRole('combobox', { name: labels[0], exact: true })
+  await first.click()
+  const search = dialog.getByRole('combobox', { name: `Поиск: ${labels[0]}`, exact: true })
+  await expect(search).toHaveValue('')
+  await page.screenshot({ path: info.outputPath('stamp-search.png') })
+  await search.press('Escape')
+  await expect(dialog).toBeVisible()
+  await expect(first).toBeFocused()
+  await first.click()
+  await search.press('Tab')
+  await expect(dialog.getByRole('listbox')).toHaveCount(0)
+  await expect(dialog.getByRole('combobox', { name: labels[1], exact: true })).toBeFocused()
+  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await editJournalJoint(page, id)
+  for (const label of labels) await expect(dialog.getByRole('combobox', { name: label, exact: true })).toHaveValue(ARCHIVED)
+  await first.click()
+  // Reopening scrolls to the selected archived stamp at the end. In a full
+  // registry the first, empty option is outside the virtualized viewport.
+  await search.fill('Пусто')
+  await dialog.getByRole('listbox').getByRole('option', { name: 'Пусто', exact: true }).click()
+  await expect(first).toHaveValue('')
+  await dialog.getByRole('button', { name: 'Отмена', exact: true }).click()
+  await page.getByRole('button', { name: 'Новый стык', exact: true }).click()
+  for (const label of [labels[0], labels[6]]) {
+    const select = dialog.getByRole('combobox', { name: label, exact: true })
+    await select.click()
+    await dialog.getByRole('combobox', { name: `Поиск: ${label}`, exact: true }).fill('wa2')
+    await dialog.getByRole('listbox').getByRole('option', { name: ACTIVE, exact: true }).click()
+    await expect(select).toHaveValue(ACTIVE)
+  }
+  await dialog.getByRole('button', { name: 'Отмена', exact: true }).click()
+  expect(errors).toEqual([])
 })
 
 test('архивация: все 12 полей, статусы стыка, граница даты, пустая дата, внутреннее клеймо и атомарность', async ({ page }) => {
@@ -184,11 +256,14 @@ test('200000 стыков: проверка архивации выполняе�
   const archived = prepareWelderStampRecordsForPersistence([{ id: 999999, naksStamp: '', internalStamp: 'OTHER', naksPermits: [], dlsPermits: [], archived: true, archivedAt: '2026-08-01' }])
   await withE2eDatabase(async db => {
     const queries: string[] = []
-    const connection = drizzle(db, { logger: { logQuery(query) { queries.push(query) } } })
-    const start = Date.now()
-    await assertWelderStampArchiveDatesAreUnused(connection, [], archived)
-    expect(queries).toHaveLength(1)
-    expect(queries[0]).toContain('limit 1')
-    console.info('Archive guard, 200001 fixture joints:', Date.now() - start, 'ms; queries:', queries.length)
+    const connection = drizzle(db, { schema, logger: { logQuery(query) { queries.push(query) } } })
+    await connection.transaction(async tx => {
+      queries.length = 0 // Measure the guard, excluding transaction setup.
+      const start = Date.now()
+      await assertWelderStampArchiveDatesAreUnused(tx, [], archived)
+      expect(queries).toHaveLength(1)
+      expect(queries[0]).toContain('limit 1')
+      console.info('Archive guard, 200001 fixture joints:', Date.now() - start, 'ms; queries:', queries.length)
+    }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
   })
 })

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
-import { execFileSync } from 'node:child_process'
 import { writeFile } from 'node:fs/promises'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
+import { prepareSafariMeasurementWindow } from '../safari-foreground'
 
 const fixtureProject = 'E2E header keyboard'
 test.beforeAll(async () => withLineProgramFixture(async db => {
@@ -51,7 +51,7 @@ for (const route of ['/', '/lnk', '/psto']) test(`header focus stays visible aft
 
 test('installed Safari: visible header navigation and asynchronous document clipboard', async ({ baseURL }, info) => {
   test.skip(process.env.INSTALLED_SAFARI_KEYBOARD !== '1', 'Opt-in installed SafariDriver on port 4445')
-  test.setTimeout(120000)
+  test.setTimeout(600000)
   if (baseURL !== 'http://127.0.0.1:3100') throw Error('Requires the isolated local E2E server')
   const command = async (path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST') => {
     const response = await fetch('http://127.0.0.1:4445' + path, { method, headers: { 'Content-Type': 'application/json' },
@@ -60,7 +60,8 @@ test('installed Safari: visible header navigation and asynchronous document clip
     if (!response.ok || result.value?.error) throw Error(JSON.stringify(result.value))
     return result.value
   }
-  const { sessionId } = await command('/session', { capabilities: { alwaysMatch: { browserName: 'safari' } } })
+  const { sessionId, capabilities } = await command('/session', { capabilities: { alwaysMatch: { browserName: 'safari' } } })
+  console.info('SAFARI_NATIVE_BROWSER', JSON.stringify({ name: capabilities.browserName, version: capabilities.browserVersion }))
   const prefix = '/session/' + sessionId
   const execute = (script: string, ...args: unknown[]) => command(prefix + '/execute/sync', { script, args })
   const key = (value: string) => command(prefix + '/actions', { actions: [{ type: 'key', id: 'keyboard', actions: [{ type: 'keyDown', value }, { type: 'keyUp', value }] }] })
@@ -69,13 +70,13 @@ test('installed Safari: visible header navigation and asynchronous document clip
   }
   try {
     await command(prefix + '/window/rect', { x: 0, y: 0, width: 1600, height: 1050 })
+    await prepareSafariMeasurementWindow(command, prefix, 300000)
     for (const route of ['/', '/lnk', '/psto']) {
       await command(prefix + '/url', { url: baseURL + route })
       await expect.poll(() => execute("return !!document.querySelector('input[type=search]')")).toBe(true)
       await execute("const e=document.querySelector('input[type=search]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,arguments[0]);e.dispatchEvent(new Event('input',{bubbles:true}))", fixtureProject)
       await expect.poll(() => execute("return document.querySelector('.ag-cell[col-id=joint]')?.textContent?.trim() === 'HEADER-F1'")).toBe(true)
       await command(prefix + '/window', { handle: await command(prefix + '/window') })
-      execFileSync('/usr/bin/osascript', ['-e', 'tell application "Safari" to activate'], { timeout: 10000 })
       await expect.poll(() => execute('return document.hasFocus() && !document.hidden'), { timeout: 30000 }).toBe(true)
       const header = await command(prefix + '/element', { using: 'css selector', value: '.ag-header-cell[col-id=projectTitle] .ag-header-cell-text' })
       await command(prefix + '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: [
@@ -99,6 +100,7 @@ test('installed Safari: visible header navigation and asynchronous document clip
     await writeFile(info.outputPath('safari-header-focus.png'), Buffer.from(await command(prefix + '/screenshot'), 'base64'))
     await command(prefix + '/url', { url: baseURL + '/documents' })
     await expect.poll(() => execute("return document.body.innerText.includes('Найдено: 110')")).toBe(true)
+    await expect.poll(() => execute("return document.body.innerText.includes('Загружено: 100')")).toBe(true)
     await expect.poll(() => execute('return document.hasFocus() && !document.hidden')).toBe(true)
     const cell = await command(prefix + '/element', { using: 'css selector', value: '.ag-row[row-index="0"] .ag-cell[col-id=title]' })
     const point = await execute('const r=arguments[0].getBoundingClientRect();return {x:r.left+4,y:r.top+4}', cell)
@@ -108,15 +110,45 @@ test('installed Safari: visible header navigation and asynchronous document clip
     const shortcut = (value: string) => command(prefix + '/actions', { actions: [{ type: 'key', id: 'keyboard', actions: [
       { type: 'keyDown', value: '\uE03D' }, { type: 'keyDown', value }, { type: 'keyUp', value }, { type: 'keyUp', value: '\uE03D' },
     ] }] })
+    await execute(`
+      const audit = window.__safariClipboardAudit = { writes: [], keys: [], copies: 0, pastes: 0 };
+      for (const method of ['write', 'writeText']) {
+        if (!navigator.clipboard?.[method]) continue;
+        const original = navigator.clipboard[method].bind(navigator.clipboard);
+        navigator.clipboard[method] = function(...args) {
+          const entry = { method, state: 'pending', active: document.hasFocus() && !document.hidden };
+          audit.writes.push(entry);
+          return original(...args).then(value => { entry.state = 'fulfilled'; return value }, error => {
+            entry.state = 'rejected'; entry.error = { name: error.name, message: error.message }; throw error;
+          });
+        };
+      }
+      document.addEventListener('keydown', event => {
+        if (['a','c','v'].includes(event.key)) audit.keys.push({ key: event.key, meta: event.metaKey, trusted: event.isTrusted,
+          target: event.target.tagName, column: event.target.closest('.ag-cell')?.getAttribute('col-id') });
+      }, true);
+      document.addEventListener('copy', () => audit.copies++);
+      document.addEventListener('paste', () => audit.pastes++);
+    `)
+    await expect.poll(() => execute("return document.activeElement?.closest('.ag-cell')?.getAttribute('col-id')")).toBe('title')
     await shortcut('a'); await shortcut('c')
+    // Keep focus in the grid until the real asynchronous write finishes.
+    // Instrumentation delegates to native clipboard APIs and never reads contents.
+    await expect.poll(() => execute("return window.__safariClipboardAudit.writes.at(-1)?.state")).toBe('fulfilled')
     // Paste through the installed browser, with its real clipboard permission and
     // user gesture. Do not read or report any pre-existing clipboard contents.
     await execute("const e=document.createElement('textarea');e.id='safari-copy-verification';e.style.cssText='position:fixed;top:0;left:0;z-index:9999';document.body.append(e)")
     await expect.poll(async () => {
       await execute("const e=document.getElementById('safari-copy-verification');e.value='';e.focus()")
       await shortcut('v')
-      return execute("return (document.getElementById('safari-copy-verification').value.match(/SAFARI-CLIP-\\d{3}/g)||[]).length")
-    }).toBe(110)
+      return execute("return (document.getElementById('safari-copy-verification').value.match(/SAFARI-CLIP-\\d{3}/g)||[]).sort()")
+    }).toEqual(Array.from({ length: 110 }, (_, index) => `SAFARI-CLIP-${String(index + 1).padStart(3, '0')}`))
+    await expect.poll(() => execute("return document.body.innerText.includes('Загружено: 100')")).toBe(true)
     console.info('SAFARI_NATIVE_CLIPBOARD', JSON.stringify({ documents: 110, loadedBlock: 100, nativePaste: true }))
+    await writeFile(info.outputPath('safari-clipboard-diagnostic.json'), JSON.stringify(await execute('return window.__safariClipboardAudit'), null, 2))
+  } catch (error) {
+    await writeFile(info.outputPath('safari-clipboard-diagnostic.json'), JSON.stringify(await execute("return {clipboard:window.__safariClipboardAudit,active:document.hasFocus()&&!document.hidden,focused:document.activeElement?.tagName,column:document.activeElement?.closest('.ag-cell')?.getAttribute('col-id')}"), null, 2))
+    await writeFile(info.outputPath('safari-keyboard-failure.png'), Buffer.from(await command(prefix + '/screenshot'), 'base64'))
+    throw error
   } finally { await command(prefix, undefined, 'DELETE') }
 })

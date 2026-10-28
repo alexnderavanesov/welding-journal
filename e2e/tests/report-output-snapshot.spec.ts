@@ -4,6 +4,7 @@ import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-prog
 import { readReportOutputSnapshot, visitReportOutput } from '../../src/server/weld-read'
 import { captureReportExcel } from '../report-excel-capture'
 import { rpcName } from '../rpc'
+import { captureFullReportPrint } from '../report-print-capture'
 
 const project = 'E2E output snapshot'
 test.afterEach(() => cleanupLineProgramProjects([project]))
@@ -16,6 +17,38 @@ async function fixture() {
       values($1,'ВИК','before','2026-09-02')`, [row.id])
   })
 }
+
+test('preview failure keeps output disabled and an explicit retry restores the captured selection', async ({ page }) => {
+  await fixture()
+  let requests = 0
+  await page.route('**/_serverFn/**', async route => {
+    if (rpcName(route.request().url()).startsWith('readReportOutputSnapshot')) {
+      requests++
+      if (requests === 1) return route.abort('failed')
+    }
+    await route.continue()
+  })
+  await page.goto('/journal')
+  await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
+  await expect(page.getByText('SNAP-BEFORE', { exact: true })).toBeVisible()
+  await expect(page.locator('[data-welding-journal-grid] .journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
+  await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
+  await page.getByRole('button', { name: 'Текущая версия', exact: true }).click()
+  const preview = page.getByRole('dialog', { name: 'Предпросмотр отчёта', exact: true })
+  await expect(preview.getByRole('alert')).toBeVisible()
+  await expect(preview.locator('iframe')).toHaveCount(0)
+  await expect(preview.getByRole('button', { name: 'Печать / Сохранить PDF', exact: true })).toBeDisabled()
+  await expect(preview.getByRole('button', { name: 'Скачать Excel', exact: true })).toHaveCount(0)
+  await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
+  await page.waitForTimeout(500)
+  expect(requests).toBe(1)
+  await preview.getByRole('button', { name: 'Повторить', exact: true }).click()
+  await expect(preview.frameLocator('iframe').locator('tbody tr')).toHaveCount(1)
+  await expect(preview.frameLocator('iframe').locator('tbody')).toContainText('SNAP-BEFORE')
+  await expect(preview.getByRole('alert')).toHaveCount(0)
+  await expect(preview.getByRole('button', { name: 'Скачать Excel', exact: true })).toBeEnabled()
+  expect(requests).toBe(2)
+})
 
 test('complete download keeps one database snapshot across batches and sees later changes on the next download', async () => {
   await withLineProgramFixture(async db => {
@@ -40,6 +73,9 @@ test('complete download keeps one database snapshot across batches and sees late
   expect(batches[2][0]).toEqual(['BATCH-2001', 'before', 'before'])
   const fresh = await readReportOutputSnapshot({ ...input, columnFilters: { search: 'BATCH-2001' } })
   expect(fresh.report.tables![0].rows[0]).toEqual(['BATCH-2001', 'after', 'after'])
+  const preview = await readReportOutputSnapshot(input)
+  expect(preview.report.tables![0].rows).toHaveLength(2000)
+  expect(preview.report.tables![0].printIdentity!.rows).toEqual(Array.from({ length: 2000 }, (_, i) => ['BATCH', `BATCH-${String(i + 1).padStart(4, '0')}`]))
   const controller = new AbortController()
   let cancelledBatches = 0
   await expect(visitReportOutput(input, async () => { cancelledBatches++; controller.abort() }, controller.signal)).rejects.toThrow()
@@ -147,12 +183,10 @@ for (const report of ['weldingJournal', 'lnk', 'heatTreatment'] as const) {
     const book = await captureReportExcel(page, preview)
     const values = Object.values(book.Sheets).flatMap(sheet => Object.entries(sheet).filter(([key]) => !key.startsWith('!')).map(([, cell]) => cell.v))
     expect(values).toContain('SNAP-AFTER'); expect(values).not.toContain('SNAP-BEFORE')
-    await preview.locator('iframe').evaluate((element: HTMLIFrameElement) => {
-      element.contentWindow!.print = () => { document.body.dataset.snapshotPrint = element.contentDocument!.body.textContent ?? '' }
-    })
+    await captureFullReportPrint(page, true)
     await preview.getByRole('button', { name: 'Печать / Сохранить PDF', exact: true }).click()
-    expect(await page.locator('body').getAttribute('data-snapshot-print')).toContain('SNAP-BEFORE')
-    expect(await page.locator('body').getAttribute('data-snapshot-print')).not.toContain('SNAP-AFTER')
+    await expect.poll(() => page.evaluate(() => (window as unknown as { auditFullPrintHtml?: string }).auditFullPrintHtml ?? '')).toContain('SNAP-BEFORE')
+    expect(await page.evaluate(() => (window as unknown as { auditFullPrintHtml?: string }).auditFullPrintHtml)).not.toContain('SNAP-AFTER')
     expect(countOutputs()).toBe(1)
     await preview.getByRole('button', { name: 'Закрыть предпросмотр', exact: true }).click()
     await expect(grid.getByText('SNAP-AFTER', { exact: true })).toBeVisible()

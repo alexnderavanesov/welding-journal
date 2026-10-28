@@ -356,6 +356,7 @@ async function buildExistingRowsImportPreview({
     const candidateForPrepare = prepareCandidateForExistingRowsValidation(candidate)
     const preparation = collectImportedWeldRecordPreparationErrors({
       records: [candidateForPrepare],
+      previousRows: [existingRow],
       skipManualJointNameValidation: true,
       skipLnkResultRuleValidation: true,
       weldFormStampSelectOptions,

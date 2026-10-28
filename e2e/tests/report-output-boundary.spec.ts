@@ -1,4 +1,4 @@
-import { stat } from 'node:fs/promises'
+import { stat, writeFile } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { expect, test, type Request } from '@playwright/test'
@@ -140,9 +140,10 @@ test(`${outputRows} строк: настоящий широкий предпро
   }
 })
 
-test('1000 строк: разрешённая широкая печать целиком', async ({ page, browser }) => {
+test('1000 строк: разрешённая широкая печать целиком', async ({ page, browser }, info) => {
   test.skip(process.env.AUDIT_REPORT_PRINT_LIMIT !== '1', 'Separate isolated allowed-print run')
-  test.setTimeout(180_000)
+  const printPdf = process.env.AUDIT_REPORT_PRINT_PDF === '1'
+  test.setTimeout(printPdf ? 300_000 : 180_000)
   await withE2eDatabase(async db => {
     expect((await db.query('select count(*)::int as n from weld_joints')).rows[0].n).toBe(1)
     await db.query(`insert into weld_joints(project_title,line,joint,weld_date,officiality,revision_actuality,
@@ -171,7 +172,7 @@ test('1000 строк: разрешённая широкая печать цел
     await expect(dialog.frameLocator('iframe').locator('tbody tr')).toHaveCount(100)
     const previewMilliseconds = Date.now() - started
     await sampling.checkpoint('preview 1000 x 111')
-    await captureFullReportPrint(page)
+    await captureFullReportPrint(page, printPdf)
     const printing = Date.now()
     await dialog.getByRole('button', { name: 'Печать / Сохранить PDF' }).click()
     await expect.poll(() => page.evaluate(() => JSON.parse(document.body.dataset.fullPrint ?? '{}').rows)).toBe(1000)
@@ -180,9 +181,41 @@ test('1000 строк: разрешённая широкая печать цел
     expect(printed.minColumns).toBe(111)
     expect(printed.maxColumns).toBe(111)
     expect(printed.lastRow).toContain('ALLOWED-PRINT-F1000')
+    expect(printed.parts.length).toBeGreaterThan(1)
+    expect(printed.physicalRows).toBe(1000 * printed.parts.length)
+    const expectedJoints = Array.from({ length: 1000 }, (_, i) => `ALLOWED-PRINT-F${String(i + 1).padStart(4, '0')}`)
+    for (const part of printed.parts) {
+      expect(part.headers.slice(0, 2)).toEqual(['Линия', 'Стык'])
+      expect(part.joints).toEqual(expectedJoints)
+      expect(part.rows).toBe(1000)
+      expect(part.minColumns).toBe(part.headers.length)
+      expect(part.maxColumns).toBe(part.headers.length)
+      expect(part.headers.length).toBeLessThanOrEqual(10)
+    }
     console.log(JSON.stringify({ workflow: '1000 x 111 allowed print DOM', previewMilliseconds, printMilliseconds: Date.now() - printing, cellNodes: printed.cellNodes }))
     await expect(page.locator('iframe[title="Полный отчёт для печати"]')).toHaveCount(0)
     await sampling.checkpoint('printed 1000 x 111')
+    if (printPdf) {
+      const html = await page.evaluate(() => {
+        const state = window as unknown as { auditFullPrintHtml?: string }
+        const html = state.auditFullPrintHtml
+        delete state.auditFullPrintHtml
+        return html
+      })
+      expect(html).toBeTruthy()
+      await writeFile(info.outputPath('full-print.html'), html!)
+      const printContext = await browser.newContext()
+      try {
+        const printPage = await printContext.newPage()
+        await printPage.setContent(html!)
+        await printPage.evaluate(() => document.fonts.ready)
+        const started = Date.now()
+        await printPage.pdf({ path: info.outputPath('full-print.pdf'), preferCSSPageSize: true, printBackground: true })
+        console.log(JSON.stringify({ workflow: 'Chrome PDF from exact full-print DOM', milliseconds: Date.now() - started,
+          bytes: (await stat(info.outputPath('full-print.pdf'))).size }))
+        await sampling.checkpoint('Chrome PDF completed')
+      } finally { await printContext.close() }
+    }
     await dialog.getByRole('button', { name: 'Закрыть предпросмотр' }).click()
     expect(errors).toEqual([])
   } finally {

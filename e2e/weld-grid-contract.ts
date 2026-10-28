@@ -1358,10 +1358,13 @@ export function registerWeldGridContract(report: GridReport) {
     const rangeCalls = calls.slice(before)
     expect(rangeCalls.some(name => name.startsWith('summarizeJournalGridRange'))).toBe(true)
     expect(rangeCalls.length).toBeLessThanOrEqual(8)
+    // The joint/WDI/date summary accompanies numeric cell statistics. Its
+    // existing area RPC must stay bounded too; it is not a full-report refresh.
+    expect(rangeCalls.filter(name => name.startsWith('summarizeJournalGridArea_')).length).toBeLessThanOrEqual(2)
     // Ctrl+Shift+Down also reveals the last, previously unloaded block. Its
     // visible next-step cells need a bounded dispatcher context, not a rebuild.
     expect(rangeCalls.filter(name => name.startsWith('getDispatcherTaskContext_')).length).toBeLessThanOrEqual(2)
-    expect(rangeCalls.every(name => /^(readJournalGrid|summarizeJournalGridRange|getDispatcherTaskContext)_/.test(name))).toBe(true)
+    expect(rangeCalls.every(name => /^(readJournalGrid|summarizeJournalGridRange|summarizeJournalGridArea|getDispatcherTaskContext)_/.test(name)), rangeCalls.join(', ')).toBe(true)
     const rendered = await page.locator('.ag-grid-scrolling-rows .ag-row').count()
     expect(rendered).toBeLessThan(60)
     console.info(`${profile.prefix} accumulated rows:`, JSON.stringify({ rows: 5000, rangeTotalMs: Math.round(duration), renderedRows: rendered, extraRpc: calls.length - before }))

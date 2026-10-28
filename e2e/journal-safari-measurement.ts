@@ -1,5 +1,6 @@
 import { expect, type Page } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
+import { prepareSafariMeasurementWindow } from './safari-foreground'
 
 /** SafariDriver creates its own automation window/profile. Never attach to a
  * user's tabs; only navigate this session to the disposable local E2E server. */
@@ -22,6 +23,7 @@ export async function measureInstalledSafari(page: Page) {
     await command(session + '/window/rect', { x: 0, y: 0, width: 1600, height: 1050 })
     const ownHandle = await command(session + '/window')
     await command(session + '/window', { handle: ownHandle })
+    await prepareSafariMeasurementWindow(command, session)
     const url = new URL(page.url())
     if (url.hostname !== '127.0.0.1' || url.port !== '3100') throw Error('Safari measurement requires disposable local port 3100')
     const storage = await page.evaluate(() => Object.fromEntries(Object.entries(localStorage)))

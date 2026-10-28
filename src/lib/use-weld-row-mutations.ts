@@ -35,7 +35,11 @@ export function useWeldRowMutations({
       specialistTransferConfirmation?: string
       weldChainLineMovePlan?: WeldChainLineMovePlan
     }) => {
-      const validationRows = rows.length > 0 ? rows : editingRecord ? [editingRecord] : []
+      // A server-paged table may omit this row or already show a newer version.
+      // Compare the draft with the editor's original; the server checks its version.
+      const validationRows = editingRecord && editingRecord.id === value.id
+        ? [editingRecord, ...rows.filter(row => row.id !== editingRecord.id)]
+        : rows
       const preparedValue = prepareWeldSaveValue({ value, rows: validationRows, welderStamps, welderStampSuspensions })
       const saveValue = {
         ...preparedValue,

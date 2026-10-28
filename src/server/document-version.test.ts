@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import type { SQL } from 'drizzle-orm'
 import { generatedDocuments } from '@/db/schema'
-import { touchDocumentMembershipParents, touchLayeredDocumentParentsForWeldDeletion, touchSystemDocumentParentsForWeldDeletion } from './document-version'
+import { touchDocumentMembershipParents, touchEditableDocumentParentsForWeldDeletion, touchSystemDocumentParentsForWeldDeletion } from './document-version'
 import { loadIndexedSystemDocumentSummaries, queryIndexedSystemDocumentHistory } from './system-document-index'
 import { loadRemoteGeneratedDocument, loadRemoteGeneratedDocumentHistory, normalizeGeneratedDocumentHistoryRequest } from './generated-documents'
 import { persistLayeredControlDocumentWrites } from './layered-control-documents'
@@ -65,12 +65,12 @@ describe('link-only membership writes invalidate parent editor versions', () => 
     expect(query.sql.length).toBeLessThan(1000)
   })
 
-  it('captures only layered parents before weld FK cascades using one array-bound statement', async () => {
+  it('captures manual and layered parents before weld FK cascades using one array-bound statement', async () => {
     const execute = vi.fn(async (_query: SQL) => ({ rows: [] }))
-    await touchLayeredDocumentParentsForWeldDeletion({ execute } as never, [21, 22])
+    await touchEditableDocumentParentsForWeldDeletion({ execute } as never, [21, 22])
     expect(execute).toHaveBeenCalledOnce()
     const query = compile(execute.mock.calls[0][0])
-    expect(query.params).toEqual([['layeredVikEdges', 'layeredVikLayers', 'layeredPvkEdges', 'layeredPvkLayers'], [21, 22]])
+    expect(query.params).toEqual([['weldingJournal', 'checklist', 'zni', 'layeredVikEdges', 'layeredVikLayers', 'layeredPvkEdges', 'layeredPvkLayers'], [21, 22]])
     expect(query.sql).toContain('a.document_id = "generated_documents"."id"')
     expect(query.sql).toContain('a.weld_joint_id = any(')
     expect(query.sql).toContain('for update')
@@ -101,7 +101,7 @@ describe('link-only membership writes invalidate parent editor versions', () => 
   it('does no work for empty selections', async () => {
     const execute = vi.fn()
     await touchDocumentMembershipParents({ execute } as never, [])
-    await touchLayeredDocumentParentsForWeldDeletion({ execute } as never, [])
+    await touchEditableDocumentParentsForWeldDeletion({ execute } as never, [])
     await touchSystemDocumentParentsForWeldDeletion({ execute } as never, [])
     expect(execute).not.toHaveBeenCalled()
   })

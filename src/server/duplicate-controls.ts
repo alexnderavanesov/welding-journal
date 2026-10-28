@@ -155,33 +155,30 @@ export async function loadDuplicateControlCandidatePage(
 ): Promise<DuplicateControlCandidatePageResult> {
   const data = normalizeDuplicateControlPageRequest(input)
   await ensureDispatcherTaskIndexFresh()
-  const db = requireDb()
-  const where = buildDuplicateControlCandidateSearchWhere(data.search)
-  const countQuery = data.page === 1
-    ? db.select({ total: count() }).from(weldJoints).where(where)
-    : Promise.resolve([])
-  const [otherSettings, [countRow], fetchedRows] = await Promise.all([
-    loadServerOtherSettings(),
-    countQuery,
-    db
+  return requireDb().transaction(async db => {
+    const where = buildDuplicateControlCandidateSearchWhere(data.search)
+    const otherSettings = await loadServerOtherSettings(db)
+    const [countRow] = data.page === 1
+      ? await db.select({ total: count() }).from(weldJoints).where(where) : []
+    const fetchedRows = await db
       .select(DUPLICATE_CONTROL_CANDIDATE_SELECT)
       .from(weldJoints)
       .where(where)
       .orderBy(...WELDING_JOURNAL_ORDER_BY)
       .limit(data.pageSize + 1)
-      .offset((data.page - 1) * data.pageSize),
-  ])
-  const pageRows = fetchedRows.slice(0, data.pageSize)
-  const sourceRows = applyCurrentSystemWdi(pageRows, otherSettings)
-  const rows = await attachDuplicateControlRelations(sourceRows)
+      .offset((data.page - 1) * data.pageSize)
+    const pageRows = fetchedRows.slice(0, data.pageSize)
+    const sourceRows = applyCurrentSystemWdi(pageRows, otherSettings)
+    const rows = await attachDuplicateControlRelations(sourceRows, db)
 
-  return {
-    rows: compactWeldRowsForTransport(rows),
-    ...(countRow ? { totalCount: Number(countRow.total) || 0 } : {}),
-    page: data.page,
-    pageSize: data.pageSize,
-    hasMore: fetchedRows.length > data.pageSize,
-  }
+    return {
+      rows: compactWeldRowsForTransport(rows),
+      ...(countRow ? { totalCount: Number(countRow.total) || 0 } : {}),
+      page: data.page,
+      pageSize: data.pageSize,
+      hasMore: fetchedRows.length > data.pageSize,
+    }
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
 export async function loadDuplicateControlCandidateIds(search: unknown): Promise<number[]> {
@@ -221,63 +218,59 @@ export async function loadDuplicateControlCandidateRowsByIds(ids: readonly numbe
   assertDuplicateControlSelectionLimit(normalizedIds.length)
   if (normalizedIds.length === 0) return []
   await ensureDispatcherTaskIndexFresh()
-  const [rows, otherSettings] = await Promise.all([
-    requireDb()
+  return requireDb().transaction(async db => {
+    const rows = await db
       .select(DUPLICATE_CONTROL_CANDIDATE_SELECT)
       .from(weldJoints)
-      .where(buildNumberArrayMatch(weldJoints.id, normalizedIds)),
-    loadServerOtherSettings(),
-  ])
-  const orderById = new Map(normalizedIds.map((id, index) => [id, index]))
-  rows.sort((left, right) => (
-    (orderById.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
-    (orderById.get(right.id) ?? Number.MAX_SAFE_INTEGER)
-  ))
-  return compactWeldRowsForTransport(
-    await attachDuplicateControlRelations(applyCurrentSystemWdi(rows, otherSettings)),
-  )
+      .where(buildNumberArrayMatch(weldJoints.id, normalizedIds))
+    const otherSettings = await loadServerOtherSettings(db)
+    const orderById = new Map(normalizedIds.map((id, index) => [id, index]))
+    rows.sort((left, right) => (
+      (orderById.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+      (orderById.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+    ))
+    return compactWeldRowsForTransport(
+      await attachDuplicateControlRelations(applyCurrentSystemWdi(rows, otherSettings), db),
+    )
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
 export async function loadDuplicateControlRegistryPage(
   input: DuplicateControlRegistryPageRequest | undefined,
 ): Promise<DuplicateControlRegistryPageResult> {
   const data = normalizeDuplicateControlPageRequest(input)
-  const db = requireDb()
-  const countQuery = data.page === 1
-    ? db.select({ total: count() }).from(duplicateControls)
-    : Promise.resolve([])
-  const [countRows, fetchedRows] = await Promise.all([
-    countQuery,
-    db
+  return requireDb().transaction(async db => {
+    const [countRow] = data.page === 1
+      ? await db.select({ total: count() }).from(duplicateControls) : []
+    const fetchedRows = await db
       .select({
-        id: duplicateControls.id,
-        weldJointId: duplicateControls.weldJointId,
-        method: duplicateControls.method,
-        result: duplicateControls.result,
-        controlDate: duplicateControls.controlDate,
-        conclusion: duplicateControls.conclusion,
-        conclusionDate: duplicateControls.conclusionDate,
-        updatedAt: duplicateControls.updatedAt,
-        projectTitle: weldJoints.projectTitle,
-        subtitleCode: weldJoints.subtitleCode,
-        line: weldJoints.line,
-        spool: weldJoints.spool,
-        joint: weldJoints.joint,
-      })
+          id: duplicateControls.id,
+          weldJointId: duplicateControls.weldJointId,
+          method: duplicateControls.method,
+          result: duplicateControls.result,
+          controlDate: duplicateControls.controlDate,
+          conclusion: duplicateControls.conclusion,
+          conclusionDate: duplicateControls.conclusionDate,
+          updatedAt: duplicateControls.updatedAt,
+          projectTitle: weldJoints.projectTitle,
+          subtitleCode: weldJoints.subtitleCode,
+          line: weldJoints.line,
+          spool: weldJoints.spool,
+          joint: weldJoints.joint,
+        })
       .from(duplicateControls)
       .innerJoin(weldJoints, eq(weldJoints.id, duplicateControls.weldJointId))
       .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id))
       .limit(data.pageSize + 1)
-      .offset((data.page - 1) * data.pageSize),
-  ])
-  const countRow = countRows[0]
-  return {
-    rows: fetchedRows.slice(0, data.pageSize).map(toRegistryPayload),
-    ...(countRow ? { totalCount: Number(countRow.total) || 0 } : {}),
-    page: data.page,
-    pageSize: data.pageSize,
-    hasMore: fetchedRows.length > data.pageSize,
-  }
+      .offset((data.page - 1) * data.pageSize)
+    return {
+      rows: fetchedRows.slice(0, data.pageSize).map(toRegistryPayload),
+      ...(countRow ? { totalCount: Number(countRow.total) || 0 } : {}),
+      page: data.page,
+      pageSize: data.pageSize,
+      hasMore: fetchedRows.length > data.pageSize,
+    }
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
 export function normalizeDuplicateControlPageRequest(

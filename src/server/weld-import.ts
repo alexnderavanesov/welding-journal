@@ -1,6 +1,7 @@
 // This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
 
 import { overlayPstoProgramPolicies } from './psto-chain-policy'
+import { deleteEmptyGeneratedDocuments } from './generated-document-cleanup'
 import { getPstoProgramState, type ImportPstoLinePolicy } from '@/lib/psto-chain-policy'
 import { requireDb } from '@/db'
 import { markTechnologyCardsUsed } from '@/server/technology-card-registry'
@@ -67,7 +68,6 @@ validateServerWeldRecords
 import { asc,count,inArray,sql } from 'drizzle-orm'
 
 import {
-deleteEmptyGeneratedDocuments,
 getDispatcherDirtyScopes,
 insertWeldJointsInBatches,
 updateWeldJointRows,
@@ -310,10 +310,10 @@ export async function replaceWeldJoints({
       await assertJointChainRowsCanBeDeleted(tx, deletedRows)
     }
     const updated = await updateWeldJointsInBatches(tx, records, previousRows)
-
+    let documentIds: number[] = []
     if (data.deleteIds.length > 0) {
       await markTechnologyCardsUsed(tx, deletedRows)
-      await removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction({
+      documentIds = await removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction({
         tx,
         weldJointIds: data.deleteIds,
       })
@@ -325,7 +325,7 @@ export async function replaceWeldJoints({
       updated,
       new Map([...previousRows, ...deletedRowsById]),
     )
-    await deleteEmptyGeneratedDocuments(tx)
+    await deleteEmptyGeneratedDocuments(tx, documentIds)
 
     const dirtyScopes = getDispatcherDirtyScopes(
       records,

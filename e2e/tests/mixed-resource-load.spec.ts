@@ -140,7 +140,7 @@ test('200k, five browser clients, mixed reads/writes/import/documents under expl
   const pages = await Promise.all(contexts.map(context => context.newPage()))
   let stopSampling: Awaited<ReturnType<typeof sampleMixedResources>> | undefined
   const timings: Array<{ role: string; round: number; milliseconds: number }> = []
-  let imports = 0, saves = 0, failureInjected = false
+  let imports = 0, saves = 0, reportRetries = 0, failureInjected = false
   let coldBaseline: Awaited<ReturnType<typeof coldFacts>> | undefined, steadyStarted = false
   let untouchedBaseline: Awaited<ReturnType<typeof preservedFacts>> | undefined
   const waitForDispatcher = async () => {
@@ -196,7 +196,22 @@ test('200k, five browser clients, mixed reads/writes/import/documents under expl
         await page.locator('header').getByRole('button', { name: 'Показать', exact: true }).click()
         await page.getByRole('button', { name: 'Текущая версия', exact: true }).click()
         const preview = page.getByRole('dialog', { name: 'Предпросмотр отчёта', exact: true })
-        await expect(preview.frameLocator('iframe').locator('tbody tr')).toHaveCount(100)
+        const rows = preview.frameLocator('iframe').locator('tbody tr')
+        const concurrentChange = preview.getByText('Не удалось подтвердить актуальность итоговых статусов: данные менялись во время пересчёта. Повторите загрузку.', { exact: true })
+        for (let attempt = 0; ; attempt++) {
+          await expect.poll(async () => await rows.count() === 100 || await concurrentChange.isVisible(), { timeout: 90_000 }).toBe(true)
+          if (await rows.count() === 100) break
+          // Refusing an incoherent snapshot is the established safety rule.
+          // Exercise the operator's explicit retry, not an automatic test rerun
+          // or acceptance of an empty/partial output. Other errors still fail.
+          await expect(concurrentChange).toBeVisible()
+          await expect(preview.locator('iframe')).toHaveCount(0)
+          await expect(preview.getByRole('button', { name: 'Печать / Сохранить PDF', exact: true })).toBeDisabled()
+          expect(attempt, 'Three explicit retries must recover a usable report').toBeLessThan(3)
+          reportRetries++
+          console.log(JSON.stringify({ phase: 'mixed explicit report retry', round, attempt: attempt + 1 }))
+          await preview.getByRole('button', { name: 'Повторить', exact: true }).click()
+        }
         await preview.getByRole('button', { name: 'Закрыть предпросмотр', exact: true }).click()
       }),
       run(1, async round => {
@@ -310,7 +325,7 @@ test('200k, five browser clients, mixed reads/writes/import/documents under expl
       throw error
     }))
     const results = await Promise.allSettled(tasks)
-    console.log(JSON.stringify({ phase: 'mixed steady', milliseconds: Math.round(performance.now() - start), sql: (await auditSqlCount())! - sqlStart!, saves, imports, failureInjected, operations: timings }))
+    console.log(JSON.stringify({ phase: 'mixed steady', milliseconds: Math.round(performance.now() - start), sql: (await auditSqlCount())! - sqlStart!, saves, imports, reportRetries, failureInjected, operations: timings }))
     for (const result of results) if (result.status === 'rejected') throw result.reason
     expect(saves).toBeGreaterThanOrEqual(2); expect(imports).toBeGreaterThanOrEqual(40)
     expect(timings.filter(value => value.role === roles[4]).length).toBeGreaterThanOrEqual(2)

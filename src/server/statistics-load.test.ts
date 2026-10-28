@@ -5,8 +5,8 @@ import { computeStatisticsServerResult } from './statistics'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 
 const state = vi.hoisted(() => ({ rows: [] as WeldRow[], tables: [] as unknown[],
-  select: vi.fn(), selectDistinct: vi.fn() }))
-vi.mock('@/db', () => ({ requireDb: () => ({ select: state.select, selectDistinct: state.selectDistinct }) }))
+  select: vi.fn(), selectDistinct: vi.fn(), transaction: vi.fn() }))
+vi.mock('@/db', () => ({ requireDb: () => ({ transaction: state.transaction }) }))
 
 function from(table: unknown, distinct = false) {
   state.tables.push(table)
@@ -22,6 +22,7 @@ beforeEach(() => {
   vi.clearAllMocks(); state.tables = []
   state.select.mockImplementation(() => ({ from: (table: unknown) => from(table) }))
   state.selectDistinct.mockImplementation(() => ({ from: (table: unknown) => from(table, true) }))
+  state.transaction.mockImplementation(callback => callback({ select: state.select, selectDistinct: state.selectDistinct }))
 })
 
 describe('physical statistics bounded loading', () => {
@@ -32,6 +33,9 @@ describe('physical statistics bounded loading', () => {
     expect(result.lineSummary.total).toBe((count - 1) * 2)
     expect(result.lineSummary.completed).toBe((count - 1) * 2)
     expect(state.tables).toHaveLength(5)
+    expect(state.transaction).toHaveBeenCalledExactlyOnceWith(expect.any(Function), {
+      isolationLevel: 'repeatable read', accessMode: 'read only',
+    })
     expect(state.tables.filter(table => table === weldJointProgramStates)).toHaveLength(1)
     expect(state.tables.every(table => [weldJoints, appSettings, weldJointProgramStates].includes(table as never))).toBe(true)
   })
@@ -52,5 +56,5 @@ describe('physical statistics bounded loading', () => {
     // Layer shares use fractional arithmetic (0.4 / 0.3 / 0.3).
     expect(result.welderSummary.rows.reduce((sum, row) => sum + row.total, 0)).toBeCloseTo(200000, 6)
     expect(result.welderSummary.rows.reduce((sum, row) => sum + row.rowIds.length, 0)).toBe(200000)
-  })
+  }, 20_000)
 })

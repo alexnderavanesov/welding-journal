@@ -5,7 +5,8 @@ import { assertNewDocumentNamesAvailable, prepareDocumentCreationIndex } from '@
 import { requireDb } from '@/db'
 import { assertJointChainRowsCanBeDeleted } from './joint-chain-deletion'
 import { deleteChangedProgramApprovals } from './program-approval-lifecycle'
-import { generatedDocuments, generatedDocumentWeldJoints, weldJoints, type WeldJoint } from '@/db/schema'
+import { weldJoints, type WeldJoint } from '@/db/schema'
+import { deleteEmptyGeneratedDocuments } from './generated-document-cleanup'
 import { normalizeDateLikeForStorage } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { assertExistingRowsImportPayload } from '@/lib/existing-row-import-validation'
@@ -45,7 +46,7 @@ import { removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction, syncS
 import { applyReservedSystemDocumentNames, reserveSystemDocumentNames, type SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
 import { type WeldBatchUpdateData, type WeldDeleteData, type WeldDeleteManyData, type WeldMutationScope, type WeldPayload, type RequestDocumentManagerData, type RepeatedJointCreateData } from '@/server/weld-contracts'
 import { loadPreviousWeldRows, loadServerWeldValidationContext, mergeWeldRecordsWithPrevious, prepareServerWeldRecords, validateServerWeldRecords } from '@/server/weld-save-validation'
-import { and, asc, eq, inArray, isNull, notExists, or, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import { getProfileTimestampUpdates, toDbInsert, updateWeldJointsInBatches, WELD_TABLE_RETURNING } from '@/server/weld-persistence'
 import { assertExpectedInteractiveWeldVersions, lockInteractiveWeldRows } from '@/server/weld-row-version'
 import { getChangedWeldLineMemberships, haveSameWeldLineMemberships, lockWeldLineMemberships } from '@/server/weld-line-membership-lock'
@@ -1125,13 +1126,13 @@ export async function deleteLockedWeldRowsInTransaction(
   await markTechnologyCardsUsed(tx, previousRows)
   await assertEarlyCoilDecisionRowsCanBeDeleted(tx, previousRows)
   await assertJointChainRowsCanBeDeleted(tx, previousRows)
-  await removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction({
+  const documentIds = await removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction({
     tx,
     weldJointIds: ids,
   })
   await tx.delete(weldJoints).where(buildNumberArrayMatch(weldJoints.id, ids))
   await syncSystemDocumentsForWeldChangesInTransaction(tx, [], previousRowsById)
-  await deleteEmptyGeneratedDocuments(tx)
+  await deleteEmptyGeneratedDocuments(tx, documentIds)
   await markDispatcherTaskIndexDirty(tx, {
     scopes: getDispatcherDirtyScopes([], previousRowsById),
   })
@@ -1162,19 +1163,6 @@ async function loadWeldLineIdentityRows(
       .from(weldJoints)
       .where(buildNumberArrayMatch(weldJoints.id, ids))
   return rows
-}
-
-export async function deleteEmptyGeneratedDocuments(tx: Parameters<Parameters<ReturnType<typeof requireDb>['transaction']>[0]>[0]) {
-  await tx
-    .delete(generatedDocuments)
-    .where(
-      notExists(
-        tx
-          .select({ value: sql`1` })
-          .from(generatedDocumentWeldJoints)
-          .where(eq(generatedDocumentWeldJoints.documentId, generatedDocuments.id)),
-      ),
-    )
 }
 
 export async function insertWeldJointsInBatches(

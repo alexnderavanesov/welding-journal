@@ -30,6 +30,7 @@ import { normalizeWeldingMethodsForImport, validateWelderStampFieldsForImport } 
 import { loadDataListSettings, normalizeDataListOption } from '@/lib/data-list-settings'
 import { getWeldMaterialGroupsError, normalizeWeldMaterialGroups } from '@/lib/weld-material-groups'
 import {
+  shouldValidateOfficialStampCompatibilityForSave,
   validateOfficialStampCompatibilityForImport,
   validateOfficialStampCompatibilityForSave,
 } from '@/lib/welder-stamp-compatibility'
@@ -80,9 +81,11 @@ export function prepareWeldSaveValue({
   validateRequiredWeldingMethodForSave(preparedValue, saveCheckSettings)
   validateManualJointNameForSave(preparedValue, rows, saveCheckSettings)
   const previousRow = preparedValue.id ? rows.find((row) => row.id === preparedValue.id) : undefined
-  validateOfficialStampCompatibilityForSave(preparedValue, welderStamps, {
-    suspensions: welderStampSuspensions,
-  })
+  if (shouldValidateOfficialStampCompatibilityForSave(preparedValue, previousRow)) {
+    validateOfficialStampCompatibilityForSave(preparedValue, welderStamps, {
+      suspensions: welderStampSuspensions,
+    })
+  }
   if (shouldCheckDocumentChronologyForSave(preparedValue, previousRow)) {
     assertNoNewLnkChronologyIssues([preparedValue], previousRow ? [previousRow] : [], saveCheckSettings)
     assertNoPstoChronologyIssues([preparedValue], saveCheckSettings)
@@ -96,7 +99,8 @@ export function buildRepeatedJointRows(task: RepeatedJointCreateTask | RepeatedJ
 }
 
 type PrepareImportedWeldRecordsOptions = {
-  records: WeldInput[]
+  records: Array<WeldInput & { id?: number }>
+  previousRows?: readonly WeldRow[]
   skipManualJointNameValidation?: boolean
   skipLnkResultRuleValidation?: boolean
   weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
@@ -126,6 +130,7 @@ export function collectImportedWeldRecordPreparationErrors(
 
 function getImportedWeldRecordPreparationSteps({
   records,
+  previousRows,
   skipManualJointNameValidation = false,
   skipLnkResultRuleValidation = false,
   weldFormStampSelectOptions,
@@ -133,6 +138,9 @@ function getImportedWeldRecordPreparationSteps({
   welderStampSuspensions,
 }: PrepareImportedWeldRecordsOptions) {
   const saveCheckSettings = loadSaveCheckSettings()
+  const previousById = new Map(previousRows?.map(row => [row.id, row]))
+  const recordsRequiringStampValidation = () => records.filter(record =>
+    shouldValidateOfficialStampCompatibilityForSave(record, record.id ? previousById.get(record.id) : undefined))
   return [
     () => normalizeSystemWdiForImport(records),
     () => normalizeLegacyControlAvailabilityForImport(records),
@@ -146,11 +154,11 @@ function getImportedWeldRecordPreparationSteps({
     () => normalizeConnectionTypesAndMaterialGroupsForImport(records),
     () => normalizeTestTypesForImport(records),
     () => validateWelderStampFieldsForImport(
-      records,
+      recordsRequiringStampValidation(),
       weldFormStampSelectOptions,
       saveCheckSettings,
     ),
-    () => validateOfficialStampCompatibilityForImport(records, welderStamps, {
+    () => validateOfficialStampCompatibilityForImport(recordsRequiringStampValidation(), welderStamps, {
       saveCheckSettings,
       suspensions: welderStampSuspensions,
     }),

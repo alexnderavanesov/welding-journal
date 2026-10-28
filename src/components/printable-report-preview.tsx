@@ -85,21 +85,14 @@ export function PrintableReportPreview({ report: fullReport, busy, error, onClos
     if (printRestriction) return
     if (!report || !ready || busy || printingRef.current) return
     setPrintError('')
-    if (page && page.pageCount > 1) {
-      printingRef.current = true; setPrinting(true)
-      disposePrint.current?.()
-      const done = () => { printingRef.current = false; setPrinting(false); closeButton.current?.focus({ preventScroll: true }) }
-      const failed = (message?: string) => {
-        done(); setPrintError(message || 'Не удалось открыть печать. Повторите действие в браузере.')
-      }
-      disposePrint.current = prepareFullReportPrint(report, done, failed)
-      return
+    // Even one preview page may need several horizontal print parts.
+    printingRef.current = true; setPrinting(true)
+    disposePrint.current?.()
+    const done = () => { printingRef.current = false; setPrinting(false); closeButton.current?.focus({ preventScroll: true }) }
+    const failed = (message?: string) => {
+      done(); setPrintError(message || 'Не удалось открыть печать. Повторите действие в браузере.')
     }
-    try {
-      const target = frame.current?.contentWindow
-      if (!target || !ready) return
-      target.focus(); target.print(); setPrintError('')
-    } catch { setPrintError('Не удалось открыть печать. Повторите действие в браузере.') }
+    disposePrint.current = prepareFullReportPrint(report, done, failed)
   }
   printAction.current = print
   const download = async () => {

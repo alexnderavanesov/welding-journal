@@ -4,7 +4,7 @@ import { cleanupLineProgramProjects } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
 
 test('статистика: план 9 из 11, затем 11 → 9 → 10, физические цепочки и подтверждение', async ({ page }) => {
-  test.setTimeout(120_000)
+  test.setTimeout(process.env.AUDIT_CHAIN_SCALE === '1' ? 300_000 : 120_000)
   const project = 'E2E statistics physical chains', line = 'STATS-PHYSICAL'
   const ids: number[] = [], calls: string[] = [], errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))

@@ -48,7 +48,7 @@ export function buildWeldFormStampSelectOptions(
   const saveCheckSettings = normalizeSaveCheckSettings(options.saveCheckSettings ?? loadSaveCheckSettings())
   const selected = new Set(officialWelderStampFieldKeys.map(key => normalizeStampForCompare(draft?.[key])))
   const officialRecords = groupStampRecords(records, record => record.naksStamp)
-  const officialOptions = uniqueStampValues(records.map(record => record.naksStamp)).flatMap(value => {
+  const officialOptions = activeStampValuesFirst(records.map(record => record.naksStamp), officialRecords).flatMap(value => {
     const stampRecords = officialRecords.get(normalizeStampForCompare(value))!
     const suspension = draft ? getSuspensionOverlapForStamp(suspensions, value, draft.weldDate) : null
     const archiveReason = draft ? getWelderStampCardArchiveSelectReason(stampRecords, draft.weldDate) : null
@@ -63,7 +63,7 @@ export function buildWeldFormStampSelectOptions(
   })
   const factualValue = (record: WelderStampRecord) => normalizeStampSelectValue(record.naksStamp) || normalizeStampSelectValue(record.internalStamp)
   const factualRecords = groupStampRecords(records, factualValue)
-  const factualOptions = uniqueStampValues(records.map(factualValue)).map(value => ({
+  const factualOptions = activeStampValuesFirst(records.map(factualValue), factualRecords).map(value => ({
     value, ...archiveLabel(value, factualRecords.get(normalizeStampForCompare(value))!),
   }))
 
@@ -86,6 +86,12 @@ function groupStampRecords(records: WelderStampRecord[], value: (record: WelderS
 
 function archiveLabel(value: string, records: WelderStampRecord[]) {
   return records.every(record => record.archived) ? { label: `${value} (в архиве)` } : {}
+}
+
+function activeStampValuesFirst(values: string[], grouped: Map<string, WelderStampRecord[]>) {
+  const archived = new Set([...grouped].filter(([, records]) => records.every(record => record.archived)).map(([value]) => value))
+  // Stable sort keeps the existing alphabetical/numeric order within both groups.
+  return uniqueStampValues(values).sort((a, b) => Number(archived.has(normalizeStampForCompare(a))) - Number(archived.has(normalizeStampForCompare(b))))
 }
 
 type SelectBlockReason = {

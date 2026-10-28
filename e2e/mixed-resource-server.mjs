@@ -2,14 +2,16 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { dirname, resolve, basename } from 'node:path'
-import { realpathSync } from 'node:fs'
+import { mkdirSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 
 assert.equal(process.env.AUDIT_MIXED_LOAD, '1')
 assert.equal(process.env.AUDIT_SQL_COUNTS, '1')
 assert.equal(process.env.E2E_USE_PRODUCTION_BUILD, '1')
 const name = 'welding-mixed-resource-20261009'
-const image = 'welding-journal:mixed-audit-20261009'
+const image = process.env.AUDIT_CONTAINER_IMAGE || 'welding-journal:mixed-audit-20261009'
+assert(['welding-journal:mixed-audit-20261009', 'welding-journal:systemic-baseline-20261027'].includes(image),
+  'Only explicitly built local audit images are allowed')
 const memoryMiB = Number(process.env.AUDIT_CONTAINER_MEMORY_MIB || 2048)
 const cpus = Number(process.env.AUDIT_CONTAINER_CPUS || 2)
 assert([2048, 4096].includes(memoryMiB), 'Choose an explicit supported local memory budget')
@@ -24,6 +26,11 @@ const endpoint = JSON.parse(docker(['context', 'inspect', 'desktop-linux']))[0].
 assert.match(endpoint, /^unix:\/\//, 'Refuse a remote Docker endpoint')
 assert(!process.env.DOCKER_HOST || process.env.DOCKER_HOST === endpoint, 'Refuse an overridden Docker endpoint')
 assert.equal(docker(['ps', '-aq', '--filter', `name=^/${name}$`]).trim(), '', 'Refuse an existing container')
+// Complete 200k-row files exceed the ordinary small-workflow 64 MiB tmpfs.
+// Use a new subdirectory of this run's already owned diagnostic directory;
+// this changes test storage, not an application limit or production setting.
+const diskExports = process.env.AUDIT_EXPORT_CONCURRENCY === '1'
+if (diskExports) mkdirSync(resolve(directory, 'report-tmp'))
 let id, stopping = false
 function stop() {
   if (stopping) return
@@ -50,6 +57,7 @@ id = docker(['create', '--pull=never', '--name', name, '--label', 'welding.local
   '-e', 'WELDING_ENV_LOADED=1', '-e', 'NODE_ENV=production', '-e', 'HOST=0.0.0.0', '-e', 'PORT=3000',
   '-e', 'DATABASE_POOL_MAX=5', '-e', 'DOCUMENT_TEMPLATE_STORAGE_PATH=/tmp/templates',
   '-e', 'AUDIT_RESOURCE_CONTAINER=1', '-e', 'AUDIT_SQL_COUNTS_FILE=/audit-counts/counts.json',
+  ...(diskExports ? ['-e', 'TMPDIR=/audit-counts/report-tmp'] : []),
   ...(['1', 'peak'].includes(process.env.AUDIT_HEAP_PROFILE) ? ['-e', `AUDIT_HEAP_PROFILE=${process.env.AUDIT_HEAP_PROFILE}`] : []),
   ...(process.env.AUDIT_CPU_PROFILE === '1' ? ['-e', 'AUDIT_CPU_PROFILE=1'] : []),
   '-e', 'E2E_USE_PRODUCTION_BUILD=1', image, 'node', 'audit-server.mjs']).trim()
@@ -59,7 +67,8 @@ try {
   assert.equal(metadata.HostConfig.MemorySwap, metadata.HostConfig.Memory)
   assert.equal(metadata.HostConfig.NanoCpus, cpus * 1e9)
   console.error(JSON.stringify({ mixedContainer: id, imageId: metadata.Image, memoryBytes: metadata.HostConfig.Memory,
-    memoryAndSwapBytes: metadata.HostConfig.MemorySwap, nanoCpus: metadata.HostConfig.NanoCpus, heap: 'Node default' }))
+    memoryAndSwapBytes: metadata.HostConfig.MemorySwap, nanoCpus: metadata.HostConfig.NanoCpus, heap: 'Node default',
+    exportTemporaryStorage: diskExports ? 'owned host disk' : '64 MiB tmpfs' }))
   const child = spawn('docker', ['start', '--attach', id], { stdio: 'inherit', detached: true })
   const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve) })
   process.exitCode = stopping ? process.exitCode ?? 0 : code ?? 1

@@ -4,8 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { once } from 'node:events'
 import { Readable } from 'node:stream'
-import { createDeflateRaw } from 'node:zlib'
-import { updateZipCrc32 } from '@/lib/weld-export-zip'
+import { createDeflateRaw, crc32 } from 'node:zlib'
 import { formatReportFieldValue, normalizeSheetName } from '@/lib/weld-export-utils'
 import { buildContentTypesXml, buildRootRelsXml, buildWorkbookXml, buildWorkbookRelsXml, buildXlsxStylesXml,
   buildWorksheetHeader, buildWorksheetRow, WORKSHEET_END, EXCEL_SHEET_DATA_ROWS } from '@/lib/weld-export-xlsx-xml'
@@ -94,7 +93,7 @@ export class ReportZipWriter {
     header.writeUInt16LE(8, 8); header.writeUInt16LE(name.length, 26); name.copy(header, 30)
     await this.emit(header)
     const deflater = createDeflateRaw({ level: 1 })
-    const entry = this.current = { name, offset, raw: 0, compressed: 0, crc: 0xffffffff, deflater, pumping: Promise.resolve(), failure: undefined as unknown }
+    const entry = this.current = { name, offset, raw: 0, compressed: 0, crc: 0, deflater, pumping: Promise.resolve(), failure: undefined as unknown }
     entry.pumping = (async () => {
       try { for await (const chunk of deflater) { entry.compressed += chunk.length; await this.emit(chunk) } }
       catch (error) { entry.failure = error; deflater.destroy(error as Error) }
@@ -106,7 +105,7 @@ export class ReportZipWriter {
     const bytes = Buffer.from(text)
     entry.raw += bytes.length
     if (entry.raw > 0xffffffff) throw new Error('Лист Excel слишком велик. Разделите выгрузку фильтрами.')
-    entry.crc = updateZipCrc32(entry.crc, bytes)
+    entry.crc = crc32(bytes, entry.crc)
     if (!entry.deflater.write(bytes)) await once(entry.deflater, 'drain')
     if (entry.failure) throw entry.failure
   }
@@ -114,7 +113,7 @@ export class ReportZipWriter {
     const entry = this.current!
     entry.deflater.end(); await entry.pumping
     if (entry.failure) throw entry.failure
-    const crc = (entry.crc ^ 0xffffffff) >>> 0, descriptor = Buffer.alloc(16)
+    const crc = entry.crc, descriptor = Buffer.alloc(16)
     descriptor.writeUInt32LE(0x08074b50, 0); descriptor.writeUInt32LE(crc, 4)
     descriptor.writeUInt32LE(entry.compressed, 8); descriptor.writeUInt32LE(entry.raw, 12)
     await this.emit(descriptor)

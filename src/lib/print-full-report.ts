@@ -6,7 +6,7 @@ import { buildPreviewFrameHtml, PREVIEW_FRAME_SANDBOX } from './document-preview
 export function prepareFullReportPrint(report: PrintableReport, onReady: () => void, onError: (message?: string) => void) {
   const restriction = getReportPrintRestriction(report)
   if (restriction) { onError(restriction); return () => {} }
-  return prepareHtmlDocumentPrint(() => buildPrintableReportHtml(report, { embedded: true, compactPrint: true }), onReady, onError)
+  return prepareHtmlDocumentPrint(() => buildPrintableReportHtml(report, { embedded: true, compactPrint: true, printLayout: true }), onReady, onError)
 }
 
 export function prepareHtmlDocumentPrint(buildHtml: () => string, onReady: () => void, onError: (message?: string) => void) {

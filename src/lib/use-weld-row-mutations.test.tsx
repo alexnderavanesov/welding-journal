@@ -38,6 +38,25 @@ describe('useWeldRowMutations', () => {
     vi.clearAllMocks()
   })
 
+  it.each(['missing', 'stale', 'empty'] as const)('validates against the editor original when the table row is %s', async mode => {
+    const editingRecord = { id: 17, line: 'L', joint: 'S1', weldDate: '2026-07-01' }
+    const peer = { id: 18, line: 'L', joint: 'S2' }
+    const stale = { ...editingRecord, weldDate: '2026-06-01' }
+    const rows = mode === 'empty' ? [] : mode === 'missing' ? [peer] : [stale, peer]
+    const value = { ...editingRecord, isometry: 'CORRECTED' }
+    mocks.prepareWeldSaveValue.mockReturnValue(value)
+    mocks.updateWeldRowOrThrow.mockResolvedValue(value)
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    const { result } = renderHook(() => useWeldRowMutations({ rows, editingRecord, welderStamps: [],
+      welderStampSuspensions: [], weldFormStampSelectOptions: {}, setEditing: vi.fn(), setMessage: vi.fn(),
+      highlightChangedRows: vi.fn(), dismissRepeatedJointTask: vi.fn() }), { wrapper })
+    await act(async () => { await result.current.saveMutation.mutateAsync(value) })
+    expect(mocks.prepareWeldSaveValue).toHaveBeenCalledWith({ value,
+      rows: mode === 'empty' ? [editingRecord] : [editingRecord, peer], welderStamps: [], welderStampSuspensions: [] })
+    expect(rows).toEqual(mode === 'empty' ? [] : mode === 'missing' ? [peer] : [stale, peer])
+  })
+
   it('closes the editor without waiting for background report refreshes', async () => {
     const savedRow = { id: 17, line: 'LIN-1', joint: 'S1' }
     const setEditing = vi.fn()

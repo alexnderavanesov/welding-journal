@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
+import { deleteEmptyGeneratedDocuments } from './generated-document-cleanup'
 import { assertJointChainRowsCanBeDeleted } from './joint-chain-deletion'
 import {
   dispatcherAcceptedWarnings,
@@ -121,10 +122,11 @@ export async function createEarlyCoilDecision({
     const candidate = evaluation.candidate
     const deletedRowIds = candidate.replacementRow ? [candidate.replacementRow.id] : []
     const previousRows = new Map<number, WeldJoint>()
+    let documentIds: number[] = []
     if (candidate.replacementRow) {
       await assertJointChainRowsCanBeDeleted(tx, [candidate.replacementRow])
       previousRows.set(candidate.replacementRow.id, candidate.replacementRow as unknown as WeldJoint)
-      await removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction({
+      documentIds = await removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction({
         tx,
         weldJointIds: deletedRowIds,
       })
@@ -141,10 +143,10 @@ export async function createEarlyCoilDecision({
       context: systemContext,
       allowSystemJointNames: true,
     })
-    const { insertWeldJointsInBatches, deleteEmptyGeneratedDocuments } = await import('@/server/weld-mutations')
+    const { insertWeldJointsInBatches } = await import('@/server/weld-mutations')
     const createdRows = await insertWeldJointsInBatches(tx, drafts, processSettings)
     await syncSystemDocumentsForWeldChangesInTransaction(tx, createdRows, previousRows)
-    if (deletedRowIds.length > 0) await deleteEmptyGeneratedDocuments(tx)
+    await deleteEmptyGeneratedDocuments(tx, documentIds)
 
     await tx.insert(dispatcherAcceptedWarnings).values({
       key: decisionKey,
@@ -254,14 +256,13 @@ export async function revokeEarlyCoilDecisionInTransaction(
   const previousRows = new Map(targetRows.map((row) => [row.id, row as unknown as WeldJoint]))
   if (deletedRowIds.length > 0) {
     await assertJointChainRowsCanBeDeleted(tx, targetRows)
-    await removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction({
+    const documentIds = await removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction({
       tx,
       weldJointIds: deletedRowIds,
     })
     await tx.delete(weldJoints).where(inArray(weldJoints.id, deletedRowIds))
     await syncSystemDocumentsForWeldChangesInTransaction(tx, [], previousRows)
-    const { deleteEmptyGeneratedDocuments } = await import('@/server/weld-mutations')
-    await deleteEmptyGeneratedDocuments(tx)
+    await deleteEmptyGeneratedDocuments(tx, documentIds)
   }
   await tx.delete(dispatcherAcceptedWarnings).where(eq(dispatcherAcceptedWarnings.key, key))
   await markDispatcherTaskIndexDirty(tx, {

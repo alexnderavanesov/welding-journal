@@ -1,3 +1,4 @@
+import { retryAppModules } from '@/lib/app-module-retry'
 import {
   createFileRoute,
   type ErrorComponentProps,
@@ -34,7 +35,7 @@ function AppRoute() {
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      clearChunkReloadAttempt(window.sessionStorage, pathname)
+      clearChunkReloadAttempt(pathname)
     }, 30_000)
     return () => window.clearTimeout(timeoutId)
   }, [pathname])
@@ -68,7 +69,7 @@ function AppRouteError({ error, reset }: ErrorComponentProps) {
 
   useEffect(() => {
     if (!chunkError) return
-    if (markChunkReloadAttempt(window.sessionStorage, pathname)) window.location.reload()
+    if (markChunkReloadAttempt(pathname)) void retryAppModules()
   }, [chunkError, pathname])
 
   return (
@@ -83,13 +84,14 @@ function AppRouteError({ error, reset }: ErrorComponentProps) {
         <Button
           type="button"
           className="mt-5 w-full"
-          onClick={() => {
-            if (chunkError) window.location.reload()
+          onClick={event => {
+            if (chunkError) { event.currentTarget.disabled = true; void retryAppModules() }
             else reset()
           }}
         >
           Повторить
         </Button>
+        {chunkError ? <p className="mt-3 text-sm leading-6 text-slate-600">Если после восстановления соединения повтор не помогает, полностью закройте браузер и откройте приложение снова.</p> : null}
       </div>
     </div>
   )

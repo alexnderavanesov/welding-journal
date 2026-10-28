@@ -198,18 +198,13 @@ for (const [path, options] of [
       if (option === 'Текущая версия') expect(paginated).toBe(true)
       const totalRows = paginated
         ? Number((await modal.getByText(/^Показаны /).textContent())?.match(/из (\d+)\./)?.[1] ?? 0)
-        : 0
+        : await frame.locator('tbody tr').count()
       await page.evaluate(() => { delete document.body.dataset.fullPrint })
-      await frame.locator('body').evaluate(body => { body.ownerDocument.defaultView!.print = () => { body.dataset.printed = 'yes' } })
       await modal.getByRole('button', { name: 'Печать / Сохранить PDF' }).click()
-      if (paginated) {
-        expect(totalRows).toBeGreaterThan(100)
-        await expect.poll(() => page.evaluate(() => JSON.parse(document.body.dataset.fullPrint ?? '{}').rows ?? 0)).toBe(totalRows)
-        await expect(page.locator('iframe[title="Полный отчёт для печати"]')).toHaveCount(0)
-        await expect(frame.locator('tbody tr')).toHaveCount(100)
-      } else {
-        await expect(frame.locator('body')).toHaveAttribute('data-printed', 'yes')
-      }
+      await expect.poll(() => page.evaluate(() => JSON.parse(document.body.dataset.fullPrint ?? '{}').rows ?? -1)).toBe(totalRows)
+      await expect(page.locator('iframe[title="Полный отчёт для печати"]')).toHaveCount(0)
+      await expect(frame.locator('tbody tr')).toHaveCount(paginated ? 100 : totalRows)
+      if (paginated) expect(totalRows).toBeGreaterThan(100)
       // The preview itself stays local. Returning focus may only probe the
       // dispatcher version, never reload unchanged reports or task snapshots.
       await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })

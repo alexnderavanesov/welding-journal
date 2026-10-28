@@ -106,10 +106,12 @@ function groupValue(key: string) {
 }
 
 function groupKeyExpression(key: string) {
-  const values = groupValue(key)
-  return sql`case when cardinality(${values}) = 0 then jsonb_build_array('empty'::text)
-    when cardinality(${values}) > 1 then jsonb_build_array('multiple'::text)
-    else jsonb_build_array('value'::text, (${values})[1]) end`
+  // The same normalized array is used by three branches. Keep its DISTINCT /
+  // sort below an inlining barrier so large registries compute it once per row.
+  return sql`(select case when cardinality("group_values"."values") = 0 then jsonb_build_array('empty'::text)
+    when cardinality("group_values"."values") > 1 then jsonb_build_array('multiple'::text)
+    else jsonb_build_array('value'::text, ("group_values"."values")[1]) end
+    from (select ${groupValue(key)} as "values" offset 0) as "group_values")`
 }
 
 const MULTIPLE_LABELS: Record<string, string> = {

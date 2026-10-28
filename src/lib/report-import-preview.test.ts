@@ -40,6 +40,31 @@ const buildReportReplaceDataPreview: typeof buildReportReplaceDataPreviewImpl = 
   })
 
 describe('existing rows report import preview', () => {
+  it.each(['massFill', 'replaceData'] as const)('allows unrelated and factual corrections of a legacy missing stamp in %s', async mode => {
+    const keys = ['isometry', 'weldingJournalNote', 'stamp1KFact', 'stamp1ZFact', 'stamp1OFact', 'stamp2KFact', 'stamp2ZFact', 'stamp2OFact'] as const
+    const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
+      activeReport: 'weldingJournal',
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, ...keys.map(key => FIELD_BY_KEY.get(key)!.label)], [[7, ...keys.map(key => key.startsWith('stamp') ? 'FACT' : 'Corrected')]]),
+      rows: [{ id: 7, joint: 'F1', rowVersion: 'v1', weldDate: '2026-07-01', connectionType: 'С17', weldingMethod: 'РАД', materialGroup: 'М01', d1: 108, d2: 108, t1: 6, t2: 6, stamp1K: 'LOST' } as WeldRow],
+      weldFormStampSelectOptions: { stamp1K: [] }, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toEqual([{ id: 7, ...Object.fromEntries(keys.map(key => [key, key.startsWith('stamp') ? 'FACT' : 'Corrected'])) }])
+  })
+
+  it.each(['massFill', 'replaceData'] as const)('rechecks a legacy stamp when filling qualification inputs in %s', async mode => {
+    const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
+      activeReport: 'weldingJournal',
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'D2', 'Тип соединения'], [[7, 159, 'НЕВЕРНО']]),
+      rows: [{ id: 7, joint: 'F1', rowVersion: 'v1', weldDate: '2026-07-01', stamp1K: 'LOST' } as WeldRow],
+      weldFormStampSelectOptions: { stamp1K: [] }, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('СП-02')
+    expect(preview.errors[0]?.message).toContain('Тип соединения')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['stamp1K', 'connectionType']))
+  })
+
   it.each(['massFill', 'replaceData'] as const)('preserves ordered material pairs in the existing Excel column (%s)', async mode => {
     const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
       activeReport: 'weldingJournal',
@@ -1471,7 +1496,7 @@ describe('existing rows report import preview', () => {
     })
   })
 
-  it('blocks mass fill of a dated joint using an archived official stamp without an archive date', async () => {
+  it('allows unrelated mass fill while retaining an archived official stamp (27 October clarification)', async () => {
     const archivedStamp = buildWelderStampRecord('ABC1', true)
     const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'], [[7, 'F1', '09Г2С']])
     const preview = await buildReportMassFillPreview({
@@ -1488,9 +1513,10 @@ describe('existing rows report import preview', () => {
       welderStampSuspensions: [],
     })
 
-    expect(preview.errors).toHaveLength(1)
-    expect(preview.errors[0]?.message).toContain('Клеймо ABC1 находится в архиве')
-    expect(preview.validRecords).toEqual([])
+    // The user's latest rule permits unrelated corrections; archive still
+    // prevents a changed qualification input, covered by the cases above.
+    expect(preview.errors).toEqual([])
+    expect(preview.validRecords).toEqual([{ id: 7, material1: '09Г2С' }])
   })
 
   it('allows mass fill of a historical joint welded before the stamp card archive date', async () => {
@@ -1530,7 +1556,7 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords).toEqual([{ id: 7, material1: '09Г2С' }])
   })
 
-  it('blocks mass fill of a joint welded after the stamp card archive date', async () => {
+  it.each([false, true])('only rechecks the archived stamp when qualification changes: %s', qualificationChanged => {
     saveDataListSettings({
       ...DEFAULT_DATA_LIST_SETTINGS,
       connectionTypes: ['С17'],
@@ -1540,8 +1566,8 @@ describe('existing rows report import preview', () => {
       ...buildWelderStampRecord('ABC1', true),
       archivedAt: '2026-08-01',
     }
-    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1'], [[7, 'F1', '09Г2С']])
-    const preview = await buildReportMassFillPreview({
+    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Марка стали 1', ...(qualificationChanged ? ['D2'] : [])], [[7, 'F1', '09Г2С', ...(qualificationChanged ? [12] : [])]])
+    return buildReportMassFillPreview({
       activeReport: 'weldingJournal',
       file,
       rows: [{
@@ -1552,7 +1578,7 @@ describe('existing rows report import preview', () => {
         connectionType: 'С17',
         materialGroup: 'M01',
         d1: '11',
-        d2: '11',
+        d2: qualificationChanged ? null : '11',
         t1: '6',
         t2: '6',
         weldDate: '2026-08-02',
@@ -1561,11 +1587,16 @@ describe('existing rows report import preview', () => {
       weldFormStampSelectOptions: buildWeldFormStampSelectOptions([archivedStamp]),
       welderStamps: [archivedStamp],
       welderStampSuspensions: [],
+    }).then(preview => {
+      if (qualificationChanged) {
+        expect(preview.errors).toHaveLength(1)
+        expect(preview.errors[0]?.message).toContain('архиве с 01.08.2026')
+        expect(preview.validRecords).toEqual([])
+      } else {
+        expect(preview.errors).toEqual([])
+        expect(preview.validRecords).toEqual([{ id: 7, material1: '09Г2С' }])
+      }
     })
-
-    expect(preview.errors).toHaveLength(1)
-    expect(preview.errors[0]?.message).toContain('архиве с 01.08.2026')
-    expect(preview.validRecords).toEqual([])
   })
 
   it('allows mass fill with an archived official stamp when the weld date is empty', async () => {

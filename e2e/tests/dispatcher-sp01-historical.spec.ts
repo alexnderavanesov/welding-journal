@@ -9,6 +9,7 @@ import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dir
 import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
 import { attachDispatcherTaskCodesToPage } from '@/server/weld-read'
 import { withE2eDatabase } from '../database'
+import { cleanupLineProgramProjects } from '../line-program-fixtures'
 import { revealJournalColumn } from '../journal-grid'
 import { revealPstoColumn } from './psto-grid-helpers'
 import { revealLnkColumn } from './lnk-grid-helpers'
@@ -189,8 +190,9 @@ for (const report of ['/journal', '/lnk', '/psto']) test(`СП-06 из ${report}
     if (missingLocalLicense) console.info('Known local audit diagnostic: AG Grid License Key Not Found; exact banner verified, all other diagnostics empty.')
   } finally {
     await page.close()
+    // Capture/remove this fixture's documents while their joint links exist.
+    await cleanupLineProgramProjects(['E2E historical SP'])
     await withE2eDatabase(async (client) => {
-      if (ids.length) await client.query('delete from weld_joints where id = any($1::int[])', [ids])
       if (settingsChanged) {
         if (previousSetting) await client.query("update app_settings set value = $1, updated_at = $2 where key = 'control-processes'", [previousSetting.value, previousSetting.updated_at])
         else await client.query("delete from app_settings where key = 'control-processes'")

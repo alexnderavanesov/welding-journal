@@ -18,9 +18,17 @@ export async function attachHeatTreatmentControlRelations<
   Row extends HeatTreatmentControlRelationsCarrier,
 >(rows: readonly Row[], db: RelationDb = requireDb()): Promise<Array<Row & HeatTreatmentControlRelationsCarrier>> {
   const rowsWithPreControls = await attachPreHeatTreatmentControlRelations(rows, db)
-  if (rows.length === 0) return rowsWithPreControls
+  if (!rows.some(row => Number.isFinite(Number(row.id)))) return rowsWithPreControls
+  return attachCurrentPolicy(await attachPstoRepeatCycleRelations(rowsWithPreControls, db), db)
+}
+
+/** Manual document sources need cycle history without unrelated policy reads. */
+export async function attachPstoRepeatCycleRelations<
+  Row extends HeatTreatmentControlRelationsCarrier,
+>(rows: readonly Row[], db: RelationDb = requireDb()): Promise<Array<Row & HeatTreatmentControlRelationsCarrier>> {
+  if (rows.length === 0) return []
   const rowIds = getRelationRowIds(rows)
-  if (rowIds.length === 0) return rowsWithPreControls
+  if (rowIds.length === 0) return [...rows]
 
   const repeatCycles = await db
     .select()
@@ -32,8 +40,7 @@ export async function attachHeatTreatmentControlRelations<
       asc(pstoRepeatCycles.id),
     )
 
-  const hydrated = mergePstoRepeatCyclesIntoRows(rowsWithPreControls, repeatCycles)
-  return attachCurrentPolicy(hydrated, db)
+  return mergePstoRepeatCyclesIntoRows(rows, repeatCycles)
 }
 
 /**

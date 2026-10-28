@@ -1,5 +1,6 @@
 import { and, asc, eq, getTableColumns, inArray, isNull, ne, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
-import { DOCUMENT_VERSION_SELECT, touchLayeredDocumentParentsForWeldDeletion, touchSystemDocumentParentsForWeldDeletion } from './document-version'
+import { DOCUMENT_VERSION_SELECT, touchEditableDocumentParentsForWeldDeletion, touchSystemDocumentParentsForWeldDeletion } from './document-version'
+import { loadGeneratedDocumentIdsForWeldDeletion } from './generated-document-cleanup'
 
 import { requireDb } from '@/db'
 import {
@@ -965,12 +966,13 @@ export async function removeHeatTreatmentSourcedDocumentPositionsForWeldsInTrans
   const rowIds = [...new Set(weldJointIds
     .map(Number)
     .filter((value) => Number.isInteger(value) && value > 0))]
-  if (rowIds.length === 0) return
+  if (rowIds.length === 0) return []
+  const documentIds = await loadGeneratedDocumentIdsForWeldDeletion(tx, rowIds)
 
   // All weld-deletion entry points run this preparation before FK cascades:
   // single/bulk deletion, import replacement and early-coil workflows. Legacy
-  // layered parents may survive a cascade and need a new editor version too.
-  await touchLayeredDocumentParentsForWeldDeletion(tx, rowIds)
+  // manual and layered parents need new versions when their membership changes.
+  await touchEditableDocumentParentsForWeldDeletion(tx, rowIds)
 
   const [preControls, repeatCycles] = await Promise.all([
     tx
@@ -1000,8 +1002,9 @@ export async function removeHeatTreatmentSourcedDocumentPositionsForWeldsInTrans
   })
   // The preceding sourced cleanup has acquired the ordered index locks. Touch
   // remaining system parents even if legacy metadata omitted this weld. Keep
-  // the normal lock order: layered parents, index locks, system parents.
+  // the normal lock order: editable parents, index locks, system parents.
   await touchSystemDocumentParentsForWeldDeletion(tx, rowIds)
+  return documentIds
 }
 
 export async function loadSourcedSystemDocumentPositionsInTransaction({

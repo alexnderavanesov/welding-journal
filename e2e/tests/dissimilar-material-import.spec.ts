@@ -133,12 +133,13 @@ test('Excel: material pairs, simultaneous errors, atomic refusal and final merge
   expect(await facts()).toEqual(before)
   expect(calls.filter(name => name.startsWith('replaceWeldJoints_'))).toHaveLength(0)
 
-  // Syntactically valid partial input is still checked against the stored
-  // dimensions and official welder; omission must not bypass either side.
+  // The first row's unchanged historical mismatch permits unrelated corrections
+  // (27 October clarification). Changing the second row to that same bad order
+  // must still be rejected against its stored dimensions and official welder.
   const partialHeaders = ['ID записи', '__Версия записи', 'Группа материалов', 'Изометрия']
   await file.setInputFiles(excelFile('wrong-side-order.xlsx', partialHeaders, [
     [first, versions.get(first), 'М01 + М05', 'ISO-NEW-1'],
-    [second, versions.get(second), 'М05 + М01', 'ISO-NEW-2'],
+    [second, versions.get(second), 'М01 + М05', 'ISO-NEW-2'],
   ]))
   await expect(error).toContainText('СП-02')
   await expect(error).toContainText('Материал 1: М01')

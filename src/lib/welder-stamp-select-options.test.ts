@@ -72,6 +72,24 @@ function suspensionRecord(value: string): WelderStampSuspensionRecord {
 }
 
 describe('welder stamp select options', () => {
+  it('places archived cards last in every official and factual field, preserving order within groups', () => {
+    const activeWithArchivedPermit = stampRecord('ZZZ2', false)
+    activeWithArchivedPermit.naksPermits[0].archived = true
+    const options = buildWeldFormStampSelectOptions([
+      stampRecord('AAA9', true), stampRecord('ZZZ9', false), stampRecord('AAA2', true),
+      stampRecord('MID0', true), stampRecord('MID0', false), activeWithArchivedPermit,
+      { ...stampRecord('', true), internalStamp: 'INT0' },
+    ])
+    for (const key of OFFICIAL_WELDER_STAMP_FIELD_KEYS) {
+      expect(options[key]?.map(option => option.value)).toEqual(['MID0', 'ZZZ2', 'ZZZ9', 'AAA2', 'AAA9'])
+      expect(options[key]?.find(option => option.value === 'MID0')?.label).toBeUndefined()
+    }
+    for (const key of FACTUAL_WELDER_STAMP_FIELD_KEYS) {
+      expect(options[key]?.map(option => option.value)).toEqual(['MID0', 'ZZZ2', 'ZZZ9', 'AAA2', 'AAA9', 'INT0'])
+      expect(options[key]?.at(-1)).toEqual({ value: 'INT0', label: 'INT0 (в архиве)' })
+    }
+  })
+
   it.each(['', '2026-07-31', '2026-08-01', '2026-08-02'])('filters official choices on %s while keeping every factual welder', weldDate => {
     const records = [stampRecord('LIVE', false), { ...stampRecord('ARCH', true), archivedAt: '2026-08-01' },
       { ...stampRecord('', true), internalStamp: 'ВН-1', archivedAt: '2026-08-01' }]

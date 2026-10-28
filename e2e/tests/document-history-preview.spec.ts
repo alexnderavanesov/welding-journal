@@ -76,6 +76,34 @@ async function chooseProject(page: Page) {
   await expect(filter).toBeHidden()
 }
 
+test('history: the last document remains reachable through native scrolling after slow filter replacements', async ({ page }) => {
+  await page.goto('/documents')
+  const grid = page.locator('[data-document-history-grid]')
+  await expect(grid.locator('.document-grid-frame')).not.toHaveAttribute('data-journal-updating', '')
+  let replacements = 0
+  await page.route('**/_serverFn/**', async route => {
+    if (rpcName(route.request().url()).startsWith('listRemoteGeneratedDocumentHistoryGrid')) {
+      replacements++
+      // Simulate the real old-model interval while a new selection is loading.
+      await new Promise(resolve => setTimeout(resolve, 250))
+    }
+    await route.continue()
+  })
+  for (let round = 0; round < 10; round++) {
+    const filter = await openDocumentGridFilter(page, 'project', 'Проект')
+    await filter.getByRole('checkbox', { name: new RegExp(project) }).setChecked(round % 2 === 0)
+    await page.keyboard.press('Escape')
+    await expect(filter).toBeHidden()
+    const row = await documentGridRow(page, manualTitle)
+    await row.titleCell.getByRole('button', { name: manualTitle, exact: true }).click()
+    const modal = page.getByRole('dialog', { name: 'Предпросмотр документа', exact: true })
+    expect(await previewSheetText(modal)).toContain('Шаблон — готовый документ')
+    await page.keyboard.press('Escape')
+    await expect(modal).toBeHidden()
+  }
+  expect(replacements).toBeGreaterThanOrEqual(10)
+})
+
 test('history preview: manual/system documents, every sheet, full Excel, selection and Escape', async ({ page }, info) => {
   const errors: string[] = [], calls: string[] = []
   page.on('pageerror', error => errors.push(error.message))

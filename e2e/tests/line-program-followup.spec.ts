@@ -3,6 +3,7 @@ import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
 import { captureReportExcel } from '../report-excel-capture'
+import { captureFullReportPrint } from '../report-print-capture'
 
 // Finish the initial key before searching; rows can arrive before full totals.
 async function searchProgram(page: Page, search: string) {
@@ -109,9 +110,9 @@ test('сводки всех страниц текущего отбора, отд
   expect(await report.locator('thead').evaluate(el => getComputedStyle(el).display)).toBe('table-header-group')
   await page.emulateMedia({ media: 'screen' })
   await expect(preview.getByRole('button', { name: 'Печать / Сохранить PDF' })).toBeEnabled()
-  await report.locator('body').evaluate(el => { el.ownerDocument.defaultView!.print = () => { el.dataset.printed = 'true' } })
+  await captureFullReportPrint(page)
   await preview.getByRole('button', { name: 'Печать / Сохранить PDF' }).click()
-  await expect(report.locator('body')).toHaveAttribute('data-printed', 'true')
+  await expect.poll(() => page.evaluate(() => JSON.parse(document.body.dataset.fullPrint ?? '{}').rows)).toBe(32)
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
   await page.screenshot({ path: 'outputs/program-line-report.png' })
   expect(calls.filter(name => name.startsWith('getLineProgramReport_'))).toHaveLength(1)
@@ -173,9 +174,9 @@ test('ПКМ: печатная сводка выбранного клейма, �
     if (label === 'Сводка по этому клейму') {
       await expect(report.locator('tbody')).toContainText('FOLLOW-K')
       await expect(report.locator('tbody')).not.toContainText('SECOND-K')
-      await report.locator('body').evaluate(el => { el.ownerDocument.defaultView!.print = () => { el.dataset.printed = 'true' } })
+      await captureFullReportPrint(page)
       await preview.getByRole('button', { name: 'Печать / Сохранить PDF' }).click()
-      await expect(report.locator('body')).toHaveAttribute('data-printed', 'true')
+      await expect.poll(() => page.evaluate(() => JSON.parse(document.body.dataset.fullPrint ?? '{}').rows)).toBe(rows)
       await page.screenshot({ path: 'outputs/program-context-stamp-report.png' })
     }
     await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })

@@ -14,11 +14,17 @@ try {
   // file versions. Every runner must also own an empty, disposable file store.
   templateDirectory = await mkdtemp(join(tmpdir(), 'welding-e2e-templates-'))
   process.env.DOCUMENT_TEMPLATE_STORAGE_PATH = templateDirectory
-  await prepareE2eDatabase()
+  const verifyFixture = await prepareE2eDatabase()
   if (process.env.AUDIT_SQL_COUNTS === '1') {
     process.env.AUDIT_SQL_COUNTS_FILE = join(await mkdtemp(join(tmpdir(), 'welding-e2e-sql-')), 'counts.json')
   }
   exitCode = await runPlaywright(process.argv.slice(2))
+  try {
+    await verifyFixture?.()
+  } catch (error) {
+    exitCode = 1
+    throw error
+  }
 } finally {
   await dropE2eDatabase()
   if (templateDirectory && exitCode === 0) await rm(templateDirectory, { recursive: true })

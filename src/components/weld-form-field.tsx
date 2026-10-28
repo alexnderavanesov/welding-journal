@@ -70,6 +70,8 @@ function WeldFormFieldComponent({
   hideLabel = false,
   controlPickerLayout = 'grid',
 }: WeldFormFieldProps) {
+  const stampOptions = stampSelectOptions?.[field.key]
+  const stampValue = stampOptions ? getStampSelectValue(draft[field.key]) : ''
   const label = hideLabel ? null : ['weldingMethod', 'connectionType', 'materialGroup'].includes(field.key)
     ? <div className="flex h-5 items-center gap-1.5 text-[13px] font-medium text-slate-700">
       {getFormFieldLabel(field)}{field.key === 'materialGroup' ? <WeldFormMaterialGroupHelp /> : null}
@@ -86,22 +88,26 @@ function WeldFormFieldComponent({
   return (
     <div className="space-y-1.5 text-sm">
       {label}
-      {field.key === 'technologyCardNumber' ? <WeldFormTechnologyCardField draft={draft} setDraft={setDraft} fieldRefs={fieldRefs} /> : stampSelectOptions?.[field.key] ? (
+      {field.key === 'technologyCardNumber' ? <WeldFormTechnologyCardField draft={draft} setDraft={setDraft} fieldRefs={fieldRefs} /> : stampOptions ? (
         <Select
+          searchable
           aria-label={field.label}
           ref={(element) => {
             fieldRefs.current[field.key] = element
           }}
-          value={getStampSelectValue(draft[field.key])}
-          onChange={(event) =>
-            setDraft((current) => ({
-              ...current,
-              [field.key]: event.target.value || null,
-            }))
-          }
+          value={stampValue}
+          onChange={(event) => {
+            const value = event.target.value || null
+            setDraft(current => ({ ...current, [field.key]: value }))
+          }}
         >
           <option value="">Пусто</option>
-          {stampSelectOptions[field.key]?.map((option) => (
+          {stampValue && !stampOptions.some(option => option.value === stampValue) ? (
+            <option value={stampValue} disabled title="Сохранённое значение отсутствует в текущем списке. Его можно очистить или заменить.">
+              {stampValue} (нет в списке)
+            </option>
+          ) : null}
+          {stampOptions.map((option) => (
             <option
               key={option.value}
               value={option.value}

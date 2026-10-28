@@ -40,3 +40,14 @@ it('keeps the parent group visible when a statistics page starts with detail row
   expect(report.tables![0].subtitle).toBe('Проект → материал')
   expect(report.tables![0].rows).toHaveLength(102)
 })
+
+
+it('keeps hidden print identities aligned with paginated rows', () => {
+  const rows = Array.from({ length: 125 }, (_, i) => [i])
+  const identity = { columns: ['Линия', 'Стык'], indexes: [-1, -1], rows: rows.map(([i]) => ['L', `F${i}`]) }
+  const report = { title: 'Report', tables: [{ title: '', columns: ['Value'], rows, printIdentity: identity }] }
+  const second = getPrintableReportPage(report, 1).report.tables![0]
+  expect(second.rows).toEqual(rows.slice(100))
+  expect(second.printIdentity!.rows).toEqual(identity.rows.slice(100))
+  expect(identity.rows).toHaveLength(125)
+})

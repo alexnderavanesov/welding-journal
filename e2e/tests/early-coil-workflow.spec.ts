@@ -392,7 +392,7 @@ test('stops the whole officiality rebuild when another user changes the selected
 })
 
 test('blocks predecessor deletion and keeps recovery after deleting a tail or automatic coil sides', async ({ page }) => {
-  test.setTimeout(120_000)
+  test.setTimeout(process.env.AUDIT_CHAIN_SCALE === '1' ? 300_000 : 120_000)
   const rowIds = await seedDeletionRecoveryChains()
 
   await page.goto('/journal')
@@ -469,7 +469,7 @@ test('blocks predecessor deletion and keeps recovery after deleting a tail or au
 })
 
 test('moves an accepted coil chain through its base and preserves each row workflow', async ({ page }, info) => {
-  test.setTimeout(120_000)
+  test.setTimeout(process.env.AUDIT_CHAIN_SCALE === '1' ? 300_000 : 120_000)
   const sourceRowId = await seedChainLineMoveCase()
 
   await page.goto('/journal')
@@ -1176,8 +1176,14 @@ async function deleteJournalRows(page: Page, rows: Array<{ id: number; joint: st
   const selection = page.getByLabel('Статистика выделения')
   if ((await selection.textContent())?.includes('Выбрано:')) {
     const selectAll = page.locator('[data-welding-journal-grid] .ag-header-cell').getByRole('checkbox')
-    await selectAll.check()
-    await selectAll.uncheck()
+    // Selecting the full server scope is asynchronous at 200k rows; Playwright's
+    // check() expects the value to change synchronously with the native click.
+    if (!await selectAll.isChecked()) {
+      await selectAll.click()
+      await expect(selectAll).toBeChecked()
+    }
+    await selectAll.click()
+    await expect(selectAll).not.toBeChecked()
     await expect(selection).not.toContainText('Выбрано:')
   }
   if (rows.length === 1) {
@@ -1234,7 +1240,9 @@ async function openDispatcherObjectGroup(page: Page, baseJoint: string, code: st
     if (!await showMore.isVisible()) break
     await showMore.click()
   }
-  await expect(summary).toBeVisible({ timeout: 15_000 })
+  // A previously published task can remain visible during the measured full
+  // recalculation on the 200k background. Wait for this fixture's own task.
+  await expect(summary).toBeVisible({ timeout: process.env.AUDIT_CHAIN_SCALE === '1' ? 90_000 : 15_000 })
   await summary.click()
   return summary.locator('..')
 }

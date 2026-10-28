@@ -5,6 +5,25 @@ import { PrintableReportPreview } from './printable-report-preview'
 beforeEach(() => vi.spyOn(window, 'scrollTo').mockImplementation(() => {}))
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
+it('prepares horizontal print parts for a wide single-page preview without changing the preview', () => {
+  const columns = ['Линия', 'Стык', ...Array.from({ length: 20 }, (_, i) => `Поле ${i}`)]
+  render(<PrintableReportPreview report={{ title: 'Wide', tables: [{ title: '', columns, rows: [columns] }] }}
+    busy={false} error="" onClose={vi.fn()} onRetry={vi.fn()} />)
+  const preview = screen.getByTitle('Wide') as HTMLIFrameElement
+  fireEvent.load(preview)
+  const original = preview.srcdoc
+  fireEvent.click(screen.getByRole('button', { name: 'Печать / Сохранить PDF' }))
+  const full = screen.getByTitle('Полный отчёт для печати') as HTMLIFrameElement
+  const target = full.contentWindow!
+  vi.spyOn(target, 'focus').mockImplementation(() => {})
+  const print = vi.spyOn(target, 'print').mockImplementation(() => target.dispatchEvent(new Event('afterprint')))
+  expect(full.srcdoc).toContain('Часть 1 из')
+  expect(full.srcdoc).toContain('print-continuation')
+  expect(preview.srcdoc).toBe(original)
+  fireEvent.load(full)
+  expect(print).toHaveBeenCalledOnce()
+})
+
 it('cancels an unfinished file request when the preview closes', async () => {
   let signal: AbortSignal | undefined
   const download = vi.fn((requestSignal?: AbortSignal) => {

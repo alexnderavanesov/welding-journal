@@ -22,7 +22,7 @@ import type { WeldInput } from '@/lib/weld-fields'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
 import { calculateWdi, isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
 import { attachGeneratedDocumentFields } from '@/server/generated-document-row-fields'
-import { attachPreHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
+import { attachPreHeatTreatmentControlRelations, attachPstoRepeatCycleRelations } from '@/server/heat-treatment-control-relations'
 import {
   buildDocumentHistoryFilterOptionsSqlQuery,
   buildDocumentHistorySqlQuery,
@@ -743,30 +743,30 @@ export const getRemoteGeneratedDocumentRows = createServerFn({ method: 'GET' })
   })
 
 export async function loadRemoteGeneratedDocumentRows(id: number): Promise<WeldRow[]> {
-  const db = requireDb()
-  const rows = await db
-    .select({ weld: weldJoints })
-    .from(generatedDocumentWeldJoints)
-    .innerJoin(
-      generatedDocuments,
-      and(
-        eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId),
-        inArray(generatedDocuments.type, [...GENERATED_DOCUMENT_TYPES]),
-      ),
-    )
-    .innerJoin(weldJoints, eq(weldJoints.id, generatedDocumentWeldJoints.weldJointId))
-    .where(eq(generatedDocumentWeldJoints.documentId, id))
-    .orderBy(asc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
-  const otherSettings = await loadGeneratedDocumentOtherSettings(db)
-  const currentRows = rows.map(({ weld }) => weld as unknown as WeldRow)
-  return attachGeneratedDocumentFields(
-    await attachPreHeatTreatmentControlRelations(
+  return requireDb().transaction(async (db) => {
+    const rows = await db
+      .select({ weld: weldJoints })
+      .from(generatedDocumentWeldJoints)
+      .innerJoin(
+        generatedDocuments,
+        and(
+          eq(generatedDocuments.id, generatedDocumentWeldJoints.documentId),
+          inArray(generatedDocuments.type, [...GENERATED_DOCUMENT_TYPES]),
+        ),
+      )
+      .innerJoin(weldJoints, eq(weldJoints.id, generatedDocumentWeldJoints.weldJointId))
+      .where(eq(generatedDocumentWeldJoints.documentId, id))
+      .orderBy(asc(weldJoints.weldDate), asc(weldJoints.line), asc(weldJoints.joint))
+    const otherSettings = await loadGeneratedDocumentOtherSettings(db)
+    const currentRows = rows.map(({ weld }) => weld as unknown as WeldRow)
+    const rowsWithControls = await attachPreHeatTreatmentControlRelations(
       isSystemWdiMode(otherSettings)
         ? currentRows.map((row) => withSystemWdi(row, otherSettings))
         : currentRows,
       db,
-    ),
-  )
+    )
+    return attachGeneratedDocumentFields(await attachPstoRepeatCycleRelations(rowsWithControls, db), db)
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
 export const deleteRemoteGeneratedDocument = createServerFn({ method: 'POST' })

@@ -133,41 +133,40 @@ export async function listLnkWorkflowRows(
 ): Promise<WeldRow[]> {
   await assertSecurityScope('entry')
   const request = normalizeLnkWorkflowRowsRequest(input)
-  const db = requireDb()
-  const selectedRowsOrder = request.limit && request.includeRowIds?.length
-    ? [buildIncludedRowsFirstOrder(weldJoints.id, request.includeRowIds)]
-    : []
-  const readyCandidates = request.scope === 'requestCandidates' || request.scope === 'resultCandidates'
-    ? buildLnkCandidateMethodWhere(request, true)
-    : undefined
-  const readyRowsOrder = readyCandidates
-    ? [sql`case when ${readyCandidates} then 0 else 1 end`]
-    : []
-  const sourceQuery = db
-    .select(LNK_WORKFLOW_ROW_SELECT)
-    .from(weldJoints)
-    .where(buildLnkWorkflowRowsWhere(request))
-    .orderBy(...selectedRowsOrder, ...readyRowsOrder, ...getReportOrderBy('lnk'), weldJoints.id)
-  const sourceRows = request.limit
-    ? await sourceQuery.limit(request.limit + (request.includeRowIds?.length ?? 0)).offset(request.offset ?? 0)
-    : await sourceQuery
-  const reportRows = applyCurrentSystemWdi(
-    buildServerReportRows(sourceRows as unknown as WeldJoint[], 'lnk'),
-    await loadServerOtherSettings(),
-  )
-  const [rowsWithDuplicateControls, rowsWithHeatTreatmentControls] = await Promise.all([
-    attachDuplicateControlsToPage(reportRows),
-    attachHeatTreatmentControlRelations(reportRows),
-  ])
-  const rows = reportRows.map((row, index) => ({
-    ...row,
-    ...rowsWithDuplicateControls[index],
-    ...rowsWithHeatTreatmentControls[index],
-  }))
-  const rowsWithSystemDocumentIds = isLnkDocumentRegistryScope(request.scope)
-    ? await attachSystemDocumentIds(rows, db)
-    : rows
-  return compactWeldRowsForTransport(rowsWithSystemDocumentIds)
+  return requireDb().transaction(async db => {
+    const selectedRowsOrder = request.limit && request.includeRowIds?.length
+      ? [buildIncludedRowsFirstOrder(weldJoints.id, request.includeRowIds)]
+      : []
+    const readyCandidates = request.scope === 'requestCandidates' || request.scope === 'resultCandidates'
+      ? buildLnkCandidateMethodWhere(request, true)
+      : undefined
+    const readyRowsOrder = readyCandidates
+      ? [sql`case when ${readyCandidates} then 0 else 1 end`]
+      : []
+    const sourceQuery = db
+      .select(LNK_WORKFLOW_ROW_SELECT)
+      .from(weldJoints)
+      .where(buildLnkWorkflowRowsWhere(request))
+      .orderBy(...selectedRowsOrder, ...readyRowsOrder, ...getReportOrderBy('lnk'), weldJoints.id)
+    const sourceRows = request.limit
+      ? await sourceQuery.limit(request.limit + (request.includeRowIds?.length ?? 0)).offset(request.offset ?? 0)
+      : await sourceQuery
+    const reportRows = applyCurrentSystemWdi(
+      buildServerReportRows(sourceRows as unknown as WeldJoint[], 'lnk'),
+      await loadServerOtherSettings(db),
+    )
+    const rowsWithDuplicateControls = await attachDuplicateControlsToPage(reportRows, db)
+    const rowsWithHeatTreatmentControls = await attachHeatTreatmentControlRelations(reportRows, db)
+    const rows = reportRows.map((row, index) => ({
+      ...row,
+      ...rowsWithDuplicateControls[index],
+      ...rowsWithHeatTreatmentControls[index],
+    }))
+    const rowsWithSystemDocumentIds = isLnkDocumentRegistryScope(request.scope)
+      ? await attachSystemDocumentIds(rows, db)
+      : rows
+    return compactWeldRowsForTransport(rowsWithSystemDocumentIds)
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
 function isLnkDocumentRegistryScope(scope: LnkWorkflowRowsRequest['scope']) {

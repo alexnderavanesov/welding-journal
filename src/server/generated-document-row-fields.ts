@@ -274,8 +274,9 @@ function parseSystemDocumentSourceMetadata(value: string | null | undefined) {
 
 export async function attachGeneratedDocumentFields<Row extends GeneratedDocumentCarrier>(
   rows: Row[],
+  db?: Pick<ReturnType<typeof requireDb>, 'select'>,
 ): Promise<Array<Row & GeneratedDocumentRowFields>> {
-  return applyGeneratedDocumentFields(rows, await loadGeneratedDocumentAssignments(rows))
+  return applyGeneratedDocumentFields(rows, await loadGeneratedDocumentAssignments(rows, db))
 }
 
 export async function loadGeneratedDocumentAssignments<Row extends GeneratedDocumentCarrier>(

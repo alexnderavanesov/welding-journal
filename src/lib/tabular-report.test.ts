@@ -9,6 +9,7 @@ it('provides the complete data and fields without starting a browser download', 
   expect(content.report.tables?.[0].rows).toEqual([['<F1>']])
   expect(content.exportData).toEqual({ rows, fields, sheetName: 'Журнал', filename: 'journal.xlsx' })
   expect(content.exportData.rows).toBe(rows)
+  expect(content.report.tables?.[0].printIdentity).toEqual({ columns: ['Линия', 'Стык'], indexes: [-1, 0], rows: [['', '<F1>']] })
 })
 
 it('uses the agreed Russian values, calendar dates, Moscow timestamps and DNO in every output', () => {
@@ -35,4 +36,19 @@ it('preserves rejected and cancelled historical descriptions, invalid legacy dat
     ['отменен', 'годен', 'Сохранённое описание', '02.10.2026'],
     ['', '', '', ''],
   ])
+})
+
+
+it('formats the preview only when requested, once, while raw export access stays cheap', () => {
+  let reads = 0
+  const rows = [{ get joint() { reads++; return 'F1' } }]
+  const content = buildTabularReport({ rows, fields: [FIELD_BY_KEY.get('joint')!], sheetName: 'Журнал', title: 'Журнал', filename: 'journal.xlsx', emptyMessage: '' })
+  expect(content.exportData.rows).toBe(rows)
+  expect(reads).toBe(0)
+  const report = content.report
+  expect(report.tables[0].rows).toEqual([['F1']])
+  const formatted = reads
+  expect(formatted).toBeGreaterThan(0)
+  expect(content.report).toBe(report)
+  expect(reads).toBe(formatted)
 })

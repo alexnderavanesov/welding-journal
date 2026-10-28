@@ -88,4 +88,9 @@ export default async function globalSetup() {
     `)
 
   })
+
+  if (process.env.AUDIT_CHAIN_SCALE === '1') {
+    const { seedChainScaleBackground } = await import('./chain-scale-fixture')
+    return seedChainScaleBackground()
+  }
 }

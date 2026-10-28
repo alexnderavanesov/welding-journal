@@ -24,7 +24,8 @@ export function getPrintableReportPage(report: PrintableReport, requestedPage: n
         break
       }
     }
-    return [{ ...table, subtitle, rows: table.rows.slice(from, to), rowKinds: table.rowKinds?.slice(from, to) }]
+    return [{ ...table, subtitle, rows: table.rows.slice(from, to), rowKinds: table.rowKinds?.slice(from, to),
+      ...(table.printIdentity ? { printIdentity: { ...table.printIdentity, rows: table.printIdentity.rows.slice(from, to) } } : {}) }]
   })
   return { report: total > REPORT_PREVIEW_PAGE_SIZE ? { ...report, tables } : report, page, pageCount, start, end, total }
 }

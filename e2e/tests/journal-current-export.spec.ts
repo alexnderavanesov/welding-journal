@@ -30,10 +30,19 @@ async function interceptCurrentPrint(page: Page) {
       const frame = event.target
       if (!(frame instanceof HTMLIFrameElement) || frame.title !== 'Полный отчёт для печати') return
       frame.contentWindow!.print = () => {
-        document.body.dataset.currentJournalPrint = JSON.stringify({
-          headers: [...frame.contentDocument!.querySelectorAll('thead th')].map(cell => cell.textContent ?? ''),
-          rows: [...frame.contentDocument!.querySelectorAll('tbody tr')].map(row => [...row.querySelectorAll('td')].map(cell => cell.textContent ?? '')),
-        })
+        // Reassemble by original source index: print bands repeat the keys,
+        // while every selected value must still match the preview/Excel snapshot.
+        const headers: string[] = [], rows: string[][] = []
+        for (const table of frame.contentDocument!.querySelectorAll<HTMLTableElement>('table[data-source-columns]')) {
+          const sources = table.dataset.sourceColumns!.split(',').map(Number)
+          table.querySelectorAll('thead th').forEach((cell, index) => { if (sources[index] >= 0) headers[sources[index]] = cell.textContent ?? '' })
+          table.querySelectorAll('tbody tr').forEach((row, index) => {
+            const values = [...row.querySelectorAll('td')].flatMap(cell => cell.colSpan > 1 ? Array<string>(cell.colSpan).fill('') : [cell.textContent ?? ''])
+            rows[index] ??= []
+            sources.forEach((source, column) => { if (source >= 0) rows[index][source] = values[column] })
+          })
+        }
+        document.body.dataset.currentJournalPrint = JSON.stringify({ headers, rows })
         frame.contentWindow!.dispatchEvent(new Event('afterprint'))
       }
     }, true)
