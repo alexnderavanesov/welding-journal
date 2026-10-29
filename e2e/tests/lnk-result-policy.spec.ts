@@ -107,6 +107,36 @@ test('отложенный клик внесения не открывает в�
   await page.waitForLoadState('networkidle')
   await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК', exact: true })).toHaveCount(0)
   await expect(page.getByRole('dialog')).toHaveCount(1)
+  // Finish this test's delayed response before page.close(); otherwise its
+  // route.fetch rejection can be attributed to the following Escape test.
+  await page.unrouteAll({ behavior: 'wait' })
+})
+
+test('fresh header action is cancelled when the joint picture opens before its rows arrive', async ({ page }) => {
+  await seed([{ joint: 'F917', diameter: 159, method: 'ВИК' }])
+  await page.goto('/lnk')
+  await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету', exact: true }).fill(project)
+  const row = lnkGridRow(page, 'F917')
+  await row.getByRole('checkbox').check()
+  await page.waitForLoadState('networkidle')
+  let release!: () => void, started!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const pending = new Promise<void>(resolve => { started = resolve })
+  await page.route('**/_serverFn/**', async route => {
+    if (rpcName(route.request().url()).startsWith('listWeldJointRowsByIds_')) { started(); await gate }
+    await route.continue()
+  })
+  try {
+    await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
+    await page.getByRole('button', { name: 'Внести результаты', exact: true }).click()
+    await pending
+    await row.getByRole('button', { name: 'F917', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Картина стыка F917', exact: true })).toBeVisible()
+    release()
+    await page.waitForLoadState('networkidle')
+    await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('dialog')).toHaveCount(1)
+  } finally { release(); await page.unrouteAll({ behavior: 'wait' }) }
 })
 
 test('Escape сначала закрывает обычную подсказку i, не форму внесения и не её данные', async ({ page }) => {
@@ -296,6 +326,47 @@ test('ВИК малого диаметра: ручной ремонт, hover/foc
   await checkReason(page, manager.getByRole('group', { name: 'Изменить на:', exact: true }), 'вырез', ['По ВИК результат «вырез» не допускается.'])
   expect(errors).toEqual([])
   await page.close()
+})
+
+test('a result-registry click after saving waits for the refreshed availability instead of losing the intent', async ({ page }) => {
+  await seed([{ joint: 'F918', diameter: 57, method: 'ВИК' }])
+  const dialog = await openResults(page, 'F918', 'vikRequest')
+  await page.waitForLoadState('networkidle')
+  await dialog.getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'ремонт', exact: true }).click()
+  await dialog.getByLabel('Дата контроля', { exact: true }).fill('2026-09-03')
+  let releaseRows!: () => void, releaseSummary!: () => void
+  const rowsGate = new Promise<void>(resolve => { releaseRows = resolve })
+  const summaryGate = new Promise<void>(resolve => { releaseSummary = resolve })
+  await page.route('**/_serverFn/**', async route => {
+    const name = rpcName(route.request().url())
+    if (!name.startsWith('readJournalGrid_') && !name.startsWith('getLnkWorkflowSummary_')) return route.continue()
+    const response = await route.fetch()
+    await (name.startsWith('readJournalGrid_') ? rowsGate : summaryGate)
+    await route.fulfill({ response })
+  })
+  try {
+    await dialog.getByRole('button', { name: 'Сохранить результат', exact: true }).click()
+    await expect(dialog).toBeHidden()
+    const grid = page.locator('[data-lnk-grid] .journal-grid-frame')
+    await expect(grid).toHaveAttribute('aria-busy', 'true')
+    await page.locator('header').getByRole('button', { name: 'Результат', exact: true }).click()
+    const item = page.getByRole('button', { name: 'Все результаты ЛНК', exact: true })
+    await expect(item).toHaveAttribute('aria-busy', 'true')
+    await item.click()
+    releaseRows()
+    await expect(grid).toHaveAttribute('aria-busy', 'false')
+    // The previous summary contains zero results. It cannot cancel the user's
+    // click while its replacement, reflecting the save, is still in flight.
+    await expect(item).toHaveAttribute('aria-busy', 'true')
+    releaseSummary()
+    const manager = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование результатов ЛНК', exact: true }) })
+    await expect(manager).toBeVisible()
+    await manager.getByPlaceholder('Стык, линия, заявка или заключение').fill('F918')
+    await expect(manager.getByRole('group', { name: 'Изменить на:', exact: true }).getByRole('button', { name: 'ремонт', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  } finally {
+    releaseRows(); releaseSummary()
+    await page.unrouteAll({ behavior: 'wait' })
+  }
 })
 
 test('РК: все причины выбранных стыков, смена выбора без автозамены и ограничения дубля', async ({ page }) => {

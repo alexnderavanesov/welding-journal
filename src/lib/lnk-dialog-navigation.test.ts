@@ -23,7 +23,6 @@ function setup(canLeaveResultEditor: () => boolean = () => true, tableRows: Weld
         closePreHeatTreatmentResultRegistryState: controller.closePreHeatTreatmentResultRegistry,
         controlProcessSettings: settings,
         lnkRows: tableRows.length ? tableRows : [{ id: 1, joint: 'F1' }] as WeldRow[],
-        tableActionRows: tableRows, selectedLnkIds: new Set(tableRows.length ? tableRows.map(row => row.id) : [1]),
         preHeatTreatmentResultCorrectionMutation: { isPending: false },
       }),
     }
@@ -35,7 +34,7 @@ describe('LNK dialog navigation', () => {
   it('passes the complete primary selection from the header into the same bulk result action', () => {
     const rows = [1, 2].map(id => ({ id, pstoRequired: 'нет', hasVik: 'да', vikRequest: 'R', vikRequestDate: '2026-09-01', vikResult: 'ожидает НК' }) as WeldRow)
     const { result, actions } = setup(() => true, rows)
-    act(() => result.current.navigation.openAddLnkWorkflowResultFromHeader())
+    act(() => result.current.navigation.openAddLnkWorkflowResultFromHeader(rows))
     expect(actions.openAddLnkResultModalForRows).toHaveBeenCalledWith(rows)
     expect(actions.openAddLnkResultModal).not.toHaveBeenCalled()
   })
@@ -64,16 +63,15 @@ describe('LNK dialog navigation', () => {
       navigation.openAddLnkResultFromRegistry()
       navigation.switchLnkWorkflowStage('result', 'beforeHeatTreatment', [1])
       navigation.switchLnkWorkflowStage('result', 'primary', [1])
-      navigation.openAddLnkWorkflowResultFromHeader()
+      navigation.openAddLnkWorkflowResultFromHeader([])
       navigation.openCreateLnkWorkflowRequestForRows([{ id: 1 }])
       navigation.openAddLnkWorkflowResultForRow({ id: 1 })
       navigation.openAllLnkResultRegistry()
-      navigation.openSelectedLnkResultRegistry()
       navigation.openLnkResultRegistryForRows([{ id: 1 }])
       navigation.openExactLnkResult({ id: 1 }, 'vikRequest')
       navigation.openCreateLnkWorkflowRequestForRow({ id: 1 })
     })
-    expect(guard).toHaveBeenCalledTimes(12)
+    expect(guard).toHaveBeenCalledTimes(11)
     expect(result.current.controller.isPreHeatTreatmentResultManagerOpen).toBe(true)
     expect(result.current.controller.preHeatTreatmentResultManagerRowIds).toEqual([1])
     expect(result.current.controller.preHeatTreatmentLnkWorkflowMode).toBeNull()
@@ -101,7 +99,7 @@ describe('LNK dialog navigation', () => {
     expect(result.current.controller.lnkResultRegistrySearch).toBe('')
     expect(result.current.controller.lnkResultRegistryFilter).toBe('all')
     expect(actions.openLnkResultManager).toHaveBeenLastCalledWith({ rowIds: null })
-    act(() => result.current.navigation.openSelectedLnkResultRegistry())
+    act(() => result.current.navigation.openLnkResultRegistryForRows([{ id: 1 }]))
     expect(actions.openLnkResultManager).toHaveBeenLastCalledWith({ rowIds: [1] })
   })
 

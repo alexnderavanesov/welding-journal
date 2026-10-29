@@ -69,7 +69,8 @@ export function useLnkWorkflowRowsQuery({
     queryKey: [...LNK_WORKFLOW_ROWS_QUERY_KEY, isCandidateQuery ? { ...queryIdentity, initialSelection } : queryIdentity],
     queryFn: () => listLnkWorkflowRows({ data: normalizedRequest! }),
     enabled: normalizedRequest !== null,
-    staleTime: isCandidateQuery ? 0 : WORKFLOW_STALE_TIME,
+    // Every newly opened workflow reads current facts; focus does not replace a draft.
+    staleTime: 0,
     // Keep the current selection visible while the next search is in flight.
     // Selected IDs travel with that search but do not trigger requests alone.
     placeholderData: (previous, previousQuery) => isCandidateQuery &&

@@ -110,6 +110,22 @@ describe('dispatcher task snapshot visibility', () => {
     expect(serverMocks.getDispatcherTaskSnapshot).toHaveBeenCalledTimes(3)
   })
 
+  it('notifies a closed dispatcher on changed focus with one scalar probe and no snapshot read or recalculation', async () => {
+    serverMocks.getDispatcherTaskSnapshot.mockResolvedValue(snapshot(true, 7))
+    const { result, queryClient } = mountActivitySnapshot()
+    await waitFor(() => expect(result.current.data?.isFresh).toBe(true))
+    const listener = vi.fn()
+    const unsubscribe = subscribeWeldPageRefresh(queryClient, listener)
+    serverMocks.getDispatcherTaskVersion.mockResolvedValue({ sourceRevision: 8, computedRevision: 7,
+      businessDate: '2026-09-23', computedForBusinessDate: '2026-09-23', calculationVersion: DISPATCHER_TASK_CALCULATION_VERSION })
+    act(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')) })
+    await waitFor(() => expect(listener).toHaveBeenCalledWith({ reason: 'background' }))
+    expect(serverMocks.getDispatcherTaskVersion).toHaveBeenCalledOnce()
+    expect(serverMocks.getDispatcherTaskSnapshot).toHaveBeenCalledOnce()
+    expect(serverMocks.refreshDispatcherTaskSnapshot).not.toHaveBeenCalled()
+    unsubscribe()
+  })
+
   it('retains stale tasks after a corrupt POST and releases the shared request for explicit retry', async () => {
     serverMocks.refreshDispatcherTaskSnapshot
       .mockResolvedValueOnce({ encoding: 'gzip-base64-v1', summary: '%not-base64%', taskChunks: [] })

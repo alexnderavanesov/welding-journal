@@ -1840,7 +1840,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   }, [isServerPagedTab, reportGridQuery.rowsReady, visibleRows, pagedReportRows])
   const {
     openAllLnkResultRegistry,
-    openSelectedLnkResultRegistry,
     openLnkResultRegistryForRows,
     openExactLnkResult,
     openAddLnkResultFromRegistry,
@@ -1878,10 +1877,8 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     lnkRows,
     openLnkRequestRegistry,
     preHeatTreatmentResultCorrectionMutation,
-    selectedLnkIds,
     setMessage,
     setSelectedLnkIds,
-    tableActionRows,
   })
   useEffect(() => {
     const refreshDocumentAssignments = () => {
@@ -3443,6 +3440,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     return reportGridQuery.rowsReady && [...activeSelectedRowIds].every((id) => availableIds.has(id))
   }, [reportGridQuery.rowsReady, activeSelectedRowIds, tableActionRows])
   const createLnkRequestAction = useReportSelectionAction({
+    fresh: true,
     rowsReady: activeReport === 'lnk' && reportGridQuery.rowsReady,
     isModalOpen: isReportModalOpen || Boolean(editing) || Boolean(heatTreatmentFieldEditing) ||
       Boolean(chainRecord) || Boolean(coilCorrectionTarget) || Boolean(chainActuality) || Boolean(documentGenerationRequest),
@@ -3453,12 +3451,23 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onOpen: openCreateLnkWorkflowRequestForRows,
     onError: setMessage,
   })
-  const runReportSelectionAction = (action: () => void) => {
+  const headerSelectionIntent = useRef<((rows: WeldRow[]) => void) | null>(null)
+  const headerSelectionAction = useReportSelectionAction({
+    fresh: true, rowsReady: reportSelectionReady, isModalOpen: isReportModalOpen,
+    queryIdentity: `${reportOutputContext}:${reportOutputGeneration}`,
+    selectedIds: activeSelectedRowIds, rows: tableActionRows,
+    loadRowsByIds: ids => listWeldJointRowsByIds({ data: { ids } }),
+    onOpen: rows => { const action = headerSelectionIntent.current; headerSelectionIntent.current = null; action?.(rows) },
+    onError: message => { headerSelectionIntent.current = null; setMessage(message) },
+  })
+  const runReportSelectionAction = (action: (rows: WeldRow[]) => void) => {
     if (!reportSelectionReady) {
       setMessage('Дождитесь загрузки текущей выборки и всех выбранных стыков. Состав действия не изменён.')
       return
     }
-    action()
+    if (headerSelectionAction.disabled) return
+    headerSelectionIntent.current = action
+    void headerSelectionAction.run()
   }
   const pstoResultRegistryRows = useMemo(
     () => heatTreatmentRows.filter(hasPstoResultData),
@@ -3576,11 +3585,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     createPstoRequestDisabled:
       !reportSelectionReady || pstoWorkflowSummaryQuery.isLoading || !hasAvailablePstoWorkflowRequestRows,
     onOpenPstoLineProgram: openPstoLineProgram,
-    onEditSelectedPstoRequest: () => {
-      if (!reportSelectionReady) return
+    onEditSelectedPstoRequest: () => runReportSelectionAction(rows => {
       setIsPstoResultRegistryAll(false)
-      openPstoResultManagerForRows(selectedPstoHeaderRows)
-    },
+      openPstoResultManagerForRows(rows)
+    }),
     editSelectedPstoRequestDisabled:
       !reportSelectionReady ||
       selectedPstoHeaderRows.length === 0 ||
@@ -3589,15 +3597,15 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       openAllPstoHistory()
     },
     pstoRequestPending: pstoRequestMutation.isPending,
-    pstoAvailability: pstoWorkflowSummaryQuery.data !== undefined ? 'ready' : pstoWorkflowSummaryQuery.isError ? 'error' : 'loading',
+    pstoAvailability: !reportGridQuery.rowsReady || pstoWorkflowSummaryQuery.isFetching ? 'loading'
+      : pstoWorkflowSummaryQuery.isError ? 'error' : pstoWorkflowSummaryQuery.data !== undefined ? 'ready' : 'loading',
     onAddPstoResult: () => runReportSelectionAction(() => openPstoRepeatWorkflow('result')),
     pstoResultDisabled:
       !reportSelectionReady || pstoWorkflowSummaryQuery.isLoading || !hasAvailablePstoWorkflowResultRows,
-    onEditSelectedPstoResults: () => {
-      if (!reportSelectionReady) return
+    onEditSelectedPstoResults: () => runReportSelectionAction(rows => {
       setIsPstoResultRegistryAll(false)
-      openPstoResultManagerForRows(selectedPstoHeaderRows)
-    },
+      openPstoResultManagerForRows(rows)
+    }),
     editSelectedPstoResultsDisabled: !reportSelectionReady || !selectedPstoHeaderRows.some(hasPstoResultData),
     onOpenPstoResultRegistry: () => {
       openAllPstoHistory()
@@ -3619,12 +3627,13 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onPstoWorkflowMenuOpenChange: setIsPstoWorkflowMenuOpen,
     onCreateLnkRequest: () => void createLnkRequestAction.run(),
     createLnkRequestDisabled: createLnkRequestAction.disabled,
-    onExtendLnkRequest: () => runReportSelectionAction(() => openExtendLnkRequestModalForRows(
-      tableActionRows.filter((row) => selectedLnkIds.has(row.id)),
-    )),
+    onExtendLnkRequest: () => runReportSelectionAction(openExtendLnkRequestModalForRows),
     onOpenLnkRequestRegistry: () => openLnkRequestRegistry(),
     lnkRequestPending: lnkRequestMutation.isPending,
-    lnkAvailability: !reportGridQuery.rowsReady ? 'loading' : lnkWorkflowSummaryQuery.data !== undefined ? 'ready' : lnkWorkflowSummaryQuery.isError ? 'error' : 'loading',
+    // A successful save can install rows before the summary refetch finishes.
+    // Cached availability must not cancel a click queued during that refresh.
+    lnkAvailability: !reportGridQuery.rowsReady || lnkWorkflowSummaryQuery.isFetching ? 'loading'
+      : lnkWorkflowSummaryQuery.isError ? 'error' : lnkWorkflowSummaryQuery.data !== undefined ? 'ready' : 'loading',
     onAddLnkResult: () => runReportSelectionAction(openAddLnkWorkflowResultFromHeader),
     lnkResultDisabled:
       !reportSelectionReady || lnkResultMutation.isPending ||
@@ -3632,7 +3641,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       (lnkWorkflowSummaryQuery.data
         ? lnkWorkflowSummaryQuery.data.pendingPrimaryResultRowCount === 0
         : !isLnkRowsContextReady || selectedLnkResultMethods.length === 0)),
-    onEditSelectedLnkResults: () => runReportSelectionAction(openSelectedLnkResultRegistry),
+    onEditSelectedLnkResults: () => runReportSelectionAction(openLnkResultRegistryForRows),
     editSelectedLnkResultsDisabled:
       !reportSelectionReady ||
       selectedLnkIds.size === 0 ||

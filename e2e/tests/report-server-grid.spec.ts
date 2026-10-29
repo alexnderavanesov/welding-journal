@@ -99,8 +99,8 @@ test('server report scopes keep membership, counts, stages, ranges and facets in
     const range = {...query,revision,anchor:'line',parts:[{route:[],start:0,end:count,columns:['joint']}]}
     expect(await call(page,'summarizeJournalGridRange',range)).toEqual({count,numericCount:0,sum:0,average:null})
     const copy = await call<string>(page,'copyJournalGridRange',{...range,parts:[{route:[],start:90,end:110,columns:['joint','vikResult']}]})
-    const lines=copy.split('\r\n'); expect(lines).toHaveLength(21)
-    expect(lines[1]).toBe(`${report==='heatTreatment'?'F000182':'F000091'}\tгоден`)
+    const lines=copy.split('\r\n'); expect(lines).toHaveLength(20)
+    expect(lines[0]).toBe(`${report==='heatTreatment'?'F000182':'F000091'}\tгоден`)
     const facet=await call<{total:number;options:unknown[]}>(page,'readJournalFilterPage',{report,search:PROJECT,fieldKey:'joint',revision})
     expect(facet.total).toBe(count); expect(facet.options.length).toBeLessThanOrEqual(1000)
     const ms = performance.now() - started, afterSql = await auditSqlCount()

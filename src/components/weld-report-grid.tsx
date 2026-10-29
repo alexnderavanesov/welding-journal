@@ -84,7 +84,6 @@ function ReportGrid(props: WeldReportGridProps) {
   const frame = useRef<HTMLDivElement>(null)
   const pageTrack = useRef<HTMLDivElement>(null)
   const pageStage = useRef<HTMLDivElement>(null)
-  useJournalDocumentScroll(pageTrack, pageStage, frame, api, true)
   useJournalResizeBuffer(api, true)
   const resultMotion = useGridResultMotion(frame, { opacity: .84, duration: 150, ready: rowsReady })
   const resultScope = useMemo(() => JSON.stringify([props.queryIdentity, columnFilters, sort]), [props.queryIdentity, columnFilters, sort])
@@ -109,7 +108,10 @@ function ReportGrid(props: WeldReportGridProps) {
     props.onSelectedRowIdsChange?.(ids)
     return report === 'weldingJournal' || ids.size <= WORKFLOW_SELECTION_LIMIT
   },
-    onError: props.onContextMenuError, onReplace: () => {
+    onError: props.onContextMenuError, onReplace: preservePosition => {
+      // Reapplying unchanged filter models schedules an additional SSRM purge
+      // after the replacement and would discard the restored expansion/anchor.
+      if (preservePosition) return
       // Native SSRM sort/filter events purge the current store. Apply their UI
       // models only when the prepared replacement can be installed with them.
       api?.setFilterModel(Object.fromEntries(Object.entries(columnFilters).filter(([key]) => api.getColumn(key)).map(([key, value]) => [key, { value }])))
@@ -120,6 +122,7 @@ function ReportGrid(props: WeldReportGridProps) {
       if (window.scrollY > top) window.scrollTo({ top, behavior: 'instant' })
     }, onReplaced: resultMotion.reveal, total: props.totalCount, anchor: groupAnchor, ready: rowsReady })
   const rangeSummary = serverGrid.summary
+  useJournalDocumentScroll(pageTrack, pageStage, frame, api, true, 0, serverGrid.isRestoring)
   const updateRangeSummary = serverGrid.updateRange
   const copyRange = () => serverGrid.copy()
   const popupColumn = useRef<string | null>(null)
@@ -158,6 +161,7 @@ function ReportGrid(props: WeldReportGridProps) {
   const getActionRow = useCallback((row: WeldRow) => actionRows.get(row.id) ?? row, [actionRows])
   const contextRows = useMemo(() => [...actionRows.values()], [actionRows])
   const rowMenu = useWeldTableContextMenu({
+    fresh: true,
     rowsReady, queryIdentity: props.queryIdentity ?? '', selectedIds: selectedRowIds, rows: contextRows,
     customQueryIdentity: JSON.stringify([props.queryIdentity, groupings]),
     loadRowsByIds: props.loadContextMenuRows, onError: props.onContextMenuError,
@@ -598,6 +602,10 @@ function ReportGrid(props: WeldReportGridProps) {
         </div> : null}
       </div>
       <div data-journal-footer className="journal-footer rounded-b-xl border border-t-0 border-slate-200 bg-slate-50 px-3 text-xs text-slate-500">
+        {props.journalServer.updatesAvailable ? <span className="journal-freshness-notice" role="status">
+          <span>Есть обновления</span>
+          <button type="button" onClick={props.journalServer.retry} disabled={!rowsReady}>Обновить таблицу</button>
+        </span> : null}
         {!rowsReady && !props.journalServer?.error ? <span className="journal-footer-update" role="status">Обновление…</span> : null}
         <span className="journal-loaded-count">{props.totalCount === undefined ? 'Подсчёт…' : `Найдено: ${props.totalCount}`}</span>
         <div className="journal-footer-right">
@@ -613,7 +621,7 @@ function ReportGrid(props: WeldReportGridProps) {
                 }}>Действия</button>
               : null}
           </div> : null}
-          <JournalSelectionSummary ids={selectedRowIds} identity={props.journalServer?.identity} ready={rowsReady} range={serverGrid.summaryRange} recoverRevision={props.journalServer?.recoverRevision} />
+          <JournalSelectionSummary ids={selectedRowIds} identity={props.journalServer?.identity} ready={rowsReady} range={serverGrid.summaryRange} recoverRevision={props.journalServer?.recoverRevision} expired={props.journalServer.revisionExpired} getSnapshot={props.journalServer.getSnapshot} />
           {serverGrid.rangeState || rangeSummary.count > 0 ? <div className="journal-cell-range-summary" aria-label="Статистика ячеек" data-separated={Boolean(selectedRowIds.size || serverGrid.summaryRange)}>
           {serverGrid.rangeState ? <span role="status">{serverGrid.rangeState}</span> : null}
           {!serverGrid.rangeState && rangeSummary.average !== null ? <span>Среднее: {formatJournalNumber(rangeSummary.average)}</span> : null}

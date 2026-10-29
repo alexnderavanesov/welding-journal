@@ -4,13 +4,40 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { useJournalServerQuery } from './use-journal-server-query'
 import type { JournalGridResult } from './journal-server-grid'
+import type { WeldPageRefresh } from './weld-page-refresh'
 
-const mocks = vi.hoisted(() => ({ read: vi.fn(), summary: vi.fn(), subscribe: vi.fn((_client: unknown, _listener: () => void) => () => {}) }))
+const mocks = vi.hoisted(() => ({ read: vi.fn(), summary: vi.fn(), subscribe: vi.fn((_client: unknown, _listener: (event?: WeldPageRefresh) => void) => () => {}) }))
 vi.mock('@/server/journal-grid-api', () => ({ readJournalGrid: mocks.read, getJournalReportSummary: mocks.summary }))
 vi.mock('@/server/weld-read-api', () => ({ getWeldReportSummary: mocks.summary }))
 vi.mock('./weld-page-refresh', () => ({ subscribeWeldPageRefresh: mocks.subscribe }))
 const resultAt = (revision: number): JournalGridResult => ({ rows: [], rowCount: 200000, revision })
 const block = { groupBy: [], route: [], start: 0, end: 100 }
+it('keeps a healthy view and its actions when an auxiliary request discovers another writer', async () => {
+  const { result } = renderHook(() => useJournalServerQuery({ enabled: true, columnFilters: {}, sort: null }), { wrapper })
+  await act(async () => { await result.current.source.load(block) })
+  act(() => result.current.source.rowsChanged([{ id: 1 }]))
+  const identity = result.current.source.identity
+  act(() => { result.current.source.recoverRevision?.(new Error('Данные журнала изменились. Обновите таблицу и повторите действие.')) })
+  expect(result.current.source.identity).toBe(identity)
+  expect(result.current.rowsReady).toBe(true)
+  expect(result.current.rows).toEqual([{ id: 1 }])
+  expect(mocks.read).toHaveBeenCalledTimes(1)
+  expect(result.current.source.updatesAvailable).toBe(true)
+  expect(result.current.source.revisionExpired).toBe(true)
+  await expect(result.current.source.load({ ...block, start: 100, end: 200 })).rejects.toThrow('Данные журнала изменились')
+  expect(mocks.read).toHaveBeenCalledTimes(1)
+})
+it('background changes only notify and leave editing available with an independent journal revision', async () => {
+  const { result } = renderHook(() => useJournalServerQuery({ enabled: true, columnFilters: {}, sort: null }), { wrapper })
+  await act(async () => { await result.current.source.load(block) })
+  act(() => result.current.source.rowsChanged([{ id: 1 }]))
+  const identity = result.current.source.identity
+  act(() => mocks.subscribe.mock.lastCall![1]({ reason: 'background' }))
+  expect(result.current.source.identity).toBe(identity)
+  expect(result.current.source.updatesAvailable).toBe(true)
+  expect(result.current.rowsReady).toBe(true)
+  expect(mocks.read).toHaveBeenCalledTimes(1)
+})
 it.each(['success', 'failure'])('ignores a late %s from replaced grouping without losing the new revision', async outcome => {
   let finish!: (value: JournalGridResult) => void, fail!: (error: Error) => void
   mocks.read.mockImplementationOnce(() => new Promise((resolve, reject) => { finish = resolve; fail = reject }))
@@ -200,7 +227,7 @@ it('a failed block disables actions and a changed snapshot gets only one automat
   expect(result.current.source.error?.message).toContain('Данные журнала изменились')
 })
 
-it('coalesces expired counters and blocks, with a fresh recovery budget only after a healthy model is installed', async () => {
+it('coalesces expired counters without restarting a healthy view; explicit refresh opens the new version', async () => {
   const { result } = renderHook(() => useJournalServerQuery({ enabled: true, columnFilters: {}, sort: null }), { wrapper })
   const changed = new Error('Данные журнала изменились. Обновите таблицу и повторите действие.')
   await act(async () => { await result.current.source.load(block) })
@@ -211,7 +238,9 @@ it('coalesces expired counters and blocks, with a fresh recovery budget only aft
     expect(first.recoverRevision?.(changed)).toBe(true)
     first.rowsChanged([{ id: 1 }])
   })
-  expect(result.current.rowsReady).toBe(false)
+  expect(result.current.rowsReady).toBe(true)
+  expect(result.current.source.identity).toBe(first.identity)
+  await act(async () => { await result.current.refetch() })
   const next = result.current.source.identity
   expect(JSON.parse(next).at(-1)).toBe(1)
   mocks.read.mockResolvedValue(resultAt(2))
@@ -220,7 +249,8 @@ it('coalesces expired counters and blocks, with a fresh recovery budget only aft
   act(() => result.current.source.rowsChanged([{ id: 2 }]))
   expect(result.current.rowsReady).toBe(true)
   act(() => { expect(result.current.source.recoverRevision?.(changed)).toBe(true) })
-  expect(JSON.parse(result.current.source.identity).at(-1)).toBe(2)
+  expect(JSON.parse(result.current.source.identity).at(-1)).toBe(1)
+  expect(result.current.rowsReady).toBe(true)
   expect(mocks.read).toHaveBeenCalledTimes(2)
   expect(result.current.source.recoverRevision?.(new Error('Failed query'))).toBe(false)
 })

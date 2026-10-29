@@ -70,3 +70,19 @@ it('refuses missing IDs, stale results, denied access and cancelled work', async
   await expect(summarizeJournalGridSelection({ ids: [1] }, AbortSignal.abort())).rejects.toThrow()
   await expect(summarizeJournalGridSelection({ ids: [-1] })).rejects.toThrow('Некорректный')
 })
+
+it('rejects an expired displayed snapshot before rebuilding the dispatcher or reading selected rows', async () => {
+  await expect(summarizeJournalGridSelection({ ids: [1], snapshot: { revision: revision - 1, columnFilters: { search: 'old view' } } })).rejects.toThrow('изменились')
+  expect(mock.access).toHaveBeenCalledWith('entry')
+  expect(mock.ensure).not.toHaveBeenCalled()
+  expect(mock.settings).not.toHaveBeenCalled()
+  expect(mock.reads).not.toHaveBeenCalled()
+})
+
+it('still refuses a concurrent mutation after a pinned selection has been read', async () => {
+  mock.members = [record(1)]
+  mock.revisions.mockResolvedValueOnce([{ revision }]).mockResolvedValueOnce([{ revision }])
+    .mockResolvedValueOnce([{ revision }]).mockResolvedValueOnce([{ revision: revision + 1 }])
+  await expect(summarizeJournalGridSelection({ ids: [1], snapshot: { revision, columnFilters: {} } })).rejects.toThrow('изменились')
+  expect(mock.reads).toHaveBeenCalledOnce()
+})

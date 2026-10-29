@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { writeDeferredTextToClipboard } from './clipboard'
 import { flushSync } from 'react-dom'
 import type { GridApi, IRowNode, IServerSideDatasource, RowGroupOpenedEvent } from 'ag-grid-community'
@@ -14,15 +14,33 @@ import { createJournalCacheBudget, JOURNAL_LEAF_CACHE_BUDGET } from './journal-c
 import { readJournalLocalSelection } from './journal-local-selection'
 import { journalCopyRanges } from './journal-copy-ranges'
 import type { JournalSummaryRange } from './journal-selection-summary'
-import { journalReadErrorMessage } from './journal-read-error'
+import { journalReadErrorMessage, JOURNAL_CHANGED_MESSAGE } from './journal-read-error'
 
 export function useJournalServerGrid(options: {
   source?: JournalServerSource; api: GridApi<WeldRow> | null; selected: ReadonlySet<number>;
-  onSelect?: (ids: Set<number>) => boolean | void; onError?: (message: string) => void; onReplace?: () => void; onReplaced?: () => void; total?: number; anchor: string; ready: boolean
+  onSelect?: (ids: Set<number>) => boolean | void; onError?: (message: string) => void; onReplace?: (preservePosition: boolean) => void; onReplaced?: () => void; total?: number; anchor: string; ready: boolean
 }) {
   const { source, api } = options
   const current = useRef(options); current.current = options
   const installedApi = useRef<GridApi<WeldRow> | null>(null)
+  const installedIdentity = useRef('')
+  const installedView = useRef<string | undefined>(undefined)
+  const expandedOnRefresh = useRef(new Set<string>())
+  const positionOnRefresh = useRef<{ y: number; row: number; id?: string; column?: string } | null>(null)
+  const isRestoring = useCallback(() => Boolean(positionOnRefresh.current), [])
+  useEffect(() => {
+    const cancel = (event: Event) => {
+      if (!positionOnRefresh.current || event.target instanceof Element && event.target.closest('[role="dialog"], input, textarea, select, [contenteditable="true"]')) return
+      if (event instanceof KeyboardEvent && !['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) return
+      positionOnRefresh.current = null; expandedOnRefresh.current.clear()
+    }
+    window.addEventListener('wheel', cancel, { capture: true, passive: true })
+    window.addEventListener('touchstart', cancel, { capture: true, passive: true })
+    window.addEventListener('keydown', cancel, true)
+    return () => {
+      window.removeEventListener('wheel', cancel, true); window.removeEventListener('touchstart', cancel, true); window.removeEventListener('keydown', cancel, true)
+    }
+  }, [])
   const activeLoads = useRef(new Map<AbortController, string>())
   const revision = useRef<JournalRevision | undefined>(undefined)
   const revisionGroups = useRef<string | null>(null)
@@ -64,11 +82,15 @@ export function useJournalServerGrid(options: {
   })
   const query = (): JournalGridQuery => ({ report: current.current.source!.report, columnFilters: current.current.source!.columnFilters,
     sort: current.current.source!.sort, groupBy: current.current.api?.getRowGroupColumns().map(column => column.getColId() as WeldFieldKey) ?? [] })
-  const reportError = (error: unknown) => current.current.onError?.(journalReadErrorMessage(error))
+  const reportError = (error: unknown) => {
+    current.current.source?.recoverRevision?.(error)
+    current.current.onError?.(journalReadErrorMessage(error))
+  }
   const selectionScope = () => JSON.stringify([current.current.source?.identity, revision.current, query().groupBy])
   const getRange = (mode: 'summary' | 'copy' | 'selection' = 'summary'): JournalRangeRequest | null => {
     const { api, source, anchor, ready } = current.current
     if (!source || !api || api.isDestroyed() || revision.current === undefined || !ready) return null
+    if (source.revisionExpired) throw new Error(JOURNAL_CHANGED_MESSAGE)
     const ranges = (api.getCellRanges() ?? []).flatMap(range => range.startRow && range.endRow ? [{
       first: Math.min(range.startRow.rowIndex, range.endRow.rowIndex), last: Math.max(range.startRow.rowIndex, range.endRow.rowIndex),
       columns: mode === 'selection' ? ['id' as const]
@@ -135,7 +157,7 @@ export function useJournalServerGrid(options: {
   })
   const updateCounts = useStableEventCallback(() => {
     clearTimeout(countTimer.current)
-    if (!current.current.ready) {
+    if (!current.current.ready || current.current.source?.revisionExpired) {
       countRequest.current?.abort(); countRequest.current = null; countCache.current = null
       return
     }
@@ -209,7 +231,7 @@ export function useJournalServerGrid(options: {
     if (frame.current) return
     frame.current = requestAnimationFrame(() => {
       frame.current = 0
-      if (api.isDestroyed() || current.current.source?.identity !== source.identity) return
+      if (api.isDestroyed() || current.current.source?.identity !== source.identity || installedIdentity.current !== source.identity) return
       const rows: WeldRow[] = []
       const nodes: IRowNode<WeldRow>[] = []
       const routes: string[][] = []
@@ -228,6 +250,52 @@ export function useJournalServerGrid(options: {
       localMembership.current = readJournalLocalSelection({ forEachNode: visit => nodes.forEach(visit) }, current.current.total)
       cachedCards.current = rows.length
       source.rowsChanged(rows)
+      // Restore through the public expansion API after nodes exist. SSRM can
+      // retain a previously cached default (collapsed) across datasource swaps.
+      let restored = false
+      for (const node of nodes) {
+        if (!node.group || !node.id || !expandedOnRefresh.current.has(node.id)) continue
+        expandedOnRefresh.current.delete(node.id)
+        // Discard a retained child store before reopening it against the new
+        // datasource (purgeClosedRowNodes is enabled on this grid).
+        if (node.expanded) api.setRowNodeExpanded(node, false, false, true)
+        api.setRowNodeExpanded(node, true, false, true)
+        restored = true
+      }
+      if (restored) { modelUpdated(); return }
+      const position = positionOnRefresh.current
+      if (position) {
+        const node = position.id ? api.getRowNode(position.id) : undefined
+        // Restore only once the ancestor stores have materialised. Deleted or
+        // filtered-out anchors fall back to the previous bounded row position.
+        const stores = api.getServerSideGroupLevelState()
+        const pending = nodes.find(node => {
+          const group = journalGroup(node.data)
+          return node.group && node.expanded && group &&
+            !stores.find(store => journalRouteKey(store.route) === journalRouteKey(group.route))?.lastRowIndexKnown
+        })
+        // SSRM loads only visible blocks. After replacing a long grouped view,
+        // its viewport may sit below the reopened group's single loading row.
+        // Bring that row into view so the ancestor store can actually load.
+        if (pending?.rowIndex != null) api.ensureIndexVisible(pending.rowIndex + 1, 'top')
+        if (!pending) {
+          const index = Math.max(0, Math.min(node?.rowIndex ?? position.row, api.getDisplayedRowCount() - 1))
+          if (api.getDisplayedRowCount()) api.ensureIndexVisible(index)
+          const target = api.getDisplayedRowAtIndex(index)
+          if (!api.getDisplayedRowCount() || target?.data && !target.stub) requestAnimationFrame(() => {
+            if (api.isDestroyed() || positionOnRefresh.current !== position) return
+            // The document track needs its layout frame after children arrive.
+            window.scrollTo({ top: position.y, behavior: 'instant' })
+            positionOnRefresh.current = null
+            const active = document.activeElement
+            // A user may already have opened a header menu or another control
+            // while this block was loading. Do not steal that newer focus.
+            const gridOwnsFocus = active === document.body || active instanceof Element && Boolean(active.closest('.ag-cell'))
+            const overlayOpen = document.querySelector('[role="dialog"], [data-workflow-menu], [role="menu"], .ag-menu')
+            if (target?.rowIndex != null && position.column && gridOwnsFocus && !overlayOpen) api.setFocusedCell(target.rowIndex, position.column)
+          })
+        }
+      }
       updateRange(); updateCounts()
       trimCache()
     })
@@ -241,6 +309,9 @@ export function useJournalServerGrid(options: {
     rangeSignature.current = ''; countCache.current = null; countRequest.current?.abort(); countRequest.current = null; rangeRequest.current?.abort()
     setSummary(EMPTY_JOURNAL_RANGE_SUMMARY); setRangeState(''); setSummaryRange(null)
     const identity = source.identity
+    const preservePosition = installedApi.current === api && source.viewIdentity !== undefined && installedView.current === source.viewIdentity
+    expandedOnRefresh.current = new Set()
+    positionOnRefresh.current = null
     const datasource: IServerSideDatasource<WeldRow> = {
       getRows: params => {
         let settled = false
@@ -267,6 +338,7 @@ export function useJournalServerGrid(options: {
           params.success({ rowData: result.rows, rowCount: result.rowCount })
           modelUpdated()
         }).catch(() => {
+          if (current.current.source?.identity === identity) { positionOnRefresh.current = null; expandedOnRefresh.current.clear() }
           fail()
           // The query source owns load errors and clears them on retry. Do not
           // also save them as persistent context-action messages in the page.
@@ -285,11 +357,18 @@ export function useJournalServerGrid(options: {
       rootCount.current = first?.rowCount ?? 0; layouts.current.clear(); loadedRoutes.current = []
       localMembership.current.clear(); lastMembership.current = null
       cacheBudget.current.clear(); cachedCards.current = 0; clearTimeout(cacheTimer.current)
+      if (preservePosition) {
+        api.forEachNode(node => { if (node.group && node.expanded && node.id) expandedOnRefresh.current.add(node.id) })
+        const cell = api.getFocusedCell(), node = cell ? api.getDisplayedRowAtIndex(cell.rowIndex) : undefined
+        positionOnRefresh.current = { y: window.scrollY, row: cell?.rowIndex ?? api.getFirstDisplayedRowIndex(), id: node?.id, column: cell?.column.getColId() }
+      } else positionOnRefresh.current = null
       api.clearCellSelection()
       const replace = () => {
-        current.current.onReplace?.()
+        current.current.onReplace?.(preservePosition)
         api.setGridOption('serverSideDatasource', datasource)
         installedApi.current = api
+        installedIdentity.current = source.identity
+        installedView.current = source.viewIdentity
         if (first) api.applyServerSideRowData({ successParams: { rowData: first.rows, rowCount: first.rowCount }, startRow: 0 })
       }
       if (first) {
@@ -316,8 +395,8 @@ export function useJournalServerGrid(options: {
       copyRequest.current?.abort(); copyRequest.current = null
     }
   }, [api, source?.identity])
-  useEffect(updateCounts, [options.selected, options.ready, options.total, updateCounts])
-  useEffect(updateRange, [options.ready, updateRange])
+  useEffect(updateCounts, [options.selected, options.ready, options.total, source?.revisionExpired, updateCounts])
+  useEffect(updateRange, [options.ready, source?.revisionExpired, updateRange])
   useEffect(() => () => { clearTimeout(timer.current); clearTimeout(countTimer.current); clearTimeout(cacheTimer.current); cancelAnimationFrame(frame.current); rangeRequest.current?.abort(); countRequest.current?.abort() }, [])
   const groupOpened = (event: RowGroupOpenedEvent<WeldRow>) => {
     const group = journalGroup(event.node.data)
@@ -395,6 +474,7 @@ export function useJournalServerGrid(options: {
       commit(next, group?.route ?? [], true, group ? undefined : remove ? 0 : 'length' in ids ? ids.length : ids.size)
     }
     if (known) { apply(known); return }
+    if (current.current.source?.revisionExpired) { reportError(new Error(JOURNAL_CHANGED_MESSAGE)); return }
     const controller = new AbortController(); selectionRequest.current = controller
     setSelecting(true)
     void selectJournalGridRows({ signal: controller.signal, data: { ...selectionQuery, revision: revision.current, route: group?.route ?? [] } }).then(result => {
@@ -480,7 +560,7 @@ export function useJournalServerGrid(options: {
       // Background counters must not swallow the next key or checkbox click.
       pending: selecting || !options.ready || !groupingReady, toggle }
   }, [source?.identity, api, options.selected, selection, selecting, options.total, options.ready, groupingReady, toggle])
-  return { summary, summaryRange, rangeState: copying ? 'Копируем…' : rangeState, updateRange, modelUpdated, groupOpened, copy, selectRange, selectionContext, trimCache,
+  return { summary, summaryRange, rangeState: copying ? 'Копируем…' : rangeState, updateRange, modelUpdated, groupOpened, copy, selectRange, selectionContext, trimCache, isRestoring,
     resetLayout: () => {
       const groups = JSON.stringify(api?.getRowGroupColumns().map(column => column.getColId()) ?? [])
       for (const [controller, requestedGroups] of activeLoads.current) if (requestedGroups !== groups) controller.abort()

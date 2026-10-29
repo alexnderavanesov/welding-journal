@@ -15,6 +15,7 @@ type Options = {
   customQueryIdentity?: string
   selectedIds: ReadonlySet<number>
   rows: readonly WeldRow[]
+  fresh?: boolean
   loadRowsByIds?: (ids: number[]) => Promise<WeldRow[]>
   onError?: (message: string) => void
   getItems: (row: WeldRow, rows: WeldRow[], fieldKey?: WeldFieldKey) => ContextActionMenuItem[] | undefined
@@ -90,7 +91,12 @@ export function useWeldTableContextMenu(options: Options) {
     if (options.selectedIds.has(row.id)) { openSelection(position, row.id, fieldKey); return }
     close()
     intent.current = { position, rowId: row.id, fieldKey }
-    resolve([row])
+    if (options.fresh) {
+      setStored({ scope: action.scope, menu: { ...position, anchorRowId: row.id,
+        items: [{ type: 'label', id: 'row-loading', label: 'Загружаем стык…' }],
+      } })
+      void action.run([row.id])
+    } else resolve([row])
   })
   const openCustom = useStableEventCallback((custom: NonNullable<ContextActionMenuState>) => {
     if (!options.rowsReady || isModalDialogOpen()) return

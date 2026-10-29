@@ -13,6 +13,8 @@ import developmentFavicon from '@/assets/development-favicon.svg?url&no-inline'
 
 // Keep development tabs distinct; use a file URL because Safari can ignore
 // data-URL favicons. All browsers receive the same asset.
+// Reissue the unchanged icons under new URLs after stale Safari tab-icon reports.
+const companyFaviconVersion = '2026-10-28'
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
@@ -26,9 +28,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       ...(import.meta.env.DEV
         ? [{ rel: 'icon', href: developmentFavicon, type: 'image/svg+xml' }]
         : [
-          { rel: 'icon', href: companyFaviconIco, type: 'image/x-icon', sizes: '16x16 32x32 48x48' },
-          { rel: 'icon', href: companyFavicon, type: 'image/png', sizes: '64x64' },
-          { rel: 'icon', href: companyFaviconSvg, type: 'image/svg+xml', sizes: 'any' },
+          { rel: 'icon', href: `${companyFaviconIco}?v=${companyFaviconVersion}`, type: 'image/x-icon', sizes: '16x16 32x32 48x48' },
+          { rel: 'icon', href: `${companyFavicon}?v=${companyFaviconVersion}`, type: 'image/png', sizes: '64x64' },
+          { rel: 'icon', href: `${companyFaviconSvg}?v=${companyFaviconVersion}`, type: 'image/svg+xml', sizes: 'any' },
         ]),
     ],
   }),

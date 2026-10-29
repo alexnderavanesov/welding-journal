@@ -223,6 +223,11 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     () => [...initialSelectedIds].sort((left, right) => left - right).join(','),
     [initialSelectedIds],
   )
+  const initialContextKey = `${mode}:${initialMethodCode ?? ''}:${initialSelectionSignature}`
+  // Do not expose an unchecked, clickable row while the initial request and
+  // selection are still being applied by the effects below.
+  const selectionInitialized = appliedInitialSelectionRef.current === initialContextKey &&
+    (mode !== 'result' || didApplyInitialResultSelectionRef.current)
   useEffect(() => {
     if (!isContextReady || !appliedInitialSelectionRef.current) return
     onCandidateSelectionChange?.([...selectedIds])
@@ -578,11 +583,13 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     onRunRootCauseAction?.(action)
   }
   const setSelectedRows = useStableEventCallback((rowIds: number[]) => {
+    if (!selectionInitialized) return
     const allowedIds = new Set(availableRows.map((row) => row.id))
     const next = new Set(rowIds.filter((rowId) => allowedIds.has(rowId)))
     setSelectedIds(next)
   })
   const toggleRow = useStableEventCallback((rowId: number) => {
+    if (!selectionInitialized) return
     const row = rows.find((candidate) => candidate.id === rowId)
     if (!row || getRowBlockReason(row)) return
     setSelectedIds((current) => {
@@ -606,6 +613,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
   })
   const allFilteredAvailableSelected = filteredAvailableRows.length > 0 && filteredAvailableRows.every((row) => selectedIds.has(row.id))
   const toggleAll = useStableEventCallback(() => {
+    if (!selectionInitialized) return
     if (allFilteredAvailableSelected) {
       setSelectedIds((current) => {
         const next = new Set(current)
@@ -624,7 +632,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
       selectedRows,
       selectedIds,
       selectableRows: availableRows,
-      isRowSelectable: (candidate) => !getRowBlockReason(candidate),
+      isRowSelectable: (candidate) => selectionInitialized && !getRowBlockReason(candidate),
       sourceLabel: mode === 'request' ? 'заявки НК до ТО' : 'результата НК до ТО',
       relatedSelection: mode === 'result' && selectedRequest
         ? { label: 'Выбрать доступные по этой заявке', rows: availableRows }
@@ -852,7 +860,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
             action={rowsViewMode === 'selected' ? (
               <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>Снять весь выбор</Button>
             ) : (
-              <Button variant="outline" size="sm" onClick={toggleAll} disabled={filteredAvailableRows.length === 0}>
+              <Button variant="outline" size="sm" onClick={toggleAll} disabled={!selectionInitialized || filteredAvailableRows.length === 0}>
                 {mode === 'result' && !resultMethod
                   ? 'Выберите метод'
                   : mode === 'result' && !selectedRequest
@@ -903,7 +911,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
                   selectedMethods={selectedMethods}
                   resultMethod={resultMethod}
                   selected={selectedIds.has(row.id)}
-                  disabledReason={getRowBlockReason(row) ?? ''}
+                  disabledReason={selectionInitialized ? getRowBlockReason(row) ?? '' : 'Подготовка выбора стыков…'}
                   rowResult={rowResults[row.id] ?? ''}
                   onToggle={toggleRow}
                   onResultChange={(rowId, result) => setRowsResult([rowId], result)}

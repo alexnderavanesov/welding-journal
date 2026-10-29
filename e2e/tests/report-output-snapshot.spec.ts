@@ -169,11 +169,10 @@ for (const report of ['weldingJournal', 'lnk', 'heatTreatment'] as const) {
     const countOutputs = () => calls.filter(name => name.startsWith('readReportOutputSnapshot')).length
     expect(countOutputs()).toBe(1)
     await change()
-    // The normal return-to-window flow detects and recalculates the new revision.
-    // ReportBackground deliberately freezes its rendering while a modal is open;
-    // only after closing should the refreshed table become visible.
+    // Returning detects the new revision without replacing the open table.
+    // Preview/print keep their snapshot; Excel explicitly reads fresh data.
     const refreshed = page.waitForResponse(response => response.url().includes('/_serverFn/') &&
-      rpcName(response.url()).startsWith('refreshDispatcherTaskSnapshot') && response.ok())
+      rpcName(response.url()).startsWith('getDispatcherTaskVersion') && response.ok())
     await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
     await (await refreshed).finished()
     await expect(preview).toBeVisible()
@@ -189,6 +188,8 @@ for (const report of ['weldingJournal', 'lnk', 'heatTreatment'] as const) {
     expect(await page.evaluate(() => (window as unknown as { auditFullPrintHtml?: string }).auditFullPrintHtml)).not.toContain('SNAP-AFTER')
     expect(countOutputs()).toBe(1)
     await preview.getByRole('button', { name: 'Закрыть предпросмотр', exact: true }).click()
+    await expect(grid.getByText('SNAP-BEFORE', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Обновить таблицу', exact: true }).click()
     await expect(grid.getByText('SNAP-AFTER', { exact: true })).toBeVisible()
     await expect(grid.locator('.journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
     await open()

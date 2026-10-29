@@ -42,5 +42,5 @@ export default defineConfig({
       },
     },
   },
-  plugins: [tanstackClientRpcDevCompatibility(), tanstackStart(), nitro(), react()],
+  plugins: [tanstackClientRpcDevCompatibility(), tanstackStart({ start: { entry: './start.ts' } }), nitro(), react()],
 })

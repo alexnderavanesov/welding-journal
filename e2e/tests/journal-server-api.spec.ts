@@ -4,6 +4,11 @@ import { withLineProgramFixture, cleanupLineProgramProjects } from '../line-prog
 import { serializeRpcData, deserializeRpcResponse, siblingRpcUrl, rpcName } from '../rpc'
 import { WELD_FIELDS } from '../../src/lib/weld-fields'
 import { buildWeldColumnValueFilter } from '../../src/lib/weld-table-filtering'
+import { auditSqlCount } from '../audit-sql'
+import { withE2eDatabase } from '../database'
+import { sql } from 'drizzle-orm'
+import { PgDialect } from 'drizzle-orm/pg-core'
+import { buildColumnChoiceWhere } from '../../src/server/weld-server-shared'
 import type { JournalGridResult } from '../../src/lib/journal-server-grid'
 
 const PROJECT = 'E2E journal server API'
@@ -11,11 +16,33 @@ const scale = process.env.JOURNAL_SCALE === '1'
 const total = scale ? 200000 : 350
 let observed = ''
 let savedOther: string | undefined
+let apiStatements = 0
+let measureSql = false
 async function call<T>(page: Page, name: string, data: unknown): Promise<T> {
+  const before = measureSql ? await auditSqlCount() : undefined
+  const started = performance.now()
   const response = await page.request.post(siblingRpcUrl(observed, name + '_createServerFn_handler'), {
+    timeout: 60_000,
     data: await serializeRpcData(data), headers: { origin: new URL(observed).origin, 'sec-fetch-site':'same-origin', 'content-type': 'application/json', 'x-tsr-serverFn': 'true' },
   })
   const value = await deserializeRpcResponse(await response.text()) as { result: T; error?: Error }
+  const milliseconds = performance.now() - started
+  if (before !== undefined) {
+    const statements = (await auditSqlCount())! - before
+    apiStatements += statements
+    const ranges = name === 'copyJournalGridRange' ? (data as { parts: Array<{ start: number; end: number }> }).parts : []
+    // The constant budget covers access, revision, settings, snapshot and
+    // batched metadata reads, independent of the selected row count. The
+    // sampler measures the whole server process, not an RPC-exclusive trace.
+    // Clipboard alone visits 1000-row batches: one row and one fact read.
+    const budget = name === 'copyJournalGridRange'
+      ? 10 + 2 * Math.ceil(ranges.reduce((sum, part) => sum + part.end - part.start, 0) / 1000)
+      : 24
+    console.log('JOURNAL_SQL_STEP', JSON.stringify({ name, statements, budget, milliseconds }))
+    expect(statements, name).toBeLessThanOrEqual(budget)
+  } else if (scale) {
+    console.log('JOURNAL_RPC_STEP', JSON.stringify({ name, milliseconds }))
+  }
   if (value.error) { if ((value.error as any).cause?.message) console.log('RPC_ERROR_CAUSE', name, (value.error as any).cause.message); throw value.error }
   return value.result
 }
@@ -45,9 +72,12 @@ test('exact server ranges, overlap, grouping and bounded transport at the target
   await page.goto('/journal')
   await page.getByRole('searchbox').fill(PROJECT)
   await expect(page.getByText(`Найдено: ${total}`, { exact:true })).toBeVisible({ timeout:240000 })
+  await page.waitForLoadState('networkidle')
   const metrics = async () => process.env.AUDIT_SQL_COUNTS_FILE ? JSON.parse(await readFile(process.env.AUDIT_SQL_COUNTS_FILE, 'utf8')) : undefined
   if (process.env.AUDIT_SQL_COUNTS_FILE) await page.waitForTimeout(550) // instrumentation flushes every 500ms
   const before = await metrics()
+  apiStatements = 0
+  measureSql = true
   const query = { columnFilters:{ search:PROJECT }, groupBy:[] }
   const started = performance.now()
   const root = await call<JournalGridResult>(page,'readJournalGrid',{ ...query, route:[], start:0,end:100 })
@@ -60,16 +90,17 @@ test('exact server ranges, overlap, grouping and bounded transport at the target
   const overlap = await call(page,'summarizeJournalGridRange',{ ...range, parts:[...range.parts,{ route:[],start:0,end:100,columns:['wdi'] }] })
   expect(overlap).toEqual(stats)
   const copy = await call<string>(page,'copyJournalGridRange',{ ...range,parts:[{ route:[],start:90,end:110,columns:['joint','wdi'] }] })
-  expect(copy.split('\r\n')).toHaveLength(21)
-  expect(copy.split('\r\n')[1]).toBe('S000091\t1,000')
+  // Clipboard exports values only (the agreed header removal in 4338cecc).
+  expect(copy.split('\r\n')).toHaveLength(20)
+  expect(copy.split('\r\n')[0]).toBe('S000091\t1,000')
   const copyStart = performance.now()
   const fullCopy = await call<string>(page,'copyJournalGridRange',{
     ...range,parts:[{route:[],start:0,end:total,columns:['joint','wdi']}],
   })
   const copyMs = performance.now()-copyStart
   const copiedRows = fullCopy.split('\r\n')
-  expect(copiedRows).toHaveLength(total+1)
-  expect(copiedRows[1]).toBe('S000001\t1,000')
+  expect(copiedRows).toHaveLength(total)
+  expect(copiedRows[0]).toBe('S000001\t1,000')
   expect(copiedRows.at(-1)).toBe(`S${String(total).padStart(6,'0')}\t1,000`)
   const groupStart = performance.now()
   const groups = await call<JournalGridResult>(page,'readJournalGrid',{ ...query,groupBy:['line'],route:[],start:0,end:100,revision:root.revision })
@@ -86,7 +117,8 @@ test('exact server ranges, overlap, grouping and bounded transport at the target
   const expectedSummary = {
     records: total, joints: total, wdi: total, missingWdi: 0, weldDate: '01.10.2026', missingDates: 0,
   }
-  expect(await call(page, 'summarizeJournalGridSelection', { ids: allSelected.ids })).toEqual(expectedSummary)
+  const selectionSummary = { ids: allSelected.ids, snapshot: { revision: root.revision, columnFilters: query.columnFilters } }
+  expect(await call(page, 'summarizeJournalGridSelection', selectionSummary)).toEqual(expectedSummary)
   const rangeSelection = await call<{ ids: number[] }>(page, 'selectJournalGridRange', range)
   expect(new Set(rangeSelection.ids)).toEqual(new Set(allSelected.ids))
   expect(await call(page, 'summarizeJournalGridArea', range)).toEqual(expectedSummary)
@@ -114,8 +146,13 @@ test('exact server ranges, overlap, grouping and bounded transport at the target
   const elapsedMs = performance.now()-started
   if (before) await page.waitForTimeout(550)
   const after = await metrics()
+  // End the original read/scroll measurement before the separate stale-cache
+  // scenarios below. Those intentionally change filters and invalidate data.
+  measureSql = false
   const statements = before ? after.statements-before.statements : undefined
-  if (statements !== undefined) expect(statements).toBeLessThan(200+2*Math.ceil(total/1000))
+  // API budgets above are independent; the remaining work is the browser's
+  // final scroll (at most two bounded blocks plus its footer), not a second copy.
+  if (statements !== undefined) expect(statements - apiStatements).toBeLessThanOrEqual(48)
   if (typeof after?.journalSelectionAggregations === 'number') {
     // Token reuse, a missing token and a mismatched scope must not rerun the
     // potentially large ID aggregation. Only the original exact selection does.
@@ -129,6 +166,8 @@ test('exact server ranges, overlap, grouping and bounded transport at the target
   await withLineProgramFixture(db => db.query('update weld_joints set wdi=2, joint=$2 where id=$1',[root.rows[0].id, 'S999999']))
   await expect(call(page,'summarizeJournalGridRange',range)).rejects.toThrow('Данные журнала изменились')
   await expect(call(page,'selectJournalGridRange',range)).rejects.toThrow('Данные журнала изменились')
+  await expect(call(page, 'summarizeJournalGridSelection', selectionSummary)).rejects.toThrow('Данные журнала изменились')
+  await expect(call(page, 'getJournalReportSummary', { report: 'weldingJournal', revision: root.revision, columnFilters: query.columnFilters })).rejects.toThrow('Данные журнала изменились')
   await expect(call(page, 'countJournalGridSelection', tokenRequest)).rejects.toThrow('Данные журнала изменились')
   await expect(call(page, 'readJournalFilterPage', facet)).rejects.toThrow('Данные журнала изменились')
   if (after) {
@@ -155,10 +194,17 @@ test('exact server ranges, overlap, grouping and bounded transport at the target
 })
 
 test('large journal checkbox filters retain report totals and complete output', async ({ page }) => {
+  test.setTimeout(scale ? 300_000 : 60_000)
   page.on('request', request => { if (rpcName(request.url()).startsWith('readJournalGrid_')) observed = request.url() })
   await page.goto('/journal')
+  await page.getByRole('searchbox').fill(PROJECT)
   await expect(page.locator('.ag-root-wrapper')).toBeVisible()
   await expect.poll(() => observed).not.toBe('')
+  // This test also runs alone after a failed worker. Let the cold fixture's
+  // initial status calculation finish before timing its filtered read; each
+  // actual RPC below retains its separate 60-second request timeout.
+  await expect(page.getByText(`Найдено: ${total}`, { exact: true })).toBeVisible({ timeout: scale ? 240_000 : 30_000 })
+  await page.waitForLoadState('networkidle')
   const largeChoice = buildWeldColumnValueFilter([...Array.from({length:1000},(_,i)=>`S${String(i+1).padStart(6,'0')}`), 'S999999'])
   const largeSummary = await call<{total:number}>(page, 'getJournalReportSummary', { report: 'weldingJournal', search: PROJECT, columnFilters: { joint: largeChoice } })
   expect(largeSummary.total).toBe(Math.min(total,1000))
@@ -169,4 +215,23 @@ test('large journal checkbox filters retain report totals and complete output', 
   expect(output.rows).toHaveLength(Math.min(total,1000))
   expect(new Set(output.rows.map(row => row.joint)).size).toBe(output.rows.length)
   expect(output.rows.every(row => /^S(?:\d{6})$/.test(row.joint))).toBe(true)
+})
+
+test('source checkbox filters preserve empty, case, literal punctuation and stored numeric text semantics', async () => {
+  const samples = [null, '', ' ', '\t', 'ALPHA', ' alpha ', 'АлЬфа', 'альфа', "O'Reilly", '%_', 'A_B', 'ё', 'Ё', '10.000', '10']
+  const cases: Array<[string[], number[]]> = [
+    [[], []], [[''], [1, 2, 3]], [[' \t ALPHA \n'], [5, 6]], [['АЛЬФА'], [7, 8]],
+    [["o'reilly", '%_'], [9, 10]], [['е'], []], [['ё'], [12, 13]], [['10'], [15]], [['10.000'], [14]],
+  ]
+  await withE2eDatabase(async db => {
+    for (const [choices, expected] of cases) {
+      for (const padding of [[], Array.from({ length: 1001 }, (_, index) => `ABSENT-${index}`)]) {
+        const predicate = buildColumnChoiceWhere(sql`value`, [...choices, ...padding])
+        const query = new PgDialect().sqlToQuery(sql`
+          select ordinal::int from unnest(${sql.param(samples)}::text[]) with ordinality as samples(value, ordinal)
+          where ${predicate} order by ordinal`)
+        expect((await db.query(query.sql, query.params)).rows.map(row => row.ordinal)).toEqual(expected)
+      }
+    }
+  })
 })

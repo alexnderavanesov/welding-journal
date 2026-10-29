@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import pg from 'pg'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
-import { readJournalGrid } from '../../src/server/journal-grid'
+import { readJournalGrid, summarizeJournalGridSelection } from '../../src/server/journal-grid'
 
 const project = 'E2E coherent journal read'
 
@@ -53,6 +53,8 @@ for (const report of ['weldingJournal', 'lnk', 'heatTreatment'] as const) test(`
     expect(snapshot.rows[0]).toMatchObject({ isometry: 'before', preHeatTreatmentControls: [{ requestName: 'before' }] })
     // A later request pinned to the old page must still refuse the changed DB.
     await expect(readJournalGrid({ ...input, revision: snapshot.revision })).rejects.toThrow('Данные журнала изменились')
+    await expect(summarizeJournalGridSelection({ ids: [snapshot.rows[0].id],
+      snapshot: { revision: snapshot.revision, columnFilters: input.columnFilters } })).rejects.toThrow('Данные журнала изменились')
     const current = await readJournalGrid(input)
     expect(current.rowCount).toBe(2)
     expect(current.revision).not.toBe(snapshot.revision)

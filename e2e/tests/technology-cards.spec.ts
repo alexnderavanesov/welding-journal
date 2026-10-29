@@ -181,7 +181,7 @@ test('массовое назначение отклоняет стык, изм�
   expect((await saved(row.id)).technology_card_number).toBe('Другой оператор')
 })
 
-test('два пользователя: возврат обновляет диспетчер, сохраняет черновик и не запускает лишний пересчет', async ({ page, browser }) => {
+test('два пользователя: возврат проверяет версию, а открытие диспетчера читает свежие задачи без потери черновика', async ({ page, browser }) => {
   test.setTimeout(120_000)
   const row = await createWeldJoint({ data: { ...base, joint: 'F987', weldDate: '2026-10-01' } })
   await changeCard({ action: 'create', card: parameters })
@@ -219,17 +219,19 @@ test('два пользователя: возврат обновляет дис�
     expect(calls.filter(call => call.startsWith('getDispatcherTaskSnapshot'))).toHaveLength(0)
     await page.bringToFront()
     await page.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')) })
-    await expect.poll(() => calls.filter(call => call.startsWith('getDispatcherTaskSnapshot')).length).toBe(1)
+    await expect.poll(() => calls.filter(call => call.startsWith('getDispatcherTaskVersion')).length).toBe(1)
     await page.waitForLoadState('networkidle')
     await expect(draft).toHaveValue('Несохранённый черновик')
     expect(calls.filter(call => call.startsWith('getDispatcherTaskVersion'))).toHaveLength(1)
+    expect(calls.filter(call => call.startsWith('getDispatcherTaskSnapshot') || call.startsWith('readJournalGrid'))).toHaveLength(0)
     expect(calls.filter(call => call.startsWith('refreshDispatcherTaskSnapshot'))).toHaveLength(0)
     await editor.getByRole('button', { name: 'Отмена', exact: true }).click()
     calls.length = 0
     await panel.getByRole('button', { name: 'Открыть диспетчер' }).click()
     await expect.poll(() => calls.filter(call => call.startsWith('getDispatcherTaskVersion')).length).toBe(1)
     await page.waitForLoadState('networkidle')
-    expect(calls.filter(call => call.startsWith('getDispatcherTaskSnapshot') || call.startsWith('refreshDispatcherTaskSnapshot'))).toHaveLength(0)
+    expect(calls.filter(call => call.startsWith('getDispatcherTaskSnapshot'))).toHaveLength(1)
+    expect(calls.filter(call => call.startsWith('refreshDispatcherTaskSnapshot'))).toHaveLength(0)
     const tkButton = dispatcher.getByLabel('Правила диспетчера', { exact: true }).getByRole('button', { name: /ДЗ-06/ })
     if (await tkButton.count()) await tkButton.click()
     await expect(dispatcher.getByLabel('Очередь задач диспетчера')).not.toContainText('F987')

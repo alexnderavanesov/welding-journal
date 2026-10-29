@@ -44,10 +44,8 @@ type LnkDialogNavigationOptions = Pick<ReturnType<typeof useHomeLnkController>,
   lnkRows: WeldRow[]
   openLnkRequestRegistry: () => void
   preHeatTreatmentResultCorrectionMutation: { isPending: boolean }
-  selectedLnkIds: ReadonlySet<number>
   setMessage: (message: string) => void
   setSelectedLnkIds: Dispatch<SetStateAction<Set<number>>>
-  tableActionRows: WeldRow[]
   canLeaveResultEditor?: () => boolean
 }
 
@@ -77,10 +75,8 @@ export function createLnkDialogNavigation({
   lnkRows,
   openLnkRequestRegistry,
   preHeatTreatmentResultCorrectionMutation,
-  selectedLnkIds,
   setMessage,
   setSelectedLnkIds,
-  tableActionRows,
   canLeaveResultEditor = () => true,
 }: LnkDialogNavigationOptions) {
   const openAllLnkResultRegistry = () => {
@@ -89,10 +85,6 @@ export function createLnkDialogNavigation({
     setLnkResultRegistryFilter('all')
     setLnkResultRegistryLimit(WORKFLOW_REGISTRY_PAGE_SIZE)
     openLnkResultManager({ rowIds: null })
-  }
-  const openSelectedLnkResultRegistry = () => {
-    if (!canLeaveResultEditor()) return
-    openLnkResultManager({ rowIds: [...selectedLnkIds] })
   }
   const openLnkResultRegistryForRows = (selectedRows: WeldRow[]) => {
     if (!canLeaveResultEditor()) return
@@ -209,9 +201,8 @@ export function createLnkDialogNavigation({
     }
     openAddLnkResultModalForRow(row)
   }
-  const openAddLnkWorkflowResultFromHeader = () => {
+  const openAddLnkWorkflowResultFromHeader = (selectedRows: WeldRow[]) => {
     if (!canLeaveResultEditor()) return
-    const selectedRows = tableActionRows.filter((row) => selectedLnkIds.has(row.id))
     if (
       selectedRows.length > 0 &&
       getCommonLnkResultStage(selectedRows) === PRE_HEAT_TREATMENT_LNK_CONTROL_STAGE
@@ -223,7 +214,6 @@ export function createLnkDialogNavigation({
   }
   return {
     openAllLnkResultRegistry,
-    openSelectedLnkResultRegistry,
     openLnkResultRegistryForRows,
     openExactLnkResult,
     openAddLnkResultFromRegistry,

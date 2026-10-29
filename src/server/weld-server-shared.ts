@@ -397,7 +397,11 @@ export function buildFinalStatusChoiceWhere(value: string) {
 export function buildColumnChoiceWhere(column: SQLWrapper, values: readonly string[]) {
   const normalizedValues = [...new Set(values.map((value) => String(value ?? '').trim()))]
   if (normalizedValues.length === 0) return sql`false`
-  return or(...normalizedValues.map((value) => buildColumnTextEqualsWhere(column, value))) ?? sql`false`
+  // Normalize the column once per row, not once per checked value. Keep both
+  // sides' existing PostgreSQL normalization (including its locale), and let
+  // PostgreSQL fold the parameter-only array for efficient membership checks.
+  const choices = normalizedValues.map(value => sql`lower(trim(${value}))`)
+  return sql`lower(trim(coalesce(${column}::text, ''))) = any(array[${sql.join(choices, sql`, `)}]::text[])`
 }
 
 export function buildControlAvailabilityColumnWhere(column: SQLWrapper, values: readonly string[]) {

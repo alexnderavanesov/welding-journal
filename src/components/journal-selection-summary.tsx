@@ -1,12 +1,12 @@
 import { useJournalSelectionSummary } from '@/lib/use-journal-selection-summary'
 import { formatJournalNumber } from '@/lib/welding-journal-grid-state'
-import type { JournalSummaryRange } from '@/lib/journal-selection-summary'
+import type { JournalSummaryRange, JournalSelectionSnapshot } from '@/lib/journal-selection-summary'
 
-export function JournalSelectionSummary({ ids, identity, ready, range = null, recoverRevision }: { ids: ReadonlySet<number>; identity?: string; ready: boolean; range?: JournalSummaryRange; recoverRevision?: (error: unknown) => boolean }) {
-  const { summary, error, retry } = useJournalSelectionSummary(ids, identity, ready, range, recoverRevision)
+export function JournalSelectionSummary({ ids, identity, ready, range = null, recoverRevision, expired = false, getSnapshot }: { ids: ReadonlySet<number>; identity?: string; ready: boolean; range?: JournalSummaryRange; recoverRevision?: (error: unknown) => boolean; expired?: boolean; getSnapshot?: () => JournalSelectionSnapshot | undefined }) {
+  const { summary, error, retry } = useJournalSelectionSummary(ids, identity, ready, range, recoverRevision, expired, getSnapshot)
   if (!range && !ids.size) return null
   const source = <span className="text-slate-500">{range ? 'По области' : 'По выбранным'}</span>
-  if (error) return <>{source}<span role="status" title={error}>{range?.error ?? 'Итоги недоступны.'} {!range?.error ? <button type="button" className="underline" onClick={retry}>Повторить</button> : null}</span></>
+  if (error) return <>{source}<span role="status" title={error}>{expired ? error : range?.error ?? 'Итоги недоступны.'} {!expired && !range?.error ? <button type="button" className="underline" onClick={retry}>Повторить</button> : null}</span></>
   if (!summary) return <>{source}<span role="status">Итоги: считаем…</span></>
   return <>
     {source}

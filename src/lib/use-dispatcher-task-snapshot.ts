@@ -125,7 +125,7 @@ export function useDispatcherTaskSnapshot({
       (current) => canPublishDispatcherSnapshot(refreshed, current) ? refreshed : current,
     )
     if (!refreshed.isFresh) return
-    void invalidateWeldPageQueries(queryClient)
+    void invalidateWeldPageQueries(queryClient, { reason: 'background' })
   }, [queryClient, refreshQuery.data])
   const computedRevision = query.data?.computedRevision ?? -1
   const latestRevision = useRef(computedRevision)
@@ -223,7 +223,7 @@ export function useDispatcherTaskSnapshot({
     // Publishing changes computedAt and therefore the observed refresh key.
     // Its old-key effect may never run; explicit refresh owns this notification.
     // Grid subscribers coalesce it with an automatic refresh notification.
-    if (refreshed.isFresh) void invalidateWeldPageQueries(queryClient)
+    if (refreshed.isFresh) void invalidateWeldPageQueries(queryClient, { reason: 'background' })
     return refreshed.isFresh ? refreshed.computedRevision : undefined
   }
   useDispatcherActivityCheck({ enabled: enabled && activityEnabled, workspaceOpen, check: async () => {
@@ -239,12 +239,16 @@ export function useDispatcherTaskSnapshot({
         version.businessDate !== version.computedForBusinessDate || version.calculationVersion !== knownCalculationVersion.current
       setActivityError(null)
       if (!changed) return
+      // A return to the window detects changes; it must not replace the user's
+      // rows or start a heavy calculation while they are reading/editing.
+      void invalidateWeldPageQueries(queryClient, { reason: 'background' })
+      if (!workspaceOpen) return
       const revision = await refreshTasks()
       if (revision !== undefined) {
         knownCalculationVersion.current = version.calculationVersion
         // Also refresh active report pages when another client already published
         // the new snapshot (no POST refresh effect runs in that case).
-        if (version.sourceRevision === version.computedRevision && version.sourceRevision !== current?.computedRevision) void invalidateWeldPageQueries(queryClient)
+        if (version.sourceRevision === version.computedRevision && version.sourceRevision !== current?.computedRevision) void invalidateWeldPageQueries(queryClient, { reason: 'background' })
       }
     } catch (cause) {
       if (activityEnabledRef.current) setActivityError(cause instanceof Error ? cause : new Error('Не удалось проверить актуальность диспетчера.'))

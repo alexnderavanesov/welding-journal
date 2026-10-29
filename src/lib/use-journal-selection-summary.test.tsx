@@ -44,6 +44,56 @@ it('hides old totals immediately and discards a late response after changing or 
   view.unmount()
 })
 
+it('replaces checkbox totals when regrouping installs a newer revision without changing selection or filters', async () => {
+  const ids = new Set([1])
+  let revision = 6000010
+  const getSnapshot = () => ({ revision, columnFilters: { search: 'P' } })
+  const view = renderHook(() => useJournalSelectionSummary(ids, 'same-filter', true, null, undefined, false, getSnapshot))
+  await act(async () => vi.advanceTimersByTimeAsync(150))
+  expect(view.result.current.summary).toEqual(value)
+  revision++
+  vi.mocked(summarizeJournalGridSelection).mockResolvedValueOnce({ ...value, wdi: 20 })
+  view.rerender()
+  expect(view.result.current.summary).toBeUndefined()
+  await act(async () => vi.advanceTimersByTimeAsync(150))
+  expect(summarizeJournalGridSelection).toHaveBeenCalledTimes(2)
+  expect(vi.mocked(summarizeJournalGridSelection).mock.lastCall?.[0]?.data.snapshot?.revision).toBe(revision)
+  expect(view.result.current.summary?.wdi).toBe(20)
+  for (let n = 0; n < 10; n++) view.rerender()
+  await act(async () => vi.advanceTimersByTimeAsync(1000))
+  expect(summarizeJournalGridSelection).toHaveBeenCalledTimes(2)
+})
+
+it('aborts an old-revision total and ignores its late result after regrouping', async () => {
+  const finishes: ((value: JournalSelectionSummary) => void)[] = []
+  vi.mocked(summarizeJournalGridSelection).mockImplementation(() => new Promise(resolve => finishes.push(resolve)))
+  const ids = new Set([1])
+  let revision = 6000010
+  const getSnapshot = () => ({ revision, columnFilters: {} })
+  const view = renderHook(() => useJournalSelectionSummary(ids, 'same-filter', true, null, undefined, false, getSnapshot))
+  await act(async () => vi.advanceTimersByTimeAsync(150))
+  revision++
+  view.rerender()
+  expect(vi.mocked(summarizeJournalGridSelection).mock.calls[0][0]?.signal?.aborted).toBe(true)
+  await act(async () => { finishes[0](value); await vi.advanceTimersByTimeAsync(150) })
+  expect(view.result.current.summary).toBeUndefined()
+  await act(async () => finishes[1]({ ...value, wdi: 20 }))
+  expect(view.result.current.summary?.wdi).toBe(20)
+})
+
+it('pins checkbox totals and stops further reads while the displayed version is expired', async () => {
+  const ids = new Set([1]), snapshot = () => ({ revision: 6000010, columnFilters: { search: 'P' } })
+  const view = renderHook(({ expired }) => useJournalSelectionSummary(ids, 'view', true, null, undefined, expired, snapshot), { initialProps: { expired: false } })
+  await act(async () => vi.advanceTimersByTimeAsync(150))
+  expect(summarizeJournalGridSelection).toHaveBeenCalledWith(expect.objectContaining({ data: { ids: [1], snapshot: snapshot() } }))
+  view.rerender({ expired: true })
+  expect(view.result.current.summary).toBeUndefined()
+  expect(view.result.current.error).toContain('Обновите таблицу')
+  act(() => view.result.current.retry())
+  await act(async () => vi.advanceTimersByTimeAsync(1000))
+  expect(summarizeJournalGridSelection).toHaveBeenCalledOnce()
+})
+
 it('invalidates saved totals during a data refresh, retries errors explicitly and cancels on unmount', async () => {
   const ids = new Set([1])
   const view = renderHook(({ identity, ready }) => useJournalSelectionSummary(ids, identity, ready), { initialProps: { identity: 'before', ready: true } })

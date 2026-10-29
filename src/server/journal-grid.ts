@@ -282,14 +282,22 @@ export async function selectJournalGridRows(input: JournalGridQuery & { route: s
   return { ids: rows.map(row => row.id), revision: context.revision }
 }
 
-export async function summarizeJournalGridSelection(input: { ids: number[] }, signal?: AbortSignal): Promise<JournalSelectionSummary> {
+export async function summarizeJournalGridSelection(input: { ids: number[]; snapshot?: import('@/lib/journal-selection-summary').JournalSelectionSnapshot }, signal?: AbortSignal): Promise<JournalSelectionSummary> {
   if (!input || !Array.isArray(input.ids) || input.ids.some(id => !Number.isSafeInteger(id) || id <= 0)) {
     throw new Error('Некорректный выбор стыков.')
   }
   signal?.throwIfAborted()
+  if (input.snapshot) {
+    // Refuse an already expired displayed version before journalReadContext
+    // can rebuild the dispatcher. The exact-ID context must remain unfiltered
+    // so selected hidden rows and their physical roots are still included.
+    await assertSecurityScope('entry')
+    await assertJournalRevision(input.snapshot.revision, input.snapshot.columnFilters)
+  }
   // Checkbox selection survives report filters. Read the exact selected IDs,
   // including unloaded/hidden rows, without applying the current report scope.
   const context = await journalReadContext({ report: 'weldingJournal', columnFilters: {}, groupBy: [], route: [], start: 0, end: 100 })
+  if (input.snapshot) await assertJournalRevision(input.snapshot.revision, input.snapshot.columnFilters)
   const ids = [...new Set(input.ids)]
   const members = ids.length ? await readSummaryRows(context, buildNumberArrayMatch(weldJoints.id, ids)) : []
   signal?.throwIfAborted()
@@ -299,6 +307,7 @@ export async function summarizeJournalGridSelection(input: { ids: number[] }, si
   const { joints, wdi, missingWdi, weldDate, missingDates } = createWeldGroupSummarizer([...members, ...extras], context.systemSettings)(members)
   await assertJournalContextRevision(context)
   signal?.throwIfAborted()
+  if (input.snapshot) await assertJournalRevision(input.snapshot.revision, input.snapshot.columnFilters)
   return { records: members.length, joints, wdi, missingWdi, weldDate, missingDates }
 }
 

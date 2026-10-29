@@ -4,6 +4,7 @@ import { readJournalGrid, getJournalReportSummary } from '@/server/journal-grid-
 import { type WeldReportSummaryResult, type WeldSort } from '@/server/weld-read-api'
 import { splitReportQuickSearch } from './report-quick-search'
 import { subscribeWeldPageRefresh } from './weld-page-refresh'
+import type { JournalSelectionSnapshot } from './journal-selection-summary'
 import type { WeldRow } from './dispatcher-types'
 import { journalReport, type JournalGridRequest, type JournalGridResult, type JournalRevision } from './journal-server-grid'
 import { isJournalRevisionError, journalReadErrorMessage, JOURNAL_CHANGED_MESSAGE } from './journal-read-error'
@@ -11,6 +12,10 @@ import { isJournalRevisionError, journalReadErrorMessage, JOURNAL_CHANGED_MESSAG
 export type JournalServerSource = {
   report?: JournalGridRequest['report']
   identity: string
+  viewIdentity?: string
+  updatesAvailable?: boolean
+  revisionExpired?: boolean
+  getSnapshot?: () => JournalSelectionSnapshot | undefined
   columnFilters: Record<string, string>
   sort: WeldSort | null
   load: (request: Pick<JournalGridRequest, 'groupBy' | 'route' | 'start' | 'end'>, signal?: AbortSignal) => Promise<JournalGridResult>
@@ -39,6 +44,9 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
   }, [requestedIdentity, immediate, applied.immediate])
   const identity = applied.immediate === immediate ? applied.identity : requestedIdentity
   const current = useRef(requestedIdentity); current.current = requestedIdentity
+  const installed = useRef('')
+  const [notice, setNotice] = useState({ identity: '', expired: false })
+  const expired = useRef('')
   const revision = useRef<{ identity: string; value?: JournalRevision } | null>(null)
   const summaryRequest = useRef<{ key: string; promise: Promise<WeldReportSummaryResult> } | null>(null)
   const columnFilters = useMemo<Record<string, string>>(() => JSON.parse(filters), [filters])
@@ -48,6 +56,14 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
     if (!isJournalRevisionError(error)) return false
     // Several blocks/counters can reject the same expired view together.
     if (identity !== current.current || recovering.current === identity) return true
+    if (installed.current === identity) {
+      // Even a footer counter can discover a newer database revision. Keep the
+      // installed rows and editable cards; refuse only reads pinned to this
+      // expired positional snapshot until the user chooses to refresh it.
+      expired.current = identity
+      setNotice(previous => previous.identity === identity && previous.expired ? previous : { identity, expired: true })
+      return true
+    }
     const retryKey = JSON.stringify([report, filters, options.sort])
     if (automaticRetry.current === retryKey) {
       setState(previous => ({ ...previous, identity, ready: false, modelPending: false, error: new Error(JOURNAL_CHANGED_MESSAGE) }))
@@ -59,8 +75,10 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
     setGeneration(value => value + 1)
     return true
   }, [identity, report, filters, options.sort])
-  const refetch = useCallback(async () => {
+  const refetch = useCallback(async (refreshDispatcher = true) => {
     automaticRetry.current = ''
+    expired.current = ''
+    setNotice({ identity: '', expired: false })
     summaryRequest.current = null
     // A saved joint can change facet values/counts immediately. Only refresh
     // open roots; closed popups stay lazy and revision-pinned match pages are
@@ -69,42 +87,56 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
       predicate: (query: { queryKey: readonly unknown[] }) => query.queryKey[5] !== 'matches' }
     void client.cancelQueries(facets)
     void client.invalidateQueries(facets)
+    if (refreshDispatcher) void client.invalidateQueries({ queryKey: ['dispatcher-task-snapshot'] }, { cancelRefetch: false })
     setGeneration(value => value + 1)
     return true
   }, [client, report])
   useEffect(() => {
     if (!options.enabled) return
     let timer: ReturnType<typeof setTimeout> | undefined
-    const unsubscribe = subscribeWeldPageRefresh(client, () => {
+    const unsubscribe = subscribeWeldPageRefresh(client, event => {
+      if (event?.reason === 'background') {
+        if (installed.current !== current.current) return
+        // Dispatcher and journal use independent revision counters. A changed
+        // dispatcher publication is a notification, never a comparable row version.
+        setNotice(previous => previous.identity === current.current ? previous : { identity: current.current, expired: false })
+        return
+      }
       // Coalesce the reads, but disable actions on the saved row version now.
       // Otherwise a fast second command can open a menu during the debounce
       // and lose it when the replacement block arrives.
       setState(previous => previous.ready || previous.modelPending ? { ...previous, ready: false, modelPending: false } : previous)
-      clearTimeout(timer); timer = setTimeout(() => { void refetch() }, 80)
+      clearTimeout(timer); timer = setTimeout(() => { void refetch(false) }, 80)
     })
     return () => { unsubscribe(); clearTimeout(timer) }
   }, [client, options.enabled, refetch])
   const loadSummary = useCallback(async (scope: string, version?: JournalRevision) => {
     const key = JSON.stringify([report, filters, version])
     if (summaryRequest.current?.key !== key) summaryRequest.current = {
-      key, promise: getJournalReportSummary({ data: { report, ...splitReportQuickSearch(columnFilters) } }),
+      key, promise: getJournalReportSummary({ data: { report, ...splitReportQuickSearch(columnFilters), revision: version } }),
     }
     const pending = summaryRequest.current
     try {
       const summary = await pending.promise
       if (current.current === scope && summaryRequest.current === pending) setState(previous => previous.summary === summary && !previous.summaryError ? previous : ({ ...previous, summary, summaryError: undefined }))
     } catch (error) {
+      if (current.current === scope && isJournalRevisionError(error)) recoverRevision(error)
       if (current.current === scope && summaryRequest.current === pending) setState(previous => ({ ...previous, summaryError: new Error(journalReadErrorMessage(error)) }))
     }
-  }, [report, columnFilters, filters])
+  }, [report, columnFilters, filters, recoverRevision])
   const load = useCallback<JournalServerSource['load']>(async (request, signal) => {
     const scope = identity
     const revisionScope = JSON.stringify([scope, request.groupBy])
     if (!options.enabled || scope !== current.current || recovering.current === scope) throw new DOMException('Выборка журнала обновляется.', 'AbortError')
     // Claim the grouping when the request starts, not when its reply arrives.
     // A late reply from the replaced grouping must not repin the current view.
-    if (revision.current?.identity !== revisionScope) revision.current = { identity: revisionScope }
+    if (revision.current?.identity !== revisionScope) {
+      revision.current = { identity: revisionScope }
+      expired.current = ''
+      setNotice(previous => previous.identity ? { identity: '', expired: false } : previous)
+    }
     const activeRevision = revision.current
+    if (expired.current === scope) throw new Error(JOURNAL_CHANGED_MESSAGE)
     try {
       const result = await readJournalGrid({ data: { ...request, report, columnFilters, sort: options.sort,
         revision: activeRevision.value }, signal })
@@ -131,9 +163,12 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
   }, [report, identity, options.enabled, options.sort, columnFilters, filters, loadSummary, recoverRevision])
   const rowsChanged = useCallback((rows: WeldRow[]) => {
     if (current.current !== identity || recovering.current === identity) return
-    setState(previous => previous.identity !== identity || previous.error || !previous.ready && !previous.modelPending
+    setState(previous => {
+      if (previous.identity === identity && !previous.error && (previous.ready || previous.modelPending)) installed.current = identity
+      return previous.identity !== identity || previous.error || !previous.ready && !previous.modelPending
       || previous.ready && previous.rows.length === rows.length && previous.rows.every((row, index) => row === rows[index])
-      ? previous : { ...previous, rows, ready: true, modelPending: false })
+      ? previous : { ...previous, rows, ready: true, modelPending: false }
+    })
   }, [identity])
   const error = state.identity === requestedIdentity ? state.error : null
   const summaryError = state.identity === requestedIdentity ? state.summaryError : undefined
@@ -143,7 +178,10 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
       automaticRetry.current = ''; recovering.current = null
     }
   }, [identity, state.identity, state.ready, state.error])
-  const source = useMemo<JournalServerSource>(() => ({ report, identity, columnFilters, sort: options.sort, load, rowsChanged, error, retry: refetch, recoverRevision }), [report, identity, columnFilters, options.sort, load, rowsChanged, error, refetch, recoverRevision])
+  const updatesAvailable = notice.identity === requestedIdentity
+  const revisionExpired = updatesAvailable && notice.expired
+  const getSnapshot = useCallback(() => revision.current?.value === undefined ? undefined : { revision: revision.current.value, columnFilters }, [columnFilters])
+  const source = useMemo<JournalServerSource>(() => ({ report, identity, getSnapshot, viewIdentity: selectionIdentity, updatesAvailable, revisionExpired, columnFilters, sort: options.sort, load, rowsChanged, error, retry: () => { void refetch() }, recoverRevision }), [report, identity, getSnapshot, selectionIdentity, updatesAvailable, revisionExpired, columnFilters, options.sort, load, rowsChanged, error, refetch, recoverRevision])
   const ready = options.enabled && identity === requestedIdentity && state.identity === identity && state.ready
   return {
     source, rows: ready ? state.rows : [], rowsReady: ready, requestedIdentity, selectionIdentity,
@@ -152,7 +190,7 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
     availableRequestCount: ready ? state.summary?.availableRequestCount : undefined,
     summaryStatus: (error || summaryError ? 'error' : ready && state.summary ? 'ready' : 'pending') as 'error' | 'ready' | 'pending',
     summaryError,
-    retrySummary: () => { summaryRequest.current = null; void loadSummary(identity) },
+    retrySummary: () => { summaryRequest.current = null; void loadSummary(identity, revision.current?.value) },
     isFetching: !ready, isLoading: options.enabled && !ready, error, refetch,
   }
 }

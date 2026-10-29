@@ -35,6 +35,7 @@ async function renderDialogRows(
   initialSelectedIds = new Set(initialRows.map((row) => row.id)),
   initialMethodCode?: PreHeatTreatmentLnkMethodCode,
   options: {
+    isContextReady?: boolean
     initialRequestSubmitMode?: 'create' | 'extend'
     onStageChange?: (
       stage: 'primary' | 'beforeHeatTreatment',
@@ -58,7 +59,7 @@ async function renderDialogRows(
     <QueryClientProvider client={queryClient}>
       <PreHeatTreatmentLnkWorkflowDialog
         mode={mode}
-        isContextReady={rows.length > 0}
+        isContextReady={options.isContextReady ?? rows.length > 0}
         rows={rows}
         initialSelectedIds={initialSelectedIds}
         initialMethodCode={initialMethodCode}
@@ -88,6 +89,20 @@ async function renderDialog(mode: 'request' | 'result', row: WeldRow) {
 }
 
 describe('PreHeatTreatmentLnkWorkflowDialog', async () => {
+  it('waits for initial context before enabling selection, then keeps the operator choice', async () => {
+    const rows = [makeRow()]
+    const options = { isContextReady: false }
+    const view = await renderDialogRows('request', rows, new Set([1]), undefined, options)
+    const checkbox = screen.getByRole('checkbox', { name: /Выбрать стык/ })
+    expect(checkbox).toBeDisabled()
+    options.isContextReady = true
+    view.rerenderWithRows(rows)
+    await waitFor(() => expect(checkbox).toBeEnabled())
+    expect(checkbox).toBeChecked()
+    fireEvent.click(checkbox)
+    view.rerenderWithRows([...rows])
+    expect(checkbox).not.toBeChecked()
+  })
   it('starts with a system name using the pre-TO formula and its own next number', async () => {
     await renderDialog('request', makeRow())
     fireEvent.click(screen.getByRole('tab', { name: /Заявки и имена/ }))

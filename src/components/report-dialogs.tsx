@@ -1,3 +1,4 @@
+import { ReportDialogBoundary } from './report-dialog-boundary'
 import { lazy, Suspense } from 'react'
 import type { ReportChainDialogProps } from '@/components/report-chain-dialog'
 import type { ReportFieldEditorProps } from '@/components/report-field-editor'
@@ -56,46 +57,62 @@ export function ReportDialogs({
   return (
     <>
       {chainDialogProps.dialogProps ? (
-        <Suspense fallback={null}>
-          <ReportChainDialog {...chainDialogProps} />
-        </Suspense>
+        <ReportDialogBoundary onClose={chainDialogProps.dialogProps.onClose}>
+          <Suspense fallback={null}>
+            <ReportChainDialog {...chainDialogProps} />
+          </Suspense>
+        </ReportDialogBoundary>
       ) : null}
       {weldEditorProps.formKey && weldEditorProps.formProps ? (
-        <Suspense fallback={null}>
-          <ReportWeldEditor {...weldEditorProps} />
-        </Suspense>
+        <ReportDialogBoundary onClose={weldEditorProps.formProps.onCancel}>
+          <Suspense fallback={null}>
+            <ReportWeldEditor {...weldEditorProps} />
+          </Suspense>
+        </ReportDialogBoundary>
       ) : null}
       {hasOpenReportDialogProps(pstoDialogsProps) ? (
-        <PstoProgramDiagnosticBoundary open={!!pstoDialogsProps.lineProgramDialogProps?.open} onClose={() => pstoDialogsProps.lineProgramDialogProps?.onClose()}>
-          <Suspense fallback={<PstoProgramLoading open={!!pstoDialogsProps.lineProgramDialogProps?.open} onClose={() => pstoDialogsProps.lineProgramDialogProps?.onClose()} />}>
-            <ReportPstoDialogs {...pstoDialogsProps} />
-          </Suspense>
-        </PstoProgramDiagnosticBoundary>
+        <ReportDialogBoundary onClose={() => { Object.values(pstoDialogsProps).forEach(dialog => dialog?.onClose()) }}>
+          <PstoProgramDiagnosticBoundary open={!!pstoDialogsProps.lineProgramDialogProps?.open} onClose={() => pstoDialogsProps.lineProgramDialogProps?.onClose()}>
+            <Suspense fallback={<PstoProgramLoading open={!!pstoDialogsProps.lineProgramDialogProps?.open} onClose={() => pstoDialogsProps.lineProgramDialogProps?.onClose()} />}>
+              <ReportPstoDialogs {...pstoDialogsProps} />
+            </Suspense>
+          </PstoProgramDiagnosticBoundary>
+        </ReportDialogBoundary>
       ) : null}
       {hasOpenReportDialogProps(lnkDialogsProps) ? (
-        <Suspense fallback={null}>
-          <ReportLnkDialogs {...lnkDialogsProps} />
-        </Suspense>
+        <ReportDialogBoundary onClose={() => { Object.values(lnkDialogsProps).forEach(dialog => dialog?.onClose()) }}>
+          <Suspense fallback={null}>
+            <ReportLnkDialogs {...lnkDialogsProps} />
+          </Suspense>
+        </ReportDialogBoundary>
       ) : null}
       {fieldEditorProps.dialogProps ? (
-        <Suspense fallback={null}>
-          <ReportFieldEditor {...fieldEditorProps} />
-        </Suspense>
+        <ReportDialogBoundary onClose={fieldEditorProps.dialogProps.onClose}>
+          <Suspense fallback={null}>
+            <ReportFieldEditor {...fieldEditorProps} />
+          </Suspense>
+        </ReportDialogBoundary>
       ) : null}
       {importDialogProps.open ? (
-        <Suspense fallback={null}>
-          <ReportImportDialog {...importDialogProps} />
-        </Suspense>
+        <ReportDialogBoundary onClose={importDialogProps.onClose}>
+          <Suspense fallback={null}>
+            <ReportImportDialog {...importDialogProps} />
+          </Suspense>
+        </ReportDialogBoundary>
       ) : null}
       {generationDialogProps ? (
-        <Suspense fallback={null}>
-          <WeldingJournalGenerationDialog {...generationDialogProps} />
-        </Suspense>
+        <ReportDialogBoundary onClose={generationDialogProps.onClose}>
+          <Suspense fallback={null}>
+            <WeldingJournalGenerationDialog {...generationDialogProps} />
+          </Suspense>
+        </ReportDialogBoundary>
       ) : null}
       {rkExposureDialogProps ? (
-        <Suspense fallback={null}>
-          <RkExposureEditDialog {...rkExposureDialogProps} />
-        </Suspense>
+        <ReportDialogBoundary onClose={rkExposureDialogProps.onClose}>
+          <Suspense fallback={null}>
+            <RkExposureEditDialog {...rkExposureDialogProps} />
+          </Suspense>
+        </ReportDialogBoundary>
       ) : null}
       {rootCauseNavigationProps ? <WorkflowRootCauseNavigation {...rootCauseNavigationProps} /> : null}
     </>

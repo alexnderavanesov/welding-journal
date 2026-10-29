@@ -186,13 +186,13 @@ test('failed background refresh after saving shows an explicit retry and keeps t
     expect(refreshRequests).toBe(1)
 
     release()
-    // Fresh dispatcher publication legitimately invalidates rows once. It
-    // must not turn the second failure into a timer/reconciliation loop.
-    await expect.poll(() => failedReads).toBe(2)
+    // A background publication no longer retries/replaces the table. The
+    // failed post-save read stays available for an explicit user retry.
+    await page.waitForLoadState('networkidle')
     await expect(summary(page)).toContainText('Не удалось обновить строки')
     await expect(retry).toBeVisible()
     await page.waitForTimeout(1100)
-    expect(failedReads).toBe(2)
+    expect(failedReads).toBe(1)
     expect(refreshRequests).toBe(1)
     expect(await withE2eDatabase(async db => (await db.query(
       'select isometry from weld_joints where project_title=$1 and joint=$2', [project, editable],
@@ -206,7 +206,7 @@ test('failed background refresh after saving shows an explicit retry and keeps t
     await editor.getByRole('button', { name: 'Стык', exact: true }).first().click()
     await expect(editor.getByLabel('Изометрия', { exact: true })).toHaveValue('SUMMARY-SAVED')
     await editor.getByRole('button', { name: 'Отмена', exact: true }).click()
-  } finally { release() }
+  } finally { release(); await page.unrouteAll({ behavior: 'wait' }) }
 })
 
 for (const path of ['/lnk', '/psto']) test(`${path}: current preview and real Excel preserve the selected descending order`, async ({ page }) => {

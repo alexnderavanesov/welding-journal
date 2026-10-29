@@ -7,6 +7,7 @@ type ReportSelectionActionOptions = {
   queryIdentity: string
   selectedIds: ReadonlySet<number>
   rows: readonly WeldRow[]
+  fresh?: boolean
   loadRowsByIds: (ids: number[]) => Promise<WeldRow[]>
   onOpen: (rows: WeldRow[]) => void
   onError: (message: string) => void
@@ -47,12 +48,12 @@ export function useReportSelectionAction(options: ReportSelectionActionOptions) 
     scope: current,
     cancel,
     disabled: !current.ready || loading?.scope === current,
-    run: async () => {
+    run: async (rowIds?: number[]) => {
       if (!isCurrent() || pending.current?.scope === current) return
-      const ids = [...options.selectedIds]
+      const ids = rowIds ?? [...options.selectedIds]
       const available = new Map(options.rows.map(row => [row.id, row]))
-      if (ids.every(id => available.has(id))) {
-        options.onOpen(options.rows.filter(row => options.selectedIds.has(row.id)))
+      if (!ids.length || !options.fresh && ids.every(id => available.has(id))) {
+        options.onOpen(ids.map(id => available.get(id)!))
         return
       }
       // A separate token also distinguishes cancel/retry within the same scope.

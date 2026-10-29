@@ -69,7 +69,8 @@ export function usePstoWorkflowRowsQuery({
     queryKey: [...PSTO_WORKFLOW_ROWS_QUERY_KEY, isCandidateQuery ? { ...queryIdentity, initialSelection } : queryIdentity],
     queryFn: () => listPstoWorkflowRows({ data: normalizedRequest! }),
     enabled: normalizedRequest !== null,
-    staleTime: isCandidateQuery ? 0 : WORKFLOW_STALE_TIME,
+    // Every newly opened workflow reads current facts; focus does not replace a draft.
+    staleTime: 0,
     placeholderData: (previous, previousQuery) => isCandidateQuery &&
       (previousQuery?.queryKey.at(-1) as PstoWorkflowRowsRequest | undefined)?.scope === normalizedRequest?.scope
         ? previous

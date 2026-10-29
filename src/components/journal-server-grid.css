@@ -63,6 +63,8 @@ html:has([data-journal-workspace]) { overscroll-behavior-y: auto; overscroll-beh
 .journal-grid-frame[data-journal-updating] .ag-grid-scrolling-rows { pointer-events: none; }
 .journal-update-notice { position: absolute; right: 16px; top: 100px; z-index: 3; padding: 5px 10px; border: 1px solid #dbe5ef; border-radius: 5px; background: #f8fafcf2; color: #64748b; font-size: 12px; pointer-events: none; }
 .journal-footer-update { position: sticky; left: 0; flex: none; padding: 2px 6px; background: #f8fafc; color: #0369a1; font-weight: 500; z-index: 1; }
+.journal-freshness-notice { position: sticky; left: 0; z-index: 1; display: inline-flex; align-items: center; gap: 8px; flex: none; color: #0369a1; background: #f8fafc; }
+.journal-freshness-notice button { text-decoration: underline; cursor: pointer; }
 .journal-loading-cell { display: flex; align-items: center; height: 100%; width: 100%; }
 .journal-loading-cell > span { display: block; height: 14px; max-width: 100%; border-radius: 4px; background: color-mix(in srgb, var(--ag-foreground-color, #64748b) 14%, transparent); }
 .journal-load-error { display: flex; flex-wrap: wrap; gap: 8px; max-width: calc(100% - 32px); pointer-events: auto; color: #9f1239; border-color: #fecdd3; background: #fff1f2; }

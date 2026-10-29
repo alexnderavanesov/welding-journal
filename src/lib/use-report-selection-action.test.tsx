@@ -63,6 +63,19 @@ describe('report selection action opening', () => {
     expect(onError).not.toHaveBeenCalled()
   })
 
+  it('refreshes loaded selections in one batch and refuses a missing joint before opening an operation', async () => {
+    const onOpen = vi.fn(), onError = vi.fn(), loadRowsByIds = vi.fn().mockResolvedValue([{ ...rows[0], rowVersion: 'v2' }])
+    const { result } = renderHook(() => useReportSelectionAction({ fresh: true, rowsReady: true,
+      queryIdentity: 'journal', selectedIds: new Set([1]), rows: pageRows, loadRowsByIds, onOpen, onError }))
+    await act(() => result.current.run())
+    expect(loadRowsByIds).toHaveBeenCalledExactlyOnceWith([1])
+    expect(onOpen).toHaveBeenCalledExactlyOnceWith([{ ...rows[0], rowVersion: 'v2' }])
+    loadRowsByIds.mockResolvedValueOnce([])
+    await act(() => result.current.run([2]))
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenCalledOnce()
+  })
+
   it('blocks stale report rows immediately, even with a fully materialized selection', async () => {
     const { result, loadRowsByIds, onOpen } = setup({ rowsReady: false, queryIdentity: 'lnk:B', selectedIds: new Set([1]), rows: pageRows })
     expect(result.current.disabled).toBe(true)

@@ -35,7 +35,7 @@ describe('LNK workflow query load policy', () => {
     serverMocks.listLnkWorkflowRows.mockResolvedValue([])
   })
 
-  it('loads one bounded pre-TO page per navigation, reuses cached pages and ignores focus/reconnect', async () => {
+  it('reads a fresh bounded pre-TO page on navigation and ignores focus/reconnect', async () => {
     const queryClient = createQueryClient()
     const { rerender } = renderHook(({ offset }: { offset: number }) => useLnkWorkflowRowsQuery({
       request: { scope: 'preHeatTreatmentResultRegistry', search: 'PRE', offset },
@@ -47,10 +47,11 @@ describe('LNK workflow query load policy', () => {
     rerender({ offset: 50 })
     await waitFor(() => expect(serverMocks.listLnkWorkflowRows).toHaveBeenCalledTimes(2))
     rerender({ offset: 0 })
+    await waitFor(() => expect(serverMocks.listLnkWorkflowRows).toHaveBeenCalledTimes(3))
     window.dispatchEvent(new Event('focus'))
     window.dispatchEvent(new Event('online'))
     await new Promise(resolve => setTimeout(resolve, 25))
-    expect(serverMocks.listLnkWorkflowRows).toHaveBeenCalledTimes(2)
+    expect(serverMocks.listLnkWorkflowRows).toHaveBeenCalledTimes(3)
   })
 
   it('coalesces summary and equivalent scoped row requests across rerenders', async () => {

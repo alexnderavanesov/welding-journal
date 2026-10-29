@@ -668,7 +668,7 @@ test('unloaded and cancelled blocks show skeletons while the newest filter is lo
   await expect(page.getByRole('button', { name: 'S0251', exact: true })).toBeVisible()
 })
 
-for (const counter of ['countJournalGridSelection', 'summarizeJournalGridRange']) test(`grouped revision recovery: ${counter} refreshes once and preserves checked IDs`, async ({ page }) => {
+for (const counter of ['countJournalGridSelection', 'summarizeJournalGridRange']) test(`grouped revision recovery: ${counter} waits for explicit refresh and preserves checked IDs`, async ({ page }) => {
   await page.locator('.ag-header-cell[col-id="line"]').click({ button: 'right' })
   await page.getByRole('menuitem', { name: /Сгруппировать.*Линия/ }).click()
   await page.getByRole('button', { name: 'Развернуть группу SERVER-A', exact: true }).click()
@@ -695,6 +695,12 @@ for (const counter of ['countJournalGridSelection', 'summarizeJournalGridRange']
     // A different operator saves while this exact grouped-view read is pending.
     await withLineProgramFixture(db => db.query("update weld_joints set spool='REFRESH-CHECK' where project_title=$1 and joint='S0001'", [PROJECT]))
     release()
+    await expect(page.getByText('Есть обновления', { exact: true })).toBeVisible()
+    await page.waitForLoadState('networkidle')
+    expect(blocks).toBe(0)
+    await expect(checkbox).toBeChecked()
+    await expect(page.locator('.journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
+    await page.getByRole('button', { name: 'Обновить таблицу', exact: true }).click()
     await expect.poll(() => blocks).toBeGreaterThan(0)
     await expect(page.locator('.journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
     await page.waitForLoadState('networkidle')
@@ -713,7 +719,7 @@ for (const counter of ['countJournalGridSelection', 'summarizeJournalGridRange']
     await page.waitForLoadState('networkidle')
     await expect(page.getByText('Выбрано: 1', { exact: true })).toBeVisible()
     await expect(page.locator('.journal-load-error')).toHaveCount(0)
-  } finally { release() }
+  } finally { release(); await page.unrouteAll({ behavior: 'wait' }) }
 })
 
 test('initial loading uses skeletons, real errors have one viewport notice, and retry recovers', async ({ page }) => {
