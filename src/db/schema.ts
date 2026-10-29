@@ -1,6 +1,8 @@
 import { sql } from 'drizzle-orm'
 import { boolean, check, date, index, integer, jsonb, numeric, pgTable, primaryKey, serial, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 import type { DocumentSpecialists, SpecialistKind, SpecialistMethod } from '@/lib/document-specialists'
+import { DISPATCHER_SCOPE_WHITESPACE_SQL } from '@/lib/dispatcher-scope-normalization'
+import { indexedJointName, naturalJointOrder } from './journal-order'
 
 export const specialists = pgTable('specialists', {
   id: serial('id').primaryKey(),
@@ -281,6 +283,8 @@ export const weldJoints = pgTable(
     index('weld_joints_line_idx').on(table.line),
     index('weld_joints_line_program_idx').on(table.lineProgramId),
     index('weld_joints_joint_idx').on(table.joint),
+    index('weld_joints_natural_joint_asc_idx').on(...naturalJointOrder(table.joint, 'asc'), table.line, table.joint, table.id).where(indexedJointName(table.joint, table.line)),
+    index('weld_joints_natural_joint_desc_idx').on(...naturalJointOrder(table.joint, 'desc'), table.line, table.joint, table.id).where(indexedJointName(table.joint, table.line)),
     index('weld_joints_technology_card_name_idx').on(sql`btrim(${table.technologyCardNumber})`),
     index('weld_joints_final_status_idx').on(table.finalStatus),
     index('weld_joints_psto_required_idx').on(table.pstoRequired),
@@ -289,6 +293,11 @@ export const weldJoints = pgTable(
       sql`lower(btrim(coalesce(${table.projectTitle}, '')))`,
       sql`lower(btrim(coalesce(${table.subtitleCode}, '')))`,
       sql`lower(btrim(coalesce(${table.line}, '')))`,
+    ),
+    index('weld_joints_compact_line_identity_idx').on(
+      sql`lower(translate(coalesce(${table.projectTitle}, ''), ${sql.raw(DISPATCHER_SCOPE_WHITESPACE_SQL)}, ''))`,
+      sql`lower(translate(coalesce(${table.subtitleCode}, ''), ${sql.raw(DISPATCHER_SCOPE_WHITESPACE_SQL)}, ''))`,
+      sql`lower(translate(coalesce(${table.line}, ''), ${sql.raw(DISPATCHER_SCOPE_WHITESPACE_SQL)}, ''))`,
     ),
     index('weld_joints_journal_order_idx').on(
       table.createdAt.desc().nullsLast(),

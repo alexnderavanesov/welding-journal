@@ -6,6 +6,10 @@ import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 import { DERIVED_CALCULATION_REVISION_FLOOR } from '@/lib/derived-calculation-cache-version'
 
 const mock = vi.hoisted(() => ({ members: [] as any[], extras: [] as any[], reads: vi.fn(), revisions: vi.fn(), access: vi.fn(), ensure: vi.fn(), fresh: vi.fn(), settings: vi.fn() }))
+vi.mock('./journal-summary-hydration', () => ({ readJournalSummaryProjection: async (_db: unknown, projection: unknown, source: unknown) => {
+  mock.reads(projection, source)
+  return (mock.reads.mock.calls.length === 1 ? mock.members : mock.extras).map(record => ({ ...record, rootState: { replaced: record.replaced } }))
+} }))
 vi.mock('@/db', () => ({ requireDb: () => ({ select: (projection: Record<string, unknown>) => {
   const chain = { from: () => chain, leftJoin: () => chain, where: async (where: unknown) => {
     if ('revision' in projection) return mock.revisions()

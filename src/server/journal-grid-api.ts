@@ -5,6 +5,9 @@ import type { JournalGridRequest, JournalGridQuery, JournalRangeRequest, Journal
 export const readJournalGrid = createServerFn({ method: 'POST' })
   .validator((data: JournalGridRequest) => data)
   .handler(async ({ data }) => (await import('./journal-grid')).readJournalGrid(data))
+export const readJournalGridBlocks = createServerFn({ method: 'POST' })
+  .validator((data: import('@/lib/journal-server-grid').JournalGridBlocksRequest) => data)
+  .handler(async ({ data }) => (await import('./journal-grid')).readJournalGridBlocks(data, (await import('@tanstack/react-start/server')).getRequest().signal))
 export const selectJournalGridRows = createServerFn({ method: 'POST' })
   .validator((data: JournalGridQuery & { route: string[]; revision: JournalRevision }) => data)
   .handler(async ({ data }) => (await import('./journal-grid')).selectJournalGridRows(data))
@@ -34,15 +37,15 @@ export const listJournalReportRows = createServerFn({ method: 'POST' })
 export const getJournalReportSummary = createServerFn({ method: 'POST' })
   .validator((data: import('./weld-contracts').WeldReportSummaryRequest & { revision?: JournalRevision }) => data)
   .handler(async ({ data }) => {
-    const { assertJournalRevision } = await import('./journal-grid')
-    if (data.revision !== undefined) {
+    const { assertJournalRevision, peekJournalReportCount } = await import('./journal-grid')
+    if (data?.revision !== undefined) {
       await (await import('./security-functions')).assertSecurityScope('entry')
       await assertJournalRevision(data.revision, data.columnFilters)
     }
     // The footer must describe the displayed version, not a newer writer's
     // count which happened to finish while those rows were on screen.
-    const summary = await (await import('./weld-read')).getWeldReportSummary({ data })
-    if (data.revision !== undefined) await assertJournalRevision(data.revision, data.columnFilters)
+    const summary = await (await import('./weld-read')).getWeldReportSummary({ data }, normalized => peekJournalReportCount(normalized, data?.revision))
+    if (data?.revision !== undefined) await assertJournalRevision(data.revision, data.columnFilters)
     return summary
   })
 export const listJournalFilterOptions = createServerFn({ method: 'POST' })

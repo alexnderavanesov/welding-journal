@@ -10,7 +10,10 @@ test('custom Start entry preserves same-origin RPC protection and ordinary page 
   })
   const document = await page.goto('/journal')
   expect(document?.status()).toBe(200)
-  await expect(page.getByText('Найдено: 1', { exact: true })).toBeVisible()
+  // Other suites may leave their valid fixtures in the shared disposable DB.
+  // This boundary check needs a loaded report, not a particular record count.
+  await expect(page.locator('.journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
+  await expect(page.getByText(/^Найдено: \d+$/)).toBeVisible()
   expect(request).toBeDefined()
   const { url, body } = request!
   const origin = new URL(url).origin
@@ -33,11 +36,13 @@ test('custom Start entry preserves same-origin RPC protection and ordinary page 
   // A mutation must be rejected by the same gate, before payload validation.
   // The deliberately invalid payload cannot mutate the isolated fixture even
   // when this regression is run against an unprotected build.
-  const write = await page.request.post(siblingRpcUrl(url, 'updateWeldJoint_createServerFn_handler'), {
-    data: await serializeRpcData({}), headers: { ...rpcHeaders, 'sec-fetch-site': 'cross-site', origin: 'https://foreign.invalid' },
-  })
-  expect(write.status()).toBe(403)
-  expect(await write.text()).toBe('Forbidden')
+  for (const handler of ['updateWeldJoint_createServerFn_handler', 'readJournalGridBlocks_createServerFn_handler']) {
+    const blocked = await page.request.post(siblingRpcUrl(url, handler), {
+      data: await serializeRpcData({}), headers: { ...rpcHeaders, 'sec-fetch-site': 'cross-site', origin: 'https://foreign.invalid' },
+    })
+    expect(blocked.status()).toBe(403)
+    expect(await blocked.text()).toBe('Forbidden')
+  }
   // Replay an actual GET RPC, rather than sending GET to a POST-only handler.
   expect(getUrl).toBeDefined()
   expect((await page.request.get(getUrl!, { headers: { 'sec-fetch-site': 'same-origin' } })).status()).toBe(200)

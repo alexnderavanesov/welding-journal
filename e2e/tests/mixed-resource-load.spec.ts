@@ -109,7 +109,7 @@ async function openEditor(page: Page) {
     await waitForCurrentRows(page, writerJoint)
     let refreshed = false
     const onResponse = (response: import('@playwright/test').Response) => {
-      if (rpcName(response.url()).startsWith('readJournalGrid_') && response.ok()) refreshed = true
+      if (/^readJournalGrid(?:Blocks)?_/.test(rpcName(response.url())) && response.ok()) refreshed = true
     }
     const before = await getWriter()
     page.on('response', onResponse)

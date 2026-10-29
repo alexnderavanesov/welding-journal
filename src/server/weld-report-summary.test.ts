@@ -34,6 +34,24 @@ describe('independent report rows and summaries', () => {
     mocks.settings.mockResolvedValue(DEFAULT_OTHER_SETTINGS)
   })
 
+  it('reuses a validated page count only inside the captured derived-cache revision', async () => {
+    let captured = false
+    mocks.compute.mockImplementation(async (_key, compute) => { captured = true; return compute() })
+    const cached = vi.fn(async data => {
+      expect(captured).toBe(true)
+      expect(data.columnFilters).toEqual({ line: '=L' })
+      return 0
+    })
+    expect(await getWeldReportSummary({ data: { report: 'heatTreatment', columnFilters: { line: '=L' } } }, cached)).toEqual({ total: 0 })
+    expect(cached).toHaveBeenCalledOnce()
+    expect(mocks.query).not.toHaveBeenCalled()
+  })
+  it('never calculates or publishes a summary after a cached-count revision check rejects', async () => {
+    const cached = vi.fn(async () => { throw new Error('Данные журнала изменились.') })
+    await expect(getWeldReportSummary({ data: { report: 'heatTreatment' } }, cached)).rejects.toThrow('изменились')
+    expect(mocks.query).not.toHaveBeenCalled()
+  })
+
   it.each(['weldingJournal', 'lnk', 'heatTreatment'] as const)('%s first portion has no count or aggregate dependency', async report => {
     const page = await listReportPage(report, normalizeWeldPageRequest({ includeTotals: false, search: 'S999' }))
     expect(page).toMatchObject({ rows: [], page: 1, pageSize: 100, hasMore: false })

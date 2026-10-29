@@ -145,7 +145,7 @@ test('форма: номера сторон, максимум две групп�
   const refreshedReport = page.waitForResponse(response => {
     const name = rpcName(response.url())
     if (name.startsWith('refreshDispatcherTaskSnapshot_')) dispatcherRefreshed = true
-    return dispatcherRefreshed && name.startsWith('readJournalGrid_')
+    return dispatcherRefreshed && /^readJournalGrid(?:Blocks)?_/.test(name)
   })
   // Still awaited below; avoid a second unhandled rejection if an earlier
   // assertion fails and afterEach closes the page first.

@@ -55,7 +55,10 @@ for (const beforeHeatTreatment of [false, true]) test(`довнесение ВИ
     name: beforeHeatTreatment ? 'Внесение результатов ЛНК до ТО' : 'Внесение результатов ЛНК', exact: true,
   }) })
   if (!beforeHeatTreatment) await dialog.getByLabel('Метод контроля', { exact: true }).selectOption('vikRequest')
-  await dialog.getByRole('checkbox', { name: `Выбрать стык ${lineName} ${joint}`, exact: true }).check()
+  const selectedJoint = dialog.getByRole('checkbox', { name: `Выбрать стык ${lineName} ${joint}`, exact: true })
+  // The pre-TO form applies its initial selected joint before enabling input.
+  await expect(selectedJoint).toBeEnabled()
+  await selectedJoint.check()
   await dialog.getByLabel('Дата контроля', { exact: true }).fill('2026-09-02')
   await dialog.getByRole('group', { name: 'Результат для всех выбранных', exact: true }).getByRole('button', { name: 'годен', exact: true }).click()
   await dialog.getByRole('button', { name: beforeHeatTreatment ? 'Сохранить результат до ТО' : 'Сохранить результат', exact: true }).click()

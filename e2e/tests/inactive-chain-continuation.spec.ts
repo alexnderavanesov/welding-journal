@@ -362,7 +362,7 @@ test('актуальность: Escape и устаревшее окно не м�
   expect(afterSave.filter(name => name.startsWith('listWeldJointChain_'))).toHaveLength(1)
   expect(afterSave.filter(name => name.startsWith('getDispatcherTaskSnapshot_'))).toHaveLength(1)
   expect(afterSave.filter(name => name.startsWith('refreshDispatcherTaskSnapshot_'))).toHaveLength(1)
-  expect(afterSave.filter(name => name.startsWith('readJournalGrid_')).length).toBeLessThanOrEqual(2)
+  expect(afterSave.filter(name => /^readJournalGrid(?:Blocks)?_/.test(name)).length).toBeLessThanOrEqual(2)
   expect(afterSave.filter(name => name.startsWith('previewChainActuality_'))).toHaveLength(0)
   expect(calls.filter(name => name.startsWith('setChainActuality_'))).toHaveLength(2)
   expect(await withE2eDatabase(async db => (await db.query('select officiality,uzk_result,uzk_conclusion,revision_actuality from weld_joints where id=$1', [repair.id])).rows[0]))

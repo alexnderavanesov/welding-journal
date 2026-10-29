@@ -39,17 +39,20 @@ export function createWeldGroupSummarizer(input: readonly WeldRow[], settings: S
   const createStageSummary = options.heatTreatment ? createHeatTreatmentGroupSummarizer(rows) : undefined
   const createLnkSummary = options.lnk ? createLnkGroupSummarizer(rows) : undefined
   const byId = new Map(rows.map(row => [row.id, row]))
-  const context = buildFinalStatusRowsContext(rows)
-  const statuses = new Map(rows.map(row => [row.id, normalizeFinalStatus(row.finalStatus) ?? calculateFinalStatusInRows(row, rows, context)]))
+  let context: ReturnType<typeof buildFinalStatusRowsContext> | undefined
+  const statuses = new Map(rows.map(row => [row.id, normalizeFinalStatus(row.finalStatus)
+    ?? calculateFinalStatusInRows(row, rows, context ??= buildFinalStatusRowsContext(rows))]))
   const keys = new Map<number, string>()
   const roots = new Map<string, WeldRow>()
   for (const row of rows) {
-    const branch = parseRepeatedJointName(text(row.joint), settings)
-    const legacy = programJointIdentity(row, branch.base)
     const state = row.programChainState
-    const key = state ? state.physicalRootId == null ? `unknown:${row.id}` : `id:${state.physicalRootId}` : `legacy:${legacy}`
+    // Persisted physical IDs already resolve identity. Parsing legacy names
+    // for these rows cannot affect the result and dominates large plain groups.
+    const branch = state ? undefined : parseRepeatedJointName(text(row.joint), settings)
+    const key = state ? state.physicalRootId == null ? `unknown:${row.id}` : `id:${state.physicalRootId}`
+      : `legacy:${programJointIdentity(row, branch!.base)}`
     keys.set(row.id, key)
-    if (state ? state.physicalRootId === row.id : !branch.segments.length) {
+    if (state ? state.physicalRootId === row.id : !branch!.segments.length) {
       const previous = roots.get(key)
       if (!previous || text(previous.officiality).toLocaleLowerCase('ru') === 'неофициальный') roots.set(key, row)
     }
@@ -86,7 +89,7 @@ export function createWeldGroupSummarizer(input: readonly WeldRow[], settings: S
     const ids = new Set(group.map(row => row.id))
     const linkedTargets = new Set(group.flatMap(row => row.chainContinuation?.targetRowIds ?? []))
     const branches = new Map<string, WeldRow[]>()
-    const dates: string[] = []
+    let firstDate: string | undefined, lastDate: string | undefined, dateCount = 0
     const lines = new Set<string>()
     const stages = createStageSummary?.()
     const lnkStages = createLnkSummary?.()
@@ -97,7 +100,11 @@ export function createWeldGroupSummarizer(input: readonly WeldRow[], settings: S
       if (statuses.get(row.id) === 'ошибка') errors++ // History errors must never be hidden by a good successor.
       if (text(row.line)) lines.add(programJointIdentity(row, ''))
       const date = parseDateLikeToIso(row.weldDate)
-      if (date) dates.push(date)
+      if (date) {
+        dateCount++
+        if (firstDate === undefined || date < firstDate) firstDate = date
+        if (lastDate === undefined || date > lastDate) lastDate = date
+      }
       const key = keys.get(row.id)!
       if (replaced.has(key)) continue
       const branch = branches.get(key) ?? []
@@ -151,11 +158,9 @@ export function createWeldGroupSummarizer(input: readonly WeldRow[], settings: S
       const values = new Set(group.map(row => text(row[field])))
       return values.size === 1 ? values.values().next().value || '—' : '—'
     }
-    dates.sort()
-    const first = dates[0], last = dates.at(-1)
     return { rows: group, lines: lines.size, joints: branches.size, wdi: knownWdi ? cents / 100 : null, missingWdi,
-      weldDate: !first ? '—' : first === last ? formatDisplayDate(first) : `${formatDisplayDate(first)} — ${formatDisplayDate(last)}`,
-      missingDates: group.length - dates.length, projectTitle: common('projectTitle'), subtitleCode: common('subtitleCode'),
+      weldDate: !firstDate ? '—' : firstDate === lastDate ? formatDisplayDate(firstDate) : `${formatDisplayDate(firstDate)} — ${formatDisplayDate(lastDate!)}`,
+      missingDates: group.length - dateCount, projectTitle: common('projectTitle'), subtitleCode: common('subtitleCode'),
       status, rejected, errors, partialChains, ...stages?.finish(group.length),
       ...(lnkStages ? { lnkResults: lnkStages.finish(group.length) } : {}) }
   }

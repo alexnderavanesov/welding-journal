@@ -14,7 +14,9 @@ const resourceContainer = process.env.AUDIT_RESOURCE_CONTAINER === '1'
 assert.equal(process.env.DATABASE_URL, `postgresql://welding:welding@${resourceContainer ? 'host.docker.internal' : '127.0.0.1'}:5432/welding_tracker_e2e`)
 assert.equal(process.env.PORT, resourceContainer ? '3000' : '3100')
 assert.equal(process.env.E2E_USE_PRODUCTION_BUILD, '1')
-const root = resolve('.output/server')
+// Saved comparison bundles live outside Vite's mutable .output directory.
+// This changes only the local audit runner and keeps the dev server usable.
+const root = resolve(process.env.E2E_AUDIT_OUTPUT_DIR ?? '.output', 'server')
 const candidates = (await readdir(join(root, '_ssr'))).filter(name => /^db-.*\.mjs$/.test(name))
 const sources = await Promise.all(candidates.map(name => readFile(join(root, '_ssr', name), 'utf8')))
 const implementations = sources.filter(source => source.includes('async function createDatabase()'))
@@ -105,12 +107,19 @@ pg.Client.prototype.query = function (...args) {
     const started = performance.now()
     // Count only sizes/durations and schema table names, never SQL or values.
     result.then(reply => {
-      const reading = resources.reads[kind] ??= { calls: 0, rows: 0, maxRows: 0, maxWideRows: 0, maxColumns: 0, maxMilliseconds: 0 }
+      const reading = resources.reads[kind] ??= { calls: 0, rows: 0, totalMilliseconds: 0, maxRows: 0, maxWideRows: 0, maxColumns: 0, maxMilliseconds: 0 }
       reading.calls++; reading.rows += reply.rowCount ?? 0
+      reading.totalMilliseconds += performance.now() - started
       reading.maxRows = Math.max(reading.maxRows, reply.rowCount ?? 0)
       reading.maxColumns = Math.max(reading.maxColumns, reply.fields?.length ?? 0)
       if ((reply.fields?.length ?? 0) > 10) reading.maxWideRows = Math.max(reading.maxWideRows, reply.rowCount ?? 0)
       reading.maxMilliseconds = Math.max(reading.maxMilliseconds, Math.round(performance.now() - started))
+      const milliseconds = performance.now() - started
+      if (milliseconds >= 100) {
+        resources.slowReads ??= []
+        resources.slowReads.push({ table: kind, milliseconds, rows: reply.rowCount, columns: reply.fields?.map(field => field.name), uptimeSeconds: process.uptime() })
+        if (resources.slowReads.length > 100) resources.slowReads.shift()
+      }
     }, () => {})
   }
   return result

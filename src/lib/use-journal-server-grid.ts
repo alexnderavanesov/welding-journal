@@ -15,6 +15,7 @@ import { readJournalLocalSelection } from './journal-local-selection'
 import { journalCopyRanges } from './journal-copy-ranges'
 import type { JournalSummaryRange } from './journal-selection-summary'
 import { journalReadErrorMessage, JOURNAL_CHANGED_MESSAGE } from './journal-read-error'
+import { collectJournalRefreshBlocks, journalBlockKey, journalRefreshBlocksUnchanged, planJournalBlockRefresh, type JournalRefreshBlock } from './journal-refresh-blocks'
 
 export function useJournalServerGrid(options: {
   source?: JournalServerSource; api: GridApi<WeldRow> | null; selected: ReadonlySet<number>;
@@ -25,6 +26,10 @@ export function useJournalServerGrid(options: {
   const installedApi = useRef<GridApi<WeldRow> | null>(null)
   const installedIdentity = useRef('')
   const installedView = useRef<string | undefined>(undefined)
+  // The grid keeps one datasource while the query is unchanged. Each refresh
+  // delegates to a new, cancellable revision without destroying row nodes.
+  const datasourceDelegate = useRef<IServerSideDatasource<WeldRow> | null>(null)
+  const refreshingStores = useRef<Set<string> | null>(null)
   const expandedOnRefresh = useRef(new Set<string>())
   const positionOnRefresh = useRef<{ y: number; row: number; id?: string; column?: string } | null>(null)
   const isRestoring = useCallback(() => Boolean(positionOnRefresh.current), [])
@@ -232,6 +237,15 @@ export function useJournalServerGrid(options: {
     frame.current = requestAnimationFrame(() => {
       frame.current = 0
       if (api.isDestroyed() || current.current.source?.identity !== source.identity || installedIdentity.current !== source.identity) return
+      const refreshed = Boolean(refreshingStores.current)
+      if (refreshingStores.current) {
+        const existing = new Set(api.getServerSideGroupLevelState().map(store => journalRouteKey(store.route)))
+        for (const key of refreshingStores.current) if (!existing.has(key)) refreshingStores.current.delete(key)
+        // No action or summary may treat a partly refreshed cache as a single
+        // revision. Deleted groups need no completion event from their old store.
+        if (refreshingStores.current.size || activeLoads.current.size) return
+        refreshingStores.current = null
+      }
       const rows: WeldRow[] = []
       const nodes: IRowNode<WeldRow>[] = []
       const routes: string[][] = []
@@ -245,6 +259,9 @@ export function useJournalServerGrid(options: {
           route: group.route, ordinal: group.ordinal, rowCount: group.childCount,
         })
       })
+      // Group cells compare their unchanged group key. Their totals/statuses
+      // still need a renderer refresh when the retained node receives new data.
+      if (refreshed) api.refreshCells({ rowNodes: nodes.filter(node => node.group), force: true })
       layouts.current = expanded
       loadedRoutes.current = routes
       localMembership.current = readJournalLocalSelection({ forEachNode: visit => nodes.forEach(visit) }, current.current.total)
@@ -300,6 +317,10 @@ export function useJournalServerGrid(options: {
       trimCache()
     })
   })
+  const storeRefreshed = useStableEventCallback((event: { route?: string[] }) => {
+    refreshingStores.current?.delete(journalRouteKey(event.route ?? []))
+    modelUpdated()
+  })
   useEffect(() => {
     if (!api || !source) return
     setSelecting(false)
@@ -312,6 +333,8 @@ export function useJournalServerGrid(options: {
     const preservePosition = installedApi.current === api && source.viewIdentity !== undefined && installedView.current === source.viewIdentity
     expandedOnRefresh.current = new Set()
     positionOnRefresh.current = null
+    let prepared: JournalGridResult | undefined
+    const preparedBlocks = new Map<string, JournalGridResult>()
     const datasource: IServerSideDatasource<WeldRow> = {
       getRows: params => {
         let settled = false
@@ -323,8 +346,13 @@ export function useJournalServerGrid(options: {
           route: params.request.groupKeys, start: params.request.startRow ?? 0, end: params.request.endRow ?? 100 }
         const groups = JSON.stringify(request.groupBy)
         if (groups !== JSON.stringify(api.getRowGroupColumns().map(column => column.getColId()))) { fail(); return }
+        if (groups !== JSON.stringify(groupBy)) { prepared = undefined; preparedBlocks.clear() }
         const controller = new AbortController(); requests.set(controller, groups)
-        void current.current.source!.load(request, controller.signal).then(result => {
+        const blockKey = journalBlockKey(request)
+        const cached = groups === JSON.stringify(groupBy) ? preparedBlocks.get(blockKey) ??
+          (prepared && !request.route.length && request.start === 0 && request.end === 100 ? prepared : undefined) : undefined
+        if (cached) { preparedBlocks.delete(blockKey); if (!request.route.length && request.start === 0) prepared = undefined }
+        void (cached ? Promise.resolve(cached) : current.current.source!.load(request, controller.signal)).then(result => {
           if (controller.signal.aborted || current.current.source?.identity !== identity || api.isDestroyed()) { fail(); return }
           if (JSON.stringify(request.groupBy) !== JSON.stringify(api.getRowGroupColumns().map(column => column.getColId()))) { fail(); return }
           revision.current = result.revision
@@ -343,21 +371,29 @@ export function useJournalServerGrid(options: {
           // The query source owns load errors and clears them on retry. Do not
           // also save them as persistent context-action messages in the page.
         })
-          .finally(() => requests.delete(controller))
+          .finally(() => { requests.delete(controller); modelUpdated() })
       },
       destroy: () => { requests.forEach((_groups, controller) => controller.abort()); requests.clear() },
     }
     let disposed = false
     const groupBy = api.getRowGroupColumns().map(column => column.getColId() as WeldFieldKey)
-    const install = (first?: JournalGridResult) => {
+    const install = (first?: JournalGridResult, snapshot?: { blocks: JournalRefreshBlock[]; results: JournalGridResult[] }) => {
       if (disposed || api.isDestroyed() || current.current.source?.identity !== identity) return
       cancelAnimationFrame(frame.current); frame.current = 0
       revision.current = first?.revision; revisionGroups.current = first ? JSON.stringify(groupBy) : null
       setGroupingReady(Boolean(first))
+      const stores = preservePosition && first ? api.getServerSideGroupLevelState() : []
+      const populated = new Set<string>()
+      if (stores.length) api.forEachNode(node => { if (node.data && !node.stub) populated.add(journalRouteKey(node.parent?.getRoute() ?? [])) })
+      // Empty/unloaded child caches and interrupted refreshes take the existing
+      // replacement path: their old extents cannot be declared current.
+      const smooth = preservePosition && Boolean(first) && !refreshingStores.current &&
+        stores.length > 0 && stores.every(store => populated.has(journalRouteKey(store.route)))
+      refreshingStores.current = null
       rootCount.current = first?.rowCount ?? 0; layouts.current.clear(); loadedRoutes.current = []
       localMembership.current.clear(); lastMembership.current = null
       cacheBudget.current.clear(); cachedCards.current = 0; clearTimeout(cacheTimer.current)
-      if (preservePosition) {
+      if (preservePosition && !smooth) {
         api.forEachNode(node => { if (node.group && node.expanded && node.id) expandedOnRefresh.current.add(node.id) })
         const cell = api.getFocusedCell(), node = cell ? api.getDisplayedRowAtIndex(cell.rowIndex) : undefined
         positionOnRefresh.current = { y: window.scrollY, row: cell?.rowIndex ?? api.getFirstDisplayedRowIndex(), id: node?.id, column: cell?.column.getColId() }
@@ -365,11 +401,38 @@ export function useJournalServerGrid(options: {
       api.clearCellSelection()
       const replace = () => {
         current.current.onReplace?.(preservePosition)
-        api.setGridOption('serverSideDatasource', datasource)
+        datasourceDelegate.current = datasource
+        if (smooth) {
+          prepared = first
+          const patch = snapshot && journalRefreshBlocksUnchanged(snapshot.blocks, collectJournalRefreshBlocks(api))
+            ? planJournalBlockRefresh(snapshot.blocks, snapshot.results) : undefined
+          refreshingStores.current = new Set()
+          if (patch) {
+            for (const block of snapshot!.blocks) cacheBudget.current.loaded(block.route, block.rowCount)
+            for (const plan of patch) {
+              if (!plan.refresh && plan.update.length) {
+                const result = api.applyServerSideTransaction({ route: plan.route, update: plan.update })
+                if (result?.status !== 'Applied') plan.refresh = true
+              }
+              if (plan.refresh) refreshingStores.current.add(journalRouteKey(plan.route))
+            }
+            // Changed membership/order uses AG's non-purging block replacement.
+            // Reuse the same server snapshot; unchanged stores need no reload.
+            snapshot!.blocks.forEach((block, i) => {
+              if (refreshingStores.current!.has(journalRouteKey(block.route))) preparedBlocks.set(journalBlockKey(block), snapshot!.results[i])
+            })
+          } else for (const store of stores) refreshingStores.current.add(journalRouteKey(store.route))
+          for (const store of stores) if (refreshingStores.current.has(journalRouteKey(store.route))) api.refreshServerSide({ route: store.route, purge: false })
+          if (!refreshingStores.current.has('[]')) prepared = undefined
+        } else {
+          api.setGridOption('serverSideDatasource', {
+            getRows: params => datasourceDelegate.current?.getRows(params),
+          } satisfies IServerSideDatasource<WeldRow>)
+        }
         installedApi.current = api
         installedIdentity.current = source.identity
         installedView.current = source.viewIdentity
-        if (first) api.applyServerSideRowData({ successParams: { rowData: first.rows, rowCount: first.rowCount }, startRow: 0 })
+        if (first && !smooth) api.applyServerSideRowData({ successParams: { rowData: first.rows, rowCount: first.rowCount }, startRow: 0 })
       }
       if (first) {
         // The async response is outside React's lifecycle. Commit both the row
@@ -377,18 +440,37 @@ export function useJournalServerGrid(options: {
         // query replacement flushes; ordinary scrolling keeps frame batching.
         flushSync(replace)
         flushSync(() => api.flushAllAnimationFrames())
-        current.current.onReplaced?.()
+        if (!smooth) current.current.onReplaced?.()
       } else replace()
       modelUpdated()
     }
     if (installedApi.current !== api) install()
     else {
       const controller = new AbortController(); requests.set(controller, JSON.stringify(groupBy))
-      void source.load({ groupBy, route: [], start: 0, end: 100 }, controller.signal).then(first => {
+      const blocks = preservePosition && !refreshingStores.current && source.loadBlocks ? collectJournalRefreshBlocks(api) : null
+      const prefetch = async () => {
+        if (!blocks || !source.loadBlocks) return { first: await source.load({ groupBy, route: [], start: 0, end: 100 }, controller.signal) }
+        const root = { route: [], start: 0, end: 100 }
+        const rootIndex = blocks.findIndex(block => journalBlockKey(block) === journalBlockKey(root))
+        const requests = rootIndex < 0 ? [root, ...blocks] : blocks
+        const results: JournalGridResult[] = []
+        for (let index = 0; index < requests.length; index += 32) {
+          results.push(...await source.loadBlocks(groupBy, requests.slice(index, index + 32), controller.signal))
+        }
+        return { first: results[rootIndex < 0 ? 0 : rootIndex], snapshot: { blocks, results: rootIndex < 0 ? results.slice(1) : results } }
+      }
+      void prefetch().then(({ first, snapshot }) => {
         if (controller.signal.aborted || disposed) return
         const sameGroups = JSON.stringify(groupBy) === JSON.stringify(api.getRowGroupColumns().map(column => column.getColId()))
-        install(sameGroups ? first : undefined)
-      }).catch(() => { /* Load failures are exposed by the query source. */ }).finally(() => requests.delete(controller))
+        install(sameGroups ? first : undefined, sameGroups ? snapshot : undefined)
+      }).catch(() => {
+        // Regrouping cancels the old prefetch. Install the current delegate so
+        // the replacement grouping can load; otherwise the retained datasource
+        // still belongs to the previous generation and rejects every request.
+        if (!disposed && !api.isDestroyed() && current.current.source?.identity === identity &&
+          JSON.stringify(groupBy) !== JSON.stringify(api.getRowGroupColumns().map(column => column.getColId()))) install()
+        // Ordinary load failures remain owned by the query source.
+      }).finally(() => { requests.delete(controller); modelUpdated() })
     }
     return () => {
       disposed = true; datasource.destroy?.(); selectionRequest.current?.abort(); selectionRequest.current = null
@@ -560,13 +642,13 @@ export function useJournalServerGrid(options: {
       // Background counters must not swallow the next key or checkbox click.
       pending: selecting || !options.ready || !groupingReady, toggle }
   }, [source?.identity, api, options.selected, selection, selecting, options.total, options.ready, groupingReady, toggle])
-  return { summary, summaryRange, rangeState: copying ? 'Копируем…' : rangeState, updateRange, modelUpdated, groupOpened, copy, selectRange, selectionContext, trimCache, isRestoring,
+  return { summary, summaryRange, rangeState: copying ? 'Копируем…' : rangeState, updateRange, modelUpdated, storeRefreshed, groupOpened, copy, selectRange, selectionContext, trimCache, isRestoring,
     resetLayout: () => {
       const groups = JSON.stringify(api?.getRowGroupColumns().map(column => column.getColId()) ?? [])
       for (const [controller, requestedGroups] of activeLoads.current) if (requestedGroups !== groups) controller.abort()
       // AG can repeat this event after installing the same grouping's rows.
       // Keep that committed revision; only a genuinely different layout expires it.
-      if (revisionGroups.current !== groups) { revision.current = undefined; setGroupingReady(false) }
+      if (revisionGroups.current !== groups) { refreshingStores.current = null; revision.current = undefined; setGroupingReady(false) }
       copyRequest.current?.abort(); copyRequest.current = null; setCopying(false)
       selectionRequest.current?.abort(); selectionRequest.current = null; setSelecting(false)
       lastMembership.current = null; localMembership.current.clear(); api?.clearCellSelection()

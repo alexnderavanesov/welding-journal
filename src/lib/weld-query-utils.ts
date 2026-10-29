@@ -69,7 +69,9 @@ export function scheduleWeldDataRefresh(
   void queryClient.invalidateQueries({ queryKey: WELD_ROWS_BY_IDS_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: WELD_DATA_USAGE_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: WELD_FINAL_STATUS_CONTEXT_QUERY_KEY })
-  void queryClient.invalidateQueries({ queryKey: WELD_FORM_SUGGESTIONS_QUERY_KEY })
+  // Saving closes the editor. Mark its choices stale for the next opening or
+  // field change without starting another full suggestions scan while it closes.
+  void queryClient.invalidateQueries({ queryKey: WELD_FORM_SUGGESTIONS_QUERY_KEY, refetchType: 'none' })
   void queryClient.invalidateQueries({ queryKey: ['line-program'], ...(options.lineProgramListsHandled ? {
     // Even a no-refetch invalidation can enable an early-page query. Leave
     // these snapshots to the workspace's cancel/patch helper atomically.

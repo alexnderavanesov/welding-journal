@@ -36,7 +36,7 @@ export function rpcName(url: string): string {
     return JSON.parse(Buffer.from(decoded, 'base64url').toString()).export as string
   }
   if (!productionNames) {
-    const directory = resolve('.output/server')
+    const directory = resolve(process.env.E2E_AUDIT_OUTPUT_DIR ?? '.output', 'server')
     const resolvers = readdirSync(directory).filter(name => name.includes('tanstack-start-server-fn-resolver') && name.endsWith('.mjs'))
     if (resolvers.length !== 1) throw new Error('Expected one production server-function manifest')
     const source = readFileSync(resolve(directory, resolvers[0]), 'utf8')

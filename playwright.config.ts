@@ -10,6 +10,9 @@ process.env.WELDING_ENV_LOADED = '1'
 const E2E_PORT = Number(process.env.E2E_PORT || 3100)
 const E2E_BASE_URL = `http://127.0.0.1:${E2E_PORT}`
 const useProductionBuild = process.env.E2E_USE_PRODUCTION_BUILD === '1'
+if (process.env.E2E_AUDIT_OUTPUT_DIR && (!useProductionBuild || process.env.AUDIT_SQL_COUNTS !== '1')) {
+  throw new Error('A saved comparison bundle requires the production audit runner.')
+}
 const browser = process.env.E2E_BROWSER === 'webkit' ? 'webkit' : 'chromium'
 
 export default defineConfig({

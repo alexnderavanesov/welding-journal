@@ -12,3 +12,13 @@ export async function auditSqlCount() {
   if (!Number.isSafeInteger(result.statements) || result.statements <= 0) throw new Error('SQL audit did not observe the server database connection')
   return result.statements
 }
+
+/** Optional diagnostics for bounded local measurements, never application data. */
+export async function auditSqlDetails() {
+  const file = process.env.AUDIT_SQL_COUNTS_FILE
+  if (!file) return undefined
+  return JSON.parse(await readFile(file, 'utf8')) as {
+    dispatcherCalculations: unknown[]
+    resources?: { reads: Record<string, { calls: number; rows: number; totalMilliseconds: number }> }
+  }
+}

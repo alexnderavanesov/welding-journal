@@ -12,6 +12,38 @@ vi.mock('@/server/journal-grid-api', () => ({
   countJournalGridSelection: vi.fn(), copyJournalGridRange: vi.fn(),
   selectJournalGridRange: vi.fn(), selectJournalGridRows: vi.fn(), summarizeJournalGridRange: vi.fn(),
 }))
+it('applies only changed records after a coherent batch and retains unchanged row objects', async () => {
+  vi.useFakeTimers()
+  const before = [{ id: 1, isometry: 'A' }, { id: 2, isometry: 'B' }]
+  const nodes = before.map((data, rowIndex) => ({ data, rowIndex }))
+  const set = vi.fn(), refresh = vi.fn(), rowsChanged = vi.fn()
+  const apply = vi.fn(({ update }: { update: WeldRow[] }) => {
+    for (const row of update) nodes.find(node => node.data.id === row.id)!.data = row as typeof before[number]
+    return { status: 'Applied' }
+  })
+  const api = { isDestroyed: () => false, setGridOption: set, refreshServerSide: refresh, applyServerSideTransaction: apply,
+    refreshCells: vi.fn(), clearCellSelection: vi.fn(), flushAllAnimationFrames: vi.fn(), getCellRanges: () => [], getRowGroupColumns: () => [],
+    getServerSideGroupLevelState: () => [{ route: [], rowCount: 2, lastRowIndexKnown: true }],
+    forEachNode: (visit: (node: unknown) => void) => nodes.forEach(visit),
+  } as unknown as GridApi<WeldRow>
+  const load = vi.fn(), changed = { ...before[0], isometry: 'saved' }
+  const loadBlocks = vi.fn().mockResolvedValue([{ rows: [changed, { ...before[1] }], rowCount: 2, revision: 2 }])
+  const view = renderHook(({ identity }) => useJournalServerGrid({ api,
+    source: { identity, viewIdentity: 'same', columnFilters: {}, sort: null, load, loadBlocks, rowsChanged },
+    selected: new Set(), anchor: 'line', ready: false,
+  }), { initialProps: { identity: 'before' } })
+  try {
+    await act(async () => view.rerender({ identity: 'after' }))
+    await act(async () => vi.advanceTimersByTimeAsync(50))
+    expect(loadBlocks).toHaveBeenCalledOnce()
+    expect(load).not.toHaveBeenCalled()
+    expect(apply).toHaveBeenCalledExactlyOnceWith({ route: [], update: [changed] })
+    expect(refresh).not.toHaveBeenCalled()
+    expect(set).toHaveBeenCalledOnce()
+    expect(nodes[1].data).toBe(before[1])
+    expect(rowsChanged).toHaveBeenLastCalledWith([changed, before[1]])
+  } finally { view.unmount(); vi.useRealTimers() }
+})
 it('disables selection until a changed grouping has committed its first block', async () => {
   let datasource!: IServerSideDatasource<WeldRow>, fields: string[] = []
   const api = { isDestroyed: () => false, setGridOption: (_key: string, value: IServerSideDatasource<WeldRow>) => { datasource = value },
@@ -397,5 +429,53 @@ it('does not publish an old count while a replacement selection waits for its de
     await act(async () => vi.advanceTimersByTimeAsync(200))
     expect(count.mock.calls[0][0].signal?.aborted).toBe(true)
     expect(view.result.current.selectionContext!.selectedTotal).toBe(2)
+  } finally { view.unmount(); vi.useRealTimers() }
+})
+
+it.each([false, true])('keeps one datasource and waits for every surviving refreshed store; child removed: %s', async removed => {
+  vi.useFakeTimers()
+  let datasource!: IServerSideDatasource<WeldRow>
+  let routes = [[], ['L']]
+  const rowsChanged = vi.fn()
+  const set = vi.fn((_key: string, value: IServerSideDatasource<WeldRow>) => { datasource = value })
+  const refresh = vi.fn()
+  const refreshCells = vi.fn()
+  const api = { isDestroyed: () => false, setGridOption: set, refreshServerSide: refresh,
+    refreshCells, clearCellSelection: vi.fn(), flushAllAnimationFrames: vi.fn(), getCellRanges: () => [],
+    getRowGroupColumns: () => [{ getColId: () => 'line' }],
+    getServerSideGroupLevelState: () => routes.map(route => ({ route, rowCount: 1, lastRowIndexKnown: true })),
+    forEachNode: (visit: (node: unknown) => void) => {
+      visit({ group: true, data: { journalGroup: { route: ['L'], childCount: 1 } }, parent: { getRoute: () => [] } })
+      if (routes.length > 1) visit({ data: { id: 1 }, parent: { getRoute: () => ['L'] } })
+    },
+  } as unknown as GridApi<WeldRow>
+  const load = vi.fn().mockResolvedValue({ rows: [], rowCount: 1, revision: 2 })
+  const view = renderHook(({ identity }) => useJournalServerGrid({ api,
+    source: { identity, viewIdentity: 'same-query', columnFilters: {}, sort: null, load, rowsChanged },
+    selected: new Set(), anchor: 'line', ready: false,
+  }), { initialProps: { identity: 'before' } })
+  try {
+    await act(async () => view.rerender({ identity: 'after' }))
+    await act(async () => vi.advanceTimersByTimeAsync(50))
+    expect(set).toHaveBeenCalledTimes(1)
+    expect(refresh.mock.calls).toEqual([[{ route: [], purge: false }], [{ route: ['L'], purge: false }]])
+    expect(rowsChanged).not.toHaveBeenCalled()
+    expect(refreshCells).not.toHaveBeenCalled()
+    const success = vi.fn(), fail = vi.fn()
+    await act(async () => datasource.getRows({ request: { rowGroupCols: [{ id: 'line' }], groupKeys: [], startRow: 0, endRow: 100 },
+      success, fail } as unknown as IServerSideGetRowsParams<WeldRow>))
+    expect(load).toHaveBeenCalledTimes(1) // first refreshed block reuses the pinned prefetch
+    expect(success).toHaveBeenCalledOnce()
+    expect(fail).not.toHaveBeenCalled()
+    if (removed) routes = [[]]
+    act(() => view.result.current.storeRefreshed({ route: [] }))
+    await act(async () => vi.advanceTimersByTimeAsync(50))
+    if (!removed) {
+      expect(rowsChanged).not.toHaveBeenCalled()
+      act(() => view.result.current.storeRefreshed({ route: ['L'] }))
+      await act(async () => vi.advanceTimersByTimeAsync(50))
+    }
+    expect(rowsChanged).toHaveBeenCalledOnce()
+    expect(refreshCells).toHaveBeenCalledExactlyOnceWith({ rowNodes: [expect.objectContaining({ group: true })], force: true })
   } finally { view.unmount(); vi.useRealTimers() }
 })

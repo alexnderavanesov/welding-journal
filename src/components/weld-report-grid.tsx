@@ -564,6 +564,7 @@ function ReportGrid(props: WeldReportGridProps) {
           cellSelection={CELL_SELECTION}
           onCellSelectionChanged={updateRangeSummary}
           onModelUpdated={serverGrid.modelUpdated}
+          onStoreRefreshed={serverGrid.storeRefreshed}
           onCellFocused={focus.remember}
           tabToNextCell={({ backwards, previousCellPosition }) => findTabCell(previousCellPosition, backwards)}
           tabToNextHeader={({ backwards }) => { const next = findTabCell(null, backwards); if (!next) return false; api?.setFocusedCell(next.rowIndex, next.column); return true }}

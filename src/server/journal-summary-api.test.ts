@@ -6,7 +6,7 @@ vi.mock('@tanstack/react-start', () => ({ createServerFn: () => {
   return builder
 } }))
 vi.mock('./security-functions', () => ({ assertSecurityScope: mock.access }))
-vi.mock('./journal-grid', () => ({ assertJournalRevision: mock.revision }))
+vi.mock('./journal-grid', () => ({ assertJournalRevision: mock.revision, peekJournalReportCount: vi.fn() }))
 vi.mock('./weld-read', () => ({ getWeldReportSummary: mock.summary }))
 import { getJournalReportSummary } from './journal-grid-api'
 

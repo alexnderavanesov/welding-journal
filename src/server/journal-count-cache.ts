@@ -1,7 +1,7 @@
 /** Small, revision-scoped counts only. Never retain joint cards or selections. */
 export function createJournalCountCache(limit = 64) {
   const entries = new Map<string, Promise<number>>()
-  return (key: string, compute: () => Promise<number>) => {
+  const read = (key: string, compute: () => Promise<number>) => {
     const cached = entries.get(key)
     if (cached) return cached
     const pending = compute()
@@ -10,4 +10,5 @@ export function createJournalCountCache(limit = 64) {
     void pending.catch(() => { if (entries.get(key) === pending) entries.delete(key) })
     return pending
   }
+  return Object.assign(read, { peek: (key: string) => entries.get(key) })
 }

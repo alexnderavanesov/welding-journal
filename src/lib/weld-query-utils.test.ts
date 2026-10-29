@@ -1,4 +1,4 @@
-import { QueryClient } from '@tanstack/react-query'
+import { QueryClient, QueryObserver } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 import { subscribeWeldPageRefresh } from './weld-page-refresh'
 import { DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY } from '@/lib/dispatcher-accepted-warning-query'
@@ -23,6 +23,21 @@ import {
 } from '@/lib/weld-query-utils'
 
 describe('weld query cache updates', () => {
+  it('defers stale editor suggestions until the next opening, without refetching the closing editor', async () => {
+    const queryClient = createQueryClient()
+    const queryKey = [...WELD_FORM_SUGGESTIONS_QUERY_KEY, 'line']
+    const queryFn = vi.fn(async () => ['L1'])
+    await queryClient.fetchQuery({ queryKey, queryFn, staleTime: 60_000 })
+    const observer = new QueryObserver(queryClient, { queryKey, queryFn, staleTime: 60_000 })
+    const close = observer.subscribe(() => {})
+    scheduleWeldDataRefresh(queryClient, { upsertRows: [{ id: 1, line: 'L2' }] })
+    expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(true)
+    expect(queryFn).toHaveBeenCalledTimes(1)
+    close()
+    const reopen = observer.subscribe(() => {})
+    await vi.waitFor(() => expect(queryFn).toHaveBeenCalledTimes(2))
+    reopen(); queryClient.clear()
+  })
   it('patches saved data immediately without waiting for background requests', () => {
     const queryClient = createQueryClient()
     queryClient.setQueryData(WELD_COMPLETE_SNAPSHOT_QUERY_KEY, [{ id: 1, joint: 'F1' }] as WeldRow[])
@@ -99,7 +114,7 @@ describe('weld query cache updates', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_ROWS_BY_IDS_QUERY_KEY })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_DATA_USAGE_QUERY_KEY })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_FINAL_STATUS_CONTEXT_QUERY_KEY })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_FORM_SUGGESTIONS_QUERY_KEY })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: WELD_FORM_SUGGESTIONS_QUERY_KEY, refetchType: 'none' })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['line-program'], refetchType: 'active' })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: DUPLICATE_CONTROL_CANDIDATES_QUERY_KEY })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: DUPLICATE_CONTROL_REGISTRY_QUERY_KEY })

@@ -65,7 +65,12 @@ for (const stage of ['beforeHeatTreatment', 'psto'] as const) test(`new ${stage}
   const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: isPre ? 'Внесение результатов ЛНК до ТО' : 'Внесение результатов ПСТО', exact: true }) })
   const checkboxes = dialog.getByRole('checkbox', { name: /^Выбрать стык SPEC-L/ })
   await expect(checkboxes).toHaveCount(2)
-  for (const checkbox of await checkboxes.all()) await checkbox.check()
+  for (const checkbox of await checkboxes.all()) {
+    // Opening from a joint applies its initial selection before enabling the
+    // checkbox. Let that finish before check() reads the initial checked state.
+    await expect(checkbox).toBeEnabled()
+    await checkbox.check()
+  }
   await dialog.getByLabel(isPre ? 'Дата контроля' : 'Дата ПСТО', { exact: true }).fill('2026-09-06')
   if (isPre) {
     const rule = dialog.getByRole('link', { name: 'Правило СП-07', exact: true })

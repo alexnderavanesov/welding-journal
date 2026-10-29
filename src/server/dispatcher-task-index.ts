@@ -761,7 +761,7 @@ async function rebuildScopedDispatcherTaskIndex(
         totalPageCount: repeatedJointTaskPageCount,
         taskFilterOptions: await listActiveDispatcherTaskFilterOptions(tx),
       }),
-      duplicateKeys: JSON.stringify(await listDuplicateWeldKeys(tx)),
+      duplicateKeys: JSON.stringify(await listScopedDuplicateWeldKeys(tx, lockedState.duplicateKeys, dirtyScopes)),
       dirtyScopes: '[]',
       fullRebuild: false,
       computedAt: calculationStartedAt,
@@ -989,7 +989,52 @@ function normalizeScopeText(value: unknown) {
   return String(value ?? '').trim().toLocaleLowerCase('ru-RU')
 }
 
-async function listDuplicateWeldKeys(tx: DispatcherIndexTransaction) {
+async function listScopedDuplicateWeldKeys(tx: DispatcherIndexTransaction, previous: string, dirtyScopes: DispatcherDirtyScope[]) {
+  // Duplicate identity removes internal whitespace as well as case. Dispatcher
+  // line scopes only trim, so include every spelling of the affected duplicate
+  // identity, including old/new lines after a move and an emptied deleted line.
+  // Use PostgreSQL normalization on both sides (its whitespace class differs
+  // from JavaScript for some legacy Unicode characters).
+  const keys = parseDuplicateKeys(previous)
+  if (!keys || dirtyScopes.length > 32) return listDuplicateWeldKeys(tx)
+  // Dirty scopes have already lost JS-trimmable edges. PostgreSQL can retain
+  // them (e.g. NBSP), and a completely deleted legacy line has no surviving
+  // row from which to recover its spelling. Recompute rather than retain a
+  // duplicate key that can no longer be matched to its dirty scope.
+  if (keys.some(key => (JSON.parse(key) as string[]).slice(0, 3).some(part => part.trim() !== part))) {
+    return listDuplicateWeldKeys(tx)
+  }
+  const scopes = await tx.execute<{ project: string; subtitle: string; line: string }>(sql`
+    select distinct
+      ${normalizedDuplicatePart(sql`scope."projectTitle"`)} as project,
+      ${normalizedDuplicatePart(sql`scope."subtitleCode"`)} as subtitle,
+      ${normalizedDuplicatePart(sql`scope.line`)} as line
+    from jsonb_to_recordset(${JSON.stringify(dirtyScopes)}::jsonb)
+      as scope("projectTitle" text, "subtitleCode" text, line text)
+  `)
+  const affected = new Set(scopes.rows.map(row => encodeIdentityKey([row.project, row.subtitle, row.line])))
+  const retained = keys.filter(key => !affected.has(encodeIdentityKey(JSON.parse(key).slice(0, 3))))
+  const where = or(...scopes.rows.map(scope => and(
+    eq(normalizedDuplicatePart(weldJoints.line), scope.line),
+    eq(normalizedDuplicatePart(weldJoints.projectTitle), scope.project),
+    eq(normalizedDuplicatePart(weldJoints.subtitleCode), scope.subtitle),
+  ))) ?? sql`false`
+  return [...retained, ...await listDuplicateWeldKeys(tx, where)].sort()
+}
+
+function parseDuplicateKeys(value: string): string[] | null {
+  try {
+    const keys = JSON.parse(value)
+    if (!Array.isArray(keys) || !keys.every(key => {
+      if (typeof key !== 'string') return false
+      const parts = JSON.parse(key)
+      return Array.isArray(parts) && parts.length === 4 && parts.every(part => typeof part === 'string')
+    })) return null
+    return keys
+  } catch { return null }
+}
+
+async function listDuplicateWeldKeys(tx: DispatcherIndexTransaction, scopeWhere?: import('drizzle-orm').SQL) {
   const project = normalizedDuplicatePart(weldJoints.projectTitle)
   const subtitle = normalizedDuplicatePart(weldJoints.subtitleCode)
   const line = normalizedDuplicatePart(weldJoints.line)
@@ -997,7 +1042,7 @@ async function listDuplicateWeldKeys(tx: DispatcherIndexTransaction) {
   const rows = await tx
     .select({ project, subtitle, line, joint })
     .from(weldJoints)
-    .where(sql`lower(btrim(coalesce(${WELD_EFFECTIVE_OFFICIALITY}, ''))) <> 'неофициальный'`)
+    .where(and(scopeWhere, sql`lower(btrim(coalesce(${WELD_EFFECTIVE_OFFICIALITY}, ''))) <> 'неофициальный'`))
     .groupBy(project, subtitle, line, joint)
     .having(sql`count(*) > 1 and not (${project} = '' and ${subtitle} = '' and ${line} = '' and ${joint} = '')`)
   return rows

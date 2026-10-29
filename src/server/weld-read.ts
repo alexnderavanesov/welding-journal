@@ -5,6 +5,7 @@ import type { TabularReportData } from '@/lib/tabular-report'
 import type { PrintableReport } from '@/lib/printable-report'
 import { prepareJournalPageRows } from '@/lib/use-report-rows'
 import { splitReportQuickSearch } from '@/lib/report-quick-search'
+import { naturalJointOrder } from '@/db/journal-order'
 import type { ReportOutputRequest, ReportOutputSnapshot } from './weld-contracts'
 import { buildCalculatedReportValueSql } from './report-calculated-values-sql'
 import { buildCalculatedFilterWhere, reportTextSql } from './report-filter-text-sql'
@@ -694,7 +695,9 @@ async function getReportReadContext(
   return { dispatcherState, otherSettings }
 }
 
-export async function getWeldReportSummary({ data: input }: { data: WeldReportSummaryRequest }): Promise<WeldReportSummaryResult> {
+export async function getWeldReportSummary({ data: input }: { data: WeldReportSummaryRequest },
+  cachedCount?: (data: ReturnType<typeof normalizeWeldPageRequest>) => Promise<number | undefined>,
+): Promise<WeldReportSummaryResult> {
   await assertSecurityScope('entry')
   const report = input?.report
   if (report !== 'weldingJournal' && report !== 'lnk' && report !== 'heatTreatment') {
@@ -717,11 +720,12 @@ export async function getWeldReportSummary({ data: input }: { data: WeldReportSu
     async () => {
       // Read settings only after the cache captures its source revision. A
       // concurrent setting change then prevents publishing this cached result.
+      const knownCount = await cachedCount?.(data)
       const { dispatcherState, otherSettings } = await getReportReadContext(data)
       assertCurrent(dispatcherState)
       const where = buildReportQueryWhere(report, data, otherSettings)
       const [[row], availableRequestCount, acceptedWdiTotal] = await Promise.all([
-        requireDb().select({ total: count() }).from(weldJoints).where(where),
+        knownCount === undefined ? requireDb().select({ total: count() }).from(weldJoints).where(where) : Promise.resolve([{ total: knownCount }]),
         report === 'lnk' ? countAvailableLnkRequestRows(where) : Promise.resolve(undefined),
         report === 'weldingJournal' ? computeAcceptedWdiTotal(where, otherSettings) : Promise.resolve(undefined),
       ])
@@ -1898,7 +1902,7 @@ export function getReportOrderBy(report: WeldReportKind, sort?: WeldSort, settin
   const sortColumn = currentWdi ?? (currentValue ? sql`nullif(${currentValue}, '')` : sort ? getWeldColumn(sort.fieldKey) : undefined)
   const requestedOrder = sort && sortColumn
     ? sort.fieldKey === 'joint'
-      ? getNaturalJointOrderBy(sortColumn, sort.direction)
+      ? naturalJointOrder(sortColumn, sort.direction)
       : [sort.direction === 'desc' ? sql`${sortColumn} desc nulls last` : sql`${sortColumn} asc nulls last`]
     : []
   if (report === 'weldingJournal') {
@@ -1921,29 +1925,5 @@ export function getReportOrderBy(report: WeldReportKind, sort?: WeldSort, settin
     asc(weldJoints.id),
   ]
 }
-
-function getNaturalJointOrderBy(column: SQLWrapper, direction: WeldSort['direction']): SQL[] {
-  const value = sql<string>`coalesce(${column}::text, '')`
-  const prefix = sql<string>`lower(substring(${value} from '^[^0-9]*'))`
-  const firstNumber = sql<number>`(substring(${value} from '[0-9]+'))::numeric`
-  const tail = sql<string>`regexp_replace(${value}, '^[^0-9]*[0-9]+', '')`
-  const tailPrefix = sql<string>`lower(substring(${tail} from '^[^0-9]*'))`
-  const secondNumber = sql<number>`(substring(${tail} from '[0-9]+'))::numeric`
-  const ordered = (expression: SQL, nullsFirst = false) => direction === 'desc'
-    ? sql`${expression} desc nulls last`
-    : nullsFirst
-      ? sql`${expression} asc nulls first`
-      : sql`${expression} asc nulls last`
-
-  return [
-    sql`case when ${column} is null or btrim(${column}::text) = '' then 1 else 0 end asc`,
-    ordered(prefix),
-    ordered(firstNumber, true),
-    ordered(tailPrefix),
-    ordered(secondNumber, true),
-    ordered(sql`lower(${value})`),
-  ]
-}
-
 
 export * from '@/server/weld-contracts'

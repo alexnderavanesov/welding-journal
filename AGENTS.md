@@ -5,6 +5,13 @@
 - User clarification (2026-10-19): conserving tokens takes priority over finishing sooner. Work without sub-agents by default. If delegation would materially improve the result's quality, explain the concrete benefit and obtain the user's confirmation before starting an agent. Use agents to accelerate work only when the user explicitly requests that tradeoff. Earlier general permission to use agents does not override this rule.
 - Audit priority exception (user clarification, 2026-10-27): for pre-commit checks and especially systemic audits, correctness, depth and completeness take priority over token/resource cost and speed. Do not narrow the agreed coverage or stop early to conserve resources. The user selects the model and reasoning effort; flag a concrete reason to increase effort if one arises. This exception does not itself authorize sub-agents or change the production boundary.
 
+## Better Auth documentation and skills
+
+- User instruction (2026-10-29): use the official Better Auth documentation MCP and official `better-auth/skills` when planning and implementing authentication. Setup and the agreed scope are recorded in `docs/authentication-and-access-plan-2026-10-29.md`.
+- Documentation entry point: `https://better-auth.com/llms.txt`; MCP: `https://mcp.better-auth.com/mcp` (local Codex server name `better-auth`). Resolve the actual installed library version from the lockfile, use the matching documentation index, and preserve the versioned paths returned by search. Before the dependency is installed, latest documentation is provisional, not a selected package version. If MCP is unavailable in the current session, fetch the official Markdown pages and report the limitation instead of claiming MCP was used.
+- Official setup references: `https://better-auth.com/docs/ai-resources/skills.md` and `https://better-auth.com/docs/ai-resources/mcp.md`. Relevant installed skills are `better-auth-best-practices`, `create-auth`, `email-and-password-best-practices`, and `better-auth-security-best-practices`. The installed organization and two-factor skills do not authorize adding those features.
+- Apply skills within the latest user decisions and this repository's rules. Do not repeat questions already answered in the authentication plan or follow generic migration examples using `drizzle-kit push`/direct production migration. Keep `src/db/schema.ts` and the prescribed generated-migration workflow. Installing the tools does not authorize application implementation, database changes, commit, push or deployment.
+
 ## Git commits
 
 - Never create a commit unless the user explicitly asks for one. Leave changes uncommitted for the user to review and commit.

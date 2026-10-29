@@ -6,11 +6,10 @@ import type { DispatcherDirtyScope } from './dispatcher-task-index-dirty'
 import { getDispatcherScopeKey } from './dispatcher-weld-rows'
 import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
 import { FULL_REBUILD_GENERATION_KIND } from './dispatcher-refresh-catchup'
+import { DISPATCHER_SCOPE_WHITESPACE as WHITESPACE } from '@/lib/dispatcher-scope-normalization'
 
 export const MAX_SCOPED_REBUILD_SCOPES = 500
 export const MAX_SCOPED_REBUILD_ROWS = 5_000
-// Exactly the ECMAScript whitespace set used by trim()/normalizeJointChainPart.
-const WHITESPACE = '\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'
 const SCOPE_FIELDS = ['projectTitle', 'subtitleCode', 'line'] as const
 
 /** Shared by conservative dependency selection and bounded qualification profiles.

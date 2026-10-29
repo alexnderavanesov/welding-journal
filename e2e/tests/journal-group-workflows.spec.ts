@@ -298,5 +298,18 @@ test('сохранение поля группировки и фильтра: с
   await editor.getByRole('button', { name: 'Стык', exact: true }).first().click()
   await expect(editor.getByRole('textbox', { name: 'Изометрия', exact: true })).toHaveValue('GROUP-B')
   expect(await withE2eDatabase(async db => (await db.query('select isometry from weld_joints where id=$1', [edited.id])).rows[0].isometry)).toBe('GROUP-B')
+  await editor.getByRole('button', { name: 'Отмена', exact: true }).click()
+  // Moving the last child removes its open store. The refresh must complete
+  // without waiting for an event from that destroyed store or keeping its total.
+  if (await groupA.getAttribute('aria-expanded') === 'false') await groupA.locator('.ag-group-contracted').click()
+  await editJournalJoint(page, remaining.id)
+  await editor.getByRole('button', { name: 'Стык', exact: true }).first().click()
+  await editor.getByRole('textbox', { name: 'Изометрия', exact: true }).fill('GROUP-B')
+  await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(editor).toBeHidden()
+  await expect(page.locator('[data-welding-journal-grid] .journal-grid-frame')).toHaveAttribute('aria-busy', 'false')
+  await expect(groupA).toHaveCount(0)
+  await expect(groupB.locator('[data-group-summary="joint"]')).toHaveText('3')
+  await expect(journalRow(page, remaining.id)).toBeVisible()
   expect(errors).toEqual([])
 })

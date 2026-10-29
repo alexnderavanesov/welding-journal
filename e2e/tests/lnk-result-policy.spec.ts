@@ -339,9 +339,9 @@ test('a result-registry click after saving waits for the refreshed availability 
   const summaryGate = new Promise<void>(resolve => { releaseSummary = resolve })
   await page.route('**/_serverFn/**', async route => {
     const name = rpcName(route.request().url())
-    if (!name.startsWith('readJournalGrid_') && !name.startsWith('getLnkWorkflowSummary_')) return route.continue()
+    if (!/^readJournalGrid(?:Blocks)?_/.test(name) && !name.startsWith('getLnkWorkflowSummary_')) return route.continue()
     const response = await route.fetch()
-    await (name.startsWith('readJournalGrid_') ? rowsGate : summaryGate)
+    await (/^readJournalGrid(?:Blocks)?_/.test(name) ? rowsGate : summaryGate)
     await route.fulfill({ response })
   })
   try {

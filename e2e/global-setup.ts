@@ -24,6 +24,17 @@ export default async function globalSetup() {
   })
   if (preparation.status !== 0) throw new Error(`E2E release preparation failed:\n${preparation.stdout}\n${preparation.stderr}`)
 
+  // Explicit comparison with a saved bundle after an index-only migration.
+  // Only this runner's newly created disposable DB can receive the old marker.
+  if (process.env.E2E_BASELINE_SCHEMA_TIME) await withE2eDatabase(async client => {
+    const time = Number(process.env.E2E_BASELINE_SCHEMA_TIME)
+    if (!Number.isSafeInteger(time) || time <= 0) throw new Error('Invalid baseline schema time')
+    const applied = await client.query('select 1 from drizzle.__drizzle_migrations where created_at=$1', [time])
+    if (applied.rowCount !== 1) throw new Error('Baseline migration must already be applied')
+    await client.query("update app_settings set value=$1 where key='maintenance:release:line-program:v1'",
+      [JSON.stringify({ status: 'complete', schemaTime: time })])
+  })
+
   await withE2eDatabase(async (client) => {
     await client.query(`
       insert into weld_joints (

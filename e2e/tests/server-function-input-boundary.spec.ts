@@ -1,11 +1,12 @@
 import { expect, test } from '@playwright/test'
-import { rpcName, serializeRpcPayload } from '../rpc'
+import { rpcName, serializeRpcPayload, siblingRpcUrl } from '../rpc'
 
 test('RPC rejects injected response state in an invalid read request, including document-style Accept', async ({ page }) => {
   // Exercise both summary and row POST boundaries used by the reports.
-  for (const [path, name, error] of [
+  for (const [path, name, error, target] of [
     ['/lnk', 'getJournalReportSummary_', 'Неизвестный вид отчета.'],
     ['/journal', 'readJournalGrid_', 'Некорректная выборка сварочного журнала.'],
+    ['/journal', 'readJournalGrid_', 'Некорректный набор блоков журнала.', 'readJournalGridBlocks_createServerFn_handler'],
   ]) {
     const pending = page.waitForRequest(request => rpcName(request.url()).startsWith(name))
     await page.goto(path)
@@ -24,7 +25,7 @@ test('RPC rejects injected response state in an invalid read request, including 
       { accept: 'text/html' },
       { accept: 'application/json', 'x-tsr-serverFn': 'true' },
     ] as Record<string, string>[]) {
-      const url = new URL(request.url())
+      const url = new URL(target ? siblingRpcUrl(request.url(), target) : request.url())
       if (request.method() === 'GET') url.searchParams.set('payload', payload)
       const response = await page.request.fetch(url.href, {
         method: request.method(),

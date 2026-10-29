@@ -2,19 +2,31 @@ import { expect, test, type Page } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { editJournalJoint } from '../journal-grid'
-import { rpcName } from '../rpc'
+import { deserializeRpcPayload, rpcName } from '../rpc'
 import { WELD_FIELDS } from '../../src/lib/weld-fields'
 import { prepareSafariMeasurementWindow } from '../safari-foreground'
+import { auditSqlCount, auditSqlDetails } from '../audit-sql'
+import { measureJournalSaveInSafari } from '../journal-save-safari'
+import { withE2eDatabase } from '../database'
 
 const project = 'E2E stable journal'
+const jointCount = process.env.SMOOTH_JOINT_COUNT === '200000' ? 200_000 : 9000
 const baseline = process.env.JOURNAL_UPDATE_BASELINE === '1'
+if (jointCount === 200_000) test.setTimeout(180_000)
 const editor = (page: Page) => page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
 const frame = (page: Page) => page.locator('[data-welding-journal-grid] .journal-grid-frame')
 test.beforeAll(async () => {
   await withLineProgramFixture(async db => {
+    // Reproduce the pre-change database when comparing the saved stage-1
+    // bundle. This fixture helper is restricted to the disposable E2E DB.
+    if (process.env.JOURNAL_REFRESH_BEFORE_INDEX === '1') await db.query('drop index if exists weld_joints_compact_line_identity_idx')
+    if (process.env.JOURNAL_QUERY_BEFORE_INDEX === '1') await db.query('drop index if exists weld_joints_natural_joint_asc_idx, weld_joints_natural_joint_desc_idx')
     await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,connection_type,officiality,isometry)
-      select $1,'STABLE','STABLE-'||lpad(((n-1)/300+1)::text,2,'0'),'F98'||lpad(n::text,5,'0'),'СШ','действующий','BEFORE'
-      from generate_series(1,9000) n`, [project])
+      select $1,'STABLE','STABLE-'||lpad(((n-1)/300+1)::text,greatest(2,length(((n-1)/300+1)::text)),'0'),'F98'||lpad(n::text,greatest(5,length(n::text)),'0'),'СШ','действующий','BEFORE'
+      from generate_series(1,$2::int) n`, [project, jointCount])
+    // A fresh 200k load otherwise races PostgreSQL's automatic statistics
+    // refresh, producing incomparable plans between before/after repetitions.
+    await db.query('analyze weld_joints')
   })
 })
 
@@ -59,6 +71,12 @@ test('a failed lazy editor does not reload the page; manual recovery reopens the
   expect(navigations).toBe(1)
 })
 test.afterAll(() => cleanupLineProgramProjects([project]))
+
+test('installed Safari measured own save retains rows, groups and position', async ({}, info) => {
+  test.skip(process.env.JOURNAL_SAVE_SAFARI !== '1', 'Requires the foreground local SafariDriver window')
+  test.setTimeout(300_000)
+  await writeFile(info.outputPath('safari-save.json'), JSON.stringify(await measureJournalSaveInSafari(project, jointCount, info.outputPath('safari-diagnostic.json')), null, 2))
+})
 
 test('a lost save response never replays a committed mutation and leaves the draft open', async ({ page }) => {
   await open(page)
@@ -203,7 +221,7 @@ test('a late saved-row refresh does not steal focus from a newer header interact
   const gate = new Promise<void>(resolve => { release = resolve })
   const pending = new Promise<void>(resolve => { started = resolve })
   await page.route('**/_serverFn/**', async route => {
-    if (rpcName(route.request().url()).startsWith('readJournalGrid_')) { started(); await gate }
+    if (/^readJournalGrid(?:Blocks)?_/.test(rpcName(route.request().url()))) { started(); await gate }
     await route.continue()
   })
   try {
@@ -219,22 +237,30 @@ test('a late saved-row refresh does not steal focus from a newer header interact
   } finally { release(); await page.unrouteAll({ behavior: 'wait' }) }
 })
 
-for (const nested of [false, true]) test(`own save retains ${nested ? 'nested' : 'single'} groups, checked joint and deep scroll position`, async ({ page }) => {
+for (const layout of ['flat', 'single', 'nested']) test(`own save retains ${layout} groups, checked joint and deep scroll position`, async ({ page }, info) => {
+  const nested = layout === 'nested'
+  const savedValue = `PRESERVE-${layout}-${info.repeatEachIndex}`
   await open(page)
   if (nested) {
     await page.locator('.ag-header-cell[col-id="projectTitle"]').click({ button: 'right' })
     await page.getByRole('menuitem', { name: /Сгруппировать.*Проект/ }).click()
   }
-  await page.locator('.ag-header-cell[col-id="line"]').click({ button: 'right' })
-  await page.getByRole('menuitem', { name: /Сгруппировать.*Линия/ }).click()
+  if (layout !== 'flat') {
+    await page.locator('.ag-header-cell[col-id="line"]').click({ button: 'right' })
+    await page.getByRole('menuitem', { name: /Сгруппировать.*Линия/ }).click()
+  }
   if (nested) await page.getByRole('button', { name: `Развернуть группу ${project}`, exact: true }).click()
-  await page.getByRole('button', { name: 'Развернуть группу STABLE-01', exact: true }).click()
+  if (layout !== 'flat') await page.getByRole('button', { name: 'Развернуть группу STABLE-01', exact: true }).click()
   await expect(page.getByRole('checkbox', { name: 'Выбрать стык F9800001', exact: true })).toBeVisible()
   await page.waitForLoadState('networkidle')
   await page.evaluate(y => scrollTo(0, y), nested ? 7000 : 1800)
   await page.waitForLoadState('networkidle')
   const visibleJoint = () => page.locator('.ag-row [col-id="joint"] button').evaluateAll(buttons => {
-    const button = buttons.find(button => { const rect = button.getBoundingClientRect(); return rect.top > 120 && rect.bottom < innerHeight - 100 })
+    const button = buttons.find(button => {
+      const rect = button.getBoundingClientRect()
+      return rect.top > 120 && rect.bottom < innerHeight - 100 &&
+        button.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2))
+    })
     return button?.textContent?.trim()
   })
   await expect.poll(visibleJoint).toBeTruthy()
@@ -243,28 +269,198 @@ for (const nested of [false, true]) test(`own save retains ${nested ? 'nested' :
   await checkbox.check()
   const before = await page.evaluate(() => scrollY)
   await editJournalJoint(page, joint!)
-  await editor(page).getByLabel('Изометрия', { exact: true }).fill('PRESERVE-POSITION')
+  await editor(page).getByLabel('Изометрия', { exact: true }).fill(savedValue)
+  const sqlBefore = await auditSqlCount()
+  const sqlDetailsBefore = await auditSqlDetails()
+  const calls: string[] = []
+  const rpcTimings: { name: string; milliseconds: number }[] = []
+  page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
+  page.on('requestfinished', request => {
+    if (request.url().includes('/_serverFn/')) rpcTimings.push({ name: rpcName(request.url()), milliseconds: request.timing().responseEnd })
+  })
+  await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('[data-welding-journal-grid] .ag-row')]
+    if (!rows.length) throw new Error('Measurement requires mounted grid rows')
+    const start = performance.now(), y = scrollY
+    let maxScrollShift = 0, frames = 0, missingFrames = 0, active = true
+    const sample = () => {
+      frames++; maxScrollShift = Math.max(maxScrollShift, Math.abs(scrollY-y))
+      if (!rows.some(row => row.isConnected)) missingFrames++
+      if (active) requestAnimationFrame(sample)
+    }
+    requestAnimationFrame(sample)
+    ;(window as unknown as { finishSmoothMeasure: () => unknown }).finishSmoothMeasure = () => {
+      active = false
+      return { elapsedMs: performance.now()-start, originalRows: rows.length,
+        retainedRows: rows.filter(row => row.isConnected).length, maxScrollShift, frames, missingFrames }
+    }
+  })
+  const started = performance.now()
   await editor(page).getByRole('button', { name: 'Сохранить', exact: true }).click()
   await expect(editor(page)).toBeHidden()
+  const savedMs = performance.now()-started
+  await expect(frame(page)).toHaveAttribute('aria-busy', 'false', { timeout: jointCount === 200_000 ? 30_000 : 5000 })
+  await expect(frame(page).getByText(savedValue, { exact: true })).toBeVisible()
+  const measurement = await page.evaluate(() => (window as unknown as { finishSmoothMeasure: () => unknown }).finishSmoothMeasure())
+  const measuredCalls = [...calls]
+  const sqlAfter = await auditSqlCount()
+  const sqlDetailsAfter = await auditSqlDetails()
+  await writeFile(info.outputPath('smooth-refresh.json'), JSON.stringify({ layout, jointCount, savedMs, measurement,
+    calls: measuredCalls, rpcTimings, sqlDetailsBefore, sqlDetailsAfter,
+    sqlStatements: sqlBefore === undefined || sqlAfter === undefined ? undefined : sqlAfter - sqlBefore }, null, 2))
+  const blockCalls = calls.filter(name => /^readJournalGrid(?:Blocks)?_/.test(name))
+  if (baseline || process.env.JOURNAL_REFRESH_BEFORE_INDEX === '1') expect(blockCalls.length).toBeLessThanOrEqual(12)
+  else expect(blockCalls).toHaveLength(1)
+  expect((measurement as { originalRows: number }).originalRows).toBeLessThanOrEqual(80)
+  expect((measurement as { retainedRows: number }).retainedRows).toBeGreaterThan(0)
+  expect((measurement as { maxScrollShift: number }).maxScrollShift).toBe(0)
   await page.waitForLoadState('networkidle')
-  await expect(frame(page)).toHaveAttribute('aria-busy', 'false')
   await expect.poll(() => page.evaluate(() => scrollY)).toBe(before)
   await expect(checkbox).toBeChecked()
-  await expect(frame(page).getByText('PRESERVE-POSITION', { exact: true })).toBeVisible()
+  await expect(frame(page).getByText(savedValue, { exact: true })).toBeVisible()
   await page.evaluate(() => scrollTo(0, 0))
-  await expect(page.getByRole('button', { name: 'Свернуть группу STABLE-01', exact: true })).toBeVisible()
+  if (layout !== 'flat') await expect(page.getByRole('button', { name: 'Свернуть группу STABLE-01', exact: true })).toBeVisible()
 })
 
-async function open(page: Page, count = 9000) {
+test('rapid repeated cell edits keep server facts and displayed values aligned', async ({ page }, info) => {
+  for (const layout of ['flat', 'single', 'nested']) {
+    await open(page)
+    await page.evaluate(() => localStorage.removeItem('welding-journal-ag-grid:v1'))
+    await open(page)
+    for (const field of layout === 'nested' ? ['projectTitle', 'line'] : layout === 'single' ? ['line'] : []) {
+      await page.locator(`.ag-header-cell[col-id="${field}"]`).click({ button: 'right' })
+      await page.getByRole('menuitem', { name: /^Сгруппировать по/ }).click()
+    }
+    for (const key of layout === 'nested' ? [project, 'STABLE-01'] : layout === 'single' ? ['STABLE-01'] : []) {
+      await page.getByRole('button', { name: `Развернуть группу ${key}`, exact: true }).click()
+    }
+    await expect(page.getByRole('checkbox', { name: 'Выбрать стык F9800001', exact: true })).toBeVisible()
+    await page.evaluate(() => scrollTo(0, 1800))
+    const target = () => page.locator('.ag-row [col-id="isometry"]').evaluateAll(cells => {
+      const cell = cells.find(cell => cell.closest('.ag-row')?.querySelector('[col-id="joint"] button') &&
+        cell.getBoundingClientRect().top > 150 && cell.getBoundingClientRect().bottom < innerHeight - 50)
+      return cell?.closest('.ag-row')?.getAttribute('row-id')
+    })
+    await expect.poll(target).toBeTruthy()
+    const id = (await target())!, value = `RAPID-${layout}-${info.repeatEachIndex}`
+    const cell = page.locator(`.ag-row[row-id="${id}"] [col-id="isometry"]`)
+    await cell.dblclick()
+    await editor(page).getByLabel('Изометрия', { exact: true }).fill(value)
+    await editor(page).getByRole('button', { name: 'Сохранить', exact: true }).click()
+    await expect(editor(page)).toBeHidden()
+    const stored = await withE2eDatabase(async db => (await db.query('select id,joint,isometry from weld_joints where id=$1', [Number(id)])).rows[0])
+    await writeFile(info.outputPath(`rapid-${layout}.json`), JSON.stringify({ id, value, stored }))
+    expect(stored.isometry).toBe(value)
+    await expect(frame(page)).toHaveAttribute('aria-busy', 'false')
+    await expect(cell).toContainText(value)
+  }
+})
+
+for (const outcome of ['success', 'failure', 'filter', 'conflict', 'regroup']) test(`smooth refresh keeps rows and guards incomplete groups: ${outcome}`, async ({ page }) => {
+  await open(page)
+  await page.locator('.ag-header-cell[col-id="line"]').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: /Сгруппировать.*Линия/ }).click()
+  await page.getByRole('button', { name: 'Развернуть группу STABLE-01', exact: true }).click()
+  await expect(frame(page)).toHaveAttribute('aria-busy', 'false')
+  await page.waitForLoadState('networkidle')
+  const row = page.locator('.ag-row').filter({ has: page.getByRole('button', { name: 'F9800001', exact: true }) })
+  const original = await row.elementHandle()
+  await editJournalJoint(page, 'F9800001')
+  const value = `SMOOTH-${outcome}`
+  await editor(page).getByLabel('Изометрия', { exact: true }).fill(value)
+  let release!: () => void, started!: () => void, held = false
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const pending = new Promise<void>(resolve => { started = resolve })
+  await page.route('**/_serverFn/**', async route => {
+    if (/^readJournalGrid(?:Blocks)?_/.test(rpcName(route.request().url()))) {
+      const payload = deserializeRpcPayload(route.request().postData()!) as { data: { route?: string[]; blocks?: { route: string[] }[] } }
+      if (!held && (payload.data.route?.includes('STABLE-01') || payload.data.blocks?.some(block => block.route.includes('STABLE-01')))) {
+        held = true; started(); await gate
+        if (outcome === 'failure') return route.fulfill({ status: 502, body: '' })
+      }
+    }
+    await route.continue()
+  })
+  try {
+    await editor(page).getByRole('button', { name: 'Сохранить', exact: true }).click()
+    await expect(editor(page)).toBeHidden()
+    await pending
+    await expect(frame(page)).toHaveAttribute('aria-busy', 'true')
+    expect(await original!.evaluate(node => node.isConnected)).toBe(true)
+    await expect(page.getByRole('checkbox', { name: 'Выбрать стык F9800001', exact: true })).toBeDisabled()
+    if (outcome === 'filter') {
+      await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('F9800400')
+    }
+    if (outcome === 'regroup') {
+      await page.locator('.ag-header-cell[col-id="projectTitle"]').click({ button: 'right' })
+      await page.getByRole('menuitem', { name: /Сгруппировать.*Проект/ }).click()
+    }
+    if (outcome === 'conflict') await withLineProgramFixture(db => db.query(
+      'update weld_joints set isometry=$1 where project_title=$2 and joint=$3',
+      [value + '-foreign', project, 'F9800001']).then(() => {}))
+    release()
+    if (outcome === 'failure') {
+      await page.getByRole('button', { name: 'Повторить загрузку', exact: true }).click()
+    }
+    await expect(frame(page)).toHaveAttribute('aria-busy', 'false')
+    if (outcome === 'filter') await expect(page.getByText('Найдено: 1', { exact: true })).toBeVisible()
+    else {
+      if (outcome === 'regroup') for (const key of ['STABLE-01', project]) {
+        const expand = page.getByRole('button', { name: `Развернуть группу ${key}`, exact: true })
+        await expect(expand.or(page.getByRole('button', { name: `Свернуть группу ${key}`, exact: true }))).toBeVisible()
+        if (await expand.count()) await expand.first().click()
+      }
+      await expect(row).toContainText(outcome === 'conflict' ? value + '-foreign' : value)
+    }
+  } finally { release(); await page.unrouteAll({ behavior: 'wait' }); await original?.dispose() }
+})
+
+async function open(page: Page, count = jointCount) {
   await page.addInitScript(hidden => {
     localStorage.setItem('welding-report-view:v1:weldingJournal', JSON.stringify({ activePreset: 'custom', hiddenFieldKeys: hidden, customHiddenFieldKeys: hidden, collapsedSections: [], savedViews: [] }))
   }, WELD_FIELDS.filter(field => !['projectTitle','line','joint','isometry','finalStatus'].includes(field.key)).map(field => field.key))
   await page.goto('/journal')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
-  await expect(page.getByText(`Найдено: ${count}`, { exact: true })).toBeVisible()
+  await expect(page.getByText(`Найдено: ${count}`, { exact: true })).toBeVisible({ timeout: jointCount === 200_000 ? 120_000 : 10_000 })
   await expect(frame(page)).toHaveAttribute('aria-busy', 'false')
   await page.waitForLoadState('networkidle')
 }
+
+for (const action of ['sort', 'filter', 'group', 'nested-group'] as const) test(`measured selection change: ${action}`, async ({ page }, info) => {
+  test.skip(process.env.JOURNAL_REFRESH_BENCHMARK !== '1', 'Opt-in comparison on the isolated benchmark fixture')
+  await open(page)
+  if (action === 'nested-group') {
+    await page.locator('.ag-header-cell[col-id="projectTitle"]').click({ button: 'right' })
+    await page.getByRole('menuitem', { name: /Сгруппировать.*Проект/ }).click()
+    await expect(frame(page)).toHaveAttribute('aria-busy', 'false', { timeout: 30_000 })
+    await page.waitForLoadState('networkidle')
+  }
+  if (action !== 'filter') await page.locator(`.ag-header-cell[col-id="${action === 'sort' ? 'joint' : 'line'}"]`).click({ button: 'right' })
+  const statementsBefore = await auditSqlCount(), detailsBefore = await auditSqlDetails()
+  const calls: { name: string; milliseconds: number }[] = []
+  page.on('requestfinished', request => {
+    if (request.url().includes('/_serverFn/')) calls.push({ name: rpcName(request.url()), milliseconds: request.timing().responseEnd })
+  })
+  const started = performance.now()
+  if (action === 'filter') {
+    await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('F9800001')
+    await expect(page.getByText('Найдено: 1', { exact: true })).toBeVisible({ timeout: 30_000 })
+  } else if (action === 'sort') {
+    await page.getByRole('menuitem', { name: 'По убыванию', exact: true }).click()
+    await expect(page.locator('.ag-header-cell[col-id="joint"]')).toHaveAttribute('aria-sort', 'descending')
+  } else {
+    await page.getByRole('menuitem', { name: /Сгруппировать.*Линия/ }).click()
+    await expect(page.getByRole('button', { name: `Развернуть группу ${action === 'nested-group' ? project : 'STABLE-01'}`, exact: true })).toBeVisible({ timeout: 30_000 })
+  }
+  await expect(frame(page)).toHaveAttribute('aria-busy', 'false', { timeout: 30_000 })
+  const milliseconds = performance.now() - started
+  await page.waitForLoadState('networkidle')
+  const statementsAfter = await auditSqlCount(), detailsAfter = await auditSqlDetails()
+  await writeFile(info.outputPath('selection-change.json'), JSON.stringify({ action, jointCount, milliseconds, calls,
+    statements: statementsBefore === undefined || statementsAfter === undefined ? undefined : statementsAfter - statementsBefore,
+    detailsBefore, detailsAfter }, null, 2))
+  expect(calls.filter(call => /^readJournalGrid(?:Blocks)?_/.test(call.name)).length).toBeLessThanOrEqual(4)
+})
 
 test('other writer, return to window and idle selection keep the displayed rows; fresh editor and conflict preserve the draft', async ({ page, browser }, info) => {
   test.setTimeout(120_000)
@@ -301,7 +497,7 @@ test('other writer, return to window and idle selection keep the displayed rows;
     if (baseline) return
     await expect(page.getByText('Есть обновления', { exact: true })).toBeVisible()
     await expect(frame(page)).toHaveAttribute('aria-busy', 'false')
-    expect(calls.slice(before).filter(name => /^(readJournalGrid|refreshDispatcherTaskSnapshot|getDispatcherTaskSnapshot)_/.test(name))).toEqual([])
+    expect(calls.slice(before).filter(name => /^(readJournalGrid(?:Blocks)?|refreshDispatcherTaskSnapshot|getDispatcherTaskSnapshot)_/.test(name))).toEqual([])
     await expect(first).toBeChecked()
     await editJournalJoint(page, 'F9800001')
     await expect(editor(page).getByLabel('Изометрия', { exact: true })).toHaveValue('AFTER-OTHER-WRITER')

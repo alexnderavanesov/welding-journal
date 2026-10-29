@@ -112,7 +112,7 @@ overrides:
   js-yaml@>=4.0.0 <4.3.2: 4.3.2
   nanoid@>=3.0.0 <3.3.17: 3.3.17
   postcss@<=8.5.22: 8.5.26
-  seroval@<=1.6.2: ^1.6.3
+  seroval@<1.6.11: 1.6.11
   source-map-js@>=1.0.0 <1.2.2: 1.2.2
   postcss-selector-parser@<7.1.6: 7.1.6
   undici@>=7.0.0 <7.30.1: 7.30.1
@@ -2343,10 +2343,10 @@ packages:
     resolution: {integrity: sha512-kiDK/Tb8IWZ61WEU8pA2PDmAuw37gKph9Y77OZlD56mg0Y2g0Bg7gZ1HeHhs5d40w+nRoUq/wj08V26ilbez9g==}
     engines: {node: '>=10'}
     peerDependencies:
-      seroval: ^1.6.3
+      seroval: 1.6.11
 
-  seroval@1.6.9:
-    resolution: {integrity: sha512-UeEzHwAK+yl0YLbsvROV1t5yMYEwZZ0CfKYxDvUgS2fO9Vxdf8djqVIB+OuVpuawRNPqw68LE1Du/GMsW2ZPqA==}
+  seroval@1.6.11:
+    resolution: {integrity: sha512-hpb6XnMCGN/A+79Uf8V7/iTGkyyyazNn5X0CoCAp7Uy9vT3RT8jZ9GLcnxGoVjg3P8AArbe4ZVHq6C8oT2a0kA==}
     engines: {node: '>=10'}
 
   siginfo@2.0.0:
@@ -3429,8 +3429,8 @@ snapshots:
     dependencies:
       '@tanstack/history': 1.162.4
       cookie-es: 3.1.1
-      seroval: 1.6.9
-      seroval-plugins: 1.6.9(seroval@1.6.9)
+      seroval: 1.6.11
+      seroval-plugins: 1.6.9(seroval@1.6.11)
 
   '@tanstack/router-generator@1.167.40(supports-color@7.2.0)':
     dependencies:
@@ -3511,7 +3511,7 @@ snapshots:
       '@tanstack/router-core': 1.171.34
       '@tanstack/start-fn-stubs': 1.162.0
       '@tanstack/start-storage-context': 1.167.36
-      seroval: 1.6.9
+      seroval: 1.6.11
 
   '@tanstack/start-fn-stubs@1.162.0': {}
 
@@ -3530,7 +3530,7 @@ snapshots:
       lightningcss: 1.33.0
       pathe: 2.0.3
       picomatch: 4.0.7
-      seroval: 1.6.9
+      seroval: 1.6.11
       source-map: 0.7.6
       srvx: 0.11.22
       tinyglobby: 0.2.17
@@ -3562,7 +3562,7 @@ snapshots:
       '@tanstack/start-storage-context': 1.167.36
       fetchdts: 0.1.7
       h3-v2: h3@2.0.1-rc.20(crossws@0.4.10(srvx@0.11.16))
-      seroval: 1.6.9
+      seroval: 1.6.11
     transitivePeerDependencies:
       - crossws
 
@@ -4536,11 +4536,11 @@ snapshots:
 
   semver@6.3.1: {}
 
-  seroval-plugins@1.6.9(seroval@1.6.9):
+  seroval-plugins@1.6.9(seroval@1.6.11):
     dependencies:
-      seroval: 1.6.9
+      seroval: 1.6.11
 
-  seroval@1.6.9: {}
+  seroval@1.6.11: {}
 
   siginfo@2.0.0: {}
 

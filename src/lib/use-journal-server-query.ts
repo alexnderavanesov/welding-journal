@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { readJournalGrid, getJournalReportSummary } from '@/server/journal-grid-api'
+import { readJournalGrid, readJournalGridBlocks, getJournalReportSummary } from '@/server/journal-grid-api'
 import { type WeldReportSummaryResult, type WeldSort } from '@/server/weld-read-api'
 import { splitReportQuickSearch } from './report-quick-search'
 import { subscribeWeldPageRefresh } from './weld-page-refresh'
@@ -8,6 +8,7 @@ import type { JournalSelectionSnapshot } from './journal-selection-summary'
 import type { WeldRow } from './dispatcher-types'
 import { journalReport, type JournalGridRequest, type JournalGridResult, type JournalRevision } from './journal-server-grid'
 import { isJournalRevisionError, journalReadErrorMessage, JOURNAL_CHANGED_MESSAGE } from './journal-read-error'
+import { createJournalLeafCache } from './journal-leaf-cache'
 
 export type JournalServerSource = {
   report?: JournalGridRequest['report']
@@ -19,6 +20,7 @@ export type JournalServerSource = {
   columnFilters: Record<string, string>
   sort: WeldSort | null
   load: (request: Pick<JournalGridRequest, 'groupBy' | 'route' | 'start' | 'end'>, signal?: AbortSignal) => Promise<JournalGridResult>
+  loadBlocks?: (groupBy: JournalGridRequest['groupBy'], blocks: import('./journal-server-grid').JournalGridBlock[], signal?: AbortSignal) => Promise<JournalGridResult[]>
   rowsChanged: (rows: WeldRow[]) => void
   error?: Error | null
   retry?: () => void
@@ -48,12 +50,14 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
   const [notice, setNotice] = useState({ identity: '', expired: false })
   const expired = useRef('')
   const revision = useRef<{ identity: string; value?: JournalRevision } | null>(null)
+  const leafCache = useRef(createJournalLeafCache())
   const summaryRequest = useRef<{ key: string; promise: Promise<WeldReportSummaryResult> } | null>(null)
   const columnFilters = useMemo<Record<string, string>>(() => JSON.parse(filters), [filters])
   const automaticRetry = useRef('')
   const recovering = useRef<string | null>(null)
   const recoverRevision = useCallback((error: unknown) => {
     if (!isJournalRevisionError(error)) return false
+    leafCache.current.clear()
     // Several blocks/counters can reject the same expired view together.
     if (identity !== current.current || recovering.current === identity) return true
     if (installed.current === identity) {
@@ -76,6 +80,7 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
     return true
   }, [identity, report, filters, options.sort])
   const refetch = useCallback(async (refreshDispatcher = true) => {
+    leafCache.current.clear()
     automaticRetry.current = ''
     expired.current = ''
     setNotice({ identity: '', expired: false })
@@ -96,6 +101,7 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
     let timer: ReturnType<typeof setTimeout> | undefined
     const unsubscribe = subscribeWeldPageRefresh(client, event => {
       if (event?.reason === 'background') {
+        leafCache.current.clear()
         if (installed.current !== current.current) return
         // Dispatcher and journal use independent revision counters. A changed
         // dispatcher publication is a notification, never a comparable row version.
@@ -105,6 +111,7 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
       // Coalesce the reads, but disable actions on the saved row version now.
       // Otherwise a fast second command can open a menu during the debounce
       // and lose it when the replacement block arrives.
+      leafCache.current.clear()
       setState(previous => previous.ready || previous.modelPending ? { ...previous, ready: false, modelPending: false } : previous)
       clearTimeout(timer); timer = setTimeout(() => { void refetch(false) }, 80)
     })
@@ -124,31 +131,50 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
       if (current.current === scope && summaryRequest.current === pending) setState(previous => ({ ...previous, summaryError: new Error(journalReadErrorMessage(error)) }))
     }
   }, [report, columnFilters, filters, recoverRevision])
-  const load = useCallback<JournalServerSource['load']>(async (request, signal) => {
+  const loadRequests = useCallback(async (requests: Pick<JournalGridRequest, 'groupBy' | 'route' | 'start' | 'end'>[], batch: boolean, signal?: AbortSignal) => {
+    signal?.throwIfAborted()
+    const request = requests[0]
     const scope = identity
     const revisionScope = JSON.stringify([scope, request.groupBy])
     if (!options.enabled || scope !== current.current || recovering.current === scope) throw new DOMException('Выборка журнала обновляется.', 'AbortError')
     // Claim the grouping when the request starts, not when its reply arrives.
     // A late reply from the replaced grouping must not repin the current view.
     if (revision.current?.identity !== revisionScope) {
+      leafCache.current.clear()
       revision.current = { identity: revisionScope }
       expired.current = ''
       setNotice(previous => previous.identity ? { identity: '', expired: false } : previous)
     }
     const activeRevision = revision.current
+    const cacheGeneration = leafCache.current.generation
     if (expired.current === scope) throw new Error(JOURNAL_CHANGED_MESSAGE)
     try {
-      const result = await readJournalGrid({ data: { ...request, report, columnFilters, sort: options.sort,
-        revision: activeRevision.value }, signal })
+      const key = JSON.stringify([request.route, request.start, request.end])
+      const cached = !batch && request.groupBy.length && request.route.length === request.groupBy.length
+        ? leafCache.current.get(key) : undefined
+      const results = cached && cached.revision === activeRevision.value ? [cached] : batch
+        ? await readJournalGridBlocks({ data: { report, columnFilters, sort: options.sort, groupBy: request.groupBy,
+          blocks: requests.map(({ route, start, end }) => ({ route, start, end })), revision: activeRevision.value }, signal })
+        : [await readJournalGrid({ data: { ...request, report, columnFilters, sort: options.sort,
+          revision: activeRevision.value }, signal })]
+      const result = results[0]
+      if (!result || results.length !== requests.length || results.some(value => value.revision !== result.revision)) {
+        throw new Error('Не удалось получить согласованные блоки таблицы. Повторите загрузку.')
+      }
       if (scope !== current.current || signal?.aborted || revision.current !== activeRevision || recovering.current === scope) throw new DOMException('Загрузка отменена: выборка изменилась.', 'AbortError')
       if (activeRevision.value !== undefined && activeRevision.value !== result.revision) throw new Error(JOURNAL_CHANGED_MESSAGE)
       activeRevision.value = result.revision
+      requests.forEach((part, index) => {
+        if (leafCache.current.generation === cacheGeneration && part.groupBy.length && part.route.length === part.groupBy.length) {
+          leafCache.current.set(JSON.stringify([part.route, part.start, part.end]), results[index])
+        }
+      })
       // A successful neighbouring block must not hide an unresolved failure.
       // The response is not yet installed in AG Grid. Keep actions disabled
       // until rowsChanged publishes the committed model, including empty groups.
       setState(previous => previous.identity === scope ? previous : { rows: [], identity: scope, ready: false, modelPending: true, error: null })
       void loadSummary(scope, result.revision)
-      return result
+      return results
     } catch (error) {
       if (revision.current !== activeRevision || scope !== current.current || signal?.aborted || recovering.current === scope) throw new DOMException('Загрузка отменена: выборка изменилась.', 'AbortError')
       if (scope === current.current && !signal?.aborted) {
@@ -161,6 +187,9 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
       throw error
     }
   }, [report, identity, options.enabled, options.sort, columnFilters, filters, loadSummary, recoverRevision])
+  const load = useCallback<JournalServerSource['load']>(async (request, signal) => (await loadRequests([request], false, signal))[0], [loadRequests])
+  const loadBlocks = useCallback<NonNullable<JournalServerSource['loadBlocks']>>((groupBy, blocks, signal) =>
+    loadRequests(blocks.map(block => ({ ...block, groupBy })), true, signal), [loadRequests])
   const rowsChanged = useCallback((rows: WeldRow[]) => {
     if (current.current !== identity || recovering.current === identity) return
     setState(previous => {
@@ -181,7 +210,7 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
   const updatesAvailable = notice.identity === requestedIdentity
   const revisionExpired = updatesAvailable && notice.expired
   const getSnapshot = useCallback(() => revision.current?.value === undefined ? undefined : { revision: revision.current.value, columnFilters }, [columnFilters])
-  const source = useMemo<JournalServerSource>(() => ({ report, identity, getSnapshot, viewIdentity: selectionIdentity, updatesAvailable, revisionExpired, columnFilters, sort: options.sort, load, rowsChanged, error, retry: () => { void refetch() }, recoverRevision }), [report, identity, getSnapshot, selectionIdentity, updatesAvailable, revisionExpired, columnFilters, options.sort, load, rowsChanged, error, refetch, recoverRevision])
+  const source = useMemo<JournalServerSource>(() => ({ report, identity, getSnapshot, viewIdentity: selectionIdentity, updatesAvailable, revisionExpired, columnFilters, sort: options.sort, load, loadBlocks, rowsChanged, error, retry: () => { void refetch() }, recoverRevision }), [report, identity, getSnapshot, selectionIdentity, updatesAvailable, revisionExpired, columnFilters, options.sort, load, loadBlocks, rowsChanged, error, refetch, recoverRevision])
   const ready = options.enabled && identity === requestedIdentity && state.identity === identity && state.ready
   return {
     source, rows: ready ? state.rows : [], rowsReady: ready, requestedIdentity, selectionIdentity,

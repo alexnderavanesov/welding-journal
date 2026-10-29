@@ -38,6 +38,8 @@ export type JournalGroup = {
 }
 export type JournalGridRow = WeldRow & { journalGroup?: JournalGroup }
 export type JournalGridResult = { rows: JournalGridRow[]; rowCount: number; revision: JournalRevision }
+export type JournalGridBlock = Pick<JournalGridRequest, 'route' | 'start' | 'end'>
+export type JournalGridBlocksRequest = JournalGridQuery & { blocks: JournalGridBlock[]; revision?: JournalRevision }
 export type JournalRouteLayout = { route: string[]; ordinal: number; rowCount: number }
 export type JournalRangePart<Field extends string = WeldFieldKey> = { route: string[]; start: number; end: number; columns: Field[] }
 export type JournalVisualRange<Field extends string = WeldFieldKey> = { first: number; last: number; columns: Field[] }

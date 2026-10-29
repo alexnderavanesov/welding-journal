@@ -358,6 +358,20 @@
       "when": 1793023365336,
       "tag": "0050_brown_proudstar",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1793261427593,
+      "tag": "0051_black_frog_thor",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1793271092037,
+      "tag": "0052_lying_peter_quill",
+      "breakpoints": true
     }
   ]
 }

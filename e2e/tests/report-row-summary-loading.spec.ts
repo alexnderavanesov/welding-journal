@@ -73,7 +73,7 @@ test('late search response cannot replace the newer selection or its summary', a
   let blocked = false
   await page.route('**/_serverFn/**', async route => {
     const request = route.request()
-    if (rpcName(request.url()).startsWith('readJournalGrid_') &&
+    if (/^readJournalGrid(?:Blocks)?_/.test(rpcName(request.url())) &&
       request.postData()?.includes(first)) {
       blocked = true
       await gate
@@ -128,7 +128,7 @@ test('fast typing is coalesced and does not request every intermediate search', 
   await page.waitForLoadState('networkidle')
   const requests: string[] = []
   page.on('request', request => {
-    if (rpcName(request.url()).startsWith('readJournalGrid_')) requests.push(request.postData() ?? '')
+    if (/^readJournalGrid(?:Blocks)?_/.test(rpcName(request.url()))) requests.push(request.postData() ?? '')
   })
   await search.fill('')
   await search.pressSequentially(second, { delay: 8 })
@@ -165,7 +165,7 @@ test('failed background refresh after saving shows an explicit retry and keeps t
       refreshStatuses.push(response.status())
       await publicationGate
       await route.fulfill({ response })
-    } else if (blocked && name.startsWith('readJournalGrid_')) {
+    } else if (blocked && /^readJournalGrid(?:Blocks)?_/.test(name)) {
       failedReads++
       await route.fulfill({ status: 503, contentType: 'text/plain', body: 'Rows temporarily unavailable' })
     } else await route.continue()
