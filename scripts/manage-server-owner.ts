@@ -1,5 +1,6 @@
 import { loadServerEnv } from '../src/server-env'
 import { assertExplicitMigrationTarget } from '../src/lib/migration-branch-guard'
+import { assertServerMailConfiguration } from '../src/server/auth-mail-config'
 
 // Operator-only entry point. No route, scheduled job or page imports this file.
 // Run from the matching release checkout with its dependencies installed.
@@ -17,9 +18,10 @@ assertExplicitMigrationTarget(target)
 if (!['postgres:', 'postgresql:'].includes(target.protocol) || target.hostname !== host || decodeURIComponent(target.pathname.slice(1)) !== database) {
   throw new Error('Подключение не совпадает с указанной оператором целью.')
 }
-if (process.env.AUTH_MAIL_MODE !== 'smtp' || !process.env.SMTP_USER || !process.env.SMTP_PASSWORD || !process.env.SMTP_HOST || !process.env.BETTER_AUTH_URL?.startsWith('https://')) {
-  throw new Error('До подготовки серверного владельца настройте HTTPS и доставку SMTP. Для локальной работы используйте prepare-local-owner.ts.')
+if (!process.env.BETTER_AUTH_URL?.startsWith('https://')) {
+  throw new Error('До подготовки серверного владельца настройте HTTPS.')
 }
+assertServerMailConfiguration()
 const { requireDb, closeDatabase } = await import('../src/db')
 const { sql } = await import('drizzle-orm')
 try {

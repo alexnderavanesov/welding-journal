@@ -35,6 +35,7 @@
     "verify": "pnpm typecheck && pnpm test && pnpm build && pnpm audit:prod && pnpm audit:all"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "3.1159.0",
     "@better-auth/drizzle-adapter": "1.7.14",
     "@tanstack/react-query": "^5.90.12",
     "@tanstack/react-router": "^1.170.41",
