@@ -1,6 +1,5 @@
 import {
   BarChart3,
-  BookOpenText,
   ClipboardCheck,
   FileText,
   Thermometer,
@@ -16,6 +15,8 @@ import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { ScrollToTopButton } from '@/components/scroll-to-top-button'
 import type { ActiveReport } from '@/lib/home-state'
+import { useAccess } from '@/lib/security-context'
+import { REPORT_ACCESS_AREAS, type Permission } from '@/lib/access-permissions'
 import './app-sidebar.css'
 
 type AppSidebarProps = {
@@ -40,10 +41,11 @@ const sidebarItems: Array<{
 ]
 
 export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onReportChange }: AppSidebarProps) {
+  const { can, identity } = useAccess()
+  const settingsVisible = ['templates', 'checks', 'dispatcher', 'exceptions', 'numbering', 'data', 'wdi', 'processes', 'indexes'].some(area => can(`${area}.view` as Permission))
   const sidebarRef = useRef<HTMLElement>(null)
   const [isHorizontallyScrolled, setIsHorizontallyScrolled] = useState(false)
   const settingsItem = { report: 'settings' as const, label: 'Настройки', icon: Settings }
-  const guideItem = { report: 'userGuide' as const, label: 'Руководство пользователя', icon: BookOpenText }
   const itemClassName = (isActive: boolean, muted = false) =>
     `app-sidebar-item flex items-center text-left text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${
       isActive
@@ -131,7 +133,7 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
         </Button>
       </div>
       <nav className="min-h-0 space-y-2 overflow-y-auto py-1" aria-label="Разделы программы">
-        {sidebarItems.map((item) => {
+        {sidebarItems.filter(item => can(`${REPORT_ACCESS_AREAS[item.report]}.view` as Permission)).map((item) => {
           const Icon = item.icon
           const isActive = activeReport === item.report
           return (
@@ -152,10 +154,11 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
       <div className="mb-3 mt-auto h-10 shrink-0">
         <ScrollToTopButton resetKey={activeReport} />
       </div>
-      <nav className="shrink-0 space-y-2 border-t border-slate-100 pb-7 pt-3 lg:pb-10" aria-label="Настройки и помощь">
+      <nav className="shrink-0 space-y-2 border-t border-slate-100 pb-7 pt-3 lg:pb-10" aria-label="Настройки и профиль">
         {(() => {
+          if (!settingsVisible) return null
           const Icon = settingsItem.icon
-          const isActive = activeReport === settingsItem.report
+          const isActive = activeReport === settingsItem.report && (typeof window === 'undefined' || !['/account', '/activity'].includes(window.location.pathname))
           return (
             <button
               key={settingsItem.report}
@@ -170,23 +173,9 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
             </button>
           )
         })()}
-        {(() => {
-          const Icon = guideItem.icon
-          const isActive = activeReport === guideItem.report
-          return (
-            <button
-              key={guideItem.report}
-              type="button"
-              aria-current={isActive ? 'page' : undefined}
-              className={itemClassName(isActive, true)}
-              onClick={() => onReportChange(guideItem.report)}
-              title={guideItem.label}
-            >
-              <Icon className="app-sidebar-icon h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-              <span className="app-sidebar-label"><span>{guideItem.label}</span></span>
-            </button>
-          )
-        })()}
+        <a href="/account" title="Мой профиль" className={itemClassName(typeof window !== 'undefined' && ['/account', '/activity', '/user-guide'].includes(window.location.pathname))}>
+          <BookUser className="app-sidebar-icon h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" /><span className="app-sidebar-label"><span><span className="block">{identity?.name ?? 'Мой профиль'}</span>{identity?.title ? <span className="block text-[11px] font-normal opacity-70">{identity.title}</span> : null}<span className="block text-[11px] font-normal">Мой профиль</span></span></span>
+        </a>
       </nav>
     </aside>
   )

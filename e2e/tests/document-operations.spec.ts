@@ -1,3 +1,4 @@
+import { asE2eOwner } from '../with-owner-access'
 import { randomUUID } from 'node:crypto'
 import { expect, test, type Page } from '@playwright/test'
 import { eq } from 'drizzle-orm'
@@ -7,7 +8,7 @@ import { rpcName } from '../rpc'
 import { requireDb } from '../../src/db'
 import { weldJoints } from '../../src/db/schema'
 import { syncSystemDocumentsForWeldChangesInTransaction } from '../../src/server/system-document-index'
-import { previewOperation, applyOperation, getOperationComposition, getOperationResult, planOperationBatches } from '../../src/server/document-operation-service'
+import { previewOperation as raw_previewOperation, applyOperation as raw_applyOperation, getOperationComposition as raw_getOperationComposition, getOperationResult as raw_getOperationResult, planOperationBatches as raw_planOperationBatches } from '../../src/server/document-operation-service'
 import type { DocumentOperationRequest } from '../../src/lib/system-document-operation'
 import { buildCurrentSystemDocumentName } from '../../src/lib/system-document-types'
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '../../src/lib/request-conclusion-settings'
@@ -485,3 +486,13 @@ test('action dialogs: Escape closes help then dialog, preserves selection, works
   await page.keyboard.press('Escape')
   expect(await state()).toEqual(before)
 })
+
+const previewOperation = asE2eOwner(raw_previewOperation, 'documents.view')
+
+const applyOperation = asE2eOwner(raw_applyOperation, 'documents.edit')
+
+const getOperationComposition = asE2eOwner(raw_getOperationComposition, 'documents.view')
+
+const getOperationResult = asE2eOwner(raw_getOperationResult, 'documents.view')
+
+const planOperationBatches = asE2eOwner(raw_planOperationBatches, 'documents.view')

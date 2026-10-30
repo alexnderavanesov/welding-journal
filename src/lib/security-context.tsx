@@ -1,288 +1,95 @@
-import type { FormEvent, ReactNode } from 'react'
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
-import { LockKeyhole, X } from 'lucide-react'
+import { createContext, useCallback, useContext, useEffect, useState, useRef, type FormEvent, type ReactNode } from 'react'
+import { useRouterState } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { LargeDialogShell } from '@/components/large-dialog-shell'
-import {
-  isSecurityScopeEnabled,
-  useEffectiveSecuritySettingsState,
-  type SecurityScope,
-  type SecuritySettings,
-} from '@/lib/security-settings'
-import { DATA_IMPORT_SECURITY_SCOPE } from '@/lib/security-scopes'
-import { authenticateSecurityScope } from '@/server/security-functions'
+import { getCurrentAccount, refreshAccountActivity } from '@/server/account-api'
+import { watchAccountActivity } from './account-activity'
+import { hasPermission, REPORT_ACCESS_AREAS, type AccessIdentity, type Permission } from './access-permissions'
+import { getActiveReportFromPath } from './app-report-routes'
+import { setStorageIdentity } from './user-storage'
 
-type SecurityPasswordOptions = {
-  title: string
-  description?: string
-  scope: SecurityScope
-}
-
-type SecurityPasswordRequest = (options: SecurityPasswordOptions) => Promise<boolean>
-
-type PendingSecurityPasswordRequest = SecurityPasswordOptions & {
-  resolve: (confirmed: boolean) => void
-}
-
-type SecurityContextValue = {
-  requestPassword: SecurityPasswordRequest
-  settings: SecuritySettings
-  settingsResolved: boolean
-  settingsLoadError: string | null
-  retrySettingsLoad: () => void
-}
-
-const SecurityPasswordContext = createContext<SecurityContextValue | null>(null)
-
+export const ACCESS_EXPIRED_EVENT = 'welding-access-expired'
+type AccessValue = { identity: AccessIdentity | null; loading: boolean; error: string; refresh: () => Promise<void>; can: (permission: Permission) => boolean }
+const Context = createContext<AccessValue | null>(null)
 export function SecurityProvider({ children }: { children: ReactNode }) {
-  const [pendingRequest, setPendingRequest] = useState<PendingSecurityPasswordRequest | null>(null)
-  const {
-    settings,
-    resolved: settingsResolved,
-    loadError: settingsLoadError,
-    retry: retrySettingsLoad,
-  } = useEffectiveSecuritySettingsState()
-
-  const requestPassword = useCallback<SecurityPasswordRequest>(
-    (options) =>
-      new Promise<boolean>((resolve) => {
-        setPendingRequest({ ...options, resolve })
-      }),
-    [],
-  )
-
-  const closePendingRequest = useCallback((confirmed: boolean) => {
-    setPendingRequest((current) => {
-      current?.resolve(confirmed)
-      return null
-    })
-  }, [])
-
-  const contextValue = useMemo(
-    () => ({ requestPassword, settings, settingsResolved, settingsLoadError, retrySettingsLoad }),
-    [requestPassword, retrySettingsLoad, settings, settingsLoadError, settingsResolved],
-  )
-
-  return (
-    <SecurityPasswordContext.Provider value={contextValue}>
-      {children}
-      {pendingRequest ? (
-        <SecurityPasswordDialog
-          scope={pendingRequest.scope}
-          title={pendingRequest.title}
-          description={pendingRequest.description}
-          onCancel={() => closePendingRequest(false)}
-          onSuccess={() => closePendingRequest(true)}
-        />
-      ) : null}
-    </SecurityPasswordContext.Provider>
-  )
-}
-
-export function useSecurityGuard() {
-  const context = useContext(SecurityPasswordContext)
-  if (!context) {
-    throw new Error('useSecurityGuard must be used inside SecurityProvider')
-  }
-  const { requestPassword, settings } = context
-
-  const requirePassword = useCallback(
-    async (scope: SecurityScope, options: SecurityPasswordOptions) => {
-      if (!isSecurityScopeEnabled(settings, scope)) return true
-      return requestPassword(options)
-    },
-    [requestPassword, settings],
-  )
-
-  return {
-    requireSettingsChangePassword: () =>
-      requirePassword('settings', {
-        scope: 'settings',
-        title: 'Изменение настроек',
-        description: 'Введите пароль, чтобы изменить или сохранить настройки.',
-      }),
-    requireEditPassword: (actionLabel = 'действие') =>
-      requirePassword('edit', {
-        scope: 'edit',
-        title: 'Подтверждение доступа',
-        description: `Введите пароль, чтобы выполнить ${actionLabel}.`,
-      }),
-    requireImportPassword: (actionLabel = 'импорт данных') =>
-      requirePassword(DATA_IMPORT_SECURITY_SCOPE, {
-        scope: DATA_IMPORT_SECURITY_SCOPE,
-        title: 'Изменение данных импортом',
-        description: `Введите пароль, чтобы выполнить ${actionLabel}.`,
-      }),
-    requireDocumentGenerationPassword: (actionLabel = 'формирование документа') =>
-      requirePassword('documentGeneration', {
-        scope: 'documentGeneration',
-        title: 'Формирование документа',
-        description: `Введите пароль, чтобы выполнить ${actionLabel}.`,
-      }),
-    requireDeletePassword: (actionLabel = 'удаление') =>
-      requirePassword('delete', {
-        scope: 'delete',
-        title: 'Подтверждение удаления',
-        description: `Введите пароль, чтобы выполнить ${actionLabel}.`,
-      }),
-  }
-}
-
-export function SiteSecurityGate({ children }: { children: ReactNode }) {
-  const context = useContext(SecurityPasswordContext)
-  const [unlocked, setUnlocked] = useState(false)
-  if (!context) throw new Error('SiteSecurityGate must be used inside SecurityProvider')
-  const { settings, settingsResolved, settingsLoadError, retrySettingsLoad } = context
-
-  if (settingsLoadError) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-        <div className="w-full max-w-md rounded-lg border border-red-200 bg-white p-6 shadow-xl shadow-slate-200/60">
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-700">
-              <LockKeyhole className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold text-slate-950">Доступ временно недоступен</h1>
-              <p className="mt-1 text-sm leading-6 text-slate-600">{settingsLoadError}</p>
-            </div>
-          </div>
-          <Button className="mt-5 w-full" onClick={retrySettingsLoad}>Повторить проверку</Button>
-        </div>
-      </div>
-    )
-  }
-
-  if (!settingsResolved) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 text-sm text-slate-500">
-        Проверяем доступ...
-      </div>
-    )
-  }
-
-  if (!isSecurityScopeEnabled(settings, 'entry') || unlocked) return <>{children}</>
-
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/60">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-slate-900 text-white">
-            <LockKeyhole className="h-5 w-5" />
-          </div>
-          <div>
-            <h1 className="text-lg font-semibold text-slate-950">Вход в систему</h1>
-            <p className="mt-1 text-sm text-slate-500">Введите пароль для открытия сайта.</p>
-          </div>
-        </div>
-        <PasswordForm scope="entry" submitLabel="Войти" onSuccess={() => setUnlocked(true)} />
-      </div>
-    </div>
-  )
-}
-
-export function useResolvedSecuritySettings() {
-  const context = useContext(SecurityPasswordContext)
-  if (!context) throw new Error('useResolvedSecuritySettings must be used inside SecurityProvider')
-  return context.settings
-}
-
-function SecurityPasswordDialog({
-  scope,
-  title,
-  description,
-  onCancel,
-  onSuccess,
-}: SecurityPasswordOptions & {
-  onCancel: () => void
-  onSuccess: () => void
-}) {
-  return (
-    <LargeDialogShell
-      maxWidthClassName="max-w-[480px]"
-      maxHeightClassName="max-h-[90vh]"
-      overlayClassName="z-[170] bg-slate-950/35"
-      panelRadiusClassName="rounded-lg"
-      panelClassName="overflow-hidden"
-    >
-      <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
-        <div className="flex items-center gap-2">
-          <LockKeyhole className="h-5 w-5 text-slate-500" />
-          <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
-        </div>
-        <button
-          type="button"
-          className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950"
-          onClick={onCancel}
-          aria-label="Закрыть"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-      <div className="px-6 py-6">
-        {description ? <p className="mb-4 text-sm leading-6 text-slate-600">{description}</p> : null}
-        <PasswordForm scope={scope} submitLabel="Продолжить" onSuccess={onSuccess} onCancel={onCancel} />
-      </div>
-    </LargeDialogShell>
-  )
-}
-
-function PasswordForm({
-  scope,
-  submitLabel,
-  onSuccess,
-  onCancel,
-}: {
-  scope: SecurityScope
-  submitLabel: string
-  onSuccess: () => void
-  onCancel?: () => void
-}) {
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
-
-  const [submitting, setSubmitting] = useState(false)
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setSubmitting(true)
+  const queryClient = useQueryClient()
+  const [identity, setIdentity] = useState<AccessIdentity | null>(null)
+  const refreshSequence = useRef(0)
+  const currentIdentity = useRef<AccessIdentity | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const refresh = useCallback(async () => {
+    const sequence = ++refreshSequence.current
     try {
-      await authenticateSecurityScope({ data: { scope, password } })
-      setError(null)
-      setPassword('')
-      onSuccess()
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Пароль не подходит')
-    } finally {
-      setSubmitting(false)
-    }
-  }
+      const next = await (document.visibilityState === 'visible' ? refreshAccountActivity() : getCurrentAccount())
+      if (sequence !== refreshSequence.current) return
+      if (currentIdentity.current?.id !== next?.id || currentIdentity.current?.revision !== next?.revision) queryClient.clear()
+      setStorageIdentity(next?.id ?? null, currentIdentity.current?.revision !== next?.revision); currentIdentity.current = next
+      // A fresh RPC object with unchanged contents must not rebuild table
+      // columns and discard an open filter. Compare every public identity field,
+      // so changed permissions/profile data still propagate immediately.
+      setIdentity(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next)
+      setError('')
+    } catch (reason) { if (sequence !== refreshSequence.current) return; setIdentity(null); currentIdentity.current = null; setStorageIdentity(null); queryClient.clear(); setError(reason instanceof Error ? reason.message : 'Не удалось проверить доступ.') }
+    finally { setLoading(false) }
+  }, [queryClient])
+  useEffect(() => {
+    const stop = watchAccountActivity(refresh)
+    const check = () => { void refresh() }
+    window.addEventListener(ACCESS_EXPIRED_EVENT, check)
+    return () => { stop(); window.removeEventListener(ACCESS_EXPIRED_EVENT, check) }
+  }, [refresh])
 
-  return (
-    <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
-      <label className="grid gap-1 text-sm font-medium text-slate-700">
-        Пароль
-        <Input
-          autoFocus
-          type="password"
-          value={password}
-          onChange={(event) => {
-            setPassword(event.target.value)
-            setError(null)
-          }}
-          placeholder="Введите пароль"
-        />
-      </label>
-      {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
-      <div className="flex justify-end gap-2">
-        {onCancel ? (
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Отмена
-          </Button>
-        ) : null}
-        <Button type="submit" disabled={submitting}>{submitting ? 'Проверяем...' : submitLabel}</Button>
-      </div>
-    </form>
-  )
+  return <Context.Provider value={{ identity, loading, error, refresh, can: permission => hasPermission(identity, permission) }}>{children}</Context.Provider>
+}
+export function useAccess() { const value = useContext(Context); if (!value) throw new Error('Не подключена проверка доступа.'); return value }
+export function useSecurityGuard() {
+  const { can } = useAccess()
+  const area = typeof window === 'undefined' ? 'welding' : REPORT_ACCESS_AREAS[getActiveReportFromPath(window.location.pathname)] ?? 'welding'
+  const allowed = async (permission: Permission) => {
+    if (can(permission)) return true
+    window.alert('Недостаточно прав для этого действия. Обратитесь к администратору.')
+    return false
+  }
+  return {
+    requireSettingsChangePassword: async () => ['templates', 'checks', 'dispatcher', 'exceptions', 'numbering', 'data', 'wdi', 'processes', 'indexes', 'references'].some(key => can(`${key}.edit` as Permission)),
+    requireEditPassword: (_label?: string) => allowed(`${area}.edit`),
+    requireImportPassword: (_label?: string) => allowed(`${area}.import`),
+    requireDocumentGenerationPassword: (_label?: string) => allowed(area === 'documents' ? 'documents.generate' : `${area}.generate`),
+    requireDeletePassword: (_label?: string) => allowed(`${area}.delete`),
+  }
+}
+export function SiteSecurityGate({ children }: { children: ReactNode }) {
+  const { identity, loading, error, refresh } = useAccess()
+  const pathname = useRouterState({ select: state => state.location.pathname })
+  if (loading) return <div className="p-10 text-center text-slate-600">Проверяем доступ…</div>
+  if (error) return <div role="alert" className="mx-auto mt-24 max-w-lg space-y-4 rounded-lg border bg-white p-6"><h1>Доступ временно недоступен</h1><p>{error}</p><Button onClick={() => void refresh()}>Повторить проверку</Button></div>
+  if (!identity) return <SignInForm />
+  const page = REPORT_ACCESS_AREAS[getActiveReportFromPath(pathname)]
+  const ordinaryPage = !['/account', '/activity', '/settings', '/user-guide'].includes(pathname)
+  if (ordinaryPage && page && !hasPermission(identity, `${page}.view`)) return <main className="p-10"><p>Доступ к этому разделу не предоставлен.</p><a href="/account" className="text-sky-700 underline">Открыть мой профиль</a></main>
+  return <div key={`${identity.id}:${identity.revision}`} className="contents">{children}</div>
+}
+function SignInForm() {
+  const { refresh } = useAccess()
+  const [email, setEmail] = useState(''), [password, setPassword] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false)
+  async function submit(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError('')
+    try {
+      const { authClient } = await import('./auth-client')
+      const result = await authClient.signIn.email({ email, password, rememberMe: true })
+      if (result.error) throw new Error('Не удалось войти. Проверьте почту и пароль. Если приглашение не активировано, откройте ссылку из письма.')
+      setPassword(''); await refresh()
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Не удалось войти.') }
+    finally { setBusy(false) }
+  }
+  return <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4"><form onSubmit={submit} className="w-full max-w-md space-y-5 rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
+    <div><p className="text-sm text-slate-500">Учёт сварки трубопроводов</p><h1 className="mt-2 text-2xl font-semibold">Вход в систему</h1></div>
+    <label className="grid gap-2 text-sm">Почта<Input type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} required /></label>
+    <label className="grid gap-2 text-sm">Пароль<Input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required /></label>
+    {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
+    <Button type="submit" className="w-full" disabled={busy}>{busy ? 'Входим…' : 'Войти'}</Button>
+    <p className="text-sm leading-6 text-slate-500">Доступ предоставляется по приглашению. Для восстановления пароля обратитесь к администратору.</p>
+  </form></main>
 }

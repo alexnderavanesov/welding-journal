@@ -8,9 +8,30 @@ import { WeldFormField } from '@/components/weld-form-field'
 import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import { ConfirmActionProvider } from '@/lib/confirm-action-context'
 
-vi.mock('@/lib/security-context', () => ({ useSecurityGuard: () => ({ requireEditPassword: vi.fn() }) }))
+vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: () => true }), useSecurityGuard: () => ({ requireEditPassword: vi.fn() }) }))
 
 describe('weld form input performance', () => {
+  it('selects the complete line identity and reopens choices without requiring a blur', () => {
+    function Harness() {
+      const [draft, setDraft] = useState<WeldInput>({ line: 'L1', isometry: 'KEEP' })
+      return <>
+        <WeldFormField field={FIELD_BY_KEY.get('line')!} draft={draft} setDraft={setDraft} fieldRefs={{ current: {} }}
+          suggestionRows={[{ line: 'L1', projectTitle: 'Проект', subtitleCode: 'A' }, { line: 'L1', projectTitle: 'Проект', subtitleCode: 'B' }]} />
+        <output>{`${draft.projectTitle}|${draft.subtitleCode}|${draft.isometry}`}</output>
+      </>
+    }
+    renderWithQueryClient(<Harness />)
+    const input = screen.getByRole('textbox', { name: 'Линия' })
+    fireEvent.focus(input)
+    fireEvent.click(screen.getByRole('button', { name: /^L1\s*Проект: Проект · Шифр: A$/ }))
+    expect(screen.getByText('Проект|A|KEEP')).toBeVisible()
+    fireEvent.click(input)
+    fireEvent.click(screen.getByRole('button', { name: /^L1\s*Проект: Проект · Шифр: B$/ }))
+    expect(screen.getByText('Проект|B|KEEP')).toBeVisible()
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    expect(screen.getByRole('button', { name: /^L1\s*Проект: Проект · Шифр: A$/ })).toBeVisible()
+  })
+
   it('closes the weld editor with one Escape even when a text suggestion is open', () => {
     HTMLElement.prototype.scrollTo = vi.fn()
     const onCancel = vi.fn(), onSave = vi.fn()

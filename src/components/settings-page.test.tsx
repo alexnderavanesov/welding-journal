@@ -7,7 +7,7 @@ import { ConfirmActionProvider } from '@/lib/confirm-action-context'
 const mocks = vi.hoisted(() => ({ usage: vi.fn(), settingsPassword: vi.fn(), exceptions: vi.fn() }))
 vi.mock('@/server/dispatcher-warnings', () => ({ listDispatcherAcceptedWarnings: mocks.exceptions, revokeDispatcherAcceptedWarning: vi.fn() }))
 vi.mock('@/server/weld-read-api', () => ({ getWeldDataUsageSummary: mocks.usage }))
-vi.mock('@/lib/security-context', () => ({
+vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: () => true }),
   useSecurityGuard: () => ({ requireSettingsChangePassword: mocks.settingsPassword }),
 }))
 
@@ -59,7 +59,7 @@ describe('settings system rule catalog', () => {
     await waitFor(() => expect(toggle).not.toBeChecked())
     stored = JSON.parse(localStorage.getItem('welding-save-check-settings')!)
     expect(stored).toMatchObject({ officialDls: false, officialRegistry: true, officialNaksDate: true })
-    expect(mocks.settingsPassword).toHaveBeenCalledTimes(2)
+    expect(mocks.settingsPassword).not.toHaveBeenCalled() // Personal checks.edit is checked directly for this independent subsection.
     expect(mocks.usage).not.toHaveBeenCalled()
   })
 
@@ -106,6 +106,29 @@ describe('settings system rule catalog', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Удалить ГИ' })).not.toBeInTheDocument())
     expect(material.getByText('М01')).toBeVisible()
     expect(mocks.settingsPassword).toHaveBeenCalledTimes(3)
+  })
+
+  it('explains and blocks unsupported classes and material prefixes before any save', async () => {
+    mocks.usage.mockResolvedValue({ rowsCount: 0, leadingLetterIndexedRowsCount: 0, weldingTypes: [], connectionTypes: [], materialGroups: [], testTypes: [] })
+    mocks.settingsPassword.mockResolvedValue(true)
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Данные' }))
+    const connections = within(await screen.findByRole('region', { name: 'Тип соединения' }))
+    expect(connections.getByText(/Первая буква — кириллическая «С» или «У»/)).toBeVisible()
+    const materials = within(screen.getByRole('region', { name: 'Группа материалов' }))
+    expect(materials.getByText(/Первая буква — только кириллическая «М»/)).toBeVisible()
+    for (const [section, value] of [[connections, 'Т1'], [connections, 'C2'], [materials, 'Н01'], [materials, 'M02']] as const) {
+      const input = section.getByLabelText('Новое значение')
+      fireEvent.change(input, { target: { value } })
+      expect(input).toHaveAttribute('aria-invalid', 'true')
+      expect(section.getByRole('button', { name: 'Добавить' })).toBeDisabled()
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(section.queryByRole('button', { name: `Удалить ${value}` })).not.toBeInTheDocument()
+    }
+    expect(mocks.settingsPassword).not.toHaveBeenCalled()
+    fireEvent.change(connections.getByLabelText('Новое значение'), { target: { value: ' с2 ' } })
+    fireEvent.keyDown(connections.getByLabelText('Новое значение'), { key: 'Enter' })
+    await connections.findByRole('button', { name: 'Удалить С2' })
   })
 
   it('opens eleven mandatory rules and seven optional guards/reminders without data requests', async () => {

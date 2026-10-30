@@ -15,7 +15,7 @@ vi.mock('@/server/dispatcher-warnings', () => ({
   revokeDispatcherAcceptedWarning: mocks.revoke,
 }))
 
-vi.mock('@/lib/security-context', () => ({
+vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: () => true }),
   useSecurityGuard: () => ({ requireDeletePassword: mocks.requireDeletePassword }),
 }))
 

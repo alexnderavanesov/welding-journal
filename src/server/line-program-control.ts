@@ -95,6 +95,7 @@ export async function changeProgramInTransaction(tx: SystemDocumentSequenceTrans
       if (previewOnly) return result
       if (data.previewToken !== token) throw new Error('Расчёт или выбор изменился после проверки. Повторно проверьте изменения; ничего не сохранено.')
       if (preview.newExcess.length && !data.confirmedExcess) throw new Error(`Подтвердите назначение сверх нормы или несколько способов контроля ${PROGRAM_DEMAND_LABELS.common}.`)
+      if (preview.newExcess.length) await (await import('./access-functions')).assertActionPermission('exceptions.edit')
       result.rows = await saveAssignedRows(tx, preview.records, previousRows, preview.records.filter(row => row.layeredControlAssigned && !previousRows.get(row.id)?.layeredControlAssigned).map(row => row.id), context)
       if (preview.newExcess.length) await tx.insert(dispatcherAcceptedWarnings).values(preview.newExcess.map(entry => ({
         key: entry.key, weldJointId: entry.rowId, kind: 'line-program-control', title: 'Согласован лишний контроль',

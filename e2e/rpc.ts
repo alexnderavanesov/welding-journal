@@ -74,3 +74,8 @@ export async function deserializeRpcResponse(payload: string): Promise<unknown> 
   const { createDefaultSerovalPlugins } = await import(pathToFileURL(location).href)
   return fromCrossJSON(JSON.parse(payload), { plugins: createDefaultSerovalPlugins() })
 }
+
+/** A visible tab records activity while checking identity; a hidden tab only checks identity. */
+export function isAccountRefreshRpc(name: string): boolean {
+  return /^(getCurrentAccount|refreshAccountActivity)(?:_|$)/.test(name)
+}

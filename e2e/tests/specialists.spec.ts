@@ -8,11 +8,14 @@ import { requireDb } from '../../src/db'
 import { weldJoints } from '../../src/db/schema'
 import { syncSystemDocumentsForWeldChangesInTransaction } from '../../src/server/system-document-index'
 import { applySpecialistAssignments } from '../../src/server/specialists'
-import { previewOperation, applyOperation } from '../../src/server/document-operation-service'
+import { previewOperation as raw_previewOperation, applyOperation as raw_applyOperation } from '../../src/server/document-operation-service'
+import { asE2eOwner } from '../with-owner-access'
 import { randomUUID } from 'node:crypto'
 import { updateWeldJointRows } from '../../src/server/weld-mutations'
 
 const project = 'E2E specialists'
+const applyOperation = asE2eOwner(raw_applyOperation, 'documents.edit')
+const previewOperation = asE2eOwner(raw_previewOperation, 'documents.view')
 const names = ['E2E Иванов специалист', 'E2E Петров специалист', 'E2E Сидоров термист']
 test.afterEach(async ({ page }) => {
   await page.close()

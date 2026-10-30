@@ -1,3 +1,4 @@
+import { auditSql } from './audit-functions'
 import { eq, sql } from 'drizzle-orm'
 
 import type { requireDb } from '@/db'
@@ -139,7 +140,7 @@ export async function refreshEarlyCoilDecisionContextsInTransaction(
     }]
   })
   if (updates.length > 0) {
-    await tx.execute(sql`
+    await auditSql(tx, [{ table: dispatcherAcceptedWarnings, where: sql`${dispatcherAcceptedWarnings.key} = any(${sql.param(updates.map(row => row.key))}::text[])` }], () => tx.execute(sql`
       update ${dispatcherAcceptedWarnings} as "target"
       set
         "title" = "changes"."title",
@@ -150,7 +151,7 @@ export async function refreshEarlyCoilDecisionContextsInTransaction(
         ${sql.param(updates.map((update) => update.context))}::text[]
       ) as "changes"("key", "title", "context")
       where "target"."key" = "changes"."key"
-    `)
+    `))
   }
 }
 

@@ -30,7 +30,7 @@ describe('weld mutation policy', () => {
       expect(WELD_FIELDS.some((field) => String(field.key) === key)).toBe(false)
     }
   })
-  it('keeps the obsolete exemption only in the schema and client-write denylist', () => {
+  it('keeps the obsolete exemption in data compatibility and history display only', () => {
     const root = resolve(process.cwd(), 'src')
     const scan = (directory: string): string[] => readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
       const path = resolve(directory, entry.name)
@@ -39,7 +39,9 @@ describe('weld mutation policy', () => {
         /preHeatTreatmentLnkExempt|pre_heat_treatment_lnk_exempt/.test(readFileSync(path, 'utf8'))
         ? [relative(root, path).replaceAll('\\', '/')] : []
     })
-    expect(scan(root).sort()).toEqual(['db/schema.ts', 'server/weld-mutation-policy.ts'])
+    // The audit journal names persisted fields, including legacy values. A label
+    // does not restore the retired exemption as an editable or calculated rule.
+    expect(scan(root).sort()).toEqual(['db/schema.ts', 'lib/activity-labels.ts', 'server/weld-mutation-policy.ts'])
   })
   it('persists every visible editable field from the weld form', () => {
     const allowed = new Set(WELD_MUTATION_FIELD_KEYS.welding)

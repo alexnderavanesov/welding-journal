@@ -1,3 +1,4 @@
+import { asE2eOwner } from '../with-owner-access'
 import { journalRow, deleteJournalJoint } from '../journal-grid'
 import { expect, test } from '@playwright/test'
 import { execFile } from 'node:child_process'
@@ -6,7 +7,7 @@ import { E2E_DATABASE_URL, withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
 import { confirmLnkResultChanges } from '../lnk-result-confirmation'
-import { clearLnkRequestPosition, deleteWeldJoints } from '@/server/weld-mutations'
+import { clearLnkRequestPosition as raw_clearLnkRequestPosition , deleteWeldJoints as raw_deleteWeldJoints } from '@/server/weld-mutations'
 
 const project = 'Демо — исправление ошибочной катушки'
 test('обычное удаление сторон с заявками: отмена, обе стороны, сохранённая цепочка и видимая СП-09', async ({ page }) => {
@@ -153,3 +154,7 @@ test('помощник: переходы, удаление сторон, исп�
     await withE2eDatabase(db => db.query("delete from welder_stamps where naks_stamp='DCK1'"))
   }
 })
+
+const deleteWeldJoints = asE2eOwner(raw_deleteWeldJoints, 'welding.delete')
+
+const clearLnkRequestPosition = asE2eOwner(raw_clearLnkRequestPosition, 'lnk.delete')

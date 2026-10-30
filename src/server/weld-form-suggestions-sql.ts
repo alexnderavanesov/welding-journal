@@ -1,6 +1,6 @@
 import { sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 
-import { weldJoints } from '@/db/schema'
+import { linePrograms, weldJoints } from '@/db/schema'
 import {
   FIELD_BY_KEY,
   type WeldFieldKey,
@@ -13,6 +13,28 @@ import {
   type WeldFormSuggestion,
 } from '@/lib/weld-form-suggestions'
 import { getWeldColumn } from '@/server/weld-server-shared'
+
+/** Choose the complete registry identity, including lines with no joints yet.
+ * Existing joints may move only inside their immutable project/code. */
+export function buildWeldLineSuggestionsQuery(draft: WeldInput) {
+  const project = String(draft.projectTitle ?? '').trim().toLocaleLowerCase('ru')
+  const code = String(draft.subtitleCode ?? '').trim().toLocaleLowerCase('ru')
+  const line = String(draft.line ?? '').trim().toLocaleLowerCase('ru')
+  return sql`
+    select ${linePrograms.projectTitle} as "projectTitle", ${linePrograms.subtitleCode} as "subtitleCode", ${linePrograms.line} as "line"
+    from ${linePrograms}
+    where btrim(${linePrograms.line}) <> ''
+      ${line ? sql`and strpos(lower(${linePrograms.line}), ${line}) > 0` : sql``}
+      ${draft.id ? sql`and lower(btrim(${linePrograms.projectTitle})) = ${project}
+        and lower(btrim(${linePrograms.subtitleCode})) = ${code}` : sql``}
+    order by
+      (case when ${project} <> '' and lower(btrim(${linePrograms.projectTitle})) = ${project} then 40 else 0 end +
+       case when ${code} <> '' and lower(btrim(${linePrograms.subtitleCode})) = ${code} then 36 else 0 end) desc,
+      (lower(btrim(${linePrograms.line})) = ${line}) desc,
+      ${linePrograms.line}, ${linePrograms.projectTitle}, ${linePrograms.subtitleCode}, ${linePrograms.id}
+    limit 8
+  `
+}
 
 const CONTEXT_FIELDS: WeldFieldKey[] = ['projectTitle', 'subtitleCode', 'line', 'joint']
 const MATCH_CONTEXT_FIELDS: Array<{ key: WeldFieldKey; score: number }> = [

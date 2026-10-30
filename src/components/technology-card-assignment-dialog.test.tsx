@@ -7,7 +7,7 @@ import { emptyTechnologyCardAssignmentCounts } from '@/lib/technology-card-assig
 const mocks = vi.hoisted(() => ({ preview: vi.fn(), details: vi.fn(), apply: vi.fn(), confirm: vi.fn(), guard: vi.fn(), invalidate: vi.fn() }))
 vi.mock('@/server/technology-cards-api', () => ({ previewTechnologyCardAssignments: mocks.preview, getTechnologyCardAssignmentDetails: mocks.details, applyTechnologyCardAssignmentBatch: mocks.apply }))
 vi.mock('@/lib/confirm-action-context', () => ({ useConfirmAction: () => mocks.confirm }))
-vi.mock('@/lib/security-context', () => ({ useSecurityGuard: () => ({ requireEditPassword: mocks.guard }) }))
+vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: () => true }), useSecurityGuard: () => ({ requireEditPassword: mocks.guard }) }))
 vi.mock('@/lib/weld-query-utils', () => ({ scheduleWeldDataRefresh: mocks.invalidate }))
 const context = { version: 1, fingerprint: 'registry', upperId: 6 }
 const chunk = { afterId: 0, throughId: 3, fingerprint: 'rows', size: 3, counts: { ...emptyTechnologyCardAssignmentCounts(), assign: 1, reassign: 1, rename: 1 } }

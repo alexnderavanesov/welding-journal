@@ -14,7 +14,6 @@ const sections: [ActiveReport, string, string][] = [
   ['statistics', 'Статистика', 'chart-column'],
   ['documents', 'Документы', 'file-text'],
   ['settings', 'Настройки', 'settings'],
-  ['userGuide', 'Руководство пользователя', 'book-open-text'],
 ]
 
 it.each([false, true])('keeps every section accessible with consistent outline icons, collapsed=%s', collapsed => {
@@ -36,6 +35,9 @@ it.each([false, true])('keeps every section accessible with consistent outline i
     expect(button).toHaveClass('bg-sky-50', 'text-sky-700')
     expect(sidebar.querySelectorAll('[aria-current="page"]')).toHaveLength(1)
   }
+  expect(within(sidebar).getByRole('link', { name: /Мой профиль/ })).toHaveAttribute('href', '/account')
+  expect(within(sidebar).queryByRole('button', { name: 'Руководство пользователя' })).not.toBeInTheDocument()
+  expect(within(sidebar).queryByRole('link', { name: 'Журнал действий' })).not.toBeInTheDocument()
   fireEvent.click(within(sidebar).getByRole('button', { name: collapsed ? 'Раскрыть меню' : 'Скрыть меню' }))
   expect(onCollapsedChange).toHaveBeenCalledExactlyOnceWith(!collapsed)
 })

@@ -1,10 +1,11 @@
+import { asE2eOwner } from '../with-owner-access'
 import { expect, test } from '@playwright/test'
 import pg from 'pg'
 import { writeFile } from 'node:fs/promises'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { readAcrossCommittedWrite } from '../interleaved-read'
-import { listLnkWorkflowRows } from '../../src/server/lnk-workflow-context'
-import { listPstoWorkflowRows } from '../../src/server/psto-workflow-context'
+import { listLnkWorkflowRows as raw_listLnkWorkflowRows } from '../../src/server/lnk-workflow-context'
+import { listPstoWorkflowRows as raw_listPstoWorkflowRows } from '../../src/server/psto-workflow-context'
 import { loadDuplicateControlCandidatePage, loadDuplicateControlCandidateRowsByIds, loadDuplicateControlRegistryPage } from '../../src/server/duplicate-controls'
 
 const project = 'E2E workflow coherent source'
@@ -100,3 +101,6 @@ test('workflow relation reads remain constant for one and 500 selected joints', 
   console.log('WORKFLOW_READ_COUNTS', JSON.stringify(samples))
   await writeFile(info.outputPath('workflow-read-counts.json'), JSON.stringify(samples, null, 2))
 })
+
+const listLnkWorkflowRows = asE2eOwner(raw_listLnkWorkflowRows, 'lnk.view')
+const listPstoWorkflowRows = asE2eOwner(raw_listPstoWorkflowRows, 'psto.view')

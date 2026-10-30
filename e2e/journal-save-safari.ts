@@ -31,7 +31,7 @@ export async function measureJournalSaveInSafari(project: string, count: number,
     const hidden = WELD_FIELDS.filter(field => !['projectTitle', 'line', 'joint', 'isometry', 'finalStatus'].includes(field.key)).map(field => field.key)
     for (const layout of ['flat', 'single', 'nested']) {
       console.log('SAFARI_SAVE_LAYOUT', layout)
-      await execute(`localStorage.removeItem('welding-journal-ag-grid:v1');localStorage.setItem('welding-report-view:v1:weldingJournal',JSON.stringify({activePreset:'custom',hiddenFieldKeys:arguments[0],customHiddenFieldKeys:arguments[0],collapsedSections:[],savedViews:[]}))`, hidden)
+      await execute(`for(const key of Object.keys(localStorage)) if(['welding-journal-ag-grid:v1','welding-report-view:v1:weldingJournal'].some(name=>key===name||key.startsWith('welding-user:')&&key.endsWith(':'+name))) localStorage.removeItem(key);localStorage.setItem('welding-report-view:v1:weldingJournal',JSON.stringify({activePreset:'custom',hiddenFieldKeys:arguments[0],customHiddenFieldKeys:arguments[0],collapsedSections:[],savedViews:[]}))`, hidden)
       await command(session + '/refresh', {})
       await wait(`return !!document.querySelector('input[aria-label="Быстрый поиск по отчету"]')`)
       await fill('input[aria-label="Быстрый поиск по отчету"]', project)

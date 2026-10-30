@@ -8,7 +8,7 @@ import type { WeldInput } from '@/lib/weld-fields'
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 const mocks = vi.hoisted(() => ({ password: vi.fn(), change: vi.fn(), invalidate: vi.fn() }))
-vi.mock('@/lib/security-context', () => ({ useSecurityGuard: () => ({ requireEditPassword: mocks.password }) }))
+vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: () => true }), useSecurityGuard: () => ({ requireEditPassword: mocks.password }) }))
 vi.mock('@/server/line-program-control', () => ({ changeLayeredControl: mocks.change }))
 vi.mock('@/server/line-program', () => ({ findLineProgram: vi.fn() }))
 vi.mock('@/lib/weld-query-utils', () => ({ scheduleWeldDataRefresh: mocks.invalidate }))

@@ -1,9 +1,10 @@
+import { asE2eOwner } from '../with-owner-access'
 import { expect, test, type Page } from '@playwright/test'
 import { eq } from 'drizzle-orm'
 import { requireDb } from '../../src/db'
 import { weldJoints } from '../../src/db/schema'
-import { extendLnkRequest } from '../../src/server/weld-mutations'
-import { getLnkWorkflowRequestSummary } from '../../src/server/lnk-workflow-context'
+import { extendLnkRequest as raw_extendLnkRequest } from '../../src/server/weld-mutations'
+import { getLnkWorkflowRequestSummary as raw_getLnkWorkflowRequestSummary } from '../../src/server/lnk-workflow-context'
 import { syncSystemDocumentsForWeldChangesInTransaction } from '../../src/server/system-document-index'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
@@ -164,3 +165,6 @@ test('одновременные добавления не теряются, п�
     disabledReason: null, rowCount: 4, positionCount: 5,
   })
 })
+
+const extendLnkRequest = asE2eOwner(raw_extendLnkRequest, 'lnk.edit')
+const getLnkWorkflowRequestSummary = asE2eOwner(raw_getLnkWorkflowRequestSummary, 'lnk.view')

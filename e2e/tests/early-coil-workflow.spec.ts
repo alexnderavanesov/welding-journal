@@ -184,12 +184,6 @@ test('creates, navigates, revokes and safely protects an early coil', async ({ p
   await expect(confirm).toBeDisabled()
   await correction.getByRole('checkbox').check()
   await confirm.click()
-  await expect(page.getByRole('heading', { name: 'Изменение настроек', exact: true })).toBeVisible()
-  await page.getByLabel('Пароль', { exact: true }).fill(SETTINGS_PASSWORD)
-  await page.getByRole('button', { name: 'Продолжить', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Подтверждение удаления', exact: true })).toBeVisible()
-  await page.getByLabel('Пароль', { exact: true }).fill(DELETE_PASSWORD)
-  await page.getByRole('button', { name: 'Продолжить', exact: true }).click()
   await expect(correction).toBeHidden()
   await expect.poll(loadEarlyCoilState).toEqual({ accepted: false, expectedRepairExists: false, coilJoints: [] })
   await page.goto('/journal')
@@ -577,14 +571,7 @@ async function revokeEarlyCoil(page: Page, authenticate = false) {
   }
   await dialog.getByRole('checkbox').check()
   await dialog.getByRole('button', { name: 'Подтвердить отмену', exact: true }).click()
-  if (authenticate) {
-    await expect(page.getByRole('heading', { name: 'Изменение настроек', exact: true })).toBeVisible()
-    await page.getByLabel('Пароль', { exact: true }).fill(SETTINGS_PASSWORD)
-    await page.getByRole('button', { name: 'Продолжить', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'Подтверждение удаления', exact: true })).toBeVisible()
-    await page.getByLabel('Пароль', { exact: true }).fill(DELETE_PASSWORD)
-    await page.getByRole('button', { name: 'Продолжить', exact: true }).click()
-  }
+  // Personal owner permissions replace the retired shared-password prompts.
 }
 
 async function configureEarlyCoilSecurity() {
@@ -1037,9 +1024,6 @@ async function assertDirectCoilDeletionIsBlocked(page: Page) {
   const rowId = await loadJointId(COIL_JOINTS[0])
   await page.goto('/journal')
   await deleteJournalJoint(page, rowId)
-  await expect(page.getByRole('heading', { name: 'Подтверждение удаления', exact: true })).toBeVisible()
-  await page.getByLabel('Пароль', { exact: true }).fill(DELETE_PASSWORD)
-  await page.getByRole('button', { name: 'Продолжить', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Удалить стык' })).toBeVisible()
   const confirmDialog = page.locator('[data-confirm-action-dialog="true"]').locator('..')
   await confirmDialog.getByRole('button', { name: 'Удалить', exact: true }).click()
@@ -1054,9 +1038,6 @@ async function assertDirectCoilDeletionIsBlocked(page: Page) {
 async function assertDirectEarlyCoilSourceDeletionIsBlocked(page: Page, sourceRowId: number) {
   await page.goto('/journal')
   await deleteJournalJoint(page, sourceRowId)
-  await expect(page.getByRole('heading', { name: 'Подтверждение удаления', exact: true })).toBeVisible()
-  await page.getByLabel('Пароль', { exact: true }).fill(DELETE_PASSWORD)
-  await page.getByRole('button', { name: 'Продолжить', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Удалить стык', exact: true })).toBeVisible()
   const confirmDialog = page.locator('[data-confirm-action-dialog="true"]').locator('..')
   await confirmDialog.getByRole('button', { name: 'Удалить', exact: true }).click()
@@ -1074,10 +1055,7 @@ async function assertDirectCoilPairDeletionIsBlocked(page: Page) {
   await deleteSelectedAction.evaluate((element) => element.scrollIntoView({ block: 'center' }))
   await deleteSelectedAction.click()
   const passwordHeading = page.getByRole('heading', { name: 'Подтверждение удаления', exact: true })
-  if (await passwordHeading.isVisible()) {
-    await page.getByLabel('Пароль', { exact: true }).fill(DELETE_PASSWORD)
-    await page.getByRole('button', { name: 'Продолжить', exact: true }).click()
-  }
+  await expect(passwordHeading).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Удалить выбранные стыки', exact: true })).toBeVisible()
   const confirmDialog = page.locator('[data-confirm-action-dialog="true"]').locator('..')
   await confirmDialog.getByRole('button', { name: 'Удалить', exact: true }).click()
@@ -1203,10 +1181,7 @@ async function deleteJournalRows(page: Page, rows: Array<{ id: number; joint: st
   }
 
   const passwordHeading = page.getByRole('heading', { name: 'Подтверждение удаления', exact: true })
-  if (await passwordHeading.isVisible()) {
-    await page.getByLabel('Пароль', { exact: true }).fill(DELETE_PASSWORD)
-    await page.getByRole('button', { name: 'Продолжить', exact: true }).click()
-  }
+  await expect(passwordHeading).toHaveCount(0)
   const confirmTitle = rows.length === 1 ? 'Удалить стык' : 'Удалить выбранные стыки'
   await expect(page.getByRole('heading', { name: confirmTitle, exact: true })).toBeVisible()
   const confirmDialog = page.locator('[data-confirm-action-dialog="true"]').locator('..')

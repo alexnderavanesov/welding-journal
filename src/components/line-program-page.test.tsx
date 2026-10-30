@@ -22,7 +22,7 @@ vi.mock('@/server/line-program', () => ({ getLineProgramPage: mocks.page, getLin
     (!search || [line.projectTitle, line.subtitleCode, line.line, ...(line.searchStamps ?? [])].some(value => value.toLocaleLowerCase('ru').includes(search)))) }
 }, getLineProgramCalculation: mocks.calculate, getLineProgramExplanation: mocks.explanation, getLineProgramJointPage: mocks.rows, findLineProgram: mocks.find, saveLineProgram: mocks.save }))
 vi.mock('@/server/line-program-control', () => ({ applyLineProgramControl: mocks.assign, previewLineProgramControl: mocks.preview }))
-vi.mock('@/lib/security-context', () => ({ useSecurityGuard: () => ({ requireEditPassword: async () => true }) }))
+vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: () => true }), useSecurityGuard: () => ({ requireEditPassword: async () => true }) }))
 vi.mock('@/lib/confirm-action-context', () => ({ useConfirmAction: () => mocks.confirm }))
 const line = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'LP-1', category: 'II', groupName: 'A', weldControlPercent: 30, pvkControlPercent: 10, configurationIssue: null, version: '2026-09-01T00:00:00.000Z' }
 const sample = { id: 1, connectionType: 'С', joint: 'F1', weldDate: '2026-09-01', stamp1K: 'STAMP', rowVersion: '123' }

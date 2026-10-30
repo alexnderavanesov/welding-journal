@@ -5,7 +5,7 @@ import { WeldFormSections } from './weld-form-sections'
 import { FIELD_BY_KEY, type WeldInput } from '@/lib/weld-fields'
 import { ConfirmActionProvider } from '@/lib/confirm-action-context'
 
-vi.mock('@/lib/security-context', () => ({ useSecurityGuard: () => ({ requireEditPassword: vi.fn() }) }))
+vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: () => true }), useSecurityGuard: () => ({ requireEditPassword: vi.fn() }) }))
 vi.mock('@/server/line-program-control', () => ({ changeLayeredControl: vi.fn() }))
 vi.mock('@/server/line-program', () => ({ findLineProgram: vi.fn() }))
 

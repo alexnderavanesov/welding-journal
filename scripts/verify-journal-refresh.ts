@@ -1,3 +1,4 @@
+import { asE2eOwner } from '../e2e/with-owner-access'
 import assert from 'node:assert/strict'
 import pg from 'pg'
 import { and, eq, getTableColumns, sql } from 'drizzle-orm'
@@ -84,20 +85,20 @@ try {
     return result as ReturnType<pg.Client['query']>
   } as typeof original
   let results: Awaited<ReturnType<typeof journal.readJournalGridBlocks>>
-  try { results = await journal.readJournalGridBlocks({ ...query, blocks }) }
+  try { results = await asE2eOwner(journal.readJournalGridBlocks, 'welding.view')({ ...query, blocks }) }
   finally { pg.Client.prototype.query = original }
   assert(changed, 'Concurrent writer must run between the two block reads')
   assert.equal(results.length, 2)
   assert.equal(results[0].revision, results[1].revision)
   assert(results.every(result => result.rows.length === 1 && result.rows[0].isometry === 'BEFORE'))
-  await assert.rejects(journal.readJournalGridBlocks({ ...query, blocks, revision: results[0].revision }), /изменились/)
-  await assert.rejects(journal.readJournalGridBlocks({ ...query, blocks: Array(33).fill(blocks[0]) }), /набор блоков/)
-  await assert.rejects(journal.readJournalGridBlocks({ ...query, blocks }, AbortSignal.abort()), /aborted/)
+  await assert.rejects(asE2eOwner(journal.readJournalGridBlocks, 'welding.view')({ ...query, blocks, revision: results[0].revision }), /изменились/)
+  await assert.rejects(asE2eOwner(journal.readJournalGridBlocks, 'welding.view')({ ...query, blocks: Array(33).fill(blocks[0]) }), /набор блоков/)
+  await assert.rejects(asE2eOwner(journal.readJournalGridBlocks, 'welding.view')({ ...query, blocks }, AbortSignal.abort()), /aborted/)
 
   // Copy/range readers hold a checked context, but read outside a transaction
   // and reject a concurrent writer at the end. Their discarded aggregates must
   // never contaminate a grid transaction that legitimately retains the old view.
-  const groupContext = await journal.journalReadContext({
+  const groupContext = await asE2eOwner(journal.journalReadContext, 'welding.view')({
     columnFilters: { projectTitle: '=' + project, line: '=AB' },
     groupBy: ['line'], route: [], start: 0, end: 100,
   })

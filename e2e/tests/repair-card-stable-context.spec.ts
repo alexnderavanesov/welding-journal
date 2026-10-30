@@ -1,7 +1,8 @@
+import { asE2eOwner } from '../with-owner-access'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
-import { getWeldJointById } from '@/server/weld-read'
+import { getWeldJointById as raw_getWeldJointById } from '@/server/weld-read'
 
 const project = 'E2E stable repair card'
 const ids: number[] = []
@@ -40,3 +41,5 @@ test('сохранённый первичный стык с похожим на 
   expect(row?.programChainState?.kind).toBe('primary')
   expect(row?.programRepairRequirements ?? []).toEqual([])
 })
+
+const getWeldJointById = asE2eOwner(raw_getWeldJointById, 'welding.view')

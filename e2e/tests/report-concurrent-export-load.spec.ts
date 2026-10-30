@@ -32,7 +32,7 @@ test('three complete 200k × 111 exports alongside editing/search; cancellation 
     md5(string_agg(md5((to_jsonb(w)-'final_status')::text),'' order by id)) facts
     from weld_joints w where project_title=$1`, [project])).rows[0])
   const before = await facts()
-  const contexts = await Promise.all(Array.from({ length: 5 }, () => browser.newContext({ baseURL: 'http://127.0.0.1:3100', viewport: { width: 1600, height: 1000 } })))
+  const contexts = await Promise.all(Array.from({ length: 5 }, () => browser.newContext({ storageState: process.env.E2E_AUTH_STATE, baseURL: 'http://127.0.0.1:3100', viewport: { width: 1600, height: 1000 } })))
   contexts.forEach(context => { context.setDefaultTimeout(90_000); context.setDefaultNavigationTimeout(180_000) })
   const clients = contexts.map((context, index) => observeMixedClient(context, ['export-1', 'export-2', 'export-3', 'writer', 'reader'][index]))
   const pages = await Promise.all(contexts.map(context => context.newPage()))

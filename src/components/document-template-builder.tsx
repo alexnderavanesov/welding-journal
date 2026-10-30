@@ -1,3 +1,4 @@
+import { userStorage, scopedStorageKey } from '@/lib/user-storage'
 import { Select } from '@/components/ui/select'
 import { useCallback, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import {
@@ -492,7 +493,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
   const [cellClipboard, setCellClipboard] = useState<DocumentTemplateCellClipboardPayload | null>(() =>
     typeof window === 'undefined'
       ? null
-      : readDocumentTemplateCellClipboard(window.localStorage),
+      : readDocumentTemplateCellClipboard(userStorage),
   )
 
   useEffect(() => {
@@ -604,7 +605,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
 
   const readCurrentCellClipboard = useCallback(() => {
     if (typeof window === 'undefined') return cellClipboard
-    const storedClipboard = readDocumentTemplateCellClipboard(window.localStorage)
+    const storedClipboard = readDocumentTemplateCellClipboard(userStorage)
     setCellClipboard(storedClipboard)
     return storedClipboard
   }, [cellClipboard])
@@ -617,7 +618,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
       sheetName: draft.sheetName,
     })
     if (typeof window !== 'undefined') {
-      writeDocumentTemplateCellClipboard(window.localStorage, payload)
+      writeDocumentTemplateCellClipboard(userStorage, payload)
     }
     setCellClipboard(payload)
   }, [draft.sheetName, template.fileName, template.id])
@@ -666,7 +667,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
     setSelectedCell(cell)
     const clipboard = typeof window === 'undefined'
       ? cellClipboard
-      : readDocumentTemplateCellClipboard(window.localStorage)
+      : readDocumentTemplateCellClipboard(userStorage)
     const pasteIssue = clipboard ? getCellPasteIssue(cell, clipboard) : null
     setCellClipboard(clipboard)
     setCellContextMenu({
@@ -712,8 +713,8 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
   useEffect(() => {
     const handleStorage = (event: StorageEvent) => {
       if (event.storageArea !== window.localStorage) return
-      if (event.key !== null && event.key !== DOCUMENT_TEMPLATE_CELL_CLIPBOARD_STORAGE_KEY) return
-      setCellClipboard(readDocumentTemplateCellClipboard(window.localStorage))
+      if (event.key !== null && event.key !== scopedStorageKey(DOCUMENT_TEMPLATE_CELL_CLIPBOARD_STORAGE_KEY)) return
+      setCellClipboard(readDocumentTemplateCellClipboard(userStorage))
     }
     window.addEventListener('storage', handleStorage)
     return () => window.removeEventListener('storage', handleStorage)

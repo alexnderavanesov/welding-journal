@@ -4,8 +4,8 @@ import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
 import { LargeDialogShell } from './large-dialog-shell'
 
 /** Shared shell for registry cards and document assignments; never expands a table row. */
-export function SpecialistDialogShell({ label, busy, onClose, children, wide = false }: {
-  label: string; busy: boolean; onClose: () => void; children: ReactNode; wide?: boolean
+export function SpecialistDialogShell({ label, busy, onClose, children, wide = false, maxWidthClassName }: {
+  label: string; busy: boolean; onClose: () => void; children: ReactNode; wide?: boolean; maxWidthClassName?: string
 }) {
   const root = useRef<HTMLDivElement>(null)
   const previousFocus = useRef(typeof document === 'undefined' ? null : document.activeElement)
@@ -21,7 +21,7 @@ export function SpecialistDialogShell({ label, busy, onClose, children, wide = f
     event.stopImmediatePropagation()
     if (!busy) onClose()
   }, { capture: true })
-  return <LargeDialogShell ariaLabel={label} maxWidthClassName={wide ? 'max-w-3xl' : 'max-w-xl'}
+  return <LargeDialogShell ariaLabel={label} maxWidthClassName={maxWidthClassName ?? (wide ? 'max-w-3xl' : 'max-w-xl')}
     maxHeightClassName="max-h-[calc(100dvh-2rem)]" panelRadiusClassName="rounded-xl" panelClassName="overflow-hidden">
     <div ref={root} className="flex min-h-0 flex-col" onKeyDown={event => {
       if (event.key !== 'Tab') return

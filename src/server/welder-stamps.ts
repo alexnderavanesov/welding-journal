@@ -1,3 +1,4 @@
+import { auditSql } from './audit-functions'
 import { createServerFn } from '@tanstack/react-start'
 import { asc, eq, inArray, or, sql, type SQL } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
@@ -209,6 +210,10 @@ export const saveWelderStampRecords = createServerFn({ method: 'POST' })
       await assertRemovedWelderStampAliasesAreUnused(tx, currentStampRows, preparedRecords)
 
       const currentRecords = currentStampRows.map(toWelderStampPayload)
+      const preparedById = new Map(preparedRecords.map(record => [record.id, record]))
+      if (currentRecords.some(before => !preparedById.has(before.id) || !before.archived && preparedById.get(before.id)?.archived)) {
+        await (await import('./access-functions')).assertActionPermission('references.delete')
+      }
       await assertWelderStampArchiveDatesAreUnused(tx, currentRecords, preparedRecords)
       const impact = getWelderStampDispatcherImpact(currentRecords, preparedRecords)
       // A stale resubmission must still pass all revision/reference checks above.
@@ -262,13 +267,13 @@ export async function persistWelderStampObjects(
       oldToken: ',' + JSON.stringify(oldName.toLocaleLowerCase('ru')) + ']', newToken: ',' + JSON.stringify(newName.toLocaleLowerCase('ru')) + ']' }] : []
   })
   const expiryPrefix = sql`'welder-stamp-expiry:' || split_part(decisions.key, ':', 2) || ':' || changes.id || ':'`
-  if (renamed.length) await tx.execute(sql`update ${dispatcherAcceptedWarnings} as decisions set key = case
+  if (renamed.length) await auditSql(tx, [{ table: dispatcherAcceptedWarnings, where: sql`${dispatcherAcceptedWarnings.welderStampId} = any(${sql.param(renamed.map(row => row.id))}::integer[])` }], () => tx.execute(sql`update ${dispatcherAcceptedWarnings} as decisions set key = case
       when decisions.kind = 'percentage-line-control' then replace(decisions.key, changes.old_token, changes.new_token)
       else ${expiryPrefix} || changes.new_name || ':' || substring(decisions.key from length(${expiryPrefix} || changes.old_name || ':') + 1) end
     from unnest(${sql.param(renamed.map(change => change.id))}::integer[], ${sql.param(renamed.map(change => change.oldToken))}::text[], ${sql.param(renamed.map(change => change.newToken))}::text[],
       ${sql.param(renamed.map(change => change.oldName))}::text[], ${sql.param(renamed.map(change => change.newName))}::text[]) as changes(id, old_token, new_token, old_name, new_name)
     where decisions.welder_stamp_id = changes.id and (decisions.kind = 'percentage-line-control'
-      or (decisions.kind = 'welder-stamp-expiry' and left(decisions.key, length(${expiryPrefix} || changes.old_name || ':')) = ${expiryPrefix} || changes.old_name || ':'))`)
+      or (decisions.kind = 'welder-stamp-expiry' and left(decisions.key, length(${expiryPrefix} || changes.old_name || ':')) = ${expiryPrefix} || changes.old_name || ':'))`))
   const updateSet = Object.fromEntries(Object.keys(toDbInsert(records[0])).filter(key => key !== 'id').map(key => [key,
     sql`excluded.${sql.identifier(welderStamps[key as keyof typeof welderStamps.$inferInsert].name)}`,
   ]))
@@ -393,6 +398,8 @@ export const saveWelderStampSuspensionRecords = createServerFn({ method: 'POST' 
 
       const impact = getWelderStampSuspensionDispatcherImpact(currentSuspensionRows.map(suspensionToPayload), preparedRecords)
       if (!impact.changed) return createRegistrySnapshot(currentStampRows, currentSuspensionRows)
+      const retainedIds = new Set(preparedRecords.map(record => record.id))
+      if (currentSuspensionRows.some(before => !retainedIds.has(before.id))) await (await import('./access-functions')).assertActionPermission('references.delete')
       const selectedScopes = await loadWelderStampDispatcherScopes(tx, impact.officialAliases, [])
       const scopes = selectedScopes === null ? null : await loadBoundedDispatcherDirtyScopes(tx, selectedScopes)
 

@@ -18,6 +18,8 @@ try {
   if (process.env.AUDIT_SQL_COUNTS === '1') {
     process.env.AUDIT_SQL_COUNTS_FILE = join(await mkdtemp(join(tmpdir(), 'welding-e2e-sql-')), 'counts.json')
   }
+  const { prepareE2eAuthentication } = await import('./authentication')
+  await prepareE2eAuthentication(templateDirectory)
   exitCode = await runPlaywright(process.argv.slice(2))
   try {
     await verifyFixture?.()

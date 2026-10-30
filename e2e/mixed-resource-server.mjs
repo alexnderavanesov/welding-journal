@@ -5,6 +5,8 @@ import { dirname, resolve, basename } from 'node:path'
 import { mkdirSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 
+assert(process.env.E2E_AUTH_STATE && (process.env.BETTER_AUTH_SECRET?.length ?? 0) >= 32, 'Prepare isolated E2E authentication first')
+assert.equal(process.env.BETTER_AUTH_URL, 'http://127.0.0.1:3100')
 assert.equal(process.env.AUDIT_MIXED_LOAD, '1')
 assert.equal(process.env.AUDIT_SQL_COUNTS, '1')
 assert.equal(process.env.E2E_USE_PRODUCTION_BUILD, '1')
@@ -56,6 +58,8 @@ id = docker(['create', '--pull=never', '--name', name, '--label', 'welding.local
   '-e', 'DATABASE_URL=postgresql://welding:welding@host.docker.internal:5432/welding_tracker_e2e',
   '-e', 'WELDING_ENV_LOADED=1', '-e', 'NODE_ENV=production', '-e', 'HOST=0.0.0.0', '-e', 'PORT=3000',
   '-e', 'DATABASE_POOL_MAX=5', '-e', 'DOCUMENT_TEMPLATE_STORAGE_PATH=/tmp/templates',
+  '-e', 'BETTER_AUTH_SECRET', '-e', 'BETTER_AUTH_URL', '-e', 'AUTH_MAIL_MODE=local',
+  '-e', 'SMTP_HOST=127.0.0.1', '-e', 'AUTH_MAIL_LOCAL_DIR=/tmp/auth-mail',
   '-e', 'AUDIT_RESOURCE_CONTAINER=1', '-e', 'AUDIT_SQL_COUNTS_FILE=/audit-counts/counts.json',
   ...(diskExports ? ['-e', 'TMPDIR=/audit-counts/report-tmp'] : []),
   ...(['1', 'peak'].includes(process.env.AUDIT_HEAP_PROFILE) ? ['-e', `AUDIT_HEAP_PROFILE=${process.env.AUDIT_HEAP_PROFILE}`] : []),

@@ -46,7 +46,7 @@ test.afterEach(async ({ page }) => {
   await restoreDatabaseSnapshot()
 })
 
-test('shows the protected process tab before locking and keeps RK exposures there', async ({ page }) => {
+test('owner edits process settings through personal access; legacy password settings do not restore the retired gate', async ({ page }) => {
   await configureSettingsPassword()
   await configureRkExposureTable()
   await page.goto('/settings')
@@ -63,7 +63,6 @@ test('shows the protected process tab before locking and keeps RK exposures ther
     'Правила и проверки',
     'Расчет дюймов',
     'Процессы контроля',
-    'Блокировка',
   ])
 
   await page.getByRole('button', { name: 'Процессы контроля', exact: true }).click()
@@ -80,23 +79,17 @@ test('shows the protected process tab before locking and keeps RK exposures ther
 
   await page.getByRole('button', { name: /^(Редактировать|Заполнить) справочник$/ }).click()
   await page.getByRole('button', { name: 'Сохранить справочник', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Изменение настроек', exact: true })).toBeVisible()
-  await page.getByLabel('Пароль', { exact: true }).fill(SETTINGS_PASSWORD)
-  await page.getByRole('button', { name: 'Продолжить', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Экспозиции по диаметрам', exact: true })).toHaveCount(1)
 
   const layeredSwitch = page.getByRole('switch', { name: /^ПВК — только годен/ })
   await layeredSwitch.locator('xpath=..').click()
-  await page.getByRole('button', { name: 'Включить', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Изменение настроек', exact: true })).toBeVisible()
   await expect.poll(() => loadControlSettings()).toEqual({
     pvkGoodOnly: false,
     preHeatTreatmentLnkEnabled: true,
     allowPrimaryLnkBeforePreviousStagesComplete: false,
   })
 
-  await page.getByLabel('Пароль', { exact: true }).fill(SETTINGS_PASSWORD)
-  await page.getByRole('button', { name: 'Продолжить', exact: true }).click()
+  await page.getByRole('button', { name: 'Включить', exact: true }).click()
   await expect(layeredSwitch).toBeChecked()
   await expect(page.getByText('ПВК — только годен включен для проекта.', { exact: true })).toBeVisible()
   await expect.poll(() => loadControlSettings()).toEqual({
@@ -107,9 +100,6 @@ test('shows the protected process tab before locking and keeps RK exposures ther
 
   await layeredSwitch.locator('xpath=..').click()
   await page.getByRole('button', { name: 'Выключить', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Изменение настроек', exact: true })).toBeVisible()
-  await page.getByLabel('Пароль', { exact: true }).fill(SETTINGS_PASSWORD)
-  await page.getByRole('button', { name: 'Продолжить', exact: true }).click()
   await expect(layeredSwitch).not.toBeChecked()
 })
 

@@ -3,6 +3,30 @@ import { getWeldFormSuggestions } from './weld-form-suggestions'
 import type { WeldInput } from './weld-fields'
 
 describe('getWeldFormSuggestions', () => {
+  it('keeps namesake lines separate by project and code, including an unconfigured namesake', () => {
+    const rows: WeldInput[] = [
+      { projectTitle: '', subtitleCode: '', line: 'L1' },
+      { projectTitle: 'Проект', subtitleCode: 'A', line: 'L1' },
+      { projectTitle: 'Проект', subtitleCode: 'B', line: 'L1' },
+      { projectTitle: 'Проект', subtitleCode: 'A', line: 'L1' },
+    ]
+    const result = getWeldFormSuggestions({ fieldKey: 'line', value: 'L1', draft: {}, rows })
+    expect(result).toHaveLength(3)
+    expect(result.map(item => item.lineIdentity)).toContainEqual({ projectTitle: 'Проект', subtitleCode: 'B', line: 'L1' })
+    expect(result.find(item => item.lineIdentity?.subtitleCode === 'A')?.count).toBe(2)
+  })
+
+  it('limits existing-joint line choices to its immutable project and code', () => {
+    const rows: WeldInput[] = [
+      { projectTitle: 'Проект', subtitleCode: 'A', line: 'L1' },
+      { projectTitle: 'Проект', subtitleCode: 'B', line: 'L1' },
+      { projectTitle: 'Другой', subtitleCode: 'A', line: 'L1' },
+    ]
+    const result = getWeldFormSuggestions({ fieldKey: 'line', value: 'L1', draft: { id: 1, projectTitle: ' проект ', subtitleCode: 'a' }, rows })
+    expect(result).toHaveLength(1)
+    expect(result[0].lineIdentity).toEqual(rows[0])
+  })
+
   it('filters values by any part of text without case sensitivity', () => {
     const rows = [
       { line: 'LIN-243-11-31', projectTitle: 'Риформинг', joint: 'F1' },

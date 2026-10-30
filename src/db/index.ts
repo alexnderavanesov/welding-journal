@@ -2,6 +2,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import * as schema from './schema'
 
 type Database = NodePgDatabase<typeof schema>
+let databasePool: import('pg').Pool | undefined
 
 const shouldInitializeDatabase = import.meta.env?.SSR ?? typeof window === 'undefined'
 
@@ -11,6 +12,9 @@ export function requireDb() {
   if (!db) throw new Error('Database is only available on the server')
   return db
 }
+
+/** Explicit lifecycle cleanup for isolated local runners. */
+export async function closeDatabase() { await databasePool?.end() }
 
 async function createDatabase(): Promise<Database> {
   const [drizzleModule, pgModule, serverEnvModule, sslModule] = await Promise.all([
@@ -32,5 +36,7 @@ async function createDatabase(): Promise<Database> {
     idleTimeoutMillis: 30_000,
     allowExitOnIdle: true,
   })
-  return drizzleModule.drizzle(pool, { schema })
+  databasePool = pool
+  const { withAuditedTransactions } = await import('@/server/audited-database')
+  return withAuditedTransactions(drizzleModule.drizzle(pool, { schema }))
 }

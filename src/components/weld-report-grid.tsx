@@ -1,3 +1,6 @@
+import { useAccess } from '@/lib/security-context'
+import { canViewWeldField } from '@/lib/weld-field-access'
+import { REPORT_ACCESS_AREAS } from '@/lib/access-permissions'
 import { WORKFLOW_SELECTION_LIMIT } from '@/lib/workflow-selection-limit'
 import { JournalSelectionSummary } from './journal-selection-summary'
 import { gridHeaderKeyboard } from '@/lib/grid-header-keyboard'
@@ -65,6 +68,7 @@ export function WeldReportGrid(props: WeldReportGridProps) {
 }
 
 function ReportGrid(props: WeldReportGridProps) {
+  const { identity, can } = useAccess()
   const { report } = props
   const profile = WELD_GRID_PROFILES[report]
   const { rows, columnFilters, rowsReady = true, selectedRowIds = EMPTY_IDS, sort = null } = props
@@ -133,7 +137,7 @@ function ReportGrid(props: WeldReportGridProps) {
   }, [profile.storageKey])
   const sections = useMemo(() => getAvailableWeldTableSections({
     hiddenFieldKeys: props.hiddenFieldKeys ?? EMPTY_FIELDS, mergePstoSections: props.mergePstoSections ?? false, sectionLayout: props.sectionLayout,
-  }), [props.hiddenFieldKeys, props.mergePstoSections, props.sectionLayout])
+  }).map(section => ({ ...section, fields: section.fields.filter(field => identity && canViewWeldField(identity, field.key)) })).filter(section => section.fields.length), [props.hiddenFieldKeys, props.mergePstoSections, props.sectionLayout, identity])
   const alwaysVisible = WELD_GRID_REQUIRED_FIELDS
   const extraSectionSignature = JSON.stringify([...new Set((props.extraColumns ?? []).filter(column => column.collapsible).map(column => column.section))])
   const extraSections = useMemo<string[]>(() => JSON.parse(extraSectionSignature), [extraSectionSignature])
@@ -144,7 +148,7 @@ function ReportGrid(props: WeldReportGridProps) {
     columnFilters, sort, onColumnFiltersChange: props.onColumnFiltersChange, onSortChange: props.onSortChange ?? NOOP,
   })
   const { canEditField, canEditCell } = useWeldTableEditability({
-    onEdit: props.onEdit ? NOOP : undefined, readOnly: props.readOnly ?? false,
+    onEdit: props.onEdit ? NOOP : undefined, readOnly: (props.readOnly ?? false) || !can(`${REPORT_ACCESS_AREAS[report]}.edit`),
     editableFieldKeys: props.editableFieldKeys ?? EMPTY_FIELDS, blockedFieldKeys: props.blockedFieldKeys ?? EMPTY_FIELDS,
     isCellEditable: props.isCellEditable ?? ALLOW,
   })

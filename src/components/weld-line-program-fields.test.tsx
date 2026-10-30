@@ -20,6 +20,16 @@ describe('line-program fields in the weld form', () => {
       expect(apply(newer)).toBe(newer)
     }
   })
+
+  it('clears shared properties when the line is removed, preserving individual data and assignments', () => {
+    const client = new QueryClient()
+    const row: WeldInput = { line: '', category: 'II', groupName: 'Б(а)', weldControlPercent: 30,
+      pvkControlPercent: 10, lineProgramId: 1, isometry: 'ISO-1', hasRk: 'да' }
+    const setDraft = vi.fn()
+    render(<QueryClientProvider client={client}><WeldLineProgramFields draft={row} setDraft={setDraft} /></QueryClientProvider>)
+    const next = setDraft.mock.calls[0][0](row)
+    expect(next).toEqual({ ...row, category: null, groupName: null, weldControlPercent: null, pvkControlPercent: null, lineProgramId: null })
+  })
 })
 
 function renderCachedProgram() {

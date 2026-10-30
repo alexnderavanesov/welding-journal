@@ -143,7 +143,7 @@ test('свёрнутая группа: выбор полной группы из
   // the 50 hidden by the isometry filter, and exclude every newly loaded ID.
   await saveView(page, 'Проверка выбранных')
   const actionIds = await page.evaluate(() => {
-    const view = JSON.parse(localStorage.getItem('welding-report-view:v1:weldingJournal')!)
+    const view = JSON.parse(localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith('welding-user:') && key.endsWith(':welding-report-view:v1:weldingJournal')) ?? 'welding-report-view:v1:weldingJournal')!)
       .savedViews.find((item: { name: string }) => item.name === 'Проверка выбранных')
     return JSON.parse(view.snapshot.columnFilters.__rowIdList).rowIds as number[]
   })
@@ -184,7 +184,7 @@ test('личный вид: перезапись и удаление соглас
     values ($1,'VIEW','GROUP-VIEW','F0001')`, [VIEW_PROJECT]))
   await openProject(page, VIEW_PROJECT, 1)
   await saveView(page, 'Рабочая смена')
-  const originalId = await page.evaluate(() => JSON.parse(localStorage.getItem('welding-report-view:v1:weldingJournal')!).savedViews[0].id)
+  const originalId = await page.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith('welding-user:') && key.endsWith(':welding-report-view:v1:weldingJournal')) ?? 'welding-report-view:v1:weldingJournal')!).savedViews[0].id)
   await groupBy(page, 'projectTitle')
   await page.locator('.ag-header-cell[col-id="subtitleCode"]').click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Скрыть столбец', exact: true }).click()
@@ -204,8 +204,8 @@ test('личный вид: перезапись и удаление соглас
   // A case-insensitive name updates the existing view instead of duplicating it.
   await saveView(page, 'РАБОЧАЯ СМЕНА')
   const overwritten = await page.evaluate(() => ({
-    views: JSON.parse(localStorage.getItem('welding-report-view:v1:weldingJournal')!).savedViews,
-    layouts: JSON.parse(localStorage.getItem('welding-journal-ag-grid:v1')!).views,
+    views: JSON.parse(localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith('welding-user:') && key.endsWith(':welding-report-view:v1:weldingJournal')) ?? 'welding-report-view:v1:weldingJournal')!).savedViews,
+    layouts: JSON.parse(localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith('welding-user:') && key.endsWith(':welding-journal-ag-grid:v1')) ?? 'welding-journal-ag-grid:v1')!).views,
   }))
   expect(overwritten.views).toHaveLength(1)
   expect(overwritten.views[0].id).toBe(originalId)
@@ -233,8 +233,8 @@ test('личный вид: перезапись и удаление соглас
   await expect(settings.getByText('Сохранённых видов пока нет')).toBeVisible()
   await page.reload()
   const deleted = await page.evaluate(() => ({
-    views: JSON.parse(localStorage.getItem('welding-report-view:v1:weldingJournal')!).savedViews,
-    layouts: JSON.parse(localStorage.getItem('welding-journal-ag-grid:v1')!).views,
+    views: JSON.parse(localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith('welding-user:') && key.endsWith(':welding-report-view:v1:weldingJournal')) ?? 'welding-report-view:v1:weldingJournal')!).savedViews,
+    layouts: JSON.parse(localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith('welding-user:') && key.endsWith(':welding-journal-ag-grid:v1')) ?? 'welding-journal-ag-grid:v1')!).views,
   }))
   expect(deleted).toEqual({ views: [], layouts: {} })
   // Removing a preset does not reset the user's currently applied layout.

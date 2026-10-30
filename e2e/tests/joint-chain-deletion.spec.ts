@@ -1,8 +1,9 @@
+import { asE2eOwner } from '../with-owner-access'
 import { deleteJournalJoint } from '../journal-grid'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
-import { createWeldJoints, deleteWeldJoint, deleteWeldJoints } from '@/server/weld-mutations'
-import { replaceWeldJoints } from '@/server/weld-import'
+import { createWeldJoints as raw_createWeldJoints , deleteWeldJoint as raw_deleteWeldJoint, deleteWeldJoints as raw_deleteWeldJoints } from '@/server/weld-mutations'
+import { replaceWeldJoints as raw_replaceWeldJoints } from '@/server/weld-import'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
 
 const project = 'E2E chain deletion protection'
@@ -128,3 +129,9 @@ test('карточка удаления объясняет отказ; отме�
   await expect.poll(async () => (await snapshot()).map(r => r.joint)).toEqual(['S1', 'S1R1', 'F9'])
   expect(errors).toEqual([])
 })
+
+const deleteWeldJoint = asE2eOwner(raw_deleteWeldJoint, 'welding.delete')
+const deleteWeldJoints = asE2eOwner(raw_deleteWeldJoints, 'welding.delete')
+const replaceWeldJoints = asE2eOwner(raw_replaceWeldJoints, 'welding.import')
+
+const createWeldJoints = asE2eOwner(raw_createWeldJoints, 'welding.edit')

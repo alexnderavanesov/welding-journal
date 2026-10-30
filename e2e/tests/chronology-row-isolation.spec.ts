@@ -1,9 +1,10 @@
+import { asE2eOwner } from '../with-owner-access'
 import { expect, test } from '@playwright/test'
 import { inArray } from 'drizzle-orm'
 import { withE2eDatabase } from '../database'
 import { requireDb } from '@/db'
 import { weldJoints } from '@/db/schema'
-import { changeSystemDocumentDate } from '@/server/system-document-date-workflow'
+import { changeSystemDocumentDate as raw_changeSystemDocumentDate } from '@/server/system-document-date-workflow'
 import { buildSystemDocumentSummaries } from '@/lib/system-document-types'
 import { syncSystemDocumentsForWeldChangesInTransaction, upsertSourcedSystemDocumentInTransaction } from '@/server/system-document-index'
 
@@ -72,3 +73,5 @@ for (const sourced of [false, true]) test(`общая дата ТВМТ (${sourc
     }))
   }
 })
+
+const changeSystemDocumentDate = asE2eOwner(raw_changeSystemDocumentDate, 'documents.edit')

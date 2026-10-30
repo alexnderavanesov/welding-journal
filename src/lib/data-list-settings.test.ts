@@ -7,6 +7,7 @@ import {
   saveDataListSettings,
   loadDataListSettings,
   applyRemoteDataListSettings,
+  prepareDataListSettingsChange,
 } from './data-list-settings'
 
 describe('data list settings', () => {
@@ -57,8 +58,11 @@ describe('data list settings', () => {
 
   it.each([
     ['weldingTypes', 'РАД'],
+    ['connectionTypes', 'С2'],
     ['connectionTypes', 'У17'],
+    ['connectionTypes', ' у 17 '],
     ['materialGroups', 'М01'],
+    ['materialGroups', ' м123 '],
     ['weldingTypes', 'РУЧНАЯ 1'],
   ] as const)('accepts Cyrillic letters, digits and spaces for %s', (key, value) => {
     expect(getDataListOptionInputError(key, value)).toBeNull()
@@ -75,5 +79,35 @@ describe('data list settings', () => {
 
   it('does not apply the restriction to test types', () => {
     expect(getDataListOptionInputError('testTypes', 'VT-1')).toBeNull()
+  })
+
+  it.each(['Т1', 'Н2', '17С', 'ОП'])('rejects a new connection class: %s', value => {
+    expect(getDataListOptionInputError('connectionTypes', value)).toContain('«С» или «У»')
+  })
+
+  it.each(['Н01', '01М', 'СТАЛЬ'])('requires Cyrillic М at the start of a new material group: %s', value => {
+    expect(getDataListOptionInputError('materialGroups', value)).toContain('кириллической «М»')
+  })
+
+  it('normalizes valid additions and restores fixed codes when saving settings', () => {
+    expect(prepareDataListSettingsChange(undefined, {
+      connectionTypes: [' с2 ', 'у17'], materialGroups: [' м123 '],
+    })).toMatchObject({ connectionTypes: ['С17', 'У19', 'С2', 'У17'], materialGroups: ['М01', 'М05', 'М11', 'М123'] })
+  })
+
+  it('rejects all invalid additions together without mutating stored settings', () => {
+    const before = JSON.stringify(DEFAULT_DATA_LIST_SETTINGS)
+    expect(() => prepareDataListSettingsChange(DEFAULT_DATA_LIST_SETTINGS, {
+      ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: ['С2', 'Т1', 'C2'], materialGroups: ['М02', 'Н01', 'M02'],
+    })).toThrow(/«Т1»[\s\S]*«C2»[\s\S]*«Н01»[\s\S]*«M02»/)
+    expect(JSON.stringify(DEFAULT_DATA_LIST_SETTINGS)).toBe(before)
+  })
+
+  it('preserves legacy codes on unrelated additions, but cannot reintroduce them after removal', () => {
+    const legacy = normalizeDataListSettings({ connectionTypes: ['ТШ', 'C17'], materialGroups: ['Н01', 'M01'] })
+    const next = { ...legacy, connectionTypes: [...legacy.connectionTypes, 'С2'], materialGroups: [...legacy.materialGroups, 'М02'] }
+    expect(prepareDataListSettingsChange(legacy, next)).toEqual(next)
+    expect(prepareDataListSettingsChange(legacy, DEFAULT_DATA_LIST_SETTINGS)).toEqual(DEFAULT_DATA_LIST_SETTINGS)
+    expect(() => prepareDataListSettingsChange(DEFAULT_DATA_LIST_SETTINGS, legacy)).toThrow(/«ТШ»/)
   })
 })

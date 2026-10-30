@@ -17,7 +17,7 @@ test('программа ПСТО открывается сразу после �
     await expect(dialog).toBeHidden()
   }
   expect(errors).toEqual([])
-  const trace = await page.evaluate(key => JSON.parse(sessionStorage.getItem(key) ?? '[]'), PSTO_PROGRAM_DIAGNOSTICS_KEY)
+  const trace = await page.evaluate(key => JSON.parse(sessionStorage.getItem(Object.keys(sessionStorage).find(stored => stored.startsWith('welding-user:') && !stored.startsWith('welding-user:signed-out:') && stored.endsWith(':' + key)) ?? key) ?? '[]'), PSTO_PROGRAM_DIAGNOSTICS_KEY)
   expect(trace.length).toBeLessThanOrEqual(60)
   expect(trace.some((entry: { event: string }) => entry.event === 'mounted')).toBe(true)
 })
@@ -39,7 +39,7 @@ test('ошибка списка ПСТО оставляет диагностик
   await expect(dialog.getByText('Техническая диагностика открытия ПСТО')).toBeVisible()
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
   expect(reads).toBe(1)
-  const trace = await page.evaluate(key => JSON.parse(sessionStorage.getItem(key) ?? '[]'), PSTO_PROGRAM_DIAGNOSTICS_KEY)
+  const trace = await page.evaluate(key => JSON.parse(sessionStorage.getItem(Object.keys(sessionStorage).find(stored => stored.startsWith('welding-user:') && !stored.startsWith('welding-user:signed-out:') && stored.endsWith(':' + key)) ?? key) ?? '[]'), PSTO_PROGRAM_DIAGNOSTICS_KEY)
   expect(trace.some((entry: { event: string }) => entry.event === 'query-error')).toBe(true)
   fail = false
   await dialog.getByRole('button', { name: 'Обновить список линий' }).click()
@@ -69,7 +69,7 @@ test('закрытие ПСТО во время загрузки модуля н
   await expect(loading).toBeVisible()
   await loading.getByRole('button', { name: 'Закрыть', exact: true }).click()
   release()
-  await expect.poll(() => page.evaluate(key => JSON.parse(sessionStorage.getItem(key) ?? '[]')
+  await expect.poll(() => page.evaluate(key => JSON.parse(sessionStorage.getItem(Object.keys(sessionStorage).find(stored => stored.startsWith('welding-user:') && !stored.startsWith('welding-user:signed-out:') && stored.endsWith(':' + key)) ?? key) ?? '[]')
     .some((entry: { event: string }) => entry.event === 'dialog-ready'), PSTO_PROGRAM_DIAGNOSTICS_KEY)).toBe(true)
   await expect(page.getByRole('dialog')).toHaveCount(0)
   expect(reads).toBe(0)

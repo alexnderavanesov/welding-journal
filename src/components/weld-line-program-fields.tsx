@@ -21,11 +21,11 @@ export function WeldLineProgramFields({ draft, setDraft }: { draft: WeldInput; s
     staleTime: 60_000, refetchOnWindowFocus: false, refetchOnReconnect: false })
   const current = identity === debounced
   useEffect(() => {
-    if (!current || !query.isSuccess) return
-    const line = query.data
+    if (identity.line && (!current || !query.isSuccess)) return
+    const line = identity.line ? query.data : null
     const values = { category: line?.category ?? null, groupName: line?.groupName ?? null,
       weldControlPercent: line?.weldControlPercent ?? null, pvkControlPercent: line?.pvkControlPercent ?? null,
-      lineProgramId: line?.id ?? null, hasVik: 'да' }
+      lineProgramId: line?.id ?? null, ...(identity.line ? { hasVik: 'да' } : {}) }
     setDraft((row) => {
       // A response for the previous line must not overwrite the current draft.
       if (String(row.projectTitle ?? '').trim() !== identity.projectTitle ||
@@ -35,7 +35,7 @@ export function WeldLineProgramFields({ draft, setDraft }: { draft: WeldInput; s
         ? row : { ...row, ...values }
     })
   }, [query.data, query.isSuccess, current, identity, setDraft])
-  return <span className="text-xs text-slate-600">{query.error ? 'Не удалось прочитать программу линии. Повторите открытие.' :
+  return <span className="text-xs text-slate-600">{!identity.line ? (draft.id ? 'Укажите линию в текущем проекте и шифре. Общие свойства заполнятся по её программе.' : 'Выберите линию из подсказок: проект, шифр и общие свойства заполнятся по её программе.') : query.error ? 'Не удалось прочитать программу линии. Повторите открытие.' :
     !current || query.isFetching ? 'Читаем программу линии…' : query.data ?
       `Программа линии: базовый ${query.data.weldControlPercent ?? '—'}%, ПВК ${query.data.pvkControlPercent ?? '—'}%. ${query.data.configurationIssue ?? 'Общие свойства изменяются в программе линий.'}` :
       'Новая линия появится в программе после сохранения. Настройте её общие свойства в «Программе линий» (СП-01).'}</span>

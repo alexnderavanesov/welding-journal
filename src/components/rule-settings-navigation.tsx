@@ -1,18 +1,19 @@
 import { RULE_SETTINGS_TABS, getRuleConnections, type RuleSettingsTab } from '@/lib/rule-settings-navigation'
 
-export function RuleSettingsTabs({ value, onChange }: { value: RuleSettingsTab; onChange: (tab: RuleSettingsTab) => void }) {
+export function RuleSettingsTabs({ value, onChange, allowed }: { allowed?: readonly RuleSettingsTab[]; value: RuleSettingsTab; onChange: (tab: RuleSettingsTab) => void }) {
+  const tabs = RULE_SETTINGS_TABS.filter(tab => !allowed || allowed.includes(tab.id))
   return <div role="tablist" aria-label="Разделы правил и проверок" className="-mb-3 mt-2 flex gap-5 overflow-x-auto border-t border-slate-100 px-1">
-    {RULE_SETTINGS_TABS.map((tab, index) => <button key={tab.id} type="button" role="tab" id={`rules-tab-${tab.id}`}
+    {tabs.map((tab, index) => <button key={tab.id} type="button" role="tab" id={`rules-tab-${tab.id}`}
       aria-label={tab.label} aria-selected={value === tab.id} aria-controls={`rules-${tab.id}`} tabIndex={value === tab.id ? 0 : -1}
       onClick={() => onChange(tab.id)}
       onKeyDown={event => {
-        const next = event.key === 'ArrowRight' ? (index + 1) % RULE_SETTINGS_TABS.length
-          : event.key === 'ArrowLeft' ? (index + RULE_SETTINGS_TABS.length - 1) % RULE_SETTINGS_TABS.length
-          : event.key === 'Home' ? 0 : event.key === 'End' ? RULE_SETTINGS_TABS.length - 1 : undefined
+        const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
+          : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length
+          : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : undefined
         if (next === undefined) return
         event.preventDefault()
-        onChange(RULE_SETTINGS_TABS[next].id)
-        document.getElementById(`rules-tab-${RULE_SETTINGS_TABS[next].id}`)?.focus({ preventScroll: true })
+        onChange(tabs[next].id)
+        document.getElementById(`rules-tab-${tabs[next].id}`)?.focus({ preventScroll: true })
       }}
       className={`flex shrink-0 items-center gap-2 border-b-2 py-3 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400 ${value === tab.id ? 'border-sky-600 text-sky-800' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900'}`}>
       {tab.label}{'count' in tab ? <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-500">{tab.count}</span> : null}

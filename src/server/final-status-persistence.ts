@@ -1,3 +1,4 @@
+import { auditSql } from './audit-functions'
 import { sql, type SQL } from 'drizzle-orm'
 
 import { weldJoints } from '@/db/schema'
@@ -43,7 +44,7 @@ export async function persistCalculatedFinalStatuses(
     if (pendingChanges.length === 0) return
     const chunk = pendingChanges.splice(0, pendingChanges.length)
     changeCount += chunk.length
-    await executor.execute(sql`
+    await auditSql(executor, [{ table: weldJoints, where: sql`${weldJoints.id} = any(${sql.param(chunk.map(change => change.id))}::integer[])` }], () => executor.execute(sql`
       update ${weldJoints} as "target"
       set "final_status" = "changes"."final_status"
       from unnest(
@@ -53,7 +54,7 @@ export async function persistCalculatedFinalStatuses(
       ) as "changes"("id", "previous_final_status", "final_status")
       where "target"."id" = "changes"."id"
         and "target"."final_status" is not distinct from "changes"."previous_final_status"
-    `)
+    `))
   }
   if (!rowsAreAligned) {
     for (const change of getFinalStatusPersistenceChanges(sourceRows, preparedRows)) {

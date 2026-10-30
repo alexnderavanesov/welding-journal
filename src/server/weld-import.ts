@@ -254,6 +254,7 @@ export async function replaceWeldJoints({
     await lockAndAssertWeldRowVersions(tx, targetIds, data.expectedVersions)
 
     const previousRows = await loadPreviousWeldRows(tx, data.records)
+    for (const record of data.records) (await import('./access-payload')).assertImportedWeldFields(record, previousRows.get(Number(record.id)))
     const deletedRows = data.deleteIds.length > 0
       ? await tx.select().from(weldJoints).where(inArray(weldJoints.id, data.deleteIds))
       : []
@@ -380,6 +381,7 @@ export async function importWeldJoints({
 
   return db.transaction(async (tx) => {
     const processSettings = await loadControlProcessSettingsFromTransaction(tx)
+    for (const record of data.records) (await import('./access-payload')).assertImportedWeldFields(record)
     await lockWeldLineMemberships(tx, data.records)
     await prepareLineProgramWeldRecords(tx, data.records)
     const validationContext = await loadServerWeldValidationContext(tx, data.records)

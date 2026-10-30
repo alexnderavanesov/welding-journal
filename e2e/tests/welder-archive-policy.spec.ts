@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { asE2eOwner } from '../with-owner-access'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import * as schema from '../../src/db/schema'
 import { withE2eDatabase } from '../database'
@@ -209,7 +210,9 @@ test('кнопка архива не сообщает об успехе при �
 test('сервер и импорт проверяют архив по итоговой строке; фактические данные остаются свободными', async ({ page }) => {
   const id = await seed()
   await registry(page)
-  const { importWeldJoints, massFillWeldJoints } = await import('../../src/server/weld-import')
+  const { importWeldJoints: rawImportWeldJoints, massFillWeldJoints: rawMassFillWeldJoints } = await import('../../src/server/weld-import')
+  const importWeldJoints = asE2eOwner(rawImportWeldJoints, 'welding.import')
+  const massFillWeldJoints = asE2eOwner(rawMassFillWeldJoints, 'welding.import')
   const date = '2026-08-01'
   const input = { projectTitle: PROJECT, subtitleCode: 'ARCHIVE', line: 'ARC', joint: 'F8801', weldDate: date,
     connectionType: 'С17', weldingMethod: 'РАД', materialGroup: 'М01', d1: 108, d2: 108, t1: 6, t2: 6, stamp1K: ARCHIVED }

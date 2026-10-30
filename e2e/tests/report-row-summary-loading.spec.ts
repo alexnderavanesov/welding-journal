@@ -1,4 +1,5 @@
 import { editJournalJoint } from '../journal-grid'
+import { asE2eOwner } from '../with-owner-access'
 import { expect, test, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { rpcName } from '../rpc'
@@ -257,10 +258,15 @@ async function withPausedDispatcherPublishers(run: () => Promise<void>) {
 }
 
 test('task-filter totals follow active/background publications without a fact revision change', () => withPausedDispatcherPublishers(async () => {
-  const { getWeldReportSummary } = await import('../../src/server/weld-read')
-  const { readJournalGrid, countJournalGridSelection } = await import('../../src/server/journal-grid')
-  const { summarizeJournalGridRange } = await import('../../src/server/journal-grid-range')
-  const { readJournalFilterPage } = await import('../../src/server/journal-filter-options')
+  const { getWeldReportSummary: rawGetWeldReportSummary } = await import('../../src/server/weld-read')
+  const getWeldReportSummary = asE2eOwner(rawGetWeldReportSummary, 'lnk.view')
+  const { readJournalGrid: rawReadJournalGrid, countJournalGridSelection: rawCountJournalGridSelection } = await import('../../src/server/journal-grid')
+  const { summarizeJournalGridRange: rawSummarizeJournalGridRange } = await import('../../src/server/journal-grid-range')
+  const { readJournalFilterPage: rawReadJournalFilterPage } = await import('../../src/server/journal-filter-options')
+  const readJournalGrid = asE2eOwner(rawReadJournalGrid, 'welding.view')
+  const countJournalGridSelection = asE2eOwner(rawCountJournalGridSelection, 'welding.view')
+  const summarizeJournalGridRange = asE2eOwner(rawSummarizeJournalGridRange, 'welding.view')
+  const readJournalFilterPage = asE2eOwner(rawReadJournalFilterPage, 'welding.view')
   const request = { report: 'lnk' as const, search: first,
     columnFilters: { __dispatcherTaskFilter: JSON.stringify({ mode: 'codes', codes: ['E2E-PUB'] }) } }
   const sourceRevision = () => withE2eDatabase(async db => (await db.query('select source_revision from derived_calculation_state where id=1')).rows[0].source_revision)

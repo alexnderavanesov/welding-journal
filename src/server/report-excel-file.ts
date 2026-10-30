@@ -15,6 +15,7 @@ import { visitReportOutput } from './weld-read'
 /** One temporary file per HTTP request, removed on failure, cancellation or
  * completed delivery. No job registry, snapshot store or browser workbook. */
 export async function createReportExcelResponse(input: ReportOutputRequest, signal: AbortSignal) {
+  input = (await import('./access-payload')).accessibleReportInput(input)
   const definition = getReportOutputBuilder(input)([]).exportData!
   const directory = await mkdtemp(join(tmpdir(), 'welding-report-'))
   const path = join(directory, 'report.xlsx')

@@ -1,3 +1,4 @@
+import { userSessionStorage } from '@/lib/user-storage'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { GENERATED_DOCUMENT_HISTORY_QUERY_KEY } from '@/lib/weld-query-utils'
@@ -10,7 +11,7 @@ const SELECTION_HYDRATION_BATCH_SIZE = 10_000
 function readSelection(viewId: string): Array<string | number> {
   if (typeof window === 'undefined') return []
   try {
-    const value: unknown = JSON.parse(window.sessionStorage.getItem(`${STORAGE_PREFIX}${viewId}`) ?? '{}')
+    const value: unknown = JSON.parse(userSessionStorage.getItem(`${STORAGE_PREFIX}${viewId}`) ?? '{}')
     if (!value || typeof value !== 'object' || !('selectedDocumentIds' in value) || !Array.isArray(value.selectedDocumentIds)) return []
     return [...new Set(value.selectedDocumentIds.filter((id): id is string | number =>
       typeof id === 'string' ? id.length > 0 && id.length <= 500 : typeof id === 'number' && Number.isSafeInteger(id) && id > 0,
@@ -47,7 +48,7 @@ export function useDocumentGridController<T extends { id: string | number }>(
     selectionRef.current = distinct
     setDocuments(distinct); setSelectionError(null); setSelectionPending(false)
     try {
-      window.sessionStorage.setItem(`${STORAGE_PREFIX}${viewId}`, JSON.stringify({ selectedDocumentIds: distinct.map(document => document.id) }))
+      userSessionStorage.setItem(`${STORAGE_PREFIX}${viewId}`, JSON.stringify({ selectedDocumentIds: distinct.map(document => document.id) }))
     } catch { /* Selection remains usable when storage is unavailable. */ }
   }, [viewId])
 

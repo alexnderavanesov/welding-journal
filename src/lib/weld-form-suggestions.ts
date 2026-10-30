@@ -1,10 +1,22 @@
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+import { getLineProgramIdentityKey, normalizeLineProgramIdentity, type LineProgramIdentity } from '@/lib/line-program'
 
 export type WeldFormSuggestion = {
   value: string
   context: string
   count: number
   score: number
+  lineIdentity?: LineProgramIdentity
+}
+
+export function makeWeldLineSuggestion(identity: LineProgramIdentity): WeldFormSuggestion {
+  return {
+    value: identity.line,
+    context: `Проект: ${identity.projectTitle || 'не указан'} · Шифр: ${identity.subtitleCode || 'не указан'}`,
+    count: 1,
+    score: 0,
+    lineIdentity: identity,
+  }
 }
 
 const CONTEXT_FIELDS: WeldFieldKey[] = ['projectTitle', 'subtitleCode', 'line', 'joint']
@@ -73,15 +85,20 @@ export function getWeldFormSuggestions({
 
   for (const row of rows) {
     if (currentId !== null && row.id === currentId) continue
+    const identity = fieldKey === 'line' ? normalizeLineProgramIdentity(row) : undefined
+    if (identity && currentId !== null && (['projectTitle', 'subtitleCode'] as const).some(key =>
+      identity[key].toLocaleLowerCase('ru') !== String(draft[key] ?? '').trim().toLocaleLowerCase('ru'))) continue
 
     for (const sourceFieldKey of sourceFieldKeys) {
       const candidate = normalizeWeldFormSuggestionValue(row[sourceFieldKey])
       if (!candidate) continue
       if (query && !normalizeWeldFormSuggestionText(candidate).includes(query)) continue
 
-      const previous = suggestions.get(candidate)
+      const key = identity ? getLineProgramIdentityKey(identity) : candidate
+      const previous = suggestions.get(key)
       const score = getContextScore(row, draft)
-      const context = getSuggestionContext(row, fieldKey)
+      const lineSuggestion = identity ? makeWeldLineSuggestion(identity) : undefined
+      const context = lineSuggestion?.context ?? getSuggestionContext(row, fieldKey)
       if (previous) {
         previous.count += 1
         previous.score = Math.max(previous.score, score)
@@ -89,8 +106,9 @@ export function getWeldFormSuggestions({
         continue
       }
 
-      suggestions.set(candidate, {
-        value: candidate,
+      suggestions.set(key, {
+        ...lineSuggestion,
+        value: lineSuggestion?.value ?? candidate,
         context,
         count: 1,
         score,

@@ -1,7 +1,8 @@
+import { asE2eOwner } from '../with-owner-access'
 import { expect, test } from '@playwright/test'
 import pg from 'pg'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
-import { readJournalGrid, summarizeJournalGridSelection } from '../../src/server/journal-grid'
+import { readJournalGrid as raw_readJournalGrid , summarizeJournalGridSelection as raw_summarizeJournalGridSelection } from '../../src/server/journal-grid'
 
 const project = 'E2E coherent journal read'
 
@@ -64,3 +65,6 @@ for (const report of ['weldingJournal', 'lnk', 'heatTreatment'] as const) test(`
     await cleanupLineProgramProjects([project])
   }
 })
+
+const readJournalGrid = asE2eOwner(raw_readJournalGrid, 'welding.view')
+const summarizeJournalGridSelection = asE2eOwner(raw_summarizeJournalGridSelection, 'welding.view')

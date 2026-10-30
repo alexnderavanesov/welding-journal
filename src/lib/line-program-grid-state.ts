@@ -1,3 +1,4 @@
+import { userStorage } from '@/lib/user-storage'
 import type { ColumnState } from 'ag-grid-community'
 
 export type ProgramGridKind = 'lines' | 'stamps' | 'joints' | 'assignments'
@@ -16,7 +17,7 @@ export function programGridColumns(columns: readonly ColumnState[]): ColumnState
 export function readProgramGridSettings(kind: ProgramGridKind): ProgramGridSettings {
   const defaults = defaultProgramGridSettings()
   try {
-    const value = JSON.parse(localStorage.getItem(key(kind)) ?? 'null')
+    const value = JSON.parse(userStorage.getItem(key(kind)) ?? 'null')
     if (!value || typeof value !== 'object') return defaults
     return {
       columns: Array.isArray(value.columns) ? programGridColumns(value.columns.filter((item: unknown) => item && typeof item === 'object')) : [],
@@ -25,6 +26,6 @@ export function readProgramGridSettings(kind: ProgramGridKind): ProgramGridSetti
 }
 
 export function writeProgramGridSettings(kind: ProgramGridKind, settings: ProgramGridSettings) {
-  try { localStorage.setItem(key(kind), JSON.stringify({ ...settings, columns: programGridColumns(settings.columns) })) } catch { return /* A blocked storage must not disable the table. */ }
+  try { userStorage.setItem(key(kind), JSON.stringify({ ...settings, columns: programGridColumns(settings.columns) })) } catch { return /* A blocked storage must not disable the table. */ }
   window.dispatchEvent(new CustomEvent('program-grid-settings', { detail: kind }))
 }

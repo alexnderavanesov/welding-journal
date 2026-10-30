@@ -6,12 +6,15 @@ import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-prog
 import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '../../src/lib/control-process-settings'
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '../../src/lib/request-conclusion-settings'
 import { randomUUID } from 'node:crypto'
-import { applyOperation, previewOperation } from '../../src/server/document-operation-service'
+import { applyOperation as raw_applyOperation, previewOperation as raw_previewOperation } from '../../src/server/document-operation-service'
+import { asE2eOwner } from '../with-owner-access'
 import type { DocumentOperationRequest } from '../../src/lib/system-document-operation'
 import { loadSystemDocumentSpecialistSnapshot } from '../../src/server/system-document-index'
 import { pstoActionRow } from './psto-grid-helpers'
 
 const project = 'E2E specialist result creation'
+const applyOperation = asE2eOwner(raw_applyOperation, 'documents.edit')
+const previewOperation = asE2eOwner(raw_previewOperation, 'documents.view')
 const names = ['E2E результат специалист А', 'E2E результат специалист Б']
 const settings = { 'control-processes': DEFAULT_CONTROL_PROCESS_SETTINGS, 'request-conclusion': REQUEST_CONCLUSION_DEFAULT_SETTINGS, 'document-specialist-defaults': {} }
 let original: Array<{ key: string; value: string; updated_at: Date }> = []

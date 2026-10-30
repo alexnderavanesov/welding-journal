@@ -1,3 +1,4 @@
+import { userStorage } from '@/lib/user-storage'
 import { useEffect, useState } from 'react'
 import { persistProjectSettingToRemoteAndWait, PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 import {
@@ -63,7 +64,7 @@ export function normalizeDispatcherBackgroundSettings(value: unknown): Dispatche
 export function loadDispatcherBackgroundSettings() {
   if (typeof window === 'undefined') return DEFAULT_DISPATCHER_BACKGROUND_SETTINGS
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY)
+    const stored = userStorage.getItem(STORAGE_KEY)
     return stored ? normalizeDispatcherBackgroundSettings(JSON.parse(stored)) : DEFAULT_DISPATCHER_BACKGROUND_SETTINGS
   } catch {
     return DEFAULT_DISPATCHER_BACKGROUND_SETTINGS
@@ -77,7 +78,7 @@ export function saveDispatcherBackgroundSettings(
   if (typeof window === 'undefined') return
   const normalized = normalizeDispatcherBackgroundSettings(settings)
   const applyLocal = () => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
+    userStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
     window.dispatchEvent(new Event(DISPATCHER_BACKGROUND_SETTINGS_EVENT))
   }
   if (options.syncRemote === false) return applyLocal()

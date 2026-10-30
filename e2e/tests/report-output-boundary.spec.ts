@@ -204,7 +204,7 @@ test('1000 строк: разрешённая широкая печать цел
       })
       expect(html).toBeTruthy()
       await writeFile(info.outputPath('full-print.html'), html!)
-      const printContext = await browser.newContext()
+      const printContext = await browser.newContext({ storageState: process.env.E2E_AUTH_STATE })
       try {
         const printPage = await printContext.newPage()
         await printPage.setContent(html!)

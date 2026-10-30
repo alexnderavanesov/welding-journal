@@ -1,8 +1,9 @@
+import { asE2eOwner } from '../with-owner-access'
 import { expect, test } from '@playwright/test'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { readAcrossCommittedWrite } from '../interleaved-read'
 import { loadRemoteGeneratedDocumentRows } from '../../src/server/generated-documents'
-import { getDocumentGenerationData } from '../../src/server/weld-read'
+import { getDocumentGenerationData as raw_getDocumentGenerationData } from '../../src/server/weld-read'
 
 const project = 'E2E document coherent source'
 test.afterEach(() => cleanupLineProgramProjects([project]))
@@ -40,3 +41,5 @@ for (const entry of ['history', 'generation'] as const) for (const action of ['c
   expect(next).toEqual(action === 'delete' ? [] : [expect.objectContaining({ id, line: 'NEW-LINE', jsrDocument: 'NEW-DOCUMENT',
     preHeatTreatmentControls: [expect.objectContaining({ conclusionName: 'NEW-VIK' })] })])
 })
+
+const getDocumentGenerationData = asE2eOwner(raw_getDocumentGenerationData, 'documents.generate')

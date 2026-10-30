@@ -3,6 +3,7 @@ import pg from 'pg'
 
 import { assertSafeE2eDatabaseUrl, withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
+import { asE2eOwner } from '../with-owner-access'
 
 const project = 'E2E exact selection 200k'
 const documentTitle = 'EXACT-SHARED-200000'
@@ -85,7 +86,8 @@ test('200k: exact off-page IDs retain versions and relations with constant SQL a
   })
   expect(expected).toHaveLength(5_000)
   expect(new Set(expected.map(row => row.version)).size).toBe(2)
-  const { listWeldJointRowsByIds } = await import('../../src/server/weld-read')
+  const { listWeldJointRowsByIds: rawListWeldJointRowsByIds } = await import('../../src/server/weld-read')
+  const listWeldJointRowsByIds = asE2eOwner(rawListWeldJointRowsByIds, 'welding.view')
   const prototype = pg.Client.prototype, original = prototype.query
   let statements: Statement[] = []
   prototype.query = function (this: unknown, ...args: unknown[]) {

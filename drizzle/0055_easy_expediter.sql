@@ -1,0 +1,1 @@
+ALTER TABLE "auth_users" ADD COLUMN "confidentiality_required" boolean DEFAULT false NOT NULL;

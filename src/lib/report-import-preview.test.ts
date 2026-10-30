@@ -76,6 +76,16 @@ describe('existing rows report import preview', () => {
     expect(preview.validRecords[0]).toMatchObject({ id: 7, materialGroup: 'М05 + М01' })
   })
 
+  it('rejects an unconfigured connection class and material prefix together in Excel', async () => {
+    const preview = await buildReportImportPreview({
+      activeReport: 'weldingJournal',
+      file: buildWeldingJournalImportFile({ joint: 'S1', connectionType: 'Т1', materialGroup: 'Н01' }),
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0].fieldKeys).toEqual(expect.arrayContaining(['connectionType', 'materialGroup']))
+  })
+
   it('highlights a third material group and an invalid connection together', async () => {
     const preview = await buildReportImportPreview({
       activeReport: 'weldingJournal',

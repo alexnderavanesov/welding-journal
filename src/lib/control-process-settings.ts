@@ -1,3 +1,4 @@
+import { userStorage } from '@/lib/user-storage'
 import { useEffect, useState } from 'react'
 
 import {
@@ -44,7 +45,7 @@ export function loadControlProcessSettings(): ControlProcessSettings {
   if (typeof window === 'undefined') return DEFAULT_CONTROL_PROCESS_SETTINGS
 
   try {
-    const rawValue = window.localStorage.getItem(CONTROL_PROCESS_SETTINGS_STORAGE_KEY)
+    const rawValue = userStorage.getItem(CONTROL_PROCESS_SETTINGS_STORAGE_KEY)
     if (!rawValue) return DEFAULT_CONTROL_PROCESS_SETTINGS
     if (rawValue === cachedControlProcessSettingsRaw && cachedControlProcessSettings) {
       return cachedControlProcessSettings
@@ -101,6 +102,6 @@ function saveControlProcessSettingsLocally(settings: ControlProcessSettings) {
   const serializedSettings = JSON.stringify(settings)
   cachedControlProcessSettingsRaw = serializedSettings
   cachedControlProcessSettings = settings
-  window.localStorage.setItem(CONTROL_PROCESS_SETTINGS_STORAGE_KEY, serializedSettings)
+  userStorage.setItem(CONTROL_PROCESS_SETTINGS_STORAGE_KEY, serializedSettings)
   window.dispatchEvent(new Event(CONTROL_PROCESS_SETTINGS_EVENT))
 }

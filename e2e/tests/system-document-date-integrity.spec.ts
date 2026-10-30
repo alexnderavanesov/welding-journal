@@ -1,7 +1,8 @@
+import { asE2eOwner } from '../with-owner-access'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
-import { changeSystemDocumentDate } from '@/server/system-document-date-workflow'
+import { changeSystemDocumentDate as raw_changeSystemDocumentDate } from '@/server/system-document-date-workflow'
 
 const project = 'E2E document date integrity'
 test.afterEach(() => cleanupLineProgramProjects([project]))
@@ -52,3 +53,5 @@ test('date change follows weld-before-document locking used by rebuild and does 
     expect(after).toEqual({ vik_request_date: '2026-08-02', vik_result: 'годен', vik_conclusion: 'Date integrity result' })
   })
 })
+
+const changeSystemDocumentDate = asE2eOwner(raw_changeSystemDocumentDate, 'documents.edit')

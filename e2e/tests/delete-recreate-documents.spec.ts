@@ -1,18 +1,19 @@
+import { asE2eOwner } from '../with-owner-access'
 import { documentGridRow } from '../document-grid'
 import { expect, test } from '@playwright/test'
 import { inArray } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { preHeatTreatmentControls, weldJoints } from '@/db/schema'
 import { buildSystemDocumentSummaries } from '@/lib/system-document-types'
-import { createWeldJoint, deleteWeldJoint, deleteWeldJoints } from '@/server/weld-mutations'
-import { replaceWeldJoints } from '@/server/weld-import'
-import { loadRemoteGeneratedDocument, loadRemoteGeneratedDocumentRows, loadRemoteGeneratedDocumentHistory, normalizeGeneratedDocumentHistoryRequest } from '@/server/generated-documents'
+import { createWeldJoint as raw_createWeldJoint, deleteWeldJoint as raw_deleteWeldJoint, deleteWeldJoints as raw_deleteWeldJoints } from '@/server/weld-mutations'
+import { replaceWeldJoints as raw_replaceWeldJoints } from '@/server/weld-import'
+import { loadRemoteGeneratedDocument as raw_loadRemoteGeneratedDocument, loadRemoteGeneratedDocumentRows as raw_loadRemoteGeneratedDocumentRows, loadRemoteGeneratedDocumentHistory as raw_loadRemoteGeneratedDocumentHistory, normalizeGeneratedDocumentHistoryRequest } from '@/server/generated-documents'
 import { syncPreHeatTreatmentDocumentsInTransaction } from '@/server/pre-heat-treatment-system-documents'
 import { syncSystemDocumentsForWeldChangesInTransaction, upsertSourcedSystemDocumentInTransaction } from '@/server/system-document-index'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { rpcName } from '../rpc'
-import { readJournalGrid } from '@/server/journal-grid'
+import { readJournalGrid as raw_readJournalGrid } from '@/server/journal-grid'
 
 const project = 'E2E delete and recreate with shared history'
 type Target = { id: number; version: string }
@@ -254,3 +255,12 @@ test('повторное формирование, выделение части
   for (const id of manualIds.slice(1)) expect(await loadRemoteGeneratedDocument(id)).toMatchObject({ rowCount: 2 })
   expect(errors).toEqual([])
 })
+
+const createWeldJoint = asE2eOwner(raw_createWeldJoint, 'welding.edit')
+const deleteWeldJoint = asE2eOwner(raw_deleteWeldJoint, 'welding.delete')
+const deleteWeldJoints = asE2eOwner(raw_deleteWeldJoints, 'welding.delete')
+const replaceWeldJoints = asE2eOwner(raw_replaceWeldJoints, 'welding.import')
+const readJournalGrid = asE2eOwner(raw_readJournalGrid, 'welding.view')
+const loadRemoteGeneratedDocument = asE2eOwner(raw_loadRemoteGeneratedDocument, 'documents.export')
+const loadRemoteGeneratedDocumentRows = asE2eOwner(raw_loadRemoteGeneratedDocumentRows, 'documents.view')
+const loadRemoteGeneratedDocumentHistory = asE2eOwner(raw_loadRemoteGeneratedDocumentHistory, 'documents.view')

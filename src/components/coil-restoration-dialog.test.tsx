@@ -6,7 +6,7 @@ import { CoilRestorationDialog, CoilRestorationHistory } from './coil-restoratio
 const mocks = vi.hoisted(() => ({ preview: vi.fn(), earlyPreview: vi.fn(), restore: vi.fn(), earlyCancel: vi.fn(), history: vi.fn(), password: vi.fn(), invalidate: vi.fn() }))
 vi.mock('@/server/coil-restoration', () => ({ previewCoilRestoration: mocks.preview, previewEarlyCoilCorrection: mocks.earlyPreview,
   restoreErroneousCoil: mocks.restore, cancelErroneousEarlyCoil: mocks.earlyCancel, getCoilRestorationHistory: mocks.history }))
-vi.mock('@/lib/security-context', () => ({ useSecurityGuard: () => ({ requireEditPassword: mocks.password,
+vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: () => true }), useSecurityGuard: () => ({ requireEditPassword: mocks.password,
   requireDeletePassword: mocks.password, requireSettingsChangePassword: mocks.password }) }))
 vi.mock('@/lib/weld-query-utils', () => ({ scheduleWeldDataRefresh: mocks.invalidate }))
 const preview = { operation: 'restore', rootId: 1, token: 'a'.repeat(64), joint: 'S1', line: 'L', reason: null, chain: [{ id: 1, joint: 'S1' }], cancelledEarlyDecisions: 0,

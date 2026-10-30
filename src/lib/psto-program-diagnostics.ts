@@ -1,3 +1,4 @@
+import { userSessionStorage } from '@/lib/user-storage'
 import { isChunkLoadError } from './chunk-load-recovery'
 
 export const PSTO_PROGRAM_DIAGNOSTICS_KEY = 'welding-psto-program-diagnostics-v1'
@@ -11,7 +12,7 @@ type Entry = { at: string; event: Event; failure?: 'chunk' | 'other' }
  * joint/line data or names; never send diagnostics to a server. */
 export function readPstoProgramDiagnostics(): Entry[] {
   try {
-    const stored: unknown = JSON.parse(sessionStorage.getItem(PSTO_PROGRAM_DIAGNOSTICS_KEY) ?? '[]')
+    const stored: unknown = JSON.parse(userSessionStorage.getItem(PSTO_PROGRAM_DIAGNOSTICS_KEY) ?? '[]')
     if (!Array.isArray(stored)) return []
     return stored.slice(-LIMIT).flatMap(entry => {
       if (!entry || !EVENTS.includes(entry.event) || typeof entry.at !== 'string' || !/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(entry.at)) return []
@@ -26,7 +27,7 @@ export function tracePstoProgram(event: Event, error?: unknown) {
     const entries = readPstoProgramDiagnostics()
     entries.push({ at: new Date().toISOString(), event,
       ...(error === undefined ? {} : { failure: isChunkLoadError(error) ? 'chunk' as const : 'other' as const }) })
-    sessionStorage.setItem(PSTO_PROGRAM_DIAGNOSTICS_KEY, JSON.stringify(entries.slice(-LIMIT)))
+    userSessionStorage.setItem(PSTO_PROGRAM_DIAGNOSTICS_KEY, JSON.stringify(entries.slice(-LIMIT)))
   } catch { /* Private mode/full storage must not break opening or saving. */ }
 }
 

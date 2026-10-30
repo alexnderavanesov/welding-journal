@@ -1,3 +1,4 @@
+import { userStorage } from '@/lib/user-storage'
 import { useEffect, useState } from 'react'
 import {
   persistProjectSettingToRemote,
@@ -114,7 +115,7 @@ export function loadOtherSettings(): OtherSettings {
   if (typeof window === 'undefined') return DEFAULT_OTHER_SETTINGS
 
   try {
-    const rawValue = window.localStorage.getItem(OTHER_SETTINGS_STORAGE_KEY)
+    const rawValue = userStorage.getItem(OTHER_SETTINGS_STORAGE_KEY)
     if (!rawValue) return DEFAULT_OTHER_SETTINGS
     if (rawValue === cachedOtherSettingsRaw && cachedOtherSettings) return cachedOtherSettings
     cachedOtherSettingsRaw = rawValue
@@ -131,7 +132,7 @@ export function saveOtherSettings(settings: OtherSettingsInput, options: { syncR
   const serializedSettings = JSON.stringify(normalizedSettings)
   cachedOtherSettingsRaw = serializedSettings
   cachedOtherSettings = normalizedSettings
-  window.localStorage.setItem(OTHER_SETTINGS_STORAGE_KEY, serializedSettings)
+  userStorage.setItem(OTHER_SETTINGS_STORAGE_KEY, serializedSettings)
   window.dispatchEvent(new Event(OTHER_SETTINGS_EVENT))
   if (options.syncRemote !== false) persistProjectSettingToRemote(PROJECT_SETTING_KEYS.other, normalizedSettings)
 }

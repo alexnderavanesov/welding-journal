@@ -1,9 +1,15 @@
 import { expect, test, type Request } from '@playwright/test'
 
 import { withE2eDatabase } from '../database'
-import { rpcName } from '../rpc'
+import { isAccountRefreshRpc, rpcName } from '../rpc'
 import { captureFullReportPrint } from '../report-print-capture'
 import { captureReportExcel } from '../report-excel-capture'
+
+function expectOnlyFocusProbes(calls: string[], returns: number) {
+  expect(calls.every(name => (name.startsWith('getDispatcherTaskVersion_') || isAccountRefreshRpc(name)))).toBe(true)
+  expect(calls.filter(name => name.startsWith('getDispatcherTaskVersion_')).length).toBeLessThanOrEqual(returns)
+  expect(calls.filter(isAccountRefreshRpc).length).toBeLessThanOrEqual(returns)
+}
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => { window.open = () => { throw new Error('Unexpected popup') } })
@@ -77,11 +83,10 @@ test('special LNK output previews in a modal and contains rows beyond the candid
   expect(await download.failure()).toBeNull()
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
   await page.waitForLoadState('networkidle')
-  // Printing returns focus to the app. Only the compact dispatcher version
-  // probe is allowed; unchanged data must not reload reports/tasks or recalculate.
+  // Printing returns focus to the app. Session and compact dispatcher-version
+  // probes are allowed; unchanged data must not reload reports or recalculate.
   const printCalls = calls.slice(loadedCalls)
-  expect(printCalls.every(name => name.startsWith('getDispatcherTaskVersion'))).toBe(true)
-  expect(printCalls.length).toBeLessThanOrEqual(3) // two prints and one explicit return
+  expectOnlyFocusProbes(printCalls, 3) // two prints and one explicit return
   await preview.getByRole('button', { name: 'Закрыть предпросмотр' }).click()
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('E2E-OUTPUT-501')
   await expect(page.getByText('E2E-OUTPUT-501', { exact: true })).toBeVisible()
@@ -205,16 +210,15 @@ for (const [path, options] of [
       await expect(page.locator('iframe[title="Полный отчёт для печати"]')).toHaveCount(0)
       await expect(frame.locator('tbody tr')).toHaveCount(paginated ? 100 : totalRows)
       if (paginated) expect(totalRows).toBeGreaterThan(100)
-      // The preview itself stays local. Returning focus may only probe the
-      // dispatcher version, never reload unchanged reports or task snapshots.
+      // The preview stays local. Returning focus may check session/dispatcher
+      // versions, never reload unchanged reports or task snapshots.
       await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
       await frame.locator('body').press('Escape')
       await expect(modal).toHaveCount(0)
       await expect(show).toBeFocused()
       await page.waitForLoadState('networkidle')
       const printCalls = calls.slice(before)
-      expect(printCalls.every(name => name.startsWith('getDispatcherTaskVersion'))).toBe(true)
-      expect(printCalls.length).toBeLessThanOrEqual(2) // print and explicit return
+      expectOnlyFocusProbes(printCalls, 2) // print and explicit return
     }
     expect(errors).toEqual([])
   })
@@ -253,8 +257,9 @@ test('every statistics tab downloads styled Excel with the same badges and no ne
     const book = await captureReportExcel(page, modal, `outputs/print-limit-statistics-${index}.xlsx`)
     expect(book.SheetNames.length).toBeGreaterThan(1)
     await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
+    await expect.poll(() => calls.slice(before).filter(name => isAccountRefreshRpc(name)).length).toBe(1)
     await expect.poll(() => pending.size).toBe(0)
-    expect(calls.slice(before)).toEqual([])
+    expect(calls.slice(before).filter(name => !isAccountRefreshRpc(name))).toEqual([])
     await modal.getByRole('button', { name: 'Закрыть предпросмотр' }).click()
   }
   expect(errors).toEqual([])
@@ -304,8 +309,7 @@ for (const path of ['/journal', '/lnk', '/psto']) {
     await expect(modal.getByRole('button', { name: 'Скачать Excel' })).toBeVisible()
     await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
     await settle()
-    expect(calls.slice(before).every(name => name.startsWith('getDispatcherTaskVersion'))).toBe(true)
-    expect(calls.length - before).toBeLessThanOrEqual(1)
+    expectOnlyFocusProbes(calls.slice(before), 1)
     await modal.getByRole('button', { name: 'Закрыть предпросмотр' }).click()
   })
 }

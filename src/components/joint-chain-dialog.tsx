@@ -1,3 +1,4 @@
+import { useAccess } from '@/lib/security-context'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CoilRestorationHistory } from './coil-restoration-dialog'
 import { GitFork, History, ListTodo, LoaderCircle, RotateCcw, ShieldAlert, X } from 'lucide-react'
@@ -113,6 +114,7 @@ export function JointChainDialog({
   onOpenOfficiality,
   onRetry,
 }: JointChainDialogProps) {
+  const { can } = useAccess()
   const [selectedRowId, setSelectedRowId] = useState(record.id)
   const [pictureMode, setPictureMode] = useState<JointPictureTab>(initialTab)
   const [remoteLineCount, setRemoteLineCount] = useState<{ rowId: number; revision: number | null | undefined; total: number } | null>(null)
@@ -188,6 +190,7 @@ export function JointChainDialog({
             Картина стыка {String(selectedRow.joint ?? '-').trim() || '-'}
           </h2>
           <p className="mt-1 text-sm text-slate-500">{getJointChainSubtitle(selectedRow)}</p>
+          {can('history.joint') && can('welding.view') ? <a href={`/activity?jointId=${selectedRow.id}`} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-sm text-sky-700 underline">История изменений</a> : null}
         </div>
         <Button variant="ghost" size="icon" onClick={onClose} aria-label="Закрыть картину">
           <X className="h-4 w-4" />

@@ -1,3 +1,4 @@
+import { userStorage } from '@/lib/user-storage'
 import { useEffect, useState } from 'react'
 import { persistProjectSettingToRemote, PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 
@@ -52,7 +53,7 @@ export function loadSystemIndexSettings(): SystemIndexSettings {
   if (typeof window === 'undefined') return DEFAULT_SYSTEM_INDEX_SETTINGS
 
   try {
-    const rawValue = window.localStorage.getItem(SYSTEM_INDEX_SETTINGS_STORAGE_KEY)
+    const rawValue = userStorage.getItem(SYSTEM_INDEX_SETTINGS_STORAGE_KEY)
     if (!rawValue) return DEFAULT_SYSTEM_INDEX_SETTINGS
     return normalizeSystemIndexSettings(JSON.parse(rawValue))
   } catch {
@@ -63,7 +64,7 @@ export function loadSystemIndexSettings(): SystemIndexSettings {
 export function saveSystemIndexSettings(settings: SystemIndexSettings, options: { syncRemote?: boolean } = {}) {
   if (typeof window === 'undefined') return
   const normalizedSettings = normalizeSystemIndexSettings(settings)
-  window.localStorage.setItem(SYSTEM_INDEX_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
+  userStorage.setItem(SYSTEM_INDEX_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
   window.dispatchEvent(new Event(SYSTEM_INDEX_SETTINGS_EVENT))
   if (options.syncRemote !== false) persistProjectSettingToRemote(PROJECT_SETTING_KEYS.systemIndex, normalizedSettings)
 }

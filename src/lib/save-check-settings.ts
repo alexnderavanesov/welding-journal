@@ -1,3 +1,4 @@
+import { userStorage } from '@/lib/user-storage'
 import { useEffect, useState } from 'react'
 import { loadOtherSettings } from '@/lib/other-settings'
 import { persistProjectSettingToRemote, PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
@@ -158,7 +159,7 @@ export function loadSaveCheckSettings(): SaveCheckSettings {
   if (typeof window === 'undefined') return DEFAULT_SAVE_CHECK_SETTINGS
 
   try {
-    const rawValue = window.localStorage.getItem(SAVE_CHECK_SETTINGS_STORAGE_KEY)
+    const rawValue = userStorage.getItem(SAVE_CHECK_SETTINGS_STORAGE_KEY)
     if (!rawValue) return { ...DEFAULT_SAVE_CHECK_SETTINGS, officialDls: loadOtherSettings().requireDlsForOfficialStamps }
     return normalizeSaveCheckSettings(JSON.parse(rawValue))
   } catch {
@@ -169,7 +170,7 @@ export function loadSaveCheckSettings(): SaveCheckSettings {
 export function saveSaveCheckSettings(settings: SaveCheckSettings, options: { syncRemote?: boolean } = {}) {
   if (typeof window === 'undefined') return
   const normalizedSettings = normalizeSaveCheckSettings(settings)
-  window.localStorage.setItem(SAVE_CHECK_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
+  userStorage.setItem(SAVE_CHECK_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
   window.dispatchEvent(new Event(SAVE_CHECK_SETTINGS_EVENT))
   if (options.syncRemote !== false) persistProjectSettingToRemote(PROJECT_SETTING_KEYS.saveCheck, normalizedSettings)
 }

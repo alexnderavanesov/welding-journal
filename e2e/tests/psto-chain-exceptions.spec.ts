@@ -165,11 +165,15 @@ test('устаревшее окно и неполный состав не мен
   await expect(call(page, 'updateWeldJoint', { id: root.id, line: B, expectedVersion: current.expectedVersions.find(v => v.id === root.id)!.version, mutationScope: 'welding' })).rejects.toThrow(/цепочк/)
   // An official namesake is a fresh record, not a copy of stale assignment columns.
   await withLineProgramFixture(async db => { await db.query("update weld_joints set officiality='неофициальный' where id=$1", [root.id]) })
-  const created = await call<{ pstoRequired: string; pstoExceptionBasis: string }>(page, 'createWeldJoint', {
+  const draft = {
     projectTitle: PROJECT, subtitleCode: 'EX', line: A, joint: 'S3', officiality: 'действующий', revisionActuality: 'актуальная',
     connectionType: 'С17', category: 'II', groupName: 'A', weldControlPercent: 100,
-    pstoRequired: null, pstoExceptionBasis: 'подмена', mutationScope: 'welding',
-  })
+    mutationScope: 'welding',
+  }
+  const beforeRejected = await stored()
+  await expect(call(page, 'createWeldJoint', { ...draft, pstoRequired: null, pstoExceptionBasis: 'подмена' })).rejects.toThrow(/недоступно/)
+  expect(await stored()).toEqual(beforeRejected)
+  const created = await call<{ pstoRequired: string; pstoExceptionBasis: string }>(page, 'createWeldJoint', draft)
   expect(created.pstoRequired).toBe('да')
   expect(created.pstoExceptionBasis).toBe('Техническое решение И-12')
 })

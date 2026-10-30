@@ -1,3 +1,4 @@
+import { auditSql } from './audit-functions'
 import { createHash } from 'node:crypto'
 import { asc, eq, sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
@@ -329,8 +330,8 @@ async function persistOperation(tx: SystemDocumentSequenceTransaction, state: Sn
   const controlList = [...controls.values()]
   for (let start = 0; start < controlList.length; start += 1000) {
     const batch = controlList.slice(start, start + 1000).map(c => ({ id: c.id, request_name: c.requestName, conclusion_name: c.conclusionName }))
-    const result = await tx.execute(sql`update ${preHeatTreatmentControls} as target set request_name = n.request_name, conclusion_name = n.conclusion_name, updated_at = now()
-      from jsonb_to_recordset(${JSON.stringify(batch)}::jsonb) as n(id integer, request_name text, conclusion_name text) where target.id = n.id returning target.id`)
+    const result = await auditSql(tx, [{ table: preHeatTreatmentControls, where: sql`${preHeatTreatmentControls.id} = any(${sql.param(batch.map(row => row.id))}::integer[])` }], () => tx.execute(sql`update ${preHeatTreatmentControls} as target set request_name = n.request_name, conclusion_name = n.conclusion_name, updated_at = now()
+      from jsonb_to_recordset(${JSON.stringify(batch)}::jsonb) as n(id integer, request_name text, conclusion_name text) where target.id = n.id returning target.id`))
     if (result.rows.length !== batch.length) throw stale()
   }
   for (const id of retained.keys()) replaced.delete(id)
@@ -339,8 +340,8 @@ async function persistOperation(tx: SystemDocumentSequenceTransaction, state: Sn
     // Retain the original ID for renaming / the first stable split group, but
     // replace its exact membership before upsert (never union with old members).
     const payload = [...retained].map(([id, doc]) => ({ id, title: doc.summary.title, file_name: doc.summary.fileName, row_count: doc.summary.rowCount, source_metadata: serializeSystemDocumentSummary(doc.summary, doc.sourcePositions) }))
-    await tx.execute(sql`update ${generatedDocuments} as d set title = n.title, file_name = n.file_name, row_count = n.row_count, source_metadata = n.source_metadata, updated_at = now()
-      from jsonb_to_recordset(${JSON.stringify(payload)}::jsonb) as n(id integer, title text, file_name text, row_count integer, source_metadata text) where d.id = n.id`)
+    await auditSql(tx, [{ table: generatedDocuments, where: sql`${generatedDocuments.id} = any(${sql.param(payload.map(row => row.id))}::integer[])` }], () => tx.execute(sql`update ${generatedDocuments} as d set title = n.title, file_name = n.file_name, row_count = n.row_count, source_metadata = n.source_metadata, updated_at = now()
+      from jsonb_to_recordset(${JSON.stringify(payload)}::jsonb) as n(id integer, title text, file_name text, row_count integer, source_metadata text) where d.id = n.id`))
     await tx.delete(generatedDocumentWeldJoints).where(buildNumberArrayMatch(generatedDocumentWeldJoints.documentId, [...retained.keys()]))
   }
   if (rows.length) {

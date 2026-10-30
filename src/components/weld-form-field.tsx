@@ -331,12 +331,23 @@ function FreeTextField({
   }
 
   function selectSuggestion(suggestion: WeldFormSuggestion) {
-    updateValue(suggestion.value)
+    setDraft((current) => ({
+      ...current,
+      ...(field.key === 'line' && suggestion.lineIdentity && !current.id ? suggestion.lineIdentity : {}),
+      [field.key]: suggestion.value,
+    }))
     setOpen(false)
     setActiveIndex(0)
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (canShowSuggestions && !open && event.key === 'ArrowDown') {
+      event.preventDefault()
+      event.stopPropagation()
+      setActiveIndex(0)
+      setOpen(true)
+      return
+    }
     if (!visibleSuggestions.length) return
 
     if (event.key === 'ArrowDown') {
@@ -384,6 +395,9 @@ function FreeTextField({
         onFocus={() => {
           if (canShowSuggestions) setOpen(true)
         }}
+        onClick={() => {
+          if (canShowSuggestions) setOpen(true)
+        }}
         onBlur={() => {
           setOpen(false)
         }}
@@ -423,7 +437,7 @@ function FreeTextField({
                       </span>
                     ) : null}
                   </span>
-                  {suggestion.context ? <span className="truncate text-xs text-slate-500">{suggestion.context}</span> : null}
+                  {suggestion.context ? <span className="whitespace-normal break-words text-xs text-slate-500">{suggestion.context}</span> : null}
                 </button>
               )
             })}
@@ -444,9 +458,9 @@ function RemoteSuggestionSource({ fieldKey, draft, onResult }: {
   draft: WeldInput
   onResult: Dispatch<SetStateAction<RemoteSuggestionResult | null>>
 }) {
-  const queryDraft = useMemo(() => Object.fromEntries(
+  const queryDraft = useMemo(() => ({ id: draft.id, ...Object.fromEntries(
     getWeldFormSuggestionQueryFieldKeys(fieldKey).map((key) => [key, draft[key]]),
-  ) as WeldInput, [fieldKey, draft])
+  ) }) as WeldInput, [fieldKey, draft])
   const debounced = useDebouncedValue(queryDraft, 180)
   const query = useRemoteWeldFormSuggestions({ fieldKey, draft: debounced, enabled: debounced === queryDraft })
   const suggestions = debounced === queryDraft ? query.data ?? EMPTY_SUGGESTIONS : EMPTY_SUGGESTIONS

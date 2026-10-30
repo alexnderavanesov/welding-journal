@@ -31,6 +31,8 @@
 .read-only-grid-popup-layer { position: fixed; inset: 0; z-index: 160; pointer-events: none; }
 .read-only-grid-popup-layer > * { pointer-events: auto; }
 .read-only-grid-popup.ag-filter-menu { width: 284px; min-width: 240px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); padding: 0; border: 1px solid #dce4ee; border-radius: 12px; background: #f9fafb; color: #475569; font-size: 12px; box-shadow: 0 10px 32px #0f172a1f; overflow: auto; }
+/* The popup owns the width; the activity filter fills its inner content box. */
+.read-only-grid-popup.ag-filter-menu:has(.activity-column-filter) { width: 310px; min-width: 0; overflow-x: hidden; }
 .read-only-grid-popup[data-filter-label]::before { content: attr(data-filter-label); display: block; padding: 10px 12px 6px; font-size: 13px; font-weight: 600; color: #1e293b; }
 .read-only-grid-popup:has(.journal-filter)::before { display: none; }
 .read-only-grid-popup:has(.journal-filter) { padding: 0; width: 310px; max-width: calc(100vw - 24px); border-radius: 12px; overflow: hidden; }

@@ -1,3 +1,4 @@
+import { auditSql } from './audit-functions'
 import { sql } from 'drizzle-orm'
 import { dispatcherAcceptedWarnings, weldJoints } from '@/db/schema'
 import { getLineProgramIdentityKey, type LineProgramIdentity } from '@/lib/line-program'
@@ -31,6 +32,10 @@ export async function renameLineProgramDecisions(tx: SystemDocumentSequenceTrans
   }
   const oldContext = contextPrefix(previous)
   const newContext = contextPrefix(next)
+  await auditSql(tx, [{ table: dispatcherAcceptedWarnings, where: sql`(kind = 'percentage-line-control' and (strpos(key, ${oldToken}) > 0 or strpos(key, ${newToken}) > 0)) or (kind = 'line-program-control' and (left(context, length(${oldContext}) + 3) = ${oldContext + ' · '} or left(context, length(${newContext}) + 3) = ${newContext + ' · '})) or (kind = 'early-coil' and exists (
+      select 1 from ${weldJoints} where ${lineProgramWeldWhere(next)}
+        and key = 'early-coil:' || ${weldJoints.id}::text
+    ))` }], async () => {
   await tx.execute(sql`update ${dispatcherAcceptedWarnings} set
     key = case when ${percentageMatch} then replace(key, ${oldToken}, ${newToken}) else key end,
     context = case when left(context, length(${oldContext}) + 3) = ${oldContext + ' · '}
@@ -39,4 +44,5 @@ export async function renameLineProgramDecisions(tx: SystemDocumentSequenceTrans
       select 1 from ${weldJoints} where ${lineProgramWeldWhere(next)}
         and key = 'early-coil:' || ${weldJoints.id}::text
     ))`)
+  })
 }

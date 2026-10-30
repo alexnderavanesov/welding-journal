@@ -1,3 +1,4 @@
+import { asE2eOwner } from '../with-owner-access'
 import { expect, test } from '@playwright/test'
 import pg from 'pg'
 import { readFile, writeFile } from 'node:fs/promises'
@@ -9,7 +10,7 @@ import { loadRemoteGeneratedDocumentHistoryGrid, normalizeGeneratedDocumentHisto
 import { loadIndexedSystemDocumentHistoryGrid, loadIndexedSystemDocumentHistoryFilterOptions, loadSystemDocumentSummaries } from '../../src/server/system-document-index'
 import { normalizeSystemDocumentHistoryGridRequest, normalizeSystemDocumentHistoryFilterOptionsRequest } from '../../src/server/system-documents'
 import { requireDb } from '../../src/db'
-import { deleteWeldJoint, deleteWeldJoints } from '../../src/server/weld-mutations'
+import { deleteWeldJoint as raw_deleteWeldJoint , deleteWeldJoints as raw_deleteWeldJoints } from '../../src/server/weld-mutations'
 import { deleteEmptyGeneratedDocuments, loadGeneratedDocumentIdsForWeldDeletion } from '../../src/server/generated-document-cleanup'
 import { SYSTEM_DOCUMENT_TYPES, type SystemDocumentType } from '../../src/lib/system-document-types'
 
@@ -260,3 +261,6 @@ test(`${process.env.AUDIT_DOCUMENT_PLANS_ONLY === '1' ? 'PLAN DIAGNOSTIC ONLY: '
     }
   })
 })
+
+const deleteWeldJoint = asE2eOwner(raw_deleteWeldJoint, 'welding.delete')
+const deleteWeldJoints = asE2eOwner(raw_deleteWeldJoints, 'welding.delete')

@@ -1,3 +1,4 @@
+import { auditSql, auditInsertedSql } from './audit-functions'
 import { and, asc, eq, inArray, notExists, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
@@ -373,7 +374,7 @@ export async function persistLayeredControlDocumentWrites(
     .filter((write) => write.targetDocumentId != null && write.shouldUpdate)
     .map((write) => [write.targetDocumentId!, write])).values()]
   if (changedExistingWrites.length > 0) {
-    await tx.execute(sql`
+    await auditSql(tx, [{ table: generatedDocuments, where: sql`${generatedDocuments.id} = any(${sql.param(changedExistingWrites.map(write => write.targetDocumentId!))}::integer[])` }], () => tx.execute(sql`
       update "generated_documents" as document
       set
         "title" = refreshed.title,
@@ -407,13 +408,13 @@ export async function persistLayeredControlDocumentWrites(
         document_number
       )
       where document."id" = refreshed.id
-    `)
+    `))
   }
 
   const newWrites = writes.filter((write) => write.targetDocumentId == null)
   const insertedDocumentIds = new Map<string, number>()
   if (newWrites.length > 0) {
-    const insertedResult = await tx.execute(sql`
+    const insertedResult = await auditInsertedSql(tx, generatedDocuments, () => tx.execute(sql`
       insert into "generated_documents" (
         "type",
         "title",
@@ -462,7 +463,7 @@ export async function persistLayeredControlDocumentWrites(
         "id",
         "type",
         "document_number" as "documentNumber"
-    `)
+    `))
     const inserted = insertedResult.rows as Array<{
       id: number
       type: string
@@ -481,7 +482,7 @@ export async function persistLayeredControlDocumentWrites(
     return { documentId, weldJointId: write.rowId }
   })
   if (newAssignments.length > 0) {
-    await tx.execute(sql`
+    await auditSql(tx, [{ table: generatedDocumentWeldJoints, where: sql`${generatedDocumentWeldJoints.documentId} = any(${sql.param(newAssignments.map(assignment => assignment.documentId))}::integer[])` }], () => tx.execute(sql`
       insert into "generated_document_weld_joints" ("document_id", "weld_joint_id")
       select source.document_id, source.weld_joint_id
       from unnest(
@@ -489,7 +490,7 @@ export async function persistLayeredControlDocumentWrites(
         ${sql.param(newAssignments.map((assignment) => assignment.weldJointId))}::integer[]
       ) as source(document_id, weld_joint_id)
       on conflict do nothing
-    `)
+    `))
   }
 
   const duplicates = [...new Map(duplicateAssignments.map((assignment) => [
@@ -500,7 +501,7 @@ export async function persistLayeredControlDocumentWrites(
     const documentIds = duplicates.map((assignment) => assignment.documentId)
     await touchDocumentMembershipParents(tx, documentIds)
     const weldJointIds = duplicates.map((assignment) => assignment.weldJointId)
-    await tx.execute(sql`
+    await auditSql(tx, [{ table: generatedDocumentWeldJoints, where: sql`${generatedDocumentWeldJoints.documentId} = any(${sql.param(documentIds)}::integer[])` }], () => tx.execute(sql`
       delete from "generated_document_weld_joints" as assignment
       using unnest(
         ${sql.param(documentIds)}::integer[],
@@ -508,7 +509,7 @@ export async function persistLayeredControlDocumentWrites(
       ) as duplicate(document_id, weld_joint_id)
       where assignment."document_id" = duplicate.document_id
         and assignment."weld_joint_id" = duplicate.weld_joint_id
-    `)
+    `))
   }
   const duplicateDocumentIds = [...new Set(duplicates.map((assignment) => assignment.documentId))]
   if (duplicateDocumentIds.length > 0) {

@@ -1,3 +1,4 @@
+import { asE2eOwner } from '../with-owner-access'
 import { randomUUID } from 'node:crypto'
 import { expect, test } from '@playwright/test'
 import { and, eq } from 'drizzle-orm'
@@ -10,8 +11,8 @@ import type { DocumentOperationRequest } from '../../src/lib/system-document-ope
 import { applySpecialistAssignments, assignCreatedDocumentSpecialists } from '../../src/server/specialists'
 import { initializeSystemDocumentIndexesInTransaction, syncSystemDocumentsForWeldChangesInTransaction } from '../../src/server/system-document-index'
 import { syncPreHeatTreatmentDocumentsInTransaction } from '../../src/server/pre-heat-treatment-system-documents'
-import { applyOperation, previewOperation } from '../../src/server/document-operation-service'
-import { deleteWeldJoint } from '../../src/server/weld-mutations'
+import { applyOperation as raw_applyOperation, previewOperation as raw_previewOperation } from '../../src/server/document-operation-service'
+import { deleteWeldJoint as raw_deleteWeldJoint } from '../../src/server/weld-mutations'
 import { persistLayeredControlDocumentWrites } from '../../src/server/layered-control-documents'
 import { loadRemoteGeneratedDocument } from '../../src/server/generated-documents'
 import { rpcName } from '../rpc'
@@ -21,6 +22,8 @@ import { rpcName } from '../rpc'
 // binds server imports to the disposable database; refuse any different target.
 test.describe.configure({ mode: 'serial' })
 const date = '2026-10-12'
+const applyOperation = asE2eOwner(raw_applyOperation, 'documents.edit')
+const previewOperation = asE2eOwner(raw_previewOperation, 'documents.view')
 type Stage = 'primary' | 'beforeHeatTreatment'
 type StoredConclusion = {
   id: number; title: string; period_from: string; stage: string; row_count: number
@@ -378,3 +381,5 @@ for (const removal of ['layered removal', 'duplicate pruning', 'weld deletion'] 
     expect((await read()).specialists).toEqual({ first: null, second: null })
   })
 }
+
+const deleteWeldJoint = asE2eOwner(raw_deleteWeldJoint, 'welding.delete')

@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx'
 import { VISIBLE_FIELDS } from '../../src/lib/weld-fields'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
-import { rpcName } from '../rpc'
+import { isAccountRefreshRpc, rpcName } from '../rpc'
 
 const PROJECT = 'E2E current journal columns'
 const VIEW = 'Экспорт смены'
@@ -81,7 +81,7 @@ async function verifyCurrentOutput(page: Page, calls: string[], headers = HEADER
   await modal.getByRole('button', { name: 'Печать / Сохранить PDF', exact: true }).click()
   await expect.poll(() => page.evaluate(() => JSON.parse(document.body.dataset.currentJournalPrint ?? '{}').rows?.length)).toBe(125)
   expect(await page.evaluate(() => JSON.parse(document.body.dataset.currentJournalPrint!))).toEqual({ headers, rows })
-  expect(calls.slice(beforeLocalOutput).filter(name => !name.startsWith('getDispatcherTaskVersion'))).toEqual([])
+  expect(calls.slice(beforeLocalOutput).filter(name => !name.startsWith('getDispatcherTaskVersion') && !isAccountRefreshRpc(name))).toEqual([])
   expect(calls.length - before).toBeLessThanOrEqual(5)
   await modal.getByRole('button', { name: 'Закрыть предпросмотр', exact: true }).click()
   await expect(modal).toBeHidden()
@@ -97,7 +97,7 @@ test('журнал: текущая версия сохраняет видимы�
   // (hiding a field/section, moving columns, saving and applying) use real UI.
   const initial = new Set([...FIELD_KEYS.filter(key => key !== 'wdi' && key !== 'weldDate'), 'd1', 'element1'])
   await page.addInitScript(hiddenFieldKeys => {
-    if (localStorage.getItem('welding-report-view:v1:weldingJournal')) return
+    if (localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith('welding-user:') && key.endsWith(':welding-report-view:v1:weldingJournal')) ?? 'welding-report-view:v1:weldingJournal')) return
     localStorage.setItem('welding-report-view:v1:weldingJournal', JSON.stringify({
       activePreset: 'custom', hiddenFieldKeys, customHiddenFieldKeys: hiddenFieldKeys,
       collapsedSections: ['Следующий шаг'], savedViews: [],
@@ -167,13 +167,13 @@ test('журнал: текущая версия сохраняет видимы�
 
   // A failed save must not turn current output into the old persisted view.
   const persisted = await page.evaluate(() => ({
-    view: localStorage.getItem('welding-report-view:v1:weldingJournal'),
-    grid: localStorage.getItem('welding-journal-ag-grid:v1'),
+    view: localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith('welding-user:') && key.endsWith(':welding-report-view:v1:weldingJournal')) ?? 'welding-report-view:v1:weldingJournal'),
+    grid: localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith('welding-user:') && key.endsWith(':welding-journal-ag-grid:v1')) ?? 'welding-journal-ag-grid:v1'),
   }))
   await page.evaluate(() => {
     const setItem = Storage.prototype.setItem
     Storage.prototype.setItem = function (key, value) {
-      if (key === 'welding-report-view:v1:weldingJournal' || key === 'welding-journal-ag-grid:v1') {
+      if (['welding-report-view:v1:weldingJournal', 'welding-journal-ag-grid:v1'].some(name => key === name || key.startsWith('welding-user:') && key.endsWith(':' + name))) {
         throw new DOMException('Test storage quota exceeded', 'QuotaExceededError')
       }
       return setItem.call(this, key, value)
@@ -197,8 +197,8 @@ test('журнал: текущая версия сохраняет видимы�
   await page.mouse.up()
   await expect.poll(() => currentScreenFields(page)).toEqual(['line', 'joint', 'subtitleCode', 'projectTitle', 'materialGroup', 'wdi', 'weldDate', 'finalStatus'])
   expect(await page.evaluate(() => ({
-    view: localStorage.getItem('welding-report-view:v1:weldingJournal'),
-    grid: localStorage.getItem('welding-journal-ag-grid:v1'),
+    view: localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith('welding-user:') && key.endsWith(':welding-report-view:v1:weldingJournal')) ?? 'welding-report-view:v1:weldingJournal'),
+    grid: localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith('welding-user:') && key.endsWith(':welding-journal-ag-grid:v1')) ?? 'welding-journal-ag-grid:v1'),
   }))).toEqual(persisted)
   await verifyCurrentOutput(page, calls, ['Линия', 'Стык', 'Шифр', 'Проект', 'Группа материалов', 'WDI', 'Дата сварки', 'Итоговый статус'])
   expect(errors).toEqual([])

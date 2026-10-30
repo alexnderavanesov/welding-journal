@@ -1,3 +1,4 @@
+import { useAccess } from '@/lib/security-context'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { ChevronDown, ClipboardCheck, CopyCheck, FilePlus2, Gauge, ListChecks, ListFilter, Pencil, Plus, ShieldCheck, Upload } from 'lucide-react'
 import { ReportShowMenu } from '@/components/report-show-menu'
@@ -48,13 +49,16 @@ export function WeldingJournalHeaderActions({
   onOpenCancelledAcceptedReport,
   onOpenSystemReport,
 }: WeldingJournalHeaderActionsProps) {
+  const { can } = useAccess()
+  const editable = can('welding.edit')
   return (
     <>
-      <Button onClick={onCreateWeldJoint}>
+      <Button onClick={onCreateWeldJoint} disabled={!editable}>
         <Plus className="mr-2 h-4 w-4" />
         Новый стык
       </Button>
       <ReportShowMenu
+        disabled={!can('welding.export')}
         isOpen={isShowMenuOpen}
         onToggle={onToggleShowMenu}
         widthClassName="w-64"
@@ -70,6 +74,7 @@ export function WeldingJournalHeaderActions({
       />
       <ReportShowMenu
         label="Сформировать"
+        disabled={!can('welding.generate') || !can('documents.generate')}
         isOpen={isGenerateMenuOpen}
         onToggle={onToggleGenerateMenu}
         widthClassName="w-56"
@@ -79,7 +84,7 @@ export function WeldingJournalHeaderActions({
           { label: 'ЗНИ', onClick: onGenerateZniDocument },
         ]}
       />
-      <Button variant="outline" onClick={onOpenImportDialog} disabled={importDisabled}>
+      <Button variant="outline" onClick={onOpenImportDialog} disabled={importDisabled || !can('welding.import')}>
         <Upload className="mr-2 h-4 w-4" />
         Импорт
       </Button>
@@ -144,6 +149,8 @@ export function HeatTreatmentHeaderActions({
   availability = 'ready',
   onWorkflowMenuOpenChange = () => undefined,
 }: HeatTreatmentHeaderActionsProps) {
+  const { can } = useAccess()
+  const editable = can('psto.edit')
   const workflowMenuRootRef = useRef<HTMLDivElement | null>(null)
   const cancelPendingAction = useCancelPendingWorkflowAction()
   const [isRequestMenuOpen, setIsRequestMenuOpen] = useState(false)
@@ -224,7 +231,7 @@ export function HeatTreatmentHeaderActions({
               label="Новая заявка"
               icon={Plus}
               onClick={() => runWorkflowAction(onCreateRequest)}
-              disabled={availability === 'ready' && createRequestDisabled}
+              disabled={!editable || (availability === 'ready' && createRequestDisabled)}
               disabledReason="Нет стыков, готовых к ПСТО. Следующий этап — в истории стыка."
               description="Создать заявку для стыков, готовых к ПСТО."
               availability={availability}
@@ -233,7 +240,7 @@ export function HeatTreatmentHeaderActions({
               label="Редактировать выбранную"
               icon={Pencil}
               onClick={() => runWorkflowAction(onEditSelectedRequest)}
-              disabled={editSelectedRequestDisabled}
+              disabled={!editable || (editSelectedRequestDisabled)}
               disabledReason="Выберите в таблице стык с созданной заявкой ПСТО."
               description="Изменить заявку отмеченного в таблице стыка."
             />
@@ -263,7 +270,7 @@ export function HeatTreatmentHeaderActions({
               label="Внести результаты"
               icon={Plus}
               onClick={() => runWorkflowAction(onAddResult)}
-              disabled={availability === 'ready' && resultDisabled}
+              disabled={!editable || (availability === 'ready' && resultDisabled)}
               disabledReason="Нет заявок ПСТО, ожидающих результата. Сначала создайте заявку ПСТО."
               description="Внести результаты по ожидающим заявкам ПСТО."
               availability={availability}
@@ -272,7 +279,7 @@ export function HeatTreatmentHeaderActions({
               label="Редактировать выбранные"
               icon={ClipboardCheck}
               onClick={() => runWorkflowAction(onEditSelectedResults)}
-              disabled={editSelectedResultsDisabled}
+              disabled={!editable || (editSelectedResultsDisabled)}
               disabledReason="Выберите в таблице стык с уже внесенным результатом ПСТО."
               description="Открыть результаты отмеченных в таблице стыков."
             />
@@ -308,7 +315,7 @@ export function HeatTreatmentHeaderActions({
               icon={FilePlus2}
               tone="violet"
               onClick={() => runWorkflowAction(onCreateTvmtRequest)}
-              disabled={availability === 'ready' && createTvmtRequestDisabled}
+              disabled={!editable || (availability === 'ready' && createTvmtRequestDisabled)}
               disabledReason="Нет стыков с проведенной ПСТО, ожидающих заявку ТВМТ."
               description="Создать заявку ТВМТ после проведённой ПСТО."
               availability={availability}
@@ -318,7 +325,7 @@ export function HeatTreatmentHeaderActions({
               icon={ClipboardCheck}
               tone="violet"
               onClick={() => runWorkflowAction(onAddTvmtResult)}
-              disabled={availability === 'ready' && addTvmtResultDisabled}
+              disabled={!editable || (availability === 'ready' && addTvmtResultDisabled)}
               disabledReason="Нет заявок ТВМТ, ожидающих результата. Сначала создайте заявку ТВМТ."
               description="Внести результаты по ожидающим заявкам ТВМТ."
               availability={availability}
@@ -327,6 +334,7 @@ export function HeatTreatmentHeaderActions({
         ) : null}
       </div>
       <ReportShowMenu
+        disabled={!can('psto.export')}
         isOpen={isShowMenuOpen}
         onToggle={toggleShowMenu}
         widthClassName="w-56"
@@ -394,6 +402,8 @@ export function LnkHeaderActions({
   availability = 'ready',
   onWorkflowMenuOpenChange = () => undefined,
 }: LnkHeaderActionsProps) {
+  const { can } = useAccess()
+  const editable = can('lnk.edit')
   const workflowMenuRootRef = useRef<HTMLDivElement | null>(null)
   const cancelPendingAction = useCancelPendingWorkflowAction()
   const [isRequestMenuOpen, setIsRequestMenuOpen] = useState(false)
@@ -453,11 +463,12 @@ export function LnkHeaderActions({
               label="Новая заявка"
               icon={Plus}
               onClick={() => runWorkflowAction(onCreateRequest)}
-              disabled={createRequestDisabled}
+              disabled={!editable || (createRequestDisabled)}
               disabledReason="Дождитесь загрузки текущей выборки и всех выбранных стыков."
             />
             <WorkflowActionMenuItem
               label="Добавить позиции"
+              disabled={!editable}
               icon={FilePlus2}
               onClick={() => runWorkflowAction(onExtendRequest)}
             />
@@ -487,7 +498,7 @@ export function LnkHeaderActions({
               label="Внести результаты"
               icon={Plus}
               onClick={() => runWorkflowAction(onAddResult)}
-              disabled={availability === 'ready' && resultDisabled}
+              disabled={!editable || (availability === 'ready' && resultDisabled)}
               disabledReason="Нет ожидающих заявок ЛНК. Создайте заявку нужного этапа."
               description="Внести результаты по заявкам выбранного этапа НК."
               availability={availability}
@@ -496,7 +507,7 @@ export function LnkHeaderActions({
               label="Редактировать выбранные"
               icon={ClipboardCheck}
               onClick={() => runWorkflowAction(onEditSelectedResults)}
-              disabled={editSelectedResultsDisabled}
+              disabled={!editable || (editSelectedResultsDisabled)}
               disabledReason="Выберите в таблице стык с внесенным результатом ЛНК."
               description="Открыть результаты отмеченных в таблице стыков."
             />
@@ -518,7 +529,7 @@ export function LnkHeaderActions({
         variant="outline"
         className={REPORT_WORKFLOW_BUTTON_CLASS}
         onClick={() => runWorkflowAction(onOpenOfficiality)}
-        disabled={officialityPending}
+        disabled={!editable || (officialityPending)}
       >
         <ShieldCheck className="mr-2 h-4 w-4" />
         Официальность
@@ -527,12 +538,13 @@ export function LnkHeaderActions({
         variant="outline"
         className={REPORT_WORKFLOW_BUTTON_CLASS}
         onClick={() => runWorkflowAction(onOpenDuplicateControl)}
-        disabled={duplicateControlPending}
+        disabled={!editable || (duplicateControlPending)}
       >
         <CopyCheck className="mr-2 h-4 w-4" />
         Дубль контроль
       </Button>
       <ReportShowMenu
+        disabled={!can('lnk.export')}
         isOpen={isShowMenuOpen}
         onToggle={toggleShowMenu}
         buttonClassName={REPORT_WORKFLOW_BUTTON_CLASS}

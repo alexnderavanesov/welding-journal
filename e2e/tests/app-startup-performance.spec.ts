@@ -73,7 +73,7 @@ test('normal CPU: three cold sessions, twenty refreshes and twenty returns with 
   for (let cold = 0; cold < 3; cold++) {
     // A fresh context gives an empty browser HTTP cache; the local server and
     // PostgreSQL are deliberately not called cold merely because a tab is new.
-    const context = await browser.newContext({ baseURL: info.project.use.baseURL, viewport: { width: 1600, height: 1000 } })
+    const context = await browser.newContext({ storageState: process.env.E2E_AUTH_STATE, baseURL: info.project.use.baseURL, viewport: { width: 1600, height: 1000 } })
     try {
       await context.addInitScript(installProbe)
       const page = await context.newPage()

@@ -1,3 +1,5 @@
+import { RESTRICTED_WELD_FIELDS, SERVICE_DATE_FIELDS } from './weld-field-access'
+import { WELD_MUTATION_FIELD_KEYS } from '@/server/weld-mutation-policy'
 import {
   createWeldJoint,
   createWeldJoints,
@@ -48,7 +50,7 @@ export async function updateWeldRowOrThrow<T extends RowWithId>(
 ) {
   const saved = await updateWeldJoint({
     data: {
-      ...normalizeDateFieldsForSave(record),
+      ...normalizeDateFieldsForSave(record, options.mutationScope),
       expectedVersion: getExpectedWeldRowVersion(record),
       mutationScope: options.mutationScope,
       ...(options.specialistCorrectionConfirmation ? { specialistCorrectionConfirmation: options.specialistCorrectionConfirmation } : {}),
@@ -93,7 +95,7 @@ export async function updateWeldRowsOrThrow<T extends RowWithId>(
 ) {
   const savedRows = await updateWeldJoints({
     data: {
-      records: records.map((record) => normalizeDateFieldsForSave(record)),
+      records: records.map((record) => normalizeDateFieldsForSave(record, options.mutationScope)),
       expectedVersions: getExpectedWeldRowVersions(records),
       mutationScope: options.mutationScope,
       ...(options.specialistCorrectionConfirmation ? { specialistCorrectionConfirmation: options.specialistCorrectionConfirmation } : {}),
@@ -115,7 +117,7 @@ export async function massFillWeldRowsOrThrow<T extends RowWithId>(
 ) {
   const savedRows = await massFillWeldJoints({
     data: {
-      records: records.map((record) => normalizeDateFieldsForSave(record)),
+      records: records.map((record) => normalizeDateFieldsForSave(record, null)),
       expectedVersions,
     },
   })
@@ -131,7 +133,7 @@ export async function replaceWeldRowsOrThrow<T extends RowWithId>(
 ) {
   const result = await replaceWeldJoints({
     data: {
-      records: records.map((record) => normalizeDateFieldsForSave(record)),
+      records: records.map((record) => normalizeDateFieldsForSave(record, null)),
       deleteIds,
       expectedVersions,
     },
@@ -140,7 +142,7 @@ export async function replaceWeldRowsOrThrow<T extends RowWithId>(
   return result
 }
 
-function normalizeDateFieldsForSave<T extends WeldInput>(record: T): T {
+function normalizeDateFieldsForSave<T extends WeldInput>(record: T, scope: WeldMutationScope | null = 'welding'): T {
   let nextRecord: T | null = null
   for (const fieldKey of dateFieldKeys) {
     const normalizedValue = normalizeDateLikeForStorage(record[fieldKey])
@@ -149,7 +151,11 @@ function normalizeDateFieldsForSave<T extends WeldInput>(record: T): T {
       nextRecord = { ...(nextRecord ?? record), [fieldKey]: nextValue } as T
     }
   }
-  return nextRecord ?? record
+  // A form draft also contains derived values and other specialties for display.
+  // Send only this operation's working fields; direct forged RPCs remain rejected on the server.
+  const allowed = scope ? new Set<string>(WELD_MUTATION_FIELD_KEYS[scope]) : null
+  return Object.fromEntries(Object.entries(nextRecord ?? record).filter(([key]) =>
+    key === 'id' || !SERVICE_DATE_FIELDS.has(key) && (!allowed || !RESTRICTED_WELD_FIELDS.has(key) || allowed.has(key)))) as T
 }
 
 const dateFieldKeys = [...FIELD_BY_KEY.entries()]

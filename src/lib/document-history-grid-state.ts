@@ -1,3 +1,4 @@
+import { userStorage } from '@/lib/user-storage'
 import type { ColumnState } from 'ag-grid-community'
 import type { DocumentHistoryColumnDefinition } from './document-history-columns'
 export type DocumentGridColumnDefinition = Omit<DocumentHistoryColumnDefinition, 'key'> & {
@@ -64,7 +65,7 @@ export function readDocumentGridState(viewId: string, columns: readonly Document
   const fallback = { columns: [], appearance: { ...DOCUMENT_GRID_DEFAULT_APPEARANCE }, views: [] }
   try {
     if (typeof window === 'undefined') return fallback
-    const raw = JSON.parse(window.localStorage.getItem(prefix + viewId) || 'null')
+    const raw = JSON.parse(userStorage.getItem(prefix + viewId) || 'null')
     if (!raw || typeof raw !== 'object') return fallback
     return {
       columns: normalizeDocumentGridColumns(raw.columns, columns), appearance: appearance(raw.appearance),
@@ -80,5 +81,5 @@ export function readDocumentGridState(viewId: string, columns: readonly Document
 }
 
 export function writeDocumentGridState(viewId: string, state: DocumentGridState) {
-  try { window.localStorage.setItem(prefix + viewId, JSON.stringify(state)) } catch { /* Keep the working in-memory view when browser storage is unavailable. */ }
+  try { userStorage.setItem(prefix + viewId, JSON.stringify(state)) } catch { /* Keep the working in-memory view when browser storage is unavailable. */ }
 }

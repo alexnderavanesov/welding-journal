@@ -40,7 +40,7 @@ describe('lazy loading boundaries', () => {
       'utf8',
     )
 
-    expect(userGuide).toContain("import { WORK_GUIDE_SECTIONS } from '@/components/user-guide-content/work-sections'")
+    expect(userGuide).toContain("import { WORK_GUIDE_SECTIONS as EXISTING_WORK_GUIDE_SECTIONS } from '@/components/user-guide-content/work-sections'")
     expect(userGuide.match(/import\('@\/components\/user-guide-content\/reference-sections-/g)).toHaveLength(3)
     expect(userGuide).not.toMatch(/import\s+\{[^}]*REFERENCE_GUIDE_SECTIONS[^}]*\}\s+from/)
   })

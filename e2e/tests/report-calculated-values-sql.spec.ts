@@ -1,5 +1,6 @@
+import { asE2eOwner } from '../with-owner-access'
 import { buildWeldColumnFilterOptionsFromRows, projectPstoReportDisplayValues } from '../../src/server/report-filter-reference.test-helper'
-import { buildReportQueryWhere, buildServerReportRows, listReportPage, listColumnFilterOptions, normalizeWeldPageRequest, normalizeWeldColumnFilterOptionsRequest, getWeldReportSummary, readReportOutputSnapshot } from '../../src/server/weld-read'
+import { buildReportQueryWhere, buildServerReportRows, listReportPage, listColumnFilterOptions, normalizeWeldPageRequest, normalizeWeldColumnFilterOptionsRequest, getWeldReportSummary as raw_getWeldReportSummary , readReportOutputSnapshot as raw_readReportOutputSnapshot } from '../../src/server/weld-read'
 import { LNK_METHODS } from '../../src/lib/report-config'
 import type { WeldFieldKey } from '../../src/lib/weld-fields'
 import type { WeldJoint } from '../../src/db/schema'
@@ -301,3 +302,6 @@ test('WDI header sort uses current values across pages, filters and settings cha
     else await db.delete(appSettings).where(eq(appSettings.key, key))
   }
 })
+
+const getWeldReportSummary = asE2eOwner(raw_getWeldReportSummary, 'welding.view')
+const readReportOutputSnapshot = asE2eOwner(raw_readReportOutputSnapshot, 'welding.view')

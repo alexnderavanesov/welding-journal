@@ -1,3 +1,4 @@
+import { useAccess } from '@/lib/security-context'
 import { X } from 'lucide-react'
 import { OfficialityBadge } from '@/components/joint-meta'
 import { Button } from '@/components/ui/button'
@@ -11,6 +12,7 @@ type WeldFormHeaderProps = {
 }
 
 export function WeldFormHeader({ draft, isEditing, onCancel }: WeldFormHeaderProps) {
+  const { can } = useAccess()
   return (
     <div className="flex items-center justify-between border-b border-slate-200/80 bg-white px-6 py-4">
       <div>
@@ -20,6 +22,7 @@ export function WeldFormHeader({ draft, isEditing, onCancel }: WeldFormHeaderPro
           <OfficialityBadge row={draft} />
         </p>
       </div>
+      {isEditing && draft.id && can('history.joint') ? <a href={`/activity?jointId=${draft.id}`} target="_blank" rel="noopener noreferrer" className="ml-auto mr-4 text-sm text-sky-700 underline">История изменений</a> : null}
       <Button variant="ghost" size="icon" onClick={onCancel} aria-label="Закрыть">
         <X className="h-4 w-4" />
       </Button>

@@ -1,3 +1,4 @@
+import { auditSql } from './audit-functions'
 import { sql } from 'drizzle-orm'
 import { generatedDocuments, pstoRepeatCycles, weldJoints } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -67,14 +68,14 @@ export async function persistRebuildDocumentNames(
       const records = scope.records.slice(offset, offset + 1000)
       const payload = records.map(record => ({ id: record.id, ...Object.fromEntries(columns.map(({ key, column }) =>
         [column, (record as unknown as Record<string, unknown>)[key] ?? null])) }))
-      const result = await tx.execute(sql`
+      const result = await auditSql(tx, [{ table: scope.table, where: sql`${scope.table.id} = any(${sql.param(records.map(record => record.id))}::integer[])` }], () => tx.execute(sql`
         update ${scope.table} as target set
           ${sql.join(columns.map(({ column }) => sql`${sql.identifier(column)} = renamed.${sql.identifier(column)}`), sql`, `)},
           updated_at = now()
         from jsonb_to_recordset(${JSON.stringify(payload)}::jsonb) as renamed(
           id integer, ${sql.join(columns.map(({ column, type }) => sql`${sql.identifier(column)} ${sql.raw(type)}`), sql`, `)}
         ) where target.id = renamed.id returning target.id
-      `)
+      `))
       if (result.rows.length !== records.length) throw new Error('Документы или циклы изменились. Обновите предварительный просмотр.')
     }
   }

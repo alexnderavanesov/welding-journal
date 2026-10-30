@@ -1,3 +1,4 @@
+import { auditSql, auditInsertedSql } from './audit-functions'
 import { createServerFn } from '@tanstack/react-start'
 import { and, asc, count, eq, inArray, max, min, sql } from 'drizzle-orm'
 
@@ -571,13 +572,13 @@ async function saveGeneratedDocumentBatchInTransaction(
   const resolvedDocumentIds = await persistGeneratedDocumentBatchRecordsInTransaction(tx, records)
 
   if (existingDocumentIds.length > 0) {
-    await tx.execute(sql`
+    await auditSql(tx, [{ table: generatedDocumentWeldJoints, where: sql`${generatedDocumentWeldJoints.weldJointId} = any(${sql.param(selectedIds)}::integer[])` }], () => tx.execute(sql`
       delete from "generated_document_weld_joints" as assignment
       using "generated_documents" as document
       where assignment."document_id" = document."id"
         and document."type" = ${data[0].type}
         and assignment."weld_joint_id" = any(${sql.param(selectedIds)}::integer[])
-    `)
+    `))
   }
   const nextAssignments = data.flatMap((input, inputIndex) => {
     const documentId = resolvedDocumentIds.get(inputIndex)
@@ -585,7 +586,7 @@ async function saveGeneratedDocumentBatchInTransaction(
     return input.weldJointIds.map((weldJointId) => ({ documentId, weldJointId }))
   })
   if (nextAssignments.length > 0) {
-    await tx.execute(sql`
+    await auditSql(tx, [{ table: generatedDocumentWeldJoints, where: sql`${generatedDocumentWeldJoints.documentId} = any(${sql.param(nextAssignments.map(assignment => assignment.documentId))}::integer[])` }], () => tx.execute(sql`
       insert into "generated_document_weld_joints" ("document_id", "weld_joint_id")
       select source.document_id, source.weld_joint_id
       from unnest(
@@ -593,7 +594,7 @@ async function saveGeneratedDocumentBatchInTransaction(
         ${sql.param(nextAssignments.map((assignment) => assignment.weldJointId))}::integer[]
       ) as source(document_id, weld_joint_id)
       on conflict do nothing
-    `)
+    `))
   }
 
   const targetDocumentIds = new Set(resolvedDocumentIds.values())
@@ -632,7 +633,7 @@ export async function persistGeneratedDocumentBatchRecordsInTransaction(
   const resolvedDocumentIds = new Map<number, number>()
   const existingRecords = records.filter((record) => record.targetDocumentId != null)
   if (existingRecords.length > 0) {
-    await tx.execute(sql`
+    await auditSql(tx, [{ table: generatedDocuments, where: sql`${generatedDocuments.id} = any(${sql.param(existingRecords.map(record => record.targetDocumentId!))}::integer[])` }], () => tx.execute(sql`
       update "generated_documents" as document
       set
         "title" = refreshed.title,
@@ -668,13 +669,13 @@ export async function persistGeneratedDocumentBatchRecordsInTransaction(
         updated_at
       )
       where document."id" = refreshed.id
-    `)
+    `))
     existingRecords.forEach((record) => resolvedDocumentIds.set(record.inputIndex, record.targetDocumentId!))
   }
 
   const newRecords = records.filter((record) => record.targetDocumentId == null)
   if (newRecords.length > 0) {
-    const insertedResult = await tx.execute(sql`
+    const insertedResult = await auditInsertedSql(tx, generatedDocuments, () => tx.execute(sql`
       insert into "generated_documents" (
         "type",
         "title",
@@ -720,7 +721,7 @@ export async function persistGeneratedDocumentBatchRecordsInTransaction(
       returning
         "id",
         "document_number" as "documentNumber"
-    `)
+    `))
     const inserted = insertedResult.rows as Array<{
       id: number
       documentNumber: number | null
@@ -1052,7 +1053,7 @@ export async function refreshStaleGeneratedDocumentsInTransaction({
         : now,
     }
   })
-  await tx.execute(sql`
+  await auditSql(tx, [{ table: generatedDocuments, where: sql`${generatedDocuments.id} = any(${sql.param(populatedDocumentIds)}::integer[])` }], () => tx.execute(sql`
     update "generated_documents" as document
     set
       "row_count" = refreshed.row_count,
@@ -1069,7 +1070,7 @@ export async function refreshStaleGeneratedDocumentsInTransaction({
       ${sql.param(populatedSummaries.map(({ updatedAt }) => updatedAt.toISOString()))}::timestamptz[]
     ) as refreshed(id, row_count, period_from, period_to, wdi_total, updated_at)
     where document."id" = refreshed.id
-  `)
+  `))
 }
 
 async function touchWeldingProfile(

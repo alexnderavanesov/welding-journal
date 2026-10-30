@@ -1,24 +1,25 @@
+import { asE2eOwner } from '../with-owner-access'
 import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Page, type Request } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
-import { rpcName } from '../rpc'
-import { createWeldJoint, updateWeldJoint } from '@/server/weld-mutations'
-import { importWeldJoints, massFillWeldJoints, replaceWeldJoints } from '@/server/weld-import'
-import { changeCard } from '@/server/technology-cards'
+import { isAccountRefreshRpc, rpcName } from '../rpc'
+import { createWeldJoint as raw_createWeldJoint, updateWeldJoint as raw_updateWeldJoint } from '@/server/weld-mutations'
+import { importWeldJoints as raw_importWeldJoints, massFillWeldJoints as raw_massFillWeldJoints, replaceWeldJoints as raw_replaceWeldJoints } from '@/server/weld-import'
+import { changeCard as raw_changeCard } from '@/server/technology-cards'
 import { ensureDispatcherTaskIndexFresh } from '@/server/dispatcher-task-index'
 import { attachDispatcherTaskCodesToPage } from '@/server/weld-read'
-import { readJournalGrid } from '@/server/journal-grid'
+import { readJournalGrid as raw_readJournalGrid } from '@/server/journal-grid'
 import { buildDispatcherTaskServerFilters } from '@/lib/dispatcher-task-row-codes'
 import type { WeldInput } from '@/lib/weld-fields'
 import { DEFAULT_DATA_LIST_SETTINGS } from '@/lib/data-list-settings'
-import { loadRemoteGeneratedDocumentRows } from '@/server/generated-documents'
+import { loadRemoteGeneratedDocumentRows as raw_loadRemoteGeneratedDocumentRows } from '@/server/generated-documents'
 import { DISPATCHER_INDEX_LOCK_ID, DISPATCHER_REFRESH_LOCK_ID } from '@/server/dispatcher-task-index-constants'
 
 const project = 'E2E Технологические карты'
 const name = 'E2E ТК №12'
 const parameters = { name, weldingMethods: ['РАД'], connectionType: 'С17', materialGroups: ['М01'], diameterFrom: 57, diameterTo: 159, thicknessFrom: 3, thicknessTo: 8, psto: 'any' }
-const base: WeldInput = { projectTitle: project, subtitleCode: 'TK', line: 'TK-LINE', category: 'II', groupName: 'Б(а)', weldControlPercent: 0, pvkControlPercent: 0,
+const base: WeldInput = { projectTitle: project, subtitleCode: 'TK', line: 'TK-LINE', category: 'II', groupName: 'Б(а)', weldControlPercent: 0,
   weldingMethod: 'РАД', connectionType: 'С17', materialGroup: 'М01', d1: 57, d2: 159, t1: 6, t2: 3,
   stamp1KFact: 'TKA1', stamp1ZFact: 'TKA1', stamp1OFact: 'TKA1', weldingElectrodes: 'Не изменять электроды', fillerWire: 'Не изменять проволоку' }
 
@@ -203,7 +204,7 @@ test('два пользователя: возврат проверяет вер�
   const calls: string[] = [], errors: string[] = []
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error => errors.push(error.message))
-  const other = await browser.newContext({ baseURL: new URL(page.url()).origin, viewport: { width: 1600, height: 1000 } })
+  const other = await browser.newContext({ storageState: process.env.E2E_AUTH_STATE, baseURL: new URL(page.url()).origin, viewport: { width: 1600, height: 1000 } })
   try {
     const otherPage = await other.newPage()
     await openCards(otherPage)
@@ -374,8 +375,9 @@ test('реестр ТК: UI, история переименования, арх
   await expect.poll(() => pending.size).toBe(0)
   const count = calls.length
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
-  await page.waitForTimeout(500)
-  expect(calls).toHaveLength(count)
+  await expect.poll(() => calls.slice(count).filter(name => isAccountRefreshRpc(name)).length).toBe(1)
+  await expect.poll(() => pending.size).toBe(0)
+  expect(calls.slice(count).filter(name => !isAccountRefreshRpc(name))).toEqual([])
   await page.getByRole('tab', { name: 'Параметры проверки' }).click()
   await page.getByRole('tab', { name: 'Технологические карты' }).click()
   expect(calls.filter(value => value.startsWith('getTechnologyCardPage')).length).toBeLessThanOrEqual(11)
@@ -504,3 +506,12 @@ test('выключение ДЗ-06 через настройки не отклю
     })
   }
 })
+
+const createWeldJoint = asE2eOwner(raw_createWeldJoint, 'welding.edit')
+const updateWeldJoint = asE2eOwner(raw_updateWeldJoint, 'welding.edit')
+const importWeldJoints = asE2eOwner(raw_importWeldJoints, 'welding.import')
+const massFillWeldJoints = asE2eOwner(raw_massFillWeldJoints, 'welding.import')
+const replaceWeldJoints = asE2eOwner(raw_replaceWeldJoints, 'welding.import')
+const readJournalGrid = asE2eOwner(raw_readJournalGrid, 'welding.view')
+const loadRemoteGeneratedDocumentRows = asE2eOwner(raw_loadRemoteGeneratedDocumentRows, 'documents.view')
+const changeCard = asE2eOwner(raw_changeCard, 'references.edit')

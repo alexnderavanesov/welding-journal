@@ -5,7 +5,7 @@ import { DocumentSpecialistAssignmentDialog, DocumentSpecialistCell } from './do
 import { assignDocumentSpecialists } from '@/server/specialists'
 
 vi.mock('@/server/specialists', () => ({ assignDocumentSpecialists: vi.fn(async () => ({ count: 1 })) }))
-vi.mock('@/lib/security-context', () => ({ useSecurityGuard: () => ({ requireEditPassword: async () => true }) }))
+vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: () => true }), useSecurityGuard: () => ({ requireEditPassword: async () => true }) }))
 vi.mock('./specialist-select', () => ({
   useSpecialistOptions: () => ({ known: new Map([[8, { name: 'Иванов', certificate: '8' }]]) }),
   SpecialistSearch: () => null,

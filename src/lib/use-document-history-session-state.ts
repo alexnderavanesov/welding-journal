@@ -1,3 +1,4 @@
+import { userSessionStorage } from '@/lib/user-storage'
 import { type SetStateAction, useEffect, useState } from 'react'
 
 const DOCUMENT_HISTORY_SESSION_STORAGE_PREFIX = 'welding-journal:documents:session:v1:'
@@ -28,7 +29,7 @@ export function useDocumentHistorySessionValue<T extends string>(
   useEffect(() => {
     if (state.key !== fullStorageKey || typeof window === 'undefined') return
     try {
-      window.sessionStorage.setItem(fullStorageKey, JSON.stringify(state.value))
+      userSessionStorage.setItem(fullStorageKey, JSON.stringify(state.value))
     } catch {
       // The working state remains available until the current page is closed.
     }
@@ -56,7 +57,7 @@ function readDocumentHistorySessionValue<T extends string>(
 ) {
   if (typeof window === 'undefined') return defaultValue
   try {
-    const parsed: unknown = JSON.parse(window.sessionStorage.getItem(storageKey) ?? 'null')
+    const parsed: unknown = JSON.parse(userSessionStorage.getItem(storageKey) ?? 'null')
     return isValid(parsed) ? parsed : defaultValue
   } catch {
     return defaultValue

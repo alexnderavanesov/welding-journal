@@ -59,7 +59,7 @@ vi.mock('@/server/weld-read-api', () => ({
   getDocumentGenerationData,
 }))
 
-vi.mock('@/lib/security-context', () => ({
+vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: () => true }),
   useSecurityGuard: () => ({
     requireDeletePassword: vi.fn(async () => true),
     requireDocumentGenerationPassword: vi.fn(async () => true),

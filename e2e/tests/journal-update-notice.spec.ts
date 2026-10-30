@@ -325,7 +325,7 @@ for (const layout of ['flat', 'single', 'nested']) test(`own save retains ${layo
 test('rapid repeated cell edits keep server facts and displayed values aligned', async ({ page }, info) => {
   for (const layout of ['flat', 'single', 'nested']) {
     await open(page)
-    await page.evaluate(() => localStorage.removeItem('welding-journal-ag-grid:v1'))
+    await page.evaluate(() => Object.keys(localStorage).filter(key => key === 'welding-journal-ag-grid:v1' || key.startsWith('welding-user:') && key.endsWith(':welding-journal-ag-grid:v1')).forEach(key => localStorage.removeItem(key)))
     await open(page)
     for (const field of layout === 'nested' ? ['projectTitle', 'line'] : layout === 'single' ? ['line'] : []) {
       await page.locator(`.ag-header-cell[col-id="${field}"]`).click({ button: 'right' })
@@ -464,7 +464,7 @@ for (const action of ['sort', 'filter', 'group', 'nested-group'] as const) test(
 
 test('other writer, return to window and idle selection keep the displayed rows; fresh editor and conflict preserve the draft', async ({ page, browser }, info) => {
   test.setTimeout(120_000)
-  const context = await browser.newContext({ baseURL: `http://127.0.0.1:${process.env.E2E_PORT || 3100}`, viewport: { width: 1600, height: 1000 } })
+  const context = await browser.newContext({ storageState: process.env.E2E_AUTH_STATE, baseURL: `http://127.0.0.1:${process.env.E2E_PORT || 3100}`, viewport: { width: 1600, height: 1000 } })
   const writer = await context.newPage()
   const calls: string[] = [], measures: Record<string, unknown>[] = []
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })

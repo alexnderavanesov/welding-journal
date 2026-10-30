@@ -1,4 +1,4 @@
-import { rpcName } from '../rpc'
+import { isAccountRefreshRpc, rpcName } from '../rpc'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
@@ -293,7 +293,9 @@ test('спокойная иерархия: расчёт в модальном о
   await trigger.click(); await trigger.click()
   await expect(heading).toBeVisible()
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
-  expect(calls.length).toBe(count)
+  await expect.poll(() => calls.slice(count).filter(name => isAccountRefreshRpc(name)).length).toBe(1)
+  await page.waitForLoadState('networkidle')
+  expect(calls.slice(count).filter(name => !isAccountRefreshRpc(name))).toEqual([])
   await heading.getByRole('button', { name: /^Назначения/ }).click()
   await expect(page.getByRole('dialog', { name: `Назначения · ${name}` })).toBeVisible()
   expect(errors).toEqual([])

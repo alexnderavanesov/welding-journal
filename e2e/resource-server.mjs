@@ -1,5 +1,9 @@
 import { execFileSync, spawn } from 'node:child_process'
 
+if (!process.env.E2E_AUTH_STATE || (process.env.BETTER_AUTH_SECRET?.length ?? 0) < 32 || process.env.BETTER_AUTH_URL !== 'http://127.0.0.1:3100') {
+  throw new Error('Prepare isolated E2E authentication before starting the local resource container')
+}
+
 const memory = Number(process.env.AUDIT_CONTAINER_MEMORY_MIB)
 if (![2048, 4096].includes(memory)) throw new Error('Explicit local memory limit required')
 const defaultHeap = process.env.AUDIT_CONTAINER_DEFAULT_HEAP === '1'
@@ -39,6 +43,8 @@ const child = spawn('docker', ['run', '--pull=never', '--name', name,
   '-e', 'DATABASE_URL=postgresql://welding:welding@host.docker.internal:5432/welding_tracker_e2e',
   '-e', 'WELDING_ENV_LOADED=1', '-e', 'NODE_ENV=production', '-e', 'HOST=0.0.0.0', '-e', 'PORT=3000',
   '-e', 'DATABASE_POOL_MAX=5', '-e', 'DOCUMENT_TEMPLATE_STORAGE_PATH=/tmp/templates',
+  '-e', 'BETTER_AUTH_SECRET', '-e', 'BETTER_AUTH_URL', '-e', 'AUTH_MAIL_MODE=local',
+  '-e', 'SMTP_HOST=127.0.0.1', '-e', 'AUTH_MAIL_LOCAL_DIR=/tmp/auth-mail',
   ...(defaultHeap ? [] : ['-e', `NODE_OPTIONS=--max-old-space-size=${memory === 2048 ? 1536 : 3072}`]),
   image, 'node', '.output/server/index.mjs'], { stdio: 'inherit', detached: true })
 try {

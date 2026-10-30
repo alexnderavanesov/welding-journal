@@ -134,7 +134,7 @@ async function openEditor(page: Page) {
 test('200k, five browser clients, mixed reads/writes/import/documents under explicit local resource limits', async ({ browser }, info) => {
   test.skip(process.env.AUDIT_MIXED_LOAD !== '1', 'Separate opt-in, freshly built container and disposable database')
   const roles = ['reports', 'program-dispatcher', 'writer', 'import', 'documents-permits']
-  const contexts = await Promise.all(roles.map(() => browser.newContext({ baseURL: 'http://127.0.0.1:3100', viewport: { width: 1600, height: 1000 } })))
+  const contexts = await Promise.all(roles.map(() => browser.newContext({ storageState: process.env.E2E_AUTH_STATE, baseURL: 'http://127.0.0.1:3100', viewport: { width: 1600, height: 1000 } })))
   for (const context of contexts) { context.setDefaultTimeout(45_000); context.setDefaultNavigationTimeout(90_000) }
   const telemetry = contexts.map((context, i) => observeMixedClient(context, roles[i]))
   const pages = await Promise.all(contexts.map(context => context.newPage()))

@@ -1,115 +1,28 @@
 import { describe, expect, it } from 'vitest'
-
-import {
-  DEFAULT_SECURITY_SETTINGS,
-  SERVER_SECURITY_PASSWORD_PLACEHOLDER,
-  isSecurityScopeEnabled,
-  hasMigratableLocalSecurityPasswords,
-  normalizeSecuritySettings,
-  serializeLocalSecurityConfiguration,
-  verifySecurityPassword,
-  toLocalSecuritySettings,
-} from '@/lib/security-settings'
-import { DATA_IMPORT_SECURITY_SCOPE } from '@/lib/security-scopes'
-
-describe('security settings', () => {
-  it('keeps the remote-settings request dependency stable for equal settings objects', () => {
-    const settings = normalizeSecuritySettings({
-      entryPassword: 'entry',
-      requirePasswordOnEntry: true,
-    })
-
-    expect(serializeLocalSecurityConfiguration({ ...settings })).toBe(
-      serializeLocalSecurityConfiguration(settings),
-    )
+import { canManageAccount, hasPermission, normalizePermissions, type AccessIdentity } from './access-permissions'
+const user: AccessIdentity = { id: 'one', name: 'Имя', email: 'one@example.test', title: 'Директор', role: 'user', permissions: ['templates.view', 'templates.edit'], revision: 1 }
+describe('personal permissions replace shared passwords', () => {
+  it('does not derive permissions from job title or an unrelated setting', () => {
+    expect(hasPermission(user, 'templates.edit')).toBe(true)
+    expect(hasPermission(user, 'dispatcher.edit')).toBe(false)
+    expect(hasPermission(user, 'psto.edit')).toBe(false)
+    expect(hasPermission(null, 'welding.view')).toBe(false)
   })
-
-  it('keeps the existing import password scope for every import action', () => {
-    const settings = normalizeSecuritySettings({
-      importReplacePassword: 'import',
-      protectImportReplace: true,
-    })
-
-    expect(DATA_IMPORT_SECURITY_SCOPE).toBe('importReplace')
-    expect(isSecurityScopeEnabled(settings, DATA_IMPORT_SECURITY_SCOPE)).toBe(true)
-    expect(verifySecurityPassword(settings, DATA_IMPORT_SECURITY_SCOPE, 'import')).toBe(true)
+  it('keeps viewing separate from editing and history permissions separate', () => {
+    expect(hasPermission({ ...user, permissions: ['lnk.view', 'history.joint'] }, 'lnk.edit')).toBe(false)
+    expect(hasPermission({ ...user, permissions: ['history.joint'] }, 'history.view')).toBe(false)
   })
-
-  it('keeps document generation protection disabled for legacy settings', () => {
-    const settings = normalizeSecuritySettings({
-      editPassword: 'edit',
-      protectEdit: true,
-    })
-
-    expect(settings.documentGenerationPassword).toBe('')
-    expect(settings.protectDocumentGeneration).toBe(false)
-    expect(isSecurityScopeEnabled(settings, 'documentGeneration')).toBe(false)
+  it('only the owner manages administrators and nobody manages the protected owner or themselves', () => {
+    const owner = { ...user, role: 'owner' as const }, admin = { ...user, role: 'admin' as const }
+    expect(canManageAccount(owner, { id: 'two', role: 'admin' })).toBe(true)
+    expect(canManageAccount(admin, { id: 'two', role: 'admin' })).toBe(false)
+    expect(canManageAccount(admin, { id: 'two', role: 'user' })).toBe(true)
+    expect(canManageAccount(owner, { id: 'two', role: 'owner' })).toBe(false)
+    expect(canManageAccount(owner, owner)).toBe(false)
   })
-
-  it('enables the document generation scope only with a configured password', () => {
-    const settings = normalizeSecuritySettings({
-      documentGenerationPassword: 'docs',
-      protectDocumentGeneration: true,
-    })
-
-    expect(isSecurityScopeEnabled(settings, 'documentGeneration')).toBe(true)
-    expect(verifySecurityPassword(settings, 'documentGeneration', 'docs')).toBe(true)
-    expect(verifySecurityPassword(settings, 'documentGeneration', 'wrong')).toBe(false)
-  })
-
-  it('does not enable document generation protection without a password', () => {
-    const settings = normalizeSecuritySettings({
-      protectDocumentGeneration: true,
-    })
-
-    expect(settings).toEqual(DEFAULT_SECURITY_SETTINGS)
-    expect(isSecurityScopeEnabled(settings, 'documentGeneration')).toBe(false)
-  })
-})
-
-describe('toLocalSecuritySettings', () => {
-  it('keeps only server placeholders in browser storage', () => {
-    expect(
-      toLocalSecuritySettings({
-        revision: 'security-revision-7',
-        configured: true,
-        configuredScopes: {
-          entry: false,
-          settings: true,
-          edit: true,
-          importReplace: false,
-          documentGeneration: false,
-          delete: true,
-        },
-        entry: false,
-        settings: true,
-        edit: false,
-        importReplace: false,
-        documentGeneration: false,
-        delete: true,
-      }),
-    ).toMatchObject({
-      revision: 'security-revision-7',
-      entryPassword: '',
-      settingsPassword: SERVER_SECURITY_PASSWORD_PLACEHOLDER,
-      editPassword: SERVER_SECURITY_PASSWORD_PLACEHOLDER,
-      deletePassword: SERVER_SECURITY_PASSWORD_PLACEHOLDER,
-      protectSettings: true,
-      protectEdit: false,
-      protectDelete: true,
-    })
-  })
-})
-
-describe('legacy security migration', () => {
-  it('migrates real browser passwords but never the server placeholder', () => {
-    expect(hasMigratableLocalSecurityPasswords({
-      ...DEFAULT_SECURITY_SETTINGS,
-      settingsPassword: 'legacy-password',
-    })).toBe(true)
-    expect(hasMigratableLocalSecurityPasswords({
-      ...DEFAULT_SECURITY_SETTINGS,
-      settingsPassword: SERVER_SECURITY_PASSWORD_PLACEHOLDER,
-    })).toBe(false)
+  it('rejects invented permissions instead of granting a wildcard', () => {
+    expect(() => normalizePermissions(['users.admin', '*'])).toThrow()
+    expect(() => normalizePermissions(null)).toThrow()
+    expect(normalizePermissions(['lnk.view', 'lnk.view'])).toEqual(['lnk.view'])
   })
 })

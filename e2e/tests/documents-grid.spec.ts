@@ -453,7 +453,7 @@ test('document grid browser: restores a child block beneath a distant root group
   await expect.poll(async () => Math.abs(await viewport.evaluate(element => element.scrollTop) - savedScroll)).toBeLessThanOrEqual(1)
   await expect(lastRow.getByRole('checkbox')).toBeChecked()
   await expect(grid.getByText('Выбрано: 2', { exact: true })).toBeVisible()
-  const restoredIds: Array<string | number> = await page.evaluate(() => JSON.parse(sessionStorage.getItem('welding-journal:documents:session:v1:generated:weldingJournal')!).selectedDocumentIds)
+  const restoredIds: Array<string | number> = await page.evaluate(() => JSON.parse(sessionStorage.getItem(Object.keys(sessionStorage).find(key => key.startsWith('welding-user:') && key.endsWith(':welding-journal:documents:session:v1:generated:weldingJournal')) ?? 'welding-journal:documents:session:v1:generated:weldingJournal')!).selectedDocumentIds)
   // Hydration returns server-ordered snapshots; explicit selection is an exact
   // set of documents, independent of the order in which its checkboxes were set.
   expect(restoredIds.map(String).sort()).toEqual([firstId, lastId].map(String).sort())
@@ -784,7 +784,7 @@ test('document actions column supports resizing, unpinning, hiding, saved views 
   await openDocumentGridColumnMenu(page, '__actions')
   await page.getByRole('menuitem', { name: 'Закрепить столбец', exact: true }).hover()
   await page.getByRole('menuitemcheckbox', { name: 'Не закреплять', exact: true }).click()
-  const state = () => page.evaluate(() => JSON.parse(localStorage.getItem('welding-journal:documents:grid:v1:generated:weldingJournal')!).columns.find((c: { colId: string }) => c.colId === '__actions'))
+  const state = () => page.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith('welding-user:') && key.endsWith(':welding-journal:documents:grid:v1:generated:weldingJournal')) ?? 'welding-journal:documents:grid:v1:generated:weldingJournal')!).columns.find((c: { colId: string }) => c.colId === '__actions'))
   await expect.poll(async () => (await state()).pinned).toBeNull()
   await grid.getByRole('button', { name: 'Настроить вид', exact: true }).click()
   const settings = page.getByRole('dialog', { name: 'Настройка вида документов', exact: true })
@@ -1425,7 +1425,7 @@ test('document grid groups: checkboxes select all descendants, preserve outside 
   expect(Number(reveal.to)).toBe(1)
   await outsideRow.getByRole('checkbox').check()
   const selectedIds = () => page.evaluate(() => {
-    const state = JSON.parse(sessionStorage.getItem('welding-journal:documents:session:v1:generated:weldingJournal') ?? '{}') as { selectedDocumentIds?: Array<string | number> }
+    const state = JSON.parse(sessionStorage.getItem(Object.keys(sessionStorage).find(key => key.startsWith('welding-user:') && key.endsWith(':welding-journal:documents:session:v1:generated:weldingJournal')) ?? 'welding-journal:documents:session:v1:generated:weldingJournal') ?? '{}') as { selectedDocumentIds?: Array<string | number> }
     return (state.selectedDocumentIds ?? []).map(String).sort()
   })
   const settled = async () => {

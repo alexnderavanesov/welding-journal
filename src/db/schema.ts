@@ -1,8 +1,83 @@
+import type { AuditValue } from '@/lib/audit-value'
 import { sql } from 'drizzle-orm'
 import { boolean, check, date, index, integer, jsonb, numeric, pgTable, primaryKey, serial, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 import type { DocumentSpecialists, SpecialistKind, SpecialistMethod } from '@/lib/document-specialists'
 import { DISPATCHER_SCOPE_WHITESPACE_SQL } from '@/lib/dispatcher-scope-normalization'
 import { indexedJointName, naturalJointOrder } from './journal-order'
+import type { AccountRole, Permission } from '@/lib/access-permissions'
+
+// Better Auth 1.7: model aliases are provided by the adapter; existing business
+// identities (welders/specialists) deliberately do not reference login accounts.
+export const authUsers = pgTable('auth_users', {
+  id: text('id').primaryKey(), name: text('name').notNull(), email: text('email').notNull(),
+  emailVerified: boolean('email_verified').default(false).notNull(), image: text('image'),
+  title: text('title').default('').notNull(), role: text('role').$type<AccountRole>().default('user').notNull(),
+  permissions: jsonb('permissions').$type<Permission[]>().default([]).notNull(),
+  revision: integer('revision').default(1).notNull(),
+  status: text('status').$type<'pending' | 'active'>().default('pending').notNull(),
+  tokenGeneration: integer('token_generation').default(0).notNull(),
+  linkExpiresAt: timestamp('link_expires_at', { withTimezone: true }),
+  lastActiveAt: timestamp('last_active_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, table => [uniqueIndex('auth_users_email_idx').on(sql`lower(${table.email})`),
+  check('auth_users_role_check', sql`${table.role} in ('owner','admin','user')`),
+  check('auth_users_status_check', sql`${table.status} in ('pending','active')`)])
+
+export const authOwner = pgTable('auth_owner', {
+  singleton: integer('singleton').primaryKey().default(1),
+  userId: text('user_id').notNull().unique().references(() => authUsers.id, { onDelete: 'restrict' }),
+}, table => [check('auth_owner_singleton_check', sql`${table.singleton} = 1`)])
+
+export const authSessions = pgTable('auth_sessions', {
+  id: text('id').primaryKey(), token: text('token').notNull().unique(),
+  userId: text('user_id').notNull().references(() => authUsers.id, { onDelete: 'cascade' }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  ipAddress: text('ip_address'), userAgent: text('user_agent'),
+  lastActiveAt: timestamp('last_active_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, table => [index('auth_sessions_user_idx').on(table.userId)])
+
+export const authAccounts = pgTable('auth_accounts', {
+  id: text('id').primaryKey(), accountId: text('account_id').notNull(), providerId: text('provider_id').notNull(),
+  userId: text('user_id').notNull().references(() => authUsers.id, { onDelete: 'cascade' }),
+  password: text('password'), accessToken: text('access_token'), refreshToken: text('refresh_token'), idToken: text('id_token'),
+  accessTokenExpiresAt: timestamp('access_token_expires_at', { withTimezone: true }),
+  refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true }), scope: text('scope'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, table => [index('auth_accounts_user_idx').on(table.userId), uniqueIndex('auth_accounts_provider_idx').on(table.providerId, table.accountId)])
+
+export const authVerifications = pgTable('auth_verifications', {
+  id: text('id').primaryKey(), identifier: text('identifier').notNull(), value: text('value').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, table => [index('auth_verifications_identifier_idx').on(table.identifier)])
+
+export const authRateLimits = pgTable('auth_rate_limits', {
+  id: text('id').primaryKey(), key: text('key').notNull().unique(), count: integer('count').notNull(),
+  lastRequest: numeric('last_request', { precision: 20, scale: 0, mode: 'number' }).notNull(),
+})
+
+// No user/joint FK: deleting an account or a joint never deletes its history.
+export const auditOperations = pgTable('audit_operations', {
+  id: text('id').primaryKey(), actorId: text('actor_id'), actorName: text('actor_name').notNull(),
+  action: text('action').notNull(), area: text('area').notNull(), source: text('source').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, table => [index('audit_operations_time_idx').on(table.createdAt, table.id),
+  index('audit_operations_actor_time_idx').on(table.actorId, table.createdAt, table.id),
+  index('audit_operations_action_time_idx').on(table.action, table.createdAt, table.id)])
+export const auditChanges = pgTable('audit_changes', {
+  id: serial('id').primaryKey(), operationId: text('operation_id').notNull().references(() => auditOperations.id, { onDelete: 'restrict' }),
+  entity: text('entity').notNull(), entityId: text('entity_id').notNull(), label: text('label').notNull(),
+  jointId: integer('joint_id'), area: text('area').notNull(),
+  kind: text('kind').$type<'create' | 'update' | 'delete'>().notNull(),
+  changes: jsonb('changes').$type<Record<string, { before?: AuditValue; after?: AuditValue }>>().notNull(),
+}, table => [index('audit_changes_operation_idx').on(table.operationId, table.id),
+  index('audit_changes_joint_idx').on(table.jointId, table.id),
+  index('audit_changes_entity_idx').on(table.entity, table.entityId, table.id)])
 
 export const specialists = pgTable('specialists', {
   id: serial('id').primaryKey(),

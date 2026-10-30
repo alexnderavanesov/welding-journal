@@ -24,6 +24,7 @@ export default defineConfig({
   reporter: [['list']],
   use: {
     baseURL: E2E_BASE_URL,
+    storageState: process.env.E2E_AUTH_STATE,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',

@@ -1,3 +1,4 @@
+import { userStorage } from '@/lib/user-storage'
 const JOURNAL_SELECTION_STORAGE_PREFIX = 'welding-journal:journal-selection:'
 const JOURNAL_SELECTION_QUERY_KEY = 'selection'
 const JOURNAL_SELECTION_TTL_MS = 10 * 60_000
@@ -58,7 +59,7 @@ export function openJournalSelectionInNewTab(rowIds: readonly number[], sourceLa
   if (typeof window === 'undefined') return false
   let token: string | null
   try {
-    token = createJournalSelectionHandoff(window.localStorage, rowIds, sourceLabel)
+    token = createJournalSelectionHandoff(userStorage, rowIds, sourceLabel)
   } catch {
     return false
   }
@@ -74,7 +75,7 @@ export function openJournalSelectionInNewTab(rowIds: readonly number[], sourceLa
   }
   if (!openedWindow) {
     try {
-      window.localStorage.removeItem(getJournalSelectionStorageKey(token))
+      userStorage.removeItem(getJournalSelectionStorageKey(token))
     } catch {
       // The transfer will expire even if browser storage cannot be cleaned immediately.
     }

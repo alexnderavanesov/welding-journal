@@ -10,6 +10,9 @@ auditConfig:
   ignoreGhsas:
     - GHSA-67mh-4wv8-2f99
 
+minimumReleaseAgeExclude:
+  - nodemailer@10.3.1
+
 overrides:
   'braces@<=3.0.3': 'file:vendor/braces-3.0.4-security.0.tgz'
   'esbuild@>=0.27.3 <0.28.1': '0.28.1'

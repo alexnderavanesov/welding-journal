@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
-import { rpcName } from '../rpc'
+import { isAccountRefreshRpc, rpcName } from '../rpc'
 
 const stamp = 'TABS'
 test.beforeEach(async () => {
@@ -68,8 +68,9 @@ test('вкладки клейм: таблица, сохранение реест
   await expect(heading).toBeVisible()
   await checks.click()
   await page.evaluate(() => { window.dispatchEvent(new Event('blur')); window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('offline')); window.dispatchEvent(new Event('online')) })
-  await page.waitForTimeout(700)
-  expect(calls.filter(name => !name.startsWith('getTechnologyCardPage') && !name.startsWith('listSpecialists'))).toEqual([])
+  await expect.poll(() => calls.filter(name => isAccountRefreshRpc(name)).length).toBe(1)
+  await page.waitForLoadState('networkidle')
+  expect(calls.filter(name => !(/^(getTechnologyCardPage|listSpecialists)_/.test(name) || isAccountRefreshRpc(name)))).toEqual([])
   expect(calls.filter(name => name.startsWith('getTechnologyCardPage'))).toHaveLength(1)
   await registry.click()
   await page.getByRole('button', { name: 'Редактировать', exact: true }).click()
@@ -80,7 +81,8 @@ test('вкладки клейм: таблица, сохранение реест
   await expect(page.getByRole('heading', { name: 'Добавление клейма' })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog')).toBeHidden()
-  expect(calls.filter(name => !name.startsWith('getTechnologyCardPage') && !name.startsWith('listSpecialists'))).toEqual([])
+  expect(calls.filter(name => !(/^(getTechnologyCardPage|listSpecialists)_/.test(name) || isAccountRefreshRpc(name)))).toEqual([])
+  expect(calls.filter(name => isAccountRefreshRpc(name))).toHaveLength(1)
   expect(calls.filter(name => name.startsWith('getTechnologyCardPage'))).toHaveLength(1)
   expect(errors).toEqual([])
 })

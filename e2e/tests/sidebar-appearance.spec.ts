@@ -14,7 +14,6 @@ test('контурное меню: все разделы, мягкая подс�
     ['Статистика', '/statistics', 'chart-column'],
     ['Документы', '/documents', 'file-text'],
     ['Настройки', '/settings', 'settings'],
-    ['Руководство пользователя', '/user-guide', 'book-open-text'],
   ]
   for (const collapsed of [false, true]) {
     // The shorter viewport also checks that the enlarged icons do not hide sections.

@@ -1,3 +1,4 @@
+import { userSessionStorage } from '@/lib/user-storage'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 
 import { getActiveReportFromPath } from '@/lib/app-report-routes'
@@ -236,7 +237,7 @@ function saveReportNavigationSnapshot(snapshot: ReportNavigationSnapshot) {
   try {
     // Do not call history.replaceState here: TanStack subscribes to it and
     // starts another route load, even if only selection/scroll changed.
-    const storage = window.sessionStorage
+    const storage = userSessionStorage
     const rawIndex: unknown = JSON.parse(storage.getItem(SNAPSHOT_STORAGE_INDEX) ?? '[]')
     const entries = Array.isArray(rawIndex)
       ? rawIndex.filter((entry): entry is string => typeof entry === 'string' && entry.startsWith(SNAPSHOT_STORAGE_PREFIX))
@@ -253,7 +254,7 @@ function saveReportNavigationSnapshot(snapshot: ReportNavigationSnapshot) {
 function readReportNavigationSnapshot() {
   const key = getSnapshotStorageKey()
   try {
-    const value = key ? window.sessionStorage.getItem(key) : null
+    const value = key ? userSessionStorage.getItem(key) : null
     if (value) return getReportNavigationSnapshot({ [REPORT_NAVIGATION_HISTORY_KEY]: JSON.parse(value) })
   } catch {
     // A corrupt/blocked browser cache must not prevent opening a report.

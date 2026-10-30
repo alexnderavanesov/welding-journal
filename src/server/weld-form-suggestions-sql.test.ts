@@ -3,10 +3,27 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildWeldFormSuggestionsQuery,
+  buildWeldLineSuggestionsQuery,
   normalizeWeldFormSuggestionRows,
 } from '@/server/weld-form-suggestions-sql'
 
 describe('weld form suggestions SQL', () => {
+  it('reads bounded full identities from the line registry, restricting existing joints to their project/code', () => {
+    const dialect = new PgDialect()
+    const draft = { projectTitle: ' Проект ', subtitleCode: ' A ', line: 'L_%' }
+    const create = dialect.sqlToQuery(buildWeldLineSuggestionsQuery(draft))
+    const edit = dialect.sqlToQuery(buildWeldLineSuggestionsQuery({ ...draft, id: 7 }))
+    expect(create.sql).toContain('from "line_programs"')
+    expect(create.sql).toContain('limit 8')
+    expect(create.sql).toContain('strpos(')
+    expect(create.params).toContain('l_%')
+    expect(create.sql.split('order by')[0]).not.toContain('and lower(btrim("line_programs"."project_title")) =')
+    expect(edit.sql.split('order by')[0]).toContain('and lower(btrim("line_programs"."project_title")) =')
+    expect(edit.sql.split('order by')[0]).toContain('and lower(btrim("line_programs"."subtitle_code")) =')
+    expect(edit.params).toContain('проект')
+    expect(edit.params).toContain('a')
+  })
+
   it('aggregates paired values, context scores, literal search, and current-row exclusion in SQL', () => {
     const query = buildWeldFormSuggestionsQuery({
       fieldKey: 'material2',

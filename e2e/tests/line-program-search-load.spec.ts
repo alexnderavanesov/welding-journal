@@ -24,7 +24,7 @@ test('200k: first complete lines and independent search before the full summary 
     await db.query('analyze weld_joints')
     return (await db.query('select count(*)::int n from line_programs')).rows[0].n as number
   })
-  const contexts = await Promise.all(Array.from({ length: 3 }, () => browser.newContext({
+  const contexts = await Promise.all(Array.from({ length: 3 }, () => browser.newContext({ storageState: process.env.E2E_AUTH_STATE,
     baseURL: 'http://127.0.0.1:3100', viewport: { width: 1600, height: 1000 },
   })))
   const clients = contexts.map((context, i) => observeMixedClient(context, `line-search-${i}`))

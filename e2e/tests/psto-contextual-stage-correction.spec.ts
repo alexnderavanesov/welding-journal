@@ -1,4 +1,5 @@
 import { filterPstoExceptions } from './psto-exception-helpers'
+import { asE2eOwner } from '../with-owner-access'
 import { documentGridRow } from '../document-grid'
 import { editJournalJoint } from '../journal-grid'
 import { expect, test, type Locator, type Page } from '@playwright/test'
@@ -521,7 +522,7 @@ test('предкоммит: удаление старой позиции цел�
   expect(targetBefore.row_count).toBe(2)
   const version = await withE2eDatabase(async db => (await db.query('select xmin::text version from weld_joints where id=$1', [oldId])).rows[0].version)
   // This is a real supported deletion, not direct manipulation of the token.
-  await mutations.deleteWeldJoint({ data: { id: oldId, version } })
+  await asE2eOwner(mutations.deleteWeldJoint, 'welding.delete')({ data: { id: oldId, version } })
   const targetAfter = await withE2eDatabase(async db => (await db.query('select updated_at,row_count from generated_documents where id=$1', [targetId])).rows[0])
   expect(targetAfter.row_count).toBe(1)
   expect(targetAfter.updated_at).toEqual(targetBefore.updated_at)

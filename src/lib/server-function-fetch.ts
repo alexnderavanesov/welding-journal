@@ -9,6 +9,7 @@ export async function serverFunctionFetch(input: RequestInfo | URL, init?: Reque
     if (init?.signal?.aborted || error instanceof Error && error.name === 'AbortError') throw error
     throw new Error('Не удалось связаться с сервером. Проверьте соединение. Если вы сохраняли данные, проверьте результат перед повторным сохранением.', { cause: error })
   }
+  if (response.headers.get('X-Access-Expired') === 'true' && typeof window !== 'undefined') window.dispatchEvent(new Event('welding-access-expired'))
   const contentType = response.headers.get('content-type') ?? ''
   if (response.headers.get('x-tss-raw') === 'true') return response
   if (!contentType || !/application\/(?:json|x-ndjson|x-tss-framed)/i.test(contentType)) {

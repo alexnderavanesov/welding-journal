@@ -32,7 +32,7 @@ vi.mock('@/lib/confirm-action-context', () => ({
   useConfirmAction: () => mocks.confirm,
 }))
 
-vi.mock('@/lib/security-context', () => ({
+vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: () => true }),
   useSecurityGuard: () => ({ requireEditPassword: mocks.requireEditPassword }),
 }))
 

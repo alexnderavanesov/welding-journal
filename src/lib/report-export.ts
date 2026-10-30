@@ -1,3 +1,4 @@
+import { userStorage } from '@/lib/user-storage'
 import {
   VISIBLE_FIELD_SECTIONS,
   VISIBLE_FIELDS,
@@ -112,7 +113,7 @@ function readCollapsedSections(storageKey: string) {
   if (typeof window === 'undefined') return new Set<string>()
 
   try {
-    const stored = window.localStorage.getItem(`${collapsedSectionsStoragePrefix}:${storageKey}`)
+    const stored = userStorage.getItem(`${collapsedSectionsStoragePrefix}:${storageKey}`)
     if (!stored) return new Set<string>()
     const parsed = JSON.parse(stored)
     return Array.isArray(parsed) ? new Set(parsed.filter((value): value is string => typeof value === 'string')) : new Set<string>()

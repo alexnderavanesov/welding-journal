@@ -1,7 +1,8 @@
+import { asE2eOwner } from '../with-owner-access'
 import { expect, test } from '@playwright/test'
 import pg from 'pg'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
-import { readReportOutputSnapshot, visitReportOutput } from '../../src/server/weld-read'
+import { readReportOutputSnapshot as raw_readReportOutputSnapshot, visitReportOutput as raw_visitReportOutput } from '../../src/server/weld-read'
 import { captureReportExcel } from '../report-excel-capture'
 import { rpcName } from '../rpc'
 import { captureFullReportPrint } from '../report-print-capture'
@@ -199,3 +200,6 @@ for (const report of ['weldingJournal', 'lnk', 'heatTreatment'] as const) {
     expect(Date.parse((await preview.locator('time').getAttribute('datetime'))!)).toBeGreaterThan(Date.parse(time!))
   })
 }
+
+const readReportOutputSnapshot = asE2eOwner(raw_readReportOutputSnapshot, 'welding.view')
+const visitReportOutput = asE2eOwner(raw_visitReportOutput, 'lnk.view')

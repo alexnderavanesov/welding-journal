@@ -43,7 +43,7 @@ describe('UserGuidePage', () => {
 
     expect(screen.getByRole('heading', { name: 'ЛНК: заявки и результаты' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'С чего начать', hidden: true }).closest('.hidden')).toBeInTheDocument()
-    expect(screen.getByText('4 из 13')).toBeInTheDocument()
+    expect(screen.getByText('5 из 14')).toBeInTheDocument()
   })
 
   it('searches inside the selected guide mode and can clear an empty result', () => {

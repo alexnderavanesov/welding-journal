@@ -1,10 +1,11 @@
+import { asE2eOwner } from '../with-owner-access'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { inArray } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import { preHeatTreatmentControls, weldJoints } from '@/db/schema'
 import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
 import { syncPreHeatTreatmentDocumentsInTransaction } from '@/server/pre-heat-treatment-system-documents'
-import { updateWeldJoints } from '@/server/weld-mutations'
+import { updateWeldJoints as raw_updateWeldJoints } from '@/server/weld-mutations'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
 import { lnkResultConfirmation, confirmLnkResultChanges } from '../lnk-result-confirmation'
@@ -277,3 +278,5 @@ test('удаление заявки не захватывает стык, доб
   expect(await withE2eDatabase(async db => (await db.query('select joint,vik_request from weld_joints where project_title=$1 order by joint', [project])).rows))
     .toEqual(['F991', 'F992', 'F993'].map(joint => ({ joint, vik_request: 'STAGED-REQUEST' })))
 })
+
+const updateWeldJoints = asE2eOwner(raw_updateWeldJoints, 'welding.edit')

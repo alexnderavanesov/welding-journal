@@ -1,10 +1,11 @@
+import { asE2eOwner } from '../with-owner-access'
 import { readFile } from 'node:fs/promises'
 import { expect, test, type Locator } from '@playwright/test'
 import * as XLSX from 'xlsx'
 import { requireDb } from '../../src/db'
 import { markDispatcherTaskIndexDirty } from '../../src/server/dispatcher-task-index-dirty'
 import { ensureDispatcherTaskIndexFresh } from '../../src/server/dispatcher-task-index'
-import { listWeldingJournalPage } from '../../src/server/weld-read'
+import { listWeldingJournalPage as raw_listWeldingJournalPage } from '../../src/server/weld-read'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
 import { editJournalJoint, journalRow, revealJournalColumn } from '../journal-grid'
@@ -184,3 +185,5 @@ test('Excel: material pairs, simultaneous errors, atomic refusal and final merge
   await editor.getByRole('button', { name: 'Отмена', exact: true }).click()
   expect(errors).toEqual([])
 })
+
+const listWeldingJournalPage = asE2eOwner(raw_listWeldingJournalPage, 'welding.view')

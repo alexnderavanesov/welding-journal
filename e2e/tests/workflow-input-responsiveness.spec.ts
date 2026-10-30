@@ -1,7 +1,7 @@
 import { expect, test, type Page, type Request } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
-import { rpcName } from '../rpc'
+import { isAccountRefreshRpc, rpcName } from '../rpc'
 
 const project = 'E2E workflow input responsiveness'
 
@@ -98,7 +98,8 @@ for (const kind of ['LNK', 'PSTO'] as const) test(`${kind}: набор, выбо
     await new Promise(resolve => setTimeout(resolve, 400))
   })
   await expect.poll(() => pending.size).toBe(0)
-  expect(calls.slice(idleStart)).toEqual(['getDispatcherTaskVersion'])
+  expect(calls.slice(idleStart).filter(isAccountRefreshRpc)).toHaveLength(1)
+  expect(calls.slice(idleStart).filter(name => !isAccountRefreshRpc(name))).toEqual(['getDispatcherTaskVersion'])
   const measurements = await page.evaluate(() => (window as unknown as {
     workflowInputSamples: Array<{ event: string; ms: number }>
   }).workflowInputSamples)

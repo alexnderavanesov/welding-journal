@@ -1,3 +1,4 @@
+import { userStorage } from '@/lib/user-storage'
 import { useJournalServerQuery } from './use-journal-server-query'
 import { createLnkDialogNavigation } from '@/lib/lnk-dialog-navigation'
 import { usePreHeatTreatmentResultEditActions } from '@/lib/use-pre-heat-treatment-result-edit-actions'
@@ -556,7 +557,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     if (activeReport !== 'weldingJournal' || !token || consumedJournalSelectionTokenRef.current === token) return
     consumedJournalSelectionTokenRef.current = token
     try {
-      const handoff = consumeJournalSelectionHandoff(window.localStorage, token)
+      const handoff = consumeJournalSelectionHandoff(userStorage, token)
       removeJournalSelectionTokenFromCurrentUrl()
       if (!handoff) {
         setMessage('Не удалось открыть выбранные стыки: ссылка устарела или уже была использована.')

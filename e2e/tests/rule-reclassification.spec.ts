@@ -58,22 +58,23 @@ for (const [report, path, grid] of [
     await db.query("update dispatcher_task_index_state set source_revision=source_revision+1,full_rebuild=true,dirty_scopes='[]'")
     return rows.map(row => row.id)
   })
-  await page.addInitScript(({ report, id, filter }) => {
+  const ownerId = await withE2eDatabase(async db => (await db.query('select user_id from auth_owner where singleton=1')).rows[0].user_id as string)
+  await page.addInitScript(({ report, id, filter, ownerId }) => {
     const entryKey = 'saved-history-rule'
     window.history.replaceState({ ...window.history.state, __TSR_key: entryKey }, '')
-    window.sessionStorage.setItem(`welding-report-navigation:v1:${entryKey}`, JSON.stringify({
+    window.sessionStorage.setItem(`welding-user:${ownerId}:welding-report-navigation:v1:${entryKey}`, JSON.stringify({
       version: 1, report, filters: { dispatcherTasks: filter, line: 'RULES-SAVED' },
       selectedRowIds: [id], scrollPosition: { left: 0, top: 0 },
     }))
-  }, { report, id: ids[0], filter: buildWeldColumnValueFilter(['СП-12']) })
+  }, { report, id: ids[0], filter: buildWeldColumnValueFilter(['СП-12']), ownerId })
   await page.goto(path)
   const table = page.locator(grid)
   await expect(table.getByRole('button', { name: 'F982', exact: true })).toBeVisible()
   await expect(table.getByRole('button', { name: 'F983', exact: true })).toHaveCount(0)
   await expect(table.locator(`.ag-row[row-id="${ids[0]}"]`).getByRole('checkbox')).toBeChecked()
-  await expect.poll(() => page.evaluate(() => JSON.parse(
-    window.sessionStorage.getItem(`welding-report-navigation:v1:${window.history.state.__TSR_key}`)!,
-  ).filters)).toEqual({ dispatcherTasks: buildWeldColumnValueFilter(['СП-11']), line: 'RULES-SAVED' })
+  await expect.poll(() => page.evaluate(ownerId => JSON.parse(
+    window.sessionStorage.getItem(`welding-user:${ownerId}:welding-report-navigation:v1:${window.history.state.__TSR_key}`)!,
+  ).filters, ownerId)).toEqual({ dispatcherTasks: buildWeldColumnValueFilter(['СП-11']), line: 'RULES-SAVED' })
 })
 
 test('требование ДЛС доступно в параметрах, сохраняется и не отключает обязательный НАКС', async ({ page }) => {

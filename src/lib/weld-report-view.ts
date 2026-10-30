@@ -1,3 +1,5 @@
+import { SERVICE_DATE_FIELDS } from './weld-field-access'
+import { userStorage } from '@/lib/user-storage'
 import {
   FIELD_BY_KEY,
   isVirtualWeldField,
@@ -64,8 +66,8 @@ export function createDefaultWeldReportViewStorage(
 ): WeldReportViewStorage {
   return {
     activePreset: 'custom',
-    hiddenFieldKeys: [],
-    customHiddenFieldKeys: [],
+    hiddenFieldKeys: [...SERVICE_DATE_FIELDS] as WeldFieldKey[],
+    customHiddenFieldKeys: [...SERVICE_DATE_FIELDS] as WeldFieldKey[],
     collapsedSections: [...defaultCollapsedSections],
     savedViews: [],
   }
@@ -78,7 +80,7 @@ export function readWeldReportViewStorage(
   const fallback = createDefaultWeldReportViewStorage(defaultCollapsedSections)
   if (typeof window === 'undefined') return fallback
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(getStorageKey(storageKey)) ?? 'null') as Partial<WeldReportViewStorage> | null
+    const parsed = JSON.parse(userStorage.getItem(getStorageKey(storageKey)) ?? 'null') as Partial<WeldReportViewStorage> | null
     if (!parsed) return fallback
     return {
       activePreset: isPreset(parsed.activePreset) ? parsed.activePreset : fallback.activePreset,
@@ -94,7 +96,7 @@ export function readWeldReportViewStorage(
 
 export function writeWeldReportViewStorage(storageKey: string, value: WeldReportViewStorage) {
   if (typeof window === 'undefined') return
-  try { window.localStorage.setItem(getStorageKey(storageKey), JSON.stringify(value)) }
+  try { userStorage.setItem(getStorageKey(storageKey), JSON.stringify(value)) }
   catch { /* Keep the current view usable in memory when browser storage is unavailable. */ }
 }
 

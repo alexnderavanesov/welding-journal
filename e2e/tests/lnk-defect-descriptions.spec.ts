@@ -84,8 +84,8 @@ test('shows and edits independent VIK, UZK and PVK defect descriptions', async (
 
 test('does not overwrite a newer defect description from another user', async ({ browser, baseURL }) => {
   await seedDefectDescriptionJoint(CONCURRENT_JOINT)
-  const firstContext = await browser.newContext({ baseURL, viewport: { width: 1600, height: 1000 } })
-  const secondContext = await browser.newContext({ baseURL, viewport: { width: 1600, height: 1000 } })
+  const firstContext = await browser.newContext({ storageState: process.env.E2E_AUTH_STATE, baseURL, viewport: { width: 1600, height: 1000 } })
+  const secondContext = await browser.newContext({ storageState: process.env.E2E_AUTH_STATE, baseURL, viewport: { width: 1600, height: 1000 } })
   const firstPage = await firstContext.newPage()
   const secondPage = await secondContext.newPage()
 

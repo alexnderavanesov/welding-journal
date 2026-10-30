@@ -1,3 +1,4 @@
+import { userStorage } from '@/lib/user-storage'
 import type { ColumnState } from 'ag-grid-community'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { FIELD_BY_KEY, DATE_TIME_WELD_FIELD_KEYS, type WeldFieldKey } from '@/lib/weld-fields'
@@ -51,7 +52,7 @@ export function readJournalGridStorage(storageKey = JOURNAL_GRID_STORAGE_KEY): J
   const fallback = { columns: [], appearance: DEFAULT_JOURNAL_APPEARANCE, views: {} }
   if (typeof window === 'undefined') return fallback
   try {
-    const value = JSON.parse(localStorage.getItem(storageKey) ?? 'null')
+    const value = JSON.parse(userStorage.getItem(storageKey) ?? 'null')
     if (!value || typeof value !== 'object') return fallback
     const layout = (entry: Partial<JournalLayout>): JournalLayout => ({
       columns: journalColumnLayout(Array.isArray(entry?.columns) ? entry.columns.filter(Boolean) : []),
@@ -65,7 +66,7 @@ export function readJournalGridStorage(storageKey = JOURNAL_GRID_STORAGE_KEY): J
 }
 
 export function writeJournalGridStorage(value: JournalGridStorage, storageKey = JOURNAL_GRID_STORAGE_KEY) {
-  try { localStorage.setItem(storageKey, JSON.stringify(value)) } catch { /* Private/full storage: keep the current session usable. */ }
+  try { userStorage.setItem(storageKey, JSON.stringify(value)) } catch { /* Private/full storage: keep the current session usable. */ }
 }
 
 export function journalClipboardValue(row: WeldRow, fieldKey: WeldFieldKey, value: unknown): string {

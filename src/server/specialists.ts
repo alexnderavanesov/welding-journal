@@ -1,3 +1,4 @@
+import { auditSql } from './audit-functions'
 import { createServerFn } from '@tanstack/react-start'
 import { and, asc, eq, ilike, or, sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
@@ -44,10 +45,12 @@ export function normalizeSpecialistArchive(data: { id: number; revision: number;
 
 export const archiveSpecialist = createServerFn({ method: 'POST' }).validator(normalizeSpecialistArchive).handler(async ({ data }) => {
   await assertSecurityScope('settings')
-  const [saved] = await requireDb().update(specialists).set({ archived: data.archived, revision: sql`${specialists.revision} + 1` })
+  return requireDb().transaction(async tx => {
+  const [saved] = await tx.update(specialists).set({ archived: data.archived, revision: sql`${specialists.revision} + 1` })
     .where(and(eq(specialists.id, data.id), eq(specialists.revision, data.revision))).returning()
   if (!saved) throw new Error('Карточка изменена другим пользователем. Обновите список и повторите действие.')
   return saved
+  })
 })
 
 export function normalizeSpecialistCard(data: Omit<SpecialistRecord, 'id' | 'revision'> & { id?: number; revision?: number }) {
@@ -65,12 +68,14 @@ export const saveSpecialist = createServerFn({ method: 'POST' })
   .validator(normalizeSpecialistCard)
   .handler(async ({ data }) => {
     await assertSecurityScope('settings')
+    return requireDb().transaction(async tx => {
     const { id, revision, ...values } = data
-    if (!id) return (await requireDb().insert(specialists).values(values).returning())[0]!
-    const [saved] = await requireDb().update(specialists).set({ ...values, revision: sql`${specialists.revision} + 1` })
+    if (!id) return (await tx.insert(specialists).values(values).returning())[0]!
+    const [saved] = await tx.update(specialists).set({ ...values, revision: sql`${specialists.revision} + 1` })
       .where(and(eq(specialists.id, id), eq(specialists.revision, revision!))).returning()
     if (!saved) throw new Error('Карточка изменена другим пользователем. Откройте её заново; ваши изменения не сохранены.')
     return saved
+    })
   })
 
 export type SpecialistAssignmentTarget = { id: number; revision: number; updatedAt: string; documentVersion: string }
@@ -117,11 +122,11 @@ async function loadSelectedSpecialists(tx: SystemDocumentSequenceTransaction, se
 
 export async function writeDocumentSpecialists(tx: SystemDocumentSequenceTransaction, writes: Array<{ id: number; snapshot: DocumentSpecialists }>) {
   if (!writes.length) return
-  await tx.execute(sql`update ${generatedDocuments} as d set specialists = v.snapshot::jsonb,
+  await auditSql(tx, [{ table: generatedDocuments, where: sql`${generatedDocuments.id} = any(${sql.param(writes.map(row => row.id))}::integer[])` }], () => tx.execute(sql`update ${generatedDocuments} as d set specialists = v.snapshot::jsonb,
     specialists_revision = d.specialists_revision + 1,
     updated_at = greatest(clock_timestamp(), d.updated_at + interval '1 millisecond')
     from unnest(${sql.param(writes.map(write => write.id))}::integer[], ${sql.param(writes.map(write => JSON.stringify(write.snapshot)))}::text[]) as v(id, snapshot)
-    where d.id = v.id`)
+    where d.id = v.id`))
 }
 
 /** Only called after new-document validation and index sync in the SAME transaction. */

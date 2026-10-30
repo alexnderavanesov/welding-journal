@@ -203,6 +203,7 @@ export async function createWeldJoint({ data }: { data: WeldPayload }) {
   await assertSecurityScope('edit')
   const db = requireDb()
   return db.transaction(async (tx) => {
+    await (await import('./access-payload')).assertSubmittedWeldFields(data, undefined, 'welding')
     let record = restrictWeldMutationRecord(data, 'welding')
     if (data.layeredControlRequest?.assigned === true) record = buildLayeredControlAssignment(record as WeldRow, data.layeredControlRequest.confirmPvk === true)
     await loadControlProcessSettingsFromTransaction(tx)
@@ -360,6 +361,7 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
     )
     const previousRows = await loadPreviousWeldRows(tx, [scopedData])
     if (!previousRows.has(id)) throw new Error(`Запись ${id} не найдена`)
+    await (await import('./access-payload')).assertSubmittedWeldFields(data, previousRows.get(id), mutationScope)
     assertExpectedInteractiveWeldVersions(
       [id],
       [{ id, version: String(data.expectedVersion ?? '').trim() }],
@@ -680,6 +682,7 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
           otherSettings: validationContext.otherSettings,
         })
       }
+      for (const submitted of records) await (await import('./access-payload')).assertSubmittedWeldFields(submitted, previousRows.get(Number(submitted.id)), mutationScope)
       records = mergeWeldRecordsWithPrevious(
         records.map((record) => restrictWeldMutationRecord(record, mutationScope)),
         previousRows,

@@ -1,3 +1,4 @@
+import { userSessionStorage } from '@/lib/user-storage'
 export type DocumentGridBreadcrumb = { id: string; route: string[]; index: number }
 export type DocumentGridSession = {
   scope: string
@@ -15,7 +16,7 @@ const prefix = 'welding-journal:documents:grid-session:v1:'
 export const EMPTY_DOCUMENT_GRID_SESSION: DocumentGridSession = { scope: '', search: '', firstRow: 0, rowId: null, top: 0, left: 0, expandedPaths: [] }
 export function readDocumentGridSession(viewId: string): DocumentGridSession {
   try {
-    const raw = JSON.parse(window.sessionStorage.getItem(prefix + viewId) ?? 'null')
+    const raw = JSON.parse(userSessionStorage.getItem(prefix + viewId) ?? 'null')
     if (!raw || typeof raw !== 'object') return { ...EMPTY_DOCUMENT_GRID_SESSION }
     return {
       scope: typeof raw.scope === 'string' ? raw.scope : '', search: typeof raw.search === 'string' ? raw.search : '',
@@ -36,7 +37,7 @@ export function readDocumentGridSession(viewId: string): DocumentGridSession {
   } catch { return { ...EMPTY_DOCUMENT_GRID_SESSION } }
 }
 export function writeDocumentGridSession(viewId: string, session: DocumentGridSession) {
-  try { window.sessionStorage.setItem(prefix + viewId, JSON.stringify(session)) } catch { /* Working state stays in the grid. */ }
+  try { userSessionStorage.setItem(prefix + viewId, JSON.stringify(session)) } catch { /* Working state stays in the grid. */ }
 }
 export function documentGridPathKey(path: readonly string[]) { return JSON.stringify(path) }
 export function documentGridErrorMessage(failure: unknown) {

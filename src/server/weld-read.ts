@@ -109,6 +109,7 @@ type WeldInput
 } from '@/lib/weld-fields'
 import {
 canSuggestWeldFormField,
+makeWeldLineSuggestion,
 type WeldFormSuggestion,
 } from '@/lib/weld-form-suggestions'
 import {
@@ -121,6 +122,7 @@ getOrComputeDerivedCalculation,
 import { buildAcceptedWdiTotalQuery } from '@/server/wdi-aggregate-sql'
 import {
 buildWeldFormSuggestionsQuery,
+buildWeldLineSuggestionsQuery,
 normalizeWeldFormSuggestionRows,
 } from '@/server/weld-form-suggestions-sql'
 import {
@@ -387,6 +389,10 @@ export async function listWeldFormSuggestions({
   }
   await assertSecurityScope('entry')
   if (!FIELD_BY_KEY.has(data.fieldKey) || !canSuggestWeldFormField(data.fieldKey)) return []
+  if (data.fieldKey === 'line') {
+    const result = await requireDb().execute<{ projectTitle: string; subtitleCode: string; line: string }>(buildWeldLineSuggestionsQuery(data.draft))
+    return result.rows.map(makeWeldLineSuggestion)
+  }
   const query = buildWeldFormSuggestionsQuery({
     fieldKey: data.fieldKey,
     draft: data.draft,
@@ -740,6 +746,7 @@ export async function getWeldReportSummary({ data: input }: { data: WeldReportSu
 /** Preview and download each own a coherent transaction. The preview keeps a
  * bounded prefix; downloading starts a new snapshot and visits every batch. */
 export async function readReportOutputSnapshot(input: ReportOutputRequest): Promise<ReportOutputSnapshot> {
+  input = (await import('./access-payload')).accessibleReportInput(input)
   const build = getReportOutputBuilder(input)
   const report: PrintableReport = build([]).report
   let kept = 0, truncated = false

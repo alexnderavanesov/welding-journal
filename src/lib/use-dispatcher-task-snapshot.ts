@@ -1,3 +1,4 @@
+import { useAccess } from '@/lib/security-context'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { buildDispatcherTaskGroups } from '@/lib/dispatcher-view'
@@ -58,6 +59,8 @@ export function useDispatcherTaskSnapshot({
   workspaceOpen = false,
   activityEnabled = enabled,
 }: UseDispatcherTaskSnapshotInput) {
+  const { can } = useAccess()
+  enabled = enabled && can('welding.view') && can('lnk.view') && can('psto.view')
   const queryClient = useQueryClient()
   const [additionalTasks, setAdditionalTasks] = useState<{
     revision: number

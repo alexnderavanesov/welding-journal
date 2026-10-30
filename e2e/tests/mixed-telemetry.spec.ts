@@ -6,7 +6,7 @@ import { rpcName } from '../rpc'
 test('отмена чтения не путается с явно имитированным сбоем; настоящие ошибки записи не скрываются', async ({ browser }) => {
   const server = createServer((_request, response) => response.end('<html>telemetry fixture</html>'))
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
-  const context = await browser.newContext()
+  const context = await browser.newContext({ storageState: process.env.E2E_AUTH_STATE })
   const telemetry = observeMixedClient(context, 'writer')
   try {
     const page = await context.newPage(), address = server.address()
@@ -62,7 +62,7 @@ test(`счётчик отличает уход со страницы от жив
     } else response.end('<html>telemetry fixture</html>')
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
-  const context = await browser.newContext()
+  const context = await browser.newContext({ storageState: process.env.E2E_AUTH_STATE })
   const telemetry = observeMixedClient(context, 'telemetry-regression')
   try {
     const page = await context.newPage()
@@ -112,7 +112,7 @@ test('счётчик учитывает позднее чтение уходящ
     } else response.end('<html>old document</html>')
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
-  const context = await browser.newContext(), telemetry = observeMixedClient(context, 'late-navigation-read')
+  const context = await browser.newContext({ storageState: process.env.E2E_AUTH_STATE }), telemetry = observeMixedClient(context, 'late-navigation-read')
   try {
     const page = await context.newPage(), address = server.address()
     if (!address || typeof address === 'string') throw new Error('Expected a local ephemeral server')

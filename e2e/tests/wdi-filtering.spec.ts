@@ -1,11 +1,12 @@
+import { asE2eOwner } from '../with-owner-access'
 import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import * as XLSX from 'xlsx'
 import pg from 'pg'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
-import { rpcName } from '../rpc'
-import { listWeldingJournalImportScope } from '../../src/server/weld-import'
+import { isAccountRefreshRpc, rpcName } from '../rpc'
+import { listWeldingJournalImportScope as raw_listWeldingJournalImportScope } from '../../src/server/weld-import'
 import { listReportPage, normalizeWeldPageRequest, listColumnFilterOptions, normalizeWeldColumnFilterOptionsRequest } from '../../src/server/weld-read'
 import { buildWeldColumnValueFilter } from '../../src/lib/weld-column-choice-filter'
 import { VISIBLE_FIELDS } from '../../src/lib/weld-fields'
@@ -208,8 +209,10 @@ test('WDI filter and mass-fill use the same current result without refetching on
   expect(count('listWeldingJournalImportScope')).toBe(1)
   const before = calls.length
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
+  await expect.poll(() => calls.slice(before).filter(name => isAccountRefreshRpc(name)).length).toBe(1)
   await page.waitForLoadState('networkidle')
-  expect(calls.length).toBe(before)
+  expect(calls.slice(before)).toHaveLength(1)
+  expect(calls.slice(before).every(isAccountRefreshRpc)).toBe(true)
   expect(errors).toEqual([])
 })
 
@@ -241,3 +244,5 @@ test('quick-search templates contain only the visible match in both modes; cance
   expect(await snapshot()).toEqual(before)
   expect(errors).toEqual([])
 })
+
+const listWeldingJournalImportScope = asE2eOwner(raw_listWeldingJournalImportScope, 'welding.view')

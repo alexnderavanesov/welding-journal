@@ -1,3 +1,4 @@
+import { auditSql } from './audit-functions'
 import { createHash } from 'node:crypto'
 import { and, asc, desc, gt, lte, sql } from 'drizzle-orm'
 import { technologyCardNames, technologyCards, weldJoints } from '@/db/schema'
@@ -94,10 +95,10 @@ export async function applyTechnologyCardAssignments(tx: Transaction, input: Tec
     changes.push({ id: row.id, name: proposal.newName }); changedRows.push(row); counts[proposal.kind]++
   }
   if (changes.length) {
-    await tx.execute(sql`update ${weldJoints} as w set technology_card_number = p.name,
+    await auditSql(tx, [{ table: weldJoints, where: sql`${weldJoints.id} = any(${sql.param(changes.map(change => change.id))}::integer[])` }], () => tx.execute(sql`update ${weldJoints} as w set technology_card_number = p.name,
       welding_updated_at = greatest(clock_timestamp(), w.updated_at + interval '1 millisecond'),
       updated_at = greatest(clock_timestamp(), w.updated_at + interval '1 millisecond')
-      from jsonb_to_recordset(${JSON.stringify(changes)}::jsonb) as p(id integer, name text) where w.id = p.id`)
+      from jsonb_to_recordset(${JSON.stringify(changes)}::jsonb) as p(id integer, name text) where w.id = p.id`))
     await markTechnologyCardsUsed(tx, [...changedRows, ...changes.map(change => ({ technologyCardNumber: change.name }))])
     await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes(changedRows, new Map()) })
   }

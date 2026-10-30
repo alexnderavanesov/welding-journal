@@ -1,8 +1,9 @@
+import { asE2eOwner } from '../with-owner-access'
 import { expect, test } from '@playwright/test'
 import { withE2eDatabase } from '../database'
 import { withLineProgramFixture, cleanupLineProgramProjects } from '../line-program-fixtures'
-import { deleteWeldJoint, deleteWeldJoints } from '../../src/server/weld-mutations'
-import { replaceWeldJoints } from '../../src/server/weld-import'
+import { deleteWeldJoint as raw_deleteWeldJoint , deleteWeldJoints as raw_deleteWeldJoints } from '../../src/server/weld-mutations'
+import { replaceWeldJoints as raw_replaceWeldJoints } from '../../src/server/weld-import'
 import { loadSystemDocumentSummaries } from '../../src/server/system-document-index'
 import { documentGridRow } from '../document-grid'
 import { rpcName } from '../rpc'
@@ -160,3 +161,7 @@ for (const type of ['weldingJournal', 'checklist', 'zni'] as const) {
     })
   }
 }
+
+const deleteWeldJoint = asE2eOwner(raw_deleteWeldJoint, 'welding.delete')
+const deleteWeldJoints = asE2eOwner(raw_deleteWeldJoints, 'welding.delete')
+const replaceWeldJoints = asE2eOwner(raw_replaceWeldJoints, 'welding.view')

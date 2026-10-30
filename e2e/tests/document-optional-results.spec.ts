@@ -1,3 +1,4 @@
+import { asE2eOwner } from '../with-owner-access'
 import { lnkRow as lnkGridRow, lnkActionRow } from './lnk-grid-helpers'
 import { expect, test } from '@playwright/test'
 import { pstoActionRow } from './psto-grid-helpers'
@@ -6,7 +7,7 @@ import { cleanupLineProgramProjects } from '../line-program-fixtures'
 import { DEFAULT_CONTROL_PROCESS_SETTINGS } from '../../src/lib/control-process-settings'
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '../../src/lib/request-conclusion-settings'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '../../src/lib/save-check-settings'
-import { updateWeldJoints } from '../../src/server/weld-mutations'
+import { updateWeldJoints as raw_updateWeldJoints } from '../../src/server/weld-mutations'
 
 const project = 'E2E required document requisites'
 const settings = {
@@ -152,3 +153,5 @@ for (const stage of ['beforeHeatTreatment', 'psto'] as const) {
     expect(stored.documents).toHaveLength(2)
   })
 }
+
+const updateWeldJoints = asE2eOwner(raw_updateWeldJoints, 'welding.view')

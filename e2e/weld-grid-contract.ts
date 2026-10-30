@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { observeGridResults } from './grid-result-motion'
 import { withE2eDatabase } from './database'
 import { withLineProgramFixture } from './line-program-fixtures'
-import { deserializeRpcPayload, rpcName } from './rpc'
+import { deserializeRpcPayload, isAccountRefreshRpc, rpcName } from './rpc'
 
 async function revealColumn(page: Page, field: string) {
   const viewport = page.locator('.ag-grid-viewport')
@@ -92,6 +92,7 @@ export function registerWeldGridContract(report: GridReport) {
       await client.query(`delete from weld_joint_program_states s using weld_joints w
         where s.weld_joint_id=w.id and w.project_title=any($1::text[])`, [projects])
       await client.query('delete from weld_joints where project_title=any($1::text[])', [projects])
+      await client.query('delete from line_programs where project_title=any($1::text[])', [projects])
     })
   })
 
@@ -140,8 +141,9 @@ export function registerWeldGridContract(report: GridReport) {
     expect(await page.locator('.ag-grid-scrolling-rows .ag-cell').count()).toBeLessThan(1500)
     const beforeFocus = [...calls]
     await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
+    await expect.poll(() => calls.slice(beforeFocus.length).filter(name => isAccountRefreshRpc(name)).length).toBe(1)
     await page.waitForLoadState('networkidle')
-    expect(calls).toEqual(beforeFocus)
+    expect(calls.slice(beforeFocus.length).filter(name => !isAccountRefreshRpc(name))).toEqual([])
     await page.locator('.ag-header-cell[col-id="line"] .ag-header-cell-filter-button').click()
     const filter = page.getByRole('dialog', { name: 'Фильтр: Линия' })
     await filter.getByLabel('Найти значение фильтра').fill('AG-0250')
@@ -451,6 +453,11 @@ export function registerWeldGridContract(report: GridReport) {
   })
 
   test(name('resize, автоматическая загрузка, компактная панель и однократный Escape из редактирования'), async ({ page }) => {
+    if (!isWorkflow) await withLineProgramFixture(client => client.query(`
+      insert into line_programs(project_title,subtitle_code,line)
+      select $1,'AG','AG-0001' where not exists
+        (select 1 from line_programs where project_title=$1 and subtitle_code='AG' and line='AG-0001')
+    `, [PROJECT])) // Line suggestions now use complete identities from the program registry.
     await page.goto(profile.route)
     await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(PROJECT)
     await expect(page.getByText(loaded(100, 250), { exact: true })).toBeVisible()
@@ -765,7 +772,9 @@ export function registerWeldGridContract(report: GridReport) {
       await page.getByRole('menuitem', { name: 'Сбросить столбцы', exact: true }).click()
     }
     await reset()
-    const canonical = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).columns, profile.storageKey)
+    const storedKey = await page.evaluate(key => Object.keys(localStorage).find(stored => stored.startsWith('welding-user:') && !stored.startsWith('welding-user:signed-out:') && stored.endsWith(':' + key))!, profile.storageKey)
+    expect(storedKey).toBeTruthy()
+    const canonical = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).columns, storedKey)
     expect(canonical.filter((c: { pinned: string }) => c.pinned === 'left').map((c: { colId: string }) => c.colId)).toEqual(['ag-Grid-SelectionColumn', 'line', 'joint'])
     expect(canonical.filter((c: { pinned: string }) => c.pinned === 'right').map((c: { colId: string }) => c.colId)).toEqual(['finalStatus'])
     await page.locator('.ag-header-group-cell').filter({ hasText: 'Проект' }).first().click({ button: 'right' })
@@ -783,7 +792,7 @@ export function registerWeldGridContract(report: GridReport) {
       value.columns.reverse()
       for (const column of value.columns) if (!column.colId.startsWith('ag-')) { column.width = 190; column.pinned = null }
       localStorage.setItem(key, JSON.stringify(value))
-    }, profile.storageKey)
+    }, storedKey)
     await page.reload()
     await page.getByRole('button', { name: 'Настроить вид' }).click()
     await page.getByRole('tab', { name: 'Оформление', exact: true }).click()
@@ -793,7 +802,7 @@ export function registerWeldGridContract(report: GridReport) {
     await expect(page.locator('.ag-grid-pinned-right-cells [col-id="finalStatus"]').first()).toBeVisible()
     await page.locator('.ag-grid-viewport').evaluate(e => { e.scrollLeft = 0 })
     await expect(page.locator('.ag-header-cell[col-id="subtitleCode"]')).toBeVisible()
-    expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).columns, profile.storageKey)).toEqual(canonical)
+    expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).columns, storedKey)).toEqual(canonical)
     await page.reload()
     await expect(page.locator('.ag-grid-pinned-right-cells [col-id="finalStatus"]').first()).toBeVisible()
   })
@@ -1004,6 +1013,10 @@ export function registerWeldGridContract(report: GridReport) {
     expect(await layout()).toEqual(initial)
     await page.reload()
     await expect(chips.getByRole('button', { name: /^Группировка:/ })).toHaveText(['Линия', 'Проект'])
+    // Saved chips mount before the fetched total. That total changes toolbar
+    // widths; pointer coordinates must be captured after the restored read.
+    await expect(page.getByText(loaded(100, 250), { exact: true })).toBeVisible()
+    await waitForGridRows(page)
     const lineHandle = chips.getByRole('button', { name: 'Группировка: Линия', exact: true })
     const projectHandle = chips.getByRole('button', { name: 'Группировка: Проект', exact: true })
     const from = (await lineHandle.boundingBox())!, to = (await projectHandle.boundingBox())!
@@ -1098,11 +1111,12 @@ export function registerWeldGridContract(report: GridReport) {
     await page.goto(profile.route)
     await expect(page.locator(`${profile.grid} .ag-root`)).toBeVisible()
     await page.evaluate(({ project, key }) => {
-      const value = JSON.parse(localStorage.getItem(key)!)
+      const storedKey = Object.keys(localStorage).find(stored => stored.startsWith('welding-user:') && !stored.startsWith('welding-user:signed-out:') && stored.endsWith(':' + key))!
+      const value = JSON.parse(localStorage.getItem(storedKey)!)
       value.savedViews.push({ id: 'legacy-text-filter', name: 'Прежний фильтр', snapshot: {
         hiddenFieldKeys: [], collapsedSections: [], sort: null, columnFilters: { projectTitle: '=' + project, line: '=AG-0002' },
       } })
-      localStorage.setItem(key, JSON.stringify(value))
+      localStorage.setItem(storedKey, JSON.stringify(value))
     }, { project: PROJECT, key: `welding-report-view:v1:${report}` })
     await page.reload()
     await page.getByRole('button', { name: 'Настроить вид' }).click()
@@ -1256,7 +1270,9 @@ export function registerWeldGridContract(report: GridReport) {
       })).toEqual([])
     }
     const expandFirstBranch = async (expectedLevels = 4) => {
-      await page.locator('.ag-grid-viewport').evaluate(viewport => { viewport.scrollTop = 0 })
+      // Document scrolling owns the position. Writing the internal viewport
+      // can be overwritten by a pending page-scroll frame after the next step.
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
       // AG updates its groups before React publishes the chips. Reading the
       // old three-chip list after adding level four leaves that level closed.
       await expect(chips.getByRole('button', { name: /^Группировка:/ })).toHaveCount(expectedLevels)
@@ -1297,9 +1313,9 @@ export function registerWeldGridContract(report: GridReport) {
     await page.locator('.ag-row.ag-row-group.ag-row-level-0').first().locator('.ag-group-expanded').click()
     await expectColors()
     await expandFirstBranch()
-    await page.locator('.ag-grid-viewport').evaluate(viewport => { viewport.scrollTop = 900 })
+    await page.evaluate(() => window.scrollTo({ top: 900, behavior: 'instant' }))
     await expectColors()
-    await page.locator('.ag-grid-viewport').evaluate(viewport => { viewport.scrollTop = 0 })
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
     await expect.poll(actionColors).toEqual(originalColors)
     await chips.getByRole('button', { name: 'Группировка: Линия', exact: true }).press('Alt+ArrowLeft')
     await expect(chips.getByRole('button', { name: /^Группировка:/ }).nth(1)).toHaveAttribute('aria-label', 'Группировка: Линия')

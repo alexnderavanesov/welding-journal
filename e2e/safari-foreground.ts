@@ -1,4 +1,5 @@
 import { expect } from '@playwright/test'
+import { authenticateE2eSafari } from './authentication'
 
 type DriverCommand = (path: string, body?: unknown, method?: string) => Promise<any>
 
@@ -10,5 +11,6 @@ export async function prepareSafariMeasurementWindow(command: DriverCommand, ses
   await expect.poll(() => command(session + '/execute/sync', {
     script: 'return !document.hidden && document.hasFocus()', args: [],
   }), { timeout, message: 'Bring the local Safari audit window to the foreground before measuring' }).toBe(true)
+  await authenticateE2eSafari(command, session)
   console.log('SAFARI_FOREGROUND_CONFIRMED: timed measurements may start')
 }

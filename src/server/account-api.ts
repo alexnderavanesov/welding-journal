@@ -1,0 +1,20 @@
+import { createServerFn } from '@tanstack/react-start'
+import type * as Management from './account-management'
+
+export const getCurrentAccount = createServerFn({ method: 'GET' }).handler(async () => (await import('./access-context')).readAccessIdentity())
+export const refreshAccountActivity = createServerFn({ method: 'POST' }).handler(async () => (await import('./account-activity')).refreshAccountActivity())
+export const listAccounts = createServerFn({ method: 'GET' }).handler(async () => (await import('./account-management')).listAccounts())
+export const inviteAccount = createServerFn({ method: 'POST' }).validator((data: Parameters<typeof Management.inviteAccount>[0]) => data)
+  .handler(async ({ data }) => (await import('./account-management')).inviteAccount(data))
+export const changeAccount = createServerFn({ method: 'POST' }).validator((data: Parameters<typeof Management.changeAccount>[0]) => data)
+  .handler(async ({ data }) => (await import('./account-management')).changeAccount(data))
+export const sendManagedLink = createServerFn({ method: 'POST' }).validator((data: Parameters<typeof Management.sendManagedLink>[0]) => data)
+  .handler(async ({ data }) => (await import('./account-management')).sendManagedLink(data))
+export const deleteAccount = createServerFn({ method: 'POST' }).validator((data: Parameters<typeof Management.deleteAccount>[0]) => data)
+  .handler(async ({ data }) => (await import('./account-management')).deleteAccount(data))
+export const completeAccountLink = createServerFn({ method: 'POST' }).validator((data: Parameters<typeof Management.completeAccountLink>[0]) => data)
+  .handler(async ({ data }) => (await import('./account-management')).completeAccountLink(data))
+export const updateOwnProfile = createServerFn({ method: 'POST' }).validator((data: Parameters<typeof Management.updateOwnProfile>[0]) => data)
+  .handler(async ({ data }) => (await import('./account-management')).updateOwnProfile(data))
+export const changeOwnPassword = createServerFn({ method: 'POST' }).validator((data: Parameters<typeof Management.changeOwnPassword>[0]) => data)
+  .handler(async ({ data }) => (await import('./account-management')).changeOwnPassword(data))

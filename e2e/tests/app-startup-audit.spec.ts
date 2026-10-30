@@ -9,7 +9,7 @@ async function expectExplicitRecovery(page: Page, browser: Browser, info: TestIn
     // evidence, never a successful retry that makes this test pass.
     const failedPage = await page.evaluate(() => ({ url: location.href, text: document.body.innerText,
       resources: performance.getEntriesByType('resource').map(entry => ({ name: entry.name, bytes: (entry as PerformanceResourceTiming).transferSize })) }))
-    const context = await browser.newContext()
+    const context = await browser.newContext({ storageState: process.env.E2E_AUTH_STATE })
     let recoveredInFreshContext = false
     try {
       const fresh = await context.newPage()

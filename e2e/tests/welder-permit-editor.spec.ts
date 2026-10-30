@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page, type Request } from '@playwright/test'
 import { withE2eDatabase } from '../database'
-import { rpcName } from '../rpc'
+import { isAccountRefreshRpc, rpcName } from '../rpc'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
 
 const codes = ['EPA1', 'EPA2', 'EPA3', 'EPA5']
@@ -180,10 +180,11 @@ test('реальный ввод НАКС/ДЛС: 1/2/3 группы, спосо�
   await expect.poll(() => pendingCalls.size).toBe(0)
   const beforeIdle = [...calls]
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
-  await expect.poll(() => calls.length).toBe(beforeIdle.length + 1)
+  await expect.poll(() => calls.slice(beforeIdle.length).filter(isAccountRefreshRpc).length).toBe(1)
+  await expect.poll(() => calls.slice(beforeIdle.length).filter(name => name.startsWith('getDispatcherTaskVersion_')).length).toBe(1)
   await expect.poll(() => pendingCalls.size).toBe(0)
-  expect(calls.slice(beforeIdle.length)).toHaveLength(1)
-  expect(calls.at(-1)).toMatch(/^getDispatcherTaskVersion/)
+  expect(calls.slice(beforeIdle.length)).toHaveLength(2)
+  expect(calls.slice(beforeIdle.length).every(name => (name.startsWith('getDispatcherTaskVersion_') || isAccountRefreshRpc(name)))).toBe(true)
   expect(calls.filter(name => name.startsWith('saveWelderStampRecords'))).toHaveLength(6)
   expect(errors).toEqual([])
 })
@@ -210,7 +211,7 @@ test('ошибка сети сохраняет черновик; пять одн
   expect((await saved('EPA5')).welder_name).toBe('Аудит EPA5')
   const request = intercepted!, headers = await request.allHeaders()
   delete headers['content-length']
-  const clients = await Promise.all(Array.from({ length: 5 }, () => playwright.request.newContext()))
+  const clients = await Promise.all(Array.from({ length: 5 }, () => playwright.request.newContext({ storageState: process.env.E2E_AUTH_STATE })))
   try {
     const replies = await Promise.all(clients.map(client => client.post(request.url(), { headers, data: request.postData()! }).then(response => response.text())))
     expect(replies.filter(reply => reply.includes('Справочник клейм уже изменён'))).toHaveLength(4)

@@ -1,3 +1,4 @@
+import { userStorage } from '@/lib/user-storage'
 import { useCallback, useState } from 'react'
 
 import type { ActiveReport } from '@/lib/home-state'
@@ -30,7 +31,7 @@ export function useReportSortState(activeReport: ActiveReport) {
 export function readSortByReport(): SortByReport {
   if (typeof window === 'undefined') return {}
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '{}') as Record<string, unknown>
+    const parsed = JSON.parse(userStorage.getItem(STORAGE_KEY) ?? '{}') as Record<string, unknown>
     return Object.fromEntries(
       Object.entries(parsed).flatMap(([report, value]) => {
         if (!isWeldReportKind(report) || !isWeldSort(value)) return []
@@ -44,7 +45,7 @@ export function readSortByReport(): SortByReport {
 
 function writeSortByReport(value: SortByReport) {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
+  userStorage.setItem(STORAGE_KEY, JSON.stringify(value))
 }
 
 function isWeldReportKind(value: unknown): value is WeldReportKind {

@@ -1,5 +1,6 @@
+import { asE2eOwner } from '../with-owner-access'
 import { randomUUID } from 'node:crypto'
-import { previewOperation, applyOperation, getOperationResult } from '../../src/server/document-operation-service'
+import { previewOperation as rawPreviewOperation, applyOperation as rawApplyOperation, getOperationResult as rawGetOperationResult } from '../../src/server/document-operation-service'
 import type { DocumentOperationRequest } from '../../src/lib/system-document-operation'
 import { openDocumentOperation, confirmDocumentOperation } from '../document-operation-ui'
 import { expect, test } from '@playwright/test'
@@ -10,7 +11,7 @@ import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '../../src/lib/request-concl
 import { buildCurrentSystemDocumentName } from '../../src/lib/system-document-types'
 import { ensureDispatcherTaskIndexFresh } from '@/server/dispatcher-task-index'
 import { markDispatcherTaskIndexDirty } from '@/server/dispatcher-task-index-dirty'
-import { updateWeldJoint } from '@/server/weld-mutations'
+import { updateWeldJoint as raw_updateWeldJoint } from '@/server/weld-mutations'
 
 const project = 'E2E cycle document rebuild'
 let settings: { value: string; updated_at: Date } | undefined
@@ -331,3 +332,8 @@ test('lost HTTP response is recovered from the committed receipt without another
   expect((await snapshot()).rows.map(facts)).toEqual(before.rows.map(facts))
   await expect(dialog.getByRole('button', { name: 'Подтвердить и применить' })).toBeDisabled()
 })
+
+const updateWeldJoint = asE2eOwner(raw_updateWeldJoint, 'welding.edit')
+const previewOperation = asE2eOwner(rawPreviewOperation, 'documents.view')
+const applyOperation = asE2eOwner(rawApplyOperation, 'documents.edit')
+const getOperationResult = asE2eOwner(rawGetOperationResult, 'documents.view')

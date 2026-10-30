@@ -151,7 +151,7 @@ test('measured filter, sort and group matrix preserves complete selections', asy
 
 test('measured group reopening keeps checked joints and bounds reads', async ({ page, browser }, info) => {
   test.setTimeout(240_000)
-  await page.addInitScript(() => localStorage.removeItem('welding-journal-ag-grid:v1'))
+  await page.addInitScript(() => Object.keys(localStorage).filter(key => key === 'welding-journal-ag-grid:v1' || key.startsWith('welding-user:') && key.endsWith(':welding-journal-ag-grid:v1')).forEach(key => localStorage.removeItem(key)))
   await page.addInitScript(hidden => localStorage.setItem('welding-report-view:v1:weldingJournal', JSON.stringify({
     activePreset: 'custom', hiddenFieldKeys: hidden, customHiddenFieldKeys: hidden, collapsedSections: [], savedViews: [],
   })), WELD_FIELDS.filter(field => !['projectTitle', 'line', 'joint', 'wdi'].includes(field.key)).map(field => field.key))

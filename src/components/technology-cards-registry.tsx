@@ -7,7 +7,7 @@ import { TechnologyCardEditor } from '@/components/technology-card-editor'
 import { TechnologyCardAssignmentDialog } from '@/components/technology-card-assignment-dialog'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { useConfirmAction } from '@/lib/confirm-action-context'
-import { useSecurityGuard } from '@/lib/security-context'
+import { useAccess } from '@/lib/security-context'
 import { DISPATCHER_TASK_SNAPSHOT_QUERY_KEY, invalidateWeldPageQueries } from '@/lib/weld-query-utils'
 import { TECHNOLOGY_CARD_PSTO_OPTIONS, type TechnologyCardRecord } from '@/lib/technology-card-types'
 import { changeTechnologyCard, getTechnologyCardPage, type TechnologyCardChange } from '@/server/technology-cards-api'
@@ -22,7 +22,7 @@ const STATUS_OPTIONS = [
 export function TechnologyCardsRegistry({ active }: { active: boolean }) {
   const client = useQueryClient()
   const confirm = useConfirmAction()
-  const { requireSettingsChangePassword } = useSecurityGuard()
+  const { can } = useAccess()
   const [search, setSearch] = useState('')
   const querySearch = useDebouncedValue(search.trim(), 300)
   const [archive, setArchive] = useState<'active' | 'archived' | 'all'>('active')
@@ -43,7 +43,7 @@ export function TechnologyCardsRegistry({ active }: { active: boolean }) {
     if (busyRef.current) return false
     busyRef.current = true; setBusy(true); setMessage('')
     try {
-      if (!await requireSettingsChangePassword()) return false
+      if (!can(input.action === 'delete' || input.action === 'archive' ? 'references.delete' : 'references.edit')) return false
       await changeTechnologyCard({ data: input })
       await client.invalidateQueries({ queryKey: TECHNOLOGY_CARDS_QUERY_KEY, refetchType: 'active' })
       void client.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY })
@@ -68,7 +68,7 @@ export function TechnologyCardsRegistry({ active }: { active: boolean }) {
   return <section className="space-y-3" aria-label="Реестр технологических карт">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h1 className="text-xl font-semibold">Технологические карты</h1><p className="mt-1 text-sm text-slate-500">Общий реестр проверенных заказчиком карт для всего журнала.</p></div>
-      <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={busy} onClick={() => setAssignmentOpen(true)}>Проверить и назначить ТК</Button><Button disabled={busy} onClick={() => { setMessage(''); setEditor({ card: null }) }}><Plus className="h-4 w-4" aria-hidden="true" />Добавить ТК</Button></div>
+      <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={busy || !can('welding.edit')} onClick={() => setAssignmentOpen(true)}>Проверить и назначить ТК</Button><Button disabled={busy || !can('references.edit')} onClick={() => { setMessage(''); setEditor({ card: null }) }}><Plus className="h-4 w-4" aria-hidden="true" />Добавить ТК</Button></div>
     </div>
     <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-white p-3">
       <div className="relative min-w-0 flex-1">
@@ -93,7 +93,7 @@ export function TechnologyCardsRegistry({ active }: { active: boolean }) {
           <td className="px-3 py-2">{card.weldingMethods.join(' + ')} · {card.connectionType}</td><td className="px-3 py-2">{card.materialGroups.join(' + ')}</td>
           <td className="whitespace-nowrap px-3 py-2">D {card.diameterFrom}–{card.diameterTo}<br />T {card.thicknessFrom}–{card.thicknessTo}</td>
           <td className="px-3 py-2">{TECHNOLOGY_CARD_PSTO_OPTIONS.find(option => option.value === card.psto)?.label}</td>
-          <td className="px-3 py-2"><div className="flex flex-wrap gap-1"><Button size="sm" variant="outline" disabled={busy} onClick={() => { setMessage(''); setEditor({ card }) }}>Изменить</Button><Button size="sm" variant="ghost" disabled={busy} onClick={() => void change({ action: 'archive', id: card.id, expectedRevision: card.revision, archived: !card.archived })}>{card.archived ? 'Вернуть' : 'В архив'}</Button><Button size="sm" variant="ghost" disabled={busy} onClick={() => void remove(card)}>Удалить</Button></div></td>
+          <td className="px-3 py-2"><div className="flex flex-wrap gap-1"><Button size="sm" variant="outline" disabled={busy || !can('references.edit')} onClick={() => { setMessage(''); setEditor({ card }) }}>Изменить</Button><Button size="sm" variant="ghost" disabled={busy || !can('references.delete')} onClick={() => void change({ action: 'archive', id: card.id, expectedRevision: card.revision, archived: !card.archived })}>{card.archived ? 'Вернуть' : 'В архив'}</Button><Button size="sm" variant="ghost" disabled={busy || !can('references.delete')} onClick={() => void remove(card)}>Удалить</Button></div></td>
         </tr>)}</tbody></table>
       {!query.data.items.length && <p className="p-4 text-sm text-slate-500">Технологические карты не найдены.</p>}
     </div>}

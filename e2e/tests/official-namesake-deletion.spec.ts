@@ -1,3 +1,4 @@
+import { asE2eOwner } from '../with-owner-access'
 import { lnkRow as lnkGridRow } from './lnk-grid-helpers'
 import { journalRow, deleteJournalJoint } from '../journal-grid'
 import { expect, test, type Page } from '@playwright/test'
@@ -6,8 +7,8 @@ import { requireDb } from '@/db'
 import { weldJoints } from '@/db/schema'
 import { getLnkResultRestrictionReasons } from '@/lib/lnk-result-policy'
 import { getDispatcherTaskIndexSnapshot } from '@/server/dispatcher-task-index'
-import { readJournalGrid } from '@/server/journal-grid'
-import { deleteWeldJoint } from '@/server/weld-mutations'
+import { readJournalGrid as raw_readJournalGrid } from '@/server/journal-grid'
+import { deleteWeldJoint as raw_deleteWeldJoint } from '@/server/weld-mutations'
 import { syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects } from '../line-program-fixtures'
@@ -183,3 +184,6 @@ for (const result of ['ремонт', 'вырез'] as const) test(`удалит
   expect(await facts()).toEqual(beforeBlockedDeletion)
   expect(errors).toEqual([])
 })
+
+const deleteWeldJoint = asE2eOwner(raw_deleteWeldJoint, 'welding.delete')
+const readJournalGrid = asE2eOwner(raw_readJournalGrid, 'welding.view')

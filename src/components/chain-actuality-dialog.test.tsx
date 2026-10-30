@@ -5,7 +5,7 @@ import { ChainActualityDialog } from './chain-actuality-dialog'
 
 const mocks = vi.hoisted(() => ({ preview: vi.fn(), save: vi.fn(), password: vi.fn(), invalidate: vi.fn() }))
 vi.mock('@/server/chain-actuality', () => ({ previewChainActuality: mocks.preview, setChainActuality: mocks.save }))
-vi.mock('@/lib/security-context', () => ({ useSecurityGuard: () => ({ requireEditPassword: mocks.password }) }))
+vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: () => true }), useSecurityGuard: () => ({ requireEditPassword: mocks.password }) }))
 vi.mock('@/lib/weld-query-utils', () => ({ scheduleWeldDataRefresh: mocks.invalidate }))
 const preview = { rowId: 1, active: false, token: 'a'.repeat(64), reason: null, total: 2, changedCount: 1, page: 0, pageSize: 100,
   rows: [{ id: 1, joint: 'S1', officiality: 'неофициальный', inactive: false }, { id: 2, joint: 'S1R1', officiality: '', inactive: true }] }

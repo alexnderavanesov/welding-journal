@@ -1,8 +1,9 @@
+import { asE2eOwner } from '../with-owner-access'
 import { expect, test } from '@playwright/test'
 import * as XLSX from 'xlsx'
 import type { WeldPayload } from '../../src/server/weld-contracts'
-import { createWeldJoint, updateWeldJoint, updateWeldJoints } from '../../src/server/weld-mutations'
-import { importWeldJoints, massFillWeldJoints, replaceWeldJoints } from '../../src/server/weld-import'
+import { createWeldJoint as raw_createWeldJoint , updateWeldJoint as raw_updateWeldJoint , updateWeldJoints as raw_updateWeldJoints } from '../../src/server/weld-mutations'
+import { importWeldJoints as raw_importWeldJoints , massFillWeldJoints as raw_massFillWeldJoints , replaceWeldJoints as raw_replaceWeldJoints } from '../../src/server/weld-import'
 import { withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { editJournalJoint, journalRow } from '../journal-grid'
@@ -261,3 +262,10 @@ test('UI: клеймо сохраняется до заполнения пара
   await expect(dialog.getByRole('textbox', { name: 'D1', exact: true })).toHaveValue('57')
   await expect(dialog.getByRole('combobox', { name: 'Корень_1', exact: true })).toHaveValue(stamp)
 })
+
+const createWeldJoint = asE2eOwner(raw_createWeldJoint, 'welding.edit')
+const updateWeldJoint = asE2eOwner(raw_updateWeldJoint, 'welding.view')
+const updateWeldJoints = asE2eOwner(raw_updateWeldJoints, 'welding.view')
+const importWeldJoints = asE2eOwner(raw_importWeldJoints, 'welding.import')
+const massFillWeldJoints = asE2eOwner(raw_massFillWeldJoints, 'welding.import')
+const replaceWeldJoints = asE2eOwner(raw_replaceWeldJoints, 'welding.view')

@@ -1,3 +1,4 @@
+import { userStorage } from '@/lib/user-storage'
 import { useEffect, useState } from 'react'
 import {
   UNOFFICIAL_REJECTED_WITH_COIL_REASON,
@@ -519,7 +520,7 @@ export function loadDispatcherSettings(): DispatcherSettings {
   if (typeof window === 'undefined') return DEFAULT_DISPATCHER_SETTINGS
 
   try {
-    const rawValue = window.localStorage.getItem(DISPATCHER_SETTINGS_STORAGE_KEY)
+    const rawValue = userStorage.getItem(DISPATCHER_SETTINGS_STORAGE_KEY)
     if (!rawValue) return DEFAULT_DISPATCHER_SETTINGS
     return normalizeDispatcherSettings(JSON.parse(rawValue))
   } catch {
@@ -530,7 +531,7 @@ export function loadDispatcherSettings(): DispatcherSettings {
 export function saveDispatcherSettings(settings: DispatcherSettings, options: { syncRemote?: boolean } = {}) {
   if (typeof window === 'undefined') return
   const normalizedSettings = normalizeDispatcherSettings(settings)
-  window.localStorage.setItem(DISPATCHER_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
+  userStorage.setItem(DISPATCHER_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
   window.dispatchEvent(new Event(DISPATCHER_SETTINGS_EVENT))
   if (options.syncRemote !== false) persistProjectSettingToRemote(PROJECT_SETTING_KEYS.dispatcher, normalizedSettings)
 }
@@ -539,7 +540,7 @@ export function loadDispatcherReminderSettings(): DispatcherReminderSettings {
   if (typeof window === 'undefined') return DEFAULT_DISPATCHER_REMINDER_SETTINGS
 
   try {
-    const rawValue = window.localStorage.getItem(DISPATCHER_REMINDER_SETTINGS_STORAGE_KEY)
+    const rawValue = userStorage.getItem(DISPATCHER_REMINDER_SETTINGS_STORAGE_KEY)
     if (!rawValue) return DEFAULT_DISPATCHER_REMINDER_SETTINGS
     return normalizeDispatcherReminderSettings(JSON.parse(rawValue))
   } catch {
@@ -550,7 +551,7 @@ export function loadDispatcherReminderSettings(): DispatcherReminderSettings {
 export function saveDispatcherReminderSettings(settings: DispatcherReminderSettings, options: { syncRemote?: boolean } = {}) {
   if (typeof window === 'undefined') return
   const normalizedSettings = normalizeDispatcherReminderSettings(settings)
-  window.localStorage.setItem(DISPATCHER_REMINDER_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
+  userStorage.setItem(DISPATCHER_REMINDER_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
   window.dispatchEvent(new Event(DISPATCHER_SETTINGS_EVENT))
   if (options.syncRemote !== false) persistProjectSettingToRemote(PROJECT_SETTING_KEYS.dispatcherReminders, normalizedSettings)
 }

@@ -1,3 +1,4 @@
+import { userStorage } from '@/lib/user-storage'
 import { generatedDocumentGridValue, systemDocumentGridValue, formatDocumentDate as formatDate, formatDocumentUpdatedAt as formatGeneratedDocumentDate, formatDocumentWdi as formatWdi } from '@/lib/document-history-values'
 import { DocumentSpecialistCell, DocumentSpecialistAssignmentDialog, type SpecialistDocument } from './document-specialist-assignment'
 import { specialistHistoryColumns } from '@/lib/document-history-columns'
@@ -49,7 +50,7 @@ import { ReportNotificationToast } from '@/components/report-notification-toast'
 import { Button } from '@/components/ui/button'
 import { useConfirmAction } from '@/lib/confirm-action-context'
 import { isModalDialogOpen } from '@/lib/modal-layer'
-import { useSecurityGuard } from '@/lib/security-context'
+import { useSecurityGuard, useAccess } from '@/lib/security-context'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type {
   DocumentNavigationRequest,
@@ -382,7 +383,7 @@ export function DocumentsPage({
       if (typeof window === 'undefined') return {}
       try {
         return parseDocumentHistoryColumnPreferences(
-          window.localStorage.getItem(DOCUMENT_HISTORY_COLUMNS_STORAGE_KEY),
+          userStorage.getItem(DOCUMENT_HISTORY_COLUMNS_STORAGE_KEY),
         )
       } catch {
         return {}
@@ -482,7 +483,7 @@ export function DocumentsPage({
   useEffect(() => {
     try {
       setIsParametersCollapsed(
-        window.localStorage.getItem(DOCUMENT_PARAMETERS_COLLAPSED_STORAGE_KEY) === 'true',
+        userStorage.getItem(DOCUMENT_PARAMETERS_COLLAPSED_STORAGE_KEY) === 'true',
       )
     } catch {
       // Local storage may be unavailable in a restricted browser mode.
@@ -686,7 +687,7 @@ export function DocumentsPage({
   const changeParametersCollapsed = (collapsed: boolean) => {
     setIsParametersCollapsed(collapsed)
     try {
-      window.localStorage.setItem(DOCUMENT_PARAMETERS_COLLAPSED_STORAGE_KEY, String(collapsed))
+      userStorage.setItem(DOCUMENT_PARAMETERS_COLLAPSED_STORAGE_KEY, String(collapsed))
     } catch {
       // The current view still works when local storage is unavailable.
     }
@@ -1298,6 +1299,7 @@ function GeneratedDocumentsPanel({
   onOpenRows: (documentRecord: StoredGeneratedDocument) => Promise<void>
   onOpenJointHistory: (documentRecord: StoredGeneratedDocument) => Promise<void>
 }) {
+  const { can } = useAccess()
   const { requireDeletePassword } = useSecurityGuard()
   const historyTypes = documentTypes ?? [documentType]
   const historyStorageKey = `generated:${historyTypes.join('+')}`
@@ -1379,6 +1381,7 @@ function GeneratedDocumentsPanel({
     setPreviewRequest({ title: documentRecord.title, fileName: documentRecord.fileName, createBlob: () => createDocumentBlob(documentRecord) })
   }
   const downloadDocumentRecord = async (documentRecord: StoredGeneratedDocument) => {
+    if (!can('documents.export')) return
     setOpenRowsError(null)
     try {
       await downloadGeneratedDocument(documentRecord, () => createDocumentBlob(documentRecord))
@@ -1387,6 +1390,7 @@ function GeneratedDocumentsPanel({
     }
   }
   const downloadSelectedArchive = async () => {
+    if (!can('documents.export')) return
     if (selectedDocuments.length === 0 || isDownloadingArchive) return
     setIsDownloadingArchive(true)
     setOpenRowsError(null)
@@ -1427,7 +1431,7 @@ function GeneratedDocumentsPanel({
     <DocumentHistoryActionButton title="Показать стыки документа в сварочном журнале" tone="emerald" disabled={openingRowsDocumentId === documentRecord.id} onClick={() => void openDocumentRows(documentRecord)}><Rows3 className="h-4 w-4" /></DocumentHistoryActionButton>
     {documentRecord.rowCount === 1 ? <DocumentHistoryActionButton title="Открыть картину стыка" tone="sky" disabled={openingRowsDocumentId === documentRecord.id} onClick={() => void openDocumentJointHistory(documentRecord)}><GitBranch className="h-4 w-4" /></DocumentHistoryActionButton> : null}
     {onRepeat ? <DocumentHistoryActionButton title="Повторить с параметрами" tone="violet" onClick={() => onRepeat(documentRecord)}><SlidersHorizontal className="h-4 w-4" /></DocumentHistoryActionButton> : null}
-    <DocumentHistoryActionButton title="Скачать Excel" onClick={() => void downloadDocumentRecord(documentRecord)}><Download className="h-4 w-4" /></DocumentHistoryActionButton>
+    <DocumentHistoryActionButton disabled={!can('documents.export')} title="Скачать Excel" onClick={() => void downloadDocumentRecord(documentRecord)}><Download className="h-4 w-4" /></DocumentHistoryActionButton>
     {allowDelete ? <DocumentHistoryActionButton title="Удалить документ" tone="rose" onClick={() => void deleteDocumentRecord(documentRecord)}><Trash2 className="h-4 w-4" /></DocumentHistoryActionButton> : null}
   </div>
   return <section className="min-w-0 rounded-md border border-[#cbdde6] bg-white">
@@ -1443,7 +1447,7 @@ function GeneratedDocumentsPanel({
       onSelectionPendingChange={pending => { if (pending) setContextMenu(null) }} onTotalChange={setTotalDocuments} onSearchChange={setGridSearch}
       toolbarActions={<>
         {getSpecialistDocumentProfile(documentType) ? <Button variant="outline" size="sm" disabled={!selectedDocuments.length} onClick={() => { setSpecialistRole(undefined); void resolveDocuments().then(documents => { if (documents) setSpecialistDocuments(documents) }) }}><UsersRound className="mr-1 h-4 w-4" />Назначить специалистов ({selectedDocuments.length})</Button> : null}
-        <Button variant="outline" size="sm" disabled={!selectedDocuments.length || isDownloadingArchive} onClick={() => void downloadSelectedArchive()}><Archive className="mr-1 h-4 w-4" />{isDownloadingArchive ? 'Готовим архив…' : `Архив (${selectedDocuments.length})`}</Button>
+        <Button variant="outline" size="sm" disabled={!can('documents.export') || !selectedDocuments.length || isDownloadingArchive} onClick={() => void downloadSelectedArchive()}><Archive className="mr-1 h-4 w-4" />{isDownloadingArchive ? 'Готовим архив…' : `Архив (${selectedDocuments.length})`}</Button>
       </>}
       onRowContextMenu={(documentRecord, event) => {
         setKeyboardMenu(Boolean(event.keyboard))
@@ -1470,7 +1474,7 @@ function GeneratedDocumentsPanel({
                       { type: 'separator', id: 'open-separator' },
                       { id: 'copy-cells', label: 'Копировать ячейки', icon: Copy, description: 'Ctrl+C · ячейки всего выбранного диапазона', onSelect: event.copyCells },
                       { id: 'open-document', label: 'Предпросмотр', icon: FileText, onSelect: () => openDocumentRecord(documentRecord) },
-                      { id: 'download-document', label: 'Скачать Excel', icon: Download, onSelect: () => downloadDocumentRecord(documentRecord) },
+                      { id: 'download-document', label: 'Скачать Excel', icon: Download, disabled: !can('documents.export'), onSelect: () => downloadDocumentRecord(documentRecord) },
                       ...(allowDelete ? [
                         { type: 'separator' as const, id: 'delete-separator' },
                         { id: 'delete-document', label: 'Удалить', icon: Trash2, danger: true, onSelect: () => deleteDocumentRecord(documentRecord) },
@@ -1510,6 +1514,7 @@ function SystemDocumentsPanel({
   onOpenJointHistory: (documentRecord: SystemDocumentSummary) => Promise<void>
   onRenamed: (savedRows?: WeldRow[]) => Promise<void>
 }) {
+  const { can } = useAccess()
   const { requireEditPassword } = useSecurityGuard()
   const historyStorageKey = `system:${documentType}:${methodScope}`
   const [columnFilters, setColumnFilters] = useStoredDocumentHistoryFilters(
@@ -1632,10 +1637,11 @@ function SystemDocumentsPanel({
       createBlob: () => createCurrentSystemDocumentBlob({ reference: documentRecord, summary: documentRecord, welderStamps }),
     })
   }
-  const downloadDocumentRecord = (documentRecord: SystemDocumentSummary) => runAction(() =>
+  const downloadDocumentRecord = (documentRecord: SystemDocumentSummary) => can('documents.export') ? runAction(() =>
     downloadSystemDocument({ reference: documentRecord, summary: documentRecord, welderStamps }),
-  )
+  ) : Promise.resolve()
   const downloadSelectedArchive = async () => {
+    if (!can('documents.export')) return
     if (!selectedDocuments.length || isDownloadingArchive) return
     setIsDownloadingArchive(true)
     await runAction(async () => {
@@ -1666,7 +1672,7 @@ function SystemDocumentsPanel({
   const getCellValue = systemDocumentGridValue
   const renderCell = (key: DocumentHistoryColumnKey, documentRecord: SystemDocumentSummary) => {
     switch (key) {
-      case 'title': return <DocumentTitleButton title={documentRecord.title} disabled={!hasTemplateForDocument(documentRecord)} onClick={() => openDocumentRecord(documentRecord)} />
+      case 'title': return <DocumentTitleButton title={documentRecord.title} disabled={!can('documents.export') || !hasTemplateForDocument(documentRecord)} onClick={() => openDocumentRecord(documentRecord)} />
       case 'method': return <DocumentDimensionCell values={getSystemDocumentMethodCodes(documentRecord)} />
       case 'stage': return <span className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${getSystemDocumentStageClassName(documentRecord)}`}>{getSystemDocumentStageLabel(documentRecord)}</span>
       case 'project': return <DocumentDimensionCell values={documentRecord.projects} />
@@ -1681,7 +1687,7 @@ function SystemDocumentsPanel({
   const renderActions = (documentRecord: SystemDocumentSummary) => <div data-document-row-actions className="flex items-center justify-end gap-1">
     <DocumentHistoryActionButton title={`Показать стыки документа в отчете ${getSystemDocumentTargetReport(documentRecord) === 'lnk' ? 'ЛНК' : 'ПСТО'}`} tone="emerald" onClick={() => void runAction(() => onOpenRows(documentRecord))}><Rows3 className="h-4 w-4" /></DocumentHistoryActionButton>
     {documentRecord.rowCount === 1 ? <DocumentHistoryActionButton title="Открыть картину стыка" tone="sky" onClick={() => void runAction(() => onOpenJointHistory(documentRecord))}><GitBranch className="h-4 w-4" /></DocumentHistoryActionButton> : null}
-    <DocumentHistoryActionButton title={hasTemplateForDocument(documentRecord) ? 'Скачать актуальный Excel' : 'Для этого вида документа шаблон еще не загружен'} disabled={!hasTemplateForDocument(documentRecord)} onClick={() => void downloadDocumentRecord(documentRecord)}><Download className="h-4 w-4" /></DocumentHistoryActionButton>
+    <DocumentHistoryActionButton title={hasTemplateForDocument(documentRecord) ? 'Скачать актуальный Excel' : 'Для этого вида документа шаблон еще не загружен'} disabled={!can('documents.export') || !hasTemplateForDocument(documentRecord)} onClick={() => void downloadDocumentRecord(documentRecord)}><Download className="h-4 w-4" /></DocumentHistoryActionButton>
   </div>
   return <section className="min-w-0 rounded-md border border-[#cbdde6] bg-white">
       {documentType === 'lnkConclusion' && methodScope === 'lnk' ? (
@@ -1807,7 +1813,7 @@ function SystemDocumentsPanel({
                         { type: 'separator', id: 'open-separator' },
                       { id: 'copy-cells', label: 'Копировать ячейки', icon: Copy, description: 'Ctrl+C · ячейки всего выбранного диапазона', onSelect: event.copyCells },
                         { id: 'open-document', label: 'Предпросмотр', icon: FileText, disabled: !templateAvailable, onSelect: () => openDocumentRecord(documentRecord) },
-                        { id: 'download-document', label: 'Скачать Excel', icon: Download, disabled: !templateAvailable, onSelect: () => downloadDocumentRecord(documentRecord) },
+                        { id: 'download-document', label: 'Скачать Excel', icon: Download, disabled: !can('documents.export') || !templateAvailable, onSelect: () => downloadDocumentRecord(documentRecord) },
                       ],
                     })
       }} />
@@ -2209,7 +2215,7 @@ function useStoredDocumentHistoryFilters(
 
   useEffect(() => {
     if (state.key !== fullStorageKey || typeof window === 'undefined') return
-    window.localStorage.setItem(fullStorageKey, JSON.stringify(state.filters))
+    userStorage.setItem(fullStorageKey, JSON.stringify(state.filters))
   }, [fullStorageKey, state])
 
   const setFilters = (next: SetStateAction<Record<string, string>>) => {
@@ -2230,7 +2236,7 @@ function useStoredDocumentHistoryFilters(
 function readStoredDocumentHistoryFilters(storageKey: string) {
   if (typeof window === 'undefined') return {}
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(storageKey) ?? '{}') as Record<string, unknown>
+    const parsed = JSON.parse(userStorage.getItem(storageKey) ?? '{}') as Record<string, unknown>
     return Object.fromEntries(
       Object.entries(parsed).flatMap(([key, value]) => {
         const normalized = String(value ?? '').trim()

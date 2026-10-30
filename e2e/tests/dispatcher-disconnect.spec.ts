@@ -28,14 +28,23 @@ test('уход со страницы не прерывает публикаци�
   page.on('response', (response) => { if (response.status() >= 400) errors.push(`HTTP ${response.status()}`) })
   context.on('request', (request) => { if (new URL(request.url()).pathname === path) refreshes.push(request.url()) })
   await ensureDispatcherTaskIndexFresh()
+  // Authenticate and hydrate both tabs before holding the publication lock.
+  // This test measures disconnect/coalescing, not cold module delivery into a
+  // second tab; the access gate adds an asynchronous stage before mounting it.
+  await page.goto('/journal')
+  await expect(page.getByLabel('Диспетчер задач', { exact: true })).toContainText('Изменения выполняются только после подтверждения.')
+  const other = await context.newPage()
+  await other.goto('/journal')
+  await expect(other.getByLabel('Диспетчер задач', { exact: true })).toContainText('Изменения выполняются только после подтверждения.')
+  await page.waitForLoadState('networkidle'); await other.waitForLoadState('networkidle')
+  refreshes.length = 0
   const before = await readPublishedIndex()
   await markDispatcherTaskIndexDirty()
   await withE2eDatabase(async (client) => {
     await client.query('select pg_advisory_lock($1)', [DISPATCHER_REFRESH_LOCK_ID])
     try {
-      await page.goto('/journal')
-      const other = await context.newPage()
-      await other.goto('/journal')
+      await page.reload()
+      await other.reload()
       await expect.poll(() => refreshes.length).toBe(2)
       // Both browsers share one server calculation, waiting on our test lock.
       await expect.poll(async () => (await client.query(`select count(*)::int as count

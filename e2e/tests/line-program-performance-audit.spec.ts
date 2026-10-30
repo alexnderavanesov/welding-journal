@@ -27,7 +27,7 @@ for (const count of [50, 100, 500]) test(`${count} joints: assignment opening, i
   const paint = (page: Page) => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
   try {
     for (let cold = 0; cold < 3; cold++) {
-      const context = await browser.newContext({ baseURL: info.project.use.baseURL, viewport: { width: 1600, height: 1000 } })
+      const context = await browser.newContext({ storageState: process.env.E2E_AUTH_STATE, baseURL: info.project.use.baseURL, viewport: { width: 1600, height: 1000 } })
       try {
         const page = await context.newPage(), calls: string[] = []
         page.on('pageerror', error => errors.push(error.message))

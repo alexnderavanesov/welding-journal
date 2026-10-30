@@ -1,3 +1,4 @@
+import { auditSql, auditInsertedSql } from './audit-functions'
 import { and, asc, eq, getTableColumns, inArray, isNull, ne, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import { DOCUMENT_VERSION_SELECT, touchEditableDocumentParentsForWeldDeletion, touchSystemDocumentParentsForWeldDeletion } from './document-version'
 import { loadGeneratedDocumentIdsForWeldDeletion } from './generated-document-cleanup'
@@ -702,7 +703,7 @@ export async function persistSourcedSystemDocumentUpsertPlans(
   // in the driver without changing the one enclosing atomic transaction.
   for (let offset = 0; offset < existingPlans.length; offset += 100) {
     const batch = existingPlans.slice(offset, offset + 100)
-    await tx.execute(sql`
+    await auditSql(tx, [{ table: generatedDocuments, where: sql`${generatedDocuments.id} = any(${sql.param(batch.map(plan => plan.targetDocumentId!))}::integer[])` }], () => tx.execute(sql`
       update "generated_documents" as document
       set
         "file_name" = refreshed.file_name,
@@ -716,14 +717,14 @@ export async function persistSourcedSystemDocumentUpsertPlans(
         ${sql.param(batch.map((plan) => plan.sourceMetadata))}::text[]
       ) as refreshed(id, file_name, row_count, source_metadata)
       where document."id" = refreshed.id
-    `)
+    `))
     batch.forEach((plan) => documentIdsByScope.set(plan.scopeKey, plan.targetDocumentId!))
   }
 
   const newPlans = plans.filter((plan) => plan.targetDocumentId == null)
   for (let offset = 0; offset < newPlans.length; offset += 100) {
     const batch = newPlans.slice(offset, offset + 100)
-    const insertedResult = await tx.execute(sql`
+    const insertedResult = await auditInsertedSql(tx, generatedDocuments, () => tx.execute(sql`
       insert into "generated_documents" (
         "type",
         "title",
@@ -757,7 +758,7 @@ export async function persistSourcedSystemDocumentUpsertPlans(
         "title",
         "period_from" as "periodFrom",
         "source_metadata" as "sourceMetadata"
-    `)
+    `))
     const inserted = insertedResult.rows as Array<Pick<
       typeof generatedDocuments.$inferSelect,
       'id' | 'type' | 'title' | 'periodFrom' | 'sourceMetadata'
@@ -1168,7 +1169,7 @@ export async function persistSourcedSystemDocumentChangesInTransaction(
 
   const retainedChanges = normalizedChanges.filter((change) => change.rowIds.length > 0)
   if (retainedChanges.length === 0) return
-  await tx.execute(sql`
+  await auditSql(tx, [{ table: generatedDocuments, where: sql`${generatedDocuments.id} = any(${sql.param(retainedChanges.map(change => change.documentId))}::integer[])` }], () => tx.execute(sql`
     update "generated_documents" as document
     set
       "row_count" = refreshed.row_count,
@@ -1180,7 +1181,7 @@ export async function persistSourcedSystemDocumentChangesInTransaction(
       ${sql.param(retainedChanges.map((change) => change.sourceMetadata))}::text[]
     ) as refreshed(id, row_count, source_metadata)
     where document."id" = refreshed.id
-  `)
+  `))
   await replaceGeneratedDocumentAssignmentsInTransaction(
     tx,
     retainedChanges.map((change) => change.documentId),
@@ -1203,7 +1204,7 @@ export async function persistSystemDocumentSummaryRecordsInTransaction({
   const resolvedDocumentIds = new Map(matchedDocumentIds)
   const existingEntries = entries.filter(({ summaryIndex }) => resolvedDocumentIds.has(summaryIndex))
   if (existingEntries.length > 0) {
-    await tx.execute(sql`
+    await auditSql(tx, [{ table: generatedDocuments, where: sql`${generatedDocuments.id} = any(${sql.param(existingEntries.map(({ summaryIndex }) => resolvedDocumentIds.get(summaryIndex)!))}::integer[])` }], () => tx.execute(sql`
       update "generated_documents" as document
       set
         "title" = refreshed.title,
@@ -1233,7 +1234,7 @@ export async function persistSystemDocumentSummaryRecordsInTransaction({
         updated_at
       )
       where document."id" = refreshed.id
-    `)
+    `))
   }
 
   const newEntries = entries.filter(({ summaryIndex }) => !resolvedDocumentIds.has(summaryIndex))
@@ -1242,7 +1243,7 @@ export async function persistSystemDocumentSummaryRecordsInTransaction({
     'id' | 'type' | 'title' | 'periodFrom' | 'sourceMetadata'
   >> = []
   if (newEntries.length > 0) {
-    const insertedResult = await tx.execute(sql`
+    const insertedResult = await auditInsertedSql(tx, generatedDocuments, () => tx.execute(sql`
       insert into "generated_documents" (
         "type",
         "title",
@@ -1276,7 +1277,7 @@ export async function persistSystemDocumentSummaryRecordsInTransaction({
         "title",
         "period_from" as "periodFrom",
         "source_metadata" as "sourceMetadata"
-    `)
+    `))
     insertedDocuments = insertedResult.rows as typeof insertedDocuments
   }
   if (insertedDocuments.length !== newEntries.length) {
@@ -1330,7 +1331,7 @@ async function replaceGeneratedDocumentAssignmentsInTransaction(
     ))
     .map((assignment) => [`${assignment.documentId}:${assignment.weldJointId}`, assignment])).values()]
   if (assignments.length > 0) {
-    await tx.execute(sql`
+    await auditSql(tx, [{ table: generatedDocumentWeldJoints, where: sql`${generatedDocumentWeldJoints.documentId} = any(${sql.param(assignments.map(assignment => assignment.documentId))}::integer[])` }], () => tx.execute(sql`
       insert into "generated_document_weld_joints" ("document_id", "weld_joint_id")
       select source.document_id, source.weld_joint_id
       from unnest(
@@ -1338,7 +1339,7 @@ async function replaceGeneratedDocumentAssignmentsInTransaction(
         ${sql.param(assignments.map((assignment) => assignment.weldJointId))}::integer[]
       ) as source(document_id, weld_joint_id)
       on conflict do nothing
-    `)
+    `))
   }
 }
 
@@ -1349,12 +1350,12 @@ async function insertGeneratedDocumentAssignments(
 ) {
   const rowIds = [...new Set(weldJointIds)]
   if (rowIds.length === 0) return
-  await tx.execute(sql`
+  await auditSql(tx, [{ table: generatedDocumentWeldJoints, where: sql`${generatedDocumentWeldJoints.documentId} = any(${sql.param([documentId])}::integer[])` }], () => tx.execute(sql`
     insert into "generated_document_weld_joints" ("document_id", "weld_joint_id")
     select ${documentId}::integer, source.weld_joint_id
     from unnest(${sql.param(rowIds)}::integer[]) as source(weld_joint_id)
     on conflict do nothing
-  `)
+  `))
 }
 
 export function collectSystemDocumentChangeReferences(
@@ -1658,6 +1659,11 @@ export async function rebuildSystemDocumentIndexInTransaction(
   const storageTypes = getSystemDocumentStorageTypes(type)
   if (storageTypes.length === 0) return
 
+  const auditDocumentWhere = sql`${generatedDocuments.type} = any(${sql.param(storageTypes)}::text[]) and coalesce(${generatedDocuments.sourceMetadata}, '') !~ ${'"sourceKind"\\s*:'}`
+  await auditSql(tx, [
+    { table: generatedDocuments, where: auditDocumentWhere },
+    { table: generatedDocumentWeldJoints, where: sql`${generatedDocumentWeldJoints.documentId} in (select ${generatedDocuments.id} from ${generatedDocuments} where ${auditDocumentWhere})` },
+  ], async () => {
   await tx.execute(sql`
     create temporary table ${positionsTable} on commit drop as
     ${buildSystemDocumentIndexPositionsQuery(type)}
@@ -1851,6 +1857,7 @@ export async function rebuildSystemDocumentIndexInTransaction(
       and "current_document"."documentDate" = "positions"."documentDate"
     on conflict do nothing
   `)
+  })
 }
 
 function buildSystemDocumentIndexPositionsQuery(type: SystemDocumentType) {

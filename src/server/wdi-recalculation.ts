@@ -1,9 +1,11 @@
+import { auditSql } from './audit-functions'
 import { createServerFn } from '@tanstack/react-start'
 import { eq, sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import {
   appSettings,
   weldJoints,
+  generatedDocuments,
 } from '@/db/schema'
 import { DEFAULT_OTHER_SETTINGS, normalizeOtherSettings } from '@/lib/other-settings'
 import { PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
@@ -54,7 +56,7 @@ export const recalculateWdi = createServerFn({ method: 'POST' })
       }
       const plan = buildWdiRecalculationPlan(rows, settings)
       if (plan.changes.length > 0) {
-        await tx.execute(sql`
+        await auditSql(tx, [{ table: weldJoints, where: sql`${weldJoints.id} = any(${sql.param(plan.changes.map(row => row.id))}::integer[])` }], () => tx.execute(sql`
           update "weld_joints" as weld
           set
             "wdi" = recalculated.wdi::numeric,
@@ -65,11 +67,11 @@ export const recalculateWdi = createServerFn({ method: 'POST' })
             ${sql.param(plan.changes.map((change) => change.wdi))}::numeric[]
           ) as recalculated(id, wdi)
           where weld."id" = recalculated.id
-        `)
+        `))
       }
 
       if (plan.changes.length > 0) {
-        await tx.execute(sql`
+        await auditSql(tx, [{ table: generatedDocuments, where: sql`true` }], () => tx.execute(sql`
           with totals as (
             select
               document."id" as document_id,
@@ -88,7 +90,7 @@ export const recalculateWdi = createServerFn({ method: 'POST' })
           from totals
           where document."id" = totals."document_id"
             and document."wdi_total" is distinct from totals.wdi_total
-        `)
+        `))
         await invalidateDerivedCalculationCache(tx, { preserveLineOverviews: true })
       }
 

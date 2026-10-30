@@ -1,8 +1,9 @@
+import { asE2eOwner } from '../with-owner-access'
 import { expect, test, type Page } from '@playwright/test'
 import * as XLSX from 'xlsx'
 import { withE2eDatabase } from '../database'
 import { rpcName } from '../rpc'
-import { getRemoteDocumentTemplate, getRemoteDocumentTemplateInventory, saveRemoteDocumentTemplate, updateRemoteDocumentTemplate } from '../../src/server/document-templates'
+import { getRemoteDocumentTemplate as raw_getRemoteDocumentTemplate , getRemoteDocumentTemplateInventory as raw_getRemoteDocumentTemplateInventory , saveRemoteDocumentTemplate as raw_saveRemoteDocumentTemplate , updateRemoteDocumentTemplate as raw_updateRemoteDocumentTemplate } from '../../src/server/document-templates'
 import { createDocumentTemplateFileStore, resolveDocumentTemplateStorageDirectory } from '../../src/server/document-template-files'
 
 const config = { version: 1 as const, sheetName: 'Бланк', repeatRow: 2, bindings: [{ cell: 'A2', mode: 'row' as const, field: 'joint' as const }] }
@@ -174,3 +175,8 @@ test('metadata and file readers wait for a concurrent replacement instead of fal
   expect(inventory.missing).toEqual([])
   expect(inventory.templates.find(template => template.id === 'weldingJournal')?.fileDataBase64).toBe(bytes.toString('base64'))
 })
+
+const getRemoteDocumentTemplate = asE2eOwner(raw_getRemoteDocumentTemplate, 'welding.view')
+const getRemoteDocumentTemplateInventory = asE2eOwner(raw_getRemoteDocumentTemplateInventory, 'templates.view')
+const saveRemoteDocumentTemplate = asE2eOwner(raw_saveRemoteDocumentTemplate, 'templates.edit')
+const updateRemoteDocumentTemplate = asE2eOwner(raw_updateRemoteDocumentTemplate, 'templates.edit')

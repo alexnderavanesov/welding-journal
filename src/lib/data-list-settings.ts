@@ -1,3 +1,4 @@
+import { userStorage } from '@/lib/user-storage'
 import { useEffect, useState } from 'react'
 import { persistProjectSettingToRemote, PROJECT_SETTING_KEYS } from '@/lib/project-settings-remote'
 
@@ -62,7 +63,7 @@ export function loadDataListSettings(): DataListSettings {
   if (typeof window === 'undefined') return DEFAULT_DATA_LIST_SETTINGS
 
   try {
-    const rawValue = window.localStorage.getItem(DATA_LIST_SETTINGS_STORAGE_KEY)
+    const rawValue = userStorage.getItem(DATA_LIST_SETTINGS_STORAGE_KEY)
     if (!rawValue) return DEFAULT_DATA_LIST_SETTINGS
     return normalizeDataListSettings(JSON.parse(rawValue))
   } catch {
@@ -73,7 +74,7 @@ export function loadDataListSettings(): DataListSettings {
 export function saveDataListSettings(settings: DataListSettings, options: { syncRemote?: boolean } = {}) {
   if (typeof window === 'undefined') return
   const normalizedSettings = normalizeDataListSettings(settings)
-  window.localStorage.setItem(DATA_LIST_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
+  userStorage.setItem(DATA_LIST_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
   window.dispatchEvent(new Event(DATA_LIST_SETTINGS_EVENT))
   if (options.syncRemote !== false) persistProjectSettingToRemote(PROJECT_SETTING_KEYS.dataList, normalizedSettings)
 }
@@ -125,7 +126,35 @@ export function getDataListOptionInputError(key: keyof DataListSettings, value: 
 
   const option = normalizeDataListOption(value)
   if (!option) return null
-  if (/^[А-ЯЁ0-9 ]+$/u.test(option)) return null
+  if (!/^[А-ЯЁ0-9 ]+$/u.test(option)) {
+    return 'Разрешены только кириллические буквы, цифры и пробелы. Латиница и другие символы недоступны.'
+  }
+  if (key === 'connectionTypes' && !/^[СУ]/u.test(option)) {
+    return 'Тип соединения должен начинаться с кириллической «С» или «У», например С2 или У17. Другие классы пока не поддерживаются.'
+  }
+  if (key === 'materialGroups' && !option.startsWith('М')) {
+    return 'Группа материалов должна начинаться с кириллической «М», например М02.'
+  }
+  return null
+}
 
-  return 'Разрешены только кириллические буквы, цифры и пробелы. Латиница и другие символы недоступны.'
+/** Validate additions against the locked stored list; never discard legacy values on read. */
+export function prepareDataListSettingsChange(previousValue: unknown, nextValue: unknown): DataListSettings {
+  const previous = normalizeDataListSettings(previousValue)
+  const next = normalizeDataListSettings(nextValue)
+  const labels: Record<keyof DataListSettings, string> = {
+    weldingTypes: 'Способ сварки', connectionTypes: 'Тип соединения',
+    materialGroups: 'Группа материалов', testTypes: 'Вид испытаний',
+  }
+  const errors: string[] = []
+  for (const key of Object.keys(labels) as Array<keyof DataListSettings>) {
+    const existing = new Set(previous[key])
+    for (const option of next[key]) {
+      if (existing.has(option)) continue
+      const error = getDataListOptionInputError(key, option)
+      if (error) errors.push(`${labels[key]} «${option}»: ${error}`)
+    }
+  }
+  if (errors.length) throw new Error(errors.join('\n'))
+  return next
 }

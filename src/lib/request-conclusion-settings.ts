@@ -1,3 +1,4 @@
+import { userStorage } from '@/lib/user-storage'
 import { useEffect, useState } from 'react'
 import { formatLongDate, formatPstoDiagramLongDate, formatPstoDiagramShortDateFromLong, formatShortDate } from '@/lib/date-format'
 import {
@@ -145,7 +146,7 @@ export function loadRequestConclusionSettings(): RequestConclusionSettings {
   if (typeof window === 'undefined') return REQUEST_CONCLUSION_DEFAULT_SETTINGS
 
   try {
-    const rawValue = window.localStorage.getItem(REQUEST_CONCLUSION_SETTINGS_STORAGE_KEY)
+    const rawValue = userStorage.getItem(REQUEST_CONCLUSION_SETTINGS_STORAGE_KEY)
     if (!rawValue) return REQUEST_CONCLUSION_DEFAULT_SETTINGS
     return normalizeRequestConclusionSettings(JSON.parse(rawValue))
   } catch {
@@ -160,7 +161,7 @@ export function saveRequestConclusionSettings(settings: RequestConclusionSetting
     normalizeRequestConclusionSettings(settings),
   )
   const applyLocal = () => {
-    window.localStorage.setItem(REQUEST_CONCLUSION_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
+    userStorage.setItem(REQUEST_CONCLUSION_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
     window.dispatchEvent(new Event(REQUEST_CONCLUSION_SETTINGS_EVENT))
   }
   if (options.syncRemote === false) return applyLocal()
@@ -173,7 +174,7 @@ export function saveRequestConclusionSettings(settings: RequestConclusionSetting
 export function applyRemoteRequestConclusionSettings(settings: unknown) {
   const normalizedSettings = normalizeRequestConclusionSettings(settings)
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(REQUEST_CONCLUSION_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
+  userStorage.setItem(REQUEST_CONCLUSION_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings))
   window.dispatchEvent(new Event(REQUEST_CONCLUSION_SETTINGS_EVENT))
 }
 

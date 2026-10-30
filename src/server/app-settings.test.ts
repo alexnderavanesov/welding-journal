@@ -7,8 +7,9 @@ import { assertAppSettingVersion } from '@/server/app-settings'
 describe('app setting concurrency', () => {
   it('normalizes the system data codes under the validation lock before a direct settings write', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/server/app-settings.ts'), 'utf8')
-    const normalization = source.indexOf('prepareAppSettingValue(normalizeDataListSettings(value))')
+    const normalization = source.indexOf('prepareAppSettingValue(prepareDataListSettingsChange(')
     expect(normalization).toBeGreaterThan(source.indexOf("await lockWeldValidationSettings(tx, 'exclusive')"))
+    expect(normalization).toBeGreaterThan(source.indexOf('assertAppSettingVersion(current?.updatedAt.toISOString() ?? null, expectedUpdatedAt)'))
     expect(normalization).toBeLessThan(source.indexOf('.insert(appSettings)'))
   })
   it('checks immutable index letters under the validation lock and before writing the setting', () => {

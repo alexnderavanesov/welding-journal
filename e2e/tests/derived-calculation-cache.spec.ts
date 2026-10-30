@@ -4,6 +4,7 @@ import { DERIVED_CALCULATION_CACHE_VERSION, DERIVED_CALCULATION_REVISION_FLOOR }
 import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
 import { getOrComputeDerivedCalculation } from '@/server/derived-calculation-cache'
 import { withE2eDatabase } from '../database'
+import { withLineProgramFixture } from '../line-program-fixtures'
 
 test('does not reuse old rules even when the data revision exceeds the new version floor', async () => {
   const namespace = 'e2e:high-revision-policy'
@@ -35,7 +36,8 @@ test('does not reuse old rules even when the data revision exceeds the new versi
 test('invalidates persisted derived calculations from an older code version', async ({ page }) => {
   const staleCacheKey = 'e2e:stale-derived-calculation'
 
-  await withE2eDatabase(async (client) => {
+  const previousRevision = await withE2eDatabase(async (client) => {
+    const previous = (await client.query('select source_revision from derived_calculation_state where id=1')).rows[0]?.source_revision ?? 0
     await client.query(`
       insert into derived_calculation_state (id, source_revision, updated_at)
       values (1, 42, now())
@@ -48,25 +50,34 @@ test('invalidates persisted derived calculations from an older code version', as
       on conflict (cache_key) do update
       set source_revision = 42, payload = '{"legacy":true}', computed_at = now()
     `, [staleCacheKey])
+    return previous
   })
 
-  await page.goto('/statistics')
-  await expect(page.getByRole('heading', { name: 'Статистика' })).toBeVisible()
+  try {
+    await page.goto('/statistics')
+    await expect(page.getByRole('heading', { name: 'Статистика' })).toBeVisible()
 
-  await expect.poll(() => withE2eDatabase(async (client) => {
-    const state = await client.query<{ source_revision: number }>(
-      'select source_revision from derived_calculation_state where id = 1',
-    )
-    const cache = await client.query<{ count: number }>(
-      'select count(*)::int as count from derived_calculation_cache where cache_key = $1',
-      [staleCacheKey],
-    )
-    return {
-      sourceRevision: Number(state.rows[0]?.source_revision),
-      staleCacheRows: Number(cache.rows[0]?.count),
-    }
-  })).toEqual({
-    sourceRevision: DERIVED_CALCULATION_REVISION_FLOOR,
-    staleCacheRows: 0,
-  })
+    await expect.poll(() => withE2eDatabase(async (client) => {
+      const state = await client.query<{ source_revision: number }>(
+        'select source_revision from derived_calculation_state where id = 1',
+      )
+      const cache = await client.query<{ count: number }>(
+        'select count(*)::int as count from derived_calculation_cache where cache_key = $1',
+        [staleCacheKey],
+      )
+      return {
+        sourceRevision: Number(state.rows[0]?.source_revision),
+        staleCacheRows: Number(cache.rows[0]?.count),
+      }
+    })).toEqual({
+      sourceRevision: DERIVED_CALCULATION_REVISION_FLOOR,
+      staleCacheRows: 0,
+    })
+  } finally {
+    // The fixture intentionally moves the revision backwards to emulate old
+    // code. Restore a new revision above the previous range: the live server
+    // retains bounded count caches keyed by revision between test files.
+    await withLineProgramFixture(client => client.query(`update derived_calculation_state
+      set source_revision=greatest(source_revision,$1::bigint)+1,updated_at=now() where id=1`, [previousRevision]))
+  }
 })

@@ -1,6 +1,7 @@
 import { expect, type Page, type TestInfo } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
+import { authenticateE2eSafari } from './authentication'
 
 const command = async (path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST') => {
   const response = await fetch('http://127.0.0.1:4445' + path, { method, headers: { 'Content-Type': 'application/json' },
@@ -29,6 +30,7 @@ export async function checkInstalledSafariFooter(page: Page, info: TestInfo, rep
     await command(session + '/window/rect', { x: 0, y: 0, width: 1600, height: 1050 })
     await command(session + '/window', { handle: await command(session + '/window') })
     const storage = await page.evaluate(() => Object.fromEntries(Object.entries(localStorage)))
+    await authenticateE2eSafari(command, session)
     await command(session + '/url', { url: url.href })
     await execute('for(const [k,v] of Object.entries(arguments[0])) localStorage.setItem(k,v)', storage)
     await command(session + '/refresh', {})

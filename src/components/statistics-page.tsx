@@ -1,3 +1,4 @@
+import { useAccess } from '@/lib/security-context'
 import { useCallback, useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   Activity,
@@ -292,6 +293,7 @@ function StatisticsReports({
   onOpenReportRowIds,
   onOpenWeldRowIds,
 }: Omit<StatisticsPageProps, 'fixedTab'> & { fixedTab?: StatisticsTab }) {
+  const { can } = useAccess()
   const [selectedTab, setSelectedTab] = useState<StatisticsTab>(fixedTab ?? 'general')
   const { open: openPreview, previewProps } = useReportPreview(fixedTab ?? selectedTab)
   const activeTab = fixedTab ?? selectedTab
@@ -534,10 +536,10 @@ function StatisticsReports({
               variant="outline"
               size="sm"
               className="h-9 gap-2 rounded-md border-sky-200 bg-white text-sky-800 hover:bg-sky-50"
-              disabled={!reportReady}
+              disabled={!reportReady || !can('statistics.export')}
               aria-describedby={!calculationReady ? calculationStatusId : undefined}
               onClick={event => {
-                if (!reportReady || !printableReport) return
+                if (!reportReady || !printableReport || !can('statistics.export')) return
                 event.currentTarget.focus({ preventScroll: true })
                 // Preview, print and Excel retain the same immutable snapshot,
                 // even if the underlying query refreshes while the modal is open.

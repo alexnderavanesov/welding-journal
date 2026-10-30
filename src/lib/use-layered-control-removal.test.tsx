@@ -7,7 +7,7 @@ import { useLayeredControlRemoval } from '@/lib/use-layered-control-removal'
 
 const mocks = vi.hoisted(() => ({ confirm: vi.fn(), password: vi.fn(), change: vi.fn(), invalidate: vi.fn() }))
 vi.mock('@/lib/confirm-action-context', () => ({ useConfirmAction: () => mocks.confirm }))
-vi.mock('@/lib/security-context', () => ({ useSecurityGuard: () => ({ requireEditPassword: mocks.password }) }))
+vi.mock('@/lib/security-context', () => ({ useAccess: () => ({ can: () => true }), useSecurityGuard: () => ({ requireEditPassword: mocks.password }) }))
 vi.mock('@/server/line-program-control', () => ({ changeLayeredControl: mocks.change }))
 vi.mock('@/lib/weld-query-utils', () => ({ scheduleWeldDataRefresh: mocks.invalidate }))
 

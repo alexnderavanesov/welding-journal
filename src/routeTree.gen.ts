@@ -11,6 +11,9 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as AccountRouteImport } from './routes/account'
+import { Route as AccountLinkRouteImport } from './routes/account-link'
+import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as AppDocumentsRouteImport } from './routes/_app.documents'
 import { Route as AppJournalRouteImport } from './routes/_app.journal'
 import { Route as AppLineProgramRouteImport } from './routes/_app.line-program'
@@ -23,6 +26,7 @@ import { Route as AppStatisticsRouteImport } from './routes/_app.statistics'
 import { Route as AppUserGuideRouteImport } from './routes/_app.user-guide'
 import { Route as AppWelderStampsRouteImport } from './routes/_app.welder-stamps'
 import { Route as ApiReportExcelRouteImport } from './routes/api/report-excel'
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiMaintenanceDispatcherRefreshRouteImport } from './routes/api/maintenance/dispatcher-refresh'
 
 const IndexRoute = IndexRouteImport.update({
@@ -32,6 +36,21 @@ const IndexRoute = IndexRouteImport.update({
 } as any)
 const AppRoute = AppRouteImport.update({
   id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountRoute = AccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountLinkRoute = AccountLinkRouteImport.update({
+  id: '/account-link',
+  path: '/account-link',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ActivityRoute = ActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppDocumentsRoute = AppDocumentsRouteImport.update({
@@ -94,6 +113,11 @@ const ApiReportExcelRoute = ApiReportExcelRouteImport.update({
   path: '/api/report-excel',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiMaintenanceDispatcherRefreshRoute =
   ApiMaintenanceDispatcherRefreshRouteImport.update({
     id: '/api/maintenance/dispatcher-refresh',
@@ -103,6 +127,9 @@ const ApiMaintenanceDispatcherRefreshRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
+  '/account-link': typeof AccountLinkRoute
+  '/activity': typeof ActivityRoute
   '/documents': typeof AppDocumentsRoute
   '/journal': typeof AppJournalRoute
   '/line-program': typeof AppLineProgramRoute
@@ -115,10 +142,14 @@ export interface FileRoutesByFullPath {
   '/user-guide': typeof AppUserGuideRoute
   '/welder-stamps': typeof AppWelderStampsRoute
   '/api/report-excel': typeof ApiReportExcelRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
+  '/account-link': typeof AccountLinkRoute
+  '/activity': typeof ActivityRoute
   '/documents': typeof AppDocumentsRoute
   '/journal': typeof AppJournalRoute
   '/line-program': typeof AppLineProgramRoute
@@ -131,12 +162,16 @@ export interface FileRoutesByTo {
   '/user-guide': typeof AppUserGuideRoute
   '/welder-stamps': typeof AppWelderStampsRoute
   '/api/report-excel': typeof ApiReportExcelRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
+  '/account': typeof AccountRoute
+  '/account-link': typeof AccountLinkRoute
+  '/activity': typeof ActivityRoute
   '/_app/documents': typeof AppDocumentsRoute
   '/_app/journal': typeof AppJournalRoute
   '/_app/line-program': typeof AppLineProgramRoute
@@ -149,12 +184,16 @@ export interface FileRoutesById {
   '/_app/user-guide': typeof AppUserGuideRoute
   '/_app/welder-stamps': typeof AppWelderStampsRoute
   '/api/report-excel': typeof ApiReportExcelRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/maintenance/dispatcher-refresh': typeof ApiMaintenanceDispatcherRefreshRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/account'
+    | '/account-link'
+    | '/activity'
     | '/documents'
     | '/journal'
     | '/line-program'
@@ -167,10 +206,14 @@ export interface FileRouteTypes {
     | '/user-guide'
     | '/welder-stamps'
     | '/api/report-excel'
+    | '/api/auth/$'
     | '/api/maintenance/dispatcher-refresh'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/account'
+    | '/account-link'
+    | '/activity'
     | '/documents'
     | '/journal'
     | '/line-program'
@@ -183,11 +226,15 @@ export interface FileRouteTypes {
     | '/user-guide'
     | '/welder-stamps'
     | '/api/report-excel'
+    | '/api/auth/$'
     | '/api/maintenance/dispatcher-refresh'
   id:
     | '__root__'
     | '/'
     | '/_app'
+    | '/account'
+    | '/account-link'
+    | '/activity'
     | '/_app/documents'
     | '/_app/journal'
     | '/_app/line-program'
@@ -200,13 +247,18 @@ export interface FileRouteTypes {
     | '/_app/user-guide'
     | '/_app/welder-stamps'
     | '/api/report-excel'
+    | '/api/auth/$'
     | '/api/maintenance/dispatcher-refresh'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  AccountRoute: typeof AccountRoute
+  AccountLinkRoute: typeof AccountLinkRoute
+  ActivityRoute: typeof ActivityRoute
   ApiReportExcelRoute: typeof ApiReportExcelRoute
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiMaintenanceDispatcherRefreshRoute: typeof ApiMaintenanceDispatcherRefreshRoute
 }
 
@@ -224,6 +276,27 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account-link': {
+      id: '/account-link'
+      path: '/account-link'
+      fullPath: '/account-link'
+      preLoaderRoute: typeof AccountLinkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/activity': {
+      id: '/activity'
+      path: '/activity'
+      fullPath: '/activity'
+      preLoaderRoute: typeof ActivityRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/documents': {
@@ -310,6 +383,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiReportExcelRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/maintenance/dispatcher-refresh': {
       id: '/api/maintenance/dispatcher-refresh'
       path: '/api/maintenance/dispatcher-refresh'
@@ -353,7 +433,11 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  AccountRoute: AccountRoute,
+  AccountLinkRoute: AccountLinkRoute,
+  ActivityRoute: ActivityRoute,
   ApiReportExcelRoute: ApiReportExcelRoute,
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiMaintenanceDispatcherRefreshRoute: ApiMaintenanceDispatcherRefreshRoute,
 }
 export const routeTree = rootRouteImport
