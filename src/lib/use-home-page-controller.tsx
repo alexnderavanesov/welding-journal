@@ -8,7 +8,7 @@ import { getDispatcherTaskSettingId } from '@/lib/dispatcher-settings'
 import { useQueryClient } from '@tanstack/react-query'
 import { type PreHeatTreatmentRegistryFilters } from '@/lib/pre-heat-treatment-registry'
 import { PRE_HEAT_TREATMENT_REGISTRY_PAGE_SIZE } from '@/server/weld-contracts'
-import { BadgeCheck, ClipboardCheck, ExternalLink, FileSpreadsheet, FilePlus2, FileText, GitBranch, ListFilter, Pencil, Trash2 } from 'lucide-react'
+import { BadgeCheck, ClipboardCheck, ExternalLink, FileSpreadsheet, FilePlus2, FileText, GitBranch, Link2, ListFilter, Pencil, Trash2 } from 'lucide-react'
 import type { DispatcherTask, PercentageLineControlTask, RepeatedJointTask, WeldDraft, WeldRow } from '@/lib/dispatcher-types'
 import { copyTextToClipboard } from '@/lib/clipboard'
 import type { ActiveReport } from '@/lib/home-state'
@@ -46,6 +46,7 @@ import { useReportRequestDerivedState } from '@/lib/use-report-request-derived-s
 import { useActiveReportLayoutState } from '@/lib/use-active-report-layout-state'
 import { usePstoResultDerivedState } from '@/lib/use-psto-result-derived-state'
 import { hasPstoResultData } from '@/lib/psto-result-derived-utils'
+import { hasPstoDocumentHistory } from '@/lib/psto-cycle'
 import { buildManagedPstoDiagramDrafts } from '@/lib/psto-report-action-utils'
 import { useLnkResultDerivedState } from '@/lib/use-lnk-result-derived-state'
 import { useManagedLnkResultDerivedState } from '@/lib/use-managed-lnk-result-derived-state'
@@ -85,7 +86,7 @@ import { usePstoReportActions } from '@/lib/use-psto-report-actions'
 import { useLnkReportMutations } from '@/lib/use-lnk-report-mutations'
 import { useRepeatedJointTaskActions } from '@/lib/use-repeated-joint-task-actions'
 import { useConfirmAction } from '@/lib/confirm-action-context'
-import { useSecurityGuard } from '@/lib/security-context'
+import { useAccess, useSecurityGuard } from '@/lib/security-context'
 import { createDispatcherTaskCardHandlers } from '@/lib/dispatcher-task-card-props'
 import { createReportRowActionHandlers } from '@/lib/report-row-action-handlers'
 import { createWeldTableProps } from '@/lib/weld-table-props'
@@ -307,6 +308,8 @@ type WorkflowRootCauseNavigationFrame = {
 }
 
 export function useHomePageController(options: UseHomePageControllerOptions = {}) {
+  const { can } = useAccess()
+  const canReadFinalStatusContext = can('welding.view') && can('lnk.view') && can('psto.view')
   const queryClient = useQueryClient()
   const saveCheckSettings = useSaveCheckSettings()
   const otherSettings = useOtherSettings()
@@ -729,11 +732,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     deleteWelderStampSuspensionRecord,
   } = useWelderStampRegistryState({
     enabled:
-      activeReport === 'weldingJournal' ||
+      can('references.view') && (activeReport === 'weldingJournal' ||
       activeReport === 'heatTreatment' ||
       activeReport === 'lnk' ||
       activeReport === 'welderStamps' ||
-      activeReport === 'documents',
+      activeReport === 'documents'),
     setMessage,
   })
   const {
@@ -743,6 +746,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     openReportDocument,
     documentPreviewRequest,
     closeDocumentPreview,
+    documentConnectionsReference,
+    openDocumentConnections,
+    closeDocumentConnections,
     documentNavigationRequest,
     setDocumentNavigationRequest,
     handleDocumentNavigationRequest,
@@ -1055,6 +1061,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const pstoWorkflowRowsQuery = usePstoWorkflowRowsQuery({ request: pstoWorkflowRowsRequest })
   const finalStatusContextQuery = useWeldFinalStatusContextQuery({
     enabled:
+      canReadFinalStatusContext &&
       isServerPagedTab &&
       (
         lnkWorkflowRowsRequest !== null ||
@@ -1068,7 +1075,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     }),
     [finalStatusContextQuery.data],
   )
-  const isRemoteFinalStatusContextReady = finalStatusContextQuery.data !== undefined
+  const isRemoteFinalStatusContextReady = !canReadFinalStatusContext || finalStatusContextQuery.data !== undefined
   const duplicateControlCandidates = useDuplicateControlCandidates({
     enabled: isDuplicateControlModalOpen,
     search: debouncedDuplicateControlSearch,
@@ -1243,7 +1250,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     retryChainRows,
   } = useJointChainDialogState({
     chainRecord,
-    onClose: () => setChainRecord(null),
   })
   const needsTaskContext = dispatcherTaskSnapshot.hasMoreTasks
   const taskContextRevision = dispatcherTaskSnapshot.data?.isFresh ? dispatcherTaskSnapshot.data.computedRevision : null
@@ -2026,7 +2032,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     isPstoRequestModalOpen,
     isPstoResultManagerOpen,
     isPstoResultModalOpen,
-    lnkResultRequestOptions,
     lnkRows,
     managedLnkResultEntries,
     managedLnkResultMethodKey,
@@ -2051,8 +2056,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     deleteManagedPstoRequest,
     deleteManagedPstoResult,
     handleAddPstoResult,
-    openAddPstoResultModal,
-    openAddPstoResultModalForRow,
     openCreatePstoRequestModal,
     openCreatePstoRequestModalForRow,
     openPstoRequestManager,
@@ -2817,6 +2820,12 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
             setActiveReport('documents')
           },
         },
+        ...(systemDocumentReference && can('documents.view') && can(systemDocumentReference.type.startsWith('psto') || systemDocumentReference.methodCode === 'ТВМТ' ? 'psto.view' : 'lnk.view') ? [{
+          id: 'document-connections',
+          label: 'Связи документов',
+          icon: Link2,
+          onSelect: () => openDocumentConnections(systemDocumentReference),
+        } satisfies ContextActionMenuItem] : []),
         ...(systemDocumentReference ? [{
           id: 'filter-system-document-rows',
           label: 'Показать все стыки документа',
@@ -3321,7 +3330,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     activeReport,
     rowsReady: !isServerPagedTab || reportGridQuery.rowsReady,
     queryIdentity: `${reportOutputContext}:${reportOutputGeneration}`,
-    loadContextMenuRows: ids => listWeldJointRowsByIds({ data: { ids } }),
+    loadContextMenuRows: ids => listWeldJointRowsByIds({ data: { ids, report: isServerPagedTab ? activeReport : 'weldingJournal' } }),
     onContextMenuError: setMessage,
     rows: isServerPagedTab ? pagedReportRows : (visibleRows as WeldRow[]),
     actionRows: tableActionRows,
@@ -3448,7 +3457,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     queryIdentity: `${reportOutputContext}:${reportOutputGeneration}`,
     selectedIds: selectedLnkIds,
     rows: tableActionRows,
-    loadRowsByIds: (ids) => listWeldJointRowsByIds({ data: { ids } }),
+    loadRowsByIds: (ids) => listWeldJointRowsByIds({ data: { ids, report: 'lnk' } }),
     onOpen: openCreateLnkWorkflowRequestForRows,
     onError: setMessage,
   })
@@ -3457,7 +3466,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     fresh: true, rowsReady: reportSelectionReady, isModalOpen: isReportModalOpen,
     queryIdentity: `${reportOutputContext}:${reportOutputGeneration}`,
     selectedIds: activeSelectedRowIds, rows: tableActionRows,
-    loadRowsByIds: ids => listWeldJointRowsByIds({ data: { ids } }),
+    loadRowsByIds: ids => listWeldJointRowsByIds({ data: { ids, report: isServerPagedTab ? activeReport : 'weldingJournal' } }),
     onOpen: rows => { const action = headerSelectionIntent.current; headerSelectionIntent.current = null; action?.(rows) },
     onError: message => { headerSelectionIntent.current = null; setMessage(message) },
   })
@@ -3471,7 +3480,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     void headerSelectionAction.run()
   }
   const pstoResultRegistryRows = useMemo(
-    () => heatTreatmentRows.filter(hasPstoResultData),
+    () => heatTreatmentRows.filter((row) => hasPstoDocumentHistory(row)),
     [heatTreatmentRows],
   )
   const hasAvailableTvmtRequestRows = useMemo(
@@ -4479,6 +4488,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     preSaveDecision: pstoLineMovePreSaveDecision,
     isSaving: saveMutation.isPending,
     onCancel: () => {
+      if (currentWorkflowRootCauseDestination === 'weld-form') {
+        returnFromWorkflowRootCause()
+        return
+      }
       resetPstoLineMoveDraftState()
       setEditing(null)
     },
@@ -4504,13 +4517,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   const reportFieldEditorProps = createReportFieldEditorProps({
     editing: heatTreatmentFieldEditing,
     requestOptions: lnkRequestOptions,
-    isSaving:
-      heatTreatmentFieldMutation.isPending ||
-      lnkFieldMutation.isPending ||
-      Boolean(
-        heatTreatmentFieldEditing &&
-          (heatTreatmentFieldEditing.report === 'lnk' ? !isLnkRowsContextReady : !isPstoRowsContextReady),
-      ),
+    isSaving: heatTreatmentFieldMutation.isPending || lnkFieldMutation.isPending,
+    isContextReady: !Boolean(
+      heatTreatmentFieldEditing &&
+        (heatTreatmentFieldEditing.report === 'lnk' ? !isLnkRowsContextReady : !isPstoRowsContextReady),
+    ),
     onChange: (value) => setHeatTreatmentFieldEditing((current) => (current ? { ...current, value } : current)),
     onClose: () => setHeatTreatmentFieldEditing(null),
     onSave: () => runProtectedEdit('сохранение поля отчета', saveEditedHeatTreatmentField),
@@ -4692,7 +4703,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     resultManagerOpen: isPstoResultManagerOpen,
     resultManager: {
       elevated: currentWorkflowRootCauseDestination === 'psto-result-manager',
-      rows: managedPstoResultRows,
+      rows: isPstoResultRegistryAll ? pstoResultRegistryRows : managedPstoResultRows,
       diagramDrafts: managedPstoDiagramDrafts,
       isPending:
         pstoResultCorrectionMutation.isPending ||
@@ -5302,8 +5313,9 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     chainActualityDialogProps: chainActuality == null ? null : { ...chainActuality, onClose: () => setChainActuality(null), onSaved: setMessage },
     activeTitle,
     reportPreviewProps,
+    documentConnectionsProps: documentConnectionsReference ? { reference: documentConnectionsReference, onClose: closeDocumentConnections } : null,
     documentPreviewProps: documentPreviewRequest ? { request: documentPreviewRequest, onClose: closeDocumentPreview } : null,
-    freezeReportBackground: isReportModalOpen || coilCorrectionTarget !== null || chainActuality !== null || Boolean(documentGenerationRequest) || Boolean(reportPreviewProps) || Boolean(documentPreviewRequest),
+    freezeReportBackground: isReportModalOpen || coilCorrectionTarget !== null || chainActuality !== null || Boolean(documentGenerationRequest) || Boolean(reportPreviewProps) || Boolean(documentPreviewRequest) || Boolean(documentConnectionsReference),
     navCollapsed,
     registerMinWidth,
     stickyLeft,

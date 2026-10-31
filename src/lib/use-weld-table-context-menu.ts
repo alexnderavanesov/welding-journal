@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ContextActionMenuItem, ContextActionMenuState } from '@/components/context-action-menu'
 import type { WeldRow } from './dispatcher-types'
 import type { WeldFieldKey } from './weld-fields'
@@ -52,7 +52,10 @@ export function useWeldTableContextMenu(options: Options) {
   })
   // The same guard hides an existing menu immediately, including row versions.
   const menu = stored?.scope === (stored?.custom ? customScope : action.scope) && options.rowsReady ? stored.menu : null
-  useEffect(() => {
+  // Finish invalidating the old render before the next pointer event can open
+  // a menu. A passive cleanup can otherwise erase that newly opened menu when
+  // an unrelated lazy block arrives just before the right click.
+  useLayoutEffect(() => {
     if (stored?.custom && stored.scope === customScope) return
     close()
   }, [action.scope, customScope, close])

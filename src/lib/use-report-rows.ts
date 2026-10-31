@@ -1,4 +1,5 @@
 import { useMemo, useRef } from 'react'
+import { getControlWorkflowAccess } from './control-workflow-access'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import { clearDisabledLnkRequests } from '@/lib/lnk-field-updates'
@@ -75,19 +76,25 @@ export function prepareReportRows(
   const rows = prepareReportControlRows(sourceRows, duplicateControls)
   const finalStatusRows = finalStatusSourceRows ?? rows
   const finalStatusContext = finalStatusSourceContext ?? buildFinalStatusRowsContext(finalStatusRows)
-  const preparedRows = rows.map((row, index) => {
+  const preparedRows = rows.map((row, index): WeldRow => {
+    const source = sourceRows?.[index] as WeldRow | undefined
+    const primaryPstoFact = preserveCancelledPstoResult && source && isControlCancelledValue(source.pstoRequired)
+      ? { pstoResult: source.pstoResult } : {}
+    // A specialty-only response contains availability, not all facts needed
+    // for the combined status. Never manufacture it from hidden fields.
+    if (getControlWorkflowAccess(row)) {
+      const { finalStatus: _status, ...visible } = row
+      return { ...visible, ...primaryPstoFact }
+    }
     const calculatedStatus = calculateFinalStatusInRows(row, finalStatusRows, finalStatusContext)
     // A paged report may not contain the rejected source. Keep its server-
     // calculated repair status until an authoritative complete context is loaded.
     const keepRepair = preserveStoredRepairStatus && !finalStatusSourceContext &&
       calculatedStatus === 'ожидает сварку' && row.finalStatus === 'ожидает ремонт'
-    const source = sourceRows?.[index] as WeldRow | undefined
     // PSTO's display accessor decorates cancellation. Restore the primary fact
     // only after the existing status calculation, without changing dispatcher
     // preparation or the journal/LNK's established result annotations.
-    return { ...row, finalStatus: keepRepair ? 'ожидает ремонт' : calculatedStatus,
-      ...(preserveCancelledPstoResult && source && isControlCancelledValue(source.pstoRequired)
-        ? { pstoResult: source.pstoResult } : {}) }
+    return { ...row, finalStatus: keepRepair ? 'ожидает ремонт' : calculatedStatus, ...primaryPstoFact }
   })
   return otherSettings && isSystemWdiMode(otherSettings)
     ? preparedRows.map((row) => withSystemWdi(row, otherSettings))

@@ -128,6 +128,11 @@ test('installed Safari: program, nested assignments, LNK/PSTO, statistics, docum
 
     await goto('/statistics')
     await click('button','Сварщики')
+    // The fixture dates must not depend on the month of the audit.
+    await click('button','Настройки отчета')
+    await click('select[aria-label="Период отчета"]')
+    await click('[role="option"]','За весь период')
+    await click('button','Скрыть настройки')
     await inspect('welder statistics','[data-statistics-grid="welders"]')
     await click('button','Подробности сварщика SFA')
     await bodyContains('Динамика по дням')

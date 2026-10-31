@@ -6,6 +6,7 @@ import { DialogRowMenuButton } from '@/components/dialog-row-menu-button'
 import type { RequestNamingState } from '@/lib/request-naming-state'
 import type { SystemDocumentCreationGroup, SystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 import { DocumentCompositionPanel } from '@/components/document-composition-panel'
+import { DocumentIssuesFilter } from '@/components/document-issues-filter'
 
 type SystemDocumentNamesPanelProps = {
   plan: SystemDocumentCreationPlan
@@ -135,7 +136,7 @@ export function SystemDocumentNamesPanel({
       ) : null}
 
       {plan.groups.length > 50 ? <BufferedDocumentNameInput value={search} onCommit={value => { setSearch(value); setPage(0) }} placeholder="Поиск по группам и названиям" aria-label="Поиск по будущим документам" className="mt-2" /> : null}
-      {errorGroups.length > 0 || errorsOnly ? <label className="mt-2 text-xs text-rose-700"><input type="checkbox" checked={errorsOnly} onChange={event => { setErrorsOnly(event.target.checked); setSearch(''); setPage(0) }} /> Только проблемные группы — {errorGroups.length} во всём списке</label> : null}
+      {errorGroups.length > 0 || errorsOnly ? <DocumentIssuesFilter checked={errorsOnly} count={errorGroups.length} onChange={checked => { setErrorsOnly(checked); setSearch(''); setPage(0) }} /> : null}
 
       <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-slate-200 bg-white">
         <div className="hidden shrink-0 grid-cols-[minmax(160px,.9fr)_minmax(200px,1.2fr)_60px_32px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 text-[11px] font-semibold text-slate-500 md:grid">

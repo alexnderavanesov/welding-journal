@@ -29,10 +29,9 @@ export function LineProgramSectionCalculationDialog({ lines, totals, context, in
   const value = programSectionMetricValue(totals, metric)
   const breakdown = (summary: ProgramSectionSummary) => metric === 'missing' || metric === 'excess'
     ? `${PROGRAM_DEMAND_LABELS.common}: ${summary.common[metric]} · ПВК: ${summary.pvk[metric]}` : null
-  return <LargeDialogShell ariaLabel="Расчёт · итоги раздела" maxWidthClassName="max-w-[1000px]" maxHeightClassName="max-h-[90dvh]" panelRadiusClassName="rounded-2xl" panelClassName="min-w-0 overflow-hidden">
+  return <LargeDialogShell onEscape={onClose} ariaLabel="Расчёт · итоги раздела" maxWidthClassName="max-w-[1000px]" maxHeightClassName="max-h-[90dvh]" panelRadiusClassName="rounded-2xl" panelClassName="min-w-0 overflow-hidden">
     <div className="flex min-h-0 flex-col" onKeyDown={event => {
-      if (shouldDeferModalEscape()) return
-      if (event.key === 'Escape') { event.stopPropagation(); onClose() }
+      if (shouldDeferModalEscape(closeButton.current?.closest('[data-modal-dialog="true"]'))) return
       if (event.key === 'Tab') {
         if (event.shiftKey && document.activeElement === closeButton.current) { event.preventDefault(); returnButton.current?.focus() }
         else if (!event.shiftKey && document.activeElement === returnButton.current) { event.preventDefault(); closeButton.current?.focus() }

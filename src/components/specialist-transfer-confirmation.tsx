@@ -1,3 +1,4 @@
+import { Checkbox } from '@/components/ui/checkbox'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { previewSpecialistTransfer } from '@/server/document-specialist-transfer-preview'
@@ -24,7 +25,7 @@ export function useSpecialistTransferConfirmation(rowIds: number[], target: 'pri
     </> : conflicts.length ? <>
       <p>При объединении различаются специалисты или сохранённые удостоверения. В итоговых заключениях будут очищены обе роли. Документов: {conflicts.length}.</p>
       <p className="mt-1 text-xs">{conflicts.slice(0, 5).map(item => `${item.title} (${item.date})`).join('; ')}{conflicts.length > 5 ? '…' : ''}</p>
-      <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={accepted === query.data?.confirmation}
+      <label className="mt-2 flex items-center gap-2"><Checkbox checked={accepted === query.data?.confirmation}
         onChange={event => setAccepted(event.target.checked ? query.data!.confirmation : '')} />Подтверждаю очистку обеих ролей в объединяемых заключениях</label>
       <Button variant="ghost" size="sm" onClick={refresh}>Обновить проверку специалистов</Button>
     </> : <><p>ФИО и удостоверения сохранятся. Конфликтов назначений нет.</p><Button variant="ghost" size="sm" onClick={refresh}>Обновить проверку специалистов</Button></>}

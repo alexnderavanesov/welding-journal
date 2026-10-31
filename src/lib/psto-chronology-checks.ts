@@ -1,3 +1,4 @@
+import { formatPstoChronologyMessage, type ValidationMessageFormatter } from './validation-message'
 import { normalizeControlResultText } from '@/lib/report-value-utils'
 import { formatDisplayDate, getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import {
@@ -92,38 +93,42 @@ export function findFirstPstoChronologyIssue(
 export function findFirstPstoChronologySaveBlockReason(
   rows: WeldInput[],
   settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+  format?: ValidationMessageFormatter,
 ) {
   const issue = getPstoChronologyIssues(rows, settings)[0]
-  return issue ? formatPstoChronologyIssueSaveBlockReason(issue) : ''
+  return issue ? formatPstoChronologyIssueSaveBlockReason(issue, format) : ''
 }
 
 export function findFirstNewPstoChronologySaveBlockReason(
   rows: WeldInput[],
   previousRows: WeldInput[],
   settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+  format?: ValidationMessageFormatter,
 ) {
   const previousIssueKeys = new Set(
     getPstoChronologyIssues(previousRows, settings).map(getPstoChronologyIssueIdentity),
   )
   const issue = getPstoChronologyIssues(rows, settings)
     .find((candidate) => !previousIssueKeys.has(getPstoChronologyIssueIdentity(candidate)))
-  return issue ? formatPstoChronologyIssueSaveBlockReason(issue) : ''
+  return issue ? formatPstoChronologyIssueSaveBlockReason(issue, format) : ''
 }
 
 export function assertNoNewPstoChronologyIssues(
   rows: WeldInput[],
   previousRows: WeldInput[],
   settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+  format?: ValidationMessageFormatter,
 ) {
-  const issue = findFirstNewPstoChronologySaveBlockReason(rows, previousRows, settings)
+  const issue = findFirstNewPstoChronologySaveBlockReason(rows, previousRows, settings, format)
   if (issue) throw new Error(issue)
 }
 
 export function assertNoPstoChronologyIssues(
   rows: WeldInput[],
   settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
+  format?: ValidationMessageFormatter,
 ) {
-  const issue = findFirstPstoChronologySaveBlockReason(rows, settings)
+  const issue = findFirstPstoChronologySaveBlockReason(rows, settings, format)
   if (issue) throw new Error(issue)
 }
 
@@ -383,9 +388,10 @@ export function getPstoChronologyIssueIdentity(issue: PstoChronologyIssue) {
   ])
 }
 
-function formatPstoChronologyIssueSaveBlockReason(issue: PstoChronologyIssue) {
+function formatPstoChronologyIssueSaveBlockReason(issue: PstoChronologyIssue, format?: ValidationMessageFormatter) {
+  const message = formatPstoChronologyMessage(issue, format)
   const code = getPstoChronologyRuleCode(issue.kind)
-  return issue.kind.endsWith('-invalid') || !code ? issue.message : `${code} · ${issue.message}`
+  return issue.kind.endsWith('-invalid') || !code ? message : `${code} · ${message}`
 }
 
 function hasFinalPstoResult(value: unknown) {

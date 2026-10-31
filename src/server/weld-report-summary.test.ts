@@ -72,7 +72,7 @@ describe('independent report rows and summaries', () => {
       if (key === 'joint') return `S${i + 1}`
       return null
     }))
-    mocks.query.mockResolvedValueOnce({ rows: sourceRows })
+    mocks.query.mockImplementation(async ({ text }) => ({ rows: text.includes('from "weld_joints"') && text.includes('"connection_type"') ? sourceRows : [] }))
     const page = await listReportPage('weldingJournal', normalizeWeldPageRequest({ includeTotals: false }))
     expect(page.rows).toHaveLength(100)
     expect(page.rows[0].id).toBe(1)

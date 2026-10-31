@@ -25,6 +25,18 @@ function mount(rows: WeldRow[]) {
 }
 
 describe('compact joint rows preserve meaningful details', () => {
+  it.each(['да', 'отменен', null])('shows primary and repeat requests without results for assignment %s', (assignment) => {
+    mountContent(<JointDetails row={{ id: 1, joint: 'F1', pstoRequired: assignment,
+      pstoRequest: 'ПСТО-1', pstoRequestDate: '2026-10-02',
+      pstoRepeatCycles: [{ id: 2, weldJointId: 1, sequence: 2, pstoRequest: 'ПСТО-2', pstoRequestDate: '2026-10-04' }],
+    }} />)
+    for (const [name, date] of [['ПСТО-1', '02.10.2026'], ['ПСТО-2', '04.10.2026']]) {
+      const request = screen.getByLabelText(`Заявка: ${name}`)
+      expect(within(request).getByRole('button', { name })).toBeVisible()
+      expect(within(request).getByText(date)).toBeVisible()
+    }
+  })
+
   const good: WeldRow = { id: 1, joint: 'F1', connectionType: 'С17', weldDate: '2026-09-01', hasVik: 'да', vikResult: 'годен' }
   const colorCases: [string, WeldRow, string, string | null][] = [
     ['good', good, 'годен', 'program-joint-good'],

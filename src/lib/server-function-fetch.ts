@@ -21,7 +21,9 @@ export async function serverFunctionFetch(input: RequestInfo | URL, init?: Reque
       status: response.status, contentType,
     })
     void response.body?.cancel().catch(() => {})
-    throw new Error(`Сервер вернул некорректный ответ (HTTP ${response.status}). Повторите загрузку. Если вы сохраняли данные, сначала проверьте результат сохранения.`)
+    const error = new Error(`Сервер вернул некорректный ответ (HTTP ${response.status}). Повторите загрузку. Если вы сохраняли данные, сначала проверьте результат сохранения.`)
+    error.name = 'ServerFunctionResponseError'
+    throw error
   }
   return response
 }

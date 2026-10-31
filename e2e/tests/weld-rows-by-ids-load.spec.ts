@@ -164,7 +164,11 @@ test('200k: exact off-page IDs retain versions and relations with constant SQL a
       baselineStatements ??= statements.length
       expect(statements.length).toBe(baselineStatements)
       expect(statements.length).toBeLessThanOrEqual(12)
-      expect(statements.every(statement => /^\s*select\b/i.test(statement.sql))).toBe(true)
+      // Reading one coherent snapshot adds only read-only BEGIN/COMMIT.
+      // Keep rejecting every data-changing statement and the same SQL bound.
+      expect(statements.filter(statement => !/^\s*select\b/i.test(statement.sql))
+        .map(statement => statement.sql.trim().replace(/\s+/g, ' ').toLowerCase()))
+        .toEqual(['begin isolation level repeatable read read only', 'commit'])
       for (const [table, expectedRows] of [
         ['weld_joints', count], ['duplicate_controls', count], ['pre_heat_treatment_controls', count],
         ['psto_repeat_cycles', count * 2], ['weld_joint_program_states', count], ['generated_document_weld_joints', 1],

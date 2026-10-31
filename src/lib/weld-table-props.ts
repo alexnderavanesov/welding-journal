@@ -18,6 +18,8 @@ import {
   shouldMergePstoSections,
 } from '@/lib/report-ui-state'
 import { LNK_VISIBLE_FIELD_SECTIONS } from '@/lib/lnk-visible-field-layout'
+import { buildPrimaryPstoSystemDocumentRow } from '@/lib/system-document-virtual-row'
+import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WeldTableSection } from '@/lib/weld-table-sections'
 import {
   getLnkDefectDescriptionDescriptor,
@@ -25,6 +27,7 @@ import {
 } from '@/lib/lnk-defect-description'
 
 const LNK_DEFAULT_COLLAPSED_SECTIONS = new Set(['НК до ТО'])
+const PSTO_CYCLE_DOCUMENT_FIELDS = new Set<WeldFieldKey>(['pstoRequest', 'heatTreatmentDiagram', 'tvmtRequest', 'tvmtConclusion'])
 
 type CreateWeldTablePropsOptions = {
   activeReport: ActiveReport
@@ -153,7 +156,16 @@ export function createWeldTableProps({
     onOpenChain,
     onOpenLinkedReport: canOpenLinkedReport(activeReport) ? onOpenLinkedReport : undefined,
     onOpenDocument:
-      activeReport === 'weldingJournal' || activeReport === 'lnk' || activeReport === 'heatTreatment'
+      activeReport === 'weldingJournal' && onOpenDocument
+        ? (row, field) => onOpenDocument(
+            // Journal document cells show the primary fields; the PSTO report
+            // projects the current cycle. Open the document named by the cell.
+            PSTO_CYCLE_DOCUMENT_FIELDS.has(field) && row.pstoRepeatCycles?.length
+              ? buildPrimaryPstoSystemDocumentRow(row)
+              : row,
+            field,
+          )
+        : activeReport === 'lnk' || activeReport === 'heatTreatment'
         ? onOpenDocument
         : undefined,
     onOpenLnkRequest:

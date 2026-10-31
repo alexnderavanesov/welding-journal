@@ -1,3 +1,4 @@
+import { Checkbox } from '@/components/ui/checkbox'
 import type { Permission } from '@/lib/access-permissions'
 import { Select } from '@/components/ui/select'
 import { type ChangeEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -560,7 +561,7 @@ function DlsRequirementSettingsPanel({ runProtectedSettingsChange }: { runProtec
   const settings = useSaveCheckSettings()
   return <section id="rules-dls-requirement" className="scroll-mt-48 rounded-lg border border-slate-200 bg-white p-4">
     <label className="flex cursor-pointer items-start gap-3">
-      <input type="checkbox" className="mt-1 h-4 w-4 rounded border-slate-300" checked={settings.officialDls}
+      <Checkbox className="mt-1" checked={settings.officialDls}
         aria-label="Требовать ДЛС для официальных клейм"
         onChange={event => { const enabled = event.currentTarget.checked; void runProtectedSettingsChange(() => saveSaveCheckSettings({ ...settings, officialDls: enabled })) }} />
       <span><span className="block text-sm font-semibold text-slate-900">Требовать ДЛС для официальных клейм</span>
@@ -1460,18 +1461,10 @@ function WdiRecalculationPreviewDialog({
   onClose: () => void
   onRecalculate: () => void
 }) {
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || isRecalculating || document.querySelector('[data-select-listbox]')) return
-      event.preventDefault()
-      onClose()
-    }
-    window.addEventListener('keydown', handleKeyDown, true)
-    return () => window.removeEventListener('keydown', handleKeyDown, true)
-  }, [isRecalculating, onClose])
+
 
   return (
-    <LargeDialogShell maxWidthClassName="max-w-[1040px]" maxHeightClassName="max-h-[90vh]" overlayClassName="z-[150] bg-slate-950/35">
+    <LargeDialogShell onEscape={onClose} escapeDisabled={isRecalculating} maxWidthClassName="max-w-[1040px]" maxHeightClassName="max-h-[90vh]" overlayClassName="z-[150] bg-slate-950/35">
       <DialogHeader
         title={(
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -2052,14 +2045,13 @@ function SystemIndexesSettingsPanel({
       </div>
 
       <label className="flex cursor-pointer items-start gap-3 rounded-md border border-sky-200 bg-sky-50/70 p-4">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={draft.allowLeadingLetterIndex}
           onChange={(event) => setDraft((current) => ({
             ...current,
             allowLeadingLetterIndex: event.target.checked,
           }))}
-          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+          className="mt-0.5"
         />
         <span>
           <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
@@ -2865,16 +2857,7 @@ function DocumentTemplateReplacementDialog({
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [mappingDirty, setMappingDirty] = useState(false)
 
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape' || isSaving || document.querySelector('[data-select-listbox]')) return
-      event.preventDefault()
-      event.stopPropagation()
-      onClose()
-    }
-    window.addEventListener('keydown', handleKeyDown, true)
-    return () => window.removeEventListener('keydown', handleKeyDown, true)
-  }, [isSaving, onClose])
+
 
   const checkMapping = async () => {
     setIsAnalyzing(true)
@@ -2903,7 +2886,7 @@ function DocumentTemplateReplacementDialog({
     && Boolean(analysis.constructorConfig)
 
   return (
-    <LargeDialogShell
+    <LargeDialogShell onEscape={onClose} escapeDisabled={isSaving}
       maxWidthClassName="max-w-[820px]"
       maxHeightClassName="max-h-[90vh]"
       overlayClassName="z-[150] bg-slate-950/35"
@@ -3135,12 +3118,11 @@ function TemplateOptionCheckbox({
         disabled ? 'border-slate-200 bg-slate-50 text-slate-400' : 'cursor-pointer border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
       }`}
     >
-      <input
-        type="checkbox"
+      <Checkbox
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
-        className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500"
+        className="mt-1"
       />
       <span>
         <span className="block text-sm font-semibold text-slate-900">{label}</span>
@@ -3794,12 +3776,11 @@ function DispatcherSettingsPanel({
       {backgroundOnly ? <section className="rounded-md border border-sky-200 bg-sky-50/60 p-4 shadow-sm shadow-slate-200/40">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <label className={`flex min-w-0 items-start gap-3 ${DISPATCHER_BACKGROUND_REFRESH_ENABLED ? 'cursor-pointer' : 'cursor-default'}`}>
-            <input
-              type="checkbox"
+            <Checkbox
               checked={backgroundSettings.enabled}
               onChange={(event) => updateBackgroundSetting(event.target.checked)}
               disabled={!DISPATCHER_BACKGROUND_REFRESH_ENABLED}
-              className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-1 disabled:cursor-not-allowed disabled:opacity-50"
             />
             <span>
               <span className="block text-sm font-semibold text-slate-900">Показывать коды выключенных проверок в отчетах</span>
@@ -3918,11 +3899,10 @@ function DispatcherSettingsGroupCard({
             <div id={`dispatcher-setting-${item.id}`} key={item.id} className={`scroll-mt-48 px-4 py-3 transition-colors ${expanded ? 'bg-slate-50/80' : 'hover:bg-slate-50/60'}`}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                 <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={enabled}
                     onChange={(event) => onItemChange(item.id, event.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500"
+                    className="mt-1"
                   />
                   <span className="min-w-0 flex-1">
                     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -4183,14 +4163,13 @@ function SaveChecksSettingsPanel({
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                         <label className={`flex min-w-0 flex-1 items-start gap-3 ${required ? 'cursor-default' : 'cursor-pointer'}`}>
-                          <input
-                            type="checkbox"
+                          <Checkbox
                             checked={enabled}
                             disabled={required}
                             onChange={(event) => {
                               void updateSetting(item.id, event.currentTarget.checked)
                             }}
-                            className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-70"
+                            className="mt-1 disabled:cursor-not-allowed disabled:opacity-70"
                           />
                           <span className="min-w-0 flex-1">
                             <span className="flex flex-wrap items-center gap-x-2 gap-y-1">

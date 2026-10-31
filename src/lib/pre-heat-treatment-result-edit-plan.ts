@@ -1,3 +1,4 @@
+import type { ValidationMessageFormatter } from './validation-message'
 import type { WeldRow } from './dispatcher-types'
 import type { PreHeatTreatmentControlRecord } from './lnk-control-stage'
 import {
@@ -50,11 +51,12 @@ export function normalizePreHeatTreatmentResultEditBatch(value: PreHeatTreatment
 /** Builds the whole final state before any write. Requisites are dedicated edits:
  * a result-only batch cannot smuggle an unsaved name or date into its payload. */
 export function buildPreHeatTreatmentResultEditWrites({ rows, changes, saveCheckSettings = loadSaveCheckSettings(),
-  systemIndexSettings = loadSystemIndexSettings(), rkExposureTable = null,
+  systemIndexSettings = loadSystemIndexSettings(), rkExposureTable = null, formatMessage,
 }: {
   rows: WeldRow[]
   changes: PreHeatTreatmentResultEdit[]
   saveCheckSettings?: SaveCheckSettings
+  formatMessage?: ValidationMessageFormatter
   systemIndexSettings?: SystemIndexSettings
   rkExposureTable?: RkExposureTableSettings | null
 }) {
@@ -72,13 +74,13 @@ export function buildPreHeatTreatmentResultEditWrites({ rows, changes, saveCheck
     } else {
       writes.push(buildPreHeatTreatmentResultCorrectionWrite({ row, control, result: change.result,
         conclusionName: String(control.conclusionName ?? ''), controlDate: String(control.conclusionDate ?? ''),
-        saveCheckSettings, systemIndexSettings, rkExposureTable }))
+        saveCheckSettings, systemIndexSettings, rkExposureTable, formatMessage }))
     }
   }
   const writesById = new Map(writes.map(write => [write.id, write]))
   const finalRows = rows.map(row => ({ ...row, preHeatTreatmentControls: row.preHeatTreatmentControls?.map(control =>
     ({ ...control, ...writesById.get(control.id) } as PreHeatTreatmentControlRecord)) }))
   for (const row of finalRows) assertUnofficialLastRejectionRetained(row, rowsById.get(row.id)!)
-  assertNoNewLnkChronologyIssues(finalRows, rows, saveCheckSettings)
+  assertNoNewLnkChronologyIssues(finalRows, rows, saveCheckSettings, { formatValidationMessage: formatMessage })
   return { writes, finalRows }
 }

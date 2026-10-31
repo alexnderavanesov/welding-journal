@@ -1,3 +1,4 @@
+import { isTopModalDialog } from '@/lib/modal-layer'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { DOCUMENT_PREVIEW_PAGE_COLUMNS, DOCUMENT_PREVIEW_PAGE_ROWS, type HistoryDocumentWorkbook } from '@/lib/history-document-preview'
 import { attachPreviewZoom, previewZoomAnchor } from '@/lib/preview-zoom'
@@ -36,6 +37,7 @@ export function DocumentSheetPreview({ workbook, title, onClose, onPrint }: {
         paper.style.zoom = String(scale); win.scrollBy(anchor()); setZoom(Math.round(scale * 100))
       } })
     const keydown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !isTopModalDialog(frame.current)) return
       if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); actions.current.onClose() }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') { event.preventDefault(); actions.current.onPrint() }
       if (event.key === 'Tab') { event.preventDefault(); frame.current?.closest('[role="dialog"]')?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus() }

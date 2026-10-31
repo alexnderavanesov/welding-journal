@@ -1,3 +1,4 @@
+import { hasVisibleEscapePopup } from './modal-layer'
 import { useEffect, useRef } from 'react'
 
 type UseWindowEscapeKeyOptions = {
@@ -19,7 +20,7 @@ export function useWindowEscapeKey(
     if (!enabled) return
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape' || document.querySelector('[data-select-listbox]')) return
+      if (event.key !== 'Escape' || event.defaultPrevented || hasVisibleEscapePopup('[data-select-listbox]')) return
       onEscapeRef.current(event)
     }
 

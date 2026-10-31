@@ -1,3 +1,4 @@
+import { WorkflowConflictError } from '@/lib/workflow-conflict'
 import { sql } from 'drizzle-orm'
 import { generatedDocuments } from '@/db/schema'
 import { documentOperationIdentity } from '@/lib/system-document-operation'
@@ -29,5 +30,5 @@ export async function assertNewDocumentNamesAvailable(tx: SystemDocumentSequence
   const identities = new Set(result.rows.map(row => documentOperationIdentity({ type: SYSTEM_DOCUMENT_TEMPLATE_PROFILES.find(p => `system:${p.id}` === row.type)!.documentType,
     title: String(row.title), date: String(row.date), methodCode: String(row.method ?? '') || undefined, sourceKind: row.source as SystemDocumentReference['sourceKind'],
   }, String(row.title))))
-  for (const reference of candidates) if (identities.has(documentOperationIdentity(reference, reference.title))) throw new Error(`Название «${reference.title}» уже занято документом этого вида и даты. Выберите другое имя или явно добавьте позиции в существующую заявку.`)
+  for (const reference of candidates) if (identities.has(documentOperationIdentity(reference, reference.title))) throw new WorkflowConflictError('DOCUMENT_NAME_OCCUPIED', `Название «${reference.title}» уже занято документом этого вида и даты. Выберите другое имя или явно добавьте позиции в существующую заявку.`)
 }

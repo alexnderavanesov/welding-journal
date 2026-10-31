@@ -1,16 +1,21 @@
 import { filterPstoExceptions } from './psto-exception-helpers'
+import { readFile } from 'node:fs/promises'
+import * as XLSX from 'xlsx'
+import { randomUUID } from 'node:crypto'
+import { createDocumentTemplateFileStore, resolveDocumentTemplateStorageDirectory } from '../../src/server/document-template-files'
 import { lnkRow as lnkGridRow, revealLnkColumn, lnkActionRow } from './lnk-grid-helpers'
 import { documentGridRow, openDocumentGridFilter, revealDocumentColumn } from '../document-grid'
-import { editJournalJoint } from '../journal-grid'
+import { editJournalJoint, revealJournalColumn } from '../journal-grid'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { chooseSpecialist } from '../specialist-helpers'
 import { confirmLnkResultChanges } from '../lnk-result-confirmation'
-import { pstoActionRow, revealPstoColumn } from './psto-grid-helpers'
+import { pstoActionRow, pstoRow, revealPstoColumn } from './psto-grid-helpers'
 
 import { LNK_VISIBLE_FIELD_SECTIONS } from '@/lib/lnk-visible-field-layout'
 import { getWeldLineMembershipLockKeys } from '@/server/weld-line-membership-lock'
 import { withE2eDatabase } from '../database'
-import { rpcName } from '../rpc'
+import { deserializeRpcPayload, deserializeRpcResponse, rpcName } from '../rpc'
+import { normalizeRequestConclusionSettings } from '../../src/lib/request-conclusion-settings'
 
 const JOINT = 'F1'
 const CANCELLED_CYCLE_JOINT = 'F2'
@@ -25,9 +30,24 @@ const CONCURRENT_PSTO_SUBTITLE = 'E2E-010'
 const CONCURRENT_PSTO_LINE = 'E2E-L10'
 const LNK_REPORT_VIEW_STORAGE_KEY = 'welding-report-view:v1:lnk'
 const testSpecialistIds: number[] = []
+let originalNaming: { value: string; updated_at: Date } | null | undefined
+const historyTemplateStore = createDocumentTemplateFileStore(resolveDocumentTemplateStorageDirectory())
+let historyTemplateKey = ''
 
 test.afterEach(async () => {
+  if (historyTemplateKey) {
+    await withE2eDatabase(db => db.query('delete from document_templates where blob_key=$1', [historyTemplateKey]))
+    await historyTemplateStore.delete(historyTemplateKey)
+    historyTemplateKey = ''
+  }
   if (testSpecialistIds.length) await withE2eDatabase(db => db.query('delete from specialists where id=any($1::int[])', [testSpecialistIds.splice(0)]))
+  if (originalNaming !== undefined) {
+    const saved = originalNaming
+    originalNaming = undefined
+    await withE2eDatabase(db => saved
+      ? db.query("update app_settings set value=$1,updated_at=$2 where key='request-conclusion'", [saved.value, saved.updated_at])
+      : db.query("delete from app_settings where key='request-conclusion'"))
+  }
 })
 
 test('переключение этапа ЛНК сохраняет оболочку окна', async ({ page }) => {
@@ -55,6 +75,17 @@ test('переключение этапа ЛНК сохраняет оболоч
 
 test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор -> основной НК -> ремонт -> исправление', async ({ page }) => {
   test.setTimeout(180_000)
+  await installHistoryRequestTemplate()
+  // Exercise contextual names across every real UI save path, not only the
+  // default date/number formula that cannot expose a missing row context.
+  await withE2eDatabase(async db => {
+    originalNaming = (await db.query("select value,updated_at from app_settings where key='request-conclusion'")).rows[0] ?? null
+    const settings = normalizeRequestConclusionSettings(originalNaming ? JSON.parse(originalNaming.value) : {})
+    for (const key of ['lnkRequest', 'lnkConclusion', 'pstoRequest', 'pstoConclusion', 'tvmtRequest', 'tvmtConclusion', 'lnkRequestBeforeHeatTreatment', 'lnkConclusionBeforeHeatTreatment'] as const) {
+      settings[key].systemPattern += '-{{Проект}}-{{Шифр}}-{{Линия}}'
+    }
+    await db.query("insert into app_settings(key,value) values('request-conclusion',$1) on conflict(key) do update set value=excluded.value", [JSON.stringify(settings)])
+  })
   const [inspector, thermist] = await withE2eDatabase(async db => (await db.query(`insert into specialists(name,kind,certificate,methods) values ('E2E полный цикл дефектоскопист','inspector','ЦИКЛ-НК',array['ВИК','ТВМТ']),('E2E полный цикл термист','thermist','ЦИКЛ-ТО',array[]::text[]) returning id`)).rows.map(row => row.id))
   testSpecialistIds.push(inspector, thermist)
   async function sign(heat = false) {
@@ -112,6 +143,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
     psto_result: null,
     final_status: 'ожидает НК',
   })
+  await expectRequestOnlyHistory(page, 1, '04.08.2026')
 
   await runNextAction(page, 'Внести результат ПСТО · цикл 1')
   await expect(page.getByRole('heading', { name: 'Внесение результатов ПСТО' })).toBeVisible()
@@ -153,6 +185,7 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await page.getByRole('button', { name: 'Создать заявку', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Заявка ПСТО' })).toBeHidden()
   await expectRepeatCycle({ sequence: 2, psto_request_date: '2026-08-08' })
+  await expectRequestOnlyHistory(page, 2, '08.08.2026')
 
   await runNextAction(page, 'Внести результат ПСТО · цикл 2')
   await expect(page.getByRole('heading', { name: 'Внесение результатов ПСТО' })).toBeVisible()
@@ -1087,6 +1120,146 @@ async function chooseOptionByLabel(page: Page, label: string, value: string) {
 async function openHeaderMenuItem(page: Page, menu: string, item: string) {
   await page.locator('header').getByRole('button', { name: menu, exact: true }).click()
   await page.getByRole('button', { name: item, exact: true }).click()
+}
+
+async function expectRequestOnlyHistory(page: Page, sequence: number, date: string) {
+  const requestName = await withE2eDatabase(async db => (await db.query(sequence === 1
+    ? 'select psto_request from weld_joints where joint=$1'
+    : 'select c.psto_request from psto_repeat_cycles c join weld_joints w on w.id=c.weld_joint_id where w.joint=$1 and c.sequence=2', [JOINT])).rows[0].psto_request as string)
+  for (const entry of ['row', 'registry'] as const) {
+    if (entry === 'row') {
+      await page.getByRole('button', { name: JOINT, exact: true }).click({ button: 'right' })
+      await page.getByRole('button', { name: 'История циклов ПСТО/ТВМТ', exact: true }).click()
+    } else {
+      await openHeaderMenuItem(page, 'Результат', 'История ПСТО и ТВМТ')
+    }
+    const history = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'История ПСТО и ТВМТ', exact: true }) })
+    await expect(history.getByRole('tab', { name: sequence === 1 ? 'Основной цикл' : `Повтор #${sequence}`, exact: true })).toHaveAttribute('aria-selected', 'true')
+    const request = history.getByRole('article').filter({ has: page.getByRole('heading', { name: 'Заявка ПСТО', exact: true }) })
+    await expect(request.getByRole('textbox', { name: 'Наименование заявки', exact: true })).toHaveValue(requestName)
+    await expect(request.getByText(`Дата: ${date}`, { exact: true })).toBeVisible()
+    await expect(history.getByRole('heading', { name: 'Результат ПСТО', exact: true })).toHaveCount(0)
+    if (entry === 'registry') {
+      const loaded = page.waitForResponse(response => {
+        if (!rpcName(response.url()).startsWith('listPstoWorkflowRows_')) return false
+        const payload = response.request().postData() ?? new URL(response.url()).searchParams.get('payload')
+        return payload !== null && (deserializeRpcPayload(payload) as { data?: { search?: string } }).data?.search === requestName
+      })
+      await history.getByPlaceholder('Стык, линия или документ').fill(requestName)
+      // Wait for the server-filtered response, not just the immediate local filter.
+      const result = await deserializeRpcResponse(await (await loaded).text()) as { result?: Array<{ joint: string }> }
+      expect(result.result?.map(row => row.joint)).toEqual([JOINT])
+      await expect(request.getByRole('textbox', { name: 'Наименование заявки', exact: true })).toHaveValue(requestName)
+      await expect(history.getByText('Найдено: 1', { exact: true })).toBeVisible()
+    }
+    await history.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  }
+  await expectRequestOnlySurfaces(page, requestName, sequence, date)
+}
+
+async function expectRequestOnlySurfaces(page: Page, requestName: string, sequence: number, date: string) {
+  // The current-cycle table, preview and Excel must already contain the request,
+  // without filling the empty result from an earlier cycle.
+  await revealPstoColumn(page, 'pstoCycleSummary')
+  await expect(pstoRow(page, JOINT).locator('[col-id="pstoCycleSummary"]')).toHaveText(
+    `${sequence === 1 ? 'Основной' : `Повтор #${sequence}`} · ожидает ПСТО`,
+  )
+  await revealPstoColumn(page, 'pstoRequestDate')
+  await expect(pstoRow(page, JOINT).locator('[col-id="pstoRequestDate"]')).toHaveText(date)
+  await revealPstoColumn(page, 'pstoRequest')
+  await pstoRow(page, JOINT).getByRole('button', { name: requestName, exact: true }).click()
+  const documentPreview = page.getByRole('dialog', { name: 'Предпросмотр документа', exact: true })
+  await expect(documentPreview.getByText(requestName, { exact: true })).toBeVisible()
+  await expectRequestPreview(page, requestName, date)
+  await documentPreview.getByRole('button', { name: 'Закрыть предпросмотр', exact: true }).click()
+  await openHeaderMenuItem(page, 'Показать', 'Текущая версия')
+  const report = page.getByRole('dialog', { name: 'Предпросмотр отчёта', exact: true })
+  await expect(report.frameLocator('iframe').getByText(requestName, { exact: true })).toBeVisible()
+  const downloading = page.waitForEvent('download')
+  await report.getByRole('button', { name: 'Скачать Excel', exact: true }).click()
+  const file = await downloading
+  expect(await file.failure()).toBeNull()
+  const workbook = XLSX.read(await readFile((await file.path())!), { type: 'buffer' })
+  const values = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[workbook.SheetNames[0]], { header: 1 }).flat()
+  expect(values).toContain(requestName)
+  await page.keyboard.press('Escape')
+
+  // Each report opens the same complete picture, even when PSTO columns are
+  // intentionally absent from the LNK report's own table.
+  for (const route of ['/psto', '/journal', '/lnk']) {
+    await page.goto(route)
+    await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(JOINT)
+    await expect(page.getByText('Найдено: 1', { exact: true })).toBeVisible()
+    if (route === '/journal') {
+      const primary = await withE2eDatabase(async db => (await db.query('select psto_request from weld_joints where joint=$1', [JOINT])).rows[0].psto_request as string)
+      await revealJournalColumn(page, 'pstoRequest')
+      await page.getByRole('button', { name: primary, exact: true }).click()
+      await expectRequestPreview(page, primary, '04.08.2026')
+      await documentPreview.getByRole('button', { name: 'Закрыть предпросмотр', exact: true }).click()
+    }
+    await page.getByRole('button', { name: JOINT, exact: true }).click()
+    const picture = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: `Картина стыка ${JOINT}`, exact: true }) })
+    const psto = picture.locator('section').filter({ has: page.getByRole('heading', { name: 'ПСТО и ТВМТ', exact: true }) })
+    await expect(psto.getByText(`Цикл ${sequence}`, { exact: true })).toBeVisible()
+    await expect(psto.getByText('Ожидает ПСТО', { exact: true })).toBeVisible()
+    await psto.getByRole('button', { name: requestName, exact: true }).click()
+    await expect(documentPreview.getByText(requestName, { exact: true })).toBeVisible()
+    await expectRequestPreview(page, requestName, date)
+    await documentPreview.getByRole('button', { name: 'Закрыть предпросмотр', exact: true }).click()
+    if (sequence > 1) {
+      const primary = await withE2eDatabase(async db => (await db.query('select psto_request from weld_joints where joint=$1', [JOINT])).rows[0].psto_request as string)
+      await psto.getByRole('button', { name: primary, exact: true }).click()
+      await expectRequestPreview(page, primary, '04.08.2026')
+      await documentPreview.getByRole('button', { name: 'Закрыть предпросмотр', exact: true }).click()
+    }
+    await picture.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  }
+
+  await page.goto('/documents')
+  await page.getByRole('button', { name: 'Заявка ПСТО', exact: true }).click()
+  const document = await documentGridRow(page, requestName)
+  await expect(document.titleCell).toHaveText(requestName)
+  await document.titleCell.getByRole('button', { name: requestName, exact: true }).click()
+  await expectRequestPreview(page, requestName, date)
+  await documentPreview.getByRole('button', { name: 'Закрыть предпросмотр', exact: true }).click()
+  await expectPstoCycleDocumentPosition(JOINT, sequence, true)
+  // Reopening the report must keep the pending request available for the next
+  // real result save in the lifecycle, without repeating request creation.
+  await page.goto('/psto')
+  await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(JOINT)
+  await expect(page.getByText('Найдено: 1', { exact: true })).toBeVisible()
+}
+
+async function installHistoryRequestTemplate() {
+  expect(process.env.DOCUMENT_TEMPLATE_STORAGE_PATH).toContain('welding-e2e-templates-')
+  const fields = ['joint', 'pstoRequest', 'pstoRequestDate', 'pstoDate', 'heatTreatmentDiagram', 'pstoResult']
+  const book = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([fields, fields.map(() => '')]), 'Заявка')
+  const data = XLSX.write(book, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+  historyTemplateKey = `e2e-request-history/${randomUUID()}.xlsx`
+  await historyTemplateStore.set(historyTemplateKey, data)
+  await withE2eDatabase(async db => {
+    expect((await db.query("select id from document_templates where id='pstoRequest'")).rows).toEqual([])
+    await db.query(`insert into document_templates(id,blob_key,file_name,file_type,file_size,metadata,constructor_config)
+      values('pstoRequest',$1,'history.xlsx','xlsx',$2,$3,$4)`, [historyTemplateKey, data.byteLength,
+      JSON.stringify({ fields: [], markerCount: 0, locations: [], warnings: [] }),
+      JSON.stringify({ version: 1, sheetName: 'Заявка', repeatRow: 2,
+        bindings: fields.map((field, column) => ({ cell: XLSX.utils.encode_cell({ r: 1, c: column }), mode: 'row', field })) })])
+  })
+}
+
+async function expectRequestPreview(page: Page, name: string, date: string) {
+  const preview = page.getByRole('dialog', { name: 'Предпросмотр документа', exact: true })
+  await expect(preview.getByText(name, { exact: true })).toBeVisible()
+  await expect(preview.frameLocator('iframe').getByText(name, { exact: true })).toBeVisible()
+  const downloading = page.waitForEvent('download')
+  await preview.getByRole('button', { name: 'Скачать Excel', exact: true }).click()
+  const file = await downloading
+  expect(await file.failure()).toBeNull()
+  expect(file.suggestedFilename()).toBe(`${name}.xlsx`)
+  const book = XLSX.read(await readFile((await file.path())!), { type: 'buffer' })
+  const sheet = book.Sheets['Заявка']
+  expect([sheet.A2?.v, sheet.B2?.v, sheet.C2?.v]).toEqual([JOINT, name, date])
 }
 
 async function expectWeld(expected: Record<string, unknown>) {

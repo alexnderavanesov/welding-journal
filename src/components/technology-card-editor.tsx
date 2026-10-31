@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useId, useState } from 'react'
 import { ArrowRight, Check, History, Layers, Ruler } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,15 +20,11 @@ export function TechnologyCardEditor({ card, busy, message, onClose, onSave }: {
     diameterFrom: String(card.diameterFrom), diameterTo: String(card.diameterTo), thicknessFrom: String(card.thicknessFrom), thicknessTo: String(card.thicknessTo),
   } : createEmptyTechnologyCardDraft())
   const [issues, setIssues] = useState<TechnologyCardIssue[]>([])
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) { event.preventDefault(); onClose() } }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [busy, onClose])
+
   const update = <K extends keyof TechnologyCardDraft>(field: K, value: TechnologyCardDraft[K]) => setDraft(current => ({ ...current, [field]: value }))
   const invalid = (field: keyof TechnologyCardDraft) => issues.some(issue => issue.field === field)
 
-  return <LargeDialogShell ariaLabel={card ? 'Редактирование ТК' : 'Новая технологическая карта'} maxWidthClassName="max-w-2xl" panelRadiusClassName="rounded-xl" panelClassName="overflow-hidden">
+  return <LargeDialogShell onEscape={onClose} escapeDisabled={busy} ariaLabel={card ? 'Редактирование ТК' : 'Новая технологическая карта'} maxWidthClassName="max-w-2xl" panelRadiusClassName="rounded-xl" panelClassName="overflow-hidden">
     <DialogHeader title={card ? 'Редактирование ТК' : 'Новая технологическая карта'} onClose={onClose} closeDisabled={busy} />
     <form className="flex min-h-0 flex-col" onSubmit={event => {
       event.preventDefault()

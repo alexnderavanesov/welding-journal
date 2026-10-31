@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { useReportModalEscapeKey } from '@/lib/use-report-modal-escape-key'
+import { shouldDeferModalEscape, useReportModalEscapeKey } from '@/lib/use-report-modal-escape-key'
 import { setContextActionMenuOpen } from '@/lib/context-action-menu-state'
 
 type EscapeKeyOptions = Parameters<typeof useReportModalEscapeKey>[0]
@@ -63,6 +63,20 @@ it('defers Escape to document preview above a workflow manager', () => {
 })
 
 describe('useReportModalEscapeKey', () => {
+  it('leaves an independent help dialog in charge without closing the underlying draft', () => {
+    const options = createOptions({ isLnkRequestModalOpen: true, isRkExposureModalOpen: false })
+    const { unmount } = renderHook(() => useReportModalEscapeKey(options))
+    const panel = document.createElement('div')
+    panel.dataset.containedDialogFocus = 'true'
+    document.body.appendChild(panel)
+    pressEscape()
+    expect(options.onCloseLnkRequestModal).not.toHaveBeenCalled()
+    expect(shouldDeferModalEscape(panel)).toBe(false)
+    panel.remove()
+    pressEscape()
+    expect(options.onCloseLnkRequestModal).toHaveBeenCalledOnce()
+    unmount()
+  })
   afterEach(() => {
     setContextActionMenuOpen(false)
     document.querySelectorAll('[data-confirm-action-dialog="true"]').forEach((node) => node.remove())

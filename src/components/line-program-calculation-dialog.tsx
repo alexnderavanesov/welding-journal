@@ -52,10 +52,9 @@ export function LineProgramCalculationDialog({ line, groups, stamp, stampOptions
     setDetail(current => current?.kind === kind && current.list === list ? null : { kind, list })
   }
   useEffect(() => { if (detail) scrollDetail() }, [detail, scrollDetail])
-  return <LargeDialogShell ariaLabel={`Расчёт · ${line.line}`} maxWidthClassName="max-w-[1180px]" maxHeightClassName="max-h-[90dvh]" panelRadiusClassName="rounded-2xl" panelClassName="min-w-0 overflow-hidden">
+  return <LargeDialogShell onEscape={onClose} ariaLabel={`Расчёт · ${line.line}`} maxWidthClassName="max-w-[1180px]" maxHeightClassName="max-h-[90dvh]" panelRadiusClassName="rounded-2xl" panelClassName="min-w-0 overflow-hidden">
     <div ref={panel} className="flex min-h-0 flex-col" onKeyDown={event => {
-      if (shouldDeferModalEscape()) return
-      if (event.key === 'Escape') { event.stopPropagation(); onClose() }
+      if (shouldDeferModalEscape(panel.current)) return
       if (event.key === 'Tab') {
         const fields = Array.from(panel.current?.querySelectorAll<HTMLElement>('button:not(:disabled), select, [tabindex="0"]') ?? [])
         const first = fields[0], last = fields.at(-1)

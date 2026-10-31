@@ -7,6 +7,9 @@ type DriverCommand = (path: string, body?: unknown, method?: string) => Promise<
 export async function prepareSafariMeasurementWindow(command: DriverCommand, session: string, timeout = 120_000) {
   const html = '<!doctype html><html lang="ru"><meta charset="utf-8"><title>Локальный аудит Safari</title><body style="font:22px sans-serif;padding:60px"><h1>Локальный аудит Safari</h1><p>Оставьте это окно на переднем плане. Проверка продолжится автоматически.</p></body></html>'
   await command(session + '/url', { url: 'data:text/html;charset=utf-8,' + encodeURIComponent(html) })
+  // Select only this driver's automation window before checking visibility;
+  // creating a session alone can leave it behind another application.
+  await command(session + '/window', { handle: await command(session + '/window') })
   console.log('SAFARI_WAITING_FOR_FOREGROUND: own automation window, before measurements')
   await expect.poll(() => command(session + '/execute/sync', {
     script: 'return !document.hidden && document.hasFocus()', args: [],

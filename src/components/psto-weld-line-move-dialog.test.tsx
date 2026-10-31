@@ -191,7 +191,7 @@ describe('PstoWeldLineMoveDialog', () => {
     expect(screen.getByRole('button', { name: 'Закрыть' })).toBeDisabled()
   })
 
-  it('leaves Escape to the editor and returning to the form does not submit a selected correction', () => {
+  it('Escape returns only from the upper move dialog without submitting a selected correction', () => {
     const onConfirm = vi.fn(), onClose = vi.fn()
     render(<PstoWeldLineMoveDialog preview={correctionPreview} pending={false} onClose={onClose} onConfirm={onConfirm} />)
     const transfer = screen.getByRole('radio', { name: 'Весь НК до ТО → основной' })
@@ -199,14 +199,19 @@ describe('PstoWeldLineMoveDialog', () => {
     transfer.focus()
     const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
     const outerHandler = vi.fn()
-    window.addEventListener('keydown', outerHandler, { once: true })
-    fireEvent(transfer, escape)
-    expect(outerHandler).toHaveBeenCalledOnce()
-    expect(escape.defaultPrevented).toBe(false)
-    expect(onConfirm).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Вернуться к форме' }))
-    expect(onClose).toHaveBeenCalledOnce()
-    expect(onConfirm).not.toHaveBeenCalled()
+    window.addEventListener('keydown', outerHandler)
+    try {
+      fireEvent(transfer, escape)
+      // Latest UI rule: Escape closes the upper window, never the editor below.
+      expect(outerHandler).not.toHaveBeenCalled()
+      expect(escape.defaultPrevented).toBe(true)
+      expect(onClose).toHaveBeenCalledOnce()
+      expect(onConfirm).not.toHaveBeenCalled()
+      onClose.mockClear()
+      fireEvent.click(screen.getByRole('button', { name: 'Вернуться к форме' }))
+      expect(onClose).toHaveBeenCalledOnce()
+      expect(onConfirm).not.toHaveBeenCalled()
+    } finally { window.removeEventListener('keydown', outerHandler) }
   })
 
   it.each([false, true])('reports the confirmed correction count in the weld editor (chain: %s)', async isChainMove => {

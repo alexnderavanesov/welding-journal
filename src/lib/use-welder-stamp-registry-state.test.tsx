@@ -47,6 +47,51 @@ describe('useWelderStampRegistryState', () => {
     await waitFor(() => expect(serverMocks.loadWelderStampRegistrySnapshot).toHaveBeenCalledTimes(1))
   })
 
+  it('keeps suspension dates until the server confirms and allows retry after rejection', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={queryClient}>
+      <ConfirmActionProvider>{children}</ConfirmActionProvider></QueryClientProvider>
+    const { result } = renderHook(() => useWelderStampRegistryState({ setMessage: vi.fn() }), { wrapper })
+    await waitFor(() => expect(serverMocks.loadWelderStampRegistrySnapshot).toHaveBeenCalledOnce())
+    const draft = { id: 0, naksStamp: 'AUD2', suspendedFrom: '2026-10-01', suspendedTo: '2026-10-15' }
+    act(() => result.current.editWelderStampSuspensionRecord(draft))
+    let rejectSave!: (reason: Error) => void
+    serverMocks.saveWelderStampSuspensionRecords.mockImplementation(() => new Promise((_resolve, reject) => { rejectSave = reject }))
+    let first: boolean | Promise<boolean>
+    act(() => { first = result.current.saveWelderStampSuspensionRecord() })
+    await waitFor(() => expect(serverMocks.saveWelderStampSuspensionRecords).toHaveBeenCalledOnce())
+    expect(result.current.welderStampSuspensionDraft).toEqual(draft)
+    await act(async () => { expect(await result.current.saveWelderStampSuspensionRecord()).toBe(false) })
+    expect(serverMocks.saveWelderStampSuspensionRecords).toHaveBeenCalledOnce()
+    await act(async () => { rejectSave(new Error('Конфликт версии')); expect(await first!).toBe(false) })
+    expect(result.current.welderStampSuspensionDraft).toEqual(draft)
+    expect(result.current.welderStampSuspensions).toEqual([])
+    serverMocks.saveWelderStampSuspensionRecords.mockResolvedValue({ stamps: [], suspensions: [{ ...draft, id: 1 }], revision: 'saved' })
+    await act(async () => { expect(await result.current.saveWelderStampSuspensionRecord()).toBe(true) })
+    expect(result.current.welderStampSuspensionDraft.naksStamp).toBe('')
+    expect(result.current.welderStampSuspensions).toEqual([{ ...draft, id: 1 }])
+  })
+
+  it.each([[true, false], [false, false], [true, true], [false, true]])('reconciles a lost suspension response only when fresh dates match (%s), retrying the read (%s)', async (matches, retryRead) => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={queryClient}>
+      <ConfirmActionProvider>{children}</ConfirmActionProvider></QueryClientProvider>
+    const message = vi.fn()
+    const { result } = renderHook(() => useWelderStampRegistryState({ setMessage: message }), { wrapper })
+    await waitFor(() => expect(serverMocks.loadWelderStampRegistrySnapshot).toHaveBeenCalledOnce())
+    const draft = { id: 0, naksStamp: 'AUD2', suspendedFrom: '2026-10-01', suspendedTo: '2026-10-15' }
+    act(() => result.current.editWelderStampSuspensionRecord(draft))
+    const saved = { ...draft, id: 1, suspendedTo: matches ? draft.suspendedTo : '2026-10-20' }
+    serverMocks.loadWelderStampRegistrySnapshot.mockResolvedValue({ stamps: [], suspensions: [saved], revision: 'confirmed' })
+    if (retryRead) serverMocks.loadWelderStampRegistrySnapshot.mockRejectedValueOnce(new TypeError('Чтение прервано'))
+    serverMocks.saveWelderStampSuspensionRecords.mockRejectedValue(new TypeError('Ответ потерян'))
+    await act(async () => { expect(await result.current.saveWelderStampSuspensionRecord()).toBe(matches) })
+    expect(serverMocks.saveWelderStampSuspensionRecords).toHaveBeenCalledOnce()
+    expect(result.current.welderStampSuspensions).toEqual([saved])
+    expect(result.current.welderStampSuspensionDraft).toEqual(matches ? { id: 0, naksStamp: '', suspendedFrom: '', suspendedTo: '' } : draft)
+    if (matches) expect(message).toHaveBeenLastCalledWith(expect.stringContaining('подтверждено повторной проверкой'))
+  })
+
   it('keeps the draft after a failed save and coalesces repeated clicks until confirmation', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={queryClient}>

@@ -161,7 +161,11 @@ export const OPERATION_POLICIES = {
   "line-program.ts#getLineProgramCalculation": "lines.view",
   "line-program.ts#getLineProgramJointPage": "lines.view",
   "line-program.ts#getLineProgramExplanation": "lines.view",
+  "document-connections.ts#getDocumentConnections": "documents.view",
+  "document-save-recovery-api.ts#checkDocumentSave": "@identity",
   "line-program.ts#saveLineProgram": "lines.edit",
+  "line-program-deletion.ts#previewLineProgramDeletion": "lines.delete",
+  "line-program-deletion.ts#deleteLineProgram": "lines.delete",
   "weld-read-api.ts#getLnkWorkflowSummary": "lnk.view",
   "weld-read-api.ts#getLnkWorkflowRequestSummary": "lnk.view",
   "weld-read-api.ts#listLnkWorkflowRows": "lnk.view",
@@ -182,7 +186,7 @@ export const OPERATION_POLICIES = {
   "weld-read-api.ts#listWeldColumnFilterOptions": "@report",
   "weld-read-api.ts#getDocumentGenerationData": "documents.generate",
   "weld-read-api.ts#getWeldDataUsageSummary": "@weldDataUsage",
-  "weld-read-api.ts#listWeldJointRowsByIds": "welding.view",
+  "weld-read-api.ts#listWeldJointRowsByIds": "@workingReport",
 } as const
 
 type Input = Record<string, any>
@@ -205,6 +209,10 @@ export function getOperationPermissions(policy: string, value: unknown): Permiss
     return result
   }
   if (policy === '@workingViews') return ['welding.view', 'lnk.view', 'psto.view']
+  if (policy === '@workingReport') {
+    if (!['weldingJournal', 'lnk', 'heatTreatment'].includes(data.report ?? 'weldingJournal')) throw new Error('Неизвестный рабочий отчёт.')
+    return [`${reportArea(data)}.view`]
+  }
   if (policy === '@referenceChange') return ['references.view', ['archive', 'delete'].includes(data.action) ? 'references.delete' : 'references.edit']
   if (['@identity', '@account', '@lineIdentity', '@weldDataUsage', '@documentSequenceRead'].includes(policy)) return []
   if (policy === '@retired') throw new Error('Общие пароли заменены личными аккаунтами.')

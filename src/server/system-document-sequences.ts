@@ -42,6 +42,7 @@ import type { WeldFieldKey } from '@/lib/weld-fields'
 import { assertSecurityScope } from '@/server/security-functions'
 import { getSystemDocumentSequenceId, getSequenceTemplateId, legacySystemDocumentCounterKey, sequenceIdForStage, supportsDocumentNumberStages, systemDocumentCounterKey, SYSTEM_DOCUMENT_SEQUENCE_IDS, type DocumentNumberStage, type SystemDocumentSequenceId } from '@/lib/system-document-sequence-id'
 import { findAvailableSystemDocumentName, systemDocumentNameKey } from '@/lib/system-document-name-allocation'
+import { changedSystemDocumentNameError } from '@/lib/system-document-name-conflict'
 
 export type SystemDocumentSequenceUpdate = {
   sourceKind?: 'beforeHeatTreatment'
@@ -50,6 +51,8 @@ export type SystemDocumentSequenceUpdate = {
   methodCode?: string
   fieldKeys: WeldFieldKey[]
   provisionalName: string
+  /** Diagnostic hint only; the transaction always derives the authoritative name. */
+  namingPattern?: string
 }
 
 export type ReservedSystemDocumentName = {
@@ -171,6 +174,7 @@ export function normalizeSystemDocumentSequenceUpdate(
     date,
     fieldKeys,
     provisionalName,
+    ...(typeof value.namingPattern === 'string' ? { namingPattern: value.namingPattern } : {}),
     ...(value.sourceKind ? { sourceKind: value.sourceKind } : {}),
     ...(methodCode ? { methodCode } : {}),
   }
@@ -299,7 +303,8 @@ export async function reserveSystemDocumentNames(
       occupiedNames, occupiedNumbers,
     })
     if (options.rejectChangedProvisionalNames && name !== request.provisionalName) {
-      throw new Error('Показанное системное имя уже занято либо номер или правило имени изменились. При создании откройте «…» рядом с разделением → «Обновить номера и имена»; при изменении готовых документов нажмите «Проверить изменения». Проверьте новые названия перед сохранением.')
+      throw changedSystemDocumentNameError({ pattern, namingPattern: request.namingPattern, context,
+        date: request.date, provisionalName: request.provisionalName, occupiedNames, number })
     }
     occupiedNames.add(systemDocumentNameKey(request.date, name))
     occupiedNumbers.add(number)

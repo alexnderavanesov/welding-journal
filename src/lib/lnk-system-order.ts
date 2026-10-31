@@ -1,4 +1,5 @@
 import type { WeldInput } from './weld-fields'
+import { getControlWorkflowAccess } from './control-workflow-access'
 import type { LnkChronologyIssue } from './lnk-chronology-checks'
 import { LNK_METHODS } from './lnk-report-config'
 import { normalizeResultStatus } from './weld-status'
@@ -46,8 +47,8 @@ export function getHistoricalLnkRequestDateReason(row: WeldInput, method: string
   const currentResult = stage === 'primary' ? row[currentMethod.resultKey] : controls.find(control => control.method === method)?.result
   if (!completed(currentResult) && !canBackfillOwnLnkResult(row, method, stage)) return 'После негодного предшествующего метода дальнейший контроль оформляется на ремонтном стыке.'
   const date = parseDateLikeToIso(requestDate), weld = parseDateLikeToIso(row.weldDate)
-  if (!date || !weld) return 'Для исторической заявки укажите корректные даты сварки и заявки.'
-  if (date < weld) return 'Дата исторической заявки не может быть раньше даты сварки.'
+  if (!date || (!weld && !getControlWorkflowAccess(row)?.welded)) return 'Для исторической заявки укажите корректные даты сварки и заявки.'
+  if (weld && date < weld) return 'Дата исторической заявки не может быть раньше даты сварки.'
   const conclusion = parseDateLikeToIso(stage === 'primary' ? row[currentMethod.conclusionDateKey] : controls.find(control => control.method === method)?.conclusionDate)
   if (completed(currentResult) && conclusion && date > conclusion) return 'Дата исторической заявки не может быть позже даты заключения.'
   if (failures.some(failure => failure.date && date > failure.date)) return 'Дата исторической заявки не может быть позже негодного контроля: заключение должно быть не раньше заявки и не позже брака.'
@@ -88,7 +89,8 @@ export function getNewHistoricalLnkResultIssues(rows: WeldInput[], previousRows:
         if (!completed(after.result) || (before.result === after.result && before.date === after.date) ||
           !LNK_METHODS.some(other => other.code !== method.code && rejected(values(previous, other.code).result))) return []
         const weld = parseDateLikeToIso(row.weldDate), request = parseDateLikeToIso(after.requestDate), conclusion = parseDateLikeToIso(after.date)
-        if (weld && request && conclusion && weld <= request && request <= conclusion) return []
+        // The server rechecks the hidden weld date against the final stored record.
+        if (request && conclusion && (weld ? weld <= request : getControlWorkflowAccess(row)?.welded) && request <= conclusion) return []
         return [{ kind: 'method-order' as const, methodCode: method.code, controlStage: stage,
           documentPart: 'result' as const, reason: 'проверить последовательность НК', row,
           message: `Стык ${row.joint ?? row.id}: для довнесения ${method.code}${stage === 'beforeHeatTreatment' ? ' до ТО' : ''} соблюдайте даты: сварка ≤ заявка ≤ заключение.` }]

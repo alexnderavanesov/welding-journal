@@ -1,4 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
+import { isTopModalDialog } from '@/lib/modal-layer'
+import { shouldDeferModalEscape } from '@/lib/use-report-modal-escape-key'
 import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 
@@ -8,6 +10,8 @@ import { cn } from '@/lib/utils'
 
 type LargeDialogShellProps = {
   children: ReactNode
+  onEscape?: () => void
+  escapeDisabled?: boolean
   ariaLabel?: string
   maxWidthClassName?: string
   maxHeightClassName?: string
@@ -52,6 +56,8 @@ function schedulePageScrollRestore() {
 
 export function LargeDialogShell({
   children,
+  onEscape,
+  escapeDisabled = false,
   ariaLabel,
   maxWidthClassName = 'max-w-[1320px]',
   maxHeightClassName = 'max-h-[92vh]',
@@ -61,6 +67,21 @@ export function LargeDialogShell({
   panelClassName,
   returnPageScrollPosition,
 }: LargeDialogShellProps) {
+  const panel = useRef<HTMLDivElement>(null)
+  const escape = useRef({ onEscape, escapeDisabled })
+  escape.current = { onEscape, escapeDisabled }
+  useLayoutEffect(() => {
+    if (!onEscape) return
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || !isTopModalDialog(panel.current) || shouldDeferModalEscape(panel.current)) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      if (!escape.current.escapeDisabled) escape.current.onEscape?.()
+    }
+    window.addEventListener('keydown', keydown, true)
+    return () => window.removeEventListener('keydown', keydown, true)
+  }, [Boolean(onEscape)])
+
   useEffect(() => {
     cancelPendingPageScrollRestore()
     if (pageScrollLockCount === 0) {
@@ -91,7 +112,9 @@ export function LargeDialogShell({
   const shell = (
     <div className={cn('fixed inset-0 flex items-center justify-center overflow-hidden overscroll-contain px-4 backdrop-blur-[1px]', overlayClassName)}>
       <div
+        ref={panel}
         data-modal-dialog="true"
+        data-modal-escape-owned={onEscape ? "true" : undefined}
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}

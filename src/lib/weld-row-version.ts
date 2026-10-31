@@ -1,3 +1,5 @@
+import { WorkflowConflictError } from './workflow-conflict'
+
 export type WeldRowVersionTarget = {
   id: number
   version: string
@@ -78,7 +80,7 @@ export function assertCurrentInteractiveWeldRowVersions({
 
   const currentById = new Map(currentVersions.map((entry) => [entry.id, entry]))
   if (currentById.size !== uniqueTargetIds.length) {
-    throw new Error(
+    throw new WorkflowConflictError('ROW_MISSING',
       'Один или несколько выбранных стыков больше не существуют. Ничего не сохранено. Обновите отчет и повторите действие.',
     )
   }
@@ -87,7 +89,7 @@ export function assertCurrentInteractiveWeldRowVersions({
     const current = currentById.get(id)
     if (!current || expectedById.get(id) !== String(current.version ?? '').trim()) {
       const label = current ? formatWeldRowVersionLabel(current) : `Запись ID ${id}`
-      throw new Error(
+      throw new WorkflowConflictError('ROW_VERSION_STALE',
         `${label} уже изменен другим пользователем или в другом окне. Ничего не сохранено. Обновите отчет и повторите действие.`,
       )
     }
@@ -101,7 +103,7 @@ function throwFreshReplaceTemplateError(): never {
 }
 
 function throwStaleScreenError(): never {
-  throw new Error(
+  throw new WorkflowConflictError('ROW_VERSION_MISSING',
     'Открытые данные устарели или не содержат служебную версию. Ничего не сохранено. Обновите отчет и повторите действие.',
   )
 }

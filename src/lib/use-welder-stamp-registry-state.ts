@@ -54,6 +54,7 @@ export function useWelderStampRegistryState({ enabled = true, setMessage }: Weld
   )
   const registryRevisionRef = useRef('')
   const registrySavePendingRef = useRef(false)
+  const restoredRegistryRef = useRef<{ error: unknown; snapshot: WelderStampRegistrySnapshot } | null>(null)
 
   const applyRegistrySnapshot = (snapshot: WelderStampRegistrySnapshot) => {
     const normalizedStamps = normalizeWelderStampRecordsForRegistry(snapshot.stamps)
@@ -67,12 +68,20 @@ export function useWelderStampRegistryState({ enabled = true, setMessage }: Weld
   }
 
   const restoreCurrentRegistrySnapshot = async (error: unknown) => {
+    restoredRegistryRef.current = null
     setMessage((error as Error).message)
-    try {
-      const snapshot = await loadWelderStampRegistrySnapshot()
+    const accept = (snapshot: WelderStampRegistrySnapshot) => {
       applyRegistrySnapshot(snapshot)
+      restoredRegistryRef.current = { error, snapshot }
+    }
+    try {
+      accept(await loadWelderStampRegistrySnapshot())
     } catch {
-      await queryClient.invalidateQueries({ queryKey: WELDER_STAMP_REGISTRY_QUERY_KEY })
+      await queryClient.invalidateQueries({ queryKey: WELDER_STAMP_REGISTRY_QUERY_KEY, refetchType: 'none' })
+      try {
+        accept(await queryClient.fetchQuery({ queryKey: WELDER_STAMP_REGISTRY_QUERY_KEY,
+          queryFn: () => loadWelderStampRegistrySnapshot(), staleTime: 30_000, retry: false }))
+      } catch { /* Keep the invalidated registry and the unsaved draft. */ }
     }
   }
 
@@ -253,17 +262,40 @@ export function useWelderStampRegistryState({ enabled = true, setMessage }: Weld
     setWelderStampSuspensionDraft(createEmptyWelderStampSuspensionDraft())
   }
 
-  function saveWelderStampSuspensionRecord() {
+  async function saveWelderStampSuspensionRecord() {
+    if (registrySavePendingRef.current) return false
     const preparedSave = prepareWelderStampSuspensionSave(welderStampSuspensions, welderStampSuspensionDraft)
     if (!preparedSave.ok) {
       setMessage(preparedSave.message)
       return false
     }
 
-    persistWelderStampSuspensionRecords(preparedSave.nextRecords)
-    setMessage(preparedSave.message)
-    resetWelderStampSuspensionForm()
-    return true
+    const submitted = preparedSave.nextRecords.find(record => record.id === welderStampSuspensionDraft.id) ?? preparedSave.nextRecords[0]
+    registrySavePendingRef.current = true
+    restoredRegistryRef.current = null
+    try {
+      await welderStampSuspensionsMutation.mutateAsync(preparedSave.nextRecords)
+      setMessage(preparedSave.message)
+      resetWelderStampSuspensionForm()
+      return true
+    } catch (error) {
+      // A response can disappear after commit. The existing error recovery
+      // reads fresh server facts; only that matching read can confirm success.
+      // Never turn a retained new draft into a second suspension on retry.
+      const restored = restoredRegistryRef.current as { error: unknown; snapshot: WelderStampRegistrySnapshot } | null
+      const confirmed = restored && restored.error === error && restored.snapshot.suspensions.some(record =>
+        record.id === submitted.id && record.naksStamp === submitted.naksStamp
+        && record.suspendedFrom === submitted.suspendedFrom && record.suspendedTo === submitted.suspendedTo)
+      if (confirmed) {
+        setMessage('Запись отстранения сохранена — это подтверждено повторной проверкой.')
+        resetWelderStampSuspensionForm()
+        return true
+      }
+      // The refreshed registry must not replace the operator's unsaved dates.
+      return false
+    } finally {
+      registrySavePendingRef.current = false
+    }
   }
 
   function editWelderStampSuspensionRecord(record: WelderStampSuspensionRecord) {

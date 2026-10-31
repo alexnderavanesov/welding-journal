@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { previewCoilRestoration, restoreErroneousCoil, getCoilRestorationHistory, previewEarlyCoilCorrection, cancelErroneousEarlyCoil } from '@/server/coil-restoration'
 import { useSecurityGuard } from '@/lib/security-context'
@@ -29,15 +30,11 @@ export function CoilRestorationDialog({ rootId, onClose, onSaved, earlyDecision 
   const inFlight = useRef(false)
   const preview = useQuery<CorrectionPreview>({ queryKey: ['coil-restoration-preview', requestId, isEarly], queryFn: async () => (isEarly ? previewEarlyCoilCorrection : previewCoilRestoration)({ data: { rootId: requestId } }),
     staleTime: 0, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false })
-  useEffect(() => {
-    const handleEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !inFlight.current) { event.stopImmediatePropagation(); close() } }
-    window.addEventListener('keydown', handleEscape, true)
-    return () => window.removeEventListener('keydown', handleEscape, true)
-  }, [onClose, earlySourceId, restorationRootId])
+
   const data = preview.data
   const earlyData = data && isEarlyCorrectionPreview(data) ? data : null
   const title = isEarly ? 'Отмена решения о досрочной катушке' : 'Отменить ошибочно внесённую катушку'
-  return <LargeDialogShell ariaLabel={title} maxWidthClassName="max-w-3xl" overlayClassName="z-[90] bg-slate-950/30">
+  return <LargeDialogShell onEscape={() => { if (!inFlight.current) close() }} ariaLabel={title} maxWidthClassName="max-w-3xl" overlayClassName="z-[90] bg-slate-950/30">
     <header className="shrink-0 border-b px-5 py-4">
       <h2 className="text-lg font-semibold">{title}</h2>
       <p className="mt-1 text-sm text-slate-500">{isEarly ? 'Проверка записей → подтверждение отмены → восстановление, если требуется' : 'Проверка исходной цепочки и отдельное подтверждение восстановления'}</p>
@@ -66,7 +63,7 @@ export function CoilRestorationDialog({ rootId, onClose, onSaved, earlyDecision 
           </tbody></table></div> : null}
           {!data.before.common ? <p>Программа линии не настроена: норму пока рассчитать нельзя.</p> : null}
           <p>{isEarly ? 'Результатов, документов и даты сварки у удаляемых сторон быть не должно. Их пустые назначения будут удалены вместе со строками.' : 'Назначения, результаты и документы не изменятся.'} Будет отменено решений о досрочной катушке этой ветки: {data.cancelledEarlyDecisions}.</p>
-          <label className="flex items-start gap-2 rounded-lg border border-slate-200 p-3"><input type="checkbox" className="mt-0.5" checked={confirmed} disabled={busy || !!error} onChange={event => setConfirmed(event.target.checked)} />Катушка фактически не врезалась; исправляется ошибочная запись</label>
+          <label className="flex items-start gap-2 rounded-lg border border-slate-200 p-3"><Checkbox className="mt-0.5" checked={confirmed} disabled={busy || !!error} onChange={event => setConfirmed(event.target.checked)} />Катушка фактически не врезалась; исправляется ошибочная запись</label>
         </>}
       </> : null}
       {error ? <p role="alert" className="text-red-700">{error}</p> : null}

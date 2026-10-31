@@ -1,9 +1,10 @@
 import { useEffect, useId, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Eye, RefreshCw, Search, ShieldCheck, UserPlus } from 'lucide-react'
+import { BriefcaseBusiness, Eye, MoreHorizontal, RefreshCw, Search, ShieldCheck, Trash2, UserPlus } from 'lucide-react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { AccessDialog } from './access-dialog'
+import { ContextActionMenu, type ContextActionMenuState } from './context-action-menu'
 import { PermissionEditor } from './permission-editor'
 import { FieldHelp } from './field-help'
 import { useAccess } from '@/lib/security-context'
@@ -29,7 +30,9 @@ export function UsersPanel() {
   const [message, setMessage] = useState(''), [failed, setFailed] = useState(false), [busy, setBusy] = useState(false)
   // Hold the revision at opening time: a background refresh must not let a stale draft overwrite new rights.
   const [editor, setEditor] = useState<Account | 'new' | null>(null)
+  const [titleOnly, setTitleOnly] = useState(false)
   const [pending, setPending] = useState<AccountAction | null>(null)
+  const [menu, setMenu] = useState<ContextActionMenuState>(null)
   const [search, setSearch] = useState('')
   const selected = editor && editor !== 'new' ? editor : null
   const current = selected ? users.data?.find(user => user.id === selected.id) : undefined
@@ -49,7 +52,7 @@ export function UsersPanel() {
       await queryClient.invalidateQueries({ queryKey: ['accounts'] })
     } finally { setBusy(false) }
   }
-  function openEditor(user: Account | 'new') { setMessage(''); setEditor(user) }
+  function openEditor(user: Account | 'new', onlyTitle = false) { setMessage(''); setTitleOnly(onlyTitle); setEditor(user) }
   const closeEditor = () => { if (!busy) setEditor(null) }
   return <section className="space-y-5">
     <div className="flex flex-wrap items-start justify-between gap-4">
@@ -73,14 +76,23 @@ export function UsersPanel() {
             <td className="px-4 py-4"><span className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ${user.role === 'user' ? 'bg-slate-100 text-slate-600' : 'bg-sky-50 text-sky-700'}`}>{accountRoleLabel(user.role)}</span><p className="mt-2 text-xs text-slate-500">{user.role === 'user' ? `${user.permissions.length} разрешений` : 'Все рабочие права'}</p></td>
             <td className="px-4 py-4"><span className={`inline-flex items-center gap-1.5 text-xs font-medium ${user.status === 'active' ? 'text-emerald-700' : 'text-amber-700'}`}><span className={`h-1.5 w-1.5 rounded-full ${user.status === 'active' ? 'bg-emerald-500' : 'bg-amber-400'}`} />{user.status === 'active' ? 'Активирован' : 'Ожидает активации'}</span>{user.linkExpiresAt ? <p className="mt-2 max-w-40 text-xs leading-5 text-slate-400">Ссылка до {new Date(user.linkExpiresAt).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })} МСК</p> : null}</td>
             <td className="px-4 py-4"><AccountActivity user={user} available={!users.isError} now={now} /></td>
-            <td className="px-5 py-4"><Button variant="outline" size="sm" disabled={busy} onClick={() => openEditor(user)}>{managed ? <ShieldCheck className="h-4 w-4" /> : <Eye className="h-4 w-4" />}{managed ? 'Настроить права' : 'Посмотреть права'}</Button>
-              {managed ? <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1"><button className="rounded text-xs text-slate-500 hover:text-sky-700 focus-visible:ring-2 focus-visible:ring-sky-300" disabled={busy} onClick={() => { setMessage(''); setPending({ user, kind: user.status === 'pending' ? 'invite' : 'recovery' }) }}>{user.status === 'pending' ? 'Повторить приглашение' : 'Восстановить доступ'}</button><button className="rounded text-xs text-slate-400 hover:text-rose-700 focus-visible:ring-2 focus-visible:ring-rose-300" disabled={busy} onClick={() => { setMessage(''); setPending({ user, kind: 'delete' }) }}>Удалить</button></div> : null}
+            <td className="px-5 py-4"><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={busy} onClick={() => openEditor(user)}>{managed ? <ShieldCheck className="h-4 w-4" /> : <Eye className="h-4 w-4" />}{managed ? 'Настроить права' : 'Посмотреть права'}</Button>
+              {managed ? <Button variant="ghost" size="sm" className="h-8 w-8 shrink-0 p-0" aria-label={`Действия пользователя: ${user.name}`} aria-haspopup="menu" aria-expanded={menu?.anchorElement?.getAttribute('data-account-id') === user.id} data-account-id={user.id} disabled={busy} onClick={event => {
+                const anchor = event.currentTarget, rect = anchor.getBoundingClientRect()
+                const choose = (kind: AccountAction['kind']) => { setMessage(''); setPending({ user, kind }) }
+                setMenu({ x: rect.right - 224, y: rect.bottom + 4, anchorElement: anchor, heading: user.name, items: [
+                  { id: 'title', icon: BriefcaseBusiness, label: 'Изменить должность', onSelect: () => openEditor(user, true) },
+                  { id: 'link', icon: RefreshCw, label: user.status === 'pending' ? 'Повторить приглашение' : 'Восстановить доступ', onSelect: () => choose(user.status === 'pending' ? 'invite' : 'recovery') },
+                  { id: 'delete', icon: Trash2, label: 'Удалить', danger: true, onSelect: () => choose('delete') },
+                ] })
+              }}><MoreHorizontal aria-hidden="true" className="h-4 w-4" /></Button> : null}</div>
             </td>
           </tr>
         })}</tbody>
       </table>{!visible.length && !users.error ? <p className="p-8 text-center text-sm text-slate-500">Пользователи не найдены.</p> : null}</div>}
     </div>
-    {editor ? <UserAccessDialog key={editor === 'new' ? 'new' : `${editor.id}-${editor.revision}`} user={selected} editable={editable} stale={stale} busy={busy}
+    <ContextActionMenu menu={menu} autoFocus onClose={() => { setMenu(null); if (menu?.anchorElement instanceof HTMLElement) menu.anchorElement.focus({ preventScroll: true }) }} />
+    {editor ? <UserAccessDialog key={editor === 'new' ? 'new' : `${editor.id}-${editor.revision}`} user={selected} editable={editable} stale={stale} busy={busy} titleOnly={titleOnly}
       owner={identity?.role === 'owner'} message={message} onClose={closeEditor} onReload={current ? () => { setMessage(''); setEditor(current) } : undefined}
       onSave={data => { if (stale || !editable) return; void run(() => selected ? accounts.changeAccount({ data: { id: selected.id, revision: selected.revision, role: data.role, permissions: data.permissions, title: data.title } }) : accounts.inviteAccount({ data })) }} /> : null}
     {pending ? <AccessDialog title={pending.kind === 'delete' ? 'Удалить пользователя?' : pending.kind === 'invite' ? 'Повторить приглашение?' : 'Восстановить доступ?'} description={`${pending.user.name} · ${pending.user.email}`} busy={busy} onClose={() => setPending(null)} footer={<><Button variant="outline" disabled={busy} onClick={() => setPending(null)}>Отмена</Button><Button variant={pending.kind === 'delete' ? 'destructive' : 'default'} disabled={busy} onClick={() => void run(() => pending.kind === 'delete' ? accounts.deleteAccount({ data: { id: pending.user.id, revision: pending.user.revision, confirmed: true } }) : accounts.sendManagedLink({ data: { id: pending.user.id, revision: pending.user.revision, kind: pending.kind } }))}>{pending.kind === 'delete' ? 'Удалить пользователя' : 'Отправить ссылку'}</Button></>}>
@@ -98,8 +110,9 @@ function AccountActivity({ user, available, now }: { user: Account; available: b
   return <div className="text-xs leading-5 text-slate-500"><p>Был(а) на сайте</p><time className="whitespace-nowrap" dateTime={time.iso} title={time.exact} aria-label={`${time.label}; ${time.exact}`}>{time.label}</time></div>
 }
 
-function UserAccessDialog({ user, editable, stale, busy, owner, message, onClose, onReload, onSave }: {
+function UserAccessDialog({ user, editable, stale, busy, owner, titleOnly, message, onClose, onReload, onSave }: {
   user: Account | null; editable: boolean; stale: boolean; busy: boolean; owner: boolean; message: string; onClose: () => void; onReload?: () => void
+  titleOnly: boolean
   onSave: (data: { name: string; email: string; title: string; role: 'user' | 'admin'; permissions: Permission[] }) => void
 }) {
   const formId = useId()
@@ -107,12 +120,25 @@ function UserAccessDialog({ user, editable, stale, busy, owner, message, onClose
   const [role, setRole] = useState<'user' | 'admin'>(user?.role === 'admin' ? 'admin' : 'user')
   const [name, setName] = useState(''), [email, setEmail] = useState(''), [title, setTitle] = useState(user?.title ?? '')
   const fullAccess = user?.role === 'owner' || role === 'admin'
+  if (titleOnly && user) return <AccessDialog title="Должность пользователя" description={`${user.name} · ${user.email}`} busy={busy} onClose={onClose}
+    footer={<><Button type="button" variant="outline" disabled={busy} onClick={onClose}>Отмена</Button><Button type="submit" form={formId} disabled={busy || stale || !editable}>{busy ? 'Сохраняем…' : 'Сохранить должность'}</Button></>}>
+    <form id={formId} className="space-y-4" onSubmit={event => {
+      event.preventDefault()
+      if (editable && !stale && !busy) onSave({ name: user.name, email: user.email, title, role, permissions })
+    }}>
+      <label className="grid gap-2 text-sm font-medium text-slate-700">Должность<Input autoFocus value={title} readOnly={!editable} disabled={busy} maxLength={200} onChange={event => setTitle(event.target.value)} placeholder="Например, инженер по сварке" /></label>
+      <p className="text-sm leading-6 text-slate-500">Должность не меняет права доступа. Чтобы убрать должность, очистите поле и сохраните.</p>
+      {message ? <p role="alert" className="text-sm text-rose-700">{message}</p> : null}
+      {stale ? <div role="alert" className="space-y-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Учётная запись изменилась. Загрузите актуальные данные перед сохранением.{onReload ? <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onReload}>Загрузить актуальные данные</Button> : null}</div> : null}
+      {!editable ? <p role="alert" className="text-sm text-rose-700">Нет разрешения изменять этого пользователя.</p> : null}
+    </form>
+  </AccessDialog>
   return <AccessDialog title={user ? `${editable ? 'Настройка прав' : 'Права доступа'}: ${user.name}` : 'Пригласить пользователя'} description={user ? user.email : 'Пользователь получит письмо и самостоятельно задаст пароль.'} wide busy={busy} onClose={onClose}
     footer={<><span className="mr-auto text-xs text-slate-500">{fullAccess ? 'Все рабочие разрешения' : `Выбрано разрешений: ${permissions.length}`}</span><Button type="button" variant="outline" disabled={busy} onClick={onClose}>{editable ? 'Отмена' : 'Закрыть'}</Button>{editable ? <Button type="submit" form={formId} disabled={busy || stale}>{busy ? 'Сохраняем…' : user ? 'Сохранить права' : 'Создать и отправить приглашение'}</Button> : null}</>}>
     <form id={formId} className="space-y-5" onSubmit={event => { event.preventDefault(); if (editable && !stale && !busy) onSave({ name, email, title, role, permissions }) }}>
       {message ? <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{message}</p> : null}
       {stale ? <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Учётная запись изменилась. Загрузите актуальные права перед сохранением.{onReload ? <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onReload}>Загрузить актуальные права</Button> : null}</div> : null}
-      {!user ? <fieldset disabled={busy} className="grid gap-4 md:grid-cols-3"><label className="grid gap-2 text-sm text-slate-700">ФИО<Input value={name} onChange={event => setName(event.target.value)} maxLength={200} required /></label><label className="grid gap-2 text-sm text-slate-700">Почта<Input type="email" value={email} onChange={event => setEmail(event.target.value)} required /></label><label className="grid gap-2 text-sm text-slate-700">Должность<Input value={title} onChange={event => setTitle(event.target.value)} maxLength={200} placeholder="Не определяет права" /></label></fieldset> : null}
+      {!user ? <fieldset disabled={busy} className="grid gap-4 md:grid-cols-3"><label className="grid gap-2 text-sm text-slate-700">Фамилия и имя<Input value={name} onChange={event => setName(event.target.value)} maxLength={200} required /></label><label className="grid gap-2 text-sm text-slate-700">Почта<Input type="email" value={email} onChange={event => setEmail(event.target.value)} required /></label><label className="grid gap-2 text-sm text-slate-700">Должность<Input value={title} onChange={event => setTitle(event.target.value)} maxLength={200} placeholder="Не определяет права" /></label></fieldset> : null}
       {user ? <label className="grid max-w-md gap-2 text-sm font-medium text-slate-700">Должность<Input value={title} readOnly={!editable} disabled={busy} maxLength={200} onChange={event => setTitle(event.target.value)} placeholder="Назначает администратор" /></label> : null}
       {editable ? <div className="space-y-2"><p className="text-sm font-medium text-slate-700">Набор прав</p><div className="flex flex-wrap gap-2">
         <Button type="button" variant={role === 'admin' ? 'default' : 'outline'} disabled={busy || !owner} title={!owner ? 'Администраторов назначает владелец' : undefined} onClick={() => setRole('admin')}>Администратор</Button>

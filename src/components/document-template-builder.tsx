@@ -1,3 +1,4 @@
+import { Checkbox } from '@/components/ui/checkbox'
 import { userStorage, scopedStorageKey } from '@/lib/user-storage'
 import { Select } from '@/components/ui/select'
 import { useCallback, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
@@ -892,7 +893,7 @@ export function DocumentTemplateBuilder({ template, onClose, onSave }: DocumentT
   }
 
   return (
-    <LargeDialogShell maxWidthClassName="max-w-[1500px]" maxHeightClassName="max-h-[94vh]" overlayClassName="z-[90] bg-slate-950/35">
+    <LargeDialogShell onEscape={onClose} escapeDisabled={isSaving} maxWidthClassName="max-w-[1500px]" maxHeightClassName="max-h-[94vh]" overlayClassName="z-[90] bg-slate-950/35">
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
         <div>
           <h3 className="text-lg font-semibold text-slate-950">Конструктор шаблона</h3>
@@ -1820,11 +1821,9 @@ function CellPartsEditor({
                 </div>
 
                 <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={Boolean(part.lineBreakAfter)}
                     onChange={(event) => updatePart(index, { lineBreakAfter: event.target.checked })}
-                    className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
                   />
                   Перенести следующую часть на новую строку
                 </label>
@@ -1874,11 +1873,10 @@ function DeduplicateValuesToggle({
 }) {
   return (
     <label className="flex items-start gap-2 rounded-md border border-slate-200 px-3 py-2 text-xs leading-5 text-slate-600">
-      <input
-        type="checkbox"
+      <Checkbox
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
-        className="mt-0.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+        className="mt-0.5"
       />
       <span>
         <span className="block font-semibold text-slate-700">Убрать повторяющиеся значения</span>

@@ -139,9 +139,9 @@ export function getSelectedLnkResultRows(
       draft.rowIds.has(row.id) &&
       canSelectLnkResultRow(
         row,
-        draft.requestName,
+        '',
         draft.methodKey,
-        draft.requestDate,
+        undefined,
         controlProcessSettings,
       ),
   )

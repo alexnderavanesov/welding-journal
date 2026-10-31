@@ -10,7 +10,7 @@ const state = vi.hoisted(() => ({
 }))
 
 vi.mock('@/db', () => ({
-  requireDb: () => ({ select: state.select }),
+  requireDb: () => ({ select: state.select, transaction: (read: (db: unknown) => unknown) => read({ select: state.select }) }),
 }))
 vi.mock('@/server/heat-treatment-control-relations', () => ({
   attachHeatTreatmentControlRelations: async (rows: WeldRow[]) => rows.map((row) => ({

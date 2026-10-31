@@ -169,7 +169,7 @@ export function useDocumentGridQuery<T extends Identity>(options: {
       return next
     })
   })
-  const parts = (copy: boolean): JournalRangePart<string>[] => {
+  const parts = (copy: boolean, selection = false): JournalRangePart<string>[] => {
     const { api, ready, columns } = current.current
     if (!api || api.isDestroyed() || !ready || !revision.current) return []
     const allowed = new Set(columns.map(column => column.key)), focused = api.getFocusedCell()
@@ -177,7 +177,9 @@ export function useDocumentGridQuery<T extends Identity>(options: {
     const cells = ranges.length ? ranges : copy && focused ? [{ startRow: focused, endRow: focused, columns: [focused.column] }] : []
     const selected = cells.flatMap(range => range.startRow && range.endRow && !range.startRow.rowPinned && !range.endRow.rowPinned ? [{
       first: Math.min(range.startRow.rowIndex, range.endRow.rowIndex), last: Math.max(range.startRow.rowIndex, range.endRow.rowIndex),
-      columns: range.columns.filter(column => column.isVisible() && allowed.has(column.getColId())).map(column => column.getColId()),
+      // Row selection includes checkbox/action columns; clipboard and numeric
+      // summaries still use only the visible document values.
+      columns: selection ? ['title'] : range.columns.filter(column => column.isVisible() && allowed.has(column.getColId())).map(column => column.getColId()),
     }] : []).filter(range => range.columns.length)
     if (!selected.length) return []
     const stores = new Map(api.getServerSideGroupLevelState().map(store => [journalRouteKey(store.route), store]))
@@ -194,6 +196,38 @@ export function useDocumentGridQuery<T extends Identity>(options: {
     if (result.some(part => !stores.get(journalRouteKey(part.route))?.lastRowIndexKnown)) throw new Error('Дождитесь загрузки раскрытых групп.')
     return result.filter(part => part.route.length === query().rowGroupCols.length)
   }
+  const selectRange = useStableEventCallback(async () => {
+    if (selectionBusy.current === generation.current) return
+    const active = generation.current, choice = selectionVersion.current, signature = visualSignature(), request = query()
+    let ranges: JournalRangePart<string>[]
+    try { ranges = parts(false, true) } catch (error) { current.current.error((error as Error).message); return }
+    if (!ranges.length) return
+    const layout = JSON.stringify(ranges), load = current.current.load
+    const isCurrent = () => active === generation.current && choice === selectionVersion.current
+      && request.revision === revision.current && signature === visualSignature() && layout === JSON.stringify(parts(false, true))
+    selectionBusy.current = active; setSelecting(true)
+    try {
+      const ids = new Set<Id>(), routes = new Map<string, typeof ranges>()
+      for (const range of ranges) { const key = journalRouteKey(range.route), list = routes.get(key) ?? []; list.push(range); routes.set(key, list) }
+      for (const list of routes.values()) {
+        const spans = mergeJournalRangeSpans(list.map(part => ({ fieldKey: 'title', first: part.start, last: part.end - 1 })))
+        for (const span of spans) for (let start = span.first; start <= span.last; start += 500) {
+          const end = Math.min(span.last + 1, start + 500)
+          const result = await load({ ...request, groupKeys: list[0].route, startRow: start, endRow: end })
+          if (!isCurrent()) return
+          if (result.revision !== request.revision || result.rows.length !== end - start || result.rows.some(isDocumentHistoryGroupRow)) {
+            throw new Error('Документы изменились. Обновите таблицу и повторите выбор диапазона.')
+          }
+          for (const row of result.rows) ids.add(row.id)
+        }
+      }
+      if (!isCurrent()) return
+      const selected = new Set(current.current.selected.map(row => row.id)), remove = [...ids].every(id => selected.has(id))
+      for (const id of ids) if (remove) selected.delete(id); else selected.add(id)
+      current.current.select([...selected].map(id => ({ id })))
+    } catch (error) { if (active === generation.current) current.current.error((error as Error).message) }
+    finally { if (selectionBusy.current === active) selectionBusy.current = null; if (active === generation.current) setSelecting(false) }
+  })
   const updateRange = useStableEventCallback(() => {
     let ranges: JournalRangePart<string>[]
     try { ranges = parts(false) } catch (error) {
@@ -290,5 +324,5 @@ export function useDocumentGridQuery<T extends Identity>(options: {
     }
     finally { if (requestId === copyGeneration.current) { copyingRanges.current = null; setCopying(false) } }
   })
-  return { accept, invalidate, revision, toggle, counts, selecting, summary, rangeState, updateRange, countSelection, copy, copying, trim }
+  return { accept, invalidate, revision, toggle, selectRange, counts, selecting, summary, rangeState, updateRange, countSelection, copy, copying, trim }
 }

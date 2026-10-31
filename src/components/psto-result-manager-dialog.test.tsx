@@ -5,6 +5,24 @@ import { PstoResultManagerDialog } from '@/components/psto-result-manager-dialog
 import type { WeldRow } from '@/lib/dispatcher-types'
 
 describe('PstoResultManagerDialog', () => {
+  it('preserves the selected repeat while server search temporarily clears the rows', () => {
+    const row = {
+      id: 7, pstoRequired: 'да', pstoRequest: 'ПСТО-1',
+      pstoRepeatCycles: [{ id: 70, weldJointId: 7, sequence: 2, pstoRequest: 'ПСТО-2', pstoRequestDate: '2026-10-30' }],
+    } as WeldRow
+    const props = {
+      diagramDrafts: {}, isPending: false, canOpenDocument: false,
+      onClose: vi.fn(), onDiagramDraftChange: vi.fn(), onRenameDiagram: vi.fn(),
+      onDeleteResult: vi.fn(), onOpenDocument: vi.fn(), onOpenJournalRows: vi.fn(), onCopyDocumentName: vi.fn(),
+    }
+    const { rerender } = render(<PstoResultManagerDialog {...props} rows={[row]} />)
+    expect(screen.getByRole('tab', { name: 'Повтор #2' })).toHaveAttribute('aria-selected', 'true')
+    rerender(<PstoResultManagerDialog {...props} rows={[]} />)
+    rerender(<PstoResultManagerDialog {...props} rows={[row]} />)
+    expect(screen.getByRole('tab', { name: 'Повтор #2' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('textbox', { name: 'Наименование заявки' })).toHaveValue('ПСТО-2')
+  })
+
   it('does not present a missing TVMT result as good and allows restoring it explicitly', () => {
     const onCorrectStage = vi.fn()
     const row = {

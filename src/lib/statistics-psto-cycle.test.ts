@@ -9,6 +9,22 @@ import { buildStatisticsSummary } from '@/lib/statistics-summary'
 import { buildPercentageLineSummaries } from '@/lib/percentage-line-summary'
 
 describe('PSTO cycle values for statistics', () => {
+  it.each([false, true])('counts a request before its result, including a repeat (%s)', (repeat) => {
+    const row = {
+      id: 1, joint: 'F1', weldDate: '2026-10-01', pstoRequired: 'да',
+      pstoRequest: 'ПСТО-1', pstoRequestDate: '2026-10-02',
+      ...(repeat ? { pstoResult: 'проведено', pstoDate: '2026-10-03', tvmtResult: 'не годен' } : {}),
+    } as WeldRow
+    const rows = applyLatestPstoCycleToStatisticsRows([row], repeat
+      ? [{ id: 2, weldJointId: 1, sequence: 2, pstoRequest: 'ПСТО-2', pstoRequestDate: '2026-10-04' }]
+      : [])
+    const summary = buildStatisticsSummary(rows, '2026-10-01', '2026-10-31', 'joints')
+    expect(summary.pstoMethod).toMatchObject({
+      requests: 1, createdRequests: 1, waitingControl: 1, closed: 0, totalClosed: 0,
+      rowIds: { requests: [1], waitingControl: [1], closed: [] },
+    })
+  })
+
   it('applies the current stage setting before the line calculation without deleting saved history', () => {
     const input: WeldRow[] = [{ id: 1, joint: 'F1', line: 'L', weldDate: '2026-09-01', connectionType: 'СШ', stamp1K: 'A',
       weldControlPercent: 30, pvkControlPercent: 10, hasPvk: 'отменен' }]

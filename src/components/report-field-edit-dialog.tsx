@@ -8,14 +8,13 @@ import { Select } from '@/components/ui/select'
 import type { HeatTreatmentFieldEditingState } from '@/lib/home-state'
 import { withCurrentOption } from '@/lib/report-naming'
 import { getJointTitle } from '@/lib/report-ui-state'
-import { shouldDeferModalEscape } from '@/lib/use-report-modal-escape-key'
-import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
 import { RESULT_STATUS_OPTIONS } from '@/lib/weld-fields'
 
 type ReportFieldEditDialogProps = {
   editing: HeatTreatmentFieldEditingState
   requestOptions: string[]
   isSaving: boolean
+  isContextReady?: boolean
   onChange: (value: string) => void
   onClose: () => void
   onSave: () => void
@@ -25,24 +24,20 @@ export function ReportFieldEditDialog({
   editing,
   requestOptions,
   isSaving,
+  isContextReady = true,
   onChange,
   onClose,
   onSave,
 }: ReportFieldEditDialogProps) {
-  useWindowEscapeKey(true, event => {
-    if (event.defaultPrevented || shouldDeferModalEscape()) return
-    // Own Escape throughout the dialog, including its footer buttons. Closing
-    // the portal must not let the same key clear the report below it.
-    event.preventDefault()
-    event.stopImmediatePropagation()
-    onClose()
-  })
+
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement | HTMLSelectElement>) {
-    if (event.key === 'Enter') onSave()
+    if (event.key !== 'Enter') return
+    event.preventDefault()
+    if (!isSaving && isContextReady) onSave()
   }
 
   return (
-    <LargeDialogShell
+    <LargeDialogShell onEscape={onClose} escapeDisabled={isSaving}
       maxWidthClassName="max-w-xl"
       maxHeightClassName=""
       overlayClassName="z-50 bg-slate-950/20"
@@ -56,7 +51,7 @@ export function ReportFieldEditDialog({
             <OfficialityBadge row={editing.record} compact />
           </p>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Закрыть">
+        <Button variant="ghost" size="icon" onClick={onClose} disabled={isSaving} aria-label="Закрыть">
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -93,10 +88,10 @@ export function ReportFieldEditDialog({
         </label>
       </div>
       <div className="flex justify-end gap-2 border-t border-slate-200/80 px-5 py-4">
-        <Button variant="outline" onClick={onClose}>
+        <Button variant="outline" onClick={onClose} disabled={isSaving}>
           Отмена
         </Button>
-        <Button onClick={onSave} disabled={isSaving}>
+        <Button onClick={onSave} disabled={isSaving || !isContextReady}>
           <Check className="mr-2 h-4 w-4" />
           Сохранить
         </Button>

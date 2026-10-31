@@ -6,6 +6,7 @@ import {
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { hasRejectedLnkResult } from '@/lib/lnk-status'
+import { getControlWorkflowAccess } from '@/lib/control-workflow-access'
 import { canBackfillOwnLnkResult, getHistoricalLnkRequestDateReason } from '@/lib/lnk-system-order'
 import {
   createRequestDocumentIdentity,
@@ -290,12 +291,14 @@ function getLnkRequestExtensionTargetReason(
 
   const weldDate = parseDateLikeToIso(row.weldDate)
   const normalizedRequestDate = parseDateLikeToIso(requestDate)
-  if (!weldDate) return 'не указана корректная дата сварки.'
+  if (!weldDate && !getControlWorkflowAccess(row)?.welded) return 'не указана корректная дата сварки.'
   if (
     !normalizedRequestDate ||
     getDateInputValidationReason(normalizedRequestDate, 'Дата заявки ЛНК')
   ) return 'у выбранной заявки не указана корректная дата.'
-  if (weldDate > normalizedRequestDate) {
+  // Limited-role clients know whether welding exists; the server compares its
+  // actual date on the locked stored row before extending the request.
+  if (weldDate && weldDate > normalizedRequestDate) {
     return 'дата сварки позднее даты выбранной заявки.'
   }
 

@@ -1,3 +1,4 @@
+import { formatValidationMessage, type ValidationMessageFormatter } from './validation-message'
 import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldInput } from '@/lib/weld-fields'
@@ -18,7 +19,8 @@ export function findFirstDateBeforeWeldDateIssue(rows: WeldRow[], eventDate: unk
   return row ? formatDateBeforeWeldDateSaveReason(row, eventDate, eventLabel) : null
 }
 
-export function formatDateBeforeWeldDateSaveReason(row: WeldInput, eventDate: unknown, eventLabel: string) {
+export function formatDateBeforeWeldDateSaveReason(row: WeldInput, eventDate: unknown, eventLabel: string, format?: ValidationMessageFormatter) {
   const joint = String(row.joint ?? '').trim() || '-'
-  return `Стык ${joint}: ${eventLabel} (${formatDisplayDate(parseDateLikeToIso(eventDate))}) не может быть раньше даты сварки (${formatDisplayDate(parseDateLikeToIso(row.weldDate))}).`
+  return formatValidationMessage({ fields: ['weldDate'], publicMessage: `Стык ${joint}: ${eventLabel} не может быть раньше даты сварки.`,
+    message: `Стык ${joint}: ${eventLabel} (${formatDisplayDate(parseDateLikeToIso(eventDate))}) не может быть раньше даты сварки (${formatDisplayDate(parseDateLikeToIso(row.weldDate))}).` }, format)
 }

@@ -11,7 +11,7 @@ export function DocumentSplitModeSelect({ value, onChange, disabled, label = 'Р
     <span aria-hidden="true" className="text-slate-500">Разделение: <strong className="font-semibold text-slate-800">{SYSTEM_DOCUMENT_SPLIT_MODE_OPTIONS.find(option => option.id === value)?.label.toLocaleLowerCase('ru-RU')}</strong></span>
     <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 text-slate-400" />
     <Select aria-label={label} value={value} disabled={disabled} onChange={event => onChange(event.target.value as SystemDocumentSplitMode)}
-      className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed">
+      className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed disabled:opacity-0">
       {SYSTEM_DOCUMENT_SPLIT_MODE_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
     </Select>
   </label>

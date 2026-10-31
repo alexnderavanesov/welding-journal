@@ -1,3 +1,4 @@
+import { DocumentConnectionsButton } from './document-connections-button'
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { CalendarClock, CheckSquare2, ClipboardCheck, FileSpreadsheet, Layers3, ListFilter, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 
@@ -616,6 +617,7 @@ export function LnkResultManagerDialog({
                     conclusionName={selectedConclusion}
                     conclusionDate={selectedConclusionDate}
                   />
+                  <DocumentConnectionsButton reference={selectedDocumentReference} />
                   {selectedDocumentReference && (
                     dateEditorTarget?.entryKey === selectedEntry.changeKey ||
                     (rootCauseTarget?.focus === 'date' &&

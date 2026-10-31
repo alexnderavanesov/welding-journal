@@ -36,7 +36,7 @@ export function usePstoRequestCreateMutation({
       useSystemName?: boolean
       documentGroups?: SystemDocumentCreationGroup[]
     }) => {
-      const groups = documentGroups ?? [{
+      const groups: SystemDocumentCreationGroup[] = documentGroups ?? [{
         key: 'legacy',
         label: 'Все выбранные позиции',
         rowIds: records.map((record) => record.id),
@@ -62,6 +62,7 @@ export function usePstoRequestCreateMutation({
                 date: requestDate,
                 fieldKeys: ['pstoRequest'],
                 provisionalName: group.name,
+                namingPattern: group.namingPattern,
               })),
         },
       )

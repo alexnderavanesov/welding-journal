@@ -10,6 +10,7 @@ import {
 import { QueryBuilder } from 'drizzle-orm/pg-core'
 
 import { requireDb } from '@/db'
+import { workflowRequestSearchWhere } from './workflow-request-search'
 import { buildOwnLnkBackfillWhere } from './lnk-system-order-sql'
 import {
   duplicateControls,
@@ -203,6 +204,14 @@ export async function getLnkWorkflowRequestSummary(
 ): Promise<LnkWorkflowRequestSummary> {
   await assertSecurityScope('entry')
   const request = normalizeLnkWorkflowRequestSummaryRequest(input)
+  if (request.resultScope) {
+    const result = await requireDb().execute<LnkWorkflowRequestSummaryRow>(buildLnkResultRequestOptionsQuery(request))
+    const requestOptions = result.rows.slice(0, request.limit).flatMap(row => {
+      const identity = createRequestDocumentIdentity(row.name, row.date)
+      return identity ? [{ ...identity, rowCount: Number(row.rowCount), positionCount: Number(row.positionCount), methodCodes: row.methodCodes ?? [], searchText: `${row.name} ${row.date}`, disabledReason: null }] : []
+    })
+    return { requestNames: requestOptions.map(option => option.name), requestOptions, hasMore: result.rows.length > request.limit }
+  }
   const requestRowsResult = await requireDb().execute<LnkWorkflowRequestSummaryRow>(
     buildLnkWorkflowRequestSummaryQuery(sql`true`, request),
   )
@@ -211,6 +220,24 @@ export async function getLnkWorkflowRequestSummary(
     ...buildLnkWorkflowRequestDocumentSummary(requestRowsResult.rows.slice(0, request.limit)),
     hasMore,
   }
+}
+
+export function buildLnkResultRequestOptionsQuery(input: LnkWorkflowRequestSummaryRequest) {
+  const request = normalizeLnkWorkflowRequestSummaryRequest(input)
+  const methods = LNK_METHODS.filter(method => !request.methodCode || method.code === request.methodCode)
+  const positions = methods.map(method => {
+    const where = buildLnkWorkflowRowsWhere({ scope: request.resultScope === 'beforeHeatTreatment' ? 'preHeatTreatmentResultCandidates' : 'resultCandidates', methodKeys: [method.requestKey] })
+    return request.resultScope === 'beforeHeatTreatment'
+      ? sql`select ${weldJoints.id} as row_id, c.request_name as name, c.request_date::text as date, c.method as method_code
+          from ${weldJoints} join ${preHeatTreatmentControls} c on c.weld_joint_id = ${weldJoints.id}
+          where ${where} and c.method = ${method.code} and not (${finalResultWhere(sql`c.result`)})`
+      : sql`select ${weldJoints.id} as row_id, ${weldJoints[method.requestKey]} as name, ${weldJoints[method.requestDateKey]}::text as date, ${method.code}::text as method_code
+          from ${weldJoints} where ${where}`
+  })
+  return sql`with positions as (${sql.join(positions, sql` union all `)})
+    select btrim(name) as name, coalesce(date, '') as date, count(distinct row_id)::integer as "rowCount", count(*)::integer as "positionCount", array_agg(distinct method_code) as "methodCodes"
+    from positions where ${workflowRequestSearchWhere(request.search, sql`name`, sql`date`)}
+    group by btrim(name), coalesce(date, '') order by date desc, name asc limit ${request.limit + 1}`
 }
 
 export function buildLnkWorkflowRequestSummaryQuery(

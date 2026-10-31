@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test'
 import { eq } from 'drizzle-orm'
 import pg from 'pg'
 import { requireDb } from '../../src/db'
@@ -17,6 +17,167 @@ const project = 'E2E document grid blocks'
 const defaults: DocumentHistoryGridRequest = { startRow: 0, endRow: 100, rowGroupCols: [], groupKeys: [], sortModel: [] }
 type Kind = 'generated' | 'system'
 const columnFilters = { project: buildWeldColumnValueFilter([project]) }
+
+async function prepareClipboard(page: Page, context: BrowserContext, browserName: string) {
+  if (browserName !== 'webkit') return context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  // WebKit automation cannot grant OS clipboard permissions. Keep real range
+  // selection, keyboard handling and server reads; replace only the transport.
+  // Native clipboard behavior is covered by Chrome and the opt-in Safari test.
+  await page.addInitScript(() => {
+    let clipboard = ''
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: async (value: string) => { clipboard = value }, readText: async () => clipboard,
+    } })
+  })
+}
+
+for (const kind of ['generated', 'system'] as const) {
+  test(`document selection parity: ${kind} checkbox ranges, pointer hit areas and group keyboard`, async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 1000 })
+    await page.goto('/documents')
+    if (kind === 'system') await page.getByRole('button', { name: 'Заявка ЛНК', exact: true }).click()
+    const grid = page.locator(kind === 'generated' ? '[data-document-history-grid="generated:weldingJournal"]' : '[data-document-history-grid^="system:lnkRequest:"]')
+    await expect(grid.getByText('Найдено: 250', { exact: true })).toBeVisible()
+    const cell = (index: number) => grid.locator(`.ag-row[row-index="${index}"] .ag-cell[col-id^="ag-Grid-SelectionColumn"]`)
+    const checkbox = (index: number) => cell(index).getByRole('checkbox')
+    const count = (n: number) => expect(grid.getByText(`Выбрано: ${n}`, { exact: true })).toBeVisible()
+    const pointer = async (input: Locator, edge = false) => {
+      const box = await input.boundingBox(); expect(box).not.toBeNull()
+      await page.mouse.click(box!.x + (edge ? -4 : box!.width / 2), box!.y + box!.height / 2)
+    }
+    await pointer(checkbox(5)); await count(1)
+    const first = await checkbox(0).boundingBox(), last = await checkbox(2).boundingBox()
+    expect(first).not.toBeNull(); expect(last).not.toBeNull()
+    await page.mouse.move(first!.x + first!.width / 2, first!.y + first!.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(last!.x + last!.width / 2, last!.y + last!.height / 2, { steps: 12 })
+    await page.mouse.up()
+    await expect(grid.locator('.ag-cell-range-selected')).toHaveCount(3)
+    await page.keyboard.press('Shift+Space'); await count(4)
+    for (const index of [0, 1, 2, 5]) await expect(checkbox(index)).toBeChecked()
+    await page.keyboard.down('Shift'); await page.keyboard.down('Space'); await page.keyboard.down('Space')
+    await page.keyboard.up('Space'); await page.keyboard.up('Shift'); await count(1)
+    await page.keyboard.press('Space'); await count(2)
+    await pointer(checkbox(4), true); await count(3)
+    await expect(grid.locator('.ag-cell-range-selected')).toHaveCount(0)
+    await pointer(checkbox(4), true); await count(2)
+    // Cmd/Ctrl keeps independent ranges, while an ordinary checkbox click clears them.
+    const valueCell = (index: number) => grid.locator(`.ag-row[row-index="${index}"] .ag-cell[col-id="title"]`)
+    await valueCell(0).click({ position: { x: 3, y: 15 } })
+    await valueCell(2).click({ position: { x: 3, y: 15 }, modifiers: ['ControlOrMeta'] })
+    await expect(grid.locator('.ag-cell-range-selected')).toHaveCount(2)
+    await page.keyboard.press('Shift+Space'); await count(3)
+    await pointer(checkbox(2)); await count(2)
+    await expect(grid.locator('.ag-cell-range-selected')).toHaveCount(0)
+    await openDocumentGridColumnMenu(page, 'line')
+    await page.getByRole('menuitem', { name: 'Сгруппировать по «Линия»', exact: true }).click()
+    const group = grid.locator('.ag-full-width-row.ag-row-group').filter({ hasText: 'LINE-A' }).first()
+    await expect(group).toBeVisible()
+    await group.click()
+    await page.keyboard.press('Enter')
+    await expect(group).toHaveAttribute('aria-expanded', 'true')
+    const leaf = grid.locator('.ag-row[row-id^="document:"] .ag-cell[col-id="title"]').first()
+    await leaf.click({ position: { x: 5, y: 15 } })
+    await page.keyboard.press('ArrowUp')
+    for (const key of ['F2', 'Enter', 'F2', 'Enter']) {
+      await page.keyboard.press(key)
+      await expect(grid.locator('.ag-cell-range-selected')).toHaveCount(0)
+      await expect(group).toBeFocused()
+      await count(2)
+    }
+    await page.keyboard.press('ArrowDown')
+    await expect(leaf).toBeFocused()
+    const groupCheckbox = group.getByRole('checkbox')
+    await pointer(groupCheckbox, true)
+    await expect(groupCheckbox).toBeChecked()
+    await pointer(groupCheckbox, true)
+    await expect(groupCheckbox).not.toBeChecked()
+    const header = grid.getByRole('checkbox', { name: 'Выбрать все документы', exact: true })
+    await pointer(header, true); await count(250)
+    await pointer(header, true); await count(0)
+    // Repeat the Safari reproduction inside an expanded group, using real
+    // pointer drags/clicks rather than invoking checkbox DOM methods.
+    const leaves = grid.locator('.ag-row[row-id^="document:"] input[type="checkbox"]')
+    for (let repeat = 0; repeat < 3; repeat++) {
+      const from = await leaves.nth(0).boundingBox(), to = await leaves.nth(2).boundingBox()
+      expect(from).not.toBeNull(); expect(to).not.toBeNull()
+      await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2)
+      await page.mouse.down(); await page.mouse.move(to!.x + to!.width / 2, to!.y + to!.height / 2, { steps: 10 }); await page.mouse.up()
+      await expect(grid.locator('.ag-cell-range-selected')).toHaveCount(3)
+      await page.keyboard.press('Shift+Space'); await count(3)
+      await pointer(leaves.nth(1), true); await count(2)
+      await pointer(leaves.nth(1)); await count(3)
+      await pointer(groupCheckbox, true); await expect(groupCheckbox).toBeChecked()
+      await pointer(groupCheckbox, true); await count(0)
+    }
+    // The open group has 124 documents but only its first 100 cards are loaded.
+    // Collapsed sibling groups are not documents in the visible cell range.
+    await leaf.click({ position: { x: 5, y: 15 } })
+    await page.keyboard.press('ControlOrMeta+a')
+    await page.keyboard.press('Shift+Space'); await count(124)
+    await page.keyboard.press('Shift+Space'); await count(0)
+    await expect(grid.locator('[role="alert"]')).toHaveCount(0)
+  })
+}
+
+for (const kind of ['generated', 'system'] as const) test(`document keyboard selection: ${kind} keeps group and header checkbox focus while membership loads`, async ({ page }) => {
+  await page.goto('/documents')
+  if (kind === 'system') await page.getByRole('button', { name: 'Заявка ЛНК', exact: true }).click()
+  const grid = page.locator('[data-document-history-grid]')
+  await expect(grid.getByText('Найдено: 250', { exact: true })).toBeVisible()
+  const header = grid.getByRole('checkbox', { name: 'Выбрать все документы', exact: true })
+  let release!: () => void, pending = false, releaseGroup!: () => void, groupRead = false, holdGroup = false
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const groupGate = new Promise<void>(resolve => { releaseGroup = resolve })
+  await page.route('**/_serverFn/**', async route => {
+    if (!pending && rpcName(route.request().url()).includes('DocumentHistoryGrid')) {
+      pending = true
+      await gate
+    }
+    if (holdGroup && !groupRead && rpcName(route.request().url()).includes('DocumentHistoryGrid')) {
+      groupRead = true
+      await groupGate
+    }
+    await route.continue()
+  })
+  try {
+    await header.click()
+    await expect.poll(() => pending).toBe(true)
+    await expect(header).toBeFocused()
+    // Repeated activation while the membership read is pending is ignored.
+    await page.keyboard.down('Space')
+    release()
+    await expect(grid.getByText('Выбрано: 250', { exact: true })).toBeVisible()
+    await page.keyboard.up('Space')
+    await expect(grid.getByText('Выбрано: 250', { exact: true })).toBeVisible()
+    await expect(header).toBeFocused()
+    await page.keyboard.press('Space')
+    await expect(grid.getByText('Выбрано: 0', { exact: true })).toBeVisible()
+    await openDocumentGridColumnMenu(page, 'line')
+    await page.getByRole('menuitem', { name: 'Сгруппировать по «Линия»', exact: true }).click()
+    const group = grid.locator('.ag-full-width-row.ag-row-group').filter({ hasText: 'LINE-A' }).first().getByRole('checkbox')
+    await expect(group).toBeVisible()
+    await page.waitForLoadState('networkidle')
+    holdGroup = true
+    await group.click()
+    await expect.poll(() => groupRead).toBe(true)
+    // A key pressed while unavailable must not become a new toggle merely
+    // because membership finishes loading before that key is released.
+    await page.keyboard.down('Space')
+    releaseGroup()
+    await expect(grid.getByText('Выбрано: 124', { exact: true })).toBeVisible()
+    await page.keyboard.up('Space')
+    await expect(grid.getByText('Выбрано: 124', { exact: true })).toBeVisible()
+    await expect(group).toBeFocused()
+    await page.keyboard.press('Space')
+    await expect(grid.getByText('Выбрано: 0', { exact: true })).toBeVisible()
+    await expect(group).toBeFocused()
+  } finally {
+    release()
+    releaseGroup()
+    await page.unrouteAll({ behavior: 'wait' })
+  }
+})
 
 test.beforeEach(async () => {
   assertSafeE2eDatabaseUrl(process.env.DATABASE_URL ?? '')
@@ -1214,8 +1375,8 @@ test('document grid parity: date filter exposes year/month/day with immediate ex
   await info.attach('document-date-filter-reloads', { body: JSON.stringify(reloads, null, 2), contentType: 'application/json' })
 })
 
-test('document grid parity: clipboard copies complete ranges from leaf, header and group focus in bounded requests', async ({ page, context }) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+test('document grid parity: clipboard copies complete ranges from leaf, header and group focus in bounded requests', async ({ page, context, browserName }) => {
+  await prepareClipboard(page, context, browserName)
   const requests = observeDocumentRequests(page)
   await page.setViewportSize({ width: 1600, height: 1000 })
   await page.goto('/documents')
@@ -1671,8 +1832,8 @@ test('document filter stays above the toolbar and unclipped on a short viewport'
   await expect(grid.locator('.ag-header-cell[col-id="project"]')).toBeFocused()
 })
 
-test('document grid numeric selection uses decimal commas and hide all preserves document identity and actions', async ({ page, context }) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+test('document grid numeric selection uses decimal commas and hide all preserves document identity and actions', async ({ page, context, browserName }) => {
+  await prepareClipboard(page, context, browserName)
   await withLineProgramFixture(db => db.query('update weld_joints set wdi=45.6 where project_title=$1', [project]))
   await page.goto('/documents')
   const grid = page.locator('[data-document-history-grid="generated:weldingJournal"]')
@@ -1743,15 +1904,7 @@ test('system registry revision covers metadata and parent touches outside the vi
 })
 
 test('document transfer: full selection and clipboard include unloaded documents and retain hidden choices', async ({ page, context, browserName }) => {
-  if (browserName === 'chromium') await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-  else await page.addInitScript(() => {
-    // WebKit's automation does not grant native clipboard permissions. Exercise
-    // range loading/cancellation here; native clipboard remains Chrome coverage.
-    let clipboard = ''
-    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
-      writeText: async (value: string) => { clipboard = value }, readText: async () => clipboard,
-    } })
-  })
+  await prepareClipboard(page, context, browserName)
   await page.setViewportSize({ width: 1600, height: 1000 })
   const requests = observeDocumentRequests(page)
   await page.goto('/documents')

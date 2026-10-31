@@ -1,3 +1,4 @@
+import { Checkbox } from '@/components/ui/checkbox'
 import { Select } from '@/components/ui/select'
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, memo, type MouseEvent, type KeyboardEvent } from 'react'
 import type { ColDef, GridApi, ICellRendererParams, ValueGetterParams, SetFilterHandler } from 'ag-grid-community'
@@ -32,7 +33,7 @@ function AssignmentIdentity({ data: row }: ICellRendererParams<WeldRow>) {
 }
 function AssignmentCheckbox({ data: row }: ICellRendererParams<WeldRow>) {
   const { selected, busy, canSelect, onSelect } = useContext(AssignmentContext)
-  return row ? <input type="checkbox" className="program-assignment-checkbox h-4 w-4 accent-sky-600" aria-label={`Выбрать ${row.joint}`} checked={selected.has(row.id)} disabled={busy || !canSelect(row)} onChange={event => onSelect(row.id, event.target.checked)} /> : null
+  return row ? <Checkbox className="program-assignment-checkbox" aria-label={`Выбрать ${row.joint}`} checked={selected.has(row.id)} disabled={busy || !canSelect(row)} onChange={event => onSelect(row.id, event.target.checked)} /> : null
 }
 function AssignmentEditor({ data: row, colDef }: ICellRendererParams<WeldRow>) {
   const { draft, busy, onChange, getError, focusedJoint, focusedMethod, removalHints } = useContext(AssignmentContext)
@@ -88,7 +89,7 @@ export function ProgramAssignmentTable(props: ProgramAssignmentTableProps) {
   const eligible = visible.filter(props.canSelect), all = !!eligible.length && eligible.every(row => props.selected.has(row.id)), partly = !all && eligible.some(row => props.selected.has(row.id))
   return <AssignmentContext.Provider value={props}><div className="program-assignment-grid" data-testid="assignment-grid">
     <ProgramGrid kind="assignments" sessionKey={props.sessionKey ?? 'assignments'} label="Стыки и назначения всех методов" rows={props.rows} columns={columns} getId={row => String(row.id)} virtual onReady={setApi}
-      toolbar={<label className="flex items-center gap-2 text-xs"><input type="checkbox" className="program-assignment-checkbox h-4 w-4 accent-sky-600" aria-label="Выбрать все доступные стыки" ref={element => { if (element) element.indeterminate = partly }} checked={all} disabled={props.busy || !eligible.length} onChange={event => props.onSelectAll(event.target.checked, visible)} />Выбрать доступные в отборе</label>}
+      toolbar={<label className="flex items-center gap-2 text-xs"><Checkbox className="program-assignment-checkbox" aria-label="Выбрать все доступные стыки" ref={element => { if (element) element.indeterminate = partly }} checked={all} disabled={props.busy || !eligible.length} onChange={event => props.onSelectAll(event.target.checked, visible)} />Выбрать доступные в отборе</label>}
       onFilterRows={rows => { setVisible(previous => previous.length === rows.length && previous.every((row, i) => row === rows[i]) ? previous : rows); props.onFilterRows?.(rows) }}
       onRowClick={row => { if (!props.busy && props.canSelect(row)) props.onSelect(row.id, !props.selected.has(row.id)) }} onRowMenu={props.onContextMenu}
       getRowClass={({ data }) => data ? rowClass(data, props.focusedJoint === data.id || props.selected.has(data.id)) : ''}

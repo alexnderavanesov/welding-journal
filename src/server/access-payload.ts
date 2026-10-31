@@ -6,11 +6,13 @@ import { accessContext } from './access-store'
 import type { WeldMutationScope } from './weld-contracts'
 
 /** Validate query selectors before a cache/SQL read, including aggregate/filter probes. */
-export function assertReadableQuery(identity: AccessIdentity, value: unknown) {
+export function assertReadableQuery(identity: AccessIdentity, value: unknown, searchArea?: 'lnk' | 'psto') {
   const visit = (input: unknown, parent = '') => {
     if (!input || typeof input !== 'object') return
     for (const [key, item] of Object.entries(input)) {
-      if (key === 'search' && typeof item === 'string' && item.trim() && !['welding.view', 'lnk.view', 'psto.view'].every(permission => hasPermission(identity, permission as any))) throw new Error('Общий поиск требует просмотра всех рабочих областей. Используйте фильтр доступного столбца.')
+      if (key === 'search' && typeof item === 'string' && item.trim() &&
+        !(searchArea && hasPermission(identity, `${searchArea}.view`)) &&
+        !['welding.view', 'lnk.view', 'psto.view'].every(permission => hasPermission(identity, permission as any))) throw new Error('Общий поиск требует просмотра всех рабочих областей. Используйте фильтр доступного столбца.')
       if (['columnFilters', 'filterModel', 'filters'].includes(key) && item && typeof item === 'object') {
         for (const field of Object.keys(item)) if (RESTRICTED_WELD_FIELDS.has(field) && !canViewWeldField(identity, field)) throw new Error('Фильтр использует недоступное поле.')
       }
@@ -23,8 +25,18 @@ export function assertReadableQuery(identity: AccessIdentity, value: unknown) {
   }
   visit(value)
 }
+
+/** These handlers search only shared identity and their own specialty fields.
+ * Never infer the scope from client input or exempt field selectors themselves.
+ */
+export function getOperationSearchArea(filename: string, name: string): 'lnk' | 'psto' | undefined {
+  if (filename.replaceAll('\\', '/').split('/').at(-1) !== 'weld-read-api.ts') return
+  if (['listLnkWorkflowRows', 'getLnkWorkflowRequestSummary'].includes(name)) return 'lnk'
+  if (['listPstoWorkflowRows', 'getPstoWorkflowRequestOptions'].includes(name)) return 'psto'
+}
 /** Full client drafts are accepted only when fields outside this operation are unchanged. */
 export function assertSubmittedWeldFields(input: Record<string, any>, previous: Record<string, any> | undefined, scope: WeldMutationScope) {
+  assertNoSubmittedWorkflowAccess(input)
   if (!accessContext.getStore()) return // Trusted local fixture / migration path, never an HTTP bypass.
   const allowed = new Set<string>(WELD_MUTATION_FIELD_KEYS[scope])
   const normalized = (key: string, value: unknown) => value == null || value === '' || key === 'officiality' && value === 'действующий' ? null : value instanceof Date ? value.toISOString() : value
@@ -43,6 +55,7 @@ export function requireContextPermission(permission: Parameters<typeof hasPermis
 /** Import can carry historical specialty facts; it needs each affected specialty,
  * in addition to its import permission. Existing business import checks still run. */
 export function assertImportedWeldFields(input: Record<string, unknown>, previous?: Record<string, unknown>) {
+  assertNoSubmittedWorkflowAccess(input)
   const context = accessContext.getStore()
   if (!context) return
   const welding = new Set<string>(WELDING_PROFILE_FIELD_KEYS)
@@ -54,6 +67,10 @@ export function assertImportedWeldFields(input: Record<string, unknown>, previou
     if (PSTO_PROFILE_FIELD_KEYS.has(key as WeldFieldKey)) requireContextPermission('psto.edit')
     else if (LNK_PROFILE_FIELD_KEYS.has(key as WeldFieldKey)) requireContextPermission('lnk.edit')
   }
+}
+
+function assertNoSubmittedWorkflowAccess(input: Record<string, unknown>) {
+  if (Object.hasOwn(input, 'controlWorkflowAccess')) throw new Error('Поле «controlWorkflowAccess» недоступно для изменения. Готовность этапов проверяется по сохранённым данным.')
 }
 
 export function accessibleReportInput<T extends { fieldKeys?: string[]; kind?: string }>(input: T): T {

@@ -10,6 +10,7 @@ import type { WeldPageRequest } from '../../src/server/weld-contracts'
 import { assertSafeE2eDatabaseUrl, withE2eDatabase } from '../database'
 import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-program-fixtures'
 import { loadDispatcherTaskContext, normalizeDispatcherTaskContextRequest } from '../../src/server/dispatcher-task-context'
+import { measureResultRequestSearch } from '../result-request-search-load'
 
 const project = 'E2E PSTO page read 200k'
 const fixtureSize = 200_000
@@ -43,7 +44,7 @@ function repeatDate(n: number, sequence: number, daysAfter = 0) {
 test.beforeEach(cleanup)
 test.afterEach(cleanup)
 
-test('200k ПСТО: paged current-cycle filters and sorting retain raw facts and bounded group metadata', async ({}, info) => {
+test('200k ПСТО: paged current-cycle filters and sorting retain raw facts and bounded group metadata', async ({ page }, info) => {
   test.setTimeout(240_000)
   assertSafeE2eDatabaseUrl(process.env.DATABASE_URL ?? '')
   await withLineProgramFixture(async db => {
@@ -214,20 +215,29 @@ test('200k ПСТО: paged current-cycle filters and sorting retain raw facts an
     const extraRead = request.pageSize === 'all' || request.includeTotals === true ? 1 : 0
     pageStatementCount ??= statements.length - extraRead
     expect(statements.length, `${name}: count must not grow with page or repeat population`).toBe(pageStatementCount + extraRead)
-    // One source read, settings/index reads and fixed relation families. This
+    // Selection plus one bounded snapshot reload, settings/index reads and fixed relation families. This
     // budget is independent of the 200k source, page length and repeat count.
-    expect(statements.length).toBeLessThanOrEqual(14)
+    expect(statements.length).toBeLessThanOrEqual(18)
     expect(statements.every(statement => statement.rows !== null)).toBe(true)
     const stateReads = statements.filter(statement => /^\s*with "inserted_state" as/i.test(statement.sql))
     expect(stateReads).toHaveLength(1)
     expect(stateReads[0]!.sql).toMatch(/on conflict \("id"\) do nothing/i)
-    expect(statements.filter(statement => !stateReads.includes(statement)).every(statement => /^\s*select\b/i.test(statement.sql))).toBe(true)
+    const boundaries = statements.filter(statement => /^(begin isolation level repeatable read read only|commit)$/i.test(statement.sql))
+    expect(boundaries.map(statement => statement.sql.toLowerCase())).toEqual(['begin isolation level repeatable read read only', 'commit'])
+    expect(statements.filter(statement => !stateReads.includes(statement) && !boundaries.includes(statement))
+      .every(statement => /^\s*select\b/i.test(statement.sql))).toBe(true)
+    const snapshot = statements.slice(statements.indexOf(boundaries[0]!)+1, -1)
+    expect(snapshot.every(statement => /^\s*select\b/i.test(statement.sql))).toBe(true)
 
     // Inspect database-returned rows, not just the final JavaScript slice.
     // Derived/global hydration would fail even if the returned page looked right.
     const sourceReads = statements.filter(statement => ['weld_date', 'psto_required', 'tvmt_result']
       .every(field => statement.fields.includes(field)))
-    expect(sourceReads, `${name}: exactly one full-row source query`).toHaveLength(1)
+    expect(sourceReads, `${name}: selection and bounded coherent card reload`).toHaveLength(2)
+    expect(sourceReads[1]!.rows).toBe(count)
+    expect(snapshot).toContain(sourceReads[1])
+    expect(sourceReads[1]!.sql).toMatch(/= any\(\$\d+::integer\[\]\)/)
+    expect(sourceReads[1]!.parameters.filter(Array.isArray).map(values => [...values as number[]].sort((a, b) => a - b))).toEqual([ids])
     expect(sourceReads[0]!.rows).toBeGreaterThanOrEqual(count)
     expect(sourceReads[0]!.rows).toBeLessThanOrEqual(count + (request.pageSize === 'all' || request.includeTotals ? 0 : 1))
     const repeatReads = statements.filter(statement => statement.table === 'psto_repeat_cycles')
@@ -312,6 +322,16 @@ test('200k ПСТО: paged current-cycle filters and sorting retain raw facts an
     }
     console.info('Dispatcher contexts on 200k joints:', JSON.stringify(contextMeasurements))
     await info.attach('dispatcher-context-200k.json', { body: JSON.stringify(contextMeasurements), contentType: 'application/json' })
+    await withE2eDatabase(async db => {
+      await db.query("update weld_joints set psto_result=null,psto_date=null,heat_treatment_diagram=null,tvmt_request=null,tvmt_request_date=null,tvmt_result=null,tvmt_conclusion=null,tvmt_conclusion_date=null where project_title=$1 and isometry::int%2=1", [project])
+      await db.query("update psto_repeat_cycles c set tvmt_result='ожидает НК',tvmt_conclusion=null,tvmt_conclusion_date=null from weld_joints w where c.weld_joint_id=w.id and w.project_title=$1 and c.sequence=3", [project])
+      await db.query('analyze weld_joints'); await db.query('analyze psto_repeat_cycles')
+    })
+    const requestSearch = await measureResultRequestSearch(page, [
+      { scope: 'psto', prefix: 'PRIMARY-PSTO-', exact: 'PRIMARY-PSTO-199999', absent: 'PRIMARY-PSTO-200000' },
+      { scope: 'tvmt', prefix: 'REPEAT-TVMT-', exact: 'REPEAT-TVMT-200000-3', absent: 'REPEAT-TVMT-200000-2' },
+    ])
+    await info.attach('psto-request-search-200k.json', { body: JSON.stringify(requestSearch, null, 2), contentType: 'application/json' })
     console.info(JSON.stringify({ workflow: 'psto-page-read-200k',
       measurements: measurements.map(({ name, returned, statements, bytes, elapsedMs }) => ({ name, returned, statements, bytes, elapsedMs })) }))
   } finally {

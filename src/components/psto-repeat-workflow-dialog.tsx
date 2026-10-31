@@ -1,3 +1,6 @@
+import { runDocumentSave } from '@/lib/run-document-save'
+import { collectResultRequestSources } from '@/lib/result-request-sources'
+import { useResultRequestSources } from '@/components/use-result-request-sources'
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -17,7 +20,7 @@ import { RequestDialogFooter } from '@/components/request-dialog-footer'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
 import { ResultDialogHeader } from '@/components/result-dialog-header'
 import { RequestRowsPanel } from '@/components/request-rows-panel'
-import { RequestDocumentCombobox } from '@/components/request-document-combobox'
+import { ResultRequestCombobox } from '@/components/result-request-combobox'
 import { SelectedRowsViewToggle, type SelectedRowsViewMode } from '@/components/selected-rows-view-toggle'
 import { SystemDocumentNamesPanel } from '@/components/system-document-names-panel'
 import { SystemDocumentSplitControl } from '@/components/system-document-split-control'
@@ -67,6 +70,7 @@ import {
 import {
   canAddPstoWorkflowResult as canAddPstoResult,
   canCreatePstoWorkflowRequest as canCreatePstoRequest,
+  getPstoWorkflowResultBlockReason,
 } from '@/lib/psto-status'
 import { usePagePagination } from '@/lib/use-page-pagination'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
@@ -128,17 +132,22 @@ export function PstoRepeatWorkflowDialog({
   const [naming, setNaming] = useState<RequestNamingState>(() =>
     getDefaultNamingState(),
   )
-  const requestOptions = useMemo(() => getPstoRequestOptions(rows), [rows])
-  const [requestKey, setRequestKey] = useState(() =>
-    mode === 'result' ? getInitialRequestKey(rows, initialSelectedIds, requestOptions) : '',
+  const candidateRequests = useMemo(() => getPstoRequestOptions(rows), [rows])
+  const [selectedRequest, setSelectedRequest] = useState(() =>
+    mode === 'result' ? getInitialRequest(rows, initialSelectedIds, candidateRequests) : null,
   )
-  const selectedRequest = requestOptions.find((option) => option.key === requestKey) ?? null
+  // Keep the filter identity even when a server search returns no matching rows.
+  const requestOptions = useMemo(() => collectRequestDocumentIdentities([
+    ...candidateRequests,
+    ...(selectedRequest ? [selectedRequest] : []),
+  ]), [candidateRequests, selectedRequest])
+  const requestKey = selectedRequest?.key ?? ''
   useEffect(() => {
     if (!isContextReady) return
     onCandidateRequestChange?.(mode === 'result' ? selectedRequest : null)
   }, [isContextReady, mode, onCandidateRequestChange, selectedRequest])
   const [selectedIds, setSelectedIds, selectionWarning] = useWorkflowSelectionState(() =>
-    getInitialSelectedIds(mode, rows, initialSelectedIds, selectedRequest),
+    getInitialSelectedIds(mode, rows, initialSelectedIds),
   )
   const initialSelectionSignature = useMemo(
     () => [...initialSelectedIds].sort((left, right) => left - right).join(','),
@@ -153,15 +162,13 @@ export function PstoRepeatWorkflowDialog({
     const contextKey = `${mode}:${initialSelectionSignature}`
     if (appliedInitialSelectionRef.current === contextKey) return
 
-    const nextRequestKey = mode === 'result'
-      ? getInitialRequestKey(rows, initialSelectedIds, requestOptions)
-      : ''
-    const nextRequest = requestOptions.find((option) => option.key === nextRequestKey) ?? null
-    setRequestKey(nextRequestKey)
-    setSelectedIds(getInitialSelectedIds(mode, rows, initialSelectedIds, nextRequest))
+    setSelectedRequest(mode === 'result'
+      ? getInitialRequest(rows, initialSelectedIds, candidateRequests)
+      : null)
+    setSelectedIds(getInitialSelectedIds(mode, rows, initialSelectedIds))
     setRowsViewMode('all')
     appliedInitialSelectionRef.current = contextKey
-  }, [initialSelectedIds, initialSelectionSignature, isContextReady, mode, requestOptions, rows])
+  }, [initialSelectedIds, initialSelectionSignature, isContextReady, mode, candidateRequests, rows])
   const { data: sequences } = useQuery({
     queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
     queryFn: loadSystemDocumentSequences,
@@ -171,8 +178,7 @@ export function PstoRepeatWorkflowDialog({
     refetchOnReconnect: false,
   })
   const requestRows = useMemo(() => {
-    if (mode !== 'result') return rows
-    if (!selectedRequest) return []
+    if (mode !== 'result' || !selectedRequest) return rows
     return rows.filter((row) => {
       const cycle = getCurrentPstoCycle(row)
       return isSameRequestDocument(cycle?.pstoRequest, cycle?.pstoRequestDate, selectedRequest)
@@ -198,16 +204,20 @@ export function PstoRepeatWorkflowDialog({
     () => rows.filter((row) => selectedIds.has(row.id)),
     [rows, selectedIds],
   )
+  const selectedRequests = useMemo(() => getPstoRequestOptions(selectedRows), [selectedRows])
+  const managerRows = selectedRows.length > 0 ? selectedRows : requestRows
+  const requestSourceGroups = useMemo(() => collectResultRequestSources(selectedRows, getPstoRequestOptions), [selectedRows])
+  const requestSources = useResultRequestSources(selectedRows, requestSourceGroups, () => { setRowsViewMode('selected'); setSelectedSearch(''); setWorkspaceTab('joints') })
   const filteredSelectedRows = useMemo(
-    () => filterRows(selectedRows, selectedSearch),
-    [selectedRows, selectedSearch],
+    () => filterRows(requestSources.rows, selectedSearch),
+    [requestSources.rows, selectedSearch],
   )
   const displayedRows = rowsViewMode === 'selected' ? filteredSelectedRows : filteredRows
   const displayedSearch = rowsViewMode === 'selected' ? selectedSearch : search
   const pagination = usePagePagination({
     items: displayedRows,
     defaultPageSize: 50,
-    resetKeys: [displayedSearch, rowsViewMode, requestKey],
+    resetKeys: [requestSources.sourceProps.activeKey, displayedSearch, rowsViewMode, requestKey],
   })
   const creationPlan = useMemo(() => buildSystemDocumentCreationPlan({
     type: mode === 'request' ? 'pstoRequest' : 'pstoConclusion',
@@ -260,20 +270,21 @@ export function PstoRepeatWorkflowDialog({
   }, [rowsViewMode, selectedIds.size])
 
   const mutation = useMutation({
-    mutationFn: async () => savePstoRepeatWorkflow({ data: {
+    mutationFn: async () => runDocumentSave('savePstoRepeatWorkflow', headers => savePstoRepeatWorkflow({ headers, data: {
       action: mode === 'request' ? 'pstoRequest' : 'pstoResult',
       date,
       groups: creationPlan.groups.map((group) => ({
         rowIds: group.rowIds,
         name: group.name,
         useSystemName: group.useSystemName,
+          namingPattern: group.namingPattern,
       })),
       documentGrouping: getCreationGroupingCommand(creationPlan.groups),
       expectedVersions: selectedRows.map((row) => ({
         id: row.id,
         version: String(row.rowVersion ?? '').trim(),
       })),
-    } }),
+    } })),
     onSuccess: async (savedRows) => {
       const resultRows = savedRows as WeldRow[]
       scheduleWeldDataRefresh(queryClient, { upsertRows: resultRows })
@@ -291,11 +302,11 @@ export function PstoRepeatWorkflowDialog({
     },
     onError: (error) => onSaved([], [], (error as Error).message),
   })
-  const saveBlockReason = !isContextReady ? 'Загрузка выбранных стыков…' : mode === 'result' && !selectedRequest
-      ? 'Выберите заявку ПСТО.'
-      : selectedRows.length === 0
-        ? 'Выберите хотя бы один доступный стык.'
-        : [dateReason, creationPlan.error].filter(Boolean).join('\n') || effectiveDomainReason
+  const saveBlockReason = !isContextReady
+    ? 'Загрузка выбранных стыков…'
+    : selectedRows.length === 0
+      ? 'Выберите хотя бы один доступный стык.'
+      : [dateReason, creationPlan.error].filter(Boolean).join('\n') || effectiveDomainReason
 
   const runRootCauseAction = (action: WorkflowRootCauseAction) => {
     const target = action.target
@@ -317,7 +328,7 @@ export function PstoRepeatWorkflowDialog({
   }
 
   const setSelectedRows = useStableEventCallback((rowIds: number[]) => {
-    const allowedIds = new Set(requestRows.filter(canSelectRow).map((row) => row.id))
+    const allowedIds = new Set(rows.filter(canSelectRow).map((row) => row.id))
     setSelectedIds(new Set(rowIds.filter((rowId) => allowedIds.has(rowId))))
   })
   const toggleRow = useStableEventCallback((rowId: number) => {
@@ -384,12 +395,14 @@ export function PstoRepeatWorkflowDialog({
         />
       ) : (
         <ResultDialogHeader
+          sources={requestSources.sourceProps}
           title="Внесение результатов ПСТО"
-          requestName={selectedRequest?.name ?? ''}
+          requestName={selectedRequests[0]?.name ?? selectedRequest?.name ?? ''}
+          requestCount={selectedRequests.length}
           selectedCount={selectedRows.length}
-          managerDisabled={!onOpenResultManager || requestRows.length === 0}
-          managerDisabledReason="Сначала выберите заявку ПСТО с доступными позициями."
-          onOpenManager={() => onOpenResultManager?.(requestRows)}
+          managerDisabled={!onOpenResultManager || managerRows.length === 0}
+          managerDisabledReason="Стыков для просмотра результатов не найдено."
+          onOpenManager={() => onOpenResultManager?.(managerRows)}
           onClose={onClose}
         />
       )}
@@ -405,18 +418,19 @@ export function PstoRepeatWorkflowDialog({
         </label>
         {mode === 'result' ? (
           <label className="block min-w-0 space-y-1.5 text-sm">
-            <span className="text-[13px] font-medium leading-none text-slate-700">Заявка ПСТО</span>
-            <RequestDocumentCombobox
-              ariaLabel="Заявка ПСТО"
+            <span className="text-[13px] font-medium leading-none text-slate-700">Фильтр по заявке ПСТО</span>
+            <ResultRequestCombobox scope="psto"
+              ariaLabel="Фильтр по заявке ПСТО"
               value={requestKey}
               options={requestOptions}
-              placeholder="Найдите заявку по названию или дате"
+              placeholder="Все заявки"
+              emptyOptionLabel="Все заявки"
               onChange={(request) => {
-                setRequestKey(request?.key ?? '')
-                setSelectedIds(new Set())
+                setSelectedRequest(request)
                 setRowsViewMode('all')
               }}
             />
+            <span className="block text-xs text-slate-500">Одна диаграмма может включать разные заявки. Фильтр сохраняет выбор стыков.</span>
           </label>
         ) : null}
       </section>
@@ -451,7 +465,7 @@ export function PstoRepeatWorkflowDialog({
             description={rowsViewMode === 'all' && rows.length >= WORKFLOW_CANDIDATE_PAGE_SIZE
               ? `Показаны первые ${WORKFLOW_CANDIDATE_PAGE_SIZE} подходящих стыков. Уточните поиск, чтобы найти остальные.`
               : ''}
-            viewToggle={<SelectedRowsViewToggle mode={rowsViewMode} selectedCount={selectedIds.size} onChange={setRowsViewMode} />}
+            viewToggle={<SelectedRowsViewToggle mode={rowsViewMode} selectedCount={selectedIds.size} onChange={mode => { requestSources.clear(); setRowsViewMode(mode) }} />}
             action={rowsViewMode === 'selected' ? (
               <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>Снять весь выбор</Button>
             ) : (
@@ -467,9 +481,7 @@ export function PstoRepeatWorkflowDialog({
               ? <>Найдено: {filteredSelectedRows.length} · Выбрано: {selectedRows.length}</>
               : undefined}
             isEmpty={displayedRows.length === 0}
-            emptyMessage={mode === 'result' && !selectedRequest
-              ? 'Выберите заявку ПСТО.'
-              : 'Стыков для этого действия не найдено.'}
+            emptyMessage="Стыков для этого действия не найдено."
             onSearchChange={rowsViewMode === 'selected'
               ? setSelectedSearch
               : (value) => {
@@ -548,7 +560,7 @@ function getPstoRequestOptions(rows: WeldRow[]) {
   }))
 }
 
-function getInitialRequestKey(
+function getInitialRequest(
   rows: WeldRow[],
   initialSelectedIds: ReadonlySet<number>,
   options: RequestDocumentIdentity[],
@@ -559,25 +571,19 @@ function getInitialRequestKey(
     const identity = createRequestDocumentIdentity(cycle?.pstoRequest, cycle?.pstoRequestDate)
     return identity ? [identity.key] : []
   }))
-  if (keys.size === 1) return [...keys][0] ?? ''
-  return options.length === 1 ? options[0]?.key ?? '' : ''
+  if (keys.size === 1) return options.find(option => keys.has(option.key)) ?? null
+  return options.length === 1 ? options[0] ?? null : null
 }
 
 function getInitialSelectedIds(
   mode: PstoRepeatWorkflowRowMode,
   rows: WeldRow[],
   initialSelectedIds: ReadonlySet<number>,
-  selectedRequest: RequestDocumentIdentity | null,
 ) {
   return new Set(rows.flatMap((row) => {
     if (!initialSelectedIds.has(row.id)) return []
     if (mode === 'request') return canCreatePstoRequest(row) ? [row.id] : []
-    const cycle = getCurrentPstoCycle(row)
-    return selectedRequest &&
-      canAddPstoResult(row) &&
-      isSameRequestDocument(cycle?.pstoRequest, cycle?.pstoRequestDate, selectedRequest)
-      ? [row.id]
-      : []
+    return canAddPstoResult(row) ? [row.id] : []
   }))
 }
 
@@ -600,6 +606,8 @@ function validatePstoResultRow(
   diagramName: string,
   saveCheckSettings: SaveCheckSettings,
 ) {
+  const blockReason = getPstoWorkflowResultBlockReason(row)
+  if (blockReason) throw new Error(`Стык ${row.joint || row.id}: ${blockReason}`)
   if (getCurrentPstoCycle(row)?.source === 'repeat') {
     buildRepeatPstoResultCycle({ row, pstoDate, diagramName, saveCheckSettings })
     return

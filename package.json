@@ -27,12 +27,14 @@
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:workflow-contracts": "vitest run src/server/workflow-contracts.test.ts src/server/control-workflow-access.test.ts src/server/access-operation-policy.test.ts src/server/access-response.test.ts src/server/weld-mutation-policy.test.ts src/lib/weld-save-utils.test.ts src/components/psto-repeat-workflow-dialog.test.tsx src/components/tvmt-workflow-dialog.test.tsx src/components/pre-heat-treatment-lnk-workflow-dialog.test.tsx src/lib/lnk-result-action-utils.test.ts src/lib/lnk-result-derived-utils.test.ts src/lib/use-lnk-report-modal-sync-effects.test.tsx src/server/weld-validation-disclosure.test.ts src/server/access-validation-message.test.ts src/lib/system-document-name-conflict.test.ts src/server/workflow-conflict-diagnostics.test.ts src/server/result-request-search.test.ts src/components/result-request-combobox.test.tsx src/lib/run-document-save.test.ts src/components/modal-escape-ownership.test.tsx src/components/report-field-edit-dialog.test.tsx src/lib/use-contained-dialog-focus.test.tsx scripts/vite-dev-transport.test.ts",
     "test:e2e": "tsx e2e/run.ts",
     "test:e2e:ui": "tsx e2e/run.ts --ui",
     "typecheck": "tsc --noEmit",
     "audit:prod": "pnpm audit --prod",
     "audit:all": "pnpm audit",
-    "verify": "pnpm typecheck && pnpm test && pnpm build && pnpm audit:prod && pnpm audit:all"
+    "verify": "pnpm typecheck && pnpm test && pnpm build && pnpm audit:prod && pnpm audit:all",
+    "checks:install": "node scripts/install-verification-hooks.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "3.1159.0",

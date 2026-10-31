@@ -1,3 +1,4 @@
+import { Checkbox } from '@/components/ui/checkbox'
 import { memo, type MouseEvent } from 'react'
 
 import { DialogRowMenuButton } from '@/components/dialog-row-menu-button'
@@ -64,14 +65,12 @@ function TvmtWorkflowRowComponent({
             : 'cursor-pointer bg-white hover:bg-slate-50'
       }`}
     >
-      <input
-        type="checkbox"
+      <Checkbox
         aria-label={`Выбрать стык ${String(row.line ?? '').trim()} ${String(row.joint ?? row.id).trim()}`.trim()}
         checked={selected}
         onClick={(event) => event.stopPropagation()}
         onChange={() => onToggle(row.id)}
         disabled={disabled}
-        className="h-4 w-4 rounded border-slate-300 text-slate-900"
       />
 
       <span className="min-w-0">

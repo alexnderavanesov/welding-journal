@@ -1,3 +1,4 @@
+import { Checkbox } from '@/components/ui/checkbox'
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
@@ -53,7 +54,7 @@ export function WeldLayeredControlField({ draft, setDraft }: { draft: WeldInput;
   const reason = getLayeredControlSaveError({ ...draft, hasPvk: 'да', layeredControlAssigned: true } as WeldRow)
   if (!isAngularConnectionType(draft.connectionType) && !assigned) return null
   return <div className="space-y-2 border-t bg-sky-50 p-4 text-sm">
-    <label className="flex items-center gap-2"><input type="checkbox" aria-label="Послойная замена РК/УЗК" checked={Boolean(assigned)} disabled={Boolean(draft.layeredControlAssigned) || busy || excluded}
+    <label className="flex items-center gap-2"><Checkbox aria-label="Послойная замена РК/УЗК" checked={Boolean(assigned)} disabled={Boolean(draft.layeredControlAssigned) || busy || excluded}
       onChange={async (event) => {
         if (inFlight.current) return
         if (!event.target.checked) { setDraft((row) => ({ ...row, layeredControlRequest: undefined })); return }

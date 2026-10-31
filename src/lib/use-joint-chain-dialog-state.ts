@@ -1,17 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
-import { shouldDeferModalEscape } from '@/lib/use-report-modal-escape-key'
-import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { listWeldJointChain } from '@/server/weld-read-api'
 
 type UseJointChainDialogStateOptions = {
   chainRecord: WeldRow | null
-  onClose: () => void
 }
 
 export function useJointChainDialogState({
   chainRecord,
-  onClose,
 }: UseJointChainDialogStateOptions) {
   const chainQuery = useQuery({
     queryKey: ['weld-joint-chain', chainRecord?.id ?? null],
@@ -21,14 +17,6 @@ export function useJointChainDialogState({
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   })
-
-  useWindowEscapeKey(Boolean(chainRecord), (event) => {
-    if (shouldDeferModalEscape()) return
-    event.preventDefault()
-    event.stopImmediatePropagation()
-    onClose()
-  })
-
   return {
     chainRows: chainQuery.data?.rows ?? [],
     chainTransitions: chainQuery.data?.transitions ?? [],

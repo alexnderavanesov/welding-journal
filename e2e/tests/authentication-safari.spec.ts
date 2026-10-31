@@ -69,7 +69,17 @@ test('installed Safari: invitation, wrong password, login, profile save, tab ret
     // Existing opt-in Safari measurements use the isolated runner's session,
     // without warming the application's HTML or JavaScript before navigation.
     await authenticateE2eSafari(command, session)
-    await command(session + '/url', { url: baseURL + '/account' }); await wait('Пользователи и права')
+    await command(session + '/url', { url: baseURL + '/account' }); await wait('Сотрудники и доступ')
+    expect(await execute('return [...document.querySelectorAll("button")].some(b=>b.textContent.trim()==="Выйти")')).toBe(false)
+    await execute(`document.querySelector('[aria-label="Действия пользователя: Новое имя Safari"]').click()`)
+    await click('Изменить должность'); await wait('Должность пользователя')
+    const beforeTitle = await withE2eDatabase(async db => (await db.query('select role,permissions from auth_users where email=$1', [email])).rows[0])
+    await fill('[role="dialog"] input', 'Инженер Safari'); await click('Сохранить должность')
+    await wait('Инженер Safari')
+    expect(await withE2eDatabase(async db => (await db.query('select title,role,permissions from auth_users where email=$1', [email])).rows[0]))
+      .toEqual({ ...beforeTitle, title: 'Инженер Safari' })
+    await click('Мой профиль')
+    expect(await execute('return [...document.querySelectorAll("button")].some(b=>b.textContent.trim()==="Выйти")')).toBe(true)
     await click('Пользователи и права'); await wait('Сотрудники и доступ')
     await wait('Посмотреть права'); await click('Посмотреть права'); await wait('Права доступа:')
     expect(await execute(`const boxes=[...document.querySelectorAll('[role="dialog"] input[type="checkbox"]')]; return boxes.length>0&&boxes.every(i=>i.checked&&i.disabled)`)).toBe(true)

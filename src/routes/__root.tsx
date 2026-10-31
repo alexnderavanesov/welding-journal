@@ -1,3 +1,4 @@
+import { DocumentSaveRecovery } from '@/components/document-save-recovery'
 import { useEffect, type ReactNode } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { HeadContent, Outlet, Scripts, createRootRouteWithContext } from '@tanstack/react-router'
@@ -48,6 +49,7 @@ function RootComponent() {
         <ConfirmActionProvider>
           <SecurityProvider>
             <Outlet />
+            <DocumentSaveRecovery />
           </SecurityProvider>
         </ConfirmActionProvider>
       </QueryClientProvider>

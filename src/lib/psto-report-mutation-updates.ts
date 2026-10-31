@@ -1,3 +1,4 @@
+import type { ValidationMessageFormatter } from './validation-message'
 import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
 import { assertDocumentRequisites } from '@/lib/document-requisites'
 import {
@@ -29,17 +30,19 @@ export function buildPstoRequestRows({
   requestName,
   requestDate,
   saveCheckSettings = loadSaveCheckSettings(),
+  formatMessage,
 }: {
   records: RowWithId[]
   requestName: string
   requestDate: string
   saveCheckSettings?: SaveCheckSettings
+  formatMessage?: ValidationMessageFormatter
 }) {
   const requestDateReason = getDateInputValidationReason(requestDate, 'Дата заявки ПСТО')
   if (requestDateReason) throw new Error(requestDateReason)
   assertPrimaryPstoReady(records)
   const proposedRecords = buildPstoRequestDraftRows({ records, requestName, requestDate })
-  assertNoPstoChronologyIssues(proposedRecords, saveCheckSettings)
+  assertNoPstoChronologyIssues(proposedRecords, saveCheckSettings, formatMessage)
   return proposedRecords
 }
 
@@ -68,6 +71,7 @@ export function buildPstoResultRows({
   diagramName,
   rows: _rows,
   saveCheckSettings = loadSaveCheckSettings(),
+  formatMessage,
 }: {
   records: RowWithId[]
   pstoDate: string
@@ -75,6 +79,7 @@ export function buildPstoResultRows({
   diagramName: string
   rows: RowWithId[]
   saveCheckSettings?: SaveCheckSettings
+  formatMessage?: ValidationMessageFormatter
 }) {
   if (result !== 'проведено') throw new Error('Выберите результат ПСТО')
   assertDocumentRequisites({ name: diagramName, date: pstoDate,
@@ -86,7 +91,7 @@ export function buildPstoResultRows({
   const pstoUpdatedAt = new Date().toISOString()
   const proposedRows = records.map((record) => {
     if (saveCheckSettings.pstoResultDateAfterWeldDate && isDateBeforeWeldDate(normalizedPstoDate ?? pstoDate, record.weldDate)) {
-      throw new Error(formatDateBeforeWeldDateSaveReason(record, normalizedPstoDate ?? pstoDate, 'Дата ПСТО'))
+      throw new Error(formatDateBeforeWeldDateSaveReason(record, normalizedPstoDate ?? pstoDate, 'Дата ПСТО', formatMessage))
     }
     return applyPstoResult({
       record,
@@ -96,8 +101,8 @@ export function buildPstoResultRows({
       pstoUpdatedAt,
     })
   })
-  assertNoPstoChronologyIssues(proposedRows, saveCheckSettings)
-  assertNoNewLnkChronologyIssues(proposedRows, records, saveCheckSettings)
+  assertNoPstoChronologyIssues(proposedRows, saveCheckSettings, formatMessage)
+  assertNoNewLnkChronologyIssues(proposedRows, records, saveCheckSettings, { formatValidationMessage: formatMessage })
   return proposedRows
 }
 
@@ -114,12 +119,14 @@ export function buildPstoRequestManagerRows({
   requestDate,
   nextRequestName,
   action,
+  formatMessage,
 }: {
   heatTreatmentRows: RowWithId[]
   requestName: string
   requestDate: string
   nextRequestName: string
   action: PstoRequestManagerAction
+  formatMessage?: ValidationMessageFormatter
 }) {
   const pstoUpdatedAt = new Date().toISOString()
   return heatTreatmentRows.flatMap((record) => {
@@ -131,7 +138,7 @@ export function buildPstoRequestManagerRows({
     ) {
       return []
     }
-    if (action === 'delete') assertPstoRequestCanBeRemoved(record)
+    if (action === 'delete') assertPstoRequestCanBeRemoved(record, formatMessage)
     return [applyPstoRequestManagerAction({ record, nextRequestName, action, pstoUpdatedAt }) as RowWithId]
   })
 }
@@ -141,8 +148,8 @@ export function buildPstoRequestCorrectionRow(record: RowWithId) {
   return clearPstoRequestPosition(record) as RowWithId
 }
 
-function assertPstoRequestCanBeRemoved(record: RowWithId) {
-  const blockReason = getPstoCycleStageDeleteBlockReason(record, 1, 'pstoRequest')
+function assertPstoRequestCanBeRemoved(record: RowWithId, formatMessage?: ValidationMessageFormatter) {
+  const blockReason = getPstoCycleStageDeleteBlockReason(record, 1, 'pstoRequest', formatMessage)
   if (!blockReason) return
   const joint = String(record.joint ?? '').trim() || `ID ${record.id}`
   throw new Error(`Стык ${joint}: ${blockReason}`)

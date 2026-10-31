@@ -61,11 +61,10 @@ export function LineProgramEditor({ value, onClose, onSaved }: {
     formRef.current?.querySelector<HTMLElement>('input:not(:disabled)')?.focus()
     return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus() }
   }, [])
-  return <LargeDialogShell ariaLabel={draft.id ? 'Настройка линии' : 'Новая линия'} maxWidthClassName="max-w-[560px]" maxHeightClassName="max-h-[92dvh]" panelRadiusClassName="rounded-2xl" panelClassName="overflow-hidden">
+  return <LargeDialogShell onEscape={onClose} escapeDisabled={mutation.isPending} ariaLabel={draft.id ? 'Настройка линии' : 'Новая линия'} maxWidthClassName="max-w-[560px]" maxHeightClassName="max-h-[92dvh]" panelRadiusClassName="rounded-2xl" panelClassName="overflow-hidden">
     <form ref={formRef} className="flex max-h-[92dvh] min-h-0 flex-col" onSubmit={(event) => { event.preventDefault(); if (!mutation.isPending) mutation.mutate() }}
       onKeyDown={(event) => {
-        if (shouldDeferModalEscape() || mutation.isPending || !formRef.current?.contains(document.activeElement)) return
-        if (event.key === 'Escape') { event.stopPropagation(); onClose() }
+        if (shouldDeferModalEscape(formRef.current) || mutation.isPending || !formRef.current?.contains(document.activeElement)) return
         if (event.key === 'Tab') {
           const fields = Array.from(formRef.current.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]'))
           const first = fields[0], last = fields.at(-1)

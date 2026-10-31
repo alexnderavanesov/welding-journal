@@ -27,6 +27,7 @@ export type SystemDocumentCreationGroup = {
   rows: WeldRow[]
   name: string
   useSystemName: boolean
+  namingPattern?: string
   isMissingValueFallback: boolean
   splitMode?: SystemDocumentSplitMode
   splitSettingId?: ReturnType<typeof getSystemDocumentSplitSettingId>
@@ -121,6 +122,7 @@ export function buildSystemDocumentCreationPlan({
       matchingManualName: manualMembers.get(membership),
     }),
     useSystemName,
+    ...(useSystemName ? { namingPattern: settings[getRequestConclusionNamingKind({ type, methodCode, sourceKind })].systemPattern } : {}),
     isMissingValueFallback: group.isMissingValueFallback,
     splitMode: mode,
     splitSettingId: settingId,

@@ -1,3 +1,5 @@
+import { beginDocumentSaveReceipt, finishDocumentSaveReceipt } from './document-save-receipt'
+import { formatAccessValidationMessage } from './access-validation-message'
 import { assertCreationGrouping, normalizeDocumentGroupingCommand, type DocumentGroupingCommand } from '@/lib/document-grouping-command'
 import { buildPreHeatTreatmentResultEditWrites, normalizePreHeatTreatmentResultEditBatch } from '@/lib/pre-heat-treatment-result-edit-plan'
 import { syncPreHeatTreatmentDocumentsInTransaction } from './pre-heat-treatment-system-documents'
@@ -90,6 +92,7 @@ export type PreHeatTreatmentLnkWorkflowGroup = {
   positions: PreHeatTreatmentLnkPosition[]
   name: string
   useSystemName?: boolean
+  namingPattern?: string
 }
 
 export type PreHeatTreatmentLnkResultEntry = PreHeatTreatmentLnkPosition & {
@@ -123,6 +126,7 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
     const db = requireDb()
     await prepareDocumentCreationIndex(data.documentGrouping)
     return db.transaction(async (tx) => {
+      const receipt = await beginDocumentSaveReceipt(tx, data)
       const processSettings = await assertPreHeatTreatmentLnkEnabled(tx)
       const workflowSettings = await loadWeldWorkflowSettingsFromTransaction(tx)
       const documentGrouping = await lockDocumentGroupingPreference(tx, data.documentGrouping)
@@ -140,7 +144,7 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
           throw new Error('Заключения разных видов НК до ТО должны оформляться разными документами.')
         }
         return group.useSystemName
-          ? getSequenceRequest(data.action, data.date, group.name, methodCodes)
+          ? { ...getSequenceRequest(data.action, data.date, group.name, methodCodes), ...(group.namingPattern !== undefined ? { namingPattern: group.namingPattern } : {}) }
           : null
       })
       const sequenceIds = [...new Set(sequenceRequests
@@ -232,7 +236,7 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
         const reason = getLayeredControlSaveError({ ...row, preHeatTreatmentControls: [...controls.values()] }, row, processSettings.pvkGoodOnly)
         if (reason) throw new Error(reason)
         const finalRow = { ...row, preHeatTreatmentControls: [...controls.values()] }
-        assertNoNewLnkChronologyIssues([finalRow], [row], workflowSettings.saveCheckSettings)
+        assertNoNewLnkChronologyIssues([finalRow], [row], workflowSettings.saveCheckSettings, { formatValidationMessage: formatAccessValidationMessage })
       }
       const savedControls = await savePreHeatTreatmentControlWrites(tx, data.action, writes)
       await assertStoredEarlyCoilDecisionSourcesRemainValid(tx, rowIds)
@@ -253,6 +257,7 @@ export const savePreHeatTreatmentLnkWorkflow = createServerFn({ method: 'POST' }
       await markDispatcherTaskIndexDirty(tx, {
         scopes: getDispatcherDirtyScopes(touchedRows, new Map()),
       })
+      await finishDocumentSaveReceipt(tx, receipt, resolvedGroups.map(group => ({ type: data.action === 'request' ? 'lnkRequest' : 'lnkConclusion', title: group.name, date: data.date, ...(data.action === 'result' ? { methodCode: group.positions[0]?.methodCode } : {}), sourceKind: 'beforeHeatTreatment' })))
       return attachHeatTreatmentControlRelations(touchedRows, tx)
     })
   })
@@ -345,7 +350,7 @@ export const savePreHeatTreatmentLnkResultEdits = createServerFn({ method: 'POST
         throw new Error('Позиция НК до ТО больше не существует. Ничего не сохранено.')
       }
       const rows = await attachDuplicateControlRelations(await attachHeatTreatmentControlRelations(storedRows as WeldRow[], tx), tx)
-      const { writes, finalRows } = buildPreHeatTreatmentResultEditWrites({ rows, changes: data.changes,
+      const { writes, finalRows } = buildPreHeatTreatmentResultEditWrites({ formatMessage: formatAccessValidationMessage, rows, changes: data.changes,
         saveCheckSettings: workflowSettings.saveCheckSettings, systemIndexSettings: workflowSettings.systemIndexSettings,
         rkExposureTable: workflowSettings.otherSettings.rkExposureTable })
       const previousById = new Map(rows.map(row => [row.id, row]))
@@ -452,7 +457,7 @@ export const correctPreHeatTreatmentLnkResult = createServerFn({ method: 'POST' 
 
       let nextControl: PreHeatTreatmentControlWrite
       if (data.stage === 'request') {
-        nextControl = buildPreHeatTreatmentRequestCorrectionWrite({
+        nextControl = buildPreHeatTreatmentRequestCorrectionWrite({ formatMessage: formatAccessValidationMessage,
           row,
           control: currentControl,
           requestDate: data.requestDate,
@@ -475,7 +480,7 @@ export const correctPreHeatTreatmentLnkResult = createServerFn({ method: 'POST' 
           rkExposureConfirmedDiameter: null,
         }
       } else {
-        nextControl = buildPreHeatTreatmentResultCorrectionWrite({
+        nextControl = buildPreHeatTreatmentResultCorrectionWrite({ formatMessage: formatAccessValidationMessage,
           row,
           control: currentControl,
           controlDate: data.conclusionDate,
@@ -495,7 +500,7 @@ export const correctPreHeatTreatmentLnkResult = createServerFn({ method: 'POST' 
       if (reason) throw new Error(reason)
       const finalRow = { ...row, preHeatTreatmentControls: row.preHeatTreatmentControls?.map(control =>
         control.id === currentControl.id ? { ...control, ...nextControl } : control) }
-      assertNoNewLnkChronologyIssues([finalRow], [row], workflowSettings.saveCheckSettings)
+      assertNoNewLnkChronologyIssues([finalRow], [row], workflowSettings.saveCheckSettings, { formatValidationMessage: formatAccessValidationMessage })
       const [savedControl] = await tx
         .update(preHeatTreatmentControls)
         .set({ ...toControlInsert(nextControl), updatedAt: new Date() })
@@ -600,6 +605,7 @@ function normalizePayload(value: PreHeatTreatmentLnkWorkflowPayload): Normalized
     positions: normalizePositions(group?.positions),
     name: String(group?.name ?? '').trim(),
     useSystemName: Boolean(group?.useSystemName),
+    ...(typeof group?.namingPattern === 'string' ? { namingPattern: group.namingPattern } : {}),
   })).filter((group) => group.positions.length > 0)
   if (groups.length === 0) throw new Error('Выберите хотя бы одну позицию НК до ТО.')
   const requisiteErrors = [...new Set(groups.flatMap(group => getDocumentRequisiteErrors({
@@ -689,7 +695,7 @@ function buildGroupWrites({
       positionsByRowId.set(position.rowId, current)
     }
     return [...positionsByRowId].flatMap(([rowId, methodCodes]) =>
-      buildPreHeatTreatmentRequestWrites({
+      buildPreHeatTreatmentRequestWrites({ formatMessage: formatAccessValidationMessage,
         row: rowsById.get(rowId)!,
         methodCodes,
         requestName: group.name,
@@ -701,7 +707,7 @@ function buildGroupWrites({
 
   return group.positions.map((position) => {
     const result = resultByPosition.get(positionKey(position))!
-    return buildPreHeatTreatmentResultWrite({
+    return buildPreHeatTreatmentResultWrite({ formatMessage: formatAccessValidationMessage,
       row: rowsById.get(position.rowId)!,
       methodCode: position.methodCode,
       controlDate: date,

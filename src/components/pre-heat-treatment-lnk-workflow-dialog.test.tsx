@@ -89,6 +89,51 @@ async function renderDialog(mode: 'request' | 'result', row: WeldRow) {
 }
 
 describe('PreHeatTreatmentLnkWorkflowDialog', async () => {
+  it('keeps the result draft when the operator picks the already selected method', async () => {
+    const row = makeRow({ id: 1, joint: 'F1', preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'ВИК', requestName: 'REQ-1', requestDate: '2026-08-20' }] })
+    await renderDialogRows('result', [row], new Set([1]), 'ВИК')
+    fireEvent.click(within(screen.getByRole('group', { name: 'Результат для всех выбранных' })).getByRole('button', { name: 'годен' }))
+    fireEvent.click(screen.getByRole('combobox', { name: 'Метод контроля' }))
+    fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: /^ВИК$/ }))
+    expect(screen.getByRole('checkbox', { name: /F1$/ })).toBeChecked()
+    expect(within(screen.getByRole('group', { name: 'Результат для всех выбранных' })).getByRole('button', { name: 'годен' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Сохранить результат до ТО' })).toBeEnabled()
+  })
+  it('keeps selected joints from different pre-TO requests in one method conclusion', async () => {
+    const rows = [1, 2, 3].map(id => makeRow({ id, joint: `F${id}`, preHeatTreatmentControls: [
+      { id, weldJointId: id, method: 'ВИК', requestName: `НК-до-ТО-${id}`, requestDate: `2026-08-0${id + 1}` },
+    ] }))
+    await renderDialogRows('result', rows, new Set([1, 2]), 'ВИК')
+    expect(screen.getByRole('checkbox', { name: /F1$/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /F2$/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /F3$/ })).not.toBeChecked()
+    fireEvent.click(within(screen.getByRole('group', { name: 'Результат для всех выбранных' })).getByRole('button', { name: 'годен' }))
+    expect(screen.getByRole('button', { name: 'Сохранить результат до ТО' })).toBeEnabled()
+    expect(screen.getByRole('tab', { name: /Заключения и имена/ })).toHaveTextContent('1')
+  })
+
+
+  it('keeps selection and entered results through unrelated request filters and empty candidate searches', async () => {
+    const rows = [1, 2, 3].map(id => makeRow({ id, joint: `F${id}`, preHeatTreatmentControls: [{ id, weldJointId: id, method: 'ВИК', requestName: `REQ-${id}`, requestDate: '2026-08-20' }] }))
+    const view = await renderDialogRows('result', rows, new Set([1, 2]), 'ВИК')
+    fireEvent.click(within(screen.getByRole('group', { name: 'Результат для всех выбранных' })).getByRole('button', { name: 'годен' }))
+    const filter = screen.getByRole('combobox', { name: 'Фильтр по заявке ЛНК до ТО' })
+    fireEvent.focus(filter)
+    fireEvent.click(screen.getByRole('option', { name: /REQ-3/ }))
+    expect(screen.getByRole('button', { name: 'Выбрано: 2' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать все доступные' }))
+    expect(screen.getByRole('button', { name: 'Выбрано: 3' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: /F3$/ }))
+    view.rerenderWithRows(rows.slice(0, 2))
+    expect(filter).toHaveValue('REQ-3 · 20.08.2026')
+    expect(screen.getByRole('button', { name: 'Сохранить результат до ТО' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрано: 2' }))
+    expect(screen.getByRole('checkbox', { name: /F1$/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /F2$/ })).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: 'Сбросить выбранную заявку' }))
+    expect(filter).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Сохранить результат до ТО' })).toBeEnabled()
+  })
   it('waits for initial context before enabling selection, then keeps the operator choice', async () => {
     const rows = [makeRow()]
     const options = { isContextReady: false }
@@ -202,7 +247,7 @@ describe('PreHeatTreatmentLnkWorkflowDialog', async () => {
     expect(screen.getByRole('heading', { name: 'Внесение результатов ЛНК до ТО' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Все результаты' })).toBeInTheDocument()
     expect(screen.getByText('Результат для всех выбранных')).toBeInTheDocument()
-    expect(screen.getByText('Заявка ЛНК до ТО')).toBeInTheDocument()
+    expect(screen.getByText('Фильтр по заявке ЛНК до ТО')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Метод контроля' })).toHaveValue('ВИК')
     expect(await screen.findByRole('checkbox', { name: /Выбрать стык/ })).toBeChecked()
     expect(screen.queryByRole('combobox', { name: /этап/i })).not.toBeInTheDocument()

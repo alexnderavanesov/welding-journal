@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type Route } from '@playwright/test'
 import { observeGridResults } from './grid-result-motion'
 import { withE2eDatabase } from './database'
 import { withLineProgramFixture } from './line-program-fixtures'
@@ -450,6 +450,53 @@ export function registerWeldGridContract(report: GridReport) {
     await page.keyboard.press('Escape')
     await expect(page.getByRole('searchbox')).toHaveValue('')
     await expect(page.getByRole('button', { name: 'Сбросить', exact: true })).toHaveCount(0)
+  })
+
+  if (isWorkflow) test(name('Escape закрывает редактор во время загрузки контекста, Enter не сохраняет'), async ({ page }) => {
+    await page.goto(profile.route)
+    await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(PROJECT)
+    await expect(page.getByText(loaded(100, 250), { exact: true })).toBeVisible()
+    await waitForGridRows(page)
+    await page.getByRole('button', { name: 'Настроить вид' }).click()
+    await showAllColumns(page)
+    await page.keyboard.press('Escape')
+    await revealColumn(page, noteField)
+    const column = isPsto ? 'psto_note' : 'lnk_note'
+    const readNotes = () => withE2eDatabase(async client => (await client.query(
+      `select id, ${column} as note, updated_at from weld_joints where project_title=$1 order by id`, [PROJECT],
+    )).rows)
+    const before = await readNotes()
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    let held = false
+    const holdContext = async (route: Route) => {
+      if (!rpcName(route.request().url()).startsWith(isPsto ? 'listPstoWorkflowRows' : 'listLnkWorkflowRows')) return route.continue()
+      held = true
+      await gate
+      await route.continue()
+    }
+    await page.route('**/_serverFn/**', holdContext)
+    try {
+      await page.locator(`.ag-row[row-index="0"] [col-id="${noteField}"]`).click()
+      await page.keyboard.press('F2')
+      const editor = page.getByRole('dialog')
+      await expect(editor.getByRole('heading', { name: editHeading, exact: true })).toBeVisible()
+      await expect.poll(() => held).toBe(true)
+      await expect(editor.getByRole('button', { name: 'Сохранить', exact: true })).toBeDisabled()
+      await editor.getByRole('textbox', { name: editHeading, exact: true }).fill('Не должно сохраниться при загрузке')
+      await page.keyboard.press('Enter')
+      await expect(editor).toBeVisible()
+      await expect(editor.getByRole('button', { name: 'Отмена', exact: true })).toBeEnabled()
+      await editor.getByRole('button', { name: 'Отмена', exact: true }).focus()
+      await page.keyboard.press('Escape')
+      await expect(editor).toHaveCount(0)
+      await expect(page.getByRole('searchbox')).toHaveValue(PROJECT)
+    } finally {
+      release()
+      await page.unrouteAll({ behavior: 'wait' })
+    }
+    await page.waitForLoadState('networkidle')
+    expect(await readNotes()).toEqual(before)
   })
 
   test(name('resize, автоматическая загрузка, компактная панель и однократный Escape из редактирования'), async ({ page }) => {

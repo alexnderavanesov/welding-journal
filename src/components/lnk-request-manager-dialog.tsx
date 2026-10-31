@@ -1,3 +1,4 @@
+import { DocumentConnectionsButton } from './document-connections-button'
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import {
   CalendarClock,
@@ -494,6 +495,7 @@ export function LnkRequestManagerDialog({
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    <DocumentConnectionsButton reference={selectedDocumentReference} />
                     <Button
                       onClick={() => selectedOption && onAddPositions(selectedOption)}
                       disabled={!selectedOption || Boolean(selectedOption.disabledReason) || isManagerPending || isCorrectionPending}

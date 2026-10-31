@@ -1,3 +1,4 @@
+import { isTopModalDialog } from '@/lib/modal-layer'
 import { ConfirmActionDialog } from './confirm-action-dialog'
 import { getControlAssignmentCancellations } from '@/lib/control-assignment-history'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
@@ -169,16 +170,11 @@ export function WeldForm({
     onSave(withCalculatedFinalStatus(draft))
   }
   const handleSaveRef = useRef(handleSave)
-  const onCancelRef = useRef(onCancel)
   handleSaveRef.current = handleSave
-  onCancelRef.current = onCancel
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        onCancelRef.current()
-        return
-      }
+      if (event.defaultPrevented || !isTopModalDialog(contentRef.current)) return
 
       if (event.isComposing) return
 
@@ -280,7 +276,7 @@ export function WeldForm({
   }
 
   return (
-    <LargeDialogShell
+    <LargeDialogShell onEscape={onCancel} escapeDisabled={busy}
       maxWidthClassName="max-w-[min(1500px,96vw)]"
       maxHeightClassName="h-[calc(100dvh-2rem)] max-h-[96vh]"
       overlayClassName={elevated ? 'z-[110] bg-slate-950/30 py-4' : 'z-[70] bg-slate-950/20 py-4'}

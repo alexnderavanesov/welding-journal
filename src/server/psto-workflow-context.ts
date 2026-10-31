@@ -14,6 +14,7 @@ import {
 import { alias, QueryBuilder } from 'drizzle-orm/pg-core'
 
 import { requireDb } from '@/db'
+import { workflowRequestSearchWhere } from './workflow-request-search'
 import {
   preHeatTreatmentControls,
   pstoRepeatCycles,
@@ -23,7 +24,7 @@ import {
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { PRE_HEAT_TREATMENT_LNK_METHODS } from '@/lib/lnk-control-stage'
 import { ALL_LNK_FIELD_METHODS } from '@/lib/lnk-report-config'
-import { hasPstoResultData } from '@/lib/psto-result-derived-utils'
+import { hasPstoDocumentHistory } from '@/lib/psto-cycle'
 import { createRequestDocumentIdentity } from '@/lib/request-document-identity'
 import {
   canAddPstoWorkflowResult,
@@ -40,7 +41,7 @@ import {
   type PstoWorkflowSummary,
 } from '@/server/weld-contracts'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
-import { buildNoRejectedPreHeatTreatmentWhere, buildPreHeatTreatmentEnabledWhere, buildPstoExecutionHistoryWhere, buildRelevantPstoRepeatWhere } from '@/server/pre-heat-treatment-policy'
+import { buildNoRejectedPreHeatTreatmentWhere, buildPreHeatTreatmentEnabledWhere, buildPstoDocumentHistoryWhere, buildPstoExecutionHistoryWhere, buildRelevantPstoRepeatWhere } from '@/server/pre-heat-treatment-policy'
 import { assertSecurityScope } from '@/server/security-functions'
 import {
   buildReportKindWhere,
@@ -204,6 +205,23 @@ export function buildPstoWorkflowRequestOptionsQuery(
   input?: PstoWorkflowRequestOptionsRequest,
 ) {
   const request = normalizePstoWorkflowRequestOptionsRequest(input)
+  if (request.resultScope) {
+    const method = request.resultScope === 'tvmt' ? 'tvmt' : 'psto'
+    const nameKey = method === 'tvmt' ? 'tvmtRequest' : 'pstoRequest'
+    const dateKey = method === 'tvmt' ? 'tvmtRequestDate' : 'pstoRequestDate'
+    const where = buildPstoWorkflowRowsWhere({ scope: method === 'tvmt' ? 'tvmtResultCandidates' : 'resultCandidates' })
+    return sql`with positions as (
+      select case when current_cycle.id is null then ${weldJoints[nameKey]} else current_cycle.name end as name,
+        case when current_cycle.id is null then ${weldJoints[dateKey]}::text else current_cycle.request_date end as date
+      from ${weldJoints} left join lateral (
+        select ${pstoRepeatCycles.id} as id, ${pstoRepeatCycles[nameKey]} as name, ${pstoRepeatCycles[dateKey]}::text as request_date
+        from ${pstoRepeatCycles} where ${pstoRepeatCycles.weldJointId} = ${weldJoints.id} and ${buildRelevantPstoRepeatWhere(pstoRepeatCycles)}
+        order by ${pstoRepeatCycles.sequence} desc limit 1
+      ) current_cycle on true where ${where}
+    ) select btrim(name) as name, coalesce(date, '') as date from positions
+      where ${workflowRequestSearchWhere(request.search, sql`name`, sql`date`)}
+      group by btrim(name), coalesce(date, '') order by date desc, name asc limit ${request.limit + 1}`
+  }
   const searchWhere = request.search
     ? buildPstoWorkflowSearchWhere(request.search)
     : undefined
@@ -228,7 +246,9 @@ export function buildPstoWorkflowRequestOptionsQuery(
 export function buildPstoWorkflowRowsWhere(input: PstoWorkflowRowsRequest) {
   const request = normalizePstoWorkflowRowsRequest(input)
   const reportWhere = buildReportKindWhere('heatTreatment')
-  const searchWhere = request.search ? buildPstoWorkflowSearchWhere(request.search) : undefined
+  const searchWhere = request.search
+    ? buildPstoWorkflowSearchWhere(request.search, request.scope === 'resultRegistry')
+    : undefined
   if (request.rowIds) {
     return and(reportWhere, buildNumberArrayMatch(weldJoints.id, request.rowIds), searchWhere) ?? sql`false`
   }
@@ -294,9 +314,9 @@ function buildCurrentPstoCycleDocumentIdentityWhere(
   )
 }
 
-function buildPstoWorkflowSearchWhere(search: string) {
+function buildPstoWorkflowSearchWhere(search: string, includeRepeatHistory = false) {
   const pattern = `%${search.toLocaleLowerCase('ru-RU')}%`
-  return sql`lower(concat_ws(
+  const primary = sql`lower(concat_ws(
     ' ',
     ${weldJoints.projectTitle},
     ${weldJoints.subtitleCode},
@@ -314,6 +334,20 @@ function buildPstoWorkflowSearchWhere(search: string) {
     ${weldJoints.tvmtConclusionDate},
     ${weldJoints.tvmtConclusion}
   )) like ${pattern}`
+  if (!includeRepeatHistory) return primary
+  return or(primary, repeatExists(sql`lower(concat_ws(
+    ' ',
+    ${pstoRepeatCycles.pstoRequest},
+    ${pstoRepeatCycles.pstoRequestDate},
+    ${pstoRepeatCycles.pstoResult},
+    ${pstoRepeatCycles.pstoDate},
+    ${pstoRepeatCycles.heatTreatmentDiagram},
+    ${pstoRepeatCycles.tvmtRequest},
+    ${pstoRepeatCycles.tvmtRequestDate},
+    ${pstoRepeatCycles.tvmtResult},
+    ${pstoRepeatCycles.tvmtConclusionDate},
+    ${pstoRepeatCycles.tvmtConclusion}
+  )) like ${pattern}`)) ?? sql`false`
 }
 
 export function filterPstoWorkflowRows(
@@ -328,7 +362,7 @@ export function filterPstoWorkflowRows(
     return rows.filter((row) => keepIncluded(row) || hasText(row.pstoRequest))
   }
   if (scope === 'resultCandidates') return rows.filter((row) => keepIncluded(row) || canAddPstoWorkflowResult(row))
-  if (scope === 'resultRegistry') return rows.filter((row) => keepIncluded(row) || hasPstoResultData(row))
+  if (scope === 'resultRegistry') return rows.filter((row) => keepIncluded(row) || hasPstoDocumentHistory(row))
   if (scope === 'tvmtRequestCandidates') return rows.filter((row) => keepIncluded(row) || canCreateTvmtRequest(row))
   if (scope === 'tvmtResultCandidates') return rows.filter((row) => keepIncluded(row) || canAddTvmtResult(row))
   return rows
@@ -388,11 +422,9 @@ function buildPstoScopeWhere(scope: PstoWorkflowRowsRequest['scope']): SQL {
     ) ?? sql`false`
   }
   if (scope === 'resultRegistry') {
-    return or(
-      completedPstoResult(weldJoints.pstoResult),
-      hasTextWhere(weldJoints.pstoDate),
-      hasTextWhere(weldJoints.heatTreatmentDiagram),
-    ) ?? sql`false`
+    // This scope now serves the complete cycle history, including requests
+    // that have no result yet. Keep the summary and row query on the same rule.
+    return buildPstoDocumentHistoryWhere()
   }
   if (scope === 'tvmtRequestCandidates') {
     return and(

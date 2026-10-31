@@ -76,8 +76,17 @@ export function buildPrimaryPstoSystemDocumentRow(row: WeldRow): WeldRow {
 }
 
 function clearLnkDocumentFields(row: WeldRow): WeldRow {
-  const nextRow: WeldRow = { ...row }
+  const nextRow: WeldRow = {
+    ...row,
+    systemDocumentIds: row.systemDocumentIds ? { ...row.systemDocumentIds } : undefined,
+  }
   for (const method of ALL_LNK_FIELD_METHODS) {
+    // These fields are being replaced with another stage/cycle. Its document
+    // must be resolved by that identity, not by the original row's cached ID.
+    if (nextRow.systemDocumentIds) {
+      delete nextRow.systemDocumentIds[method.requestKey]
+      delete nextRow.systemDocumentIds[method.conclusionKey]
+    }
     nextRow[method.requestKey] = undefined
     nextRow[method.requestDateKey] = undefined
     nextRow[method.resultKey] = undefined
@@ -91,8 +100,14 @@ function clearLnkDocumentFields(row: WeldRow): WeldRow {
 }
 
 function clearPstoDocumentFields(row: WeldRow): WeldRow {
+  const systemDocumentIds = row.systemDocumentIds ? { ...row.systemDocumentIds } : undefined
+  if (systemDocumentIds) {
+    delete systemDocumentIds.pstoRequest
+    delete systemDocumentIds.heatTreatmentDiagram
+  }
   return {
     ...row,
+    systemDocumentIds,
     pstoRequest: undefined,
     pstoRequestDate: undefined,
     pstoDate: undefined,

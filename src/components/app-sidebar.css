@@ -39,8 +39,12 @@
     grid-template-rows var(--sidebar-duration) var(--sidebar-easing), opacity 140ms ease;
 }
 .app-sidebar-label > span { width: var(--sidebar-label-width); min-height: 0; overflow: hidden; }
+.app-sidebar-account { padding-block: 6px; gap: 8px; }
+.app-sidebar-account .app-sidebar-label,
+.app-sidebar-account .app-sidebar-label > span { width: calc(var(--sidebar-label-width) - 4px); }
 .app-sidebar[data-collapsed="true"] { padding-inline: 11.5px; }
 .app-sidebar[data-collapsed="true"] .app-sidebar-item { padding-inline: 10px; gap: 0; }
+.app-sidebar[data-collapsed="true"] .app-sidebar-account { padding-inline: 6px; }
 .app-sidebar[data-collapsed="true"] .app-sidebar-label { width: 0; grid-template-rows: 0fr; opacity: 0; }
 .app-sidebar[data-collapsed="true"] .app-sidebar-brand { opacity: 0; }
 .app-sidebar[data-collapsed="true"] .app-sidebar-toggle { right: 2px; }

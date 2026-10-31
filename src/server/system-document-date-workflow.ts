@@ -1,3 +1,4 @@
+import { formatAccessValidationMessage } from './access-validation-message'
 import { and, asc, eq, ne, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
@@ -119,11 +120,13 @@ export async function changeSystemDocumentDate({
       plan.rows,
       currentRows,
       workflowSettings.saveCheckSettings,
+      { formatValidationMessage: formatAccessValidationMessage },
     )
     assertNoNewPstoChronologyIssues(
       plan.rows,
       currentRows,
       workflowSettings.saveCheckSettings,
+      formatAccessValidationMessage,
     )
 
     await assertNoDocumentIdentityConflict(tx, document.id, document.type, plan.nextReference)

@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react'
+import { useAccess } from './security-context'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { DOCUMENT_TEMPLATE_STORAGE_EVENT } from '@/lib/document-storage-events'
@@ -17,11 +18,12 @@ export function useSystemDocumentTemplateAvailability({
 }: {
   enabled?: boolean
 } = {}) {
+  const { can } = useAccess()
   const queryClient = useQueryClient()
   const availabilityQuery = useQuery({
     queryKey: SYSTEM_DOCUMENT_TEMPLATE_AVAILABILITY_QUERY_KEY,
     queryFn: () => listRemoteDocumentTemplateIds(),
-    enabled,
+    enabled: enabled && (can('templates.view') || can('documents.generate') || can('documents.export')),
     staleTime: 60_000,
     retry: false,
     refetchOnWindowFocus: false,

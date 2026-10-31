@@ -130,6 +130,15 @@ test('официальность: нижние счетчики и послед�
   await settings.getByRole('button', { name: /^Официальный/ }).click()
   await expect(dialog.getByRole('button', { name: 'Сохранить официальность', exact: true })).toBeEnabled()
   await expect(settings.getByRole('button', { name: /^Неофициальный/ })).toBeDisabled()
+  await dialog.getByRole('button', { name: 'Предпросмотр (1)', exact: true }).click()
+  const preview = page.getByRole('dialog', { name: 'Предпросмотр выбранных стыков', exact: true })
+  await expect(preview).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(preview).toBeHidden()
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByPlaceholder('Проект, шифр, линия, спул или стык')).toHaveValue('F830')
+  await expect(dialog.getByRole('button', { name: 'Сохранить официальность', exact: true })).toBeEnabled()
+  await expect(dialog.getByRole('button', { name: 'Предпросмотр (1)', exact: true })).toBeVisible()
   for (const viewport of [{ width: 1000, height: 720 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport)
     await expect.poll(async () => {
@@ -139,9 +148,13 @@ test('официальность: нижние счетчики и послед�
     await dialog.locator('[data-officiality-workspace]').hover()
     await page.mouse.wheel(0, 1600)
     await expect(rows.getByText('1-1', { exact: true })).toBeInViewport()
-    // Resizing can retain the inner list's scroll offset; its top must remain reachable too.
-    await rows.locator('.overflow-auto').hover()
-    await page.mouse.wheel(0, -1600)
+    // Only scroll an overflowing inner list. With one fitting row, WebKit
+    // correctly passes the wheel to the outer workspace and hides the list.
+    const innerList = rows.locator('.overflow-auto')
+    if (await innerList.evaluate(element => element.scrollHeight > element.clientHeight)) {
+      await innerList.hover()
+      await page.mouse.wheel(0, -1600)
+    }
     await expect(dialog.getByText('UI-LINE · F830', { exact: true })).toBeInViewport()
     await expect(dialog.getByRole('button', { name: 'Сохранить официальность', exact: true })).toBeInViewport()
     await expect.poll(() => dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)

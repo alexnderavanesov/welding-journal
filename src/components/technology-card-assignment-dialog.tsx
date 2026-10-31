@@ -1,3 +1,4 @@
+import { Checkbox } from '@/components/ui/checkbox'
 import { Select } from '@/components/ui/select'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -38,11 +39,7 @@ export function TechnologyCardAssignmentDialog({ onClose }: { onClose: () => voi
   const [result, setResult] = useState({ assign: 0, reassign: 0, rename: 0 })
   const [processed, setProcessed] = useState(0)
   useEffect(() => () => { stop.current = true }, [])
-  useEffect(() => {
-    const close = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) { event.preventDefault(); onClose() } }
-    window.addEventListener('keydown', close)
-    return () => window.removeEventListener('keydown', close)
-  }, [busy, onClose])
+
   const selectedCount = useMemo(() => actions.reduce((sum, action) => sum + counts[action], 0) - [...excluded.values()].filter(kind => actions.includes(kind)).length, [actions, counts, excluded])
   const chunk = chunks[chunkIndex]
   const visibleChunkIndexes = useMemo(() => chunks.flatMap((part, index) => technologyCardAssignmentFilterCount(part.counts, filter) > 0 ? [index] : []), [chunks, filter])
@@ -118,12 +115,12 @@ export function TechnologyCardAssignmentDialog({ onClose }: { onClose: () => voi
     }
   }
 
-  return <LargeDialogShell ariaLabel="Проверка и назначение ТК" maxWidthClassName="max-w-[1200px]" panelClassName="overflow-hidden">
+  return <LargeDialogShell onEscape={onClose} escapeDisabled={busy} ariaLabel="Проверка и назначение ТК" maxWidthClassName="max-w-[1200px]" panelClassName="overflow-hidden">
     <header className="flex items-start justify-between gap-3 border-b px-5 py-4"><div><h2 className="text-lg font-semibold">Проверить и назначить ТК</h2><p className="mt-1 text-sm text-slate-500">Весь журнал · все проекты · включая уже заваренные стыки</p></div><Button variant="ghost" size="icon" disabled={busy} aria-label="Закрыть проверку ТК" onClick={onClose}><X className="h-5 w-5" /></Button></header>
     <div className="min-h-0 space-y-4 overflow-y-auto p-5">
       <p className="text-sm text-slate-600">Проверка ничего не сохраняет. Выберите действия и исключите отдельные стыки перед применением. Причина пропуска указана в строке.</p>
       <div className="grid gap-2 sm:grid-cols-3">{TK_ASSIGNMENT_ACTIONS.map(action => <label key={action} className={`flex cursor-pointer items-center gap-3 rounded-md border p-3 ${actions.includes(action) ? 'border-sky-300 bg-sky-50' : 'border-slate-200 bg-slate-50'}`}>
-        <input type="checkbox" aria-label={TK_ASSIGNMENT_LABELS[action]} checked={actions.includes(action)} disabled={busy || phase === 'result'} onChange={event => setActions(current => event.target.checked ? [...current, action] : current.filter(value => value !== action))} />
+        <Checkbox aria-label={TK_ASSIGNMENT_LABELS[action]} checked={actions.includes(action)} disabled={busy || phase === 'result'} onChange={event => setActions(current => event.target.checked ? [...current, action] : current.filter(value => value !== action))} />
         <span className="flex-1 text-sm font-medium">{TK_ASSIGNMENT_LABELS[action]}<span className="block text-xs font-normal text-slate-500">{action === 'assign' ? 'ТК не заполнена' : action === 'reassign' ? 'Включая прежний ручной выбор' : 'Та же карта, новое название'}</span></span><strong className="text-xl">{counts[action]}</strong>
       </label>)}</div>
       <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600">{(['ambiguous', 'none', 'incomplete', 'unchanged', 'excluded'] as const).map(kind => <span key={kind}>{TK_ASSIGNMENT_LABELS[kind]}: <b>{counts[kind]}</b></span>)}<span>Несоответствий заполненных ТК: <b>{counts.mismatch}</b></span></div>
@@ -136,7 +133,7 @@ export function TechnologyCardAssignmentDialog({ onClose }: { onClose: () => voi
           setFilter(next); setPage(0); setChunkIndex(chunks.findIndex(part => technologyCardAssignmentFilterCount(part.counts, next) > 0))
         }}>{Object.entries(TK_ASSIGNMENT_FILTER_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</Select></label><span className="text-xs text-slate-500">Фильтр таблицы не меняет выбор для применения.</span></div>
         <div className="overflow-x-auto rounded-md border"><table className="w-full text-left text-sm"><thead className="bg-slate-50"><tr>{['Выбор', 'Проект / линия / стык', 'Было → станет', 'Результат проверки'].map(label => <th className="px-3 py-2 font-medium" key={label}>{label}</th>)}</tr></thead><tbody>
-          {visibleDetails.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map(row => <tr key={row.id} className="border-t"><td className="px-3 py-2">{isTechnologyCardAssignmentAction(row.kind) ? <input aria-label={`Назначение ТК стыку ${row.id}`} type="checkbox" disabled={busy || !actions.includes(row.kind)} checked={actions.includes(row.kind) && !excluded.has(row.id)} onChange={event => setExcluded(current => { const next = new Map(current); if (event.target.checked) next.delete(row.id); else next.set(row.id, row.kind as TechnologyCardAssignmentAction); return next })} /> : '—'}</td><td className="px-3 py-2"><span className="block text-xs text-slate-500">{row.project || 'Без проекта'}</span>{row.line || '—'} / {row.joint || '—'}<span className="block text-xs text-slate-400">ID {row.id}</span></td><td className="px-3 py-2">{row.oldName || 'Не заполнена'}{isTechnologyCardAssignmentAction(row.kind) && <><span className="block text-slate-400">↓</span><span className="font-medium text-sky-800">{row.newName}</span></>}</td><td className="max-w-md px-3 py-2"><span className="font-medium">{TK_ASSIGNMENT_LABELS[row.kind]}</span><p className="mt-1 text-xs text-slate-500">{row.reason}</p></td></tr>)}
+          {visibleDetails.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map(row => <tr key={row.id} className="border-t"><td className="px-3 py-2">{isTechnologyCardAssignmentAction(row.kind) ? <Checkbox aria-label={`Назначение ТК стыку ${row.id}`}  disabled={busy || !actions.includes(row.kind)} checked={actions.includes(row.kind) && !excluded.has(row.id)} onChange={event => setExcluded(current => { const next = new Map(current); if (event.target.checked) next.delete(row.id); else next.set(row.id, row.kind as TechnologyCardAssignmentAction); return next })} /> : '—'}</td><td className="px-3 py-2"><span className="block text-xs text-slate-500">{row.project || 'Без проекта'}</span>{row.line || '—'} / {row.joint || '—'}<span className="block text-xs text-slate-400">ID {row.id}</span></td><td className="px-3 py-2">{row.oldName || 'Не заполнена'}{isTechnologyCardAssignmentAction(row.kind) && <><span className="block text-slate-400">↓</span><span className="font-medium text-sky-800">{row.newName}</span></>}</td><td className="max-w-md px-3 py-2"><span className="font-medium">{TK_ASSIGNMENT_LABELS[row.kind]}</span><p className="mt-1 text-xs text-slate-500">{row.reason}</p></td></tr>)}
         </tbody></table>{detailsBusy ? <p className="p-4 text-sm">Загружаем стыки…</p> : !visibleDetails.length && <p className="p-4 text-sm text-slate-500">Стыков нет.</p>}</div>
         {visibleChunkIndexes.length > 0 && <div className="flex flex-wrap items-center gap-3">
           <Button variant="outline" disabled={busy || detailsBusy || (chunkPosition === 0 && page === 0)} onClick={() => {

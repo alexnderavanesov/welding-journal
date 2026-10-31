@@ -1,6 +1,4 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
-import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
 import { LargeDialogShell } from './large-dialog-shell'
 
 /** Shared shell for registry cards and document assignments; never expands a table row. */
@@ -13,15 +11,8 @@ export function SpecialistDialogShell({ label, busy, onClose, children, wide = f
     const target = previousFocus.current
     if (target instanceof HTMLElement && target.isConnected) target.focus({ preventScroll: true })
   }, [])
-  useWindowEscapeKey(true, event => {
-    if (event.defaultPrevented || isContextActionMenuOpen() || document.querySelector('[role="tooltip"], [data-specialist-listbox]')) return
-    const dialogs = document.querySelectorAll('[data-modal-dialog="true"]')
-    if (!dialogs.item(dialogs.length - 1)?.contains(root.current)) return
-    event.preventDefault()
-    event.stopImmediatePropagation()
-    if (!busy) onClose()
-  }, { capture: true })
-  return <LargeDialogShell ariaLabel={label} maxWidthClassName={maxWidthClassName ?? (wide ? 'max-w-3xl' : 'max-w-xl')}
+
+  return <LargeDialogShell onEscape={onClose} escapeDisabled={busy} ariaLabel={label} maxWidthClassName={maxWidthClassName ?? (wide ? 'max-w-3xl' : 'max-w-xl')}
     maxHeightClassName="max-h-[calc(100dvh-2rem)]" panelRadiusClassName="rounded-xl" panelClassName="overflow-hidden">
     <div ref={root} className="flex min-h-0 flex-col" onKeyDown={event => {
       if (event.key !== 'Tab') return

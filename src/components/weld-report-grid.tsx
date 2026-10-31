@@ -445,7 +445,14 @@ function ReportGrid(props: WeldReportGridProps) {
             // AG normally turns a right click outside a range into a new range.
             // Keep deliberate selections intact for the Copy command instead.
             event.preventDefault(); event.stopPropagation()
-          } else if (event.button === 0) setMenuInput(false)
+          } else if (event.button === 0) {
+            setMenuInput(false)
+            // AG focuses checkbox cells but deliberately skips its range
+            // handler for widgets. A plain click must not leave an older
+            // range painted as a second focus elsewhere in the table.
+            if (!event.metaKey && !event.ctrlKey && !event.shiftKey
+              && event.target instanceof Element && event.target.closest('.journal-server-checkbox')) api?.clearCellSelection()
+          }
         }}
         onClickCapture={event => {
           if (event.target instanceof Element && event.target.closest('.journal-group-toggle')) groupMotion.begin()
@@ -480,13 +487,17 @@ function ReportGrid(props: WeldReportGridProps) {
           if (!rowsReady && event.target instanceof Element && event.target.closest('.ag-row')
             && !['Escape', 'Tab'].includes(event.key)) { event.preventDefault(); event.stopPropagation(); return }
           if (props.selectable && event.key === ' ' && !event.altKey && !event.ctrlKey && !event.metaKey
-            && event.target instanceof Element && !event.target.closest('button, a, input, textarea, select, [contenteditable], .ag-menu')) {
+            && event.target instanceof Element
+            && (event.shiftKey && event.target.matches('.journal-server-checkbox input[type=checkbox]') && Boolean(api?.getCellRanges()?.length)
+              || !event.target.closest('button, a, input, textarea, select, [contenteditable], .ag-menu'))) {
             const cell = event.target.closest('.ag-cell')
             const row = cell?.closest('[row-index]')
             if (row) {
               // Journal checkboxes use exact server-backed selection, not AG's
               // loaded-row selection. Consume repeats and pending/stub presses
               // too, so holding Space cannot toggle twice or scroll the page.
+              // Shift+Space also owns a range drawn through checkbox inputs;
+              // cancel their native single-row toggle on keyup in that case.
               event.preventDefault(); event.stopPropagation()
               const node = api?.getDisplayedRowAtIndex(Number(row.getAttribute('row-index')))
               if (!event.repeat && !serverGrid.selectionContext?.pending) {
@@ -496,8 +507,15 @@ function ReportGrid(props: WeldReportGridProps) {
               return
             }
           }
-          if (event.target instanceof Element && !event.target.closest('input, textarea, [contenteditable=true], .ag-menu') && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
-            event.preventDefault(); event.stopPropagation(); copyRange(); return
+          if (event.target instanceof Element && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+            // A pointer range can start on our native checkbox and leave focus
+            // there. Filter checkboxes (including portals) still own their keys.
+            const selectionCheckbox = event.target.matches('.journal-server-checkbox input[type="checkbox"]')
+              && event.target.closest('.ag-cell, .ag-header-cell')
+            if ((!event.target.closest('input') || selectionCheckbox)
+              && !event.target.closest('textarea, [contenteditable=true], .ag-menu, .ag-popup-child, .journal-filter')) {
+              event.preventDefault(); event.stopPropagation(); copyRange(); return
+            }
           }
           // AG closes its popup at document level without consuming Escape. Handle
           // it before that, otherwise the report clears filters in the same event.
@@ -510,9 +528,12 @@ function ReportGrid(props: WeldReportGridProps) {
                 const checkbox = event.target.closest('.ag-cell')?.querySelector<HTMLInputElement>('input[type=checkbox]')
                 if (checkbox) { if (rowsReady && !checkbox.disabled) checkbox.click() }
                 else {
-                  const column = api?.getColumn(groupAnchor)
-                  if (column && groupNode.rowIndex != null) api?.setFocusedCell(groupNode.rowIndex, column)
+                  // Expanding changes positional ranges. Keep the keyboard
+                  // column instead of jumping to the group's title column.
+                  const colId = event.target.closest('.ag-cell')?.getAttribute('col-id')
+                  api?.clearCellSelection()
                   groupNode.setExpanded(!groupNode.expanded, event.nativeEvent, true)
+                  if (colId && groupNode.rowIndex != null) api?.setFocusedCell(groupNode.rowIndex, colId)
                 }
                 return
               }

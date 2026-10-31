@@ -271,6 +271,9 @@ test('navigation stays visible and clickable when scrolling history; Formation p
   }
   await page.screenshot({ path: info.outputPath('sticky-documents.png') })
   await page.getByRole('tab', { name: 'Формирование', exact: true }).click()
+  // This fixture is historical; the app correctly defaults to today's month.
+  await page.getByLabel('Период с', { exact: true }).fill('2026-10-01')
+  await page.getByLabel('по', { exact: true }).fill('2026-10-31')
   await expect(page.locator('.document-grid-bottom-cover')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Открыть на весь экран', exact: true })).toBeVisible()
   await expect(page.getByRole('dialog')).toHaveCount(0)
@@ -310,7 +313,7 @@ async function revealReportDocument(page: Page, title: string) {
 
 test('report conclusion and joint picture open template preview inline; Escape keeps the picture and filter', async ({ page, context }, info) => {
   const title = 'E2E-PREVIEW-VIK'
-  await withE2eDatabase(db => db.query("update weld_joints set vik_result='годен',vik_conclusion=$2,vik_conclusion_date='2026-10-03' where project_title=$1", [project, title]))
+  await withE2eDatabase(db => db.query("update weld_joints set vik_result='годен',vik_conclusion=$2,vik_conclusion_date='2026-10-03',psto_required='отменен' where project_title=$1", [project, title]))
   await requireDb().transaction(async tx => {
     const rows = await tx.select().from(weldJoints).where(eq(weldJoints.projectTitle, project))
     await syncSystemDocumentsForWeldChangesInTransaction(tx, rows, new Map())
@@ -324,6 +327,26 @@ test('report conclusion and joint picture open template preview inline; Escape k
   await expect(joint).toBeVisible()
   await joint.click()
   const picture = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Картина стыка F001', exact: true }) })
+  // Labels must stay on one line, without overlapping the neighboring status,
+  // both in the desktop two-column layout and on a narrow screen.
+  const initialViewport = page.viewportSize()!
+  for (const viewport of [initialViewport, { width: 720, height: 900 }]) {
+    await page.setViewportSize(viewport)
+    const badge = picture.getByText('Линия ПСТО', { exact: true })
+    await expect(badge).toBeVisible()
+    await badge.scrollIntoViewIfNeeded()
+    const geometry = await badge.evaluate(element => {
+      const range = document.createRange(); range.selectNodeContents(element)
+      const rect = element.getBoundingClientRect()
+      const status = element.parentElement!.nextElementSibling!.getBoundingClientRect()
+      return { lines: new Set([...range.getClientRects()].map(line => Math.round(line.top))).size,
+        separated: status.left >= rect.right || status.top >= rect.bottom,
+        fits: rect.right <= window.innerWidth }
+    })
+    expect(geometry).toEqual({ lines: 1, separated: true, fits: true })
+    await page.screenshot({ path: info.outputPath(`joint-history-badges-${viewport.width}.png`) })
+  }
+  await page.setViewportSize(initialViewport)
   await picture.getByRole('button', { name: title, exact: true }).click()
   const modal = page.getByRole('dialog', { name: 'Предпросмотр документа', exact: true })
   await expect(modal.frameLocator('iframe').getByText('Шаблон — готовый документ')).toBeVisible()

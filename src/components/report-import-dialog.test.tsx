@@ -103,8 +103,9 @@ describe('ReportImportDialog save result', () => {
 
     await uploadPreviewFile('import.xlsx · найдено: 1 · к добавлению: 0')
 
-    expect(screen.getByTitle('330-P49-03-000').closest('.ag-cell')).toHaveClass('bg-amber-50')
-    expect(screen.getByTitle('F1').closest('.ag-cell')).toHaveClass('bg-amber-50')
+    // The summary renders before AG Grid finishes mounting its cells.
+    expect((await screen.findByTitle('330-P49-03-000')).closest('.ag-cell')).toHaveClass('bg-amber-50')
+    expect((await screen.findByTitle('F1')).closest('.ag-cell')).toHaveClass('bg-amber-50')
     expect(screen.getByRole('button', { name: 'Только строки с ошибками · 1' })).toBeInTheDocument()
   })
 })

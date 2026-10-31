@@ -1,5 +1,5 @@
 import { useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
-import { Calculator, ChevronDown, ChevronUp, ClipboardList, List, Printer, Settings2 } from 'lucide-react'
+import { Calculator, ChevronDown, ChevronUp, ClipboardList, List, Printer, Settings2, Trash2 } from 'lucide-react'
 import { ContextActionMenu, type ContextActionMenuState } from './context-action-menu'
 import type { LineProgramRecord } from '@/lib/line-program'
 import type { ProgramSelection } from '@/lib/line-program-workspace'
@@ -11,7 +11,7 @@ export type ProgramScopeMenuEvent = MouseEvent<HTMLElement> | KeyboardEvent<HTML
 export type ProgramScopeMenuOptions = {
   line: LineProgramRecord; scope: ProgramSelection; expanded: boolean
   onToggle: () => void; onAssignments: () => void; onCalculation: (selection: ProgramSelection, explain: boolean) => void
-  onSelect: (selection: ProgramSelection) => void; onEdit?: () => void
+  onSelect: (selection: ProgramSelection) => void; onEdit?: () => void; onDelete?: () => void
 }
 type SectionFilter = 'all' | 'missing' | 'excess' | 'reduction' | 'approved' | 'additional' | 'configuration'
 
@@ -31,10 +31,10 @@ export function useProgramScopeMenu(onReport: (request: ProgramReportRequest) =>
       ?? event.currentTarget.querySelector<HTMLElement>('button[aria-expanded]')
       ?? event.currentTarget.querySelector<HTMLElement>('button')
     const anchor = (trigger.current ?? event.currentTarget).getBoundingClientRect()
-    setMenu({ ...content, x: 'clientX' in event ? event.clientX : anchor.left + 16, y: 'clientY' in event ? event.clientY : anchor.bottom })
+    setMenu({ ...content, anchorElement: trigger.current ?? event.currentTarget, x: 'clientX' in event ? event.clientX : anchor.left + 16, y: 'clientY' in event ? event.clientY : anchor.bottom })
   }
   const open = (event: ProgramScopeMenuEvent, options: ProgramScopeMenuOptions) => {
-    const { line, scope, expanded, onToggle, onAssignments, onCalculation, onSelect, onEdit } = options
+    const { line, scope, expanded, onToggle, onAssignments, onCalculation, onSelect, onEdit, onDelete } = options
     const metric = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-program-slice]') : null
     const slice = metric?.dataset.programSlice as ProgramSelection['slice'] | undefined
     const kind = metric?.dataset.programKind
@@ -57,6 +57,7 @@ export function useProgramScopeMenu(onReport: (request: ProgramReportRequest) =>
         ] as const).map(([slice, label]) => ({ id: slice, label, disabled: !!issue, title: issue, onSelect: () => onSelect({ ...scope, kind: undefined, slice }) })) },
         { type: 'separator', id: 'view' },
         { id: 'toggle', label: expanded ? 'Свернуть' : 'Развернуть', icon: expanded ? ChevronUp : ChevronDown, onSelect: onToggle },
+        ...(!scope.stamp && !scope.unassigned && onDelete ? [{ id: 'delete', label: 'Удалить линию из программы', icon: Trash2, onSelect: onDelete }] : []),
         ...(!scope.stamp && !scope.unassigned && onEdit ? [{ id: 'settings', label: 'Настроить линию', icon: Settings2, onSelect: onEdit }] : []),
       ],
     })

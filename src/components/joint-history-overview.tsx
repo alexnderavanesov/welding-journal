@@ -336,9 +336,9 @@ function HistoryLine({
 }) {
   const visibleDocuments = documents.filter((document): document is NonNullable<DocumentTarget> => Boolean(document))
   return (
-    <div className="grid gap-2 border-b border-slate-100 py-2 last:border-b-0 md:grid-cols-[88px_minmax(0,1fr)]">
+    <div className="grid gap-2 border-b border-slate-100 py-2 last:border-b-0 md:grid-cols-[112px_minmax(0,1fr)]">
       <div className="flex items-start gap-2">
-        <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-700">{label}</span>
+        <span className="shrink-0 whitespace-nowrap rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-700">{label}</span>
       </div>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">

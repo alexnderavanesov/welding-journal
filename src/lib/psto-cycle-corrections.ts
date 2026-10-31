@@ -1,3 +1,4 @@
+import { formatLnkChronologyMessage, formatValidationMessage, type ValidationMessageFormatter } from './validation-message'
 import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
 import { assertDocumentRequisites } from '@/lib/document-requisites'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -59,6 +60,7 @@ export function applyPstoCycleCorrection(
   row: WeldRow,
   input: PstoCycleCorrectionInput,
   saveCheckSettings: SaveCheckSettings = loadSaveCheckSettings(),
+  formatMessage?: ValidationMessageFormatter,
 ): PstoCycleCorrectionResult {
   const repeats = [...(row.pstoRepeatCycles ?? [])]
     .map((cycle) => ({ ...cycle }))
@@ -76,7 +78,7 @@ export function applyPstoCycleCorrection(
 
   const nextCycle = { ...current }
   if (input.action === 'delete') {
-    const blockReason = getPstoCycleStageDeleteBlockReason(row, input.sequence, input.stage)
+    const blockReason = getPstoCycleStageDeleteBlockReason(row, input.sequence, input.stage, formatMessage)
     if (blockReason) throw new Error(blockReason)
     clearStage(nextCycle, input.stage)
   } else {
@@ -84,11 +86,11 @@ export function applyPstoCycleCorrection(
   }
 
   const nextTimeline = timeline.map((cycle, cycleIndex) => cycleIndex === index ? nextCycle : cycle)
-  validateTimeline(row, nextTimeline, saveCheckSettings)
+  validateTimeline(row, nextTimeline, saveCheckSettings, formatMessage)
 
   if (current.source === 'primary') {
     const nextRow = applyPrimaryCycle(row, nextCycle)
-    assertNoPstoCorrectionCrossStageIssues(row, nextRow, input, saveCheckSettings)
+    assertNoPstoCorrectionCrossStageIssues(row, nextRow, input, saveCheckSettings, formatMessage)
     return {
       row: { ...nextRow, finalStatus: calculateFinalStatus(nextRow) },
       repeatCycle: null,
@@ -103,7 +105,7 @@ export function applyPstoCycleCorrection(
     ? repeats.filter((cycle) => cycle.id !== relation.id)
     : repeats.map((cycle) => cycle.id === relation.id ? applyRepeatCycle(cycle, nextCycle) : cycle)
   const nextRow = { ...row, pstoRepeatCycles: nextRepeatCycles }
-  assertNoPstoCorrectionCrossStageIssues(row, nextRow, input, saveCheckSettings)
+  assertNoPstoCorrectionCrossStageIssues(row, nextRow, input, saveCheckSettings, formatMessage)
   return {
     row: { ...nextRow, finalStatus: calculateFinalStatus(nextRow) },
     repeatCycle: deleteWholeCycle ? null : nextRepeatCycles.find((cycle) => cycle.id === relation.id) ?? null,
@@ -115,6 +117,7 @@ export function applyPstoTvmtCorrectionWithLaterCycleRemoval(
   row: WeldRow,
   input: PstoTvmtCorrectionWithLaterCycleRemovalInput,
   saveCheckSettings: SaveCheckSettings = loadSaveCheckSettings(),
+  formatMessage?: ValidationMessageFormatter,
 ): PstoTvmtCorrectionWithLaterCycleRemovalResult {
   const repeats = [...(row.pstoRepeatCycles ?? [])]
     .map((cycle) => ({ ...cycle }))
@@ -147,7 +150,7 @@ export function applyPstoTvmtCorrectionWithLaterCycleRemoval(
   validateTimeline(row, [
     ...timeline.slice(0, index),
     nextCycle,
-  ], saveCheckSettings)
+  ], saveCheckSettings, formatMessage)
 
   const remainingRepeats = repeats
     .filter((cycle) => cycle.sequence <= current.sequence)
@@ -159,7 +162,7 @@ export function applyPstoTvmtCorrectionWithLaterCycleRemoval(
     ? remainingRepeats.find((cycle) => cycle.id === current.id) ?? null
     : null
 
-  assertNoPstoCorrectionCrossStageIssues(row, nextRow, correctionInput, saveCheckSettings)
+  assertNoPstoCorrectionCrossStageIssues(row, nextRow, correctionInput, saveCheckSettings, formatMessage)
   return {
     row: { ...nextRow, finalStatus: calculateFinalStatus(nextRow) },
     repeatCycle: updatedRepeatCycle,
@@ -189,11 +192,12 @@ function assertNoPstoCorrectionCrossStageIssues(
   nextRow: WeldRow,
   input: PstoCycleCorrectionInput,
   saveCheckSettings: SaveCheckSettings,
+  formatMessage?: ValidationMessageFormatter,
 ) {
   assertPstoNotAfterCancellation(nextRow, input)
 
   const newIssue = getNewPstoCrossStageIssue(currentRow, nextRow, saveCheckSettings)
-  if (newIssue) throw new Error(newIssue.message)
+  if (newIssue) throw new Error(formatLnkChronologyMessage(newIssue, formatMessage))
 }
 
 function getNewPstoCrossStageIssue(
@@ -239,6 +243,7 @@ export function getPstoCycleStageDeleteBlockReason(
   row: WeldRow,
   sequence: number,
   stage: PstoCycleStage,
+  formatMessage?: ValidationMessageFormatter,
 ) {
   const timeline = buildPstoCycleTimeline(row, row.pstoRepeatCycles ?? [])
   const cycle = timeline.find((candidate) => candidate.sequence === sequence)
@@ -266,7 +271,7 @@ export function getPstoCycleStageDeleteBlockReason(
             )),
       }
   const crossStageIssue = getNewPstoCrossStageIssue(row, nextRow)
-  if (crossStageIssue) return crossStageIssue.message
+  if (crossStageIssue) return formatLnkChronologyMessage(crossStageIssue, formatMessage)
   return ''
 }
 
@@ -343,6 +348,7 @@ function validateTimeline(
   row: WeldRow,
   timeline: PstoCycleSnapshot[],
   saveCheckSettings: SaveCheckSettings,
+  formatMessage?: ValidationMessageFormatter,
 ) {
   const weldDate = parseDateLikeToIso(row.weldDate)
   for (const [index, cycle] of timeline.entries()) {
@@ -357,7 +363,8 @@ function validateTimeline(
     if (cycle.pstoRequest || requestDate) {
       if (!cycle.pstoRequest || !requestDate) throw new Error(`У заявки ПСТО ${label} должны быть имя и дата.`)
       if (saveCheckSettings.pstoResultRequestDateOrder && weldDate && requestDate < weldDate) {
-        throw new Error(`Дата заявки ПСТО ${label} (${formatDisplayDate(requestDate)}) не может быть раньше даты сварки (${formatDisplayDate(weldDate)}).`)
+        throw new Error(formatValidationMessage({ fields: ['weldDate'], publicMessage: `Дата заявки ПСТО ${label} не может быть раньше даты сварки.`,
+          message: `Дата заявки ПСТО ${label} (${formatDisplayDate(requestDate)}) не может быть раньше даты сварки (${formatDisplayDate(weldDate)}).` }, formatMessage))
       }
     }
     if (hasPstoResult || pstoDate || cycle.heatTreatmentDiagram) {
@@ -366,7 +373,8 @@ function validateTimeline(
       // Completeness of the edited stage is checked in updateStage. A different
       // legacy cycle must retain its facts and must not block an unrelated edit.
       if (saveCheckSettings.pstoResultDateAfterWeldDate && pstoDate && weldDate && pstoDate < weldDate) {
-        throw new Error(`Дата результата ПСТО ${label} (${formatDisplayDate(pstoDate)}) не может быть раньше даты сварки (${formatDisplayDate(weldDate)}).`)
+        throw new Error(formatValidationMessage({ fields: ['weldDate'], publicMessage: `Дата результата ПСТО ${label} не может быть раньше даты сварки.`,
+          message: `Дата результата ПСТО ${label} (${formatDisplayDate(pstoDate)}) не может быть раньше даты сварки (${formatDisplayDate(weldDate)}).` }, formatMessage))
       }
       if (saveCheckSettings.pstoResultRequestDateOrder && pstoDate && pstoDate < requestDate) {
         throw new Error(`Дата результата ПСТО ${label} (${formatDisplayDate(pstoDate)}) не может быть раньше даты заявки (${formatDisplayDate(requestDate)}).`)

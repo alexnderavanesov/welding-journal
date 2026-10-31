@@ -34,7 +34,7 @@ export function PstoWeldLineMoveDialog({ preview, initialDecisions, pending, err
   const transferRowIds = new Set(decisions.filter(decision => decision.disposition !== 'keepPrimary').map(decision => decision.rowId))
   const specialists = useSpecialistTransferConfirmation([...transferRowIds], target)
   const directionLabel = target === 'primary' ? 'НК до ТО → основной' : 'основной НК → до ТО'
-  return <LargeDialogShell maxWidthClassName="max-w-[940px]" maxHeightClassName="max-h-[92vh]" overlayClassName="z-[90] bg-slate-950/35">
+  return <LargeDialogShell onEscape={onClose} escapeDisabled={pending} maxWidthClassName="max-w-[940px]" maxHeightClassName="max-h-[92vh]" overlayClassName="z-[90] bg-slate-950/35">
     <DialogHeader title={preview.isChainMove ? `Перенос цепочки ${preview.rootJoint}` : 'Перенос стыка на другую линию'}
       subtitle="Проверьте состав переноса и этапы контроля" closeDisabled={pending} onClose={onClose} />
     <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 px-5 py-4">

@@ -1,3 +1,4 @@
+import { DocumentConnectionsButton } from './document-connections-button'
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { getDocumentRequisiteErrors } from '@/lib/document-requisites'
 import { CalendarClock, FileSpreadsheet, Plus, Search, Trash2 } from 'lucide-react'
@@ -602,6 +603,7 @@ export function PreHeatTreatmentResultManagerDialog({
                   </div>
                 </div>
               </section>
+              <DocumentConnectionsButton reference={selectedDocumentReference} />
               {registryMode === 'request' ? (
                 <section className="rounded-md border border-slate-200 bg-slate-50/60 p-4">
                 <h3 className="text-sm font-semibold text-slate-900">Заявка</h3>

@@ -45,3 +45,28 @@ it('leaves Escape to the confirmation above the field editor', () => {
   expect(close).not.toHaveBeenCalled()
   expect(screen.getByRole('dialog')).toBeInTheDocument()
 })
+
+it('allows cancelling while context loads, but does not save through Enter', () => {
+  const close = vi.fn(), save = vi.fn()
+  render(<ReportFieldEditDialog editing={editing} requestOptions={[]} isSaving={false} isContextReady={false}
+    onChange={() => undefined} onClose={close} onSave={save} />)
+  expect(screen.getByRole('button', { name: 'Сохранить' })).toBeDisabled()
+  fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+  expect(save).not.toHaveBeenCalled()
+  const cancel = screen.getByRole('button', { name: 'Отмена' })
+  expect(cancel).toBeEnabled()
+  cancel.focus()
+  fireEvent.keyDown(cancel, { key: 'Escape' })
+  expect(close).toHaveBeenCalledOnce()
+})
+
+it('blocks duplicate Enter and every close control while an actual write is pending', () => {
+  const close = vi.fn(), save = vi.fn()
+  render(<ReportFieldEditDialog editing={editing} requestOptions={[]} isSaving isContextReady
+    onChange={() => undefined} onClose={close} onSave={save} />)
+  fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+  fireEvent.keyDown(window, { key: 'Escape' })
+  for (const name of ['Сохранить', 'Отмена', 'Закрыть']) expect(screen.getByRole('button', { name })).toBeDisabled()
+  expect(save).not.toHaveBeenCalled()
+  expect(close).not.toHaveBeenCalled()
+})

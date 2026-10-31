@@ -12,10 +12,10 @@ it('keeps the record version and welding change without resubmitting derived con
   for (const key of ['vikResult', 'pstoResult', 'finalStatus', 'lnkCreatedAt']) expect(input).not.toHaveProperty(key)
 })
 it('sends only LNK working fields in a full workflow draft while preserving the batch concurrency contract', async () => {
-  await updateWeldRowsOrThrow([{ id: 1, rowVersion: '124', isometry: 'context', vikRequest: 'V-1', vikRequestDate: '30.10.2026', pstoNote: 'context', lnkCreatedAt: '2026-10-30' }], undefined, { mutationScope: 'lnk' })
+  await updateWeldRowsOrThrow([{ id: 1, rowVersion: '124', isometry: 'context', vikRequest: 'V-1', vikRequestDate: '30.10.2026', pstoNote: 'context', lnkCreatedAt: '2026-10-30', controlWorkflowAccess: { welded: true } }], undefined, { mutationScope: 'lnk' })
   const input = rpc.updateWeldJoints.mock.calls[0][0].data
   expect(input).toMatchObject({ expectedVersions: [{ id: 1, version: '124' }], mutationScope: 'lnk', records: [{ id: 1, vikRequest: 'V-1', vikRequestDate: '2026-10-30' }] })
-  for (const key of ['isometry', 'pstoNote', 'lnkCreatedAt']) expect(input.records[0]).not.toHaveProperty(key)
+  for (const key of ['isometry', 'pstoNote', 'lnkCreatedAt', 'controlWorkflowAccess']) expect(input.records[0]).not.toHaveProperty(key)
 })
 it('creates a joint without client supplied system defaults', async () => {
   await createWeldRowOrThrow({ joint: 'F1', officiality: 'действующий', finalStatus: 'ожидает сварку' })

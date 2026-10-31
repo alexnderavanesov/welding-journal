@@ -1,3 +1,6 @@
+import { runDocumentSave } from '@/lib/run-document-save'
+import { collectResultRequestSources } from '@/lib/result-request-sources'
+import { useResultRequestSources } from '@/components/use-result-request-sources'
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -9,7 +12,7 @@ import { DocumentSpecialistsPanel } from '@/components/document-specialists-pane
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { WorkflowSelectionWarning } from '@/components/workflow-selection-warning'
 import { useWorkflowSelectionState } from '@/lib/use-workflow-selection-state'
-import { RequestDocumentCombobox } from '@/components/request-document-combobox'
+import { ResultRequestCombobox } from '@/components/result-request-combobox'
 import { RequestDialogFooter } from '@/components/request-dialog-footer'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
 import { ResultDialogHeader } from '@/components/result-dialog-header'
@@ -140,14 +143,18 @@ export function TvmtWorkflowDialog({
   const [naming, setNaming] = useState<RequestNamingState>(() =>
     getDefaultNamingState(),
   )
-  const requestOptions = useMemo(() => getTvmtRequestOptions(rows), [rows])
-  const [requestKey, setRequestKey] = useState(() =>
-    mode === 'result' ? getInitialRequestKey(rows, initialSelectedIds, requestOptions) : '',
+  const candidateRequests = useMemo(() => getTvmtRequestOptions(rows), [rows])
+  const [selectedRequest, setSelectedRequest] = useState<RequestDocumentIdentity | null>(() =>
+    mode === 'result' ? getInitialRequest(rows, initialSelectedIds, candidateRequests) : null,
   )
+  const requestOptions = useMemo(() => collectRequestDocumentIdentities([
+    ...candidateRequests, ...(selectedRequest ? [selectedRequest] : []),
+  ]), [candidateRequests, selectedRequest])
+  const requestKey = selectedRequest?.key ?? ''
   const [defaultResult, setDefaultResult] = useState('')
   const [rowResults, setRowResults] = useState<Record<number, string>>({})
   const [selectedIds, setSelectedIds, selectionWarning] = useWorkflowSelectionState(() =>
-    getInitialSelectedIds(mode, rows, initialSelectedIds, requestKey, requestOptions),
+    getInitialSelectedIds(mode, rows, initialSelectedIds),
   )
   const initialSelectionSignature = useMemo(
     () => [...initialSelectedIds].sort((left, right) => left - right).join(','),
@@ -162,14 +169,11 @@ export function TvmtWorkflowDialog({
     const contextKey = `${mode}:${initialSelectionSignature}`
     if (appliedInitialSelectionRef.current === contextKey) return
 
-    const nextRequestKey = mode === 'result'
-      ? getInitialRequestKey(rows, initialSelectedIds, requestOptions)
-      : ''
-    setRequestKey(nextRequestKey)
-    setSelectedIds(getInitialSelectedIds(mode, rows, initialSelectedIds, nextRequestKey, requestOptions))
+    setSelectedRequest(mode === 'result' ? getInitialRequest(rows, initialSelectedIds, candidateRequests) : null)
+    setSelectedIds(getInitialSelectedIds(mode, rows, initialSelectedIds))
     setRowsViewMode('all')
     appliedInitialSelectionRef.current = contextKey
-  }, [initialSelectedIds, initialSelectionSignature, isContextReady, mode, requestOptions, rows])
+  }, [initialSelectedIds, initialSelectionSignature, isContextReady, mode, candidateRequests, rows])
   const { data: sequences } = useQuery({
     queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
     queryFn: loadSystemDocumentSequences,
@@ -178,14 +182,12 @@ export function TvmtWorkflowDialog({
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   })
-  const selectedRequest = requestOptions.find((option) => option.key === requestKey) ?? null
   useEffect(() => {
     if (!isContextReady) return
     onCandidateRequestChange?.(mode === 'result' ? selectedRequest : null)
   }, [isContextReady, mode, onCandidateRequestChange, selectedRequest])
   const requestRows = useMemo(() => {
-    if (mode !== 'result') return rows
-    if (!selectedRequest) return []
+    if (mode !== 'result' || !selectedRequest) return rows
     return rows.filter((row) => {
       const current = getCurrentTvmtDocumentFields(row)
       return isSameRequestDocument(current.requestName, current.requestDate, selectedRequest)
@@ -214,16 +216,20 @@ export function TvmtWorkflowDialog({
     () => rows.filter((row) => selectedIds.has(row.id)),
     [rows, selectedIds],
   )
+  const selectedRequests = useMemo(() => getTvmtRequestOptions(selectedRows), [selectedRows])
+  const managerRows = selectedRows.length ? selectedRows : requestRows
+  const requestSourceGroups = useMemo(() => collectResultRequestSources(selectedRows, getTvmtRequestOptions), [selectedRows])
+  const requestSources = useResultRequestSources(selectedRows, requestSourceGroups, () => { setRowsViewMode('selected'); setSelectedSearch(''); setWorkspaceTab('joints') })
   const filteredSelectedRows = useMemo(
-    () => filterTvmtRows(selectedRows, selectedSearch),
-    [selectedRows, selectedSearch],
+    () => filterTvmtRows(requestSources.rows, selectedSearch),
+    [requestSources.rows, selectedSearch],
   )
   const displayedRows = rowsViewMode === 'selected' ? filteredSelectedRows : filteredRows
   const displayedSearch = rowsViewMode === 'selected' ? selectedSearch : search
   const pagination = usePagePagination({
     items: displayedRows,
     defaultPageSize: 50,
-    resetKeys: [displayedSearch, rowsViewMode, requestKey],
+    resetKeys: [requestSources.sourceProps.activeKey, displayedSearch, rowsViewMode, requestKey],
   })
   const nextNumber = mode === 'request'
     ? sequences?.[TVMT_REQUEST_SEQUENCE_ID]
@@ -284,13 +290,14 @@ export function TvmtWorkflowDialog({
 
   const mutation = useMutation({
     mutationFn: async (): Promise<SaveResult> => {
-      const savedRows = await savePstoRepeatWorkflow({ data: {
+      const savedRows = await runDocumentSave('savePstoRepeatWorkflow', headers => savePstoRepeatWorkflow({ headers, data: {
         action: mode === 'request' ? 'tvmtRequest' : 'tvmtResult',
         date,
         groups: creationPlan.groups.map((group) => ({
           rowIds: group.rowIds,
           name: group.name,
           useSystemName: group.useSystemName,
+          namingPattern: group.namingPattern,
         })),
         documentGrouping: getCreationGroupingCommand(creationPlan.groups),
         expectedVersions: selectedRows.map((row) => ({
@@ -300,7 +307,7 @@ export function TvmtWorkflowDialog({
         results: mode === 'result'
           ? selectedRows.map((row) => ({ rowId: row.id, result: rowResults[row.id] ?? '' }))
           : [],
-      } })
+      } }))
       return { rows: savedRows as WeldRow[], documentCount: creationPlan.groups.length }
     },
     onSuccess: async (result) => {
@@ -322,9 +329,7 @@ export function TvmtWorkflowDialog({
     },
   })
   const effectiveSaveBlockReason = !isContextReady ? 'Загрузка выбранных стыков…' : getSaveBlockReason({
-    mode,
     selectedRowsCount: selectedRows.length,
-    requestSelected: Boolean(selectedRequest),
     dateReason,
     creationPlanError: creationPlan.error,
     domainReason: effectiveDomainReason,
@@ -348,7 +353,7 @@ export function TvmtWorkflowDialog({
     onRunRootCauseAction?.(action)
   }
   const setSelectedRows = useStableEventCallback((rowIds: number[]) => {
-    const allowedIds = new Set(requestRows.filter(canSelectRow).map((row) => row.id))
+    const allowedIds = new Set(rows.filter(canSelectRow).map((row) => row.id))
     const nextIds = new Set(rowIds.filter((id) => allowedIds.has(id)))
     setSelectedIds(nextIds)
     if (mode === 'result' && defaultResult) {
@@ -428,9 +433,8 @@ export function TvmtWorkflowDialog({
       onOpenJournalRows,
     }))
   })
-  const changeRequest = (nextKey: string) => {
-    setRequestKey(nextKey)
-    setSelectedIds(new Set())
+  const changeRequest = (request: RequestDocumentIdentity | null) => {
+    setSelectedRequest(request)
     setRowsViewMode('all')
   }
   const changeDefaultResult = (result: string) => {
@@ -460,12 +464,14 @@ export function TvmtWorkflowDialog({
         />
       ) : (
         <ResultDialogHeader
+          sources={requestSources.sourceProps}
           title="Внесение результатов ТВМТ"
-          requestName={selectedRequest?.name ?? ''}
+          requestName={selectedRequests[0]?.name ?? ''}
+          requestCount={selectedRequests.length}
           selectedCount={selectedRows.length}
-          managerDisabled={!onOpenResultManager || requestRows.length === 0}
-          managerDisabledReason="Сначала выберите заявку ТВМТ с доступными позициями."
-          onOpenManager={() => onOpenResultManager?.(requestRows)}
+          managerDisabled={!onOpenResultManager || managerRows.length === 0}
+          managerDisabledReason="Нет стыков для просмотра результатов ТВМТ."
+          onOpenManager={() => onOpenResultManager?.(managerRows)}
           onClose={onClose}
         />
       )}
@@ -503,13 +509,14 @@ export function TvmtWorkflowDialog({
         ) : null}
         {mode === 'result' ? (
           <label className="block min-w-0 space-y-1.5 text-sm">
-            <span className="text-[13px] font-medium leading-none text-slate-700">Заявка ТВМТ</span>
-            <RequestDocumentCombobox
-              ariaLabel="Заявка ТВМТ"
+            <span className="text-[13px] font-medium leading-none text-slate-700">Фильтр по заявке ТВМТ</span>
+            <ResultRequestCombobox scope="tvmt"
+              ariaLabel="Фильтр по заявке ТВМТ"
               value={requestKey}
               options={requestOptions}
-              placeholder="Найдите заявку по названию или дате"
-              onChange={(request) => changeRequest(request?.key ?? '')}
+              placeholder="Все заявки"
+              emptyOptionLabel="Все заявки"
+              onChange={changeRequest}
             />
           </label>
         ) : null}
@@ -546,7 +553,7 @@ export function TvmtWorkflowDialog({
               ? `Показаны первые ${WORKFLOW_CANDIDATE_PAGE_SIZE} подходящих стыков. Уточните поиск, чтобы найти остальные.`
               : ''}
             viewToggle={(
-              <SelectedRowsViewToggle mode={rowsViewMode} selectedCount={selectedIds.size} onChange={setRowsViewMode} />
+              <SelectedRowsViewToggle mode={rowsViewMode} selectedCount={selectedIds.size} onChange={mode => { requestSources.clear(); setRowsViewMode(mode) }} />
             )}
             action={rowsViewMode === 'selected' ? (
               <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>Снять весь выбор</Button>
@@ -563,9 +570,7 @@ export function TvmtWorkflowDialog({
               ? <>Найдено: {filteredSelectedRows.length} · Выбрано: {selectedRows.length}</>
               : undefined}
             isEmpty={displayedRows.length === 0}
-            emptyMessage={mode === 'result' && !selectedRequest
-              ? 'Выберите заявку ТВМТ.'
-              : rowsViewMode === 'selected'
+            emptyMessage={rowsViewMode === 'selected'
                 ? 'Среди выбранных стыков ничего не найдено.'
                 : 'Стыков для этого действия не найдено.'}
             onSearchChange={rowsViewMode === 'selected'
@@ -648,7 +653,7 @@ function getTvmtRequestOptions(rows: WeldRow[]) {
   }))
 }
 
-function getInitialRequestKey(
+function getInitialRequest(
   rows: WeldRow[],
   initialSelectedIds: ReadonlySet<number>,
   options: RequestDocumentIdentity[],
@@ -659,27 +664,19 @@ function getInitialRequestKey(
     const identity = createRequestDocumentIdentity(current.requestName, current.requestDate)
     return identity ? [identity.key] : []
   }))
-  if (selectedKeys.size === 1) return [...selectedKeys][0] ?? ''
-  return options.length === 1 ? options[0]?.key ?? '' : ''
+  if (selectedKeys.size === 1) return options.find(option => selectedKeys.has(option.key)) ?? null
+  return options.length === 1 ? options[0] ?? null : null
 }
 
 function getInitialSelectedIds(
   mode: TvmtWorkflowRowMode,
   rows: WeldRow[],
   initialSelectedIds: ReadonlySet<number>,
-  requestKey: string,
-  requestOptions: RequestDocumentIdentity[],
 ) {
-  const request = requestOptions.find((option) => option.key === requestKey)
   return new Set(rows.flatMap((row) => {
     if (!initialSelectedIds.has(row.id)) return []
     if (mode === 'request') return canCreateTvmtRequest(row) ? [row.id] : []
-    const current = getCurrentTvmtDocumentFields(row)
-    return request &&
-      canAddTvmtResult(row) &&
-      isSameRequestDocument(current.requestName, current.requestDate, request)
-      ? [row.id]
-      : []
+    return canAddTvmtResult(row) ? [row.id] : []
   }))
 }
 
@@ -717,6 +714,8 @@ function validateTvmtResultRow(
   conclusionName: string,
   saveCheckSettings: ReturnType<typeof useSaveCheckSettings>,
 ) {
+  const blockReason = getTvmtWorkflowBlockReason(row, 'result')
+  if (blockReason) throw new Error(blockReason)
   if (getCurrentPstoCycle(row)?.source === 'repeat') {
     buildRepeatTvmtResultCycle({ row, controlDate, result, conclusionName, saveCheckSettings })
     return
@@ -725,21 +724,16 @@ function validateTvmtResultRow(
 }
 
 function getSaveBlockReason({
-  mode,
   selectedRowsCount,
-  requestSelected,
   dateReason,
   creationPlanError,
   domainReason,
 }: {
-  mode: TvmtWorkflowRowMode
   selectedRowsCount: number
-  requestSelected: boolean
   dateReason: string | null
   creationPlanError: string
   domainReason: string
 }) {
-  if (mode === 'result' && !requestSelected) return 'Выберите заявку ТВМТ.'
   if (selectedRowsCount === 0) return 'Выберите хотя бы один доступный стык.'
   return [dateReason, creationPlanError].filter(Boolean).join('\n') || domainReason || ''
 }

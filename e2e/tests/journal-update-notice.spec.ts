@@ -336,13 +336,20 @@ test('rapid repeated cell edits keep server facts and displayed values aligned',
     }
     await expect(page.getByRole('checkbox', { name: 'Выбрать стык F9800001', exact: true })).toBeVisible()
     await page.evaluate(() => scrollTo(0, 1800))
+    // Finish the initial viewport load before choosing the row to edit. During
+    // a group reveal, old virtual rows can briefly occupy the new coordinates.
+    await page.waitForLoadState('networkidle')
+    await expect(frame(page)).toHaveAttribute('aria-busy', 'false')
     const target = () => page.locator('.ag-row [col-id="isometry"]').evaluateAll(cells => {
       const cell = cells.find(cell => cell.closest('.ag-row')?.querySelector('[col-id="joint"] button') &&
         cell.getBoundingClientRect().top > 150 && cell.getBoundingClientRect().bottom < innerHeight - 50)
       return cell?.closest('.ag-row')?.getAttribute('row-id')
     })
-    await expect.poll(target).toBeTruthy()
-    const id = (await target())!, value = `RAPID-${layout}-${info.repeatEachIndex}`
+    // Keep the ID observed by the successful poll. A second DOM read can land
+    // between virtual-row replacements and return undefined after a valid poll.
+    let id: string | null | undefined
+    await expect.poll(async () => { id = await target(); return id }).toMatch(/^\d+$/)
+    const value = `RAPID-${layout}-${info.repeatEachIndex}`
     const cell = page.locator(`.ag-row[row-id="${id}"] [col-id="isometry"]`)
     await cell.dblclick()
     await editor(page).getByLabel('Изометрия', { exact: true }).fill(value)

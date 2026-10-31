@@ -6,6 +6,8 @@ import { writeFileSync, renameSync, readFileSync } from 'node:fs'
 import { getHeapStatistics } from 'node:v8'
 import { Session } from 'node:inspector'
 import { channel } from 'node:diagnostics_channel'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -30,7 +32,15 @@ assert.equal(typeof pg.Client.prototype.query, 'function')
 const file = process.env.AUDIT_SQL_COUNTS_FILE
 assert(resourceContainer ? file === '/audit-counts/counts.json'
   : file?.startsWith(join(tmpdir(), 'welding-e2e-sql-')) && file.endsWith('/counts.json'))
-const counts = { statements: 0, operations: {} }
+const counts = { statements: 0, operations: {}, rpcStatements: {} }
+// Keep endpoint budgets independent of other browser tabs and background RPCs.
+// Store only the generated RPC identifier and submission count, never payloads.
+const rpcScope = new AsyncLocalStorage()
+const emit = Server.prototype.emit
+Server.prototype.emit = function (event, ...args) {
+  const rpc = event === 'request' && /^\/_serverFn\/([\w-]+)(?:\?|$)/.exec(args[0]?.url ?? '')?.[1]
+  return rpc ? rpcScope.run(rpc, () => emit.call(this, event, ...args)) : emit.call(this, event, ...args)
+}
 const dispatcherCalculations = []
 // Explicit local diagnostic run only; the normal timing run has no profiler.
 // Capture through the first substantial calculation, excluding later idle time.
@@ -97,6 +107,8 @@ if (resources && ['1', 'peak'].includes(process.env.AUDIT_HEAP_PROFILE)) {
 const original = pg.Client.prototype.query
 pg.Client.prototype.query = function (...args) {
   counts.statements++
+  const rpc = rpcScope.getStore()
+  if (rpc) counts.rpcStatements[rpc] = (counts.rpcStatements[rpc] ?? 0) + 1
   const sql = typeof args[0] === 'string' ? args[0] : args[0]?.text
   const operation = /^\s*(\w+)/.exec(sql ?? '')?.[1]?.toUpperCase() ?? 'OTHER'
   counts.operations[operation] = (counts.operations[operation] ?? 0) + 1

@@ -11,7 +11,7 @@ export class ReportDialogBoundary extends Component<{ children: ReactNode; onClo
   static getDerivedStateFromError() { return { failed: true } }
   render() {
     if (!this.state.failed) return this.props.children
-    return <LargeDialogShell ariaLabel="Не удалось открыть окно" maxWidthClassName="max-w-xl">
+    return <LargeDialogShell onEscape={this.props.onClose} ariaLabel="Не удалось открыть окно" maxWidthClassName="max-w-xl">
       <DialogHeader title="Не удалось открыть окно" onClose={this.props.onClose} />
       <p className="px-6 py-4 text-sm text-slate-600" role="alert">Таблица остаётся открытой. Проверьте соединение. Если окно не открывается повторно, обновите страницу. При обновлении страницы несохранённые изменения будут потеряны.</p>
       <div className="flex justify-end gap-3 px-6 pb-5">

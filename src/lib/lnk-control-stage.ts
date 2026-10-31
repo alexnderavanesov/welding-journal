@@ -1,4 +1,5 @@
 import { isControlEnabledValue, isControlCancelledValue } from '@/lib/control-availability-values'
+import { getControlWorkflowAccess } from './control-workflow-access'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { isPreHeatTreatmentStageEnabled, type PreHeatTreatmentPolicyRow } from '@/lib/pre-heat-treatment-policy'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
@@ -120,7 +121,7 @@ export function isPreHeatTreatmentLnkAvailable(row: WeldInput) {
 }
 
 export function requiresHeatTreatmentStagedLnk(row: WeldInput) {
-  return isControlEnabledValue(row.pstoRequired) || requiresPostHeatTreatmentCompletion(row)
+  return getControlWorkflowAccess(row)?.heatTreatmentRequired ?? (isControlEnabledValue(row.pstoRequired) || requiresPostHeatTreatmentCompletion(row))
 }
 
 export function getPreHeatTreatmentControls(row: WeldInput) {
@@ -224,7 +225,9 @@ export function isPrimaryPstoReady(row: WeldInput) {
   return !getPrimaryPstoStartBlockReason(row)
 }
 
-function getPrimaryPstoStartPrerequisites(row: WeldInput) {
+export function getPrimaryPstoStartPrerequisites(row: WeldInput) {
+  const projected = getControlWorkflowAccess(row)?.pstoPrerequisites
+  if (projected) return projected
   const empty = { rejected: [] as string[], missingRequests: [] as string[], pendingResults: [] as string[] }
   if (!isPreHeatTreatmentStageEnabled(row)) return empty
   empty.rejected = getRejectedPreHeatTreatmentControls(row).map(({ methodCode }) => methodCode)
@@ -246,6 +249,11 @@ function getPrimaryPstoStartPrerequisites(row: WeldInput) {
     }
   }
   return empty
+}
+
+export function getRejectedPreHeatTreatmentMethodCodes(row: WeldInput) {
+  return getControlWorkflowAccess(row)?.pstoPrerequisites?.rejected ??
+    getRejectedPreHeatTreatmentControls(row).map(control => control.methodCode)
 }
 
 export function getPrimaryLnkStageBlockReason(

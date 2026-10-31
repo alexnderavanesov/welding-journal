@@ -2,8 +2,31 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { ReportRowActionHandlers } from '@/lib/report-row-actions'
 import { createWeldTableProps } from '@/lib/weld-table-props'
+import { getSystemDocumentReferenceForField } from '@/lib/system-document-types'
+import type { WeldRow } from '@/lib/dispatcher-types'
 
 describe('createWeldTableProps joint history routing', () => {
+  it.each(['pstoRequest', 'heatTreatmentDiagram', 'tvmtRequest', 'tvmtConclusion'] as const)(
+    'opens the cycle actually displayed in the %s cell, even after a repeat starts', field => {
+      const row = {
+        id: 1, pstoRequired: 'да', [field]: 'Первичный документ',
+        systemDocumentIds: { [field]: 202 },
+        pstoRepeatCycles: [{ id: 2, weldJointId: 1, sequence: 2, [field]: 'Повторный документ' }],
+      } as WeldRow
+      for (const report of ['weldingJournal', 'heatTreatment'] as const) {
+        const onOpenDocument = vi.fn()
+        const props = createWeldTableProps({ ...createOptions(report, vi.fn(), vi.fn()), onOpenDocument })
+        props.onOpenDocument?.(row, field)
+        const [openedRow, openedField] = onOpenDocument.mock.calls[0]
+        const reference = getSystemDocumentReferenceForField(openedRow, openedField)
+        expect(reference?.title).toBe(props.getDisplayValue?.(row, field))
+        expect(reference?.cycleSequences).toEqual([report === 'weldingJournal' ? 1 : 2])
+        expect(reference?.documentId).toBe(report === 'weldingJournal' ? undefined : 202)
+      }
+      expect(row.systemDocumentIds?.[field]).toBe(202)
+    },
+  )
+
   it('keeps PSTO history on the joint cell only in the heat-treatment report', () => {
     const onOpenJoint = vi.fn()
     const onOpenJointOverview = vi.fn()
@@ -43,7 +66,7 @@ describe('createWeldTableProps joint history routing', () => {
 })
 
 function createOptions(
-  activeReport: 'lnk' | 'heatTreatment',
+  activeReport: 'lnk' | 'heatTreatment' | 'weldingJournal',
   onOpenJoint: () => void,
   onOpenJointOverview: () => void,
 ): Parameters<typeof createWeldTableProps>[0] {

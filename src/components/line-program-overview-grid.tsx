@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useRef, type ReactNode } from 'react'
 import type { ColDef, GridApi, ICellRendererParams } from 'ag-grid-community'
-import { Check, ChevronRight, Settings2 } from 'lucide-react'
+import { Check, ChevronRight, Settings2, MoreHorizontal } from 'lucide-react'
 import { Button } from './ui/button'
 import { ProgramGrid } from './line-program-grid'
 import { CompactLineMetrics } from './line-program-compact-metrics'
@@ -14,7 +14,7 @@ type Props = { rows: Program[]; expanded: Map<number, Program>; onToggle: (line:
   onSelect: (line: Program, selection: ProgramSelection) => void; onMenu: (event: ProgramScopeMenuEvent, line: Program) => void
   renderDetail: (line: Program) => ReactNode; onReady?: (api: GridApi) => void }
 const Context = createContext<Props>(null!)
-const Actions = createContext<Pick<Props, 'onSelect' | 'onAssignments' | 'onEdit'>>(null!)
+const Actions = createContext<Pick<Props, 'onSelect' | 'onAssignments' | 'onEdit' | 'onMenu'>>(null!)
 function LineIdentity({ data: line }: ICellRendererParams<Program>) {
   const state = useContext(Context)
   if (!line) return null
@@ -36,7 +36,7 @@ function LineActions({ data: line }: ICellRendererParams<Program>) {
     {finished || onEdit ? <div className={`col-start-2 row-start-1 flex flex-col items-center gap-1 self-stretch py-1 xl:col-start-3 ${finished ? 'justify-between' : 'justify-center'}`}>
         {finished ? <span data-testid="program-finished-label" role="img" aria-label="Линия завершена" title="Линия завершена" className="flex h-5 w-8 shrink-0 items-center justify-center text-emerald-700"><Check aria-hidden="true" className="h-4 w-4" /></span> : null}
         {onEdit ? <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-slate-400 hover:text-sky-700" aria-label="Настроить" title="Настроить линию" onClick={onEdit}><Settings2 className="h-4 w-4" /></Button> : null}
-      </div> : null}</div>
+      </div> : null}<Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-slate-400 hover:text-sky-700" aria-label={`Действия с линией ${line.line}`} aria-haspopup="menu" onClick={event => state.onMenu(event, line)}><MoreHorizontal className="h-4 w-4" /></Button></div>
 }
 function LineMetric({ data: line, colDef }: ICellRendererParams<Program>) {
   const { onSelect } = useContext(Actions)
@@ -51,7 +51,7 @@ const columns: ColDef<Program>[] = [
     width: key === 'control' || key === 'missing' ? 140 : key === 'common' || key === 'pvk' ? 135 : 100, minWidth: key === 'control' || key === 'missing' ? 130 : key === 'common' || key === 'pvk' ? 125 : key === 'joints' ? 122 : 90, flex: 1, cellRenderer: LineMetric, autoHeight: key === 'missing' || key === 'control',
     valueGetter: ({ data }) => { const o = data?.overview; if (!o) return ''; if (key === 'common' || key === 'pvk') return `${o[key]?.covered ?? 0} / ${o[key]?.actionableRequired ?? 0}`; if (key === 'control') return `Согласовано: ${o.approved}; дополнительных стыков: ${o.additional}`; if (key === 'missing' || key === 'excess') return (o.common?.[key] ?? 0) + (o.pvk?.[key] ?? 0); return key === 'reduction' ? o.reducible : o[key] },
   })),
-  { colId: 'actions', headerName: 'Действия', width: 174, minWidth: 164, cellRenderer: LineActions, sortable: false, filter: false, enableRowGroup: false, lockVisible: true },
+  { colId: 'actions', headerName: 'Действия', width: 210, minWidth: 200, cellRenderer: LineActions, sortable: false, filter: false, enableRowGroup: false, lockVisible: true },
 ]
 export function ProgramOverviewGrid(props: Props) {
   const current = useRef(props); current.current = props
@@ -59,6 +59,7 @@ export function ProgramOverviewGrid(props: Props) {
   // Disclosure changes only identities/details. Stable action context keeps
   // every metric cell from rendering again when another line is opened.
   const actions = useMemo(() => ({
+    onMenu: (event: ProgramScopeMenuEvent, line: Program) => current.current.onMenu(event, line),
     onSelect: (line: Program, selection: ProgramSelection) => current.current.onSelect(line, selection),
     onAssignments: (line: Program) => current.current.onAssignments(line),
     onEdit: canEdit ? (line: Program) => current.current.onEdit?.(line) : undefined,

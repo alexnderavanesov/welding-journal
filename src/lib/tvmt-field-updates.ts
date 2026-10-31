@@ -1,8 +1,9 @@
+import type { ValidationMessageFormatter } from './validation-message'
 import { formatDisplayDate, getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import { assertDocumentRequisites } from '@/lib/document-requisites'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
-import { getRejectedPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
+import { getRejectedPreHeatTreatmentMethodCodes } from '@/lib/lnk-control-stage'
 import { isCancelledControlValue } from '@/lib/report-value-utils'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import { loadSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
@@ -14,33 +15,33 @@ import {
 } from '@/lib/tvmt-cycle'
 
 export function canCreatePrimaryTvmtRequest(row: WeldRow) {
-  if (getRejectedPreHeatTreatmentControls(row).length > 0) return false
+  if (getRejectedPreHeatTreatmentMethodCodes(row).length > 0) return false
   const cycle = getCurrentPstoCycle(row)
   return Boolean(cycle?.source === 'primary' && getPstoTvmtWorkflowState(row) === 'waiting-tvmt-request')
 }
 
 export function canCreateTvmtRequest(row: WeldRow) {
-  return getRejectedPreHeatTreatmentControls(row).length === 0 &&
+  return getRejectedPreHeatTreatmentMethodCodes(row).length === 0 &&
     getPstoTvmtWorkflowState(row) === 'waiting-tvmt-request'
 }
 
 export function canAddPrimaryTvmtResult(row: WeldRow) {
-  if (getRejectedPreHeatTreatmentControls(row).length > 0) return false
+  if (getRejectedPreHeatTreatmentMethodCodes(row).length > 0) return false
   const cycle = getCurrentPstoCycle(row)
   return Boolean(cycle?.source === 'primary' && getPstoTvmtWorkflowState(row) === 'waiting-tvmt')
 }
 
 export function canAddTvmtResult(row: WeldRow) {
-  return getRejectedPreHeatTreatmentControls(row).length === 0 &&
+  return getRejectedPreHeatTreatmentMethodCodes(row).length === 0 &&
     getPstoTvmtWorkflowState(row) === 'waiting-tvmt'
 }
 
 export function getTvmtWorkflowBlockReason(row: WeldRow, mode: 'request' | 'result') {
   const available = mode === 'request' ? canCreateTvmtRequest(row) : canAddTvmtResult(row)
   if (available) return ''
-  const rejectedPreControls = getRejectedPreHeatTreatmentControls(row)
+  const rejectedPreControls = getRejectedPreHeatTreatmentMethodCodes(row)
   if (rejectedPreControls.length > 0) {
-    return `Недоступно: НК до ТО не годен (${rejectedPreControls.map(({ methodCode }) => methodCode).join(', ')}); ТВМТ для этого стыка не требуется.`
+    return `Недоступно: НК до ТО не годен (${rejectedPreControls.join(', ')}); ТВМТ для этого стыка не требуется.`
   }
   const state = getPstoTvmtWorkflowState(row)
   if (state === 'not-required') {
@@ -82,6 +83,7 @@ export function buildPrimaryTvmtRequestRows({
   requestName: string
   requestDate: string
   saveCheckSettings?: SaveCheckSettings
+  formatMessage?: ValidationMessageFormatter
 }) {
   const name = requestName.trim()
   if (!name) throw new Error('Укажите наименование заявки ТВМТ.')
@@ -109,12 +111,14 @@ export function buildPrimaryTvmtResultRows({
   result,
   conclusionName,
   saveCheckSettings = loadSaveCheckSettings(),
+  formatMessage,
 }: {
   records: WeldRow[]
   controlDate: string
   result: string
   conclusionName: string
   saveCheckSettings?: SaveCheckSettings
+  formatMessage?: ValidationMessageFormatter
 }) {
   const normalizedResult = normalizeTvmtResult(result)
   if (!normalizedResult) throw new Error('Выберите результат ТВМТ.')
@@ -144,7 +148,7 @@ export function buildPrimaryTvmtResultRows({
       tvmtConclusion: name,
     })
   })
-  assertNoNewLnkChronologyIssues(proposedRows, records, saveCheckSettings)
+  assertNoNewLnkChronologyIssues(proposedRows, records, saveCheckSettings, { formatValidationMessage: formatMessage })
   return proposedRows
 }
 

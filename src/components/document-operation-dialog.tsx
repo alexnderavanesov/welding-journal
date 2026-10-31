@@ -1,3 +1,4 @@
+import { Checkbox } from '@/components/ui/checkbox'
 import { Select } from '@/components/ui/select'
 import { useEffect, useId, useRef, useState } from 'react'
 import { CheckCheck, ChevronDown, FileText, ListTree, Merge, Search } from 'lucide-react'
@@ -5,6 +6,7 @@ import { LargeDialogShell } from './large-dialog-shell'
 import { DialogHeader } from './dialog-header'
 import { BufferedDocumentNameInput } from './buffered-document-name-input'
 import { DocumentCompositionPanel } from './document-composition-panel'
+import { DocumentIssuesFilter } from './document-issues-filter'
 import { DocumentSplitModeSelect } from './document-split-mode-select'
 import { FieldHelp } from './field-help'
 import { Button } from './ui/button'
@@ -14,8 +16,6 @@ import type { DocumentOperationRequest } from '@/lib/system-document-operation'
 import type { DocumentOperationPreview, DocumentOperationResult } from '@/server/document-operation-service'
 import { applyDocumentOperation, getDocumentOperationComposition, getDocumentOperationResult, planDocumentOperationBatches, previewDocumentOperation } from '@/server/document-operations'
 import { getDocumentGroupingDefaults } from '@/server/document-grouping-preferences'
-import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
-import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
 
 export function DocumentOperationDialog({ documents, action, onClose, onApplied }: {
   documents: SystemDocumentSummary[]; action: DocumentOperationRequest['action']; onClose: () => void; onApplied: () => Promise<void>
@@ -36,13 +36,7 @@ export function DocumentOperationDialog({ documents, action, onClose, onApplied 
   const mounted = useRef(true)
   const compositionId = useId()
   const compositionTrigger = useRef<HTMLButtonElement | null>(null)
-  // Popovers handle Escape in capture; never let it also clear the page selection.
-  useWindowEscapeKey(true, event => {
-    if (event.defaultPrevented || isContextActionMenuOpen()) return
-    event.preventDefault()
-    event.stopImmediatePropagation()
-    if (!saving) onClose()
-  })
+
   useEffect(() => {
     mounted.current = true
     openRequest.current ??= getDocumentGroupingDefaults()
@@ -118,7 +112,7 @@ export function DocumentOperationDialog({ documents, action, onClose, onApplied 
   const currentPage = Math.min(page, Math.max(0, Math.ceil(filtered.length / 50) - 1))
   const visible = filtered.slice(currentPage * 50, (currentPage + 1) * 50)
   const title = action === 'split' ? 'Изменить разделение' : action === 'merge' ? 'Объединить документы' : 'Переименовать документы'
-  return <LargeDialogShell ariaLabel={title} panelClassName="h-[90vh] overflow-hidden" panelRadiusClassName="rounded-xl" maxWidthClassName="max-w-[1320px]">
+  return <LargeDialogShell onEscape={onClose} escapeDisabled={saving} ariaLabel={title} panelClassName="h-[90vh] overflow-hidden" panelRadiusClassName="rounded-xl" maxWidthClassName="max-w-[1320px]">
     <DialogHeader title={title} subtitle={`Выбрано документов: ${documents.length} · Даты, результаты и история сохраняются`} closeDisabled={saving} onClose={onClose} />
     <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-200 bg-slate-50/70 px-5 py-3">
       {action === 'split' ? <>
@@ -128,7 +122,7 @@ export function DocumentOperationDialog({ documents, action, onClose, onApplied 
         </div>
         {documents.length > 1 ? <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
           <Merge aria-hidden="true" className="h-4 w-4 shrink-0 text-sky-600" />
-          <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" checked={merge} disabled={locked || saved.length > 0} onChange={e => { setMerge(e.target.checked); setBatches([]); setBatchIndex(0); setDirty(true); setComposition(null) }} />Объединить перед разделением</label>
+          <label className="flex items-center gap-2 text-sm text-slate-700"><Checkbox checked={merge} disabled={locked || saved.length > 0} onChange={e => { setMerge(e.target.checked); setBatches([]); setBatchIndex(0); setDirty(true); setComposition(null) }} />Объединить перед разделением</label>
           <FieldHelp label="Что значит объединить документы"><p className="font-semibold">Сначала собрать вместе, затем разделить</p><p className="mt-1">Две заявки, в каждой две одинаковые линии: без объединения получится 4 документа, с объединением — 2. С вариантом «Без разделения» — 1 документ.</p><p className="mt-1">Виды, даты и этапы должны быть совместимы. НК до ТО и основной НК, а также разные циклы одного стыка объединять нельзя. Разные циклы разных стыков допустимы.</p></FieldHelp>
         </div> : null}
       </> : action === 'merge' ? <div className="flex items-center gap-2 text-sm text-slate-600"><Merge aria-hidden="true" className="h-4 w-4 shrink-0 text-sky-600" /><span>Все выбранные документы → один. Проверьте итоговое название и состав.</span><FieldHelp label="Правила объединения документов"><p className="font-semibold">Объединяется весь выбор целиком</p><p className="mt-1">Например, два заключения ВИК одной даты и этапа станут одним, со всеми исходными позициями. Можно задать новое имя или взять имя одного из исходных документов.</p><p className="mt-1">ВИК и РК, разные даты, НК до ТО и основной НК, разные циклы одного стыка объединять нельзя. При несовместимости ни один документ не меняется.</p><p className="mt-1">Исходные документы заменятся одним; позиции, факты контроля, история и ссылки сохранятся. Привычный режим разделения для новых документов не меняется.</p></FieldHelp></div>
@@ -154,7 +148,7 @@ export function DocumentOperationDialog({ documents, action, onClose, onApplied 
             {nameModes.size > 1 ? <span className="text-xs text-slate-500">Смешанные</span> : null}
           </div>
           <div className="relative shrink-0"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" /><BufferedDocumentNameInput value={search} onCommit={value => { setSearch(value); setPage(0) }} className="pl-9" placeholder="Найти документ или группу" aria-label="Поиск по будущим документам" /></div>
-          {issues.length || errorsOnly ? <label className="mt-2 text-xs text-rose-700"><input type="checkbox" checked={errorsOnly} onChange={event => { setErrorsOnly(event.target.checked); setSearch(''); setPage(0) }} /> Только проблемные группы — {issues.length} во всём списке{dirty ? ' (по предыдущей проверке)' : ''}</label> : null}
+          {issues.length || errorsOnly ? <DocumentIssuesFilter checked={errorsOnly} count={issues.length} stale={dirty} onChange={checked => { setErrorsOnly(checked); setSearch(''); setPage(0) }} /> : null}
           {structureDirty ? <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">Параметры разделения изменены. Нажмите «Проверить изменения», чтобы увидеть новый состав и названия. Ниже — предыдущий расчёт.</p> : null}
           <div className="mt-3 shrink-0 lg:min-h-0 lg:flex-1 lg:overflow-auto lg:[scrollbar-gutter:stable]">
             <div className="space-y-3">{visible.map((group, index) => {

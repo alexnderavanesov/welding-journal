@@ -1,3 +1,5 @@
+import { beginDocumentSaveReceipt, finishDocumentSaveReceipt } from './document-save-receipt'
+import { formatAccessValidationMessage } from './access-validation-message'
 import { lockDocumentGroupingPreference, rememberDocumentGrouping, validatePrimaryCreationGrouping, primaryCreationReferences } from '@/server/document-grouping-preferences'
 import { captureCorrectedDocumentSpecialists, restoreCorrectedDocumentSpecialists } from './document-specialist-corrections'
 import { assertNewDocumentNamesAvailable, prepareDocumentCreationIndex } from '@/server/document-name-conflicts'
@@ -614,11 +616,21 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
     const db = requireDb()
     await prepareDocumentCreationIndex(data.documentGrouping)
     return db.transaction(async (tx) => {
+      const receipt = await beginDocumentSaveReceipt(tx, data)
       const mutationScope = data.mutationScope ?? 'welding'
       await lockSubmittedRequestDocuments(tx, data.records, mutationScope)
       await loadControlProcessSettingsFromTransaction(tx)
       const documentGrouping = await lockDocumentGroupingPreference(tx, data.documentGrouping)
       let records = data.records
+      // Specialty saves contain only editable fields. Naming needs the stored
+      // project/subtitle/line, not display context supplied by the client.
+      // Reuse this snapshot for line locking; the locked rows are checked below
+      // so a concurrent move rolls back the reservation as well as the save.
+      const identityRows = await loadWeldLineIdentityRows(
+        tx,
+        records.map((record) => Number(record.id)),
+      )
+      const identityRowsById = new Map(identityRows.map((row) => [row.id, row]))
       const systemDocumentSequences = [
         ...(data.systemDocumentSequence ? [data.systemDocumentSequence] : []),
         ...(data.systemDocumentSequences ?? []),
@@ -637,7 +649,10 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
         if (targetRecords.length === 0) {
           throw new Error('Не найдены строки с предварительным именем системного документа.')
         }
-        return { request: systemDocumentSequence, rows: targetRecords }
+        return { request: systemDocumentSequence, rows: targetRecords.map(record => ({
+          ...identityRowsById.get(Number(record.id)),
+          ...restrictWeldMutationRecord(record, mutationScope),
+        })) }
       })
       const systemDocumentReservations = await reserveSystemDocumentNames(
         tx,
@@ -645,11 +660,6 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
         { rejectChangedProvisionalNames: Boolean(documentGrouping) },
       )
       records = applyReservedSystemDocumentNames(data.records, systemDocumentReservations)
-      const identityRows = await loadWeldLineIdentityRows(
-        tx,
-        records.map((record) => Number(record.id)),
-      )
-      const identityRowsById = new Map(identityRows.map((row) => [row.id, row]))
       const identityDrafts = records.map((record) => ({
         ...identityRowsById.get(Number(record.id)),
         ...restrictWeldMutationRecord(record, mutationScope),
@@ -740,6 +750,7 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
       }
       await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes(records, previousRows) })
       if (createdDocuments) await rememberDocumentGrouping(tx, documentGrouping)
+      await finishDocumentSaveReceipt(tx, receipt, documentGrouping && createdDocuments ? primaryCreationReferences(documentGrouping, records, previousRows) : [])
       return updated
     })
 }
@@ -924,7 +935,7 @@ export async function manageLnkRequestDocument({
     const hydratedRows = await attachDuplicateControlRelations(
       await attachHeatTreatmentControlRelations(rows, tx), tx,
     )
-    const records = buildLnkRequestManagerRows({
+    const records = buildLnkRequestManagerRows({ formatMessage: formatAccessValidationMessage,
       records: hydratedRows,
       requestName: data.requestName,
       requestDate: data.requestDate,
@@ -999,7 +1010,7 @@ export async function managePstoRequestDocument({
       if (duplicate) throw new Error('Заявка с таким наименованием и датой уже существует')
     }
 
-    const records = buildPstoRequestManagerRows({
+    const records = buildPstoRequestManagerRows({ formatMessage: formatAccessValidationMessage,
       heatTreatmentRows: rows as WeldRow[],
       requestName: data.requestName,
       requestDate: data.requestDate,

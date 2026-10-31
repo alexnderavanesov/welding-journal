@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { getTopModalDialog, hasVisibleEscapePopup, isEscapeLayerVisible } from './modal-layer'
 import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
 
 type ReportModalEscapeKeyOptions = {
@@ -234,15 +235,21 @@ export function useReportModalEscapeKey({
   ])
 }
 
-export function shouldDeferModalEscape() {
+export function shouldDeferModalEscape(ownedPanel?: HTMLElement | null) {
+  const top = getTopModalDialog()
+  const foreignOverlay = (selector: string) => [...document.querySelectorAll(selector)].some(node =>
+    isEscapeLayerVisible(node) && !ownedPanel?.contains(node) && (!ownedPanel || !top || !node.closest('[data-modal-dialog="true"]') || top.contains(node)),
+  )
   return Boolean(
-    document.querySelector('[data-document-preview="true"]') ||
-    document.querySelector('[data-confirm-action-dialog="true"]') ||
-    document.querySelector('[data-workflow-result-tooltip="true"]') ||
-    document.querySelector('[data-specialist-listbox]') ||
-    document.querySelector('[data-select-listbox]') ||
-    document.querySelector('[data-dispatcher-action-menu="true"]') ||
-    document.querySelector('.read-only-grid-popup') ||
+    (!ownedPanel && top?.matches('[data-modal-escape-owned="true"]')) ||
+    (!ownedPanel && (top ?? document).querySelector('[data-contained-dialog-focus="true"]')) ||
+    foreignOverlay('[data-document-preview="true"]') ||
+    foreignOverlay('[data-confirm-action-dialog="true"]') ||
+    hasVisibleEscapePopup('[data-workflow-result-tooltip="true"], [role="tooltip"]') ||
+    hasVisibleEscapePopup('[data-specialist-listbox]') ||
+    hasVisibleEscapePopup('[data-select-listbox]') ||
+    hasVisibleEscapePopup('[data-dispatcher-action-menu="true"]') ||
+    hasVisibleEscapePopup('.read-only-grid-popup, .ag-popup-child') ||
     isContextActionMenuOpen(),
   )
 }

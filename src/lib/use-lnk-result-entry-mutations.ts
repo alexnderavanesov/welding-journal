@@ -48,7 +48,7 @@ export function useLnkResultEntryMutations({
     }) => {
       const method = LNK_METHODS.find((candidate) => candidate.requestKey === methodKey)
       const hasConclusion = Object.values(resultById).some((result) => result !== LNK_EMPTY_RESULT_VALUE)
-      const groups = documentGroups ?? (hasConclusion ? [{
+      const groups: SystemDocumentCreationGroup[] = documentGroups ?? (hasConclusion ? [{
         key: 'legacy',
         label: 'Все выбранные позиции',
         rowIds: records.map((record) => record.id),
@@ -92,6 +92,7 @@ export function useLnkResultEntryMutations({
                 methodCode: method.code,
                 fieldKeys: [method.conclusionKey],
                 provisionalName: group.name,
+                namingPattern: group.namingPattern,
               }))
             : [],
         },

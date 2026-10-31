@@ -11,16 +11,17 @@ export function createRowDocumentPreviewRequest(
   field: WeldFieldKey,
   welderStamps: WelderStampRecord[],
 ): HistoryDocumentPreviewRequest {
-  const title = String(row[field] ?? '').trim() || 'Документ'
+  const generated = isGeneratedDocumentFieldKey(field)
+  const reference = generated ? null : getSystemDocumentReferenceForField(row, field)
+  const title = reference?.title || String(row[field] ?? '').trim() || 'Документ'
   return {
     title,
     fileName: `${title.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ')}.xlsx`,
     createBlob: async () => {
-      if (isGeneratedDocumentFieldKey(field)) {
+      if (generated) {
         const { createGeneratedDocumentBlobForRow } = await import('@/lib/welding-journal-document')
         return createGeneratedDocumentBlobForRow(row, field, welderStamps)
       }
-      const reference = getSystemDocumentReferenceForField(row, field)
       if (!reference) throw new Error('У документа не сохранён номер или тип. Откройте его из раздела «Документы».')
       const { createCurrentSystemDocumentBlob } = await import('@/lib/system-document-storage')
       return createCurrentSystemDocumentBlob({ reference, welderStamps })

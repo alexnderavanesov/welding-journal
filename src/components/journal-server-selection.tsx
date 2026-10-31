@@ -16,17 +16,32 @@ export const JournalServerSelectionContext = createContext<JournalSelectionConte
 function Checkbox({ checked, partial, disabled, label, onChange }: { checked: boolean; partial: boolean; disabled: boolean; label: string; onChange: () => void }) {
   const ref = useRef<HTMLInputElement>(null)
   useLayoutEffect(() => { if (ref.current) ref.current.indeterminate = partial }, [partial])
-  return <span className="ag-selection-checkbox journal-server-checkbox"><span className={`ag-checkbox-input-wrapper ${partial ? 'ag-indeterminate' : checked ? 'ag-checked' : ''}`}><input className="ag-input-field-input ag-checkbox-input" ref={ref} type="checkbox" aria-label={label}
-    checked={checked} aria-disabled={disabled} aria-busy={disabled}
-    onKeyDown={event => { if (event.key === ' ') event.stopPropagation() }}
-    onChange={() => { if (!disabled) onChange() }}
+  // AG's wrapper extends the checkbox hit area with ::before. A native label
+  // activates the input exactly once when that area, rather than the input,
+  // receives the click. Keep focus handling on the entire same hit area.
+  return <label className="ag-selection-checkbox journal-server-checkbox"
+    onPointerDownCapture={event => {
+      if (event.button !== 0) return
+      // Establish focus before AG's native pointerdown handler. Otherwise AG
+      // focuses the containing cell with scrolling enabled; the document-scroll
+      // adapter can move the pressed checkbox before mouseup, losing the click.
+      ref.current?.focus({ preventScroll: true })
+    }}
+    onMouseDownCapture={event => {
+      if (event.button !== 0) return
+      event.preventDefault()
+      ref.current?.focus({ preventScroll: true })
+    }}
     onClick={event => {
       event.stopPropagation()
       // Clicking a checkbox must establish the keyboard return point too,
       // independently of the browser's native mouse-focus preference.
-      event.currentTarget.focus({ preventScroll: true })
+      ref.current?.focus({ preventScroll: true })
       if (disabled) event.preventDefault()
-    }} /></span></span>
+    }}><span className={`ag-checkbox-input-wrapper ${partial ? 'ag-indeterminate' : checked ? 'ag-checked' : ''}`}><input className="ag-input-field-input ag-checkbox-input" ref={ref} type="checkbox" aria-label={label}
+      checked={checked} aria-disabled={disabled} aria-busy={disabled}
+      onKeyDown={event => { if (event.key === ' ') event.stopPropagation() }}
+      onChange={() => { if (!disabled) onChange() }} /></span></label>
 }
 export function JournalServerSelectionCell({ data }: ICellRendererParams<WeldRow>) {
   const value = useContext(JournalServerSelectionContext)

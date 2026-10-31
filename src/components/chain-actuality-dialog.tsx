@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { previewChainActuality, setChainActuality } from '@/server/chain-actuality'
 import { useSecurityGuard } from '@/lib/security-context'
@@ -13,16 +14,12 @@ export function ChainActualityDialog({ rowId, active, onClose, onSaved }: { rowI
   const [page, setPage] = useState(0)
   const preview = useQuery({ queryKey: ['chain-actuality-preview', rowId, active, page], queryFn: () => previewChainActuality({ data: { rowId, active, page } }),
     staleTime: 0, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false })
-  useEffect(() => {
-    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopImmediatePropagation(); if (!inFlight.current) onClose() } }
-    window.addEventListener('keydown', close, true)
-    return () => window.removeEventListener('keydown', close, true)
-  }, [onClose])
+
   const data = preview.data, single = data?.total === 1
   const title = single
     ? active ? 'Вернуть актуальность стыку' : 'Сделать стык неактуальным'
     : active ? 'Вернуть актуальность цепочке' : 'Сделать цепочку неактуальной'
-  return <LargeDialogShell ariaLabel={title} maxWidthClassName="max-w-3xl" overlayClassName="z-[90] bg-slate-950/30">
+  return <LargeDialogShell onEscape={() => { if (!inFlight.current) onClose() }} ariaLabel={title} maxWidthClassName="max-w-3xl" overlayClassName="z-[90] bg-slate-950/30">
     <div className="space-y-4 overflow-y-auto p-5">
       <h2 className="text-lg font-semibold">{title}</h2>
       {data ? <>
@@ -42,7 +39,7 @@ export function ChainActualityDialog({ rowId, active, onClose, onSaved }: { rowI
           <span>Страница {data.page + 1} из {Math.ceil(data.total / 100)}</span>
           <Button variant="outline" disabled={busy || (data.page + 1) * 100 >= data.total} onClick={() => { setConfirmed(false); setPage(data.page + 1) }}>Следующие записи</Button>
         </div> : null}
-        {data.reason ? <p role="alert">{data.reason}</p> : data.changedCount ? <label className="flex items-start gap-2"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} />{single ? 'Подтверждаю изменение актуальности этого стыка' : 'Состав цепочки проверен; подтверждаю изменение актуальности всех перечисленных записей'}</label> : <p>{single ? 'Стык уже имеет выбранную актуальность. Изменения не нужны.' : 'Все записи уже имеют выбранную актуальность. Изменения не нужны.'}</p>}
+        {data.reason ? <p role="alert">{data.reason}</p> : data.changedCount ? <label className="flex items-start gap-2"><Checkbox checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} />{single ? 'Подтверждаю изменение актуальности этого стыка' : 'Состав цепочки проверен; подтверждаю изменение актуальности всех перечисленных записей'}</label> : <p>{single ? 'Стык уже имеет выбранную актуальность. Изменения не нужны.' : 'Все записи уже имеют выбранную актуальность. Изменения не нужны.'}</p>}
       </> : null}
       {error ? <p role="alert" className="text-red-700">{error}</p> : null}
       <div className="flex flex-wrap justify-end gap-2">

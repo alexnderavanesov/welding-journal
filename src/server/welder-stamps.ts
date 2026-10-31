@@ -1,3 +1,4 @@
+import { formatAccessValidationMessage } from './access-validation-message'
 import { auditSql } from './audit-functions'
 import { createServerFn } from '@tanstack/react-start'
 import { asc, eq, inArray, or, sql, type SQL } from 'drizzle-orm'
@@ -334,9 +335,13 @@ export async function assertWelderStampArchiveDatesAreUnused(
     limit 1
   `)
   const conflict = conflicts.rows[0]
-  if (conflict) throw new Error(`Нельзя архивировать клеймо ${conflict.stamp} с ${formatDisplayDate(conflict.date)}: ` +
-    `оно указано в стыке ${conflict.joint} с датой сварки ${formatDisplayDate(conflict.weldDate)}. ` +
-    'Дата архивации должна быть позже дат сварки всех стыков с этим клеймом, включая официальные и фактические поля.')
+  if (conflict) throw new Error(formatAccessValidationMessage({ fields: ['joint', 'weldDate'],
+    message: `Нельзя архивировать клеймо ${conflict.stamp} с ${formatDisplayDate(conflict.date)}: ` +
+      `оно указано в стыке ${conflict.joint} с датой сварки ${formatDisplayDate(conflict.weldDate)}. ` +
+      'Дата архивации должна быть позже дат сварки всех стыков с этим клеймом, включая официальные и фактические поля.',
+    publicMessage: `Нельзя архивировать клеймо ${conflict.stamp} с ${formatDisplayDate(conflict.date)}: ` +
+      'дата архивации должна быть позже дат сварки всех стыков с этим клеймом, включая официальные и фактические поля.',
+  }))
 }
 
 async function assertRemovedWelderStampAliasesAreUnused(

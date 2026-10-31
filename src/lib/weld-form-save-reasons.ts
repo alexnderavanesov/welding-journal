@@ -1,3 +1,4 @@
+import type { ValidationMessageFormatter } from './validation-message'
 import { normalizeControlResultText } from '@/lib/report-value-utils'
 import { getWeldMaterialGroupsError } from '@/lib/weld-material-groups'
 import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
@@ -49,6 +50,7 @@ import { getExcludedControlAssignmentIssues } from './control-assignment-eligibi
 import { getUnofficialLnkResultIssues } from './unofficial-lnk-result-guard'
 
 type WeldFormSaveBlockOptions = {
+  formatValidationMessage?: ValidationMessageFormatter
   /** Import has already collected these issues and must continue checking other fields. */
   historyIssuesCollected?: boolean
   allowSystemJointName?: boolean
@@ -113,11 +115,10 @@ export function getWeldFormFieldSaveBlockReason(
         [draft],
         [initialValue],
         saveCheckSettings,
-        options.allowPrimaryLnkStageDebt
-          ? { ignoredKinds: PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS }
-          : undefined,
+        { formatValidationMessage: options.formatValidationMessage,
+          ...(options.allowPrimaryLnkStageDebt ? { ignoredKinds: PRIMARY_LNK_STAGE_DEBT_ISSUE_KINDS } : {}) },
       ) ||
-      findFirstNewPstoChronologySaveBlockReason([draft], [initialValue], saveCheckSettings)
+      findFirstNewPstoChronologySaveBlockReason([draft], [initialValue], saveCheckSettings, options.formatValidationMessage)
     if (documentChronologyReason) return documentChronologyReason
   }
 

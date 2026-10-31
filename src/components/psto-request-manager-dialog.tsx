@@ -1,3 +1,4 @@
+import { DocumentConnectionsButton } from './document-connections-button'
 import { useMemo, useRef, useState, type MouseEvent } from 'react'
 import { CalendarClock, Pencil, Search, Trash2 } from 'lucide-react'
 
@@ -219,6 +220,7 @@ export function PstoRequestManagerDialog({
               <span className="font-semibold text-slate-800">Используется:</span>
               <RequestManagerUsageBadge>Стыков: {requestRows.length}</RequestManagerUsageBadge>
               <RequestManagerUsageBadge>С последующими этапами: {rowsWithLaterStages}</RequestManagerUsageBadge>
+              <DocumentConnectionsButton reference={documentReference} />
             </div>
           </RequestManagerUsagePanel>
         ) : (

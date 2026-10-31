@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react'
-import { useEffect } from 'react'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
@@ -30,25 +29,13 @@ export function ConfirmActionDialog({
   onConfirm,
   onClose,
 }: ConfirmActionDialogProps) {
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        event.stopPropagation()
-        event.stopImmediatePropagation()
-        onClose()
-      }
-    }
 
-    window.addEventListener('keydown', handleKeyDown, true)
-    return () => window.removeEventListener('keydown', handleKeyDown, true)
-  }, [onClose])
 
   const isDanger = tone === 'danger'
   const resolvedConfirmLabel = confirmLabel ?? (isDanger ? 'Удалить' : 'Принять')
 
   return (
-    <LargeDialogShell
+    <LargeDialogShell onEscape={onClose}
       ariaLabel={title}
       maxWidthClassName="max-w-[720px]"
       maxHeightClassName="max-h-[90vh]"

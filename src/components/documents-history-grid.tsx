@@ -2,7 +2,7 @@ import { gridHeaderKeyboard } from '@/lib/grid-header-keyboard'
 import './grid-keyboard.css'
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AgGridProvider, AgGridReact } from 'ag-grid-react'
-import type { ColDef, GridApi, IRowNode, IServerSideDatasource, RowSelectionOptions, SelectionColumnDef, GetColumnMenuItemsParams, DefaultMenuItem, MenuItemDef, SuppressMouseEventHandlingParams } from 'ag-grid-community'
+import type { ColDef, GridApi, IRowNode, IServerSideDatasource, RowSelectionOptions, SelectionColumnDef, GetColumnMenuItemsParams, DefaultMenuItem, MenuItemDef } from 'ag-grid-community'
 import { ChevronDown, ChevronUp, ChevronsDown, ChevronsUp } from 'lucide-react'
 import { ContextActionMenu, type ContextActionMenuState } from './context-action-menu'
 import { positionGridPopup } from './grid-popup-position'
@@ -66,11 +66,11 @@ export type DocumentsHistoryGridProps<T extends DocumentRow> = {
   highlightedDocumentId?: string | number | null
   highlightRow?: (document: T) => boolean
 }
-const SelectionHeaderContext = createContext({ checked: false, mixed: false, disabled: true, toggle: () => undefined as void })
+const SelectionHeaderContext = createContext({ checked: false, mixed: false, disabled: true, busy: false, toggle: () => undefined as void })
 function SelectionHeader() {
   const state = useContext(SelectionHeaderContext)
   return <DocumentGridCheckbox aria-label="Выбрать все документы" title="Все документы по текущим условиям, включая незагруженные" checked={state.checked} disabled={state.disabled}
-    indeterminate={state.mixed} onChange={state.toggle} />
+    busy={state.busy} indeterminate={state.mixed} onChange={state.toggle} />
 }
 const GroupSelectionContext = createContext({ groups: new Map<string, DocumentGridGroupSelection>(), disabled: true, toggle: (_id: string) => undefined as void })
 function GroupLabel({ data, node }: { data?: DocumentRow | DocumentHistoryGroupRow; node: { id?: string; key: string | null } }) {
@@ -81,7 +81,7 @@ function GroupLabel({ data, node }: { data?: DocumentRow | DocumentHistoryGroupR
   return <span className="document-grid-group-label">
     <DocumentGridCheckbox className="document-grid-group-checkbox" aria-label={`Выбрать все документы группы ${label ?? ''}`}
       title={`Все документы группы: ${loaded}, включая незагруженные`}
-      checked={loaded > 0 && selected === loaded} disabled={selection.disabled || !loaded}
+      checked={loaded > 0 && selected === loaded} disabled={!loaded} busy={selection.disabled}
       indeterminate={selected > 0 && selected < loaded}
       onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}
       onChange={() => { if (node.id) selection.toggle(node.id) }} />
@@ -543,13 +543,10 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   }), [props.viewId, search, props.columnFilters, props.filterSourceRevision, props.sourceRevision])
   const selectionColumn = useMemo<SelectionColumnDef>(() => ({ pinned: 'left', lockPinned: true, width: 46, minWidth: 46, maxWidth: 46,
     resizable: false, suppressMovable: true, suppressHeaderMenuButton: true, headerComponent: SelectionHeader,
-    // The checkbox owns pointer focus. Focusing its clipped row on mousedown
-    // can move the input before mouseup and discard an otherwise valid click.
-    cellRendererParams: { suppressMouseEventHandling: ({ event }: SuppressMouseEventHandlingParams) => event.target instanceof Element && !!event.target.closest('.ag-selection-checkbox') },
   }), [])
   const groupRenderer = useMemo(() => ({ suppressCount: false, innerRenderer: GroupLabel }), [])
   const rowClassRules = useMemo(() => ({ 'document-grid-highlight': (params: { data?: Row }) => Boolean(params.data && !isGroup(params.data) && (current.current.highlightRow?.(params.data) || String(params.data.id) === String(current.current.highlightedDocumentId))) }), [])
-  return <DocumentGridFilterContext.Provider value={filterContext}><GroupSelectionContext.Provider value={groupSelection}><SelectionHeaderContext.Provider value={{ checked: total > 0 && selectedTotal === total, mixed: selectedTotal > 0 && selectedTotal < total, disabled: selectionPending || fullQuery.selecting || !total, toggle: toggleAll }}>
+  return <DocumentGridFilterContext.Provider value={filterContext}><GroupSelectionContext.Provider value={groupSelection}><SelectionHeaderContext.Provider value={{ checked: total > 0 && selectedTotal === total, mixed: selectedTotal > 0 && selectedTotal < total, disabled: !total, busy: selectionPending || fullQuery.selecting, toggle: toggleAll }}>
     <div data-document-history-grid={props.viewId} onContextMenuCapture={event => event.preventDefault()} className={`document-history-grid journal-server-section ${settings.appearance.wrapText ? 'document-grid-wrap' : ''} ${settings.appearance.stripes ? 'document-grid-stripes' : ''} ${settings.appearance.verticalLines ? 'document-grid-lines' : ''}`}>
       <DocumentsGridToolbar columns={viewColumns}
         filteredColumnKeys={new Set(Object.keys(props.columnFilters).filter(key => Boolean(props.columnFilters[key])))}
@@ -582,6 +579,19 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
       <div ref={frame} data-journal-updating={selectionPending ? '' : undefined} className={`document-grid-frame grid-result-motion journal-grid-frame journal-theme-${settings.appearance.theme}`}
       onPointerDownCapture={event => {
         if (event.button === 2 && event.target instanceof Element && event.target.closest('.ag-cell')) { event.preventDefault(); event.stopPropagation() }
+        if (event.button === 0 && event.target instanceof Element) {
+          const checkbox = event.target.closest('.ag-selection-checkbox')?.querySelector<HTMLInputElement>('input[type=checkbox]')
+          if (checkbox) {
+            if (!event.shiftKey && !event.ctrlKey && !event.metaKey) api?.clearCellSelection()
+            // Focus before AG handles pointerdown, without scrolling a clipped
+            // checkbox out from under the pointer. Keep native range dragging.
+            checkbox.focus({ preventScroll: true })
+          }
+        }
+      }} onMouseDownCapture={event => {
+        if (event.button !== 0 || !(event.target instanceof Element)) return
+        const checkbox = event.target.closest('.ag-selection-checkbox')?.querySelector<HTMLInputElement>('input[type=checkbox]')
+        if (checkbox) { event.preventDefault(); checkbox.focus({ preventScroll: true }) }
       }}
       onClickCapture={event => {
         if (event.target instanceof Element && progressSort(event.target, event.shiftKey)) { event.preventDefault(); event.stopPropagation(); return }
@@ -630,7 +640,14 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
         if (event.key === ' ' && cell && node?.id && !node.group && node.data && !isGroup(node.data)
           && !event.target.closest('button, a, input:not([type=checkbox]), textarea, [contenteditable=true]')) {
           if (selectionPendingRef.current) { event.preventDefault(); event.stopPropagation(); return }
-          if (event.shiftKey) { event.preventDefault(); event.stopPropagation(); selectRowRange(node.id, event.metaKey || event.ctrlKey); return }
+          if (event.shiftKey) {
+            event.preventDefault(); event.stopPropagation()
+            if (!event.repeat) {
+              if (api?.getCellRanges()?.length) void fullQuery.selectRange()
+              else selectRowRange(node.id, event.metaKey || event.ctrlKey)
+            }
+            return
+          }
           event.preventDefault(); event.stopPropagation()
           if (!event.repeat) { rowRange.current = { anchorId: node.id, endId: null }; current.current.onSelectionChange(toggleLoadedDocumentGridSelection(current.current.selectedDocuments, [node.data])) }
           return
@@ -660,7 +677,12 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
           const index = buttons.indexOf(event.target as HTMLButtonElement) + (event.shiftKey ? -1 : 1)
           if (index >= 0 && index < buttons.length) { event.preventDefault(); event.stopPropagation(); buttons[index].focus({ preventScroll: true }); return }
         }
-        if (group && event.target.matches('.document-grid-group-checkbox') && event.key === ' ') { event.stopPropagation(); return }
+        if (group && event.target.matches('.document-grid-group-checkbox') && event.key === ' ') {
+          // A key pressed during a membership read must stay ignored even if
+          // the response arrives before native checkbox activation on keyup.
+          if (selectionPendingRef.current) event.preventDefault()
+          event.stopPropagation(); return
+        }
         if (['Enter', 'F2'].includes(event.key)) {
           const headerCheckbox = event.target.closest('.ag-header-cell')?.querySelector<HTMLInputElement>('input[type=checkbox]')
           if (headerCheckbox) { event.preventDefault(); event.stopPropagation(); if (!headerCheckbox.disabled) headerCheckbox.click(); return }
@@ -668,9 +690,11 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
             event.preventDefault(); event.stopPropagation()
             const checkbox = event.target.closest<HTMLInputElement>('.document-grid-group-checkbox')
             if (checkbox) { if (!checkbox.disabled) checkbox.click(); return }
-            const column = api?.getAllDisplayedColumns()[0]
+            const column = api?.getFocusedCell()?.column ?? api?.getAllDisplayedColumns()[0]
+            api?.clearCellSelection()
+            node.setExpanded(!node.expanded, event.nativeEvent, true)
             if (column && node.rowIndex != null) api?.setFocusedCell(node.rowIndex, column)
-            node.setExpanded(!node.expanded, event.nativeEvent, true); return
+            return
           }
           if (cell && colId && node?.data && !node.stub) {
             event.preventDefault(); event.stopPropagation()

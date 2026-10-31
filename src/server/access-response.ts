@@ -1,11 +1,14 @@
 import type { AccessIdentity } from '@/lib/access-permissions'
 import { redactWeldData } from '@/lib/weld-field-access'
+import { projectControlWorkflowAccess } from './control-workflow-access'
 
 // These handlers return only their own registry/configuration/aggregate data.
 // A coincident property name (for example connectionType) is not a weld fact.
 // Activity details already apply entity-area and weld-field checks in SQL and
 // projection; applying weld rules again would erase authorized registry history.
 const ownDomainResults = new Set([
+  'document-connections.ts#getDocumentConnections',
+  'document-save-recovery-api.ts#checkDocumentSave',
   // Registry IDs and configuration keys may also be called id, connectionType
   // or pstoRequest. They are not restricted weld facts; their operation policy
   // and (for accounts/history) internal checks remain mandatory.
@@ -54,7 +57,7 @@ const lineConfigurationFields = ['projectTitle', 'subtitleCode', 'line', 'catego
 export function redactOperationResult<T>(identity: AccessIdentity, filename: string, name: string, value: T): T {
   const operation = `${filename.replaceAll('\\', '/').split('/').at(-1)}#${name}`
   if (ownDomainResults.has(operation)) return value
-  const redacted = redactWeldData(identity, value)
+  const redacted = redactWeldData(identity, value, (source, result) => projectControlWorkflowAccess(identity, source, result))
   if (!value || typeof value !== 'object' || !redacted || typeof redacted !== 'object') return redacted
   // These mixed responses have explicit line records alongside calculations.
   // Joint-page and explanation rows deliberately keep normal field redaction.

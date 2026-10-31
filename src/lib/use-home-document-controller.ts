@@ -7,6 +7,7 @@ import { createRowDocumentPreviewRequest } from '@/lib/row-document-preview'
 import type { HistoryDocumentPreviewRequest } from '@/components/history-document-preview'
 import type { WeldFieldKey } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import type { SystemDocumentReference } from '@/lib/system-document-types'
 
 type UseHomeDocumentControllerOptions = {
   setMessage: (message: string) => void
@@ -23,6 +24,8 @@ export function useHomeDocumentController({
 }: UseHomeDocumentControllerOptions) {
   const [documentPreviewRequest, setDocumentPreviewRequest] = useState<HistoryDocumentPreviewRequest | null>(null)
   const closeDocumentPreview = useCallback(() => setDocumentPreviewRequest(null), [])
+  const [documentConnectionsReference, openDocumentConnections] = useState<SystemDocumentReference | null>(null)
+  const closeDocumentConnections = useCallback(() => openDocumentConnections(null), [])
   const [documentGenerationRequest, setDocumentGenerationRequest] =
     useState<DocumentGenerationRequest | null>(null)
   const [documentNavigationRequest, setDocumentNavigationRequest] =
@@ -57,6 +60,9 @@ export function useHomeDocumentController({
   }, [welderStamps])
 
   return {
+    documentConnectionsReference,
+    openDocumentConnections,
+    closeDocumentConnections,
     documentPreviewRequest,
     closeDocumentPreview,
     documentGenerationRequest,

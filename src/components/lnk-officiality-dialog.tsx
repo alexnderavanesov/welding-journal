@@ -181,7 +181,7 @@ function LnkOfficialityPreviewDialog({
   const rowsPagination = usePagination({ items: rows, defaultPageSize: 100, resetKeys: [rows] })
 
   return (
-    <LargeDialogShell
+    <LargeDialogShell onEscape={onClose} ariaLabel="Предпросмотр выбранных стыков"
       maxWidthClassName="max-w-4xl"
       maxHeightClassName="max-h-[86vh]"
       overlayClassName="z-[110] bg-slate-950/30"

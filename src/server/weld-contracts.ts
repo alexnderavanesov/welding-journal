@@ -97,14 +97,19 @@ export const LNK_WORKFLOW_REQUEST_OPTION_LIMIT = 200
 export type LnkWorkflowRequestSummaryRequest = {
   search?: string
   limit?: number
+  resultScope?: 'primary' | 'beforeHeatTreatment'
+  methodCode?: string
 }
 
 export function normalizeLnkWorkflowRequestSummaryRequest(
   value?: LnkWorkflowRequestSummaryRequest,
-): Required<LnkWorkflowRequestSummaryRequest> {
+): Required<Pick<LnkWorkflowRequestSummaryRequest, 'search' | 'limit'>> & Pick<LnkWorkflowRequestSummaryRequest, 'resultScope' | 'methodCode'> {
+  if (value?.resultScope !== undefined && !['primary', 'beforeHeatTreatment'].includes(value.resultScope)) throw new Error('Неизвестный этап поиска заявок ЛНК.')
+  if (value?.methodCode && !['ВИК', 'РК', 'УЗК', 'ПВК'].includes(value.methodCode)) throw new Error('Неизвестный вид контроля заявки.')
   const requestedLimit = Number(value?.limit ?? LNK_WORKFLOW_REQUEST_OPTION_LIMIT)
   return {
     search: String(value?.search ?? '').trim().slice(0, 200),
+    ...(value?.resultScope ? { resultScope: value.resultScope, ...(value.methodCode ? { methodCode: value.methodCode } : {}) } : {}),
     limit: Number.isInteger(requestedLimit) && requestedLimit > 0
       ? Math.min(requestedLimit, LNK_WORKFLOW_REQUEST_OPTION_LIMIT)
       : LNK_WORKFLOW_REQUEST_OPTION_LIMIT,
@@ -214,6 +219,7 @@ export const PSTO_WORKFLOW_REQUEST_OPTION_LIMIT = 200
 export type PstoWorkflowRequestOptionsRequest = {
   search?: string
   limit?: number
+  resultScope?: 'psto' | 'tvmt'
 }
 
 export type PstoWorkflowRequestOptionsResult = {
@@ -223,10 +229,12 @@ export type PstoWorkflowRequestOptionsResult = {
 
 export function normalizePstoWorkflowRequestOptionsRequest(
   value?: PstoWorkflowRequestOptionsRequest,
-): Required<PstoWorkflowRequestOptionsRequest> {
+): Required<Pick<PstoWorkflowRequestOptionsRequest, 'search' | 'limit'>> & Pick<PstoWorkflowRequestOptionsRequest, 'resultScope'> {
+  if (value?.resultScope !== undefined && !['psto', 'tvmt'].includes(value.resultScope)) throw new Error('Неизвестный этап поиска заявок ПСТО/ТВМТ.')
   const requestedLimit = Number(value?.limit ?? PSTO_WORKFLOW_REQUEST_OPTION_LIMIT)
   return {
     search: String(value?.search ?? '').trim().slice(0, 200),
+    ...(value?.resultScope ? { resultScope: value.resultScope } : {}),
     limit: Number.isInteger(requestedLimit) && requestedLimit > 0
       ? Math.min(requestedLimit, PSTO_WORKFLOW_REQUEST_OPTION_LIMIT)
       : PSTO_WORKFLOW_REQUEST_OPTION_LIMIT,
@@ -358,7 +366,7 @@ export type WeldJointChainResult = {
   transitions: JointCoilTransition[]
   earlyCoilCandidates: WeldJointChainEarlyCoilCandidate[]
 }
-export type WeldRowsByIdsRequest = { ids: number[] }
+export type WeldRowsByIdsRequest = { ids: number[]; report?: WeldReportKind }
 export type WeldSnapshotPageRequest = { afterId?: number; batchSize?: number }
 
 export type WeldSnapshotPageResult = {

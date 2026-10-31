@@ -78,12 +78,27 @@ describe('PSTO modal workflow queries', () => {
     expect(filterPstoWorkflowRows([nonCandidate], 'requestCandidates', [200_000])).toEqual([nonCandidate])
   })
 
-  it('limits result registries to rows with PSTO result data', () => {
+  it('includes requests and repeat cycles in the history SQL before a result exists', () => {
     const query = compileWhere({ scope: 'resultRegistry' })
 
+    expect(query.sql).toContain('"weld_joints"."psto_request"')
+    expect(query.sql).toContain('"weld_joints"."psto_request_date"')
+    expect(query.sql).toContain('"psto_repeat_cycles"."psto_request"')
     expect(query.sql).toContain('"weld_joints"."psto_result"')
     expect(query.sql).toContain('"weld_joints"."psto_date"')
     expect(query.sql).toContain('"weld_joints"."heat_treatment_diagram"')
+  })
+
+  it('retains request-only history after hydration, without treating waiting as history', () => {
+    const rows = [
+      { id: 1, pstoRequired: 'да', pstoRequest: 'ПСТО-1', pstoRequestDate: '2026-10-30' },
+      { id: 2, pstoRequired: 'отменен', pstoRequest: 'Сохранённая заявка' },
+      { id: 3, pstoRepeatCycles: [{ id: 30, weldJointId: 3, sequence: 2, pstoRequest: 'Повторная заявка' }] },
+      { id: 4, pstoRequestDate: '2026-10-30' },
+      { id: 5, pstoRequired: 'да', pstoResult: 'ожидает' },
+      { id: 6, pstoResult: 'проведено' },
+    ] as WeldRow[]
+    expect(filterPstoWorkflowRows(rows, 'resultRegistry').map(row => row.id)).toEqual([1, 2, 3, 4, 6])
   })
 
   it('narrows PSTO and TVMT result candidates by the selected current-cycle request', () => {

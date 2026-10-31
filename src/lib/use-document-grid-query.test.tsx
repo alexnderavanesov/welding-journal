@@ -22,6 +22,52 @@ function setup(load: (request: DocumentHistoryGridRequest) => Promise<DocumentHi
   act(() => hook.result.current.accept({ rows: [], total: size, rowCount: size, revision }))
   return { ...hook, api, error, select }
 }
+it('selects overlapping checkbox ranges once, toggles the whole range and preserves outside choices', async () => {
+  const load = vi.fn(async (request: DocumentHistoryGridRequest) => ({
+    rows: Array.from({ length: request.endRow - request.startRow }, (_, offset) => ({ id: request.startRow + offset + 1, title: 'Document' })),
+    rowCount: 750, total: 750, revision,
+  }))
+  const hook = setup(load, 750)
+  const checkboxColumn = { getColId: () => 'ag-Grid-SelectionColumn', isVisible: () => true }
+  hook.api.getCellRanges.mockReturnValue([{ ...range(749), columns: [checkboxColumn] }, { ...range(600), columns: [checkboxColumn] }])
+  hook.rerender({ scope: 'first', selected: [{ id: 900 }] })
+  await act(async () => hook.result.current.selectRange())
+  expect(load.mock.calls.map(([r]) => [r.startRow, r.endRow, r.revision])).toEqual([[0, 500, revision], [500, 750, revision]])
+  const selected = hook.select.mock.calls[0][0]
+  expect(selected).toHaveLength(751)
+  expect(selected[0]).toEqual({ id: 900 })
+  hook.rerender({ scope: 'first', selected })
+  await act(async () => hook.result.current.selectRange())
+  expect(hook.select).toHaveBeenLastCalledWith([{ id: 900 }])
+  hook.unmount()
+})
+it.each(['scope', 'range', 'selection', 'revision', 'unmount'])('discards a late range selection after %s changes', async reason => {
+  let complete!: (value: DocumentHistoryGridResult<Row>) => void
+  const load = vi.fn(() => new Promise<DocumentHistoryGridResult<Row>>(resolve => { complete = resolve }))
+  const hook = setup(load, 2)
+  let operation: Promise<void> | undefined
+  act(() => { operation = hook.result.current.selectRange(); void hook.result.current.selectRange() })
+  expect(load).toHaveBeenCalledTimes(1)
+  if (reason === 'scope') hook.rerender({ scope: 'second', selected: [] })
+  else if (reason === 'selection') hook.rerender({ scope: 'first', selected: [{ id: 900 }] })
+  else if (reason === 'range') hook.api.getCellRanges.mockReturnValue([range(0)])
+  else if (reason === 'revision') act(() => hook.result.current.accept({ rows: [], total: 2, rowCount: 2, revision: 'b'.repeat(32) }))
+  else hook.unmount()
+  await act(async () => { complete({ rows: [{ id: 1, title: 'A' }, { id: 2, title: 'B' }], total: 2, rowCount: 2, revision }); await operation })
+  expect(hook.select).not.toHaveBeenCalled()
+  hook.unmount()
+})
+it.each(['failure', 'partial', 'revision'])('never applies a partial range selection after a later batch %s', async reason => {
+  const load = vi.fn().mockResolvedValueOnce({ rows: Array.from({ length: 500 }, (_, id) => ({ id, title: 'Document' })), rowCount: 750, total: 750, revision })
+  if (reason === 'failure') load.mockRejectedValueOnce(new Error('Registry changed'))
+  else load.mockResolvedValueOnce({ rows: Array.from({ length: reason === 'partial' ? 249 : 250 }, (_, id) => ({ id: id + 500, title: 'Document' })), rowCount: 750, total: 750, revision: reason === 'revision' ? 'b'.repeat(32) : revision })
+  const hook = setup(load, 750)
+  await act(async () => hook.result.current.selectRange())
+  expect(hook.select).not.toHaveBeenCalled()
+  expect(hook.error).toHaveBeenCalledOnce()
+  expect(hook.result.current.selecting).toBe(false)
+  hook.unmount()
+})
 it('coalesces repeated group counts in flight and after success, but refreshes a changed selection, revision or scope', async () => {
   vi.useFakeTimers()
   const response = { rows: [], counts: { '[]': 1 }, total: 250, rowCount: 250, revision }

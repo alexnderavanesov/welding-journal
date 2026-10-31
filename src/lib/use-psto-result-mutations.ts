@@ -54,7 +54,7 @@ export function usePstoResultMutations({
       useSystemName?: boolean
       documentGroups?: SystemDocumentCreationGroup[]
     }) => {
-      const groups = documentGroups ?? [{
+      const groups: SystemDocumentCreationGroup[] = documentGroups ?? [{
         key: 'legacy',
         label: 'Все выбранные позиции',
         rowIds: records.map((record) => record.id),
@@ -86,6 +86,7 @@ export function usePstoResultMutations({
                 date: pstoDate,
                 fieldKeys: ['heatTreatmentDiagram'],
                 provisionalName: group.name,
+                namingPattern: group.namingPattern,
               })),
         },
       )

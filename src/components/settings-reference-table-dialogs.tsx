@@ -1,3 +1,4 @@
+import { Checkbox } from '@/components/ui/checkbox'
 import { type ClipboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Plus, Save, Trash2, X } from 'lucide-react'
 
@@ -57,7 +58,6 @@ export function WdiTableEditorDialog({
     if (confirmed) onClose()
   }
 
-  useDialogEscape(() => void requestClose())
 
   function updateCell(rowIndex: number, columnIndex: number, value: string) {
     setGrid((current) => {
@@ -123,7 +123,7 @@ export function WdiTableEditorDialog({
   const testResult = getWdiTestResult(grid, testDiameter, testThickness)
 
   return (
-    <LargeDialogShell maxWidthClassName="max-w-[1500px]" maxHeightClassName="max-h-[92vh]" panelClassName="overflow-hidden">
+    <LargeDialogShell onEscape={() => void requestClose()} escapeDisabled={isSaving} maxWidthClassName="max-w-[1500px]" maxHeightClassName="max-h-[92vh]" panelClassName="overflow-hidden">
       <DialogHeader
         title="Таблица расчета WDI"
         subtitle="Диаметры находятся по строкам, толщины по столбцам. Диапазон из Excel можно вставить в выбранную ячейку через Ctrl+V."
@@ -296,7 +296,6 @@ export function RkExposureTableEditorDialog({
     if (confirmed) onClose()
   }
 
-  useDialogEscape(() => void requestClose())
 
   function updateCell(rowIndex: number, columnIndex: number, value: string) {
     setGrid((current) => {
@@ -476,7 +475,7 @@ export function RkExposureTableEditorDialog({
   const testResult = getRkTestResult(grid, testDiameter)
 
   return (
-    <LargeDialogShell maxWidthClassName="max-w-[1800px]" maxHeightClassName="max-h-[92vh]" panelClassName="overflow-hidden">
+    <LargeDialogShell onEscape={() => void requestClose()} escapeDisabled={isSaving} maxWidthClassName="max-w-[1800px]" maxHeightClassName="max-h-[92vh]" panelClassName="overflow-hidden">
       <DialogHeader
         title="Экспозиции по диаметрам"
         subtitle="Каждый диаметр образует группу столбцов, а каждый столбец — отдельный вариант экспозиции. Данные из Excel можно вставить через Ctrl+V, начиная с поля диаметра."
@@ -565,12 +564,10 @@ export function RkExposureTableEditorDialog({
                 {diameterGroups.flatMap((group) => group.options.map((option, optionIndex) => (
                   <td key={option.startRowIndex} className={`h-12 border-b border-slate-200 bg-white p-0 text-center ${optionIndex === group.options.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r'}`}>
                     <label className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 text-xs text-slate-500">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={normalizedGrid[option.startRowIndex][2]?.trim() === '+'}
                         onChange={(event) => updateDefaultOption(group, option, event.target.checked)}
                         aria-label={`Вариант по умолчанию ${group.diameter || 'без диаметра'}:${optionIndex + 1}`}
-                        className="h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-500"
                       />
                       <span>{normalizedGrid[option.startRowIndex][2]?.trim() === '+' ? 'Основной' : 'Не выбран'}</span>
                     </label>
@@ -834,17 +831,4 @@ function parseTestNumber(value: string) {
   const parsed = Number(value.trim().replace(',', '.'))
   if (!Number.isFinite(parsed) || parsed < 0) throw new Error('Проверочное значение должно быть неотрицательным числом.')
   return parsed
-}
-
-function useDialogEscape(onClose: () => void) {
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape' || document.querySelector('[data-confirm-action-dialog="true"]')) return
-      event.preventDefault()
-      event.stopPropagation()
-      onClose()
-    }
-    window.addEventListener('keydown', handleKeyDown, true)
-    return () => window.removeEventListener('keydown', handleKeyDown, true)
-  }, [onClose])
 }

@@ -180,19 +180,7 @@ function WelderStampsRegistryContent({
     [allRecords],
   )
 
-  useEffect(() => {
-    if (!isEditorOpen) return
 
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopPropagation()
-      closeEditorDialog()
-    }
-
-    document.addEventListener('keydown', handleKeyDown, true)
-    return () => document.removeEventListener('keydown', handleKeyDown, true)
-  }, [isEditorOpen])
 
   useEffect(() => {
     if (selectedRecordId !== null && !visibleRecords.some((record) => record.id === selectedRecordId)) setSelectedRecordId(null)
@@ -316,7 +304,7 @@ function WelderStampsRegistryContent({
       </div>
 
       {isEditorOpen ? (
-        <LargeDialogShell maxWidthClassName="max-w-[1080px]" maxHeightClassName="max-h-[90vh]" overlayClassName="z-[80] bg-slate-950/30">
+        <LargeDialogShell onEscape={closeEditorDialog} maxWidthClassName="max-w-[1080px]" maxHeightClassName="max-h-[90vh]" overlayClassName="z-[80] bg-slate-950/30">
           <DialogHeader
             title={editingId === null ? 'Добавление клейма' : 'Редактирование клейма'}
             subtitle="Клеймо НАКС, внутреннее клеймо и допуски по способу сварки, группе материалов, диаметрам и сроку действия."

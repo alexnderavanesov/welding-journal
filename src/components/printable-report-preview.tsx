@@ -1,3 +1,4 @@
+import { isTopModalDialog } from '@/lib/modal-layer'
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Download, Printer, X } from 'lucide-react'
 import { buildPrintableReportHtml, type PrintableReport } from '@/lib/printable-report'
@@ -45,10 +46,10 @@ export function PrintableReportPreview({ report: fullReport, busy, error, onClos
     const previousFocus = document.activeElement as HTMLElement | null
     closeButton.current?.focus({ preventScroll: true })
     const keydown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !isTopModalDialog(panel.current)) return
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
         event.preventDefault(); printAction.current(); return
       }
-      if (event.key === 'Escape') { if (document.querySelector('[data-select-listbox]')) return; event.preventDefault(); event.stopImmediatePropagation(); closeAction.current(); return }
       if (event.key !== 'Tab') return
       const targets = panel.current?.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), iframe')
       if (!targets?.length) return
@@ -67,6 +68,7 @@ export function PrintableReportPreview({ report: fullReport, busy, error, onClos
     if (!doc || !report) return
     // Keyboard events inside an iframe do not bubble to the containing dialog.
     const keydown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !isTopModalDialog(panel.current)) return
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
         event.preventDefault(); printAction.current(); return
       }
@@ -103,7 +105,7 @@ export function PrintableReportPreview({ report: fullReport, busy, error, onClos
     catch (error) { setDownloadError(`Не удалось скачать Excel. ${error instanceof Error ? error.message : 'Повторите действие.'}`) }
     finally { downloadingRef.current = false; setDownloading(false) }
   }
-  return <LargeDialogShell ariaLabel={previewTitle} overlayClassName="z-[100] bg-slate-950/30" maxWidthClassName="max-w-[1480px]" panelClassName="h-[92vh]">
+  return <LargeDialogShell onEscape={onClose} ariaLabel={previewTitle} overlayClassName="z-[180] bg-slate-950/30" maxWidthClassName="max-w-[1480px]" panelClassName="h-[92vh]">
     <div ref={panel} data-document-preview="true" className="flex min-h-0 flex-1 flex-col">
       <header className="flex flex-wrap items-center justify-between border-b border-slate-200 gap-3 px-5 py-3">
         <h2 className="min-w-0 font-semibold text-slate-800 text-base">{previewTitle}</h2>

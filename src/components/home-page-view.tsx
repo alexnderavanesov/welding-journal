@@ -1,5 +1,6 @@
 import { isAgGridWeldReport } from '@/lib/weld-report-grid-profile'
 import { lazy, Suspense, memo, type ComponentProps } from 'react'
+const DocumentConnectionsDialog = lazy(() => import('./document-connections-dialog').then(module => ({ default: module.DocumentConnectionsDialog })))
 const CoilRestorationDialog = lazy(() => import('./coil-restoration-dialog').then(module => ({ default: module.CoilRestorationDialog })))
 const ChainActualityDialog = lazy(() => import('./chain-actuality-dialog').then(module => ({ default: module.ChainActualityDialog })))
 import { DispatcherWorkspaceDialog } from '@/components/dispatcher-workspace-dialog'
@@ -23,6 +24,7 @@ type HomePageViewProps = {
   coilRestorationDialogProps?: ComponentProps<typeof CoilRestorationDialog> | null
   coilCorrectionReturnProps?: { onReturn: () => void; onDismiss: () => void } | null
   chainActualityDialogProps?: ComponentProps<typeof ChainActualityDialog> | null
+  documentConnectionsProps?: ComponentProps<typeof DocumentConnectionsDialog> | null
   documentPreviewProps?: ComponentProps<typeof HistoryDocumentPreview> | null
   reportPreviewProps: ComponentProps<typeof PrintableReportPreview> | null
   activeReport: ComponentProps<typeof ReportWorkspace>['activeReport']
@@ -75,6 +77,7 @@ export function HomePageView({
   chainActualityDialogProps,
   reportPreviewProps,
   documentPreviewProps,
+  documentConnectionsProps,
   activeReport,
   activeTitle,
   freezeReportBackground,
@@ -205,6 +208,7 @@ export function HomePageView({
             : null
         }
       />
+      {documentConnectionsProps ? <Suspense fallback={null}><DocumentConnectionsDialog {...documentConnectionsProps} /></Suspense> : null}
       {documentPreviewProps ? <HistoryDocumentPreview {...documentPreviewProps} /> : null}
     </ReportWorkspace>
   )

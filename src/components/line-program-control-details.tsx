@@ -1,3 +1,6 @@
+import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
+import { isModalDialogOpen } from '@/lib/modal-layer'
+import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { MoreHorizontal } from 'lucide-react'
@@ -58,6 +61,10 @@ function ControlDetailsPopover({ approved, additional, onApproved, onAdditional,
       window.removeEventListener('scroll', scroll, true)
     }
   }, [onClose, trigger])
+  useWindowEscapeKey(true, event => {
+    if (isModalDialogOpen() || isContextActionMenuOpen()) return
+    event.preventDefault(); event.stopImmediatePropagation(); onClose(true)
+  })
   const select = (action: () => void) => { onClose(true); action() }
   return createPortal(<div ref={panel} role="dialog" aria-label="Другие показатели контроля" style={position}
     className="fixed z-50 max-h-[calc(100vh-16px)] w-80 max-w-[calc(100vw-16px)] overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg shadow-slate-900/10"

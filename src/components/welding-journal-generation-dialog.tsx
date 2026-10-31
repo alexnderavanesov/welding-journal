@@ -122,13 +122,7 @@ export function WeldingJournalGenerationDialog({
     }
   }, [request.id, request.type])
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isGenerating) onClose()
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isGenerating, onClose])
+
 
   const handleGenerate = async () => {
     if (plan.groups.length === 0 || isGenerating || contextLoading || contextError || templateLoading) return
@@ -153,7 +147,7 @@ export function WeldingJournalGenerationDialog({
   }
 
   return (
-    <LargeDialogShell maxWidthClassName="max-w-[760px]" maxHeightClassName="max-h-[86vh]" overlayClassName="z-[90] bg-slate-950/35">
+    <LargeDialogShell onEscape={onClose} escapeDisabled={isGenerating} maxWidthClassName="max-w-[760px]" maxHeightClassName="max-h-[86vh]" overlayClassName="z-[90] bg-slate-950/35">
       <DialogHeader
         title={`Формирование: ${documentLabel}`}
         subtitle={`Выбрано стыков: ${request.rows.length}. После формирования вы останетесь в сварочном журнале.`}

@@ -5,6 +5,26 @@ import { DocumentGridCheckbox } from './document-grid-checkbox'
 afterEach(cleanup)
 
 describe('document grid themed checkbox', () => {
+  it('keeps focus while busy and ignores native and wrapper activation until the read finishes', () => {
+    const change = vi.fn(), click = vi.fn()
+    const view = render(<DocumentGridCheckbox aria-label="Все документы" checked={false} onChange={change} onClick={click} />)
+    const input = screen.getByRole('checkbox')
+    input.focus()
+    view.rerender(<DocumentGridCheckbox aria-label="Все документы" checked={false} busy onChange={change} onClick={click} />)
+    expect(input).toHaveFocus()
+    expect(input).not.toBeDisabled()
+    expect(input).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(input)
+    fireEvent.click(input.closest('label')!)
+    expect(change).not.toHaveBeenCalled()
+    expect(click).not.toHaveBeenCalled()
+    expect(input).not.toBeChecked()
+    view.rerender(<DocumentGridCheckbox aria-label="Все документы" checked onChange={change} onClick={click} />)
+    expect(input).toHaveFocus()
+    fireEvent.click(input)
+    expect(change).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps the native input state and AG theme classes aligned for unchecked, mixed, checked and disabled controls', () => {
     const change = vi.fn()
     const view = render(<DocumentGridCheckbox aria-label="Загруженные документы" checked={false} onChange={change} />)

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react'
 import { DialogHeader } from '@/components/dialog-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
@@ -34,6 +34,8 @@ export function WelderStampSuspensionsPanel({
 }: WelderStampSuspensionsPanelProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [isEditorOpen, setIsEditorOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
   const validationReason = validateWelderStampSuspensionRecord(draft)
   const hasDraft = Boolean(draft.naksStamp || draft.suspendedFrom || draft.suspendedTo)
   const isEditing = draft.id > 0 && records.some((record) => record.id === draft.id)
@@ -43,20 +45,6 @@ export function WelderStampSuspensionsPanel({
       left.localeCompare(right, 'ru'),
     )
   }, [draft.naksStamp, stampOptions])
-
-  useEffect(() => {
-    if (!isEditorOpen) return
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopPropagation()
-      closeEditor()
-    }
-
-    document.addEventListener('keydown', handleKeyDown, true)
-    return () => document.removeEventListener('keydown', handleKeyDown, true)
-  }, [isEditorOpen])
 
   useEffect(() => {
     if (openEditorSignal <= 0) return
@@ -77,14 +65,23 @@ export function WelderStampSuspensionsPanel({
   }
 
   function closeEditor() {
+    if (savingRef.current) return
     setIsEditorOpen(false)
     onReset()
   }
 
   async function saveAndCloseEditor() {
-    const saved = await onSave()
-    if (saved) setIsEditorOpen(false)
-    return saved
+    if (savingRef.current) return false
+    savingRef.current = true
+    setSaving(true)
+    try {
+      const saved = await onSave()
+      if (saved) setIsEditorOpen(false)
+      return saved
+    } finally {
+      savingRef.current = false
+      setSaving(false)
+    }
   }
 
   return (
@@ -185,11 +182,12 @@ export function WelderStampSuspensionsPanel({
       ) : null}
 
       {isEditorOpen ? (
-        <LargeDialogShell maxWidthClassName="max-w-[560px]" maxHeightClassName="max-h-[88vh]" overlayClassName="z-[90] bg-slate-950/30">
+        <LargeDialogShell onEscape={closeEditor} escapeDisabled={saving} maxWidthClassName="max-w-[560px]" maxHeightClassName="max-h-[88vh]" overlayClassName="z-[90] bg-slate-950/30">
           <DialogHeader
             title={isEditing ? 'Редактирование отстранения' : 'Добавление отстранения'}
             subtitle="Период, в который клеймо нельзя указывать в официальных клеймах стыка."
             onClose={closeEditor}
+            closeDisabled={saving}
           />
           <div className="space-y-4 px-5 py-5">
             <label className="block space-y-1.5 text-sm">
@@ -197,7 +195,7 @@ export function WelderStampSuspensionsPanel({
               <Select
                 value={draft.naksStamp}
                 onChange={(event) => onDraftChange('naksStamp', event.target.value)}
-                disabled={availableStampOptions.length === 0}
+                disabled={saving || availableStampOptions.length === 0}
               >
                 <option value="">Выберите клеймо</option>
                 {availableStampOptions.map((stamp) => (
@@ -215,6 +213,7 @@ export function WelderStampSuspensionsPanel({
                   type="date"
                   min={WELDER_STAMP_MIN_ALLOWED_DATE_ISO}
                   value={draft.suspendedFrom}
+                  disabled={saving}
                   onChange={(event) => onDraftChange('suspendedFrom', event.target.value)}
                 />
               </label>
@@ -224,6 +223,7 @@ export function WelderStampSuspensionsPanel({
                   type="date"
                   min={WELDER_STAMP_MIN_ALLOWED_DATE_ISO}
                   value={draft.suspendedTo}
+                  disabled={saving}
                   onChange={(event) => onDraftChange('suspendedTo', event.target.value)}
                 />
               </label>
@@ -244,10 +244,10 @@ export function WelderStampSuspensionsPanel({
             </div>
           </div>
           <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
-            <Button type="button" variant="secondary" onClick={closeEditor}>
+            <Button type="button" variant="secondary" onClick={closeEditor} disabled={saving}>
               Отмена
             </Button>
-            <Button type="button" onClick={saveAndCloseEditor} disabled={availableStampOptions.length === 0}>
+            <Button type="button" onClick={saveAndCloseEditor} disabled={saving || availableStampOptions.length === 0}>
               {isEditing ? 'Сохранить' : 'Добавить'}
             </Button>
           </div>

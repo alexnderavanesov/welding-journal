@@ -4,7 +4,7 @@ import { withLineProgramFixture, cleanupLineProgramProjects } from '../line-prog
 import { serializeRpcData, deserializeRpcResponse, siblingRpcUrl, rpcName } from '../rpc'
 import { WELD_FIELDS } from '../../src/lib/weld-fields'
 import { buildWeldColumnValueFilter } from '../../src/lib/weld-table-filtering'
-import { auditSqlCount } from '../audit-sql'
+import { auditSqlCount, auditSqlDetails } from '../audit-sql'
 import { withE2eDatabase } from '../database'
 import { sql } from 'drizzle-orm'
 import { PgDialect } from 'drizzle-orm/pg-core'
@@ -19,21 +19,36 @@ let savedOther: string | undefined
 let apiStatements = 0
 let measureSql = false
 async function call<T>(page: Page, name: string, data: unknown): Promise<T> {
-  const before = measureSql ? await auditSqlCount() : undefined
+  const url = siblingRpcUrl(observed, name + '_createServerFn_handler')
+  const before = measureSql ? await auditSqlCount(url) : undefined
+  const isolateCopy = before !== undefined && name === 'copyJournalGridRange'
+  const processBefore = isolateCopy ? (await auditSqlDetails())!.statements : undefined
   const started = performance.now()
-  const response = await page.request.post(siblingRpcUrl(observed, name + '_createServerFn_handler'), {
+  // An unrelated read reproduces the old process-wide counter contamination.
+  // It must not consume the copy endpoint's unchanged SQL budget.
+  const otherRead = isolateCopy ? page.request.get(siblingRpcUrl(observed, 'getCurrentAccount_createServerFn_handler'), {
+    headers: { origin: new URL(observed).origin, 'x-tsr-serverFn': 'true' },
+  }) : undefined
+  const response = await page.request.post(url, {
     timeout: 60_000,
     data: await serializeRpcData(data), headers: { origin: new URL(observed).origin, 'sec-fetch-site':'same-origin', 'content-type': 'application/json', 'x-tsr-serverFn': 'true' },
   })
   const value = await deserializeRpcResponse(await response.text()) as { result: T; error?: Error }
+  if (otherRead) expect((await otherRead).ok()).toBe(true)
   const milliseconds = performance.now() - started
   if (before !== undefined) {
-    const statements = (await auditSqlCount())! - before
+    const statements = (await auditSqlCount(url))! - before
+    expect(statements, `${name}: RPC-local SQL must be observed`).toBeGreaterThan(0)
+    if (processBefore !== undefined) {
+      const processStatements = (await auditSqlDetails())!.statements - processBefore
+      expect(processStatements, 'unrelated account read is excluded from the copy budget').toBeGreaterThan(statements)
+      console.log('JOURNAL_SQL_ISOLATION', JSON.stringify({ statements, processStatements }))
+    }
     apiStatements += statements
     const ranges = name === 'copyJournalGridRange' ? (data as { parts: Array<{ start: number; end: number }> }).parts : []
     // The constant budget covers access, revision, settings, snapshot and
     // batched metadata reads, independent of the selected row count. The
-    // sampler measures the whole server process, not an RPC-exclusive trace.
+    // sampler isolates this endpoint from unrelated browser/session requests.
     // Clipboard alone visits 1000-row batches: one row and one fact read.
     const budget = name === 'copyJournalGridRange'
       ? 10 + 2 * Math.ceil(ranges.reduce((sum, part) => sum + part.end - part.start, 0) / 1000)

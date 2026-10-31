@@ -1,3 +1,6 @@
+import { collectResultRequestSources } from '@/lib/result-request-sources'
+import { useResultRequestSources } from '@/components/use-result-request-sources'
+import { getLnkResultMethodRequestOptions } from '@/lib/lnk-result-derived-utils'
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { DialogContextMenuLayer, type DialogContextMenuLayerHandle } from '@/components/dialog-context-menu-layer'
 import {
@@ -145,9 +148,11 @@ export function LnkResultDialog({
     () => pinInitiallySelectedRows(visibleRows, draft.rowIds, initiallySelectedIds),
     [draft.rowIds, initiallySelectedIds, visibleRows],
   )
+  const requestSourceGroups = useMemo(() => collectResultRequestSources(selectedRows, (rows: WeldRow[]) => getLnkResultMethodRequestOptions(rows, [], draft.methodKey)), [selectedRows, draft.methodKey])
+  const requestSources = useResultRequestSources(selectedRows, requestSourceGroups, () => { setRowsViewMode('selected'); setSelectedRowsSearch(''); setWorkspaceTab('joints') })
   const filteredSelectedRows = useMemo(
-    () => filterLnkResultRows(selectedRows, selectedRowsSearch, draft.methodKey),
-    [draft.methodKey, selectedRows, selectedRowsSearch],
+    () => filterLnkResultRows(requestSources.rows, selectedRowsSearch, draft.methodKey),
+    [draft.methodKey, requestSources.rows, selectedRowsSearch],
   )
   useEffect(() => {
     if (draft.rowIds.size === 0 && rowsViewMode === 'selected') setRowsViewMode('all')
@@ -157,11 +162,12 @@ export function LnkResultDialog({
       setWorkspaceTab('joints')
     }
   }, [draft.methodKey, systemDocumentCreationPlan, workspaceTab])
+  const selectedRequests = getLnkResultMethodRequestOptions(selectedRows, [], draft.methodKey)
   const displayedRows = rowsViewMode === 'selected' ? filteredSelectedRows : orderedVisibleRows
   const displayedSearch = rowsViewMode === 'selected' ? selectedRowsSearch : draft.search
   const paginationResetKeys = useMemo(
-    () => [displayedSearch, rowsViewMode, draft.requestName, draft.requestDate, draft.methodKey],
-    [displayedSearch, draft.methodKey, draft.requestDate, draft.requestName, rowsViewMode],
+    () => [requestSources.sourceProps.activeKey, displayedSearch, rowsViewMode, draft.requestName, draft.requestDate, draft.methodKey],
+    [requestSources.sourceProps.activeKey, displayedSearch, draft.methodKey, draft.requestDate, draft.requestName, rowsViewMode],
   )
   const rowsPagination = usePagePagination({
     items: displayedRows,
@@ -177,7 +183,7 @@ export function LnkResultDialog({
     <SelectedRowsViewToggle
       mode={rowsViewMode}
       selectedCount={draft.rowIds.size}
-      onChange={setRowsViewMode}
+      onChange={mode => { requestSources.clear(); setRowsViewMode(mode) }}
     />
   )
   const rowsAction = rowsViewMode === 'selected' ? (
@@ -203,9 +209,9 @@ export function LnkResultDialog({
     const point = getDialogMenuPoint(event)
     const isRowSelectable = (candidate: WeldRow) => canSelectLnkResultRow(
       candidate,
-      draft.requestName,
+      '',
       draft.methodKey,
-      draft.requestDate,
+      undefined,
       controlProcessSettings,
     )
     contextMenuRef.current?.open(buildDialogRowContextMenu({
@@ -269,8 +275,10 @@ export function LnkResultDialog({
   const content = (
     <>
       <ResultDialogHeader
+          sources={requestSources.sourceProps}
         title="Внесение результатов ЛНК"
-        requestName={draft.requestName}
+        requestName={selectedRequests[0]?.name ?? ''}
+        requestCount={selectedRequests.length}
         selectedCount={draft.rowIds.size}
         managerDisabled={false}
         onOpenManager={onOpenManager}
@@ -357,8 +365,8 @@ export function LnkResultDialog({
                 <LnkResultRow
                   row={row}
                   controlProcessSettings={controlProcessSettings}
-                  requestName={draft.requestName}
-                  requestDate={draft.requestDate}
+                  requestName=""
+                  requestDate=""
                   methodKey={draft.methodKey}
                   selected={draft.rowIds.has(row.id)}
                   rowResult={getEffectiveLnkResultDraftValue(row.id, draft)}

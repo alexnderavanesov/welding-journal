@@ -1,3 +1,4 @@
+import { Checkbox } from '@/components/ui/checkbox'
 import { memo, useId, type MouseEvent } from 'react'
 import { Layers3, LockKeyhole } from 'lucide-react'
 import { isAngularConnectionType } from '@/lib/connection-type'
@@ -92,14 +93,12 @@ function LnkResultRowComponent({
             : 'cursor-pointer bg-white hover:bg-slate-50'
       }`}
     >
-      <input
-        type="checkbox"
+      <Checkbox
         aria-label={`Выбрать стык ${String(row.line ?? '').trim()} ${String(row.joint ?? row.id).trim()}`.trim()}
         checked={selected}
         onClick={(event) => event.stopPropagation()}
         onChange={() => onToggleRow(row.id)}
         disabled={disabled}
-        className="h-4 w-4 rounded border-slate-300 text-slate-900"
       />
       <span className="min-w-0">
         <RequestRowJointHeading row={row} stackMetadata />
@@ -168,13 +167,13 @@ function LnkResultRowComponent({
         <div className="col-start-2 -col-end-1 flex flex-wrap items-center gap-x-3 gap-y-1 pb-1 text-xs"
           onClick={(event) => event.stopPropagation()}>
           <label className={`inline-flex items-center gap-2 rounded py-1 font-medium focus-within:ring-2 focus-within:ring-sky-500/40 ${layeredChecked ? 'text-sky-800' : 'text-slate-600'} ${layeredAssigned || !selected || layeredBlockReason ? 'cursor-default' : 'cursor-pointer'}`}>
-            <input type="checkbox"
+            <Checkbox
               aria-label={`Послойный контроль: ${row.line || 'Без линии'} · ${row.joint || row.id}`}
               aria-describedby={layeredHintId}
               checked={layeredChecked}
               disabled={layeredAssigned || !selected || Boolean(layeredBlockReason) || !onSetLayeredControl}
               onChange={(event) => onSetLayeredControl?.(row.id, event.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 accent-sky-600 disabled:opacity-100" />
+              className="disabled:opacity-100" />
             <Layers3 className="h-3.5 w-3.5" aria-hidden="true" />
             Послойный контроль
             {layeredAssigned ? <LockKeyhole className="h-3 w-3" aria-hidden="true" /> : null}

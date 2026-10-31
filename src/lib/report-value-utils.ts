@@ -1,4 +1,5 @@
 import type { WeldInput } from '@/lib/weld-fields'
+import { getControlWorkflowAccess } from './control-workflow-access'
 import {
   isControlAdditionalValue,
   isControlCancelledValue,
@@ -57,7 +58,7 @@ export function formatControlAvailabilityForExport(value: unknown) {
 }
 
 export function hasWeldDate(row: WeldInput) {
-  return hasText(row.weldDate)
+  return getControlWorkflowAccess(row)?.welded ?? hasText(row.weldDate)
 }
 
 export function isEnabledControlValue(value: unknown) {

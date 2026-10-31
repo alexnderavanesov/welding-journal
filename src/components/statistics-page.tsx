@@ -26,6 +26,7 @@ import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { LineProgramPage } from '@/components/line-program-page'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { StatisticsSubtitleFilter } from './statistics-subtitle-filter'
 import { isModalDialogOpen } from '@/lib/modal-layer'
 import { formatDisplayDate } from '@/lib/date-format'
 import {
@@ -687,48 +688,7 @@ function StatisticsReports({
               </label>
 
               <div className="min-w-0 flex-1 basis-[420px]">
-                <div className="mb-1 flex items-center justify-between gap-3 text-xs font-medium text-slate-600">
-                  <span>Шифр/подтитул</span>
-                  {selectedSubtitles.length > 0 ? (
-                    <button
-                      type="button"
-                      className="text-sky-700 hover:text-sky-900"
-                      onClick={() => setSelectedSubtitles([])}
-                    >
-                      Сбросить шифры
-                    </button>
-                  ) : null}
-                </div>
-                <div className="flex min-h-9 flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
-                  {subtitleOptions.length > 0 ? (
-                    subtitleOptions.map((subtitle) => {
-                      const selected = selectedSubtitles.includes(subtitle.value)
-                      return (
-                        <button
-                          key={subtitle.value}
-                          type="button"
-                          className={cn(
-                            'rounded border px-2.5 py-1 text-sm transition-colors',
-                            selected
-                              ? 'border-sky-300 bg-sky-50 text-sky-800'
-                              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
-                          )}
-                          onClick={() =>
-                            setSelectedSubtitles((current) =>
-                              current.includes(subtitle.value)
-                                ? current.filter((value) => value !== subtitle.value)
-                                : [...current, subtitle.value],
-                            )
-                          }
-                        >
-                          {subtitle.label}
-                        </button>
-                      )
-                    })
-                  ) : (
-                    <span className="text-sm text-slate-400">Шифры не найдены</span>
-                  )}
-                </div>
+                <StatisticsSubtitleFilter options={subtitleOptions} value={selectedSubtitles} onChange={setSelectedSubtitles} />
               </div>
 
               <div className="grid min-w-[220px] gap-1 text-xs font-medium text-slate-600">

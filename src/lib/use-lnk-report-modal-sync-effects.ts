@@ -6,16 +6,10 @@ import {
 import { filterLnkResultDraftRowResults } from '@/lib/lnk-result-draft'
 import {
   canSelectLnkResultRow,
-  filterLnkRowsByRequestName,
-  getLnkInputMethodsForRows,
 } from '@/lib/report-modal-rows'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import type { WeldFieldKey } from '@/lib/weld-fields'
-import {
-  findRequestDocumentIdentity,
-  type RequestDocumentIdentity,
-} from '@/lib/request-document-identity'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 
 type SetNumberSet = Dispatch<SetStateAction<Set<number>>>
@@ -36,7 +30,6 @@ export type LnkReportModalSyncEffectsOptions = {
   isLnkRequestModalOpen: boolean
   isLnkResultManagerOpen: boolean
   isLnkResultModalOpen: boolean
-  lnkResultRequestOptions: RequestDocumentIdentity[]
   lnkRows: WeldRow[]
   managedLnkResultEntries: ManagedLnkResultEntry[]
   managedLnkResultMethodKey: WeldFieldKey | ''
@@ -54,7 +47,6 @@ export function useLnkReportModalSyncEffects({
   isLnkRequestModalOpen,
   isLnkResultManagerOpen,
   isLnkResultModalOpen,
-  lnkResultRequestOptions,
   lnkRows,
   managedLnkResultEntries,
   managedLnkResultMethodKey,
@@ -103,38 +95,19 @@ export function useLnkReportModalSyncEffects({
     if (!isLnkRowsContextReady) return
     setLnkResultDraft((current) => {
       if (!isLnkResultModalOpen) return current
-      const selectedRows = lnkRows.filter((row) => current.rowIds.has(row.id))
-      const selectedRequest = findRequestDocumentIdentity(
-        lnkResultRequestOptions,
-        current.requestName,
-        current.requestDate,
-      )
-      const keepsCurrentRequest = Boolean(
-        selectedRequest &&
-          selectedRequest.name === current.requestName &&
-          selectedRequest.date === current.requestDate,
-      )
-      const requestName = keepsCurrentRequest ? current.requestName : ''
-      const requestDate = keepsCurrentRequest ? current.requestDate : ''
-      const requestRows = filterLnkRowsByRequestName(lnkRows, requestName, requestDate)
-      const methodRows = current.rowIds.size > 0 ? [...selectedRows, ...requestRows] : requestName ? requestRows : lnkRows
-      const methods = getLnkInputMethodsForRows(methodRows, '')
-      const methodKey = !current.methodKey || methods.some((method) => method.requestKey === current.methodKey) ? current.methodKey : ''
+      const methodKey = current.methodKey
       const rowsById = new Map(lnkRows.map((row) => [row.id, row]))
       const rowIds = new Set(
         [...current.rowIds].filter((id) => {
           const row = rowsById.get(id)
           return row
             ? !methodKey ||
-                canSelectLnkResultRow(row, requestName, methodKey, requestDate, controlProcessSettings)
+                canSelectLnkResultRow(row, '', methodKey, undefined, controlProcessSettings)
             : false
         }),
       )
       const rowResults = filterLnkResultDraftRowResults(current.rowResults, rowIds)
       if (
-        requestName === current.requestName &&
-        requestDate === current.requestDate &&
-        methodKey === current.methodKey &&
         areNumberSetsEqual(rowIds, current.rowIds) &&
         areStringRecordsEqual(rowResults, current.rowResults)
       ) {
@@ -142,14 +115,12 @@ export function useLnkReportModalSyncEffects({
       }
       return {
         ...current,
-        requestName,
-        requestDate,
-        methodKey,
         rowIds,
         rowResults,
+        layeredControlRowIds: new Set([...current.layeredControlRowIds].filter(id => rowIds.has(id))),
       }
     })
-  }, [controlProcessSettings, isLnkResultModalOpen, isLnkRowsContextReady, lnkResultRequestOptions, lnkRows, setLnkResultDraft])
+  }, [controlProcessSettings, isLnkResultModalOpen, isLnkRowsContextReady, lnkRows, setLnkResultDraft])
 }
 
 function areNumberSetsEqual(left: ReadonlySet<number>, right: ReadonlySet<number>) {

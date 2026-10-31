@@ -7,6 +7,7 @@ type CreateReportFieldEditorPropsOptions = {
   editing: HeatTreatmentFieldEditingState | null
   requestOptions: FieldDialogProps['requestOptions']
   isSaving: boolean
+  isContextReady?: boolean
   onChange: FieldDialogProps['onChange']
   onClose: FieldDialogProps['onClose']
   onSave: FieldDialogProps['onSave']
@@ -16,6 +17,7 @@ export function createReportFieldEditorProps({
   editing,
   requestOptions,
   isSaving,
+  isContextReady,
   onChange,
   onClose,
   onSave,
@@ -26,6 +28,7 @@ export function createReportFieldEditorProps({
           editing,
           requestOptions,
           isSaving,
+          isContextReady,
           onChange,
           onClose,
           onSave,

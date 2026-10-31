@@ -7,6 +7,7 @@ import { buildWeldColumnValueFilter } from '../../src/lib/weld-column-choice-fil
 import { getLnkDisplayValue } from '../../src/lib/lnk-status'
 import { calculateWdi, isSystemWdiMode } from '../../src/lib/wdi'
 import type { WeldPageRequest } from '../../src/server/weld-contracts'
+import { measureResultRequestSearch } from '../result-request-search-load'
 
 const project = 'E2E LNK read 200k'
 async function cleanup() {
@@ -16,7 +17,7 @@ async function cleanup() {
 test.beforeEach(cleanup)
 test.afterEach(cleanup)
 
-test('200k ЛНК: both page paths, filters, stages, roots, coils and output use bounded query counts', async ({}, info) => {
+test('200k ЛНК: both page paths, filters, stages, roots, coils and output use bounded query counts', async ({ page }, info) => {
   test.setTimeout(300_000)
   assertSafeE2eDatabaseUrl(process.env.DATABASE_URL ?? '')
   await withLineProgramFixture(async db => {
@@ -90,7 +91,18 @@ test('200k ЛНК: both page paths, filters, stages, roots, coils and output use
     if(ordinals)expect(result.rows.map(row=>row.id)).toEqual(ordinals.map(n=>byOrdinal.get(n)))
     // Calculated predicates may publish a bounded page-ID cache. Counts must
     // stay bounded on both cold and warm reads, including narrow ID queries.
-    expect(statements.length).toBeLessThanOrEqual(derived ? 26 : 14)
+    // Five fixed statements reload the selected cards/settings/index state in a read-only
+    // snapshot; retain the previous budget for selection and hydration.
+    expect(statements.length).toBeLessThanOrEqual(derived ? 31 : 19)
+    const snapshotStart = statements.findIndex(statement => /^begin isolation level repeatable read read only$/i.test(statement.sql))
+    expect(snapshotStart).toBeGreaterThanOrEqual(0)
+    const snapshot = statements.slice(snapshotStart)
+    expect(snapshot.at(-1)!.sql).toMatch(/^commit$/i)
+    expect(snapshot.slice(1, -1).every(statement => /^\s*select\b/i.test(statement.sql))).toBe(true)
+    expect(snapshot.filter(statement => /from "dispatcher_task_index_state"/i.test(statement.sql))).toHaveLength(1)
+    const cards = snapshot.filter(statement => statement.columns > 100)
+    expect(cards).toHaveLength(1)
+    expect(cards[0]!.rows).toBe(result.rows.length)
     if (derived) expect(Math.max(...statements.map(statement => statement.rows ?? 0))).toBeLessThanOrEqual(Math.max(1000, result.rows.length * 2))
     const roots=statements.filter(s=>s.sql.includes('"journal_physical_root"'))
     expect(roots).toHaveLength(1)
@@ -146,6 +158,19 @@ test('200k ЛНК: both page paths, filters, stages, roots, coils and output use
       expect(statements.length).toBeLessThanOrEqual(14)
       expect(measurements.at(-1)!.widestRead).toBe(0)
     }
+    // All earlier report/history expectations use the original fixture. Switch
+    // only now to pending controls to measure request lookup with many matches.
+    await withE2eDatabase(async db => {
+      await db.query("update weld_joints set vik_result='ожидает НК',vik_conclusion=null,vik_conclusion_date=null where project_title=$1", [project])
+      await db.query("update pre_heat_treatment_controls c set result='ожидает НК',conclusion_name=null,conclusion_date=null from weld_joints w where c.weld_joint_id=w.id and w.project_title=$1 and c.method='ВИК'", [project])
+      await db.query('analyze weld_joints'); await db.query('analyze pre_heat_treatment_controls')
+    })
+    const requestSearch = await measureResultRequestSearch(page, [
+      { scope: 'primary', methodCode: 'ВИК', prefix: 'VIK-', exact: 'VIK-199999', absent: 'VIK-absent' },
+      { scope: 'primary', prefix: 'VIK-', exact: 'VIK-199999', absent: 'VIK-absent' },
+      { scope: 'beforeHeatTreatment', methodCode: 'ВИК', prefix: 'PRE-ВИК-', exact: 'PRE-ВИК-000020', absent: 'VIK-199999' },
+    ])
+    await info.attach('lnk-request-search-200k.json', { body: JSON.stringify(requestSearch, null, 2), contentType: 'application/json' })
   }finally{
     pg.Client.prototype.query=original
     console.info('LNK 200k:',JSON.stringify(measurements))

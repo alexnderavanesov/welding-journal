@@ -1,4 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render as baseRender, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LnkResultSettings } from '@/components/lnk-result-settings'
@@ -8,6 +10,10 @@ import { createDefaultLnkResultDraft } from '@/lib/report-draft-state'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
 
 const selectedRows = [{ id: 1, joint: 'F16A' }] as WeldRow[]
+function render(ui: ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return baseRender(ui, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> })
+}
 
 describe('LnkResultSettings', () => {
   beforeEach(() => window.localStorage.clear())
@@ -58,7 +64,7 @@ describe('LnkResultSettings', () => {
     expect(screen.getByText('Метод контроля')).toBeInTheDocument()
     expect(screen.getByText('Дата контроля')).toBeInTheDocument()
     expect(screen.getByText('Результат для всех выбранных')).toBeInTheDocument()
-    expect(screen.getByText('Заявка ЛНК')).toBeInTheDocument()
+    expect(screen.getByText('Фильтр по заявке ЛНК')).toBeInTheDocument()
     expect(screen.queryByText('Заключение')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Системное' })).not.toBeInTheDocument()
   })

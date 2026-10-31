@@ -12,6 +12,8 @@ import { PstoResultSettings } from '@/components/psto-result-settings'
 import { RequestRowsSearch } from '@/components/request-rows-search'
 import { ResultDialogFooter } from '@/components/result-dialog-footer'
 import { ResultDialogHeader } from '@/components/result-dialog-header'
+import { useResultRequestSources } from '@/components/use-result-request-sources'
+import { collectResultRequestSources } from '@/lib/result-request-sources'
 import { SelectedRowsViewToggle, type SelectedRowsViewMode } from '@/components/selected-rows-view-toggle'
 import { SystemDocumentNamesPanel } from '@/components/system-document-names-panel'
 import { SystemDocumentSplitControl } from '@/components/system-document-split-control'
@@ -30,6 +32,7 @@ import { usePagePagination } from '@/lib/use-page-pagination'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import {
   createRequestDocumentIdentity,
+  getPstoRequestDocumentIdentities,
   type RequestDocumentIdentity,
 } from '@/lib/request-document-identity'
 import type { WorkflowRootCauseAction } from '@/lib/workflow-root-cause-actions'
@@ -104,9 +107,11 @@ export function PstoResultDialog({
   const [rowsViewMode, setRowsViewMode] = useState<SelectedRowsViewMode>('all')
   const [workspaceTab, setWorkspaceTab] = useState<DocumentWorkspaceTab>('joints')
   const [selectedRowsSearch, setSelectedRowsSearch] = useState('')
+  const requestSourceGroups = useMemo(() => collectResultRequestSources(selectedRows, getPstoRequestDocumentIdentities), [selectedRows])
+  const requestSources = useResultRequestSources(selectedRows, requestSourceGroups, () => { setRowsViewMode('selected'); setSelectedRowsSearch(''); setWorkspaceTab('joints') })
   const filteredSelectedRows = useMemo(
-    () => filterPstoResultRows(selectedRows, selectedRowsSearch),
-    [selectedRows, selectedRowsSearch],
+    () => filterPstoResultRows(requestSources.rows, selectedRowsSearch),
+    [requestSources.rows, selectedRowsSearch],
   )
   useEffect(() => {
     if (draft.rowIds.size === 0 && rowsViewMode === 'selected') setRowsViewMode('all')
@@ -114,8 +119,8 @@ export function PstoResultDialog({
   const displayedRows = rowsViewMode === 'selected' ? filteredSelectedRows : filteredRows
   const displayedSearch = rowsViewMode === 'selected' ? selectedRowsSearch : draft.search
   const paginationResetKeys = useMemo(
-    () => [displayedSearch, rowsViewMode, draft.requestName, draft.requestDate, requestSearch],
-    [displayedSearch, draft.requestDate, draft.requestName, requestSearch, rowsViewMode],
+    () => [requestSources.sourceProps.activeKey, displayedSearch, rowsViewMode, draft.requestName, draft.requestDate, requestSearch],
+    [requestSources.sourceProps.activeKey, displayedSearch, draft.requestDate, draft.requestName, requestSearch, rowsViewMode],
   )
   const rowsPagination = usePagePagination({
     items: displayedRows,
@@ -129,7 +134,7 @@ export function PstoResultDialog({
     <SelectedRowsViewToggle
       mode={rowsViewMode}
       selectedCount={draft.rowIds.size}
-      onChange={setRowsViewMode}
+      onChange={mode => { requestSources.clear(); setRowsViewMode(mode) }}
     />
   )
   const selectableRequestRows = useMemo(
@@ -195,6 +200,7 @@ export function PstoResultDialog({
       <ResultDialogHeader
         title="Внесение результатов ПСТО"
         requestName={draft.requestName}
+        sources={requestSources.sourceProps}
         selectedCount={draft.rowIds.size}
         managerDisabled={draft.rowIds.size === 0}
         managerDisabledReason="Сначала выберите хотя бы один стык из заявки ПСТО."

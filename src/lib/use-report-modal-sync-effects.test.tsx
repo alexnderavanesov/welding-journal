@@ -34,7 +34,7 @@ describe('report modal context loading', () => {
         isLnkRequestModalOpen: false,
         isLnkResultManagerOpen: false,
         isLnkResultModalOpen: true,
-        lnkResultRequestOptions: [],
+
         lnkRows: [{ id: 7 }] as WeldRow[],
         managedLnkResultEntries: [],
         managedLnkResultMethodKey: '',
@@ -69,7 +69,7 @@ describe('report modal context loading', () => {
           isLnkRequestModalOpen: false,
           isLnkResultManagerOpen: true,
           isLnkResultModalOpen: false,
-          lnkResultRequestOptions: [],
+
           lnkRows: [row],
           managedLnkResultEntries: entries,
           managedLnkResultMethodKey: '',
@@ -132,7 +132,7 @@ describe('report modal context loading', () => {
         isLnkRequestModalOpen: true,
         isLnkResultManagerOpen: false,
         isLnkResultModalOpen: false,
-        lnkResultRequestOptions: [],
+
         lnkRows: rows,
         managedLnkResultEntries: [],
         managedLnkResultMethodKey: '',

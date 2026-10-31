@@ -384,7 +384,7 @@ test('РК: все причины выбранных стыков, смена в
   }
   // A native checkbox is checked before the controlled selection finishes its
   // render. Wait for all three rows before testing a separate hover interaction.
-  await expect(dialog.getByText(/^Заявка:.*· Выбрано: 3$/)).toBeVisible()
+  await expect(dialog.getByRole('group', { name: 'Показать стыки', exact: true }).getByRole('button', { name: 'Выбрано: 3', exact: true })).toBeVisible()
   const common = dialog.getByRole('group', { name: 'Результат для всех выбранных', exact: true })
   await checkReason(page, common, 'ремонт', ['меньше 89 мм', 'два ремонта'])
   await expect(common.getByRole('button', { name: 'вырез', exact: true })).toBeEnabled()

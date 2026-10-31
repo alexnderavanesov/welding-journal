@@ -1,11 +1,31 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { createRowDocumentPreviewRequest } from './row-document-preview'
 import type { WeldFieldKey } from './weld-fields'
+import type { WeldRow } from './dispatcher-types'
 
 const mocks = vi.hoisted(() => ({ system: vi.fn(), generated: vi.fn() }))
 vi.mock('@/lib/system-document-storage', () => ({ createCurrentSystemDocumentBlob: mocks.system }))
 vi.mock('@/lib/welding-journal-document', () => ({ createGeneratedDocumentBlobForRow: mocks.generated }))
 afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks() })
+
+it.each([
+  ['pstoRequest', 'pstoRequestDate'], ['heatTreatmentDiagram', 'pstoDate'],
+  ['tvmtRequest', 'tvmtRequestDate'], ['tvmtConclusion', 'tvmtConclusionDate'],
+] as const)('uses the selected cycle identity for the title, file name and content of %s', async (field, dateField) => {
+  const row = {
+    id: 1, pstoRequired: 'да', [field]: 'Первичный документ', [dateField]: '2026-10-01',
+    pstoRepeatCycles: [{ id: 2, weldJointId: 1, sequence: 2, [field]: 'Повтор/2', [dateField]: '2026-10-30' }],
+  } as WeldRow
+  const request = createRowDocumentPreviewRequest(row, field, [])
+  expect(request.title).toBe('Повтор/2')
+  expect(request.fileName).toBe('Повтор-2.xlsx')
+  expect(mocks.system).not.toHaveBeenCalled()
+  await request.createBlob()
+  expect(mocks.system).toHaveBeenCalledExactlyOnceWith({
+    reference: expect.objectContaining({ title: 'Повтор/2', date: '2026-10-30', cycleSequences: [2] }),
+    welderStamps: [],
+  })
+})
 
 it.each([
   ['vikConclusion', 'ВИК'], ['rkConclusion', 'РК'], ['uzkConclusion', 'УЗК'], ['pvkConclusion', 'ПВК'], ['tvmtConclusion', 'ТВМТ'],

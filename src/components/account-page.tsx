@@ -24,7 +24,7 @@ export function AccountPage({ initialTab }: { initialTab?: AccountTab }) { retur
 function AccountPanel({ initialTab }: { initialTab?: AccountTab }) {
   const { identity, refresh, can } = useAccess()
   const queryClient = useQueryClient()
-  const [requestedTab, setTab] = useState<AccountTab>(() => initialTab ?? (new URLSearchParams(window.location.search).get('tab') as AccountTab) ?? 'profile')
+  const [requestedTab, setTab] = useState<AccountTab | null>(() => initialTab ?? (new URLSearchParams(window.location.search).get('tab') as AccountTab | null))
   const [message, setMessage] = useState(''), [busy, setBusy] = useState(false)
   const [name, setName] = useState(identity?.name ?? ''), [title, setTitle] = useState(identity?.title ?? '')
   useEffect(() => { const timer = window.setTimeout(() => clearChunkReloadAttempt(window.location.pathname), 30000); return () => window.clearTimeout(timer) }, [])
@@ -37,7 +37,8 @@ function AccountPanel({ initialTab }: { initialTab?: AccountTab }) {
     ...(can('history.view') || jointId && can('history.joint') ? [{ id: 'activity', label: 'Журнал действий', icon: ClipboardList }] : []),
     { id: 'guide', label: 'Руководство', icon: BookOpenText },
   ]
-  const tab = tabs.some(item => item.id === requestedTab) ? requestedTab : requestedTab === 'activity' ? 'activity' : 'profile'
+  const defaultTab = identity.role === 'user' ? 'profile' : 'users'
+  const tab = requestedTab && tabs.some(item => item.id === requestedTab) ? requestedTab : requestedTab === 'activity' ? 'activity' : defaultTab
   function changeTab(next: AccountTab) {
     setTab(next)
     const url = new URL(window.location.href)
@@ -54,7 +55,7 @@ function AccountPanel({ initialTab }: { initialTab?: AccountTab }) {
   function leaveSession() { setStorageIdentity(null); queryClient.clear(); window.location.assign('/account') }
   async function signOut() { const { authClient } = await import('@/lib/auth-client'); const result = await authClient.signOut(); if (result.error) throw new Error('Не удалось завершить сеанс.'); leaveSession() }
   return <div className="mx-auto max-w-[1500px] space-y-6">
-    <header className="flex flex-wrap items-center justify-between gap-4"><div><h1 className="text-2xl font-semibold tracking-tight text-slate-900">{tabs.find(item => item.id === tab)?.label ?? 'Журнал действий'}</h1><p className="mt-1 text-sm text-slate-500">{identity.name} · {accountRoleLabel(identity.role)}</p></div><Button variant="outline" disabled={busy} onClick={() => void action(signOut)}><LogOut className="h-4 w-4" />Выйти</Button></header>
+    <header className="flex flex-wrap items-center justify-between gap-4"><div><h1 className="text-2xl font-semibold tracking-tight text-slate-900">{tabs.find(item => item.id === tab)?.label ?? 'Журнал действий'}</h1><p className="mt-1 text-sm text-slate-500">{identity.name} · {accountRoleLabel(identity.role)}</p></div>{tab === 'profile' ? <Button variant="outline" disabled={busy} onClick={() => void action(signOut)}><LogOut className="h-4 w-4" />Выйти</Button> : null}</header>
     <div role="tablist" aria-label="Аккаунт и доступ" className="flex gap-1 overflow-x-auto border-b border-slate-200" onKeyDown={event => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
       event.preventDefault()
@@ -65,7 +66,7 @@ function AccountPanel({ initialTab }: { initialTab?: AccountTab }) {
     <div id="account-panel-profile" role="tabpanel" aria-labelledby="account-tab-profile" hidden={tab !== 'profile'} className="space-y-5">
     {message ? <p role="status" className="rounded-lg border bg-white p-4 text-sm">{message}</p> : null}
     <div className="grid gap-6 xl:grid-cols-2"><form className="space-y-4 rounded-xl border bg-white p-6" onSubmit={event => { event.preventDefault(); void action(() => accounts.updateOwnProfile({ data: { name, title: identity.role === 'user' ? identity.title : title, revision: identity.revision } })) }}>
-      <h2 className="font-semibold text-slate-900">Личные данные</h2><Field label="ФИО"><Input value={name} onChange={event => setName(event.target.value)} maxLength={200} required /></Field>
+      <h2 className="font-semibold text-slate-900">Личные данные</h2><Field label="Фамилия и имя"><Input value={name} onChange={event => setName(event.target.value)} maxLength={200} required /></Field>
       <Field label="Должность"><Input value={identity.role === 'user' ? identity.title : title} readOnly={identity.role === 'user'} onChange={event => setTitle(event.target.value)} maxLength={200} /></Field>
       <Field label="Почта"><Input value={identity.email} readOnly /></Field><p className="text-sm text-slate-500">Адрес входа изменить нельзя. Должность назначает администратор; она не определяет права доступа.</p>
       <Button disabled={busy}>Сохранить профиль</Button>

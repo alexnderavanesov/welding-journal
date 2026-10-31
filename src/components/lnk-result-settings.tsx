@@ -1,7 +1,7 @@
 import { LnkResultControlBar } from '@/components/lnk-result-control-bar'
 import { getLnkSelectionResultRestrictionReason } from '@/components/lnk-result-selection-restrictions'
 import { WorkflowResultOptionPicker } from '@/components/workflow-result-option-picker'
-import { RequestDocumentCombobox } from '@/components/request-document-combobox'
+import { ResultRequestCombobox } from '@/components/result-request-combobox'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { getDateInputValidationReason, MIN_ALLOWED_DATE_ISO } from '@/lib/date-format'
@@ -47,7 +47,7 @@ export function LnkResultSettings({
   selectedRows,
   requestKey,
   requestOptions,
-  requestLabel = 'Заявка ЛНК',
+  requestLabel = 'Фильтр по заявке ЛНК',
   saveCheckSettings,
   controlDateInputRef,
   onMethodChange,
@@ -121,10 +121,12 @@ export function LnkResultSettings({
       requestControl={(
         <label className="block min-w-0 space-y-1.5 text-sm">
           <span className="text-[13px] font-medium leading-none text-slate-700">{requestLabel}</span>
-          <RequestDocumentCombobox
+          <ResultRequestCombobox scope="primary" methodCode={methodCode || undefined}
             ariaLabel={requestLabel}
             value={requestKey}
             options={requestOptions}
+            placeholder="Все заявки"
+            emptyOptionLabel="Все заявки"
             onChange={onRequestChange}
           />
         </label>

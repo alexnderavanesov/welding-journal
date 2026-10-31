@@ -115,7 +115,7 @@ describe('document template builder cell clipboard', () => {
       />,
     )
     const sourceDialog = await screen.findByRole('dialog')
-    const sourceCell = within(sourceDialog).getByLabelText('Ячейка A1')
+    const sourceCell = await within(sourceDialog).findByLabelText('Ячейка A1')
 
     fireEvent.contextMenu(sourceCell, { clientX: 20, clientY: 20 })
     fireEvent.click(screen.getByRole('button', { name: /Копировать содержимое/ }))
@@ -130,7 +130,7 @@ describe('document template builder cell clipboard', () => {
       />,
     )
     const targetDialog = await screen.findByRole('dialog')
-    const targetCell = within(targetDialog).getByLabelText('Ячейка B1')
+    const targetCell = await within(targetDialog).findByLabelText('Ячейка B1')
 
     fireEvent.contextMenu(targetCell, { clientX: 40, clientY: 40 })
     const pasteButton = screen.getByRole('button', { name: /Вставить содержимое/ })

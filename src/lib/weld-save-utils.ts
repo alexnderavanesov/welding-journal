@@ -1,3 +1,4 @@
+import { runDocumentSave } from './run-document-save'
 import { RESTRICTED_WELD_FIELDS, SERVICE_DATE_FIELDS } from './weld-field-access'
 import { WELD_MUTATION_FIELD_KEYS } from '@/server/weld-mutation-policy'
 import {
@@ -93,7 +94,8 @@ export async function updateWeldRowsOrThrow<T extends RowWithId>(
     layeredControl?: { rowIds: number[]; confirmPvk: boolean }
   } = {},
 ) {
-  const savedRows = await updateWeldJoints({
+  const save = (headers?: Record<string, string>) => updateWeldJoints({
+    headers,
     data: {
       records: records.map((record) => normalizeDateFieldsForSave(record, options.mutationScope)),
       expectedVersions: getExpectedWeldRowVersions(records),
@@ -106,6 +108,7 @@ export async function updateWeldRowsOrThrow<T extends RowWithId>(
       layeredControl: options.layeredControl,
     },
   })
+  const savedRows = options.documentGrouping ? await runDocumentSave('updateWeldJoints', save) : await save()
   if (!savedRows.every(Boolean)) throw new Error(errorMessage)
   return savedRows
 }
@@ -155,7 +158,7 @@ function normalizeDateFieldsForSave<T extends WeldInput>(record: T, scope: WeldM
   // Send only this operation's working fields; direct forged RPCs remain rejected on the server.
   const allowed = scope ? new Set<string>(WELD_MUTATION_FIELD_KEYS[scope]) : null
   return Object.fromEntries(Object.entries(nextRecord ?? record).filter(([key]) =>
-    key === 'id' || !SERVICE_DATE_FIELDS.has(key) && (!allowed || !RESTRICTED_WELD_FIELDS.has(key) || allowed.has(key)))) as T
+    key === 'id' || key !== 'controlWorkflowAccess' && !SERVICE_DATE_FIELDS.has(key) && (!allowed || !RESTRICTED_WELD_FIELDS.has(key) || allowed.has(key)))) as T
 }
 
 const dateFieldKeys = [...FIELD_BY_KEY.entries()]

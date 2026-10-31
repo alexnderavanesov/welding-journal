@@ -42,7 +42,7 @@ function databaseRows(select: Record<string, unknown>, rows = sourceRows) {
 describe('SQL-sorted report output survives server hydration', () => {
   beforeEach(() => {
     vi.resetAllMocks()
-    mocks.query.mockResolvedValue({ rows: [] })
+    mocks.query.mockImplementation(async ({ text }) => ({ rows: text.includes('from "weld_joints"') && text.includes('"connection_type"') ? databaseRows(WELD_TABLE_SELECT) : [] }))
     mocks.compute.mockImplementation((_key, compute) => compute())
   })
 
@@ -80,6 +80,7 @@ describe('SQL-sorted report output survives server hydration', () => {
     { id: 2, joint: 'F2', line: 'L', weldDate: '2026-09-01',
       pstoRequired: 'отменен', pstoRequest: 'ПСТО-2', pstoDate: '2026-09-02', pstoResult: 'проведено',
       tvmtResult: 'годен' }]
+    mocks.query.mockImplementation(async ({ text }) => ({ rows: text.includes('from "weld_joints"') && text.includes('"connection_type"') ? databaseRows(WELD_TABLE_SELECT, stored) : [] }))
     if (path === 'derived') mocks.query.mockResolvedValueOnce({ rows: stored.map(row => [row.id, null]) })
     mocks.query.mockResolvedValueOnce({ rows: databaseRows(WELD_TABLE_SELECT, stored) })
     const page = await listReportPage('heatTreatment', normalizeWeldPageRequest({ includeTotals: false,

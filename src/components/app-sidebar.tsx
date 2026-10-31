@@ -42,6 +42,9 @@ const sidebarItems: Array<{
 
 export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onReportChange }: AppSidebarProps) {
   const { can, identity } = useAccess()
+  const accountNameParts = identity?.name.trim().split(/\s+/).slice(0, 2) ?? []
+  const accountName = accountNameParts.join(' ')
+  const accountInitials = accountNameParts.map(part => Array.from(part)[0]).join('').toLocaleUpperCase('ru-RU')
   const settingsVisible = ['templates', 'checks', 'dispatcher', 'exceptions', 'numbering', 'data', 'wdi', 'processes', 'indexes'].some(area => can(`${area}.view` as Permission))
   const sidebarRef = useRef<HTMLElement>(null)
   const [isHorizontallyScrolled, setIsHorizontallyScrolled] = useState(false)
@@ -173,8 +176,8 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
             </button>
           )
         })()}
-        <a href="/account" title="Мой профиль" className={itemClassName(typeof window !== 'undefined' && ['/account', '/activity', '/user-guide'].includes(window.location.pathname))}>
-          <BookUser className="app-sidebar-icon h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" /><span className="app-sidebar-label"><span><span className="block">{identity?.name ?? 'Мой профиль'}</span>{identity?.title ? <span className="block text-[11px] font-normal opacity-70">{identity.title}</span> : null}<span className="block text-[11px] font-normal">Мой профиль</span></span></span>
+        <a href="/account" aria-label={identity ? `Мой профиль: ${identity.name}` : 'Мой профиль'} title={identity?.name ?? 'Мой профиль'} className={`app-sidebar-account ${itemClassName(typeof window !== 'undefined' && ['/account', '/activity', '/user-guide'].includes(window.location.pathname))}`}>
+          <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-100 text-[11px] font-semibold text-sky-700">{accountInitials || <BookUser className="h-4 w-4" strokeWidth={1.5} />}</span><span className="app-sidebar-label"><span className="truncate">{accountName || 'Мой профиль'}</span></span>
         </a>
       </nav>
     </aside>

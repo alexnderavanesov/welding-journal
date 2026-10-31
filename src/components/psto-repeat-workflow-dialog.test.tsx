@@ -3,11 +3,13 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { PstoRepeatWorkflowDialog } from '@/components/psto-repeat-workflow-dialog'
+import { savePstoRepeatWorkflow } from '@/server/psto-repeat-workflow'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY } from '@/lib/system-document-sequence-storage'
 
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '@/lib/request-conclusion-settings'
 vi.mock('@/server/document-grouping-preferences', () => ({ getDocumentGroupingDefaults: vi.fn(async () => REQUEST_CONCLUSION_DEFAULT_SETTINGS) }))
+vi.mock('@/server/psto-repeat-workflow', () => ({ savePstoRepeatWorkflow: vi.fn(async () => []) }))
 vi.mock('@/server/system-document-sequences', () => ({ getSystemDocumentSequences: vi.fn(async () => ({ pstoRequest: 5, pstoConclusion: 7 })) }))
 
 function makeFailedTvmtRow(overrides: Partial<WeldRow> = {}): WeldRow {
@@ -37,6 +39,7 @@ async function renderDialog(
   initialSelectedIds?: ReadonlySet<number>,
   onOpenResultManager = vi.fn(),
   onRunRootCauseAction: React.ComponentProps<typeof PstoRepeatWorkflowDialog>['onRunRootCauseAction'] = vi.fn(),
+  onCandidateRequestChange = vi.fn(),
 ) {
   let currentRows = Array.isArray(rowOrRows) ? rowOrRows : [rowOrRows]
   let currentSelectedIds = initialSelectedIds ?? new Set(currentRows.map((row) => row.id))
@@ -52,6 +55,7 @@ async function renderDialog(
         isContextReady={currentRows.length > 0}
         rows={currentRows}
         initialSelectedIds={currentSelectedIds}
+        onCandidateRequestChange={onCandidateRequestChange}
         onClose={vi.fn()}
         onRunProtectedEdit={(_label, action) => action()}
         onSaved={vi.fn()}
@@ -77,6 +81,89 @@ async function renderDialog(
 }
 
 describe('PstoRepeatWorkflowDialog', async () => {
+  it('keeps selected joints from different requests together for one diagram', async () => {
+    const rows = [1, 2, 3].map(id => makeFailedTvmtRow({
+      id,
+      line: `Линия-${id}`,
+      joint: `F${id}`,
+      weldDate: `2026-08-${19 + id}`,
+      pstoRequest: `Заявка ПСТО-${id}`,
+      pstoRequestDate: `2026-08-${22 + id}`,
+      pstoDate: null,
+      pstoResult: 'ожидает ПСТО',
+      tvmtRequest: null,
+      tvmtRequestDate: null,
+      tvmtResult: null,
+      tvmtConclusionDate: null,
+      tvmtConclusion: null,
+    }))
+    const onCandidateRequestChange = vi.fn()
+    const onOpenResultManager = vi.fn()
+    const view = await renderDialog('result', rows, new Set([1, 2]), onOpenResultManager, vi.fn(), onCandidateRequestChange)
+
+    expect(screen.getByRole('checkbox', { name: /F1$/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /F2$/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /F3$/ })).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeEnabled()
+    expect(screen.getByRole('tab', { name: /Диаграммы и имена/ })).toHaveTextContent('1')
+    expect(screen.getByRole('button', { name: 'Заявки: 2' }).closest('p')).toHaveTextContent('Заявки: 2 · Выбрано: 2')
+
+    const filter = screen.getByRole('combobox', { name: 'Фильтр по заявке ПСТО' })
+    fireEvent.focus(filter)
+    fireEvent.click(screen.getByRole('option', { name: /Заявка ПСТО-3/ }))
+    expect(screen.getByRole('button', { name: 'Выбрано: 2' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /F1$/ })).not.toBeInTheDocument()
+    // The selected request must survive an empty filtered response; selected
+    // joints from other requests are still included by the server contract.
+    view.rerenderWithRows(rows.slice(0, 2))
+    expect(filter).toHaveValue('Заявка ПСТО-3 · 25.08.2026')
+    expect(onCandidateRequestChange).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'Заявка ПСТО-3' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Все результаты' }))
+    expect(onOpenResultManager).toHaveBeenLastCalledWith(rows.slice(0, 2))
+    view.rerenderWithRows(rows)
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать доступные' }))
+    expect(screen.getByRole('button', { name: 'Выбрано: 3' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Снять доступные' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Сбросить выбранную заявку' }))
+    expect(screen.getByRole('checkbox', { name: /F1$/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /F2$/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /F3$/ })).not.toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить результат' }))
+    await waitFor(() => expect(savePstoRepeatWorkflow).toHaveBeenCalledWith({ headers: { 'x-welding-document-save-id': expect.stringMatching(/^[\da-f-]{36}$/) }, data: expect.objectContaining({
+      action: 'pstoResult',
+      groups: [expect.objectContaining({ rowIds: [1, 2] })],
+    }) }))
+  })
+
+  it('restores mixed primary/repeat selection with equal request names and distinct dates', async () => {
+    const rows = [
+      makeFailedTvmtRow({ pstoDate: null, pstoResult: 'ожидает ПСТО', tvmtRequest: null, tvmtRequestDate: null, tvmtResult: null, tvmtConclusion: null, tvmtConclusionDate: null }),
+      makeFailedTvmtRow({ id: 2, joint: 'F2', pstoRepeatCycles: [{ id: 9, weldJointId: 2, sequence: 2, pstoRequest: 'ПСТО-1', pstoRequestDate: '2026-08-23' }] }),
+    ]
+    const view = await renderDialog('result', [], new Set([1, 2]))
+    view.rerenderWithRows(rows)
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: /F1$/ })).toBeChecked())
+    expect(screen.getByRole('checkbox', { name: /F2$/ })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Заявки: 2' }).closest('p')).toHaveTextContent('Заявки: 2 · Выбрано: 2')
+    expect(screen.getByRole('combobox', { name: 'Фильтр по заявке ПСТО' })).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeEnabled()
+    fireEvent.change(screen.getByLabelText('Дата ПСТО'), { target: { value: '2026-08-21' } })
+    expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeDisabled()
+  })
+
+  it('blocks a selected result when a refresh shows another operator already completed it', async () => {
+    const waiting = makeFailedTvmtRow({
+      pstoDate: null, pstoResult: null, tvmtRequest: null, tvmtRequestDate: null,
+      tvmtResult: null, tvmtConclusion: null, tvmtConclusionDate: null,
+    })
+    const view = await renderDialog('result', waiting)
+    expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeEnabled()
+    view.rerenderWithRows([{ ...waiting, pstoDate: '2026-08-24', pstoResult: 'проведено', heatTreatmentDiagram: 'Другой результат' }])
+    expect(screen.getByRole('checkbox', { name: /F1$/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /F1$/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeDisabled()
+  })
+
   it('offers the next cycle only after failed TVMT', async () => {
     await renderDialog('request', makeFailedTvmtRow())
 
@@ -150,10 +237,10 @@ describe('PstoRepeatWorkflowDialog', async () => {
     ]
     const view = await renderDialog('result', rows, new Set())
 
-    expect(screen.getByRole('combobox', { name: 'Заявка ПСТО' })).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: 'Фильтр по заявке ПСТО' })).toHaveValue('')
     view.rerenderWithInitialSelectedIds(new Set([2]))
 
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Заявка ПСТО' })).toHaveValue(
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Фильтр по заявке ПСТО' })).toHaveValue(
       'Заявка ПСТО-B · 23.08.2026',
     ))
     expect(screen.getByRole('checkbox', { name: /F2/ })).toBeChecked()
@@ -198,10 +285,10 @@ describe('PstoRepeatWorkflowDialog', async () => {
     })
     const view = await renderDialog('result', [], new Set([waitingResult.id]))
 
-    expect(screen.getByRole('combobox', { name: 'Заявка ПСТО' })).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: 'Фильтр по заявке ПСТО' })).toHaveValue('')
     view.rerenderWithRows([waitingResult])
 
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Заявка ПСТО' })).toHaveValue(
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Фильтр по заявке ПСТО' })).toHaveValue(
       'Заявка ПСТО-A · 23.08.2026',
     ))
     expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeChecked()

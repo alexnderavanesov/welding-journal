@@ -14,7 +14,7 @@ import {
 import type { LnkResultDraftState } from '@/lib/report-draft-state'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { SaveCheckSettings } from '@/lib/save-check-settings'
-import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
+import { withCurrentRequestDocumentIdentity, type RequestDocumentIdentity } from '@/lib/request-document-identity'
 import type { RequestConclusionSettings } from '@/lib/request-conclusion-settings'
 import { buildSystemDocumentCreationPlan } from '@/lib/system-document-creation-plan'
 import { getEffectiveLnkResultDraftValueForRow } from '@/lib/lnk-result-draft'
@@ -55,8 +55,8 @@ export function useLnkResultDerivedState({
   )
 
   const lnkResultAvailableRequestOptions = useMemo(() => {
-    return lnkResultMethodRequestOptions
-  }, [lnkResultMethodRequestOptions])
+    return withCurrentRequestDocumentIdentity(lnkResultMethodRequestOptions, { name: lnkResultDraft.requestName, date: lnkResultDraft.requestDate })
+  }, [lnkResultMethodRequestOptions, lnkResultDraft.requestName, lnkResultDraft.requestDate])
 
   const lnkResultSearchRows = useMemo(
     () =>

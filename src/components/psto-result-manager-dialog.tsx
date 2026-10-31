@@ -1,3 +1,4 @@
+import { DocumentConnectionsButton } from './document-connections-button'
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { getDocumentRequisiteErrors } from '@/lib/document-requisites'
 import { ArrowRight, CalendarClock, FileSpreadsheet, Search, Trash2 } from 'lucide-react'
@@ -170,6 +171,9 @@ export function PstoResultManagerDialog({
     }
   }, [selectedRow, selectedRowId, timeline])
   useEffect(() => {
+    // Search/refetch can temporarily have no rows. Keep the user's cycle
+    // until the next response instead of resetting it to the primary cycle.
+    if (!selectedRow) return
     setSelectedSequence((current) => {
       if (initialRowId === selectedRow?.id && initialSequence && timeline.some((cycle) => cycle.sequence === initialSequence)) {
         return initialSequence
@@ -589,6 +593,7 @@ function CycleStageEditor({
           />
         </label>
       </div>
+      <DocumentConnectionsButton reference={documentReference} />
       {documentReference && (rootCauseFocus === 'date' || dateEditorFocusKey > 0) ? (
         <div className="mt-4">
           <SystemDocumentDateEditor

@@ -10,10 +10,11 @@ const transportFields: Record<string, string> = { chainStates: 'programChainStat
 export const SERVICE_DATE_FIELDS = new Set(['createdAt', 'updatedAt', 'weldingUpdatedAt', 'lnkCreatedAt', 'lnkUpdatedAt', 'pstoCreatedAt', 'pstoUpdatedAt'])
 export const RESTRICTED_WELD_FIELDS = new Set<string>([...WELD_FIELDS.map(field => field.key),
   'preHeatTreatmentControls', 'preHeatTreatmentLnkEnabled', 'pstoRepeatCycles', 'duplicateControls', 'pstoExceptionBasis', 'pvkControlPercent', 'layeredControlAssigned',
-  'activeDispatcherTasks', 'programRepairRequirements', 'programChainState', 'chainContinuation',
+  'controlWorkflowAccess', 'activeDispatcherTasks', 'programRepairRequirements', 'programChainState', 'chainContinuation',
   'jsrDocumentId', 'checklistDocumentId', 'zniDocumentId', 'layeredVikEdgesDocumentId', 'layeredVikLayersDocumentId', 'layeredPvkEdgesDocumentId', 'layeredPvkLayersDocumentId'])
 export function canViewWeldField(identity: AccessIdentity, key: string) {
   if (identity.role !== 'user') return true
+  if (key === 'controlWorkflowAccess') return hasPermission(identity, 'lnk.view') || hasPermission(identity, 'psto.view')
   if (key === 'officiality') return ['welding.view', 'lnk.view', 'psto.view'].some(permission => hasPermission(identity, permission as any))
   if (['finalStatus', 'dispatcherTasks', 'activeDispatcherTasks', 'controlBasisSummary', 'programChainState', 'chainContinuation'].includes(key)) return ['welding.view', 'lnk.view', 'psto.view'].every(permission => identity.permissions.includes(permission as any))
   if (key === 'programRepairRequirements' || key.startsWith('layered')) return hasPermission(identity, 'lnk.view')
@@ -30,16 +31,19 @@ export function canViewWeldField(identity: AccessIdentity, key: string) {
   if (key.startsWith('welding') || ['jsrDocument', 'checklistDocument', 'zniDocument'].includes(key)) return hasPermission(identity, 'welding.view')
   return ['welding.view', 'lnk.view', 'psto.view', 'documents.view', 'lines.view'].some(permission => identity.permissions.includes(permission as any))
 }
-export function redactWeldData<T>(identity: AccessIdentity, value: T): T {
+export function redactWeldData<T>(identity: AccessIdentity, value: T,
+  project?: (source: Record<string, unknown>, result: Record<string, unknown>) => Record<string, unknown>,
+): T {
   if (identity.role !== 'user' || value == null || typeof value !== 'object' || value instanceof Date) return value
-  if (Array.isArray(value)) return value.map(entry => redactWeldData(identity, entry)) as T
+  if (Array.isArray(value)) return value.map(entry => redactWeldData(identity, entry, project)) as T
   if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) return value
   // Compact line-program payloads move these fields outside individual rows.
   // Apply the original field policy before the client restores that metadata.
-  return Object.fromEntries(Object.entries(value).filter(([key]) => {
+  const result = Object.fromEntries(Object.entries(value).filter(([key]) => {
     const field = transportFields[key] ?? key
     return !RESTRICTED_WELD_FIELDS.has(field) || canViewWeldField(identity, field)
   }).map(([key, entry]) => [key, key === 'nullFields' && Array.isArray(entry)
     ? entry.filter(field => typeof field === 'string' && canViewWeldField(identity, field))
-    : redactWeldData(identity, entry)])) as T
+    : redactWeldData(identity, entry, project)]))
+  return (project ? project(value as Record<string, unknown>, result) : result) as T
 }

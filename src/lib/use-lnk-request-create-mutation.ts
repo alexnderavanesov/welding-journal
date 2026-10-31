@@ -41,7 +41,7 @@ export function useLnkRequestCreateMutation({
       useSystemName?: boolean
       documentGroups?: SystemDocumentCreationGroup[]
     }) => {
-      const groups = documentGroups ?? [{
+      const groups: SystemDocumentCreationGroup[] = documentGroups ?? [{
         key: 'legacy',
         label: 'Все выбранные позиции',
         rowIds: records.map((record) => record.id),
@@ -77,6 +77,7 @@ export function useLnkRequestCreateMutation({
                 date: requestDate,
                 fieldKeys: methodKeys,
                 provisionalName: group.name,
+                namingPattern: group.namingPattern,
               })),
         },
       )

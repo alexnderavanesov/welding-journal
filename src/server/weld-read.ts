@@ -332,20 +332,21 @@ export async function listWeldJointSnapshotPage({
 }) {
   const data = normalizeWeldSnapshotPageRequest(input)
   await assertSecurityScope('entry')
-  const db = requireDb()
-  const rows = await db
-    .select(WELD_TABLE_SELECT)
-    .from(weldJoints)
-    .where(data.afterId > 0 ? gt(weldJoints.id, data.afterId) : undefined)
-    .orderBy(asc(weldJoints.id))
-    .limit(data.batchSize)
-  const lastId = rows.length > 0 ? Number(rows[rows.length - 1].id) : data.afterId
+  return requireDb().transaction(async db => {
+    const rows = await db
+      .select(WELD_TABLE_SELECT)
+      .from(weldJoints)
+      .where(data.afterId > 0 ? gt(weldJoints.id, data.afterId) : undefined)
+      .orderBy(asc(weldJoints.id))
+      .limit(data.batchSize)
+    const lastId = rows.length > 0 ? Number(rows[rows.length - 1].id) : data.afterId
 
-  return {
-    rows: compactWeldRowsForTransport(await attachHeatTreatmentControlRelations(rows)),
-    nextAfterId: rows.length === data.batchSize ? lastId : null,
-    hasMore: rows.length === data.batchSize,
-  }
+    return {
+      rows: compactWeldRowsForTransport(await attachHeatTreatmentControlRelations(rows, db)),
+      nextAfterId: rows.length === data.batchSize ? lastId : null,
+      hasMore: rows.length === data.batchSize,
+    }
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
 export async function listWeldReportContextRows({
@@ -357,19 +358,21 @@ export async function listWeldReportContextRows({
     report: input?.report === 'heatTreatment' ? 'heatTreatment' : 'lnk',
   } as const
   await assertSecurityScope('entry')
-  await assertReportOutputWithinLimit(buildReportKindWhere(data.report))
-  const rows = await requireDb()
-    .select(getReportContextSelect(data.report))
-    .from(weldJoints)
-    .where(buildReportKindWhere(data.report))
-    .orderBy(...getReportOrderBy(data.report))
-  const reportRows = applyCurrentSystemWdi(
-    buildServerReportRows(rows as unknown as WeldJoint[], data.report),
-    await loadServerOtherSettings(),
-  )
-  return compactWeldRowsForTransport(
-    await attachHeatTreatmentControlRelations(await attachDuplicateControlsToPage(reportRows)),
-  )
+  return requireDb().transaction(async db => {
+    await assertReportOutputWithinLimit(buildReportKindWhere(data.report), db)
+    const rows = await db
+      .select(getReportContextSelect(data.report))
+      .from(weldJoints)
+      .where(buildReportKindWhere(data.report))
+      .orderBy(...getReportOrderBy(data.report))
+    const reportRows = applyCurrentSystemWdi(
+      buildServerReportRows(rows as unknown as WeldJoint[], data.report),
+      await loadServerOtherSettings(db),
+    )
+    return compactWeldRowsForTransport(
+      await attachHeatTreatmentControlRelations(await attachDuplicateControlsToPage(reportRows, db), db),
+    )
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
 export async function listWeldFinalStatusContextKeys(): Promise<string[]> {
@@ -413,79 +416,82 @@ export async function listWeldJointChain({
   data: { id: number }
 }): Promise<WeldJointChainResult> {
   await assertSecurityScope('entry')
-  const db = requireDb()
-  const [record] = await db
-    .select(WELD_TABLE_RETURNING)
-    .from(weldJoints)
-    .where(eq(weldJoints.id, data.id))
-    .limit(1)
-  if (!record) return { record: null, rows: [], transitions: [], earlyCoilCandidates: [] }
+  // Initialize/schedule the index outside the read-only snapshot.
+  await readDispatcherTaskIndexState()
+  return requireDb().transaction(async db => {
+    const [record] = await db
+      .select(WELD_TABLE_RETURNING)
+      .from(weldJoints)
+      .where(eq(weldJoints.id, data.id))
+      .limit(1)
+    if (!record) return { record: null, rows: [], transitions: [], earlyCoilCandidates: [] }
 
-  const candidates = await db
-    .select(WELD_TABLE_RETURNING)
-    .from(weldJoints)
-    .where(
-      and(
-        normalizedTextEquals(weldJoints.projectTitle, record.projectTitle),
-        normalizedTextEquals(weldJoints.subtitleCode, record.subtitleCode),
-        normalizedTextEquals(weldJoints.line, record.line),
-      ),
+    const candidates = await db
+      .select(WELD_TABLE_RETURNING)
+      .from(weldJoints)
+      .where(
+        and(
+          normalizedTextEquals(weldJoints.projectTitle, record.projectTitle),
+          normalizedTextEquals(weldJoints.subtitleCode, record.subtitleCode),
+          normalizedTextEquals(weldJoints.line, record.line),
+        ),
+      )
+    const otherSettings = await loadServerOtherSettings(db)
+    const [weldRecord] = applyCurrentSystemWdi([record as unknown as WeldRow], otherSettings)
+    const weldCandidates = applyCurrentSystemWdi(candidates as unknown as WeldRow[], otherSettings)
+    const [systemIndexRow] = await db
+      .select({ value: appSettings.value })
+      .from(appSettings)
+      .where(eq(appSettings.key, PROJECT_SETTING_KEYS.systemIndex))
+      .limit(1)
+    const systemIndexSettings = normalizeSystemIndexSettings(
+      parseStoredJson(systemIndexRow?.value) ?? DEFAULT_SYSTEM_INDEX_SETTINGS,
     )
-  const otherSettings = await loadServerOtherSettings()
-  const [weldRecord] = applyCurrentSystemWdi([record as unknown as WeldRow], otherSettings)
-  const weldCandidates = applyCurrentSystemWdi(candidates as unknown as WeldRow[], otherSettings)
-  const [systemIndexRow] = await db
-    .select({ value: appSettings.value })
-    .from(appSettings)
-    .where(eq(appSettings.key, PROJECT_SETTING_KEYS.systemIndex))
-    .limit(1)
-  const systemIndexSettings = normalizeSystemIndexSettings(
-    parseStoredJson(systemIndexRow?.value) ?? DEFAULT_SYSTEM_INDEX_SETTINGS,
-  )
 
-  const chainRows = getJointChainRows(weldCandidates, weldRecord, systemIndexSettings)
-  const hydratedRows = await attachReportPageMetadata(chainRows)
-  const earlyCoilDecisionSourceRowIds = new Set(
-    hydratedRows
-      .filter((row) => row.earlyCoilDecisionAccepted)
-      .map((row) => row.id),
-  )
-  const documentLinks = await db
-    .select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
-    .from(generatedDocumentWeldJoints)
-    .where(buildNumberArrayMatch(
-      generatedDocumentWeldJoints.weldJointId,
-      hydratedRows.map((row) => row.id),
-    ))
-  const documentedRowIds = new Set(documentLinks.map((link) => link.weldJointId))
-  const typedRows = hydratedRows as WeldRow[]
-  const transitions = buildJointCoilTransitions(typedRows, {
-    earlyCoilDecisionSourceRowIds,
-    systemIndexSettings,
-  })
-  const earlyCoilCandidates = typedRows.flatMap((row) => {
-    const evaluation = evaluateEarlyCoilCandidate(typedRows, row, {
-      documentedRowIds,
+    const chainRows = getJointChainRows(weldCandidates, weldRecord, systemIndexSettings)
+    const hydratedRows = await attachReportPageMetadata(chainRows, { db })
+    const earlyCoilDecisionSourceRowIds = new Set(
+      hydratedRows
+        .filter((row) => row.earlyCoilDecisionAccepted)
+        .map((row) => row.id),
+    )
+    const documentLinks = await db
+      .select({ weldJointId: generatedDocumentWeldJoints.weldJointId })
+      .from(generatedDocumentWeldJoints)
+      .where(buildNumberArrayMatch(
+        generatedDocumentWeldJoints.weldJointId,
+        hydratedRows.map((row) => row.id),
+      ))
+    const documentedRowIds = new Set(documentLinks.map((link) => link.weldJointId))
+    const typedRows = hydratedRows as WeldRow[]
+    const transitions = buildJointCoilTransitions(typedRows, {
       earlyCoilDecisionSourceRowIds,
       systemIndexSettings,
     })
-    return evaluation.candidate
-      ? [{
-          replacementJoint: String(evaluation.candidate.replacementRow?.joint ?? '').trim() || null,
-          replacementRowId: evaluation.candidate.replacementRow?.id ?? null,
-          sourceJoint: evaluation.candidate.sourceJoint,
-          sourceRowId: evaluation.candidate.sourceRow.id,
-          targetJoints: evaluation.candidate.targetJoints,
-        }]
-      : []
-  })
+    const earlyCoilCandidates = typedRows.flatMap((row) => {
+      const evaluation = evaluateEarlyCoilCandidate(typedRows, row, {
+        documentedRowIds,
+        earlyCoilDecisionSourceRowIds,
+        systemIndexSettings,
+      })
+      return evaluation.candidate
+        ? [{
+            replacementJoint: String(evaluation.candidate.replacementRow?.joint ?? '').trim() || null,
+            replacementRowId: evaluation.candidate.replacementRow?.id ?? null,
+            sourceJoint: evaluation.candidate.sourceJoint,
+            sourceRowId: evaluation.candidate.sourceRow.id,
+            targetJoints: evaluation.candidate.targetJoints,
+          }]
+        : []
+    })
 
-  return {
-    record: hydratedRows.find((row) => row.id === weldRecord.id) ?? weldRecord,
-    rows: typedRows,
-    transitions,
-    earlyCoilCandidates,
-  }
+    return {
+      record: hydratedRows.find((row) => row.id === weldRecord.id) ?? weldRecord,
+      rows: typedRows,
+      transitions,
+      earlyCoilCandidates,
+    }
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
 export async function getWeldJointById({
@@ -496,29 +502,30 @@ export async function getWeldJointById({
   const data = { id: Math.max(0, Math.floor(Number(input?.id) || 0)) }
   await assertSecurityScope('entry')
   if (!data.id) return null
-  const db = requireDb()
-  const [record] = await db
-    .select(WELD_TABLE_RETURNING)
-    .from(weldJoints)
-    .where(eq(weldJoints.id, data.id))
-    .limit(1)
-  if (!record) return null
-  const [recordWithDuplicateControls] = await attachGeneratedDocumentFields(
-    await attachHeatTreatmentControlRelations(
-      await attachDuplicateControlsToPage(
-        applyCurrentSystemWdi([record], await loadServerOtherSettings()),
-      ),
-    ),
-  )
-  const result = recordWithDuplicateControls as unknown as WeldRow
-  // Only an explicitly opened repair card needs its full ancestor context. Report
-  // pages do not load the same line once per row or query on every field change.
-  const settings = result.programChainState ? undefined : await loadProgramSystemIndexSettings(db)
-  if (result.programChainState?.kind === 'repair' || !result.programChainState && parseRepeatedJointName(String(result.joint ?? ''), settings).segments.length) {
-    const context = await loadProgramRuleContext(db, [result], result.preHeatTreatmentLnkEnabled !== false)
-    result.programRepairRequirements = buildProgramRepairRequirements(context.rows, context.approved, settings).get(result.id) ?? []
-  }
-  return result
+  return requireDb().transaction(async db => {
+    const [record] = await db
+      .select(WELD_TABLE_RETURNING)
+      .from(weldJoints)
+      .where(eq(weldJoints.id, data.id))
+      .limit(1)
+    if (!record) return null
+    const [recordWithDuplicateControls] = await attachGeneratedDocumentFields(
+      await attachHeatTreatmentControlRelations(
+        await attachDuplicateControlsToPage(
+          applyCurrentSystemWdi([record], await loadServerOtherSettings(db)), db,
+        ), db,
+      ), db,
+    )
+    const result = recordWithDuplicateControls as unknown as WeldRow
+    // Only an explicitly opened repair card needs its full ancestor context. Report
+    // pages do not load the same line once per row or query on every field change.
+    const settings = result.programChainState ? undefined : await loadProgramSystemIndexSettings(db)
+    if (result.programChainState?.kind === 'repair' || !result.programChainState && parseRepeatedJointName(String(result.joint ?? ''), settings).segments.length) {
+      const context = await loadProgramRuleContext(db, [result], result.preHeatTreatmentLnkEnabled !== false)
+      result.programRepairRequirements = buildProgramRepairRequirements(context.rows, context.approved, settings).get(result.id) ?? []
+    }
+    return result
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
 export async function listWeldingJournalPage({
@@ -824,7 +831,7 @@ export async function visitReportOutput(
 export async function listReportPage(report: WeldReportKind, data: ReturnType<typeof normalizeWeldPageRequest>): Promise<WeldPageResult> {
   const db = requireDb()
   const includeTotals = data.includeTotals !== false
-  const { dispatcherState, otherSettings } = await getReportReadContext(data, report === 'weldingJournal' && includeTotals)
+  const { otherSettings } = await getReportReadContext(data, report === 'weldingJournal' && includeTotals)
   const where = buildReportQueryWhere(report, data, otherSettings)
   if (data.pageSize === WELD_PAGE_ALL_SIZE) {
     // Legacy contextual/bulk consumers retain their operation guard. Report
@@ -856,10 +863,24 @@ export async function listReportPage(report: WeldReportKind, data: ReturnType<ty
   const total = data.pageSize === WELD_PAGE_ALL_SIZE ? rows.length : countRow ? Number(countRow.total) || 0 : undefined
   // Hydrate the selected page before testing report membership: a historical
   // PSTO row may exist only through its repeat cycles, with no primary fields.
-  const metadataRows = await attachReportPageMetadata(applyCurrentSystemWdi(rows, otherSettings), { dispatcherState })
-  const reportRows = buildServerReportRows(metadataRows, report, { preserveSourceOrder: Boolean(data.sort) })
+  const coherentRows = rows.length ? await db.transaction(async snapshot => {
+    // Cached selection/totals keep their existing path. Reload the bounded cards
+    // and all their relations together; refuse a selection changed in between.
+    const current = await loadWeldRowsByIdsInBatches(snapshot, rows.map(row => row.id))
+    const byId = new Map(current.map(row => [row.id, row]))
+    const selected = rows.map(row => {
+      const stored = byId.get(row.id)
+      if (!stored || stored.rowVersion !== row.rowVersion) throw new Error('Данные отчёта изменились во время отбора. Повторите загрузку.')
+      return stored
+    })
+    const settings = await loadServerOtherSettings(snapshot)
+    if (JSON.stringify(settings) !== JSON.stringify(otherSettings)) throw new Error('Данные отчёта изменились во время отбора. Повторите загрузку.')
+    const metadataRows = await attachReportPageMetadata(applyCurrentSystemWdi(selected, settings), { db: snapshot })
+    const reportRows = buildServerReportRows(metadataRows, report, { preserveSourceOrder: Boolean(data.sort) })
+    return compactWeldRowsForTransport(await attachJournalGroupContext(reportRows, settings, snapshot))
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' }) : []
   return {
-    rows: compactWeldRowsForTransport(await attachJournalGroupContext(reportRows, otherSettings)),
+    rows: coherentRows,
     ...(total === undefined ? {} : { total }),
     ...(availableRequestCount === undefined ? {} : { availableRequestCount }),
     ...(acceptedWdiTotal === undefined ? {} : { acceptedWdiTotal }),
@@ -1184,7 +1205,9 @@ export async function attachReportPageMetadata<Row extends DuplicateControlCarri
 ) {
   const includeJointWorkflowMetadata = options.includeJointWorkflowMetadata ?? true
   const dispatcherState = rows.length > 0 && includeJointWorkflowMetadata
-    ? options.dispatcherState ?? await readDispatcherTaskIndexState()
+    ? options.dispatcherState ?? (options.db
+      ? (await options.db.select().from(dispatcherTaskIndexState).where(eq(dispatcherTaskIndexState.id, 1)).limit(1))[0]
+      : await readDispatcherTaskIndexState())
     : null
   const [
     rowsWithDuplicateControls,
@@ -1312,59 +1335,61 @@ export function buildServerReportRows<Row extends WeldInput & { id: number }>(
 }
 
 export async function loadCurrentFinalStatusRowsContext() {
-  const rows = await requireDb()
-    .select({
-      id: weldJoints.id,
-      projectTitle: weldJoints.projectTitle,
-      subtitleCode: weldJoints.subtitleCode,
-      line: weldJoints.line,
-      joint: weldJoints.joint,
-      officiality: WELD_EFFECTIVE_OFFICIALITY,
-      hasVik: weldJoints.hasVik,
-      hasRk: weldJoints.hasRk,
-      hasUzk: weldJoints.hasUzk,
-      hasPvk: weldJoints.hasPvk,
-      pstoRequired: weldJoints.pstoRequired,
-      pstoResult: weldJoints.pstoResult,
-      pstoDate: weldJoints.pstoDate,
-      heatTreatmentDiagram: weldJoints.heatTreatmentDiagram,
-      tvmtRequest: weldJoints.tvmtRequest,
-      tvmtRequestDate: weldJoints.tvmtRequestDate,
-      tvmtConclusion: weldJoints.tvmtConclusion,
-      tvmtConclusionDate: weldJoints.tvmtConclusionDate,
-      vikResult: weldJoints.vikResult,
-      rkResult: weldJoints.rkResult,
-      uzkResult: weldJoints.uzkResult,
-      pvkResult: weldJoints.pvkResult,
-      tvmtResult: weldJoints.tvmtResult,
-      rejectedDuplicateMethod: sql<string | null>`(
-        select ${duplicateControls.method}
-        from ${duplicateControls}
-        where ${duplicateControls.weldJointId} = ${weldJoints.id}
-          and ${duplicateControls.result} in ('ремонт', 'вырез')
-        order by ${duplicateControls.id}
-        limit 1
-      )`,
-    })
-    .from(weldJoints)
-    .where(eq(WELD_EFFECTIVE_OFFICIALITY, 'неофициальный'))
-  const rowsWithDuplicates = rows.map(({ rejectedDuplicateMethod, ...row }) => rejectedDuplicateMethod
-    ? {
-        ...row,
-        duplicateControls: [{
-          id: 0,
-          weldJointId: row.id,
-          method: rejectedDuplicateMethod as DuplicateControlRecord['method'],
-          result: 'ремонт' as const,
-          controlDate: '',
-          conclusion: '',
-          conclusionDate: '',
-        }],
-      }
-    : row) as WeldRow[]
-  return buildFinalStatusRowsContext(
-    await attachHeatTreatmentControlRelations(rowsWithDuplicates),
-  )
+  return requireDb().transaction(async db => {
+    const rows = await db
+      .select({
+        id: weldJoints.id,
+        projectTitle: weldJoints.projectTitle,
+        subtitleCode: weldJoints.subtitleCode,
+        line: weldJoints.line,
+        joint: weldJoints.joint,
+        officiality: WELD_EFFECTIVE_OFFICIALITY,
+        hasVik: weldJoints.hasVik,
+        hasRk: weldJoints.hasRk,
+        hasUzk: weldJoints.hasUzk,
+        hasPvk: weldJoints.hasPvk,
+        pstoRequired: weldJoints.pstoRequired,
+        pstoResult: weldJoints.pstoResult,
+        pstoDate: weldJoints.pstoDate,
+        heatTreatmentDiagram: weldJoints.heatTreatmentDiagram,
+        tvmtRequest: weldJoints.tvmtRequest,
+        tvmtRequestDate: weldJoints.tvmtRequestDate,
+        tvmtConclusion: weldJoints.tvmtConclusion,
+        tvmtConclusionDate: weldJoints.tvmtConclusionDate,
+        vikResult: weldJoints.vikResult,
+        rkResult: weldJoints.rkResult,
+        uzkResult: weldJoints.uzkResult,
+        pvkResult: weldJoints.pvkResult,
+        tvmtResult: weldJoints.tvmtResult,
+        rejectedDuplicateMethod: sql<string | null>`(
+          select ${duplicateControls.method}
+          from ${duplicateControls}
+          where ${duplicateControls.weldJointId} = ${weldJoints.id}
+            and ${duplicateControls.result} in ('ремонт', 'вырез')
+          order by ${duplicateControls.id}
+          limit 1
+        )`,
+      })
+      .from(weldJoints)
+      .where(eq(WELD_EFFECTIVE_OFFICIALITY, 'неофициальный'))
+    const rowsWithDuplicates = rows.map(({ rejectedDuplicateMethod, ...row }) => rejectedDuplicateMethod
+      ? {
+          ...row,
+          duplicateControls: [{
+            id: 0,
+            weldJointId: row.id,
+            method: rejectedDuplicateMethod as DuplicateControlRecord['method'],
+            result: 'ремонт' as const,
+            controlDate: '',
+            conclusion: '',
+            conclusionDate: '',
+          }],
+        }
+      : row) as WeldRow[]
+    return buildFinalStatusRowsContext(
+      await attachHeatTreatmentControlRelations(rowsWithDuplicates, db),
+    )
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
 export async function listWeldJointRowsByIds({
@@ -1377,19 +1402,20 @@ export async function listWeldJointRowsByIds({
   }
   await assertSecurityScope('entry')
   if (data.ids.length === 0) return []
-  const db = requireDb()
-  const rows = await loadWeldRowsByIdsInBatches(db, data.ids)
-  const orderById = new Map(data.ids.map((id, index) => [id, index]))
-  rows.sort((left, right) => (orderById.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (orderById.get(right.id) ?? Number.MAX_SAFE_INTEGER))
-  return compactWeldRowsForTransport(
-    await attachGeneratedDocumentFields(
-      await attachHeatTreatmentControlRelations(
-        await attachDuplicateControlsToPage(
-          applyCurrentSystemWdi(rows, await loadServerOtherSettings()),
-        ),
+  return requireDb().transaction(async db => {
+    const rows = await loadWeldRowsByIdsInBatches(db, data.ids)
+    const orderById = new Map(data.ids.map((id, index) => [id, index]))
+    rows.sort((left, right) => (orderById.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (orderById.get(right.id) ?? Number.MAX_SAFE_INTEGER))
+    return compactWeldRowsForTransport(
+      await attachGeneratedDocumentFields(
+        await attachHeatTreatmentControlRelations(
+          await attachDuplicateControlsToPage(
+            applyCurrentSystemWdi(rows, await loadServerOtherSettings(db)), db,
+          ), db,
+        ), db,
       ),
-    ),
-  )
+    )
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
 export async function loadWeldRowsByIdsInBatches(

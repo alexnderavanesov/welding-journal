@@ -1,3 +1,4 @@
+import { isTopModalDialog } from '@/lib/modal-layer'
 import { useEffect, useRef, useState } from 'react'
 import { downloadBlob } from '@/lib/generated-document-storage'
 import { readHistoryDocumentWorkbook, type HistoryDocumentWorkbook } from '@/lib/history-document-preview'
@@ -12,7 +13,6 @@ export function HistoryDocumentPreview({ request, onClose }: { request: HistoryD
   const [snapshot, setSnapshot] = useState<PreviewSnapshot | null>(null)
   const [error, setError] = useState(''), [attempt, setAttempt] = useState(0)
   const pending = useRef<{ request: HistoryDocumentPreviewRequest; attempt: number; promise: Promise<PreviewSnapshot> } | null>(null)
-  const close = useRef(onClose); close.current = onClose
   const downloadButton = useRef<HTMLButtonElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null), panel = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -31,10 +31,8 @@ export function HistoryDocumentPreview({ request, onClose }: { request: HistoryD
     const previous = document.activeElement as HTMLElement | null
     closeButton.current?.focus({ preventScroll: true })
     const keydown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (document.querySelector('[data-select-listbox]')) return
-        event.preventDefault(); event.stopImmediatePropagation(); close.current()
-      } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
+      if (event.defaultPrevented || !isTopModalDialog(panel.current)) return
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
         event.preventDefault(); event.stopImmediatePropagation(); downloadButton.current?.focus()
       } else if (event.key === 'Tab') {
         const targets = panel.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), iframe, [tabindex="0"]')
@@ -48,7 +46,7 @@ export function HistoryDocumentPreview({ request, onClose }: { request: HistoryD
     document.addEventListener('keydown', keydown, true)
     return () => { document.removeEventListener('keydown', keydown, true); previous?.focus({ preventScroll: true }) }
   }, [])
-  return <LargeDialogShell ariaLabel="Предпросмотр документа" maxWidthClassName="max-w-[1440px]" panelClassName="h-[92vh] md:w-[92vw]">
+  return <LargeDialogShell onEscape={onClose} overlayClassName="z-[180] bg-slate-950/30" ariaLabel="Предпросмотр документа" maxWidthClassName="max-w-[1440px]" panelClassName="h-[92vh] md:w-[92vw]">
     <div ref={panel} className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-200 px-4 py-3">
         <div className="min-w-0 flex-[1_1_240px]"><h2 className="text-xs font-medium text-slate-500">Предпросмотр документа</h2><p className="truncate text-sm font-semibold text-slate-800" title={request.title}>{request.title}</p><p className="text-xs text-slate-500">Для печати скачайте Excel и откройте его на компьютере.</p></div>

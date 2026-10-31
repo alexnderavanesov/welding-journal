@@ -110,7 +110,11 @@ const transitions: Array<{
     expectedRequest: { unit: 'joints' }, expectedMeta: ['Единица', 'стыки'] },
   { name: 'project scope', change: () => fireEvent.change(screen.getByRole('combobox', { name: 'Проект' }), { target: { value: 'project a' } }),
     expectedRequest: { projectFilter: 'project a' }, expectedMeta: ['Срез', 'проект Project A'] },
-  { name: 'subtitle scope', change: () => fireEvent.click(screen.getByRole('button', { name: 'Sub A' })),
+  { name: 'subtitle scope', change: () => {
+    fireEvent.click(screen.getByRole('button', { name: /Шифр\/подтитул/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Sub A' }))
+    fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Найти шифр' }), { key: 'Escape' })
+  },
     expectedRequest: { selectedSubtitles: ['sub a'] }, expectedMeta: ['Срез', 'шифры Sub A'] },
   { name: 'period start', change: () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Период отчета' }), { target: { value: 'custom' } })

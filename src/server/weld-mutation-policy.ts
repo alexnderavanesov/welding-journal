@@ -9,6 +9,7 @@ import {
 } from '@/lib/report-config'
 import {
   WELD_FIELDS,
+  isVirtualWeldField,
   type WeldFieldKey,
 } from '@/lib/weld-fields'
 import { secondaryWeldFormFieldKeys } from '@/lib/weld-form-field-sets'
@@ -104,6 +105,7 @@ for (const fieldKey of secondaryWeldFormFieldKeys) {
 }
 
 export const WELDING_PROFILE_FIELD_KEYS = WELD_FIELDS
+  .filter((field) => !isVirtualWeldField(field))
   .map((field) => field.key)
   .filter((fieldKey): fieldKey is WeldFieldKey =>
     !SYSTEM_FIELD_KEYS.has(fieldKey) &&

@@ -1,3 +1,4 @@
+import { formatValidationMessage, type ValidationMessageFormatter } from './validation-message'
 import { formatDisplayDate, getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import { assertDocumentRequisites } from '@/lib/document-requisites'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -92,12 +93,14 @@ export function buildPreHeatTreatmentRequestWrites({
   requestName,
   requestDate,
   saveCheckSettings = loadSaveCheckSettings(),
+  formatMessage,
 }: {
   row: WeldRow
   methodCodes: string[]
   requestName: string
   requestDate: string
   saveCheckSettings?: SaveCheckSettings
+  formatMessage?: ValidationMessageFormatter
 }): PreHeatTreatmentControlWrite[] {
   const name = requestName.trim()
   if (!name) throw new Error('Укажите наименование заявки НК до ТО.')
@@ -107,8 +110,8 @@ export function buildPreHeatTreatmentRequestWrites({
     .find(Boolean)
   if (methodBlockReason) throw new Error(`Стык ${formatJoint(row)}: ${methodBlockReason}`)
   if (saveCheckSettings.lnkResultRequestDateOrder) {
-    assertNotBeforeWeld(row, date, 'Дата заявки НК до ТО')
-    assertNotAfterPsto(row, date, 'Дата заявки НК до ТО')
+    assertNotBeforeWeld(row, date, 'Дата заявки НК до ТО', formatMessage)
+    assertNotAfterPsto(row, date, 'Дата заявки НК до ТО', formatMessage)
   }
 
   const methods = [...new Set(methodCodes.map(normalizeMethodCode))]
@@ -142,6 +145,7 @@ export function buildPreHeatTreatmentResultWrite({
   rkExposureConfirmedDiameter,
   rkExposureTable = null,
   saveCheckSettings = loadSaveCheckSettings(),
+  formatMessage,
   systemIndexSettings = loadSystemIndexSettings(),
 }: {
   row: WeldRow
@@ -153,6 +157,7 @@ export function buildPreHeatTreatmentResultWrite({
   rkExposureConfirmedDiameter?: number | null
   rkExposureTable?: RkExposureTableSettings | null
   saveCheckSettings?: SaveCheckSettings
+  formatMessage?: ValidationMessageFormatter
   systemIndexSettings?: SystemIndexSettings
 }): PreHeatTreatmentControlWrite {
   const methodCode = normalizeMethodCode(rawMethodCode)
@@ -165,7 +170,7 @@ export function buildPreHeatTreatmentResultWrite({
   if (!current) throw new Error(`Стык ${formatJoint(row)}: позиция НК до ТО не найдена.`)
   assertDocumentRequisites({ name: conclusionName, date: controlDate, nameLabel: 'наименование заключения НК до ТО', dateLabel: 'Дата контроля НК до ТО' })
   const date = parseDateLikeToIso(controlDate)!
-  validatePreHeatTreatmentResultDate(row, current, methodCode, date, saveCheckSettings)
+  validatePreHeatTreatmentResultDate(row, current, methodCode, date, saveCheckSettings, formatMessage)
 
   const normalizedResult = text(result).toLocaleLowerCase('ru-RU')
   assertUnofficialLnkGoodResultAllowed(row, normalizedResult, current.result, `${methodCode} до ТО`)
@@ -205,7 +210,7 @@ export function buildPreHeatTreatmentResultWrite({
       ? { rkExposureConfirmedDiameter: exposureRecord?.rkExposureConfirmedDiameter ?? null }
       : {}),
   }
-  assertResultWriteChronology(row, write, saveCheckSettings)
+  assertResultWriteChronology(row, write, saveCheckSettings, formatMessage)
   return write
 }
 
@@ -217,6 +222,7 @@ export function buildPreHeatTreatmentResultCorrectionWrite({
   conclusionName,
   rkExposureTable = null,
   saveCheckSettings = loadSaveCheckSettings(),
+  formatMessage,
   systemIndexSettings = loadSystemIndexSettings(),
 }: {
   row: WeldRow
@@ -226,6 +232,7 @@ export function buildPreHeatTreatmentResultCorrectionWrite({
   conclusionName: string
   rkExposureTable?: RkExposureTableSettings | null
   saveCheckSettings?: SaveCheckSettings
+  formatMessage?: ValidationMessageFormatter
   systemIndexSettings?: SystemIndexSettings
 }): PreHeatTreatmentControlWrite {
   const methodCode = normalizeMethodCode(control.method)
@@ -234,7 +241,7 @@ export function buildPreHeatTreatmentResultCorrectionWrite({
 
   assertDocumentRequisites({ name: conclusionName, date: controlDate, nameLabel: 'наименование заключения НК до ТО', dateLabel: 'Дата контроля НК до ТО' })
   const date = parseDateLikeToIso(controlDate)!
-  validatePreHeatTreatmentResultDate(row, control, methodCode, date, saveCheckSettings)
+  validatePreHeatTreatmentResultDate(row, control, methodCode, date, saveCheckSettings, formatMessage)
 
   const normalizedResult = text(result).toLocaleLowerCase('ru-RU')
   const currentResult = text(control.result).toLocaleLowerCase('ru-RU')
@@ -289,15 +296,15 @@ export function buildPreHeatTreatmentResultCorrectionWrite({
           }),
         }),
   }
-  assertResultWriteChronology(row, write, saveCheckSettings)
+  assertResultWriteChronology(row, write, saveCheckSettings, formatMessage)
   return write
 }
 
-function assertResultWriteChronology(row: WeldRow, write: PreHeatTreatmentControlWrite, settings: SaveCheckSettings) {
+function assertResultWriteChronology(row: WeldRow, write: PreHeatTreatmentControlWrite, settings: SaveCheckSettings, formatMessage?: ValidationMessageFormatter) {
   const finalRow = { ...row, preHeatTreatmentControls: (row.preHeatTreatmentControls ?? []).map(control =>
     control.method === write.method ? { ...control, ...write } : control) }
   assertUnofficialLastRejectionRetained(finalRow, row)
-  assertNoNewLnkChronologyIssues([finalRow], [row], settings)
+  assertNoNewLnkChronologyIssues([finalRow], [row], settings, { formatValidationMessage: formatMessage })
 }
 
 export function buildPreHeatTreatmentRequestCorrectionWrite({
@@ -306,12 +313,14 @@ export function buildPreHeatTreatmentRequestCorrectionWrite({
   requestName,
   requestDate,
   saveCheckSettings = loadSaveCheckSettings(),
+  formatMessage,
 }: {
   row: WeldRow
   control: PreHeatTreatmentControlRecord
   requestName: string
   requestDate: string
   saveCheckSettings?: SaveCheckSettings
+  formatMessage?: ValidationMessageFormatter
 }): PreHeatTreatmentControlWrite {
   const methodCode = normalizeMethodCode(control.method)
   if (!isPreHeatTreatmentLnkMethodCode(methodCode)) throw new Error('Вид НК до ТО не определен.')
@@ -323,13 +332,13 @@ export function buildPreHeatTreatmentRequestCorrectionWrite({
     if (historicalReason) throw new Error(`Стык ${formatJoint(row)}: ${historicalReason}`)
   }
   if (saveCheckSettings.lnkResultRequestDateOrder) {
-    assertNotBeforeWeld(row, date, 'Дата заявки НК до ТО')
+    assertNotBeforeWeld(row, date, 'Дата заявки НК до ТО', formatMessage)
     assertNotBefore(
       parseDateLikeToIso(control.conclusionDate) ?? date,
       date,
       `Стык ${formatJoint(row)}: дата заявки НК до ТО (${formatDisplayDate(date)}) не может быть позже даты контроля (${formatDisplayDate(parseDateLikeToIso(control.conclusionDate))}).`,
     )
-    assertNotAfterPsto(row, date, 'Дата заявки НК до ТО')
+    assertNotAfterPsto(row, date, 'Дата заявки НК до ТО', formatMessage)
   }
   return {
     ...control,
@@ -428,34 +437,37 @@ function validatePreHeatTreatmentResultDate(
   methodCode: PreHeatTreatmentLnkMethodCode,
   date: string,
   settings: SaveCheckSettings,
+  formatMessage?: ValidationMessageFormatter,
 ) {
   if (!date) return
   assertDocumentRequisites({ name: control.requestName, date: control.requestDate,
     nameLabel: 'наименование заявки НК до ТО', dateLabel: 'Дата заявки НК до ТО' })
-  if (settings.lnkResultDateAfterWeldDate) assertNotBeforeWeld(row, date, 'Дата НК до ТО')
+  if (settings.lnkResultDateAfterWeldDate) assertNotBeforeWeld(row, date, 'Дата НК до ТО', formatMessage)
   if (settings.lnkResultRequestDateOrder) {
     assertNotBefore(
       date,
       control.requestDate,
       `Стык ${formatJoint(row)}: дата НК до ТО (${formatDisplayDate(date)}) не может быть раньше даты заявки (${formatDisplayDate(parseDateLikeToIso(control.requestDate))}).`,
     )
-    assertNotAfterPsto(row, date, 'Дата НК до ТО')
+    assertNotAfterPsto(row, date, 'Дата НК до ТО', formatMessage)
   }
   assertPreHeatTreatmentVikOrder(row, methodCode, date, settings)
 }
 
-function assertNotBeforeWeld(row: WeldRow, date: string, label: string) {
+function assertNotBeforeWeld(row: WeldRow, date: string, label: string, format?: ValidationMessageFormatter) {
   assertNotBefore(
     date,
     row.weldDate,
-    `Стык ${formatJoint(row)}: ${label.charAt(0).toLowerCase() + label.slice(1)} (${formatDisplayDate(date)}) не может быть раньше даты сварки (${formatDisplayDate(parseDateLikeToIso(row.weldDate))}).`,
+    formatValidationMessage({ fields: ['weldDate'], publicMessage: `Стык ${formatJoint(row)}: ${label} не может быть раньше даты сварки.`,
+      message: `Стык ${formatJoint(row)}: ${label.charAt(0).toLowerCase() + label.slice(1)} (${formatDisplayDate(date)}) не может быть раньше даты сварки (${formatDisplayDate(parseDateLikeToIso(row.weldDate))}).` }, format),
   )
 }
 
-function assertNotAfterPsto(row: WeldRow, date: string, label: string) {
+function assertNotAfterPsto(row: WeldRow, date: string, label: string, format?: ValidationMessageFormatter) {
   const pstoDate = parseDateLikeToIso(row.pstoDate)
   if (pstoDate && date > pstoDate) {
-    throw new Error(`Стык ${formatJoint(row)}: ${label.charAt(0).toLowerCase() + label.slice(1)} (${formatDisplayDate(date)}) не может быть позже даты ПСТО (${formatDisplayDate(pstoDate)}).`)
+    throw new Error(formatValidationMessage({ fields: ['pstoDate'], publicMessage: `Стык ${formatJoint(row)}: ${label} не может быть позже даты ПСТО.`,
+      message: `Стык ${formatJoint(row)}: ${label.charAt(0).toLowerCase() + label.slice(1)} (${formatDisplayDate(date)}) не может быть позже даты ПСТО (${formatDisplayDate(pstoDate)}).` }, format))
   }
 }
 

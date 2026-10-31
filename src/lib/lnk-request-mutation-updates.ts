@@ -1,3 +1,4 @@
+import type { ValidationMessageFormatter } from './validation-message'
 import { LNK_METHODS } from '@/lib/report-config'
 import { getDateInputValidationReason, normalizeDateLikeForStorage } from '@/lib/date-format'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
@@ -154,12 +155,14 @@ export function buildLnkRequestManagerRows({
   requestDate,
   nextRequestName,
   action,
+  formatMessage,
 }: {
   records: RowWithId[]
   requestName: string
   requestDate: string
   nextRequestName: string
   action: LnkRequestManagerAction
+  formatMessage?: ValidationMessageFormatter
 }) {
   if (action === 'delete') {
     for (const record of records) {
@@ -196,7 +199,7 @@ export function buildLnkRequestManagerRows({
     return changed ? [withTouchedLnkFinalStatus(nextRecord)] : []
   })
   if (action === 'rename') {
-    assertNoNewLnkChronologyIssues(proposedRecords, records, loadSaveCheckSettings())
+    assertNoNewLnkChronologyIssues(proposedRecords, records, loadSaveCheckSettings(), { formatValidationMessage: formatMessage })
   }
   return proposedRecords
 }

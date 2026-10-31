@@ -6,7 +6,7 @@ import { escapeRegExp } from '@/lib/string-utils'
 import type { WeldInput } from '@/lib/weld-fields'
 import {
   getPrimaryPstoStartBlockReason,
-  getRejectedPreHeatTreatmentControls,
+  getRejectedPreHeatTreatmentMethodCodes,
 } from '@/lib/lnk-control-stage'
 import {
   canCreateRepeatPstoCycle,
@@ -17,7 +17,7 @@ import {
 
 export function getPstoRequestBlockReason(row: WeldInput) {
   if (!isYesText(row.pstoRequired)) return 'ПСТО не назначена.'
-  if (getRejectedPreHeatTreatmentControls(row).length > 0) {
+  if (getRejectedPreHeatTreatmentMethodCodes(row).length > 0) {
     return getPrimaryPstoStartBlockReason(row)
   }
   const requestName = String(row.pstoRequest ?? '').trim()
@@ -30,7 +30,7 @@ export function canCreatePstoRequest(row: WeldInput) {
 }
 
 export function getPstoWorkflowRequestBlockReason(row: WeldInput) {
-  if (getRejectedPreHeatTreatmentControls(row).length > 0) {
+  if (getRejectedPreHeatTreatmentMethodCodes(row).length > 0) {
     return getPrimaryPstoStartBlockReason(row)
   }
   if (canCreatePstoRequest(row) || canCreateRepeatPstoCycle(row)) return ''
@@ -59,7 +59,7 @@ export function canCreatePstoWorkflowRequest(row: WeldInput) {
 }
 
 export function getPstoWorkflowResultBlockReason(row: WeldInput) {
-  if (getRejectedPreHeatTreatmentControls(row).length > 0) {
+  if (getRejectedPreHeatTreatmentMethodCodes(row).length > 0) {
     return getPrimaryPstoStartBlockReason(row)
   }
   const state = getPstoTvmtWorkflowState(row)

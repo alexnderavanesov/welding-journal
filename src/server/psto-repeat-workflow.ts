@@ -1,3 +1,5 @@
+import { beginDocumentSaveReceipt, finishDocumentSaveReceipt } from './document-save-receipt'
+import { formatAccessValidationMessage } from './access-validation-message'
 import { assertCreationGrouping, normalizeDocumentGroupingCommand, type DocumentGroupingCommand } from '@/lib/document-grouping-command'
 import { captureCorrectedDocumentSpecialists, restoreCorrectedDocumentSpecialists } from './document-specialist-corrections'
 import { getDocumentRequisiteErrors } from '@/lib/document-requisites'
@@ -94,6 +96,7 @@ export type PstoRepeatWorkflowGroup = {
   rowIds: number[]
   name: string
   useSystemName?: boolean
+  namingPattern?: string
 }
 
 export type PstoRepeatWorkflowPayload = {
@@ -112,6 +115,7 @@ export const savePstoRepeatWorkflow = createServerFn({ method: 'POST' })
     const db = requireDb()
     await prepareDocumentCreationIndex(data.documentGrouping)
     return db.transaction(async (tx) => {
+      const receipt = await beginDocumentSaveReceipt(tx, data)
       await loadControlProcessSettingsFromTransaction(tx)
       const { saveCheckSettings } = await loadWeldWorkflowSettingsFromTransaction(tx)
       const documentGrouping = await lockDocumentGroupingPreference(tx, data.documentGrouping)
@@ -121,7 +125,7 @@ export const savePstoRepeatWorkflow = createServerFn({ method: 'POST' })
       const rowIds = [...new Set(data.groups.flatMap((group) => group.rowIds))]
       const sequenceRequests = data.groups.map((group) => (
         group.useSystemName
-          ? getSequenceRequest(data.action, data.date, group.name)
+          ? { ...getSequenceRequest(data.action, data.date, group.name), ...(group.namingPattern !== undefined ? { namingPattern: group.namingPattern } : {}) }
           : null
       ))
       const sequenceIds = [...new Set(sequenceRequests
@@ -210,6 +214,7 @@ export const savePstoRepeatWorkflow = createServerFn({ method: 'POST' })
       await markDispatcherTaskIndexDirty(tx, {
         scopes: getDispatcherDirtyScopes(updatedRows, new Map()),
       })
+      await finishDocumentSaveReceipt(tx, receipt, resolvedGroups.map(group => ({ type: data.action === 'pstoRequest' ? 'pstoRequest' : data.action === 'pstoResult' ? 'pstoConclusion' : data.action === 'tvmtRequest' ? 'lnkRequest' : 'lnkConclusion', title: group.name, date: data.date, ...(data.action.startsWith('tvmt') ? { methodCode: 'ТВМТ' } : {}), sourceKind: 'pstoCycle' })))
       return updatedRows
     })
   })
@@ -257,7 +262,7 @@ export const correctPstoCycleStage = createServerFn({ method: 'POST' })
         await attachHeatTreatmentControlRelations([storedRow as WeldRow], tx),
         tx,
       )
-      const correction = applyPstoCycleCorrection(currentRow, data, saveCheckSettings)
+      const correction = applyPstoCycleCorrection(currentRow, data, saveCheckSettings, formatAccessValidationMessage)
       const sourceRelationId = data.sequence === 1
         ? data.rowId
         : correction.repeatCycle?.id ?? correction.deletedRepeatCycleId
@@ -359,7 +364,7 @@ export const correctPstoTvmtAndRemoveLaterCycles = createServerFn({ method: 'POS
         await attachHeatTreatmentControlRelations([storedRow as WeldRow], tx),
         tx,
       )
-      const correction = applyPstoTvmtCorrectionWithLaterCycleRemoval(currentRow, data, saveCheckSettings)
+      const correction = applyPstoTvmtCorrectionWithLaterCycleRemoval(currentRow, data, saveCheckSettings, formatAccessValidationMessage)
       const currentRelationId = data.sequence === 1
         ? data.rowId
         : correction.repeatCycle?.id
@@ -508,6 +513,7 @@ export function normalizePstoCycleWorkflowPayload(
       .filter((rowId) => Number.isInteger(rowId) && rowId > 0))],
     name: String(group?.name ?? '').trim(),
     useSystemName: Boolean(group?.useSystemName),
+    ...(typeof group?.namingPattern === 'string' ? { namingPattern: group.namingPattern } : {}),
   })).filter((group) => group.rowIds.length > 0)
   if (groups.length === 0) throw new Error('Выберите хотя бы один стык.')
   const requisiteErrors = [...new Set(groups.flatMap(group => getDocumentRequisiteErrors({
@@ -571,7 +577,7 @@ export function buildWorkflowWrite({
   }
   if (action === 'pstoRequest') {
     assertCurrentWorkflowStage(row, currentCycle?.source, workflowState, 'primary', 'waiting-psto-request')
-    const [updatedRow] = buildPstoRequestRows({
+    const [updatedRow] = buildPstoRequestRows({ formatMessage: formatAccessValidationMessage,
       records: [row],
       requestName: name,
       requestDate: date,
@@ -584,7 +590,7 @@ export function buildWorkflowWrite({
   }
   if (action === 'pstoResult' && currentCycle?.source === 'primary') {
     assertCurrentWorkflowStage(row, currentCycle.source, workflowState, 'primary', 'waiting-psto')
-    const [updatedRow] = buildPstoResultRows({
+    const [updatedRow] = buildPstoResultRows({ formatMessage: formatAccessValidationMessage,
       records: [row],
       pstoDate: date,
       result: 'проведено',
@@ -605,7 +611,7 @@ export function buildWorkflowWrite({
           requestDate: date,
           saveCheckSettings,
         })
-      : buildPrimaryTvmtResultRows({
+      : buildPrimaryTvmtResultRows({ formatMessage: formatAccessValidationMessage,
           records: [row],
           controlDate: date,
           result,
@@ -617,7 +623,7 @@ export function buildWorkflowWrite({
   if (action === 'pstoResult') {
     return {
       source: 'repeat' as const,
-      cycle: buildRepeatPstoResultCycle({
+      cycle: buildRepeatPstoResultCycle({ formatMessage: formatAccessValidationMessage,
         row,
         pstoDate: date,
         diagramName: name,
@@ -638,7 +644,7 @@ export function buildWorkflowWrite({
   }
   return {
     source: 'repeat' as const,
-    cycle: buildRepeatTvmtResultCycle({
+    cycle: buildRepeatTvmtResultCycle({ formatMessage: formatAccessValidationMessage,
       row,
       controlDate: date,
       result,

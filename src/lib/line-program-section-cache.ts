@@ -45,3 +45,11 @@ export async function updateLineProgramSectionCaches(
     })
   }
 }
+
+/** Remove a deleted row immediately; refresh totals and page membership from the server. */
+export async function removeLineProgramSectionCaches(client: QueryClient, id: number) {
+  await client.cancelQueries({ queryKey: ['line-program'] })
+  client.setQueriesData<LineSnapshot>(listQueries, previous => previous ? { ...previous, rows: previous.rows.filter(row => row.id !== id) } : previous)
+  client.removeQueries({ queryKey: ['line-program'], predicate: query => !listQueries.predicate(query) && query.queryKey[2] === id })
+  void client.invalidateQueries({ ...listQueries, refetchType: 'active' })
+}

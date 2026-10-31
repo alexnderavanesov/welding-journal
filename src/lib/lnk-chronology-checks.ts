@@ -1,3 +1,4 @@
+import { formatLnkChronologyMessage, type ValidationMessageFormatter } from './validation-message'
 import type { WeldInput } from '@/lib/weld-fields'
 import { getUnofficialLastRejectionRemovalReason } from './unofficial-lnk-result-guard'
 import { getLnkChronologyRuleCode } from './chronology-rule-code'
@@ -345,22 +346,22 @@ export function findFirstLnkChronologyIssue(rows: WeldInput[], settings: SaveChe
 export function findFirstLnkChronologySaveBlockReason(
   rows: WeldInput[],
   settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
-  options: { ignoredKinds?: ReadonlySet<LnkChronologyIssueKind> } = {},
+  options: { ignoredKinds?: ReadonlySet<LnkChronologyIssueKind>; formatValidationMessage?: ValidationMessageFormatter } = {},
 ) {
   const issue = getLnkChronologyIssues(rows, settings)
     .find((candidate) => !options.ignoredKinds?.has(candidate.kind))
-  return issue ? formatLnkChronologyIssueSaveBlockReason(issue) : ''
+  return issue ? formatLnkChronologyIssueSaveBlockReason(issue, options.formatValidationMessage) : ''
 }
 
 export function findFirstNewLnkChronologySaveBlockReason(
   rows: WeldInput[],
   previousRows: WeldInput[],
   settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
-  options: { ignoredKinds?: ReadonlySet<LnkChronologyIssueKind> } = {},
+  options: { ignoredKinds?: ReadonlySet<LnkChronologyIssueKind>; formatValidationMessage?: ValidationMessageFormatter } = {},
 ) {
   const issue = getNewLnkChronologyIssues(rows, previousRows, settings)
     .find(candidate => !options.ignoredKinds?.has(candidate.kind))
-  return issue ? formatLnkChronologyIssueSaveBlockReason(issue) : ''
+  return issue ? formatLnkChronologyIssueSaveBlockReason(issue, options.formatValidationMessage) : ''
 }
 
 export function getNewLnkChronologyIssues(rows: WeldInput[], previousRows: WeldInput[], settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS) {
@@ -378,11 +379,11 @@ export function getNewLnkChronologyIssues(rows: WeldInput[], previousRows: WeldI
 export function assertNoLnkChronologyIssues(
   rows: WeldInput[],
   settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
-  options: { ignoredKinds?: ReadonlySet<LnkChronologyIssueKind> } = {},
+  options: { ignoredKinds?: ReadonlySet<LnkChronologyIssueKind>; formatValidationMessage?: ValidationMessageFormatter } = {},
 ) {
   const issue = getLnkChronologyIssues(rows, settings)
     .find((candidate) => !options.ignoredKinds?.has(candidate.kind))
-  const reason = issue ? formatLnkChronologyIssueSaveBlockReason(issue) : ''
+  const reason = issue ? formatLnkChronologyIssueSaveBlockReason(issue, options.formatValidationMessage) : ''
   if (reason) throw new Error(reason)
 }
 
@@ -390,7 +391,7 @@ export function assertNoNewLnkChronologyIssues(
   rows: WeldInput[],
   previousRows: WeldInput[],
   settings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
-  options: { ignoredKinds?: ReadonlySet<LnkChronologyIssueKind> } = {},
+  options: { ignoredKinds?: ReadonlySet<LnkChronologyIssueKind>; formatValidationMessage?: ValidationMessageFormatter } = {},
 ) {
   const issue = findFirstNewLnkChronologySaveBlockReason(rows, previousRows, settings, options)
   if (issue) throw new Error(issue)
@@ -415,9 +416,10 @@ export function getLnkResultRemovalBlockReason(
   return `Результат ${method.code} нельзя удалить, пока сохранены результаты следующих видов НК: ${dependentMethods.join(', ')}. Сначала удалите их результаты.`
 }
 
-function formatLnkChronologyIssueSaveBlockReason(issue: LnkChronologyIssue) {
+function formatLnkChronologyIssueSaveBlockReason(issue: LnkChronologyIssue, format?: ValidationMessageFormatter) {
+  const message = formatLnkChronologyMessage(issue, format)
   const code = getLnkChronologyRuleCode(issue.kind)
-  return issue.kind.endsWith('-invalid') || !code ? issue.message : `${code} · ${issue.message}`
+  return issue.kind.endsWith('-invalid') || !code ? message : `${code} · ${message}`
 }
 
 export function getLnkChronologyIssueIdentity(issue: LnkChronologyIssue) {

@@ -1,3 +1,4 @@
+import { formatAccessValidationMessage } from './access-validation-message'
 import { getControlAssignmentRemovalReason } from '@/lib/control-assignment-history'
 import { getLnkResultRemovalBlockReason } from '@/lib/lnk-chronology-checks'
 import { getDocumentRequisiteErrors } from '@/lib/document-requisites'
@@ -506,6 +507,7 @@ export function validateServerWeldRecords({
       { ...previous, programChainState: previous ? trustedChainStates.get(previous.id) : undefined } as WeldInput,
       context.saveCheckSettings,
       {
+        formatValidationMessage: formatAccessValidationMessage,
         allowSystemJointName: allowSystemJointNames,
         allowPrimaryLnkStageDebt:
           context.controlProcessSettings.preHeatTreatmentLnkEnabled &&

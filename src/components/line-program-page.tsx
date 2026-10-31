@@ -1,3 +1,5 @@
+import { LineProgramDeleteDialog } from './line-program-delete-dialog'
+import { useAccess } from '@/lib/security-context'
 import type { FilterChangedEvent, GridApi } from 'ag-grid-community'
 import { ProgramViewSettings } from './line-program-view-settings'
 import { useProgramStickyHeaders } from './line-program-sticky-headers'
@@ -50,6 +52,8 @@ export function LineProgramPage(props: Props) {
 }
 
 function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenReportRows }: Props) {
+  const { can } = useAccess()
+  const [deleting, setDeleting] = useState<LineProgramRecord | null>(null)
   const [overviewApi, setOverviewApi] = useState<GridApi | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   useProgramStickyHeaders(rootRef)
@@ -249,10 +253,12 @@ function LineProgramContent({ navigationRequest, onNavigationHandled, onOpenRepo
       onMenu={(event, line) => scopeMenu.open(event, {
       line, scope: { slice: 'all' }, expanded: expanded.has(line.id), onToggle: () => toggle(line),
       onAssignments: () => requestCommand(line, 'assignments'), onCalculation: (selection, explain) => requestCommand(line, 'calculation', selection, explain),
+      onDelete: can('lines.delete') ? () => setDeleting(line) : undefined,
       onSelect: selection => choose(line, selection), onEdit: tab === 'lines' ? () => edit(line) : undefined,
     })}
       renderDetail={line => <LineCalculation onOpenReportRows={onOpenReportRows} line={line} overview={line.overview} onEdit={tab === 'lines' ? () => edit(line) : undefined} enabled={expanded.has(line.id)} targetSelection={target?.id === line.id ? target.selection : undefined}
         command={command?.lineId === line.id ? command.value : undefined} onCommandHandled={handled => setCommand(current => current?.value === handled ? null : current)} onOpenScopeMenu={scopeMenu.open} />} />
+    {deleting ? <LineProgramDeleteDialog line={deleting} onClose={() => setDeleting(null)} onDeleted={id => { setDeleting(null); setExpanded(previous => { const next = new Map(previous); next.delete(id); return next }); setTarget(current => current?.id === id ? null : current); setCommand(current => current?.lineId === id ? null : current); setPage(0) }} /> : null}
     {scopeMenu.menu}
     {(summaryReady || pageReady && filter === 'all') && !visible.length ? <p className="rounded-xl border border-dashed p-10 text-center text-sm text-slate-500">Линии не найдены. Попробуйте изменить поиск или фильтр.</p> : null}
     {summaryReady || pageReady && filter === 'all' ? <ProgramPagination page={actualPage} pageSize={30} total={summaryReady ? filtered.length : pageQuery.data!.total} noun="линий" onChange={next => { setPage(next); collapseAll() }} /> : null}

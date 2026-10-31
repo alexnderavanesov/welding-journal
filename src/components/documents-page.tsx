@@ -1,3 +1,5 @@
+import { Checkbox } from '@/components/ui/checkbox'
+import { DocumentConnectionsDialog } from './document-connections-dialog'
 import { userStorage } from '@/lib/user-storage'
 import { generatedDocumentGridValue, systemDocumentGridValue, formatDocumentDate as formatDate, formatDocumentUpdatedAt as formatGeneratedDocumentDate, formatDocumentWdi as formatWdi } from '@/lib/document-history-values'
 import { DocumentSpecialistCell, DocumentSpecialistAssignmentDialog, type SpecialistDocument } from './document-specialist-assignment'
@@ -24,6 +26,7 @@ import {
   FileSpreadsheet,
   FileText,
   GitBranch,
+  Link2,
   Maximize2,
   Minimize2,
   Merge,
@@ -1516,6 +1519,7 @@ function SystemDocumentsPanel({
 }) {
   const { can } = useAccess()
   const { requireEditPassword } = useSecurityGuard()
+  const [connections, setConnections] = useState<SystemDocumentSummary | null>(null)
   const historyStorageKey = `system:${documentType}:${methodScope}`
   const [columnFilters, setColumnFilters] = useStoredDocumentHistoryFilters(
     historyStorageKey,
@@ -1685,6 +1689,7 @@ function SystemDocumentsPanel({
     }
   }
   const renderActions = (documentRecord: SystemDocumentSummary) => <div data-document-row-actions className="flex items-center justify-end gap-1">
+    <DocumentHistoryActionButton title="Связи документов" tone="sky" onClick={() => setConnections(documentRecord)}><Link2 className="h-4 w-4" /></DocumentHistoryActionButton>
     <DocumentHistoryActionButton title={`Показать стыки документа в отчете ${getSystemDocumentTargetReport(documentRecord) === 'lnk' ? 'ЛНК' : 'ПСТО'}`} tone="emerald" onClick={() => void runAction(() => onOpenRows(documentRecord))}><Rows3 className="h-4 w-4" /></DocumentHistoryActionButton>
     {documentRecord.rowCount === 1 ? <DocumentHistoryActionButton title="Открыть картину стыка" tone="sky" onClick={() => void runAction(() => onOpenJointHistory(documentRecord))}><GitBranch className="h-4 w-4" /></DocumentHistoryActionButton> : null}
     <DocumentHistoryActionButton title={hasTemplateForDocument(documentRecord) ? 'Скачать актуальный Excel' : 'Для этого вида документа шаблон еще не загружен'} disabled={!can('documents.export') || !hasTemplateForDocument(documentRecord)} onClick={() => void downloadDocumentRecord(documentRecord)}><Download className="h-4 w-4" /></DocumentHistoryActionButton>
@@ -1801,6 +1806,7 @@ function SystemDocumentsPanel({
                       y: event.y, anchorElement: event.anchorElement,
                       items: [
                         ...bulkItems,
+                        { id: 'document-connections', label: 'Связи документов', icon: Link2, onSelect: () => setConnections(documentRecord) },
                         { id: 'show-document-rows', label: 'Показать стыки в отчете', icon: Rows3, onSelect: () => runAction(() => onOpenRows(documentRecord)) },
                         ...(documentRecord.rowCount === 1 ? [{
                           id: 'open-joint-history',
@@ -1818,6 +1824,7 @@ function SystemDocumentsPanel({
                     })
       }} />
     <ContextActionMenu menu={contextMenu} panelClassName="journal-context-menu" autoFocus={keyboardMenu ? true : 'panel'} onClose={() => setContextMenu(null)} />
+    {connections ? <DocumentConnectionsDialog reference={connections} onClose={() => setConnections(null)} /> : null}
     {specialistDocuments ? <DocumentSpecialistAssignmentDialog documents={specialistDocuments} onlyRole={specialistRole} onClose={() => { setSpecialistDocuments(null); setSpecialistRole(undefined) }} /> : null}
     {documentOperation ? <DocumentOperationDialog documents={documentOperation.documents} action={documentOperation.action} onClose={() => setDocumentOperation(null)} onApplied={() => onRenamed()} /> : null}
     {previewRequest ? <HistoryDocumentPreview request={previewRequest} onClose={closePreview} /> : null}
@@ -1969,11 +1976,9 @@ function DocumentMultiFilter({
                   key={option}
                   className="flex min-h-8 cursor-pointer items-center gap-2 border-b border-slate-100 px-2.5 py-1.5 last:border-b-0 hover:bg-slate-50"
                 >
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={isSelected}
                     onChange={() => toggleValue(option)}
-                    className="h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-600"
                   />
                   <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-700" title={option}>
                     {option}

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { TvmtWorkflowDialog } from '@/components/tvmt-workflow-dialog'
@@ -70,6 +70,48 @@ async function renderDialog(
 }
 
 describe('TvmtWorkflowDialog', async () => {
+  it('keeps mixed requests selected for one TVMT conclusion', async () => {
+    const rows = [1, 2, 3].map(id => makeRow({ id, joint: `F${id}`, tvmtRequest: `ТВМТ-${id}`, tvmtRequestDate: `2026-08-${28 + id}` }))
+    await renderDialog('result', rows, new Set([1, 2]))
+    expect(screen.getByRole('checkbox', { name: /F1$/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /F2$/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /F3$/ })).not.toBeChecked()
+    fireEvent.change(screen.getByRole('combobox', { name: 'Результат для выбранных' }), { target: { value: 'годен' } })
+    expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeEnabled()
+    expect(screen.getByRole('tab', { name: /Заключения и имена/ })).toHaveTextContent('1')
+  })
+
+
+  it('keeps selection and entered results through unrelated request filters and empty candidate searches', async () => {
+    const rows = [1, 2, 3].map(id => makeRow({ id, joint: `F${id}`, tvmtRequest: `REQ-${id}`, tvmtRequestDate: '2026-08-29' }))
+    const view = await renderDialog('result', rows, new Set([1, 2]))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Результат для выбранных' }), { target: { value: 'годен' } })
+    const filter = screen.getByRole('combobox', { name: 'Фильтр по заявке ТВМТ' })
+    fireEvent.focus(filter)
+    fireEvent.click(screen.getByRole('option', { name: /REQ-3/ }))
+    expect(screen.getByRole('button', { name: 'Выбрано: 2' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать доступные' }))
+    expect(screen.getByRole('button', { name: 'Выбрано: 3' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: /F3$/ }))
+    view.rerenderWithRows(rows.slice(0, 2))
+    expect(filter).toHaveValue('REQ-3 · 29.08.2026')
+    expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрано: 2' }))
+    expect(screen.getByRole('checkbox', { name: /F1$/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /F2$/ })).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: 'Сбросить выбранную заявку' }))
+    expect(filter).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeEnabled()
+  })
+  it('blocks a fresh result if a selected TVMT cycle has already been completed on refresh', async () => {
+    const row = makeRow({ tvmtRequest: 'REQ', tvmtRequestDate: '2026-08-29' })
+    const view = await renderDialog('result', row)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Результат для выбранных' }), { target: { value: 'годен' } })
+    expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeEnabled()
+    view.rerenderWithRows([{ ...row, tvmtResult: 'годен', tvmtConclusion: 'Existing conclusion', tvmtConclusionDate: '2026-08-30' }])
+    expect(screen.getByRole('button', { name: 'Сохранить результат' })).toBeDisabled()
+  })
+
   it.each(['request', 'result'] as const)('shows connection type in TVMT %s metadata', async (mode) => {
     await renderDialog(mode, makeRow({ connectionType: 'С17', tvmtRequest: 'ТВМТ-1', tvmtRequestDate: '2026-08-29' }))
     expect(screen.getByText('С17').parentElement).toHaveTextContent('Тип: С17')
@@ -140,10 +182,10 @@ describe('TvmtWorkflowDialog', async () => {
     })
     const view = await renderDialog('result', [], new Set([waitingResult.id]))
 
-    expect(screen.getByRole('combobox', { name: 'Заявка ТВМТ' })).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: 'Фильтр по заявке ТВМТ' })).toHaveValue('')
     view.rerenderWithRows([waitingResult])
 
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Заявка ТВМТ' })).toHaveValue(
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Фильтр по заявке ТВМТ' })).toHaveValue(
       'Заявка-ТВМТ-001 · 29.08.2026',
     ))
     expect(screen.getByRole('checkbox', { name: /Выбрать стык/ })).toBeChecked()

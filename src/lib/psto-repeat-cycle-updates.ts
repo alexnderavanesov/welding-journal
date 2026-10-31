@@ -1,8 +1,9 @@
+import type { ValidationMessageFormatter } from './validation-message'
 import { formatDisplayDate, getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import { assertDocumentRequisites } from '@/lib/document-requisites'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { assertNoNewLnkChronologyIssues } from '@/lib/lnk-chronology-checks'
-import { getRejectedPreHeatTreatmentControls } from '@/lib/lnk-control-stage'
+import { getRejectedPreHeatTreatmentMethodCodes } from '@/lib/lnk-control-stage'
 import {
   getCurrentPstoCycle,
   getNextPstoCycleSequence,
@@ -25,6 +26,7 @@ export function buildRepeatPstoRequestCycle({
   requestName: string
   requestDate: string
   saveCheckSettings?: SaveCheckSettings
+  formatMessage?: ValidationMessageFormatter
 }): PstoRepeatCycleWrite {
   const name = requestName.trim()
   if (!name) throw new Error('Укажите наименование повторной заявки ПСТО.')
@@ -58,11 +60,13 @@ export function buildRepeatPstoResultCycle({
   pstoDate,
   diagramName,
   saveCheckSettings = loadSaveCheckSettings(),
+  formatMessage,
 }: {
   row: WeldRow
   pstoDate: string
   diagramName: string
   saveCheckSettings?: SaveCheckSettings
+  formatMessage?: ValidationMessageFormatter
 }): PstoRepeatCycleWrite {
   const cycle = requireCurrentRepeatCycle(row, 'waiting-psto')
   assertDocumentRequisites({ name: cycle.pstoRequest, date: cycle.pstoRequestDate,
@@ -75,7 +79,7 @@ export function buildRepeatPstoResultCycle({
     saveCheckSettings.pstoResultDateAfterWeldDate &&
     isDateBeforeWeldDate(date, row.weldDate)
   ) {
-    throw new Error(formatDateBeforeWeldDateSaveReason(row, date, `Дата повторной ПСТО цикла #${cycle.sequence}`))
+    throw new Error(formatDateBeforeWeldDateSaveReason(row, date, `Дата повторной ПСТО цикла #${cycle.sequence}`, formatMessage))
   }
   if (date && saveCheckSettings.pstoResultRequestDateOrder) {
     assertNotBefore(
@@ -102,6 +106,7 @@ export function buildRepeatTvmtRequestCycle({
   requestName: string
   requestDate: string
   saveCheckSettings?: SaveCheckSettings
+  formatMessage?: ValidationMessageFormatter
 }): PstoRepeatCycleWrite {
   const cycle = requireCurrentRepeatCycle(row, 'waiting-tvmt-request')
   const name = requestName.trim()
@@ -128,12 +133,14 @@ export function buildRepeatTvmtResultCycle({
   result,
   conclusionName,
   saveCheckSettings = loadSaveCheckSettings(),
+  formatMessage,
 }: {
   row: WeldRow
   controlDate: string
   result: string
   conclusionName: string
   saveCheckSettings?: SaveCheckSettings
+  formatMessage?: ValidationMessageFormatter
 }): PstoRepeatCycleWrite {
   const cycle = requireCurrentRepeatCycle(row, 'waiting-tvmt')
   assertDocumentRequisites({ name: cycle.tvmtRequest, date: cycle.tvmtRequestDate,
@@ -167,7 +174,7 @@ export function buildRepeatTvmtResultCycle({
       candidate.id === nextCycle.id ? nextCycle : candidate
     )),
   }
-  assertNoNewLnkChronologyIssues([nextRow], [row], saveCheckSettings)
+  assertNoNewLnkChronologyIssues([nextRow], [row], saveCheckSettings, { formatValidationMessage: formatMessage })
   return nextCycle
 }
 
@@ -188,10 +195,10 @@ function requireCurrentRepeatCycle(
 }
 
 function assertPreHeatTreatmentAllowsCycle(row: WeldRow) {
-  const rejected = getRejectedPreHeatTreatmentControls(row)
+  const rejected = getRejectedPreHeatTreatmentMethodCodes(row)
   if (rejected.length === 0) return
   throw new Error(
-    `Стык ${formatJoint(row)}: НК до ТО не годен (${rejected.map(({ methodCode }) => methodCode).join(', ')}); ` +
+    `Стык ${formatJoint(row)}: НК до ТО не годен (${rejected.join(', ')}); ` +
     'ПСТО и ТВМТ для этого стыка не требуются.',
   )
 }

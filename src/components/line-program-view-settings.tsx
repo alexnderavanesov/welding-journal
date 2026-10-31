@@ -1,3 +1,6 @@
+import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
+import { isModalDialogOpen } from '@/lib/modal-layer'
+import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { GridApi } from 'ag-grid-community'
@@ -49,6 +52,10 @@ export function ProgramViewSettings({ api }: { api: GridApi | null }) {
     window.addEventListener('resize', place); window.addEventListener('scroll', place, true); document.addEventListener('pointerdown', outside, true)
     return () => { observer.disconnect(); window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); document.removeEventListener('pointerdown', outside, true) }
   }, [open])
+  useWindowEscapeKey(open, event => {
+    if (isModalDialogOpen() || isContextActionMenuOpen()) return
+    event.preventDefault(); event.stopImmediatePropagation(); close(true)
+  })
   const found = columns.filter(column => column.label.toLocaleLowerCase('ru').includes(search.trim().toLocaleLowerCase('ru')))
   const usable = api && !api.isDestroyed()
   const visibility = (ids: string[], visible: boolean) => {

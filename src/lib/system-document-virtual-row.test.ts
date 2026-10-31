@@ -12,6 +12,30 @@ import {
 } from '@/lib/system-document-types'
 
 describe('system document virtual rows', () => {
+  it('does not reuse current-cycle document IDs when selecting historical document fields', () => {
+    const source: WeldRow = {
+      id: 1, pstoRequired: 'да', pstoRequest: 'Первичная', pstoRequestDate: '2026-10-01',
+      tvmtRequest: 'Первичная ТВМТ', tvmtRequestDate: '2026-10-02',
+      systemDocumentIds: { pstoRequest: 300, heatTreatmentDiagram: 301, tvmtRequest: 302, tvmtConclusion: 303 },
+    }
+    const repeat = { id: 2, weldJointId: 1, sequence: 2, pstoRequest: 'Повторная', pstoRequestDate: '2026-10-03' }
+    for (const projected of [buildPrimaryPstoSystemDocumentRow(source), buildPstoRepeatSystemDocumentRow(source, repeat)]) {
+      for (const field of ['pstoRequest', 'heatTreatmentDiagram', 'tvmtRequest', 'tvmtConclusion'] as const) {
+        expect(projected.systemDocumentIds?.[field]).toBeUndefined()
+        expect(getSystemDocumentReferenceForField(projected, field)?.documentId).toBeUndefined()
+      }
+    }
+    expect(source.systemDocumentIds?.pstoRequest).toBe(300)
+  })
+
+  it('does not reuse primary LNK IDs for projected preheat documents', () => {
+    const projected = buildPreHeatTreatmentSystemDocumentRow({ id: 1, systemDocumentIds: { vikRequest: 100, vikConclusion: 101 } },
+      [{ id: 2, weldJointId: 1, method: 'ВИК', requestName: 'До ТО', requestDate: '2026-10-01' }])
+    expect(getSystemDocumentReferenceForField(projected, 'vikRequest')).toMatchObject({ title: 'До ТО' })
+    expect(projected.systemDocumentIds?.vikRequest).toBeUndefined()
+    expect(projected.systemDocumentIds?.vikConclusion).toBeUndefined()
+  })
+
   it('keeps pre-heat-treatment documents separate from primary LNK fields', () => {
     const row = buildPreHeatTreatmentSystemDocumentRow({
       id: 10,

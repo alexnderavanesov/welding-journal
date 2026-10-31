@@ -1,4 +1,5 @@
 import { isControlEnabledValue } from '@/lib/control-availability-values'
+import { getControlWorkflowAccess } from './control-workflow-access'
 import {
   buildPstoCycleTimeline,
   hasPstoExecutionHistory,
@@ -26,6 +27,8 @@ export function getPstoTvmtWorkflowState(
   row: WeldInput,
   repeatCycles: readonly PstoRepeatCycleRecord[] = getRowRepeatCycles(row),
 ): PstoTvmtWorkflowState {
+  const projected = getControlWorkflowAccess(row)?.heatTreatmentState
+  if (projected) return projected
   const active = isControlEnabledValue(row.pstoRequired)
   const inactiveWithPerformedHistory = !active && hasPstoExecutionHistory(row, repeatCycles)
   if (!active && !inactiveWithPerformedHistory) return 'not-required'

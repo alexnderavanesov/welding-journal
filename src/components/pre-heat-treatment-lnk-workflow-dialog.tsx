@@ -1,3 +1,6 @@
+import { runDocumentSave } from '@/lib/run-document-save'
+import { collectResultRequestSources } from '@/lib/result-request-sources'
+import { useResultRequestSources } from '@/components/use-result-request-sources'
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -29,6 +32,7 @@ import {
 import { RequestDialogFooter } from '@/components/request-dialog-footer'
 import { RequestDialogHeader } from '@/components/request-dialog-header'
 import { RequestDocumentCombobox } from '@/components/request-document-combobox'
+import { ResultRequestCombobox } from '@/components/result-request-combobox'
 import { RequestRowsPanel } from '@/components/request-rows-panel'
 import { ResultDialogHeader } from '@/components/result-dialog-header'
 import { SelectedRowsViewToggle, type SelectedRowsViewMode } from '@/components/selected-rows-view-toggle'
@@ -189,7 +193,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
   const contextMenuRef = useRef<DialogContextMenuLayerHandle>(null)
   const dateInputRef = useRef<HTMLInputElement>(null)
   const appliedInitialSelectionRef = useRef('')
-  const didApplyInitialResultSelectionRef = useRef(false)
+
   const [date, setDate] = useState(() => formatDateInputValue(new Date()))
   const [search, setSearch] = useState('')
   const [selectedSearch, setSelectedSearch] = useState('')
@@ -204,7 +208,8 @@ export function PreHeatTreatmentLnkWorkflowDialog({
   const [resultMethod, setResultMethod] = useState<PreHeatTreatmentLnkMethodCode | ''>(() =>
     getInitialResultMethod(mode, rows, initialSelectedIds, initialMethodCode),
   )
-  const [requestKey, setRequestKey] = useState('')
+  const [selectedRequest, setSelectedRequest] = useState<RequestDocumentIdentity | null>(null)
+  const requestKey = selectedRequest?.key ?? ''
   const [requestSubmitMode, setRequestSubmitMode] = useState<LnkRequestComposerMode>(initialRequestSubmitMode)
   const [existingRequestKey, setExistingRequestKey] = useState('')
   const [existingRequestSearch, setExistingRequestSearch] = useState('')
@@ -226,8 +231,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
   const initialContextKey = `${mode}:${initialMethodCode ?? ''}:${initialSelectionSignature}`
   // Do not expose an unchecked, clickable row while the initial request and
   // selection are still being applied by the effects below.
-  const selectionInitialized = appliedInitialSelectionRef.current === initialContextKey &&
-    (mode !== 'result' || didApplyInitialResultSelectionRef.current)
+  const selectionInitialized = appliedInitialSelectionRef.current === initialContextKey
   useEffect(() => {
     if (!isContextReady || !appliedInitialSelectionRef.current) return
     onCandidateSelectionChange?.([...selectedIds])
@@ -241,18 +245,23 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     const nextResultMethod = getInitialResultMethod(mode, rows, initialSelectedIds, initialMethodCode)
     setSelectedMethods(nextSelectedMethods)
     setResultMethod(nextResultMethod)
-    setRequestKey('')
+    const initialResultRows = mode === 'result' && nextResultMethod
+      ? rows.filter(row => initialSelectedIds.has(row.id) && canAddPreHeatTreatmentResult(row, nextResultMethod, saveCheckSettings))
+      : []
+    const initialRequests = getPreHeatTreatmentRequestOptions(initialResultRows, nextResultMethod)
+    const options = getPreHeatTreatmentRequestOptions(rows, nextResultMethod)
+    setSelectedRequest(initialRequests.length === 1 ? initialRequests[0]! : options.length === 1 ? options[0]! : null)
     setRowsViewMode('all')
-    didApplyInitialResultSelectionRef.current = false
+
     setSelectedIds(mode === 'request'
       ? new Set(rows.flatMap((row) => (
           initialSelectedIds.has(row.id) && hasAvailableRequestPosition(row, nextSelectedMethods)
             ? [row.id]
             : []
         )))
-      : new Set())
+      : new Set(initialResultRows.map(row => row.id)))
     appliedInitialSelectionRef.current = contextKey
-  }, [initialMethodCode, initialSelectedIds, initialSelectionSignature, isContextReady, mode, rows])
+  }, [initialMethodCode, initialSelectedIds, initialSelectionSignature, isContextReady, mode, rows, saveCheckSettings])
   const { data: sequences } = useQuery({
     queryKey: SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY,
     queryFn: loadSystemDocumentSequences,
@@ -263,8 +272,10 @@ export function PreHeatTreatmentLnkWorkflowDialog({
   })
 
   const requestOptions = useMemo(
-    () => getPreHeatTreatmentRequestOptions(rows, resultMethod),
-    [resultMethod, rows],
+    () => collectRequestDocumentIdentities([
+      ...getPreHeatTreatmentRequestOptions(rows, resultMethod), ...(selectedRequest ? [selectedRequest] : []),
+    ]),
+    [resultMethod, rows, selectedRequest],
   )
   const existingRequestOptions = useMemo(
     () => getAllPreHeatTreatmentRequestOptions(rows),
@@ -283,10 +294,6 @@ export function PreHeatTreatmentLnkWorkflowDialog({
   const visibleExistingRequestOptions = selectedExistingRequest && !filteredExistingRequestOptions.some((option) => option.key === selectedExistingRequest.key)
     ? [selectedExistingRequest, ...filteredExistingRequestOptions]
     : filteredExistingRequestOptions
-  const requestSelectionReason = resultMethod && requestOptions.length === 0
-    ? `Нет заявок ${resultMethod} до ТО, ожидающих результата. Сначала создайте заявку до ТО.`
-    : 'Выберите заявку НК до ТО.'
-  const selectedRequest = requestOptions.find((option) => option.key === requestKey) ?? null
   useEffect(() => {
     if (!isContextReady) return
     onCandidateFilterChange?.({
@@ -296,45 +303,10 @@ export function PreHeatTreatmentLnkWorkflowDialog({
       request: mode === 'result' ? selectedRequest : null,
     })
   }, [isContextReady, mode, onCandidateFilterChange, resultMethod, selectedMethods, selectedRequest])
-  useEffect(() => {
-    if (!isContextReady || mode !== 'result' || !resultMethod) return
-    if (requestOptions.some((option) => option.key === requestKey)) return
-    const initialKeys = new Set(rows.flatMap((row) => {
-      if (!initialSelectedIds.has(row.id)) return []
-      const control = getPreHeatTreatmentControl(row, resultMethod)
-      const identity = createRequestDocumentIdentity(control?.requestName, control?.requestDate)
-      return identity && canAddPreHeatTreatmentResult(row, resultMethod, saveCheckSettings) ? [identity.key] : []
-    }))
-    const nextKey = initialKeys.size === 1
-      ? [...initialKeys][0] ?? ''
-      : requestOptions.length === 1
-        ? requestOptions[0]?.key ?? ''
-        : ''
-    setRequestKey(nextKey)
-  }, [initialSelectedIds, isContextReady, mode, requestKey, requestOptions, resultMethod, rows, saveCheckSettings])
-
-  useEffect(() => {
-    if (
-      !isContextReady ||
-      mode !== 'result' ||
-      !resultMethod ||
-      !selectedRequest ||
-      didApplyInitialResultSelectionRef.current
-    ) return
-    didApplyInitialResultSelectionRef.current = true
-    setSelectedIds(new Set(rows.flatMap((row) => {
-      const control = getPreHeatTreatmentControl(row, resultMethod)
-      return initialSelectedIds.has(row.id) &&
-        canAddPreHeatTreatmentResult(row, resultMethod, saveCheckSettings) &&
-        isSameRequestDocument(control?.requestName, control?.requestDate, selectedRequest)
-        ? [row.id]
-        : []
-    })))
-  }, [initialSelectedIds, isContextReady, mode, resultMethod, rows, saveCheckSettings, selectedRequest])
-
   const sourceRows = useMemo(() => {
     if (mode === 'request') return rows
-    if (!resultMethod || !selectedRequest) return []
+    if (!resultMethod) return []
+    if (!selectedRequest) return rows
     return rows.filter((row) => {
       const control = getPreHeatTreatmentControl(row, resultMethod)
       return isSameRequestDocument(control?.requestName, control?.requestDate, selectedRequest)
@@ -348,9 +320,8 @@ export function PreHeatTreatmentLnkWorkflowDialog({
         : getFirstRequestBlockReason(row, selectedMethods)
     }
     if (!resultMethod) return 'Выберите вид НК до ТО.'
-    if (!selectedRequest) return requestSelectionReason
     return getPreHeatTreatmentResultBlockReason(row, resultMethod, saveCheckSettings)
-  }, [mode, requestSelectionReason, resultMethod, saveCheckSettings, selectedMethods, selectedRequest])
+  }, [mode, resultMethod, saveCheckSettings, selectedMethods])
   const availableRows = useMemo(
     () => sourceRows.filter((row) => !getRowBlockReason(row)),
     [getRowBlockReason, sourceRows],
@@ -364,16 +335,19 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     () => rows.filter((row) => selectedIds.has(row.id) && !getRowBlockReason(row)),
     [getRowBlockReason, rows, selectedIds],
   )
+  const selectedRequests = useMemo(() => getPreHeatTreatmentRequestOptions(selectedRows, resultMethod), [selectedRows, resultMethod])
+  const requestSourceGroups = useMemo(() => collectResultRequestSources(selectedRows, (rows: WeldRow[]) => getPreHeatTreatmentRequestOptions(rows, resultMethod)), [selectedRows, resultMethod])
+  const requestSources = useResultRequestSources(selectedRows, requestSourceGroups, () => { setRowsViewMode('selected'); setSelectedSearch(''); setWorkspaceTab('joints') })
   const filteredSelectedRows = useMemo(
-    () => filterRows(selectedRows, selectedSearch),
-    [selectedRows, selectedSearch],
+    () => filterRows(requestSources.rows, selectedSearch),
+    [requestSources.rows, selectedSearch],
   )
   const displayedRows = rowsViewMode === 'selected' ? filteredSelectedRows : filteredRows
   const displayedSearch = rowsViewMode === 'selected' ? selectedSearch : search
   const pagination = usePagePagination({
     items: displayedRows,
     defaultPageSize: 50,
-    resetKeys: [displayedSearch, rowsViewMode, requestKey, resultMethod, [...selectedMethods].join('|')],
+    resetKeys: [requestSources.sourceProps.activeKey, displayedSearch, rowsViewMode, requestKey, resultMethod, [...selectedMethods].join('|')],
   })
   useEffect(() => {
     if (selectedRows.length === 0 && rowsViewMode === 'selected') setRowsViewMode('all')
@@ -414,6 +388,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
       return creationPlan.groups.map((group) => ({
         name: group.name,
         useSystemName: group.useSystemName,
+        namingPattern: group.namingPattern,
         positions: getGroupPositions(group, mode, selectedMethods, resultMethod),
       }))
     }
@@ -506,7 +481,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
 
   const mutation = useMutation({
     mutationFn: async (): Promise<SaveResult> => {
-      const savedRows = await savePreHeatTreatmentLnkWorkflow({ data: {
+      const savedRows = await runDocumentSave('savePreHeatTreatmentLnkWorkflow', headers => savePreHeatTreatmentLnkWorkflow({ headers, data: {
         action: mode,
         date: effectiveDate,
         groups: workflowGroups,
@@ -522,7 +497,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
               result: rowResults[row.id] ?? '',
             }))
           : [],
-      } })
+      } }))
       return {
         rows: savedRows as WeldRow[],
         documentCount: workflowGroups.length,
@@ -548,14 +523,15 @@ export function PreHeatTreatmentLnkWorkflowDialog({
     onError: (error) => onSaved([], [], (error as Error).message),
   })
 
-  const saveBlockReason = !isContextReady ? 'Загрузка выбранных стыков…' : getSaveBlockReason({
+  const saveBlockReason = !isContextReady ? 'Загрузка выбранных стыков…'
+    : mode === 'result' && resultMethod && requestOptions.length === 0
+      ? `Нет заявок ${resultMethod} до ТО, ожидающих результата. Сначала создайте заявку до ТО.`
+      : getSaveBlockReason({
     mode,
     selectedMethodsCount: selectedMethods.size,
     resultMethod,
-    requestSelected: Boolean(selectedRequest),
     existingRequestSelected: Boolean(selectedExistingRequest),
     requestSubmitMode,
-    requestSelectionReason,
     selectedRowsCount: selectedRows.length,
     dateReason,
     creationPlanError,
@@ -584,7 +560,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
   }
   const setSelectedRows = useStableEventCallback((rowIds: number[]) => {
     if (!selectionInitialized) return
-    const allowedIds = new Set(availableRows.map((row) => row.id))
+    const allowedIds = new Set(rows.filter(row => !getRowBlockReason(row)).map((row) => row.id))
     const next = new Set(rowIds.filter((rowId) => allowedIds.has(rowId)))
     setSelectedIds(next)
   })
@@ -672,17 +648,15 @@ export function PreHeatTreatmentLnkWorkflowDialog({
   const changeResultMethod = (value: string) => {
     const method = PRE_HEAT_TREATMENT_LNK_METHODS.find((candidate) => candidate.code === value)?.code ?? ''
     setResultMethod(method)
-    setRequestKey('')
+    setSelectedRequest(null)
     setSelectedIds(new Set())
     setRowResults({})
-    didApplyInitialResultSelectionRef.current = true
+
   }
-  const changeRequest = (value: string) => {
-    setRequestKey(value)
-    setSelectedIds(new Set())
-    setRowResults({})
+  const changeRequest = (request: RequestDocumentIdentity | null) => {
+    setSelectedRequest(request)
     setRowsViewMode('all')
-    didApplyInitialResultSelectionRef.current = true
+
   }
   const changeDefaultResult = (result: string) => {
     if (getDisabledResultReason(result)) return
@@ -708,8 +682,10 @@ export function PreHeatTreatmentLnkWorkflowDialog({
         />
       ) : (
         <ResultDialogHeader
+          sources={requestSources.sourceProps}
           title="Внесение результатов ЛНК до ТО"
-          requestName={selectedRequest?.name ?? ''}
+          requestName={selectedRequests[0]?.name ?? ''}
+          requestCount={selectedRequests.length}
           selectedCount={selectedRows.length}
           managerDisabled={!onOpenResultRegistry}
           managerDisabledReason="Реестр результатов НК до ТО недоступен в этом контексте."
@@ -812,12 +788,14 @@ export function PreHeatTreatmentLnkWorkflowDialog({
           )}
           requestControl={(
             <label className="block min-w-0 space-y-1.5 text-sm">
-              <span className="text-[13px] font-medium leading-none text-slate-700">Заявка ЛНК до ТО</span>
-              <RequestDocumentCombobox
-                ariaLabel="Заявка ЛНК до ТО"
+              <span className="text-[13px] font-medium leading-none text-slate-700">Фильтр по заявке ЛНК до ТО</span>
+              <ResultRequestCombobox scope="beforeHeatTreatment" methodCode={resultMethod || undefined}
+                ariaLabel="Фильтр по заявке ЛНК до ТО"
                 value={requestKey}
                 options={requestOptions}
-                onChange={(request) => changeRequest(request?.key ?? '')}
+                placeholder="Все заявки"
+                emptyOptionLabel="Все заявки"
+                onChange={changeRequest}
               />
             </label>
           )}
@@ -856,16 +834,14 @@ export function PreHeatTreatmentLnkWorkflowDialog({
             description={rowsViewMode === 'all' && rows.length >= WORKFLOW_CANDIDATE_PAGE_SIZE
               ? `Показаны первые ${WORKFLOW_CANDIDATE_PAGE_SIZE} подходящих стыков. Уточните поиск, чтобы найти остальные.`
               : ''}
-            viewToggle={<SelectedRowsViewToggle mode={rowsViewMode} selectedCount={selectedRows.length} onChange={setRowsViewMode} />}
+            viewToggle={<SelectedRowsViewToggle mode={rowsViewMode} selectedCount={selectedRows.length} onChange={mode => { requestSources.clear(); setRowsViewMode(mode) }} />}
             action={rowsViewMode === 'selected' ? (
               <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>Снять весь выбор</Button>
             ) : (
               <Button variant="outline" size="sm" onClick={toggleAll} disabled={!selectionInitialized || filteredAvailableRows.length === 0}>
                 {mode === 'result' && !resultMethod
                   ? 'Выберите метод'
-                  : mode === 'result' && !selectedRequest
-                    ? 'Выберите заявку'
-                    : allFilteredAvailableSelected
+                  : allFilteredAvailableSelected
                   ? mode === 'result' ? 'Снять все' : 'Снять доступные'
                   : mode === 'result' ? 'Выбрать все доступные' : 'Выбрать доступные'}
               </Button>
@@ -878,9 +854,7 @@ export function PreHeatTreatmentLnkWorkflowDialog({
             isEmpty={displayedRows.length === 0}
             emptyMessage={mode === 'result' && !resultMethod
               ? 'Выберите вид контроля.'
-              : mode === 'result' && !selectedRequest
-                ? requestSelectionReason
-                : rowsViewMode === 'selected'
+              : rowsViewMode === 'selected'
                   ? 'Среди выбранных стыков ничего не найдено.'
                   : 'Стыков для этого действия не найдено.'}
             onSearchChange={rowsViewMode === 'selected'
@@ -1100,10 +1074,8 @@ function getSaveBlockReason({
   mode,
   selectedMethodsCount,
   resultMethod,
-  requestSelected,
   existingRequestSelected,
   requestSubmitMode,
-  requestSelectionReason,
   selectedRowsCount,
   dateReason,
   creationPlanError,
@@ -1112,10 +1084,8 @@ function getSaveBlockReason({
   mode: PreHeatTreatmentLnkWorkflowRowMode
   selectedMethodsCount: number
   resultMethod: PreHeatTreatmentLnkMethodCode | ''
-  requestSelected: boolean
   existingRequestSelected: boolean
   requestSubmitMode: 'create' | 'extend'
-  requestSelectionReason: string
   selectedRowsCount: number
   dateReason: string | null
   creationPlanError: string
@@ -1126,7 +1096,6 @@ function getSaveBlockReason({
     return 'Выберите существующую заявку НК до ТО.'
   }
   if (mode === 'result' && !resultMethod) return 'Выберите вид НК до ТО.'
-  if (mode === 'result' && !requestSelected) return requestSelectionReason
   if (selectedRowsCount === 0) return 'Выберите хотя бы один доступный стык.'
   return [dateReason, creationPlanError].filter(Boolean).join('\n') || domainReason || ''
 }

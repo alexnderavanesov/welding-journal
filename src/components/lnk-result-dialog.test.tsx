@@ -1,4 +1,6 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render as baseRender, screen, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { LnkResultDialog, type LnkResultDialogProps } from '@/components/lnk-result-dialog'
@@ -7,6 +9,10 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { LNK_METHODS } from '@/lib/report-config'
 import { createDefaultLnkResultDraft } from '@/lib/report-draft-state'
 import { DEFAULT_SAVE_CHECK_SETTINGS } from '@/lib/save-check-settings'
+function render(ui: ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return baseRender(ui, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> })
+}
 
 describe('LnkResultDialog', () => {
   it('offers layered control inside each U-joint, never in the footer or a C-joint', () => {

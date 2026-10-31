@@ -1,5 +1,6 @@
 import { createDefaultLnkResultDraft } from '@/lib/report-draft-state'
 import {
+  getInitialLnkResultRequest,
   resolveLnkResultDraftAfterMethodChange,
   resolveLnkResultDraftAfterRequestChange,
   resolveLnkResultDraftAfterRowIdsChange,
@@ -12,7 +13,7 @@ import {
 } from '@/lib/report-modal-rows'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { WeldFieldKey } from '@/lib/weld-fields'
-import { getLnkRequestDocumentIdentities, type RequestDocumentIdentity } from '@/lib/request-document-identity'
+import type { RequestDocumentIdentity } from '@/lib/request-document-identity'
 import { getLnkMethodByRequestKey } from '@/lib/lnk-status'
 
 export function useLnkResultActions({
@@ -33,20 +34,6 @@ export function useLnkResultActions({
     setIsModalOpen(true)
   }
 
-  const getCommonLnkRequests = (selectedRows: WeldRow[]) => {
-    if (selectedRows.length === 0) return []
-    const [firstRow, ...restRows] = selectedRows
-    const firstRequests = getLnkRequestDocumentIdentities([firstRow])
-    const common = new Set(firstRequests.map((request) => request.key))
-    for (const selectedRow of restRows) {
-      const keys = new Set(getLnkRequestDocumentIdentities([selectedRow]).map((request) => request.key))
-      for (const key of [...common]) {
-        if (!keys.has(key)) common.delete(key)
-      }
-    }
-    return firstRequests.filter((request) => common.has(request.key))
-  }
-
   function openAddLnkResultModalForRows(selectedRows: WeldRow[]) {
     if (selectedRows.length === 0) {
       openAddLnkResultModal()
@@ -61,8 +48,7 @@ export function useLnkResultActions({
       return
     }
 
-    const commonRequests = getCommonLnkRequests(selectedRows)
-    const request = commonRequests.length === 1 ? commonRequests[0] : null
+    const request = getInitialLnkResultRequest(selectedRows, controlProcessSettings)
     setPreservedOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
     setDraft({
       ...createDefaultLnkResultDraft(defaultConclusionNaming),
@@ -81,7 +67,7 @@ export function useLnkResultActions({
       return
     }
 
-    const request = requests.length === 1 ? requests[0] : null
+    const request = getInitialLnkResultRequest([row], controlProcessSettings)
     setPreservedOrderIds(lnkRows.map((lnkRow) => lnkRow.id))
     setDraft({
       ...createDefaultLnkResultDraft(defaultConclusionNaming),
@@ -120,7 +106,7 @@ export function useLnkResultActions({
   }
 
   function changeLnkResultRequest(request: RequestDocumentIdentity | null) {
-    setDraft((current) => resolveLnkResultDraftAfterRequestChange(current, lnkRows, request))
+    setDraft((current) => resolveLnkResultDraftAfterRequestChange(current, request))
   }
 
   function changeLnkResultMethod(methodKey: WeldFieldKey | '') {
@@ -133,14 +119,14 @@ export function useLnkResultActions({
   }
 
   function toggleLnkResultRow(rowId: number) {
-    const row = filteredRows.find((candidate) => candidate.id === rowId)
+    const row = lnkRows.find((candidate) => candidate.id === rowId)
     if (
       !row ||
       !canSelectLnkResultRow(
         row,
-        draft.requestName,
+        '',
         draft.methodKey,
-        draft.requestDate,
+        undefined,
         controlProcessSettings,
       )
     ) return
@@ -152,7 +138,7 @@ export function useLnkResultActions({
       } else {
         rowIds.add(rowId)
       }
-      return resolveLnkResultDraftAfterRowIdsChange(current, lnkRows, rowIds)
+      return resolveLnkResultDraftAfterRowIdsChange(current, rowIds)
     })
   }
 
@@ -175,7 +161,7 @@ export function useLnkResultActions({
       const rowIds = allSelected
         ? new Set([...current.rowIds].filter((id) => !filteredIds.has(id)))
         : new Set([...current.rowIds, ...filteredIds])
-      return resolveLnkResultDraftAfterRowIdsChange(current, lnkRows, rowIds)
+      return resolveLnkResultDraftAfterRowIdsChange(current, rowIds)
     })
   }
 
@@ -185,13 +171,13 @@ export function useLnkResultActions({
         const row = lnkRows.find((candidate) => candidate.id === rowId)
         return Boolean(row && canSelectLnkResultRow(
           row,
-          current.requestName,
+          '',
           current.methodKey,
-          current.requestDate,
+          undefined,
           controlProcessSettings,
         ))
       }))
-      return resolveLnkResultDraftAfterRowIdsChange(current, lnkRows, selectableRowIds)
+      return resolveLnkResultDraftAfterRowIdsChange(current, selectableRowIds)
     })
   }
 

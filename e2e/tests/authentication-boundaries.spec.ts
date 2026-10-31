@@ -16,7 +16,7 @@ test('restricted accounts cannot probe hidden fields, compressed tasks, settings
   const joint = await withE2eDatabase(async db => (await db.query("insert into weld_joints(project_title,line,joint,welding_journal_note,lnk_note,psto_result) values('AUTH-BOUNDARY','A','F987','visible','SECRET-LNK','не годен') returning *")).rows[0])
   let observed = ''
   page.on('request', request => { if (request.url().includes('/_serverFn/')) observed = request.url() })
-  await page.goto('/account'); await expect(page.getByRole('heading', { name: 'Мой профиль' })).toBeVisible()
+  await page.goto('/account'); await expect(page.getByRole('heading', { name: 'Пользователи и права' })).toBeVisible()
   expect(observed).not.toBe('')
   const context = await browser.newContext({ baseURL, storageState: { cookies: [], origins: [] } })
   const call = async (client: APIRequestContext, name: string, data: unknown, method = 'GET') => {
@@ -31,6 +31,14 @@ test('restricted accounts cannot probe hidden fields, compressed tasks, settings
     const allowed = await call(context.request, 'getWeldJointById', { id: joint.id })
     expect(allowed.error).toBeUndefined(); expect(allowed.result.weldingJournalNote).toBe('visible')
     expect(JSON.stringify(allowed)).not.toContain('SECRET-LNK'); expect(allowed.result).not.toHaveProperty('pstoResult')
+    const selected = await call(context.request, 'listWeldJointRowsByIds', { ids: [joint.id], report: 'weldingJournal' }, 'POST')
+    expect(selected.error).toBeUndefined()
+    expect(selected.result).toEqual([expect.objectContaining({ id: joint.id, weldingJournalNote: 'visible' })])
+    expect(JSON.stringify(selected)).not.toContain('SECRET-LNK')
+    expect(selected.result[0]).not.toHaveProperty('pstoCycleSummary')
+    for (const report of ['lnk', 'heatTreatment', 'documents', 'unknown']) {
+      expect((await call(context.request, 'listWeldJointRowsByIds', { ids: [joint.id], report }, 'POST')).error, report).toBeDefined()
+    }
     for (const [name, data, method] of [
       ['getDispatcherTaskSnapshot', { transport: 'gzip-v1' }, 'GET'],
       ['listWeldFormSuggestions', { fieldKey: 'lnkNote', draft: {} }, 'POST'],

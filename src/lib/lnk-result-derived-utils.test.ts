@@ -5,6 +5,7 @@ import { buildLnkResultDraftById } from '@/lib/lnk-result-draft'
 import { buildLnkConclusionCorrectionRows, buildLnkResultCorrectionRow } from '@/lib/lnk-result-correction-updates'
 import { buildLnkResultRows } from '@/lib/lnk-result-create-updates'
 import {
+  getLnkResultSearchRows,
   getLnkResultRootCauseActions,
   getLnkResultSaveBlockReason,
   getSelectedLnkResultMethods,
@@ -77,7 +78,7 @@ describe('getLnkResultSaveBlockReason', () => {
     expect(getSelectedLnkResultMethods([baseRow]).map((method) => method.code)).toEqual(['РК'])
   })
 
-  it('selects only rows from the matching LNK request date', () => {
+  it('filters candidates by exact request date without removing selected positions', () => {
     const rows = [
       baseRow,
       {
@@ -92,7 +93,8 @@ describe('getLnkResultSaveBlockReason', () => {
         ...baseDraft,
         rowIds: new Set([1, 2]),
       }).map((row) => row.id),
-    ).toEqual([1])
+    ).toEqual([1, 2])
+    expect(getLnkResultSearchRows({ lnkRows: rows, selectedRequestRows: rows, requestName: baseDraft.requestName, requestDate: baseDraft.requestDate, methodKey: baseDraft.methodKey }).map(row => row.id)).toEqual([1])
   })
 
   it('blocks LNK control date before weld date when the check is enabled', () => {

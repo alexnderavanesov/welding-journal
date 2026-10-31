@@ -1,3 +1,4 @@
+import { Checkbox } from '@/components/ui/checkbox'
 import { FieldHelp } from './field-help'
 import { ACCESS_AREAS, ACCESS_ACTIONS, AREA_ACTIONS, type AccessArea, type AccessAction, type Permission } from '@/lib/access-permissions'
 
@@ -36,9 +37,9 @@ export function PermissionEditor({ value, onChange, disabled = false }: {
     const area = permission.split('.')[0]
     onChange(checked ? [...new Set([...value, permission, ...(area !== 'history' ? [`${area}.view` as Permission] : [])])] : value.filter(item => item !== permission && !(permission.endsWith('.view') && area !== 'history' && item.startsWith(`${area}.`))))
   }
-  const checkbox = (permission: Permission, label: string) => <input type="checkbox" aria-label={label} checked={value.includes(permission)}
+  const checkbox = (permission: Permission, label: string) => <Checkbox aria-label={label} checked={value.includes(permission)}
     disabled={disabled || !onChange} onChange={event => toggle(permission, event.target.checked)}
-    className="h-4 w-4 cursor-pointer rounded border-slate-300 text-sky-600 focus:ring-sky-500 disabled:cursor-default disabled:opacity-70" />
+    className="cursor-pointer disabled:cursor-default disabled:opacity-70" />
   return <div className="space-y-4">
     <p className="text-sm leading-6 text-slate-500">Наведите на <span className="font-medium text-slate-700">ⓘ</span> или нажмите, чтобы прочитать пояснение. Действие автоматически включает просмотр раздела. Прочерк — отдельного разрешения нет.</p>
     <div className="min-w-[850px] rounded-xl border border-slate-200">
