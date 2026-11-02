@@ -24,6 +24,10 @@ export const accessMiddleware = createMiddleware({ type: 'function' }).server(as
     const { getRequestHeader } = await import('@tanstack/react-start/server')
     const { DOCUMENT_SAVE_ID_HEADER, DOCUMENT_SAVE_OPERATIONS } = await import('@/lib/document-save-recovery')
     const { accessContext } = await import('./access-store')
+    if (permissions.some(permission => /\.(edit|import|delete|generate)$/.test(permission))) {
+      const { createAuditOriginResolver } = await import('./audit-origin-policy')
+      accessContext.getStore()!.auditOrigin = createAuditOriginResolver(serverFnMeta.name, data, accessContext.getStore())
+    }
     const saveId = getRequestHeader(DOCUMENT_SAVE_ID_HEADER)
     if (saveId && DOCUMENT_SAVE_OPERATIONS.some(operation => operation === serverFnMeta.name)) {
       const { documentSaveReceiptKey } = await import('./document-save-receipt')

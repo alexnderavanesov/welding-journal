@@ -7,6 +7,7 @@ const mock = vi.hoisted(() => ({ live: { wdi: 20 }, projection: vi.fn() }))
 function database(wdi: number) {
   const chain = {
     from: () => chain, where: () => chain, groupBy: () => chain,
+    as: () => ({ key: sql`'L'`, childCount: sql`1`, recordCount: sql`1`, total: sql`1` }),
     orderBy: () => chain, limit: () => chain,
     offset: async () => [{ key: 'L', childCount: 1, recordCount: 1, total: 1 }],
   }

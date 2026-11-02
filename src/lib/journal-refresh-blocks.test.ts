@@ -42,3 +42,13 @@ it('keeps nested group ordinals distinct from display offsets and refreshes only
   expect(blocks.map(block => [block.route, block.start])).toEqual([[[], 0], [['P', 'L'], 0]])
   expect(planJournalBlockRefresh(blocks, results).map(plan => [plan.route, plan.refresh])).toEqual([[[], false], [['P', 'L'], true]])
 })
+it('ignores only pristine child placeholders, without fetching every expanded group', () => {
+  const group = { data: { id: 0, journalGroup: { route: ['A'], ordinal: 0, childCount: 50 } }, rowIndex: 0 } as unknown as IRowNode<WeldRow>
+  const placeholder = { stub: true, rowIndex: 1, parent: { getRoute: () => ['A'] } } as IRowNode<WeldRow>
+  const stores = [{ route: [], rowCount: 1, lastRowIndexKnown: true }, { route: ['A'], rowCount: 1, lastRowIndexKnown: false }]
+  expect(collectJournalRefreshBlocks(grid([group, placeholder], stores))).toMatchObject([{ route: [], nodes: [group] }])
+  // Cached extents/data cannot be treated as a new, never-loaded child store.
+  expect(collectJournalRefreshBlocks(grid([group, placeholder], [stores[0], { ...stores[1], rowCount: 50 }]))).toBeNull()
+  expect(collectJournalRefreshBlocks(grid([group, placeholder], [stores[0], { ...stores[1], lastRowIndexKnown: true }]))).toBeNull()
+  expect(collectJournalRefreshBlocks(grid([group, { ...placeholder, data: { id: 1 } } as IRowNode<WeldRow>], stores))).toBeNull()
+})

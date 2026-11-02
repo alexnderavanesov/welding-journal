@@ -54,9 +54,9 @@ function AccountPanel({ initialTab }: { initialTab?: AccountTab }) {
   }
   function leaveSession() { setStorageIdentity(null); queryClient.clear(); window.location.assign('/account') }
   async function signOut() { const { authClient } = await import('@/lib/auth-client'); const result = await authClient.signOut(); if (result.error) throw new Error('Не удалось завершить сеанс.'); leaveSession() }
-  return <div className="mx-auto max-w-[1500px] space-y-6">
-    <header className="flex flex-wrap items-center justify-between gap-4"><div><h1 className="text-2xl font-semibold tracking-tight text-slate-900">{tabs.find(item => item.id === tab)?.label ?? 'Журнал действий'}</h1><p className="mt-1 text-sm text-slate-500">{identity.name} · {accountRoleLabel(identity.role)}</p></div>{tab === 'profile' ? <Button variant="outline" disabled={busy} onClick={() => void action(signOut)}><LogOut className="h-4 w-4" />Выйти</Button> : null}</header>
-    <div role="tablist" aria-label="Аккаунт и доступ" className="flex gap-1 overflow-x-auto border-b border-slate-200" onKeyDown={event => {
+  return <div className={`mx-auto max-w-[1500px] ${tab === 'activity' ? 'flex h-[calc(100dvh-2rem)] min-h-[36rem] flex-col gap-6 lg:h-[calc(100dvh-4rem)]' : 'space-y-6'}`}>
+    <header className="flex shrink-0 flex-wrap items-center justify-between gap-4"><div><h1 className="text-2xl font-semibold tracking-tight text-slate-900">{tabs.find(item => item.id === tab)?.label ?? 'Журнал действий'}</h1><p className="mt-1 text-sm text-slate-500">{identity.name} · {accountRoleLabel(identity.role)}</p></div>{tab === 'profile' ? <Button variant="outline" disabled={busy} onClick={() => void action(signOut)}><LogOut className="h-4 w-4" />Выйти</Button> : null}</header>
+    <div role="tablist" aria-label="Аккаунт и доступ" className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-200" onKeyDown={event => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
       event.preventDefault()
       const index = tabs.findIndex(item => item.id === tab)
@@ -79,7 +79,7 @@ function AccountPanel({ initialTab }: { initialTab?: AccountTab }) {
     </form></div>
     </div>
     {identity.role !== 'user' && tab === 'users' ? <div id="account-panel-users" role="tabpanel" aria-labelledby="account-tab-users"><UsersPanel /></div> : null}
-    {tab === 'activity' || tab === 'guide' ? <div id={`account-panel-${tab}`} role="tabpanel" aria-labelledby={`account-tab-${tab}`}><Suspense fallback={<p className="p-6 text-sm text-slate-500">Загрузка…</p>}>{tab === 'activity' ? <ActivityPanel embedded /> : <UserGuidePage />}</Suspense></div> : null}
+    {tab === 'activity' || tab === 'guide' ? <div id={`account-panel-${tab}`} role="tabpanel" className={tab === 'activity' ? 'flex min-h-0 flex-1 flex-col' : undefined} aria-labelledby={`account-tab-${tab}`}><Suspense fallback={<p className="p-6 text-sm text-slate-500">Загрузка…</p>}>{tab === 'activity' ? <ActivityPanel embedded /> : <UserGuidePage />}</Suspense></div> : null}
   </div>
 }
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="grid gap-2 text-sm font-medium text-slate-700">{label}{children}</label> }

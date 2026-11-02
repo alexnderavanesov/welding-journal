@@ -33,6 +33,9 @@ test('историческая заявка переименовывается, 
     await expect(confirmation).toContainText('Полное наименование документа останется без изменений')
     await confirmation.getByRole('button', { name: 'Изменить дату', exact: true }).click()
     await expect.poll(() => readJoint(id)).toMatchObject({ vik_request: '1503-2', vik_request_date: '2026-03-16' })
+    const dateHistory = await withE2eDatabase(async db => (await db.query(`select changes from audit_changes
+      where entity='weld_joints' and joint_id=$1 and changes ? 'vikRequestDate' order by id desc limit 1`, [id])).rows[0])
+    expect(dateHistory.changes.vikRequestDate).toMatchObject({ after: '2026-03-16', origin: 'user' })
     await page.getByPlaceholder('Новое наименование заявки', { exact: true }).fill('1503-2 исправлено')
     await page.getByRole('button', { name: 'Переименовать', exact: true }).click()
     await expect.poll(() => readJoint(id)).toMatchObject({ vik_request: '1503-2 исправлено', vik_request_date: '2026-03-16' })

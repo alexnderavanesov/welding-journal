@@ -1,6 +1,9 @@
-// Opt-in instrumentation of the unchanged production bundle. No SQL or values
-// are logged; only submission counts are written to a fresh temporary file.
+// Opt-in instrumentation of the unchanged production bundle. Normal runs log
+// counts only. Explicit isolated group/wide-date fixture diagnostics below
+// additionally capture their narrowly matched SQL and parameters. The separate
+// joint-facet trace records timing/shape hashes only, never SQL or bind values.
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { readdir, readFile } from 'node:fs/promises'
 import { writeFileSync, renameSync, readFileSync } from 'node:fs'
 import { getHeapStatistics } from 'node:v8'
@@ -33,12 +36,77 @@ const file = process.env.AUDIT_SQL_COUNTS_FILE
 assert(resourceContainer ? file === '/audit-counts/counts.json'
   : file?.startsWith(join(tmpdir(), 'welding-e2e-sql-')) && file.endsWith('/counts.json'))
 const counts = { statements: 0, operations: {}, rpcStatements: {} }
+const jointFacetTrace = process.env.DEEP_JOINT_FACET_CACHE === '1'
+const foundRecheck = process.env.DEEP_POPUP_FOUND_RECHECK === '1'
+if (foundRecheck) {
+  assert.equal(jointFacetTrace, true)
+  assert.equal(process.env.DEEP_PRIORITY_POPUP, '1')
+  assert.equal(process.env.DEEP_POPUP_REPORTS, 'journal')
+}
+let facetTrace, facetScope, facetRpcIds
+const flushFacetTrace = () => {
+  if (!jointFacetTrace) return
+  const target = file.replace(/counts\.json$/, 'joint-facet-trace.json')
+  writeFileSync(target + '.tmp', JSON.stringify(facetTrace))
+  renameSync(target + '.tmp', target)
+}
+if (jointFacetTrace) {
+  assert.equal(resourceContainer, false)
+  assert.equal(process.env.DEEP_POPUP_ROWS, '200000')
+  assert.notEqual(process.env.DEEP_FILTER_HTTP_GROUP_REPRO, '1')
+  assert.notEqual(process.env.DEEP_WIDE_DATE_CHOICE, '1')
+  assert.match(process.env.DEEP_JOINT_FACET_LABEL ?? '', /^[a-z0-9][a-z0-9-]{0,63}$/)
+  assert(process.env.E2E_AUDIT_OUTPUT_DIR && resolve(process.env.E2E_AUDIT_OUTPUT_DIR) !== resolve('.output'))
+  const manifests = (await readdir(root)).filter(name => name.includes('tanstack-start-server-fn-resolver') && name.endsWith('.mjs'))
+  assert.equal(manifests.length, 1)
+  const manifest = await readFile(join(root, manifests[0]), 'utf8')
+  const names = new Set(['readJournalFilterPage_createServerFn_handler', 'selectJournalFilterValues_createServerFn_handler'])
+  facetRpcIds = new Set([...manifest.matchAll(/"([a-f0-9]{64})":\s*\{\s*functionName:\s*"([^"\n]+)"/g)]
+    .filter(match => names.has(match[2])).map(match => match[1]))
+  assert.equal(facetRpcIds.size, 2)
+  facetScope = new AsyncLocalStorage()
+  facetTrace = { version: 'joint-facet-http-sql-v1', label: process.env.DEEP_JOINT_FACET_LABEL,
+    clock: 'performance.now milliseconds in this server process', requests: [], statements: 0 }
+}
+let facetCpuControl
+if (process.env.DEEP_JOINT_FACET_CPU === '1') {
+  assert.equal(jointFacetTrace, true)
+  assert.equal(process.env.AUDIT_SQL_COUNTS, '1')
+  assert.equal(resolve(process.env.E2E_AUDIT_OUTPUT_DIR ?? ''), resolve('outputs/deep-optimization-2026-11-01/candidate-6-output'))
+  assert.equal(process.env.DEEP_JOINT_FACET_LABEL, 'joint-facet-cpu-candidate6-200000')
+  assert.equal(process.env.E2E_BASELINE_SCHEMA_TIME, undefined)
+  assert.notEqual(process.env.E2E_DEEP_JOINT_CHOICE_BASELINE, '1')
+  assert(!process.env.AUDIT_CPU_PROFILE && !process.env.AUDIT_HEAP_PROFILE, 'Disable other audit profilers')
+  assert(![...process.execArgv, process.env.NODE_OPTIONS ?? ''].some(value => /--(?:cpu-prof|heap-prof|prof)(?:\s|=|$)/.test(value)), 'Disable CLI profilers')
+  const { createJointFacetCpuControl } = await import('./joint-facet-cpu.mjs')
+  facetCpuControl = await createJointFacetCpuControl({ countsFile: file, label: process.env.DEEP_JOINT_FACET_LABEL })
+}
 // Keep endpoint budgets independent of other browser tabs and background RPCs.
 // Store only the generated RPC identifier and submission count, never payloads.
 const rpcScope = new AsyncLocalStorage()
 const emit = Server.prototype.emit
 Server.prototype.emit = function (event, ...args) {
+  if (facetCpuControl && event === 'request' && facetCpuControl(args[0], args[1])) return true
   const rpc = event === 'request' && /^\/_serverFn\/([\w-]+)(?:\?|$)/.exec(args[0]?.url ?? '')?.[1]
+  if (jointFacetTrace && rpc && facetRpcIds.has(rpc) && (foundRecheck || args[0]?.headers['x-e2e-facet-trace-id'] !== undefined)) {
+    const id = foundRecheck ? `recheck-${facetTrace.requests.length}` : args[0].headers['x-e2e-facet-trace-id']
+    assert.match(id, foundRecheck ? /^recheck-\d+$/ : /^facet-c[0-2]-(?:expired|within-16s|across-31s)-(?:first|match|select)$/)
+    assert(facetTrace.requests.length < 128 && !facetTrace.requests.some(entry => entry.id === id))
+    const entry = { id, rpc, start: performance.now(), sql: [] }
+    facetTrace.requests.push(entry)
+    const response = args[1]
+    let completed = false
+    const end = completion => {
+      if (completed) return
+      completed = true
+      entry.end = performance.now(); entry.milliseconds = entry.end - entry.start
+      entry.completion = completion; entry.status = response.statusCode
+      flushFacetTrace()
+    }
+    response.once('finish', () => end('finish'))
+    response.once('close', () => end('close'))
+    return rpcScope.run(rpc, () => facetScope.run(entry, () => emit.call(this, event, ...args)))
+  }
   return rpc ? rpcScope.run(rpc, () => emit.call(this, event, ...args)) : emit.call(this, event, ...args)
 }
 const dispatcherCalculations = []
@@ -105,6 +173,116 @@ if (resources && ['1', 'peak'].includes(process.env.AUDIT_HEAP_PROFILE)) {
   }, 1000).unref()
 }
 const original = pg.Client.prototype.query
+// Enabled only for the explicitly labelled synthetic HTTP requests above.
+// Keep the original pg promise/return value and callback receiver/arguments.
+function traceFacetQuery(client, args, sqlText, operation, request) {
+  assert(++facetTrace.statements <= 2048, 'Joint-facet diagnostic statement bound exceeded')
+  const shape = value => value === null ? 'null' : value === undefined ? 'undefined'
+    : typeof value === 'string' ? { type: 'string', length: value.length }
+    : Array.isArray(value) ? { type: 'array', length: value.length, items: value.map(shape) }
+    : value instanceof Date ? 'date' : Buffer.isBuffer(value) ? { type: 'buffer', length: value.length }
+    : typeof value
+  const parameters = Array.isArray(args[1]) ? args[1] : args[0]?.values ?? []
+  const hash = value => createHash('sha256').update(value).digest('hex')
+  const entry = { sequence: facetTrace.statements, operation, start: performance.now(),
+    sqlShapeSha256: hash(sqlText ?? ''), parameterShapeSha256: hash(JSON.stringify(parameters.map(shape))) }
+  request.sql.push(entry)
+  let completed = false
+  const end = (error, reply, completion) => {
+    if (completed) return
+    completed = true
+    entry.end = performance.now(); entry.milliseconds = entry.end - entry.start; entry.completion = completion
+    if (error) entry.error = { kind: 'query-error', ...(typeof error.code === 'string' && /^[A-Z0-9]{5}$/.test(error.code) ? { sqlState: error.code } : {}) }
+    else if (reply) { entry.rows = reply.rowCount ?? null; entry.columns = reply.fields?.length ?? null }
+    if (request.end !== undefined) flushFacetTrace()
+  }
+  const callback = typeof args.at(-1) === 'function' ? args.at(-1) : undefined
+  const forwarded = callback ? [...args.slice(0, -1), function (...values) {
+    end(values[0], values[1], 'callback')
+    return callback.apply(this, values)
+  }] : args
+  try {
+    const result = original.apply(client, forwarded)
+    if (!callback && typeof result?.then === 'function') result.then(reply => end(undefined, reply, 'promise'), error => end(error, undefined, 'promise'))
+    else if (!callback) end(undefined, undefined, 'unobserved-query-contract')
+    return result
+  } catch (error) { end(error, undefined, 'synchronous-throw'); throw error }
+}
+// Explicit synthetic-fixture diagnostic only. Capture the actual large group
+// read and its non-executing plan before it can stall; never enable this during
+// acceptance timings or against any database outside the runner guard above.
+const groupRepro = process.env.DEEP_FILTER_HTTP_GROUP_REPRO === '1'
+if (groupRepro) {
+  assert.equal(resourceContainer, false)
+  assert.equal(process.env.DEEP_FILTER_HTTP, '1')
+  assert.equal(process.env.PORT, '3100')
+}
+const wideDate = process.env.DEEP_WIDE_DATE_CHOICE === '1'
+if (wideDate) {
+  assert.equal(resourceContainer, false)
+  assert.equal(process.env.PORT, '3100')
+  assert.equal(process.env.DEEP_POPUP_ROWS, '200000')
+  assert.equal(groupRepro, false)
+}
+let wideDateSequence = 0
+async function captureWideDateLeaf(client, args, sqlText, rpc) {
+  assert(!args.some(value => typeof value === 'function'), 'Wide-date capture requires a promise query')
+  const parameters = Array.isArray(args[1]) ? args[1] : args[0]?.values ?? []
+  const record = { sequence: ++wideDateSequence, backendPid: client.processID, rpc,
+    capturedAt: new Date().toISOString(), sql: sqlText, parameters, startedAt: new Date().toISOString() }
+  const diagnosticFile = file.replace(/counts\.json$/, 'wide-date-leaf.json')
+  const save = () => {
+    writeFileSync(diagnosticFile + '.tmp', JSON.stringify(record))
+    renameSync(diagnosticFile + '.tmp', diagnosticFile)
+  }
+  save()
+  try {
+    // No EXPLAIN, query rewrite or settings changes on the HTTP path.
+    const result = await original.apply(client, args)
+    record.completedAt = new Date().toISOString()
+    record.rows = result.rowCount
+    save()
+    return result
+  } catch (error) {
+    record.queryError = error.message
+    save()
+    throw error
+  }
+}
+let groupReproSequence = 0
+async function explainGroupRepro(client, args, sqlText) {
+  assert(!args.some(value => typeof value === 'function'), 'Group repro requires a promise query')
+  const parameters = Array.isArray(args[1]) ? args[1] : args[0]?.values ?? []
+  const record = { sequence: ++groupReproSequence, backendPid: client.processID,
+    capturedAt: new Date().toISOString(), sql: sqlText, parameters }
+  const diagnosticFile = file.replace(/counts\.json$/, 'group-repro-member.json')
+  const save = () => {
+    writeFileSync(diagnosticFile + '.tmp', JSON.stringify(record))
+    renameSync(diagnosticFile + '.tmp', diagnosticFile)
+  }
+  save()
+  try {
+    const plan = await original.call(client, { text: 'EXPLAIN (FORMAT JSON) ' + sqlText, values: parameters })
+    record.plan = plan.rows
+  } catch (error) {
+    record.planError = error.message
+    save()
+    throw error
+  }
+  record.startedAt = new Date().toISOString()
+  save()
+  try {
+    const result = await original.apply(client, args)
+    record.completedAt = new Date().toISOString()
+    record.rows = result.rowCount
+    save()
+    return result
+  } catch (error) {
+    record.queryError = error.message
+    save()
+    throw error
+  }
+}
 pg.Client.prototype.query = function (...args) {
   counts.statements++
   const rpc = rpcScope.getStore()
@@ -112,7 +290,14 @@ pg.Client.prototype.query = function (...args) {
   const sql = typeof args[0] === 'string' ? args[0] : args[0]?.text
   const operation = /^\s*(\w+)/.exec(sql ?? '')?.[1]?.toUpperCase() ?? 'OTHER'
   counts.operations[operation] = (counts.operations[operation] ?? 0) + 1
-  const result = original.apply(this, args)
+  const captureWideDate = wideDate && rpc && operation === 'SELECT'
+    && sql.includes('"weld_joints".xmin::text as "row_version"') && sql.includes('union all')
+    && (Array.isArray(args[1]) ? args[1] : args[0]?.values ?? []).includes('%E2E-DEEP-POPUP%')
+  const facetRequest = jointFacetTrace ? facetScope.getStore() : undefined
+  const result = facetRequest ? traceFacetQuery(this, args, sql, operation, facetRequest)
+    : captureWideDate ? captureWideDateLeaf(this, args, sql, rpc)
+    : groupRepro && operation === 'SELECT' && sql.includes('"row_groupKey"') && sql.includes('"journal_root_state"')
+    ? explainGroupRepro(this, args, sql) : original.apply(this, args)
   if (resources && result?.then && operation === 'SELECT') {
     const table = /\bfrom\s+"(\w+)"/i.exec(sql ?? '')?.[1] ?? 'metadata'
     const kind = table === 'weld_joints' && /join\s+"line_programs"/i.test(sql) ? 'weld_joints_join_line_programs' : table
@@ -149,6 +334,7 @@ const flush = () => {
   }
   writeFileSync(file + '.tmp', JSON.stringify({ ...counts, dispatcherCalculations, ...(resources ? { resources } : {}) }))
   renameSync(file + '.tmp', file)
+  if (jointFacetTrace) flushFacetTrace()
 }
 flush()
 // Tests discover this process-owned path through its environment-free marker.

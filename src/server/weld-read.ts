@@ -55,7 +55,7 @@ DISPATCHER_TASKS_FIELD_KEY,
 parseDispatcherTaskServerFilter,
 } from '@/lib/dispatcher-task-row-codes'
 import type { JointChainContinuation, WeldRow } from '@/lib/dispatcher-types'
-import { parseDispatcherTaskIndexPayload } from '@/lib/dispatcher-task-index-payload'
+import { readDispatcherTaskStateContext } from './dispatcher-task-state-context'
 import type { DuplicateControlRecord } from '@/lib/duplicate-control-types'
 import {
 isPreHeatTreatmentLnkMethodCode,
@@ -171,7 +171,9 @@ import {
 addBaseFilterClauses,
 applyCurrentSystemWdi,
 buildColumnChoiceWhere,
+buildColumnTextContainsWhere,
 buildColumnTextEqualsWhere,
+buildWeldDateColumnWhere,
 buildControlAvailabilityColumnWhere,
 buildDispatcherTaskWhere,
 buildFinalStatusColumnWhere,
@@ -1237,7 +1239,7 @@ export async function attachReportPageMetadata<Row extends DuplicateControlCarri
   const rowsWithChainContinuations = mergeJointChainContinuationMetadataIntoRows(
     rows,
     dispatcherState
-      ? parseDispatcherTaskIndexPayload(dispatcherState.repeatedTasks).chainContinuations
+      ? readDispatcherTaskStateContext(dispatcherState).chainContinuations
       : [],
   )
   return rows.map((row, index) => ({
@@ -1459,7 +1461,7 @@ export async function listColumnFilterOptions(data: ReturnType<typeof normalizeW
       const value = reportTextSql(column)
       const rows = await requireDb().select({ value, count: count() }).from(weldJoints).where(where).groupBy(sql`1`)
       return normalizeWeldColumnFilterOptions(data.fieldKey,
-        rows.map(row => ({ value: row.value, count: Number(row.count), label: row.value || '(пусто)' })), data.report === 'weldingJournal')
+        rows.map(row => ({ value: row.value, count: Number(row.count), label: row.value || '(пусто)' })))
   }
   const calculated = !isReportSourceColumnFilter(data.fieldKey, data.report) ||
     !canPaginateReportSource(columnFilters, data.report) || data.fieldKey === 'wdi' || Boolean(columnFilters.wdi)
@@ -1793,6 +1795,11 @@ export function addReportSourceColumnFilterClauses(
       continue
     }
 
+    if (key === 'weldDate') {
+      clauses.push(buildWeldDateColumnWhere(query))
+      continue
+    }
+
     const documentType = GENERATED_DOCUMENT_FIELD_TYPES[key as keyof typeof GENERATED_DOCUMENT_FIELD_TYPES]
     if (documentType) {
       clauses.push(buildGeneratedDocumentColumnWhere(query, documentType, key))
@@ -1824,7 +1831,7 @@ export function addReportSourceColumnFilterClauses(
       continue
     }
 
-    clauses.push(sql`coalesce(${column}::text, '') ilike ${`%${query}%`}`)
+    clauses.push(buildColumnTextContainsWhere(column, query))
   }
 }
 
@@ -1865,9 +1872,8 @@ export function canPaginateReportSource(columnFilters: Record<string, string>, r
 export function normalizeWeldColumnFilterOptions(
   fieldKey: WeldFieldKey,
   options: readonly WeldColumnFilterOption[],
-  reuseLabelCollator = false,
 ) {
-  if (!CONTROL_ASSIGNMENT_FIELD_KEYS.has(fieldKey)) return sortColumnFilterOptions([...options], reuseLabelCollator)
+  if (!CONTROL_ASSIGNMENT_FIELD_KEYS.has(fieldKey)) return sortColumnFilterOptions(options)
 
   const counts = new Map<string, number>()
   for (const option of options) {
@@ -1879,19 +1885,19 @@ export function normalizeWeldColumnFilterOptions(
       value,
       count,
       label: value || '(пусто)',
-    })), reuseLabelCollator,
+    })),
   )
 }
 
-// Opted into only by journal scalar facets. The collation and stable tie order
-// are unchanged; large option lists no longer construct a collator per compare.
-const JOURNAL_FILTER_COLLATOR = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' })
-export function sortColumnFilterOptions(options: WeldColumnFilterOption[], reuseLabelCollator = false) {
+// The same Russian/numeric collation is shared by all report facets, including
+// LNK/PSTO and document titles. Recreating it per comparison adds substantial
+// CPU cost to a cold high-cardinality list without changing its ordering.
+const REPORT_FILTER_COLLATOR = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' })
+export function sortColumnFilterOptions(options: readonly WeldColumnFilterOption[]) {
   return [...options].sort((left, right) => {
     if (left.value === '') return -1
     if (right.value === '') return 1
-    return reuseLabelCollator ? JOURNAL_FILTER_COLLATOR.compare(left.label, right.label)
-      : left.label.localeCompare(right.label, 'ru', { numeric: true, sensitivity: 'base' })
+    return REPORT_FILTER_COLLATOR.compare(left.label, right.label)
   })
 }
 

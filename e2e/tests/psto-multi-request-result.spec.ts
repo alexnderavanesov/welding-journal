@@ -148,6 +148,16 @@ for (const repeat of [false, true]) test(`one diagram from multiple requests/lin
   ])
   await expect(dialog).toBeHidden()
   const after = await snapshot()
+  const audit = await withE2eDatabase(async db => (await db.query(`select entity,changes from audit_changes where operation_id=(
+    select operation_id from audit_changes where joint_id=$1 and changes ? 'pstoDate' order by id desc limit 1)`, [ids[0]])).rows)
+  const cycleChanges = audit.filter(row => ['weld_joints', 'psto_repeat_cycles'].includes(row.entity) && row.changes.pstoDate)
+  expect(cycleChanges).toHaveLength(2)
+  for (const row of cycleChanges) {
+    expect(row.changes.pstoDate.origin).toBe('user')
+    expect(row.changes.pstoResult.origin).toBe('automatic')
+    expect(row.changes.heatTreatmentDiagram.origin).toBe('automatic')
+  }
+  expect(audit.some(row => row.entity === 'generated_documents' && row.changes.title?.origin === 'automatic')).toBe(true)
   const created = after.documents.filter(document => document.type === 'system:pstoConclusion' && document.title === name)
   expect(created).toHaveLength(1)
   expect(created[0].row_count).toBe(2)

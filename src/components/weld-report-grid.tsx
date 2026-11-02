@@ -1,4 +1,5 @@
 import { useAccess } from '@/lib/security-context'
+import { useReportGroupSession } from '@/lib/report-group-session'
 import { canViewWeldField } from '@/lib/weld-field-access'
 import { REPORT_ACCESS_AREAS } from '@/lib/access-permissions'
 import { WORKFLOW_SELECTION_LIMIT } from '@/lib/workflow-selection-limit'
@@ -81,6 +82,7 @@ function ReportGrid(props: WeldReportGridProps) {
     return () => { reportExportFieldsRef.current = null }
   }, [api, reportExportFieldsRef, report])
   const [settings, setSettings] = useState<JournalGridStorage>(() => readJournalGridStorage(profile.storageKey))
+  const groupSession = useReportGroupSession(report, settings.columns)
   const settingsRef = useRef(settings)
   const restoringLayout = useRef(false)
   const initialLayout = useRef<JournalGridStorage['columns']>([])
@@ -208,6 +210,11 @@ function ReportGrid(props: WeldReportGridProps) {
       }
       focusGroup(target)
     }
+    // Public AG focus also calls native focus without preventScroll. Focus the
+    // existing anchor cell first so a clipped row does not scroll the page and
+    // immediately dismiss the menu we are about to open.
+    const anchorRow = anchor.closest('.ag-row')
+    anchorRow?.querySelector<HTMLElement>(`.ag-cell[col-id="${groupAnchor}"]`)?.focus({ preventScroll: true })
     focusGroup(node)
     rowMenu.openCustom({ ...position, anchorElement: anchor, heading: `Группа: ${node.key || '(Пусто)'}`,
       description: 'Группы всей выборки по текущим фильтрам', items: [
@@ -432,11 +439,12 @@ function ReportGrid(props: WeldReportGridProps) {
             if (node?.group) openGroupMenu(node, groupRow, { x: event.clientX, y: event.clientY })
             return
           }
-          const cell = event.target instanceof Element ? event.target.closest('.ag-cell') : null
+          const cell = event.target instanceof Element ? event.target.closest<HTMLElement>('.ag-cell') : null
           const rowId = cell?.closest('[row-id]')?.getAttribute('row-id')
           const node = rowId ? api?.getRowNode(rowId) : null
           if (!node?.data || node.rowIndex == null || !cell) return
           const id = cell.getAttribute('col-id') ?? ''
+          cell.focus({ preventScroll: true })
           api?.setFocusedCell(node.rowIndex, id)
           openMenu(node.data, { x: event.clientX, y: event.clientY, anchorElement: cell }, FIELD_BY_KEY.has(id as WeldFieldKey) ? id as WeldFieldKey : undefined)
         }}
@@ -573,6 +581,8 @@ function ReportGrid(props: WeldReportGridProps) {
           if (popupColumn.current) api?.setFocusedHeader(popupColumn.current)
         }}>
         <AgGridReact<WeldRow>
+          initialState={groupSession.initialState}
+          onGridPreDestroyed={event => groupSession.capture(event.api)}
           postProcessPopup={positionGridPopup}
           rowModelType="serverSide"
           cacheBlockSize={100} maxBlocksInCache={5} maxConcurrentDatasourceRequests={2} blockLoadDebounceMillis={0} purgeClosedRowNodes

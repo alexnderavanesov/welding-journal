@@ -1,3 +1,4 @@
+import { recordAuditWdiMode } from './audit-functions'
 import { formatAccessValidationMessage } from './access-validation-message'
 import { getControlAssignmentRemovalReason } from '@/lib/control-assignment-history'
 import { getLnkResultRemovalBlockReason } from '@/lib/lnk-chronology-checks'
@@ -268,7 +269,9 @@ export function prepareServerWeldRecords({
     policyRow.preHeatTreatmentLnkEnabled = context.controlProcessSettings.preHeatTreatmentLnkEnabled
     record.finalStatus = calculateFinalStatus(record)
   })
-  if (!isSystemWdiMode(context.otherSettings)) return records
+  const systemWdi = isSystemWdiMode(context.otherSettings)
+  recordAuditWdiMode(systemWdi)
+  if (!systemWdi) return records
 
   records.forEach((record, index) => {
     const previous = record.id ? previousRows.get(Number(record.id)) : undefined

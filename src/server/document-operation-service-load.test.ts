@@ -7,6 +7,7 @@ import { buildSystemDocumentSummaries, type SystemDocumentSummary } from '@/lib/
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { REBUILD_DOCUMENT_LIMIT, REBUILD_FACT_BYTES_LIMIT } from '@/lib/system-document-rebuild-batch'
 import { assertDocumentOperationLockCoverage, checkOperationNameConflicts, getOperationComposition, loadDocumentOperationSelection, loadDocumentOperationSnapshot, normalizeOperationRequest, planOperationBatches, previewOperation } from './document-operation-service'
+import { parseSystemDocumentMetadata } from './system-document-index'
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), settings: vi.fn(), numbers: vi.fn(), transaction: vi.fn(), budget: vi.fn() }))
 vi.mock('@/db', () => ({ requireDb: () => ({ transaction: mocks.transaction }) }))
@@ -17,7 +18,7 @@ vi.mock('./system-document-rebuild-batch', async original => ({
 }))
 vi.mock('./system-document-index', async original => ({
   ...await original<typeof import('./system-document-index')>(),
-  initializeSystemDocumentIndexesInTransaction: vi.fn(async () => {}), loadIndexedSystemDocumentSummaries: mocks.load,
+  initializeSystemDocumentIndexesInTransaction: vi.fn(async () => {}), loadIndexedSystemDocumentSelection: mocks.load,
 }))
 vi.mock('./system-document-sequences', async original => ({
   ...await original<typeof import('./system-document-sequences')>(),
@@ -75,7 +76,10 @@ function cycleFixture(count: number) {
 }
 beforeEach(() => {
   vi.clearAllMocks(); documents = []; rows = []; cycles = []; controls = []; metadata = new Map(); factBytes = new Map(); catalogOverride = undefined
-  mocks.load.mockImplementation(async (_tx, type) => documents.filter(doc => doc.type === type))
+  mocks.load.mockImplementation(async (_tx, ids: number[]) => ({
+    documents: documents.filter(doc => ids.includes(doc.documentId)),
+    positions: new Map(ids.map(id => [id, parseSystemDocumentMetadata(metadata.get(id))?.sourcePositions ?? []])),
+  }))
   mocks.settings.mockResolvedValue(REQUEST_CONCLUSION_DEFAULT_SETTINGS); mocks.numbers.mockResolvedValue({})
 })
 
@@ -99,11 +103,11 @@ it.each(['rowIds', 'cycleIds', 'controlIds'] as const)('rejects changed %s after
 
 it.each([24, 60_000])('discovers %i cycle lock targets without loading facts or calculating names', async count => {
   cycleFixture(count)
-  const { tx, select, reads } = connection()
+  const { tx, select } = connection()
   const result = await loadDocumentOperationSelection(tx, [1])
   expect(result.rowIds).toEqual(rows.map(row => row.id)); expect(result.cycleIds).toEqual(cycles.map(cycle => cycle.id))
-  expect(result.controlIds).toEqual([]); expect(select).toHaveBeenCalledOnce(); expect(reads[0].table).toBe(generatedDocuments)
-  expect(mocks.load).toHaveBeenCalledTimes(4); expect(mocks.settings).not.toHaveBeenCalled(); expect(mocks.budget).not.toHaveBeenCalled()
+  expect(result.controlIds).toEqual([]); expect(select).not.toHaveBeenCalled()
+  expect(mocks.load).toHaveBeenCalledExactlyOnceWith(tx, [1]); expect(mocks.settings).not.toHaveBeenCalled(); expect(mocks.budget).not.toHaveBeenCalled()
 })
 
 it('includes before-TO controls in the real lock and freshness snapshot', async () => {
@@ -123,14 +127,14 @@ it.each([24, REBUILD_DOCUMENT_LIMIT])('loads %i selected documents without one q
   documents = rows.map(row => ({ documentId: row.id, type: 'pstoRequest', title: `P${row.id}`, date: '2026-09-01', rowIds: [row.id] })) as SystemDocumentSummary[]
   const { tx, select } = connection(), result = await loadDocumentOperationSnapshot(tx, documents.map(doc => doc.documentId))
   expect(result.sources).toHaveLength(count); expect(result.sources.at(-1)?.rows[0].id).toBe(count)
-  expect(mocks.load).toHaveBeenCalledTimes(4); expect(mocks.settings).toHaveBeenCalledOnce(); expect(mocks.numbers).toHaveBeenCalledOnce()
-  expect(select).toHaveBeenCalledTimes(1 + Math.ceil(count / 5000))
+  expect(mocks.load).toHaveBeenCalledOnce(); expect(mocks.settings).toHaveBeenCalledOnce(); expect(mocks.numbers).toHaveBeenCalledOnce()
+  expect(select).toHaveBeenCalledTimes(Math.ceil(count / 5000))
 })
 
 it.each([24, 60_000])('reads all %i exact cycles in bounded batches and fingerprints their actual facts', async count => {
   cycleFixture(count)
   const { tx, select } = connection(), result = await loadDocumentOperationSnapshot(tx, [1])
-  expect(select).toHaveBeenCalledTimes(2 + 2 * Math.ceil(count / 5000))
+  expect(select).toHaveBeenCalledTimes(1 + 2 * Math.ceil(count / 5000))
   expect(result.sources[0].cyclePositions).toHaveLength(count)
   expect(result.sources[0].cyclePositions?.at(-1)?.cycle).toEqual(cycles.at(-1))
   if (count === 24) {

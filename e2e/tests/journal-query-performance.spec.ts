@@ -33,6 +33,8 @@ test.beforeAll(async () => {
       select $1,'QUERY','QUERY-'||lpad(((n-1)/300)::text,4,'0'),'F'||n,
         date '2026-10-01'+(n%20),'ISO-'||lpad((n%100)::text,3,'0'),'действующий','СШ',1
       from generate_series(1,$2::int) n`, [project, total])
+    if (process.env.DAILY_LNK_FIXTURE === '1') await db.query(`update weld_joints set has_vik='да',vik_result='годен'
+      where project_title=$1`, [project])
     await db.query(`insert into weld_joint_program_states(weld_joint_id,kind,physical_root_id)
       select id,'primary',id from weld_joints where project_title=$1`, [project])
     await db.query('analyze weld_joints')
@@ -196,4 +198,91 @@ test('native Safari query comparison', async ({}, info) => {
   test.setTimeout(300_000)
   const result = await measureJournalQueriesInSafari(project, total, info.outputPath('safari-diagnostic.json'))
   await writeFile(info.outputPath('safari-queries.json'), JSON.stringify(result, null, 2))
+})
+
+test('daily main-field filters, facets and sorts retain the same complete selection', async ({ page, browser }, info) => {
+  test.skip(process.env.DAILY_QUERY_BENCHMARK !== '1', 'Focused comparison of the six daily fields')
+  test.setTimeout(600_000)
+  let observed = ''
+  page.on('request', request => { if (rpcName(request.url()).startsWith('readJournalGrid_')) observed = request.url() })
+  await page.goto('/journal')
+  await page.getByRole('searchbox').fill(project)
+  await expect(page.getByText(`Найдено: ${total}`, { exact: true })).toBeVisible({ timeout: 240_000 })
+  await page.waitForLoadState('networkidle')
+  const call = async <T,>(name: string, data: object) => {
+    const response = await page.request.post(siblingRpcUrl(observed, name + '_createServerFn_handler'), {
+      data: await serializeRpcData(data), headers: { origin: new URL(observed).origin, 'sec-fetch-site': 'same-origin',
+        'content-type': 'application/json', 'x-tsr-serverFn': 'true' },
+    })
+    expect(response.ok()).toBe(true)
+    const payload = await deserializeRpcResponse(await response.text()) as { result: T; error?: Error }
+    if (payload.error) throw payload.error
+    return payload.result
+  }
+  const fields = ['projectTitle', 'subtitleCode', 'line', 'joint', 'weldDate', 'finalStatus'] as const
+  const fragments = { projectTitle: 'query perf', subtitleCode: 'UER', line: 'Y-0001', joint: 'F123', weldDate: '2026-10-0', finalStatus: 'годен' }
+  const columns = { projectTitle: 'project_title', subtitleCode: 'subtitle_code', line: 'line', joint: 'joint', weldDate: 'weld_date', finalStatus: 'final_status' }
+  const samples: object[] = []
+  for (const scope of [project, project.toLowerCase(), project.toUpperCase()]) {
+    const base: JournalGridRequest = { columnFilters: { projectTitle: '=' + scope }, groupBy: [], route: [], start: 0, end: 100 }
+    for (const fieldKey of fields) {
+      const request = { ...base, columnFilters: { ...base.columnFilters, [fieldKey]: fragments[fieldKey] } }
+      const expected = await withE2eDatabase(async db => (await db.query(`select count(*)::int as total from weld_joints
+        where project_title=$1 and coalesce(${columns[fieldKey]}::text,'') ilike $2`, [project, '%' + fragments[fieldKey] + '%'])).rows[0].total)
+      const start = performance.now()
+      const filtered = await call<JournalGridResult>('readJournalGrid', request)
+      expect(filtered.rowCount).toBe(expected)
+      samples.push({ scope, name: 'filter-' + fieldKey, milliseconds: performance.now() - start, count: filtered.rowCount,
+        rows: filtered.rows.map(row => row.id) })
+      for (const direction of ['asc', 'desc'] as const) {
+        const started = performance.now()
+        const sorted = await call<JournalGridResult>('readJournalGrid', { ...base, sort: { fieldKey, direction } })
+        samples.push({ scope, name: 'sort-' + fieldKey + '-' + direction, milliseconds: performance.now() - started,
+          count: sorted.rowCount, rows: sorted.rows.map(row => row.id) })
+        expect(sorted.rowCount).toBe(total)
+        expect(new Set(sorted.rows.map(row => row.id)).size).toBe(100)
+      }
+      // Inspect complete value lists through the same paged endpoint used by the UI.
+      for (const report of ['weldingJournal', 'lnk'] as const) {
+        const started = performance.now()
+        const facet = await call<import('../../src/lib/journal-filter-options').JournalFilterPage>('readJournalFilterPage', {
+          report, fieldKey, columnFilters: base.columnFilters,
+        })
+        samples.push({ scope, name: 'facet-' + report + '-' + fieldKey, milliseconds: performance.now() - started,
+          total: facet.total, first: facet.options.slice(0, 3), last: facet.options.at(-1) })
+      }
+    }
+  }
+  await writeFile(info.outputPath('daily-fields.json'), JSON.stringify({ total, browser: browser.version(), samples }, null, 2))
+})
+
+test('daily mixed groups preserve fractional WDI and legacy identity', async ({ page }, info) => {
+  test.skip(process.env.DAILY_GROUP_FALLBACK !== '1', 'Focused before/after mixed-group comparison')
+  test.setTimeout(300_000)
+  let observed = ''
+  page.on('request', request => { if (rpcName(request.url()).startsWith('readJournalGrid_')) observed = request.url() })
+  await withLineProgramFixture(async db => {
+    await db.query('update weld_joints set wdi=1.235 where project_title=$1 and joint=$2', [project, 'F' + total])
+    await db.query('delete from weld_joint_program_states where weld_joint_id in (select id from weld_joints where project_title=$1 and joint=$2)', [project, 'F' + total])
+  })
+  await page.goto('/journal')
+  await page.getByRole('searchbox').fill(project)
+  await expect(page.getByText(`Найдено: ${total}`, { exact: true })).toBeVisible({ timeout: 240_000 })
+  await page.waitForLoadState('networkidle')
+  const samples: object[] = []
+  for (const scope of [project, project.toLowerCase(), project.toUpperCase()]) {
+    const started = performance.now()
+    const response = await page.request.post(siblingRpcUrl(observed, 'readJournalGrid_createServerFn_handler'), {
+      data: await serializeRpcData({ columnFilters: { projectTitle: '=' + scope }, groupBy: ['projectTitle'], route: [], start: 0, end: 100 }),
+      headers: { origin: new URL(observed).origin, 'sec-fetch-site': 'same-origin', 'content-type': 'application/json', 'x-tsr-serverFn': 'true' },
+    })
+    expect(response.ok()).toBe(true)
+    const payload = await deserializeRpcResponse(await response.text()) as { result: JournalGridResult; error?: Error }
+    if (payload.error) throw payload.error
+    const result = payload.result
+    expect(result.rowCount).toBe(1)
+    expect(result.rows[0].journalGroup?.summary).toMatchObject({ joints: total, wdi: total + 0.24, missingWdi: 0, partialChains: 0 })
+    samples.push({ scope, milliseconds: performance.now() - started, summary: result.rows[0].journalGroup?.summary })
+  }
+  await writeFile(info.outputPath('mixed-groups.json'), JSON.stringify({ total, samples }, null, 2))
 })

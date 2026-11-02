@@ -401,6 +401,71 @@ describe('document grid server lifecycle', () => {
     expect(selection).toHaveBeenCalledTimes(1)
     expect(loadRows).toHaveBeenCalledTimes(1)
   })
+  it.each([false, true])('commits an individual checkbox before immediate store eviction (previously selected: %s)', async wasSelected => {
+    const group = { id: 'group', group: true, level: 0, rowIndex: 0, expanded: true, parent: null,
+      data: { id: 'group', __group: true, groupKey: 'A', groupLabel: 'A', childCount: 1, ordinal: 0 },
+      isSelected: () => false, setExpanded: vi.fn() } as unknown as IRowNode<Row | DocumentHistoryGroupRow>
+    const node = { id: 'document:1', data: { id: 1 }, rowIndex: 1, parent: group,
+      isSelected: () => wasSelected } as IRowNode<Row | DocumentHistoryGroupRow>
+    let loaded = [group, node]
+    grid.groups = [group]
+    grid.api.forEachNode.mockImplementation(callback => loaded.forEach(callback))
+    grid.api.getDisplayedRowAtIndex.mockImplementation(index => loaded.find(row => row.rowIndex === index))
+    vi.mocked(group.setExpanded).mockImplementation(expanded => { group.expanded = expanded; loaded = expanded ? [group, node] : [group] })
+    const selection = vi.fn(), initial = props({ selectedDocuments: [{ id: 900 }, ...(wasSelected ? [{ id: 1 }] : [])], onSelectionChange: selection,
+      loadRows: vi.fn().mockResolvedValue({ rows: [node.data], rowCount: 1, total: 1 }) })
+    const view = render(<DocumentsHistoryGrid {...initial} />)
+    await act(async () => { request() })
+    const row = document.createElement('div'), wrapper = document.createElement('div'), checkbox = document.createElement('input')
+    row.className = 'ag-row'; row.setAttribute('row-index', '1')
+    wrapper.className = 'ag-selection-checkbox'; checkbox.type = 'checkbox'; checkbox.checked = wasSelected
+    wrapper.append(checkbox); row.append(wrapper); view.container.querySelector('.document-grid-frame')!.append(row)
+    const deferredNativeSelection = vi.fn()
+    wrapper.addEventListener('click', deferredNativeSelection)
+    selection.mockClear()
+    fireEvent.click(checkbox)
+    // No timer, render-ready wait or selected-count poll between the operator
+    // action and group collapse. The outside identity must stay untouched.
+    fireEvent.keyDown(view.container.querySelector('.ag-full-width-row')!, { key: 'Enter' })
+    row.remove()
+    const expected = [{ id: 900 }, ...(!wasSelected ? [{ id: 1 }] : [])]
+    expect(selection).toHaveBeenCalledExactlyOnceWith(expected)
+    expect(group.setExpanded).toHaveBeenCalledWith(false, expect.any(KeyboardEvent), true)
+    expect(deferredNativeSelection).not.toHaveBeenCalled()
+    expect(checkbox.checked).toBe(!wasSelected)
+    // A re-created AG node may retain its old internal selection. Restore the
+    // authoritative identities, including a deselect, when the leaf returns.
+    loaded = [group, node]; grid.api.setNodesSelected.mockClear()
+    view.rerender(<DocumentsHistoryGrid {...initial} selectedDocuments={expected} />)
+    expect(grid.api.setNodesSelected).toHaveBeenCalledWith({ nodes: [node], newValue: !wasSelected, source: 'api' })
+    expect(initial.loadRows).toHaveBeenCalledTimes(1)
+  })
+  it('does not treat a null SSRM selectedNodes snapshot as clearing loaded identities', async () => {
+    const node = { data: { id: 1 }, isSelected: () => true } as IRowNode<Row | DocumentHistoryGroupRow>
+    grid.api.forEachNode.mockImplementation(callback => callback(node))
+    const selection = vi.fn(), initial = props({ selectedDocuments: [{ id: 900 }, { id: 1 }], onSelectionChange: selection })
+    render(<DocumentsHistoryGrid {...initial} />)
+    await act(async () => { request() })
+    act(() => grid.props.onSelectionChanged({ source: 'keyboardSelectAll', selectedNodes: null,
+      serverSideState: { selectAll: true, toggledNodes: [] } } as unknown as SelectionChangedEvent<Row | DocumentHistoryGroupRow>))
+    expect(selection).not.toHaveBeenCalled()
+  })
+  it('keeps individual, Shift-range and keyboard selection blocked while the source is unresolved', async () => {
+    const node = { id: 'document:1', data: { id: 1 }, rowIndex: 0, isSelected: () => false } as IRowNode<Row | DocumentHistoryGroupRow>
+    grid.api.forEachNode.mockImplementation(callback => callback(node))
+    grid.api.getDisplayedRowAtIndex.mockReturnValue(node)
+    const selection = vi.fn(), view = render(<DocumentsHistoryGrid {...props({ selectedDocuments: [{ id: 900 }],
+      selectionDisabled: true, onSelectionChange: selection })} />)
+    await act(async () => { request() })
+    const row = document.createElement('div'), cell = document.createElement('div'), wrapper = document.createElement('div'), checkbox = document.createElement('input')
+    row.className = 'ag-row'; row.setAttribute('row-index', '0'); cell.className = 'ag-cell'; cell.setAttribute('col-id', 'ag-Grid-SelectionColumn')
+    wrapper.className = 'ag-selection-checkbox'; checkbox.type = 'checkbox'
+    wrapper.append(checkbox); cell.append(wrapper); row.append(cell); view.container.querySelector('.document-grid-frame')!.append(row)
+    fireEvent.click(checkbox); fireEvent.click(checkbox, { shiftKey: true })
+    fireEvent.keyDown(cell, { key: ' ' }); fireEvent.keyDown(cell, { key: ' ', shiftKey: true })
+    await act(async () => undefined)
+    expect(checkbox).not.toBeChecked(); expect(selection).not.toHaveBeenCalled()
+  })
   it('selects an unloaded group in one ID request and keeps choices outside it', async () => {
     const top = { id: 'top', group: true, level: 0, rowIndex: 0, key: 'TOP', parent: null,
       data: { id: 'top', __group: true, groupKey: '["value","TOP"]', groupLabel: 'TOP', childCount: 3, ordinal: 0, selectedCount: 1 },

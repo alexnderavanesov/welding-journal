@@ -368,7 +368,6 @@ export function DocumentsPage({
       ? getDocumentNavigationViewId(navigationRequest)
       : initialDocumentType ?? 'weldingJournal',
   )
-  const [activeDocumentTemplate, setActiveDocumentTemplate] = useState<StoredDocumentTemplate | null>(null)
   const [templateDocumentPreview, setTemplateDocumentPreview] = useState<DocumentTemplateWorkbookPreview | null>(null)
   const [templatePreviewError, setTemplatePreviewError] = useState<string | null>(null)
   const [isTemplatePreviewLoading, setIsTemplatePreviewLoading] = useState(false)
@@ -433,6 +432,19 @@ export function DocumentsPage({
   const activeGeneratedDocumentType: ManualGeneratedDocumentType = isManualGeneratedDocumentType(activeDocumentType)
     ? activeDocumentType
     : 'weldingJournal'
+  const generationOpen = isManualGeneratedDocumentView && activeWorkspaceTab === 'generation'
+  // A fresh scope on every entry/type change makes the previous file unusable
+  // immediately, before effects run. An absent custom file is a loaded result.
+  const templateScope = useMemo(() => ({ type: activeGeneratedDocumentType, enabled: generationOpen }),
+    [activeGeneratedDocumentType, generationOpen])
+  const [templateLoad, setTemplateLoad] = useState<{
+    scope: typeof templateScope
+    ready: boolean
+    template: StoredDocumentTemplate | null
+  } | null>(null)
+  const templateReady = templateLoad?.scope === templateScope && templateLoad.ready
+  const isDocumentTemplatePending = generationOpen && !templateReady
+  const activeDocumentTemplate = templateReady ? templateLoad.template : null
   const activeDocumentProfile =
     DOCUMENT_TYPE_OPTIONS.find((option) => option.type === activeGeneratedDocumentType) ?? DOCUMENT_TYPE_OPTIONS[0]
   const activeDocumentOptions = useMemo(
@@ -511,19 +523,23 @@ export function DocumentsPage({
 
   useEffect(() => {
     let isMounted = true
-    if (!isManualGeneratedDocumentView) {
-      setActiveDocumentTemplate(null)
+    let request = 0
+    if (!templateScope.enabled) {
+      setTemplateLoad(null)
       return () => {
         isMounted = false
       }
     }
     const syncTemplate = () => {
-      loadDocumentTemplate(activeGeneratedDocumentType)
+      const currentRequest = ++request
+      setTemplateLoad({ scope: templateScope, ready: false, template: null })
+      loadDocumentTemplate(templateScope.type)
         .then((template) => {
-          if (isMounted) setActiveDocumentTemplate(template ?? null)
+          if (isMounted && request === currentRequest) setTemplateLoad({ scope: templateScope, ready: true, template: template ?? null })
         })
         .catch(() => {
-          if (isMounted) setActiveDocumentTemplate(null)
+          // Preserve the existing fallback to the built-in form on read error.
+          if (isMounted && request === currentRequest) setTemplateLoad({ scope: templateScope, ready: true, template: null })
         })
     }
 
@@ -533,7 +549,7 @@ export function DocumentsPage({
       isMounted = false
       window.removeEventListener(DOCUMENT_TEMPLATE_STORAGE_EVENT, syncTemplate)
     }
-  }, [activeGeneratedDocumentType, isManualGeneratedDocumentView])
+  }, [templateScope])
 
   useEffect(() => {
     const handleGeneratedDocumentChange = () => {
@@ -548,7 +564,7 @@ export function DocumentsPage({
 
   const journalRows = useMemo(
     () => {
-      if (!isManualGeneratedDocumentView) return []
+      if (!generationOpen || isDocumentTemplatePending) return []
       return prepareWeldingJournalDocumentRows({
         sourceRows: rows,
         contextRows: rows,
@@ -563,7 +579,8 @@ export function DocumentsPage({
       })
     },
     [
-      isManualGeneratedDocumentView,
+      generationOpen,
+      isDocumentTemplatePending,
       periodFrom,
       periodTo,
       rows,
@@ -612,7 +629,7 @@ export function DocumentsPage({
 
   useEffect(() => {
     let isActive = true
-    if (!isManualGeneratedDocumentView || !activeDocumentTemplate || previewRows.length === 0) {
+    if (!generationOpen || !activeDocumentTemplate || previewRows.length === 0) {
       setTemplateDocumentPreview(null)
       setTemplatePreviewError(null)
       setIsTemplatePreviewLoading(false)
@@ -642,10 +659,10 @@ export function DocumentsPage({
     return () => {
       isActive = false
     }
-  }, [activeDocumentTemplate, isManualGeneratedDocumentView, previewRows, welderStamps])
+  }, [activeDocumentTemplate, generationOpen, previewRows, welderStamps])
 
   const handleGenerateDocuments = async () => {
-    if (journalDocumentGroups.length === 0 || isGenerating) return
+    if (isDocumentTemplatePending || journalDocumentGroups.length === 0 || isGenerating) return
     setIsGenerating(true)
     const accessGranted = await requireDocumentGenerationPassword(
       `формирование ${activeDocumentProfile.label}`,
@@ -870,7 +887,7 @@ export function DocumentsPage({
                   <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
                 )}
                 <span className="truncate">
-                  {activeDocumentTemplate ? activeDocumentTemplate.fileName : 'Системная форма'}
+                  {isDocumentTemplatePending ? 'Загрузка шаблона…' : activeDocumentTemplate ? activeDocumentTemplate.fileName : 'Системная форма'}
                 </span>
               </span>
               {activeDocumentTemplate && (activeDocumentOptions.officialOnly || activeDocumentOptions.goodOnly || activeDocumentOptions.actualOnly) ? (
@@ -916,7 +933,7 @@ export function DocumentsPage({
               <Button
                 type="button"
                 onClick={() => void handleGenerateDocuments()}
-                disabled={journalRows.length === 0 || isGenerating || generationDataQuery.isFetching}
+                disabled={journalRows.length === 0 || isGenerating || generationDataQuery.isFetching || isDocumentTemplatePending}
                 className="h-10 gap-2 px-4 sm:min-w-40"
               >
                 <FileSpreadsheet className="h-4 w-4" />

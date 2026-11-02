@@ -13,6 +13,25 @@ vi.mock('./weld-page-refresh', () => ({ subscribeWeldPageRefresh: mocks.subscrib
 const resultAt = (revision: number): JournalGridResult => ({ rows: [], rowCount: 200000, revision })
 const block = { groupBy: [], route: [], start: 0, end: 100 }
 const childBlock = { ...block, groupBy: ['line' as const], route: ['L'] }
+it('keeps each snapshot reader on its captured filters while reading the current revision', async () => {
+  const { result, rerender, unmount } = renderHook(({ line }) =>
+    useJournalServerQuery({ enabled: true, columnFilters: { line }, sort: null }), { wrapper, initialProps: { line: 'A' } })
+  const first = result.current.source.getSnapshot!
+  expect(first()).toBeUndefined()
+  await act(async () => { await result.current.source.load(block) })
+  expect(first()).toEqual({ revision: 1, columnFilters: { line: 'A' } })
+  rerender({ line: 'B' })
+  const second = result.current.source.getSnapshot!
+  expect(second).not.toBe(first)
+  mocks.read.mockResolvedValueOnce(resultAt(2))
+  await act(async () => { await result.current.source.load(block) })
+  expect(first()).toEqual({ revision: 2, columnFilters: { line: 'A' } })
+  expect(second()).toEqual({ revision: 2, columnFilters: { line: 'B' } })
+  rerender({ line: 'B' })
+  expect(result.current.source.getSnapshot).toBe(second)
+  expect(mocks.read).toHaveBeenCalledTimes(2)
+  unmount()
+})
 it('reopens a cached child snapshot without another read, but never reuses it after an update notice', async () => {
   const { result, unmount } = renderHook(() => useJournalServerQuery({ enabled: true, columnFilters: {}, sort: null }), { wrapper })
   await act(async () => { await result.current.source.load(childBlock) })

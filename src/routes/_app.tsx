@@ -17,6 +17,7 @@ export const Route = createFileRoute('/_app')({
   component: AppRoute,
   errorComponent: AppRouteError,
   pendingComponent: AppRouteLoading,
+  pendingMinMs: 0,
   ssr: false,
 })
 

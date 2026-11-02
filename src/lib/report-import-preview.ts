@@ -15,7 +15,7 @@ import {
 import { readFirstSheetRows } from '@/lib/weld-import-sheet-reader'
 import { withOfficialJoint } from '@/lib/report-control-state'
 import { getLnkResultRuleIssues } from '@/lib/lnk-result-policy'
-import { collectImportedWeldRecordPreparationErrors } from '@/lib/weld-journal-mutation-updates'
+import { collectImportedWeldRecordPreparationErrors, loadImportedWeldPreparationSettings, type ImportedWeldPreparationSettings } from '@/lib/weld-journal-mutation-updates'
 import {
   MASS_FILL_ROW_ID_HEADER,
   REPLACE_DELETE_ROW_HEADER,
@@ -29,8 +29,8 @@ import {
   stripIgnoredImportFields,
   type ImportableReport,
 } from '@/lib/report-import-template'
-import { loadOtherSettings } from '@/lib/other-settings'
-import { formatSaveCheckBlockReason, loadSaveCheckSettings } from '@/lib/save-check-settings'
+import type { OtherSettings } from '@/lib/other-settings'
+import { formatSaveCheckBlockReason } from '@/lib/save-check-settings'
 import { loadSystemIndexSettings, type SystemIndexSettings } from '@/lib/system-index-settings'
 import {
   getControlAvailabilityReportHistoryIssues,
@@ -106,7 +106,8 @@ export async function buildReportImportPreview({
 }: BuildReportImportPreviewOptions): Promise<ReportImportPreview> {
   const parsed = await parseReportImportFile(activeReport, file)
   assertWeldImportRowLimit(parsed.records.length)
-  const records = parsed.records.map((record) => stripIgnoredImportFields(record, activeReport))
+  const preparationSettings = loadImportedWeldPreparationSettings()
+  const records = parsed.records.map((record) => stripIgnoredImportFields(record, activeReport, preparationSettings))
   const fields = getReportImportPreviewFields(activeReport)
 
   const { validRecords, errors } = validateReportImportRecords(
@@ -121,6 +122,7 @@ export async function buildReportImportPreview({
       rowNumbers: parsed.recordRowNumbers,
       cellErrors: parsed.cellErrors,
     },
+    preparationSettings,
   )
 
   return {
@@ -212,7 +214,8 @@ async function buildExistingRowsImportPreview({
   const errors: ReportImportPreviewError[] = []
   const expectedRowVersions: WeldRowVersionTarget[] = []
   const recordRowNumbers: number[] = []
-  const saveCheckSettings = loadSaveCheckSettings()
+  const preparationSettings = loadImportedWeldPreparationSettings()
+  const { saveCheckSettings } = preparationSettings
   const { pvkGoodOnly } = loadControlProcessSettings()
   const systemIndexSettings = loadSystemIndexSettings()
   let skippedRows = parsed.skippedRows
@@ -254,7 +257,7 @@ async function buildExistingRowsImportPreview({
     const validationMessages: string[] = []
     const validationFieldKeys = new Set<WeldFieldKey>()
     fieldsByColumn.forEach((field, columnIndex) => {
-      if (!field || isExistingRowsFieldLocked(mode, activeReport, field, existingRow)) return
+      if (!field || isExistingRowsFieldLocked(mode, activeReport, field, existingRow, preparationSettings)) return
       try {
         const value = parseImportCell(field, row[columnIndex])
         if (mode === 'massFill' && emptyToNull(value) === null) return
@@ -329,6 +332,7 @@ async function buildExistingRowsImportPreview({
         record: candidate,
         activeReport,
         fallbackFieldKeys: changedFieldKeys,
+        preparationSettings,
       }).forEach((fieldKey) => validationFieldKeys.add(fieldKey))
     }
     const pstoLineMoveReason = getImportPstoLineMoveBlockReason(
@@ -353,7 +357,7 @@ async function buildExistingRowsImportPreview({
     }
 
     let preparedUpdates: ReportImportRecord | null = null
-    const candidateForPrepare = prepareCandidateForExistingRowsValidation(candidate)
+    const candidateForPrepare = prepareCandidateForExistingRowsValidation(candidate, preparationSettings.otherSettings)
     const preparation = collectImportedWeldRecordPreparationErrors({
       records: [candidateForPrepare],
       previousRows: [existingRow],
@@ -362,6 +366,7 @@ async function buildExistingRowsImportPreview({
       weldFormStampSelectOptions,
       welderStamps,
       welderStampSuspensions,
+      preparationSettings,
     })
     const prepared = preparation.records[0] as ReportImportRecord
     for (const error of preparation.errors) {
@@ -372,6 +377,7 @@ async function buildExistingRowsImportPreview({
         record: candidate,
         activeReport,
         fallbackFieldKeys: changedFieldKeys,
+        preparationSettings,
       }).forEach((fieldKey) => validationFieldKeys.add(fieldKey))
     }
     const resultIssues = getLnkResultRuleIssues(prepared, systemIndexSettings)
@@ -490,15 +496,15 @@ function applyPreparedDerivedUpdates(
   }
 }
 
-function prepareCandidateForExistingRowsValidation(candidate: ReportImportRecord) {
-  if (!isSystemWdiMode(loadOtherSettings())) return { ...candidate }
+function prepareCandidateForExistingRowsValidation(candidate: ReportImportRecord, otherSettings: OtherSettings) {
+  if (!isSystemWdiMode(otherSettings)) return { ...candidate }
   return { ...candidate, wdi: null }
 }
 
-function isExistingRowsFieldLocked(mode: 'massFill' | 'replaceData', activeReport: ImportableReport, field: WeldField, existingRow: WeldRow) {
+function isExistingRowsFieldLocked(mode: 'massFill' | 'replaceData', activeReport: ImportableReport, field: WeldField, existingRow: WeldRow, preparationSettings: ImportedWeldPreparationSettings) {
   if (isExistingRowsImportLockedField(field)) return true
-  if (mode === 'replaceData') return isSystemImportField(activeReport, field, existingRow)
-  return isMassFillFieldLocked(activeReport, field, existingRow)
+  if (mode === 'replaceData') return isSystemImportField(activeReport, field, existingRow, preparationSettings)
+  return isMassFillFieldLocked(activeReport, field, existingRow, preparationSettings)
 }
 
 function getExistingRowsPreviewFields(fieldsByColumn: Array<WeldField | null>) {
@@ -516,16 +522,18 @@ export function fixReportImportPreviewErrors(
 ): ReportImportPreview {
   if (preview.errors.length === 0) return preview
 
+  const preparationSettings = loadImportedWeldPreparationSettings()
   const errorRowNumbers = new Set(preview.errors.map((error) => error.rowNumber))
   const fixedRecords = preview.records.map((record, index) => {
     const rowNumber = preview.recordRowNumbers?.[index] ?? index + 2
     if (!errorRowNumbers.has(rowNumber)) return record
-    return fixImportRecordCheckedCells(record, options)
+    return fixImportRecordCheckedCells(record, options, preparationSettings)
   })
   const { validRecords, errors } = validateReportImportRecords(
     fixedRecords,
     options,
     { rowNumbers: preview.recordRowNumbers },
+    preparationSettings,
   )
 
   return {
@@ -548,10 +556,11 @@ function validateReportImportRecords(
       fieldKeys: readonly string[]
     }[]
   } = {},
+  preparationSettings: ImportedWeldPreparationSettings = loadImportedWeldPreparationSettings(),
 ) {
   const validRecords: ReportImportRecord[] = []
   const errors: ReportImportPreviewError[] = []
-  const saveCheckSettings = loadSaveCheckSettings()
+  const { saveCheckSettings } = preparationSettings
   const { pvkGoodOnly } = loadControlProcessSettings()
   const systemIndexSettings = loadSystemIndexSettings()
 
@@ -609,6 +618,7 @@ function validateReportImportRecords(
       weldFormStampSelectOptions,
       welderStamps,
       welderStampSuspensions,
+      preparationSettings,
     })
     for (const error of preparation.errors) {
       const message = getImportErrorMessage(error)
@@ -617,7 +627,8 @@ function validateReportImportRecords(
         message,
         record,
         activeReport,
-        fallbackFieldKeys: getRecordFallbackErrorFieldKeys(record, activeReport),
+        fallbackFieldKeys: getRecordFallbackErrorFieldKeys(record, activeReport, preparationSettings),
+        preparationSettings,
       }).forEach((fieldKey) => validationFieldKeys.add(fieldKey))
     }
     const resultIssues = getLnkResultRuleIssues(preparation.records[0], systemIndexSettings)
@@ -646,17 +657,17 @@ function validateReportImportRecords(
   return { validRecords, errors }
 }
 
-function fixImportRecordCheckedCells(record: WeldInput, options: ReportImportPreviewValidationOptions) {
-  const checkedFieldKeys = [...getReportImportCheckedFieldKeys(options.activeReport)] as WeldFieldKey[]
+function fixImportRecordCheckedCells(record: WeldInput, options: ReportImportPreviewValidationOptions, preparationSettings: ImportedWeldPreparationSettings) {
+  const checkedFieldKeys = [...getReportImportCheckedFieldKeys(options.activeReport, preparationSettings)] as WeldFieldKey[]
   const clearableFieldKeys = checkedFieldKeys.filter((fieldKey) => fieldKey !== 'joint')
 
   for (const fieldKey of clearableFieldKeys) {
     const candidate = clearImportRecordFields(record, [fieldKey])
-    if (validateReportImportRecords([candidate], options).errors.length === 0) return candidate
+    if (validateReportImportRecords([candidate], options, {}, preparationSettings).errors.length === 0) return candidate
   }
 
   const candidate = clearImportRecordFields(record, clearableFieldKeys)
-  return validateReportImportRecords([candidate], options).errors.length === 0 ? candidate : record
+  return validateReportImportRecords([candidate], options, {}, preparationSettings).errors.length === 0 ? candidate : record
 }
 
 function clearImportRecordFields(record: WeldInput, fieldKeys: readonly WeldFieldKey[]) {
@@ -671,8 +682,8 @@ function getKnownFieldKeys(keys: readonly string[]) {
   return keys.filter((key): key is WeldFieldKey => FIELD_BY_KEY.has(key as WeldFieldKey))
 }
 
-function getRecordFallbackErrorFieldKeys(record: WeldInput, activeReport: ImportableReport) {
-  const checkedFieldKeys = [...getReportImportCheckedFieldKeys(activeReport)] as WeldFieldKey[]
+function getRecordFallbackErrorFieldKeys(record: WeldInput, activeReport: ImportableReport, preparationSettings: ImportedWeldPreparationSettings) {
+  const checkedFieldKeys = [...getReportImportCheckedFieldKeys(activeReport, preparationSettings)] as WeldFieldKey[]
   const filledCheckedKeys = checkedFieldKeys.filter((fieldKey) => emptyToNull(record[fieldKey]) !== null)
   return filledCheckedKeys.length ? filledCheckedKeys : checkedFieldKeys
 }
@@ -682,14 +693,16 @@ function getImportErrorFieldKeys({
   record,
   activeReport,
   fallbackFieldKeys,
+  preparationSettings,
 }: {
   message: string
   record: WeldInput
   activeReport: ImportableReport
   fallbackFieldKeys: readonly WeldFieldKey[]
+  preparationSettings: ImportedWeldPreparationSettings
 }) {
   const matchedFieldKeys = collectImportErrorFieldKeys(message, record)
-  if (matchedFieldKeys.length === 0) return fallbackFieldKeys.length ? [...fallbackFieldKeys] : getRecordFallbackErrorFieldKeys(record, activeReport)
+  if (matchedFieldKeys.length === 0) return fallbackFieldKeys.length ? [...fallbackFieldKeys] : getRecordFallbackErrorFieldKeys(record, activeReport, preparationSettings)
 
   const fallbackSet = new Set(fallbackFieldKeys)
   if (fallbackSet.size === 0) return matchedFieldKeys

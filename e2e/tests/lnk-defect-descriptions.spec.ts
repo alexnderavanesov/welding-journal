@@ -80,6 +80,10 @@ test('shows and edits independent VIK, UZK and PVK defect descriptions', async (
     vikDefectDescription: 'Подрез 14 мм',
     prePvkDefectDescription: 'Трещина до ТО',
   })
+  const history = await withE2eDatabase(async db => (await db.query(`select c.entity,c.changes from audit_changes c
+    join weld_joints w on w.id=c.joint_id where w.joint=$1 order by c.id`, [JOINT])).rows)
+  expect(history.some(row => row.entity === 'weld_joints' && row.changes.vikDefectDescription?.after === 'Подрез 14 мм' && row.changes.vikDefectDescription.origin === 'user')).toBe(true)
+  expect(history.some(row => row.entity === 'pre_heat_treatment_controls' && row.changes.defectDescription?.after === 'Трещина до ТО' && row.changes.defectDescription.origin === 'user')).toBe(true)
 })
 
 test('does not overwrite a newer defect description from another user', async ({ browser, baseURL }) => {

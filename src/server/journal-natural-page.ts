@@ -15,3 +15,11 @@ export function journalNaturalPageIds(where: SQL, order: SQL[], end: number): SQ
     (select ${weldJoints.id} from ${weldJoints} where (${where}) and not (${eligible}) order by ${ordering} limit ${end})
   )`
 }
+
+/** Sort only the columns needed for ordering before reading the wide cards.
+ * LIMIT bounds the candidate set, never the available report. The outer query
+ * repeats the complete order and applies the original page offset. */
+export function journalOrderedPageIds(where: SQL, order: SQL[], end: number): SQL {
+  return sql`(select ${weldJoints.id} from ${weldJoints} where ${where}
+    order by ${sql.join(order, sql`, `)} limit ${end})`
+}

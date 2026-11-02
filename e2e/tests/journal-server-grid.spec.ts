@@ -12,6 +12,7 @@ import { captureJournalGaps } from '../journal-gap-capture'
 import { measureJournalMotion } from '../journal-motion-measurement'
 import { measureInstalledSafari } from '../journal-safari-measurement'
 import { measureJournalGroupDepth } from '../journal-group-depth-measurement'
+import { ACCOUNT_ACTIVITY_REFRESH_MS } from '../../src/lib/account-activity'
 
 let previousSettings: string | undefined
 const PROJECT = 'E2E server journal'
@@ -278,8 +279,8 @@ test('journal interaction: pointer menus do not preselect commands or create cel
   await expect(page.locator('.ag-cell-range-selected')).toHaveCount(selected)
 })
 
-test('expand all includes unloaded root blocks and nested levels without fetching the whole report', async ({ page, context }) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+test('expand all includes unloaded root blocks and nested levels without fetching the whole report', async ({ page, context, browserName }) => {
+  if (browserName === 'chromium') await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.getByRole('searchbox').fill(EXPAND_PROJECT)
   await expect(page.getByText('Найдено: 240', { exact: true })).toBeVisible()
   const groupBy = async (id: string) => {
@@ -311,9 +312,13 @@ test('expand all includes unloaded root blocks and nested levels without fetchin
   }).toBe(true)
   await page.waitForLoadState('networkidle')
   expect(reads.length).toBeLessThan(55)
-  await page.getByRole('button', { name: 'E120B', exact: true }).locator('xpath=ancestor::*[@role="row"][1]').locator('[col-id="joint"]').click({ position: { x: 4, y: 4 } })
-  await page.keyboard.press('ControlOrMeta+c')
-  await expect.poll(() => page.evaluate(async () => (await navigator.clipboard.readText()))).toBe('E120B')
+  // Playwright WebKit has no native clipboard-write permission. Keep the full
+  // grouping scenario there; exercise the real clipboard in Chrome.
+  if (browserName === 'chromium') {
+    await page.getByRole('button', { name: 'E120B', exact: true }).locator('xpath=ancestor::*[@role="row"][1]').locator('[col-id="joint"]').click({ position: { x: 4, y: 4 } })
+    await page.keyboard.press('ControlOrMeta+c')
+    await expect.poll(() => page.evaluate(async () => (await navigator.clipboard.readText()))).toBe('E120B')
+  }
   // A regroup resets expansion; a single command must reach new child levels.
   await page.evaluate(() => scrollTo(0, 0))
   await groupBy('subtitleCode')
@@ -1211,6 +1216,7 @@ test('grouped resize cadence and horizontal rendering on normal CPU', async ({ p
   await expect(page.locator('.journal-loading-cell')).toHaveCount(0)
   await page.waitForLoadState('networkidle')
   const calls: string[] = []
+  const observationStarted = performance.now()
   page.on('request', request => { const name = rpcName(request.url()); if (name) calls.push(name) })
   const header = page.locator('.ag-header-cell[col-id="line"]')
   const handle = (await header.locator('.ag-header-cell-resize').boundingBox())!
@@ -1258,10 +1264,16 @@ test('grouped resize cadence and horizontal rendering on normal CPU', async ({ p
     expect((await header.boundingBox())!.width).toBe(200)
   }
   await cdp?.detach()
-  const result = { browserName, browserVersion: browser.version(), deviceScaleFactor: await page.evaluate(() => devicePixelRatio), samples, requests: calls }
+  const observationMs = performance.now() - observationStarted
+  const accountActivityRequests = calls.filter(name => name === 'refreshAccountActivity_createServerFn_handler')
+  const result = { browserName, browserVersion: browser.version(), deviceScaleFactor: await page.evaluate(() => devicePixelRatio), samples, requests: calls,
+    accountActivityRequests, observationMs }
   await writeFile(`/tmp/journal-resize-${process.env.JOURNAL_RESIZE_LABEL}.json`, JSON.stringify(result, null, 2))
   console.log('GROUPED_RESIZE', JSON.stringify(result))
-  expect(calls).toEqual([])
+  // Preserve the full request evidence, allowing only the bounded normal
+  // account heartbeat; resizing a warmed grid must not fetch table data.
+  expect(calls.filter(name => name !== 'refreshAccountActivity_createServerFn_handler')).toEqual([])
+  expect(accountActivityRequests.length).toBeLessThanOrEqual(Math.ceil(observationMs / ACCOUNT_ACTIVITY_REFRESH_MS))
   const viewport = page.locator('.ag-grid-viewport')
   await viewport.hover()
   for (const dx of [2000, 2000, -4000]) { await page.mouse.wheel(dx, 0); await page.waitForTimeout(100) }

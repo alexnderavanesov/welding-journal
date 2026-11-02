@@ -9,7 +9,7 @@ import { rpcName } from './rpc'
 const exec = promisify(execFile)
 // Grid blocks and summaries use POST for reads and may outlive their document.
 // Keep the allowlist exact: an aborted mutation has an unknown outcome.
-const isReportRead = (request: Request) => /^(?:readJournalGrid|getJournalReportSummary|getDispatcherTaskContext|readReportOutputSnapshot)(?:_|$)/.test(rpcName(request.url()))
+const isReportRead = (request: Request) => /^(?:readJournalGrid|getJournalReportSummary|getDispatcherTaskContext|readReportOutputSnapshot|summarizeJournalGridArea|summarizeJournalGridRange|summarizeJournalGridSelection)(?:_|$)/.test(rpcName(request.url()))
 const isNavigationRead = (request: Request) => request.method() === 'GET' || isReportRead(request)
   || rpcName(request.url()).startsWith('refreshDispatcherTaskSnapshot')
 export function observeMixedClient(context: BrowserContext, role: string) {
@@ -82,6 +82,7 @@ export function observeMixedClient(context: BrowserContext, role: string) {
     })().catch(error => { errors.push(String(error)) }))
   })
   return { calls, errors, expectedFailures, pending,
+    get rpcStarted() { return rpcStarted },
     expectInjectedNetworkFailure(request: Request) {
       if (!pending.has(request)) throw new Error('Fault injection must mark the exact active request')
       injectedNetworkFailures.add(request)

@@ -9,12 +9,12 @@ import type { PstoRepeatCycleRecord } from '@/lib/psto-cycle'
 import { getRequestConclusionNamingKind } from '@/lib/request-conclusion-settings'
 import { assertDocumentOperationIntent, buildDocumentOperationGroups, getDocumentOperationOccupiedNames, documentOperationIdentity, isCycleDocument, type DocumentOperationGroup, type DocumentOperationRequest, type DocumentOperationSource } from '@/lib/system-document-operation'
 import { SYSTEM_DOCUMENT_SPLIT_MODES, getSystemDocumentSplitSettingId } from '@/lib/system-document-splitting'
-import { SYSTEM_DOCUMENT_TYPES, getSystemDocumentFileName, type SystemDocumentSummary } from '@/lib/system-document-types'
+import { getSystemDocumentFileName, type SystemDocumentSummary } from '@/lib/system-document-types'
 import { getSystemDocumentTemplateId, SYSTEM_DOCUMENT_TEMPLATE_PROFILES } from '@/lib/system-document-template-types'
 import { getSystemDocumentSequenceId } from '@/lib/system-document-sequence-id'
 import { REBUILD_DOCUMENT_LIMIT, REBUILD_POSITION_LIMIT, REBUILD_METADATA_LIMIT, REBUILD_FACT_BYTES_LIMIT, REBUILD_PREVIEW_BYTES_LIMIT, selectRebuildBatch, type RebuildCatalogSize } from '@/lib/system-document-rebuild-batch'
 import { readRequestConclusionSettings, readSystemDocumentNextNumbers, reserveSystemDocumentNames, loadExistingSystemDocumentNameKeys, lockSystemDocumentNumberCounter, type SystemDocumentSequenceTransaction } from './system-document-sequences'
-import { initializeSystemDocumentIndexesInTransaction, loadIndexedSystemDocumentSummaries, lockSystemDocumentIndexes, parseSystemDocumentMetadata, serializeSystemDocumentSummary, syncSystemDocumentsForWeldChangesInTransaction, upsertSourcedSystemDocumentsInTransaction, type SourcedSystemDocumentUpsertInput } from './system-document-index'
+import { initializeSystemDocumentIndexesInTransaction, loadIndexedSystemDocumentSelection, lockSystemDocumentIndexes, serializeSystemDocumentSummary, syncSystemDocumentsForWeldChangesInTransaction, upsertSourcedSystemDocumentsInTransaction, type SourcedSystemDocumentUpsertInput } from './system-document-index'
 import { attachRebuildCyclePositions, persistRebuildDocumentNames } from './system-document-rebuild'
 import { assertRebuildFactBudget } from './system-document-rebuild-batch'
 import { loadRebuildWeldFacts } from './system-document-rebuild-facts'
@@ -114,11 +114,8 @@ export async function planOperationBatches(input: { documentIds: number[]; merge
 export async function loadDocumentOperationSelection(tx: SystemDocumentSequenceTransaction, ids: number[]) {
   const sizes = await catalog(tx, ids)
   if (sizes.reduce((sum, item) => sum + Number(item.positionCount), 0) > REBUILD_POSITION_LIMIT || sizes.reduce((sum, item) => sum + Number(item.metadataBytes), 0) > REBUILD_METADATA_LIMIT) throw new Error('Состав выбранных документов превышает безопасный объём пакета. Документы не изменены.')
-  const documents: SystemDocumentSummary[] = []
-  for (const type of SYSTEM_DOCUMENT_TYPES) documents.push(...await loadIndexedSystemDocumentSummaries(tx, type, ids))
+  const { documents, positions } = await loadIndexedSystemDocumentSelection(tx, ids)
   documents.sort((a, b) => a.documentId - b.documentId)
-  const metadata = await tx.select({ id: generatedDocuments.id, value: generatedDocuments.sourceMetadata }).from(generatedDocuments).where(buildNumberArrayMatch(generatedDocuments.id, ids))
-  const positions = new Map(metadata.map(row => [row.id, parseSystemDocumentMetadata(row.value)?.sourcePositions ?? []]))
   const rowIds = [...new Set(documents.flatMap(doc => doc.rowIds))].sort((a, b) => a - b)
   const cycleIds = [...new Set([...positions.values()].flat().filter(p => p.kind === 'pstoRepeat' || p.kind === 'pstoCycle' && Number(p.sequence) >= 2).map(p => p.relationId))].sort((a, b) => a - b)
   const controlIds = [...new Set([...positions.values()].flat().filter(p => p.kind === 'beforeHeatTreatment').map(p => p.relationId))].sort((a, b) => a - b)

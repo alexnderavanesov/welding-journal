@@ -45,8 +45,7 @@ export function validateWelderStampFieldsForImport(
   })
 }
 
-export function normalizeWeldingMethodsForImport(records: WeldInput[]) {
-  const weldingTypeOptions = loadDataListSettings().weldingTypes
+export function normalizeWeldingMethodsForImport(records: WeldInput[], weldingTypeOptions: readonly string[] = loadDataListSettings().weldingTypes) {
   records.forEach((record, index) => {
     const rawValue = normalizeStampSelectValue(record.weldingMethod)
     if (!rawValue) {

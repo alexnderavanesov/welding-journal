@@ -30,6 +30,23 @@ export type WeldGroupSummary = {
 const text = (value: unknown) => String(value ?? '').trim()
 const waiting = ['ожидает сварку', 'ожидает ремонт', 'ожидает заявку', 'ожидает НК'] as const
 
+function createGroupLineIdentity() {
+  const keys = new Map<string, string>()
+  let reuse = true
+  return (row: WeldRow) => {
+    if (!reuse) return programJointIdentity(row, '')
+    const parts = [text(row.projectTitle), text(row.subtitleCode), text(row.line)]
+    if (parts.reduce((sum, value) => sum + value.length, 0) > 512) return programJointIdentity(row, '')
+    const raw = JSON.stringify(parts)
+    const cached = keys.get(raw)
+    if (cached !== undefined) return cached
+    const identity = programJointIdentity(row, '')
+    if (keys.size < 1024) keys.set(raw, identity)
+    else { reuse = false; keys.clear() }
+    return identity
+  }
+}
+
 /** A summary of the supplied group, not of hidden rows or an entire server query.
  * Resolve identity once per loaded batch; aggregate once per group, never per cell.
  * Saved IDs take precedence over names; legacy continuations are explicit evidence.
@@ -91,6 +108,9 @@ export function createWeldGroupSummarizer(input: readonly WeldRow[], settings: S
     const branches = new Map<string, WeldRow[]>()
     let firstDate: string | undefined, lastDate: string | undefined, dateCount = 0
     const lines = new Set<string>()
+    // Normalize repeated line tuples once, including interleaved rows. Reuse
+    // is bounded to this group and switches off for high-cardinality inputs.
+    const lineIdentity = createGroupLineIdentity()
     const stages = createStageSummary?.()
     const lnkStages = createLnkSummary?.()
     let errors = 0
@@ -98,7 +118,7 @@ export function createWeldGroupSummarizer(input: readonly WeldRow[], settings: S
       stages?.addHistory(row)
       lnkStages?.addHistory(row)
       if (statuses.get(row.id) === 'ошибка') errors++ // History errors must never be hidden by a good successor.
-      if (text(row.line)) lines.add(programJointIdentity(row, ''))
+      if (text(row.line)) lines.add(lineIdentity(row))
       const date = parseDateLikeToIso(row.weldDate)
       if (date) {
         dateCount++

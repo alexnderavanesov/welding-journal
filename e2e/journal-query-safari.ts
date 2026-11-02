@@ -30,13 +30,14 @@ export async function measureJournalQueriesInSafari(project: string, total: numb
   }
   const samples: object[] = []
   const measure = async (round: number, action: string, run: () => Promise<unknown>, condition: string) => {
-    await execute(`window.querySample={start:performance.now(),frames:0,hidden:document.hidden,calls:[]};window.queryDone=false;
-      const tick=()=>{const s=window.querySample;s.frames++;s.hidden||=document.hidden;
+    await execute(`window.querySample={start:performance.now(),frames:0,hidden:document.hidden,focused:document.hasFocus(),calls:[]};window.queryDone=false;
+      const tick=()=>{const s=window.querySample;s.frames++;s.hidden||=document.hidden;s.focused&&=document.hasFocus();
         if(performance.now()-s.start>30&&${ready}&&(${condition})){s.milliseconds=performance.now()-s.start;window.queryDone=true;return}requestAnimationFrame(tick)};requestAnimationFrame(tick)`)
     await run()
     await wait('return window.queryDone===true', 60_000)
     const sample = await execute('return window.querySample')
     expect(sample.hidden).toBe(false)
+    expect(sample.focused).toBe(true)
     expect(sample.frames).toBeGreaterThan(0)
     const calls = sample.calls.map((url: string) => rpcName(new URL(url, 'http://127.0.0.1:3100').toString())).filter(Boolean)
     const blockReads = calls.filter((name: string) => /^readJournalGrid(?:Blocks)?_/.test(name)).length

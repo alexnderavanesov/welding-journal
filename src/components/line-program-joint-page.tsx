@@ -3,7 +3,7 @@ import { Select } from '@/components/ui/select'
 import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import { PROGRAM_SLICE_LABELS as slices } from '@/lib/line-program-labels'
 import { useProgramSessionState } from './line-program-grid-session'
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Search, X } from 'lucide-react'
@@ -146,14 +146,14 @@ export function LineJointPage({ line, workspaces, onOpenReportRows, enabled = tr
     await invalidateProgramApprovalCaches(queryClient, line.id)
   } })
   const busy = preview.isPending || save.isPending || approval.isPending
-  const canSelect = (row: WeldRow) => isProgramEditableRow(row) || approvedRowIds.has(row.id)
-  const select = (id: number, checked: boolean) => { setSelected(previous => { const next = new Set(previous); checked ? next.add(id) : next.delete(id); return next }) }
-  const mergedValues = (row: WeldRow, patch: ProgramPatch) => {
+  const canSelect = useCallback((row: WeldRow) => isProgramEditableRow(row) || approvedRowIds.has(row.id), [approvedRowIds])
+  const select = useCallback((id: number, checked: boolean) => { setSelected(previous => { const next = new Set(previous); checked ? next.add(id) : next.delete(id); return next }) }, [setSelected])
+  const mergedValues = useCallback((row: WeldRow, patch: ProgramPatch) => {
     const values = { ...manual.get(row.id), ...patch }
     for (const method of PROGRAM_METHODS) if (values[method] === programAssignment(row, method)) delete values[method]
     return values
-  }
-  const getError = (row: WeldRow, method: ProgramMethod, value: ProgramAssignment) => getProgramAssignmentError(row, mergedValues(row, { [method]: value }), historyProtection)
+  }, [manual])
+  const getError = useCallback((row: WeldRow, method: ProgramMethod, value: ProgramAssignment) => getProgramAssignmentError(row, mergedValues(row, { [method]: value }), historyProtection), [mergedValues, historyProtection])
   const applyChanges = (targets: WeldRow[], patch: ProgramPatch) => {
     const updates = targets.map(row => ({ row, values: mergedValues(row, patch) }))
     const problems = updates.map(({ row, values }) => { const error = getProgramAssignmentError(row, values, historyProtection); return error ? `${row.joint}: ${error}` : '' }).filter(Boolean)

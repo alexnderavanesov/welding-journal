@@ -6,6 +6,8 @@ import { readdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { E2E_DATABASE_URL } from '../database'
 import { prepareSafariMeasurementWindow } from '../safari-foreground'
+import { authenticateE2eSafari } from '../authentication'
+import { capturePreviousAccountHtml, previousAccountPath, type CapturedPreviousHtml } from '../application-update-fixture'
 
 test.use({ trace: 'off', video: 'off' })
 
@@ -14,12 +16,18 @@ test('installed Safari: local version switch, initial module faults and explicit
   expect(process.env.E2E_USE_PRODUCTION_BUILD).toBe('1')
   expect(info.project.use.baseURL).toBe('http://127.0.0.1:3100')
   expect(process.env.AUDIT_OLD_BUILD).toBeTruthy()
-  test.setTimeout(300_000)
+  const foregroundTimeout=Number(process.env.SAFARI_FOREGROUND_TIMEOUT_MS ?? 120_000)
+  expect(Number.isInteger(foregroundTimeout)&&foregroundTimeout>=1000&&foregroundTimeout<=600_000).toBe(true)
+  test.setTimeout(foregroundTimeout+360_000)
   const previousBuild = resolve(process.env.AUDIT_OLD_BUILD!)
-  expect(previousBuild).not.toBe(resolve('.output'))
-  const retiredGuide = (await readdir(resolve(previousBuild, 'public/assets'))).find(name => /^user-guide-page-.*\.js$/.test(name))!
+  const currentBuild=resolve(process.env.E2E_AUDIT_OUTPUT_DIR ?? '.output')
+  expect(previousBuild).not.toBe(currentBuild)
+  const oldAssets=await readdir(resolve(previousBuild, 'public/assets'))
+  const retiredGuide = oldAssets.find(name => /^user-guide-page-.*\.js$/.test(name))!
+  const oldEntry=oldAssets.find(name=>/^index-.*\.js$/.test(name))!
+  expect(oldEntry).toBeTruthy()
   expect(retiredGuide).toBeTruthy()
-  expect(await readdir(resolve('.output/public/assets'))).not.toContain(retiredGuide)
+  expect(await readdir(resolve(currentBuild,'public/assets'))).not.toContain(retiredGuide)
   const previousOrigin = 'http://127.0.0.1:3117'
   let origin = 'http://127.0.0.1:3118'
   let occupied = false
@@ -30,14 +38,23 @@ test('installed Safari: local version switch, initial module faults and explicit
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let oldLog = '', oldDelivery = true, fault: null | 'network' | 'syntax' | 'execution' = null, session = ''
+  let previousHtml: CapturedPreviousHtml | undefined
   const requests: Array<{ path: string; old: boolean; status: number }> = []
   old.stdout?.on('data', value => { oldLog += value })
   old.stderr?.on('data', value => { oldLog += value })
-  // A loopback proxy changes only test asset delivery. RPCs always reach the
-  // current server and its disposable DB; no user browser tabs are attached.
+  // A loopback proxy delivers the captured HTML and real old static assets.
+  // RPCs always reach the current server and its disposable DB; no user browser
+  // tabs are attached, and the real release marker is restored before use.
   const proxy = createServer(async (req, res) => {
     try {
-      const path = req.url!, asset = path.startsWith('/assets/'), useOld = oldDelivery && (asset || path.startsWith('/journal'))
+      const path = req.url!, asset = path.startsWith('/assets/'), useOld = oldDelivery && asset
+      if(oldDelivery && path===previousAccountPath) {
+        if(!previousHtml)throw new Error('Previous HTML has not been captured with the release marker restored')
+        requests.push({path,old:true,status:200})
+        res.writeHead(200,previousHtml.headers)
+        res.end(previousHtml.body)
+        return
+      }
       if (fault && /^\/assets\/index-[^/]+\.js(?:\?.*)?$/.test(path)) {
         const status = fault === 'network' ? 503 : 200
         requests.push({ path, old: false, status })
@@ -71,8 +88,9 @@ test('installed Safari: local version switch, initial module faults and explicit
   try {
     await expect.poll(async () => {
       if (old.exitCode !== null) throw new Error(oldLog.slice(-1000))
-      try { return (await request.get(previousOrigin + '/journal', { timeout: 1000 })).ok() } catch { return false }
+      try { return (await request.get(previousOrigin + '/health/live', { timeout: 1000 })).ok() } catch { return false }
     }, { timeout: 15000 }).toBe(true)
+    previousHtml=await capturePreviousAccountHtml({request,oldOrigin:previousOrigin,oldEntry,diagnosticPath:info.outputPath('previous-html-capture.json')})
     proxy.listen(3118, '127.0.0.1')
     await once(proxy, 'listening')
     const created = await command('/session', { capabilities: { alwaysMatch: { browserName: 'safari', pageLoadStrategy: 'eager' } } })
@@ -85,16 +103,19 @@ test('installed Safari: local version switch, initial module faults and explicit
     }
     await command(session + '/window/rect', { x: 0, y: 0, width: 1600, height: 1050 })
     await prepareSafariMeasurementWindow(command, session)
-    await command(session + '/url', { url: origin + '/journal' })
-    await wait('return document.querySelector(".journal-grid-frame")?.getAttribute("aria-busy")==="false"')
+    await command(session + '/url', { url: origin + previousAccountPath })
+    await wait('return document.getElementById("account-tab-profile")?.getAttribute("aria-selected")==="true" && [...document.querySelectorAll("h1")].some(e=>e.textContent.trim()==="Мой профиль")')
     expect(requests.some(item => item.old && /^\/assets\/index-/.test(item.path))).toBe(true)
     expect(requests.some(item => item.path.includes(retiredGuide))).toBe(false)
+    expect(requests.some(item => !item.old && item.path.startsWith('/_serverFn/') && item.status===200)).toBe(true)
     oldDelivery = false
-    const before = requests.filter(item => item.path === '/user-guide').length
-    await execute('[...document.querySelectorAll("button")].find(e=>e.textContent.trim()==="Руководство пользователя").click()')
+    const before = requests.filter(item => item.path === '/account?tab=guide').length
+    await click('#account-tab-guide')
     await wait('return [...document.querySelectorAll("input")].some(e=>e.placeholder==="Например: заявка, клеймо")')
     expect(requests.some(item => item.path === '/assets/' + retiredGuide && item.status === 404)).toBe(true)
-    expect(requests.filter(item => item.path === '/user-guide').length - before).toBe(1)
+    expect(requests.filter(item => item.path === '/account?tab=guide').length - before).toBe(1)
+    expect(await execute('return location.pathname+location.search')).toBe('/account?tab=guide')
+    expect(requests.filter(item=>item.old).every(item=>item.path===previousAccountPath||item.path.startsWith('/assets/'))).toBe(true)
     samples.push({ phase: 'version switch', browser: created.capabilities.browserVersion, requests: [...requests] })
     // A fresh loopback origin for each fault avoids successful assets cached
     // by the version-switch phase. Keep the original module dependency graph.
@@ -128,6 +149,7 @@ test('installed Safari: local version switch, initial module faults and explicit
         session = ''
         const fresh = await command('/session', { capabilities: { alwaysMatch: { browserName: 'safari', pageLoadStrategy: 'eager' } } })
         session = '/session/' + fresh.sessionId
+        await authenticateE2eSafari(command,session)
         await command(session + '/url', { url: origin + '/journal' })
         try { await wait(ready); recoveredAfterNewSession = true } catch { recoveredAfterNewSession = false }
       }

@@ -119,7 +119,7 @@ const MULTIPLE_LABELS: Record<string, string> = {
 }
 
 export function buildDocumentHistoryGridSql({
-  baseQuery, columnFilters, filterKeys, request, idKind, sortExpressions, defaultOrder, populatedExpressions = {}, revisionValue,
+  baseQuery, columnFilters, filterKeys, request, idKind, sortExpressions, defaultOrder, populatedExpressions = {}, revisionValue, compact,
 }: {
   baseQuery: SQL
   columnFilters: Record<string, string>
@@ -133,6 +133,11 @@ export function buildDocumentHistoryGridSql({
   /** Only when this token covers every input of a registry row. Derived/manual
    * histories keep hashing their complete values, including related welds. */
   revisionValue?: SQL
+  /** Indexed system histories can retain only revision/group/sort columns for
+   * the complete filtered set, then hydrate the bounded leaf block in the same
+   * statement. The hydration query must restrict source IDs before parsing
+   * metadata and return exactly the original registry-card projection. */
+  compact?: { columns: readonly string[]; hydrate: (ids: SQL) => SQL }
 }) {
   const idColumn = sql.identifier(idKind === 'system' ? 'documentId' : 'id')
   const groups = request.groupKeys.map((key, index) => sql`${groupKeyExpression(request.rowGroupCols[index])} = ${key}::jsonb`)
@@ -140,6 +145,9 @@ export function buildDocumentHistoryGridSql({
   const routeWhere = request.selectionOnly ? sql`${idColumn} = any(${sql.param(selectedIds ?? [])}::integer[])`
     : groups.length ? sql.join(groups, sql` and `) : sql`true`
   const groupColumn = request.selectionOnly || request.idsOnly ? undefined : request.rowGroupCols[request.groupKeys.length]
+  // Manual histories hash complete derived rows; cell summaries also require
+  // their original columns. Neither may use the compact system projection.
+  const projection = idKind === 'system' && revisionValue && !request.cells?.summary ? compact : undefined
   const selectedWhere = sql`${idColumn} = any(${sql.param(selectedIds ?? [])}::integer[])`
   // Counter responses contain aggregates only, never echo a potentially large
   // selection back to the client on every newly visible group.
@@ -180,19 +188,24 @@ export function buildDocumentHistoryGridSql({
         ${keys.length ? sql`group by ${sql.join(keys, sql`, `)}` : sql``}`
     }), sql` union all `)}
     ) "selection_counts" where "route" = any(${sql.param((request.countRoutes ?? []).map(route => JSON.stringify(route.map(key => JSON.parse(key)))))}::jsonb[]))` : sql`null::jsonb`
+  const blockQuery = sql`
+      select * from "level_rows" order by ${order}
+      limit ${request.idsOnly ? 0 : request.selectionOnly ? 10_000 : request.endRow - request.startRow} offset ${request.selectionOnly ? 0 : request.startRow}
+    `
+  const blockRows = projection && !groupColumn && !request.idsOnly ? sql`
+    "block_ids" as materialized (${blockQuery}),
+    "block_rows" as materialized (${projection.hydrate(sql`select ${idColumn} from "block_ids"`)})
+  ` : sql`"block_rows" as materialized (${blockQuery})`
   return sql`
     with "document_history" as not materialized (${baseQuery}),
     "filtered_documents" as materialized (
-      select * from "document_history"
+      select ${projection ? sql.join(projection.columns.map(column => sql.identifier(column)), sql`, `) : sql`*`} from "document_history"
       where ${request.selectionOnly ? sql`true` : buildDocumentHistoryWhere(columnFilters, [...filterKeys])}
         and ${request.selectionOnly ? sql`true` : buildDocumentHistoryGridSearch(request.search, filterKeys)}
     ),
     "scoped_documents" as not materialized (select * from "filtered_documents" where ${routeWhere}),
     "level_rows" as not materialized (${levelQuery}),
-    "block_rows" as materialized (
-      select * from "level_rows" order by ${order}
-      limit ${request.idsOnly ? 0 : request.selectionOnly ? 10_000 : request.endRow - request.startRow} offset ${request.selectionOnly ? 0 : request.startRow}
-    )
+    ${blockRows}
     select ${request.cells?.summary ? sql`'[]'::jsonb` : sql`coalesce((select jsonb_agg(to_jsonb("block_rows") order by ${order}) from "block_rows"), '[]'::jsonb)`} as "rows",
       (select count(*)::integer from "level_rows") as "rowCount",
       (select count(*)::integer from "filtered_documents") as "total",

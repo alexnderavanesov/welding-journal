@@ -127,6 +127,16 @@ test('regrouping after another writer refreshes selected totals with the install
     await page.getByRole('checkbox', { name: 'Выбрать стык F9800001', exact: true }).check()
     await expect(page.getByText('WDI: 13', { exact: true })).toBeVisible()
     await setWdi(20)
+    // The seed has 300 distinct ordinary joints on STABLE-01, no weld dates,
+    // and only this selected joint has a WDI. Check the fixture independently
+    // of the summary RPC before asserting the checkbox -> area composition.
+    const fixture = await withE2eDatabase(async db => (await db.query(`select
+      count(*)::int as records, count(distinct joint)::int as identities,
+      count(*) filter (where connection_type='СШ')::int as ordinary,
+      sum(wdi)::double precision as wdi, count(wdi)::int as known_wdi,
+      count(weld_date)::int as known_dates
+      from weld_joints where project_title=$1 and line='STABLE-01'`, [project])).rows[0])
+    expect(fixture).toEqual({ records: 300, identities: 300, ordinary: 300, wdi: 20, known_wdi: 1, known_dates: 0 })
     await page.evaluate(() => window.dispatchEvent(new Event('focus')))
     await expect(page.getByText('Есть обновления', { exact: true })).toBeVisible()
     // The old view remains coherent until the user changes its grouping.
@@ -139,6 +149,26 @@ test('regrouping after another writer refreshes selected totals with the install
     await expect(page.getByText('WDI: 20', { exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Развернуть группу STABLE-01', exact: true }).click()
     await expect(page.getByRole('checkbox', { name: 'Выбрать стык F9800001', exact: true })).toBeChecked()
+    const footer = page.getByLabel('Статистика выделения')
+    await expect(footer).toContainText('По области')
+    await expect(footer.getByText('Выбрано: 1', { exact: true })).toBeVisible()
+    await expect(footer.getByText('Стыков: 300', { exact: true })).toBeVisible()
+    await expect(footer.getByText('WDI: 20*', { exact: true })).toBeVisible()
+    await expect(footer.getByText('Сварка: —*', { exact: true })).toBeVisible()
+    await expect(footer).not.toContainText('Итоги: считаем…')
+    await expect(footer).not.toContainText('Итоги недоступны.')
+    // A normal filter change clears the cell range but retains the checked ID.
+    // Its settled total must use the new revision rather than the former 13.
+    await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('F9800001')
+    await expect(page.getByText('Найдено: 1', { exact: true })).toBeVisible()
+    await expect(footer).toContainText('По выбранным')
+    await expect(footer).not.toContainText('По области')
+    await expect(footer.getByText('Выбрано: 1', { exact: true })).toBeVisible()
+    await expect(footer.getByText('Стыков: 1', { exact: true })).toBeVisible()
+    await expect(footer.getByText('WDI: 20', { exact: true })).toBeVisible()
+    await expect(footer.getByText('Сварка: —*', { exact: true })).toBeVisible()
+    await expect(footer).not.toContainText('Итоги: считаем…')
+    await expect(footer).not.toContainText('Итоги недоступны.')
   } finally {
     await withLineProgramFixture(db => db.query('update weld_joints set wdi=null where project_title=$1 and joint=$2', [project, 'F9800001']).then(() => {}))
   }
@@ -253,18 +283,27 @@ for (const layout of ['flat', 'single', 'nested']) test(`own save retains ${layo
   if (layout !== 'flat') await page.getByRole('button', { name: 'Развернуть группу STABLE-01', exact: true }).click()
   await expect(page.getByRole('checkbox', { name: 'Выбрать стык F9800001', exact: true })).toBeVisible()
   await page.waitForLoadState('networkidle')
-  await page.evaluate(y => scrollTo(0, y), nested ? 7000 : 1800)
+  const targetScroll = nested ? 7000 : 1800
+  await page.evaluate(y => scrollTo(0, y), targetScroll)
   await page.waitForLoadState('networkidle')
-  const visibleJoint = () => page.locator('.ag-row [col-id="joint"] button').evaluateAll(buttons => {
+  const visibleJoint = () => page.locator('.ag-row [col-id="joint"] button').evaluateAll((buttons, targetScroll) => {
+    const track = document.querySelector('[data-welding-journal-grid] .journal-page-track')
+    const viewport = document.querySelector('[data-welding-journal-grid] .ag-grid-viewport')
+    // networkidle does not wait for document/grid scroll synchronization. Do
+    // not capture a temporarily visible first row before the deep scroll lands.
+    if (!track || !viewport || Math.abs(scrollY - targetScroll) > 1 ||
+      Math.abs(viewport.scrollTop - Math.max(0, -track.getBoundingClientRect().top)) > 1) return undefined
     const button = buttons.find(button => {
       const rect = button.getBoundingClientRect()
       return rect.top > 120 && rect.bottom < innerHeight - 100 &&
         button.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2))
     })
     return button?.textContent?.trim()
-  })
-  await expect.poll(visibleJoint).toBeTruthy()
-  const joint = await visibleJoint()
+  }, targetScroll)
+  // Retain the successful observation: another DOM read can fall between
+  // virtual-row replacements and yield undefined after the poll has passed.
+  let joint: string | undefined
+  await expect.poll(async () => { joint = await visibleJoint(); return joint }).toMatch(/^F\d+$/)
   const checkbox = page.getByRole('checkbox', { name: `Выбрать стык ${joint}`, exact: true })
   await checkbox.check()
   const before = await page.evaluate(() => scrollY)

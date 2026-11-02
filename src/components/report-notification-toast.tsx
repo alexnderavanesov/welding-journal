@@ -63,10 +63,10 @@ export function ReportNotificationToast({
       role="status"
       aria-live="polite"
       className={cn(
-        'fixed right-4 z-[220] flex w-[calc(100vw-2rem)] max-w-sm items-center gap-2.5 rounded-lg border bg-white p-2.5 pr-2 text-[13px] shadow-[0_14px_36px_rgba(15,23,42,0.24)] transition-[bottom,right] duration-150',
+        'fixed right-[max(0.5rem,env(safe-area-inset-right))] z-[220] flex w-[calc(100vw-2rem)] max-w-sm items-center gap-2.5 rounded-lg border bg-white p-2.5 pr-2 text-[13px] shadow-[0_14px_36px_rgba(15,23,42,0.24)] transition-[bottom] duration-150',
         hasOpenModal
-          ? 'bottom-24 xl:bottom-24 xl:right-6'
-          : 'bottom-20 xl:bottom-5 xl:right-20',
+          ? 'bottom-[max(6rem,env(safe-area-inset-bottom))]'
+          : 'bottom-[max(0.5rem,env(safe-area-inset-bottom))]',
         isError
           ? 'border-rose-200 text-rose-950 shadow-rose-100/50'
           : isSuccess

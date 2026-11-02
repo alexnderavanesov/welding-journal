@@ -20,8 +20,9 @@ test('indexed pages preserve natural order, long legacy names, null groups and e
     ...Array.from({ length: 2000 }, (_, index) => 'Z' + (index + 1))]
   await withLineProgramFixture(async db => {
     for (const [index, joint] of names.entries()) {
-      await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,officiality,wdi)
-        values($1,'QUERY',$2,$3,'действующий',$4)`, [project, index === 0 ? null : index === 1 ? '' : index === 2 ? ' ' : index === 17 ? 'L'.repeat(300) : 'L', joint, index % 2 ? 1 : 2])
+      await db.query(`insert into weld_joints(project_title,subtitle_code,line,joint,officiality,wdi,weld_date)
+        values($1,$5,$2,$3,'действующий',$4,$6)`, [project, index === 0 ? null : index === 1 ? '' : index === 2 ? ' ' : index === 17 ? 'L'.repeat(300) : 'L', joint, index % 2 ? 1 : 2,
+        [null, '', 'A2', 'A10', 'Я', 'я'][index % 6], index % 3 ? `2026-10-${String(1 + index % 20).padStart(2, '0')}` : null])
     }
   })
   let observed = ''
@@ -55,6 +56,21 @@ test('indexed pages preserve natural order, long legacy names, null groups and e
       const result = await call({ columnFilters: { projectTitle: '=' + project }, groupBy: [], route: [], start, end: start + 4, sort: { fieldKey: 'joint', direction } })
       expect(result.rowCount).toBe(names.length)
       expect(result.rows.map(row => row.id)).toEqual(expected.slice(start, start + 4))
+    }
+  }
+  // The narrow page must retain ties, NULLS LAST and deep-offset fallback for
+  // the daily scalar sorts too. Read expected IDs directly with the established
+  // order, independently of the candidate-page helper.
+  for (const [fieldKey, column] of [['projectTitle', 'project_title'], ['subtitleCode', 'subtitle_code'],
+    ['line', 'line'], ['weldDate', 'weld_date'], ['finalStatus', 'final_status']] as const) {
+    for (const direction of ['asc', 'desc'] as const) {
+      const expected = await withE2eDatabase(async db => (await db.query(`select id from weld_joints where project_title=$1
+        order by ${column} ${direction} nulls last, line asc, joint asc, id asc`, [project])).rows.map(row => row.id))
+      for (const start of [0, 3, 99, 995, 1000, names.length - 4]) {
+        const result = await call({ columnFilters: { projectTitle: '=' + project }, groupBy: [], route: [], start, end: start + 4, sort: { fieldKey, direction } })
+        expect(result.rowCount).toBe(names.length)
+        expect(result.rows.map(row => row.id), `${fieldKey} ${direction} offset ${start}`).toEqual(expected.slice(start, start + 4))
+      }
     }
   }
   const base: JournalGridRequest = { columnFilters: { projectTitle: '=' + project }, groupBy: ['line'], route: [], start: 0, end: 100 }

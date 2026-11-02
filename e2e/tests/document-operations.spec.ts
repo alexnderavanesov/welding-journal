@@ -263,6 +263,10 @@ test('standalone merge from compact actions preserves all facts, replaces only t
   expect(after.documents.find(doc => doc.id === docs[2].id)).toEqual(before.documents.find(doc => doc.id === docs[2].id))
   expect(after.documents.filter(doc => docs.slice(0, 2).some(source => source.title === doc.title))).toHaveLength(1)
   const merged = after.documents.find(doc => doc.title === docs[0].title)!
+  const audit = await withE2eDatabase(async db => (await db.query(`select entity,kind,changes from audit_changes
+    where operation_id=(select operation_id from audit_changes where entity='generated_documents' and entity_id=$1 order by id desc limit 1)`, [String(docs[1].id)])).rows)
+  expect(audit.some(row => row.entity === 'generated_documents' && row.kind === 'delete' && row.changes.title?.origin === 'user')).toBe(true)
+  expect(audit.filter(row => row.entity === 'weld_joints').every(row => Object.values(row.changes).every(change => (change as { origin?: string }).origin === 'automatic'))).toBe(true)
   expect(after.links.filter(link => link.document_id === merged.id)).toHaveLength(4)
   expect(after.settings.find(setting => setting.key === 'request-conclusion')).toEqual(before.settings.find(setting => setting.key === 'request-conclusion'))
   expect(errors).toEqual([])

@@ -16,7 +16,7 @@ import {
 import { hasWeldDate } from '@/lib/report-value-utils'
 import { VISIBLE_FIELDS } from '@/lib/weld-visible-field-layout'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { loadOtherSettings } from '@/lib/other-settings'
+import { loadOtherSettings, type OtherSettings } from '@/lib/other-settings'
 import { isSystemWdiMode } from '@/lib/wdi'
 import { formatDateTimeWithSeconds } from '@/lib/weld-table-formatting'
 import { loadSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
@@ -29,6 +29,7 @@ import {
 export type ImportTemplateCellKind = 'free' | 'checked' | 'ignored'
 export type ReportImportMode = 'newRecords' | 'massFill' | 'replaceData'
 export type ImportableReport = 'weldingJournal'
+type ReportImportSettings = Readonly<{ otherSettings: OtherSettings; saveCheckSettings: SaveCheckSettings }>
 
 export const MASS_FILL_ROW_ID_HEADER = 'ID записи'
 export const REPLACE_ROW_VERSION_HEADER = '__Версия записи'
@@ -164,8 +165,8 @@ export function getReportImportPreviewFields(activeReport: ImportableReport) {
   return priority.filter((field) => fields.some((candidate) => candidate.key === field.key))
 }
 
-export function getReportImportCellKind(activeReport: ImportableReport, fieldKey: string): ImportTemplateCellKind {
-  return getReportImportCellKindFromRules(fieldKey, getReportImportTemplateRules(activeReport))
+export function getReportImportCellKind(activeReport: ImportableReport, fieldKey: string, settings?: ReportImportSettings): ImportTemplateCellKind {
+  return getReportImportCellKindFromRules(fieldKey, getReportImportTemplateRules(activeReport, settings))
 }
 
 function getReportImportCellKindFromRules(
@@ -178,17 +179,16 @@ function getReportImportCellKindFromRules(
   return 'free'
 }
 
-export function getReportImportIgnoredFieldKeys(activeReport: ImportableReport) {
-  return getReportImportTemplateRules(activeReport).ignoredFieldKeys
+export function getReportImportIgnoredFieldKeys(activeReport: ImportableReport, settings?: ReportImportSettings) {
+  return getReportImportTemplateRules(activeReport, settings).ignoredFieldKeys
 }
 
-export function getReportImportCheckedFieldKeys(activeReport: ImportableReport) {
-  return getReportImportTemplateRules(activeReport).checkedFieldKeys
+export function getReportImportCheckedFieldKeys(activeReport: ImportableReport, settings?: ReportImportSettings) {
+  return getReportImportTemplateRules(activeReport, settings).checkedFieldKeys
 }
 
-function getReportImportTemplateRules(_activeReport: ImportableReport) {
-  const otherSettings = loadOtherSettings()
-  const saveCheckSettings = loadSaveCheckSettings()
+function getReportImportTemplateRules(_activeReport: ImportableReport, settings?: ReportImportSettings) {
+  const { otherSettings, saveCheckSettings } = settings ?? { otherSettings: loadOtherSettings(), saveCheckSettings: loadSaveCheckSettings() }
   const ignoredFieldKeys = isSystemWdiMode(otherSettings)
     ? new Set([...WELD_IMPORT_IGNORED_FIELD_KEYS, 'wdi'])
     : WELD_IMPORT_IGNORED_FIELD_KEYS
@@ -224,8 +224,8 @@ function hasEnabledOfficialStampCheck(settings: SaveCheckSettings) {
   )
 }
 
-export function stripIgnoredImportFields(record: WeldInput, activeReport: ImportableReport) {
-  const ignoredKeys = getReportImportIgnoredFieldKeys(activeReport)
+export function stripIgnoredImportFields(record: WeldInput, activeReport: ImportableReport, settings?: ReportImportSettings) {
+  const ignoredKeys = getReportImportIgnoredFieldKeys(activeReport, settings)
   if (ignoredKeys.size === 0) return record
   const nextRecord = { ...record }
   for (const key of ignoredKeys) {
@@ -527,20 +527,20 @@ function getExistingRowsBodyStyleId(
   return getTemplateStyleId(field.key, rules)
 }
 
-export function isMassFillFieldLocked(activeReport: ImportableReport, field: WeldField, record: WeldInput) {
+export function isMassFillFieldLocked(activeReport: ImportableReport, field: WeldField, record: WeldInput, settings?: ReportImportSettings) {
   if (isExistingRowsImportLockedField(field)) return true
   if (isReportSpecificNoteField(field.key)) {
     return !canEditReportSpecificNote(record, field.key) || hasMassFillValue(record[field.key as keyof WeldInput])
   }
-  if (isSystemImportField(activeReport, field)) return true
+  if (isSystemImportField(activeReport, field, undefined, settings)) return true
   return hasMassFillValue(record[field.key as keyof WeldInput])
 }
 
-export function isSystemImportField(activeReport: ImportableReport, field: WeldField, record?: WeldInput | null) {
+export function isSystemImportField(activeReport: ImportableReport, field: WeldField, record?: WeldInput | null, settings?: ReportImportSettings) {
   if (isReportSpecificNoteField(field.key)) {
     return !record || !canEditReportSpecificNote(record, field.key)
   }
-  return getReportImportCellKind(activeReport, field.key) === 'ignored'
+  return getReportImportCellKind(activeReport, field.key, settings) === 'ignored'
 }
 
 export function isReportSpecificNoteField(fieldKey: string): fieldKey is 'lnkNote' | 'pstoNote' {

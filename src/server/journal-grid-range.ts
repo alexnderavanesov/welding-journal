@@ -61,8 +61,10 @@ export async function selectJournalGridRange(input: JournalRangeRequest, signal?
       for (const row of rows) ids.add(row.id)
     } else {
       const field = input.groupBy[part.route.length], value = journalGroupSql(field, context)
-      const groups = await requireDb().select({ key: sql<string>`${value}` }).from(weldJoints).where(where)
-        .groupBy(value).orderBy(journalGroupOrder(field, context)).limit(part.end - part.start).offset(part.start)
+      const grouped = requireDb().select({ key: sql<string>`${value}`.as('group_key') }).from(weldJoints).where(where)
+        .groupBy(sql`1`).as('journal_range_groups')
+      const groups = await requireDb().select({ key: grouped.key }).from(grouped)
+        .orderBy(journalGroupOrder(field, context, grouped.key)).limit(part.end - part.start).offset(part.start)
       if (groups.length !== part.end - part.start) throw new Error('Диапазон больше текущей выборки. Обновите журнал.')
       signal?.throwIfAborted()
       const rows = await requireDb().select({ id: weldJoints.id }).from(weldJoints)

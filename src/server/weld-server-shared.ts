@@ -48,7 +48,7 @@ import {
 type WeldFilters,
 type WeldImportScopeRequest
 } from '@/server/weld-contracts'
-import { and,asc,eq,exists,getTableColumns,ilike,inArray,notExists,notInArray,or,sql,type SQL,type SQLWrapper } from 'drizzle-orm'
+import { Column,and,asc,eq,exists,getTableColumns,ilike,inArray,notExists,notInArray,or,sql,type SQL,type SQLWrapper } from 'drizzle-orm'
 import { getControlMethodFilterColumnKey } from '@/server/weld-request-utils'
 
 export const filterKeys = [
@@ -223,6 +223,10 @@ export function addColumnFilterClauses(clauses: SQL[], columnFilters: Record<str
       clauses.push(buildFinalStatusColumnWhere(query))
       continue
     }
+    if (key === 'weldDate') {
+      clauses.push(buildWeldDateColumnWhere(query))
+      continue
+    }
     const column = getWeldColumn(key as WeldFieldKey)
     if (!column) continue
 
@@ -246,7 +250,7 @@ export function addColumnFilterClauses(clauses: SQL[], columnFilters: Record<str
       continue
     }
 
-    clauses.push(sql`coalesce(${column}::text, '') ilike ${`%${query}%`}`)
+    clauses.push(buildColumnTextContainsWhere(column, query))
   }
 }
 
@@ -358,6 +362,14 @@ export function buildFinalStatusColumnWhere(query: string) {
   if (query.startsWith('=')) {
     return buildFinalStatusChoiceWhere(query.slice(1).trim().replace(/^["']|["']$/g, ''))
   }
+  // The displayed duplicate rejection only appends its methods to this text.
+  // Any literal fragment already inside it (notably «годен» / «не годен»)
+  // matches exactly the same rows before that suffix is calculated. Other
+  // fragments, including method names and LIKE metacharacters, keep the full
+  // expression so hidden/legacy duplicate facts remain searchable.
+  if (query && 'не годен по дублю'.includes(query.toLowerCase())) {
+    return sql`coalesce(${weldJoints.finalStatus}::text, '') ilike ${`%${query}%`}`
+  }
   return sql`coalesce(${getWeldColumnFilterExpression('finalStatus')}::text, '') ilike ${`%${query}%`}`
 }
 
@@ -411,6 +423,59 @@ export function buildControlAvailabilityColumnWhere(column: SQLWrapper, values: 
 
 export function buildColumnTextEqualsWhere(column: SQLWrapper, value: string) {
   return sql`lower(trim(coalesce(${column}::text, ''))) = lower(trim(${value}))`
+}
+
+/** Expose physical text-column statistics for ordinary literal fragments.
+ * Wrapping both columns of a broad combined filter in coalesce can make the
+ * planner expect one row and repeatedly scan whole joined tables. A nonempty
+ * literal cannot match the old empty-string substitute; the explicit null
+ * guard also preserves FALSE (rather than UNKNOWN) for boolean consumers.
+ * Computed expressions and LIKE patterns retain their exact original SQL.
+ */
+export function buildColumnTextContainsWhere(column: SQLWrapper, query: string): SQL {
+  if (column instanceof Column && column.columnType === 'PgText' && query.length > 0 && !/[%_\\]/.test(query)) {
+    return sql`(${column} is not null and ${column}::text ilike ${`%${query}%`})`
+  }
+  return sql`coalesce(${column}::text, '') ilike ${`%${query}%`}`
+}
+
+/** Both the journal and the LNK/PSTO source-filter loops use this physical field. */
+export function buildWeldDateColumnWhere(query: string): SQL {
+  const choice = parseWeldColumnChoiceFilter(query)
+  if (choice?.kind === 'values') return buildWeldDateChoiceWhere(
+    choice.values, buildColumnChoiceWhere(weldJoints.weldDate, choice.values),
+  )
+  if (query.startsWith('=')) {
+    const exactValue = query.slice(1).trim().replace(/^["']|["']$/g, '')
+    return buildWeldDateChoiceWhere([exactValue], buildColumnTextEqualsWhere(weldJoints.weldDate, exactValue))
+  }
+  return sql`coalesce(${weldJoints.weldDate}::text, '') ilike ${`%${query}%`}`
+}
+
+/** Canonical ISO choices can use the native date index. Rechecking the same
+ * dates as text under ISO double-counts selectivity and can make a broad
+ * natural-order page scan/sort every match instead of reading its first rows.
+ * Keep the exact text recheck for other session DateStyles, and the original
+ * predicate for noncanonical choices. Virtual dates and fragments stay separate. */
+function buildWeldDateChoiceWhere(values: readonly string[], textMatch: SQL): SQL {
+  // Choice decoding has already applied JS.trim. Legacy quoted exact values
+  // retain inner Unicode whitespace; PostgreSQL trim removes ASCII spaces only.
+  const normalized = [...new Set(values.map(value => value.replace(/^ +| +$/g, '')))]
+  if (!normalized.length || !normalized.every(value => !value || isCanonicalWeldDate(value))) return textMatch
+  const dates = normalized.filter(Boolean)
+  // NULL must remain FALSE for a nonempty choice, including beneath NOT/OR.
+  const nativeMatch = or(dates.length ? sql`(${weldJoints.weldDate} is not null and ${weldJoints.weldDate} = any(${sql.param(dates)}::date[]))` : undefined,
+    normalized.includes('') ? sql`${weldJoints.weldDate} is null` : undefined)
+  return and(nativeMatch, sql`case when split_part(current_setting('DateStyle'), ',', 1) = 'ISO' then true else ${textMatch} end`)!
+}
+
+function isCanonicalWeldDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return false
+  const year = Number(match[1]), month = Number(match[2]), day = Number(match[3])
+  if (year < 1 || month < 1 || month > 12 || day < 1) return false
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+  return day <= [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
 }
 
 export function buildRowIdListWhere(filter: NonNullable<ReturnType<typeof parseRowIdListFilter>>) {

@@ -193,6 +193,7 @@ type IndexedSystemDocumentHistoryRequest = {
   limit: number
   columnFilters: Record<string, string>
 }
+type IndexedSystemDocumentHistoryGridRequest = Omit<IndexedSystemDocumentHistoryRequest, 'limit'> & DocumentHistoryGridRequest
 
 export async function loadIndexedSystemDocumentHistory({
   type,
@@ -209,23 +210,40 @@ export async function loadIndexedSystemDocumentHistory({
 }
 
 export async function loadIndexedSystemDocumentHistoryGrid(
-  request: Omit<IndexedSystemDocumentHistoryRequest, 'limit'> & DocumentHistoryGridRequest,
+  request: IndexedSystemDocumentHistoryGridRequest,
 ): Promise<DocumentHistoryGridResult<SystemDocumentSummary>> {
   return requireDb().transaction(async tx => {
     await lockSystemDocumentIndex(tx, request.type)
     await ensureSystemDocumentIndexInitializedInTransaction(tx, request.type)
-    const sortExpressions = Object.fromEntries(SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS.map(key => [key, documentHistoryTextSort(key)]))
-    Object.assign(sortExpressions, { rowCount: sql`"rowCount"`, date: sql`nullif("date", '')::date` })
-    const result = await tx.execute(buildDocumentHistoryGridSql({
-      baseQuery: buildIndexedSystemDocumentHistoryBaseQuery(request.type, getSystemDocumentStorageTypes(request.type), request.documentId, true),
-      columnFilters: request.columnFilters, filterKeys: SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS,
-      request, idKind: 'system', sortExpressions,
-      defaultOrder: sql`"date" desc, "title" desc, "documentId" desc`,
-      // This indexed row reads only generated_documents. Its existing xmin
-      // token changes with metadata, specialists and membership touches too.
-      revisionValue: sql`"documentId"::text || ':' || "documentVersion"`,
-    }))
+    const result = await tx.execute(buildIndexedSystemDocumentHistoryGridSql(request))
     return normalizeDocumentHistoryGridResult(result.rows[0], request, 'system', record => toIndexedSystemDocumentHistorySummary(record, request.type), systemDocumentGridValue)
+  })
+}
+
+export function buildIndexedSystemDocumentHistoryGridSql(request: IndexedSystemDocumentHistoryGridRequest) {
+  const storageTypes = getSystemDocumentStorageTypes(request.type)
+  const sortExpressions = Object.fromEntries(SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS.map(key => [key, documentHistoryTextSort(key)]))
+  Object.assign(sortExpressions, { rowCount: sql`"rowCount"`, date: sql`nullif("date", '')::date` })
+  const fields = [...new Set([...request.rowGroupCols, ...request.sortModel.map(item => item.colId)])]
+  // Metadata filters already parse each candidate to test membership. Global
+  // search also adds enough expressions to trigger costly JIT compilation on
+  // larger registries. Rehydrating a narrow result regressed these measured
+  // paths; preserve their original query. Selection restoration ignores both.
+  const keepFullProjection = !request.selectionOnly && (Boolean(request.search?.trim()) ||
+    ['method', 'stage', 'project', 'subtitle', 'line'].some(key => Boolean(request.columnFilters[key]?.trim())))
+  return buildDocumentHistoryGridSql({
+    baseQuery: buildIndexedSystemDocumentHistoryBaseQuery(request.type, storageTypes, request.documentId, true),
+    columnFilters: request.columnFilters, filterKeys: SYSTEM_DOCUMENT_HISTORY_FILTER_KEYS,
+    request, idKind: 'system', sortExpressions,
+    defaultOrder: sql`"date" desc, "title" desc, "documentId" desc`,
+    // This indexed row reads only generated_documents. Its existing xmin
+    // token changes with metadata, specialists and membership touches too.
+    revisionValue: sql`"documentId"::text || ':' || "documentVersion"`,
+    compact: keepFullProjection ? undefined : {
+      columns: ['documentId', 'documentVersion', 'date', 'title', ...(fields.includes('rowCount') ? ['rowCount'] : []),
+        ...fields.map(key => `filter_${key}`)],
+      hydrate: ids => buildIndexedSystemDocumentHistoryBaseQuery(request.type, storageTypes, request.documentId, true, ids),
+    },
   })
 }
 
@@ -1987,12 +2005,16 @@ function buildSystemDocumentTargetMetadataSql(target: SQL) {
   ))::text`
 }
 
-function buildIndexedSystemDocumentHistoryBaseQuery(
+export function buildIndexedSystemDocumentHistoryBaseQuery(
   type: SystemDocumentType,
   storageTypes: string[],
   documentId?: number,
   summaryOnly = false,
+  documentIds?: SQL,
 ) {
+  const scope = documentId
+    ? and(inArray(generatedDocuments.type, storageTypes), eq(generatedDocuments.id, documentId))
+    : inArray(generatedDocuments.type, storageTypes)
   const metadataArray = (key: string) => sql`
     case
       when jsonb_typeof("document_source"."metadata" -> ${key}) = 'array'
@@ -2103,12 +2125,7 @@ function buildIndexedSystemDocumentHistoryBaseQuery(
           ${DOCUMENT_VERSION_SELECT} as "documentVersion",
           ${generatedDocuments.updatedAt} as "updatedAt"
         from ${generatedDocuments}
-        where ${documentId
-          ? and(
-              inArray(generatedDocuments.type, storageTypes),
-              eq(generatedDocuments.id, documentId),
-            )
-          : inArray(generatedDocuments.type, storageTypes)}
+        where ${documentIds ? and(scope, sql`${generatedDocuments.id} in (${documentIds})`) : scope}
       ) as "document_record"
       -- Parse stored metadata once per document. Inlining this projection
       -- repeated text-to-jsonb parsing for every displayed/filter field.
@@ -2158,7 +2175,30 @@ export async function loadIndexedSystemDocumentSummaries(
   type: SystemDocumentType,
   selectedDocumentIds?: number[],
 ): Promise<SystemDocumentSummary[]> {
-  const storageTypes = getSystemDocumentStorageTypes(type)
+  return loadIndexedSystemDocumentData(tx, getSystemDocumentStorageTypes(type), selectedDocumentIds)
+}
+
+const systemDocumentTypeByStorageType = new Map<string, SystemDocumentType>(
+  SYSTEM_DOCUMENT_TEMPLATE_PROFILES.map(profile => [systemDocumentStorageType(profile.id), profile.documentType]),
+)
+
+/** Read a mixed selection once, retaining its source positions from the same
+ * document versions as the summaries. Each caller still gets a fresh read. */
+export async function loadIndexedSystemDocumentSelection(
+  tx: SystemDocumentSequenceTransaction,
+  selectedDocumentIds: number[],
+) {
+  const positions = new Map<number, SystemDocumentSourcePosition[]>()
+  const documents = await loadIndexedSystemDocumentData(tx, [...systemDocumentTypeByStorageType.keys()], selectedDocumentIds, positions)
+  return { documents, positions }
+}
+
+async function loadIndexedSystemDocumentData(
+  tx: SystemDocumentSequenceTransaction,
+  storageTypes: string[],
+  selectedDocumentIds?: number[],
+  positions?: Map<number, SystemDocumentSourcePosition[]>,
+): Promise<SystemDocumentSummary[]> {
   if (storageTypes.length === 0) return []
   if (selectedDocumentIds?.length === 0) return []
   const documents = await tx
@@ -2187,6 +2227,7 @@ export async function loadIndexedSystemDocumentSummaries(
   return documents
     .map((document) => {
       const metadata = parseSystemDocumentMetadata(document.sourceMetadata)
+      positions?.set(document.id, metadata?.sourcePositions ?? [])
       const rowIds = (rowIdsByDocument.get(document.id) ?? []).sort((left, right) => left - right)
       return {
         documentId: document.id,
@@ -2194,7 +2235,7 @@ export async function loadIndexedSystemDocumentSummaries(
         specialists: document.specialists,
         specialistsRevision: document.specialistsRevision,
         documentVersion: document.documentVersion,
-        type,
+        type: systemDocumentTypeByStorageType.get(document.type)!,
         title: document.title,
         date: document.periodFrom ?? '',
         ...(metadata?.methodCode ? { methodCode: metadata.methodCode } : {}),

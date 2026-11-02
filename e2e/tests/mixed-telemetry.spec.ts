@@ -28,21 +28,29 @@ test('отмена чтения не путается с явно имитиро
     await fail('getWeldReportSummary_obsolete', 'GET')
     await fail('readJournalGrid_aborted')
     await fail('getJournalReportSummary_aborted')
+    await fail('summarizeJournalGridArea_aborted')
+    await fail('summarizeJournalGridRange_aborted')
+    await fail('summarizeJournalGridSelection_aborted')
     await fail('updateWeldJoint_injected')
     expect(telemetry.expectedFailures).toEqual([
       'getWeldReportSummary_obsolete: net::ERR_ABORTED',
       'readJournalGrid_aborted: net::ERR_ABORTED',
       'getJournalReportSummary_aborted: net::ERR_ABORTED',
+      'summarizeJournalGridArea_aborted: net::ERR_ABORTED',
+      'summarizeJournalGridRange_aborted: net::ERR_ABORTED',
+      'summarizeJournalGridSelection_aborted: net::ERR_ABORTED',
       'updateWeldJoint_injected: net::ERR_FAILED',
     ])
     await fail('updateWeldJoint_realLater')
     await fail('updateWeldJoint_aborted')
     await fail('readJournalGrid_realFailure')
+    await fail('summarizeJournalGridArea_realFailure')
     expect(telemetry.errors).toEqual([
       'updateWeldJoint_realFirst: net::ERR_FAILED',
       'updateWeldJoint_realLater: net::ERR_FAILED',
       'updateWeldJoint_aborted: net::ERR_ABORTED',
       'readJournalGrid_realFailure: net::ERR_FAILED',
+      'summarizeJournalGridArea_realFailure: net::ERR_FAILED',
     ])
   } finally {
     await context.close()

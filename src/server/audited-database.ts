@@ -1,4 +1,4 @@
-import type { AuditValue } from '@/lib/audit-value'
+import type { AuditFieldChange, AuditValue } from '@/lib/audit-value'
 import { createHash } from 'node:crypto'
 import { and, eq, getTableColumns, getTableName, or, sql, type SQL } from 'drizzle-orm'
 import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core'
@@ -149,7 +149,7 @@ function wrapTransaction(tx: Executor, state: State): Executor {
   return wrapped
 }
 export function businessFieldChanges(before: Row | undefined, after: Row | undefined) {
-  const changed: Record<string, { before?: AuditValue; after?: AuditValue }> = {}
+  const changed: Record<string, AuditFieldChange> = {}
   for (const key of new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])) {
     if (technicalFields.has(key)) continue
     if (Object.is(before?.[key], after?.[key])) continue
@@ -189,6 +189,13 @@ async function flush(tx: Executor, state: State) {
     const changes = businessFieldChanges(before, after)
     state.changes.delete(key)
     if (!Object.keys(changes).length) continue
+    if (state.context.auditOrigin) {
+      const entity = getTableName(table)
+      for (const [field, change] of Object.entries(changes)) {
+        const origin = state.context.auditOrigin(entity, before, after, field)
+        if (origin) change.origin = origin
+      }
+    }
     const row = after ?? before!
     details.push({ operationId: state.context.operationId, entity: getTableName(table), entityId: identity(table, row),
       jointId: table === schema.weldJoints ? row.id : row.weldJointId ?? null,

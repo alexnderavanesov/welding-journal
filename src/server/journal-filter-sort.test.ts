@@ -1,6 +1,14 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { writeFileSync } from 'node:fs'
 import { normalizeWeldColumnFilterOptions, buildDerivedReportCacheKey } from './weld-read'
+import type { WeldColumnFilterOption } from './weld-contracts'
+
+// Independent reference for the established collation, retained only in tests.
+const previousSort = (options: readonly WeldColumnFilterOption[]) => [...options].sort((left, right) => {
+  if (left.value === '') return -1
+  if (right.value === '') return 1
+  return left.label.localeCompare(right.label, 'ru', { numeric: true, sensitivity: 'base' })
+})
 
 afterEach(() => vi.restoreAllMocks())
 it('bounds large journal cache keys while preserving exact filter identity and other reports', () => {
@@ -17,9 +25,9 @@ it('retains Russian/numeric order, stable ties, empty values and counts without 
   const labels = ['', 'Линия-10', 'Линия-2', 'Линия-02', 'линия-2', 'е', 'ё', 'Е', 'Ё', 'A-10', 'A-2', 'А-2', '3,5', '3.5', '№ 12', '№ 2', 'é', 'é']
   const input = labels.map((label, index) => Object.freeze({ value: label, label: label || '(пусто)', count: index + 1 }))
   const snapshot = [...input]
-  const previous = normalizeWeldColumnFilterOptions('line', input)
+  const previous = previousSort(input)
   const compare = vi.spyOn(String.prototype, 'localeCompare')
-  const journal = normalizeWeldColumnFilterOptions('line', input, true)
+  const journal = normalizeWeldColumnFilterOptions('line', input)
   expect(compare).not.toHaveBeenCalled()
   expect(journal).toEqual(previous)
   expect(journal[0].value).toBe('')
@@ -27,16 +35,19 @@ it('retains Russian/numeric order, stable ties, empty values and counts without 
   expect(input).toEqual(snapshot)
 })
 
-it('preserves normalized control choices and leaves the existing sort path as the default', () => {
+it('preserves normalized control choices while sharing the collator across all callers', () => {
   const input = [
     { value: '', label: '(пусто)', count: 2 }, { value: 'нет', label: 'нет', count: 3 },
     { value: 'Да', label: 'Да', count: 5 }, { value: 'да', label: 'да', count: 7 },
     { value: 'отменен', label: 'отменен', count: 1 },
   ]
-  expect(normalizeWeldColumnFilterOptions('hasRk', input, true)).toEqual(normalizeWeldColumnFilterOptions('hasRk', input))
+  expect(normalizeWeldColumnFilterOptions('hasRk', input)).toEqual(previousSort([
+    { value: '', label: '(пусто)', count: 5 }, { value: 'да', label: 'да', count: 12 },
+    { value: 'отменен', label: 'отменен', count: 1 },
+  ]))
   const compare = vi.spyOn(String.prototype, 'localeCompare')
   normalizeWeldColumnFilterOptions('line', input)
-  expect(compare).toHaveBeenCalled()
+  expect(compare).not.toHaveBeenCalled()
 })
 
 it.runIf(process.env.JOURNAL_FILTER_SORT_MEASURE === '1')('measures the actual journal facet normalization with the same inputs', () => {
@@ -49,11 +60,12 @@ it.runIf(process.env.JOURNAL_FILTER_SORT_MEASURE === '1')('measures the actual j
       seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
       const other = seed % (index + 1); [rows[index], rows[other]] = [rows[other], rows[index]]
     }
-    expect(normalizeWeldColumnFilterOptions('line', rows, true)).toEqual(normalizeWeldColumnFilterOptions('line', rows))
+    expect(normalizeWeldColumnFilterOptions('line', rows)).toEqual(previousSort(rows))
     const samples: Record<string, number[]> = { before: [], after: [] }
     for (let repeat = 0; repeat < 3; repeat++) for (const name of repeat % 2 ? ['after', 'before'] : ['before', 'after']) {
       const start = performance.now()
-      normalizeWeldColumnFilterOptions('line', rows, name === 'after')
+      if (name === 'after') normalizeWeldColumnFilterOptions('line', rows)
+      else previousSort(rows)
       samples[name].push(performance.now() - start)
     }
     measurements.push({ size, samples })

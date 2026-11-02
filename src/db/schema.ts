@@ -1,4 +1,4 @@
-import type { AuditValue } from '@/lib/audit-value'
+import type { AuditFieldChange } from '@/lib/audit-value'
 import { sql } from 'drizzle-orm'
 import { boolean, check, date, index, integer, jsonb, numeric, pgTable, primaryKey, serial, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 import type { DocumentSpecialists, SpecialistKind, SpecialistMethod } from '@/lib/document-specialists'
@@ -74,7 +74,7 @@ export const auditChanges = pgTable('audit_changes', {
   entity: text('entity').notNull(), entityId: text('entity_id').notNull(), label: text('label').notNull(),
   jointId: integer('joint_id'), area: text('area').notNull(),
   kind: text('kind').$type<'create' | 'update' | 'delete'>().notNull(),
-  changes: jsonb('changes').$type<Record<string, { before?: AuditValue; after?: AuditValue }>>().notNull(),
+  changes: jsonb('changes').$type<Record<string, AuditFieldChange>>().notNull(),
 }, table => [index('audit_changes_operation_idx').on(table.operationId, table.id),
   index('audit_changes_joint_idx').on(table.jointId, table.id),
   index('audit_changes_entity_idx').on(table.entity, table.entityId, table.id)])
@@ -358,6 +358,7 @@ export const weldJoints = pgTable(
     index('weld_joints_line_idx').on(table.line),
     index('weld_joints_line_program_idx').on(table.lineProgramId),
     index('weld_joints_joint_idx').on(table.joint),
+    index('weld_joints_joint_choice_idx').on(sql`lower(trim(coalesce(${table.joint}::text, '')))`),
     index('weld_joints_natural_joint_asc_idx').on(...naturalJointOrder(table.joint, 'asc'), table.line, table.joint, table.id).where(indexedJointName(table.joint, table.line)),
     index('weld_joints_natural_joint_desc_idx').on(...naturalJointOrder(table.joint, 'desc'), table.line, table.joint, table.id).where(indexedJointName(table.joint, table.line)),
     index('weld_joints_technology_card_name_idx').on(sql`btrim(${table.technologyCardNumber})`),

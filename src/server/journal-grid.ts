@@ -16,10 +16,10 @@ import { FIELD_BY_KEY, isVirtualWeldField, type WeldFieldKey } from '@/lib/weld-
 import { type JournalGridRequest, type JournalGridQuery, type JournalGridResult, type JournalGridRow, type JournalRevision, isJournalRevision, journalReport } from '@/lib/journal-server-grid'
 import { LNK_METHODS } from '@/lib/report-config'
 import { buildPstoCurrentReportValueSql } from './psto-report-current-values'
-import { attachHeatTreatmentControlRelations } from './heat-treatment-control-relations'
+import { attachHeatTreatmentControlRelationsInPlace } from './heat-treatment-control-relations'
 import { createWeldGroupSummarizer } from '@/lib/weld-group-summary'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { parseDispatcherTaskIndexPayload } from '@/lib/dispatcher-task-index-payload'
+import { readDispatcherTaskStateContext } from './dispatcher-task-state-context'
 import { parseRepeatedJointName } from '@/lib/joint-chain'
 import { calculateWdi, isSystemWdiMode } from '@/lib/wdi'
 import { journalNumericValue } from '@/lib/welding-journal-grid-state'
@@ -32,7 +32,7 @@ import { applyCurrentSystemWdi, filterKeys, getWeldColumn, loadServerOtherSettin
 import { attachDuplicateControlsToPage, attachReportPageMetadata, buildServerReportRows, buildReportQueryWhere, getReportOrderBy, normalizeWeldPageRequest } from './weld-read'
 import { compactWeldRowsForTransport, buildNumberArrayMatch } from './weld-request-utils'
 import { loadProgramSystemIndexSettings } from './line-program'
-import { journalNaturalPageIds } from './journal-natural-page'
+import { journalNaturalPageIds, journalOrderedPageIds } from './journal-natural-page'
 
 const changed = () => new Error('Данные журнала изменились. Обновите таблицу и повторите действие.')
 type JournalReadDb = Pick<ReturnType<typeof requireDb>, 'select' | 'execute'>
@@ -117,8 +117,7 @@ export function journalGroupSql(key: WeldFieldKey, context: Pick<JournalReadCont
   const value = journalValueSql(key, context)
   return FIELD_BY_KEY.get(key)?.kind === 'number' ? sql`coalesce((${value})::double precision::text, '')` : sql`coalesce(${value}::text, '')`
 }
-export function journalGroupOrder(field: WeldFieldKey, context: JournalReadContext) {
-  const value = journalGroupSql(field, context)
+export function journalGroupOrder(field: WeldFieldKey, context: JournalReadContext, value: SQLWrapper = journalGroupSql(field, context)) {
   const orderValue = FIELD_BY_KEY.get(field)?.kind === 'number' ? sql`nullif(${value}, '')::double precision` : value
   return context.request.sort?.fieldKey === field && context.request.sort.direction === 'desc'
     ? sql`${orderValue} desc nulls last` : sql`${orderValue} asc nulls last`
@@ -174,7 +173,7 @@ export async function readJournalGridBlocks(input: import('@/lib/journal-server-
   const context = await journalReadContext(requests[0])
   return requireDb().transaction(async db => {
     const [dispatcher] = await db.select().from(dispatcherTaskIndexState).where(eq(dispatcherTaskIndexState.id, 1))
-    if (!isDispatcherTaskIndexFresh(dispatcher)) throw changed()
+    if (!isDispatcherTaskIndexFresh(dispatcher, context.dispatcher)) throw changed()
     await assertJournalContextRevision(context, db)
     const results: JournalGridResult[] = []
     for (const request of requests) {
@@ -196,7 +195,7 @@ export async function readJournalGrid(input: JournalGridRequest): Promise<Journa
   // actions still reject its revision after a concurrent change.
   return requireDb().transaction(async db => {
     const [dispatcher] = await db.select().from(dispatcherTaskIndexState).where(eq(dispatcherTaskIndexState.id, 1))
-    if (!isDispatcherTaskIndexFresh(dispatcher)) throw changed()
+    if (!isDispatcherTaskIndexFresh(dispatcher, context.dispatcher)) throw changed()
     await assertJournalContextRevision(context, db)
     let pending = request.route.length < request.groupBy.length ? groupPages.get(key) : undefined
     if (!pending) {
@@ -235,10 +234,16 @@ export async function readJournalLeafRows(context: JournalReadContext, ids?: num
   const order = getReportOrderBy(journalReport(request.report), request.sort ?? undefined, context.settings)
   // Deep offsets keep the direct bounded page read. Materializing two large
   // candidate sets would add work without helping random access near the end.
-  const naturalPage = !ids && matchingCount !== undefined && matchingCount > 1000 && request.sort?.fieldKey === 'joint' && request.end <= 1000
-    ? sql`${weldJoints.id} in ${journalNaturalPageIds(where, order, request.end)}` : where
+  const narrowPage = !ids && matchingCount !== undefined && matchingCount > 1000 && request.end <= 1000
+  const pageWhere = narrowPage && request.sort?.fieldKey === 'joint'
+    ? sql`${weldJoints.id} in ${journalNaturalPageIds(where, order, request.end)}`
+    // The existing index already serves ascending line order efficiently;
+    // narrowing that path showed no benefit in the same before/after fixture.
+    : narrowPage && request.sort && !(request.sort.fieldKey === 'line' && request.sort.direction === 'asc')
+      && ['projectTitle', 'subtitleCode', 'line', 'weldDate', 'finalStatus'].includes(request.sort.fieldKey)
+      ? sql`${weldJoints.id} in ${journalOrderedPageIds(where, order, request.end)}` : where
   const query = (context.db ?? requireDb()).select(WELD_TABLE_SELECT).from(weldJoints)
-    .where(ids ? and(where, buildNumberArrayMatch(weldJoints.id, ids)) : naturalPage)
+    .where(ids ? and(where, buildNumberArrayMatch(weldJoints.id, ids)) : pageWhere)
     .orderBy(...(ids ? [sql`array_position(${sql.param(ids)}::int[], ${weldJoints.id})`]
       : getReportOrderBy(journalReport(request.report), request.sort ?? undefined, context.settings)))
   const rows = await (ids ? query : query.limit(request.end - request.start).offset(request.start))
@@ -255,9 +260,16 @@ async function readGroups(context: JournalReadContext): Promise<JournalGridResul
   const value = journalGroupSql(field, context)
   const nextField = request.groupBy[request.route.length + 1]
   const children = nextField ? sql`count(distinct ${journalGroupSql(nextField, context)})` : sql`count(*)`
-  const groups = await (context.db ?? requireDb()).select({ key: sql<string>`${value}`, childCount: sql<number>`${children}::int`,
-    recordCount: sql<number>`count(*)::int`, total: sql<number>`count(*) over()::int` })
-    .from(weldJoints).where(where).groupBy(value).orderBy(journalGroupOrder(field, context)).limit(request.end - request.start).offset(request.start)
+  // Bind each computed key once. Repeating its SQL in SELECT/GROUP BY/ORDER BY
+  // gives identical values different parameter numbers, which PostgreSQL does
+  // not consider the same grouped expression. The outer query also lets numeric
+  // ordering use the exact grouped key, without recomputing a current cycle.
+  const database = context.db ?? requireDb()
+  const grouped = database.select({ key: sql<string>`${value}`.as('group_key'), childCount: sql<number>`${children}::int`.as('child_count'),
+    recordCount: sql<number>`count(*)::int`.as('record_count'), total: sql<number>`count(*) over()::int`.as('group_total') })
+    .from(weldJoints).where(where).groupBy(sql`1`).as('journal_groups')
+  const groups = await database.select({ key: grouped.key, childCount: grouped.childCount, recordCount: grouped.recordCount, total: grouped.total })
+    .from(grouped).orderBy(journalGroupOrder(field, context, grouped.key)).limit(request.end - request.start).offset(request.start)
   if (!groups.length) {
     if (request.start === 0) return { rows: [], rowCount: 0, revision }
     const [row] = await (context.db ?? requireDb()).select({ total: sql<number>`count(distinct ${value})::int` }).from(weldJoints).where(where)
@@ -309,7 +321,7 @@ async function readSummaryContext(context: JournalReadContext, members: WeldRow[
   // Bring in only the identity context used by the old physical summarizer.
   // In particular, a namesake or legacy root can be outside this group/page.
   const memberIds = new Set(members.map(row => row.id))
-  const continuations = parseDispatcherTaskIndexPayload(context.dispatcher.repeatedTasks).chainContinuations
+  const continuations = readDispatcherTaskStateContext(context.dispatcher).chainContinuations
   const links = new Map(continuations.map(link => [link.sourceRowId, link]))
   const contextIds = new Set<number>()
   for (const row of members) {
@@ -361,7 +373,7 @@ async function readSummaryRows(context: JournalReadContext, where: SQL): Promise
     left join ${weldJoints} as ${sql.identifier('journal_root')} on ${root.id} = ${weldJointProgramStates.physicalRootId}
     left join ${weldJointProgramStates} as ${sql.identifier('journal_root_state')} on ${rootState.weldJointId} = ${root.id}
     where ${where}`)
-  const links = new Map(parseDispatcherTaskIndexPayload(context.dispatcher.repeatedTasks).chainContinuations.map(link => [link.sourceRowId, link]))
+  const links = new Map(readDispatcherTaskStateContext(context.dispatcher).chainContinuations.map(link => [link.sourceRowId, link]))
   const rows = records.map(({ row, state, root: source, rootState: physicalState }) => ({ ...row,
     ...(state ? { programChainState: state } : {}),
     ...(state?.physicalRootId == null ? {} : { groupPhysicalRoot: { id: state.physicalRootId, exists: Boolean(source), replaced: Boolean(physicalState?.replaced),
@@ -369,7 +381,10 @@ async function readSummaryRows(context: JournalReadContext, where: SQL): Promise
     ...(links.has(row.id) ? { chainContinuation: links.get(row.id) } : {}),
   })) as unknown as WeldRow[]
   if (report === 'weldingJournal') return rows
-  const hydrated = await attachHeatTreatmentControlRelations(await attachDuplicateControlsToPage(rows, context.db), context.db)
+  // These narrow rows are owned by this read and already carry the complete
+  // chain-state left join, including its legitimate nulls for legacy rows.
+  const hydrated = await attachHeatTreatmentControlRelationsInPlace(await attachDuplicateControlsToPage(rows, context.db), context.db,
+    undefined, { programChainStatesLoaded: true })
   return prepareJournalPageRows(hydrated, report)
 }
 export async function selectJournalGridRows(input: JournalGridQuery & { route: string[]; revision: JournalRevision }) {
@@ -430,7 +445,7 @@ export async function countJournalGridSelection(input: JournalSelectionCountRequ
     if (input.ids.length) {
       const path = sql`jsonb_build_array(${sql.join(input.groupBy.map(key => journalGroupSql(key, context)), sql`, `)})`
       const records = await requireDb().select({ path: sql<string[]>`${path}`, count: sql<number>`count(*)::int` })
-        .from(weldJoints).where(and(context.base, buildNumberArrayMatch(weldJoints.id, input.ids))).groupBy(path)
+        .from(weldJoints).where(and(context.base, buildNumberArrayMatch(weldJoints.id, input.ids))).groupBy(sql`1`)
       for (const row of records) {
         total += row.count
         for (let depth = 1; depth <= row.path.length; depth++) {

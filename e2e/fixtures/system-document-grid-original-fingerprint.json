@@ -1,0 +1,26 @@
+{
+  "source": "outputs/deep-optimization-2026-11-01/document-projection-v2-2000/deep-system-document-proje-763f5-complete-current-query-2000-chromium/deep-system-document-projection-2000.json",
+  "case": "first / lnkRequest / unfiltered default 0..100",
+  "normalization": "trim and collapse whitespace",
+  "sha256": "ff804022d5dc4125287a8b4ea46de09ded5c31c5e801ef3594a2e66cdd588e9e",
+  "values": [
+    "methodCodes",
+    "methodCodes",
+    "methodCodes",
+    "projects",
+    "projects",
+    "projects",
+    "subtitleCodes",
+    "subtitleCodes",
+    "subtitleCodes",
+    "lines",
+    "lines",
+    "lines",
+    "lnkRequest",
+    "system:lnkRequest",
+    "system:tvmtRequest",
+    100,
+    0,
+    []
+  ]
+}

@@ -193,6 +193,9 @@ test('личный вид: перезапись и удаление соглас
   await page.getByRole('menuitemcheckbox', { name: 'Слева', exact: true }).click()
   await expect(page.locator('.ag-header-cell[col-id="projectTitle"] .journal-column-pin')).toHaveAttribute('title', /Закреплён слева/)
   const line = page.locator('.ag-header-cell[col-id="line"]'), joint = page.locator('.ag-header-cell[col-id="joint"]')
+  // Both headers move during the animation. Compare their current positions,
+  // rather than freezing the target's intermediate coordinate before polling.
+  const lineOffsetFromJoint = async () => (await line.boundingBox())!.x - (await joint.boundingBox())!.x
   await line.hover()
   await joint.hover()
   const from = (await line.boundingBox())!, to = (await joint.boundingBox())!
@@ -200,7 +203,7 @@ test('личный вид: перезапись и удаление соглас
   await page.mouse.down()
   await page.mouse.move(to.x + to.width - 12, to.y + to.height / 2, { steps: 20 })
   await page.mouse.up()
-  await expect.poll(async () => (await line.boundingBox())!.x).toBeGreaterThan((await joint.boundingBox())!.x)
+  await expect.poll(lineOffsetFromJoint).toBeGreaterThan(0)
   // A case-insensitive name updates the existing view instead of duplicating it.
   await saveView(page, 'РАБОЧАЯ СМЕНА')
   const overwritten = await page.evaluate(() => ({
@@ -226,7 +229,7 @@ test('личный вид: перезапись и удаление соглас
   await expect(page.getByRole('button', { name: 'Группировка: Проект', exact: true })).toBeVisible()
   await expect(page.locator('.ag-header-cell[col-id="subtitleCode"]')).toHaveCount(0)
   await expect(page.locator('.ag-header-cell[col-id="projectTitle"] .journal-column-pin')).toHaveAttribute('title', /Закреплён слева/)
-  await expect.poll(async () => (await line.boundingBox())!.x).toBeGreaterThan((await joint.boundingBox())!.x)
+  await expect.poll(lineOffsetFromJoint).toBeGreaterThan(0)
   await page.getByRole('button', { name: 'Настроить вид', exact: true }).click()
   await settings.getByRole('tab', { name: 'Мои виды', exact: true }).click()
   await settings.getByRole('button', { name: 'Удалить вид РАБОЧАЯ СМЕНА', exact: true }).click()

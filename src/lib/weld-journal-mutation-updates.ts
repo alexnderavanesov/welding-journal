@@ -27,15 +27,15 @@ import {
   validateWeldDatesForImport,
 } from '@/lib/weld-validation'
 import { normalizeWeldingMethodsForImport, validateWelderStampFieldsForImport } from '@/lib/welder-stamp-import'
-import { loadDataListSettings, normalizeDataListOption } from '@/lib/data-list-settings'
+import { loadDataListSettings, normalizeDataListOption, type DataListSettings } from '@/lib/data-list-settings'
 import { getWeldMaterialGroupsError, normalizeWeldMaterialGroups } from '@/lib/weld-material-groups'
 import {
   shouldValidateOfficialStampCompatibilityForSave,
   validateOfficialStampCompatibilityForImport,
   validateOfficialStampCompatibilityForSave,
 } from '@/lib/welder-stamp-compatibility'
-import { loadOtherSettings } from '@/lib/other-settings'
-import { loadSaveCheckSettings } from '@/lib/save-check-settings'
+import { loadOtherSettings, type OtherSettings } from '@/lib/other-settings'
+import { loadSaveCheckSettings, type SaveCheckSettings } from '@/lib/save-check-settings'
 import { applySystemWdi, getSystemWdiValidationError, isSystemWdiMode } from '@/lib/wdi'
 import { parseDateLikeToIso } from '@/lib/date-format'
 import type {
@@ -98,6 +98,18 @@ export function buildRepeatedJointRows(task: RepeatedJointCreateTask | RepeatedJ
   return targetJoints.map((targetJoint) => buildRepeatedJointDraft(task.row, targetJoint))
 }
 
+export type ImportedWeldPreparationSettings = Readonly<{
+  saveCheckSettings: SaveCheckSettings
+  dataListSettings: DataListSettings
+  otherSettings: OtherSettings
+}>
+
+/** Share only within one synchronous validation pass. A new preview/import
+ * loads a fresh snapshot after any asynchronous file reading has finished. */
+export function loadImportedWeldPreparationSettings(): ImportedWeldPreparationSettings {
+  return { saveCheckSettings: loadSaveCheckSettings(), dataListSettings: loadDataListSettings(), otherSettings: loadOtherSettings() }
+}
+
 type PrepareImportedWeldRecordsOptions = {
   records: Array<WeldInput & { id?: number }>
   previousRows?: readonly WeldRow[]
@@ -106,6 +118,7 @@ type PrepareImportedWeldRecordsOptions = {
   weldFormStampSelectOptions: Partial<Record<WeldFieldKey, readonly StampSelectOptionLike[]>>
   welderStamps: WelderStampRecord[]
   welderStampSuspensions: WelderStampSuspensionRecord[]
+  preparationSettings?: ImportedWeldPreparationSettings
 }
 
 export function prepareImportedWeldRecords(options: PrepareImportedWeldRecordsOptions) {
@@ -136,13 +149,14 @@ function getImportedWeldRecordPreparationSteps({
   weldFormStampSelectOptions,
   welderStamps,
   welderStampSuspensions,
+  preparationSettings,
 }: PrepareImportedWeldRecordsOptions) {
-  const saveCheckSettings = loadSaveCheckSettings()
+  const { saveCheckSettings, dataListSettings, otherSettings } = preparationSettings ?? loadImportedWeldPreparationSettings()
   const previousById = new Map(previousRows?.map(row => [row.id, row]))
   const recordsRequiringStampValidation = () => records.filter(record =>
     shouldValidateOfficialStampCompatibilityForSave(record, record.id ? previousById.get(record.id) : undefined))
   return [
-    () => normalizeSystemWdiForImport(records),
+    () => normalizeSystemWdiForImport(records, otherSettings),
     () => normalizeLegacyControlAvailabilityForImport(records),
     () => validateRequiredRootStampsForImport(records, saveCheckSettings),
     () => validateRequiredWeldCoreFieldsForImport(records, saveCheckSettings),
@@ -150,9 +164,9 @@ function getImportedWeldRecordPreparationSteps({
       ? [() => validateManualJointNamesForImport(records, saveCheckSettings)]
       : []),
     () => validateWeldDatesForImport(records, saveCheckSettings),
-    () => normalizeWeldingMethodsForImport(records),
-    () => normalizeConnectionTypesAndMaterialGroupsForImport(records),
-    () => normalizeTestTypesForImport(records),
+    () => normalizeWeldingMethodsForImport(records, dataListSettings.weldingTypes),
+    () => normalizeConnectionTypesAndMaterialGroupsForImport(records, dataListSettings),
+    () => normalizeTestTypesForImport(records, dataListSettings.testTypes),
     () => validateWelderStampFieldsForImport(
       recordsRequiringStampValidation(),
       weldFormStampSelectOptions,
@@ -160,6 +174,8 @@ function getImportedWeldRecordPreparationSteps({
     ),
     () => validateOfficialStampCompatibilityForImport(recordsRequiringStampValidation(), welderStamps, {
       saveCheckSettings,
+      weldingTypes: dataListSettings.weldingTypes,
+      materialGroups: dataListSettings.materialGroups,
       suspensions: welderStampSuspensions,
     }),
     ...(!skipLnkResultRuleValidation
@@ -170,8 +186,7 @@ function getImportedWeldRecordPreparationSteps({
   ]
 }
 
-function normalizeSystemWdiForImport(records: WeldInput[]) {
-  const otherSettings = loadOtherSettings()
+function normalizeSystemWdiForImport(records: WeldInput[], otherSettings: OtherSettings) {
   if (!isSystemWdiMode(otherSettings)) return
 
   records.forEach((record, index) => {
@@ -183,8 +198,7 @@ function normalizeSystemWdiForImport(records: WeldInput[]) {
   })
 }
 
-function normalizeConnectionTypesAndMaterialGroupsForImport(records: WeldInput[]) {
-  const settings = loadDataListSettings()
+function normalizeConnectionTypesAndMaterialGroupsForImport(records: WeldInput[], settings: DataListSettings) {
   records.forEach((record, index) => {
     const errors = [
       normalizeConfiguredDataListField(record, 'connectionType', 'Тип соединения', settings.connectionTypes),
@@ -223,9 +237,7 @@ function normalizeConfiguredDataListField(
   return null
 }
 
-function normalizeTestTypesForImport(records: WeldInput[]) {
-  const testTypeOptions = loadDataListSettings().testTypes
-
+function normalizeTestTypesForImport(records: WeldInput[], testTypeOptions: readonly string[]) {
   records.forEach((record, index) => {
     const rawValue = String(record.testTypes ?? '').trim()
     if (!rawValue) {

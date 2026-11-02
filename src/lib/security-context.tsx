@@ -8,6 +8,7 @@ import { watchAccountActivity } from './account-activity'
 import { hasPermission, REPORT_ACCESS_AREAS, type AccessIdentity, type Permission } from './access-permissions'
 import { getActiveReportFromPath } from './app-report-routes'
 import { setStorageIdentity } from './user-storage'
+import { ReportGroupSessionProvider } from './report-group-session'
 
 export const ACCESS_EXPIRED_EVENT = 'welding-access-expired'
 type AccessValue = { identity: AccessIdentity | null; loading: boolean; error: string; refresh: () => Promise<void>; can: (permission: Permission) => boolean }
@@ -69,7 +70,7 @@ export function SiteSecurityGate({ children }: { children: ReactNode }) {
   const page = REPORT_ACCESS_AREAS[getActiveReportFromPath(pathname)]
   const ordinaryPage = !['/account', '/activity', '/settings', '/user-guide'].includes(pathname)
   if (ordinaryPage && page && !hasPermission(identity, `${page}.view`)) return <main className="p-10"><p>Доступ к этому разделу не предоставлен.</p><a href="/account" className="text-sky-700 underline">Открыть мой профиль</a></main>
-  return <div key={`${identity.id}:${identity.revision}`} className="contents">{children}</div>
+  return <div key={`${identity.id}:${identity.revision}`} className="contents"><ReportGroupSessionProvider>{children}</ReportGroupSessionProvider></div>
 }
 function SignInForm() {
   const { refresh } = useAccess()

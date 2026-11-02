@@ -50,6 +50,12 @@ for (const historical of [false, true]) test(`НК до ТО доступен: $
     await expect(page.getByRole('heading', { name: 'Внесение результатов ЛНК до ТО' })).toBeHidden()
     await expect(row().getByRole('button', { name: historical ? 'Выполнить: Создать заявку основного НК' : 'Выполнить: Создать заявку ПСТО', exact: true })).toBeVisible()
     await expect.poll(() => withE2eDatabase(async (client) => (await client.query('select result from pre_heat_treatment_controls where weld_joint_id = $1', [id])).rows)).toEqual([{ result: 'годен' }])
+    const audit = await withE2eDatabase(async db => (await db.query(`select changes from audit_changes
+      where joint_id=$1 and entity='pre_heat_treatment_controls' and changes ? 'result' order by id desc limit 1`, [id])).rows[0])
+    expect(audit.changes.result.origin).toBe('user')
+    expect(audit.changes.conclusionDate.origin).toBe('user')
+    expect(audit.changes.conclusionName.origin).toBe('automatic')
+    expect(audit.changes.defectDescription.origin).toBe('automatic')
     if (historical) await expect.poll(() => withE2eDatabase(async (client) => (await client.query('select psto_request, heat_treatment_diagram, tvmt_conclusion, pre_heat_treatment_lnk_exempt from weld_joints where id = $1', [id])).rows)).toEqual([
       { psto_request: 'P-HISTORY', heat_treatment_diagram: 'D-HISTORY', tvmt_conclusion: 'C-HISTORY', pre_heat_treatment_lnk_exempt: true },
     ])

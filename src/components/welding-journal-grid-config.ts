@@ -2,7 +2,7 @@ import {
   ColumnApiModule, RowApiModule,
   CellApiModule, ScrollApiModule, RenderApiModule, EventApiModule, ColumnAutoSizeModule,
   CustomFilterModule, CellStyleModule, RowStyleModule,
-  LocaleModule,
+  LocaleModule, GridStateModule,
   type RowClassParams,
 } from 'ag-grid-community'
 import { CellSelectionModule, ColumnMenuModule, RowGroupingModule, ServerSideRowModelModule, ServerSideRowModelApiModule } from 'ag-grid-enterprise'
@@ -16,7 +16,7 @@ export const MODULES = [
   ServerSideRowModelModule, ServerSideRowModelApiModule, ColumnApiModule, RowApiModule,
   CellApiModule, ScrollApiModule, RenderApiModule, EventApiModule, ColumnAutoSizeModule,
   CustomFilterModule, CellStyleModule, RowStyleModule,
-  LocaleModule, CellSelectionModule, ColumnMenuModule, RowGroupingModule,
+  LocaleModule, GridStateModule, CellSelectionModule, ColumnMenuModule, RowGroupingModule,
 ]
 export const groupRowClass = ({ node }: RowClassParams<WeldRow>) => node.group ? `journal-group-tone-${node.level % 4}` : undefined
 export const LOCALE = {

@@ -21,7 +21,7 @@ describe('ReportNotificationToast', () => {
 
     const toast = screen.getByRole('status')
     expect(toast).toHaveTextContent('Выберите один или несколько стыков')
-    expect(toast).toHaveClass('bottom-20', 'xl:bottom-5', 'xl:right-20', 'z-[220]', 'max-w-sm')
+    expect(toast).toHaveClass('bottom-[max(0.5rem,env(safe-area-inset-bottom))]', 'right-[max(0.5rem,env(safe-area-inset-right))]', 'z-[220]', 'max-w-sm')
     expect(toast.parentElement).toBe(document.body)
 
     act(() => vi.advanceTimersByTime(9_999))
@@ -73,9 +73,9 @@ describe('ReportNotificationToast', () => {
     modal.dataset.modalDialog = 'true'
 
     document.body.appendChild(modal)
-    await waitFor(() => expect(toast).toHaveClass('bottom-24', 'xl:bottom-24', 'xl:right-6'))
+    await waitFor(() => expect(toast).toHaveClass('bottom-[max(6rem,env(safe-area-inset-bottom))]'))
 
     modal.remove()
-    await waitFor(() => expect(toast).toHaveClass('bottom-20', 'xl:bottom-5', 'xl:right-20'))
+    await waitFor(() => expect(toast).toHaveClass('bottom-[max(0.5rem,env(safe-area-inset-bottom))]', 'right-[max(0.5rem,env(safe-area-inset-right))]'))
   })
 })

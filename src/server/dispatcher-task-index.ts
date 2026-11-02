@@ -97,6 +97,7 @@ import { getFullRebuildCatchUpScopes } from './dispatcher-refresh-catchup'
 import { loadBoundedDispatcherDirtyScopes, MAX_SCOPED_REBUILD_SCOPES, parseDispatcherDirtyScopes } from './dispatcher-dirty-scope-selection'
 import { loadDispatcherDateScopes } from './dispatcher-date-scopes'
 import { overlayPstoProgramPolicies } from './psto-chain-policy'
+import { readDispatcherTaskStateContext } from './dispatcher-task-state-context'
 export { getDispatcherScopeKey } from './dispatcher-weld-rows'
 
 export { getFinalStatusPersistenceChanges } from '@/server/final-status-persistence'
@@ -1054,12 +1055,26 @@ function normalizedDuplicatePart(column: SQLWrapper) {
   return sql<string>`lower(regexp_replace(coalesce(${column}, ''), '\\s+', '', 'g'))`
 }
 
-export function isDispatcherTaskIndexFresh(state: typeof dispatcherTaskIndexState.$inferSelect | undefined) {
+export function isDispatcherTaskIndexFresh(
+  state: typeof dispatcherTaskIndexState.$inferSelect | undefined,
+  sourceState?: typeof dispatcherTaskIndexState.$inferSelect,
+) {
   if (
     !state ||
     state.computedRevision !== state.sourceRevision ||
-    !state.computedAt ||
-    !isDispatcherTaskIndexPayloadCurrent(state.repeatedTasks) ||
+    !state.computedAt
+  ) return false
+  // Different headers usually mean a save/recalculation crossed the reads.
+  // Skip the potentially large string comparison in that case; matching
+  // headers only permit trying the hint, never prove payload or freshness.
+  const compatibleSource = sourceState &&
+    state.sourceRevision === sourceState.sourceRevision &&
+    state.computedRevision === sourceState.computedRevision &&
+    state.computedAt.getTime() === sourceState.computedAt?.getTime() &&
+    state.updatedAt.getTime() === sourceState.updatedAt.getTime()
+    ? sourceState : undefined
+  if (
+    readDispatcherTaskStateContext(state, compatibleSource).version !== DISPATCHER_TASK_CALCULATION_VERSION ||
     state.fullRebuild || parseDispatcherDirtyScopes(state.dirtyScopes)?.length !== 0
   ) return false
   return isDispatcherTaskIndexBusinessDateCurrent(state.computedAt)

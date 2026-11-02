@@ -126,6 +126,7 @@ for (const stage of ['primary', 'beforeHeatTreatment'] as const) {
     }).click()
     await expect(manager).toBeVisible()
     await expect(page.getByRole('status').filter({ hasText: 'Сначала сохраните или отмените изменения результатов' })).toBeVisible()
+    await page.screenshot({ path: info.outputPath(`notification-${stage}-modal.png`) })
     await page.getByRole('status').filter({ hasText: 'Сначала сохраните или отмените изменения результатов' }).getByRole('button', { name: 'Закрыть уведомление' }).click()
     await expect(manager.getByRole('button', { name: 'Сохранить изменения', exact: true })).toBeEnabled()
     await manager.getByRole('button', { name: 'Отменить изменения', exact: true }).click()
@@ -173,6 +174,7 @@ for (const stage of ['primary', 'beforeHeatTreatment'] as const) {
     expect(document).toEqual([{ row_count: 2, specialists: signers, joints: ['F981', 'F983'] }])
     expect(writes).toHaveLength(1)
     expect(errors).toEqual([])
+    await page.screenshot({ path: info.outputPath(`notification-${stage}-saved.png`) })
   })
 
   test(`${stage}: устаревшая позиция блокирует весь подтверждённый пакет без частичного удаления`, async ({ page }) => {

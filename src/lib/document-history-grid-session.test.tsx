@@ -130,6 +130,22 @@ describe('document grid session', () => {
     act(() => result.current.capture())
     expect(readDocumentGridSession('view')).toMatchObject({ firstRow: 237, rowId: 'document:238', top: 13289, offset: 17, left: 70 })
   })
+  it('anchors the scrolled document, not the floating copy of its distant group header', () => {
+    const { frame, viewport } = visibleFrame('document:110', 360)
+    viewport.scrollTop = 360 * 56 + 5
+    const sticky = document.createElement('div'), group = document.createElement('div')
+    sticky.className = 'ag-grid-sticky-top-rows-container'
+    group.className = 'ag-row'; group.setAttribute('row-id', 'group:249'); group.setAttribute('row-index', '249')
+    group.getBoundingClientRect = () => ({ top: 0, bottom: 56, height: 56 }) as DOMRect
+    sticky.append(group); frame.prepend(sticky)
+    const api = { isDestroyed: () => false, getDisplayedRowCount: () => 376,
+      getDisplayedRowAtIndex: (index: number) => ({ id: index === 249 ? 'group:249' : 'document:110', rowIndex: index,
+        rowTop: index * 56, group: index === 249, data: {}, level: 0, parent: null }),
+    } as unknown as GridApi
+    const { result } = renderHook(() => useDocumentGridSession(api, { current: frame }, 'view', 'scope', '', EMPTY_DOCUMENT_GRID_SESSION, false))
+    act(() => result.current.capture())
+    expect(readDocumentGridSession('view')).toMatchObject({ rowId: 'document:110', firstRow: 360, offset: 5 })
+  })
   it('does not apply a delayed restoration block after its grouping or sort scope changes', async () => {
     let scheduled: FrameRequestCallback | undefined, resolve!: (value: { rows: { id: string }[]; rowCount: number }) => void
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { scheduled = callback; return 1 }); vi.stubGlobal('cancelAnimationFrame', () => undefined)

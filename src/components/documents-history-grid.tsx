@@ -28,6 +28,7 @@ import { isContextActionMenuOpen } from '@/lib/context-action-menu-state'
 import { documentGridErrorMessage, readDocumentGridSession } from '@/lib/document-history-grid-session'
 import { useDocumentGridFocus } from '@/lib/use-document-grid-focus'
 import { useDocumentGridSession } from '@/lib/use-document-grid-session'
+import { useReportGroupSession } from '@/lib/report-group-session'
 import { DOCUMENT_GRID_MODULES, DOCUMENT_GRID_LOCALE, DOCUMENT_GRID_THEMES } from './document-history-grid-config'
 import { DOCUMENT_HISTORY_SERVER_FILTER, DocumentGridFilterContext, type DocumentGridFilterOption } from './document-history-grid-filter'
 import { useGridResultMotion } from './use-grid-result-motion'
@@ -107,7 +108,6 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   const resetRowRange = useCallback(() => { rowRange.current = { anchorId: null, endId: null } }, [])
   const filterModel = useMemo(() => Object.fromEntries(props.columns.filter(column => props.columnFilters[column.key])
     .map(column => [column.key, { value: props.columnFilters[column.key] }])), [props.columns, props.columnFilters])
-  const initialGridState = useRef({ filter: { filterModel } })
   const pageTrack = useRef<HTMLDivElement>(null), pageStage = useRef<HTMLDivElement>(null)
   const frame = useRef<HTMLDivElement>(null), popupColumn = useRef<string | null>(null)
   const [popupParent] = useState(() => typeof document === 'undefined' ? undefined : document.createElement('div'))
@@ -127,6 +127,8 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   }, [popupParent])
   const viewColumns = useMemo(() => [...props.columns, DOCUMENT_GRID_ACTIONS_COLUMN], [props.columns])
   const [settings, setSettings] = useState<DocumentGridState>(() => readDocumentGridState(props.viewId, viewColumns))
+  const groupSession = useReportGroupSession(`documents:${props.viewId}`, settings.columns, props.highlightedDocumentId == null)
+  const initialGridState = useRef({ filter: { filterModel }, ...groupSession.initialState })
   const settingsRef = useRef(settings); settingsRef.current = settings
   const [initialSession] = useState(() => readDocumentGridSession(props.viewId))
   const positionScope = JSON.stringify([Object.entries(props.columnFilters).sort(([a], [b]) => a.localeCompare(b)),
@@ -188,9 +190,6 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
     return () => { observer.disconnect(); window.removeEventListener('resize', measure) }
   }, [])
   const groupMotion = useJournalGroupMotion(frame, true, positionScope)
-  const expandAll = useRef(false)
-  const groupingSignature = JSON.stringify(settings.columns.filter(column => column.rowGroup).sort((a, b) => (a.rowGroupIndex ?? 0) - (b.rowGroupIndex ?? 0)).map(column => column.colId))
-  useEffect(() => { expandAll.current = false }, [groupingSignature])
   const focus = useDocumentGridFocus(api, frame)
   const prepared = useRef<{ generation: number; request: DocumentHistoryGridRequest; result: DocumentHistoryGridResult<T> } | null>(null)
   const requests = useRef(new Map<string, Promise<DocumentHistoryGridResult<T>>>())
@@ -510,11 +509,8 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
       if (all && !expanded) while (target.parent && target.parent.level >= 0) target = target.parent
       api.clearCellSelection(); groupMotion.begin()
       if (all) {
-        expandAll.current = expanded
-        const groups: IRowNode<Row>[] = []
-        api.forEachNode(candidate => { if (candidate.group) groups.push(candidate) })
-        groups.sort((left, right) => expanded ? left.level - right.level : right.level - left.level)
-        groups.forEach(candidate => candidate.setExpanded(expanded, undefined, true))
+        if (expanded) api.expandAll()
+        else api.collapseAll()
       }
       else node.setExpanded(expanded, undefined, true)
       focusGroup(target)
@@ -532,7 +528,10 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
   }
   const openDocumentMenu = (node: IRowNode<Row>, anchor: Element, x: number, y: number, keyboard = false) => {
     if (selectionPendingRef.current || !node.data || node.group || isGroup(node.data)) return
-    if (node.rowIndex != null) api?.setFocusedCell(node.rowIndex, anchor.closest('.ag-cell')?.getAttribute('col-id') ?? 'title')
+    const cell = anchor.closest<HTMLElement>('.ag-cell')
+    // Keep a clipped row stationary while recording AG's keyboard focus.
+    cell?.focus({ preventScroll: true })
+    if (node.rowIndex != null) api?.setFocusedCell(node.rowIndex, cell?.getAttribute('col-id') ?? 'title')
     focus.remember()
     current.current.onRowContextMenu(node.data, { x, y, clientX: x, clientY: y, anchorElement: anchor, copyCells, keyboard })
   }
@@ -608,7 +607,16 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
           // propagation. Apply AG selection after that native rollback.
           setTimeout(() => selectRowRange(id, meta), 0)
         }
-        else rowRange.current = { anchorId: node.id, endId: null }
+        else {
+          // Commit the clicked identity before a following collapse/scroll can
+          // purge its store. AG's async selectionChanged event otherwise reads
+          // an already empty loaded scope and loses this select/deselect.
+          // Keep the native checkbox default: unlike Shift ranges this toggle
+          // agrees with its checked value, so no deferred rollback is needed.
+          event.stopPropagation()
+          rowRange.current = { anchorId: node.id, endId: null }
+          current.current.onSelectionChange(toggleLoadedDocumentGridSelection(current.current.selectedDocuments, [node.data]))
+        }
       }} onContextMenu={event => {
         if (!(event.target instanceof Element)) return
         const group = event.target.closest<HTMLElement>('.ag-full-width-row.ag-row-group')
@@ -721,11 +729,12 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
           serverSideInitialRowCount={position.initialRowCount}
           serverSideSortAllLevels suppressServerSideFullWidthLoadingRow serverSideEnableClientSideSort={false} suppressAggFuncInHeader suppressGroupChangesColumnVisibility
           groupDisplayType="groupRows" groupDefaultExpanded={0}
-          isServerSideGroupOpenByDefault={params => expandAll.current || position.isGroupOpen(params.rowNode)}
+          ssrmExpandAllAffectsAllRows
+          isServerSideGroupOpenByDefault={params => position.isGroupOpen(params.rowNode)}
           groupRowRendererParams={groupRenderer}
           rowSelection={selection} selectionColumnDef={selectionColumn}
           rowHeight={documentGridRowHeight(settings.appearance)}
-          headerHeight={56} rowBuffer={6} suppressScrollOnNewData suppressDragLeaveHidesColumns maintainColumnOrder enableFilterHandlers preventDefaultOnContextMenu
+          headerHeight={56} rowBuffer={6} animateRows={false} suppressScrollOnNewData suppressDragLeaveHidesColumns maintainColumnOrder enableFilterHandlers preventDefaultOnContextMenu
           cellSelection={CELL_SELECTION} onCellSelectionChanged={updateRangeSummary} rowClassRules={rowClassRules} getRowClass={({ node }) => node.group ? `journal-group-tone-${node.level % 4}` : undefined}
           onGridReady={event => {
             apiRef.current = event.api
@@ -736,12 +745,15 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
           onModelUpdated={() => {
             scheduleSelectionSync(); position.restore(); updateRangeSummary(); fullQuery.countSelection(); fullQuery.trim()
           }}
-          onFirstDataRendered={position.restore} onBodyScrollEnd={position.bodyScrollEnd} onGridPreDestroyed={position.capture}
+          onFirstDataRendered={position.restore} onBodyScrollEnd={position.bodyScrollEnd} onGridPreDestroyed={event => { position.capture(); groupSession.capture(event.api) }}
           onRowGroupOpened={event => { api?.clearCellSelection(); groupMotion.begin(); position.groupOpened(event.node) }} onCellFocused={focus.remember}
           onSelectionChanged={event => {
             if (restoringSelection.current || event.source === 'rowDataChanged' || event.source.startsWith('api')) return
             if (selectionPendingRef.current) { syncSelection(); return }
-            const selected = new Set((event.selectedNodes ?? []).flatMap(node => node.data && !node.group && !isGroup(node.data) ? [String(node.data.id)] : []))
+            // SSRM reports null for server-side select-all, not an empty list.
+            // Registry/group selection is owned by the exact full-query flow.
+            if (event.selectedNodes === null) { syncSelection(); return }
+            const selected = new Set(event.selectedNodes.flatMap(node => node.data && !node.group && !isGroup(node.data) ? [String(node.data.id)] : []))
             current.current.onSelectionChange(mergeLoadedDocumentGridSelection(current.current.selectedDocuments, getLoadedRows(), selected))
           }}
           onColumnMoved={event => { if (event.finished) captureColumns() }} onColumnResized={event => { fullQuery.trim(); if (event.finished) captureColumns() }}

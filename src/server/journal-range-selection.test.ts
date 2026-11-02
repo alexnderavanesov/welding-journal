@@ -8,6 +8,7 @@ vi.mock('@/db', () => ({ requireDb: () => ({ select: (projection: object) => {
   const query: Record<string, unknown> = { projection }
   const chain = { from: () => chain, where: (where: unknown) => { query.where = where; return chain },
     groupBy: (value: unknown) => { query.groupBy = value; return chain }, orderBy: (...order: unknown[]) => { query.order = order; return chain },
+    as: () => projection,
     limit: (limit: number) => { query.limit = limit; return chain }, offset: (offset: number) => { query.offset = offset; return chain },
     then: (resolve: (value: object[]) => void, reject: (error: unknown) => void) => {
       mock.reads(query); return Promise.resolve(mock.rows.shift() ?? []).then(resolve, reject)

@@ -63,6 +63,9 @@ export function useDocumentGridSession<T>(
     // AG's first displayed index includes buffered, invisible rows. Anchor the
     // actual visible row instead, including clipping by the sticky navigation.
     const visible = Array.from(element.querySelectorAll<HTMLElement>('.ag-row[row-id]'))
+      // A floating group header represents a distant ancestor, not the row at
+      // this scroll position. Anchoring it loses the target child block.
+      .filter(row => !row.closest('.ag-grid-sticky-top-rows-container, .ag-grid-sticky-bottom-rows-container'))
       .map(row => ({ id: row.getAttribute('row-id'), index: Number(row.getAttribute('row-index')), rect: row.getBoundingClientRect() }))
       .filter(row => row.rect.bottom > top + 1 && row.rect.top < bottom - 1)
       .sort((left, right) => left.rect.top - right.rect.top)[0]

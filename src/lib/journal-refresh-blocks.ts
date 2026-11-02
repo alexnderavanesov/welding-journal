@@ -6,21 +6,25 @@ export type JournalRefreshBlock = JournalGridBlock & { rowCount: number; nodes: 
 export const journalBlockKey = (block: JournalGridBlock) => JSON.stringify([block.route, block.start, block.end])
 
 /** Snapshot only cached nodes. Never allocate an array sized to the database.
- * A partly loaded block takes the ordinary refresh path instead of certifying
- * unloaded placeholders as current. Group ordinals are store-local; leaf
+ * A partly loaded block takes the ordinary refresh path. A pristine child
+ * placeholder has no old facts or known extent to refresh and stays lazy.
+ * Group ordinals are store-local; leaf
  * stores have no expanded children, so their displayed offsets are exact.
  */
 export function collectJournalRefreshBlocks(api: GridApi<WeldRow>): JournalRefreshBlock[] | null {
   const stores = api.getServerSideGroupLevelState()
-  const counts = new Map(stores.map(store => [journalRouteKey(store.route), store.rowCount]))
-  if (!stores.length || stores.some(store => !store.lastRowIndexKnown)) return null
+  const states = new Map(stores.map(store => [journalRouteKey(store.route), store]))
+  const pristine = new Set(stores.filter(store => store.route.length > 0 && store.rowCount === 1 && store.lastRowIndexKnown === false).map(store => journalRouteKey(store.route)))
+  if (!stores.length || stores.some(store => !store.lastRowIndexKnown && !pristine.has(journalRouteKey(store.route)))) return null
   const blocks = new Map<string, JournalRefreshBlock>()
   let incomplete = false
   api.forEachNode(node => {
-    if (!node.data || node.stub || node.rowIndex == null) { incomplete = true; return }
     const route = node.parent?.getRoute() ?? []
+    const keyRoute = journalRouteKey(route)
+    if (pristine.has(keyRoute)) { if (node.data) incomplete = true; return }
+    if (!node.data || node.stub || node.rowIndex == null) { incomplete = true; return }
     const index = journalGroup(node.data)?.ordinal ?? node.rowIndex - (node.parent?.rowIndex ?? -1) - 1
-    const rowCount = counts.get(journalRouteKey(route))
+    const rowCount = states.get(keyRoute)?.rowCount
     if (!Number.isSafeInteger(index) || index < 0 || rowCount === undefined || index >= rowCount) { incomplete = true; return }
     const start = Math.floor(index / 100) * 100, end = start + 100
     const key = journalBlockKey({ route, start, end })
@@ -32,7 +36,8 @@ export function collectJournalRefreshBlocks(api: GridApi<WeldRow>): JournalRefre
     const length = Math.min(block.end, block.rowCount) - block.start
     if (block.nodes.length !== length || Array.from({ length }, (_, index) => !block.nodes[index]).some(Boolean)) incomplete = true
   }
-  if (incomplete || stores.some(store => store.rowCount > 0 && ![...blocks.values()].some(block => journalRouteKey(block.route) === journalRouteKey(store.route)))) return null
+  const populated = new Set([...blocks.values()].map(block => journalRouteKey(block.route)))
+  if (incomplete || stores.some(store => !pristine.has(journalRouteKey(store.route)) && !populated.has(journalRouteKey(store.route)))) return null
   if (!blocks.size) return null
   return [...blocks.values()].sort((a, b) => a.route.length - b.route.length || journalRouteKey(a.route).localeCompare(journalRouteKey(b.route)) || a.start - b.start)
 }

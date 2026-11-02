@@ -9,6 +9,8 @@ import { isAngularConnectionType } from '@/lib/connection-type'
 import { formatDisplayDate } from '@/lib/date-format'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import { getLineProgramOfficialStamps } from '@/lib/line-program-calculation'
+import { getProgramAssignmentRefresh } from '@/lib/line-program-assignment-refresh'
+import { useStableEventCallback } from '@/lib/use-stable-event-callback'
 import { ProgramGrid } from './line-program-grid'
 import { useProgramSessionState } from './line-program-grid-session'
 import { ProgramResultSummary } from './line-program-result-summary'
@@ -26,17 +28,19 @@ export type ProgramAssignmentTableProps = {
   getError: (row: WeldRow, method: ProgramMethod, value: ProgramAssignment) => string
   onContextMenu?: RowContextMenu; focusedMethod?: ProgramMethod; focusedJoint?: number | null
 }
-const AssignmentContext = createContext<ProgramAssignmentTableProps>(null!)
-function AssignmentIdentity({ data: row }: ICellRendererParams<WeldRow>) {
-  const { approvedRowIds } = useContext(AssignmentContext)
+const AssignmentIdentityContext = createContext<ProgramAssignmentTableProps['approvedRowIds']>(undefined)
+const AssignmentSelectionContext = createContext<Pick<ProgramAssignmentTableProps, 'selected' | 'busy' | 'canSelect' | 'onSelect'>>(null!)
+const AssignmentEditorContext = createContext<Pick<ProgramAssignmentTableProps, 'draft' | 'busy' | 'onChange' | 'getError' | 'focusedJoint' | 'focusedMethod' | 'removalHints'>>(null!)
+const AssignmentIdentity = memo(function AssignmentIdentity({ data: row }: ICellRendererParams<WeldRow>) {
+  const approvedRowIds = useContext(AssignmentIdentityContext)
   return row ? <div><div className="flex flex-wrap items-center gap-x-2 gap-y-0.5"><span className="font-semibold text-sky-800">{String(row.joint)}</span><span className="text-xs text-slate-500">{String(row.connectionType ?? '')}</span><ProgramJointExclusions row={row} />{approvedRowIds?.has(row.id) ? <span className="text-[11px] text-emerald-700" title="Есть сохранённое согласование контроля. Выберите стык, чтобы снять согласование без изменения назначений.">✓ Согласовано</span> : null}</div><ProgramJointMetadata row={row} stacked /></div> : null
-}
-function AssignmentCheckbox({ data: row }: ICellRendererParams<WeldRow>) {
-  const { selected, busy, canSelect, onSelect } = useContext(AssignmentContext)
+})
+const AssignmentCheckbox = memo(function AssignmentCheckbox({ data: row }: ICellRendererParams<WeldRow>) {
+  const { selected, busy, canSelect, onSelect } = useContext(AssignmentSelectionContext)
   return row ? <Checkbox className="program-assignment-checkbox" aria-label={`Выбрать ${row.joint}`} checked={selected.has(row.id)} disabled={busy || !canSelect(row)} onChange={event => onSelect(row.id, event.target.checked)} /> : null
-}
-function AssignmentEditor({ data: row, colDef }: ICellRendererParams<WeldRow>) {
-  const { draft, busy, onChange, getError, focusedJoint, focusedMethod, removalHints } = useContext(AssignmentContext)
+})
+const AssignmentEditor = memo(function AssignmentEditor({ data: row, colDef }: ICellRendererParams<WeldRow>) {
+  const { draft, busy, onChange, getError, focusedJoint, focusedMethod, removalHints } = useContext(AssignmentEditorContext)
   if (!row) return null
   const method = colDef!.colId as ProgramMethod
   const hasRepairHints = row.programRepairRequirements?.some(item => item.method !== 'ВИК')
@@ -54,17 +58,31 @@ function AssignmentEditor({ data: row, colDef }: ICellRendererParams<WeldRow>) {
           {!requirement && !unavailable && removalReason ? <span className="sr-only">{removalLabel(row, method)}</span> : null}
         </div>
 
-}
-function AssignmentResult({ data }: ICellRendererParams<WeldRow>) { return data ? <ProgramResultSummary row={data} compact /> : null }
+})
+const AssignmentResult = memo(function AssignmentResult({ data }: ICellRendererParams<WeldRow>) { return data ? <ProgramResultSummary row={data} compact /> : null })
 const resultValues = (row: WeldRow) => [calculateFinalStatus(row), ...PROGRAM_METHODS.map(method => programResultDisplay(row, method).text)].filter(Boolean)
 const resultValue = (row: WeldRow) => resultValues(row).join(' · ')
-const rowClass = (row: WeldRow, highlighted = false) => [calculateFinalStatus(row) === 'годен' ? 'program-joint-good' : calculateFinalStatus(row).startsWith('не годен') ? 'program-joint-rejected' : '', highlighted ? 'program-joint-highlighted' : ''].join(' ')
+const rowClass = (row: WeldRow, highlighted = false) => {
+  const status = calculateFinalStatus(row)
+  return [status === 'годен' ? 'program-joint-good' : status.startsWith('не годен') ? 'program-joint-rejected' : '', highlighted ? 'program-joint-highlighted' : ''].join(' ')
+}
 
 /** Selection only marks records; all editing still uses the existing atomic draft validation. */
 export function ProgramAssignmentTable(props: ProgramAssignmentTableProps) {
   const current = useRef(props); current.current = props
   const [api, setApi] = useState<GridApi<WeldRow> | null>(null)
   const [visible, setVisible] = useState(props.rows)
+  const previousRefresh = useRef<{ api: GridApi<WeldRow>; rows: WeldRow[]; draft: Map<number, WeldRow> } | null>(null)
+  const onChange = useStableEventCallback(props.onChange)
+  const selectionContext = useMemo(() => ({ selected: props.selected, busy: props.busy, canSelect: props.canSelect, onSelect: props.onSelect }), [props.selected, props.busy, props.canSelect, props.onSelect])
+  // Removal candidates depend on the whole line. A draft in another row must
+  // still refresh every editor's availability/hints through this context.
+  const editorContext = useMemo(() => ({ draft: props.draft, busy: props.busy, onChange, getError: props.getError, focusedJoint: props.focusedJoint, focusedMethod: props.focusedMethod, removalHints: props.removalHints }), [props.draft, props.busy, onChange, props.getError, props.focusedJoint, props.focusedMethod, props.removalHints])
+  const getRowClass = useCallback(({ data }: { data?: WeldRow }) => data ? rowClass(data, props.focusedJoint === data.id || props.selected.has(data.id)) : '', [props.focusedJoint, props.selected])
+  const rowAttributes = useCallback((row: WeldRow) => {
+    const status = calculateFinalStatus(row)
+    return { 'data-testid': 'line-program-joint', 'data-row-id': String(row.id), 'data-highlighted': props.focusedJoint === row.id || props.selected.has(row.id) ? 'true' : undefined, 'data-final-status': status, title: `Итоговое состояние: ${status}` }
+  }, [props.focusedJoint, props.selected])
   const columns = useMemo<ColDef<WeldRow>[]>(() => [
     { colId: 'selection', headerName: 'Выбор', width: 76, minWidth: 64, sortable: false, filter: false, enableRowGroup: false, lockVisible: true, cellRenderer: AssignmentCheckbox },
     { colId: 'joint', field: 'joint', headerName: 'Стык', width: 220, minWidth: 165, flex: 1.3, autoHeight: true, cellRenderer: AssignmentIdentity },
@@ -74,10 +92,21 @@ export function ProgramAssignmentTable(props: ProgramAssignmentTableProps) {
   ], [])
   useEffect(() => {
     if (!api || api.isDestroyed()) return
-    api.refreshCells({ force: true })
-    for (const method of PROGRAM_EDITOR_METHODS) api.getColumnFilterHandler<SetFilterHandler>(method)?.refreshFilterValues()
-    api.onFilterChanged()
-  }, [api, props.draft])
+    const previous = previousRefresh.current
+    previousRefresh.current = { api, rows: props.rows, draft: props.draft }
+    const complete = !previous || previous.api !== api || previous.rows !== props.rows
+    const changed: { rowIds: number[]; methods: ProgramMethod[] } = complete ? { rowIds: [], methods: PROGRAM_EDITOR_METHODS } : getProgramAssignmentRefresh(props.rows, previous.draft, props.draft)
+    if (!changed.methods.length) return
+    const rowNodes = complete ? undefined : changed.rowIds.flatMap(id => { const node = api.getRowNode(String(id)); return node ? [node] : [] })
+    // Identity/history renderers also read metadata outside their cell value.
+    // Fresh server rows must refresh them even when joint/result is unchanged.
+    if (complete) api.refreshCells({ force: true })
+    else api.refreshCells({ columns: PROGRAM_EDITOR_METHODS, rowNodes, force: true })
+    for (const method of changed.methods) api.getColumnFilterHandler<SetFilterHandler>(method)?.refreshFilterValues()
+    // The filter stage also reapplies sorting. Preserve it for fresh data,
+    // active filters and a changed assignment used as the current sort key.
+    if (complete || api.isAnyFilterPresent() || api.getColumnState().some(column => column.sort && changed.methods.includes(column.colId as ProgramMethod))) api.onFilterChanged()
+  }, [api, props.rows, props.draft])
   useEffect(() => {
     if (!api || api.isDestroyed() || props.focusedJoint == null) return
     const node = api.getRowNode(String(props.focusedJoint))
@@ -87,14 +116,13 @@ export function ProgramAssignmentTable(props: ProgramAssignmentTableProps) {
     }
   }, [api, props.focusedJoint, props.rows])
   const eligible = visible.filter(props.canSelect), all = !!eligible.length && eligible.every(row => props.selected.has(row.id)), partly = !all && eligible.some(row => props.selected.has(row.id))
-  return <AssignmentContext.Provider value={props}><div className="program-assignment-grid" data-testid="assignment-grid">
+  return <AssignmentIdentityContext.Provider value={props.approvedRowIds}><AssignmentSelectionContext.Provider value={selectionContext}><AssignmentEditorContext.Provider value={editorContext}><div className="program-assignment-grid" data-testid="assignment-grid">
     <ProgramGrid kind="assignments" sessionKey={props.sessionKey ?? 'assignments'} label="Стыки и назначения всех методов" rows={props.rows} columns={columns} getId={row => String(row.id)} virtual onReady={setApi}
       toolbar={<label className="flex items-center gap-2 text-xs"><Checkbox className="program-assignment-checkbox" aria-label="Выбрать все доступные стыки" ref={element => { if (element) element.indeterminate = partly }} checked={all} disabled={props.busy || !eligible.length} onChange={event => props.onSelectAll(event.target.checked, visible)} />Выбрать доступные в отборе</label>}
       onFilterRows={rows => { setVisible(previous => previous.length === rows.length && previous.every((row, i) => row === rows[i]) ? previous : rows); props.onFilterRows?.(rows) }}
       onRowClick={row => { if (!props.busy && props.canSelect(row)) props.onSelect(row.id, !props.selected.has(row.id)) }} onRowMenu={props.onContextMenu}
-      getRowClass={({ data }) => data ? rowClass(data, props.focusedJoint === data.id || props.selected.has(data.id)) : ''}
-      rowAttributes={row => ({ 'data-testid': 'line-program-joint', 'data-row-id': String(row.id), 'data-highlighted': props.focusedJoint === row.id || props.selected.has(row.id) ? 'true' : undefined, 'data-final-status': calculateFinalStatus(row), title: `Итоговое состояние: ${calculateFinalStatus(row)}` })} />
-  </div></AssignmentContext.Provider>
+      getRowClass={getRowClass} rowAttributes={rowAttributes} />
+  </div></AssignmentEditorContext.Provider></AssignmentSelectionContext.Provider></AssignmentIdentityContext.Provider>
 }
 
 type ReadProps = { sessionKey?: string; contextLabel?: string; removalHints?: ProgramRemovalHints; rows: WeldRow[]; onAssignment: (id: number, method?: ProgramMethod) => void; onContextMenu?: RowContextMenu }

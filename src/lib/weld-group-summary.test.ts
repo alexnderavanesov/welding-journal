@@ -63,6 +63,26 @@ describe('grouped physical connections (not journal record totals)', () => {
       expect(summarize(rows).status).not.toBe('годен')
     }
   })
+  it('counts adjacent and interleaved line identities across every component and independently for each subset', () => {
+    const rows = [row(1, 'S1'), row(2, 'S2'),
+      row(3, 'S3', 'годен', { projectTitle: 'P2' }), row(4, 'S4', 'годен', { projectTitle: 'P2' }),
+      row(5, 'S5', 'годен', { projectTitle: 'P2', subtitleCode: 'C2' }),
+      row(6, 'S6', 'годен', { projectTitle: 'P2', subtitleCode: 'C2', line: 'L2' }),
+      row(7, 'S7', 'годен', { projectTitle: ' p2\u00a0', subtitleCode: 'c2', line: '\ufeffl2 ' }),
+      row(8, 'S8', 'годен', { line: '\u00a0' })]
+    const summary = createWeldGroupSummarizer(rows)
+    for (const order of [rows, [...rows].reverse(), [rows[0], rows[2], rows[1], ...rows.slice(3)]]) expect(summary(order).lines).toBe(4)
+    expect(summary(rows.slice(2, 4)).lines).toBe(1)
+    expect(summary([rows[7]]).lines).toBe(0)
+    expect(summary(rows).lines).toBe(4)
+  })
+  it('retains every line beyond the reuse bound and does not truncate long identity components', () => {
+    const rows = Array.from({ length: 1200 }, (_, index) => row(index + 1, `S${index}`, 'годен', { line: `L${index}` }))
+    expect(summarize(rows).lines).toBe(1200)
+    const long = 'X'.repeat(600)
+    expect(summarize([row(1, 'S1', 'годен', { line: long }), row(2, 'S2', 'годен', { line: long.toLowerCase() }),
+      row(3, 'S3', 'годен', { line: long + '2' })]).lines).toBe(2)
+  })
   it('uses root metadata for a filtered repair without inventing a complete chain', () => {
     const item = repair(3, 1, 2, 'годен')
     item.groupPhysicalRoot = { id: 1, exists: true, replaced: false, wdi: 12.34 }

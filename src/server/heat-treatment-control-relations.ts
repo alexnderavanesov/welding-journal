@@ -44,13 +44,14 @@ export async function attachPstoRepeatCycleRelations<
 }
 
 /**
- * Full dispatcher refresh owns its freshly selected rows. Attach relations to
- * those objects in place so a 200k-row calculation does not retain two extra
- * copies of the complete weld table.
+ * Full dispatcher refresh and narrow group summaries own their freshly read
+ * rows. Attach relations without cloning cards or materializing flat pre-TO
+ * display fields; their stage accessors read the relation arrays directly.
  */
 export async function attachHeatTreatmentControlRelationsInPlace<
   Row extends HeatTreatmentControlRelationsCarrier,
->(rows: Row[], db: RelationDb = requireDb(), settings?: ControlProcessSettings) {
+>(rows: Row[], db: RelationDb = requireDb(), settings?: ControlProcessSettings,
+  options: { programChainStatesLoaded?: boolean } = {}) {
   if (rows.length === 0) return rows
   const rowIds = getRelationRowIds(rows)
   if (rowIds.length === 0) return rows
@@ -84,13 +85,16 @@ export async function attachHeatTreatmentControlRelationsInPlace<
     const cycles = repeatCyclesByWeldId.get(row.id)
     if (cycles?.length) row.pstoRepeatCycles = cycles
   }
-  return attachCurrentPolicy(rows, db, settings)
+  return attachCurrentPolicy(rows, db, settings, options.programChainStatesLoaded)
 }
 
 async function attachCurrentPolicy<Row extends HeatTreatmentControlRelationsCarrier>(
-  rows: Row[], db: RelationDb, settings?: ControlProcessSettings,
+  rows: Row[], db: RelationDb, settings?: ControlProcessSettings, programChainStatesLoaded = false,
 ) {
-  await attachProgramChainStates(rows, db)
+  // Only a caller that already read the complete left join in its snapshot may
+  // skip this read. A missing state in that join is valid legacy information;
+  // merely finding some state properties on arbitrary cards is not sufficient.
+  if (!programChainStatesLoaded) await attachProgramChainStates(rows, db)
   if (!settings) {
     const [stored] = await db.select({ value: appSettings.value }).from(appSettings)
       .where(eq(appSettings.key, PROJECT_SETTING_KEYS.controlProcesses)).orderBy(appSettings.key)

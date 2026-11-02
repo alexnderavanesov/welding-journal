@@ -36,7 +36,7 @@ async function seed(names = ['S1', 'S1R1', 'S1R2', 'F9']) {
 }
 const snapshot = () => withE2eDatabase(async db => (await db.query('select * from weld_joints where project_title=$1 order by id', [project])).rows)
 
-for (const deletionFirst of [true, false]) test(`создание продолжения и удаление источника конкурентно: удаление запущено ${deletionFirst ? 'первым' : 'вторым'}`, async () => {
+for (const deletionFirst of [true, false]) test(`создание продолжения и удаление источника конкурентно: удаление получает блокировку ${deletionFirst ? 'первым' : 'вторым'}`, async () => {
   const createSource = () => withE2eDatabase(async db => (await db.query<Target>(`insert into weld_joints
     (project_title,subtitle_code,line,joint,weld_date,connection_type,has_vik,vik_result,has_rk,rk_result,stamp_1_k)
     values ($1,'DELETE','RACE','S1','2026-09-01','С19','да','годен','да','ремонт','A') returning id,xmin::text as version`, [project])).rows[0])
@@ -51,10 +51,42 @@ for (const deletionFirst of [true, false]) test(`создание продолж
   const source = await createSource()
   const create = () => createWeldJoints({ data: { source, targetJoints: ['S1R1'] } })
   const remove = () => deleteWeldJoint({ data: source })
-  const results = await Promise.allSettled(deletionFirst ? [remove(), create()] : [create(), remove()])
-  expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+  let release!: () => void, locked!: (pid: number) => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const ready = new Promise<number>(resolve => { locked = resolve })
+  const holder = withE2eDatabase(async db => {
+    await db.query('begin')
+    try {
+      await db.query('select id from weld_joints where id=$1 for update', [source.id])
+      locked((await db.query('select pg_backend_pid() pid')).rows[0].pid)
+      await gate
+    } finally { await db.query('rollback') }
+  })
+  const pending: Array<Promise<PromiseSettledResult<unknown>>> = []
+  const start = (run: () => Promise<unknown>) => pending.push(run().then(
+    value => ({ status: 'fulfilled' as const, value }), reason => ({ status: 'rejected' as const, reason }),
+  ))
+  try {
+    const pid = await Promise.race([ready, holder.then(() => { throw new Error('Lock holder ended before readiness') })])
+    // Starting promises in order is not proof of lock order. Queue one writer
+    // behind our row lock, then observe the second behind it before releasing.
+    const waiting = () => withE2eDatabase(async db => Number((await db.query(`with recursive waiting(pid) as (
+      select pid from pg_stat_activity where datname=current_database() and $1::int=any(pg_blocking_pids(pid))
+      union select a.pid from pg_stat_activity a join waiting w on w.pid=any(pg_blocking_pids(a.pid))
+        where a.datname=current_database()) select count(*) n from waiting`, [pid])).rows[0].n))
+    start(deletionFirst ? remove : create)
+    await expect.poll(waiting).toBe(1)
+    start(deletionFirst ? create : remove)
+    await expect.poll(waiting).toBe(2)
+  } finally {
+    release()
+    await Promise.allSettled([holder, ...pending])
+  }
+  await holder
+  const results = await Promise.all(pending)
+  expect(results.map(result => result.status)).toEqual(['fulfilled', 'rejected'])
   const final = await snapshot()
-  expect([[], ['S1', 'S1R1']]).toContainEqual(final.map(r => r.joint))
+  expect(final.map(r => r.joint)).toEqual(deletionFirst ? [] : ['S1', 'S1R1'])
   const failure = results.find(result => result.status === 'rejected') as PromiseRejectedResult
   expect(String(failure.reason)).toMatch(/предшественника|больше не|перенесен|изменен|изменил|устарел/i)
 })

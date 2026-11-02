@@ -26,6 +26,15 @@ export type JournalServerSource = {
   retry?: () => void
   recoverRevision?: (error: unknown) => boolean
 }
+
+// Keep this callback outside the hook's shared closure context. Otherwise its
+// filter lifetime and refetch's report lifetime can retain one another across
+// renders, along with old row arrays. Each source still owns its original filters.
+function createSnapshotReader(revision: { current: { value?: JournalRevision } | null }, columnFilters: Record<string, string>) {
+  return (): JournalSelectionSnapshot | undefined => revision.current?.value === undefined
+    ? undefined : { revision: revision.current.value, columnFilters }
+}
+
 export function useJournalServerQuery(options: { report?: JournalGridRequest['report']; enabled: boolean; columnFilters: Record<string, string>; sort: WeldSort | null }) {
   const report = journalReport(options.report)
   const client = useQueryClient()
@@ -209,7 +218,7 @@ export function useJournalServerQuery(options: { report?: JournalGridRequest['re
   }, [identity, state.identity, state.ready, state.error])
   const updatesAvailable = notice.identity === requestedIdentity
   const revisionExpired = updatesAvailable && notice.expired
-  const getSnapshot = useCallback(() => revision.current?.value === undefined ? undefined : { revision: revision.current.value, columnFilters }, [columnFilters])
+  const getSnapshot = useMemo(() => createSnapshotReader(revision, columnFilters), [revision, columnFilters])
   const source = useMemo<JournalServerSource>(() => ({ report, identity, getSnapshot, viewIdentity: selectionIdentity, updatesAvailable, revisionExpired, columnFilters, sort: options.sort, load, loadBlocks, rowsChanged, error, retry: () => { void refetch() }, recoverRevision }), [report, identity, getSnapshot, selectionIdentity, updatesAvailable, revisionExpired, columnFilters, options.sort, load, loadBlocks, rowsChanged, error, refetch, recoverRevision])
   const ready = options.enabled && identity === requestedIdentity && state.identity === identity && state.ready
   return {

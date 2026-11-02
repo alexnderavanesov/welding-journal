@@ -1,0 +1,1 @@
+CREATE INDEX "weld_joints_joint_choice_idx" ON "weld_joints" USING btree (lower(trim(coalesce("joint"::text, ''))));

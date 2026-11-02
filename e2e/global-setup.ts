@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process'
 
 import { E2E_DATABASE_URL, createE2eDatabase, withE2eDatabase } from './database'
+import { applyDeepBaselineJointIndex } from './deep-baseline-joint-index'
 
 export default async function globalSetup() {
   await createE2eDatabase()
@@ -34,6 +35,8 @@ export default async function globalSetup() {
     await client.query("update app_settings set value=$1 where key='maintenance:release:line-program:v1'",
       [JSON.stringify({ status: 'complete', schemaTime: time })])
   })
+
+  await applyDeepBaselineJointIndex()
 
   await withE2eDatabase(async (client) => {
     await client.query(`

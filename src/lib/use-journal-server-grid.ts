@@ -385,10 +385,12 @@ export function useJournalServerGrid(options: {
       const stores = preservePosition && first ? api.getServerSideGroupLevelState() : []
       const populated = new Set<string>()
       if (stores.length) api.forEachNode(node => { if (node.data && !node.stub) populated.add(journalRouteKey(node.parent?.getRoute() ?? [])) })
-      // Empty/unloaded child caches and interrupted refreshes take the existing
-      // replacement path: their old extents cannot be declared current.
+      const patch = snapshot && journalRefreshBlocksUnchanged(snapshot.blocks, collectJournalRefreshBlocks(api))
+        ? planJournalBlockRefresh(snapshot.blocks, snapshot.results) : undefined
+      // A verified patch may omit pristine child placeholders: they contain no
+      // old facts. Partly cached/evicted stores keep the conservative fallback.
       const smooth = preservePosition && Boolean(first) && !refreshingStores.current &&
-        stores.length > 0 && stores.every(store => populated.has(journalRouteKey(store.route)))
+        stores.length > 0 && (Boolean(patch) || stores.every(store => populated.has(journalRouteKey(store.route))))
       refreshingStores.current = null
       rootCount.current = first?.rowCount ?? 0; layouts.current.clear(); loadedRoutes.current = []
       localMembership.current.clear(); lastMembership.current = null
@@ -404,8 +406,6 @@ export function useJournalServerGrid(options: {
         datasourceDelegate.current = datasource
         if (smooth) {
           prepared = first
-          const patch = snapshot && journalRefreshBlocksUnchanged(snapshot.blocks, collectJournalRefreshBlocks(api))
-            ? planJournalBlockRefresh(snapshot.blocks, snapshot.results) : undefined
           refreshingStores.current = new Set()
           if (patch) {
             for (const block of snapshot!.blocks) cacheBudget.current.loaded(block.route, block.rowCount)
@@ -423,6 +423,10 @@ export function useJournalServerGrid(options: {
             })
           } else for (const store of stores) refreshingStores.current.add(journalRouteKey(store.route))
           for (const store of stores) if (refreshingStores.current.has(journalRouteKey(store.route))) api.refreshServerSide({ route: store.route, purge: false })
+          // An in-flight placeholder request may have been cancelled with the
+          // previous revision. Reset failed loads; AG still loads only needed
+          // viewport blocks, rather than eagerly reading all expanded groups.
+          if (patch && stores.some(store => !populated.has(journalRouteKey(store.route)))) api.retryServerSideLoads()
           if (!refreshingStores.current.has('[]')) prepared = undefined
         } else {
           api.setGridOption('serverSideDatasource', {

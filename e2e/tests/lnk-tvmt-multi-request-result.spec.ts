@@ -107,7 +107,15 @@ for (const { kind, method } of scenarios) test(`${kind} ${method.code}: one conc
   if (!tvmt) {
     const controlMethod = dialog.getByRole('combobox', { name: 'Метод контроля', exact: true })
     const value = pre ? method.code : `${method.field}Request`
-    if (await controlMethod.inputValue() !== value) await controlMethod.selectOption(value)
+    // Pre-TO infers the pending method after loading the selected joints.
+    // A read-then-selectOption race can dispatch a synthetic change for the
+    // already selected method, unlike the actual Select popup.
+    if (pre) await expect(controlMethod).toHaveValue(value)
+    else {
+      await controlMethod.click()
+      await page.getByRole('listbox').getByRole('option', { name: method.code, exact: true }).click()
+      await expect(controlMethod).toHaveValue(value)
+    }
   }
   const count = (n: number) => dialog.getByRole('button', { name: `Выбрано: ${n}`, exact: true })
   const filter = dialog.getByRole('combobox', { name: `Фильтр по заявке ${tvmt ? 'ТВМТ' : pre ? 'ЛНК до ТО' : 'ЛНК'}`, exact: true })

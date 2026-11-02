@@ -1,6 +1,7 @@
 import { expect, type Page } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 import { rpcName } from './rpc'
+import { ACCOUNT_ACTIVITY_REFRESH_MS } from '../src/lib/account-activity'
 
 /** Opt-in same-input measurement; no screenshots or geometry reads inside RAF. */
 export async function measureJournalMotion(page: Page, browserVersion: string) {
@@ -15,6 +16,7 @@ export async function measureJournalMotion(page: Page, browserVersion: string) {
   }
   await page.mouse.move(1000, 600)
   const calls: string[] = [], errors: string[] = []
+  const observationStarted = performance.now()
   page.on('request', req => { const name = rpcName(req.url()); if (name) calls.push(name) })
   page.on('pageerror', error => errors.push(error.message))
   const samples = []
@@ -72,9 +74,16 @@ export async function measureJournalMotion(page: Page, browserVersion: string) {
     console.log('MOTION_SAMPLE', JSON.stringify(samples.at(-1)))
     expect(positions[0][direction === 'horizontal' ? 'x' : 'y'] - positions[1][direction === 'horizontal' ? 'x' : 'y']).toBeGreaterThan(step * 40)
   }
-  const result = { browserVersion, deviceScaleFactor: await page.evaluate(() => devicePixelRatio), cpuThrottle: 1, verticalTarget: process.env.JOURNAL_MOTION_MARGIN ? 'margin' : 'cells', samples, errors }
+  const measuredRequests = samples.flatMap(sample => sample.requests)
+  const accountActivityRequests = measuredRequests.filter(name => name === 'refreshAccountActivity_createServerFn_handler')
+  const observationMs = performance.now() - observationStarted
+  const result = { browserVersion, deviceScaleFactor: await page.evaluate(() => devicePixelRatio), cpuThrottle: 1, verticalTarget: process.env.JOURNAL_MOTION_MARGIN ? 'margin' : 'cells', samples, errors,
+    allObservedRequests: calls, accountActivityRequests, observationMs }
   await writeFile(`/tmp/journal-motion-${label}.json`, JSON.stringify(result, null, 2))
   console.log('JOURNAL_MOTION', JSON.stringify(result))
   expect(errors).toEqual([])
-  expect(samples.flatMap(s => s.requests)).toEqual([])
+  // The normal minute heartbeat is independent of scrolling. Keep it visible
+  // and bounded; every table/data RPC must still be absent from warm gestures.
+  expect(measuredRequests.filter(name => name !== 'refreshAccountActivity_createServerFn_handler')).toEqual([])
+  expect(accountActivityRequests.length).toBeLessThanOrEqual(Math.ceil(observationMs / ACCOUNT_ACTIVITY_REFRESH_MS))
 }
