@@ -260,6 +260,20 @@ describe('weld server pagination helpers', () => {
     )).toEqual([])
   })
 
+  it('returns only the next support repair past R10 even with a stale early-coil decision', () => {
+    const source = row({ id: 51, projectTitle: 'Проект', subtitleCode: 'Титул', line: 'Линия 1',
+      joint: 'ОП-1R12', connectionType: 'Т4Д', d1: 57, uzkResult: 'ремонт' }) as WeldRow
+    for (const earlyCoil of [false, true]) {
+      expect(getCurrentRepeatedJointTargets([source], source, DEFAULT_SYSTEM_INDEX_SETTINGS, earlyCoil)).toEqual(['ОП-1R13'])
+    }
+    const created = { ...source, id: 52, joint: 'ОП-1R13', uzkResult: null }
+    expect(getCurrentRepeatedJointTargets([source, created], source, DEFAULT_SYSTEM_INDEX_SETTINGS)).toEqual([])
+    expect(getCurrentRepeatedJointTargets([source, { ...created, officiality: 'неофициальный' }], source, DEFAULT_SYSTEM_INDEX_SETTINGS)).toEqual(['ОП-1R13'])
+    for (const invalid of [{ ...source, uzkResult: 'вырез' }, { ...source, rkResult: 'годен' }]) {
+      expect(getCurrentRepeatedJointTargets([invalid], invalid, DEFAULT_SYSTEM_INDEX_SETTINGS, true)).toEqual([])
+    }
+  })
+
   it.each(['vikResult', 'pvkResult'] as const)('blocks repeat and coil targets for historical invalid %s cuts', field => {
     const source = row({ id: 51, joint: 'F1', [field]: 'вырез', rkResult: 'вырез' }) as WeldRow
     for (const earlyCoil of [false, true]) {

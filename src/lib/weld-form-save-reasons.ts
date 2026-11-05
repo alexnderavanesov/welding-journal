@@ -1,8 +1,12 @@
+import { getControlPairAssignmentIssues } from './control-pair-assignment'
+import { getProgramRepairAssignmentIssues } from './line-program-repair-requirements'
 import type { ValidationMessageFormatter } from './validation-message'
+import { getControlAssignmentBasisIssues } from './control-assignment-basis-validation'
+import { getSupportJointRuleIssues } from './support-joint-rules'
 import { normalizeControlResultText } from '@/lib/report-value-utils'
 import { getWeldMaterialGroupsError } from '@/lib/weld-material-groups'
 import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
-import { getControlAssignmentRemovalReason, getControlAssignmentCancellations } from './control-assignment-history'
+import { getControlAssignmentRemovalReason, getControlAssignmentCancellations, getControlAssignmentPerformedHistory } from './control-assignment-history'
 import { getDateInputValidationReason, parseDateLikeToIso } from '@/lib/date-format'
 import {
   hasReservedJointSystemPart,
@@ -56,6 +60,8 @@ type WeldFormSaveBlockOptions = {
   allowSystemJointName?: boolean
   allowPrimaryLnkStageDebt?: boolean
   systemIndexSettings?: SystemIndexSettings
+  /** Only automatic server continuation workflows provide this stored source. */
+  inheritedControlAssignmentSource?: WeldInput
 }
 
 export function getWeldFormSaveBlockReason(
@@ -64,8 +70,12 @@ export function getWeldFormSaveBlockReason(
   saveCheckSettings: SaveCheckSettings = DEFAULT_SAVE_CHECK_SETTINGS,
   options: WeldFormSaveBlockOptions = {},
 ) {
-  return getUnofficialLnkResultIssues(draft, initialValue)[0]?.message ||
+  return getControlPairAssignmentIssues(draft, initialValue)[0]?.message ||
+    getProgramRepairAssignmentIssues(draft, initialValue).map(issue => issue.message).join('\n') ||
+    getSupportJointRuleIssues(draft, initialValue, options.systemIndexSettings).map(issue => issue.message).join('\n') ||
+    getUnofficialLnkResultIssues(draft, initialValue)[0]?.message ||
     getExcludedControlAssignmentIssues(draft, initialValue)[0]?.message || getControlAssignmentRemovalReason(draft, initialValue) ||
+    getControlAssignmentBasisIssues(draft, initialValue, options.inheritedControlAssignmentSource).map(issue => issue.message).join('\n') ||
     getLnkResultRuleIssues(draft, options.systemIndexSettings).map(issue => issue.message).join('\n') ||
     getWeldFormFieldSaveBlockReason(draft, initialValue, saveCheckSettings, options)
 }
@@ -196,6 +206,14 @@ export type ControlAvailabilityReportHistoryIssue = {
 
 export function getControlAvailabilityReportHistoryIssues(draft: WeldInput): ControlAvailabilityReportHistoryIssue[] {
   const issues: ControlAvailabilityReportHistoryIssue[] = []
+  if (!isRealPstoResult(draft.pstoResult) && (hasText(draft.pstoDate) || hasText(draft.heatTreatmentDiagram))) {
+    issues.push({ code: 'ПСТО:результат', fieldKeys: ['pstoResult', 'pstoDate', 'heatTreatmentDiagram'],
+      message: 'Фактическая дата ПСТО или диаграмма требуют результата «проведено». Исправьте данные в процессе ПСТО.', report: 'psto' })
+  }
+  if ((draft as Partial<WeldRow>).pstoRepeatCycles?.some(cycle => !isRealPstoResult(cycle.pstoResult) && (hasText(cycle.pstoDate) || hasText(cycle.heatTreatmentDiagram)))) {
+    issues.push({ code: 'ПСТО:повтор-результат', fieldKeys: ['pstoResult', 'pstoDate', 'heatTreatmentDiagram'],
+      message: 'В повторном цикле дата ПСТО или диаграмма сохранены без результата «проведено». Исправьте соответствующий цикл ПСТО.', report: 'psto' })
+  }
   for (const method of LNK_METHODS) {
     if (isActiveControlAvailability(draft[method.enabledKey])) continue
     if (!hasRealLnkReportHistory(draft, method)) continue
@@ -208,7 +226,7 @@ export function getControlAvailabilityReportHistoryIssues(draft: WeldInput): Con
         method.conclusionDateKey,
         method.conclusionKey,
       ],
-      message: `${method.code}: выберите «отменен» либо очистите/удалите результат НК в отчете ЛНК.`,
+      message: `${method.code}: сохраните назначение выполненного контроля. Ошибочный результат исправьте в отчёте ЛНК.`,
       report: 'lnk',
     })
   }
@@ -231,7 +249,7 @@ export function getControlAvailabilityReportHistoryIssues(draft: WeldInput): Con
         'tvmtConclusionDate',
         'tvmtConclusion',
       ],
-      message: 'ПСТО: выберите «отменен» либо очистите/удалите результат ПСТО.',
+      message: 'ПСТО: сохраните назначение с выполненной работой. Ошибочные данные исправьте в профильном процессе.',
       report: 'psto',
     })
   }
@@ -249,7 +267,7 @@ export function getNewControlAvailabilityReportHistoryReason(draft: WeldInput, i
 
 export function getWeldFormCancellationResultHint(draft: WeldInput, initialValue: WeldDraft) {
   const methods = getControlAssignmentCancellations(draft, initialValue)
-  return methods.length ? `${methods.join(', ')}: назначение будет отменено. Заявки, результаты и заключения всех этапов сохраняются; фактический брак остаётся браком.` : null
+  return methods.length ? `${methods.join(', ')}: будет отменена только ещё не выполненная работа. Сохранённые заявки и другие этапы остаются; отмена не является выполнением контроля.` : null
 }
 
 export function getWeldFormReactivationResultHint(draft: WeldInput, initialValue: WeldDraft) {
@@ -295,20 +313,7 @@ function hasRealLnkReportHistory(row: WeldInput, method: (typeof LNK_METHODS)[nu
 }
 
 function hasRealPstoReportHistory(row: WeldInput) {
-  const repeatCycles = (row as WeldInput & { pstoRepeatCycles?: unknown[] }).pstoRepeatCycles ?? []
-  return (
-    isRealPstoResult(row.pstoResult) ||
-    hasAnyText(row, [
-      'heatTreatmentDiagram',
-      'pstoNote',
-      'tvmtRequest',
-      'tvmtRequestDate',
-      'tvmtResult',
-      'tvmtConclusionDate',
-      'tvmtConclusion',
-    ]) ||
-    repeatCycles.length > 0
-  )
+  return Boolean(getControlAssignmentPerformedHistory(row, 'pstoRequired'))
 }
 
 function isRealPstoResult(value: unknown) {

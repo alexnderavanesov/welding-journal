@@ -95,7 +95,7 @@ export function useJournalServerGrid(options: {
   const getRange = (mode: 'summary' | 'copy' | 'selection' = 'summary'): JournalRangeRequest | null => {
     const { api, source, anchor, ready } = current.current
     if (!source || !api || api.isDestroyed() || revision.current === undefined || !ready) return null
-    if (source.revisionExpired) throw new Error(JOURNAL_CHANGED_MESSAGE)
+    if (source.revisionExpired && mode !== 'summary') throw new Error(JOURNAL_CHANGED_MESSAGE)
     const ranges = (api.getCellRanges() ?? []).flatMap(range => range.startRow && range.endRow ? [{
       first: Math.min(range.startRow.rowIndex, range.endRow.rowIndex), last: Math.max(range.startRow.rowIndex, range.endRow.rowIndex),
       columns: mode === 'selection' ? ['id' as const]
@@ -140,6 +140,16 @@ export function useJournalServerGrid(options: {
     } } : null
     setSummaryRange(previous => JSON.stringify(previous) === JSON.stringify(nextRange) ? previous : nextRange)
     const signature = JSON.stringify(data)
+    if (current.current.source?.revisionExpired) {
+      clearTimeout(timer.current); rangeRequest.current?.abort()
+      setRangeState(previous => previous === 'Считаем…' ? 'Итоги: —' : previous)
+      if (rangeSignature.current !== signature) {
+        rangeSignature.current = ''
+        setSummary(EMPTY_JOURNAL_RANGE_SUMMARY)
+        setRangeState(data?.parts.length ? 'Итоги: —' : '')
+      }
+      return
+    }
     if (rangeSignature.current === signature) return
     rangeSignature.current = signature
     clearTimeout(timer.current)

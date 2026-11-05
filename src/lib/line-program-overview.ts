@@ -6,9 +6,10 @@ import type { LineProgramRecord } from '@/lib/line-program'
 import { getProgramDemandAccounting } from './line-program-accounting'
 import { calculateFinalStatus } from './weld-status'
 import { buildLineProgramTopology } from './line-program-topology'
-import { programApprovalKey } from './program-control-approval'
 import { countUnfinishedProgramChains } from './line-program-completion'
 import { loadSystemIndexSettings, type SystemIndexSettings } from './system-index-settings'
+import { buildSupportProgramContext, getSupportChainMethodState } from './support-program-calculation'
+import { isTConnectionType } from './connection-type'
 
 /** Keep the core's capped debt: the raw quota is context, not an unreachable assignment task. */
 export function compactLineProgramDemand(demand: LineProgramDemand) {
@@ -48,34 +49,32 @@ export function isLineProgramFinished(overview: LineProgramOverview | null | und
 
 /** Quotas are summed per stamp; physical joint counts are never summed across stamps. */
 export function summarizeLineProgram(rows: readonly WeldRow[], line: LineProgramRecord, accepted: ReadonlySet<string> = new Set(), calculated?: readonly LineProgramStampCalculation[], settings: SystemIndexSettings = loadSystemIndexSettings(), removalHints?: ProgramRemovalHints): LineProgramOverview {
+  const support = line.family === 'supports'
+  rows = rows.filter(row => isTConnectionType(row.connectionType) === support)
   // Keep every row for physical replacement history, but only eligible controls contribute to totals.
   const controlRows = rows.filter(isLineProgramControlRow)
-  const topology = buildLineProgramTopology(rows, line.weldControlPercent === 100, settings)
+  const supportContext = support ? buildSupportProgramContext(rows, settings) : null
+  const topology = supportContext?.topology ?? buildLineProgramTopology(rows, line.weldControlPercent === 100, settings)
   const physical = topology.physicalRows.filter(isLineProgramControlRow)
-  const eligible = physical.filter(line.weldControlPercent === 100 ? isLineProgramControlRow : isLineProgramCalculationRow)
+  const eligible = physical.filter(!support && line.weldControlPercent === 100 ? isLineProgramControlRow : row => isLineProgramCalculationRow(row) && (!support || getLineProgramOfficialStamps(row).length > 0))
   const states = controlRows.map(calculateFinalStatus)
   const errors = states.filter(state => state === 'ошибка').length
   const overview: LineProgramOverview = {
     joints: physical.length, journalRows: rows.length, calculationJoints: eligible.length,
-    stamps: new Set(controlRows.flatMap(getLineProgramOfficialStamps).map((s) => s.toLocaleLowerCase('ru'))).size,
+    stamps: new Set((support ? physical : controlRows).flatMap(getLineProgramOfficialStamps).map((s) => s.toLocaleLowerCase('ru'))).size,
     common: null, pvk: null,
-    additional: controlRows.filter(row => PROGRAM_METHODS.some(method => programAssignment(row, method) === 'дополнительный')).length,
+    additional: supportContext ? physical.filter(row => (['common', 'pvk'] as const).some(kind => getSupportChainMethodState(supportContext.members.get(row.id) ?? [row], kind).additional)).length : controlRows.filter(row => PROGRAM_METHODS.some(method => programAssignment(row, method) === 'дополнительный')).length,
     approved: 0, reducible: 0, pending: states.filter(state => state.startsWith('ожидает')).length,
     rejected: states.filter(state => state.startsWith('не годен')).length,
-    unfinishedChains: countUnfinishedProgramChains(rows, line.weldControlPercent === 100, settings, accepted),
+    unfinishedChains: countUnfinishedProgramChains(rows, support || line.weldControlPercent === 100, settings, accepted),
     ...(errors ? { errors } : {}),
     ...(topology.issues.length ? { integrityIssues: topology.issues.length } : {}),
   }
   if (line.configurationIssue || line.weldControlPercent == null || line.pvkControlPercent == null) return overview
-  const calculations = calculated ?? calculateLineProgram(rows, line.weldControlPercent, line.pvkControlPercent, settings, accepted)
+  const calculations = calculated ?? calculateLineProgram(rows, line.weldControlPercent, line.pvkControlPercent, settings, accepted, line.family === 'supports')
   const excess = partitionProgramExcess(programExcessEntries(line.id, rows, calculations), accepted)
   overview.reducible = countProgramRemovalHints(removalHints ?? getProgramRemovalHints(line.id, rows, calculations, accepted))
-  overview.approved = new Set(excess.approved.map(programExcessIdentity)).size
-  const visibleApproved = new Set(excess.approved.map(entry => entry.key))
-  for (const row of controlRows) for (const kind of ['common', 'pvk'] as const) for (const duplicate of [false, true]) {
-    const key = programApprovalKey(row, kind, duplicate)
-    if (accepted.has(key) && !visibleApproved.has(key)) { overview.approved++; visibleApproved.add(key) }
-  }
+  overview.approved = 0
   for (const kind of ['common', 'pvk'] as const) {
     overview[kind] = calculations.reduce((total, stamp) => {
       const demand = stamp[kind]

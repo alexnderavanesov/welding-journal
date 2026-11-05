@@ -1,5 +1,5 @@
 import type { PrintableReportTable } from '@/lib/printable-report'
-import { formatPercent, formatStatisticValue, type StatisticsUnit } from '@/lib/statistics-summary'
+import { formatPercent, formatGeneralStatisticValue, type StatisticsUnit } from '@/lib/statistics-summary'
 import type { WelderStatisticsJointFilter } from '@/lib/welder-statistics-summary'
 import type {
   WeldingDynamicsMaterialJointTypeGroup,
@@ -73,11 +73,11 @@ function buildReportRow(
 ) {
   return [
     label,
-    ...jointTypes.map((jointType) => formatStatisticValue(
+    ...jointTypes.map((jointType) => formatGeneralStatisticValue(
       group.jointTypes.find((candidate) => candidate.key === jointType.key)?.value ?? 0,
       unit,
     )),
-    formatStatisticValue(group.value, unit),
+    formatGeneralStatisticValue(group.value, unit),
     String(group.welderCount),
     formatPerWelderShift(group.valuePerWelderShift, group.welderShiftCount, unit),
     formatPercent(totalValue > 0 ? (group.value / totalValue) * 100 : 0),

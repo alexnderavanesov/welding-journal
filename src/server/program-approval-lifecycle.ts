@@ -1,17 +1,18 @@
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { EARLY_COIL_DECISION_KIND } from '@/lib/early-coil-decision'
 import { dispatcherAcceptedWarnings } from '@/db/schema'
 import type { WeldInput } from '@/lib/weld-fields'
 import { programApprovalKey } from '@/lib/program-control-approval'
 import { buildTextArrayMatch, buildNumberArrayMatch } from './weld-request-utils'
-import type { ProgramApproval } from '@/lib/program-approval-actions'
 import type { SystemDocumentSequenceTransaction } from './system-document-sequences'
 import { acceptedWarningVersionSql } from './accepted-warning-objects'
 
+type ProgramApproval = { key: string; rowId: number; version: string }
+
 export async function loadProgramApprovals(tx: Pick<SystemDocumentSequenceTransaction, 'select'>, ids: number[], options: { includeEarlyCoil?: boolean } = {}): Promise<ProgramApproval[]> {
-  if (!ids.length) return []
+  if (!ids.length || !options.includeEarlyCoil) return []
   const records = await tx.select({ key: dispatcherAcceptedWarnings.key, rowId: dispatcherAcceptedWarnings.weldJointId, version: acceptedWarningVersionSql })
-    .from(dispatcherAcceptedWarnings).where(and(options.includeEarlyCoil ? inArray(dispatcherAcceptedWarnings.kind, ['line-program-control', EARLY_COIL_DECISION_KIND]) : eq(dispatcherAcceptedWarnings.kind, 'line-program-control'), buildNumberArrayMatch(dispatcherAcceptedWarnings.weldJointId, ids)))
+    .from(dispatcherAcceptedWarnings).where(and(eq(dispatcherAcceptedWarnings.kind, EARLY_COIL_DECISION_KIND), buildNumberArrayMatch(dispatcherAcceptedWarnings.weldJointId, ids)))
   return records.map(item => ({ key: item.key, rowId: item.rowId!, version: item.version }))
 }
 

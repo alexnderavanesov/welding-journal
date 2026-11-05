@@ -24,7 +24,7 @@ try {
     const rows = await tx.insert(weldJoints).values(Array.from({ length: 20 }, (_, i) => ({ ...identity,
       joint: `F${i + 1}`, weldDate: '2026-09-01', connectionType: 'С17', category: 'II', groupName: 'A',
       weldControlPercent: 10, pvkControlPercent: 10, stamp1K: 'RULE-A', hasVik: 'да',
-      hasRk: i === 0 ? 'да' : null, hasUzk: i === 0 ? 'да' : null, rkResult: i === 0 ? 'ремонт' : null,
+      hasRk: i === 0 ? 'да' : null, hasUzk: i === 0 ? 'дополнительный' : null, rkResult: i === 0 ? 'ремонт' : null,
       hasPvk: i === 0 ? 'да' : null, pvkResult: i === 0 ? 'годен' : null,
     }))).returning()
     await chain.syncProgramChainStates(tx, rows, new Map())
@@ -46,7 +46,7 @@ try {
   assert.deepEqual(first.common.coveredRowIds, [root.id])
   assert.equal(first.common.required, 4)
   assert.deepEqual(first.pvk.coveredRowIds, [])
-  // A late explicit decision adds only a warning; assignments and history stay untouched.
+  // The missing inherited Additional produces SP-08 independently of retired approvals.
   await db.insert(dispatcherAcceptedWarnings).values({ key: programApprovalKey(root, 'common', true), kind: 'line-program-control', weldJointId: root.id })
   await refresh()
   const tasks = await db.select().from(dispatcherRowTasks).where(inArray(dispatcherRowTasks.weldJointId, ids))
@@ -72,7 +72,7 @@ try {
     const [visible] = await read.attachDispatcherTaskCodesToPage([{ id: repair.id }]) as { id: number; dispatcherTasks: string }[]
     assert.equal(visible.dispatcherTasks.includes('СП-08'), expected)
   }
-  await db.update(weldJoints).set({ hasUzk: 'да' }).where(eq(weldJoints.id, repair.id))
+  await db.update(weldJoints).set({ hasUzk: 'дополнительный' }).where(eq(weldJoints.id, repair.id))
   await refresh()
   assert.equal((await db.select().from(dispatcherRowTasks).where(eq(dispatcherRowTasks.weldJointId, repair.id))).filter(task => task.code === 'СП-08').length, 0)
   // SP-01 also includes genuine line-program debts; check the former duplicate
@@ -116,7 +116,7 @@ try {
   const final = await load(), state = final.find(row => row.id === repair.id)!.programChainState!
   assert.equal(state.physicalRootId, root.id)
   assert(buildLineProgramTopology(final, false).issues.some(issue => issue.rowId === repair.id))
-  console.log(JSON.stringify({ physicalReplacement: true, stableIdsAfterDeletion: true, lateApproval: true, repairOnlyPersistedAndVirtual: true, exclusionRestoresRepairTask: true }))
+  console.log(JSON.stringify({ physicalReplacement: true, stableIdsAfterDeletion: true, inheritedAssignments: true, repairOnlyPersistedAndVirtual: true, exclusionRestoresRepairTask: true }))
 } finally {
   if (ids.length) await db.delete(weldJoints).where(inArray(weldJoints.id, ids))
   await dirty.markDispatcherTaskIndexDirty(db)

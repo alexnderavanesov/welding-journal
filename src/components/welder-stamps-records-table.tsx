@@ -1,5 +1,6 @@
 import { WelderStampsRecordRow } from '@/components/welder-stamps-record-row'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
+import { getTodayIsoDate } from '@/lib/date-format'
 
 type WelderStampsRecordsTableProps = {
   records: WelderStampRecord[]
@@ -28,6 +29,7 @@ export function WelderStampsRecordsTable({
   onRestorePermit,
   onDelete,
 }: WelderStampsRecordsTableProps) {
+  const today = getTodayIsoDate()
   if (records.length === 0) {
     return <p className="px-4 py-10 text-center text-sm text-slate-500">{emptyMessage}</p>
   }
@@ -46,12 +48,14 @@ export function WelderStampsRecordsTable({
         </tr>
       </thead>
       <tbody>
-        {records.map((record) => (
+        {records.map((record, index) => (
           <WelderStampsRecordRow
             key={record.id}
             record={record}
-            editingId={editingId}
-            selectedId={selectedId}
+            isEditing={editingId === record.id}
+            isSelected={selectedId === record.id}
+            shaded={index % 2 === 1}
+            today={today}
             onSelect={onSelect}
             onEdit={onEdit}
             onArchive={onArchive}

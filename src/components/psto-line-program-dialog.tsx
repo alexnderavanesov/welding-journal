@@ -215,7 +215,7 @@ export function PstoLineProgramDialog({
   const submitRemoval = () => {
     if ((view.type !== 'remove' && view.type !== 'cancel') || !previewMutation.data || saveMutation.isPending || !specialists.ready) return
     const cancelling = view.type === 'cancel'
-    if (cancelling !== (previewMutation.data.historyRowCount > 0)) return
+    if (!cancelling && (previewMutation.data.removalProtectedRowCount ?? previewMutation.data.completedPstoCount) > 0) return
     onRunProtectedDelete(cancelling ? 'официальная отмена ПСТО на линии' : 'удаление ошибочного назначения ПСТО', async () => {
       await saveMutation.mutateAsync({
         identity: toIdentity(view.line),
@@ -311,7 +311,7 @@ export function PstoLineProgramDialog({
           onCancellationDateChange={setCancellationDate}
           onCancellationBasisChange={setCancellationBasis}
           onUseCurrentAction={() => setView({
-            type: (previewMutation.data?.historyRowCount ?? 0) > 0 ? 'cancel' : 'remove',
+            type: 'cancel',
             line: view.line,
           })}
           onRetry={() => previewMutation.mutate(toIdentity(view.line))}
@@ -338,8 +338,8 @@ function LineActionCell({ data }: ICellRendererParams<PstoLineAssignmentSummary>
   const state = getPstoProgramState(data), hasHistory = (data.removalHistoryRowCount ?? data.historyRowCount) > 0
   return <div className="flex h-full items-center gap-1">
     {state === 'assigned' ? <>
-      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={loading || hasHistory} title={hasHistory ? 'Уже есть данные ПСТО, ТВМТ или НК до ТО — используйте отмену.' : 'Снять ошибочное назначение без оформления отмены.'} onClick={() => onRemove(data)}>Снять назначение</Button>
-      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={loading || !hasHistory} title={hasHistory ? 'Изменить решение с сохранением документов и результатов.' : 'Работы ещё не начаты — используйте снятие назначения.'} onClick={() => onCancelPsto(data)}>Отменить ПСТО</Button>
+      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={loading || hasHistory} title={hasHistory ? 'Есть выполненная работа ПСТО, ТВМТ или НК до ТО; снять её назначение нельзя.' : 'Снять ошибочное назначение; невыполненные позиции заявок будут удалены.'} onClick={() => onRemove(data)}>Снять назначение</Button>
+      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={loading} title="Отменить только ещё не выполненную работу и будущую потребность линии. Выполненные назначения сохраняются." onClick={() => onCancelPsto(data)}>Отменить ПСТО</Button>
     </> : <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-sky-700" disabled={loading} onClick={() => state === 'cancelled' ? onReactivate(data) : onAssign(data)}>{state === 'cancelled' ? 'Возобновить' : state === 'mixed' ? 'На всю линию' : 'Назначить'}</Button>}
   </div>
 }
@@ -495,7 +495,7 @@ function RemovalView({
 }) {
   const rows = preview?.rows ?? []
   const pagination = usePagePagination({ items: rows, defaultPageSize: 25, resetKeys: [preview] })
-  const actionOutdated = Boolean(preview && officialCancellation !== (preview.historyRowCount > 0))
+  const actionOutdated = Boolean(preview && !officialCancellation && (preview.removalProtectedRowCount ?? preview.completedPstoCount) > 0)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-slate-50">
@@ -526,6 +526,7 @@ function RemovalView({
               <SummaryCell label="Заявок НК до ТО без результата" value={preview.pendingPreControlCount} tone="amber" />
               <SummaryCell label="Повторных циклов" value={preview.repeatCycleCount} />
             </div>
+            {officialCancellation ? <p className="mt-3 text-sm text-slate-700">Сохраним выполненные назначения: {preview.retainedAssignmentCount ?? preview.completedPstoCount}. Отменим невыполненные: {preview.cancellationRowCount ?? Math.max(0, preview.assignedCount - preview.completedPstoCount)}. Новые стыки будут следовать отменённой потребности линии; необходимые ТВМТ и повторные циклы выполненных стыков сохранятся.</p> : <p className="mt-3 text-sm text-slate-700">Удалятся только невыполненные позиции заявок ПСТО/ТВМТ и НК до ТО. Если заявка опустеет, она будет удалена полностью. Выбор в этом окне до сохранения ничего не удаляет.</p>}
             {officialCancellation ? (
               <div className="mt-3 grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 md:grid-cols-[220px_minmax(280px,1fr)]">
                 <label className="space-y-1.5 text-sm">
@@ -538,11 +539,13 @@ function RemovalView({
                   />
                 </label>
                 <label className="space-y-1.5 text-sm">
-                  <span className="font-medium text-slate-700">Основание отмены ПСТО</span>
+                  <span className="font-medium text-slate-700">Основание отмены ПСТО <span className="text-rose-600">*</span></span>
                   <Input
                     value={cancellationBasis}
+                    aria-required="true"
+                    aria-label="Основание отмены ПСТО"
                     onChange={(event) => onCancellationBasisChange(event.target.value)}
-                    placeholder="Необязательно: техническое решение, письмо или примечание"
+                    placeholder="Техническое решение, письмо или причина отмены"
                     className="bg-white"
                   />
                 </label>
@@ -550,11 +553,9 @@ function RemovalView({
             ) : null}
             {actionOutdated ? (
               <div className="mt-3 space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                <p>{preview.historyRowCount > 0
-                  ? 'История линии изменилась: появились данные ПСТО, ТВМТ или НК до ТО. Удалить только назначение уже нельзя. Можно официально отменить ПСТО с сохранением всей истории.'
-                  : 'История линии изменилась: данных ПСТО, ТВМТ и НК до ТО больше нет. Теперь можно удалить ошибочное назначение без официальной отмены.'}</p>
+                <p>На линии есть выполненная работа ПСТО/ТВМТ или НК до ТО. Снятие недоступно. Можно открыть отмену оставшейся работы: выполненные назначения сохранятся.</p>
                 <Button variant="outline" size="sm" onClick={onUseCurrentAction}>
-                  {preview.historyRowCount > 0 ? 'Перейти к отмене ПСТО' : 'Перейти к снятию назначения'}
+                  Перейти к отмене оставшейся работы
                 </Button>
               </div>
             ) : null}
@@ -565,7 +566,7 @@ function RemovalView({
               <div className="grid min-w-[980px] grid-cols-[minmax(190px,0.75fr)_minmax(300px,1fr)_minmax(380px,1.35fr)] border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-[11px] font-semibold uppercase text-slate-500">
                 <span>Стык</span>
                 <span>Сейчас</span>
-                <span>После снятия ПСТО</span>
+                <span>{officialCancellation ? 'После отмены будущей работы' : 'После снятия ПСТО'}</span>
               </div>
               <div className="divide-y divide-slate-100">
                 {pagination.pageItems.map((row) => (
@@ -588,10 +589,10 @@ function RemovalView({
                       {actionOutdated ? (
                         <p className="text-xs leading-5 text-amber-700">Ничего не изменится, пока не выбран актуальный способ снятия ПСТО.</p>
                       ) : officialCancellation ? (<>
-                        <p className="text-xs leading-5 text-emerald-700">Назначение ПСТО будет отменено. По умолчанию этапы сохраняются. Если физическая ПСТО уже проведена, внесите фактическую ТВМТ; новый повтор не откроется.</p>
+                        <p className="text-xs leading-5 text-emerald-700">{row.cancellationDisposition === 'preserve' || row.preservesPerformedHistory ? 'Выполнено — сохраняем назначение, результаты и документы. Необходимые ТВМТ и повторные циклы остаются.' : row.cancellationDisposition === 'unchanged' ? 'Действующее исключение или назначение не меняется.' : 'Невыполнено — отменяем назначение. Сохранённые этапы НК остаются на своих местах.'}</p>
                         {row.stageCorrection?.targetStage === 'primary' ? <PstoStageCorrectionChoice row={row} moveSelected={transferRowIds.has(row.rowId) && !row.stageCorrection.disabledReason} disabled={pending} onChange={move => onTransferChange(row.rowId, move)} /> : null}
                       </>) : (
-                        <p className="text-xs text-slate-500">Основной комплект НК не изменится.</p>
+                        <p className="text-xs text-slate-500">Снимем назначение и удалим его невыполненные позиции заявок. Основной комплект НК не изменится.</p>
                       )}
                     </div>
                   </div>
@@ -623,7 +624,7 @@ function RemovalView({
                 ? 'Предпросмотр обнаружил изменение истории. Выберите предложенный способ снятия ПСТО либо вернитесь назад; документы автоматически не удаляются.'
                 : officialCancellation
                 ? `Отмена не удаляет историю. Перенос НК до ТО в основной выполняется только для явно выбранных стыков: ${rows.filter(row => transferRowIds.has(row.rowId) && row.stageCorrection?.targetStage === 'primary' && !row.stageCorrection.disabledReason).length}. Заявка или история ПСТО/ТВМТ запрещают перенос соответствующего стыка.`
-                : 'У стыков, чьё назначение изменится, нет данных ПСТО, ТВМТ и НК до ТО. Будет снято ошибочное назначение; основной НК и индивидуальные исключения сохранятся.'}
+                : 'У стыков, чьё назначение изменится, нет выполненных ПСТО, ТВМТ и НК до ТО. Будет снято назначение и удалены невыполненные позиции заявок; основной НК и индивидуальные исключения сохранятся.'}
             </p>
           </div>
           <div className="flex shrink-0 gap-2">
@@ -631,7 +632,7 @@ function RemovalView({
             <Button
               variant="destructive"
               onClick={onSubmit}
-              disabled={!preview || pending || actionOutdated || transferBlocked || (officialCancellation && !cancellationDate)}
+              disabled={!preview || pending || actionOutdated || transferBlocked || (officialCancellation && (!cancellationDate || !cancellationBasis.trim()))}
             >
               {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CircleSlash2 className="mr-2 h-4 w-4" />}
               {officialCancellation ? 'Отменить ПСТО на линии' : 'Снять назначение'}

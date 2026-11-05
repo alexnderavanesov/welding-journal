@@ -22,11 +22,22 @@ function renderControls(draft: WeldInput) {
 }
 
 describe('layered control placement in the weld form', () => {
+  it('disables the second ordinary method and every change to inherited cancellation', () => {
+    renderControls({ id: 7, joint: 'F1R1', hasRk: 'да', hasPvk: 'отменен', programRepairRequirements: [
+      { method: 'ПВК', sourceRowId: 1, sourceJoint: 'F1', reason: 'Отмена родителя', assignment: 'отменен' },
+    ] })
+    const uzk = screen.getByText('Назначение УЗК', { exact: true }).parentElement!
+    expect(within(uzk).getByRole('button', { name: 'Да' })).toBeDisabled()
+    expect(within(uzk).getByRole('button', { name: 'Дополнительный' })).toBeEnabled()
+    const pvk = screen.getByText('Правило назначения: Отмена родителя').parentElement!
+    for (const name of ['Пусто', 'Да', 'Дополнительный']) expect(within(pvk).getByRole('button', { name })).toBeDisabled()
+    expect(within(pvk).getByRole('button', { name: 'Отменен' })).toBeEnabled()
+  })
   it('explains and protects a mandatory repair method without exposing system metadata as fields', () => {
     renderControls({ id: 7, joint: 'F1R1', hasRk: 'да', programRepairRequirements: [
       { method: 'РК', sourceRowId: 1, sourceJoint: 'F1', reason: 'Обязателен после негодного РК на F1' },
     ] })
-    const block = screen.getByText('Обязательный метод: Обязателен после негодного РК на F1').parentElement!
+    const block = screen.getByText('Правило назначения: Обязателен после негодного РК на F1').parentElement!
     expect(block).toHaveClass('border-amber-400')
     expect(within(block).getByRole('button', { name: 'Пусто' })).toBeDisabled()
     expect(within(block).getByRole('button', { name: 'Отменен' })).toBeDisabled()

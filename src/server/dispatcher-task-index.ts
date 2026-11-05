@@ -1,3 +1,4 @@
+import { attachSupportProgramRates } from './support-program-context'
 import { and, asc, desc, eq, inArray, or, sql, type SQLWrapper } from 'drizzle-orm'
 import { requireDb } from '@/db'
 import {
@@ -539,6 +540,7 @@ export async function calculateFullDispatcherTasks(
     const duplicateRows = await tx.select().from(duplicateControls)
       .where(buildNumberArrayMatch(duplicateControls.weldJointId, rows.map(row => row.id)))
       .orderBy(asc(duplicateControls.weldJointId), asc(duplicateControls.id))
+    await attachSupportProgramRates(rows as WeldRow[], tx)
     const prepared = prepareReportRowsInPlace(
       await attachHeatTreatmentControlRelationsInPlace(rows, tx, getControlProcessSettings(settingsRows)),
       duplicateRows.map(toDuplicateControlRecord),
@@ -968,6 +970,7 @@ export async function prepareDispatcherReportRows(
   rows: Array<typeof weldJoints.$inferSelect>,
   duplicateRows: DuplicateControl[],
 ) {
+  await attachSupportProgramRates(rows as WeldRow[], tx)
   const rowsWithHeatTreatmentControls = await attachHeatTreatmentControlRelations(rows, tx)
   return prepareReportRows(
     rowsWithHeatTreatmentControls,

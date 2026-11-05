@@ -1,3 +1,4 @@
+import { assertControlRequestRemovalPreview } from './control-request-removal-preview'
 import { beginDocumentSaveReceipt, finishDocumentSaveReceipt } from './document-save-receipt'
 import { formatAccessValidationMessage } from './access-validation-message'
 import { lockDocumentGroupingPreference, rememberDocumentGrouping, validatePrimaryCreationGrouping, primaryCreationReferences } from '@/server/document-grouping-preferences'
@@ -7,6 +8,8 @@ import { assertNewDocumentNamesAvailable, prepareDocumentCreationIndex } from '@
 import { requireDb } from '@/db'
 import { assertJointChainRowsCanBeDeleted } from './joint-chain-deletion'
 import { deleteChangedProgramApprovals } from './program-approval-lifecycle'
+import { synchronizeSupportWeldLengths } from './support-weld-length'
+import { lockSupportWeldLengthMemberships } from './support-weld-length-scope'
 import { weldJoints, type WeldJoint } from '@/db/schema'
 import { deleteEmptyGeneratedDocuments } from './generated-document-cleanup'
 import { normalizeDateLikeForStorage } from '@/lib/date-format'
@@ -45,6 +48,7 @@ import { getDispatcherDirtyScopes, markDispatcherTaskIndexDirty } from '@/server
 import { assertPstoWorkflowLinesFullyAssigned } from '@/server/psto-workflow-line-guard'
 import { assertSecurityScope } from '@/server/security-functions'
 import { removeHeatTreatmentSourcedDocumentPositionsForWeldsInTransaction, syncSystemDocumentsForWeldChangesInTransaction } from '@/server/system-document-index'
+import { persistRemovedControlAssignmentRequests } from '@/server/control-assignment-request-removal'
 import { applyReservedSystemDocumentNames, reserveSystemDocumentNames, type SystemDocumentSequenceTransaction } from '@/server/system-document-sequences'
 import { type WeldBatchUpdateData, type WeldDeleteData, type WeldDeleteManyData, type WeldMutationScope, type WeldPayload, type RequestDocumentManagerData, type RepeatedJointCreateData } from '@/server/weld-contracts'
 import { loadPreviousWeldRows, loadServerWeldValidationContext, mergeWeldRecordsWithPrevious, prepareServerWeldRecords, validateServerWeldRecords } from '@/server/weld-save-validation'
@@ -223,6 +227,8 @@ export async function createWeldJoint({ data }: { data: WeldPayload }) {
       .insert(weldJoints)
       .values({ ...toDbInsert(record, true), layeredControlAssigned: record.layeredControlAssigned === true })
       .returning(WELD_TABLE_RETURNING)
+    const lengthUpdates = await synchronizeSupportWeldLengths(tx, [created], new Map(), { settings: validationContext.systemIndexSettings })
+    Object.assign(created, lengthUpdates.find(row => row.id === created.id))
     await syncSystemDocumentsForWeldChangesInTransaction(tx, [created], new Map())
     await markDispatcherTaskIndexDirty(tx, { scopes: getDispatcherDirtyScopes([record], new Map()) })
     return created
@@ -357,9 +363,10 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
     const identityDraft = { ...identitySnapshot, ...scopedData }
     await lockSubmittedRequestDocuments(tx, [scopedData], mutationScope)
     const processSettings = await loadControlProcessSettingsFromTransaction(tx)
-    await lockWeldLineMemberships(
+    await lockSupportWeldLengthMemberships(
       tx,
       [identitySnapshot, identityDraft],
+      [scopedData],
     )
     const previousRows = await loadPreviousWeldRows(tx, [scopedData])
     if (!previousRows.has(id)) throw new Error(`Запись ${id} не найдена`)
@@ -412,7 +419,12 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       context: validationContext,
       allowSystemJointNames,
     })
+    await assertControlRequestRemovalPreview(tx, [record], previousRows, data.controlRequestRemovalToken)
     await prepareTechnologyCardWeldWrites(tx, [record], previousRows)
+    await persistRemovedControlAssignmentRequests(tx, [record], previousRows, {
+      transferredPreControlIds: preparedMove.transferredPreControlIds,
+      preserveRecordedControlHistoryRowIds: preparedMove.preserveRecordedControlHistory ? new Set([id]) : undefined,
+    })
     const insertData = toDbInsert(record, false, { preserveRecordedControlHistory: preparedMove.preserveRecordedControlHistory })
     const timestampUpdates = getProfileTimestampUpdates(record, previousRows.get(id), new Date())
     const [updated] = await tx
@@ -425,6 +437,8 @@ export async function updateWeldJointRecord(data: WeldPayload, allowSystemJointN
       .where(eq(weldJoints.id, id))
       .returning(WELD_TABLE_RETURNING)
     if (!updated) throw new Error(`Запись ${id} не найдена`)
+    const lengthUpdates = await synchronizeSupportWeldLengths(tx, [updated], previousRows, { settings: validationContext.systemIndexSettings })
+    Object.assign(updated, lengthUpdates.find(row => row.id === updated.id))
     await deleteChangedProgramApprovals(tx, [updated], previousRows)
     if (data.layeredControlRequest?.assigned === true) {
       await persistLayeredControlFlags(tx, [id], true)
@@ -520,6 +534,9 @@ export async function createWeldJoints({
       validationContext.welderStamps,
       validationContext.welderStampSuspensions,
       {
+        // The dispatcher collapses equal targets for display. A different row
+        // order must not revoke the selected source's otherwise valid action.
+        creationSourceRowId: sourceRow.id,
         dataListSettings: validationContext.dataListSettings,
         earlyCoilDecisionSourceRowIds: hasEarlyCoilDecision
           ? new Set([sourceRow.id])
@@ -562,6 +579,7 @@ export async function createWeldJoints({
       previousRows: new Map(),
       context: validationContext,
       allowSystemJointNames: true,
+      inheritedControlAssignmentSource: hydratedSource,
     })
     const created = await insertWeldJointsInBatches(tx, records, processSettings)
     await syncSystemDocumentsForWeldChangesInTransaction(tx, created, new Map())
@@ -668,7 +686,7 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
         const previous = identityRowsById.get(Number(record.id))
         return previous ? getChangedWeldLineMemberships(previous, record) : []
       })
-      await lockWeldLineMemberships(tx, [...changedLineMemberships, ...identityRows, ...identityDrafts])
+      await lockSupportWeldLengthMemberships(tx, [...changedLineMemberships, ...identityRows, ...identityDrafts], records)
       const previousRows = await loadPreviousWeldRows(tx, records)
       if (!haveSameWeldLineMemberships(identityRows, [...previousRows.values()])) {
         throw new Error(
@@ -734,6 +752,7 @@ export async function updateWeldJointRows(data: WeldBatchUpdateData, importMode 
         context: validationContext,
         importMode,
       })
+      await assertControlRequestRemovalPreview(tx, records, previousRows, data.controlRequestRemovalToken)
       const createdDocuments = validatePrimaryCreationGrouping(documentGrouping, records, previousRows)
       if (documentGrouping && createdDocuments) await assertNewDocumentNamesAvailable(tx, primaryCreationReferences(documentGrouping, records, previousRows))
       const correctedSpecialists = !importMode && mutationScope !== 'welding' && !createdDocuments
@@ -1196,6 +1215,9 @@ export async function insertWeldJointsInBatches(
       .returning(WELD_TABLE_RETURNING)
     inserted.push(...rows)
   }
+  const lengthUpdates = await synchronizeSupportWeldLengths(tx, inserted)
+  const lengthById = new Map(lengthUpdates.map(row => [row.id, row]))
+  for (const row of inserted) Object.assign(row, lengthById.get(row.id))
   return inserted
 }
 

@@ -11,17 +11,18 @@ import {
 } from './data-list-settings'
 
 describe('data list settings', () => {
-  it.each([undefined, null, {}, { weldingTypes: [], connectionTypes: [], materialGroups: [] }])('always restores all fixed system codes from %j', input => {
+  it.each([undefined, null, {}, { weldingTypes: [], connectionTypes: [], materialGroups: [] }])('preserves formerly implicit codes when reading older settings: %j', input => {
     expect(normalizeDataListSettings(input)).toEqual({
-      weldingTypes: ['РАД', 'РД'], connectionTypes: ['С17', 'У19'], materialGroups: ['М01', 'М05', 'М11'], testTypes: ['ГИ', 'ПИ'],
+      connectionTypesVersion: 1,
+      weldingTypes: ['РАД', 'РД'], connectionTypes: ['С17', 'У19', 'Т', 'Т1', 'Т3', 'Т4Д'], materialGroups: ['М01', 'М05', 'М11'], testTypes: ['ГИ', 'ПИ'],
     })
   })
 
   it('keeps custom and legacy codes, deduplicates system codes and allows an empty test list', () => {
     const settings = normalizeDataListSettings({ weldingTypes: ['МП', ' рд '], connectionTypes: ['У19', 'ТШ', 'C17'], materialGroups: ['М02', ' м01 ', 'M01'], testTypes: [] })
-    expect(settings).toEqual({ weldingTypes: ['РАД', 'РД', 'МП'], connectionTypes: ['С17', 'У19', 'ТШ', 'C17'], materialGroups: ['М01', 'М05', 'М11', 'М02', 'M01'], testTypes: [] })
+    expect(settings).toEqual({ connectionTypesVersion: 1, weldingTypes: ['РАД', 'РД', 'МП'], connectionTypes: ['С17', 'У19', 'Т', 'Т1', 'Т3', 'Т4Д', 'ТШ', 'C17'], materialGroups: ['М01', 'М05', 'М11', 'М02', 'M01'], testTypes: [] })
     expect(normalizeDataListSettings(settings)).toEqual(settings)
-    expect(isSystemDataListOption('connectionTypes', 'С17')).toBe(true)
+    expect(isSystemDataListOption('connectionTypes', 'С17')).toBe(false)
     expect(isSystemDataListOption('connectionTypes', 'C17')).toBe(false)
     expect(isSystemDataListOption('testTypes', 'ГИ')).toBe(false)
   })
@@ -32,9 +33,9 @@ describe('data list settings', () => {
     expect(loadDataListSettings().materialGroups).toEqual(['М01', 'М05', 'М11', 'М02'])
     expect(localStorage.getItem('welding-data-list-settings')).toBe(old)
     saveDataListSettings({ weldingTypes: [], connectionTypes: [], materialGroups: [], testTypes: [] }, { syncRemote: false })
-    expect(loadDataListSettings()).toEqual({ ...DEFAULT_DATA_LIST_SETTINGS, testTypes: [] })
+    expect(loadDataListSettings()).toEqual({ ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: [], testTypes: [] })
     applyRemoteDataListSettings(JSON.parse(old))
-    expect(loadDataListSettings().connectionTypes).toEqual(['С17', 'У19', 'ТШ'])
+    expect(loadDataListSettings().connectionTypes).toEqual(['С17', 'У19', 'Т', 'Т1', 'Т3', 'Т4Д', 'ТШ'])
     localStorage.removeItem('welding-data-list-settings')
   })
   it('adds default test types to settings saved before the list existed', () => {
@@ -60,6 +61,8 @@ describe('data list settings', () => {
     ['weldingTypes', 'РАД'],
     ['connectionTypes', 'С2'],
     ['connectionTypes', 'У17'],
+    ['connectionTypes', 'Т1'],
+    ['connectionTypes', 'ТШ'],
     ['connectionTypes', ' у 17 '],
     ['materialGroups', 'М01'],
     ['materialGroups', ' м123 '],
@@ -81,25 +84,41 @@ describe('data list settings', () => {
     expect(getDataListOptionInputError('testTypes', 'VT-1')).toBeNull()
   })
 
-  it.each(['Т1', 'Н2', '17С', 'ОП'])('rejects a new connection class: %s', value => {
-    expect(getDataListOptionInputError('connectionTypes', value)).toContain('«С» или «У»')
+  it.each(['Н2', '17С', 'ОП'])('rejects a new connection class: %s', value => {
+    expect(getDataListOptionInputError('connectionTypes', value)).toContain('«С», «У» или «Т»')
   })
 
   it.each(['Н01', '01М', 'СТАЛЬ'])('requires Cyrillic М at the start of a new material group: %s', value => {
     expect(getDataListOptionInputError('materialGroups', value)).toContain('кириллической «М»')
   })
 
-  it('normalizes valid additions and restores fixed codes when saving settings', () => {
+  it('normalizes valid additions without restoring removed connection types', () => {
     expect(prepareDataListSettingsChange(undefined, {
       connectionTypes: [' с2 ', 'у17'], materialGroups: [' м123 '],
-    })).toMatchObject({ connectionTypes: ['С17', 'У19', 'С2', 'У17'], materialGroups: ['М01', 'М05', 'М11', 'М123'] })
+    })).toMatchObject({ connectionTypes: ['С2', 'У17'], materialGroups: ['М01', 'М05', 'М11', 'М123'] })
+  })
+
+  it.each(['С17', 'У19', 'Т', 'Т1', 'Т3', 'Т4Д'])('keeps %s deleted across save, reload and remote synchronization', type => {
+    const next = { ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: DEFAULT_DATA_LIST_SETTINGS.connectionTypes.filter(value => value !== type) }
+    expect(prepareDataListSettingsChange(DEFAULT_DATA_LIST_SETTINGS, next)).toEqual(next)
+    saveDataListSettings(next, { syncRemote: false })
+    expect(loadDataListSettings()).toEqual(next)
+    applyRemoteDataListSettings(JSON.parse(localStorage.getItem('welding-data-list-settings')!))
+    expect(loadDataListSettings()).toEqual(next)
+    localStorage.removeItem('welding-data-list-settings')
+  })
+
+  it('accepts an intentionally empty list, including direct writes from an older client', () => {
+    const next = prepareDataListSettingsChange(undefined, { connectionTypes: [] })
+    expect(next.connectionTypes).toEqual([])
+    expect(normalizeDataListSettings(JSON.parse(JSON.stringify(next))).connectionTypes).toEqual([])
   })
 
   it('rejects all invalid additions together without mutating stored settings', () => {
     const before = JSON.stringify(DEFAULT_DATA_LIST_SETTINGS)
     expect(() => prepareDataListSettingsChange(DEFAULT_DATA_LIST_SETTINGS, {
-      ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: ['С2', 'Т1', 'C2'], materialGroups: ['М02', 'Н01', 'M02'],
-    })).toThrow(/«Т1»[\s\S]*«C2»[\s\S]*«Н01»[\s\S]*«M02»/)
+      ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: ['С2', 'Н1', 'C2'], materialGroups: ['М02', 'Н01', 'M02'],
+    })).toThrow(/«Н1»[\s\S]*«C2»[\s\S]*«Н01»[\s\S]*«M02»/)
     expect(JSON.stringify(DEFAULT_DATA_LIST_SETTINGS)).toBe(before)
   })
 
@@ -108,6 +127,6 @@ describe('data list settings', () => {
     const next = { ...legacy, connectionTypes: [...legacy.connectionTypes, 'С2'], materialGroups: [...legacy.materialGroups, 'М02'] }
     expect(prepareDataListSettingsChange(legacy, next)).toEqual(next)
     expect(prepareDataListSettingsChange(legacy, DEFAULT_DATA_LIST_SETTINGS)).toEqual(DEFAULT_DATA_LIST_SETTINGS)
-    expect(() => prepareDataListSettingsChange(DEFAULT_DATA_LIST_SETTINGS, legacy)).toThrow(/«ТШ»/)
+    expect(() => prepareDataListSettingsChange(DEFAULT_DATA_LIST_SETTINGS, legacy)).toThrow(/«C17»/)
   })
 })

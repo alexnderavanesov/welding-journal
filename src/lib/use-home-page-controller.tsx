@@ -1,3 +1,4 @@
+import { isTConnectionType } from './connection-type'
 import { userStorage } from '@/lib/user-storage'
 import { useJournalServerQuery } from './use-journal-server-query'
 import { createLnkDialogNavigation } from '@/lib/lnk-dialog-navigation'
@@ -112,7 +113,7 @@ import {
 import {
 	usePstoWorkflowRequestOptionsQuery,
 	usePstoWorkflowRowsQuery,
-	usePstoWorkflowSummaryQuery,
+	usePstoWorkflowAvailabilityQuery,
 } from '@/lib/use-psto-workflow-context-query'
 import {
 	getLnkWorkflowRowsRequest as buildLnkWorkflowRowsRequest,
@@ -1047,7 +1048,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     search: debouncedLnkWorkflowRequestSearch,
   })
   const lnkWorkflowRowsQuery = useLnkWorkflowRowsQuery({ request: lnkWorkflowRowsRequest })
-  const pstoWorkflowSummaryQuery = usePstoWorkflowSummaryQuery({
+  const pstoWorkflowAvailabilityQuery = usePstoWorkflowAvailabilityQuery({
     enabled: shouldLoadPstoWorkflowSummary({
       isPstoReportActive: activeReport === 'heatTreatment',
       shouldLoadFullWeldRows: false,
@@ -1999,7 +2000,6 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     openPstoCurrentReport,
     openPstoResultsReport,
     openPstoWaitingRequestReport,
-    openWeldingJournalCancelledAcceptedReport,
     openWeldingJournalCurrentReport,
     openWeldingJournalSystemReport,
     openWeldingJournalWaitingControlReport,
@@ -2899,7 +2899,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         title: sameLine ? undefined : 'Выбранные стыки относятся к разным линиям',
         onSelect: () => {
           percentageLineNavigationRequestIdRef.current += 1
-          setPercentageLineNavigationRequest({ id: percentageLineNavigationRequestIdRef.current, action: 'open-line',
+          setPercentageLineNavigationRequest({ id: percentageLineNavigationRequestIdRef.current, action: 'open-line', family: isTConnectionType(row.connectionType) ? 'supports' : undefined,
             projectTitle: String(row.projectTitle ?? ''), subtitleCode: String(row.subtitleCode ?? ''), line: String(row.line ?? ''), stamp: '' })
           captureReportContext('percentageLines')
           setChainRecord(null); setEditing(null); setActiveReport('percentageLines')
@@ -3445,10 +3445,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     () => tableActionRows.filter((row) => selectedHeatTreatmentIds.has(row.id)),
     [selectedHeatTreatmentIds, tableActionRows],
   )
-  const reportSelectionReady = useMemo(() => {
-    const availableIds = new Set(tableActionRows.map((row) => row.id))
-    return reportGridQuery.rowsReady && [...activeSelectedRowIds].every((id) => availableIds.has(id))
-  }, [reportGridQuery.rowsReady, activeSelectedRowIds, tableActionRows])
+  // A server grid materializes only its loaded blocks. Header actions hydrate
+  // the exact selection through useReportSelectionAction below; requiring all
+  // selected rows here would prevent that hydration from ever starting.
+  const reportSelectionReady = reportGridQuery.rowsReady
   const createLnkRequestAction = useReportSelectionAction({
     fresh: true,
     rowsReady: activeReport === 'lnk' && reportGridQuery.rowsReady,
@@ -3472,7 +3472,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
   })
   const runReportSelectionAction = (action: (rows: WeldRow[]) => void) => {
     if (!reportSelectionReady) {
-      setMessage('Дождитесь загрузки текущей выборки и всех выбранных стыков. Состав действия не изменён.')
+      setMessage('Дождитесь загрузки текущей выборки. Состав действия не изменён.')
       return
     }
     if (headerSelectionAction.disabled) return
@@ -3484,31 +3484,31 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     [heatTreatmentRows],
   )
   const hasAvailableTvmtRequestRows = useMemo(
-    () => pstoWorkflowSummaryQuery.data
-      ? pstoWorkflowSummaryQuery.data.tvmtRequestCandidateCount > 0
+    () => pstoWorkflowAvailabilityQuery.data
+      ? pstoWorkflowAvailabilityQuery.data.tvmtRequestCandidates
       : heatTreatmentRows.some(canCreateTvmtRequest),
-    [heatTreatmentRows, pstoWorkflowSummaryQuery.data],
+    [heatTreatmentRows, pstoWorkflowAvailabilityQuery.data],
   )
   const hasAvailableTvmtResultRows = useMemo(
-    () => pstoWorkflowSummaryQuery.data
-      ? pstoWorkflowSummaryQuery.data.tvmtResultCandidateCount > 0
+    () => pstoWorkflowAvailabilityQuery.data
+      ? pstoWorkflowAvailabilityQuery.data.tvmtResultCandidates
       : heatTreatmentRows.some(canAddTvmtResult),
-    [heatTreatmentRows, pstoWorkflowSummaryQuery.data],
+    [heatTreatmentRows, pstoWorkflowAvailabilityQuery.data],
   )
   const hasAvailablePstoWorkflowRequestRows = useMemo(
-    () => pstoWorkflowSummaryQuery.data
-      ? pstoWorkflowSummaryQuery.data.requestCandidateCount > 0
+    () => pstoWorkflowAvailabilityQuery.data
+      ? pstoWorkflowAvailabilityQuery.data.requestCandidates
       : heatTreatmentRows.some(canCreatePstoWorkflowRequest),
-    [heatTreatmentRows, pstoWorkflowSummaryQuery.data],
+    [heatTreatmentRows, pstoWorkflowAvailabilityQuery.data],
   )
   const hasAvailablePstoWorkflowResultRows = useMemo(
-    () => pstoWorkflowSummaryQuery.data
-      ? pstoWorkflowSummaryQuery.data.resultCandidateCount > 0
+    () => pstoWorkflowAvailabilityQuery.data
+      ? pstoWorkflowAvailabilityQuery.data.resultCandidates
       : heatTreatmentRows.some(canAddPstoWorkflowResult),
-    [heatTreatmentRows, pstoWorkflowSummaryQuery.data],
+    [heatTreatmentRows, pstoWorkflowAvailabilityQuery.data],
   )
-  const hasPstoResultRegistryRows = pstoWorkflowSummaryQuery.data
-    ? pstoWorkflowSummaryQuery.data.resultRegistryCount > 0
+  const hasPstoResultRegistryRows = pstoWorkflowAvailabilityQuery.data
+    ? pstoWorkflowAvailabilityQuery.data.resultRegistry
     : pstoResultRegistryRows.length > 0
   const preHeatTreatmentResultRegistryRows = useMemo(() => {
     // Do not merge the report's visible rows into a server-filtered page.
@@ -3589,11 +3589,10 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     onOpenWeldingJournalWaitingRequestReport: openWeldingJournalWaitingRequestReport,
     onOpenWeldingJournalWaitingControlReport: openWeldingJournalWaitingControlReport,
     onOpenWeldingJournalWaitingRepairReport: openWeldingJournalWaitingRepairReport,
-    onOpenWeldingJournalCancelledAcceptedReport: openWeldingJournalCancelledAcceptedReport,
     onOpenWeldingJournalSystemReport: openWeldingJournalSystemReport,
     onCreatePstoRequest: () => runReportSelectionAction(() => openPstoRepeatWorkflow('request')),
     createPstoRequestDisabled:
-      !reportSelectionReady || pstoWorkflowSummaryQuery.isLoading || !hasAvailablePstoWorkflowRequestRows,
+      !reportSelectionReady || pstoWorkflowAvailabilityQuery.isLoading || !hasAvailablePstoWorkflowRequestRows,
     onOpenPstoLineProgram: openPstoLineProgram,
     onEditSelectedPstoRequest: () => runReportSelectionAction(rows => {
       setIsPstoResultRegistryAll(false)
@@ -3607,11 +3606,11 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       openAllPstoHistory()
     },
     pstoRequestPending: pstoRequestMutation.isPending,
-    pstoAvailability: !reportGridQuery.rowsReady || pstoWorkflowSummaryQuery.isFetching ? 'loading'
-      : pstoWorkflowSummaryQuery.isError ? 'error' : pstoWorkflowSummaryQuery.data !== undefined ? 'ready' : 'loading',
+    pstoAvailability: !reportGridQuery.rowsReady || pstoWorkflowAvailabilityQuery.isFetching ? 'loading'
+      : pstoWorkflowAvailabilityQuery.isError ? 'error' : pstoWorkflowAvailabilityQuery.data !== undefined ? 'ready' : 'loading',
     onAddPstoResult: () => runReportSelectionAction(() => openPstoRepeatWorkflow('result')),
     pstoResultDisabled:
-      !reportSelectionReady || pstoWorkflowSummaryQuery.isLoading || !hasAvailablePstoWorkflowResultRows,
+      !reportSelectionReady || pstoWorkflowAvailabilityQuery.isLoading || !hasAvailablePstoWorkflowResultRows,
     onEditSelectedPstoResults: () => runReportSelectionAction(rows => {
       setIsPstoResultRegistryAll(false)
       openPstoResultManagerForRows(rows)
@@ -3621,13 +3620,13 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
       openAllPstoHistory()
     },
     pstoResultRegistryDisabled:
-      pstoWorkflowSummaryQuery.isLoading || !hasPstoResultRegistryRows,
+      pstoWorkflowAvailabilityQuery.isLoading || !hasPstoResultRegistryRows,
     onCreateTvmtRequest: () => runReportSelectionAction(() => openTvmtWorkflow('request')),
     createTvmtRequestDisabled:
-      !reportSelectionReady || pstoWorkflowSummaryQuery.isLoading || !hasAvailableTvmtRequestRows,
+      !reportSelectionReady || pstoWorkflowAvailabilityQuery.isLoading || !hasAvailableTvmtRequestRows,
     onAddTvmtResult: () => runReportSelectionAction(() => openTvmtWorkflow('result')),
     addTvmtResultDisabled:
-      !reportSelectionReady || pstoWorkflowSummaryQuery.isLoading || !hasAvailableTvmtResultRows,
+      !reportSelectionReady || pstoWorkflowAvailabilityQuery.isLoading || !hasAvailableTvmtResultRows,
     tvmtPending: false,
     isPstoShowMenuOpen,
     onTogglePstoShowMenu: () => setIsPstoShowMenuOpen((current) => !current),
@@ -4130,6 +4129,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     if (actionId === 'open-line-program' && task.kind === 'line-consistency') {
       percentageLineNavigationRequestIdRef.current += 1
       setPercentageLineNavigationRequest({ id: percentageLineNavigationRequestIdRef.current, action: 'assign-missing-controls',
+        family: isTConnectionType(task.row.connectionType) ? 'supports' : undefined,
         projectTitle: task.projectTitle, subtitleCode: task.subtitleCode, line: task.line, stamp: '',
         jointId: task.systemWarningCode === 'СП-08' ? task.row.id : undefined })
       captureReportContext('percentageLines'); setChainRecord(null); setActiveReport('percentageLines')
@@ -4144,6 +4144,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
         subtitleCode: task.subtitleCode,
         line: task.line,
         stamp: task.stamp,
+        family: isTConnectionType(task.row.connectionType) ? 'supports' : undefined,
         demandKind: task.demandKind,
       })
       captureReportContext('percentageLines')
@@ -4213,7 +4214,7 @@ export function useHomePageController(options: UseHomePageControllerOptions = {}
     (lnkWorkflowSummaryQuery.isEnabled ? lnkWorkflowSummaryQuery.error : null) ??
     (lnkWorkflowRequestSummaryQuery.isEnabled ? lnkWorkflowRequestSummaryQuery.error : null) ??
     (pstoWorkflowRowsQuery.isEnabled ? pstoWorkflowRowsQuery.error : null) ??
-    (pstoWorkflowSummaryQuery.isEnabled ? pstoWorkflowSummaryQuery.error : null) ??
+    (pstoWorkflowAvailabilityQuery.isEnabled ? pstoWorkflowAvailabilityQuery.error : null) ??
     (finalStatusContextQuery.isEnabled ? finalStatusContextQuery.error : null)
   const reportLoadError = reportContextLoadError ?? (isServerPagedTab ? reportGridQuery.error : null)
   const reportLoadErrorMessage = reportLoadError instanceof Error ? reportLoadError.message : null

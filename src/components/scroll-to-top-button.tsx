@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 
 const SHOW_AFTER_PX = 480
 
-export function ScrollToTopButton({ resetKey }: { resetKey?: string }) {
+export function ScrollToTopButton({ resetKey, collapsed = false }: { resetKey?: string; collapsed?: boolean }) {
   const [isVisible, setIsVisible] = useState(false)
   const scrollTargetRef = useRef<Window | HTMLElement | null>(null)
 
@@ -37,7 +37,7 @@ export function ScrollToTopButton({ resetKey }: { resetKey?: string }) {
       type="button"
       className="app-sidebar-item flex items-center rounded-xl bg-sky-50 text-left text-sm font-medium text-sky-700 hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
       aria-label="Вернуться в начало страницы"
-      title="Наверх"
+      title={collapsed ? 'Наверх' : undefined}
       onClick={() => {
         const target = scrollTargetRef.current
         if (target instanceof HTMLElement) {

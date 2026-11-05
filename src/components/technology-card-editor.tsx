@@ -67,7 +67,7 @@ export function TechnologyCardEditor({ card, busy, message, onClose, onSave }: {
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block space-y-1.5 text-sm font-medium text-slate-700">Тип соединения
                   <Select aria-label="Тип соединения" value={draft.connectionType} aria-invalid={invalid('connectionType')} onChange={event => update('connectionType', event.target.value)}>
-                    <option value="">Выберите тип</option>{[...new Set([...settings.connectionTypes, ...(draft.connectionType ? [draft.connectionType] : [])])].filter(value => !isTConnectionType(value)).map(value => <option key={value}>{value}</option>)}
+                    <option value="">Выберите тип</option>{[...new Set([...settings.connectionTypes, ...(draft.connectionType ? [draft.connectionType] : [])])].map(value => <option key={value}>{value}</option>)}
                   </Select>
                 </label>
                 <label className="block space-y-1.5 text-sm font-medium text-slate-700">Назначение ПСТО
@@ -81,7 +81,7 @@ export function TechnologyCardEditor({ card, busy, message, onClose, onSave }: {
           <section className="rounded-xl border border-slate-200 p-3 sm:p-4" aria-label="Диапазоны размеров">
             <div className="mb-3 flex items-center gap-2">
               <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500"><Ruler className="h-4 w-4" aria-hidden="true" />Размеры, мм</h2>
-              <FieldHelp label="Как проверяются размеры ТК"><p>Границы включены. Проверяются независимо меньший D и меньшая T: для 57×6 + 159×3 — D57 и T3.</p></FieldHelp>
+              <FieldHelp label="Как проверяются размеры ТК"><p>{isTConnectionType(draft.connectionType) ? 'Границы включены. Для опоры проверяются только D1 и T1 трубы; допустимы одна группа материалов и один способ сварки. D2, T2 и длина шва не участвуют.' : 'Границы включены. Проверяются независимо меньший D и меньшая T: для 57×6 + 159×3 — D57 и T3.'}</p></FieldHelp>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               {([['diameter', 'Диаметр'], ['thickness', 'Толщина']] as const).map(([prefix, label]) => <fieldset key={prefix} className="min-w-0">

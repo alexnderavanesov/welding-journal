@@ -1,5 +1,5 @@
 import { Archive, CalendarClock, CheckCircle2, ChevronDown, Pencil, RotateCcw, ShieldAlert, ShieldCheck } from 'lucide-react'
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { ContextActionMenu, type ContextActionMenuState } from '@/components/context-action-menu'
 import { WelderStampExpandedDetails } from '@/components/welder-stamp-detail-panel'
 import { getTodayIsoDate } from '@/lib/date-format'
@@ -9,8 +9,10 @@ import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 type WelderStampsRecordRowProps = {
   record: WelderStampRecord
-  editingId?: number | null
-  selectedId?: number | null
+  isEditing: boolean
+  isSelected: boolean
+  shaded: boolean
+  today: string
   onSelect?: (record: WelderStampRecord) => void
   onEdit?: (record: WelderStampRecord, focusPermitId?: string) => void
   onArchive?: (id: number) => void
@@ -20,10 +22,11 @@ type WelderStampsRecordRowProps = {
   onDelete: (id: number) => void
 }
 
-export function WelderStampsRecordRow({
+export const WelderStampsRecordRow = memo(function WelderStampsRecordRow({
   record,
-  editingId = null,
-  selectedId = null,
+  isEditing,
+  isSelected,
+  shaded,
   onSelect,
   onEdit,
   onArchive,
@@ -33,19 +36,20 @@ export function WelderStampsRecordRow({
   onDelete,
 }: WelderStampsRecordRowProps) {
   const [contextMenu, setContextMenu] = useState<ContextActionMenuState>(null)
-  const isSelected = selectedId === record.id
   const isArchived = record.archived
   const rowClassName = isArchived
     ? 'bg-slate-50 text-slate-500'
-    : record.id === editingId
+    : isEditing
       ? 'bg-sky-50'
       : isSelected
         ? 'bg-sky-50/80'
-        : 'odd:bg-white even:bg-slate-50/60'
+        : shaded ? 'bg-slate-50/60' : 'bg-white'
 
   const textClassName = isArchived ? '' : 'text-slate-700'
   const naksCount = getWelderStampNaksPermits(record).length
-  const naksState = getRecordPermitState(record)
+  // The today prop invalidates memo on a parent refresh after midnight. Read
+  // the date again for local renders, such as opening this row's context menu.
+  const naksState = getRecordPermitState(record, getTodayIsoDate())
   const toggleRow = () => onSelect?.(record)
   const cellBorderClassName = isSelected ? 'border-t-2 border-b border-sky-200 border-t-sky-300 bg-sky-50/80' : 'border-t border-slate-200'
   const firstCellBorderClassName = isSelected ? 'border-l-2 border-l-sky-300' : ''
@@ -132,11 +136,11 @@ export function WelderStampsRecordRow({
       <ContextActionMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
     </>
   )
-}
+})
 
 type PermitState = 'active' | 'soon' | 'expired'
 
-function getRecordPermitState(record: WelderStampRecord): PermitState {
+function getRecordPermitState(record: WelderStampRecord, today: string): PermitState {
   const values = getWelderStampNaksPermits(record)
     .map((permit) => permit.validTo)
     .filter(Boolean)
@@ -144,7 +148,6 @@ function getRecordPermitState(record: WelderStampRecord): PermitState {
   const nearest = values[0]
   if (!nearest) return 'active'
 
-  const today = getTodayIsoDate()
   if (nearest < today) return 'expired'
 
   const daysLeft = Math.ceil((new Date(`${nearest}T00:00:00`).getTime() - new Date(`${today}T00:00:00`).getTime()) / 86_400_000)
@@ -163,7 +166,7 @@ function RecordStatusBadge({ archived, archivedAt }: { archived: boolean; archiv
     return (
       <span
         className="inline-flex flex-col rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold leading-4 text-slate-500"
-        title={archiveDate ? `Дата архивации: ${archiveDate}` : 'Дата архивации не указана'}
+        title={archiveDate ? undefined : 'Дата архивации не указана'}
       >
         <span>в архиве</span>
         {archiveDate ? <span className="font-normal text-slate-400">с {archiveDate}</span> : null}

@@ -8,9 +8,38 @@ import {
   getDispatcherDirtyScopes,
   markDispatcherTaskIndexDirty,
   invalidateDerivedCalculationCache,
+  registerAdditionalDispatcherDirtyScopes,
 } from '@/server/dispatcher-task-index-dirty'
 
 describe('markDispatcherTaskIndexDirty', () => {
+  it('defers moved descendant scopes to one final invalidation and consumes them only in their own transaction', async () => {
+    const root = { projectTitle: 'P', subtitleCode: 'S', line: 'A' }, moved = { ...root, line: 'B' }
+    const tx = { execute: vi.fn().mockResolvedValue(undefined) }, other = { execute: vi.fn().mockResolvedValue(undefined) }
+    registerAdditionalDispatcherDirtyScopes(tx, [moved, moved])
+    expect(tx.execute).not.toHaveBeenCalled()
+    await markDispatcherTaskIndexDirty(other, { scopes: [root] })
+    const params = (executor: typeof tx, index = 0) => new PgDialect().sqlToQuery(executor.execute.mock.calls[index][0]).params
+    expect(params(other)).not.toContain(JSON.stringify([root, moved]))
+    await markDispatcherTaskIndexDirty(tx, { scopes: [root] })
+    expect(tx.execute).toHaveBeenCalledOnce()
+    expect(params(tx)).toContain(JSON.stringify([root, moved]))
+    await markDispatcherTaskIndexDirty(tx, { scopes: [root] })
+    expect(params(tx, 1)).toContain(JSON.stringify([root]))
+    expect(params(tx, 1)).not.toContain(JSON.stringify([root, moved]))
+  })
+
+  it('preserves deferred scopes if invalidation fails and keeps implicit/full invalidation full', async () => {
+    const scope = { projectTitle: 'P', subtitleCode: 'S', line: 'B' }
+    const tx = { execute: vi.fn().mockRejectedValueOnce(new Error('retry')).mockResolvedValue(undefined) }
+    registerAdditionalDispatcherDirtyScopes(tx, [scope])
+    await expect(markDispatcherTaskIndexDirty(tx, { scopes: [scope] })).rejects.toThrow('retry')
+    await markDispatcherTaskIndexDirty(tx)
+    const query = new PgDialect().sqlToQuery(tx.execute.mock.calls[1][0])
+    expect(query.params).toContain(JSON.stringify([scope]))
+    expect(query.sql).not.toContain('retained_overviews')
+    await markDispatcherTaskIndexDirty(tx, { scopes: [{ ...scope, line: 'C' }] })
+    expect(new PgDialect().sqlToQuery(tx.execute.mock.calls[2][0]).params).not.toContain(JSON.stringify([scope]))
+  })
   it('changes dispatcher and calculation revisions in one locked database operation', async () => {
     const execute = vi.fn().mockResolvedValue(undefined)
 

@@ -1,13 +1,16 @@
+import { getControlPairAssignmentIssues } from './control-pair-assignment'
+import { getControlAssignmentBasisIssues } from './control-assignment-basis-validation'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { LineProgramRecord } from '@/lib/line-program'
 import { normalizeControlAvailabilityStorageText } from '@/lib/control-availability-values'
-import { isAngularConnectionType } from '@/lib/connection-type'
+import { isAngularConnectionType, isTConnectionType } from '@/lib/connection-type'
 import { buildLayeredControlAssignment, getLayeredControlSaveError } from '@/lib/layered-control-rules'
 import { calculateLineProgram, getLineProgramOfficialStamps, isLineProgramControlRow, type LineProgramStampCalculation } from '@/lib/line-program-calculation'
 import { programApprovalKey } from './program-control-approval'
 import { getProgramRepairAssignmentIssues } from './line-program-repair-requirements'
 import type { SystemIndexSettings } from './system-index-settings'
 import type { ProgramStatusFilter } from './line-program-row-filters'
+import type { ProgramExplanationList } from './line-program-explanation'
 
 export const PROGRAM_METHODS = ['ВИК', 'РК', 'УЗК', 'ПВК', 'Послойный ПВК'] as const
 // VIK remains part of validation/history, but has no user-selectable assignment.
@@ -15,10 +18,12 @@ export const PROGRAM_EDITOR_METHODS = PROGRAM_METHODS.filter(method => method !=
 export type ProgramMethod = typeof PROGRAM_METHODS[number]
 export type ProgramAssignment = '' | 'да' | 'дополнительный' | 'отменен'
 export const PROGRAM_ASSIGNMENT_OPTIONS: [ProgramAssignment, string][] = [['да', 'Да'], ['дополнительный', 'Дополнительный'], ['отменен', 'Отменен'], ['', 'Пусто — снять назначение']]
-export type ProgramPatch = Partial<Record<ProgramMethod, ProgramAssignment>>
+export const PROGRAM_BASIS_FIELDS = { ВИК: 'vikControlBasis', РК: 'rkControlBasis', УЗК: 'uzkControlBasis', ПВК: 'pvkControlBasis' } as const
+export type ProgramBasisKey = typeof PROGRAM_BASIS_FIELDS[keyof typeof PROGRAM_BASIS_FIELDS]
+export type ProgramPatch = Partial<Record<ProgramMethod, ProgramAssignment>> & Partial<Record<ProgramBasisKey, string>>
 export type ProgramChange = { id: number; values: ProgramPatch }
 export type ProgramSlice = 'all' | 'covered' | 'missing' | 'reduction' | 'excess' | 'approved' | 'additional' | 'assigned' | 'results' | 'cancelled' | 'duplicates' | 'candidates'
-export type ProgramSelection = { stamp?: string; unassigned?: boolean; kind?: 'common' | 'pvk'; slice: ProgramSlice; status?: ProgramStatusFilter; search?: string }
+export type ProgramSelection = { stamp?: string; unassigned?: boolean; kind?: 'common' | 'pvk'; slice: ProgramSlice; status?: ProgramStatusFilter; search?: string; explanationList?: ProgramExplanationList; reveal?: number }
 export function matchesProgramScope(row: WeldRow, scope: Pick<ProgramSelection, 'stamp' | 'unassigned'>) {
   if (!scope.stamp && !scope.unassigned) return true
   if (!isLineProgramControlRow(row)) return false
@@ -49,11 +54,17 @@ export function isProgramEditableRow(row: WeldRow) {
 
 /** Only assignments are patched. Factual results, requests and document identities are retained. */
 export function applyProgramPatch(row: WeldRow, patch: ProgramPatch): WeldRow {
-  if (!isProgramEditableRow(row)) throw new Error('Выберите актуальные официальные С/У-стыки.')
+  if (!isProgramEditableRow(row)) throw new Error('Выберите актуальные официальные соединения С/У/Т.')
   let next = { ...row }
   for (const [method, value] of Object.entries(patch)) {
+    if (Object.values(PROGRAM_BASIS_FIELDS).includes(method as ProgramBasisKey)) {
+      if (typeof value !== 'string') throw new Error('Основание к назначению должно быть текстом.')
+      next = { ...next, [method]: value || null }
+      continue
+    }
     if (!PROGRAM_METHODS.includes(method as ProgramMethod) || !['', 'да', 'дополнительный', 'отменен'].includes(value)) throw new Error('Неизвестный метод или состояние назначения.')
     if (method === 'ВИК' && value !== 'да') throw new Error('ВИК обязателен: допускается только назначение «Да».')
+    if (isTConnectionType(row.connectionType) && (method === 'РК' || method === 'Послойный ПВК')) throw new Error('Для Т РК и послойный контроль запрещены.')
     if (method === 'Послойный ПВК') {
       if (value !== 'да') throw new Error('Снятие послойного контроля выполняется отдельной командой с подтверждением удаления его документов.')
     } else {
@@ -70,6 +81,8 @@ export function applyProgramPatch(row: WeldRow, patch: ProgramPatch): WeldRow {
   if (error) throw new Error(error)
   const repairIssues = getProgramRepairAssignmentIssues(next, row)
   if (repairIssues.length) throw new Error(repairIssues.map(issue => issue.message).join('\n'))
+  const pairIssues = getControlPairAssignmentIssues(next, row)
+  if (pairIssues.length) throw new Error(pairIssues[0].message)
   return next
 }
 
@@ -87,19 +100,23 @@ export function programExcessEntries(lineId: number, rows: readonly WeldRow[], c
   }))
 }
 
-export function previewProgramChanges(rows: readonly WeldRow[], changes: readonly ProgramChange[], line: Pick<LineProgramRecord, 'id' | 'weldControlPercent' | 'pvkControlPercent'>, settings?: SystemIndexSettings, approved: ReadonlySet<string> = new Set()) {
+export function previewProgramChanges(rows: readonly WeldRow[], changes: readonly ProgramChange[], line: Pick<LineProgramRecord, 'id' | 'weldControlPercent' | 'pvkControlPercent' | 'family'>, settings?: SystemIndexSettings, approved: ReadonlySet<string> = new Set()) {
   const byId = new Map(rows.map(row => [row.id, row]))
   const changed = new Map<number, WeldRow>()
   const errors: string[] = []
   for (const change of changes) {
     const row = byId.get(change.id)
     if (!row || changed.has(change.id)) { errors.push('Стык отсутствует или повторён в выборе.'); continue }
-    try { changed.set(row.id, applyProgramPatch(row, change.values)) }
+    try {
+      const next = applyProgramPatch(row, change.values)
+      changed.set(row.id, next)
+      errors.push(...getControlAssignmentBasisIssues(next, row).map(issue => `${row.joint || row.id}: ${issue.message}`))
+    }
     catch (error) { errors.push(`${row.joint || row.id}: ${error instanceof Error ? error.message : String(error)}`) }
   }
   const after = rows.map(row => changed.get(row.id) ?? row)
-  const beforeCalc = calculateLineProgram(rows, line.weldControlPercent!, line.pvkControlPercent!, settings, approved)
-  const afterCalc = calculateLineProgram(after, line.weldControlPercent!, line.pvkControlPercent!, settings, approved)
+  const beforeCalc = calculateLineProgram(rows, line.weldControlPercent!, line.pvkControlPercent!, settings, approved, line.family === 'supports')
+  const afterCalc = calculateLineProgram(after, line.weldControlPercent!, line.pvkControlPercent!, settings, approved, line.family === 'supports')
   const beforeEntries = programExcessEntries(line.id, rows, beforeCalc)
   const afterEntries = programExcessEntries(line.id, after, afterCalc)
   const beforeKeys = new Set(beforeEntries.map(entry => entry.key))

@@ -13,7 +13,7 @@ export type ProgramScopeMenuOptions = {
   onToggle: () => void; onAssignments: () => void; onCalculation: (selection: ProgramSelection, explain: boolean) => void
   onSelect: (selection: ProgramSelection) => void; onEdit?: () => void; onDelete?: () => void
 }
-type SectionFilter = 'all' | 'missing' | 'excess' | 'reduction' | 'approved' | 'additional' | 'configuration'
+type SectionFilter = 'all' | 'missing' | 'excess' | 'reduction' | 'additional' | 'configuration'
 
 /** One menu for the whole page; opening it does not fetch or expand anything. */
 export function useProgramScopeMenu(onReport: (request: ProgramReportRequest) => void) {
@@ -76,7 +76,7 @@ export function useProgramScopeMenu(onReport: (request: ProgramReportRequest) =>
       ...(options.onCalculation ? [{ id: 'calculation', label: 'Расчёт', icon: Calculator, onSelect: () => options.onCalculation!(selected) }, { type: 'separator' as const, id: 'filters' }] : []),
       ...([
       ['all', 'Все линии раздела'], ['missing', 'К назначению'], ['excess', 'Лишний контроль'],
-      ['reduction', 'Кандидаты на снятие'], ['approved', 'Согласованные превышения'],
+      ['reduction', 'Кандидаты на снятие'],
       ['additional', 'Дополнительные стыки'], ['configuration', 'Нужна настройка'],
     ] as const).map(([filter, label]) => ({ id: filter, label, onSelect: () => options.onSelect(filter) }))] })
   }

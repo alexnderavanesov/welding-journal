@@ -51,17 +51,19 @@ describe('workflow selection across server searches', () => {
     rows.unshift(rows.pop()!)
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     client.setQueryData(SYSTEM_DOCUMENT_SEQUENCES_QUERY_KEY, { lnkRequest: 1, pstoRequest: 1, tvmtRequest: 1 })
-    render(<QueryClientProvider client={client}><Dialog mode="request" rows={rows}
-      initialSelectedIds={initialSelectedIds} onCandidateSelectionChange={onSelection}
-      onClose={noop} onSaved={noop} onOpenJournalRows={noop}
-      onRunProtectedEdit={(_label, action) => action()} /></QueryClientProvider>)
+    await act(async () => {
+      render(<QueryClientProvider client={client}><Dialog mode="request" rows={rows}
+        initialSelectedIds={initialSelectedIds} onCandidateSelectionChange={onSelection}
+        onClose={noop} onSaved={noop} onOpenJournalRows={noop}
+        onRunProtectedEdit={(_label, action) => action()} /></QueryClientProvider>)
+    })
     expect(screen.getByRole('button', { name: 'Выбрано: 5000' })).toBeInTheDocument()
     const checkbox = screen.getByRole('checkbox', { name: /Выбрать стык L F5001/ })
-    fireEvent.click(checkbox)
+    await act(async () => fireEvent.click(checkbox))
     expect(screen.getByRole('alert')).toHaveTextContent('не более 5 000')
     expect(checkbox).not.toBeChecked()
     expect(screen.getByRole('button', { name: 'Выбрано: 5000' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /Выбрать доступные|Выбрать найденные/ }))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: /Выбрать доступные|Выбрать найденные/ })))
     expect(screen.getByRole('alert')).toHaveTextContent('Прежний выбор сохранён')
     expect(new Set(onSelection.mock.lastCall?.[0])).toEqual(initialSelectedIds)
   })

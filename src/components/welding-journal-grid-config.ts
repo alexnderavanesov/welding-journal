@@ -23,7 +23,7 @@ export const LOCALE = {
   groupBy: 'Сгруппировать по «${variable}»', ungroupBy: 'Убрать группировку по «${variable}»', ungroupAll: 'Убрать группировку',
   ariaRowGroup: 'Группа стыков', ariaRowGroupExpanded: 'Развёрнуто', ariaRowGroupCollapsed: 'Свёрнуто',
   selectAll: 'Выбрать все', selectAllSearchResults: 'Выбрать найденные', searchOoo: 'Поиск…', blanks: '(Пусто)',
-  noRowsToShow: 'Нет стыков', loadingOoo: 'Загрузка…', loadingError: 'Не удалось загрузить строки', pinColumn: 'Закрепить столбец', pinLeft: 'Слева', pinRight: 'Справа', noPin: 'Не закреплять',
+  noRowsToShow: 'Нет стыков', noMatchingRows: 'По текущему поиску и фильтрам ничего не найдено.', loadingOoo: 'Загрузка…', loadingError: 'Не удалось загрузить строки', pinColumn: 'Закрепить столбец', pinLeft: 'Слева', pinRight: 'Справа', noPin: 'Не закреплять',
   autosizeThisColumn: 'Ширина по содержимому', autosizeAllColumns: 'Подобрать ширину всех',
   sortAscending: 'По возрастанию', sortDescending: 'По убыванию', sortUnSort: 'Сбросить сортировку', resetColumns: 'Сбросить столбцы',
   columnFilter: 'Фильтр столбца', columnChooser: 'Выбрать столбцы', chooseColumns: 'Выбрать столбцы', copy: 'Копировать', copyWithHeaders: 'Копировать с заголовками',

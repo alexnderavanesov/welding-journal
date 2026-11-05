@@ -394,7 +394,6 @@ function DocumentGrid<T extends DocumentRow>(props: DocumentsHistoryGridProps<T>
       cellRenderer: (params: { data?: Row; node: { group: boolean; id?: string } }) => !params.data || params.node.group || isGroup(params.data) ? null
         : <div className={`document-grid-cell ${column.align === 'end' ? 'is-numeric' : ''}`} onDoubleClick={event => event.stopPropagation()}>
           {current.current.renderCell(column.key, params.data)}</div>,
-      tooltipValueGetter: column.key === 'title' ? params => params.node?.group || isGroup(params.data) ? '' : String(params.value ?? '') : undefined,
     } satisfies ColDef<Row>)),
     { colId: '__actions', headerName: 'Действия', initialWidth: 205, minWidth: DOCUMENT_GRID_ACTIONS_COLUMN.minWidth, maxWidth: 1600, initialPinned: 'right', sortable: false, filter: false,
       headerComponentParams: { innerHeaderComponent: JournalColumnHeading },

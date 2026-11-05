@@ -23,7 +23,10 @@ export function useProgramStickyHeaders(root: RefObject<HTMLDivElement | null>) 
     page.append(context, frameEdge)
     let frame = 0, dirty = true
     let entries: Entry[] = [], active: Entry | null = null, pinned: Pinned[] = []
+    let covered: { header: HTMLElement; visibility: string }[] = []
     const reset = () => {
+      for (const { header, visibility } of covered) header.style.visibility = visibility
+      covered = []
       for (const { element, spacer } of pinned) {
         element.classList.remove('program-stuck-control')
         for (const name of ['top', 'left', 'width', 'clip-left', 'clip-right', 'scroll-left', 'scroll-right']) element.style.removeProperty(`--program-sticky-${name}`)
@@ -70,7 +73,12 @@ export function useProgramStickyHeaders(root: RefObject<HTMLDivElement | null>) 
         const overview = entry.grid.dataset.programGrid === 'lines'
         const top = overview ? 0 : contextHeight
         const height = entry.header.offsetHeight
-        return [{ entry, bounds, overview, top, height, headerBottom: top + height, naturalTop: naturalTop(entry.header) }]
+        // A windowed frame is moved by the page-scroll adapter in its own RAF.
+        // Its current header box can still reflect the preceding scroll frame.
+        // The grid root keeps the real document position of the first header,
+        // so ownership does not depend on which scroll listener runs first.
+        const headerTop = entry.grid.dataset.programPageScroll === 'true' ? bounds.top : naturalTop(entry.header)
+        return [{ entry, bounds, overview, top, height, headerBottom: top + height, naturalTop: headerTop }]
       })
       let selected: (typeof measured)[number] | null = null
       for (const candidate of measured) {
@@ -82,6 +90,13 @@ export function useProgramStickyHeaders(root: RefObject<HTMLDivElement | null>) 
       if (!chosen) { reset(); frameEdge.hidden = true; return }
       if (active !== chosen) {
         reset(); active = chosen
+        // A virtual parent keeps its own native sticky header inside the
+        // window. It sits above the child's isolated AG body, intercepting
+        // clicks/resizes even though the child header is fixed in front of it.
+        // Preserve the parent layout while the selected child owns the header.
+        covered = entries.filter(entry => entry !== chosen && entry.grid.contains(chosen.grid))
+          .map(({ header }) => ({ header, visibility: header.style.visibility }))
+        for (const { header } of covered) header.style.visibility = 'hidden'
         pin(chosen.header)
       }
       const viewport = chosen.viewport.getBoundingClientRect(), grid = chosen.grid.getBoundingClientRect()

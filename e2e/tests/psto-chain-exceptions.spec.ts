@@ -202,6 +202,19 @@ test('снятие и повторное исключение сохраняют
     const [document] = (await db.query(`insert into generated_documents(type,title,file_name,mime_type,row_count,document_number)
       values ('pstoRequest','ОБЩАЯ-ПСТО','shared.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document',2,812) returning id`)).rows
     await db.query('insert into generated_document_weld_joints(document_id,weld_joint_id) values ($1,$2),($1,$3)', [document.id, root.id, other.id])
+    // The fixture contains completed TVMT as well as PSTO. Materialize its
+    // existing document history before capturing the unchanged baseline;
+    // opening the report must not be mistaken for creation by the transition.
+    const [{ weldJoints }, { inArray }, { syncSystemDocumentsForWeldChangesInTransaction }] = await Promise.all([
+      import('../../src/db/schema'), import('drizzle-orm'), import('../../src/server/system-document-index'),
+    ])
+    const tx = drizzle(db)
+    const completedRows = await tx.select().from(weldJoints).where(inArray(weldJoints.id, [root.id, other.id]))
+    // withLineProgramFixture already owns BEGIN/COMMIT on this connection.
+    // Do not open a second transaction around this fixture's Drizzle executor.
+    await syncSystemDocumentsForWeldChangesInTransaction(
+      tx as unknown as Parameters<typeof syncSystemDocumentsForWeldChangesInTransaction>[0], completedRows, new Map(),
+    )
   })
   await open(page)
   await decide(page, root.id, true)
@@ -210,14 +223,22 @@ test('снятие и повторное исключение сохраняют
     from generated_documents d join generated_document_weld_joints r on r.document_id=d.id
     where d.id in (select document_id from generated_document_weld_joints where weld_joint_id=$1) group by d.id order by d.id`, [root.id])).rows)
   const originalDocuments = await documents()
+  expect(originalDocuments).toEqual(expect.arrayContaining([
+    expect.objectContaining({ title: 'ОБЩАЯ-ПСТО', document_number: 812, positions: [root.id, other.id].sort((a, b) => a - b) }),
+    expect.objectContaining({ type: 'system:tvmtRequest', title: 'ОБЩАЯ-ТВМТ', positions: [root.id, other.id].sort((a, b) => a - b) }),
+    expect.objectContaining({ type: 'system:tvmtConclusion', title: 'ОБЩЕЕ-ЗАКЛ', positions: [root.id, other.id].sort((a, b) => a - b) }),
+  ]))
   await decide(page, root.id, null)
   let after = await stored()
-  expect(after.find(r => r.id === root.id)).toMatchObject({ psto_required: 'отменен', psto_request: 'ОБЩАЯ-ПСТО', tvmt_conclusion: 'ОБЩЕЕ-ЗАКЛ', tvmt_result: 'годен' })
+  // Withdrawal of future demand cannot cancel this joint's performed PSTO
+  // and TVMT. Unperformed members return to the unassigned line policy.
+  expect(after.find(r => r.id === root.id)).toMatchObject({ psto_required: 'да', psto_request: 'ОБЩАЯ-ПСТО', tvmt_conclusion: 'ОБЩЕЕ-ЗАКЛ', tvmt_result: 'годен' })
+  expect(after.filter(r => r.line === A && r.id !== root.id).every(r => r.psto_required === null)).toBe(true)
   expect(after.find(r => r.id === other.id)).toEqual(before.find(r => r.id === other.id))
   await page.goto('/psto')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(A)
   await revealPstoColumn(page, 'pstoRequest')
-  await expect(page.locator(`.ag-row[row-id="${root.id}"] [col-id="pstoRequest"]`)).toHaveText('ОБЩАЯ-ПСТО (отменен)')
+  await expect(page.locator(`.ag-row[row-id="${root.id}"] [col-id="pstoRequest"]`)).toHaveText('ОБЩАЯ-ПСТО')
   await decide(page, root.id, true)
   after = await stored()
   expect(after).toEqual(before)
@@ -524,7 +545,9 @@ test('единая таблица линий: фильтры до пагинац
   await filterPstoExceptions(page, 'Линии программы ПСТО', 'line', 'PAGE-L60')
   await expect(page.getByText('из 1 линий', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Снять назначение', exact: true })).toBeEnabled()
-  await expect(page.getByRole('button', { name: 'Отменить ПСТО', exact: true })).toBeDisabled()
+  // A documented cancellation of future work is valid even when no PSTO
+  // has been performed. Removing an erroneous assignment remains separate.
+  await expect(page.getByRole('button', { name: 'Отменить ПСТО', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: 'Снять назначение', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Снятие назначения ПСТО' })).toBeVisible()
   await expect(page.getByLabel(/Дата решения об отмене/)).toHaveCount(0)
@@ -534,7 +557,7 @@ test('единая таблица линий: фильтры до пагинац
   await page.getByRole('button', { name: 'Сбросить фильтры', exact: true }).click()
   await filterPstoExceptions(page, 'Линии программы ПСТО', 'line', A)
   await expect(page.getByRole('button', { name: 'Снять назначение', exact: true })).toBeEnabled()
-  await expect(page.getByRole('button', { name: 'Отменить ПСТО', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Отменить ПСТО', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: 'Снять назначение', exact: true }).click()
   await page.getByRole('button', { name: 'Снять назначение', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Программа ПСТО', exact: true })).toBeVisible()

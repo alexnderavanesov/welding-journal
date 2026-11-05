@@ -888,6 +888,7 @@ function getTemplateFieldValueByKey(
 
   const field = WELD_FIELDS.find((candidate) => candidate.key === mappedKey)
   const value = record[mappedKey]
+  if (mappedKey === 'weldLength') return value == null ? '' : String(value)
   if (field?.kind === 'date') return formatExportDate(value)
   if (field?.kind === 'number') return formatExportNumber(value)
   if (field?.kind === 'boolean') return formatControlAvailabilityForExport(value)

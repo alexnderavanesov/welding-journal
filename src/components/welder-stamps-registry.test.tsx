@@ -24,6 +24,23 @@ function props(): WelderStampsRegistryProps {
 }
 
 describe('welder registry tabs', () => {
+  it('opens a direct specialist link without mounting stamps, then preserves the visited stamp card', () => {
+    const previousUrl = window.location.href
+    window.history.replaceState(null, '', '/references?tab=specialists')
+    try {
+      render(<WelderStampsRegistry {...props()} />)
+      expect(screen.queryByText('ABCD')).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('tab', { name: 'Клейма' }))
+      fireEvent.click(screen.getByText('ABCD'))
+      const card = screen.getByRole('heading', { name: 'Тестовый сварщик' })
+      fireEvent.click(screen.getByRole('tab', { name: 'Специалисты' }))
+      expect(card).not.toBeVisible()
+      fireEvent.click(screen.getByRole('tab', { name: 'Клейма' }))
+      expect(card).toBeVisible()
+      expect(screen.getByRole('heading', { name: 'Тестовый сварщик' })).toBe(card)
+    } finally { window.history.replaceState(null, '', previousUrl) }
+  })
+
   it('keeps the empty message outside the wide table so narrow screens do not hide it', () => {
     render(<WelderStampsRegistry {...props()} records={[]} allRecords={[]} />)
     const region = screen.getByRole('region', { name: 'Таблица клейм — горизонтальная прокрутка' })
@@ -68,39 +85,13 @@ describe('welder registry tabs', () => {
     expect(save).not.toBeDisabled()
   })
 
-  it('keeps the registry as the default and exposes all twelve read-only scenarios with rightmost examples', () => {
-    const handlers = props()
-    render(<WelderStampsRegistry {...handlers} header={<h1>Клейма</h1>} taskPanels={<p>Диспетчер оповещений клейм</p>} />)
+  it('keeps the registry as the default and leaves qualification parameters in system rules', () => {
+    render(<WelderStampsRegistry {...props()} header={<h1>Клейма</h1>} taskPanels={<p>Диспетчер оповещений клейм</p>} />)
     expect(screen.getByRole('tab', { name: 'Клейма' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('button', { name: 'Добавить клеймо' })).toBeVisible()
+    expect(screen.queryByRole('tab', { name: 'Параметры проверки' })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Клейма')
     expect(screen.getByText('Диспетчер оповещений клейм')).toBeVisible()
-    expect(screen.queryByRole('region', { name: 'Таблица параметров проверки клейм' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('tab', { name: 'Параметры проверки' }))
-    const panel = within(screen.getByRole('tabpanel'))
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Параметры проверки')
-    expect(screen.getByText('Диспетчер оповещений клейм')).not.toBeVisible()
-    const table = panel.getByRole('table')
-    expect(within(table).getAllByRole('columnheader').at(-1)).toHaveTextContent('Пример')
-    const scenarios = table.querySelectorAll('[data-stamp-check-scenario]')
-    expect(scenarios).toHaveLength(12)
-    expect(table.querySelectorAll('tbody')).toHaveLength(3)
-    for (const group of table.querySelectorAll('tbody')) {
-      const rows = group.querySelectorAll('[data-stamp-check-scenario]')
-      expect([...rows].map(row => `${row.children[0].textContent?.trim()[0]}:${row.children[0].textContent?.includes('Комбинированный')}`))
-        .toEqual(['1:false', '2:false', '1:true', '2:true'])
-      for (const row of rows) expect(row.children[2]).toHaveTextContent(/С17|У19/)
-    }
-    expect(panel.getAllByText('Диаметр: D1 ИЛИ D2')).toHaveLength(4)
-    expect(panel.getAllByText('Если D1 < D2 → D1 И T1')).toHaveLength(4)
-    expect(panel.getAllByText('Если D2 < D1 → D2 И T2')).toHaveLength(4)
-    expect(panel.getAllByText('Если D1 = D2 → общий D И меньшая T')).toHaveLength(4)
-    expect(panel.getAllByText('Группа 1 → D1 И T1')).toHaveLength(4)
-    expect(panel.getAllByText('Группа 2 → D2 И T2')).toHaveLength(4)
-    expect(panel.queryByRole('button')).not.toBeInTheDocument()
-    expect(panel.queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Добавить клеймо' })).not.toBeInTheDocument()
-    for (const [key, value] of Object.entries(handlers)) if (key.startsWith('on')) expect(value).not.toHaveBeenCalled()
   })
 
   it('preserves the opened filter panel, entered fields, status and expanded card across tab switches', () => {
@@ -118,7 +109,7 @@ describe('welder registry tabs', () => {
     fireEvent.click(screen.getByText('ABCD'))
     const heading = screen.getByRole('heading', { name: 'Тестовый сварщик' })
     expect(heading).toBeVisible()
-    fireEvent.click(screen.getByRole('tab', { name: 'Параметры проверки' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Специалисты' }))
     expect(heading).not.toBeVisible()
     fireEvent.click(screen.getByRole('tab', { name: 'Клейма' }))
     expect(screen.getByRole('textbox', { name: 'Поиск' })).toHaveValue('ABCD')
@@ -129,25 +120,26 @@ describe('welder registry tabs', () => {
     expect(handlers.onReset).not.toHaveBeenCalled()
   })
 
-  it('supports arrow keys, Home and End with focus and panel relationships', () => {
+  it('supports arrow keys, Home and End with focus and panel relationships', async () => {
     render(<WelderStampsRegistry {...props()} />)
     const registry = screen.getByRole('tab', { name: 'Клейма' })
-    const checks = screen.getByRole('tab', { name: 'Параметры проверки' })
     const cards = screen.getByRole('tab', { name: 'Технологические карты' })
     const specialists = screen.getByRole('tab', { name: 'Специалисты' })
-    for (const [tab, key, target] of [[registry, 'ArrowRight', specialists], [specialists, 'ArrowRight', cards], [cards, 'ArrowRight', checks], [checks, 'ArrowRight', registry], [registry, 'End', checks], [checks, 'Home', registry], [registry, 'ArrowLeft', checks]] as const) {
-      fireEvent.keyDown(tab, { key })
+    for (const [tab, key, target] of [[registry, 'ArrowRight', specialists], [specialists, 'ArrowRight', cards], [cards, 'ArrowRight', registry], [registry, 'End', cards], [cards, 'Home', registry], [registry, 'ArrowLeft', cards]] as const) {
+      // A newly visited technology-card tab resolves React.lazy asynchronously.
+      await act(async () => { fireEvent.keyDown(tab, { key }) })
       expect(target).toHaveFocus()
       expect(target).toHaveAttribute('aria-selected', 'true')
       expect(screen.getByRole('tabpanel')).toHaveAttribute('id', target.getAttribute('aria-controls'))
       expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', target.id)
+      if (target === cards) expect(within(screen.getByRole('tabpanel')).getByText('Реестр ТК')).toBeVisible()
     }
   })
 
   it('returns to the registry for an externally requested suspension editor', () => {
     const handlers = props()
     const { rerender } = render(<WelderStampsRegistry {...handlers} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Параметры проверки' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Специалисты' }))
     rerender(<WelderStampsRegistry {...handlers} suspensionEditorOpenSignal={1} />)
     expect(screen.getByRole('tab', { name: 'Клейма' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('dialog')).toBeVisible()

@@ -68,19 +68,21 @@ describe('unified assignments, latest approved requirements', () => {
     expect(applyProgramPatch(row(2, { weldDate: null }), { РК: 'да' })).toMatchObject({ hasRk: 'да', weldDate: null })
     expect(applyProgramPatch(row(2, { stamp1K: null }), { РК: 'да' })).toMatchObject({ hasRk: 'да', stamp1K: null })
   })
-  it('allows user-picked excess and duplicate methods in preview instead of rejecting any selection above missing', () => {
+  it('allows user-picked ordinary excess but rejects two yes methods in preview', () => {
     const rows = Array.from({ length: 10 }, (_, i) => row(i + 1))
     const preview = previewProgramChanges(rows, [{ id: 1, values: { РК: 'да', ПВК: 'да' } }, { id: 2, values: { РК: 'да', УЗК: 'да', ПВК: 'да' } }], { ...line, weldControlPercent: 10 })
-    expect(preview.errors).toEqual([])
-    expect(preview.records.map(row => row.id)).toEqual([1, 2])
-    expect(preview.newExcess).toHaveLength(3)
-    expect(preview.newExcess.every(entry => entry.rowId === 2)).toBe(true)
+    expect(preview.errors).toEqual([expect.stringContaining('Дополнительный')])
+    expect(preview.records.map(row => row.id)).toEqual([1])
+    expect(preview.newExcess).toHaveLength(0)
+    const valid = previewProgramChanges(rows, [{ id: 1, values: { РК: 'да' } }, { id: 2, values: { РК: 'да' } }], { ...line, weldControlPercent: 10 })
+    expect(valid.errors).toEqual([])
+    expect(valid.newExcess).toHaveLength(1)
   })
   it('counts additional joints once across methods; approved interchangeable methods leave the excess counter only for that exact quota/assignment', () => {
     const rows = [row(1, { hasRk: 'да', hasUzk: 'да' }), row(2, { hasRk: 'дополнительный', hasPvk: 'дополнительный' })]
     const entries = programExcessEntries(line.id, rows, calculateLineProgram(rows, 100, 10))
     const accepted = new Set(entries.map(entry => entry.key))
-    expect(summarizeLineProgram(rows, line, accepted)).toMatchObject({ additional: 1, approved: 1, common: { excess: 0 } })
+    expect(summarizeLineProgram(rows, line, accepted)).toMatchObject({ additional: 1, approved: 0, common: { excess: 1 } })
     expect(summarizeLineProgram([{ ...rows[0], hasRk: 'отменен' }, rows[1]], line, accepted).approved).toBe(0)
   })
   it('layered assignment stays U-only, exposes implied PVK in draft, and never cancels other methods silently', () => {
@@ -100,8 +102,8 @@ describe('unified assignments, latest approved requirements', () => {
   })
   it('does not turn calculated no-demand after rejection into an extra manual-edit ban', () => {
     const original = row(1, { rkResult: 'ремонт', hasRk: 'да', rkConclusion: 'RK-1' })
-    const next = applyProgramPatch(original, { УЗК: 'да' })
-    expect(next).toMatchObject({ hasUzk: 'да', rkResult: 'ремонт', rkConclusion: 'RK-1' })
+    const next = applyProgramPatch(original, { УЗК: 'дополнительный', uzkControlBasis: 'Решение 1' })
+    expect(next).toMatchObject({ hasUzk: 'дополнительный', rkResult: 'ремонт', rkConclusion: 'RK-1' })
     // The factual RK still covers this joint; a pending UZK does not add another place.
     expect(calculateLineProgram([next], 100, 10)[0].common.coveredRowIds).toEqual([1])
     expect(calculateLineProgram([{ ...next, rkResult: null, vikResult: 'ремонт' }], 100, 10)[0].common.coveredRowIds).toEqual([])

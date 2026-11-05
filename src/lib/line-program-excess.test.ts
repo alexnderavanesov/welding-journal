@@ -27,7 +27,7 @@ describe('excess accounting and safe manual removal suggestions', () => {
   })
   it('finds a jointly removable subset on 200,000 assigned joints with protected history', () => {
     const rows = Array.from({ length: 200_000 }, (_, index) => row(index + 1, {
-      hasRk: 'да', rkRequest: index % 3 === 0 ? 'Заявка' : null,
+      hasRk: 'да', rkRequest: index % 3 === 0 ? 'Заявка' : null, rkResult: index % 3 === 0 ? 'годен' : null,
     }))
     const groups = calculateLineProgram(rows, 50, 0)
     const hints = getProgramRemovalHints(1, rows, groups, new Set())
@@ -50,13 +50,15 @@ describe('excess accounting and safe manual removal suggestions', () => {
     expect(after[0].common.missing).toBe(0)
     expect(after[0].common.excessRowIds).toEqual([])
   })
-  it('protects a request on any stage, but not a waiting label without a request', () => {
+  it('allows request-only assignments at either stage within one jointly safe subset', () => {
     const rows = [row(1, { hasRk: 'да', rkResult: 'ожидает заявку' }),
       row(2, { hasRk: 'да', rkRequest: 'РК-2', rkResult: 'ожидает НК' }),
       row(3, { hasRk: 'да', preHeatTreatmentLnkEnabled: false, preHeatTreatmentControls: [{ id: 1, weldJointId: 3, method: 'РК', requestName: 'ДО-3' }] }),
       row(4, { hasRk: 'да', rkConclusion: 'РК-4', rkResult: 'годен' })]
     const hints = getProgramRemovalHints(1, rows, calculateLineProgram(rows, 50, 0), new Set())
-    expect([...hints.keys()]).toEqual([1])
+    expect([...hints.keys()]).toEqual([3, 2])
+    const next = rows.map(row => hints.has(row.id) ? applyProgramPatch(row, { РК: '' }) : row)
+    expect(calculateLineProgram(next, 50, 0)[0].common.missing).toBe(0)
   })
   it('suggests only a jointly safe subset across shared welders, never all interchangeable alternatives', () => {
     const rows = [row(1, { stamp1Z: 'B', hasRk: 'да' }), row(2, { stamp1Z: 'B', hasRk: 'да' }),
@@ -67,28 +69,28 @@ describe('excess accounting and safe manual removal suggestions', () => {
     const after = calculateLineProgram(rows.map(r => hints.has(r.id) ? applyProgramPatch(r, { РК: '' }) : r), 50, 0)
     expect(after.every(group => group.common.missing === 0)).toBe(true)
   })
-  it('confirming additional coverage does not hide the displaced ordinary yes candidate', () => {
+  it('additional coverage does not displace ordinary quota assignments', () => {
     const rows = [row(1, { hasRk: 'да' }), row(2, { hasRk: 'да' }), row(3, { hasRk: 'дополнительный' }), row(4)]
     const groups = calculateLineProgram(rows, 50, 0), entries = programExcessEntries(1, rows, groups)
-    expect(entries).toHaveLength(1)
+    expect(entries).toHaveLength(0)
     const accepted = new Set(entries.map(entry => entry.key))
-    expect(getProgramRemovalHints(1, rows, groups, accepted).get(2)?.get('РК')).toContain('сверх нормы')
+    expect(getProgramRemovalHints(1, rows, groups, accepted).size).toBe(0)
     expect(getProgramRemovalHints(1, rows, groups, accepted).has(3)).toBe(false)
-    expect(summarizeLineProgram(rows, { ...line, weldControlPercent: 50, pvkControlPercent: 0 }, accepted).common?.excess).toBe(1)
+    expect(summarizeLineProgram(rows, { ...line, weldControlPercent: 50, pvkControlPercent: 0 }, accepted).common?.excess).toBe(0)
   })
-  it('keeps additional controls separate and removes approved interchangeable yes methods from every view', () => {
+  it('keeps additional separate and ignores retired approvals in every view', () => {
     const rows = [row(1, { hasRk: 'да', hasUzk: 'да' }), row(2, { hasRk: 'дополнительный', hasPvk: 'дополнительный', rkResult: 'годен' })]
     const groups = calculateLineProgram(rows, 100, 10), entries = programExcessEntries(1, rows, groups)
     const approved = new Set(entries.map(entry => entry.key))
     expect(entries).toHaveLength(1)
     expect(getProgramRemovalHints(1, rows, groups, new Set()).get(1)?.has('УЗК')).toBe(true)
     expect(getProgramRemovalHints(1, rows, groups, new Set()).get(1)?.has('РК')).toBe(false)
-    expect(getProgramRemovalHints(1, rows, groups, approved).size).toBe(0)
-    expect(summarizeLineProgram(rows, { ...line, weldControlPercent: 100 }, approved)).toMatchObject({ additional: 1, approved: 1, common: { excess: 0 } })
-    expect(buildLineProgramDisplay(rows, projectProgramExcess(1, rows, groups, approved), 100, 10).summary.common.duplicateAssignments).toBe(0)
+    expect(getProgramRemovalHints(1, rows, groups, approved).size).toBe(1)
+    expect(summarizeLineProgram(rows, { ...line, weldControlPercent: 100 }, approved)).toMatchObject({ additional: 1, approved: 0, common: { excess: 1 } })
+    expect(buildLineProgramDisplay(rows, projectProgramExcess(1, rows, groups, approved), 100, 10).summary.common.duplicateAssignments).toBe(1)
     const select = createProgramRowSelector(rows, groups, 1, approved)
-    expect(select({ slice: 'excess' })).toEqual([])
-    expect(select({ slice: 'approved' }).map(row => row.id)).toEqual([1])
+    expect(select({ slice: 'excess' }).map(row => row.id)).toEqual([1])
+    expect(select({ slice: 'approved' })).toEqual([])
     expect(partitionProgramExcess(programExcessEntries(1, rows, calculateLineProgram(rows, 30, 10)), approved).pending.length).toBeGreaterThan(0)
   })
   it('counts a physical excess once across stamps and preserves both quotas when suggested removals are combined', () => {
@@ -105,7 +107,7 @@ describe('excess accounting and safe manual removal suggestions', () => {
   })
   it('never suggests removing facts, protected preheat work, approved patterns or necessary layered PVK', () => {
     const rows = [row(1, { hasRk: 'да', hasUzk: 'да', rkResult: 'годен', uzkConclusion: 'UZ-1' }),
-      row(2, { hasRk: 'да', rkResult: 'ожидает НК', preHeatTreatmentLnkEnabled: false, preHeatTreatmentControls: [{ id: 1, weldJointId: 2, method: 'РК', requestName: 'PRE' }] }),
+      row(2, { hasRk: 'да', rkResult: 'ожидает НК', preHeatTreatmentLnkEnabled: false, preHeatTreatmentControls: [{ id: 1, weldJointId: 2, method: 'РК', requestName: 'PRE', result: 'годен' }] }),
       row(3, { connectionType: 'У19', layeredControlAssigned: true, hasPvk: 'да' })]
     const groups = calculateLineProgram(rows, 30, 10)
     expect(getProgramRemovalHints(1, rows, groups, new Set()).size).toBe(0)

@@ -5,7 +5,7 @@ import { Input } from './ui/input'
 import { AppSidebar } from './app-sidebar'
 import { SiteSecurityGate, useAccess } from '@/lib/security-context'
 import { UsersPanel, accountRoleLabel } from './account-users-panel'
-import { UserRound, UsersRound, LogOut, BookOpenText, ClipboardList } from 'lucide-react'
+import { UserRound, UsersRound, LogOut, BookOpenText, ClipboardList, BookOpenCheck } from 'lucide-react'
 import { getAppReportPath } from '@/lib/app-report-routes'
 import { clearChunkReloadAttempt } from '@/lib/chunk-load-recovery'
 import { setStorageIdentity } from '@/lib/user-storage'
@@ -13,18 +13,24 @@ import * as accounts from '@/server/account-api'
 
 export function AccountWorkspace({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false)
-  return <SiteSecurityGate><AppSidebar activeReport="settings" collapsed={collapsed} onCollapsedChange={setCollapsed}
+  return <SiteSecurityGate><AppSidebar activeReport="settings" collapsed={collapsed} animateWidth={false} onCollapsedChange={setCollapsed}
     onReportChange={report => { window.location.href = getAppReportPath(report) }} />
     <main className={`${collapsed ? 'ml-16' : 'ml-48 lg:ml-64'} min-h-screen min-w-0 bg-slate-50 p-4 lg:p-8`}>{children}</main></SiteSecurityGate>
 }
 const ActivityPanel = lazy(() => import('./activity-page').then(module => ({ default: module.ActivityPanel })))
 const UserGuidePage = lazy(() => import('./user-guide-page').then(module => ({ default: module.UserGuidePage })))
-type AccountTab = 'profile' | 'users' | 'activity' | 'guide'
+const SystemRulesPage = lazy(() => import('./system-rules-page').then(module => ({ default: module.SystemRulesPage })))
+type AccountTab = 'profile' | 'users' | 'activity' | 'rules' | 'guide'
 export function AccountPage({ initialTab }: { initialTab?: AccountTab }) { return <AccountWorkspace><AccountPanel initialTab={initialTab} /></AccountWorkspace> }
 function AccountPanel({ initialTab }: { initialTab?: AccountTab }) {
   const { identity, refresh, can } = useAccess()
   const queryClient = useQueryClient()
   const [requestedTab, setTab] = useState<AccountTab | null>(() => initialTab ?? (new URLSearchParams(window.location.search).get('tab') as AccountTab | null))
+  useEffect(() => {
+    const restoreTab = () => setTab(window.location.pathname === '/activity' ? 'activity' : new URLSearchParams(window.location.search).get('tab') as AccountTab | null)
+    window.addEventListener('popstate', restoreTab)
+    return () => window.removeEventListener('popstate', restoreTab)
+  }, [])
   const [message, setMessage] = useState(''), [busy, setBusy] = useState(false)
   const [name, setName] = useState(identity?.name ?? ''), [title, setTitle] = useState(identity?.title ?? '')
   useEffect(() => { const timer = window.setTimeout(() => clearChunkReloadAttempt(window.location.pathname), 30000); return () => window.clearTimeout(timer) }, [])
@@ -35,6 +41,7 @@ function AccountPanel({ initialTab }: { initialTab?: AccountTab }) {
     { id: 'profile', label: 'Мой профиль', icon: UserRound },
     ...(identity.role !== 'user' ? [{ id: 'users', label: 'Пользователи и права', icon: UsersRound }] : []),
     ...(can('history.view') || jointId && can('history.joint') ? [{ id: 'activity', label: 'Журнал действий', icon: ClipboardList }] : []),
+    { id: 'rules', label: 'Правила системы', icon: BookOpenCheck },
     { id: 'guide', label: 'Руководство', icon: BookOpenText },
   ]
   const defaultTab = identity.role === 'user' ? 'profile' : 'users'
@@ -44,7 +51,10 @@ function AccountPanel({ initialTab }: { initialTab?: AccountTab }) {
     const url = new URL(window.location.href)
     url.pathname = '/account'; url.searchParams.set('tab', next)
     if (next !== 'activity') url.searchParams.delete('jointId')
-    window.history.replaceState(window.history.state, '', url)
+    if (next === 'rules') {
+      if (tab !== 'rules') url.searchParams.set('section', 'connections')
+    } else url.searchParams.delete('section')
+    if (url.href !== window.location.href) window.history.pushState(window.history.state, '', url)
   }
   async function action(run: () => Promise<unknown>) {
     setBusy(true); setMessage('')
@@ -79,7 +89,7 @@ function AccountPanel({ initialTab }: { initialTab?: AccountTab }) {
     </form></div>
     </div>
     {identity.role !== 'user' && tab === 'users' ? <div id="account-panel-users" role="tabpanel" aria-labelledby="account-tab-users"><UsersPanel /></div> : null}
-    {tab === 'activity' || tab === 'guide' ? <div id={`account-panel-${tab}`} role="tabpanel" className={tab === 'activity' ? 'flex min-h-0 flex-1 flex-col' : undefined} aria-labelledby={`account-tab-${tab}`}><Suspense fallback={<p className="p-6 text-sm text-slate-500">Загрузка…</p>}>{tab === 'activity' ? <ActivityPanel embedded /> : <UserGuidePage />}</Suspense></div> : null}
+    {tab === 'activity' || tab === 'rules' || tab === 'guide' ? <div id={`account-panel-${tab}`} role="tabpanel" className={tab === 'activity' ? 'flex min-h-0 flex-1 flex-col' : undefined} aria-labelledby={`account-tab-${tab}`}><Suspense fallback={<p className="p-6 text-sm text-slate-500">Загрузка…</p>}>{tab === 'activity' ? <ActivityPanel embedded /> : tab === 'rules' ? <SystemRulesPage /> : <UserGuidePage />}</Suspense></div> : null}
   </div>
 }
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="grid gap-2 text-sm font-medium text-slate-700">{label}{children}</label> }

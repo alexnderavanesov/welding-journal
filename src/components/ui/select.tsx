@@ -2,9 +2,10 @@ import * as React from 'react'
 import { createPortal } from 'react-dom'
 import { Check, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { overflowTitle } from '@/lib/overflow-title'
 
 type Choice = { value: string; label: string; disabled: boolean; group: string; reason: string }
-type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement> & { searchable?: boolean }
+type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement> & { searchable?: boolean; repositionOnScroll?: boolean }
 const ROW_HEIGHT = 36
 
 function readChoices(select: HTMLSelectElement): Choice[] {
@@ -16,7 +17,7 @@ function readChoices(select: HTMLSelectElement): Choice[] {
 // The select retains form values, labels, validation and existing change handlers.
 // Its native popup is replaced by a styled, bounded listbox.
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
-  ({ className, children, searchable = false, onChange, onKeyDown, onMouseDown, onPointerDown, onClick, onBlur, ...props }, forwardedRef) => {
+  ({ className, children, searchable = false, repositionOnScroll = false, onChange, onKeyDown, onMouseDown, onPointerDown, onClick, onBlur, ...props }, forwardedRef) => {
     const trigger = React.useRef<HTMLSelectElement>(null)
     const popup = React.useRef<HTMLDivElement>(null)
     const list = React.useRef<HTMLDivElement>(null)
@@ -53,7 +54,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
       setOpen(false)
       select.focus({ preventScroll: true })
     }
-    React.useLayoutEffect(() => {
+    const updatePosition = React.useCallback(() => {
       if (!open || !trigger.current) return
       const rect = trigger.current.getBoundingClientRect()
       const width = Math.min(Math.max(rect.width, 180), window.innerWidth - 16)
@@ -62,8 +63,10 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
       const up = below < Math.min(320, contentHeight) && above > below
       const maxHeight = Math.max(40 + headerHeight, Math.min(320, up ? above : below))
       const height = Math.min(contentHeight, maxHeight)
-      setPosition({ left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), top: up ? rect.top - height - 4 : rect.bottom + 4, width, maxHeight })
+      const next = { left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), top: up ? rect.top - height - 4 : rect.bottom + 4, width, maxHeight }
+      setPosition(previous => Object.keys(next).every(key => previous[key as keyof typeof next] === next[key as keyof typeof next]) ? previous : next)
     }, [open, matching.length, headerHeight])
+    React.useLayoutEffect(updatePosition, [updatePosition])
     React.useLayoutEffect(() => { if (open && searchable) search.current?.focus({ preventScroll: true }) }, [open, searchable])
     React.useLayoutEffect(() => {
       const element = list.current, index = matching.indexOf(active)
@@ -85,11 +88,22 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
     React.useEffect(() => {
       if (!open) return
       const anchor = trigger.current?.getBoundingClientRect()
+      let frame: number | null = null
+      const reposition = () => {
+        if (frame !== null) return
+        frame = requestAnimationFrame(() => {
+          frame = null
+          const rect = trigger.current?.getBoundingClientRect()
+          if (!rect || rect.bottom <= 0 || rect.top >= window.innerHeight) setOpen(false)
+          else updatePosition()
+        })
+      }
       const outside = (event: PointerEvent) => {
         if (!trigger.current?.contains(event.target as Node) && !popup.current?.contains(event.target as Node)) setOpen(false)
       }
       const scroll = (event: Event) => {
         if (event.target instanceof Node && popup.current?.contains(event.target)) return
+        if (repositionOnScroll) { reposition(); return }
         const rect = trigger.current?.getBoundingClientRect()
         if (anchor && rect && Math.abs(anchor.left - rect.left) < .5 && Math.abs(anchor.top - rect.top) < .5) return
         setOpen(false)
@@ -97,8 +111,8 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
       const resize = () => setOpen(false)
       document.addEventListener('pointerdown', outside)
       window.addEventListener('scroll', scroll, true); window.addEventListener('resize', resize)
-      return () => { document.removeEventListener('pointerdown', outside); window.removeEventListener('scroll', scroll, true); window.removeEventListener('resize', resize) }
-    }, [open])
+      return () => { document.removeEventListener('pointerdown', outside); window.removeEventListener('scroll', scroll, true); window.removeEventListener('resize', resize); if (frame !== null) cancelAnimationFrame(frame) }
+    }, [open, repositionOnScroll, updatePosition])
     const filter = (text: string, items = choices) => {
       setQuery(text); setScrollTop(0)
       if (list.current) list.current.scrollTop = 0
@@ -112,8 +126,10 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
     }
     const start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 3)
     const end = Math.min(matching.length, start + Math.ceil(listHeight / ROW_HEIGHT) + 7)
+    // An explicit empty title suppresses the browser's selected-option tooltip.
+    // Keep caller-provided reasons (for example, a blocked assignment).
     return <>
-      <select {...props} ref={element => { trigger.current = element; if (typeof forwardedRef === 'function') forwardedRef(element); else if (forwardedRef) forwardedRef.current = element }}
+      <select {...props} title={props.title ?? ''} ref={element => { trigger.current = element; if (typeof forwardedRef === 'function') forwardedRef(element); else if (forwardedRef) forwardedRef.current = element }}
         className={cn('flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-sm shadow-sm shadow-slate-200/40 outline-none hover:border-sky-300 focus-visible:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 disabled:opacity-70', props.value === '' ? 'text-slate-400' : 'text-slate-800', className)}
         aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? id : undefined} aria-activedescendant={open && active >= 0 ? `${id}-${active}` : undefined}
         onChange={event => { setOpen(false); onChange?.(event) }}
@@ -167,11 +183,11 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
         {matching.length === 0 ? <div className="px-3 py-2 text-sm text-slate-500">Ничего не найдено</div> : null}
         <div style={{ height: matching.length * ROW_HEIGHT, position: 'relative' }}>
           {matching.slice(start, end).map((index, offset) => { const choice = choices[index]; return <div key={index} id={`${id}-${index}`} role="option" aria-label={choice.label} aria-selected={trigger.current?.value === choice.value} aria-disabled={choice.disabled} aria-posinset={start + offset + 1} aria-setsize={matching.length}
-            title={[choice.group, choice.label, choice.reason].filter(Boolean).join(' · ')}
+            title={choice.reason && choice.reason !== choice.label ? choice.reason : undefined}
             className={cn('absolute left-0 right-0 flex items-center gap-2 rounded-lg px-3 text-sm', choice.disabled ? 'cursor-not-allowed text-slate-400' : 'cursor-pointer text-slate-700', index === active && !choice.disabled && 'bg-sky-50 text-sky-900')}
             style={{ top: (start + offset) * ROW_HEIGHT, height: ROW_HEIGHT }} onMouseMove={() => { if (!choice.disabled) setActive(index) }} onClick={() => choose(index)}>
-            <span className="min-w-0 flex-1 truncate">{choice.label || '—'}</span>
-            {choice.group ? <span className="max-w-32 truncate text-[11px] text-slate-400">{choice.group}</span> : null}
+            <span className="min-w-0 flex-1 truncate" {...overflowTitle([choice.label, choice.reason !== choice.label && choice.reason].filter(Boolean).join(' · '))}>{choice.label || '—'}</span>
+            {choice.group ? <span className="max-w-32 truncate text-[11px] text-slate-400" {...overflowTitle(choice.group)}>{choice.group}</span> : null}
             {trigger.current?.value === choice.value ? <Check aria-hidden="true" className="h-4 w-4 shrink-0 text-sky-600" /> : null}
           </div> })}
         </div>

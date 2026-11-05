@@ -23,7 +23,8 @@ it.each([false, true])('keeps every section accessible with consistent outline i
   expect(sidebar).toHaveClass(collapsed ? 'w-16' : 'w-48')
   for (const [report, label, icon] of sections) {
     const button = within(sidebar).getByRole('button', { name: label })
-    expect(button).toHaveAttribute('title', label)
+    if (collapsed) expect(button).toHaveAttribute('title', label)
+    else expect(button).not.toHaveAttribute('title')
     expect(button).toHaveClass(collapsed ? 'rounded-xl' : 'rounded-lg')
     expect(button.querySelector('svg')).toHaveClass(`lucide-${icon}`, 'h-5', 'w-5')
     expect(button.querySelector('svg')).toHaveAttribute('stroke-width', '1.5')

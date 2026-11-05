@@ -1,4 +1,5 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { isTConnectionType } from './connection-type'
 import { getCoilJointNames, parseRepeatedJointName } from '@/lib/joint-chain'
 import { isUnofficialJoint } from '@/lib/joint-display'
 import { getLnkResultRuleIssues } from '@/lib/lnk-result-policy'
@@ -41,6 +42,7 @@ export function evaluateEarlyCoilCandidate(
   const settings = options.systemIndexSettings ?? loadSystemIndexSettings()
   const sourceJoint = String(sourceRow.joint ?? '').trim()
   if (!sourceJoint) return blocked('У исходного стыка не заполнен номер.')
+  if (isTConnectionType(sourceRow.connectionType)) return blocked('Для Т катушка запрещена; после негодного результата создайте ремонт R.')
   if (isUnofficialJoint(sourceRow)) {
     return blocked('Досрочную катушку можно создать только после негодного официального стыка.')
   }

@@ -8,7 +8,7 @@ describe('ReportNotificationToast', () => {
     vi.useRealTimers()
   })
 
-  it('dismisses a report message after ten seconds', () => {
+  it('dismisses a report message after ten seconds', async () => {
     vi.useFakeTimers()
     const onDismiss = vi.fn()
 
@@ -24,15 +24,15 @@ describe('ReportNotificationToast', () => {
     expect(toast).toHaveClass('bottom-[max(0.5rem,env(safe-area-inset-bottom))]', 'right-[max(0.5rem,env(safe-area-inset-right))]', 'z-[220]', 'max-w-sm')
     expect(toast.parentElement).toBe(document.body)
 
-    act(() => vi.advanceTimersByTime(9_999))
+    await act(async () => vi.advanceTimersByTimeAsync(9_999))
     expect(onDismiss).not.toHaveBeenCalled()
 
-    act(() => vi.advanceTimersByTime(1))
+    await act(async () => vi.advanceTimersByTimeAsync(1))
     expect(onDismiss).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
-  it('can be closed manually and pauses automatic dismissal while hovered', () => {
+  it('can be closed manually and pauses automatic dismissal while hovered', async () => {
     vi.useFakeTimers()
     const onDismiss = vi.fn()
 
@@ -46,11 +46,11 @@ describe('ReportNotificationToast', () => {
 
     const toast = screen.getByRole('status')
     fireEvent.mouseEnter(toast)
-    act(() => vi.advanceTimersByTime(10_000))
+    await act(async () => vi.advanceTimersByTimeAsync(10_000))
     expect(onDismiss).not.toHaveBeenCalled()
 
     fireEvent.mouseLeave(toast)
-    fireEvent.click(screen.getByRole('button', { name: 'Закрыть уведомление' }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Закрыть уведомление' })) })
     expect(onDismiss).toHaveBeenCalledTimes(1)
   })
 

@@ -10,6 +10,49 @@ import { buildWeldingDynamics } from '@/lib/welding-dynamics'
 import { captureProgramChainStates } from '@/lib/line-program-chain-state'
 
 describe('buildStatisticsServerResult', () => {
+  it.each(['general', 'lnk', 'psto'] as const)('recomputes changed facts between %s requests without changing the caller snapshot', tab => {
+    const rows = [makeRow(71, { hasVik: 'да', vikResult: 'годен', finalStatus: 'годен' })]
+    const build = () => {
+      const unchanged = structuredClone(rows)
+      const result = buildStatisticsServerResult({ rows, welderStamps: [], systemIndexSettings: DEFAULT_SYSTEM_INDEX_SETTINGS,
+        request: { tab, from: '', to: '', unit: 'joints' } })
+      expect(rows).toEqual(unchanged)
+      return result
+    }
+    const first = build()
+    expect(first.summary).toMatchObject({ good: 1, rejected: 0, rejectedJointCount: 0 })
+    expect(first.generalStateRowIds).toMatchObject({ good: [71], rejected: [] })
+    // Reuse the same array and object, retaining a stale display finalStatus.
+    rows[0].vikResult = 'ремонт'
+    const rejected = build()
+    expect(rejected.summary).toMatchObject({ good: 0, rejected: 1, rejectedJointCount: 1 })
+    expect(rejected.generalStateRowIds).toMatchObject({ good: [], rejected: [71] })
+    if (tab === 'general') {
+      expect(rejected.summary.welded).toBe(0)
+      expect(rejected.generalProgressSummary.completed).toBe(0)
+    }
+    rows[0].vikResult = 'годен'
+    expect(build()).toEqual(first)
+  })
+
+  it.each(['general', 'lnk', 'psto'] as const)('retains earlier unofficial history for the %s period and changes context after a later correction', tab => {
+    const rows = [
+      makeRow(81, { joint: 'S2', officiality: 'неофициальный', weldDate: '2026-06-01', hasVik: 'да', vikResult: 'ремонт' }),
+      makeRow(82, { joint: 'S2', officiality: 'действующий', weldDate: '', hasVik: 'да', vikResult: null }),
+    ]
+    const build = () => buildStatisticsServerResult({ rows, welderStamps: [], systemIndexSettings: DEFAULT_SYSTEM_INDEX_SETTINGS,
+      request: { tab, from: '2026-07-01', to: '2026-07-31', jointFilter: 's', unit: 'joints' } })
+    const first = build()
+    expect(first.summary).toMatchObject({ backlogWaitingRepair: 1, backlogWaitingWeld: 0 })
+    expect(first.generalStateRowIds).toMatchObject({ backlogWaitingRepair: [82], backlogWaitingWeld: [] })
+    rows[0].vikResult = 'годен'
+    const corrected = build()
+    expect(corrected.summary).toMatchObject({ backlogWaitingRepair: 0, backlogWaitingWeld: 1 })
+    expect(corrected.generalStateRowIds).toMatchObject({ backlogWaitingRepair: [], backlogWaitingWeld: [82] })
+    // Counts/IDs from the already returned result remain an independent value.
+    expect(first.generalStateRowIds.backlogWaitingRepair).toEqual([82])
+  })
+
   it('filters current physical representatives without discarding stable predecessor context', () => {
     const input = [makeRow(1, { joint: 'S1' }), makeRow(2, { joint: 'S1R1', weldDate: '' })]
     const states = captureProgramChainStates(input)
@@ -44,7 +87,7 @@ describe('buildStatisticsServerResult', () => {
     expect(result.summary.totalRows).toBe(6)
   })
 
-  it('keeps the existing statistics formulas while removing source rows from the response', () => {
+  it('excludes current rejected volume only from general production, preserving quality and response bounds', () => {
     const rows = [
       makeRow(1, { projectTitle: 'Проект А', subtitleCode: '400', joint: 'F1', wdi: '2.5', hasVik: 'да' }),
       makeRow(2, { projectTitle: 'Проект А', subtitleCode: '500', joint: 'S2', wdi: '1.5', hasVik: 'да', hasRk: 'да', rkResult: 'вырез' }),
@@ -61,8 +104,7 @@ describe('buildStatisticsServerResult', () => {
     }
     const scopedRows = rows.slice(0, 2)
     const expectedSummary = buildStatisticsSummary(scopedRows, request.from, request.to, request.unit)
-    const expectedDynamics = buildWeldingDynamics(expectedSummary.periodRows, request.from, request.to, request.unit)
-    const expectedProgress = buildLineSummary(scopedRows, request.unit, DEFAULT_SYSTEM_INDEX_SETTINGS)
+    const expectedDynamics = buildWeldingDynamics([scopedRows[0]], request.from, request.to, request.unit)
 
     const result = buildStatisticsServerResult({
       rows,
@@ -71,9 +113,9 @@ describe('buildStatisticsServerResult', () => {
       request,
     })
 
-    expect(result.summary).toEqual({ ...expectedSummary, periodRows: [] })
+    expect(result.summary).toEqual({ ...expectedSummary, periodRows: [], welded: 2.5, weldedShare: 62.5 })
     expect(result.weldingDynamics).toEqual(expectedDynamics)
-    expect(result.generalProgressSummary).toEqual(expectedProgress)
+    expect(result.generalProgressSummary).toMatchObject({ total: 4, completed: 2.5, remaining: 1.5 })
     expect(result.generalStateRowIds.good).toEqual([1])
     expect(result.generalStateRowIds.rejected).toEqual([2])
     expect(result.projectOptions.map((option) => option.label)).toEqual(['Проект А', 'Проект Б'])
@@ -195,7 +237,7 @@ describe('buildStatisticsServerResult', () => {
     expect(result.generalProgressSummary.total).toBe(1)
     expect(result.weldingDynamics.jointTypes).toEqual([
       { key: 's', code: 'A', label: 'A · база', value: 0 },
-      { key: 'f', code: 'B', label: 'B · поле', value: 2 },
+      { key: 'f', code: 'B', label: 'B · поле', value: 1 },
     ])
   })
 

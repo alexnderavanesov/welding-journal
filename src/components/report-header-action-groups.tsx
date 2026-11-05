@@ -25,7 +25,6 @@ type WeldingJournalHeaderActionsProps = {
   onOpenWaitingRequestReport: () => void
   onOpenWaitingControlReport: () => void
   onOpenWaitingRepairReport: () => void
-  onOpenCancelledAcceptedReport: () => void
   onOpenSystemReport: () => void
 }
 
@@ -46,7 +45,6 @@ export function WeldingJournalHeaderActions({
   onOpenWaitingRequestReport,
   onOpenWaitingControlReport,
   onOpenWaitingRepairReport,
-  onOpenCancelledAcceptedReport,
   onOpenSystemReport,
 }: WeldingJournalHeaderActionsProps) {
   const { can } = useAccess()
@@ -69,7 +67,6 @@ export function WeldingJournalHeaderActions({
           { label: 'Ожидает заявки', onClick: onOpenWaitingRequestReport },
           { label: 'Ожидает контроль', onClick: onOpenWaitingControlReport },
           { label: 'Ожидает ремонт', onClick: onOpenWaitingRepairReport },
-          { label: 'Отмененные годные результаты', onClick: onOpenCancelledAcceptedReport },
         ]}
       />
       <ReportShowMenu

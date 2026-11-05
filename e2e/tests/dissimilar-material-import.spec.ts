@@ -64,7 +64,10 @@ function excelFile(name: string, headers: string[], rows: unknown[][]) {
 
 async function expectHighlighted(dialog: Locator, id: number, labels: string[]) {
   const grid = dialog.locator('[data-import-preview-grid]')
-  const rowId = await grid.locator('[col-id="id"]').getByTitle(String(id), { exact: true }).evaluate(element => element.closest('.ag-row')?.getAttribute('row-id'))
+  // Short visible values no longer have redundant native tooltips (04.11).
+  const idText = grid.locator('[col-id="id"]').getByText(String(id), { exact: true })
+  await expect(idText).toBeVisible()
+  const rowId = await idText.evaluate(element => element.closest('.ag-row')?.getAttribute('row-id'))
   expect(rowId).toBeTruthy()
   const viewport = grid.locator('.ag-grid-viewport')
   for (const label of labels) {

@@ -8,9 +8,10 @@ import { JointDetails } from './line-program-joint-details'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { getProgramAssignmentError } from '@/lib/line-program-assignment-validation'
 
-const mocks = vi.hoisted(() => ({ open: vi.fn(), registry: vi.fn(async () => ({ stamps: [] })) }))
+const mocks = vi.hoisted(() => ({ open: vi.fn(), registry: vi.fn(async () => ({ stamps: [] })), read: vi.fn() }))
 vi.mock('@/server/welder-stamps', () => ({ loadWelderStampRegistrySnapshot: mocks.registry }))
 vi.mock('@/lib/system-document-storage', () => ({ createCurrentSystemDocumentBlob: mocks.open }))
+vi.mock('@/lib/history-document-preview', () => ({ readHistoryDocumentWorkbook: mocks.read, DOCUMENT_PREVIEW_PAGE_ROWS: 100, DOCUMENT_PREVIEW_PAGE_COLUMNS: 111 }))
 const clients: QueryClient[] = []
 afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear()); vi.restoreAllMocks(); vi.clearAllMocks() })
 const row: WeldRow = { id: 1, joint: 'F1', connectionType: 'С17', hasRk: 'да', vikResult: 'годен', rkResult: 'ремонт', rkRequest: 'Заявка-1', rkConclusion: 'Заключение-1' }
@@ -55,7 +56,8 @@ describe('compact joint rows preserve meaningful details', () => {
     for (const testId of ['line-program-readonly-joint', 'line-program-joint']) {
       const rendered = screen.getByTestId(testId)
       expect(rendered).toHaveAttribute('data-final-status', status)
-      expect(rendered).toHaveAttribute('title', `Итоговое состояние: ${status}`)
+      expect(rendered).not.toHaveAttribute('title')
+      expect(rendered).toHaveAttribute('aria-description', `Итоговое состояние: ${status}`)
       if (tone) expect(rendered).toHaveClass(tone)
       else expect(rendered.className).not.toMatch(/bg-(emerald|rose)-/)
     }
@@ -225,6 +227,9 @@ describe('compact joint rows preserve meaningful details', () => {
   })
 
   it('orders stages and preserves separate primary/repeated PSTO documents and partial records', async () => {
+    // This routing test still completes the document preview before closing it.
+    mocks.open.mockResolvedValue({ arrayBuffer: async () => new ArrayBuffer(1) } as Blob)
+    mocks.read.mockResolvedValue({ sheets: [{ name: 'Лист', rowCount: 1, columnCount: 1 }], page: () => '<p>Документ</p>' })
     const preview = { closed: false, opener: null, document: { title: '', body: { textContent: '' } } } as unknown as Window
     vi.spyOn(window, 'open').mockReturnValue(preview)
     mountContent(<JointDetails row={{ ...row, rkRequestDate: '2026-09-10', rkConclusionDate: '2026-09-11',
@@ -243,7 +248,9 @@ describe('compact joint rows preserve meaningful details', () => {
       ['Заключение-1', { type: 'lnkConclusion', methodCode: 'РК', date: '2026-09-11' }],
     ] as const) {
       fireEvent.click(screen.getByRole('button', { name: title }))
-      await vi.waitFor(() => expect(mocks.open).toHaveBeenLastCalledWith(expect.objectContaining({ reference: expect.objectContaining({ title, ...scope }) })))
+      await screen.findByTitle(`Лист документа: ${title}`)
+      expect(mocks.open).toHaveBeenLastCalledWith(expect.objectContaining({ reference: expect.objectContaining({ title, ...scope }) }))
+      expect(screen.getByRole('button', { name: 'Скачать Excel' })).toBeEnabled()
       fireEvent.click(screen.getByRole('button', { name: 'Закрыть предпросмотр' }))
     }
     expect(mocks.registry).toHaveBeenCalledOnce()

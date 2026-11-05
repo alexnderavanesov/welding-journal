@@ -11,9 +11,9 @@ export function ProgramControlState({ state, compact = false }: { state: Control
   const incomplete = Math.max(0, state.count - state.good - state.rejected - (state.errors ?? 0))
   if (compact) return <details className="relative text-xs" data-testid="stamp-control-state-compact">
     <summary className="program-stamp-state flex min-h-7 cursor-pointer list-none flex-wrap items-center gap-2 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500" title="Показать подробности состояния контроля" aria-label={`Состояние: годен ${state.good}, не завершено ${incomplete}, не годен ${state.rejected}`}>
-      <span data-program-state="good" className={`whitespace-nowrap ${state.good ? 'text-emerald-700' : 'text-slate-500'}`} title={`Годен: ${state.good}`}><span aria-hidden>✓</span> {light ? 'Годен: ' : ''}{state.good}</span>
-      <span data-program-state="incomplete" className={`whitespace-nowrap ${incomplete ? 'text-amber-800' : 'text-slate-500'}`} title={`Не завершено: ${incomplete}`}><span aria-hidden>◷</span> {light ? 'Не завершено: ' : ''}{incomplete}</span>
-      <span data-program-state="rejected" className={`whitespace-nowrap ${state.rejected ? 'text-rose-700' : 'text-slate-500'}`} title={`Не годен: ${state.rejected}`}><span aria-hidden>×</span> {light ? 'Не годен: ' : ''}{state.rejected}</span>
+      <span data-program-state="good" className={`whitespace-nowrap ${state.good ? 'text-emerald-700' : 'text-slate-500'}`} title={light ? undefined : `Годен: ${state.good}`}><span aria-hidden>✓</span> {light ? 'Годен: ' : ''}{state.good}</span>
+      <span data-program-state="incomplete" className={`whitespace-nowrap ${incomplete ? 'text-amber-800' : 'text-slate-500'}`} title={light ? undefined : `Не завершено: ${incomplete}`}><span aria-hidden>◷</span> {light ? 'Не завершено: ' : ''}{incomplete}</span>
+      <span data-program-state="rejected" className={`whitespace-nowrap ${state.rejected ? 'text-rose-700' : 'text-slate-500'}`} title={light ? undefined : `Не годен: ${state.rejected}`}><span aria-hidden>×</span> {light ? 'Не годен: ' : ''}{state.rejected}</span>
       {state.errors ? <span className="text-rose-700">Ошибка: {state.errors}</span> : null}<span className="program-stamp-state-chevron text-slate-400" aria-hidden>⌄</span>
     </summary><div className="py-1"><ProgramControlState state={state} /></div>
   </details>

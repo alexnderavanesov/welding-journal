@@ -17,21 +17,19 @@ export const PSTO_CURRENT_SQL_FIELD_KEYS = new Set<WeldFieldKey>([
   ...CYCLE_FIELD_KEYS, 'pstoControlBasis', 'pstoCancellationDate',
 ])
 type CycleSqlFields = Pick<typeof weldJoints,
-  'pstoDate' | 'heatTreatmentDiagram' | 'pstoResult' | 'tvmtRequest' |
-  'tvmtRequestDate' | 'tvmtResult' | 'tvmtConclusionDate' | 'tvmtConclusion'>
+  'pstoDate' | 'heatTreatmentDiagram' | 'pstoResult' |
+  'tvmtResult' | 'tvmtConclusionDate' | 'tvmtConclusion'>
 
 const isActive = () => buildNullableControlEnabledWhere(weldJoints.pstoRequired, CONTROL_ENABLED_NORMALIZED_STORAGE_VALUES)
 const isCancelled = () => sql`lower(${textValue(weldJoints.pstoRequired)}) = 'отменен'`
 
-/** Exact counterpart of hasPstoCycleExecutionHistory. A request for PSTO and a
- * waiting/unknown TVMT label alone are not evidence of performed treatment. */
+/** Exact counterpart of hasPstoCycleExecutionHistory. PSTO/TVMT requests and
+ * waiting/unknown TVMT labels alone are not evidence of performed treatment. */
 function cycleExecutionWhere(cycle: { [Key in keyof CycleSqlFields]: SQLWrapper }) {
   return sql<boolean>`(
     ${textValue(cycle.pstoDate)} <> ''
     or ${textValue(cycle.heatTreatmentDiagram)} <> ''
     or ${reportResultSql(cycle.pstoResult)} in ('проведено', 'проведено (отменен)', 'да')
-    or ${textValue(cycle.tvmtRequest)} <> ''
-    or ${textValue(cycle.tvmtRequestDate)} <> ''
     or ${reportResultSql(cycle.tvmtResult)} in ('годен', 'да', 'не годен', 'негоден', 'ремонт', 'вырез')
     or ${textValue(cycle.tvmtConclusionDate)} <> ''
     or ${textValue(cycle.tvmtConclusion)} <> ''

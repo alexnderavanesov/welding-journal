@@ -1,4 +1,7 @@
+import { getControlPairAssignmentIssues } from './control-pair-assignment'
+import { getControlAssignmentBasisIssues } from './control-assignment-basis-validation'
 import { getControlAssignmentRemovalIssues } from './control-assignment-history'
+import { getSupportJointRuleIssues } from './support-joint-rules'
 import { getLayeredControlSaveIssues } from './layered-control-rules'
 import { getProgramRepairAssignmentIssues } from './line-program-repair-requirements'
 import { getExcludedControlAssignmentIssues } from './control-assignment-eligibility'
@@ -271,6 +274,14 @@ async function buildExistingRowsImportPreview({
 
     const changedKeys = Object.keys(updates).filter((key) => key !== 'id')
     const candidate = { ...existingRow, ...updates } as ReportImportRecord
+    ;[...getControlPairAssignmentIssues(candidate, existingRow), ...getControlAssignmentBasisIssues(candidate, existingRow)].forEach(issue => {
+      validationMessages.push(issue.message)
+      issue.fieldKeys.forEach(fieldKey => validationFieldKeys.add(fieldKey))
+    })
+    getSupportJointRuleIssues(candidate, existingRow, systemIndexSettings).forEach(issue => {
+      validationMessages.push(issue.message)
+      issue.fieldKeys.forEach(fieldKey => validationFieldKeys.add(fieldKey))
+    })
     getUnofficialLnkResultIssues(candidate, existingRow).forEach(issue => {
       validationMessages.push(issue.message)
       issue.fieldKeys.forEach(fieldKey => validationFieldKeys.add(fieldKey))
@@ -571,6 +582,14 @@ function validateReportImportRecords(
     const validationFieldKeys = new Set<WeldFieldKey>(cellErrors.flatMap((error) =>
       error.fieldKeys.filter((fieldKey): fieldKey is WeldFieldKey => FIELD_BY_KEY.has(fieldKey as WeldFieldKey)),
     ))
+    ;[...getControlPairAssignmentIssues(candidate), ...getControlAssignmentBasisIssues(candidate, undefined)].forEach(issue => {
+      validationMessages.push(issue.message)
+      issue.fieldKeys.forEach(fieldKey => validationFieldKeys.add(fieldKey))
+    })
+    getSupportJointRuleIssues(candidate, undefined, systemIndexSettings).forEach(issue => {
+      validationMessages.push(issue.message)
+      issue.fieldKeys.forEach(fieldKey => validationFieldKeys.add(fieldKey))
+    })
     getUnofficialLnkResultIssues(candidate).forEach(issue => {
       validationMessages.push(issue.message)
       issue.fieldKeys.forEach(fieldKey => validationFieldKeys.add(fieldKey))

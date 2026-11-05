@@ -2,13 +2,13 @@ import type { WeldRow } from './dispatcher-types'
 import { getLineProgramOfficialStamps, getLineProgramRowDemand, isLineProgramControlRow, type LineProgramStampCalculation } from './line-program-calculation'
 import { partitionProgramExcess, getProgramRemovalHints } from './line-program-excess'
 import { programAssignment, programExcessEntries, PROGRAM_METHODS, type ProgramSelection } from './line-program-workspace'
-import { programApprovalKey } from './program-control-approval'
 import { programRowSearchText, programRowStatus } from './line-program-row-filters'
+import { selectLineProgramExplanationRows } from './line-program-explanation'
 
 export const programScopeKey = (scope: Pick<ProgramSelection, 'stamp' | 'unassigned'>) => scope.unassigned ? 'unassigned:' : scope.stamp ? `stamp:${scope.stamp.toLocaleLowerCase('ru')}` : 'all:'
 
 /** Index once per data refresh, not one full-line scan/query per expanded welder. */
-export function createProgramRowSelector(rows: WeldRow[], calculations: readonly LineProgramStampCalculation[], lineId: number, approved: ReadonlySet<string>, hints = getProgramRemovalHints(lineId, rows, calculations, approved)) {
+export function createProgramRowSelector(rows: WeldRow[], calculations: readonly LineProgramStampCalculation[], lineId: number, approved: ReadonlySet<string>, hints = getProgramRemovalHints(lineId, rows, calculations, approved), context?: { percent: number; pvkPercent: number; support?: boolean }) {
   const scopes = new Map<string, WeldRow[]>([['all:', rows]])
   for (const row of rows) if (isLineProgramControlRow(row)) {
     const stamps = getLineProgramOfficialStamps(row)
@@ -32,8 +32,14 @@ export function createProgramRowSelector(rows: WeldRow[], calculations: readonly
   const searchText = new Map(rows.map(row => [row.id, programRowSearchText(row)]))
   const filteredCache = new Map<string, { status: ProgramSelection['status']; search: string; rows: WeldRow[] }>()
   const selectBase = (selection: ProgramSelection): WeldRow[] => {
-    const key = programScopeKey(selection), cacheKey = `${key}:${selection.kind ?? 'both'}:${selection.slice}`
+    const key = programScopeKey(selection), cacheKey = `${key}:${selection.kind ?? 'both'}:${selection.slice}:${selection.explanationList ?? ''}`
     if (cache.has(cacheKey)) return cache.get(cacheKey)!
+    if (selection.explanationList) {
+      const result = selectLineProgramExplanationRows(rows, context?.percent ?? calculations[0]?.common.percent ?? 0,
+        context?.pvkPercent ?? calculations[0]?.pvk.percent ?? 0, { lineId, approved, stamp: selection.stamp,
+          kind: selection.kind ?? 'common', list: selection.explanationList, support: context?.support ?? calculations.some(group => group.support) })
+      cache.set(cacheKey, result); return result
+    }
     const scoped = scopes.get(key) ?? []
     if (selection.slice === 'all') return scoped
     const kinds = selection.kind ? [selection.kind] : ['common', 'pvk'] as const
@@ -45,7 +51,6 @@ export function createProgramRowSelector(rows: WeldRow[], calculations: readonly
     }
     if (selection.slice === 'approved' || selection.slice === 'excess') {
       sources.push(new Set((selection.slice === 'approved' ? entries.approved : entries.pending).filter(entry => kinds.includes(entry.kind)).map(entry => entry.rowId)))
-      if (selection.slice === 'approved') sources.push(new Set(scoped.filter(row => isLineProgramControlRow(row) && kinds.some(kind => approved.has(programApprovalKey(row, kind, true)) || approved.has(programApprovalKey(row, kind, false)))).map(row => row.id)))
     } else if (selection.slice === 'assigned' || selection.slice === 'additional') {
       const result = scoped.filter(row => isLineProgramControlRow(row) && (selection.slice === 'assigned' ? kinds.some(kind => { const state = getLineProgramRowDemand(row, kind); return state.assigned || state.additional }) :
         (selection.kind === 'pvk' ? ['ПВК'] as const : selection.kind === 'common' ? ['РК', 'УЗК'] as const : PROGRAM_METHODS).some(method => programAssignment(row, method) === 'дополнительный')))
@@ -68,7 +73,7 @@ export function createProgramRowSelector(rows: WeldRow[], calculations: readonly
   return (selection: ProgramSelection): WeldRow[] => {
     const scoped = selectBase(selection), needle = selection.search?.trim().toLocaleLowerCase('ru') ?? ''
     if (!selection.status && !needle) return scoped
-    const key = `${programScopeKey(selection)}:${selection.kind ?? 'both'}:${selection.slice}`
+    const key = `${programScopeKey(selection)}:${selection.kind ?? 'both'}:${selection.slice}:${selection.explanationList ?? ''}`
     const cached = filteredCache.get(key)
     if (cached?.status === selection.status && cached?.search === needle) return cached.rows
     const filtered = scoped.filter(row => (!selection.status || statuses.get(row.id) === selection.status) &&

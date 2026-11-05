@@ -1,3 +1,4 @@
+import { overflowTitle } from '@/lib/overflow-title'
 import { useState } from 'react'
 import { FileText, RotateCcw, UsersRound } from 'lucide-react'
 import { getDraftSpecialists, getSpecialistDocumentProfile, type SpecialistSelection } from '@/lib/document-specialists'
@@ -45,7 +46,7 @@ export function DocumentSpecialistsPanel({ plan, naming, onChange, disabled }: {
               const custom = Object.keys(draft.documents?.[membership] ?? {}).length > 0
               const title = group.name || group.label
               return <tr key={group.key} className="h-14 border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
-                <td className="px-3 py-2"><div className="flex min-w-0 items-center gap-2"><FileText aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400" /><div className="min-w-0"><span className="block truncate font-medium text-slate-700" title={title}>{title}</span><span className={`mt-0.5 inline-block rounded px-1.5 text-[11px] leading-4 ${custom ? 'bg-amber-50 text-amber-800' : 'text-slate-400'}`}>{custom ? 'Свои назначения' : 'Общая пара'}</span></div></div></td>
+                <td className="px-3 py-2"><div className="flex min-w-0 items-center gap-2"><FileText aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400" /><div className="min-w-0"><span className="block truncate font-medium text-slate-700" {...overflowTitle(title)}>{title}</span><span className={`mt-0.5 inline-block rounded px-1.5 text-[11px] leading-4 ${custom ? 'bg-amber-50 text-amber-800' : 'text-slate-400'}`}>{custom ? 'Свои назначения' : 'Общая пара'}</span></div></div></td>
                 {(['first', 'second'] as const).map((role, index) => <td key={role} className="px-3 py-2"><div className="flex min-w-0 items-center gap-1">
                   <div className="min-w-0 flex-1"><SpecialistSelect density="cell" label={profile.labels[index]} profile={profile} options={options} value={selection[role]} disabled={disabled} onChange={value => change(role, value, membership)} /></div>
                   <Button variant="ghost" size="icon" className="h-8 w-7 shrink-0 text-sky-600 disabled:opacity-20" disabled={disabled || !Object.hasOwn(draft.documents?.[membership] ?? {}, role)} aria-label={`Вернуть общую пару: ${profile.labels[index]} — ${title}`} title="Вернуть общую пару для этой роли" onClick={() => {

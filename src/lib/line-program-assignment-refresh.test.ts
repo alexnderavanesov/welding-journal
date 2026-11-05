@@ -1,12 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import type { WeldRow } from './dispatcher-types'
-import { getProgramAssignmentRefresh } from './line-program-assignment-refresh'
+import { createProgramAssignmentRowsSelector, getProgramAssignmentRefresh } from './line-program-assignment-refresh'
 
 const first: WeldRow = { id: 1, joint: 'F1', connectionType: 'У19', hasVik: 'да', hasRk: 'да' }
 const second: WeldRow = { id: 2, joint: 'F2', connectionType: 'С17', hasVik: 'да' }
 const rows = [first, second]
 
 describe('assignment draft refresh scope', () => {
+  it('reuses calculation rows during basis typing but observes assignments, cancellation and fresh server rows', () => {
+    const select = createProgramAssignmentRowsSelector()
+    expect(select(rows, new Map())).toBe(rows)
+    const changed = { ...first, hasRk: 'дополнительный', rkControlBasis: 'Т' }
+    const calculationRows = select(rows, new Map([[first.id, changed]]))
+    const typing = new Map([[first.id, { ...changed, rkControlBasis: 'ТР № 10' }]])
+    expect(select(rows, typing)).toBe(calculationRows)
+    expect(getProgramAssignmentRefresh(rows, new Map([[first.id, changed]]), typing)).toEqual({ rowIds: [], methods: [] })
+    expect(select(rows, new Map())).toBe(rows)
+    const fresh = [{ ...first, rkResult: 'ремонт' }, second]
+    expect(select(fresh, new Map())).toBe(fresh)
+  })
   it('does not refresh rebuilt drafts with unchanged assignments or unrelated facts', () => {
     const before = new Map([[first.id, { ...first, hasRk: 'дополнительный' }]])
     const after = new Map([[first.id, { ...first, hasRk: 'дополнительный', notes: 'changed' }]])

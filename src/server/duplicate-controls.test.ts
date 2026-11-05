@@ -236,6 +236,16 @@ describe('duplicate-control batch writes', () => {
 })
 
 describe('duplicate-control mandatory result rules', () => {
+  it('enforces the support family independently of diameter, repair count and own-PVK setting', () => {
+    const row = { joint: 'ОП-1R12', connectionType: 'Т1', d1: 57 }
+    for (const result of ['', 'годен', 'ремонт', 'вырез'] as const) {
+      expect(() => assertDuplicateControlResultAllowed(row, { method: 'РК', result: result as 'годен' }, DEFAULT_SYSTEM_INDEX_SETTINGS, true)).toThrow('Для Т РК запрещён')
+    }
+    for (const method of ['ВИК', 'УЗК', 'ПВК'] as const) {
+      expect(() => assertDuplicateControlResultAllowed(row, { method, result: 'ремонт' }, DEFAULT_SYSTEM_INDEX_SETTINGS, true)).not.toThrow()
+      expect(() => assertDuplicateControlResultAllowed(row, { method, result: 'вырез' }, DEFAULT_SYSTEM_INDEX_SETTINGS)).toThrow('Для Т результат «вырез» запрещён')
+    }
+  })
   const smallDiameterRow = {
     joint: 'F1',
     d1: 57,

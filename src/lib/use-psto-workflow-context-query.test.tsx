@@ -7,15 +7,19 @@ import {
   usePstoWorkflowRequestOptionsQuery,
   usePstoWorkflowRowsQuery,
   usePstoWorkflowSummaryQuery,
+  usePstoWorkflowAvailabilityQuery,
 } from '@/lib/use-psto-workflow-context-query'
 import {
   scheduleWeldDataRefresh,
   PSTO_WORKFLOW_ROWS_QUERY_KEY,
+  PSTO_WORKFLOW_AVAILABILITY_QUERY_KEY,
+  PSTO_WORKFLOW_SUMMARY_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 import type { PstoWorkflowRowsRequest } from '@/server/weld-contracts'
 
 const serverMocks = vi.hoisted(() => ({
   getPstoWorkflowSummary: vi.fn(),
+  getPstoWorkflowAvailability: vi.fn(),
   getPstoWorkflowRequestOptions: vi.fn(),
   listPstoWorkflowRows: vi.fn(),
 }))
@@ -33,22 +37,66 @@ describe('PSTO workflow query load policy', () => {
       tvmtRequestCandidateCount: 0,
       tvmtResultCandidateCount: 0,
     })
+    serverMocks.getPstoWorkflowAvailability.mockResolvedValue({
+      requestCandidates: false,
+      resultCandidates: false,
+      resultRegistry: false,
+      tvmtRequestCandidates: false,
+      tvmtResultCandidates: false,
+    })
     serverMocks.listPstoWorkflowRows.mockResolvedValue([])
     serverMocks.getPstoWorkflowRequestOptions.mockResolvedValue({ options: [], hasMore: false })
   })
 
-  it('does not request rows or a summary while the workflow UI is closed', async () => {
+  it('does not request rows or availability while the workflow UI is closed', async () => {
     const queryClient = createQueryClient()
     renderHook(() => {
-      usePstoWorkflowSummaryQuery({ enabled: false })
+      usePstoWorkflowAvailabilityQuery({ enabled: false })
       usePstoWorkflowRequestOptionsQuery({ enabled: false, search: '' })
       usePstoWorkflowRowsQuery({ request: null })
     }, { wrapper: createWrapper(queryClient) })
 
     await new Promise((resolve) => setTimeout(resolve, 25))
     expect(serverMocks.getPstoWorkflowSummary).not.toHaveBeenCalled()
+    expect(serverMocks.getPstoWorkflowAvailability).not.toHaveBeenCalled()
     expect(serverMocks.getPstoWorkflowRequestOptions).not.toHaveBeenCalled()
     expect(serverMocks.listPstoWorkflowRows).not.toHaveBeenCalled()
+  })
+
+  it('keeps menu booleans separate from legacy exact counts in the query cache', async () => {
+    const queryClient = createQueryClient()
+    const { result } = renderHook(() => ({
+      legacy: usePstoWorkflowSummaryQuery({ enabled: true }),
+      availability: usePstoWorkflowAvailabilityQuery({ enabled: true }),
+    }), { wrapper: createWrapper(queryClient) })
+    await waitFor(() => {
+      expect(result.current.legacy.isSuccess).toBe(true)
+      expect(result.current.availability.isSuccess).toBe(true)
+    })
+    expect(serverMocks.getPstoWorkflowSummary).toHaveBeenCalledTimes(1)
+    expect(serverMocks.getPstoWorkflowAvailability).toHaveBeenCalledTimes(1)
+    expect(queryClient.getQueryData(PSTO_WORKFLOW_SUMMARY_QUERY_KEY)).toHaveProperty('resultRegistryCount', 0)
+    expect(queryClient.getQueryData(PSTO_WORKFLOW_AVAILABILITY_QUERY_KEY)).toHaveProperty('resultRegistry', false)
+    expect(queryClient.getQueryData(PSTO_WORKFLOW_AVAILABILITY_QUERY_KEY)).not.toHaveProperty('resultRegistryCount')
+  })
+
+  it('reuses fresh availability and refreshes it once after closed-menu invalidation', async () => {
+    const queryClient = createQueryClient()
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) => usePstoWorkflowAvailabilityQuery({ enabled }),
+      { initialProps: { enabled: true }, wrapper: createWrapper(queryClient) },
+    )
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    rerender({ enabled: false })
+    rerender({ enabled: true })
+    await new Promise(resolve => setTimeout(resolve, 25))
+    expect(serverMocks.getPstoWorkflowAvailability).toHaveBeenCalledTimes(1)
+    rerender({ enabled: false })
+    await act(async () => { scheduleWeldDataRefresh(queryClient, undefined, { refetchPstoWorkflow: true }) })
+    expect(serverMocks.getPstoWorkflowAvailability).toHaveBeenCalledTimes(1)
+    rerender({ enabled: true })
+    await waitFor(() => expect(serverMocks.getPstoWorkflowAvailability).toHaveBeenCalledTimes(2))
+    expect(serverMocks.getPstoWorkflowSummary).not.toHaveBeenCalled()
   })
 
   it('loads bounded request options once per search and ignores focus/reconnect', async () => {
@@ -80,7 +128,7 @@ describe('PSTO workflow query load policy', () => {
     const queryClient = createQueryClient()
     const { rerender } = renderHook(
       ({ request }: { request: PstoWorkflowRowsRequest }) => {
-        usePstoWorkflowSummaryQuery({ enabled: true })
+        usePstoWorkflowAvailabilityQuery({ enabled: true })
         usePstoWorkflowRowsQuery({ request })
       },
       {
@@ -90,7 +138,7 @@ describe('PSTO workflow query load policy', () => {
     )
 
     await waitFor(() => {
-      expect(serverMocks.getPstoWorkflowSummary).toHaveBeenCalledTimes(1)
+      expect(serverMocks.getPstoWorkflowAvailability).toHaveBeenCalledTimes(1)
       expect(serverMocks.listPstoWorkflowRows).toHaveBeenCalledTimes(1)
     })
     expect(serverMocks.listPstoWorkflowRows).toHaveBeenCalledWith({
@@ -102,7 +150,7 @@ describe('PSTO workflow query load policy', () => {
     window.dispatchEvent(new Event('online'))
     await new Promise((resolve) => setTimeout(resolve, 25))
 
-    expect(serverMocks.getPstoWorkflowSummary).toHaveBeenCalledTimes(1)
+    expect(serverMocks.getPstoWorkflowAvailability).toHaveBeenCalledTimes(1)
     expect(serverMocks.listPstoWorkflowRows).toHaveBeenCalledTimes(1)
   })
 
@@ -169,13 +217,13 @@ describe('PSTO workflow query load policy', () => {
   it('refetches an open workflow exactly once after a PSTO mutation', async () => {
     const queryClient = createQueryClient()
     renderHook(() => {
-      usePstoWorkflowSummaryQuery({ enabled: true })
+      usePstoWorkflowAvailabilityQuery({ enabled: true })
       usePstoWorkflowRowsQuery({
         request: { scope: 'resultRegistry', rowIds: null },
       })
     }, { wrapper: createWrapper(queryClient) })
     await waitFor(() => {
-      expect(serverMocks.getPstoWorkflowSummary).toHaveBeenCalledTimes(1)
+      expect(serverMocks.getPstoWorkflowAvailability).toHaveBeenCalledTimes(1)
       expect(serverMocks.listPstoWorkflowRows).toHaveBeenCalledTimes(1)
     })
 
@@ -187,14 +235,14 @@ describe('PSTO workflow query load policy', () => {
       )
     })
     await waitFor(() => {
-      expect(serverMocks.getPstoWorkflowSummary).toHaveBeenCalledTimes(2)
+      expect(serverMocks.getPstoWorkflowAvailability).toHaveBeenCalledTimes(2)
       expect(serverMocks.listPstoWorkflowRows).toHaveBeenCalledTimes(2)
     })
 
     window.dispatchEvent(new Event('focus'))
     window.dispatchEvent(new Event('online'))
     await new Promise((resolve) => setTimeout(resolve, 25))
-    expect(serverMocks.getPstoWorkflowSummary).toHaveBeenCalledTimes(2)
+    expect(serverMocks.getPstoWorkflowAvailability).toHaveBeenCalledTimes(2)
     expect(serverMocks.listPstoWorkflowRows).toHaveBeenCalledTimes(2)
   })
 

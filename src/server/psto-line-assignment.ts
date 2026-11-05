@@ -69,6 +69,7 @@ import { assertExpectedInteractiveWeldVersions } from '@/server/weld-row-version
 import { lockWeldLineMemberships } from '@/server/weld-line-membership-lock'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
 import { buildNumberArrayMatch } from '@/server/weld-request-utils'
+import { getControlAssignmentPerformedHistory, getControlAssignmentRemovalHistory } from '@/lib/control-assignment-history'
 
 type PstoLineAssignmentPayload = {
   identity: PstoLineIdentity
@@ -125,7 +126,7 @@ export const getPstoLineRemovalPreview = createServerFn({ method: 'POST' })
     // Exceptions retain their effective decision while the baseline changes.
     // Their history must not force a cancellation of otherwise empty assignments.
     const baselinePreview = buildRemovalPreview(data, hydratedRows.filter(row => !row.pstoExceptionBasis))
-    for (const key of ['historyRowCount', 'requestOnlyCount', 'completedPstoCount', 'preControlCount', 'completedPreControlCount', 'pendingPreControlCount', 'repeatCycleCount'] as const) preview[key] = baselinePreview[key]
+    for (const key of ['historyRowCount', 'requestOnlyCount', 'completedPstoCount', 'preControlCount', 'completedPreControlCount', 'pendingPreControlCount', 'repeatCycleCount', 'removalProtectedRowCount', 'cancellationRowCount', 'retainedAssignmentCount'] as const) preview[key] = baselinePreview[key] ?? 0
     preview.rows.forEach((item, index) => {
       const row = hydratedRows[index]!
       if (row.pstoExceptionBasis) return
@@ -137,7 +138,7 @@ export const getPstoLineRemovalPreview = createServerFn({ method: 'POST' })
             'beforeHeatTreatment', processSettings, systemIndexSettings,
           ),
         }
-      } else if (item.preMethods.length > 0 && isControlEnabledValue(row.pstoRequired)) {
+      } else if (item.preMethods.length > 0 && isControlEnabledValue(row.pstoRequired) && !getControlAssignmentPerformedHistory(row, 'pstoRequired')) {
         item.stageCorrection = {
           targetStage: 'primary',
           disabledReason: getPstoContextualStageCorrectionReason({ ...row, pstoRequired: 'отменен' }, 'primary', processSettings, systemIndexSettings),
@@ -357,11 +358,10 @@ export const savePstoLineAssignment = createServerFn({ method: 'POST' })
         const next = applyPstoChainPolicy(row, { ...policy, programState: nextState }, settings)
         return isControlEnabledValue(next.pstoRequired) !== isControlEnabledValue(row.pstoRequired)
       })
-      if (data.action === 'remove' && affectedRows.some(row => hasPstoLifecycleData(row))) {
-        throw new Error('У линии уже есть история ПСТО или НК до ТО. Используйте официальную отмену ПСТО.')
+      if (data.action === 'remove' && rows.some(row => !row.pstoExceptionBasis && getControlAssignmentRemovalHistory(row, 'pstoRequired'))) {
+        throw new Error('Нельзя снять назначение с выполненной работой ПСТО/ТВМТ или НК до ТО. Одна лишь заявка снятию не мешает; выполненные факты сохраняются.')
       }
       if (data.action === 'cancel') {
-        if (!affectedRows.some(row => hasPstoLifecycleData(row))) throw new Error('У линии нет истории. Уберите ошибочное назначение без оформления отмены.')
         assertPstoCancellationDateAfterHistory(affectedRows, data.cancellationDate)
       }
       const program = await ensurePstoProgram(tx, rows, state === 'mixed' ? nextState : state)
@@ -384,6 +384,10 @@ function normalizePayload(value: PstoLineAssignmentPayload) {
   if (action === 'cancel' && !/^\d{4}-\d{2}-\d{2}$/.test(cancellationDate)) {
     throw new Error('Укажите дату решения об отмене ПСТО.')
   }
+  const cancellationBasis = String(value?.cancellationBasis ?? '').trim()
+  if (action === 'cancel' && !cancellationBasis) {
+    throw new Error('Укажите основание отмены ПСТО линии.')
+  }
   if (value.activationDecisions !== undefined && !Array.isArray(value.activationDecisions)) throw new Error('Некорректные решения о НК.')
   const activationDecisions = value.activationDecisions ?? []
   if (activationDecisions.length > 0 && action === 'remove') throw new Error('При удалении пустого назначения нет НК для переноса.')
@@ -403,7 +407,7 @@ function normalizePayload(value: PstoLineAssignmentPayload) {
       version: String(entry?.version ?? '').trim(),
     })),
     cancellationDate,
-    cancellationBasis: String(value?.cancellationBasis ?? '').trim(),
+    cancellationBasis,
     activationDecisions,
   }
 }
@@ -449,6 +453,7 @@ export function buildRemovalPreview(
       pstoResult: String(row.pstoResult ?? '').trim(),
       repeatCycleCount: row.pstoRepeatCycles?.length ?? 0,
       preservesPerformedHistory: hasPerformedPstoHistory(row),
+      cancellationDisposition: row.pstoExceptionBasis ? 'unchanged' as const : getControlAssignmentPerformedHistory(row, 'pstoRequired') ? 'preserve' as const : isControlEnabledValue(row.pstoRequired) ? 'cancel' as const : 'unchanged' as const,
     }
   })
   return {
@@ -474,6 +479,9 @@ export function buildRemovalPreview(
       0,
     ),
     repeatCycleCount: rows.reduce((count, row) => count + (row.pstoRepeatCycles?.length ?? 0), 0),
+    removalProtectedRowCount: rows.filter(row => Boolean(getControlAssignmentRemovalHistory(row, 'pstoRequired'))).length,
+    cancellationRowCount: previewRows.filter(row => row.cancellationDisposition === 'cancel').length,
+    retainedAssignmentCount: previewRows.filter(row => row.cancellationDisposition === 'preserve').length,
     rows: previewRows,
   }
 }

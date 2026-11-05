@@ -211,6 +211,7 @@ async function openCancellation(page: Page) {
   await program.getByRole('button', { name: 'Отменить ПСТО', exact: true }).click()
   const cancellation = dialog(page, 'Отмена ПСТО')
   await expect(choices(cancellation, 'F881')).toBeVisible()
+  await cancellation.getByLabel('Основание отмены ПСТО', { exact: true }).fill('CTX-CANCELLATION')
   return cancellation
 }
 
@@ -531,7 +532,7 @@ test('предкоммит: удаление старой позиции цел�
   expect(await snapshot(fixture.moved.id)).toEqual(before)
 })
 
-test('цепочка на назначенную линию: подтверждение специалистов доходит до сервера, новый R-стык не наследует НК', async ({ page }) => {
+test('цепочка на назначенную линию: подтверждение специалистов доходит до сервера, новый R-стык не копирует результаты и документы НК', async ({ page }) => {
   const fixture = await seed('primary')
   const targetId = await addTarget(fixture, true, true)
   const childId = await withE2eDatabase(async db => {
@@ -943,7 +944,11 @@ for (const isChain of [false, true]) test(`KEEP: ${isChain ? 'цепочка' : 
   await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
   await expect(editor).toBeHidden()
   const after = await snapshot(fixture.moved.id)
-  expect(after.row).toMatchObject({ line: TARGET, psto_required: null })
+  // T-10 preserves this joint's performed PSTO and its assignment even when
+  // the target line has no future PSTO program. The unwelded child below does
+  // not inherit its parent's performed-history exception.
+  expect(before.row.psto_required).toBe('да')
+  expect(after.row).toMatchObject({ line: TARGET, psto_required: 'да' })
   for (const field of RECORDED_CONTROL_FIELDS) expect(after.row[field], field).toEqual(before.row[field])
   expect(after.controls).toEqual(before.controls)
   expect(after.cycles).toEqual(before.cycles)

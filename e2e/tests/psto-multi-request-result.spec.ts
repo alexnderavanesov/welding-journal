@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { eq } from 'drizzle-orm'
 import { pstoRow, revealPstoColumn } from './psto-grid-helpers'
 import { requireDb } from '../../src/db'
@@ -6,6 +6,7 @@ import { pstoRepeatCycles, weldJoints } from '../../src/db/schema'
 import { buildSystemDocumentSummaries } from '../../src/lib/system-document-types'
 import { buildPstoRepeatSystemDocumentRow } from '../../src/lib/system-document-virtual-row'
 import type { WeldRow } from '../../src/lib/dispatcher-types'
+import type { PstoWorkflowAvailability } from '../../src/server/weld-contracts'
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '../../src/lib/request-conclusion-settings'
 import { prepareDocumentCreationIndex } from '../../src/server/document-name-conflicts'
 import { syncSystemDocumentsForWeldChangesInTransaction, upsertSourcedSystemDocumentsInTransaction } from '../../src/server/system-document-index'
@@ -81,6 +82,16 @@ async function snapshot() {
   }))
 }
 
+function nextAvailability(page: Page) {
+  return page.waitForResponse(response => response.url().includes('/_serverFn/') &&
+    /^getPstoWorkflowAvailability(?:_|$)/.test(rpcName(response.url()))).then(async response => {
+    expect(response.ok()).toBe(true)
+    const payload = await deserializeRpcResponse(await response.text()) as { result: PstoWorkflowAvailability; error?: unknown }
+    expect(payload.error).toBeUndefined()
+    return payload.result
+  })
+}
+
 for (const repeat of [false, true]) test(`one diagram from multiple requests/lines, ${repeat ? 'primary + repeat' : 'two primary cycles'}`, async ({ page }, info) => {
   const ids = await seed(repeat)
   const errors: string[] = []
@@ -89,6 +100,17 @@ for (const repeat of [false, true]) test(`one diagram from multiple requests/lin
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('F8810')
   await expect(page.getByText('Найдено: 2', { exact: true })).toBeVisible()
   await page.locator('[data-psto-grid] .ag-header-cell').getByRole('checkbox').check()
+  await expect(page.locator('[data-psto-grid] .ag-header-cell').getByRole('checkbox')).toBeChecked()
+  // All three fixture joints await PSTO; even the historical failed TVMT is
+  // superseded by its pending repeat. The global setup joint has no PSTO yet.
+  // Prime the real menu cache with false before the real save below.
+  const initialAvailability = nextAvailability(page)
+  await page.locator('header').getByRole('button', { name: 'ТВМТ', exact: true }).click()
+  expect((await initialAvailability).tvmtRequestCandidates).toBe(false)
+  const availabilityReadAt = performance.now()
+  await expect(page.locator('[data-workflow-menu]').getByRole('button', { name: 'Новая заявка ТВМТ', exact: true })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('[data-workflow-menu]')).toHaveCount(0)
   await page.getByRole('button', { name: 'F88101', exact: true }).click({ button: 'right' })
   await page.getByRole('button', { name: 'Результаты и заключения', exact: true }).hover()
   await page.getByRole('button', { name: 'Внести результат · ПСТО', exact: true }).click()
@@ -191,6 +213,16 @@ for (const repeat of [false, true]) test(`one diagram from multiple requests/lin
   await revealPstoColumn(page, 'heatTreatmentDiagram')
   await expect(pstoRow(page, 'F88101').getByText(name, { exact: true })).toBeVisible()
   await expect(pstoRow(page, 'F88102').getByText(name, { exact: true })).toBeVisible()
+  // No navigation/reload or manual invalidation: saving must refresh the
+  // previously false menu while its ordinary 60-second stale time is intact.
+  expect(performance.now() - availabilityReadAt, 'Availability must not expire naturally during this check').toBeLessThan(60000)
+  const refreshedAvailability = nextAvailability(page)
+  await page.locator('header').getByRole('button', { name: 'ТВМТ', exact: true }).click()
+  expect((await refreshedAvailability).tvmtRequestCandidates).toBe(true)
+  await expect(page.locator('[data-workflow-menu]').getByRole('button', { name: 'Новая заявка ТВМТ', exact: true })).toHaveAttribute('aria-busy', 'false')
+  await expect(page.locator('[data-workflow-menu]').getByRole('button', { name: 'Новая заявка ТВМТ', exact: true })).toBeEnabled()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('[data-workflow-menu]')).toHaveCount(0)
   await page.reload()
   await revealPstoColumn(page, 'heatTreatmentDiagram')
   await expect(page.getByText(name, { exact: true }).first()).toBeVisible()

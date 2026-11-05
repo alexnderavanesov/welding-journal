@@ -45,7 +45,7 @@ describe('approved line move: preserve every stage without reclassification', ()
     const controls = [control, { id: 10, weldJointId: 1, method: 'РК', requestName: 'PRE-RK', requestDate: '2026-09-03', result: 'ожидает НК' }]
     const before = row({ preHeatTreatmentControls: controls, vikRequest: 'MAIN-VIK', vikResult: 'ремонт', uzkRequest: 'MAIN-UZK', pstoResult })
     const next = buildPstoMovedToUnassignedLineRow({ row: before, controls })
-    expect(next).toEqual({ ...before, pstoRequired: null, pstoControlBasis: null, pstoCancellationDate: null })
+    expect(next).toEqual(pstoResult === 'проведено' ? before : { ...before, pstoRequired: null, pstoControlBasis: null, pstoCancellationDate: null })
     expect(next.preHeatTreatmentControls).toEqual(controls)
   })
 

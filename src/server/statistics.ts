@@ -32,6 +32,8 @@ import { assertSecurityScope } from '@/server/security-functions'
 import { WELD_EFFECTIVE_OFFICIALITY } from '@/server/weld-server-shared'
 import { attachProgramChainStates } from '@/server/line-program-chain-state'
 import { isSystemWdiMode, withSystemWdi } from '@/lib/wdi'
+import { packStatisticsResult, STATISTICS_TRANSPORT, type StatisticsRpcRequest } from '@/lib/statistics-result-payload'
+import { supportConnectionTypeWhere } from './connection-type-sql'
 
 const STATISTICS_STATUS_ROW_SELECT = {
   id: weldJoints.id,
@@ -43,6 +45,7 @@ const STATISTICS_STATUS_ROW_SELECT = {
   officiality: WELD_EFFECTIVE_OFFICIALITY,
   wdi: weldJoints.wdi,
   connectionType: weldJoints.connectionType,
+  weldLength: weldJoints.weldLength,
   d1: weldJoints.d1,
   d2: weldJoints.d2,
   t1: weldJoints.t1,
@@ -135,13 +138,15 @@ const STATISTICS_LINE_ROW_SELECT = {
 }
 
 export const getStatisticsServerResult = createServerFn({ method: 'POST' })
-  .validator((data: StatisticsServerRequest) => normalizeStatisticsServerRequest(data))
-  .handler(async ({ data }): Promise<StatisticsServerResult> => {
+  .validator((data: StatisticsRpcRequest) => normalizeStatisticsRpcRequest(data))
+  .handler(async ({ data }) => {
     await assertSecurityScope('entry')
-    return getOrComputeDerivedCalculation(
-      buildDerivedCalculationCacheKey('statistics:v32', data),
-      () => computeStatisticsServerResult(data),
+    const result = await getOrComputeDerivedCalculation(
+      buildDerivedCalculationCacheKey('statistics:v36', data.request),
+      () => computeStatisticsServerResult(data.request),
     )
+    // Already-open clients keep their existing response shape after an update.
+    return data.transport === STATISTICS_TRANSPORT ? packStatisticsResult(result) : result
   })
 
 export async function computeStatisticsServerResult(
@@ -215,13 +220,13 @@ export async function computeStatisticsServerResult(
         .orderBy(asc(pstoRepeatCycles.weldJointId), asc(pstoRepeatCycles.sequence)) : []
     const projectRows = await db.selectDistinct({ value: weldJoints.projectTitle }).from(weldJoints)
     const subtitleRows = await db.selectDistinct({ value: weldJoints.subtitleCode }).from(weldJoints).where(projectWhere)
-    const stampRows = data.tab === 'welders'
+    const stampRows = data.tab === 'welders' || data.tab === 'supports'
         ? await db.select().from(welderStamps).orderBy(asc(welderStamps.id)) : []
     const settingsRows = await db
         .select()
         .from(appSettings)
         .where(inArray(appSettings.key, [PROJECT_SETTING_KEYS.systemIndex, PROJECT_SETTING_KEYS.other, PROJECT_SETTING_KEYS.controlProcesses]))
-    if (data.tab === 'general' || data.tab === 'lineSummary') await attachProgramChainStates(sourceRows, db)
+    if (data.tab === 'general' || data.tab === 'supports' || data.tab === 'lineSummary') await attachProgramChainStates(sourceRows, db)
     return { sourceRows, duplicateRows, preControlRows, repeatCycleRows, projectRows, subtitleRows, stampRows, settingsRows }
   }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
   const otherSettings = normalizeOtherSettings(
@@ -264,11 +269,18 @@ function getStatisticsRowSelect(tab: StatisticsServerRequest['tab']) {
   return STATISTICS_GENERAL_ROW_SELECT
 }
 
+export function normalizeStatisticsRpcRequest(data: StatisticsRpcRequest) {
+  if (data?.transport !== undefined && data.transport !== STATISTICS_TRANSPORT) throw new Error('Неизвестный формат статистики. Обновите страницу.')
+  // Transport capability is independent of calculation identity/cache entries.
+  return { request: normalizeStatisticsServerRequest(data), transport: data?.transport }
+}
+
 export function normalizeStatisticsServerRequest(data: StatisticsServerRequest): StatisticsServerRequest {
   if (String(data?.tab) === 'percentageLines') {
     throw new Error('Откройте «Программу линий»: прежний процентный расчёт статистики больше не используется. Обновите страницу.')
   }
   const tab =
+    data?.tab === 'supports' ||
     data?.tab === 'lnk' ||
     data?.tab === 'psto' ||
     data?.tab === 'welders' ||
@@ -288,8 +300,8 @@ export function normalizeStatisticsServerRequest(data: StatisticsServerRequest):
     ).sort(),
     from: String(data?.from ?? '').trim(),
     to: String(data?.to ?? '').trim(),
-    unit: data?.unit === 'wdi' ? 'wdi' : 'joints',
-    jointFilter: data?.jointFilter === 'f' || data?.jointFilter === 's' ? data.jointFilter : 'all',
+    unit: tab !== 'supports' && data?.unit === 'wdi' ? 'wdi' : 'joints',
+    jointFilter: tab !== 'supports' && (data?.jointFilter === 'f' || data?.jointFilter === 's') ? data.jointFilter : 'all',
     controlDynamicsScale:
       data?.controlDynamicsScale === 'day' ||
       data?.controlDynamicsScale === 'week' ||
@@ -321,6 +333,8 @@ function getStoredSetting(rows: Array<{ key: string; value: string }>, key: stri
 
 function buildStatisticsScopeWhere(data: StatisticsServerRequest) {
   const clauses: SQL[] = []
+  if (data.tab === 'supports') clauses.push(supportConnectionTypeWhere(weldJoints.connectionType))
+  else if (data.tab === 'general' || data.tab === 'welders' || data.tab === 'lineSummary') clauses.push(sql`not (${supportConnectionTypeWhere(weldJoints.connectionType)})`)
   if (data.projectFilter) {
     clauses.push(sql`lower(trim(coalesce(${weldJoints.projectTitle}, ''))) = ${data.projectFilter}`)
   }

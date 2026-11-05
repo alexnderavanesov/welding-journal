@@ -6,10 +6,12 @@ import {
   PSTO_WORKFLOW_REQUEST_OPTIONS_QUERY_KEY,
   PSTO_WORKFLOW_ROWS_QUERY_KEY,
   PSTO_WORKFLOW_SUMMARY_QUERY_KEY,
+  PSTO_WORKFLOW_AVAILABILITY_QUERY_KEY,
 } from '@/lib/weld-query-utils'
 import {
   getPstoWorkflowRequestOptions,
   getPstoWorkflowSummary,
+  getPstoWorkflowAvailability,
   listPstoWorkflowRows,
   type PstoWorkflowRowsRequest,
 } from '@/server/weld-read-api'
@@ -22,6 +24,19 @@ export function usePstoWorkflowSummaryQuery({ enabled }: { enabled: boolean }) {
   return useQuery({
     queryKey: PSTO_WORKFLOW_SUMMARY_QUERY_KEY,
     queryFn: () => getPstoWorkflowSummary(),
+    enabled,
+    staleTime: WORKFLOW_STALE_TIME,
+    gcTime: WORKFLOW_GC_TIME,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  })
+}
+
+export function usePstoWorkflowAvailabilityQuery({ enabled }: { enabled: boolean }) {
+  return useQuery({
+    queryKey: PSTO_WORKFLOW_AVAILABILITY_QUERY_KEY,
+    queryFn: () => getPstoWorkflowAvailability(),
     enabled,
     staleTime: WORKFLOW_STALE_TIME,
     gcTime: WORKFLOW_GC_TIME,

@@ -62,7 +62,61 @@ try {
   for (const name of ['package.json', 'tsconfig.json', 'drizzle.config.ts']) copyFileSync(join(root, name), join(fixture, name))
   mkdirSync(join(fixture, 'drizzle/meta'), { recursive: true })
   for (const entry of journal.entries) copyFileSync(join(root, 'drizzle', `${entry.tag}.sql`), join(fixture, 'drizzle', `${entry.tag}.sql`))
-  if (process.argv.includes('--document-operations')) {
+  if (process.argv.includes('--supports')) {
+    // Exercise the generated 0058 migration over a populated 0057 database.
+    // This is synthetic preservation coverage, not the pending real-backup rehearsal.
+    selectFixtureVersion(57)
+    migrate(fixture)
+    await client.query(`insert into line_programs(project_title,subtitle_code,line,weld_control_percent,pvk_control_percent,psto_assignment,psto_cancellation_basis)
+      values ('SUPPORT-UPGRADE','S','L1',30,10,'cancelled',null),
+        ('SUPPORT-UPGRADE','S','L2',100,100,'assigned','Сохранённое основание')`)
+    await client.query(`insert into weld_joints(project_title,subtitle_code,line,joint,weld_date,
+      officiality,revision_actuality,connection_type,has_vik,has_rk,has_uzk,rk_control_basis,welding_journal_note)
+      select 'SUPPORT-UPGRADE','S','L1','F'||n,'2026-10-01',
+        case when n%3=0 then 'неофициальный' else 'действующий' end,
+        case when n%5=0 then 'не актуален' else 'актуальная' end,
+        case when n%2=0 then 'С17' else 'У19' end,'да','дополнительный','отменен',null,'  Точный текст  '
+      from generate_series(1,$1::int) n`, [count])
+    await client.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,result,request_name,request_date,conclusion_name,conclusion_date,defect_description)
+      values (1,'ВИК','годен','Историческая заявка','2026-10-01','Историческое заключение','2026-10-01','ДНО')`)
+    await client.query(`insert into psto_repeat_cycles(weld_joint_id,sequence,psto_request,psto_date,psto_result,tvmt_result)
+      values (1,2,'Повторная ПСТО','2026-10-02','проведено','годен')`)
+    await client.query(`insert into duplicate_controls(weld_joint_id,method,result,conclusion)
+      values (2,'ПВК','ремонт','История дубля')`)
+    await client.query(`insert into generated_documents(type,title,file_name,mime_type,row_count)
+      values ('custom','Исторический документ','history.xlsx','application/x-test',2)`)
+    await client.query('insert into generated_document_weld_joints(document_id,weld_joint_id) values(1,1),(1,2)')
+    await client.query(`insert into technology_cards(name,welding_methods,connection_type,material_groups,diameter_from,diameter_to,thickness_from,thickness_to,psto)
+      values ('Существующая ТК',array['РД'],'С17',array['М01'],57,159,3,8,'any')`)
+    const lines = async (exclude: string[] = []) => (await client.query(
+      'select coalesce(jsonb_agg(to_jsonb(l)-$1::text[] order by id),\'[]\'::jsonb) rows from line_programs l', [exclude])).rows[0].rows
+    const cards = async () => (await client.query('select jsonb_agg(to_jsonb(c) order by id) rows from technology_cards c')).rows[0].rows
+    const before = await savedFacts(), beforeLines = await lines(), beforeCards = await cards()
+    migrate(root)
+    assert.deepEqual(await savedFacts(['weld_length']), before, '0058 preserves every old weld field and related fact/document')
+    assert.deepEqual(await lines(['support_uzk_control_percent', 'support_pvk_control_percent']), beforeLines)
+    assert.deepEqual(await cards(), beforeCards)
+    assert.equal((await client.query('select count(*)::int n from weld_joints where weld_length is not null')).rows[0].n, 0)
+    assert.equal((await client.query('select count(*)::int n from line_programs where support_uzk_control_percent is not null or support_pvk_control_percent is not null')).rows[0].n, 0)
+    const exactLength = '600.123456789123456789'
+    await client.query('update weld_joints set weld_length=$1 where id=1', [exactLength])
+    assert.equal((await client.query('select weld_length::text value from weld_joints where id=1')).rows[0].value, exactLength)
+    for (const field of ['support_uzk_control_percent', 'support_pvk_control_percent']) {
+      for (const value of [0.5, 100, null]) await client.query(`update line_programs set ${field}=$1 where id=1`, [value])
+      for (const value of [0.499, 100.001]) await assert.rejects(client.query(`update line_programs set ${field}=$1 where id=1`, [value]), /check constraint/)
+    }
+    await client.query(`insert into technology_cards(name,welding_methods,connection_type,material_groups,diameter_from,diameter_to,thickness_from,thickness_to,psto)
+      values ('Новая ТК опор',array['РД'],'Т1',array['М01'],57,159,3,8,'any')`)
+    const migrated = await savedFacts(), migratedLines = await lines(), migratedCards = await cards()
+    migrate(root)
+    assert.deepEqual(await savedFacts(), migrated, 'Repeating migrations preserves new lengths and all history')
+    assert.deepEqual(await lines(), migratedLines)
+    assert.deepEqual(await cards(), migratedCards)
+    console.log(JSON.stringify({ passed: true, baseline: '0057', target: journal.entries.at(-1)!.tag,
+      joints: count, allOldFieldsAndRelatedHistoryPreserved: true, nullMeansInheritance: true,
+      exactLengthPreserved: true, rangeConstraintsVerified: true, migrationIdempotent: true,
+      realBackupRehearsal: false }))
+  } else if (process.argv.includes('--document-operations')) {
     selectFixtureVersion(46)
     migrate(fixture)
     assert.equal((await client.query("select to_regclass('document_operation_receipts') as name")).rows[0].name, null)

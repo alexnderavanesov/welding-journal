@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { rpcName } from '../rpc'
 
-for (const [path, summary] of [['/lnk', 'getLnkWorkflowSummary'], ['/psto', 'getPstoWorkflowSummary']] as const) {
+for (const [path, summary] of [['/lnk', 'getLnkWorkflowSummary'], ['/psto', 'getPstoWorkflowAvailability']] as const) {
   test(`workflow menu ${path}: stable loading, ready, reopen and error geometry`, async ({ page }, info) => {
     let release!: () => void
     const gate = new Promise<void>(resolve => { release = resolve })

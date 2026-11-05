@@ -42,9 +42,13 @@ test.afterEach(async ({ context }) => {
 // Start from a known control, then traverse the real tab order, including the
 // unselected options. No click/focus shortcut to the long custom choices.
 async function tabTo(page: Page, target: Locator) {
+  // macOS WebKit uses Option+Tab to include buttons in native traversal.
+  // Keep real keyboard navigation instead of directly focusing each choice.
+  const tabKey = process.platform === 'darwin' && page.context().browser()?.browserType().name() === 'webkit'
+    ? 'Alt+Tab' : 'Tab'
   for (let step = 0; step < 24; step++) {
     if (await target.evaluate(element => element === document.activeElement)) break
-    await page.keyboard.press('Tab')
+    await page.keyboard.press(tabKey)
   }
   await expect(target).toBeFocused()
   await expect(target).toBeInViewport()
@@ -116,13 +120,19 @@ test('редактор НАКС/ДЛС на 390px: длинные группы �
   await selectByKeyboard(page, editors.first(), ['РАД', ...methods, 'М01', ...groups])
   await fillDetails(editors.first(), 'Основной НАКС — сохранить диапазоны и даты')
   await dialog.getByRole('button', { name: 'Добавить НАКС', exact: true }).click()
+  // Adding a permit focuses its card in the next animation frame. Observe that
+  // transition before taking keyboard focus, otherwise the pending autofocus
+  // can move it away from the option before Space/Enter is dispatched.
+  await expect(editors.nth(1)).toBeFocused()
   await selectByKeyboard(page, editors.nth(1), ['РАД', 'М11'])
   await fillDetails(editors.nth(1), 'Другой НАКС — не изменять')
   await dialog.getByRole('button', { name: 'Добавить ДЛС', exact: true }).click()
+  await expect(editors.nth(2)).toBeFocused()
   await editors.nth(2).getByLabel('Номер ДЛС', { exact: true }).fill('ДЛС-EPM1-1')
   await selectByKeyboard(page, editors.nth(2), ['РАД', ...methods, 'М01', ...groups])
   await fillDetails(editors.nth(2), 'Основной ДЛС — сохранить номер и сроки')
   await dialog.getByRole('button', { name: 'Добавить ДЛС', exact: true }).click()
+  await expect(editors.nth(3)).toBeFocused()
   await editors.nth(3).getByLabel('Номер ДЛС', { exact: true }).fill('ДЛС-EPM1-2')
   await selectByKeyboard(page, editors.nth(3), ['РАД', 'М11'])
   await fillDetails(editors.nth(3), 'Другой ДЛС — не изменять')
@@ -154,7 +164,12 @@ test('редактор НАКС/ДЛС на 390px: длинные группы �
     expect(stampBox!.x).toBeGreaterThanOrEqual(cellBox!.x)
     expect(stampBox!.x + stampBox!.width).toBeLessThanOrEqual(cellBox!.x + cellBox!.width)
     await region.focus()
-    await page.keyboard.press('ArrowRight')
+    await expect(region).toBeFocused()
+    // Native macOS WebKit cancels a zero-duration arrow press before scrolling.
+    // Hold the real key briefly; the assertion still requires native movement.
+    await page.keyboard.press('ArrowRight', {
+      delay: process.platform === 'darwin' && page.context().browser()?.browserType().name() === 'webkit' ? 50 : 0,
+    })
     await expect.poll(() => region.evaluate(element => element.scrollLeft)).toBeGreaterThan(0)
     await page.getByText(code, { exact: true }).first().click()
     await page.getByRole('button', { name: 'Редактировать', exact: true }).focus()

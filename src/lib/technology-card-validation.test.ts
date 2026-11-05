@@ -37,7 +37,7 @@ describe('technology card registry validation', () => {
   })
 
   it('reports overlapping dictionary, dimension and PSTO errors together', () => {
-    const result = validate({ ...draft, weldingMethods: ['РАД', 'BAD'], materialGroups: ['M01', 'М05', 'М11'], connectionType: 'Т1', diameterFrom: '219', thicknessTo: 'нет', psto: 'проведено' })
+    const result = validate({ ...draft, weldingMethods: ['РАД', 'BAD'], materialGroups: ['M01', 'М05', 'М11'], connectionType: 'НЕИЗВЕСТНО', diameterFrom: '219', thicknessTo: 'нет', psto: 'проведено' })
     expect(result.card).toBeNull()
     expect(new Set(result.issues.map(issue => issue.field))).toEqual(new Set(['weldingMethods', 'materialGroups', 'connectionType', 'diameterFrom', 'diameterTo', 'thicknessTo', 'psto']))
   })

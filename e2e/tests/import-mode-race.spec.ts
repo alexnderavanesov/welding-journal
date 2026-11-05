@@ -40,7 +40,7 @@ test('switching import mode retires a delayed line-validation response and allow
     await expect(dialog.getByRole('button', { name: /^Заменить/ })).toBeDisabled()
     await dialog.getByRole('button', { name: 'Импорт данных', exact: true }).click()
     await upload('fresh.xlsx', 'FRESH')
-    await expect(dialog.locator('[data-import-preview-grid] [col-id="joint"]').getByTitle('FRESH')).toBeVisible()
+    await expect(dialog.locator('[data-import-preview-grid] [col-id="joint"]').getByText('FRESH', { exact: true })).toBeVisible()
     await expect(dialog.getByText(/fresh.xlsx · найдено: 1/)).toBeVisible()
     await expect(dialog.getByText(/old.xlsx · найдено/)).toHaveCount(0)
   } finally { release() }

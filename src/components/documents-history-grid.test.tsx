@@ -213,13 +213,11 @@ describe('document grid server lifecycle', () => {
     expect(grid.api.refreshHeader).not.toHaveBeenCalled()
     expect(document.querySelector('.document-grid-filter-chips')).toBeNull()
   })
-  it('never exposes encoded group keys as tooltips, while retaining document text', () => {
+  it('does not generate duplicate document titles or encoded group keys as automatic tooltips', () => {
     render(<DocumentsHistoryGrid {...props()} />)
-    const tooltip = grid.props.columnDefs.find(column => column.colId === 'title')!.tooltipValueGetter!
-    const group = { __group: true, id: 'group', groupKey: '["value","Основной"]', groupLabel: 'Основной' }
-    expect(tooltip({ data: group, node: { group: true }, value: group.groupKey } as never)).toBe('')
-    expect(tooltip({ data: group, value: group.groupKey } as never)).toBe('')
-    expect(tooltip({ data: { id: 1 }, node: { group: false }, value: 'Название документа' } as never)).toBe('Название документа')
+    // Full clipped names are handled by the document label. The grid must not
+    // add a second unconditional tooltip, including its internal group values.
+    expect(grid.props.columnDefs.find(column => column.colId === 'title')!.tooltipValueGetter).toBeUndefined()
   })
   it('disables old-scope actions until matching selection is known, ignores late previous-scope replies and keeps errors retryable', async () => {
     const old = pending<DocumentHistoryGridResult<Row>>(), fresh = pending<DocumentHistoryGridResult<Row>>()

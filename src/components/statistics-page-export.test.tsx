@@ -27,12 +27,16 @@ vi.mock('@/components/printable-report-preview', () => ({
 
 const clients: QueryClient[] = []
 beforeEach(() => {
+  // JSDOM has no layout observer. Grid geometry is covered in real browsers;
+  // these tests exercise the report snapshot/query boundary.
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
   mocks.rpc.mockReset()
   mocks.download.mockReset().mockResolvedValue(undefined)
 })
 afterEach(() => {
   cleanup()
   clients.splice(0).forEach(client => client.clear())
+  vi.unstubAllGlobals()
   onlineManager.setOnline(true)
 })
 
@@ -281,4 +285,23 @@ it('keeps a paused initial query unavailable instead of exporting an empty fallb
   expect(reportButton()).toBeDisabled()
   await act(async () => pending.resolve(resultFor(mocks.rpc.mock.calls[0][0].data, 5)))
   await waitFor(() => expect(reportButton()).toBeEnabled())
+})
+it('exports the support snapshot with exact lengths and no WDI, independently of general settings', async () => {
+  mocks.rpc.mockImplementation(async ({ data }) => buildStatisticsServerResult({ rows: [
+    { id: 1, joint: 'ОП1', connectionType: 'Т', weldDate: '2026-10-01', projectTitle: 'P', line: 'L', hasVik: 'да', vikResult: 'годен', weldLength: '0.1' },
+    { id: 2, joint: 'ОП2', connectionType: 'Т', weldDate: '2026-10-01', projectTitle: 'P', line: 'L', hasVik: 'да', vikResult: '', weldLength: null },
+  ], welderStamps: [], systemIndexSettings: DEFAULT_SYSTEM_INDEX_SETTINGS, request: data }))
+  renderStatistics()
+  await waitFor(() => expect(reportButton()).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: /^Опоры$/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Настройки отчета' }))
+  fireEvent.change(screen.getByLabelText('Период отчета'), { target: { value: 'all' } })
+  await waitFor(() => expect(reportButton()).toBeEnabled())
+  expect(screen.queryByRole('button', { name: /^WDI$/ })).not.toBeInTheDocument()
+  expect(mocks.rpc.mock.lastCall![0].data).toMatchObject({ tab: 'supports', unit: 'joints', jointFilter: 'all' })
+  const report = await openPreview()
+  expect(report.title).toBe('Статистика опор')
+  expect(report.tables![0].rows[0]).toEqual(['Итого', 2, 2, 0, '0,1 (неполная)', 1, 0, '0', 0])
+  fireEvent.click(screen.getByRole('button', { name: 'Скачать Excel' }))
+  await waitFor(() => expect(mocks.download).toHaveBeenCalledExactlyOnceWith(report))
 })

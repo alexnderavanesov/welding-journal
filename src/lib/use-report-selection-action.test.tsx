@@ -76,6 +76,34 @@ describe('report selection action opening', () => {
     expect(onError).toHaveBeenCalledOnce()
   })
 
+  it.each(['open', 'filter-changed', 'version-changed', 'selection-changed', 'grid-not-ready'] as const)(
+    'hydrates a fresh 600-ID header action with only 21 grid rows: %s', async outcome => {
+      const selected = Array.from({ length: 600 }, (_, index): WeldRow => ({ id: index + 1, joint: `F${index + 1}`, rowVersion: 'v1' }))
+      const freshRows = selected.map(row => ({ ...row, rowVersion: 'v2' }))
+      const initial = { rowsReady: true, queryIdentity: 'lnk:filtered:A', selectedIds: new Set(selected.map(row => row.id)), rows: selected.slice(0, 21) }
+      const pending = deferred(), onOpen = vi.fn(), onError = vi.fn()
+      const loadRowsByIds = vi.fn(() => pending.promise)
+      const { result, rerender } = renderHook(props => useReportSelectionAction({ ...props, fresh: true, loadRowsByIds, onOpen, onError }), { initialProps: initial })
+      expect(result.current.disabled).toBe(false)
+      let running!: Promise<void>
+      act(() => { running = result.current.run() })
+      expect(loadRowsByIds).toHaveBeenCalledExactlyOnceWith([...initial.selectedIds])
+      expect(onOpen).not.toHaveBeenCalled()
+      if (outcome !== 'open') {
+        rerender({ ...initial, ...(outcome === 'filter-changed' ? { queryIdentity: 'lnk:filtered:B' }
+          : outcome === 'version-changed' ? { rows: [{ ...initial.rows[0]!, rowVersion: 'changed' }, ...initial.rows.slice(1)] }
+          : outcome === 'selection-changed' ? { selectedIds: new Set([1]) } : { rowsReady: false }) })
+        // Returning to A must not revive an obsolete header action.
+        rerender(initial)
+      }
+      await act(async () => { pending.resolve([...freshRows].reverse()); await running })
+      if (outcome === 'open') expect(onOpen).toHaveBeenCalledExactlyOnceWith(freshRows)
+      else expect(onOpen).not.toHaveBeenCalled()
+      expect(onError).not.toHaveBeenCalled()
+      expect(initial.selectedIds.size).toBe(600)
+    },
+  )
+
   it('blocks stale report rows immediately, even with a fully materialized selection', async () => {
     const { result, loadRowsByIds, onOpen } = setup({ rowsReady: false, queryIdentity: 'lnk:B', selectedIds: new Set([1]), rows: pageRows })
     expect(result.current.disabled).toBe(true)

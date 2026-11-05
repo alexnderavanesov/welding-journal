@@ -76,6 +76,7 @@ export function journalClipboardValue(row: WeldRow, fieldKey: WeldFieldKey, valu
   if (DATE_TIME_WELD_FIELD_KEYS.has(fieldKey)) return formatDateTimeWithSeconds(value)
   if (value === true) return 'да'
   if (value === false || value == null) return ''
+  if (field?.key === 'weldLength') return value == null ? '' : String(value)
   if (field?.kind === 'number') return gridClipboardNumber(value)
   return String(value)
 }
@@ -92,8 +93,9 @@ export function journalNumericValue(value: unknown): number | null {
 }
 
 export function journalFilterValueLabel(fieldKey: WeldFieldKey, label: string): string {
+  if (fieldKey === 'weldLength') return label
   const number = FIELD_BY_KEY.get(fieldKey)?.kind === 'number' ? journalNumericValue(label) : null
   return number === null ? label : formatJournalNumber(number)
 }
 
-export type JournalRangeSummary = { count: number; numericCount: number; sum: number; average: number | null }
+export type JournalRangeSummary = { count: number; numericCount: number; sum: number; average: number | null; exactSum?: string }

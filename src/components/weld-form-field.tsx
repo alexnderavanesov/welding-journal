@@ -1,5 +1,7 @@
+import { getControlPairAssignmentIssues } from '@/lib/control-pair-assignment'
 import { FileText } from 'lucide-react'
 import { isTConnectionType } from '@/lib/connection-type'
+import { isSupportRepair, SUPPORT_REPAIR_LENGTH_REASON } from '@/lib/support-weld-length'
 import { memo, useEffect, useMemo, useState, type Dispatch, type KeyboardEvent, type MutableRefObject, type SetStateAction } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -17,7 +19,7 @@ import { getControlAssignmentRemovalReason, HISTORY_ASSIGNMENTS } from '@/lib/co
 import { getNewControlAvailabilityReportHistoryReason } from '@/lib/weld-form-save-reasons'
 import { loadSaveCheckSettings } from '@/lib/save-check-settings'
 import { getLayeredControlSaveError } from '@/lib/layered-control-rules'
-import { REPAIR_CONTROL_FIELDS } from '@/lib/line-program-repair-requirements'
+import { getProgramRepairAssignmentIssues, REPAIR_CONTROL_FIELDS } from '@/lib/line-program-repair-requirements'
 import { EDITABLE_NK_ASSIGNMENT_FIELDS, EXCLUDED_CONTROL_ASSIGNMENT_REASON, isActiveOfficialWeld } from '@/lib/control-assignment-eligibility'
 import {
   getWeldFormSuggestionQueryFieldKeys,
@@ -86,7 +88,7 @@ function WeldFormFieldComponent({
       value={field.key === 'hasVik' ? 'да' : String(draft[field.key] ?? '')} /></div>
   }
   return (
-    <div className="space-y-1.5 text-sm">
+    <div className={cn('space-y-1.5 text-sm', field.key === 'weldingJournalNote' && 'col-span-full min-w-0')}>
       {label}
       {field.key === 'technologyCardNumber' ? <WeldFormTechnologyCardField draft={draft} setDraft={setDraft} fieldRefs={fieldRefs} /> : stampOptions ? (
         <Select
@@ -121,6 +123,7 @@ function WeldFormFieldComponent({
         </Select>
       ) : field.key === 'weldingMethod' ? (
         <WeldFormWeldingMethodField
+          single={isTConnectionType(draft.connectionType)}
           value={getTextDraftValue(draft.weldingMethod)}
           inputRef={(element) => {
             fieldRefs.current[field.key] = element
@@ -147,6 +150,7 @@ function WeldFormFieldComponent({
         />
       ) : field.key === 'connectionType' ? (
         <WeldFormConnectionTypeField
+          fixedFamily={draft.id && /^[СУТ]/i.test(String(draft.connectionType ?? '').trim()) ? isTConnectionType(draft.connectionType) ? 'supports' : 'welds' : undefined}
           value={getTextDraftValue(draft.connectionType)}
           inputRef={(element) => {
             fieldRefs.current[field.key] = element
@@ -160,6 +164,7 @@ function WeldFormFieldComponent({
         />
       ) : field.key === 'materialGroup' ? (
         <WeldFormMaterialGroupField
+          single={isTConnectionType(draft.connectionType)}
           value={getTextDraftValue(draft.materialGroup)}
           inputRef={(element) => {
             fieldRefs.current[field.key] = element
@@ -213,7 +218,9 @@ function WeldFormFieldComponent({
           value={getControlAvailabilityValue(draft[field.key])}
           basisValue={getControlBasisValue(draft, field.key)}
           removalReason={getAssignmentRemovalReason(draft, field.key)}
+          cancellationReason={getAssignmentCancellationReason(draft, field.key)}
           requiredReason={getRepairRequiredReason(draft, field.key)}
+          optionReasons={getAssignmentOptionReasons(draft, field.key)}
           layout={controlPickerLayout}
           inputRef={(element) => {
             fieldRefs.current[field.key] = element
@@ -490,7 +497,9 @@ function ControlAvailabilityPicker({
   onChange,
   onBasisChange,
   removalReason,
+  cancellationReason,
   requiredReason,
+  optionReasons,
 }: {
   value: ControlAvailabilityValue
   basisValue: string
@@ -499,15 +508,18 @@ function ControlAvailabilityPicker({
   onChange: (value: ControlAvailabilityValue) => void
   onBasisChange: (value: string) => void
   removalReason: string
+  cancellationReason: string
   requiredReason: string
+  optionReasons: Partial<Record<ControlAvailabilityValue, string>>
 }) {
-  const options = getControlAvailabilityOptions().map(option => requiredReason && (option.value === '' || option.value === 'cancelled')
-    ? { ...option, disabled: true, disabledReason: requiredReason } : option.value === '' && removalReason
-      ? { ...option, disabled: true, disabledReason: removalReason } : option)
+  const options = getControlAvailabilityOptions().map(option => optionReasons[option.value]
+    ? { ...option, disabled: true, disabledReason: optionReasons[option.value] } : option.value === '' && removalReason
+      ? { ...option, disabled: true, disabledReason: removalReason } : option.value === 'cancelled' && cancellationReason
+        ? { ...option, disabled: true, disabledReason: cancellationReason } : option)
 
   return (
     <div className={`rounded-md border ${requiredReason ? 'border-amber-400 ring-1 ring-inset ring-amber-200' : 'border-slate-200'} bg-slate-50/60 p-2 shadow-sm shadow-slate-200/30`}>
-      {requiredReason ? <p className="mb-2 text-xs text-amber-800" title={requiredReason}>Обязательный метод: {requiredReason}</p> : null}
+      {requiredReason ? <p className="mb-2 text-xs text-amber-800">Правило назначения: {requiredReason}</p> : null}
       <div className={cn('grid gap-1.5', layout === 'row' ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-5' : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3')}>
         {options.map((option, index) => {
           const active = value === option.value
@@ -518,7 +530,6 @@ function ControlAvailabilityPicker({
               type="button"
               disabled={option.disabled}
               aria-label={option.label}
-              title={option.disabledReason}
               onClick={() => {
                 if (!option.disabled) onChange(option.value)
               }}
@@ -550,7 +561,7 @@ function ControlAvailabilityPicker({
         >
           <span className="flex items-center gap-1.5 text-[12px] font-semibold leading-tight text-slate-700">
             <FileText className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
-            Основание / документ
+            Основание / документ{value === 'cancelled' || value === 'additional' ? ' *' : ''}
           </span>
           <textarea
             value={basisValue}
@@ -613,6 +624,7 @@ function getFormFieldLabel(field: WeldField & { key: WeldFieldKey }) {
 }
 
 function getReadOnlyReason(fieldKey: WeldFieldKey, draft: WeldInput) {
+  if (fieldKey === 'weldLength' && isSupportRepair(draft)) return SUPPORT_REPAIR_LENGTH_REASON
   if (fieldKey === 'hasVik') return 'ВИК всегда назначен.'
   if (EDITABLE_NK_ASSIGNMENT_FIELDS.some(key => key === fieldKey) && !isActiveOfficialWeld(draft)) return EXCLUDED_CONTROL_ASSIGNMENT_REASON
   if (['category', 'groupName', 'weldControlPercent'].includes(fieldKey)) return 'Общее свойство программы линии. Изменяется в «Программе линий».'
@@ -625,6 +637,20 @@ function getAssignmentRemovalReason(draft: WeldInput, field: WeldFieldKey) {
   const next = { ...draft, [field]: null }
   return getControlAssignmentRemovalReason(next, draft) || getLayeredControlSaveError(next, draft) ||
     (loadSaveCheckSettings().controlHistoryProtection ? getNewControlAvailabilityReportHistoryReason(next, draft) : '') || ''
+}
+
+function getAssignmentCancellationReason(draft: WeldInput, field: WeldFieldKey) {
+  if (!HISTORY_ASSIGNMENTS.some(item => item.enabledKey === field)) return ''
+  return getControlAssignmentRemovalReason({ ...draft, [field]: 'отменен' }, draft)
+}
+
+function getAssignmentOptionReasons(draft: WeldInput, field: WeldFieldKey) {
+  if (!HISTORY_ASSIGNMENTS.some(item => item.enabledKey === field)) return {}
+  return Object.fromEntries(([['', null], ['yes', 'да'], ['additional', 'дополнительный'], ['cancelled', 'отменен']] as const).map(([key, value]) => {
+    const next = { ...draft, [field]: value }
+    const issues = [...getControlPairAssignmentIssues(next, draft), ...getProgramRepairAssignmentIssues(next, draft)]
+    return [key, issues.filter(issue => (issue.fieldKeys as readonly string[]).includes(field)).map(issue => issue.message).join('\n')]
+  }))
 }
 
 function getRepairRequiredReason(draft: WeldInput, field: WeldFieldKey) {
@@ -641,10 +667,12 @@ function areWeldFormFieldPropsEqual(previous: WeldFormFieldProps, next: WeldForm
     previous.setDraft !== next.setDraft ||
     previous.hideLabel !== next.hideLabel ||
     previous.controlPickerLayout !== next.controlPickerLayout ||
+    JSON.stringify(getAssignmentOptionReasons(previous.draft, previous.field.key)) !== JSON.stringify(getAssignmentOptionReasons(next.draft, next.field.key)) ||
     getRepairRequiredReason(previous.draft, previous.field.key) !== getRepairRequiredReason(next.draft, next.field.key) ||
     getAssignmentRemovalReason(previous.draft, previous.field.key) !== getAssignmentRemovalReason(next.draft, next.field.key) ||
+    getAssignmentCancellationReason(previous.draft, previous.field.key) !== getAssignmentCancellationReason(next.draft, next.field.key) ||
     getReadOnlyReason(previous.field.key, previous.draft) !== getReadOnlyReason(next.field.key, next.draft) ||
-    (previous.field.key === 'hasRk' && previous.draft.connectionType !== next.draft.connectionType) ||
+    (['hasRk', 'materialGroup', 'weldingMethod'].includes(previous.field.key) && previous.draft.connectionType !== next.draft.connectionType) ||
     previous.stampSelectOptions?.[previous.field.key] !== next.stampSelectOptions?.[next.field.key] ||
     !Object.is(previous.draft[previous.field.key], next.draft[next.field.key]) ||
     Boolean(

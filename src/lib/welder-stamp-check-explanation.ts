@@ -1,9 +1,11 @@
+import { getSupportCompositionIssues } from './support-joint-rules'
 import { getOfficialStampJointDimensionRequirements, getOfficialStampMaterialScopes } from './welder-stamp-compatibility-utils'
 import { normalizeWeldMaterialGroups, splitWeldMaterialGroups } from './weld-material-groups'
+import { isTConnectionType } from './connection-type'
 
 export type ExampleWeldingMethod = 'РАД' | 'РД' | 'РАД+РД'
 export type StampCheckExample = {
-  connectionType: 'С17' | 'У19'
+  connectionType: 'С17' | 'У19' | 'Т'
   group1: string
   group2: string
   d1: string
@@ -36,8 +38,10 @@ export type StampCheckDimensionExplanation = {
  * Numeric requirements come from the same helpers as save/import validation. */
 export function explainStampCheckExample(input: StampCheckExample) {
   const errors: string[] = []
+  const support = isTConnectionType(input.connectionType)
+  const stampCount = support ? 1 : input.stampCount
   const numbers = {} as Record<'d1' | 't1' | 'd2' | 't2', number>
-  for (const key of ['d1', 't1', 'd2', 't2'] as const) {
+  for (const key of support ? ['d1', 't1'] as const : ['d1', 't1', 'd2', 't2'] as const) {
     const raw = input[key].trim().replace(',', '.')
     const number = Number(raw)
     if (!/^\d+(?:\.\d+)?$/.test(raw) || !Number.isFinite(number) || number <= 0) {
@@ -48,10 +52,11 @@ export function explainStampCheckExample(input: StampCheckExample) {
   for (const [index, value] of [input.group1, input.group2].entries()) {
     if (splitWeldMaterialGroups(value).length !== 1) errors.push(`Материал ${index + 1}: выберите одну группу.`)
   }
+  errors.push(...getSupportCompositionIssues({ connectionType: input.connectionType, weldingMethod: input.weldingMethod, materialGroup: normalizeWeldMaterialGroups(`${input.group1} + ${input.group2}`) }).map(issue => issue.message))
   const scopes: StampCheckDimensionExplanation[] = []
-  const welders = (input.stampCount === 1 ? ['А'] : ['А', 'Б']).map((name, index) => ({
+  const welders = (stampCount === 1 ? ['А'] : ['А', 'Б']).map((name, index) => ({
     name: `Сварщик ${name}`,
-    methods: input.weldingMethod === 'РАД+РД' && input.stampCount === 2 ? (index === 0 ? input.methodA : input.methodB) : input.weldingMethod,
+    methods: input.weldingMethod === 'РАД+РД' && stampCount === 2 ? (index === 0 ? input.methodA : input.methodB) : input.weldingMethod,
   }))
   const coveredMethods = new Set(welders.flatMap(welder => welder.methods.split('+')))
   const missingMethods = input.weldingMethod.split('+').filter(method => !coveredMethods.has(method))
@@ -62,14 +67,19 @@ export function explainStampCheckExample(input: StampCheckExample) {
   if (splitWeldMaterialGroups(record.materialGroup).length === 2) {
     for (const scope of getOfficialStampMaterialScopes(record)) {
       scopes.push({ group: scope.group,
-        diameterFields: [scope.side === 1 ? 'd1' : 'd2'], thicknessFields: [scope.side === 1 ? 't1' : 't2'], alternatives: false,
-        diameter: `D${scope.side} = ${scope.dimensions.diameters[0]} мм`,
-        thickness: `T${scope.side} = ${scope.dimensions.thicknesses[0]} мм`,
+        diameterFields: [scope.geometrySide === 1 ? 'd1' : 'd2'], thicknessFields: [scope.geometrySide === 1 ? 't1' : 't2'], alternatives: false,
+        diameter: `D${scope.geometrySide} = ${scope.dimensions.diameters[0]} мм`,
+        thickness: `T${scope.geometrySide} = ${scope.dimensions.thicknesses[0]} мм`,
         note: `Материал ${scope.side}: нужны оба параметра этой стороны. Допуск другой группы их не заменяет.` })
     }
   } else {
     const requirements = getOfficialStampJointDimensionRequirements(record)
-    if (requirements.diameterCoverage === 'any') {
+    if (support) {
+      scopes.push({ group: record.materialGroup,
+        diameterFields: ['d1'], thicknessFields: ['t1'], alternatives: false,
+        diameter: `D1 = ${requirements.diameters[0]} мм`, thickness: `T1 = ${requirements.thicknesses[0]} мм`,
+        note: 'Нужны D1 и T1 трубы. Одно официальное клеймо покрывает выбранный способ сварки; D2 и T2 не требуются.' })
+    } else if (requirements.diameterCoverage === 'any') {
       scopes.push({ group: record.materialGroup,
         diameterFields: ['d1', 'd2'], thicknessFields: ['t1', 't2'], alternatives: true,
         diameter: `D1 = ${numbers.d1} или D2 = ${numbers.d2} мм`,

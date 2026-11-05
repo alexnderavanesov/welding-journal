@@ -1,6 +1,9 @@
 import { recordAuditWdiMode } from './audit-functions'
+import { isTConnectionType } from '@/lib/connection-type'
 import { formatAccessValidationMessage } from './access-validation-message'
-import { getControlAssignmentRemovalReason } from '@/lib/control-assignment-history'
+import { getControlAssignmentPerformedHistory, getControlAssignmentRemovalReason } from '@/lib/control-assignment-history'
+import { clearRequestsForRemovedControlAssignments } from '@/lib/control-assignment-request-removal'
+import { hasPstoExecutionHistory } from '@/lib/psto-cycle'
 import { getLnkResultRemovalBlockReason } from '@/lib/lnk-chronology-checks'
 import { getDocumentRequisiteErrors } from '@/lib/document-requisites'
 import { getWeldMaterialGroupsError, normalizeWeldMaterialGroups } from '@/lib/weld-material-groups'
@@ -265,6 +268,9 @@ export function prepareServerWeldRecords({
   })
   records.forEach((record) => {
     record.hasVik = 'да'
+    if (isTConnectionType(record.connectionType)) record.wdi = null
+    const previous = record.id ? previousRows.get(Number(record.id)) : undefined
+    if (previous) clearRequestsForRemovedControlAssignments(record, previous)
     const policyRow = record as WeldRow
     policyRow.preHeatTreatmentLnkEnabled = context.controlProcessSettings.preHeatTreatmentLnkEnabled
     record.finalStatus = calculateFinalStatus(record)
@@ -372,6 +378,11 @@ function applyPstoLineAssignments({
 
     if (lineState?.programState) {
       Object.assign(record, applyPstoChainPolicy(record as WeldRow, lineState, context.systemIndexSettings))
+    } else if (!targetAssigned && getControlAssignmentPerformedHistory(record, 'pstoRequired')) {
+      // Legacy lines without an explicit policy must preserve this joint's
+      // performed PSTO just as applyPstoChainPolicy does. Reapplying the line's
+      // future demand must not undo a validated history-preserving move.
+      record.pstoExceptionBasis = null
     } else {
       record.pstoRequired = targetAssigned ? 'да' : targetCancelled ? 'отменен' : null
       record.pstoCancellationDate = targetCancelled ? lineState?.cancellationDate || null : null
@@ -452,12 +463,15 @@ export function validateServerWeldRecords({
   context,
   importMode = false,
   allowSystemJointNames = false,
+  inheritedControlAssignmentSource,
 }: {
   records: WeldInput[]
   previousRows: ReadonlyMap<number, WeldJoint>
   context: ServerWeldValidationContext
   importMode?: boolean
   allowSystemJointNames?: boolean
+  /** Locked source used by an automatic continuation, not a client-provided field. */
+  inheritedControlAssignmentSource?: WeldInput
 }) {
   context = { ...context, saveCheckSettings: normalizeSaveCheckSettings(context.saveCheckSettings) }
   const changedById = new Map(records.filter(row => row.id != null).map(row => [Number(row.id), row]))
@@ -506,12 +520,13 @@ export function validateServerWeldRecords({
     if (workflowStageReason) throw new Error(`${prefix}${workflowStageReason}`)
     const systemDocumentReason = getSystemDocumentIntegrityReason(record, previous)
     const formReason = getWeldFormSaveBlockReason(
-      record,
+      { ...record, programRepairRequirements: requirements.get(newIds.get(record)!) ?? [] },
       { ...previous, programChainState: previous ? trustedChainStates.get(previous.id) : undefined } as WeldInput,
       context.saveCheckSettings,
       {
         formatValidationMessage: formatAccessValidationMessage,
         allowSystemJointName: allowSystemJointNames,
+        inheritedControlAssignmentSource: previous ? undefined : inheritedControlAssignmentSource,
         allowPrimaryLnkStageDebt:
           context.controlProcessSettings.preHeatTreatmentLnkEnabled &&
           context.controlProcessSettings.allowPrimaryLnkBeforePreviousStagesComplete,
@@ -577,6 +592,10 @@ export function getSystemDocumentIntegrityReason(
         .some(key => hasChangedOptionalField(record, previous, key)),
   })
   if (pstoRequestReason) errors.push(pstoRequestReason)
+  if (!isCompletedPstoValue(record.pstoResult) && (hasText(record.pstoDate) || hasText(record.heatTreatmentDiagram)) &&
+      (['pstoResult', 'pstoDate', 'heatTreatmentDiagram'] as const).some(key => hasChangedOptionalField(record, previous, key))) {
+    errors.push('Фактическую дату ПСТО или диаграмму нельзя оставить без результата «проведено».')
+  }
 
   const tvmtRequestReason = getRequestDocumentIntegrityReason({
     record,
@@ -765,7 +784,7 @@ function getFullyAssignedPstoLineReason(
   const state = context.pstoLineAssignments.get(getPstoLineIdentityKey(identity))
   if (state?.programState) {
     const required = getPstoChainDecision(state, record.joint, context.systemIndexSettings ?? DEFAULT_SYSTEM_INDEX_SETTINGS)?.required ?? state.programState === 'assigned'
-    return required && isControlEnabledValue(record.pstoRequired) ? '' : 'Для этой цепочки ПСТО не назначено. Проверьте программу ПСТО и исключения линии.'
+    return (required || hasPstoExecutionHistory(record)) && isControlEnabledValue(record.pstoRequired) ? '' : 'Для этой цепочки ПСТО не назначено. Проверьте программу ПСТО и исключения линии.'
   }
   if (!state || state.rowCount === 0 || state.assignedCount !== state.rowCount) {
     const label = [identity.projectTitle, identity.subtitleCode, identity.line].filter(Boolean).join(' · ')

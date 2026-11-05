@@ -1,14 +1,14 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { isAngularConnectionType } from '@/lib/connection-type'
+import { calculateSupportProgramDetails } from './support-program-calculation'
+import { isAngularConnectionType, isTConnectionType } from '@/lib/connection-type'
 import { OFFICIAL_WELDER_STAMP_FIELD_KEYS } from '@/lib/report-common-config'
 import { normalizeControlAvailabilityStorageText } from '@/lib/control-availability-values'
 import { normalizeResultStatus } from '@/lib/weld-status'
 import { isPreHeatTreatmentStageEnabled } from '@/lib/pre-heat-treatment-policy'
-import { getControlAssignmentHistory } from './control-assignment-history'
+import { getControlAssignmentRemovalHistory } from './control-assignment-history'
 import { buildLineProgramTopology } from './line-program-topology'
 import { loadSystemIndexSettings, type SystemIndexSettings } from './system-index-settings'
 import { buildProgramRepairRequirements, REPAIR_CONTROL_FIELDS } from './line-program-repair-requirements'
-import { programApprovalKey } from './program-control-approval'
 import { isActiveOfficialWeld } from './control-assignment-eligibility'
 
 export type LineProgramMethod = 'ВИК' | 'РК' | 'УЗК' | 'ПВК'
@@ -40,6 +40,7 @@ export type LineProgramDemand = {
 }
 
 export type LineProgramStampCalculation = {
+  support?: boolean
   scope?: 'line' | 'stamp'
   stamp: string
   rowIds: number[]
@@ -100,7 +101,7 @@ export function isLineProgramCalculationRow(row: WeldRow) {
 /** Full-line assignments can be planned before welding and official stamps exist. */
 export function isLineProgramControlRow(row: WeldRow) {
   const family = String(row.connectionType ?? '').trim().toLocaleUpperCase('ru')
-  return (family.startsWith('С') || family.startsWith('У')) && isActiveOfficialWeld(row)
+  return (family.startsWith('С') || family.startsWith('У') || family.startsWith('Т')) && isActiveOfficialWeld(row)
 }
 
 export function isRejectedLineProgramResult(value: unknown) {
@@ -141,9 +142,10 @@ export function hasLineProgramSurchargeResult(row: WeldRow) {
 }
 
 export function getLineProgramRowDemand(row: WeldRow, kind: LineProgramDemandKind): RowDemand {
-  const blocked = hasRejectedLineProgramControl(row)
+  const support = isTConnectionType(row.connectionType)
+  const blocked = !support && hasRejectedLineProgramControl(row)
   const methods = kind === 'pvk' ? METHODS.filter(({ code }) => code === 'ПВК')
-    : METHODS.filter(({ code }) => code === 'РК' || code === 'УЗК')
+    : METHODS.filter(({ code }) => code === 'УЗК' || !support && code === 'РК')
   const states = methods.map(({ code, assignment }) => {
     const value = normalizeControlAvailabilityStorageText(row[assignment])
     const completed = hasOwnLineProgramMethodResult(row, code)
@@ -158,7 +160,7 @@ export function getLineProgramRowDemand(row: WeldRow, kind: LineProgramDemandKin
     }
   })
   const layered = !blocked && kind === 'common' && isAngularConnectionType(row.connectionType) && row.layeredControlAssigned === true
-  const cancelledPair = !blocked && kind === 'common' && !isAngularConnectionType(row.connectionType) && states.every((s) => s.cancelled)
+  const cancelledPair = !support && !blocked && kind === 'common' && !isAngularConnectionType(row.connectionType) && states.every((s) => s.cancelled)
   const assignedCount = states.filter((s) => s.assigned).length + Number(layered)
   const covered = states.some((s) => s.covered) || layered || cancelledPair
   return {
@@ -181,8 +183,9 @@ export function calculateLineProgram(
   pvkPercent: number,
   systemIndexSettings: SystemIndexSettings = loadSystemIndexSettings(),
   approved: ReadonlySet<string> = new Set(),
+  support = false,
 ): LineProgramStampCalculation[] {
-  return calculateLineProgramDetails(rows, percent, pvkPercent, systemIndexSettings, approved).calculations
+  return calculateLineProgramDetails(rows, percent, pvkPercent, systemIndexSettings, approved, support).calculations
 }
 
 /** Internal full-line result for projections that also need the physical count.
@@ -195,7 +198,10 @@ export function calculateLineProgramDetails(
   pvkPercent: number,
   systemIndexSettings: SystemIndexSettings = loadSystemIndexSettings(),
   approved: ReadonlySet<string> = new Set(),
+  support = false,
 ): { calculations: LineProgramStampCalculation[]; calculationRows: readonly WeldRow[] } {
+  if (support) return calculateSupportProgramDetails(rows, percent, pvkPercent, systemIndexSettings)
+  rows = rows.filter(row => !isTConnectionType(row.connectionType))
   if (parseLineProgramPercent(percent) === null || parseLineProgramPercent(pvkPercent) === null ||
     (percent === 100 ? pvkPercent < 1 : pvkPercent > percent)) {
     throw new Error('Проверьте базовый процент и процент ПВК в программе линии.')
@@ -250,12 +256,7 @@ export function calculateLineProgramDetails(
       pvk: pvkPercent === 100 ? buildDemand(lineRows, flags, 'pvk', 100, lineRows.length, lineRows.length) : buildDemand([], flags, 'pvk', 0, 0, 0),
     })
   }
-  // An approved combination is necessary independently of quota. Reserve its
-  // coverage before choosing ordinary surplus on other joints (plan §8/14).
-  const approvedCommonIds = new Set([...uniqueRows.values()].filter(row =>
-    approved.has(programApprovalKey(row, 'common', true)),
-  ).map(row => row.id))
-  const commonExcess = identifyExcess(calculations, uniqueRows, flags, 'common', approvedCommonIds)
+  const commonExcess = identifyExcess(calculations, uniqueRows, flags, 'common', new Set())
   const necessaryLayeredIds = new Set([...uniqueRows.values()].filter((row) =>
     row.layeredControlAssigned && isAngularConnectionType(row.connectionType) && !commonExcess.has(`${row.id}:Послойный ПВК`),
   ).map((row) => row.id))
@@ -271,8 +272,7 @@ export function calculateLineProgramDetails(
       const requiredMethods = new Set((row.programRepairRequirements ?? requirements.get(row.id) ?? []).map(item => item.method))
       for (const method of ['РК', 'УЗК', 'ПВК'] as const) {
         const kind = method === 'ПВК' ? 'pvk' : 'common'
-        if (requiredMethods.has(method) || normalizeControlAvailabilityStorageText(row[REPAIR_CONTROL_FIELDS[method]]) !== 'да' ||
-          approved.has(programApprovalKey(row, kind, true))) continue
+        if (requiredMethods.has(method) || normalizeControlAvailabilityStorageText(row[REPAIR_CONTROL_FIELDS[method]]) !== 'да') continue
         for (const stamp of getLineProgramOfficialStamps(row)) {
           const key = stamp.toLocaleLowerCase('ru')
           let group = byStamp.get(key)
@@ -326,7 +326,9 @@ function identifyExcess(
   protectedIds: ReadonlySet<number>,
 ) {
   const memberships = new Map<number, number[]>()
-  const remaining = calculations.map((group) => group[kind].coveredRowIds.length)
+  // Additional closes missing demand but is an explicitly justified extra place.
+  // It never displaces an ordinary assignment that fits the ordinary quota.
+  const remaining = calculations.map(group => group[kind].coveredRowIds.filter(id => !flags.get(id)?.[kind].additional).length)
   calculations.forEach((group, index) => {
     group[kind].excessAssignments = []
     group[kind].excessRowIds = []
@@ -344,7 +346,7 @@ function identifyExcess(
     ? normalizeControlAvailabilityStorageText(row.hasPvk) === 'да' ? ['ПВК'] : []
     : [...(['УЗК', 'РК'] as const).filter(method => normalizeControlAvailabilityStorageText(row[fields[method]]) === 'да'),
       ...(row.layeredControlAssigned && isAngularConnectionType(row.connectionType) ? ['Послойный ПВК' as const] : [])]
-  const protectedMethod = (row: WeldRow, method: LineProgramExcessAssignment['method']) => method === 'Послойный ПВК' || !!getControlAssignmentHistory(row, fields[method])
+  const protectedMethod = (row: WeldRow, method: LineProgramExcessAssignment['method']) => method === 'Послойный ПВК' || !!getControlAssignmentRemovalHistory(row, fields[method])
   const add = (rowId: number, method: LineProgramExcessAssignment['method'], duplicate: boolean, owners: number[]) => {
     excess.add(`${rowId}:${method}`)
     for (const index of owners) {
@@ -376,9 +378,8 @@ function identifyExcess(
   for (const id of ordered) {
     const owners = memberships.get(id) ?? []
     const state = flags.get(id)![kind]
-    // Additional coverage occupies quota places but is never a removal candidate.
-    // A mixed yes + additional joint is one protected place too: removing its yes
-    // would not reduce coverage. Look for a genuinely removable ordinary joint.
+    // Additional and mixed places were excluded from the surplus budget; their
+    // coverage still participates in missing-demand calculation above.
     const ordinary = remainingMethods.get(id)!
     if (!ordinary.length || !state.covered || !owners.length) continue
     if (!owners.every((i) => remaining[i] > calculations[i][kind].required)) continue

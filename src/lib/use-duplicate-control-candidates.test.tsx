@@ -60,9 +60,11 @@ describe('duplicate-control bounded queries', () => {
     })
     await waitFor(() => expect(result.current.totalCount).toBe(250))
 
-    window.dispatchEvent(new Event('focus'))
-    window.dispatchEvent(new Event('online'))
-    await new Promise((resolve) => setTimeout(resolve, 25))
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+      window.dispatchEvent(new Event('online'))
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    })
     expect(serverMocks.listDuplicateControlCandidatePage).toHaveBeenCalledTimes(1)
 
     act(() => result.current.loadMore())
@@ -75,7 +77,7 @@ describe('duplicate-control bounded queries', () => {
 
   it('does not request the complete controls registry until its section is expanded', async () => {
     const queryClient = createQueryClient()
-    const { rerender } = renderHook(
+    const { result, rerender } = renderHook(
       ({ registryEnabled }: { registryEnabled: boolean }) => useDuplicateControls({ registryEnabled }),
       {
         initialProps: { registryEnabled: false },
@@ -89,10 +91,13 @@ describe('duplicate-control bounded queries', () => {
     expect(serverMocks.listDuplicateControlRegistryPage).toHaveBeenCalledWith({
       data: { page: 1, pageSize: 100 },
     })
+    await waitFor(() => expect(result.current.duplicateControlRegistryReady).toBe(true))
 
-    window.dispatchEvent(new Event('focus'))
-    window.dispatchEvent(new Event('online'))
-    await new Promise((resolve) => setTimeout(resolve, 25))
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+      window.dispatchEvent(new Event('online'))
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    })
     expect(serverMocks.listDuplicateControlRegistryPage).toHaveBeenCalledTimes(1)
   })
 
@@ -109,9 +114,11 @@ describe('duplicate-control bounded queries', () => {
     })
     await waitFor(() => expect(result.current.data?.map((row) => row.id)).toEqual([9, 4]))
 
-    window.dispatchEvent(new Event('focus'))
-    window.dispatchEvent(new Event('online'))
-    await new Promise((resolve) => setTimeout(resolve, 25))
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+      window.dispatchEvent(new Event('online'))
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    })
     expect(serverMocks.listDuplicateControlCandidateRowsByIds).toHaveBeenCalledTimes(1)
   })
 })

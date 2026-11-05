@@ -53,14 +53,14 @@ describe('shared calculation explanations and zero-weight repair assignments', (
     const excess = explain(rows, { list: 'excess' })
     expect(excess.rows.map(row => row.id)).toEqual([2, 3])
     expect(excess.rows[0].reason).toContain('Можно снять')
-    expect(excess.rows[1].reason).toContain('защищена история')
+    expect(excess.rows[1].reason).toContain('защищены выполненные факты')
     expect(excess.explanation).toContain('Считаются назначения методов')
     expect(explain(rows, { list: 'reduction' }).rows.map(row => row.id)).toEqual([2])
     const paired = [row(1, { hasRk: 'да', hasUzk: 'да' })]
-    expect(explain(paired, { list: 'duplicates' }).rows[0].reason).toContain('взаимозаменяемый метод')
+    expect(explain(paired, { list: 'duplicates' }).rows[0].reason).toContain('взаимозаменяемого метода')
     const approved = new Set([programApprovalKey(paired[0], 'common', true)])
-    expect(explain(paired, { list: 'excess', approved }).total).toBe(0)
-    expect(explain(paired, { list: 'approved', approved }).rows[0].reason).toContain('явное согласование')
+    expect(explain(paired, { list: 'excess', approved }).total).toBe(1)
+    expect(explain(paired, { list: 'approved', approved }).total).toBe(0)
   })
   it('shows candidates only for groups with actual debt, never an unreachable theoretical quota', () => {
     const rows = [row(1, { hasRk: 'да', stamp1K: 'A' }), row(2, { stamp1K: 'B' })]
@@ -105,13 +105,13 @@ describe('shared calculation explanations and zero-weight repair assignments', (
     expect(result.rows.find(row => row.id === 1)?.reason).toContain('B, C')
     expect(explain(rows, { list: 'reduction' }).rows.map(row => row.id)).toEqual([2])
   })
-  it('shows an approved pair even when no excess survives and protects inherited mandatory methods', () => {
-    const rows = [row(1, { hasRk: 'да', hasUzk: 'да', vikResult: 'ремонт' }), row(2, { joint: 'F1R1', hasRk: 'да', hasUzk: 'да' })]
+  it('ignores retired approvals and protects inherited assignments without them', () => {
+    const rows = [row(1, { hasRk: 'да', hasUzk: 'дополнительный', vikResult: 'ремонт' }), row(2, { joint: 'F1R1', hasRk: 'да', hasUzk: 'дополнительный' })]
     const approved = new Set([programApprovalKey(rows[0], 'common', true)])
     const groups = calculateLineProgram(rows, 10, 10, undefined, approved)
-    expect(createProgramRowSelector(rows, groups, 1, approved)({ slice: 'approved' }).map(row => row.id)).toEqual([1])
+    expect(createProgramRowSelector(rows, groups, 1, approved)({ slice: 'approved' }).map(row => row.id)).toEqual([])
     expect(buildLineConsistencyTasks(rows, approved).filter(task => task.fieldKey === 'controlPresence')).toEqual([])
-    expect(explain(rows, { list: 'obligations', approved }).rows[0].reason).toContain('согласованию РК + УЗК')
+    expect(explain(rows, { list: 'obligations', approved }).rows[0].reason).toContain('унаследован')
   })
   it('reports missing intermediate history and never binds another line with a similar name', () => {
     const original = [row(1), row(2, { joint: 'F1R1' }), row(3, { joint: 'F1R2' })]

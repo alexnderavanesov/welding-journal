@@ -31,7 +31,7 @@ const FILTER_COLUMN = { ...DEFAULT_COLUMN, sortable: true, filter: 'agSetColumnF
   keyCreator: filterLabel,
   filterParams: { buttons: ['reset', 'apply'], closeOnApply: true, refreshValuesOnOpen: true, valueFormatter: filterLabel },
   suppressHeaderMenuButton: true, cellDataType: false } satisfies ColDef
-const LOCALE = { noRowsToShow: 'По текущему поиску и фильтрам ничего не найдено.', loadingOoo: 'Загрузка…',
+const LOCALE = { noRowsToShow: 'По текущему поиску и фильтрам ничего не найдено.', noMatchingRows: 'По текущему поиску и фильтрам ничего не найдено.', loadingOoo: 'Загрузка…',
   pinColumn: 'Закрепить столбец', pinLeft: 'Слева', pinRight: 'Справа', noPin: 'Не закреплять',
   autosizeThisColumn: 'Ширина по содержимому', autosizeAllColumns: 'Подобрать ширину всех',
   sortAscending: 'По возрастанию', sortDescending: 'По убыванию', sortUnSort: 'Сбросить сортировку',

@@ -14,6 +14,7 @@ import { RequestRowsSearch } from '@/components/request-rows-search'
 import { Button } from '@/components/ui/button'
 import { WorkflowResultOptionPicker } from '@/components/workflow-result-option-picker'
 import { getLnkSelectionResultRestrictionReason } from '@/components/lnk-result-selection-restrictions'
+import { getLnkMethodFamilyBlockReason } from '@/lib/lnk-method-family'
 import { useControlProcessSettings } from '@/lib/control-process-settings'
 import { useSystemIndexSettings } from '@/lib/system-index-settings'
 import { getSystemRuleSettingsHref } from '@/lib/system-rule-catalog'
@@ -116,6 +117,10 @@ export function DuplicateControlDialog({
   }
   const officialityBlockReason = selectedRows.map(getDuplicateControlOfficialityBlockReason).find(Boolean)
   if (officialityBlockReason) saveBlockReason = officialityBlockReason
+  const methodFamilyBlockReason = selectedRows.flatMap(row =>
+    [...draft.methods].map(method => getLnkMethodFamilyBlockReason(row, method)),
+  ).find(Boolean)
+  if (methodFamilyBlockReason) saveBlockReason = methodFamilyBlockReason
   const getDisabledResultReason = (result: string) => [
     getLnkSelectionResultRestrictionReason(selectedRows, [...draft.methods], result, {
       systemIndexSettings,
@@ -222,17 +227,20 @@ export function DuplicateControlDialog({
             <div className="mt-4 grid grid-cols-2 gap-2">
               {DUPLICATE_CONTROL_METHODS.map((method) => {
                 const selected = draft.methods.has(method)
+                const familyReason = selectedRows.map(row => getLnkMethodFamilyBlockReason(row, method)).find(Boolean)
+                const disabled = !selected && (isEditing || Boolean(familyReason))
                 return (
                   <button
                     key={method}
                     type="button"
                     onClick={() => onToggleMethod(method)}
-                    disabled={isEditing && !selected}
+                    disabled={disabled}
+                    title={familyReason}
                     className={`rounded-md border px-3 py-2 text-left text-sm transition ${
                       selected
                         ? 'border-sky-300 bg-sky-50 text-sky-900 shadow-sm'
                         : 'border-slate-200 bg-white text-slate-600 hover:border-sky-200'
-                    } ${isEditing && !selected ? 'cursor-not-allowed opacity-50 hover:border-slate-200' : ''}`}
+                    } ${disabled ? 'cursor-not-allowed opacity-50 hover:border-slate-200' : ''}`}
                   >
                     {method}
                   </button>

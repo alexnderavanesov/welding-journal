@@ -104,6 +104,9 @@ export function ProgramGrid<T>(props: Props<T>) {
 
 function Grid<T>(props: Props<T>) {
   const { kind, sessionKey, label, rows, columns, virtual = false } = props
+  // Both levels occupy their complete page extent, with only a bounded AG
+  // viewport rendered. Cell/detail auto-height still measures wrapped content.
+  const pageScroll = kind === 'joints' || kind === 'stamps'
   const { appearance } = useProgramAppearance()
   const [api, setApi] = useState<GridApi<T> | null>(null)
   const [settings, setSettings] = useState(() => readProgramGridSettings(kind))
@@ -153,7 +156,7 @@ function Grid<T>(props: Props<T>) {
       if (node) decorate(element, node, api)
     }
   }, [api, props.rowAttributes, props.getRowClass, rows, decorate])
-  useProgramPageScroll(root, api, kind === 'joints')
+  useProgramPageScroll(root, api, pageScroll)
   useProgramDomOrder(root)
   const save = useCallback((grid: GridApi<T>) => {
     if (restoring.current || grid.isDestroyed()) return
@@ -198,8 +201,8 @@ function Grid<T>(props: Props<T>) {
   const compactOverview = appearance.theme === 'quartz' && (kind === 'lines' || kind === 'stamps')
   const densityOffset = appearance.density === 'compact' ? compactOverview ? -20 : -8 : appearance.density === 'spacious' ? 12 : 0
   const rowHeight = props.rowHeight ?? ((kind === 'assignments' ? 72 : kind === 'stamps' ? 88 : kind === 'lines' ? 76 : 44) + densityOffset)
-  useJournalResizeBuffer(api, virtual || kind === 'joints')
-  useJournalScrollPlaceholder(root, api, virtual || kind === 'joints', rowHeight, appearance.theme, false, true)
+  useJournalResizeBuffer(api, virtual || pageScroll)
+  useJournalScrollPlaceholder(root, api, virtual || pageScroll, rowHeight, appearance.theme, false, true)
   const popupColumn = useRef<string | null>(null)
   const postProcessPopup = useStableEventCallback((params: PostProcessPopupParams) => {
     popupColumn.current = params.column?.getColId() ?? null
@@ -246,7 +249,7 @@ function Grid<T>(props: Props<T>) {
   }
   return <div ref={root} data-program-grid={kind} data-program-grid-context={props.contextLabel ?? label}
     data-program-density={appearance.density} data-program-theme={appearance.theme} data-program-vertical-borders={appearance.verticalBorders}
-    className={`program-ag-grid grid-result-motion ${kind === 'joints' ? 'program-ag-grid-windowed' : virtual ? 'program-ag-grid-virtual' : 'program-ag-grid-page'}`}
+    className={`program-ag-grid grid-result-motion ${pageScroll ? 'program-ag-grid-windowed' : virtual ? 'program-ag-grid-virtual' : 'program-ag-grid-page'}`}
     onContextMenu={rowMenu} onKeyDownCapture={event => {
       if (!(event.target instanceof Element) || event.target.closest('[data-program-grid]') !== root.current) return
       if (api && gridHeaderKeyboard(event, api, { openFilter: id => { popupColumn.current = id } })) return
@@ -266,10 +269,10 @@ function Grid<T>(props: Props<T>) {
     <div className="program-grid-frame">
       <AgGridReact<T> theme={(kind === 'lines' ? OVERVIEW_THEMES : THEMES)[appearance.theme]} localeText={LOCALE} rowData={rows} columnDefs={columns} defaultColDef={kind === 'lines' ? DEFAULT_COLUMN : UNGROUPED_COLUMN}
         groupDisplayType="groupRows" groupRowRendererParams={GROUP_ROW} isGroupOpenByDefault={initiallyOpenGroup}
-        initialState={initialState.current} getRowId={rowId} domLayout={virtual || kind === 'joints' ? 'normal' : 'autoHeight'}
+        initialState={initialState.current} getRowId={rowId} domLayout={virtual || pageScroll ? 'normal' : 'autoHeight'}
         rowHeight={rowHeight} getRowHeight={kind === 'lines' ? getRowHeight : undefined} headerHeight={36} rowBuffer={5} animateRows={false} suppressScrollOnNewData ensureDomOrder={false} suppressRowTransform
         suppressRowHoverHighlight suppressColumnMoveAnimation suppressDragLeaveHidesColumns
-        suppressGroupRowsSticky={kind === 'joints'}
+        suppressGroupRowsSticky={pageScroll}
         masterDetail={!!props.detailRenderer} detailCellRenderer={props.detailRenderer ? detailMotion.renderer : undefined} detailRowAutoHeight
         keepDetailRows keepDetailRowsCount={100} getRowClass={rowClasses}
         suppressCellFocus={false} suppressFocusAfterRefresh postProcessPopup={postProcessPopup} getColumnMenuItems={columnMenu}

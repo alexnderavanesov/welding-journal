@@ -1,3 +1,4 @@
+import { overflowTitle } from '@/lib/overflow-title'
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, FileSpreadsheet, Layers3 } from 'lucide-react'
 
@@ -216,7 +217,7 @@ export function WeldingJournalGenerationDialog({
                   <span className="inline-flex h-5 min-w-5 items-center justify-center rounded bg-slate-100 px-1 text-[11px] font-semibold text-slate-500">
                     {index + 1}
                   </span>
-                  <span className="min-w-0 truncate" title={title}>{title}</span>
+                  <span className="min-w-0 truncate" {...overflowTitle(title)}>{title}</span>
                   <span className="ml-auto shrink-0 text-xs text-slate-400">
                     {plan.groups[index]?.length ?? 0} ст.
                   </span>

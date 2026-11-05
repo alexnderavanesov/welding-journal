@@ -1,4 +1,5 @@
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
+import { isTConnectionType } from '@/lib/connection-type'
 import {
   formatOfficialStampCompatibilityIssue,
   getOfficialStampCompatibilityIssues,
@@ -35,8 +36,10 @@ export function shouldValidateOfficialStampCompatibilityForSave(
   previous?: OfficialStampValidationRecord,
 ) {
   if (!previous) return true
+  const support = isTConnectionType(record.connectionType) && isTConnectionType(previous.connectionType)
   return OFFICIAL_STAMP_VALIDATION_FIELD_KEYS.some(
-    (fieldKey) => normalizeComparable(record[fieldKey]) !== normalizeComparable(previous[fieldKey]),
+    (fieldKey) => !(support && (fieldKey === 'd2' || fieldKey === 't2')) &&
+      normalizeComparable(record[fieldKey]) !== normalizeComparable(previous[fieldKey]),
   )
 }
 

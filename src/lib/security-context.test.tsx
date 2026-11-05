@@ -2,16 +2,35 @@ import { act, render, screen } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import type { AccessIdentity } from './access-permissions'
 
-const state = vi.hoisted(() => ({ fetch: vi.fn(), clear: vi.fn(), refresh: undefined as undefined | (() => Promise<void>) }))
+const state = vi.hoisted(() => ({ fetch: vi.fn(), clear: vi.fn(), pathname: '/lnk', href: '/lnk', refresh: undefined as undefined | (() => Promise<void>) }))
 vi.unmock('@/lib/security-context')
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => state }))
-vi.mock('@tanstack/react-router', () => ({ useRouterState: () => '/lnk' }))
+vi.mock('@tanstack/react-router', () => ({ useRouterState: ({ select }: { select: (state: { location: { pathname: string; href: string } }) => string }) => select({ location: { pathname: state.pathname, href: state.href } }) }))
 vi.mock('@/server/account-api', () => ({ getCurrentAccount: state.fetch, refreshAccountActivity: state.fetch }))
 vi.mock('./account-activity', () => ({ watchAccountActivity: (refresh: () => Promise<void>) => { state.refresh = refresh; void refresh(); return () => {} } }))
 import { SecurityProvider, SiteSecurityGate, useAccess } from './security-context'
 
 const identity: AccessIdentity = { id: 'user', name: 'Сотрудник', email: 'user@test.example', title: '', role: 'user', revision: 1, permissions: ['lnk.view'] }
-beforeEach(() => { state.fetch.mockReset(); state.clear.mockReset(); state.fetch.mockImplementation(async () => structuredClone(identity)) })
+beforeEach(() => { state.pathname = '/lnk'; state.href = '/lnk'; state.fetch.mockReset(); state.clear.mockReset(); state.fetch.mockImplementation(async () => structuredClone(identity)) })
+
+it('allows signed-in users to read check parameters without granting access to registry routes', async () => {
+  state.pathname = '/account'; state.href = '/account?tab=rules&section=checks'
+  state.fetch.mockResolvedValue({ ...identity, permissions: [] })
+  const { rerender } = render(<SecurityProvider><SiteSecurityGate><span>Справочные параметры</span></SiteSecurityGate></SecurityProvider>)
+  await screen.findByText('Справочные параметры')
+  state.pathname = '/references'; state.href = '/references?tab=specialists'
+  rerender(<SecurityProvider><SiteSecurityGate><span>Справочные параметры</span></SiteSecurityGate></SecurityProvider>)
+  expect(screen.queryByText('Справочные параметры')).not.toBeInTheDocument()
+  expect(screen.getByText('Доступ к этому разделу не предоставлен.')).toBeVisible()
+})
+
+it('still requires a session to read the public explanation', async () => {
+  state.pathname = '/account'; state.href = '/account?tab=rules&section=checks'
+  state.fetch.mockResolvedValue(null)
+  render(<SecurityProvider><SiteSecurityGate><span>Справочные параметры</span></SiteSecurityGate></SecurityProvider>)
+  await screen.findByRole('heading', { name: 'Вход в систему' })
+  expect(screen.queryByText('Справочные параметры')).not.toBeInTheDocument()
+})
 
 it('preserves the identity reference and private view on an unchanged server refresh', async () => {
   const identities: Array<AccessIdentity | null> = []

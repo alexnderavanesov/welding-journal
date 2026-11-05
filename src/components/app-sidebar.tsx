@@ -22,6 +22,7 @@ import './app-sidebar.css'
 type AppSidebarProps = {
   activeReport: ActiveReport
   collapsed: boolean
+  animateWidth?: boolean
   onCollapsedChange: (collapsed: boolean) => void
   onReportChange: (report: ActiveReport) => void
 }
@@ -36,11 +37,11 @@ const sidebarItems: Array<{
   { report: 'heatTreatment', label: 'ПСТО и ТВМТ', icon: Thermometer },
   { report: 'lnk', label: 'ЛНК', icon: ClipboardCheck },
   { report: 'welderStamps', label: 'Справочники', icon: BookUser },
-  { report: 'statistics', label: 'Статистика', icon: BarChart3 },
   { report: 'documents', label: 'Документы', icon: FileText },
+  { report: 'statistics', label: 'Статистика', icon: BarChart3 },
 ]
 
-export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onReportChange }: AppSidebarProps) {
+export function AppSidebar({ activeReport, collapsed, animateWidth = true, onCollapsedChange, onReportChange }: AppSidebarProps) {
   const { can, identity } = useAccess()
   const accountNameParts = identity?.name.trim().split(/\s+/).slice(0, 2) ?? []
   const accountName = accountNameParts.join(' ')
@@ -120,6 +121,7 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
       }`}
       data-app-sidebar="true"
       data-collapsed={collapsed}
+      data-animate-width={animateWidth ? undefined : 'false'}
       style={{ transform: 'translate3d(var(--sidebar-viewport-x, 0px), 0, 0)' }}
     >
       <div className="app-sidebar-header mb-3 shrink-0">
@@ -146,7 +148,7 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
               aria-current={isActive ? 'page' : undefined}
               className={itemClassName(isActive)}
               onClick={() => onReportChange(item.report)}
-              title={item.label}
+              title={collapsed ? item.label : undefined}
             >
               <Icon className="app-sidebar-icon h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
               <span className="app-sidebar-label"><span>{item.label}</span></span>
@@ -155,7 +157,7 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
         })}
       </nav>
       <div className="mb-3 mt-auto h-10 shrink-0">
-        <ScrollToTopButton resetKey={activeReport} />
+        <ScrollToTopButton resetKey={activeReport} collapsed={collapsed} />
       </div>
       <nav className="shrink-0 space-y-2 border-t border-slate-100 pb-7 pt-3 lg:pb-10" aria-label="Настройки и профиль">
         {(() => {
@@ -169,7 +171,7 @@ export function AppSidebar({ activeReport, collapsed, onCollapsedChange, onRepor
               aria-current={isActive ? 'page' : undefined}
               className={itemClassName(isActive)}
               onClick={() => onReportChange(settingsItem.report)}
-              title={settingsItem.label}
+              title={collapsed ? settingsItem.label : undefined}
             >
               <Icon className="app-sidebar-icon h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
               <span className="app-sidebar-label"><span>{settingsItem.label}</span></span>

@@ -13,7 +13,7 @@ test('доп учитывается в SQL, сохранённых задача�
     env: { ...process.env, FORCE_COLOR: undefined, DATABASE_URL: E2E_DATABASE_URL, WELDING_ENV_LOADED: '1' },
   })
   expect(stderr).toBe('')
-  expect(JSON.parse(stdout.trim())).toEqual({ phases: 4, lineReadQueries: 6, persistedAndVirtual: true, cancelledResultDuplicate: true, unweldedFullLineDuplicate: true })
+  expect(JSON.parse(stdout.trim())).toEqual({ phases: 6, lineReadQueries: 6, persistedAndVirtual: true, cancelledResultDuplicate: true, unweldedFullLineDuplicate: true })
 })
 
 test('сохранённая история НК до ТО: включено → выключено → включено в расчёте, SQL-индексе и dispatcherTasks', async () => {
@@ -32,7 +32,8 @@ test('реестр создаёт линию до стыков, хранит д�
   await program.getByRole('button', { name: 'Новая линия', exact: true }).click()
   const editor = page.getByRole('dialog')
   await expect(editor).toBeVisible()
-  expect((await editor.boundingBox())!.width).toBeLessThanOrEqual(560)
+  // Separate support percentages now share this editor with the ordinary line settings.
+  expect((await editor.boundingBox())!.width).toBeLessThanOrEqual(800)
   await editor.getByLabel('Проект', { exact: true }).fill('E2E программа')
   await editor.getByLabel('Шифр', { exact: true }).fill('LP')
   await editor.getByLabel('Линия', { exact: true }).fill('PRECREATED')
@@ -108,7 +109,7 @@ test('единая таблица: отмена пары и послойный �
   const program = page.getByTestId('line-program')
   await program.getByLabel('Поиск программы линий').fill('QUICK-LINE')
   await program.getByRole('button', { name: 'Расчёт линии QUICK-LINE' }).click()
-  await program.getByRole('button', { name: 'Клеймо QUICK-A', exact: true }).click()
+  await program.getByRole('button', { name: 'Клеймо QKA1', exact: true }).click()
   await program.getByTestId('program-scope-actions').getByRole('button', { name: /^Расчёт/ }).click()
   const calculation = page.getByRole('dialog', { name: 'Расчёт · QUICK-LINE' })
   await expect(calculation.getByTestId('demand-common')).toContainText('Расчётная норма 6: по проценту 6 + из-за брака 0')
@@ -119,6 +120,8 @@ test('единая таблица: отмена пары и послойный �
   for (const method of ['РК', 'УЗК']) await editor.getByRole('button', { name: method, exact: true }).click()
   await editor.getByRole('radio', { name: 'Отменен', exact: true }).click()
   await editor.getByRole('checkbox', { name: 'Выбрать F701', exact: true }).check()
+  await expect(editor.getByRole('button', { name: /^Применить к выбранным/ })).toBeDisabled()
+  await editor.getByLabel('Основание для выбранных назначений', { exact: true }).fill('ТР-отмена пары')
   await confirmQuickAction(page)
   expect((await quickRows())[0]).toMatchObject({ has_rk: 'отменен', has_uzk: 'отменен', layered_control_assigned: false })
   expect(await withE2eDatabase(async client => (await client.query('select key from dispatcher_accepted_warnings where key=$1', [approval])).rows)).toEqual([])
@@ -160,7 +163,13 @@ test('карточки не переносят название, страниц�
   for (const width of [1600, 1000]) {
     await page.setViewportSize({ width, height: 1000 })
     await expect(name).toHaveCSS('white-space', 'nowrap')
-    await expect(name).toHaveAttribute('title', longName)
+    await expect(name).toHaveAttribute('data-overflow-title', longName)
+    // A native hint is useful only for clipped text and is calculated on hover.
+    await page.mouse.move(0, 0)
+    await name.hover()
+    const clipped = await name.evaluate(el => el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight)
+    if (clipped) await expect(name).toHaveAttribute('title', longName)
+    else await expect(name).not.toHaveAttribute('title')
     expect(await name.evaluate((el) => el.getBoundingClientRect().height)).toBeLessThanOrEqual(25)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   }
@@ -194,7 +203,7 @@ test('карточки не переносят название, страниц�
   await program.getByRole('button', { name: 'Новая линия', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Новая линия' })
   await expect(dialog).toBeVisible()
-  expect((await dialog.boundingBox())!.width).toBeLessThanOrEqual(560)
+  expect((await dialog.boundingBox())!.width).toBeLessThanOrEqual(800)
   await dialog.getByLabel('Проект', { exact: true }).press('Escape')
   await expect(dialog).toHaveCount(0)
   await expect(program.getByRole('button', { name: 'Новая линия', exact: true })).toBeFocused()
@@ -224,7 +233,19 @@ test('компактная таблица: 20 клейм, 148 стыков, ре
   await program.getByLabel('Поиск программы линий').fill('COMPACT-LINE')
   await expect(program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')).toHaveCount(1)
   await program.getByRole('button', { name: 'Расчёт линии COMPACT-LINE' }).click()
-  await expect(program.getByTestId('line-program-stamp')).toHaveCount(20)
+  // Stamp rows now use a virtual window; completeness belongs to the row model,
+  // not the number simultaneously mounted in the DOM.
+  const stampGrid = program.locator('[data-program-grid="stamps"]')
+  await expect(stampGrid).toHaveAttribute('data-program-row-count', '20')
+  await expect(program.getByRole('button', { name: 'Клейм в линиях 20', exact: true })).toBeVisible()
+  const firstStamp = program.getByRole('button', { name: 'Клеймо K01', exact: true })
+  await expect(firstStamp).toBeVisible()
+  expect(await stampGrid.getByTestId('line-program-stamp').count()).toBeLessThanOrEqual(20)
+  await firstStamp.locator('xpath=ancestor::*[contains(concat(" ",normalize-space(@class)," ")," ag-cell ")]').focus()
+  await page.keyboard.press('End')
+  await expect(program.getByRole('button', { name: 'Клеймо K20', exact: true })).toBeInViewport()
+  await page.keyboard.press('Home')
+  await expect(firstStamp).toBeInViewport()
   expect(count('getLineProgramCalculation')).toBe(1)
   expect(count('getLineProgramJointPage')).toBe(0)
   await expect(program.getByRole('columnheader', { name: 'ПВК · зачтено / норма' })).toHaveCount(0)
@@ -308,12 +329,12 @@ async function seedQuickLine() {
       officiality, revision_actuality, welding_method, material_group, d1, d2, t1, t2, wdi, isometry, spool,
       vik_control_basis, rk_control_basis, uzk_control_basis, pvk_control_basis)
       select $1, 'E2E программа', 'LP', 'QUICK-LINE', 'F' || (700+n)::text, '2026-09-01',
-      case when n=2 then 'У17' else 'СШ' end, 'II', 'A', 30, 10, 'да', 'QUICK-A', 'QUICK-A',
+      case when n=2 then 'У17' else 'СШ' end, 'II', 'A', 30, 10, 'да', 'QKA1', 'QKA1',
       'действующий', 'актуальная', 'РД', 'M01', 108, 108, 4, 4, 0.42, 'ISO-QUICK', 'S1', 'проект', 'проект', 'проект', 'проект'
       from generate_series(1,20) n`, [line.id])
     await client.query(`insert into welder_stamps (naks_stamp, welder_name, weld_type, material_groups,
       diameter_from, diameter_to, thickness_from, thickness_to, valid_from, valid_to, naks_permits)
-      values ('QUICK-A', 'E2E быстрые назначения', 'РД', 'M01', '1', '1000', '1', '100', '2026-01-01', '2026-12-31',
+      values ('QKA1', 'E2E быстрые назначения', 'РД', 'M01', '1', '1000', '1', '100', '2026-01-01', '2026-12-31',
       '[{"id":"quick","weldType":"РД","materialGroups":"M01","diameterFrom":"1","diameterTo":"1000","thicknessFrom":"1","thicknessTo":"100","validFrom":"2026-01-01","validTo":"2026-12-31","archived":false}]')`)
   })
 }

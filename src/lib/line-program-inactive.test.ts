@@ -40,7 +40,7 @@ describe('inactive joints remain historical rows, not contributions to the line 
     const officialOnly = { ...rows[3], officiality: 'действующий' }
     expect(summarizeLineProgram([officialOnly], line, approved)).toMatchObject({ joints: 0, additional: 0, approved: 0 })
     const restored = { ...officialOnly, revisionActuality: 'актуальная' }
-    expect(summarizeLineProgram([restored], line, approved)).toMatchObject({ joints: 1, additional: 1, approved: 1 })
+    expect(summarizeLineProgram([restored], line, approved)).toMatchObject({ joints: 1, additional: 1, approved: 0 })
     expect(approved.size).toBe(4)
     expect(rows[3].hasRk).toBe('дополнительный')
   })

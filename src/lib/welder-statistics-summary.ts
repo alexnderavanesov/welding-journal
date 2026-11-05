@@ -350,6 +350,15 @@ function getJointType(row: WeldRow, systemIndexSettings?: SystemIndexSettings): 
   return getConfiguredBaseJointType(baseJoint, systemIndexSettings)
 }
 
+/** Shared aliases and names for a compact statistics view without F/S or detail data. */
+export function buildWelderIdentityLookup(records: WelderStampRecord[]) {
+  const labels = buildWelderStampLabelMap(records), names = buildWelderNameMap(records)
+  return (rawStamp: string) => {
+    const stamp = getWelderStampLabel(rawStamp, labels)
+    return { stamp, welderName: getWelderName(rawStamp, stamp, names) }
+  }
+}
+
 function buildWelderStampLabelMap(records: WelderStampRecord[]) {
   const map = new Map<string, string>()
 

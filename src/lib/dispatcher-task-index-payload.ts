@@ -2,8 +2,9 @@ import type { JointChainContinuation, RepeatedJointTask } from '@/lib/dispatcher
 
 // Increment when dispatcher rules change in a way that requires existing rows
 // to be recalculated without a corresponding database mutation.
-// Rebuild existing pages/codes for effective PSTO assignments with chain exceptions.
-export const DISPATCHER_TASK_CALCULATION_VERSION = 76
+// Rebuild legacy chain identities and inherited requirements from official
+// predecessors independently of their revision actuality (pre-commit audit).
+export const DISPATCHER_TASK_CALCULATION_VERSION = 80
 export const DISPATCHER_TASK_PAGE_SIZE = 100
 
 type DispatcherTaskIndexPayload = {

@@ -64,6 +64,9 @@ const removalPreview: PstoLineRemovalPreview = {
   historyRowCount: 2,
   requestOnlyCount: 2,
   completedPstoCount: 0,
+  removalProtectedRowCount: 1,
+  cancellationRowCount: 2,
+  retainedAssignmentCount: 0,
   preControlCount: 2,
   completedPreControlCount: 1,
   pendingPreControlCount: 1,
@@ -108,6 +111,7 @@ const cleanAssignmentPreview: PstoLineRemovalPreview = {
   rowCount: unassignedLine.rowCount,
   assignedCount: 0,
   historyRowCount: 0,
+  removalProtectedRowCount: 0,
   requestOnlyCount: 0,
   completedPstoCount: 0,
   preControlCount: 0,
@@ -341,42 +345,44 @@ describe('PstoLineProgramDialog', () => {
     await screen.findByText('L-200')
     fireEvent.click(screen.getByRole('button', { name: 'Снять назначение' }))
 
-    expect(await screen.findByText(/История линии изменилась/)).toBeInTheDocument()
+    expect(await screen.findByText(/На линии есть выполненная работа/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Снять назначение' })).toBeDisabled()
     expect(screen.queryByText(/будут удалены|Перенести завершенный|Всем: перенести/)).not.toBeInTheDocument()
     expect(onRunProtectedDelete).not.toHaveBeenCalled()
     expect(savePstoLineAssignment).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Перейти к отмене ПСТО' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Перейти к отмене оставшейся работы' }))
     expect(await screen.findByRole('heading', { name: 'Отмена ПСТО' })).toBeInTheDocument()
     expect(screen.getByText(/Отмена не удаляет историю/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Отменить ПСТО на линии' })).toBeDisabled()
+    fireEvent.change(screen.getByLabelText(/Основание отмены ПСТО/), { target: { value: 'ТР-1' } })
     expect(screen.getByRole('button', { name: 'Отменить ПСТО на линии' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Отмена' }))
     expect(savePstoLineAssignment).not.toHaveBeenCalled()
     expect(getPstoLineRemovalPreview).toHaveBeenCalledTimes(1)
   })
 
-  it('offers deletion without cancellation when another operator removed all history', async () => {
+  it('allows cancelling future work even when no work or requests have started', async () => {
     vi.mocked(getPstoLineRemovalPreview).mockResolvedValue({
       ...cleanAssignmentPreview, identity: removalPreview.identity,
-      assignedCount: 2, rowCount: 2,
-      rows: activationConflictPreview.rows,
+      assignedCount: 2, rowCount: 2, cancellationRowCount: 2,
+      rows: [],
     })
     renderDialog()
     await screen.findByText('L-200')
     fireEvent.click(screen.getByRole('button', { name: 'Отменить ПСТО' }))
-    expect(await screen.findByText(/История линии изменилась/)).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Отмена ПСТО' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Отменить ПСТО на линии' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Перейти к снятию назначения' }))
-    expect(await screen.findByRole('heading', { name: 'Снятие назначения ПСТО' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Снять назначение' })).toBeEnabled()
-    expect(screen.queryByRole('radio')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Снять назначение' }))
+    fireEvent.change(screen.getByLabelText(/Основание отмены ПСТО/), { target: { value: '   ' } })
+    expect(screen.getByRole('button', { name: 'Отменить ПСТО на линии' })).toBeDisabled()
+    fireEvent.change(screen.getByLabelText(/Основание отмены ПСТО/), { target: { value: 'ТР-1' } })
+    expect(screen.getByRole('button', { name: 'Отменить ПСТО на линии' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Отменить ПСТО на линии' }))
     await waitFor(() => expect(savePstoLineAssignment).toHaveBeenCalledWith({
-      data: expect.objectContaining({ action: 'remove' }),
+      data: expect.objectContaining({ action: 'cancel', cancellationBasis: 'ТР-1' }),
     }))
     expect(getPstoLineRemovalPreview).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(savePstoLineAssignment).mock.calls[0]![0].data).not.toHaveProperty('activationDecisions')
+    expect(vi.mocked(savePstoLineAssignment).mock.calls[0]![0].data.activationDecisions).toEqual([])
   })
 
   it('preserves stages by default during cancellation while offering explicit whole-package correction', async () => {
@@ -394,6 +400,7 @@ describe('PstoLineProgramDialog', () => {
     expect(screen.queryByText(/будут удалены/)).not.toBeInTheDocument()
     expect(screen.getByText(/Отмена не удаляет историю/)).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'Оставить НК до ТО' })).toBeChecked()
+    fireEvent.change(screen.getByLabelText(/Основание отмены ПСТО/), { target: { value: 'ТР-1' } })
     expect(screen.getByRole('button', { name: 'Отменить ПСТО на линии' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Отменить ПСТО на линии' }))
 
@@ -401,14 +408,14 @@ describe('PstoLineProgramDialog', () => {
     expect(vi.mocked(savePstoLineAssignment).mock.calls[0]![0].data.activationDecisions).toEqual([{ rowId: 11, disposition: 'keepPrimary' }])
   })
 
-  it('explains that cancellation finishes a started physical cycle without opening another repeat', async () => {
+  it('explains that performed assignments, required TVMT and repeats remain active', async () => {
     vi.mocked(getPstoLineRemovalPreview).mockResolvedValue({
       ...removalPreview,
       rows: [{
         ...removalPreview.rows[0]!,
         completedPreMethods: [],
         pendingPreMethods: [],
-        preservesPerformedHistory: true,
+        preservesPerformedHistory: true, cancellationDisposition: 'preserve',
       }],
     })
     renderDialog()
@@ -416,9 +423,8 @@ describe('PstoLineProgramDialog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Отменить ПСТО' }))
 
-    expect(await screen.findByText(/внесите фактическую ТВМТ/)).toBeInTheDocument()
-    expect(screen.getByText(/новый повтор не откроется/)).toBeInTheDocument()
-    expect(screen.queryByText(/при необходимости выполнить повторную ПСТО/)).not.toBeInTheDocument()
+    expect(await screen.findByText(/необходимые ТВМТ и повторные циклы выполненных стыков сохранятся/)).toBeInTheDocument()
+    expect(screen.queryByText(/новый повтор не откроется/)).not.toBeInTheDocument()
   })
 })
 

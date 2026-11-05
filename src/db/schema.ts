@@ -119,7 +119,7 @@ export const technologyCards = pgTable('technology_cards', {
   uniqueIndex('technology_cards_name_idx').on(table.name),
   check('technology_cards_name_required', sql`${table.name} = btrim(${table.name}) and ${table.name} <> ''`),
   check('technology_cards_methods_required', sql`cardinality(${table.weldingMethods}) between 1 and 2 and array_position(${table.weldingMethods}, null) is null and array_position(${table.weldingMethods}, '') is null`),
-  check('technology_cards_connection_required', sql`btrim(${table.connectionType}) <> '' and upper(left(btrim(${table.connectionType}), 1)) <> 'Т'`),
+  check('technology_cards_connection_required', sql`btrim(${table.connectionType}) <> ''`),
   check('technology_cards_groups_count', sql`cardinality(${table.materialGroups}) between 1 and 2 and array_position(${table.materialGroups}, null) is null and array_position(${table.materialGroups}, '') is null and (cardinality(${table.materialGroups}) = 1 or ${table.materialGroups}[1] <> ${table.materialGroups}[2])`),
   check('technology_cards_diameter_range', sql`${table.diameterFrom} > 0 and ${table.diameterTo} >= ${table.diameterFrom}`),
   check('technology_cards_thickness_range', sql`${table.thicknessFrom} > 0 and ${table.thicknessTo} >= ${table.thicknessFrom}`),
@@ -149,6 +149,9 @@ export const linePrograms = pgTable('line_programs', {
   groupName: text('group_name'),
   weldControlPercent: numericNumber('weld_control_percent'),
   pvkControlPercent: numericNumber('pvk_control_percent'),
+  // Null means live inheritance from the corresponding ordinary line percentage.
+  supportUzkControlPercent: numericNumber('support_uzk_control_percent'),
+  supportPvkControlPercent: numericNumber('support_pvk_control_percent'),
   configurationIssue: text('configuration_issue'),
   // Null only for legacy lines, until their first explicit PSTO program decision.
   pstoAssignment: text('psto_assignment').$type<'assigned' | 'unassigned' | 'cancelled'>(),
@@ -166,6 +169,8 @@ export const linePrograms = pgTable('line_programs', {
   check('line_programs_psto_assignment_check', sql`${table.pstoAssignment} in ('assigned', 'unassigned', 'cancelled')`),
   check('line_programs_percent_range', sql`${table.weldControlPercent} between 0 and 100`),
   check('line_programs_pvk_range', sql`${table.pvkControlPercent} between 0 and 100`),
+  check('line_programs_support_uzk_range', sql`${table.supportUzkControlPercent} between 0.5 and 100`),
+  check('line_programs_support_pvk_range', sql`${table.supportPvkControlPercent} between 0.5 and 100`),
   check('line_programs_pvk_limit', sql`${table.weldControlPercent} is null or ${table.pvkControlPercent} is null or
     (${table.weldControlPercent} = 100 and ${table.pvkControlPercent} >= 1) or
     (${table.weldControlPercent} < 100 and ${table.pvkControlPercent} <= ${table.weldControlPercent})`),
@@ -251,6 +256,8 @@ export const weldJoints = pgTable(
     d2: numericNumber('d2'),
     t1: numericNumber('t1'),
     t2: numericNumber('t2'),
+    // No scale: keep the entered seam length instead of rounding to three decimals.
+    weldLength: numeric('weld_length'),
     wdi: numericNumber('wdi'),
     responsible: text('responsible'),
     technologyCardNumber: text('technology_card_number'),

@@ -8,6 +8,7 @@ import {
 } from './weld-fields'
 import { normalizeDateLikeForStorage, parseDateLikeToIso } from './date-format'
 import { normalizeTechnologyCardName } from './technology-card-name'
+import { normalizeSupportWeldLength, isSupportLengthDecimal } from './support-length-value'
 import {
   isControlAdditionalValue,
   isControlCancelledValue,
@@ -55,6 +56,7 @@ export function parseDate(value: unknown) {
 }
 
 export function parseCell(field: WeldField, value: unknown) {
+  if (field.key === 'weldLength') return normalizeSupportWeldLength(emptyToNull(value))
   if (field.key === 'technologyCardNumber') return normalizeTechnologyCardName(value == null ? '' : String(value)) || null
   if (field.kind === 'boolean') return parseBoolean(value)
   if (field.kind === 'number') return parseNumber(value)
@@ -75,6 +77,11 @@ export function parseCell(field: WeldField, value: unknown) {
 export function parseImportCell(field: WeldField, value: unknown) {
   const normalized = emptyToNull(value)
   if (normalized === null) return null
+  if (field.key === 'weldLength') {
+    const parsed = normalizeSupportWeldLength(normalized)!
+    if (!isSupportLengthDecimal(parsed)) throw invalidImportValue(field, value)
+    return parsed
+  }
 
   if (field.kind === 'boolean') {
     const parsed = parseBoolean(value)

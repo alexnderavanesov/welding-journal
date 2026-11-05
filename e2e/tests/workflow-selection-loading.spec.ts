@@ -48,8 +48,21 @@ for (const report of ['lnk', 'psto'] as const) for (const mode of ['request', 'r
       if (await selectAll.isChecked()) await selectAll.uncheck()
       await selectAll.check()
       const count = prefix === 'F88000' ? 9 : 5
+      // Cold PSTO availability is a separate server query. Keep the immediate
+      // click while it is pending, then start the UI assertion after its reply.
+      const availability = report === 'psto' && iteration === 0
+        ? page.waitForResponse(response => rpcName(response.url()).startsWith('getPstoWorkflowAvailability_'))
+        : undefined
       await page.locator('header').getByRole('button', { name: mode === 'request' ? 'Заявка' : 'Результат', exact: true }).click()
       await page.getByRole('button', { name: mode === 'request' ? (report === 'lnk' && iteration === 1 ? 'Добавить позиции' : 'Новая заявка') : 'Внести результаты', exact: true }).click()
+      if (availability) {
+        const response = await availability
+        await response.finished()
+        expect(response.ok()).toBe(true)
+        await test.info().attach('psto-initial-availability-timing', {
+          body: JSON.stringify(response.request().timing()), contentType: 'application/json',
+        })
+      }
       await expect(dialog).toBeVisible()
       await expect(dialog.getByText(`Выбрано: ${count}`, { exact: true })).toBeVisible()
       await dialog.getByRole('button', { name: `Выбрано: ${count}`, exact: true }).click()

@@ -1,6 +1,8 @@
 import { getRepeatedJointRepairCount, parseRepeatedJointName } from './joint-chain'
+import { isTConnectionType } from './connection-type'
 import { formatJointDiameterLabel, getMinimumJointDiameter, isUnofficialJoint } from './joint-display'
 import { LNK_METHODS } from './lnk-report-config'
+import { getLnkMethodFamilyBlockReason } from './lnk-method-family'
 import { normalizeControlResultText } from './report-value-utils'
 import { loadSystemIndexSettings, type SystemIndexSettings } from './system-index-settings'
 import type { WeldFieldKey, WeldInput } from './weld-field-definitions'
@@ -21,7 +23,7 @@ export function isOfficialLnkRepairLimitReached(
   settings: SystemIndexSettings = loadSystemIndexSettings(),
 ) {
   // Officiality and R/W/Y counters keep their established meaning.
-  return !isUnofficialJoint(row) &&
+  return !isTConnectionType(row.connectionType) && !isUnofficialJoint(row) &&
     getRepeatedJointRepairCount(parseRepeatedJointName(String(row.joint ?? '').trim(), settings)) >= 2
 }
 
@@ -35,13 +37,18 @@ export function getLnkResultRestrictionReasons(
 ): string[] {
   const method = String(methodCode).trim().toLocaleUpperCase('ru-RU').split(/\s/)[0]
   const value = normalizeControlResultText(result)
+  if (isTConnectionType(row.connectionType)) {
+    const familyReason = getLnkMethodFamilyBlockReason(row, method)
+    if (familyReason && value) return [familyReason]
+    if (value === 'вырез') return ['Для Т результат «вырез» запрещён; допускаются «годен» и «ремонт».']
+  }
   if (!LNK_METHODS.some(item => item.code === method) || !['ремонт', 'вырез'].includes(value)) return []
   const reasons: string[] = []
   if (value === 'вырез' && (method === 'ВИК' || method === 'ПВК')) {
     reasons.push(`По ${method} результат «вырез» не допускается.`)
   }
   if (value === 'ремонт') {
-    if (method === 'РК' || method === 'УЗК') {
+    if (!isTConnectionType(row.connectionType) && (method === 'РК' || method === 'УЗК')) {
       const diameter = getMinimumJointDiameter(row)
       if (diameter !== null && diameter < 89) {
         reasons.push(`Ремонт по ${method} недоступен при диаметре меньше 89 мм. Минимальный диаметр стыка: ${formatJointDiameterLabel(row)} мм.`)
@@ -81,7 +88,7 @@ export function assertLnkResultAllowed(
   result: unknown,
   options: LnkResultRestrictionOptions = {},
 ) {
-  const reason = getLnkResultRestrictionReason(row, methodCode, result, options)
+  const reason = getLnkMethodFamilyBlockReason(row, methodCode) ?? getLnkResultRestrictionReason(row, methodCode, result, options)
   if (reason) throw new Error(formatLnkResultRuleReason(reason))
 }
 

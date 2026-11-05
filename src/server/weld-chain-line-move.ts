@@ -44,6 +44,7 @@ import {
 } from '@/server/weld-line-move-stage'
 import { syncPreHeatTreatmentDocumentsInTransaction } from './pre-heat-treatment-system-documents'
 import { normalizeSubmittedWeldLineIdentity } from '@/lib/psto-line-assignment'
+import { assertControlRequestRemovalPreview } from './control-request-removal-preview'
 
 export async function moveWeldJointChain({ data }: { data: WeldPayload }) {
   return moveWeldJointChainRecord(data)
@@ -166,6 +167,7 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
       [{ id: sourceRowId, version: String(data.expectedVersion ?? '').trim() }],
       [previousRows.get(sourceRowId)!],
     )
+    await assertControlRequestRemovalPreview(tx, [draftSource], previousRows, data.controlRequestRemovalToken)
     const validationContext = withLockedTargetLineState(
       initialContext,
       targetIdentity,
@@ -217,6 +219,7 @@ export async function moveWeldJointChainRecord(data: WeldPayload) {
     })
     const updatedRows = await updateWeldJointsInBatches(tx, records, previousRows, {
       preserveRecordedControlHistoryRowIds: allowedLineMoveRowIds,
+      transferredPreControlIds,
     })
     const transferRowIds = records.filter(record => decisions.get(Number(record.id)) !== 'keepPrimary' && decisions.has(Number(record.id))).map(record => Number(record.id))
     const toPre = [...decisions.values()].includes('movePrimaryToPreHeatTreatment')

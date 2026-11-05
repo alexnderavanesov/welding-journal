@@ -1,3 +1,4 @@
+import { asSupportLineProgram } from '@/lib/line-program'
 import { createServerFn } from '@tanstack/react-start'
 import { asc } from 'drizzle-orm'
 import { requireDb } from '@/db'
@@ -22,13 +23,13 @@ export const getLineProgramReport = createServerFn({ method: 'POST' })
 export async function loadLineProgramReport(tx: Pick<SystemDocumentSequenceTransaction, 'select'>, data: ProgramReportRequest) {
   const lines = data.ids.length ? await tx.select().from(linePrograms).where(buildNumberArrayMatch(linePrograms.id, data.ids)).orderBy(asc(linePrograms.projectTitle), asc(linePrograms.subtitleCode), asc(linePrograms.line), asc(linePrograms.id)) : []
   if (lines.length !== data.ids.length) throw new Error('Часть линий удалена. Обновите программу и сформируйте сводку заново.')
-  const result: ProgramReportLine[] = await mapLineProgramCalculations(tx, lines.map(toLineProgramRecord), ({ line, rows, calculations }, { accepted, systemIndexSettings }) => {
+  const result: ProgramReportLine[] = await mapLineProgramCalculations(tx, lines.map(row => data.family === 'supports' ? asSupportLineProgram(toLineProgramRecord(row)) : toLineProgramRecord(row)), ({ line, rows, calculations }, { accepted, systemIndexSettings }) => {
     const configured = !line.configurationIssue && line.weldControlPercent != null && line.pvkControlPercent != null
     const removalHints = configured ? getProgramRemovalHints(line.id, rows, calculations, accepted) : undefined
     return { line,
       overview: summarizeLineProgram(rows, line, accepted, calculations, systemIndexSettings, removalHints),
       stamps: data.mode === 'stamps' && configured
-        ? buildLineProgramDisplay(rows, projectProgramExcess(line.id, rows, calculations, accepted), line.weldControlPercent!, line.pvkControlPercent!, removalHints).stampRows : [],
+        ? buildLineProgramDisplay(rows, projectProgramExcess(line.id, rows, calculations, accepted), line.weldControlPercent!, line.pvkControlPercent!, removalHints, line.family === 'supports').stampRows : [],
     }
   })
   // Keep the full line calculation above: selecting a stamp must not change its quota.

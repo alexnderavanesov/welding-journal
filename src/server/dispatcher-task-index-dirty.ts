@@ -26,6 +26,14 @@ type DispatcherDirtyScopeSource = {
   line?: unknown
 }
 
+// Descendant-only writes (for example L propagated to a moved repair) must join
+// the caller's final invalidation. Do not take the global dispatcher lock before
+// that caller has finished its document/row work. State belongs to one tx object.
+const additionalDirtyScopes = new WeakMap<SqlExecutor, DispatcherDirtyScope[]>()
+export function registerAdditionalDispatcherDirtyScopes(executor: SqlExecutor, scopes: DispatcherDirtyScope[]) {
+  if (scopes.length) additionalDirtyScopes.set(executor, normalizeDirtyScopes([...(additionalDirtyScopes.get(executor) ?? []), ...scopes]))
+}
+
 export function getDispatcherDirtyScopes(
   records: readonly DispatcherDirtyScopeSource[],
   previousRows: ReadonlyMap<number, DispatcherDirtyScopeSource>,
@@ -51,8 +59,9 @@ export async function markDispatcherTaskIndexDirty(
     fullRebuild?: boolean
   } = {},
 ) {
-  const scopes = normalizeDirtyScopes(options.scopes ?? [])
-  const fullRebuild = options.fullRebuild ?? scopes.length === 0
+  const pendingScopes = additionalDirtyScopes.get(executor)
+  const fullRebuild = options.fullRebuild ?? (options.scopes ?? []).length === 0
+  const scopes = normalizeDirtyScopes([...(options.scopes ?? []), ...(pendingScopes ?? [])])
   const serializedScopes = JSON.stringify(scopes)
   await executor.execute(sql`
     with "dispatcher_lock" as (
@@ -95,6 +104,7 @@ export async function markDispatcherTaskIndexDirty(
     )
     ${buildDerivedCacheRetention(fullRebuild ? null : scopes.map(getLineProgramIdentityKey))}
   `)
+  if (additionalDirtyScopes.get(executor) === pendingScopes) additionalDirtyScopes.delete(executor)
 }
 
 export async function invalidateDerivedCalculationCache(

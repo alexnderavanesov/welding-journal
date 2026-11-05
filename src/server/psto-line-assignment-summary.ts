@@ -219,13 +219,24 @@ function buildPstoLineAssignmentSummaryCte() {
     with pre_counts as (
       select
         ${preHeatTreatmentControls.weldJointId} as weld_joint_id,
-        count(*)::integer as relation_count
+        count(*)::integer as relation_count,
+        bool_or(lower(btrim(coalesce(${preHeatTreatmentControls.result}, ''))) in ('годен', 'ремонт', 'вырез', 'не годен', 'негоден', 'годен (отменен)')
+          or ${preHeatTreatmentControls.conclusionDate} is not null
+          or nullif(btrim(coalesce(${preHeatTreatmentControls.conclusionName}, '')), '') is not null
+          or nullif(btrim(coalesce(${preHeatTreatmentControls.defectDescription}, '')), '') is not null
+          or ${preHeatTreatmentControls.rkExposureConfirmedDiameter} is not null) as performed
       from ${preHeatTreatmentControls}
       group by ${preHeatTreatmentControls.weldJointId}
     ), repeat_counts as (
       select
         ${pstoRepeatCycles.weldJointId} as weld_joint_id,
-        count(*)::integer as relation_count
+        count(*)::integer as relation_count,
+        bool_or(lower(btrim(coalesce(${pstoRepeatCycles.pstoResult}, ''))) in ('проведено', 'проведено (отменен)', 'да')
+          or ${pstoRepeatCycles.pstoDate} is not null
+          or nullif(btrim(coalesce(${pstoRepeatCycles.heatTreatmentDiagram}, '')), '') is not null
+          or lower(btrim(coalesce(${pstoRepeatCycles.tvmtResult}, ''))) in ('годен', 'не годен', 'негоден', 'ремонт', 'вырез', 'годен (отменен)', 'да')
+          or ${pstoRepeatCycles.tvmtConclusionDate} is not null
+          or nullif(btrim(coalesce(${pstoRepeatCycles.tvmtConclusion}, '')), '') is not null) as performed
       from ${pstoRepeatCycles}
       group by ${pstoRepeatCycles.weldJointId}
     ), line_rows as (
@@ -256,6 +267,16 @@ function buildPstoLineAssignmentSummaryCte() {
           or coalesce(pre_counts.relation_count, 0) > 0
           or coalesce(repeat_counts.relation_count, 0) > 0
         ) as has_history,
+        (
+          ${weldJoints.pstoDate} is not null
+          or nullif(btrim(coalesce(${weldJoints.heatTreatmentDiagram}, '')), '') is not null
+          or lower(btrim(coalesce(${weldJoints.pstoResult}, ''))) in ('проведено', 'проведено (отменен)', 'да')
+          or lower(btrim(coalesce(${weldJoints.tvmtResult}, ''))) in ('годен', 'не годен', 'негоден', 'ремонт', 'вырез', 'годен (отменен)', 'да')
+          or ${weldJoints.tvmtConclusionDate} is not null
+          or nullif(btrim(coalesce(${weldJoints.tvmtConclusion}, '')), '') is not null
+          or coalesce(pre_counts.performed, false)
+          or coalesce(repeat_counts.performed, false)
+        ) as has_protected_history,
         coalesce(pre_counts.relation_count, 0) as pre_control_count,
         coalesce(repeat_counts.relation_count, 0) as repeat_cycle_count
       from ${weldJoints}
@@ -275,7 +296,7 @@ function buildPstoLineAssignmentSummaryCte() {
           where lower(btrim(coalesce(psto_required, ''))) = 'отменен'
         ))::integer as "cancelledCount",
         (count(*) filter (where has_history))::integer as "historyRowCount",
-        (count(*) filter (where has_history and not is_exception))::integer as "removalHistoryRowCount",
+        (count(*) filter (where has_protected_history and not is_exception))::integer as "removalHistoryRowCount",
         coalesce(sum(pre_control_count), 0)::integer as "preControlCount",
         coalesce(sum(repeat_cycle_count), 0)::integer as "repeatCycleCount"
       from line_rows

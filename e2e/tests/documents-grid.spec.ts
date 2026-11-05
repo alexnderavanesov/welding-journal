@@ -1623,8 +1623,12 @@ test('document grid groups: checkboxes select all descendants, preserve outside 
   await expect(child.locator('.ag-group-value')).toHaveCSS('overflow', 'visible')
   await expect(parentCheckbox).toHaveAttribute('title', 'Все документы группы: 124, включая незагруженные')
   await settled()
+  await expect(firstLeaf.getByRole('button', { name: String(lineA.rows[0].title), exact: true })).toBeVisible()
   await firstLeaf.locator('.ag-cell[col-id="title"]').hover()
-  await expect(page.getByRole('tooltip')).toHaveText(String(lineA.rows[0].title))
+  // 04.11: fully visible document titles no longer repeat in an AG tooltip.
+  // Wait past AG's default delay so this also detects a scheduled tooltip.
+  await page.waitForTimeout(2300)
+  await expect(page.locator('.ag-tooltip')).toHaveCount(0)
   await parent.locator('.ag-group-value').hover()
   await expect(page.locator('.ag-tooltip')).toHaveCount(0)
   // AG's default tooltip delay is two seconds. A negative assertion before

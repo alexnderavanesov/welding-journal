@@ -1,4 +1,3 @@
-import { isTConnectionType } from '@/lib/connection-type'
 import { normalizeTechnologyCardName } from '@/lib/technology-card-name'
 import { normalizeDataListOption, type DataListSettings } from '@/lib/data-list-settings'
 import {
@@ -53,7 +52,6 @@ export function validateTechnologyCard(value: unknown, settings: DataListSetting
   const materialGroups = readCodes('materialGroups', settings.materialGroups)
   const connectionType = typeof source.connectionType === 'string' ? normalizeDataListOption(source.connectionType) : ''
   if (!connectionType) add('connectionType', 'Выберите тип соединения.')
-  else if (isTConnectionType(connectionType)) add('connectionType', 'Подбор ТК для Т-стыков пока не поддерживается.')
   else if (!settings.connectionTypes.includes(connectionType)) add('connectionType', `Тип соединения «${connectionType}» отсутствует в справочнике.`)
 
   const dimensions = {} as Pick<TechnologyCardParameters, 'diameterFrom' | 'diameterTo' | 'thicknessFrom' | 'thicknessTo'>

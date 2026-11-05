@@ -1,6 +1,5 @@
-import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { BookOpen, FileText, Plus, Stamp, UsersRound } from 'lucide-react'
-import { WelderStampCheckParameters } from '@/components/welder-stamp-check-parameters'
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { FileText, Plus, Stamp, UsersRound } from 'lucide-react'
 import { DialogHeader } from '@/components/dialog-header'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { SpecialistsRegistry } from '@/components/specialists-registry'
@@ -16,6 +15,7 @@ import {
   type WelderStampRegistryStatus,
 } from '@/lib/welder-stamp-registry-summary'
 import type { WelderStampFilters, WelderStampRecord, WelderStampSuspensionRecord } from '@/lib/welder-stamp-types'
+import { getReferenceTab } from '@/lib/reference-navigation'
 
 export type WelderStampsRegistryProps = {
   onTasksVisibilityChange?: (visible: boolean) => void
@@ -65,14 +65,15 @@ const REGISTRY_TABS = [
   { id: 'registry', label: 'Клейма', Icon: Stamp },
   { id: 'specialists', label: 'Специалисты', Icon: UsersRound },
   { id: 'technologyCards', label: 'Технологические карты', Icon: FileText },
-  { id: 'checks', label: 'Параметры проверки', Icon: BookOpen },
 ] as const
 
 const TechnologyCardsRegistry = lazy(() => import('@/components/technology-cards-registry').then(module => ({ default: module.TechnologyCardsRegistry })))
 
 export function WelderStampsRegistry({ header, taskPanels, onTasksVisibilityChange, ...props }: WelderStampsRegistryProps & { header?: ReactNode; taskPanels?: ReactNode }) {
-  const [activeTab, setActiveTab] = useState<typeof REGISTRY_TABS[number]['id']>('registry')
+  const [activeTab, setActiveTab] = useState<typeof REGISTRY_TABS[number]['id']>(() => getReferenceTab(window.location.search))
   const [cardsOpened, setCardsOpened] = useState(false)
+  const [registryOpened, setRegistryOpened] = useState(activeTab === 'registry')
+  useEffect(() => { if (activeTab === 'registry') setRegistryOpened(true) }, [activeTab])
   useEffect(() => { onTasksVisibilityChange?.(activeTab === 'registry') }, [activeTab, onTasksVisibilityChange])
   useEffect(() => { if (activeTab === 'technologyCards') setCardsOpened(true) }, [activeTab])
   useEffect(() => {
@@ -104,20 +105,14 @@ export function WelderStampsRegistry({ header, taskPanels, onTasksVisibilityChan
       {/* Keep the registry mounted: switching to the reference must not reset
           filters, expanded cards or suspension editor state, or refetch data. */}
       <div id="stamp-panel-registry" role="tabpanel" aria-labelledby="stamp-tab-registry" hidden={activeTab !== 'registry'}>
-        <div className="space-y-4">
+        {(registryOpened || activeTab === 'registry') && <div className="space-y-4">
           {header ?? <h1 className="text-2xl font-semibold text-slate-950">Клейма</h1>}
           {taskPanels}
           <MemoizedWelderStampsRegistryContent {...props} />
-        </div>
+        </div>}
       </div>
       <div id="stamp-panel-technologyCards" role="tabpanel" aria-labelledby="stamp-tab-technologyCards" hidden={activeTab !== 'technologyCards'}>
         {cardsOpened && <Suspense fallback={<p className="text-sm text-slate-500">Загрузка ТК…</p>}><TechnologyCardsRegistry active={activeTab === 'technologyCards'} /></Suspense>}
-      </div>
-      <div id="stamp-panel-checks" role="tabpanel" aria-labelledby="stamp-tab-checks" hidden={activeTab !== 'checks'}>
-        <div className="space-y-4">
-          <h1 className="text-2xl font-semibold text-slate-950">Параметры проверки</h1>
-          <WelderStampCheckParameters />
-        </div>
       </div>
     </div>
   )
@@ -192,11 +187,11 @@ function WelderStampsRegistryContent({
     setIsEditorOpen(true)
   }
 
-  function openEditDialog(record: WelderStampRecord, focusPermitId?: string) {
+  const openEditDialog = useCallback((record: WelderStampRecord, focusPermitId?: string) => {
     onEdit(record)
     setEditorFocusPermitId(focusPermitId ?? null)
     setIsEditorOpen(true)
-  }
+  }, [onEdit])
 
   function closeEditorDialog() {
     if (editorSavingRef.current) return
@@ -219,14 +214,14 @@ function WelderStampsRegistryContent({
     }
   }
 
-  function archiveRecord(id: number) {
-    onArchive(id)
-  }
+  const selectRecord = useCallback((record: WelderStampRecord) => {
+    setSelectedRecordId(current => current === record.id ? null : record.id)
+  }, [])
 
-  function deleteRecord(id: number) {
+  const deleteRecord = useCallback((id: number) => {
     onDelete(id)
-    if (selectedRecordId === id) setSelectedRecordId(null)
-  }
+    setSelectedRecordId(current => current === id ? null : current)
+  }, [onDelete])
 
   return (
     <section className="w-full min-w-0 max-w-full space-y-4 overflow-hidden rounded-md border border-slate-200 bg-white p-4 shadow-sm shadow-slate-100">
@@ -279,9 +274,9 @@ function WelderStampsRegistryContent({
           emptyMessage={hasSearchOrRangeFilters || statusFilter !== 'all' ? 'По выбранным фильтрам клейма не найдены.' : 'Пока нет добавленных клейм.'}
           editingId={editingId}
           selectedId={selectedRecordId}
-          onSelect={(record) => setSelectedRecordId((current) => (current === record.id ? null : record.id))}
+          onSelect={selectRecord}
           onEdit={openEditDialog}
-          onArchive={archiveRecord}
+          onArchive={onArchive}
           onRestore={onRestore}
           onArchivePermit={onArchivePermit}
           onRestorePermit={onRestorePermit}

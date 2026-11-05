@@ -775,7 +775,7 @@ describe('buildRepeatedJointTasks', () => {
     )
   })
 
-  it('additional coverage displaces ordinary yes but is never itself an excess candidate', () => {
+  it('additional coverage does not increase ordinary excess', () => {
     const rows = [
       row({ id: 1, joint: 'S1', stamp1K: 'ABC1', hasRk: 'да' }),
       row({ id: 2, joint: 'S2', stamp1K: 'ABC1', hasRk: 'да' }),
@@ -791,8 +791,8 @@ describe('buildRepeatedJointTasks', () => {
           kind: 'percentage-line-control',
           issue: 'excess',
           stamp: 'ABC1',
-          count: 2,
-          targetRowIds: [2, 1],
+          count: 1,
+          targetRowIds: [2],
         }),
       ]),
     )

@@ -1,3 +1,7 @@
+import { useConfirmAction } from './confirm-action-context'
+import { previewControlRequestRemoval } from '@/server/weld-mutations-api'
+import { formatControlRequestRemovals } from './control-request-removal-preview'
+import { CONTROL_ASSIGNMENT_FIELD_KEYS } from './control-availability-values'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import { scheduleWeldDataRefresh } from '@/lib/weld-query-utils'
@@ -16,6 +20,16 @@ export function useReportImportMutations({
   highlightChangedRows,
 }: UseReportImportMutationsOptions) {
   const queryClient = useQueryClient()
+  const confirm = useConfirmAction()
+  async function confirmRequestRemoval(records: (WeldInput & { id: number })[], expectedVersions: WeldRowVersionTarget[], deleteIds: number[] = []) {
+    if (!records.some(row => Object.keys(row).some(key => CONTROL_ASSIGNMENT_FIELD_KEYS.has(key)))) return undefined
+    const ids = new Set([...records.map(row => row.id), ...deleteIds])
+    const preview = await previewControlRequestRemoval({ data: { records, deleteIds, expectedVersions: expectedVersions.filter(target => ids.has(target.id)) } })
+    if (preview.removals.length && !await confirm({ title: 'Сохранить изменения назначений?', description: formatControlRequestRemovals(preview.removals), confirmLabel: 'Подтвердить и сохранить', cancelLabel: 'Вернуться', tone: 'warning' })) {
+      throw new Error('Сохранение отменено. Данные и заявки не изменены.')
+    }
+    return preview.token
+  }
 
   const weldMassFillMutation = useMutation({
     mutationFn: async ({ records, skippedRows, expectedVersions }: {
@@ -30,10 +44,12 @@ export function useReportImportMutations({
         return { updated: 0, rows: [], changedFieldKeys: [...changedFieldKeys], skipped: invalidRecords + skippedRows }
       }
 
+      const removalToken = await confirmRequestRemoval(updatedRows, expectedVersions)
       const savedRows = await massFillWeldRowsOrThrow(
         updatedRows,
         expectedVersions,
         'Не удалось сохранить часть записей массового заполнения',
+        removalToken,
       )
       return {
         updated: savedRows.length,
@@ -58,11 +74,13 @@ export function useReportImportMutations({
       const deleteRecords = records.filter((record) => record.deleteRequested && record.id)
       const updateRecords = records.filter((record) => !record.deleteRequested)
       const { updatedRows, changedFieldKeys, invalidRecords } = buildExistingRowImportUpdates(updateRecords)
+      const removalToken = await confirmRequestRemoval(updatedRows, expectedVersions, deleteRecords.map(row => Number(row.id)))
       const replacement = await replaceWeldRowsOrThrow(
         updatedRows,
         deleteRecords.flatMap((record) => record.id ? [record.id] : []),
         expectedVersions,
         'Не удалось сохранить замену данных',
+        removalToken,
       )
       const savedRows = replacement.rows
       const deleted = replacement.deleted

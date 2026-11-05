@@ -1,3 +1,4 @@
+import { overflowTitle } from '@/lib/overflow-title'
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentType } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronRight } from 'lucide-react'
@@ -231,8 +232,8 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
       >
         {menu.heading ? (
           <div data-menu-heading className="border-b border-slate-100 px-3 pb-2 pt-1">
-            <div title={menu.heading} className="truncate text-sm font-semibold text-slate-900">{menu.heading}</div>
-            {menu.description ? <div title={menu.description} className="mt-0.5 truncate text-xs text-slate-500">{menu.description}</div> : null}
+            <div {...overflowTitle(menu.heading)} className="truncate text-sm font-semibold text-slate-900">{menu.heading}</div>
+            {menu.description ? <div {...overflowTitle(menu.description)} className="mt-0.5 truncate text-xs text-slate-500">{menu.description}</div> : null}
           </div>
         ) : null}
         {menu.items.map((item) => {
@@ -303,7 +304,7 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
                     data-menu-item
                     data-danger={child.danger || undefined}
                     disabled={child.disabled}
-                    title={child.title}
+                    title={child.title !== child.label && child.title !== childDescription ? child.title : undefined}
                     aria-label={child.label}
                     className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition-colors ${
                       child.danger
@@ -353,7 +354,7 @@ export function ContextActionMenu({ menu, autoFocus = false, closeOnEscapeWithMo
                 data-menu-item
                 data-danger={item.danger || undefined}
                 disabled={item.disabled}
-                title={item.title}
+                title={item.title !== item.label && item.title !== description ? item.title : undefined}
                 aria-label={item.label}
                 aria-haspopup={hasChildren ? 'menu' : undefined}
                 aria-expanded={hasChildren ? isSubmenuOpen : undefined}

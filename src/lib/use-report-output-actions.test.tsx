@@ -137,7 +137,6 @@ it.each([
   ['openWeldingJournalWaitingRequestReport', 'loadWeldingJournalRows', 'waitingRequest'],
   ['openWeldingJournalWaitingControlReport', 'loadWeldingJournalRows', 'waitingControl'],
   ['openWeldingJournalWaitingRepairReport', 'loadWeldingJournalRows', 'waitingRepair'],
-  ['openWeldingJournalCancelledAcceptedReport', 'loadWeldingJournalRows', 'cancelledAccepted'],
 ] as const)('%s opens an empty preview without popups and loads only the chosen slice', async (action, loader, kind) => {
   const popup = vi.spyOn(window, 'open').mockReturnValue(null)
   const p = params(), { result, rerender } = renderHook(() => useReportOutputActions(p))

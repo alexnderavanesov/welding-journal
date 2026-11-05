@@ -45,13 +45,14 @@ function Dimension({ fields, alternatives, example, owner }: {
 export function WelderStampCheckVisual({ example }: { example: StampCheckExample }) {
   const explanation = explainStampCheckExample(example)
   if (explanation.errors.length) return null
-  const owner = example.stampCount === 1 ? 'a' : 'both'
+  const support = example.connectionType === 'Т'
+  const owner = support || example.stampCount === 1 ? 'a' : 'both'
   const used = new Set(explanation.scopes.flatMap(scope => [...scope.diameterFields, ...scope.thicknessFields]))
-  const unused = (['d1', 't1', 'd2', 't2'] as const).filter(field => !used.has(field))
+  const unused = (support ? ['d1', 't1'] as const : ['d1', 't1', 'd2', 't2'] as const).filter(field => !used.has(field))
   const material = example.group1 === example.group2 ? example.group1 : `${example.group1} + ${example.group2}`
   return <div data-stamp-check-visual className="space-y-2">
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <p className="font-semibold text-slate-900">{example.connectionType} · {material} · {example.d1}×{example.t1} + {example.d2}×{example.t2}</p>
+      <p className="font-semibold text-slate-900">{example.connectionType} · {material} · {example.d1}×{example.t1}{support ? ' · труба' : ` + ${example.d2}×${example.t2}`}</p>
       <div className="flex flex-wrap gap-1">{explanation.welders.map((welder, index) => <StampCheckBadge key={welder.name} owner={index === 0 ? 'a' : 'b'}>{index === 0 ? 'А' : 'Б'} · {welder.methods.replace('+', ' + ')}</StampCheckBadge>)}</div>
     </div>
     <div className="space-y-1.5 rounded-md border border-slate-200 bg-white p-2">

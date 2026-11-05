@@ -5,12 +5,12 @@ import { PrintableReportPreview } from './printable-report-preview'
 beforeEach(() => vi.spyOn(window, 'scrollTo').mockImplementation(() => {}))
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
-it('prepares horizontal print parts for a wide single-page preview without changing the preview', () => {
+it('prepares horizontal print parts for a wide single-page preview without changing the preview', async () => {
   const columns = ['Линия', 'Стык', ...Array.from({ length: 20 }, (_, i) => `Поле ${i}`)]
   render(<PrintableReportPreview report={{ title: 'Wide', tables: [{ title: '', columns, rows: [columns] }] }}
     busy={false} error="" onClose={vi.fn()} onRetry={vi.fn()} />)
   const preview = screen.getByTitle('Wide') as HTMLIFrameElement
-  fireEvent.load(preview)
+  await act(async () => { fireEvent.load(preview) })
   const original = preview.srcdoc
   fireEvent.click(screen.getByRole('button', { name: 'Печать / Сохранить PDF' }))
   const full = screen.getByTitle('Полный отчёт для печати') as HTMLIFrameElement
@@ -20,7 +20,7 @@ it('prepares horizontal print parts for a wide single-page preview without chang
   expect(full.srcdoc).toContain('Часть 1 из')
   expect(full.srcdoc).toContain('print-continuation')
   expect(preview.srcdoc).toBe(original)
-  fireEvent.load(full)
+  await act(async () => { fireEvent.load(full) })
   expect(print).toHaveBeenCalledOnce()
 })
 
@@ -38,12 +38,12 @@ it('cancels an unfinished file request when the preview closes', async () => {
   expect(download).toHaveBeenCalledOnce()
 })
 
-it('keeps Escape inside the document working after the parent updates its close callback', () => {
+it('keeps Escape inside the document working after the parent updates its close callback', async () => {
   const originalClose = vi.fn(), currentClose = vi.fn()
   const props = { report: { title: 'Document' }, busy: false, error: '', onRetry: vi.fn() }
   const { rerender } = render(<PrintableReportPreview {...props} onClose={originalClose} />)
   const iframe = screen.getByTitle('Document') as HTMLIFrameElement
-  fireEvent.load(iframe)
+  await act(async () => { fireEvent.load(iframe) })
   iframe.focus()
   rerender(<PrintableReportPreview {...props} onClose={currentClose} />)
   const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
@@ -54,12 +54,12 @@ it('keeps Escape inside the document working after the parent updates its close 
   expect(iframe).toHaveFocus()
 })
 
-it.each([1001, 10000])('blocks button and keyboard printing of %i rows without preparing a full document', count => {
+it.each([1001, 10000])('blocks button and keyboard printing of %i rows without preparing a full document', async count => {
   const report = { title: 'Large', tables: [{ title: '', columns: ['Joint'], rows: Array.from({ length: count }, (_, i) => [`S${i}`]) }] }
   const props = { busy: false, error: '', onClose: vi.fn(), onRetry: vi.fn(), onDownloadExcel: vi.fn() }
   render(<PrintableReportPreview {...props} report={report} />)
   const frame = screen.getByTitle('Large') as HTMLIFrameElement
-  fireEvent.load(frame)
+  await act(async () => { fireEvent.load(frame) })
   const print = vi.spyOn(frame.contentWindow!, 'print').mockImplementation(() => {})
   expect(screen.getByRole('button', { name: 'Печать / Сохранить PDF' })).toBeDisabled()
   expect(screen.getByRole('status')).toHaveTextContent(`В отчёте ${count} строк`)
@@ -73,20 +73,20 @@ it.each([1001, 10000])('blocks button and keyboard printing of %i rows without p
     }
   }
   fireEvent.click(screen.getByRole('button', { name: 'Далее' }))
-  fireEvent.load(frame)
+  await act(async () => { fireEvent.load(frame) })
   expect(screen.getByRole('button', { name: 'Печать / Сохранить PDF' })).toBeDisabled()
   expect(screen.queryByTitle('Полный отчёт для печати')).not.toBeInTheDocument()
   expect(print).not.toHaveBeenCalled()
 })
 
-it('recalculates the boundary on report replacement and prints all 1000 allowed rows', () => {
+it('recalculates the boundary on report replacement and prints all 1000 allowed rows', async () => {
   const props = { busy: false, error: '', onClose: vi.fn(), onRetry: vi.fn() }
   const large = { title: 'Boundary', tables: [{ title: '', columns: ['Joint'], rows: Array.from({ length: 1001 }, (_, i) => [`S${i}`]) }] }
   const { rerender } = render(<PrintableReportPreview {...props} report={large} />)
-  fireEvent.load(screen.getByTitle('Boundary'))
+  await act(async () => { fireEvent.load(screen.getByTitle('Boundary')) })
   expect(screen.getByRole('button', { name: 'Печать / Сохранить PDF' })).toBeDisabled()
   rerender(<PrintableReportPreview {...props} report={{ ...large, tables: [{ ...large.tables[0], rows: large.tables[0].rows.slice(0, 1000) }] }} />)
-  fireEvent.load(screen.getByTitle('Boundary'))
+  await act(async () => { fireEvent.load(screen.getByTitle('Boundary')) })
   expect(screen.queryByRole('status')).not.toBeInTheDocument()
   const print = screen.getByRole('button', { name: 'Печать / Сохранить PDF' })
   expect(print).toBeEnabled()
@@ -114,7 +114,7 @@ it('keeps Excel errors in the modal, allows retry and prevents double downloads'
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })
 
-it('pages a snapshot, resets a new report and removes deferred print on close', () => {
+it('pages a snapshot, resets a new report and removes deferred print on close', async () => {
   const report = { title: 'Paged', tables: [{ title: '', columns: ['Joint'], rows: Array.from({ length: 205 }, (_, i) => [`S${i + 1}`]) }] }
   const props = { busy: false, error: '', onClose: vi.fn(), onRetry: vi.fn() }
   const { rerender, unmount } = render(<PrintableReportPreview {...props} report={report} />)
@@ -124,7 +124,7 @@ it('pages a snapshot, resets a new report and removes deferred print on close', 
   fireEvent.click(screen.getByRole('button', { name: 'Далее' }))
   expect(iframe().srcdoc).toContain('>S101<')
   expect(iframe().srcdoc).not.toContain('>S1<')
-  fireEvent.load(iframe())
+  await act(async () => { fireEvent.load(iframe()) })
   fireEvent.click(screen.getByRole('button', { name: 'Печать / Сохранить PDF' }))
   const full = screen.getByTitle('Полный отчёт для печати') as HTMLIFrameElement
   expect(full.srcdoc.match(/<tr/g)).toHaveLength(206)
@@ -134,7 +134,7 @@ it('pages a snapshot, resets a new report and removes deferred print on close', 
   rerender(<PrintableReportPreview {...props} report={{ ...report }} />)
   expect(full.isConnected).toBe(false)
   expect(iframe().srcdoc).toContain('>S1<')
-  fireEvent.load(iframe())
+  await act(async () => { fireEvent.load(iframe()) })
   fireEvent.click(screen.getByRole('button', { name: 'Печать / Сохранить PDF' }))
   const pending = screen.getByTitle('Полный отчёт для печати')
   unmount()

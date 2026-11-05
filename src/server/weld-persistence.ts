@@ -38,6 +38,7 @@ import { buildNumberArrayMatch } from '@/server/weld-request-utils'
 import { prepareLineProgramWeldRecords } from '@/server/line-program-registry'
 import { prepareTechnologyCardWeldWrites } from '@/server/technology-card-weld-write'
 import { deleteChangedProgramApprovals } from './program-approval-lifecycle'
+import { synchronizeSupportWeldLengths } from './support-weld-length'
 import { sql,type SQL } from 'drizzle-orm'
 
 import {
@@ -205,11 +206,12 @@ export async function updateWeldJointsInBatches(
   tx: SystemDocumentSequenceTransaction,
   records: readonly WeldInput[],
   previousRows: ReadonlyMap<number, WeldJoint>,
-  options: { preserveRecordedControlHistoryRowIds?: ReadonlySet<number> } = {},
+  options: { preserveRecordedControlHistoryRowIds?: ReadonlySet<number>; transferredPreControlIds?: readonly number[] } = {},
 ) {
   if (records.length === 0) return []
   await prepareLineProgramWeldRecords(tx, records, previousRows)
   await prepareTechnologyCardWeldWrites(tx, records, previousRows)
+  await (await import('./control-assignment-request-removal')).persistRemovedControlAssignmentRequests(tx, records, previousRows, options)
   const now = new Date()
   const payloads = records.map((record) => buildWeldBatchUpdatePayload(record, previousRows, now, {
     preserveRecordedControlHistory: options.preserveRecordedControlHistoryRowIds?.has(Number(record.id)),
@@ -241,6 +243,9 @@ export async function updateWeldJointsInBatches(
     updatedRows.push(...rows)
   }
 
+  const lengthUpdates = await synchronizeSupportWeldLengths(tx, updatedRows, previousRows)
+  const lengthById = new Map(lengthUpdates.map(row => [row.id, row]))
+  for (const row of updatedRows) Object.assign(row, lengthById.get(row.id))
   await deleteChangedProgramApprovals(tx, updatedRows, previousRows)
   const updatedRowsById = new Map(updatedRows.map((row) => [row.id, row]))
   return ids.map((id) => {

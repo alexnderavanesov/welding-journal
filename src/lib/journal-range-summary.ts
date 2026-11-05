@@ -1,5 +1,6 @@
 import { FIELD_BY_KEY, type WeldFieldKey } from './weld-fields'
 import { journalNumericValue, type JournalRangeSummary } from './welding-journal-grid-state'
+import { createSupportLengthSum } from './support-length-value'
 
 export const EMPTY_JOURNAL_RANGE_SUMMARY: JournalRangeSummary = { count: 0, numericCount: 0, sum: 0, average: null }
 export type JournalRangeSpan<Field extends string = WeldFieldKey> = { fieldKey: Field; first: number; last: number }
@@ -35,6 +36,8 @@ export function* journalRangeSummaryChunks<Field extends string>(
   isNumericField: (fieldKey: Field) => boolean = key => FIELD_BY_KEY.get(key as WeldFieldKey)?.kind === 'number',
 ): Generator<void, JournalRangeSummary> {
   let count = 0, numericCount = 0, sum = 0, processed = 0
+  const lengthSum = createSupportLengthSum()
+  let hasLength = false, otherSum = 0
   for (const span of mergeJournalRangeSpans(spans)) {
     const numeric = isNumericField(span.fieldKey)
     for (let index = span.first; index <= span.last; index++) {
@@ -42,10 +45,13 @@ export function* journalRangeSummaryChunks<Field extends string>(
       if (value != null && String(value).trim() !== '') {
         count++
         const number = numeric || typeof value === 'number' ? journalNumericValue(value) : null
-        if (number !== null) { numericCount++; sum += number }
+        if (span.fieldKey === 'weldLength' && lengthSum.add(value)) {
+          hasLength = true; numericCount++; sum += Number(value)
+        } else if (number !== null) { numericCount++; sum += number; otherSum += number }
       }
       if (++processed % 512 === 0) yield
     }
   }
-  return { count, numericCount, sum, average: numericCount ? sum / numericCount : null }
+  if (hasLength) lengthSum.add(otherSum)
+  return { count, numericCount, sum, average: numericCount ? sum / numericCount : null, ...(hasLength ? { exactSum: lengthSum.value() } : {}) }
 }

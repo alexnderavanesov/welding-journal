@@ -10,10 +10,13 @@ export function WelderStampCheckExample() {
   const [example, setExample] = useState<StampCheckExample>(DEFAULT_STAMP_CHECK_EXAMPLE)
   const settings = useDataListSettings()
   const explanation = explainStampCheckExample(example)
+  const support = example.connectionType === 'Т'
   function update<K extends keyof StampCheckExample>(field: K, value: StampCheckExample[K]) {
-    setExample(current => ({ ...current, [field]: value }))
+    setExample(current => field === 'connectionType' && value === 'Т'
+      ? { ...current, connectionType: 'Т', group2: current.group1, stampCount: 1, d2: '', t2: '', methodA: current.weldingMethod, methodB: 'РД' }
+      : { ...current, [field]: value, ...(current.connectionType === 'Т' && field === 'group1' ? { group2: String(value) } : {}) })
   }
-  const methods = <><option value="РАД">РАД</option><option value="РД">РД</option><option value="РАД+РД">РАД + РД</option></>
+  const methods = <><option value="РАД">РАД</option><option value="РД">РД</option><option value="РАД+РД" disabled={support}>РАД + РД</option></>
   return (
     <details className="group rounded-lg border border-sky-200 bg-white" data-stamp-check-example>
       <summary className="flex cursor-pointer list-none items-center gap-3 rounded-lg px-4 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 [&::-webkit-details-marker]:hidden">
@@ -28,19 +31,19 @@ export function WelderStampCheckExample() {
         <section aria-label="Стык">
           <h3 className="mb-2 text-xs font-semibold text-slate-900">Стык</h3>
           <div className="grid max-w-lg gap-2 sm:grid-cols-2">
-            <label className="grid gap-1 text-xs text-slate-700">Тип соединения<Select className="h-8 py-1" aria-label="Тип соединения" value={example.connectionType} onChange={event => update('connectionType', event.target.value as StampCheckExample['connectionType'])}><option value="С17">С17 — С-стык</option><option value="У19">У19 — У-стык</option></Select></label>
+            <label className="grid gap-1 text-xs text-slate-700">Тип соединения<Select className="h-8 py-1" aria-label="Тип соединения" value={example.connectionType} onChange={event => update('connectionType', event.target.value as StampCheckExample['connectionType'])}><option value="С17">С17 — С-стык</option><option value="У19">У19 — У-стык</option><option value="Т">Т — опора</option></Select></label>
             <label className="grid gap-1 text-xs text-slate-700">Способ сварки стыка<Select className="h-8 py-1" aria-label="Способ сварки стыка" value={example.weldingMethod} onChange={event => update('weldingMethod', event.target.value as ExampleWeldingMethod)}>{methods}</Select></label>
           </div>
         </section>
         <section aria-label="Стороны стыка" className="border-t border-slate-100 pt-3">
           <h3 className="mb-2 text-xs font-semibold text-slate-900">Стороны стыка</h3>
           <div className="grid gap-2 2xl:grid-cols-2">
-          {([1, 2] as const).map(side => (
+          {([1, 2] as const).filter(side => !support || side === 1).map(side => (
             <fieldset key={side} aria-label={`Сторона ${side}`} className="min-w-0 rounded-md border border-slate-200 px-2 pb-2">
-              <legend className="px-1 text-xs font-medium text-slate-700">Сторона {side} · мм</legend>
+              <legend className="px-1 text-xs font-medium text-slate-700">{support ? side === 1 ? 'Труба · D1/T1, мм' : 'Материал опоры · без отдельной геометрии' : `Сторона ${side} · мм`}</legend>
               <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
                 <label className="col-span-2 grid gap-1 text-xs text-slate-600 sm:col-span-1">Группа<Select className="h-8 px-2 py-1" aria-label={`Группа ${side}`} value={example[`group${side}`]} onChange={event => update(`group${side}`, event.target.value)}>{settings.materialGroups.map(group => <option key={group} value={group}>{group}</option>)}</Select></label>
-                {(['d', 't'] as const).map(dimension => {
+                {!(support && side === 2) && (['d', 't'] as const).map(dimension => {
                   const field = `${dimension}${side}` as const
                   const label = `${dimension === 'd' ? 'Диаметр' : 'Толщина'} ${field.toUpperCase()}, мм`
                   return <label key={field} className="grid min-w-0 gap-1 text-xs text-slate-600">{label.replace(', мм', '')}<Input className="h-8 min-w-0 px-2 py-1" aria-label={label} inputMode="decimal" value={example[field]} onChange={event => update(field, event.target.value)} aria-invalid={explanation.errors.some(error => error.startsWith(field.toUpperCase()))} /></label>
@@ -49,12 +52,12 @@ export function WelderStampCheckExample() {
             </fieldset>
           ))}
           </div>
-          <p className="mt-1 text-xs leading-5 text-slate-500">1/2 — стороны, не сварщики. Одинаковые группы — однородный стык, разные — разнородный.</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">{support ? 'Для Т разрешены одна группа материалов и один способ сварки. Проверяются D1/T1 трубы; D2/T2 не используются.' : '1/2 — стороны, не сварщики. Одинаковые группы — однородный стык, разные — разнородный.'}</p>
         </section>
         <section aria-label="Сварщики" className="border-t border-slate-100 pt-3">
           <h3 className="mb-2 text-xs font-semibold text-slate-900">Сварщики</h3>
           <div className="grid items-start gap-2 sm:grid-cols-3">
-            <label className="grid gap-1 text-xs text-slate-700">Количество клейм<Select className="h-8 py-1" aria-label="Количество клейм" value={example.stampCount} onChange={event => update('stampCount', Number(event.target.value) as 1 | 2)}><option value={1}>1 — А</option><option value={2}>2 — А и Б</option></Select></label>
+            <label className="grid gap-1 text-xs text-slate-700">Количество клейм<Select className="h-8 py-1" aria-label="Количество клейм" value={example.stampCount} disabled={support} onChange={event => update('stampCount', Number(event.target.value) as 1 | 2)}><option value={1}>1 — А</option>{!support && <option value={2}>2 — А и Б</option>}</Select></label>
             {explanation.welders.map((welder, index) => {
               const name = index === 0 ? 'A' : 'B'
               return <div key={name} className="grid gap-1">
@@ -64,6 +67,7 @@ export function WelderStampCheckExample() {
             })}
           </div>
           <p className="mt-1 text-xs leading-5 text-slate-500">Способы здесь — для примера. В журнале они определяются по допускам, не по порядку клейм.</p>
+          {support && <p className="mt-1 text-xs leading-5 text-slate-600">У Т одно официальное клеймо покрывает выбранные способ сварки и группу материалов. Во всех заполненных официальных слоях оно одинаково; фактическое клеймо может отличаться, но внутри своей группы тоже одно. Поля с индексом 2 не заполняются даже повтором первого клейма.</p>}
         </section>
         </div>
         <div aria-live="polite" aria-atomic="true" className="min-w-0 space-y-2 rounded-lg bg-slate-50 p-3" aria-label="Результат разбора примера" role="region">

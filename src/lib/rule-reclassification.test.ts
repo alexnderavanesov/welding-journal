@@ -13,8 +13,8 @@ describe('agreed rule classification', () => {
     expect(stored.configurationIssue).toContain('СП-02:')
     expect(getLineProgramConfigurationIssue({ ...stored, configurationIssue: 'Проверить исходный документ' })).toBe('Проверить исходный документ')
   })
-  it('has eleven mandatory rules, one optional input guards and six reminders', () => {
-    expect(SYSTEM_RULE_CATALOG.map(rule => rule.code)).toEqual(Array.from({ length: 11 }, (_, index) => `СП-${String(index + 1).padStart(2, '0')}`))
+  it('has twelve mandatory rules, one optional input guards and six reminders', () => {
+    expect(SYSTEM_RULE_CATALOG.map(rule => rule.code)).toEqual([...Array.from({ length: 11 }, (_, index) => `СП-${String(index + 1).padStart(2, '0')}`), 'СП-13'])
     expect(SAVE_CHECK_SETTING_ITEMS.map(item => getSaveCheckSettingCode(item.id))).toEqual(['ЗВ-01'])
     expect(DISPATCHER_SETTING_GROUPS.flatMap(group => group.items.map(item => getDispatcherSettingCode(item.id)))).toEqual(['ДЗ-01', 'ДЗ-02', 'ДЗ-03', 'ДЗ-04', 'ДЗ-05', 'ДЗ-06'])
   })

@@ -1,3 +1,4 @@
+import { overflowTitle } from '@/lib/overflow-title'
 import { ArrowRight, CheckCircle2, ExternalLink, FileText, ListTodo, Pencil, TriangleAlert } from 'lucide-react'
 
 import {
@@ -359,7 +360,7 @@ function HistoryLine({
                   onOpenDocument?.(document.row, document.fieldKey)
                 }}
                 className="inline-flex max-w-full items-center gap-1 text-left text-xs font-medium text-sky-700 hover:text-sky-900 hover:underline"
-                title={document.name}
+                {...overflowTitle(document.name)}
               >
                 <FileText className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{document.name}</span>

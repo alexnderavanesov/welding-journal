@@ -1,3 +1,4 @@
+import { overflowTitle } from '@/lib/overflow-title'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { Permission } from '@/lib/access-permissions'
 import { Select } from '@/components/ui/select'
@@ -148,7 +149,8 @@ import {
   isSystemDataListOption,
   getDataListOptionInputError,
   normalizeDataListOption,
-  saveDataListSettings,
+  saveDataListSettingsAndWait,
+  type DataListSettings,
   useDataListSettings,
 } from '@/lib/data-list-settings'
 import {
@@ -1653,6 +1655,7 @@ function DataSettingsPanel({
   runProtectedSettingsChange: ProtectedSettingsChange
 }) {
   const settings = useDataListSettings()
+  const [saving, setSaving] = useState(false)
   const [drafts, setDrafts] = useState<Record<DataListSettingsKey, string>>({
     weldingTypes: '',
     connectionTypes: '',
@@ -1662,9 +1665,26 @@ function DataSettingsPanel({
   const [message, setMessage] = useState<string | null>(null)
   const usageCountsByKey: Record<DataListSettingsKey, Map<string, number>> = {
     weldingTypes: new Map(usage.weldingTypes),
-    connectionTypes: new Map(usage.connectionTypes),
+    connectionTypes: usage.connectionTypes.reduce((counts, [value, count]) => {
+      const type = normalizeDataListOption(value)
+      counts.set(type, (counts.get(type) ?? 0) + count)
+      return counts
+    }, new Map<string, number>()),
     materialGroups: new Map(usage.materialGroups),
     testTypes: new Map(usage.testTypes),
+  }
+
+  async function saveListChange(next: DataListSettings, success: string) {
+    if (saving) return false
+    setSaving(true)
+    try {
+      const saved = await runProtectedSettingsChange(() => saveDataListSettingsAndWait(next))
+      if (saved) setMessage(success)
+      return saved
+    } catch (error) {
+      setMessage(getErrorMessage(error, 'Не удалось сохранить список. Повторите изменение.'))
+      return false
+    } finally { setSaving(false) }
   }
 
   async function addListValue(config: DataListConfig) {
@@ -1684,21 +1704,15 @@ function DataSettingsPanel({
       return
     }
 
-    const saved = await runProtectedSettingsChange(() => {
-      saveDataListSettings({
-        ...settings,
-        [config.key]: [...values, nextValue],
-      })
-    })
+    const saved = await saveListChange({ ...settings, [config.key]: [...values, nextValue] }, `Добавлено значение ${nextValue}.`)
     if (!saved) return
     setDrafts((current) => ({ ...current, [config.key]: '' }))
-    setMessage(`Добавлено значение ${nextValue}.`)
   }
 
   async function removeListValue(config: DataListConfig, value: string) {
     const values = settings[config.key]
     if (isSystemDataListOption(config.key, value)) {
-      setMessage(`${value} — системное значение. Удалить его нельзя.`)
+      setMessage(`${value} — обязательное значение. Удалить его нельзя.`)
       return
     }
     const usageCount = usageCountsByKey[config.key].get(value) ?? 0
@@ -1707,13 +1721,7 @@ function DataSettingsPanel({
       return
     }
 
-    const saved = await runProtectedSettingsChange(() => {
-      saveDataListSettings({
-        ...settings,
-        [config.key]: values.filter((item) => item !== value),
-      })
-    })
-    if (saved) setMessage(`Значение ${value} удалено из списка.`)
+    await saveListChange({ ...settings, [config.key]: values.filter((item) => item !== value) }, `Значение ${value} удалено из списка.`)
   }
 
   function renderListValue(config: DataListConfig, value: string) {
@@ -1732,10 +1740,9 @@ function DataSettingsPanel({
             стыков: {usageCount}
           </span>
         ) : null}
-        {system ? <span className="inline-flex items-center gap-1 text-xs font-normal text-slate-500" title="Системное значение используется в правилах. Удалить его нельзя.">
-          <LockKeyhole className="h-3.5 w-3.5" aria-hidden="true" />Системное
-        </span> : <button
+        {!system ? <button
           type="button"
+          disabled={saving}
           onClick={() => removeListValue(config, value)}
           className={`rounded border bg-white px-1.5 py-0.5 text-xs font-semibold transition-colors ${
             usageCount > 0
@@ -1746,7 +1753,7 @@ function DataSettingsPanel({
           title={usageCount > 0 ? `Нельзя удалить: используется в стыках (${usageCount})` : `Удалить ${value}`}
         >
           ×
-        </button>}
+        </button> : null}
       </span>
     )
   }
@@ -1759,8 +1766,8 @@ function DataSettingsPanel({
           <h3 className="text-base font-semibold text-slate-900">Данные</h3>
         </div>
         <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-          Здесь настраиваются выпадающие списки для рабочих форм и импорта. Системные значения отмечены замком и не удаляются.
-          Дополнительные значения можно добавлять и удалять, пока они не используются в стыках.
+          Здесь настраиваются выпадающие списки для рабочих форм и импорта. Любой тип соединения можно удалить, пока нет стыков с этим типом.
+          Способы сварки РАД/РД и группы материалов М01/М05/М11 обязательны; остальные значения можно добавлять и удалять, пока они не используются в стыках.
         </p>
       </div>
 
@@ -1792,6 +1799,7 @@ function DataSettingsPanel({
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,360px)_auto] sm:items-start sm:justify-start">
                   <input
                     id={`data-list-${config.key}-input`}
+                    disabled={saving}
                     aria-describedby={inputError || hasRestrictedAlphabet ? `data-list-${config.key}-hint` : undefined}
                     type="text"
                     value={drafts[config.key]}
@@ -1816,7 +1824,7 @@ function DataSettingsPanel({
                   <button
                     type="button"
                     onClick={() => addListValue(config)}
-                    disabled={Boolean(inputError)}
+                    disabled={saving || Boolean(inputError)}
                     className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                   >
                     <Plus className="h-4 w-4" />
@@ -1869,9 +1877,9 @@ const DATA_LIST_CONFIGS: DataListConfig[] = [
     description:
       'Пользователь выбирает одно значение из этого списка в меню создания и редактирования стыка. Это одиночный выбор, не набор галочек.',
     protectionHint: 'Если тип соединения уже используется в стыках, удалить его из настроек нельзя.',
-    inputHint: 'Первая буква — кириллическая «С» или «У». Можно добавлять типы только этих двух классов; класс «Т» пока недоступен. Далее — кириллические буквы, цифры и пробелы.',
+    inputHint: 'Первая буква — кириллическая «С», «У» или «Т». Типы Т используются для соединений трубы с опорой. Далее — кириллические буквы, цифры и пробелы.',
     placeholder: 'Например: С2 или У17',
-    emptyListText: '',
+    emptyListText: 'Список пуст. Добавьте типы соединений, которые используются на проекте.',
     usedValueText: 'этот тип соединения',
   },
   {
@@ -3211,7 +3219,7 @@ function TemplateMetaCard({ label, value, detail }: { label: string; value: stri
   return (
     <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
       <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</div>
-      <div className="mt-1 truncate text-sm font-semibold text-slate-900" title={value}>
+      <div className="mt-1 truncate text-sm font-semibold text-slate-900" {...overflowTitle(value)}>
         {value}
       </div>
       <div className="mt-1 text-xs text-slate-500">{detail}</div>

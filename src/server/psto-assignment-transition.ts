@@ -17,6 +17,9 @@ import { syncSystemDocumentsForWeldChangesInTransaction } from './system-documen
 import { syncPreHeatTreatmentDocumentsInTransaction } from './pre-heat-treatment-system-documents'
 import { assertStoredEarlyCoilDecisionSourcesRemainValid } from './early-coil-decision-guard'
 import { WELD_TABLE_COLUMNS, WELD_TABLE_RETURNING } from './weld-server-shared'
+import { getControlAssignmentRemovalReason } from '@/lib/control-assignment-history'
+import { clearRequestsForRemovedControlAssignments, getClearedControlAssignments } from '@/lib/control-assignment-request-removal'
+import { persistRemovedControlAssignmentRequests } from './control-assignment-request-removal'
 
 /** Shared transition for a whole line and a chain exception. Only an explicit
  * validated decision transfers the existing NK package and its specialists. */
@@ -27,6 +30,12 @@ export async function applyPstoAssignmentRows(
   systemIndexSettings: Awaited<ReturnType<typeof loadProgramSystemIndexSettings>>,
 ) {
   const previousRows = new Map(rows.map(row => [row.id, row]))
+  for (const row of nextRows) {
+    const previous = previousRows.get(row.id)
+    if (!previous) throw new Error('Состав стыков изменился. Обновите программу ПСТО.')
+    const reason = getControlAssignmentRemovalReason(row, previous)
+    if (reason) throw new Error(`Стык ${row.joint}: ${reason}`)
+  }
   const decisionsById = new Map(decisions.map(decision => [decision.rowId, decision]))
   if (decisionsById.size !== decisions.length || decisions.some(decision => !previousRows.has(decision.rowId))) {
     throw new Error('Решение о НК содержит повторный стык или стык вне выбранной цепочки/линии.')
@@ -55,8 +64,11 @@ export async function applyPstoAssignmentRows(
   for (const row of nextRows) if (toPre.has(row.id)) row.preHeatTreatmentControls = savedByRow.get(row.id) ?? []
   const primarySpecialists = await captureTransferredSpecialists(tx, [...toPrimary], 'primary', decisions.find(d => toPrimary.has(d.rowId))?.specialistTransferConfirmation)
   const preSpecialists = await captureTransferredSpecialists(tx, [...toPre], 'beforeHeatTreatment', decisions.find(d => toPre.has(d.rowId))?.specialistTransferConfirmation)
+  const removesRequests = nextRows.some(row => getClearedControlAssignments(row, previousRows.get(row.id)!).length > 0)
+  for (const row of nextRows) clearRequestsForRemovedControlAssignments(row, previousRows.get(row.id)!)
+  await persistRemovedControlAssignmentRequests(tx, nextRows, previousRows)
   const updatedRows = await persistPstoLineAssignmentRows(tx, nextRows, new Date(), new Set([...toPre, ...toPrimary]))
-  if (toPre.size || toPrimary.size) {
+  if (toPre.size || toPrimary.size || removesRequests) {
     await removeTransferredPreControlsInTransaction(tx, rows.filter(row => toPrimary.has(row.id)).flatMap(row => (row.preHeatTreatmentControls ?? []).map(c => c.id)))
     await syncSystemDocumentsForWeldChangesInTransaction(tx, updatedRows, previousRows)
     if (toPre.size) await syncPreHeatTreatmentDocumentsInTransaction(tx, updatedRows, savedControls)
@@ -72,6 +84,8 @@ const PSTO_LINE_ASSIGNMENT_UPDATE_FIELD_KEYS = [
   'pstoExceptionBasis',
   'pstoControlBasis',
   'pstoCancellationDate',
+  'pstoRequest', 'pstoRequestDate', 'pstoResult',
+  'tvmtRequest', 'tvmtRequestDate', 'tvmtResult',
   'finalStatus',
   'pstoCreatedAt',
   'pstoUpdatedAt',
@@ -110,6 +124,8 @@ export async function persistPstoLineAssignmentRows(
       pstoExceptionBasis: textOrNull(row.pstoExceptionBasis),
       pstoControlBasis: textOrNull(row.pstoControlBasis),
       pstoCancellationDate: textOrNull(row.pstoCancellationDate),
+      pstoRequest: textOrNull(row.pstoRequest), pstoRequestDate: textOrNull(row.pstoRequestDate), pstoResult: textOrNull(row.pstoResult),
+      tvmtRequest: textOrNull(row.tvmtRequest), tvmtRequestDate: textOrNull(row.tvmtRequestDate), tvmtResult: textOrNull(row.tvmtResult),
       finalStatus: textOrNull(calculateFinalStatus(row)),
       pstoCreatedAt: isControlEnabledValue(row.pstoRequired)
         ? timestampOrNull(row.pstoCreatedAt) ?? now

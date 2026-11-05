@@ -1,3 +1,4 @@
+import { overflowTitle } from '@/lib/overflow-title'
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { WorkflowDialogShell } from '@/components/workflow-dialog-shell'
 import { LnkExistingRequestSearch } from '@/components/lnk-existing-request-search'
@@ -440,7 +441,7 @@ export function LnkRequestDialog({
               }`}
             >
               {selectedExistingRequest.disabledReason ? (
-                <p className="truncate text-xs font-medium" title={selectedExistingRequest.disabledReason}>
+                <p className="truncate text-xs font-medium" {...overflowTitle(selectedExistingRequest.disabledReason)}>
                   {selectedExistingRequest.disabledReason}
                 </p>
               ) : (
@@ -449,7 +450,7 @@ export function LnkRequestDialog({
                   <span className="shrink-0"><strong>{selectedExistingRequest.positionCount}</strong> позиций НК</span>
                   <span className="shrink-0">Добавится: <strong>{extensionAnalysis.targets.length}</strong> позиций</span>
                   <span className="h-4 w-px shrink-0 bg-sky-200" />
-                  <span className="min-w-0 truncate text-sky-800" title={extensionOutcomeSummary}>
+                  <span className="min-w-0 truncate text-sky-800" {...overflowTitle(extensionOutcomeSummary)}>
                     {extensionOutcomeSummary}
                   </span>
                 </div>

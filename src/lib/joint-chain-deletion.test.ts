@@ -32,7 +32,14 @@ describe('deletion preserves every remaining continuation', () => {
     const rows = [row(1, 'S63Y1'), row(2, 'S63Y1W1R1'), row(3, 'S63Y1W2R1'),
       row(4, 'S63Y1W1R2'), row(5, 'S63Y1R1W1'), row(6, 'S63Y2W1R1')]
     expect(captureProgramChainStates(rows).get(3)?.sourceRowId).toBe(2)
-    for (const id of [4, 5, 6]) expect(remaining(rows, [id])).not.toContainEqual(expect.objectContaining({ id: 3 }))
+    for (const id of [4, 5, 6]) expect(remaining(rows, [id])).not.toContain(3)
+  })
+  it.each(['S1', 'ОП-1'])('normalizes old unofficial namesakes when capturing the physical root of %sR1', base => {
+    const rows = [row(1, base), row(2, base, { officiality: ' НЕОФИЦИАЛЬНЫЙ ' }), row(3, `${base}R1`)]
+    const states = captureProgramChainStates(rows)
+    expect(states.get(3)).toMatchObject({ sourceRowId: 1, physicalRootId: 1 })
+    expect(remaining(rows, [2])).toEqual([])
+    expect(remaining(rows, [1])).toEqual([3])
   })
   it('keeps an already captured identity without automatically repairing old stored links', () => {
     const rows = [row(1, 'S63'), row(2, 'S63W1'), row(3, 'S63W1R1'), row(4, 'S63W2R1')]

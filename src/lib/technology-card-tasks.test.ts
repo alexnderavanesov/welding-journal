@@ -72,12 +72,15 @@ describe('DZ-06 technology cards', () => {
     expect(archived(row).status).toBe('none')
     expect(review()({ ...row, technologyCardNumber: 'Старое название', weldingMethod: 'РД', connectionType: 'У19', d1: 219, d2: 219 }).message).toMatch(/Способы[\s\S]*соединени[\s\S]*диаметр/)
   })
-  it('checks only welded non-T joints and persists the optional task code per row', () => {
-    const tasks = buildTechnologyCardTasks([row, { ...row, id: 11, weldDate: null }, { ...row, id: 12, connectionType: 'Т1' }], review())
-    expect(tasks).toHaveLength(1)
+  it('checks welded joints including T and persists the optional task code per row', () => {
+    const support = { ...row, id: 12, joint: 'ОП-12', connectionType: 'Т1', d2: null, t2: null }
+    const tasks = buildTechnologyCardTasks([row, { ...row, id: 11, weldDate: null }, support], review())
+    expect(tasks).toHaveLength(2)
     expect(getDispatcherTaskCode(tasks[0])).toBe('ДЗ-06')
     expect(isMandatoryDispatcherTask(tasks[0])).toBe(false)
-    expect(buildDispatcherTaskCodeIndexRows(tasks, [row])).toEqual([{ rowId: 10, code: 'ДЗ-06', taskKey: 'code:ДЗ-06' }])
+    expect(buildDispatcherTaskCodeIndexRows(tasks, [row, support])).toEqual([
+      { rowId: 10, code: 'ДЗ-06', taskKey: 'code:ДЗ-06' }, { rowId: 12, code: 'ДЗ-06', taskKey: 'code:ДЗ-06' },
+    ])
   })
   it('flags a legacy three-method card and excludes it from new selection without rewriting the joint', () => {
     const legacy = { ...card, weldingMethods: ['РАД', 'РД', 'АФ'] }

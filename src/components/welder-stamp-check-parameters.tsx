@@ -6,7 +6,7 @@ import { type StampCheckExample } from '@/lib/welder-stamp-check-explanation'
 type CheckScenario = {
   stamps: 1 | 2
   combined: boolean
-  sample: [type: 'С17' | 'У19', group1: string, group2: string, d1: number, t1: number, d2: number, t2: number]
+  sample: [type: StampCheckExample['connectionType'], group1: string, group2: string, d1: number, t1: number, d2: number, t2: number]
   result: string
 }
 
@@ -49,6 +49,15 @@ const CHECK_GROUPS: Array<{ id: string; title: string; materials: string; checks
       { stamps: 2, combined: true, sample: ['У19', 'М05', 'М11', 219, 8, 89, 12], result: 'А — РАД на обе группы, Б — РД на обе группы. Каждый покрывает М05 на D1 = 219, T1 = 8 И М11 на D2 = 89, T2 = 12.' },
     ],
   },
+  {
+    id: 'support-homogeneous', title: 'Т · соединение трубы с опорой', materials: 'Одна группа',
+    checks: ['Диаметр: D1 трубы', 'Толщина: T1 трубы'],
+    note: 'Только D1 и T1. D2/T2 и длина шва не участвуют в проверке допуска. Для Т разрешены одна группа материалов и один способ сварки. Разнородное и комбинированное Т запрещены (СП-13).',
+    scenarios: [
+      { stamps: 1, combined: false, sample: ['Т', 'М01', 'М01', 57, 6, 0, 0], result: 'А, РАД: М01 на D1 = 57 и T1 = 6. Геометрия опоры не задаётся.' },
+    ],
+  },
+
 ]
 
 export function WelderStampCheckParameters() {
@@ -62,7 +71,7 @@ export function WelderStampCheckParameters() {
       <WelderStampCheckExample />
 
       <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-600">
-        <p><strong className="text-slate-800">Как читать таблицу:</strong> D1/T1 — диаметр и толщина материала 1, D2/T2 — материала 2. Все размеры в миллиметрах. А и Б — разные сварщики.</p>
+        <p><strong className="text-slate-800">Как читать таблицу:</strong> у С/У D1/T1 — диаметр и толщина материала 1, D2/T2 — материала 2. У Т единственная группа материалов проверяется по D1/T1 трубы, D2/T2 не требуются. Все размеры в миллиметрах. А и Б — разные сварщики; у Т допустим только один.</p>
         <p className="mt-1"><strong className="text-slate-800">И</strong> — нужны оба параметра. <strong className="text-slate-800">ИЛИ</strong> — достаточно одного из перечисленных. При двух клеймах весь набор проверяется <strong className="text-slate-800">отдельно у А и отдельно у Б</strong>.</p>
         <StampCheckColorLegend />
       </div>
@@ -117,12 +126,14 @@ export function WelderStampCheckParameters() {
       <aside aria-label="Важно при проверке клейм" className="rounded-lg border border-slate-200 bg-white p-4">
         <h3 className="flex items-center gap-2 font-semibold text-slate-900"><Info aria-hidden="true" className="h-4 w-4 text-sky-700" />Что ещё важно</h3>
         <ul className="mt-3 grid list-disc gap-x-8 gap-y-3 pl-5 text-sm leading-6 text-slate-600 lg:grid-cols-2">
-          <li><strong className="text-slate-800">Группы привязаны к сторонам.</strong> М01 + М05 и М05 + М01 — разные условия проверки. Одна группа относится к обеим сторонам.</li>
+          <li><strong className="text-slate-800">Группы и геометрия.</strong> У разнородного С/У группы привязаны к сторонам: М01 + М05 и М05 + М01 — разные условия проверки. У Т допустима только одна группа материалов; она проверяется по D1/T1 трубы.</li>
           <li><strong className="text-slate-800">Клейма считаются без повторов.</strong> Одно клеймо в корне, заполнении и облицовке — один сварщик. Номер поля не назначает ему РАД или РД автоматически.</li>
           <li><strong className="text-slate-800">Диапазоны не складываются арифметически.</strong> Два допуска до 3 мм не дают допуск до 6 мм. D и T могут покрываться разными подходящими допусками одного сварщика.</li>
           <li><strong className="text-slate-800">Нет «общего допуска команды».</strong> Способы распределять можно, но недостающую группу, D или T нельзя взять у другого сварщика. НАКС также не заменяет требуемый ДЛС.</li>
           <li><strong className="text-slate-800">Важна дата сварки, не сегодняшняя дата.</strong> Архивный допуск может учитываться для исторического стыка внутри своего срока. Отстранение проверяется отдельно и относится ко всем допускам клейма.</li>
           <li><strong className="text-slate-800">Фактическое клеймо не равно официальному допуску.</strong> Таблица описывает проверки официальных клейм. Запись факта сама по себе не подтверждает соответствие НАКС/ДЛС; без нужных исходных данных полный вывод сделать нельзя.</li>
+          <li><strong className="text-slate-800">Клейма Т по слоям.</strong> Заполненные официальные слои содержат одно и то же клеймо; фактические — отдельно одно и то же. Официальное и фактическое могут различаться, пустые слои разрешены. Все поля индекса 2 должны быть пустыми, включая повтор того же клейма.</li>
+          <li><strong className="text-slate-800">Несвязанные исправления старой записи.</strong> Если официальный допуск перестал соответствовать, можно исправлять другие сведения при неизменных дате сварки, параметрах допуска и официальных клеймах. СП-02 остаётся видимым. Новые записи и изменения этих входных данных проходят полную проверку.</li>
         </ul>
       </aside>
     </section>

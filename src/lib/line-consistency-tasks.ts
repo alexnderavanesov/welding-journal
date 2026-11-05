@@ -1,12 +1,11 @@
+import { isTConnectionType } from './connection-type'
+import { getSupportControlPercent } from './line-program'
 import type { LineConsistencyTask, WeldRow } from '@/lib/dispatcher-types'
 import { isControlEnabledValue } from '@/lib/control-availability-values'
 import { isCancelledControlValue } from '@/lib/report-value-utils'
 import { encodeIdentityKey } from '@/lib/identity-key'
 import { calculateLineProgram, getLineProgramRowDemand, isLineProgramCalculationRow, isLineProgramControlRow, parseLineProgramPercent } from '@/lib/line-program-calculation'
-import { programExcessEntries } from '@/lib/line-program-workspace'
-import { programApprovalKey } from './program-control-approval'
 import { DEFAULT_SYSTEM_INDEX_SETTINGS, type SystemIndexSettings } from './system-index-settings'
-import { buildProgramRepairRequirements } from './line-program-repair-requirements'
 import { applyPstoChainPolicy, type PstoLinePolicy } from './psto-chain-policy'
 import { getPstoLineIdentityKey } from './psto-line-assignment'
 
@@ -50,9 +49,14 @@ export function buildLineConsistencyTasks(rows: WeldRow[], accepted: ReadonlySet
     const line = normalizeDisplayValue(representativeRow.line)
     if (!line) continue
 
-    for (const field of LINE_CONSISTENCY_FIELDS) {
-      if (field.key === 'pvkControlPercent' && groupRows.every((row) => row.pvkControlPercent === undefined)) continue
-      const values = getDistinctLineValues(groupRows, field.key)
+    for (const support of [false, true]) for (const field of LINE_CONSISTENCY_FIELDS) {
+      const metadataRows = groupRows.filter(row => isTConnectionType(row.connectionType) === support).map(row => !support ? row : ({ ...row,
+        weldControlPercent: getSupportControlPercent(row.supportUzkControlPercent, parseLineProgramPercent(row.weldControlPercent)),
+        pvkControlPercent: getSupportControlPercent(row.supportPvkControlPercent, parseLineProgramPercent(row.pvkControlPercent === undefined ? row.weldControlPercent : row.pvkControlPercent)),
+      }))
+      if (!metadataRows.length || support && ['category', 'groupName'].includes(field.key) && groupRows.some(row => !isTConnectionType(row.connectionType))) continue
+      if (field.key === 'pvkControlPercent' && metadataRows.every((row) => row.pvkControlPercent === undefined)) continue
+      const values = getDistinctLineValues(metadataRows, field.key)
       if (values.length < 2 && !values.includes('пусто')) continue
       const projectTitle = normalizeDisplayValue(representativeRow.projectTitle)
       const subtitleCode = normalizeDisplayValue(representativeRow.subtitleCode)
@@ -63,45 +67,28 @@ export function buildLineConsistencyTasks(rows: WeldRow[], accepted: ReadonlySet
       const valuesText = values.join(', ')
       tasks.push({
         kind: 'line-consistency',
-        key: `line-consistency:${field.key}:${encodeIdentityKey([
+        key: `line-consistency:${support ? 'supports:' : ''}${field.key}:${encodeIdentityKey([
           normalizeKey(projectTitle),
           normalizeKey(subtitleCode),
           normalizeKey(line),
           ...values.map(normalizeKey),
         ])}`,
-        row: representativeRow,
+        row: metadataRows[0],
         line,
         projectTitle,
         subtitleCode,
         fieldKey: field.key,
         systemWarningCode: 'СП-01',
         fieldLabel: field.label,
-        title: field.title,
+        title: support ? `${field.title} — опоры` : field.title,
         values,
         details: `На линии ${line}${detailsContext ? ` (${detailsContext})` : ''} не настроено единое значение «${field.label}»: ${valuesText}. Откройте «Программу линий» и настройте общие свойства линии.`,
       })
     }
 
-    const mandatory = buildProgramRepairRequirements(groupRows, accepted, settings)
-    let duplicateRows = groupRows.filter((row) =>
-      (parseLineProgramPercent(row.weldControlPercent) === 100 ? isLineProgramControlRow(row) : isLineProgramCalculationRow(row)) &&
-      !(mandatory.get(row.id)?.some(item => item.method === 'РК') && mandatory.get(row.id)?.some(item => item.method === 'УЗК')) &&
-      getLineProgramRowDemand(row, 'common').duplicate && !accepted.has(programApprovalKey(row, 'common', true)))
-    const lineId = representativeRow.lineProgramId
-    const percent = parseLineProgramPercent(representativeRow.weldControlPercent)
-    const pvkPercent = parseLineProgramPercent(representativeRow.pvkControlPercent)
-    // Reuse exact program decisions, not a blanket acceptance of the line task.
-    // Results/conclusions do not constitute approval and are never changed here.
-    if (duplicateRows.length && accepted.size && lineId && percent != null && pvkPercent != null &&
-      groupRows.every(row => row.lineProgramId === lineId) &&
-      LINE_CONSISTENCY_FIELDS.every(field => { const values = getDistinctLineValues(groupRows, field.key); return values.length === 1 && !values.includes('пусто') })) {
-      const entries = programExcessEntries(lineId, groupRows, calculateLineProgram(groupRows, percent, pvkPercent, settings, accepted))
-      const approvals = new Map<number, boolean>()
-      for (const entry of entries) if (entry.kind === 'common' && entry.duplicate) {
-        approvals.set(entry.rowId, (approvals.get(entry.rowId) ?? true) && accepted.has(entry.key))
-      }
-      duplicateRows = duplicateRows.filter(row => !approvals.get(row.id))
-    }
+    const duplicateRows = groupRows.filter(row =>
+      !isTConnectionType(row.connectionType) && (parseLineProgramPercent(row.weldControlPercent) === 100 ? isLineProgramControlRow(row) : isLineProgramCalculationRow(row)) &&
+      getLineProgramRowDemand(row, 'common').duplicate)
     if (duplicateRows.length) tasks.push({
       kind: 'line-consistency', key: `line-consistency:controlPresence:${encodeIdentityKey([representativeRow.projectTitle, representativeRow.subtitleCode, line])}`,
       row: duplicateRows[0], projectTitle: normalizeDisplayValue(representativeRow.projectTitle), subtitleCode: normalizeDisplayValue(representativeRow.subtitleCode), line,

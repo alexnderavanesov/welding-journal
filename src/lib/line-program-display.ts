@@ -6,20 +6,23 @@ import { getProgramDemandAccounting, type ProgramCoverageAccounting } from './li
 import { calculateFinalStatus } from './weld-status'
 import { buildLineProgramTopology } from './line-program-topology'
 import { countProgramRows } from './line-program-row-filters'
+import { buildSupportProgramContext, getSupportChainMethodState } from './support-program-calculation'
+import { isTConnectionType } from './connection-type'
 
 const idFields = ['assignedRowIds', 'additionalRowIds', 'cancelledRowIds', 'coveredRowIds', 'completedRowIds', 'candidateRowIds', 'excessRowIds', 'duplicateAssignmentRowIds'] as const
 const emptyDemand = (percent: number): LineProgramDemand => ({ percent, baseRequired: 0, additionalRequired: 0, required: 0, actionableRequired: 0, missing: 0,
   assignedRowIds: [], additionalRowIds: [], cancelledRowIds: [], coveredRowIds: [], completedRowIds: [], candidateRowIds: [], excessRowIds: [], duplicateAssignmentRowIds: [] })
 
 /** Planning includes unwelded/unstamped joints; percentage quotas still use the original calculation. */
-export function buildLineProgramDisplay(rows: readonly WeldRow[], groups: readonly LineProgramStampCalculation[], percent: number, pvkPercent: number, hints: ProgramRemovalHints = new Map()) {
-  const uniqueRows = [...new Map(rows.map(row => [row.id, row])).values()]
-  const eligible = buildLineProgramTopology(uniqueRows, percent === 100).physicalRows.filter(isLineProgramControlRow)
+export function buildLineProgramDisplay(rows: readonly WeldRow[], groups: readonly LineProgramStampCalculation[], percent: number, pvkPercent: number, hints: ProgramRemovalHints = new Map(), support = groups.some(group => group.support)) {
+  const uniqueRows = [...new Map(rows.filter(row => isTConnectionType(row.connectionType) === support).map(row => [row.id, row])).values()]
+  const supportContext = support ? buildSupportProgramContext(uniqueRows) : null
+  const eligible = supportContext?.roots ?? buildLineProgramTopology(uniqueRows, percent === 100).physicalRows.filter(isLineProgramControlRow)
   const states = new Map(uniqueRows.map(row => [row.id, calculateFinalStatus(row)]))
   const good = new Set(uniqueRows.filter(row => states.get(row.id) === 'годен').map(row => row.id))
   const rejected = new Set(uniqueRows.filter(row => states.get(row.id)?.startsWith('не годен')).map(row => row.id))
   const errors = new Set(uniqueRows.filter(row => states.get(row.id) === 'ошибка').map(row => row.id))
-  const flags = new Map(uniqueRows.map(row => [row.id, { common: getLineProgramRowDemand(row, 'common'), pvk: getLineProgramRowDemand(row, 'pvk') }]))
+  const flags = new Map(uniqueRows.map(row => [row.id, { common: supportContext ? getSupportChainMethodState(supportContext.members.get(row.id) ?? [row], 'common') : getLineProgramRowDemand(row, 'common'), pvk: supportContext ? getSupportChainMethodState(supportContext.members.get(row.id) ?? [row], 'pvk') : getLineProgramRowDemand(row, 'pvk') }]))
   const physicalIds = new Set(eligible.map(row => row.id))
   const state = (members: readonly WeldRow[]) => {
     const physical = members.filter(row => physicalIds.has(row.id))
@@ -36,8 +39,8 @@ export function buildLineProgramDisplay(rows: readonly WeldRow[], groups: readon
       errors: physical.filter(row => errors.has(row.id)).length, waitingWeld: physical.filter(row => !row.weldDate).length, incompleteStages }
   }
   const assignments = (members: readonly WeldRow[], kind: 'common' | 'pvk') => getProgramDemandAccounting({
-    assignedRowIds: members.filter(row => flags.get(row.id)?.[kind].assigned).map(row => row.id),
-    additionalRowIds: members.filter(row => flags.get(row.id)?.[kind].additional).map(row => row.id), coveredRowIds: [],
+    assignedRowIds: members.filter(row => (!support || physicalIds.has(row.id)) && flags.get(row.id)?.[kind].assigned).map(row => row.id),
+    additionalRowIds: members.filter(row => (!support || physicalIds.has(row.id)) && flags.get(row.id)?.[kind].additional).map(row => row.id), coveredRowIds: [],
   }).assignments
   const reducible = (members: readonly WeldRow[], kind: 'common' | 'pvk') => members.reduce((sum, row) => sum + [...(hints.get(row.id)?.keys() ?? [])].filter(method => kind === 'pvk' ? method === 'ПВК' : method !== 'ПВК').length, 0)
   const lineGroup = groups.find(group => group.scope === 'line')
@@ -52,8 +55,10 @@ export function buildLineProgramDisplay(rows: readonly WeldRow[], groups: readon
   const members = new Map<string, { stamp: string; rows: WeldRow[] }>()
   const unstamped: WeldRow[] = []
   const extraIds = new Set(groups.flatMap(group => [...group.common.excessRowIds, ...group.pvk.excessRowIds]))
+  const supportOwners = new Map<number, string[]>()
+  if (support) for (const group of groups) for (const id of group.contextRowIds ?? group.rowIds) supportOwners.set(id, [...(supportOwners.get(id) ?? []), group.stamp])
   for (const row of uniqueRows.filter(row => physicalIds.has(row.id) || extraIds.has(row.id))) {
-    const stamps = getLineProgramOfficialStamps(row)
+    const stamps = supportOwners.get(row.id) ?? getLineProgramOfficialStamps(row)
     if (!stamps.length) unstamped.push(row)
     for (const stamp of stamps) {
       const key = stamp.toLocaleLowerCase('ru'), entry = members.get(key) ?? { stamp, rows: [] }
@@ -63,7 +68,7 @@ export function buildLineProgramDisplay(rows: readonly WeldRow[], groups: readon
   const project = (rows: WeldRow[], kind: 'common' | 'pvk', stamp?: string) => {
     const p = kind === 'common' ? percent : pvkPercent
     let demand = stampGroups.get(stamp?.toLocaleLowerCase('ru') ?? '')?.[kind] ?? emptyDemand(p)
-    if (p === 100 && lineGroup) {
+    if (!support && p === 100 && lineGroup) {
       const ids = rows.filter(row => physicalIds.has(row.id)).map(row => row.id)
       const fields = Object.fromEntries(idFields.map(field => [field, ids.filter(id => lineIds[kind][field].has(id))])) as Pick<LineProgramDemand, typeof idFields[number]>
       const repairExcess = demand.excessAssignments?.filter(entry => !physicalIds.has(entry.rowId)) ?? []

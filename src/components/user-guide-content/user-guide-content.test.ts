@@ -40,8 +40,9 @@ describe('user guide content', () => {
   it('explains the read-only stamp check tab and preserved registry state', () => {
     const stamps = REFERENCE_GUIDE_SECTIONS_2.find(section => section.id === 'stamps')!
     const content = JSON.stringify(stamps)
-    expect(content).toContain('Вкладки «Клейма», «Технологические карты» и «Параметры проверки»')
-    expect(content).toContain('таблица из 12 вариантов')
+    expect(content).toContain('Реестры справочников и параметры проверки')
+    expect(content).toContain('В профиле → «Правила системы» → «Параметры проверки»')
+    expect(content).toContain('справочная таблица с условиями для С/У и четырьмя примерами Т')
     expect(content).toContain('сохраняются поиск, фильтры и раскрытая карточка')
     expect(content).toContain('не меняет настройки или допуски')
     expect(content).toContain('без внутреннего окна')
@@ -68,6 +69,7 @@ describe('user guide content', () => {
     const settings = REFERENCE_GUIDE_SECTIONS_3.find((section) => section.id === 'settings')!
     const matrix = settings.blocks.find((block) => block.type === 'table' && block.title === 'СП-07: допустимые результаты ЛНК')
     expect(matrix?.type === 'table' ? matrix.table.rows : undefined).toEqual([
+      ['Т: ВИК / ПВК / УЗК', 'Любой D, любое число R', 'годен, ремонт; собственный ПВК может быть ограничен настройкой «только годен»'],
       ['ВИК / ПВК', 'Любой D, до двух ремонтов', 'годен, ремонт'],
       ['ВИК / ПВК', 'Любой D, после двух ремонтов', 'только годен'],
       ['РК / УЗК', 'Dmin < 89 мм, до двух ремонтов', 'годен, вырез'],
@@ -79,7 +81,7 @@ describe('user guide content', () => {
     expect(content).toContain('старые выключенные ЗВ-20/ДЗ-17 правило не отключают')
     expect(content).not.toContain('Отключать только если по проекту действует отдельное решение')
     expect(JSON.stringify(REFERENCE_GUIDE_SECTIONS_2)).toContain('даже если в Excel изменен только диаметр')
-    expect(JSON.stringify(WORK_GUIDE_SECTIONS)).toContain('Действуют: 11 обязательных СП, 2 отключаемые ЗВ и 6 отключаемых ДЗ')
+    expect(JSON.stringify(WORK_GUIDE_SECTIONS)).toContain('Действуют: 12 обязательных СП, 2 отключаемые ЗВ и 6 отключаемых ДЗ')
   })
   it('explains the release waiting page and avoids automatic retry of a save', () => {
     const content = JSON.stringify(WORK_GUIDE_SECTIONS)
@@ -107,6 +109,7 @@ describe('user guide content', () => {
       'work-stamps',
       'work-dispatcher',
       'work-percentage',
+      'support-joints',
       'specialists',
       'work-statistics',
       'work-documents',

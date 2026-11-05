@@ -21,7 +21,6 @@ type CreateReportHeaderActionsPropsOptions = {
   onOpenWeldingJournalWaitingRequestReport: () => void
   onOpenWeldingJournalWaitingControlReport: () => void
   onOpenWeldingJournalWaitingRepairReport: () => void
-  onOpenWeldingJournalCancelledAcceptedReport: () => void
   onOpenWeldingJournalSystemReport: () => void
   onCreatePstoRequest: () => void
   createPstoRequestDisabled: boolean
@@ -92,7 +91,6 @@ export function createReportHeaderActionsProps({
   onOpenWeldingJournalWaitingRequestReport,
   onOpenWeldingJournalWaitingControlReport,
   onOpenWeldingJournalWaitingRepairReport,
-  onOpenWeldingJournalCancelledAcceptedReport,
   onOpenWeldingJournalSystemReport,
   onCreatePstoRequest,
   createPstoRequestDisabled,
@@ -162,7 +160,6 @@ export function createReportHeaderActionsProps({
     onOpenWeldingJournalWaitingRequestReport,
     onOpenWeldingJournalWaitingControlReport,
     onOpenWeldingJournalWaitingRepairReport,
-    onOpenWeldingJournalCancelledAcceptedReport,
     onOpenWeldingJournalSystemReport,
     onCreatePstoRequest,
     createPstoRequestDisabled,

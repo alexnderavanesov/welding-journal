@@ -1,9 +1,11 @@
 import { useAccess } from '@/lib/security-context'
+import { formatSupportLengthDecimal } from '@/lib/support-length-value'
 import { useReportGroupSession } from '@/lib/report-group-session'
 import { canViewWeldField } from '@/lib/weld-field-access'
 import { REPORT_ACCESS_AREAS } from '@/lib/access-permissions'
 import { WORKFLOW_SELECTION_LIMIT } from '@/lib/workflow-selection-limit'
 import { JournalSelectionSummary } from './journal-selection-summary'
+import { JournalSummaryValue } from './journal-summary-value'
 import { gridHeaderKeyboard } from '@/lib/grid-header-keyboard'
 import './grid-keyboard.css'
 import { useJournalServerGrid } from '@/lib/use-journal-server-grid'
@@ -647,7 +649,7 @@ function ReportGrid(props: WeldReportGridProps) {
         <div className="journal-footer-right">
         <div className="journal-range-summary" aria-label="Статистика выделения" title="Выбрано — записей галочками. Стыков, WDI и Сварка считаются по области, если она выделена, иначе по выбранным. После разделителя — статистика ячеек области, включая незагруженные строки.">
           {selectedRowIds.size > 0 ? <div className="flex items-center gap-2" aria-label={report !== 'weldingJournal' ? 'Действия с выбранными стыками' : undefined}>
-            <span>Выбрано: {selectedRowIds.size}</span>
+            <span>Выбрано: <JournalSummaryValue label="Выбрано" value={selectedRowIds.size} /></span>
             {report !== 'weldingJournal' && props.getContextMenuItems ?
               <button type="button" data-journal-selection-actions className="journal-input text-sky-700 disabled:opacity-50" disabled={!rowMenu.selectionAvailable}
                 onClick={event => {
@@ -660,9 +662,9 @@ function ReportGrid(props: WeldReportGridProps) {
           <JournalSelectionSummary ids={selectedRowIds} identity={props.journalServer?.identity} ready={rowsReady} range={serverGrid.summaryRange} recoverRevision={props.journalServer?.recoverRevision} expired={props.journalServer.revisionExpired} getSnapshot={props.journalServer.getSnapshot} />
           {serverGrid.rangeState || rangeSummary.count > 0 ? <div className="journal-cell-range-summary" aria-label="Статистика ячеек" data-separated={Boolean(selectedRowIds.size || serverGrid.summaryRange)}>
           {serverGrid.rangeState ? <span role="status">{serverGrid.rangeState}</span> : null}
-          {!serverGrid.rangeState && rangeSummary.average !== null ? <span>Среднее: {formatJournalNumber(rangeSummary.average)}</span> : null}
-          {!serverGrid.rangeState && rangeSummary.count > 0 ? <span>Количество: {rangeSummary.count}</span> : null}
-          {!serverGrid.rangeState && rangeSummary.numericCount > 0 ? <span>Сумма: {formatJournalNumber(rangeSummary.sum)}</span> : null}
+          {!serverGrid.rangeState && rangeSummary.average !== null ? <span>Среднее: <JournalSummaryValue label="Среднее" value={formatJournalNumber(rangeSummary.average)} /></span> : null}
+          {!serverGrid.rangeState && rangeSummary.count > 0 ? <span>Количество: <JournalSummaryValue label="Количество" value={rangeSummary.count} /></span> : null}
+          {!serverGrid.rangeState && rangeSummary.numericCount > 0 ? <span>Сумма: <JournalSummaryValue label="Сумма" value={rangeSummary.exactSum === undefined ? formatJournalNumber(rangeSummary.sum) : formatSupportLengthDecimal(rangeSummary.exactSum)} /></span> : null}
           </div> : null}
         </div>
         </div>

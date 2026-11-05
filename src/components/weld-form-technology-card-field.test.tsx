@@ -4,13 +4,14 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { TechnologyCardSnapshot } from '@/lib/technology-card-review'
 import { WeldFormTechnologyCardField } from './weld-form-technology-card-field'
+import { DEFAULT_DATA_LIST_SETTINGS, saveDataListSettings } from '@/lib/data-list-settings'
 
 const query = vi.hoisted(() => ({ data: undefined as TechnologyCardSnapshot | undefined, isError: false, isFetching: false, refetch: vi.fn() }))
 vi.mock('@/lib/technology-card-query', () => ({ useTechnologyCardSnapshot: () => query }))
 const card = { id: 1, revision: 2, name: 'ТК №1', weldingMethods: ['РАД'], connectionType: 'С17', materialGroups: ['М01'], diameterFrom: 1, diameterTo: 200, thicknessFrom: 1, thicknessTo: 10, psto: 'any' as const, archived: false }
 
-function Form() {
-  const [draft, setDraft] = useState<WeldInput>({ technologyCardNumber: 'Старая ТК', weldingMethod: 'РАД', connectionType: 'С17', materialGroup: 'М01', d1: 57, d2: 57, t1: 3, t2: 3 })
+function Form({ initial }: { initial?: WeldInput }) {
+  const [draft, setDraft] = useState<WeldInput>(initial ?? { technologyCardNumber: 'Старая ТК', weldingMethod: 'РАД', connectionType: 'С17', materialGroup: 'М01', d1: 57, d2: 57, t1: 3, t2: 3 })
   const fieldRefs = useRef<Partial<Record<WeldFieldKey, HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null>>>({})
   return <><WeldFormTechnologyCardField draft={draft} setDraft={setDraft} fieldRefs={fieldRefs} /><span data-testid="draft">{JSON.stringify(draft)}</span></>
 }
@@ -53,4 +54,18 @@ it('moves full explanations into a portal, preserving the fixed controls on load
   query.isError = true; rerender(<Form />)
   expect(screen.getByRole('alert')).toHaveTextContent('Реестр недоступен')
   expect(screen.getByRole('textbox')).toHaveValue('Старая ТК')
+})
+
+it('offers support cards with one material and only the pipe geometry', () => {
+  saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: [...DEFAULT_DATA_LIST_SETTINGS.connectionTypes, 'Т1'] }, { syncRemote: false })
+  const supportCard = { ...card, connectionType: 'Т1', materialGroups: ['М05'] }
+  query.data = { cards: [supportCard], names: [{ name: supportCard.name, cardId: supportCard.id }] }
+  render(<Form initial={{ connectionType: 'Т1', materialGroup: 'М05', weldingMethod: 'РАД', d1: 57, t1: 3, d2: null, t2: null }} />)
+  expect(screen.getByRole('status')).toHaveTextContent('Подходит 1 ТК')
+  const select = screen.getByLabelText('Выбрать подходящую ТК')
+  expect(select).toBeEnabled()
+  fireEvent.change(select, { target: { value: '1' } })
+  expect(screen.getByRole('status')).toHaveTextContent('ТК подходит')
+  expect(screen.getByTestId('draft')).toHaveTextContent('"technologyCardSelection":{"id":1,"revision":2}')
+  expect(screen.getByTestId('draft')).toHaveTextContent('"d2":null,"t2":null')
 })

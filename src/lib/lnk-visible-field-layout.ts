@@ -16,7 +16,7 @@ const BASE_SECTIONS: Array<{ section: string; fieldKeys: WeldFieldKey[] }> = [
   { section: 'Материалы', fieldKeys: ['element1', 'element2', 'material1', 'material2'] },
   {
     section: 'Сварка',
-    fieldKeys: ['weldingMethod', 'connectionType', 'materialGroup', 'd1', 'd2', 't1', 't2', 'wdi', 'weldDate', 'responsible'],
+    fieldKeys: ['weldingMethod', 'connectionType', 'materialGroup', 'd1', 'd2', 't1', 't2', 'weldLength', 'wdi', 'weldDate', 'responsible'],
   },
   {
     section: 'Клейма',

@@ -1,4 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
+import { isTConnectionType } from '@/lib/connection-type'
+import { asSupportLineProgram } from '@/lib/line-program'
 import { packProgramRows } from '@/lib/line-program-row-payload'
 import { and, asc, count, eq, ilike, or, sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
@@ -37,6 +39,7 @@ import { partitionLineProgramBatches } from './line-program-batches'
 import { getOrComputeDerivedCalculation } from './derived-calculation-cache'
 import { readLineProgramOverviewCache, writeLineProgramOverviewCache, type CachedLineProgramOverview } from './line-program-overview-cache'
 import { buildDerivedCalculationCacheKey } from '@/lib/derived-calculation-cache-key'
+import { supportConnectionTypeWhere } from './connection-type-sql'
 export { lineProgramWeldWhere } from '@/server/line-program-rename'
 
 // Full journal records are fetched only for one opened line or locked mutation targets.
@@ -51,13 +54,18 @@ const LINE_PROGRAM_CALCULATION_COLUMNS = {
   stamp1K: weldJoints.stamp1K, stamp1Z: weldJoints.stamp1Z, stamp1O: weldJoints.stamp1O,
   stamp2K: weldJoints.stamp2K, stamp2Z: weldJoints.stamp2Z, stamp2O: weldJoints.stamp2O,
   hasVik: weldJoints.hasVik, hasRk: weldJoints.hasRk, hasUzk: weldJoints.hasUzk, hasPvk: weldJoints.hasPvk,
+  vikControlBasis: weldJoints.vikControlBasis, rkControlBasis: weldJoints.rkControlBasis, uzkControlBasis: weldJoints.uzkControlBasis, pvkControlBasis: weldJoints.pvkControlBasis,
   vikResult: weldJoints.vikResult, rkResult: weldJoints.rkResult, uzkResult: weldJoints.uzkResult, pvkResult: weldJoints.pvkResult,
   pstoRequired: weldJoints.pstoRequired, pstoRequest: weldJoints.pstoRequest, pstoResult: weldJoints.pstoResult,
   pstoDate: weldJoints.pstoDate, tvmtResult: weldJoints.tvmtResult,
   pstoRequestDate: weldJoints.pstoRequestDate, heatTreatmentDiagram: weldJoints.heatTreatmentDiagram,
   tvmtRequest: weldJoints.tvmtRequest, tvmtRequestDate: weldJoints.tvmtRequestDate,
   tvmtConclusion: weldJoints.tvmtConclusion, tvmtConclusionDate: weldJoints.tvmtConclusionDate,
-  hasTvmt: weldJoints.hasTvmt, vikRequest: weldJoints.vikRequest,
+  hasTvmt: weldJoints.hasTvmt, vikRequest: weldJoints.vikRequest, vikRequestDate: weldJoints.vikRequestDate,
+  vikConclusion: weldJoints.vikConclusion, vikConclusionDate: weldJoints.vikConclusionDate,
+  vikDefectDescription: weldJoints.vikDefectDescription, lnkDefectDescription: weldJoints.lnkDefectDescription,
+  uzkDefectDescription: weldJoints.uzkDefectDescription, pvkDefectDescription: weldJoints.pvkDefectDescription,
+  rkExposureConfirmedDiameter: weldJoints.rkExposureConfirmedDiameter,
   rkRequest: weldJoints.rkRequest, rkRequestDate: weldJoints.rkRequestDate, rkConclusion: weldJoints.rkConclusion, rkConclusionDate: weldJoints.rkConclusionDate,
   uzkRequest: weldJoints.uzkRequest, uzkRequestDate: weldJoints.uzkRequestDate, uzkConclusion: weldJoints.uzkConclusion, uzkConclusionDate: weldJoints.uzkConclusionDate,
   pvkRequest: weldJoints.pvkRequest, pvkRequestDate: weldJoints.pvkRequestDate, pvkConclusion: weldJoints.pvkConclusion, pvkConclusionDate: weldJoints.pvkConclusionDate,
@@ -67,10 +75,21 @@ export function toLineProgramRecord(row: LineProgram): LineProgramRecord {
   return { id: row.id, projectTitle: row.projectTitle, subtitleCode: row.subtitleCode, line: row.line,
     category: row.category, groupName: row.groupName, weldControlPercent: row.weldControlPercent,
     pvkControlPercent: row.pvkControlPercent, configurationIssue: getLineProgramConfigurationIssue(row),
+    supportUzkControlPercent: row.supportUzkControlPercent, supportPvkControlPercent: row.supportPvkControlPercent,
     version: row.updatedAt.toISOString() }
 }
-export async function loadLineProgramRows(db: Pick<SystemDocumentSequenceTransaction, 'select'>, line: LineProgramIdentity) {
-  const rows = await db.select(LINE_PROGRAM_CALCULATION_COLUMNS).from(weldJoints).where(lineProgramWeldWhere(line)).orderBy(asc(weldJoints.id))
+type LineProgramReadFamily = 'welds' | 'supports'
+function lineProgramFamilyWhere(family: LineProgramReadFamily) {
+  const support = supportConnectionTypeWhere(weldJoints.connectionType)
+  return family === 'supports' ? support : sql`not (${support})`
+}
+
+// Structural writes and card previews retain full-line context by default.
+// Display callers opt in before histories are loaded; their JS guard remains.
+export async function loadLineProgramRows(db: Pick<SystemDocumentSequenceTransaction, 'select'>, line: LineProgramIdentity, family?: LineProgramReadFamily) {
+  const rows = await db.select(LINE_PROGRAM_CALCULATION_COLUMNS).from(weldJoints)
+    .where(and(lineProgramWeldWhere(line), family ? lineProgramFamilyWhere(family) : undefined)).orderBy(asc(weldJoints.id))
+  // The heat-treatment hydrator already loads stable chain identities once.
   return attachDuplicateControlRelations(await attachHeatTreatmentControlRelations(rows as WeldRow[], db), db)
 }
 export async function loadProgramSystemIndexSettings(db: Pick<SystemDocumentSequenceTransaction, 'select'>) {
@@ -124,9 +143,13 @@ async function loadLineProgramCalculationBatch(
   systemIndexSettings: Awaited<ReturnType<typeof loadProgramSystemIndexSettings>>,
   controlProcessSettings: ReturnType<typeof normalizeControlProcessSettings>,
 ) {
+  const familyScopes = (['welds', 'supports'] as const).flatMap(family => {
+    const ids = programs.filter(line => (line.family ?? 'welds') === family).map(line => line.id)
+    return ids.length ? [and(buildNumberArrayMatch(linePrograms.id, ids), lineProgramFamilyWhere(family))] : []
+  })
   const rows = await db.select(LINE_PROGRAM_CALCULATION_COLUMNS).from(weldJoints)
     .innerJoin(linePrograms, programCalculationJoin)
-    .where(buildNumberArrayMatch(linePrograms.id, programs.map(line => line.id)))
+    .where(or(...familyScopes))
   const attached = await attachCalculationRelations(rows as WeldRow[], db, controlProcessSettings)
   const accepted = new Set((await loadProgramApprovals(db, attached.map(row => row.id), { includeEarlyCoil: true })).map(item => item.key))
   const groups = new Map<string, WeldRow[]>()
@@ -136,8 +159,8 @@ async function loadLineProgramCalculationBatch(
     group.push(row)
     groups.set(key, group)
   }
-  const calculations = programs.map(line => ({ line, rows: attachProgramRepairRequirements(groups.get(getLineProgramIdentityKey(line)) ?? [], accepted, systemIndexSettings) })).map(item => ({ ...item,
-    calculations: item.line.configurationIssue || item.line.weldControlPercent == null || item.line.pvkControlPercent == null ? [] : calculateLineProgram(item.rows, item.line.weldControlPercent, item.line.pvkControlPercent, systemIndexSettings, accepted) }))
+  const calculations = programs.map(line => ({ line, rows: attachProgramRepairRequirements((groups.get(getLineProgramIdentityKey(line)) ?? []).filter(row => isTConnectionType(row.connectionType) === (line.family === 'supports')), accepted, systemIndexSettings) })).map(item => ({ ...item,
+    calculations: item.line.configurationIssue || item.line.weldControlPercent == null || item.line.pvkControlPercent == null ? [] : calculateLineProgram(item.rows, item.line.weldControlPercent, item.line.pvkControlPercent, systemIndexSettings, accepted, item.line.family === 'supports') }))
   return { calculations, accepted, systemIndexSettings }
 }
 
@@ -146,7 +169,7 @@ async function attachCalculationRelations(rows: WeldRow[], db: Pick<SystemDocume
   if (!rows.length) return rows
   await attachProgramChainStates(rows, db)
   const ids = rows.map(row => row.id)
-  const pre = await db.select({ id: preHeatTreatmentControls.id, weldJointId: preHeatTreatmentControls.weldJointId, method: preHeatTreatmentControls.method, result: preHeatTreatmentControls.result, requestName: preHeatTreatmentControls.requestName, requestDate: preHeatTreatmentControls.requestDate, conclusionName: preHeatTreatmentControls.conclusionName, conclusionDate: preHeatTreatmentControls.conclusionDate }).from(preHeatTreatmentControls).where(buildNumberArrayMatch(preHeatTreatmentControls.weldJointId, ids))
+  const pre = await db.select({ id: preHeatTreatmentControls.id, weldJointId: preHeatTreatmentControls.weldJointId, method: preHeatTreatmentControls.method, result: preHeatTreatmentControls.result, requestName: preHeatTreatmentControls.requestName, requestDate: preHeatTreatmentControls.requestDate, conclusionName: preHeatTreatmentControls.conclusionName, conclusionDate: preHeatTreatmentControls.conclusionDate, defectDescription: preHeatTreatmentControls.defectDescription, rkExposureConfirmedDiameter: preHeatTreatmentControls.rkExposureConfirmedDiameter }).from(preHeatTreatmentControls).where(buildNumberArrayMatch(preHeatTreatmentControls.weldJointId, ids))
   const duplicates = await db.select({ id: duplicateControls.id, weldJointId: duplicateControls.weldJointId, method: duplicateControls.method, result: duplicateControls.result, conclusion: duplicateControls.conclusion, conclusionDate: duplicateControls.conclusionDate, controlDate: duplicateControls.controlDate }).from(duplicateControls).where(buildNumberArrayMatch(duplicateControls.weldJointId, ids))
   const repeats = await db.select().from(pstoRepeatCycles).where(buildNumberArrayMatch(pstoRepeatCycles.weldJointId, ids))
   const byId = new Map(rows.map(row => { row.preHeatTreatmentLnkEnabled = settings.preHeatTreatmentLnkEnabled; return [row.id, row] as const }))
@@ -175,7 +198,7 @@ export const getLineProgramSection = createServerFn({ method: 'GET' })
   })
 
 export function normalizeProgramSectionRequest(data: LineProgramListRequest) {
-  if (data?.tab != null && !['lines', 'full', 'percentage'].includes(data.tab)) throw new Error('Неизвестная вкладка программы линий.')
+  if (data?.tab != null && !['lines', 'full', 'percentage', 'supports'].includes(data.tab)) throw new Error('Неизвестная вкладка программы линий.')
   return { tab: data?.tab ?? 'lines', search: String(data?.search ?? '').trim().slice(0, 200).toLocaleLowerCase('ru') }
 }
 
@@ -201,17 +224,25 @@ async function findSectionLines(db: Pick<SystemDocumentSequenceTransaction, 'sel
   const stampLines = sql`(lower(btrim(${linePrograms.projectTitle})), lower(btrim(${linePrograms.subtitleCode})), lower(btrim(${linePrograms.line}))) in (
     select lower(btrim(coalesce(${weldJoints.projectTitle}, ''))), lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))), lower(btrim(coalesce(${weldJoints.line}, '')))
     from ${weldJoints} where ${or(...OFFICIAL_WELDER_STAMP_FIELD_KEYS.map(key => ilike(weldJoints[key], search)))})`
-  const where = data.search ? or(ilike(linePrograms.projectTitle, search), ilike(linePrograms.subtitleCode, search), ilike(linePrograms.line, search), stampLines) : undefined
+  const searchWhere = data.search ? or(ilike(linePrograms.projectTitle, search), ilike(linePrograms.subtitleCode, search), ilike(linePrograms.line, search), stampLines) : undefined
+  // Presence includes planned and historical supports, using the same identity
+  // as calculation (legacy rows may have no lineProgramId). Filter before paging
+  // and loading joint histories, not after computing every ordinary line.
+  const supportWhere = data.tab === 'supports' ? sql`exists (
+    select 1 from ${weldJoints} where ${programCalculationJoin}
+    and ${supportConnectionTypeWhere(weldJoints.connectionType)})` : undefined
+  const where = and(searchWhere, supportWhere)
   // Registry metadata is small; resolving configuration here preserves the same
   // distinction between unconfigured and genuinely zero-percent lines as the UI.
   const lines = await db.select().from(linePrograms).where(where)
     .orderBy(asc(linePrograms.projectTitle), asc(linePrograms.subtitleCode), asc(linePrograms.line), asc(linePrograms.id))
+  if (data.tab === 'supports') return lines.map(toLineProgramRecord).map(asSupportLineProgram)
   return lines.map(toLineProgramRecord).filter(line => data.tab === 'lines' || !line.configurationIssue &&
     (data.tab === 'full' ? line.weldControlPercent === 100 : line.weldControlPercent != null && line.weldControlPercent < 100))
 }
 
 export async function loadLineProgramPage(data: ProgramSectionRequest & { page: number }) {
-  return getOrComputeDerivedCalculation(buildDerivedCalculationCacheKey('line-program-page:v2', data),
+  return getOrComputeDerivedCalculation(buildDerivedCalculationCacheKey('line-program-page:v4', data),
     async () => {
       const { cacheEntries, ...result } = await requireDb().transaction(async db => {
         const revision = await readProgramSnapshotRevision(db)
@@ -230,7 +261,7 @@ export async function loadLineProgramSection(data: ProgramSectionRequest) {
   // The calculation retains one repeatable-read snapshot; mutations never use
   // this display cache for validation or for deciding the affected records.
   return getOrComputeDerivedCalculation(
-    buildDerivedCalculationCacheKey('line-program-section:v3', data),
+    buildDerivedCalculationCacheKey('line-program-section:v5', data),
     async () => {
       const { cacheEntries, ...result } = await requireDb().transaction(async db => {
         const revision = await readProgramSnapshotRevision(db)
@@ -248,6 +279,7 @@ export async function loadLineProgramSection(data: ProgramSectionRequest) {
 async function loadCachedLineProgramOverviews(
   db: Pick<SystemDocumentSequenceTransaction, 'select'>, lines: LineProgramRecord[], revision: number,
 ) {
+  if (lines.some(line => line.family === 'supports')) return { rows: await loadLineProgramOverviews(db, lines), cacheEntries: [] as CachedLineProgramOverview[] }
   const cached = await readLineProgramOverviewCache(db, revision, lines)
   const computed = await loadLineProgramOverviews(db, lines.filter(line => !cached.has(line.id)))
   const byId = new Map(computed.map(line => [line.id, line]))
@@ -286,23 +318,24 @@ export const getLineProgramsForImport = createServerFn({ method: 'POST' })
   })
 
 export const getLineProgramCalculation = createServerFn({ method: 'GET' })
-  .validator((data: { id: number }) => ({ id: Number(data.id) }))
+  .validator((data: { id: number; family?: 'supports' }) => normalizeProgramDetailRequest(data))
   .handler(async ({ data }) => {
     await assertSecurityScope('entry')
     return requireDb().transaction(async (tx) => {
-    const [line] = await tx.select().from(linePrograms).where(eq(linePrograms.id, data.id)).limit(1)
-    if (!line) throw new Error('Линия больше не существует.')
-    const issue = getLineProgramConfigurationIssue(line)
-    if (issue || line.weldControlPercent == null || line.pvkControlPercent == null) return { line: toLineProgramRecord(line), stamps: [], stampRows: [], unassigned: null, summary: null, issue }
-    const loadedRows = await loadLineProgramRows(tx, line)
+    const [storedLine] = await tx.select().from(linePrograms).where(eq(linePrograms.id, data.id)).limit(1)
+    if (!storedLine) throw new Error('Линия больше не существует.')
+    const line = data.family === 'supports' ? asSupportLineProgram(toLineProgramRecord(storedLine)) : toLineProgramRecord(storedLine)
+    const issue = line.configurationIssue
+    if (issue || line.weldControlPercent == null || line.pvkControlPercent == null) return { line, stamps: [], stampRows: [], unassigned: null, summary: null, issue }
+    const loadedRows = (await loadLineProgramRows(tx, line, line.family ?? 'welds')).filter(row => isTConnectionType(row.connectionType) === (line.family === 'supports'))
     const settings = await loadProgramSystemIndexSettings(tx)
     const accepted = await loadProgramApprovals(tx, loadedRows.map(row => row.id))
     const approvedKeys = new Set(accepted.map(warning => warning.key))
     const rows = attachProgramRepairRequirements(loadedRows, approvedKeys, settings)
-    const calculations = calculateLineProgram(rows, line.weldControlPercent, line.pvkControlPercent, settings, approvedKeys)
+    const calculations = calculateLineProgram(rows, line.weldControlPercent, line.pvkControlPercent, settings, approvedKeys, line.family === 'supports')
     const goodIds = new Set(rows.filter(row => isProgramControlComplete(row)).map(row => row.id))
     const displayedCalculations = projectProgramExcess(line.id, rows, calculations, approvedKeys)
-    const display = buildLineProgramDisplay(rows, displayedCalculations, line.weldControlPercent, line.pvkControlPercent, getProgramRemovalHints(line.id, rows, calculations, approvedKeys))
+    const display = buildLineProgramDisplay(rows, displayedCalculations, line.weldControlPercent, line.pvkControlPercent, getProgramRemovalHints(line.id, rows, calculations, approvedKeys), line.family === 'supports')
     const welderNames = await loadLineProgramWelderNames(tx, display.stampRows.map(group => group.stamp))
     const stamps = displayedCalculations.map((stamp) => ({
       scope: stamp.scope ?? 'stamp', stamp: stamp.stamp, count: stamp.rowIds.length, rejected: stamp.rejectedRowIds.length,
@@ -311,19 +344,25 @@ export const getLineProgramCalculation = createServerFn({ method: 'GET' })
       fullControlRequired: stamp.fullControlRequired,
       common: compactLineProgramDemand(stamp.common), pvk: compactLineProgramDemand(stamp.pvk),
     }))
-    return { line: toLineProgramRecord(line), stamps, ...display, stampRows: display.stampRows.map(stamp => ({ ...stamp, welderName: welderNames.get(stamp.stamp.trim().toUpperCase()) ?? '' })), issue: null }
+    return { line, stamps, ...display, stampRows: display.stampRows.map(stamp => ({ ...stamp, welderName: welderNames.get(stamp.stamp.trim().toUpperCase()) ?? '' })), issue: null }
     }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
   })
 
+export function normalizeProgramDetailRequest(data: { id: number; family?: 'supports' }) {
+  if (!Number.isSafeInteger(data?.id) || data.id <= 0 || data.family !== undefined && data.family !== 'supports') throw new Error('Некорректный запрос программы линии.')
+  return { id: data.id, ...(data.family ? { family: data.family } : {}) }
+}
+
 export const getLineProgramJointPage = createServerFn({ method: 'GET' })
-  .validator((data: { id: number }) => ({ id: Number(data.id) }))
+  .validator((data: { id: number; family?: 'supports' }) => normalizeProgramDetailRequest(data))
   .handler(async ({ data }) => {
     await assertSecurityScope('entry')
     return requireDb().transaction(async (db) => {
     const [line] = await db.select().from(linePrograms).where(eq(linePrograms.id, data.id)).limit(1)
     if (!line) throw new Error('Линия больше не существует.')
-    const rows = await db.select(WELD_TABLE_SELECT).from(weldJoints).where(lineProgramWeldWhere(line)).orderBy(asc(weldJoints.id))
-    const attached = await attachDuplicateControlRelations(await attachHeatTreatmentControlRelations(rows as WeldRow[], db), db)
+    const rows = await db.select(WELD_TABLE_SELECT).from(weldJoints)
+      .where(and(lineProgramWeldWhere(line), lineProgramFamilyWhere(data.family ?? 'welds'))).orderBy(asc(weldJoints.id))
+    const attached = await attachDuplicateControlRelations(await attachHeatTreatmentControlRelations(rows.filter(row => isTConnectionType(row.connectionType) === (data.family === 'supports')) as WeldRow[], db), db)
     const approvals = await loadProgramApprovals(db, attached.map(row => row.id))
     // One bounded document-metadata query for the opened line, never one query per joint.
     const withRequirements = attachProgramRepairRequirements(attached, new Set(approvals.map(item => item.key)), await loadProgramSystemIndexSettings(db))
@@ -334,18 +373,21 @@ export const getLineProgramJointPage = createServerFn({ method: 'GET' })
 
 /** Detail is loaded only when requested and transfers at most 50 explanatory rows. */
 export const getLineProgramExplanation = createServerFn({ method: 'GET' })
-  .validator((data: { id: number; stamp?: string; kind: 'common' | 'pvk'; list: ProgramExplanationList; page: number }) => {
+  .validator((data: { id: number; family?: 'supports'; stamp?: string; kind: 'common' | 'pvk'; list: ProgramExplanationList; page: number }) => {
+    normalizeProgramDetailRequest(data)
     if (!Number.isSafeInteger(data.id) || data.id <= 0 || !['common', 'pvk'].includes(data.kind) || !Object.hasOwn(PROGRAM_EXPLANATION_LISTS, data.list) || !Number.isSafeInteger(data.page) || data.page < 0) throw new Error('Некорректный запрос состава расчёта.')
     return { ...data, stamp: data.stamp?.trim().slice(0, 100) }
   })
   .handler(async ({ data }) => {
     await assertSecurityScope('entry')
     return requireDb().transaction(async tx => {
-      const [line] = await tx.select().from(linePrograms).where(eq(linePrograms.id, data.id)).limit(1)
-      if (!line || line.configurationIssue || line.weldControlPercent == null || line.pvkControlPercent == null) throw new Error('Обновите программу линии: расчёт недоступен.')
-      const rows = await loadLineProgramRows(tx, line)
+      const [storedLine] = await tx.select().from(linePrograms).where(eq(linePrograms.id, data.id)).limit(1)
+      if (!storedLine) throw new Error('Обновите программу линии: расчёт недоступен.')
+      const line = data.family === 'supports' ? asSupportLineProgram(toLineProgramRecord(storedLine)) : toLineProgramRecord(storedLine)
+      if (line.configurationIssue || line.weldControlPercent == null || line.pvkControlPercent == null) throw new Error('Обновите программу линии: расчёт недоступен.')
+      const rows = (await loadLineProgramRows(tx, line, data.family ?? 'welds')).filter(row => isTConnectionType(row.connectionType) === (data.family === 'supports'))
       const approved = new Set((await loadProgramApprovals(tx, rows.map(row => row.id))).map(item => item.key))
-      return explainLineProgram(rows, line.weldControlPercent, line.pvkControlPercent, { ...data, lineId: line.id, approved, settings: await loadProgramSystemIndexSettings(tx) })
+      return explainLineProgram(rows, line.weldControlPercent, line.pvkControlPercent, { ...data, support: data.family === 'supports', lineId: line.id, approved, settings: await loadProgramSystemIndexSettings(tx) })
     }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
   })
 
@@ -389,7 +431,10 @@ export async function saveLineProgramInTransaction(tx: SystemDocumentSequenceTra
   await tx.execute(sql`select ${weldJoints.id} from ${weldJoints} where ${lineProgramWeldWhere(source)} order by ${weldJoints.id} for update`)
   const values = { projectTitle: data.projectTitle, subtitleCode: data.subtitleCode, line: data.line,
     category: data.category, groupName: data.groupName, weldControlPercent: data.weldControlPercent,
-    pvkControlPercent: data.pvkControlPercent, configurationIssue: getLineProgramConfigurationIssue(data), updatedAt }
+    pvkControlPercent: data.pvkControlPercent,
+    supportUzkControlPercent: data.supportUzkControlPercent === undefined ? previous?.supportUzkControlPercent ?? null : data.supportUzkControlPercent,
+    supportPvkControlPercent: data.supportPvkControlPercent === undefined ? previous?.supportPvkControlPercent ?? null : data.supportPvkControlPercent,
+    configurationIssue: getLineProgramConfigurationIssue(data), updatedAt }
   const [saved] = data.id ? await tx.update(linePrograms).set(values).where(eq(linePrograms.id, data.id)).returning() :
     await tx.insert(linePrograms).values(values).returning()
   await tx.update(weldJoints).set({ projectTitle: saved.projectTitle, subtitleCode: saved.subtitleCode, line: saved.line,

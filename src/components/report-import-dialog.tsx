@@ -1,3 +1,4 @@
+import { overflowTitle } from '@/lib/overflow-title'
 import { AlertTriangle, CheckCircle2, Download, FileDown, FileSpreadsheet, Loader2, Upload } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -824,5 +825,5 @@ function ImportPreviewValue({ value, focusRequest, completedFocus }: {
     const cell = element.current?.closest<HTMLElement>('.ag-cell')
     if (cell) { cell.focus({ preventScroll: true }); completedFocus.current = focusRequest }
   }, [focusRequest, completedFocus])
-  return <span ref={element} title={value}>{value}</span>
+  return <span ref={element} {...overflowTitle(value, '.ag-cell')}>{value}</span>
 }

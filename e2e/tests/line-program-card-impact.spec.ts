@@ -6,7 +6,7 @@ import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-prog
 
 test.afterEach(() => cleanupLineProgramProjects(['E2E impact']))
 
-test('карточка: запрет очистки виден сразу; влияние на линию только по нажатию и без записи', async ({ page }) => {
+test('карточка: выполненный ПВК нельзя снять или отменить; влияние на линию только по нажатию и без записи', async ({ page }) => {
   const id = await withLineProgramFixture(async db => {
     const { rows: [line] } = await db.query("insert into line_programs (project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent) values ('E2E impact','IMPACT','CARD-IMPACT','II','A',100,10) returning id")
     await db.query(`insert into weld_joints (line_program_id,project_title,subtitle_code,line,joint,weld_date,connection_type,category,group_name,weld_control_percent,pvk_control_percent,has_vik,stamp_1_k,officiality,has_pvk,pvk_request,pvk_result,pvk_conclusion)
@@ -26,7 +26,8 @@ test('карточка: запрет очистки виден сразу; вл�
   await editor.getByRole('button', { name: 'Назначение контроля', exact: true }).click()
   const pvk = editor.getByText('Назначение ПВК', { exact: true }).locator('..')
   await expect(pvk.getByRole('button', { name: 'Пусто', exact: true })).toBeDisabled()
-  await expect(pvk.getByRole('button', { name: 'Отменен', exact: true })).toBeEnabled()
+  await expect(pvk.getByRole('button', { name: 'Отменен', exact: true })).toBeDisabled()
+  await expect(pvk.getByRole('button', { name: 'Отменен', exact: true })).toContainText(/нельзя отменить выполненный контроль/)
   const rk = editor.getByText('Назначение РК', { exact: true }).locator('..')
   await rk.getByRole('button', { name: 'Да', exact: true }).click()
   const impact = editor.getByRole('button', { name: 'Влияние изменений на линию' })

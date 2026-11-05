@@ -111,26 +111,60 @@ describe('weld server module boundaries', () => {
   })
 
   it('coordinates every weld-line membership workflow with PSTO line assignment', () => {
-    for (const fileName of [
-      'early-coil-workflow.ts',
-      'lnk-officiality-workflow.ts',
-      'psto-line-assignment.ts',
-      'weld-import.ts',
-      'weld-mutations.ts',
-      'weld-chain-line-move.ts',
+    for (const [fileName, lock] of [
+      ['early-coil-workflow.ts', 'lockWeldLineMemberships'],
+      ['lnk-officiality-workflow.ts', 'lockSupportWeldLengthMemberships'],
+      ['psto-line-assignment.ts', 'lockWeldLineMemberships'],
+      ['weld-import.ts', 'lockSupportWeldLengthMemberships'],
+      ['weld-mutations.ts', 'lockSupportWeldLengthMemberships'],
+      ['weld-chain-line-move.ts', 'lockWeldLineMemberships'],
     ]) {
-      expect(read(fileName), fileName).toContain('lockWeldLineMemberships')
+      expect(read(fileName), fileName).toContain(`await ${lock}(`)
     }
+  })
+
+  it('locks the expanded physical-chain line union before row locks in every L update path', () => {
+    const helper = read('support-weld-length-scope.ts')
+    expect(helper).toContain('if (!ids.length) return lockWeldLineMemberships(tx, identities)')
+    expectOrdered(helper,
+      'const snapshot = await loadSupportLengthChainRows(tx, ids)',
+      'await lockWeldLineMemberships(tx, [...identities, ...snapshot])',
+      'const current = await loadSupportLengthChainRows(tx, ids)',
+      '!haveSameWeldLineMemberships(snapshot, current)',
+      "throw new Error('Состав или расположение ремонтной цепочки изменились.",
+    )
+    expect(helper).not.toContain(".for('update')")
+    const previousRowsLoader = read('weld-save-validation.ts').split('export async function loadPreviousWeldRows(')[1].split('export function mergeWeldRecordsWithPrevious(')[0]
+    expectOrdered(previousRowsLoader, '.orderBy(asc(weldJoints.id))', ".for('update')")
+    for (const name of ['updateWeldJointRecord', 'updateWeldJointRows']) {
+      const source = modules.mutations.slice(modules.mutations.indexOf(`export async function ${name}(`))
+      expectOrdered(source, 'await lockSupportWeldLengthMemberships(', 'await loadPreviousWeldRows(', 'assertExpectedInteractiveWeldVersions(', 'validateServerWeldRecords(')
+    }
+    const replace = modules.imports.slice(modules.imports.indexOf('export async function replaceWeldJoints('))
+    expectOrdered(replace, 'await lockSupportWeldLengthMemberships(', 'await lockAndAssertWeldRowVersions(', 'await loadPreviousWeldRows(')
+    const officiality = modules.lnkOfficiality.slice(modules.lnkOfficiality.indexOf('export async function applyLnkOfficialityChange('))
+    expectOrdered(officiality,
+      'await lockSupportWeldLengthMemberships(tx, targetReferences, lengthReferences)',
+      'await loadLineChainRows(tx, targetReferences, true)',
+      'assertTargetsRemainInScope(targetReferences, scopeRows)',
+      'assertExpectedInteractiveWeldVersions(',
+      'buildLnkOfficialityChainPlan(',
+      'plan.planKey !== data.expectedPlanKey',
+      'updateWeldJointsInBatches(tx',
+    )
+    expect(modules.lnkOfficiality).toContain("return lock ? query.for('update') : query")
   })
 
   it('revalidates dispatcher-driven writes inside line-scoped server workflows', () => {
     const percentageWorkflow = read('line-program-control.ts')
     const repeatedJointDeleteWorkflow = read('repeated-joint-delete-workflow.ts')
 
-    for (const source of [percentageWorkflow, repeatedJointDeleteWorkflow, modules.lnkOfficiality]) {
-      expect(source).toContain('lockWeldLineMemberships')
+    for (const source of [percentageWorkflow, repeatedJointDeleteWorkflow]) {
+      expect(source).toContain('await lockWeldLineMemberships')
       expect(source).toContain(".for('update')")
     }
+    expect(modules.lnkOfficiality).toContain('await lockSupportWeldLengthMemberships(tx, targetReferences, lengthReferences)')
+    expect(modules.lnkOfficiality).toContain(".for('update')")
     expect(percentageWorkflow).toContain('previewProgramChanges(allRows')
     expect(percentageWorkflow).toContain('assertExpectedInteractiveWeldVersions(ids, data.targets, storedRows)')
     expect(percentageWorkflow.indexOf('data.previewToken !== token')).toBeLessThan(percentageWorkflow.indexOf('result.rows = await saveAssignedRows'))
@@ -178,6 +212,16 @@ describe('weld server module boundaries', () => {
 
 function read(fileName: string) {
   return readFileSync(resolve(process.cwd(), 'src/server', fileName), 'utf8')
+}
+
+function expectOrdered(source: string, ...fragments: string[]) {
+  let previous = -1
+  for (const fragment of fragments) {
+    const position = source.indexOf(fragment)
+    expect(position, `Missing guarded step: ${fragment}`).toBeGreaterThanOrEqual(0)
+    expect(position, `Unexpected order of guarded step: ${fragment}`).toBeGreaterThan(previous)
+    previous = position
+  }
 }
 
 function moduleImports(source: string) {

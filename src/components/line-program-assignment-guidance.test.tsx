@@ -10,6 +10,24 @@ const line: LineProgramRecord = { id: 1, projectTitle: 'P', subtitleCode: 'S', l
 const rows: WeldRow[] = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, joint: `F${i + 1}`, connectionType: 'С17', weldDate: '2026-09-01', stamp1K: i < 5 ? 'A' : 'B', hasRk: i < 2 ? 'да' : null, hasPvk: i === 0 ? 'да' : null }))
 
 describe('saved assignment guidance', () => {
+  it('keeps support 100% quotas per stamp and counts assignment history once per physical OP', () => {
+    const supportLine = { ...line, family: 'supports' as const, pvkControlPercent: 0.5 }
+    const supports: WeldRow[] = [
+      { ...rows[0], joint: 'ОП1', connectionType: 'Т1', hasRk: null, hasUzk: 'да', uzkResult: 'ремонт' },
+      { ...rows[0], id: 11, joint: 'ОП1R1', connectionType: 'Т1', stamp1K: 'REPAIRER', hasRk: null, hasUzk: 'дополнительный', uzkResult: 'годен' },
+      { ...rows[1], joint: 'ОП2', connectionType: 'Т1', hasRk: null, hasPvk: null },
+      { ...rows[2], joint: 'ОП3', connectionType: 'Т1', stamp1K: 'B', hasRk: null, hasPvk: null },
+    ]
+    const groups = calculateLineProgram(supports, 100, 0.5, undefined, undefined, true)
+    const view = render(<ProgramAssignmentGuidance line={supportLine} rows={supports} groups={groups} />)
+    expect(screen.getByTestId('assignment-guidance-common')).toHaveTextContent('УЗК · по клеймам:Назначено: 1К назначению: 2')
+    expect(screen.getByTestId('assignment-guidance-common')).toHaveTextContent('совместно 1')
+    expect(screen.getByTestId('assignment-guidance-pvk')).toHaveTextContent('К назначению: 1')
+    expect(screen.queryByText(/засчитывается РК/)).not.toBeInTheDocument()
+    view.rerender(<ProgramAssignmentGuidance line={supportLine} rows={supports} groups={groups} stamp="B" />)
+    expect(screen.getByTestId('assignment-guidance-common')).toHaveTextContent('УЗК · клеймо B:Назначено: 0К назначению: 1')
+  })
+
   it('reserves the collapsed additional-control hint before the first additional assignment', () => {
     const view = render(<ProgramAssignmentGuidance line={line} rows={rows} groups={calculateLineProgram(rows, 100, 20)} />)
     const slots = () => view.container.querySelectorAll('[data-program-additional-hint]')
@@ -21,14 +39,14 @@ describe('saved assignment guidance', () => {
     expect(slots()).toHaveLength(2)
     expect(screen.getByText('Состав зачёта · с учётом «доп»')).toBeVisible()
   })
-  it('shows the arithmetic behind additional control displacing a normal yes', () => {
+  it('shows additional credit without displacing ordinary quota assignments', () => {
     const source = rows.slice(0, 4).map((row, i) => ({ ...row, hasRk: i < 2 ? 'да' : i === 2 ? 'дополнительный' : null }))
     render(<ProgramAssignmentGuidance line={{ ...line, weldControlPercent: 50 }} rows={source} groups={calculateLineProgram(source, 50, 20)} />)
     const common = screen.getByTestId('assignment-guidance-common')
     expect(common).toHaveTextContent('Назначено: 3К назначению: 0')
     expect(common).toHaveTextContent('Назначено стыков: 3 = только «да» 2 + только «доп» 1 + совместно 0')
     expect(common).toHaveTextContent('Зачёт по нормам клейм: 3 = только «да» 2 + только «доп» 1 + совместно 0')
-    expect(common).toHaveTextContent('Текущая норма: 2 · Обычных «да» сверх нормы: 1')
+    expect(common).toHaveTextContent('Текущая норма: 2 · Обычных «да» сверх нормы: 0')
   })
   it('separates unique mixed joints from quota places across their own stamps', () => {
     const source = [{ ...rows[0], stamp1Z: 'B', hasRk: 'да', hasUzk: 'дополнительный' }]

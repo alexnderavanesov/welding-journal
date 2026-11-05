@@ -61,37 +61,36 @@ describe('weld form input performance', () => {
     expect(setDraft).not.toHaveBeenCalled()
   })
   it.each([
-    { rkRequest: 'Заявка' },
     { rkConclusion: 'Заключение', rkResult: 'годен' },
-    { preHeatTreatmentControls: [{ method: 'РК', requestName: 'До ТО' }] },
+    { preHeatTreatmentControls: [{ method: 'РК', requestName: 'До ТО', result: 'вырез' }] },
     { duplicateControls: [{ method: 'РК', conclusion: 'Дубль' }] },
-  ])('disables clearing a factual assignment immediately, but keeps cancellation available: %j', history => {
+  ])('disables clearing and cancellation of a factual assignment immediately: %j', history => {
     renderWithQueryClient(<WeldFormField field={FIELD_BY_KEY.get('hasRk')!} draft={{ id: 1, hasRk: 'да', ...history } as WeldInput} setDraft={vi.fn()} fieldRefs={{ current: {} }} />)
     expect(screen.getByRole('button', { name: 'Пусто' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Пусто' })).toHaveAttribute('title', expect.stringContaining('есть заявка, результат или заключение'))
-    expect(screen.getByRole('button', { name: 'Отменен' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Пусто' })).toHaveTextContent('есть выполненная работа')
+    expect(screen.getByRole('button', { name: 'Отменен' })).toBeDisabled()
   })
-  it('confirms official cancellation and preserves the factual result and conclusion', () => {
+  it('confirms cancellation of unperformed requested work', () => {
     HTMLElement.prototype.scrollTo = vi.fn()
     const onSave = vi.fn()
     renderWithQueryClient(<ConfirmActionProvider><WeldForm value={{
       id: 1, joint: 'F1', hasRk: 'да', rkRequest: 'Заявка РК',
-      rkResult: 'ремонт', rkConclusion: 'Заключение РК',
+      rkResult: 'ожидает НК',
     }} onSave={onSave} onCancel={vi.fn()} suggestionRows={[]} /></ConfirmActionProvider>)
     fireEvent.click(screen.getByRole('button', { name: 'Назначение контроля' }))
     const rk = screen.getByText('Назначение РК').parentElement!
     fireEvent.click(within(rk).getByRole('button', { name: /Отменен/ }))
+    fireEvent.change(within(rk).getByLabelText('Основание или документ для назначения контроля'), { target: { value: 'ТР-1' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
     expect(onSave).not.toHaveBeenCalled()
-    expect(screen.getByText('Отменить назначения?')).toBeVisible()
+    expect(screen.getByText('Сохранить изменения назначений?')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Вернуться к редактированию' }))
     expect(onSave).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить отмену и сохранить' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить и сохранить' }))
     expect(onSave).toHaveBeenCalledOnce()
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
-      hasRk: 'отменен', rkRequest: 'Заявка РК', rkResult: 'ремонт', rkConclusion: 'Заключение РК',
-      finalStatus: 'не годен',
+      hasRk: 'отменен', rkRequest: 'Заявка РК', rkResult: 'ожидает НК',
     }))
   })
 

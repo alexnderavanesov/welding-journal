@@ -6,22 +6,22 @@ import { createPortal } from 'react-dom'
 import { MoreHorizontal } from 'lucide-react'
 import type { ProgramScopeMenuEvent } from './line-program-scope-menu'
 
-type Props = { approved: number; additional: number; onApproved: () => void; onAdditional: () => void; onOpenMenu?: (event: ProgramScopeMenuEvent) => void }
+type Props = { additional: number; onAdditional: () => void; onOpenMenu?: (event: ProgramScopeMenuEvent) => void }
 
 export function ProgramControlDetails(props: Props) {
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   const close = (restoreFocus = false) => { setOpen(false); if (restoreFocus) trigger.current?.focus() }
-  if (!props.approved && !props.additional) return null
+  if (!props.additional) return null
   return <>
-    <button ref={trigger} type="button" aria-label="Ещё показатели контроля" title="Ещё: согласованный и дополнительный контроль" aria-haspopup="dialog" aria-expanded={open}
+    <button ref={trigger} type="button" aria-label="Ещё показатели контроля" aria-haspopup="dialog" aria-expanded={open}
       className={`flex h-7 shrink-0 items-center justify-center rounded-md hover:bg-slate-100 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 w-7 text-slate-400`}
       onClick={() => setOpen(value => !value)}><MoreHorizontal aria-hidden="true" className="h-4 w-4" /></button>
     {open ? <ControlDetailsPopover {...props} trigger={trigger} onClose={close} /> : null}
   </>
 }
 
-function ControlDetailsPopover({ approved, additional, onApproved, onAdditional, onOpenMenu, trigger, onClose }: Props & {
+function ControlDetailsPopover({ additional, onAdditional, onOpenMenu, trigger, onClose }: Props & {
   trigger: RefObject<HTMLButtonElement | null>; onClose: (restoreFocus?: boolean) => void
 }) {
   const panel = useRef<HTMLDivElement>(null)
@@ -78,10 +78,6 @@ function ControlDetailsPopover({ approved, additional, onApproved, onAdditional,
       if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget) && event.relatedTarget !== trigger.current) onClose()
     }}>
     <p className="px-2 py-1.5 text-xs text-slate-500">Отдельно от показателя «Лишнее»</p>
-    {approved > 0 ? <button type="button" data-program-slice="approved" aria-label={`Согласовано: ${approved}`} onClick={() => select(onApproved)} className="block w-full rounded-md px-2 py-2 text-left hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500">
-      <span className="flex items-baseline justify-between gap-3 text-sm text-slate-700"><span>Согласовано</span><span className="tabular-nums">{approved}</span></span>
-      <span className="mt-0.5 block text-xs leading-4 text-slate-500">Показать согласованные превышения</span>
-    </button> : null}
     {additional > 0 ? <button type="button" data-program-slice="additional" aria-label={`Дополнительные стыки: ${additional}`} onClick={() => select(onAdditional)} className="block w-full rounded-md px-2 py-2 text-left hover:bg-sky-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500">
       <span className="flex items-baseline justify-between gap-3 text-sm text-sky-700"><span>Дополнительные стыки</span><span className="tabular-nums">{additional}</span></span>
       <span className="mt-0.5 block text-xs leading-4 text-slate-500">Учитываются в норме, не входят в «Лишнее»</span>

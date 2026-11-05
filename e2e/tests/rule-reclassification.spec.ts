@@ -11,14 +11,18 @@ test.afterEach(async () => {
   await withE2eDatabase(db => db.query('delete from welder_stamps where naks_stamp=$1', [stamp]))
 })
 
-test('единая вкладка: СП-01–СП-11 без пропусков, 1 ЗВ, 6 ДЗ и прежняя ссылка на правило ремонта', async ({ page }) => {
+test('единая вкладка: СП-01–СП-11 и СП-13 опор, 1 ЗВ, 6 ДЗ и прежняя ссылка на правило ремонта', async ({ page }) => {
   await page.goto('/settings#system-rule-sp-05')
   await expect(page.getByRole('button', { name: 'Правила и проверки', exact: true })).toBeVisible()
-  await expect(page.getByRole('article')).toHaveCount(11)
+  // Support validation has its own mandatory СП-13. СП-12 remains the legacy
+  // alias of history protection rather than a new rule or a reused number.
+  await expect(page.getByRole('article')).toHaveCount(12)
   await expect(page.getByRole('article').getByRole('heading')).toHaveText(
-    Array.from({ length: 11 }, (_, index) => new RegExp(`^СП-${String(index + 1).padStart(2, '0')} · `)),
+    [...Array.from({ length: 11 }, (_, index) => new RegExp(`^СП-${String(index + 1).padStart(2, '0')} · `)),
+      'СП-13 · Параметры опор'],
   )
   await expect(page.getByRole('heading', { name: 'СП-11 · Сохранность истории контроля', exact: true })).toHaveCount(1)
+  await expect(page.getByRole('heading', { name: /^СП-12/ })).toHaveCount(0)
   await expect(page.getByRole('article').getByRole('checkbox')).toHaveCount(0)
   await expect(page.locator('#system-rule-lnk-results-details')).toBeVisible()
   await expect(page.getByRole('tab', { name: 'Принятые исключения', exact: true })).toHaveAttribute('aria-selected', 'false')
@@ -39,8 +43,10 @@ test('прежняя ссылка и поиск по СП-12 открывают 
   await expect(heading).toBeInViewport()
   await expect(page.getByRole('heading', { name: /^СП-12/ })).toHaveCount(0)
   await page.getByRole('searchbox', { name: 'Поиск по настройкам' }).fill('СП-12')
-  await page.getByRole('button', { name: /СП-11 · Сохранность истории контроля/ })
-    .filter({ hasText: 'Изменение назначения или удаление данных' }).click()
+  const result = page.getByRole('button', { name: /СП-11 · Сохранность истории контроля/ })
+    .filter({ hasText: 'Изменение назначения разрушает выполненный контроль' })
+  await expect(result).toHaveCount(1)
+  await result.click()
   await expect(heading).toBeInViewport()
   await expect(page.locator('#system-rule-control-history-details')).toBeVisible()
 })

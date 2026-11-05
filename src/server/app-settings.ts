@@ -120,9 +120,9 @@ async function saveAppSettingToDb({ key, value, expectedUpdatedAt }: AppSettingP
       preparedValue = prepareAppSettingValue({ ...normalizeRequestConclusionSettings(value), splitModes: previous.splitModes })
     }
     if (normalizedKey === PROJECT_SETTING_KEYS.dataList) {
-      const { prepareDataListSettingsChange } = await import('@/lib/data-list-settings')
-      preparedValue = prepareAppSettingValue(prepareDataListSettingsChange(
-        current ? parseStoredSetting(current.value) : undefined, value,
+      const { prepareDataListSettingsChangeInTransaction } = await import('@/server/data-list-settings-policy')
+      preparedValue = prepareAppSettingValue(await prepareDataListSettingsChangeInTransaction(
+        tx, current ? parseStoredSetting(current.value) : undefined, value,
       ))
     }
     if (normalizedKey === PROJECT_SETTING_KEYS.systemIndex) {

@@ -26,6 +26,14 @@ describe.each(Object.entries(entryPoints))('LNK %s result policy', (_name, write
     window.localStorage.setItem('welding-save-check-settings', JSON.stringify({ ...permissiveChecks, lnkResultRepairRules: false }))
   })
 
+  it.each(['vikRequest', 'uzkRequest', 'pvkRequest'] as const)('allows T R12 repair on D57 via %s but forbids cut and RK', methodKey => {
+    const row = { id: 1, joint: 'ОП-1R12', connectionType: 'Т1', d1: 57, vikResult: 'годен',
+      [methodKey]: 'Заявка НК', [`${methodKey}Date`]: '2026-08-19' } as WeldRow
+    expect(() => write(row, methodKey, 'ремонт')).not.toThrow()
+    expect(() => write(row, methodKey, 'вырез')).toThrow('Для Т результат «вырез» запрещён')
+    expect(() => write({ ...row, rkRequest: 'Ошибочная заявка' }, 'rkRequest', 'годен')).toThrow('Для Т РК запрещён')
+  })
+
   it.each(['vikRequest', 'pvkRequest'] as const)('permits a small-diameter repair but never cutout for %s', (methodKey) => {
     const row = { id: 1, joint: 'F1', d1: 159, d2: 57, vikResult: 'годен',
       [methodKey]: 'Заявка НК', [`${methodKey}Date`]: '2026-08-19' } as WeldRow

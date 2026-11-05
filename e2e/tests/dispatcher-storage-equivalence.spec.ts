@@ -16,6 +16,7 @@ test('flat dispatcher hydration preserves every schema field and exactly matches
         : column.dataType === 'boolean' ? true
           : column.dataType === 'date' ? new Date('2026-10-13T21:15:12.345Z')
             : column.dataType === 'number' ? 123.456
+              : column.getSQLType().startsWith('numeric') ? '123.456789123456789'
               : column.getSQLType() === 'date' ? '2024-02-29'
                 : `значение ${key}: "\\\n\t  `
     }
@@ -27,6 +28,7 @@ test('flat dispatcher hydration preserves every schema field and exactly matches
     expect(flat.sort((a, b) => a.id - b.id)).toEqual(ordinary.sort((a, b) => a.id - b.id))
     expect(Object.keys(flat[0]).sort()).toEqual(Object.keys(getTableColumns(weldJoints)).sort())
     expect(flat.find(row => row.id === full.id)?.d1).toBe(123.456)
+    expect(flat.find(row => row.id === full.id)?.weldLength).toBe('123.456789123456789')
     expect(flat.find(row => row.id === full.id)?.weldDate).toBe('2024-02-29')
     expect(flat.find(row => row.id === full.id)?.createdAt).toBeInstanceOf(Date)
     // Same transaction sees its own later mutation, not an earlier object/cache.

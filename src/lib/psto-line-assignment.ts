@@ -14,6 +14,7 @@ import {
 import { LNK_METHODS } from '@/lib/lnk-report-config'
 import { isPreHeatTreatmentStageEnabled } from '@/lib/pre-heat-treatment-policy'
 import { emptyToNull } from '@/lib/weld-import-parsers'
+import { getControlAssignmentPerformedHistory } from './control-assignment-history'
 
 export type PstoLineIdentity = {
   projectTitle: string
@@ -90,6 +91,7 @@ export type PstoLineRemovalPreviewRow = {
   pstoResult: string
   repeatCycleCount: number
   preservesPerformedHistory: boolean
+  cancellationDisposition?: 'preserve' | 'cancel' | 'unchanged'
   stageCorrection?: {
     targetStage: 'primary' | 'beforeHeatTreatment'
     disabledReason: string | null
@@ -110,6 +112,9 @@ export type PstoLineRemovalPreview = {
   completedPreControlCount: number
   pendingPreControlCount: number
   repeatCycleCount: number
+  removalProtectedRowCount?: number
+  cancellationRowCount?: number
+  retainedAssignmentCount?: number
   rows: PstoLineRemovalPreviewRow[]
 }
 
@@ -220,6 +225,7 @@ export function buildPstoMovedToUnassignedLineRow({
   row: WeldRow
   controls: readonly PreHeatTreatmentControlRecord[]
 }): WeldRow {
+  if (getControlAssignmentPerformedHistory(row, 'pstoRequired')) return { ...row, preHeatTreatmentControls: [...controls] }
   const next = buildPstoMovedToCancelledLineRow({
     row,
     controls,
@@ -234,10 +240,11 @@ export function buildPstoMovedToUnassignedLineRow({
   } as WeldRow
 }
 
-/** Official cancellation changes the decision only; every stage stays in its original place. */
+/** Line-wide cancellation leaves performed work and its assignment untouched. */
 export function buildPstoCancelledRow({ row, cancellationDate, cancellationBasis }: {
   row: WeldRow; cancellationDate: string; cancellationBasis: string
 }): WeldRow {
+  if (getControlAssignmentPerformedHistory(row, 'pstoRequired')) return { ...row }
   return { ...row, pstoRequired: 'отменен', pstoCancellationDate: cancellationDate, pstoControlBasis: cancellationBasis || null }
 }
 
@@ -253,6 +260,7 @@ export function buildPstoMovedToCancelledLineRow({
   cancellationDate: string
   cancellationBasis: string
 }): WeldRow {
+  if (getControlAssignmentPerformedHistory(row, 'pstoRequired')) return { ...row, preHeatTreatmentControls: [...controls] }
   const next = {
     ...row,
     pstoRequired: 'отменен',

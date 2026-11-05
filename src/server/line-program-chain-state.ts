@@ -27,6 +27,7 @@ export async function loadProgramChainScopeRows(tx: Pick<SystemDocumentSequenceT
     const tuples = scopes.slice(offset, offset + 500).map(row => sql`(${String(row.projectTitle ?? '').trim().toLocaleLowerCase('ru')}, ${String(row.subtitleCode ?? '').trim().toLocaleLowerCase('ru')}, ${String(row.line ?? '').trim().toLocaleLowerCase('ru')})`)
     const batch = await tx.select({ id: weldJoints.id, projectTitle: weldJoints.projectTitle, subtitleCode: weldJoints.subtitleCode,
       line: weldJoints.line, joint: weldJoints.joint, officiality: weldJoints.officiality, weldDate: weldJoints.weldDate,
+      connectionType: weldJoints.connectionType, weldLength: weldJoints.weldLength,
     }).from(weldJoints).where(sql`(lower(btrim(coalesce(${weldJoints.projectTitle}, ''))), lower(btrim(coalesce(${weldJoints.subtitleCode}, ''))),
       lower(btrim(coalesce(${weldJoints.line}, '')))) in (${sql.join(tuples, sql`, `)})`)
     for (const row of batch) rows.push(row)

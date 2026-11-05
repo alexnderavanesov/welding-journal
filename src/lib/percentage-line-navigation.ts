@@ -1,4 +1,5 @@
 export type PercentageLineNavigationRequest = {
+  family?: 'supports'
   id: number
   action: 'assign-missing-controls' | 'open-line'
   projectTitle: string

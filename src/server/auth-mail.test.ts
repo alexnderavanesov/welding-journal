@@ -47,7 +47,7 @@ describe('account email delivery', () => {
     expect(request.headers.authorization).toContain('/ru-central1/ses/aws4_request')
     expect(request.headers.authorization).not.toContain('test-secret-key')
     expect(options.abortSignal).toBeDefined()
-    const payload = JSON.parse(request.body)
+    const payload = JSON.parse(typeof request.body === 'string' ? request.body : new TextDecoder().decode(request.body))
     expect(payload.FromEmailAddress).toBe('system@yums.ru')
     expect(payload.Destination.ToAddresses).toEqual(['employee@example.test'])
     expect(payload.Content.Simple.Subject.Charset).toBe('UTF-8')

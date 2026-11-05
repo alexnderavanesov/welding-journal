@@ -21,7 +21,8 @@ describe('getWeldFormSaveBlockReason', () => {
       expect(getWeldFormSaveBlockReason({ ...previous, hasRk }, previous)).toContain('официального актуального')
     }
     expect(getWeldFormSaveBlockReason({ ...previous, isometry: 'ISO-2' }, previous)).toBeNull()
-    expect(getWeldFormSaveBlockReason({ ...previous, officiality: null, revisionActuality: null, hasUzk: 'да' }, previous)).toBeNull()
+    expect(getWeldFormSaveBlockReason({ ...previous, officiality: null, revisionActuality: null, hasUzk: 'дополнительный', uzkControlBasis: 'ТР-1' }, previous)).toBeNull()
+    expect(getWeldFormSaveBlockReason({ ...previous, officiality: null, revisionActuality: null, hasUzk: 'да' }, previous)).toContain('Дополнительный')
     expect(getWeldFormSaveBlockReason({ ...initialValue, ...excluded, hasUzk: 'да' }, initialValue)).toContain('официального актуального')
   })
 
@@ -124,7 +125,7 @@ describe('getWeldFormSaveBlockReason', () => {
     const draft = { id: 1, joint: 'S1', hasVik: null, vikRequest: 'Заявка-001', vikResult: 'годен' } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBe(
-      'СП-11 · ВИК: выберите «отменен» либо очистите/удалите результат НК в отчете ЛНК.',
+      'СП-11 · ВИК: сохраните назначение выполненного контроля. Ошибочный результат исправьте в отчёте ЛНК.',
     )
   })
 
@@ -178,31 +179,31 @@ describe('getWeldFormSaveBlockReason', () => {
   })
 
   it('allows cancelled LNK availability with existing method report history', () => {
-    const draft = { id: 1, joint: 'S1', hasVik: 'отменен', vikRequest: 'Заявка-001' } as WeldInput
+    const draft = { id: 1, joint: 'S1', hasVik: 'отменен', vikControlBasis: 'ТР-1', vikRequest: 'Заявка-001' } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
   })
 
-  it('explains cancelled positive LNK result display', () => {
+  it('blocks a new cancellation of a performed positive LNK result', () => {
     const draft = { id: 1, joint: 'S1', hasVik: 'отменен', vikResult: 'годен' } as WeldInput
 
-    expect(getWeldFormCancellationResultHint(draft, { ...initialValue, hasVik: 'да' } as WeldDraft)).toBe(
-      'ВИК: назначение будет отменено. Заявки, результаты и заключения всех этапов сохраняются; фактический брак остаётся браком.',
-    )
+    const previous = { ...initialValue, hasVik: 'да' } as WeldDraft
+    expect(getWeldFormCancellationResultHint(draft, previous)).toBeNull()
+    expect(getWeldFormSaveBlockReason(draft, previous)).toContain('нельзя отменить')
   })
 
-  it('explains that cancellation preserves rejected LNK history', () => {
+  it('blocks a new cancellation of rejected LNK work', () => {
     const draft = { id: 1, joint: 'S1', hasRk: 'отменен', rkResult: 'ремонт' } as WeldInput
 
-    expect(getWeldFormCancellationResultHint(draft, { ...initialValue, hasRk: 'да' } as WeldDraft)).toBe(
-      'РК: назначение будет отменено. Заявки, результаты и заключения всех этапов сохраняются; фактический брак остаётся браком.',
-    )
+    const previous = { ...initialValue, hasRk: 'да' } as WeldDraft
+    expect(getWeldFormCancellationResultHint(draft, previous)).toBeNull()
+    expect(getWeldFormSaveBlockReason(draft, previous)).toContain('нельзя отменить')
   })
 
 
 
   it('allows clearing PSTO availability when only request and date exist', () => {
-    const draft = { id: 1, joint: 'S1', pstoRequired: null, pstoDate: '10.06.2026' } as WeldInput
+    const draft = { id: 1, joint: 'S1', pstoRequired: null, pstoRequest: 'ПСТО-1', pstoRequestDate: '10.06.2026' } as WeldInput
 
     expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
   })
@@ -228,12 +229,12 @@ describe('getWeldFormSaveBlockReason', () => {
     expect(getControlAvailabilityReportHistoryIssues(draft)).toEqual([])
   })
 
-  it('explains cancelled positive PSTO result display', () => {
+  it('blocks a new cancellation of performed PSTO', () => {
     const draft = { id: 1, joint: 'S1', pstoRequired: 'отменен', pstoResult: 'проведено' } as WeldInput
 
-    expect(getWeldFormCancellationResultHint(draft, { ...initialValue, pstoRequired: 'да' } as WeldDraft)).toBe(
-      'ПСТО: назначение будет отменено. Заявки, результаты и заключения всех этапов сохраняются; фактический брак остаётся браком.',
-    )
+    const previous = { ...initialValue, pstoRequired: 'да' } as WeldDraft
+    expect(getWeldFormCancellationResultHint(draft, previous)).toBeNull()
+    expect(getWeldFormSaveBlockReason(draft, previous)).toContain('нельзя отменить')
   })
 
   it('allows empty availability when no related report history exists', () => {
@@ -419,7 +420,7 @@ describe('getWeldFormSaveBlockReason', () => {
   it('reads old RK/UZK replacement values as additional availability in form hints', () => {
     const draft = { id: 1, joint: 'S1', hasPvk: 'замена РК/УЗК' } as WeldInput
 
-    expect(getWeldFormSaveBlockReason(draft, initialValue)).toBeNull()
+    expect(getWeldFormSaveBlockReason(draft, draft)).toBeNull()
   })
 
   it('blocks saving D1/D2 edits when an existing LNK repair becomes forbidden by diameter', () => {

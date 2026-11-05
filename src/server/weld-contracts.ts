@@ -250,6 +250,15 @@ export type PstoWorkflowSummary = {
   tvmtResultCandidateCount: number
 }
 
+/** Menu availability does not need the complete registry/candidate counts. */
+export type PstoWorkflowAvailability = {
+  requestCandidates: boolean
+  resultCandidates: boolean
+  resultRegistry: boolean
+  tvmtRequestCandidates: boolean
+  tvmtResultCandidates: boolean
+}
+
 export function normalizePstoWorkflowRowsRequest(
   value: PstoWorkflowRowsRequest,
 ) {
@@ -406,6 +415,7 @@ export type WeldDataUsageSummary = {
 export type WeldMutationScope = 'welding' | 'lnk' | 'psto'
 
 export type WeldPayload = WeldDraft & {
+  controlRequestRemovalToken?: string
   specialistCorrectionConfirmation?: string
   expectedVersion?: string
   pstoLineMoveDisposition?: PstoWeldLineMoveDisposition
@@ -415,6 +425,7 @@ export type WeldPayload = WeldDraft & {
 }
 
 export type WeldBatchUpdateData = {
+  controlRequestRemovalToken?: string
   specialistCorrectionConfirmation?: string
   documentGrouping?: DocumentGroupingCommand
   records: WeldPayload[]

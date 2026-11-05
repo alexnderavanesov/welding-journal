@@ -1,4 +1,5 @@
 import { formatDisplayDate } from '@/lib/date-format'
+import { isTConnectionType } from '@/lib/connection-type'
 import { splitWeldMaterialGroups } from '@/lib/weld-material-groups'
 import { loadSaveCheckSettings, normalizeSaveCheckSettings } from '@/lib/save-check-settings'
 import {
@@ -112,7 +113,7 @@ export function getOfficialStampCompatibilityIssues(
 
   const uniqueEntries = getUniqueOfficialStampEntries(entries)
   const useCombinedMethodRanges = methods.length > 1
-  const useTeamWeldingMethodCoverage = saveCheckSettings.officialWeldingMethod && uniqueEntries.length > 1 && useCombinedMethodRanges
+  const useTeamWeldingMethodCoverage = !isTConnectionType(record.connectionType) && saveCheckSettings.officialWeldingMethod && uniqueEntries.length > 1 && useCombinedMethodRanges
 
   if (splitWeldMaterialGroups(record.materialGroup).length === 2) {
     const assessments = uniqueEntries.map(entry => ({ entry, assessment: getDissimilarStampCompatibilityAssessment(entry, methods, record, saveCheckSettings) }))

@@ -1,10 +1,14 @@
+import { normalizeFinalStatus } from './weld-status'
+import { isTConnectionType } from './connection-type'
+import { buildSupportStatistics, type SupportStatisticsSummary } from './support-statistics'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { isUnofficialJoint } from '@/lib/joint-display'
 import { parseJointChainName } from '@/lib/joint-chain'
-import { buildLineSummary, type LineSummary } from '@/lib/line-summary'
+import { buildLineSummary, getActualLineRows, summarizePhysicalLineRows, type LineSummary } from '@/lib/line-summary'
 import {
   buildStatisticsSummary,
   buildStatisticsStateRowIds,
+  createStatisticsFinalStatusReader,
   type StatisticsStateRowIds,
   type StatisticsSummary,
   type StatisticsUnit,
@@ -26,7 +30,7 @@ import {
   type WeldingDynamicsSummary,
 } from '@/lib/welding-dynamics'
 
-export type StatisticsTab = 'general' | 'lnk' | 'psto' | 'welders' | 'lineSummary'
+export type StatisticsTab = 'general' | 'supports' | 'lnk' | 'psto' | 'welders' | 'lineSummary'
 
 export type StatisticsFilterOption = {
   value: string
@@ -46,6 +50,7 @@ export type StatisticsServerRequest = {
 }
 
 export type StatisticsServerResult = {
+  supportSummary?: SupportStatisticsSummary
   projectOptions: StatisticsFilterOption[]
   subtitleOptions: StatisticsFilterOption[]
   summary: StatisticsSummary
@@ -69,6 +74,7 @@ const EMPTY_STATISTICS_SUMMARY: StatisticsSummary = {
   weldedShare: 0,
   good: 0,
   rejected: 0,
+  rejectedJointCount: 0,
   duplicateGood: 0,
   duplicateRejected: 0,
   waitingWeld: 0,
@@ -231,6 +237,8 @@ export function buildStatisticsServerResult({
   request: StatisticsServerRequest
 }): StatisticsServerResult {
   const tab = request.tab
+  // Control reports retain permitted T work. Production counters stay separate.
+  if (tab === 'supports' || tab === 'general' || tab === 'welders' || tab === 'lineSummary') rows = rows.filter(row => isTConnectionType(row.connectionType) === (tab === 'supports'))
   const projectFilter = normalizeFilterValue(request.projectFilter)
   const selectedSubtitles = (request.selectedSubtitles ?? []).map(normalizeFilterValue).filter(Boolean)
   const from = String(request.from ?? '').trim()
@@ -250,8 +258,13 @@ export function buildStatisticsServerResult({
       selectedSubtitles.length === 0 || selectedSubtitles.includes(normalizeFilterValue(row.subtitleCode))
     return projectMatches && subtitleMatches
   })
-  const generalRows = scopedRows.filter((row) => matchesJointFilter(row, jointFilter, systemIndexSettings))
+  const physicalRows = tab === 'general' ? getActualLineRows(scopedRows, systemIndexSettings) : scopedRows
+  const generalRows = physicalRows.filter((row) => matchesJointFilter(row, jointFilter, systemIndexSettings))
   const isGeneralLikeTab = tab === 'general' || tab === 'lnk' || tab === 'psto'
+  // General production resolves physical representatives with the complete
+  // scoped history. LNK/PSTO retain their existing joint-filtered status scope.
+  const statusRows = tab === 'general' ? scopedRows : generalRows
+  const readFinalStatus = isGeneralLikeTab ? createStatisticsFinalStatusReader(statusRows) : undefined
   const calculatedSummary = isGeneralLikeTab
     ? buildStatisticsSummary(
         generalRows,
@@ -260,18 +273,30 @@ export function buildStatisticsServerResult({
         unit,
         systemIndexSettings,
         request.controlDynamicsScale ?? 'auto',
+        statusRows,
+        readFinalStatus,
       )
     : EMPTY_STATISTICS_SUMMARY
+  // Resolve the chain before filtering the month/type; rejected history must
+  // neither create extra volume nor erase a successful current continuation.
+  const isCounted = (row: WeldRow) => normalizeFinalStatus(readFinalStatus!(row)) !== 'не годен'
+  const productionRows = tab === 'general' ? calculatedSummary.periodRows.filter(isCounted) : []
+  if (tab === 'general') {
+    calculatedSummary.welded = sumRows(productionRows, unit)
+    calculatedSummary.weldedShare = calculatedSummary.totalRows > 0 ? calculatedSummary.welded / calculatedSummary.totalRows * 100 : 0
+    calculatedSummary.completedRepairs = sumRows(productionRows.filter(row => parseJointChainName(String(row.joint ?? ''), systemIndexSettings).segments.length > 0), unit)
+  }
   const unofficialRows = isGeneralLikeTab ? calculatedSummary.periodRows.filter(isUnofficialJoint) : []
 
   return {
+    ...(tab === 'supports' ? { supportSummary: buildSupportStatistics(scopedRows, from, to, systemIndexSettings, welderStamps) } : {}),
     projectOptions,
     subtitleOptions,
     summary: isGeneralLikeTab ? { ...calculatedSummary, periodRows: [] } : EMPTY_STATISTICS_SUMMARY,
     weldingDynamics:
       tab === 'general'
         ? buildWeldingDynamics(
-            calculatedSummary.periodRows,
+            productionRows,
             from,
             to,
             unit,
@@ -297,11 +322,11 @@ export function buildStatisticsServerResult({
         : EMPTY_LINE_SUMMARY,
     generalProgressSummary:
       tab === 'general'
-        ? buildLineSummary(scopedRows, unit, systemIndexSettings, row => matchesJointFilter(row, jointFilter, systemIndexSettings))
+        ? summarizePhysicalLineRows(generalRows, unit, systemIndexSettings, undefined, row => Boolean(String(row.weldDate ?? '').trim()) && isCounted(row))
         : EMPTY_LINE_SUMMARY,
     generalStateRowIds:
       isGeneralLikeTab
-        ? buildStatisticsStateRowIds(generalRows, from, to, unit)
+        ? buildStatisticsStateRowIds(generalRows, from, to, unit, statusRows, readFinalStatus)
         : EMPTY_STATISTICS_STATE_ROW_IDS,
     unofficialCount: unofficialRows.length,
     unofficialRowIds: unofficialRows

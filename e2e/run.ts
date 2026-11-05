@@ -3,8 +3,12 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { dropE2eDatabase } from './database'
-import prepareE2eDatabase from './global-setup'
+import { E2E_DATABASE_URL, dropE2eDatabase } from './database'
+
+// Setup fixtures can import application modules with module-level database
+// pools. Pin the verified disposable target before importing any setup code.
+process.env.DATABASE_URL = E2E_DATABASE_URL
+process.env.WELDING_ENV_LOADED = '1'
 
 let exitCode = 1
 let templateDirectory: string | undefined
@@ -14,6 +18,7 @@ try {
   // file versions. Every runner must also own an empty, disposable file store.
   templateDirectory = await mkdtemp(join(tmpdir(), 'welding-e2e-templates-'))
   process.env.DOCUMENT_TEMPLATE_STORAGE_PATH = templateDirectory
+  const { default: prepareE2eDatabase } = await import('./global-setup')
   const verifyFixture = await prepareE2eDatabase()
   if (process.env.AUDIT_SQL_COUNTS === '1') {
     process.env.AUDIT_SQL_COUNTS_FILE = join(await mkdtemp(join(tmpdir(), 'welding-e2e-sql-')), 'counts.json')

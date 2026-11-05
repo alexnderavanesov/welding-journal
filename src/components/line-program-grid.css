@@ -75,7 +75,8 @@
 .program-ag-grid-windowed { position: relative; min-height: 100px; }
 .program-ag-grid-windowed > .program-grid-frame { position: absolute; top: 0; width: 100%; height: 100%; }
 .program-ag-grid-windowed .ag-grid-viewport { overflow-y: hidden; }
-.program-ag-grid-windowed .ag-body-vertical-scroll { display: none; }
+/* Do not start AG's visibility-retry loop when the page moves a nested grid. */
+.program-ag-grid-windowed .ag-body-vertical-scroll { opacity: 0 !important; visibility: visible !important; pointer-events: none; }
 .program-joint-history { background: #f8fbfd; padding: 10px 12px 12px; font-size: 12px; border-bottom: 1px solid #dce7f0; }
 .program-line-disclosure { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; margin-top: 1px; color: #2780b3; flex-shrink: 0; }
 [aria-expanded="true"] > .program-line-disclosure { background: #e0effb; }
@@ -110,23 +111,26 @@
 .program-ag-grid .ag-cell-focus { border-color: transparent !important; outline: none; }
 .program-ag-grid .ag-cell:focus-visible { box-shadow: none; }
 html[data-program-keyboard="true"] .program-ag-grid .ag-cell:focus-visible { box-shadow: inset 0 0 0 1px #7dd3fc; }
-/* Native controls keep their own focus, separate from row selection and
-   the dashed/amber assignment hints. One shadow avoids stacked focus rings. */
-.program-ag-grid[data-program-grid="assignments"] .program-assignment-select { --program-field-border: #e2e8f0; --program-field-inset: 0 0 #0000; }
-.program-ag-grid[data-program-grid="assignments"] .program-assignment-select[data-program-dirty] { --program-field-border: #0ea5e9; }
+/* Paint within the control: outer rings are clipped by AG Grid cells.
+   Keep draft/required borders and a thin inset keyboard cue independent. */
+.program-ag-grid[data-program-grid="assignments"] .program-assignment-select { --program-field-border: #e2e8f0; --program-field-inset: 0 0 #0000; outline: none; border-color: var(--program-field-border); box-shadow: var(--program-field-inset); }
+.program-ag-grid[data-program-grid="assignments"] .program-assignment-select:is(:hover, :focus, [data-program-focused]) { --program-field-border: #7dd3fc; }
+.program-ag-grid[data-program-grid="assignments"] .program-assignment-select[data-program-dirty] { --program-field-border: #94a3b8; }
 .program-ag-grid[data-program-grid="assignments"] .program-assignment-select[data-program-required]:not([data-program-dirty]),
 .program-ag-grid[data-program-grid="assignments"] .program-assignment-select[data-removal-candidate] { --program-field-border: #fbbf24; --program-field-inset: inset 0 0 0 1px #fde68a; }
-.program-ag-grid[data-program-grid="assignments"] .program-assignment-select:is(:focus, .ring-2) { outline: none; border-color: var(--program-field-border); box-shadow: var(--program-field-inset), 0 0 0 2px #bae6fd; }
-/* A pointer-edited field already has a dashed draft border. Do not leave an
-   outer blue band after its native menu closes; retain keyboard focus cues. */
-html:not([data-program-keyboard="true"]) .program-ag-grid[data-program-grid="assignments"] .program-assignment-select[data-program-dirty] { box-shadow: var(--program-field-inset); }
+html[data-program-keyboard="true"] .program-ag-grid[data-program-grid="assignments"] .program-assignment-select:focus { outline: 1px solid #0284c7; outline-offset: -3px; }
+/* One darkened border marks pointer and keyboard focus without the forms
+   plugin's bright outer ring or a second frame inside the input. */
+.program-ag-grid[data-program-grid="assignments"] .program-assignment-basis { outline: none; box-shadow: none; }
+.program-ag-grid[data-program-grid="assignments"] .program-assignment-basis:hover { border-color: #94a3b8; }
+.program-ag-grid[data-program-grid="assignments"] .program-assignment-basis:focus { border-color: #64748b; }
 .program-ag-grid[data-program-grid="assignments"] .program-assignment-checkbox { width: 16px; height: 16px; border-radius: 4px; border-color: #cbd5e1; color: #0284c7; cursor: pointer; }
 .program-ag-grid[data-program-grid="assignments"] .program-assignment-checkbox:is(:checked, :indeterminate) { border-color: #0284c7; }
 .program-ag-grid[data-program-grid="assignments"] .program-assignment-checkbox:focus { outline: none; box-shadow: none; }
 .program-ag-grid[data-program-grid="assignments"] .program-assignment-checkbox:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
 .program-ag-grid[data-program-grid="assignments"] .program-assignment-checkbox:disabled { opacity: .45; cursor: default; }
 @media (forced-colors: active) {
-  .program-ag-grid[data-program-grid="assignments"] .program-assignment-select:is(:focus, .ring-2) { outline: 2px solid Highlight; outline-offset: 2px; }
+  .program-ag-grid[data-program-grid="assignments"] :is(.program-assignment-select:is(:focus, [data-program-focused]), .program-assignment-basis:focus) { outline: 1px solid Highlight; outline-offset: -3px; }
 }
 
 /* Popups live outside clipped detail/grid containers. Keep all styling scoped

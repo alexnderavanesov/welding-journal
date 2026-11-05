@@ -40,7 +40,7 @@ async function assignments(page: Page, name: string) {
   return page.getByRole('dialog', { name: `Назначения · ${name}` })
 }
 
-test('согласование старого выполненного контроля и отмена не меняют историю; отмена диалога безопасна', async ({ page }) => {
+test('старые согласования не предлагаются; просмотр назначений сохраняет выполненную историю', async ({ page }) => {
   const id = await seed('FOLLOW-APPROVAL')
   const before = await withE2eDatabase(async db => (await db.query('select * from weld_joints where line_program_id=$1 order by id', [id])).rows)
   const calls: string[] = [], errors: string[] = []
@@ -48,34 +48,16 @@ test('согласование старого выполненного конт�
   page.on('pageerror', error => errors.push(error.message))
   const modal = await assignments(page, 'FOLLOW-APPROVAL')
   await modal.getByLabel('Выбрать F1', { exact: true }).check()
-  await modal.getByRole('button', { name: /Согласовать сочетание/ }).click()
-  await page.getByRole('button', { name: 'Вернуться', exact: true }).click()
+  await expect(modal.getByRole('button', { name: /Согласовать|Снять согласование/ })).toHaveCount(0)
+  await expect(modal.getByLabel('Согласование выбранных стыков')).toHaveCount(0)
   await expect(modal.getByText('✓ Согласовано', { exact: true })).toHaveCount(0)
-  await modal.getByRole('button', { name: /Согласовать сочетание/ }).click()
-  await page.getByRole('button', { name: 'Согласовать', exact: true }).click()
-  await expect(modal.getByText('✓ Согласовано', { exact: true })).toHaveCount(1)
-  await expect(modal.getByLabel('F1 · РК', { exact: true }).locator('option[value=""]')).toBeDisabled()
-  await modal.getByLabel('Выбрать F1', { exact: true }).check()
-  await modal.getByLabel('Выбрать F2', { exact: true }).check()
-  const mixed = modal.getByLabel('Согласование выбранных стыков')
-  await expect(mixed).toBeVisible()
-  expect(await mixed.evaluate(el => { const css = getComputedStyle(el); return parseFloat(css.lineHeight) + parseFloat(css.paddingTop) + parseFloat(css.paddingBottom) <= el.clientHeight })).toBe(true)
-  await modal.screenshot({ path: 'outputs/program-approval-selection.png' })
-  await mixed.selectOption('revoke:combination')
-  await page.getByRole('button', { name: 'Снять согласование', exact: true }).click()
-  await expect(modal.getByText('✓ Согласовано', { exact: true })).toHaveCount(0)
-  await expect(modal.getByLabel('F1 · РК', { exact: true })).toHaveValue('да')
   await expect(modal.getByLabel('F1 · РК', { exact: true }).locator('option[value=""]')).toBeDisabled()
   await withE2eDatabase(async db => {
     expect((await db.query('select * from weld_joints where line_program_id=$1 order by id', [id])).rows).toEqual(before)
     expect((await db.query('select key from dispatcher_accepted_warnings where weld_joint_id=any($1::int[])', [before.map(row => row.id)])).rows).toEqual([])
   })
-  expect(calls.filter(name => name.startsWith('changeLineProgramApprovals_'))).toHaveLength(2)
-  expect(calls.filter(name => name.startsWith('getLineProgramSection_'))).toHaveLength(2)
-  expect(calls.filter(name => name.startsWith('getLineProgramPage_'))).toHaveLength(2)
-  expect(calls.filter(name => name.startsWith('getLineProgramJointPage_'))).toHaveLength(3)
+  expect(calls.filter(name => name.startsWith('changeLineProgramApprovals_'))).toHaveLength(0)
   expect(errors).toEqual([])
-  await modal.screenshot({ path: 'outputs/program-approval-actions.png' })
 })
 
 test('сводки всех страниц текущего отбора, отдельные клейма и печатный вид без всплывающих окон', async ({ page }) => {
@@ -276,7 +258,12 @@ for (const count of [500, 1000]) test(`окно назначений ${count} с
   const searchMs = Math.round(performance.now() - searchAt)
   const reads = calls.filter(name => name.startsWith('getLineProgramJointPage_')).length
   const saveAt = performance.now()
-  await modal.getByLabel(`F${count} · УЗК`, { exact: true }).selectOption('да')
+  const uzk = modal.getByLabel(`F${count} · УЗК`, { exact: true })
+  // РК уже назначен и выполнен: второй метод назначается только как Доп с основанием.
+  await expect(uzk.locator('option[value="да"]')).toBeDisabled()
+  await uzk.selectOption('дополнительный')
+  const basis = `Техрешение для дополнительного УЗК F${count}`
+  await modal.getByLabel(`F${count} · УЗК · Основание к назначению`, { exact: true }).fill(basis)
   await modal.getByRole('button', { name: 'Проверить изменения', exact: true }).click()
   await expect(modal.getByRole('button', { name: 'Сохранить назначения', exact: true })).toBeVisible()
   const ack = modal.getByRole('checkbox', { name: /Подтверждаю назначение/ }); if (await ack.count()) await ack.check()
@@ -285,7 +272,13 @@ for (const count of [500, 1000]) test(`окно назначений ${count} с
   const saveMs = Math.round(performance.now() - saveAt)
   await expect.poll(() => calls.filter(name => name.startsWith('getLineProgramJointPage_')).length).toBe(reads + 1)
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
-  await expect(modal.getByLabel(`F${count} · УЗК`, { exact: true })).toHaveValue('да')
+  await expect(uzk).toHaveValue('дополнительный')
+  await expect(modal.getByLabel(`F${count} · УЗК · Основание к назначению`, { exact: true })).toHaveValue(basis)
+  const saved = await withE2eDatabase(async db => (await db.query(
+    'select has_uzk, uzk_control_basis, has_rk, rk_result, rk_request, rk_conclusion from weld_joints where line_program_id=$1 and joint=$2', [id, `F${count}`],
+  )).rows[0])
+  expect(saved).toEqual({ has_uzk: 'дополнительный', uzk_control_basis: basis, has_rk: 'да', rk_result: 'годен',
+    rk_request: `${name}-system:lnkRequest`, rk_conclusion: `${name}-system:lnkConclusionRk` })
   expect(calls.filter(name => name.startsWith('getLineProgramSection_'))).toHaveLength(2)
   expect(calls.filter(name => name.startsWith('getLineProgramPage_'))).toHaveLength(2)
   expect(calls.filter(name => name.startsWith('getLineProgramJointPage_'))).toHaveLength(2)

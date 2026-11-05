@@ -1,3 +1,7 @@
+import { loadControlRequestRemovalPreview } from './control-request-removal-preview'
+import { getClearedControlAssignments } from '@/lib/control-assignment-request-removal'
+import { lockLayeredControlDocumentsForWeldChange } from './layered-control-documents'
+import { lockSystemDocumentIndexes } from './system-document-index'
 import { PROGRAM_DEMAND_LABELS } from '@/lib/line-program-labels'
 import { touchDocumentMembershipParents } from './document-version'
 import { hashJsonRecordTuple } from './json-record-token'
@@ -6,7 +10,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { EXCLUDED_CONTROL_ASSIGNMENT_REASON, isActiveOfficialWeld } from '@/lib/control-assignment-eligibility'
 import { and, eq, inArray, notExists, sql } from 'drizzle-orm'
 import { requireDb } from '@/db'
-import { dispatcherAcceptedWarnings, generatedDocuments, generatedDocumentWeldJoints, linePrograms, weldJoints, type WeldJoint } from '@/db/schema'
+import { generatedDocuments, generatedDocumentWeldJoints, linePrograms, weldJoints, type WeldJoint } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { LAYERED_CONTROL_DOCUMENT_TYPES } from '@/lib/generated-document-types'
 import { buildLayeredControlAssignment } from '@/lib/layered-control-rules'
@@ -14,7 +18,9 @@ import { getLineProgramOfficialStamps } from '@/lib/line-program-calculation'
 import { previewProgramChanges, type ProgramChange } from '@/lib/line-program-workspace'
 import { programExcessIdentity } from '@/lib/line-program-excess'
 import type { WeldRowVersionTarget } from '@/lib/weld-row-version'
-import { getLineProgramConfigurationIssue } from '@/lib/line-program'
+import { asSupportLineProgram, getLineProgramConfigurationIssue } from '@/lib/line-program'
+import { isTConnectionType } from '@/lib/connection-type'
+import { buildSupportProgramContext } from '@/lib/support-program-calculation'
 import { attachDuplicateControlRelations } from '@/server/duplicate-control-relations'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 import { loadControlProcessSettingsFromTransaction } from '@/server/control-process-settings'
@@ -75,33 +81,41 @@ export async function changeProgramInTransaction(tx: SystemDocumentSequenceTrans
       await lockWeldLineMemberships(tx, [line])
       const [currentLine] = await tx.select().from(linePrograms).where(eq(linePrograms.id, data.lineId)).for('update')
       if (!currentLine || currentLine.updatedAt.toISOString() !== data.lineVersion) throw new Error('Программа линии изменилась. Обновите расчёт.')
-      if (currentLine.configurationIssue || getLineProgramConfigurationIssue(currentLine) || currentLine.weldControlPercent == null || currentLine.pvkControlPercent == null) throw new Error('Сначала настройте программу линии (СП-01).')
       const ids = data.targets.map((target) => target.id)
       const storedRows = await lockInteractiveWeldRows(tx, ids)
       assertExpectedInteractiveWeldVersions(ids, data.targets, storedRows)
       if (storedRows.some((row) => row.lineProgramId !== line.id)) throw new Error('Выбранные стыки уже перенесены на другую линию.')
       const selectedRows = await attachDuplicateControlRelations(await attachHeatTreatmentControlRelations(storedRows as WeldRow[], tx), tx)
-      if (data.stamp && selectedRows.some(row => !getLineProgramOfficialStamps(row).some(stamp => stamp.toLocaleLowerCase('ru') === data.stamp!.trim().toLocaleLowerCase('ru')))) throw new Error('Изменилось клеймо одного из выбранных стыков. Обновите данные.')
+      const supports = selectedRows.some(row => isTConnectionType(row.connectionType))
+      if (selectedRows.some(row => isTConnectionType(row.connectionType) !== supports)) throw new Error('Назначения С/У и опор изменяются в отдельных вкладках. Обновите выбор.')
+      const program = supports ? asSupportLineProgram(toLineProgramRecord(currentLine)) : toLineProgramRecord(currentLine)
+      if (program.configurationIssue || getLineProgramConfigurationIssue(program) || program.weldControlPercent == null || program.pvkControlPercent == null) throw new Error('Сначала настройте программу линии (СП-01).')
       const previousRows = new Map(selectedRows.map(row => [row.id, row]))
       const context = await loadServerWeldValidationContext(tx, selectedRows)
-      const allRows = attachProgramRepairRequirements((await loadLineProgramRows(tx, currentLine)).map(row => previousRows.get(row.id) ?? row), context.programRules?.approved ?? new Set(), context.systemIndexSettings)
-      const preview = previewProgramChanges(allRows, data.changes, currentLine, context.systemIndexSettings, context.programRules?.approved)
+      const allRows = attachProgramRepairRequirements((await loadLineProgramRows(tx, currentLine)).filter(row => isTConnectionType(row.connectionType) === supports).map(row => previousRows.get(row.id) ?? row), context.programRules?.approved ?? new Set(), context.systemIndexSettings)
+      const supportContext = supports ? buildSupportProgramContext(allRows, context.systemIndexSettings) : undefined
+      const supportRoots = new Map(supportContext?.roots.flatMap(root => (supportContext.members.get(root.id) ?? []).map(member => [member.id, root] as const)))
+      if (data.stamp && selectedRows.some(row => {
+        const root = supportRoots.get(row.id)
+        return !getLineProgramOfficialStamps(root ?? row).some(stamp => stamp.toLocaleLowerCase('ru') === data.stamp!.trim().toLocaleLowerCase('ru'))
+      })) throw new Error('Изменилось клеймо одного из выбранных стыков. Обновите данные.')
+      const preview = previewProgramChanges(allRows, data.changes, program, context.systemIndexSettings, context.programRules?.approved)
       if (preview.errors.length) throw new Error(preview.errors.join('\n'))
-      const token = await getLineProgramControlToken(currentLine.updatedAt, allRows, data.changes)
-      const result = { token, excess: new Set(preview.newExcess.map(programExcessIdentity)).size, changed: preview.records.length, rows: [] as WeldRow[], lineSummary: null as Awaited<ReturnType<typeof loadLineProgramOverviews>>[number] | null }
+      if (!previewOnly && preview.records.some(row => getClearedControlAssignments(row, previousRows.get(row.id)!).length)) {
+        await lockLayeredControlDocumentsForWeldChange(tx)
+        await lockSystemDocumentIndexes(tx)
+      }
+      const removalPreview = await loadControlRequestRemovalPreview(tx, preview.records, previousRows)
+      const token = hashJsonRecordTuple([getLineProgramControlToken(currentLine.updatedAt, allRows, data.changes), removalPreview.token])
+      const result = { token, requestRemovals: removalPreview.removals, excess: new Set(preview.newExcess.map(programExcessIdentity)).size, changed: preview.records.length, rows: [] as WeldRow[], lineSummary: null as Awaited<ReturnType<typeof loadLineProgramOverviews>>[number] | null }
       // Run save checks for preview too; no documents, assignment flags or indexes are written.
       prepareServerWeldRecords({ records: preview.records, previousRows: previousRows as unknown as Map<number, WeldJoint>, context })
       validateServerWeldRecords({ records: preview.records, previousRows: previousRows as unknown as Map<number, WeldJoint>, context })
       if (previewOnly) return result
       if (data.previewToken !== token) throw new Error('Расчёт или выбор изменился после проверки. Повторно проверьте изменения; ничего не сохранено.')
-      if (preview.newExcess.length && !data.confirmedExcess) throw new Error(`Подтвердите назначение сверх нормы или несколько способов контроля ${PROGRAM_DEMAND_LABELS.common}.`)
-      if (preview.newExcess.length) await (await import('./access-functions')).assertActionPermission('exceptions.edit')
+      if (!supports && preview.newExcess.length && !data.confirmedExcess) throw new Error(`Подтвердите назначение сверх нормы или несколько способов контроля ${PROGRAM_DEMAND_LABELS.common}.`)
       result.rows = await saveAssignedRows(tx, preview.records, previousRows, preview.records.filter(row => row.layeredControlAssigned && !previousRows.get(row.id)?.layeredControlAssigned).map(row => row.id), context)
-      if (preview.newExcess.length) await tx.insert(dispatcherAcceptedWarnings).values(preview.newExcess.map(entry => ({
-        key: entry.key, weldJointId: entry.rowId, kind: 'line-program-control', title: 'Согласован лишний контроль',
-        context: `${[line.projectTitle && `Проект: ${line.projectTitle}`, line.subtitleCode && `Шифр: ${line.subtitleCode}`, `Линия: ${line.line}`].filter(Boolean).join(' · ')} · ${entry.stamp ? `Клеймо: ${entry.stamp} · ` : ''}Стык ID ${entry.rowId} · ${PROGRAM_DEMAND_LABELS[entry.kind]}`,
-      }))).onConflictDoNothing()
-      result.lineSummary = (await loadLineProgramOverviews(tx, [toLineProgramRecord(currentLine)]))[0]
+      result.lineSummary = (await loadLineProgramOverviews(tx, [program]))[0]
       return result
 }
 

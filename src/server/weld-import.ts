@@ -1,6 +1,8 @@
+import { assertControlRequestRemovalPreview } from './control-request-removal-preview'
 // This module is intentionally domain-scoped. Keep cross-domain rules in weld-server-shared.
 
 import { overlayPstoProgramPolicies } from './psto-chain-policy'
+import { lockSupportWeldLengthMemberships } from './support-weld-length-scope'
 import { deleteEmptyGeneratedDocuments } from './generated-document-cleanup'
 import { getPstoProgramState, type ImportPstoLinePolicy } from '@/lib/psto-chain-policy'
 import { requireDb } from '@/db'
@@ -180,10 +182,11 @@ export async function listImportPstoLinePolicies(db: ReturnType<typeof requireDb
 export async function massFillWeldJoints({
   data: input,
 }: {
-  data: { records: WeldPayload[]; expectedVersions: WeldRowVersionTarget[] }
+  data: { controlRequestRemovalToken?: string; records: WeldPayload[]; expectedVersions: WeldRowVersionTarget[] }
 }) {
   const data = {
     records: Array.isArray(input?.records) ? input.records : [],
+    controlRequestRemovalToken: input.controlRequestRemovalToken,
     expectedVersions: Array.isArray(input?.expectedVersions) ? input.expectedVersions : [],
   }
   await assertSecurityScope(getWeldImportSecurityScope('massFill'))
@@ -191,6 +194,7 @@ export async function massFillWeldJoints({
   const updated = await updateWeldJointRows({
     records: data.records,
     expectedVersions: data.expectedVersions,
+    controlRequestRemovalToken: data.controlRequestRemovalToken,
   }, true)
   return updated.map((row) => ({ id: row.id }))
 }
@@ -198,7 +202,7 @@ export async function massFillWeldJoints({
 export async function replaceWeldJoints({
   data: input,
 }: {
-  data: { records: WeldPayload[]; deleteIds: number[]; expectedVersions: WeldRowVersionTarget[] }
+  data: { controlRequestRemovalToken?: string; records: WeldPayload[]; deleteIds: number[]; expectedVersions: WeldRowVersionTarget[] }
 }) {
   const data = {
     records: Array.isArray(input?.records) ? input.records : [],
@@ -241,7 +245,9 @@ export async function replaceWeldJoints({
       ...identityRowsById.get(Number(record.id)),
       ...record,
     }))
-    await lockWeldLineMemberships(tx, [
+    await lockSupportWeldLengthMemberships(tx, [
+      ...identityRows,
+      ...identityDrafts,
       ...data.deleteIds.flatMap((id) => {
         const previous = identityRowsById.get(id)
         return previous ? [previous] : []
@@ -250,7 +256,7 @@ export async function replaceWeldJoints({
         const previous = identityRowsById.get(Number(record.id))
         return previous ? getChangedWeldLineMemberships(previous, record) : []
       }),
-    ])
+    ], data.records)
     await lockAndAssertWeldRowVersions(tx, targetIds, data.expectedVersions)
 
     const previousRows = await loadPreviousWeldRows(tx, data.records)
@@ -310,6 +316,7 @@ export async function replaceWeldJoints({
       await assertEarlyCoilDecisionRowsCanBeDeleted(tx, deletedRows)
       await assertJointChainRowsCanBeDeleted(tx, deletedRows)
     }
+    await assertControlRequestRemovalPreview(tx, records, previousRows, input.controlRequestRemovalToken, data.deleteIds)
     const updated = await updateWeldJointsInBatches(tx, records, previousRows)
     let documentIds: number[] = []
     if (data.deleteIds.length > 0) {

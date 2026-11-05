@@ -330,7 +330,7 @@ function StatusBadge({ state, archivedAt }: { state: 'active' | 'archived'; arch
     return (
       <span
         className="rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600"
-        title={archiveDate ? `Дата архивации: ${archiveDate}` : 'Дата архивации не указана'}
+        title={archiveDate ? undefined : 'Дата архивации не указана'}
       >
         {archiveDate ? `в архиве с ${archiveDate}` : 'в архиве'}
       </span>

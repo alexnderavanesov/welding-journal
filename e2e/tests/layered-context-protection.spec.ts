@@ -31,7 +31,8 @@ test('меню ЛНК заранее объясняет запрет посло�
     const assign = page.getByRole('button', { name: 'Назначить послойный контроль', exact: true })
     if (reasons[index]) {
       await expect(assign).toBeDisabled()
-      await expect(assign).toHaveAttribute('title', new RegExp(reasons[index]!))
+      // The reason is already visible inside the menu item; no duplicate title.
+      await expect(assign).toContainText(new RegExp(reasons[index]!))
     } else await expect(assign).toBeEnabled()
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('context-action-menu')).toBeHidden()

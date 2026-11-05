@@ -1,3 +1,4 @@
+import { overflowTitle } from '@/lib/overflow-title'
 import { useId, useRef, useState, useMemo, type ClipboardEvent, type MouseEvent } from 'react'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 
@@ -170,12 +171,12 @@ export function SystemDocumentNamesPanel({
                 }`}
               >
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold text-slate-900" title={group.label}>{group.label}</div>
-                  <div className="mt-1 truncate text-xs leading-4 text-slate-500" title={formatGroupMeta(group.rows)}>
+                  <div className="truncate text-sm font-semibold text-slate-900" {...overflowTitle(group.label)}>{group.label}</div>
+                  <div className="mt-1 truncate text-xs leading-4 text-slate-500" {...overflowTitle(formatGroupMeta(group.rows))}>
                     {formatGroupMeta(group.rows)}
                   </div>
                   {plan.mode === 'joint' ? null : (
-                    <div className="mt-0.5 truncate text-xs leading-4 text-slate-400" title={formatJointPreview(group.rows)}>
+                    <div className="mt-0.5 truncate text-xs leading-4 text-slate-400" {...overflowTitle(formatJointPreview(group.rows))}>
                       {formatJointPreview(group.rows)}
                     </div>
                   )}

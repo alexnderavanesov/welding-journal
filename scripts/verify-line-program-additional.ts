@@ -31,19 +31,23 @@ try {
   }))).returning({ id: weldJoints.id })
   ids.push(...inserted.map(row => row.id))
   const snapshots = []
-  // Missing -> filled by additional -> ordinary yes displaced -> excess manually removed.
-  for (let phase = 0; phase < 4; phase++) {
+  // Additional closes a deficit without displacing the ordinary quota (4 November decision).
+  // One yes -> yes + additional -> two yes + additional -> three yes + additional
+  // -> remove the true surplus -> manual reduction still leaves the quota covered.
+  for (let phase = 0; phase < 6; phase++) {
     if (phase === 1) await db.update(weldJoints).set({ hasRk: 'дополнительный', hasPvk: 'дополнительный' }).where(inArray(weldJoints.id, [ids[2]]))
     if (phase === 2) await db.update(weldJoints).set({ hasRk: 'да', hasPvk: 'да' }).where(inArray(weldJoints.id, [ids[1]]))
-    if (phase === 3) await db.update(weldJoints).set({ hasRk: null, hasPvk: null }).where(inArray(weldJoints.id, [ids[1]]))
+    if (phase === 3) await db.update(weldJoints).set({ hasRk: 'да', hasPvk: 'да' }).where(inArray(weldJoints.id, [ids[3]]))
+    if (phase === 4) await db.update(weldJoints).set({ hasRk: null, hasPvk: null }).where(inArray(weldJoints.id, [ids[3]]))
+    if (phase === 5) await db.update(weldJoints).set({ hasRk: null, hasPvk: null }).where(inArray(weldJoints.id, [ids[1]]))
     const beforeRead = statements, rows = await program.loadLineProgramRows(db, identity)
     assert.equal(statements - beforeRead, 6, 'Stable chain state is one batched read, not one per joint')
     const calculation = calculateLineProgram(rows, 50, 50)[0]
     for (const kind of ['common', 'pvk'] as const) {
       assert.equal(calculation[kind].required, 2)
       assert.equal(calculation[kind].missing, phase === 0 ? 1 : 0)
-      assert.equal(calculation[kind].excessRowIds.length, phase === 2 ? 1 : 0)
-      if (phase === 2) assert.deepEqual(calculation[kind].excessRowIds, [ids[1]])
+      assert.equal(calculation[kind].excessRowIds.length, phase === 3 ? 1 : 0)
+      if (phase === 3) assert.deepEqual(calculation[kind].excessRowIds, [ids[3]])
       assert(rows.every(row => row.vikResult === 'годен'))
     }
     await dirty.markDispatcherTaskIndexDirty(db)
@@ -57,10 +61,10 @@ try {
     const tasks = pages.flatMap(page => JSON.parse(page.tasks) as PercentageLineControlTask[])
       .filter(task => task.kind === 'percentage-line-control' && task.stamp === 'ADDITIONAL-SQL')
     assert.equal(tasks.filter(task => task.issue === 'missing').length, phase === 0 ? 2 : 0)
-    assert.equal(tasks.filter(task => task.issue === 'excess').length, phase === 2 ? 2 : 0)
+    assert.equal(tasks.filter(task => task.issue === 'excess').length, phase === 3 ? 2 : 0)
     // Missing and excess now share SP-01; their distinct task families are
     // asserted above, while the row code represents either condition.
-    for (const [code, expected] of [['СП-01', phase === 0 || phase === 2]] as const) {
+    for (const [code, expected] of [['СП-01', phase === 0 || phase === 3]] as const) {
       assert.equal(persisted.some(row => row.code === code), expected, code + ': stored index')
       assert.equal(visible.some(row => row.dispatcherTasks.split(', ').includes(code)), expected, code + ': virtual field')
     }

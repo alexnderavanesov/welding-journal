@@ -67,6 +67,7 @@ export const WELD_FIELDS = [
   { key: 'd2', dbName: 'd2', label: 'D2', kind: 'number', group: 'Сварка' },
   { key: 't1', dbName: 't1', label: 'T1', kind: 'number', group: 'Сварка' },
   { key: 't2', dbName: 't2', label: 'T2', kind: 'number', group: 'Сварка' },
+  { key: 'weldLength', dbName: 'weld_length', label: 'Длина шва, мм', kind: 'number', group: 'Сварка' },
   { key: 'wdi', dbName: 'wdi', label: 'WDI', kind: 'number', group: 'Сварка' },
   { key: 'responsible', dbName: 'responsible', label: 'Ответственный', kind: 'text', group: 'Сварка', visible: true },
   {
@@ -349,6 +350,9 @@ export type WeldInput = Partial<Record<Exclude<WeldFieldKey, 'id'>, WeldFieldVal
   /** Read-only explanation of the active chain exception; shown in the existing basis summary. */
   pstoExceptionBasis?: string | null
   pvkControlPercent?: number | null
+  /** Read-only live line settings used by support quota calculations. */
+  supportUzkControlPercent?: number | null
+  supportPvkControlPercent?: number | null
   layeredControlAssigned?: boolean
   layeredControlRequest?: { assigned: true; confirmPvk: boolean }
   /** Transient explicit registry choice, never a form field or imported DB fact. */

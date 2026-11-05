@@ -34,7 +34,7 @@ export function getLayeredControlSaveIssues(
   if (current.layeredControlAssigned && !previous?.layeredControlAssigned && !isActiveOfficialWeld(current)) add(EXCLUDED_CONTROL_ASSIGNMENT_REASON, 'hasPvk')
   if (isTConnectionType(current.connectionType) && ['да', 'дополнительный'].includes(normalizeControlAvailabilityStorageText(current.hasRk) ?? '') &&
     (!isTConnectionType(previous?.connectionType) || normalizeControlAvailabilityStorageText(current.hasRk) !== normalizeControlAvailabilityStorageText(previous?.hasRk))) {
-    add('РК не назначается на Т-стыки. Полная программа Т/ОП реализуется отдельно.', 'hasRk', 'connectionType')
+    add('РК не назначается на Т-стыки.', 'hasRk', 'connectionType')
   }
   if (current.layeredControlAssigned) {
     if (current.duplicateControls?.length) {

@@ -13,7 +13,8 @@ type Geometry = { top: number; height: number; frameHeight: number; offset: numb
  * No transform: the program's real fixed headers must retain the window as their
  * containing block. Assignment dialogs deliberately do not use this adapter.
  */
-export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api: GridApi | null, enabled: boolean, stickyHeaderSelector?: string) {
+export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api: GridApi | null, enabled: boolean, stickyHeaderSelector?: string, options?: { stickyFrame?: boolean }) {
+  const stickyFrame = options?.stickyFrame ?? false
   useLayoutEffect(() => {
     const element = root.current
     if (!enabled || !element || !api || api.isDestroyed()) return
@@ -24,6 +25,8 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
     const body = frame?.querySelector<HTMLElement>('.ag-grid-scrolling-container')
     const horizontalScrollbar = frame?.querySelector<HTMLElement>('.ag-body-horizontal-scroll')
     if (!frame || !viewport || !header || !body) return
+    const gridRoot = frame.querySelector('.ag-root-wrapper')
+    const ownsEvent = (event: Event) => event.target instanceof Element && event.target.closest('.ag-root-wrapper') === gridRoot
 
     const original = {
       rootHeight: element.style.height, rootMinHeight: element.style.minHeight, rootPosition: element.style.position,
@@ -33,7 +36,7 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
     }
     element.dataset.programPageScroll = 'true'
     element.style.position = 'relative'; element.style.minHeight = '0'
-    frame.style.position = 'absolute'; frame.style.width = '100%'; frame.style.minHeight = '0'
+    frame.style.position = stickyFrame ? 'sticky' : 'absolute'; frame.style.width = '100%'; frame.style.minHeight = '0'
     // Native wheel/touch scrolling can continue to the document, while AG Grid
     // can still update scrollTop for keyboard navigation and focus visibility.
     viewport.style.overflowY = 'hidden'
@@ -41,6 +44,7 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
     let raf = 0, disposed = false, visible = false, preserveAnchor = false, pageMoved = false
     let geometry: Geometry | null = null, anchor: Anchor | null = null
     let expectedGridTop = viewport.scrollTop, observedGridTop = viewport.scrollTop
+    let observedPageTop = window.scrollY
     let expectedPageTop: number | null = null, requestedGridTop: number | null = null
     let keyboardNavigation = false, keyboardTimer = 0
 
@@ -97,6 +101,10 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
       }
       const becomingVisible = !visible
       visible = true
+      // WebKit can deliver viewport/focus work before the document scroll
+      // event. Account for the page's actual native movement now, otherwise an
+      // older anchor would undo scrollIntoView even after the target was focused.
+      if (!close(window.scrollY, observedPageTop)) pageMoved = true
       const contextHeight = stickyHeader?.offsetHeight ?? CONTEXT_HEIGHT
       const top = element.getBoundingClientRect().top + window.scrollY
       const headerHeight = header.offsetHeight
@@ -146,13 +154,23 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
         }
       }
       scrollPage(pageTop)
-      requestedGridTop = null
+      // The enclosing auto-height master/detail row is measured by AG in a
+      // later frame. Growing this root does not immediately grow the document:
+      // preserve an explicit navigation request until that outer height catches
+      // up, instead of losing it to the old document's scroll-range clamp.
+      const waitingForOuterHeight = requestedGridTop != null
+        && pageTop > window.scrollY + 1
+        && top + height > document.documentElement.scrollHeight + 1
+      if (!waitingForOuterHeight) requestedGridTop = null
       const offset = clamp(window.scrollY + contextHeight - top, maxOffset)
-      style(frame, 'top', offset)
+      // Native sticky positioning follows compositor scrolling immediately.
+      // Only row virtualization waits for RAF; the header never chases scrollY.
+      style(frame, 'top', stickyFrame ? contextHeight : offset)
       expectedGridTop = offset
       if (!close(viewport.scrollTop, offset)) viewport.scrollTop = offset
       observedGridTop = viewport.scrollTop
       geometry = { top, height, frameHeight, offset, headerHeight }
+      observedPageTop = window.scrollY
       anchor = readAnchor(offset)
       preserveAnchor = false; pageMoved = false
     }
@@ -171,27 +189,34 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
       keyboardTimer = window.setTimeout(() => { keyboardNavigation = false }, 200)
     }
     const onNavigationKey = (event: KeyboardEvent) => {
+      // Stamps can contain a second page-scroll grid. Only that inner grid
+      // should interpret its keyboard/focus movement as a navigation request.
+      if (!ownsEvent(event)) return
       if (['PageDown', 'PageUp', 'Home', 'End', 'ArrowDown', 'ArrowUp', 'Tab'].includes(event.key)) extendKeyboardNavigation()
     }
     const onPointerScroll = () => {
       keyboardNavigation = false
+      requestedGridTop = null
       window.clearTimeout(keyboardTimer)
     }
+    const onNewUserNavigation = () => { requestedGridTop = null }
     const onViewportScroll = () => {
       const next = viewport.scrollTop
       if (close(next, observedGridTop)) return
       observedGridTop = next
       if (!visible || !isVisible() || close(next, expectedGridTop)) return
-      // A model update can clamp scrollTop before its new height is measured.
-      // Preserve the known row anchor instead of interpreting that as navigation.
-      if (!preserveAnchor || keyboardNavigation) {
+      // A smaller model can clamp scrollTop before its new height is measured.
+      // Ignore that clamp, but preserve explicit ensureNodeVisible/focus moves
+      // issued immediately after a filter or expansion changed the model.
+      const clamped = preserveAnchor ? clamp(expectedGridTop, viewport.scrollHeight - viewport.clientHeight) : expectedGridTop
+      if (!preserveAnchor || keyboardNavigation || !close(next, clamped)) {
         requestedGridTop = next
         if (keyboardNavigation) extendKeyboardNavigation()
       }
       schedule()
     }
     const onModelChanged = () => { preserveAnchor = true; schedule() }
-    const onCellFocus = () => { if (keyboardNavigation) schedule() }
+    const onCellFocus = (event: FocusEvent) => { if (keyboardNavigation && ownsEvent(event)) schedule() }
     const onWindowResize = () => { preserveAnchor = true; schedule() }
     const observedHeights = new WeakMap<Element, number>()
     const heightChanged = (entries: ResizeObserverEntry[]) => entries.reduce((changed, entry) => {
@@ -203,6 +228,8 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
     // content still reports a real height change through the body/header observers.
     const onRootResize = new ResizeObserver(entries => { if (heightChanged(entries)) schedule() })
     onRootResize.observe(element)
+    const programPage = element.closest('[data-testid="line-program"]')
+    if (programPage && programPage !== element) onRootResize.observe(programPage)
     if (stickyHeader) onRootResize.observe(stickyHeader)
     const onContentResize = new ResizeObserver(entries => { if (heightChanged(entries)) onModelChanged() })
     onContentResize.observe(body); onContentResize.observe(header)
@@ -227,9 +254,11 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
     header.addEventListener('wheel', onHeaderWheel, { capture: true, passive: true })
     element.addEventListener('keydown', onNavigationKey, true)
     element.addEventListener('focusin', onCellFocus)
-    element.addEventListener('wheel', onPointerScroll, { capture: true, passive: true })
+    window.addEventListener('wheel', onPointerScroll, { capture: true, passive: true })
     viewport.addEventListener('scroll', onViewportScroll, { passive: true })
     window.addEventListener('scroll', onPageScroll, { passive: true })
+    window.addEventListener('pointerdown', onNewUserNavigation, true)
+    window.addEventListener('keydown', onNewUserNavigation, true)
     window.addEventListener('resize', onWindowResize)
     api.addEventListener('modelUpdated', onModelChanged)
     update()
@@ -239,9 +268,11 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
       header.removeEventListener('wheel', onHeaderWheel, true)
       element.removeEventListener('keydown', onNavigationKey, true)
       element.removeEventListener('focusin', onCellFocus)
-      element.removeEventListener('wheel', onPointerScroll, true)
+      window.removeEventListener('wheel', onPointerScroll, true)
       viewport.removeEventListener('scroll', onViewportScroll)
       window.removeEventListener('scroll', onPageScroll)
+      window.removeEventListener('pointerdown', onNewUserNavigation, true)
+      window.removeEventListener('keydown', onNewUserNavigation, true)
       window.removeEventListener('resize', onWindowResize)
       if (!api.isDestroyed()) {
         api.removeEventListener('modelUpdated', onModelChanged)
@@ -254,5 +285,5 @@ export function useProgramPageScroll(root: RefObject<HTMLDivElement | null>, api
       if (original.rowCount == null) element.removeAttribute('data-program-row-count')
       else element.setAttribute('data-program-row-count', original.rowCount)
     }
-  }, [root, api, enabled, stickyHeaderSelector])
+  }, [root, api, enabled, stickyHeaderSelector, stickyFrame])
 }

@@ -1,3 +1,4 @@
+import { overflowTitle } from '@/lib/overflow-title'
 import { useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
@@ -209,7 +210,7 @@ export function DispatcherTaskGroupFrame({
                   className={`inline-flex min-w-0 items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs ${
                     visibleSummaries.length === 1 ? 'max-w-[440px]' : 'max-w-[280px]'
                   }`}
-                  title={`${summary.code} · ${summary.label}`}
+                  {...overflowTitle(`${summary.code} · ${summary.label}`)}
                 >
                   <strong className="shrink-0 font-semibold text-violet-700">{summary.code}</strong>
                   <span className="truncate text-slate-600">· {summary.label}</span>
@@ -228,7 +229,7 @@ export function DispatcherTaskGroupFrame({
           {metric ? (
             <span data-dispatcher-badge
               className="hidden max-w-[280px] shrink-0 items-center truncate rounded border border-sky-100 bg-sky-50/70 px-2 py-0.5 text-xs font-medium text-sky-800 md:inline-flex"
-              title={metric}
+              {...overflowTitle(metric)}
             >
               {metric}
             </span>

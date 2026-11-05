@@ -30,6 +30,11 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    // Generated HTML reports must not reload the open application when tests,
+    // builds or local file synchronization update their artifacts.
+    watch: {
+      ignored: ['**/outputs/**', '**/test-results/**', '**/test-results [0-9]*/**', '**/playwright-report/**', '**/.output/**'],
+    },
   },
   build: {
     rollupOptions: {

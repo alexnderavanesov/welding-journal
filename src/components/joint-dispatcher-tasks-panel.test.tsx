@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -30,7 +30,7 @@ describe('JointDispatcherTasksPanel', () => {
     expect(screen.getByText('По этому стыку нет активных СП или ДЗ.')).toBeInTheDocument()
   })
 
-  it('shows the concrete action and routes it with the selected task', () => {
+  it('shows the concrete action and routes it with the selected task', async () => {
     const current = row()
     const task = checkTask(current)
     const onRunAction = vi.fn()
@@ -38,7 +38,7 @@ describe('JointDispatcherTasksPanel', () => {
 
     expect(screen.getByText('СП-05')).toBeInTheDocument()
     expect(screen.getByText('Этот стык')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Исправить в ЛНК' }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Исправить в ЛНК' })) })
 
     expect(onRunAction).toHaveBeenCalledWith(current, task, expect.objectContaining({
       id: 'open-lnk',
@@ -129,7 +129,7 @@ describe('JointDispatcherTasksPanel', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
-  it('shows system warnings first with a separate counter and exact recovery action', () => {
+  it('shows system warnings first with a separate counter and exact recovery action', async () => {
     const current = row()
     const dispatcherTask = checkTask(current)
     const systemWarning: RepeatedJointCheckTask = {
@@ -167,7 +167,7 @@ describe('JointDispatcherTasksPanel', () => {
     expect(screen.getAllByText(/^(СП-06|СП-05)$/).map((item) => item.textContent))
       .toEqual(['СП-05', 'СП-06'])
 
-    fireEvent.click(screen.getByRole('button', { name: 'Создать заявку НК до ТО' }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Создать заявку НК до ТО' })) })
     expect(onRunAction).toHaveBeenCalledWith(current, systemWarning, expect.objectContaining({
       id: 'open-root-cause',
       label: 'Создать заявку НК до ТО',

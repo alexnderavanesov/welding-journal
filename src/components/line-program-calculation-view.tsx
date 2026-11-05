@@ -1,9 +1,12 @@
+import { overflowTitle } from '@/lib/overflow-title'
 import { Select } from '@/components/ui/select'
-import type { ColDef, ICellRendererParams } from 'ag-grid-community'
+import { revealProgramComposition } from './line-program-reveal'
+import { PROGRAM_EXPLANATION_LISTS } from '@/lib/line-program-explanation'
+import type { ColDef, GridApi, ICellRendererParams } from 'ag-grid-community'
 import { ProgramGrid } from './line-program-grid'
 import { useProgramAppearance } from './line-program-appearance'
 import { useProgramSessionState } from './line-program-grid-session'
-import { PROGRAM_DEMAND_LABELS, PROGRAM_SLICE_LABELS } from '@/lib/line-program-labels'
+import { PROGRAM_DEMAND_LABELS, SUPPORT_PROGRAM_DEMAND_LABELS, PROGRAM_SLICE_LABELS } from '@/lib/line-program-labels'
 import type { ProgramReportNavigation } from './line-program-context-menu'
 import type { ProgramScopeCommand, ProgramScopeMenuEvent, ProgramScopeMenuOptions } from './line-program-scope-menu'
 import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -24,47 +27,57 @@ import { type ProgramSelection } from '@/lib/line-program-workspace'
 import { getLineProgramCalculation } from '@/server/line-program'
 
 type Props = { overview?: LineProgramOverview; onEdit?: () => void; onOpenReportRows?: ProgramReportNavigation; line: LineProgramRecord; targetStamp?: string; targetKind?: LineProgramDemandKind; targetSelection?: ProgramSelection; enabled?: boolean
-  command?: ProgramScopeCommand; onCommandHandled?: (command: ProgramScopeCommand) => void
+  command?: ProgramScopeCommand; onCommandHandled?: (command: ProgramScopeCommand) => void; onCalculationClose?: () => void
   onOpenScopeMenu?: (event: ProgramScopeMenuEvent, options: ProgramScopeMenuOptions) => void }
 const link = programLinkClass
 
-export function LineCalculation({ overview, onEdit, line, targetStamp, targetKind, targetSelection, enabled = true, onOpenReportRows, command, onCommandHandled, onOpenScopeMenu }: Props) {
+export function LineCalculation({ overview, onEdit, line, targetStamp, targetKind, targetSelection, enabled = true, onOpenReportRows, command, onCommandHandled, onOpenScopeMenu, onCalculationClose }: Props) {
+  const labels = line.family === 'supports' ? SUPPORT_PROGRAM_DEMAND_LABELS : PROGRAM_DEMAND_LABELS
   const { appearance } = useProgramAppearance()
   // Three readable summary lines need room for their labels and numbers.
   // Keep stable column identities, saved state and the other themes' widths.
-  const columns = useMemo(() => appearance.theme === 'quartz' ? stampColumns.map(column =>
-    column.colId === 'state' ? { ...column, minWidth: 154 } : column.colId === 'calculation' ? { ...column, minWidth: 220 } : column
-  ) : stampColumns, [appearance.theme])
-  const draftCount = useProgramDraftCount(line.id)
+  const columns = useMemo(() => stampColumns.map(column => {
+    if (column.colId === 'quota' && line.family === 'supports') return { ...column,
+      valueGetter: ({ data }: { data?: StampRow }) => data ? `УЗК ${Math.min(data.common.covered, data.common.actionableRequired)} / ${data.common.actionableRequired}; ПВК ${Math.min(data.pvk.covered, data.pvk.actionableRequired)} / ${data.pvk.actionableRequired}` : '' }
+    if (appearance.theme !== 'quartz') return column
+    return column.colId === 'state' ? { ...column, minWidth: 154 } : column.colId === 'calculation' ? { ...column, minWidth: 220 } : column
+  }), [appearance.theme, line.family])
+  const draftCount = useProgramDraftCount(line.id, line.family)
   const initial = targetSelection ?? { stamp: targetStamp || undefined, kind: targetKind, slice: 'all' as const }
-  const [selection, setSelection] = useProgramSessionState<ProgramSelection>(`scope:${line.id}`, initial)
-  const [blocks, setBlocks] = useProgramSessionState(`blocks:${line.id}`, () => new Map<string, { selection: ProgramSelection; open: boolean }>(targetSelection || targetStamp ? [[programScopeKey(initial), { selection: initial, open: true }]] : []))
-  const [view, setView] = useProgramSessionState<'all' | 'groups'>(`view:${line.id}`, targetSelection && !targetSelection.stamp && !targetSelection.unassigned ? 'all' : 'groups')
-  const [quickFilter, setQuickFilter] = useProgramSessionState<ProgramQuickFilter>(`quick-filter:${line.id}`, 'all')
+  const [selection, setSelection] = useProgramSessionState<ProgramSelection>(`scope:${line.family ?? 'welds'}:${line.id}`, initial)
+  const [blocks, setBlocks] = useProgramSessionState(`blocks:${line.family ?? 'welds'}:${line.id}`, () => new Map<string, { selection: ProgramSelection; open: boolean }>(targetSelection || targetStamp ? [[programScopeKey(initial), { selection: initial, open: true }]] : []))
+  const [view, setView] = useProgramSessionState<'all' | 'groups'>(`view:${line.family ?? 'welds'}:${line.id}`, targetSelection && !targetSelection.stamp && !targetSelection.unassigned ? 'all' : 'groups')
+  const [quickFilter, setQuickFilter] = useProgramSessionState<ProgramQuickFilter>(`quick-filter:${line.family ?? 'welds'}:${line.id}`, 'all')
   const [containers, setContainers] = useState(new Map<string, HTMLDivElement>())
   const registerContainer = useCallback((key: string, element: HTMLDivElement | null) => setContainers(previous => {
     if (previous.get(key) === element || !element && !previous.has(key)) return previous
     const next = new Map(previous); if (element) next.set(key, element); else next.delete(key); return next
   }), [])
   const stampButtons = useRef(new Map<string, HTMLButtonElement>())
+  const stampFocusFrame = useRef(0)
+  useEffect(() => () => cancelAnimationFrame(stampFocusFrame.current), [])
   const allButton = useRef<HTMLButtonElement>(null)
   const unassignedButton = useRef<HTMLButtonElement>(null)
   const [showCalculation, setShowCalculation] = useState(false)
+  const [stampApi, setStampApi] = useState<GridApi<StampRow> | null>(null)
+  const [navigationMessage, setNavigationMessage] = useState('')
+  const revealSequence = useRef(0)
   const [explainSelection, setExplainSelection] = useState<ProgramSelection>()
   const [assignmentRequest, setAssignmentRequest] = useState<ProgramScopeCommand>()
   const handledCommand = useRef<ProgramScopeCommand | undefined>(undefined)
   const choose = (value: ProgramSelection) => {
+    cancelAnimationFrame(stampFocusFrame.current)
     setView(value.stamp || value.unassigned ? 'groups' : 'all')
     setQuickFilter(value.status ?? (value.slice === 'missing' ? 'missing' : 'all'))
     setAssignmentRequest(undefined)
     setSelection(value)
     setBlocks(previous => new Map(previous).set(programScopeKey(value), { selection: value, open: true }))
   }
-  const filteredScope = (scope: ProgramSelection): ProgramSelection => ({ ...scope, slice: quickFilter === 'missing' ? 'missing' : 'all', kind: undefined,
+  const filteredScope = (scope: ProgramSelection): ProgramSelection => ({ ...scope, explanationList: undefined, reveal: undefined, slice: quickFilter === 'missing' ? 'missing' : 'all', kind: undefined,
     status: quickFilter !== 'all' && quickFilter !== 'missing' ? quickFilter : undefined })
   const changeFilter = (value: ProgramQuickFilter) => {
     setQuickFilter(value)
-    const filter = { kind: undefined, slice: value === 'missing' ? 'missing' as const : 'all' as const,
+    const filter = { kind: undefined, explanationList: undefined, reveal: undefined, slice: value === 'missing' ? 'missing' as const : 'all' as const,
       status: value !== 'all' && value !== 'missing' ? value : undefined }
     const openAll = ![...blocks].some(([key, block]) => block.open && (view === 'all' ? key === 'all:' : key !== 'all:'))
     if (openAll) setView('all')
@@ -75,17 +88,38 @@ export function LineCalculation({ overview, onEdit, line, targetStamp, targetKin
     })
   }
   const execute = (request: ProgramScopeCommand) => {
+    cancelAnimationFrame(stampFocusFrame.current)
     if (request.action === 'calculation') { setAssignmentRequest(undefined); setSelection(request.selection); setExplainSelection(request.explain ? request.selection : undefined); setShowCalculation(true) }
     else { choose(request.selection); setAssignmentRequest(request) }
   }
   const collapse = (scope: ProgramSelection) => {
+    cancelAnimationFrame(stampFocusFrame.current)
     setAssignmentRequest(current => current && programScopeKey(current.selection) === programScopeKey(scope) ? undefined : current)
     setBlocks(previous => new Map(previous).set(programScopeKey(scope), { selection: scope, open: false }))
-    const trigger = scope.unassigned ? unassignedButton.current ?? allButton.current : [...stampButtons.current].find(([stamp]) => stamp.toLocaleLowerCase('ru') === scope.stamp?.toLocaleLowerCase('ru'))?.[1] ?? allButton.current
-    trigger?.focus({ preventScroll: true })
+    const trigger = () => scope.unassigned ? unassignedButton.current : [...stampButtons.current].find(([stamp]) => stamp.toLocaleLowerCase('ru') === scope.stamp?.toLocaleLowerCase('ru'))?.[1]
+    const mountedTrigger = trigger()
+    if (mountedTrigger) { mountedTrigger.focus({ preventScroll: true }); return }
+    const node = stampApi && !stampApi.isDestroyed() ? stampApi.getRowNode(programScopeKey(scope)) : undefined
+    if (node?.rowIndex == null) { allButton.current?.focus({ preventScroll: true }); return }
+    // Closing from inside a long branch can find its master row outside the
+    // rendered window. Bring back that row without clearing compatible filters.
+    stampApi!.ensureNodeVisible(node, 'top')
+    stampFocusFrame.current = requestAnimationFrame(() => {
+      stampFocusFrame.current = requestAnimationFrame(() => {
+        stampFocusFrame.current = 0
+        const button = trigger() ?? allButton.current
+        button?.focus({ preventScroll: true })
+      })
+    })
   }
-  useEffect(() => { if (targetSelection) choose(targetSelection); else if (targetStamp) choose({ stamp: targetStamp, kind: targetKind, slice: 'all' }) }, [targetSelection, targetStamp, targetKind])
-  const query = useQuery({ queryKey: ['line-program', 'calculation', line.id], queryFn: () => getLineProgramCalculation({ data: { id: line.id } }), enabled, ...lineProgramQueryPolicy })
+  useEffect(() => {
+    const target: ProgramSelection | undefined = targetSelection ?? (targetStamp ? { stamp: targetStamp, kind: targetKind, slice: 'all' } : undefined)
+    if (!target) return
+    // External dispatcher/report requests predate the explicit reveal token.
+    // Only a new target prop triggers this; ordinary clicks/session state stay put.
+    choose(target.stamp || target.unassigned ? { ...target, reveal: target.reveal ?? Date.now() + ++revealSequence.current } : target)
+  }, [targetSelection, targetStamp, targetKind])
+  const query = useQuery({ queryKey: ['line-program', 'calculation', line.id, line.family ?? 'welds'], queryFn: () => getLineProgramCalculation({ data: { id: line.id, family: line.family } }), enabled, ...lineProgramQueryPolicy })
   const configured = !!query.data && !query.data.issue
   useEffect(() => {
     if (enabled) return
@@ -101,16 +135,31 @@ export function LineCalculation({ overview, onEdit, line, targetStamp, targetKin
   const stamps = useMemo(() => query.data?.stampRows ?? query.data?.stamps.filter(stamp => stamp.scope !== 'line').map(stamp => ({ ...stamp, journalRows: stamp.count, errors: 0, waitingWeld: 0, reducible: 0 })) ?? [], [query.data])
   const allGroups = query.data?.summary ? [query.data.summary, ...stamps] : query.data?.stamps ?? []
   const selectedStamp = stamps.find(stamp => stamp.stamp.toLocaleLowerCase('ru') === selection.stamp?.toLocaleLowerCase('ru'))?.stamp
+  const revealScopeId = selection.unassigned && query.data?.unassigned ? programScopeKey(selection)
+    : selectedStamp ? programScopeKey({ stamp: selectedStamp }) : undefined
+  useEffect(() => {
+    if (!selection.reveal || !stampApi || !revealScopeId) return
+    let active = true
+    void revealProgramComposition(stampApi, [revealScopeId], () => active).then(cleared => {
+      if (!active || stampApi.isDestroyed()) return
+      setNavigationMessage(cleared.length ? `Для перехода сняты мешающие фильтры клейм: ${cleared.join(', ')}.` : '')
+      // The destination workspace cannot mount until its virtual master row
+      // enters the viewport. Its own reveal then focuses the complete selection.
+      const node = stampApi.getRowNode(revealScopeId)
+      if (node?.rowIndex != null) stampApi.ensureNodeVisible(node, 'top')
+    }).catch(() => { if (active) setNavigationMessage('Не удалось раскрыть клеймо. Повторите переход из расчёта.') })
+    return () => { active = false }
+  }, [selection.reveal, revealScopeId, stampApi])
   // A removed/renamed stamp must not orphan the single workspace (or its draft).
   useEffect(() => {
     if (!configured) return
     const missingScope = (block: { selection: ProgramSelection }) => !!(block.selection.stamp && !stamps.some(stamp => stamp.stamp.toLocaleLowerCase('ru') === block.selection.stamp!.toLocaleLowerCase('ru')) || block.selection.unassigned && !query.data?.unassigned)
-    if ([...blocks.values()].some(missingScope)) setView('all')
+    if ([...blocks.values()].some(block => missingScope(block) && !block.selection.explanationList)) setView('all')
     setBlocks(previous => {
       const next = new Map(previous)
       let changed = false
       for (const [key, block] of previous) {
-        if (missingScope(block)) {
+        if (missingScope(block) && !block.selection.explanationList) {
           next.delete(key); next.set('all:', { ...block, selection: { ...block.selection, stamp: undefined, unassigned: false } }); changed = true
         }
       }
@@ -118,7 +167,7 @@ export function LineCalculation({ overview, onEdit, line, targetStamp, targetKin
     })
   }, [query.data])
   const workspaces = [...blocks].map(([key, block]) => ({ key, ...block, open: block.open && (view === 'all' ? key === 'all:' : key !== 'all:'), container: containers.get(key) ?? null, selection: {
-    ...block.selection, stamp: stamps.find(stamp => stamp.stamp.toLocaleLowerCase('ru') === block.selection.stamp?.toLocaleLowerCase('ru'))?.stamp,
+    ...block.selection, stamp: stamps.find(stamp => stamp.stamp.toLocaleLowerCase('ru') === block.selection.stamp?.toLocaleLowerCase('ru'))?.stamp ?? (block.selection.explanationList ? block.selection.stamp : undefined),
   } }))
   const displayRows = useMemo(() => [...stamps, ...(query.data?.unassigned ? [{ ...query.data.unassigned, welderName: '' }] : [])], [stamps, query.data?.unassigned])
   const openGroups = workspaces.filter(block => block.open && block.key !== 'all:')
@@ -151,7 +200,7 @@ export function LineCalculation({ overview, onEdit, line, targetStamp, targetKin
         {line.pvkControlPercent !== line.weldControlPercent ? <span>Норма ПВК <strong>{line.pvkControlPercent ?? '—'}%</strong></span> : null}
         <button onClick={() => choose({ slice: 'all' })}>Соединений <strong>{overview.joints}</strong></button>
         <span>Клейм <strong>{overview.stamps}</strong></span>
-        {(['common', 'pvk'] as const).map(kind => <button key={kind} onClick={() => choose({ kind, slice: 'covered' })}>{PROGRAM_DEMAND_LABELS[kind]} <strong>{overview[kind]!.covered} / {overview[kind]!.actionableRequired}</strong></button>)}
+        {(['common', 'pvk'] as const).map(kind => <button key={kind} onClick={() => choose({ kind, slice: 'covered' })}>{labels[kind]} <strong>{overview[kind]!.covered} / {overview[kind]!.actionableRequired}</strong></button>)}
         <button onClick={() => choose({ slice: 'missing' })}>К назначению <strong>{overview.common.missing + overview.pvk.missing}</strong></button>
         <button onClick={() => choose({ slice: 'excess' })}>Лишнее <strong>{overview.common.excess + overview.pvk.excess}</strong></button>
       </div> : null}
@@ -159,15 +208,16 @@ export function LineCalculation({ overview, onEdit, line, targetStamp, targetKin
     {query.error ? <div className="p-4"><ProgramError error={query.error} /></div> : null}
     {query.isPending ? <p role="status" className="p-4 text-sm text-slate-500">Рассчитываем потребность…</p> : null}
     {query.data?.issue ? <p className="m-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{query.data.issue} Сначала настройте линию.</p> : null}
-    {configured && selection.stamp && !selectedStamp ? <p role="status" className="px-4 py-2 text-xs text-slate-500">Клеймо {selection.stamp} больше не входит в расчёт. Показана вся линия.</p> : null}
+    {navigationMessage ? <p role="status" className="px-4 py-2 text-xs text-slate-500">{navigationMessage}</p> : null}
+    {configured && selection.stamp && !selectedStamp ? <p role="status" className="px-4 py-2 text-xs text-slate-500">Клеймо {selection.stamp} больше не входит в расчёт. {selection.explanationList ? <>Выбранный состав недоступен. <button type="button" onClick={() => void query.refetch()} className="underline">Обновить расчёт</button></> : 'Показана вся линия.'}</p> : null}
     {configured ? <div data-testid="program-line-filters" className="program-line-tabs">
       <div role="group" aria-label="Вид стыков линии" className="flex shrink-0 gap-3">{(['groups', 'all'] as const).map(mode => <button key={mode} ref={mode === 'all' ? allButton : undefined} type="button" aria-pressed={view === mode} className={`program-line-tab ${view === mode ? 'is-active' : ''}`} onClick={() => mode === 'all' ? choose(filteredScope({ slice: 'all' })) : setView('groups')}>{mode === 'groups' ? 'По клеймам' : 'Все стыки линии'}</button>)}</div>
       <ProgramQuickFilters value={quickFilter} counts={'recordCounts' in query.data! ? query.data.recordCounts : undefined} missing={query.data?.summary ? query.data.summary.common.missing + query.data.summary.pvk.missing : undefined} onChange={changeFilter} />
-      {view === 'all' ? <ScopeCaption scope={actionScope} /> : null}
+      {view === 'all' ? <ScopeCaption scope={actionScope} support={line.family === 'supports'} /> : null}
 
     </div> : null}
-    {configured ? <div hidden={view !== 'groups'}><StampGridContext.Provider value={{ blocks, choose, collapse, filteredScope, execute, registerContainer, stampButtons, unassignedButton }}>
-      <ProgramGrid kind="stamps" sessionKey={`stamps:${line.id}`} label="Расчёт по клеймам" contextLabel={`Линия ${line.line} · клейма`} rows={displayRows} columns={columns} getId={stamp => programScopeKey(stampScope(stamp))}
+    {configured ? <div hidden={view !== 'groups'}><StampGridContext.Provider value={{ support: line.family === 'supports', blocks, choose, collapse, filteredScope, execute, registerContainer, stampButtons, unassignedButton }}>
+      <ProgramGrid onReady={setStampApi} kind="stamps" sessionKey={`stamps:${line.family ?? 'welds'}:${line.id}`} label="Расчёт по клеймам" contextLabel={`Линия ${line.line} · клейма`} rows={displayRows} columns={columns} getId={stamp => programScopeKey(stampScope(stamp))}
         detailRenderer={StampDetail} isExpanded={stamp => !!blocks.get(programScopeKey(stampScope(stamp)))?.open}
 
         onRowClick={stamp => { const scope = stampScope(stamp), block = blocks.get(programScopeKey(scope)); block?.open ? collapse(block.selection) : choose(filteredScope(scope)) }}
@@ -179,12 +229,12 @@ export function LineCalculation({ overview, onEdit, line, targetStamp, targetKin
     </StampGridContext.Provider></div> : null}
     {configured && blocks.has('all:') ? <div hidden={view !== 'all' || !blocks.get('all:')?.open} data-testid="line-program-all-joints" data-scope="all:"><ScopeHost scopeKey="all:" register={registerContainer} /></div> : null}
     {blocks.size > 0 && configured ? <LineJointPage workspaces={workspaces} onOpenReportRows={onOpenReportRows} line={query.data!.line} enabled={enabled && workspaces.some(block => block.open)} assignmentRequest={assignmentRequest} onAssignmentRequestHandled={handled => setAssignmentRequest(current => current === handled ? undefined : current)} /> : null}
-    {enabled && showCalculation && configured ? <LineProgramCalculationDialog onOpenRow={onOpenReportRows ? id => onOpenReportRows([id], 'weldingJournal') : undefined} line={query.data!.line} groups={allGroups} initialSelection={explainSelection} stampOptions={stamps} stamp={selectedStamp} onClose={() => setShowCalculation(false)} onChoose={value => { choose(value); setShowCalculation(false) }} /> : null}
+    {enabled && showCalculation && configured ? <LineProgramCalculationDialog onOpenRow={onOpenReportRows ? id => onOpenReportRows([id], 'weldingJournal') : undefined} line={query.data!.line} groups={allGroups} initialSelection={explainSelection} stampOptions={stamps} stamp={selectedStamp} onClose={() => { setShowCalculation(false); onCalculationClose?.() }} onChoose={value => { choose({ ...value, reveal: Date.now() + ++revealSequence.current }); setShowCalculation(false) }} /> : null}
   </div>
 }
 
-function ScopeCaption({ scope }: { scope: ProgramSelection }) {
-  const label = [scope.kind ? PROGRAM_DEMAND_LABELS[scope.kind] : '', scope.slice === 'all' ? '' : PROGRAM_SLICE_LABELS[scope.slice]].filter(Boolean).join(' · ')
+function ScopeCaption({ scope, support = false }: { scope: ProgramSelection; support?: boolean }) {
+  const label = [scope.kind ? (support ? SUPPORT_PROGRAM_DEMAND_LABELS : PROGRAM_DEMAND_LABELS)[scope.kind] : '', scope.explanationList ? PROGRAM_EXPLANATION_LISTS[scope.explanationList] : scope.slice === 'all' ? '' : PROGRAM_SLICE_LABELS[scope.slice]].filter(Boolean).join(' · ')
   return label ? <span data-testid="program-scope-caption" className="text-xs text-slate-500">{label}</span> : null
 }
 
@@ -193,12 +243,13 @@ function ScopeHost({ scopeKey, register }: { scopeKey: string; register: (key: s
   return <div ref={ref} />
 }
 
-function Quota({ kind, demand: d, choose }: { kind: LineProgramDemandKind; demand: LineProgramDemandSummary; choose: (slice: ProgramSelection['slice']) => void }) {
-  return <div className="text-[13px] leading-5"><button type="button" className={`${link} font-medium tabular-nums`} data-program-slice="covered" data-program-kind={kind} onClick={() => choose('covered')}>{PROGRAM_DEMAND_LABELS[kind]}: {Math.min(d.covered, d.actionableRequired)} / {d.actionableRequired}</button></div>
+function Quota({ kind, demand: d, choose, support }: { support?: boolean; kind: LineProgramDemandKind; demand: LineProgramDemandSummary; choose: (slice: ProgramSelection['slice']) => void }) {
+  return <div className="text-[13px] leading-5"><button type="button" className={`${link} font-medium tabular-nums`} data-program-slice="covered" data-program-kind={kind} onClick={() => choose('covered')}>{(support ? SUPPORT_PROGRAM_DEMAND_LABELS : PROGRAM_DEMAND_LABELS)[kind]}: {Math.min(d.covered, d.actionableRequired)} / {d.actionableRequired}</button></div>
 }
 
 type StampRow = { stamp: string; scope: 'stamp' | 'line' | 'unassigned'; welderName?: string; count: number; journalRows: number; good: number; rejected: number; errors: number; waitingWeld: number; reducible: number; fullControlRequired: boolean; common: LineProgramDemandSummary; pvk: LineProgramDemandSummary; incompleteStages?: { welding: number; request: number; control: number; other: number } }
 type StampGridContextValue = {
+  support: boolean
   blocks: Map<string, { selection: ProgramSelection; open: boolean }>
   choose: (value: ProgramSelection) => void; collapse: (scope: ProgramSelection) => void
   filteredScope: (scope: ProgramSelection) => ProgramSelection; execute: (request: ProgramScopeCommand) => void
@@ -208,7 +259,8 @@ type StampGridContextValue = {
 const StampGridContext = createContext<StampGridContextValue>(null!)
 const stampScope = (stamp: StampRow): ProgramSelection => ({ stamp: stamp.scope === 'unassigned' ? undefined : stamp.stamp, unassigned: stamp.scope === 'unassigned', slice: 'all' })
 function StampCell({ data: stamp, colDef }: ICellRendererParams<StampRow>) {
-  const { blocks, choose, collapse, filteredScope, execute, stampButtons, unassignedButton } = useContext(StampGridContext)
+  const { support, blocks, choose, collapse, filteredScope, execute, stampButtons, unassignedButton } = useContext(StampGridContext)
+  const labels = support ? SUPPORT_PROGRAM_DEMAND_LABELS : PROGRAM_DEMAND_LABELS
   const light = useProgramAppearance().appearance.theme === 'quartz'
   if (!stamp) return null
       const unassigned = stamp.scope === 'unassigned', code = unassigned ? undefined : stamp.stamp
@@ -225,14 +277,14 @@ function StampCell({ data: stamp, colDef }: ICellRendererParams<StampRow>) {
       const selectStamp = () => active ? collapse(block!.selection) : choose(filteredScope({ stamp: code, unassigned, slice: 'all' }))
       const select = (value: ProgramSelection) => choose({ ...value, stamp: code, unassigned })
 
-  const content: Record<string, () => React.ReactNode> = { stamp: () => <><div className="flex min-w-0 items-center gap-1"><button ref={element => { if (unassigned) unassignedButton.current = element; else if (element) stampButtons.current.set(code!, element); else stampButtons.current.delete(code!) }} type="button" title={unassigned ? 'Стыки без назначенного сварщика' : stamp.welderName || 'ФИО не указано'} className={`${programDisclosureClass} min-w-0 text-sky-800 hover:bg-slate-50`} aria-label={scopeLabel} aria-expanded={active} onClick={selectStamp}>{active ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}<span className="truncate" title={unassigned ? 'Клеймо не назначено' : code}>{unassigned ? 'Клеймо не назначено' : code}</span></button><button type="button" className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-500 hover:bg-sky-50 hover:text-sky-800" title="Расчёт" aria-label={`Расчёт · ${scopeLabel}`} aria-haspopup="dialog" disabled={unassigned} onClick={() => execute({ action: 'calculation', selection: scope })}><Calculator aria-hidden className="h-3.5 w-3.5" /></button></div>{!unassigned ? <span data-testid="line-program-welder-name" className="block truncate pl-[1.625rem] text-xs leading-4 text-slate-500" title={stamp.welderName || 'ФИО не указано'}>{stamp.welderName || 'ФИО не указано'}</span> : null}{light && unassigned ? <span data-testid="line-program-welder-name" className="block truncate pl-[1.625rem] text-xs leading-4 text-slate-500">Сварщик не назначен</span> : null}{active ? <ScopeCaption scope={block!.selection} /> : null}</>,
+  const content: Record<string, () => React.ReactNode> = { stamp: () => <><div className="flex min-w-0 items-center gap-1"><button ref={element => { if (unassigned) unassignedButton.current = element; else if (element) stampButtons.current.set(code!, element); else stampButtons.current.delete(code!) }} type="button" {...overflowTitle(unassigned ? 'Стыки без назначенного сварщика' : stamp.welderName || 'ФИО не указано')} className={`${programDisclosureClass} min-w-0 text-sky-800 hover:bg-slate-50`} aria-label={scopeLabel} aria-expanded={active} onClick={selectStamp}>{active ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}<span className="truncate" {...overflowTitle(unassigned ? 'Клеймо не назначено' : code)}>{unassigned ? 'Клеймо не назначено' : code}</span></button><button type="button" className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-500 hover:bg-sky-50 hover:text-sky-800" title="Расчёт" aria-label={`Расчёт · ${scopeLabel}`} aria-haspopup="dialog" disabled={unassigned} onClick={() => execute({ action: 'calculation', selection: scope })}><Calculator aria-hidden className="h-3.5 w-3.5" /></button></div>{!unassigned ? <span data-testid="line-program-welder-name" className="block truncate pl-[1.625rem] text-xs leading-4 text-slate-500" {...overflowTitle(stamp.welderName || 'ФИО не указано')}>{stamp.welderName || 'ФИО не указано'}</span> : null}{light && unassigned ? <span data-testid="line-program-welder-name" className="block truncate pl-[1.625rem] text-xs leading-4 text-slate-500">Сварщик не назначен</span> : null}{active ? <ScopeCaption scope={block!.selection} support={support} /> : null}</>,
 count: () => <><button type="button" className={link} title="Учитываемые физические соединения, включая ещё не сваренные. Это не число записей журнала и не процентная база." data-program-slice="all" onClick={() => select({ slice: 'all' })}>{stamp.count}</button></>,
 state: () => <><ProgramControlState state={stamp} compact /></>,
-quota: () => <><div>{kinds.map(kind => <div key={kind} data-testid={'program-demand-row-' + kind} className="min-h-6 text-xs">{kind === 'common' || stamp[kind].required || stamp[kind].covered ? unassigned && stamp[kind].percent < 100 ? <p className="text-slate-500">{PROGRAM_DEMAND_LABELS[kind]}: расчёт после сварки и назначения клейма</p> : <Quota kind={kind} demand={stamp[kind]} choose={slice => select({ kind, slice })} /> : null}</div>)}</div></>,
-assigned: () => <><div>{kinds.map(kind => <div key={kind} className="min-h-6 text-xs"><button type="button" className={link + ' max-w-full flex-wrap text-left leading-5 tabular-nums'} title={stamp[kind].accounting ? formatProgramAssignmentAccounting(stamp[kind].accounting.assignments) : undefined} data-program-slice="assigned" data-program-kind={kind} onClick={() => select({ kind, slice: 'assigned' })}>{PROGRAM_DEMAND_LABELS[kind]}: <span className="whitespace-nowrap">назначено {stamp[kind].assigned}</span></button></div>)}</div></>,
+quota: () => <><div>{kinds.map(kind => <div key={kind} data-testid={'program-demand-row-' + kind} className="min-h-6 text-xs">{kind === 'common' || stamp[kind].required || stamp[kind].covered ? unassigned && stamp[kind].percent < 100 ? <p className="text-slate-500">{labels[kind]}: расчёт после сварки и назначения клейма</p> : <Quota support={support} kind={kind} demand={stamp[kind]} choose={slice => select({ kind, slice })} /> : null}</div>)}</div></>,
+assigned: () => <><div>{kinds.map(kind => <div key={kind} className="min-h-6 text-xs"><button type="button" className={link + ' max-w-full flex-wrap text-left leading-5 tabular-nums'} title={stamp[kind].accounting ? formatProgramAssignmentAccounting(stamp[kind].accounting.assignments) : undefined} data-program-slice="assigned" data-program-kind={kind} onClick={() => select({ kind, slice: 'assigned' })}>{labels[kind]}: <span className="whitespace-nowrap">назначено {stamp[kind].assigned}</span></button></div>)}</div></>,
 missing: () => <>
-          {planning || unassigned && !stamp.common.required && !stamp.pvk.required ? <span className="text-slate-400">—</span> : <button type="button" aria-label={`К назначению: ${needed}`} title="Сумма достижимой потребности РК/УЗК и ПВК, не число разных стыков." data-program-slice="missing" onClick={() => select({ slice: 'missing' })} className={`min-h-6 min-w-6 rounded text-left text-sm font-semibold tabular-nums underline decoration-dotted underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 ${needed ? 'text-amber-900 hover:text-amber-950' : 'text-slate-600 hover:text-slate-800'}`}>{needed}</button>}
-          {needed > 0 || light && !planning && !(unassigned && !stamp.common.required && !stamp.pvk.required) ? <div data-testid="program-demand-breakdown" aria-label="К назначению по методам" title="Сумма мест потребности по методам и клеймам, не число разных стыков." className="flex flex-wrap gap-x-2 text-xs font-normal">{kinds.map(kind => <div key={kind}>{stamp[kind].missing ? <button type="button" className={programLinkClass} data-program-slice="missing" data-program-kind={kind} onClick={() => select({ kind, slice: 'missing' })}>{PROGRAM_DEMAND_LABELS[kind]}: {stamp[kind].missing}</button> : <span className="inline-flex min-h-6 items-center text-slate-600">{PROGRAM_DEMAND_LABELS[kind]}: 0</span>}</div>)}</div> : null}
+          {planning || unassigned && !stamp.common.required && !stamp.pvk.required ? <span className="text-slate-400">—</span> : <button type="button" aria-label={`К назначению: ${needed}`} title={`Сумма достижимой потребности ${labels.common} и ПВК, не число разных стыков.`} data-program-slice="missing" onClick={() => select({ slice: 'missing' })} className={`min-h-6 min-w-6 rounded text-left text-sm font-semibold tabular-nums underline decoration-dotted underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 ${needed ? 'text-amber-900 hover:text-amber-950' : 'text-slate-600 hover:text-slate-800'}`}>{needed}</button>}
+          {needed > 0 || light && !planning && !(unassigned && !stamp.common.required && !stamp.pvk.required) ? <div data-testid="program-demand-breakdown" aria-label="К назначению по методам" title="Сумма мест потребности по методам и клеймам, не число разных стыков." className="flex flex-wrap gap-x-2 text-xs font-normal">{kinds.map(kind => <div key={kind}>{stamp[kind].missing ? <button type="button" className={programLinkClass} data-program-slice="missing" data-program-kind={kind} onClick={() => select({ kind, slice: 'missing' })}>{labels[kind]}: {stamp[kind].missing}</button> : <span className="inline-flex min-h-6 items-center text-slate-600">{labels[kind]}: 0</span>}</div>)}</div> : null}
         </>,
 calculation: () => <>
           <div className="program-stamp-calculation-lines grid min-h-12 grid-rows-[minmax(1.5rem,auto)_minmax(1.5rem,auto)] text-xs">
@@ -252,7 +304,7 @@ calculation: () => <>
 results: () => <><div className="flex flex-col items-start text-xs">
           <button type="button" className="min-h-6 min-w-6 rounded text-[13px] text-slate-600 underline decoration-dotted underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500" data-program-slice="results" onClick={() => select({ slice: 'results' })}>Результаты</button>
           {light ? <button type="button" className={link} data-program-stamp-assignments aria-label={`Открыть назначения · ${scopeLabel}`} onClick={() => execute({ action: 'assignments', selection: scope })}>Назначения</button> : null}
-          {fullControlByRejection ? <span title={`Для этого сварщика требуется 100% контроля ${PROGRAM_DEMAND_LABELS.common} по браку`} className="whitespace-nowrap rounded bg-rose-50 px-1 py-0.5 text-[11px] font-medium text-rose-700">100% по браку</span> : null}
+          {fullControlByRejection ? <span title={`Для этого сварщика требуется 100% контроля ${labels.common} по браку`} className="whitespace-nowrap rounded bg-rose-50 px-1 py-0.5 text-[11px] font-medium text-rose-700">100% по браку</span> : null}
         </div></> }
   return <div className="program-stamp-cell w-full" data-testid={colDef?.colId === 'missing' ? 'program-assignment-demand' : colDef?.colId === 'calculation' ? 'program-stamp-calculation' : colDef?.colId === 'results' ? 'program-stamp-results' : undefined}>{content[colDef!.colId!]?.()}</div>
 }

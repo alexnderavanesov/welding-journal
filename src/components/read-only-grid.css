@@ -4,7 +4,8 @@
 .read-only-grid-page { position: relative; min-height: 120px; }
 .read-only-grid-page > .program-grid-frame { position: absolute; width: 100%; height: 100%; }
 .read-only-grid-page .ag-grid-viewport { overflow-y: hidden; }
-.read-only-grid-page .ag-body-vertical-scroll { display: none; }
+/* Keep AG's scroll partner measurable; display:none makes it retry every 10ms. */
+.read-only-grid-page .ag-body-vertical-scroll { opacity: 0 !important; visibility: visible !important; pointer-events: none; }
 .read-only-grid .ag-cell { border-right: 1px solid #edf1f5; }
 /* The neighbouring header already draws its resize handle at this boundary. */
 .read-only-grid .ag-header .ag-grid-pinned-right-cells > .ag-grid-container-wrapper { border-left: 0; }

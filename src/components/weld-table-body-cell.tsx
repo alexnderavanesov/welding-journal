@@ -1,4 +1,5 @@
 import { formatPstoDocumentDisplay } from '@/lib/psto-document-display'
+import { overflowTitle } from '@/lib/overflow-title'
 import { WeldTableValue } from '@/components/weld-table-value'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { DATE_TIME_WELD_FIELD_KEYS, getFinalStatusErrorReason, type WeldField, type WeldFieldKey } from '@/lib/weld-fields'
@@ -282,7 +283,7 @@ export const WeldTableBodyCell = memo(function WeldTableBodyCell({
       {layeredDocumentTypes.length > 0 ? (
         <div className="journal-layered-documents flex h-[52px] flex-col items-stretch justify-center gap-0.5 px-2 py-1">
           {layeredWaitingLabel ? (
-            <span title={journalTooltips ? undefined : layeredWaitingLabel} className="line-clamp-2 min-w-0 text-center text-[11px] font-medium leading-4 text-amber-800">
+            <span {...overflowTitle(journalTooltips ? undefined : layeredWaitingLabel)} className="line-clamp-2 min-w-0 text-center text-[11px] font-medium leading-4 text-amber-800">
               {layeredWaitingLabel}
             </span>
           ) : null}

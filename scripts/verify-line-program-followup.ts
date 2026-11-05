@@ -22,8 +22,8 @@ try {
   process.env.DATABASE_URL = url; process.env.WELDING_ENV_LOADED = '1'
   const migration = spawnSync('pnpm', ['db:migrate'], { env: process.env, encoding: 'utf8' })
   assert.equal(migration.status, 0, migration.stderr || migration.stdout)
-  const [{ requireDb }, schema, { loadLineProgramReport }, { loadScopedAcceptedWarningKeys }, { changeProgramApprovalsInTransaction }, { loadProgramApprovals }, { programApprovalKey }, { programApprovalVersion }, { WELD_TABLE_SELECT }, { findCurrentDispatcherTask }, { serializeDispatcherTaskIndexPayload }, { getDispatcherScopeKey }] = await Promise.all([
-    import('../src/db'), import('../src/db/schema'), import('../src/server/line-program-report'), import('../src/server/accepted-warning-scope'), import('../src/server/line-program-approvals'), import('../src/server/program-approval-lifecycle'), import('../src/lib/program-control-approval'), import('../src/lib/program-approval-actions'), import('../src/server/weld-server-shared'), import('../src/server/dispatcher-warnings'), import('../src/lib/dispatcher-task-index-payload'), import('../src/server/dispatcher-task-index'),
+  const [{ requireDb }, schema, { loadLineProgramReport }, { loadScopedAcceptedWarningKeys }, { changeProgramApprovalsInTransaction }, { loadProgramApprovals }, { programApprovalKey }, { WELD_TABLE_SELECT }, { findCurrentDispatcherTask }, { serializeDispatcherTaskIndexPayload }, { getDispatcherScopeKey }] = await Promise.all([
+    import('../src/db'), import('../src/db/schema'), import('../src/server/line-program-report'), import('../src/server/accepted-warning-scope'), import('../src/server/line-program-approvals'), import('../src/server/program-approval-lifecycle'), import('../src/lib/program-control-approval'), import('../src/server/weld-server-shared'), import('../src/server/dispatcher-warnings'), import('../src/lib/dispatcher-task-index-payload'), import('../src/server/dispatcher-task-index'),
   ])
   const db = requireDb(); pool = (db as unknown as { $client: pg.Pool }).$client
   const { linePrograms, weldJoints, dispatcherAcceptedWarnings: warnings, dispatcherTaskPages, dispatcherTaskIndexState } = schema
@@ -94,18 +94,18 @@ try {
     const [row] = await tx.select(WELD_TABLE_SELECT).from(weldJoints).where(eq(weldJoints.id, joint.id))
     const key = programApprovalKey(row, 'common', true), pvkKey = programApprovalKey(row, 'pvk', false)
     const request = { lineId: line.id, lineVersion: line.updatedAt.toISOString(), action: 'approve' as const, confirmed: true, keys: [key], targets: [{ id: row.id, version: row.rowVersion, approvalVersion: '[]' }] }
-    await changeProgramApprovalsInTransaction(tx, request)
-    await assert.rejects(tx.transaction(nested => changeProgramApprovalsInTransaction(nested, request)), /Согласования изменились/)
+    await tx.insert(warnings).values([key, pvkKey].map(savedKey => ({ key: savedKey, weldJointId: row.id, kind: 'line-program-control' })))
+    await tx.insert(dispatcherTaskIndexState).values({ id: 1, fullRebuild: false }).onConflictDoNothing()
+    const [state] = await tx.select().from(dispatcherTaskIndexState)
+    for (const action of ['approve', 'revoke'] as const) {
+      await assert.rejects(changeProgramApprovalsInTransaction(tx, { ...request, action }), /больше не используется/)
+      await assert.rejects(changeProgramApprovalsInTransaction(tx, { ...request, action, targets: [{ ...request.targets[0], version: 'stale' }] }), /больше не используется/)
+    }
     const [after] = await tx.select().from(weldJoints).where(eq(weldJoints.id, row.id))
-    assert.deepEqual(after, joint, 'Decision must not touch any joint field or timestamp')
-    await tx.insert(warnings).values({ key: pvkKey, weldJointId: row.id, kind: 'line-program-control' })
-    const approvals = await loadProgramApprovals(tx, [row.id])
-    const revoke = { ...request, action: 'revoke' as const, targets: [{ ...request.targets[0], approvalVersion: programApprovalVersion(approvals) }] }
-    await changeProgramApprovalsInTransaction(tx, revoke)
-    assert.deepEqual((await loadProgramApprovals(tx, [row.id])).map(item => item.key), [pvkKey], 'Unrelated PVK approval retained')
-    await assert.rejects(tx.transaction(nested => changeProgramApprovalsInTransaction(nested, { ...request, targets: [{ ...request.targets[0], version: 'stale' }] })), /изменен|устарели/)
-    const state = (await tx.select().from(dispatcherTaskIndexState))[0]
-    assert.equal(state.fullRebuild, false); assert.match(state.dirtyScopes, /DECISION/)
+    assert.deepEqual(after, joint, 'A retired action must not touch any joint field or timestamp')
+    assert.deepEqual(await loadProgramApprovals(tx, [row.id]), [], 'Retired saved approvals must not participate in the current calculation')
+    assert.equal((await tx.select().from(warnings).where(eq(warnings.weldJointId, row.id))).length, 2, 'History is not rewritten by a refused action')
+    assert.deepEqual((await tx.select().from(dispatcherTaskIndexState))[0], state, 'Refused actions must not dirty the calculation')
     // Card 5001 is deliberately outside the compact snapshot, but is present in its indexed scope.
     const task = { key: 'outside-first-5000', kind: 'check', row: { id: row.id }, description: 'test' }
     const scopeKey = getDispatcherScopeKey(line)
@@ -115,7 +115,7 @@ try {
     assert.equal(await findCurrentDispatcherTask(tx, task.key, { ...fresh, sourceRevision: 8 }, line), undefined)
     assert.equal(await findCurrentDispatcherTask(tx, task.key, fresh, { line: 'wrong' }), undefined)
   })
-  console.log('Approval concurrency, independent PVK, unchanged history and task beyond snapshot: passed')
+  console.log('Retired approvals refused without mutations; historical records and task beyond snapshot preserved: passed')
   // A stamp-only decision dirties no joint scope. Preserve existing task pages,
   // rather than treating an empty scope list as a request for a full rebuild.
   const { ensureDispatcherTaskIndexFresh } = await import('../src/server/dispatcher-task-index')

@@ -9,7 +9,7 @@ import { DEFAULT_SYSTEM_INDEX_SETTINGS } from '@/lib/system-index-settings'
 import { getPstoLineIdentityKey } from '@/lib/psto-line-assignment'
 import { preparePstoLineMoveRecordInTransaction } from './weld-line-move-stage'
 import { toDbInsert } from './weld-persistence'
-import type { ServerWeldValidationContext } from './weld-save-validation'
+import { prepareServerWeldRecords, type ServerWeldValidationContext } from './weld-save-validation'
 
 function fixture(result: string | null) {
   return {
@@ -43,6 +43,29 @@ function context(record: WeldRow, target: string): ServerWeldValidationContext {
 }
 
 describe('line moves preserve recorded stages', () => {
+  it.each(['unassigned', 'cancelled'])('keeps performed PSTO through final save preparation on a legacy %s destination', async target => {
+    const previous = fixture('годен'), record = { ...previous, line: 'target' }
+    const validationContext = context(record, target)
+    const prepared = await preparePstoLineMoveRecordInTransaction({
+      tx: {} as never, record, previousStored: previous as unknown as WeldJoint,
+      validationContext, processSettings: DEFAULT_CONTROL_PROCESS_SETTINGS,
+    })
+    const before = structuredClone(prepared.record)
+    expect(() => prepareServerWeldRecords({ records: [prepared.record],
+      previousRows: new Map([[previous.id, prepared.validationPrevious]]),
+      context: validationContext, allowPstoLineLifecycleMove: true,
+    })).not.toThrow()
+    expect(prepared.record).toMatchObject({ pstoRequired: 'да', pstoResult: 'проведено', pstoRequest: 'PSTO-1',
+      tvmtResult: 'годен', tvmtConclusion: 'TVMT-CONCLUSION', line: 'target' })
+    expect(prepared.record.preHeatTreatmentControls).toEqual(before.preHeatTreatmentControls)
+    expect(prepared.record.pstoRepeatCycles).toEqual(before.pstoRepeatCycles)
+    // This exemption belongs to the existing performed joint, never to a new
+    // joint merely joining the same destination line.
+    const fresh: WeldRow = { id: 2, joint: 'F2', projectTitle: 'P', subtitleCode: 'S', line: 'target' }
+    prepareServerWeldRecords({ records: [fresh], previousRows: new Map(), context: validationContext })
+    expect(fresh.pstoRequired).toBe(target === 'cancelled' ? 'отменен' : null)
+  })
+
   function primaryMovable() {
     return { id: 1, joint: 'F1', projectTitle: 'P', subtitleCode: 'S', line: 'source',
       officiality: 'действующий', hasVik: 'да', weldDate: '2026-07-01',

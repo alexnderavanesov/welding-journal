@@ -16,6 +16,23 @@ type OfficialityMutationInput = {
 type OfficialityPreviewInput = Omit<OfficialityMutationInput, 'plan'>
 
 describe('useLnkOfficialityActions', () => {
+  it('explains missing mandatory methods in the same confirmation and cancellation saves nothing', async () => {
+    const plan = makePlan({
+      officiality: 'official',
+      renames: [{ rowId: 2, currentJoint: 'S1', targetJoint: 'S1R1' }],
+      missingControlAssignments: [{ rowId: 2, joint: 'S1R1', methods: ['РК', 'УЗК'] }],
+    })
+    const mutate = vi.fn()
+    const { result } = renderActions({ record: row(1, 'S1'), mutate, preview: vi.fn().mockResolvedValue(plan) })
+    let saving: Promise<void> | undefined
+    act(() => { saving = result.current.saveLnkOfficiality() })
+    expect(await screen.findByText(/S1R1: потребуется назначить РК, УЗК/)).toBeInTheDocument()
+    expect(screen.getByText(/Назначения автоматически не изменятся.*СП-08/s)).toBeInTheDocument()
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Отмена' }))
+    await act(async () => saving)
+    expect(mutate).not.toHaveBeenCalled()
+  })
   it('saves a simple officiality change after the server preview', async () => {
     const record = row(1, 'S1')
     const plan = makePlan()

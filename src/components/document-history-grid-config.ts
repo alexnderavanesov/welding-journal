@@ -13,7 +13,7 @@ export const DOCUMENT_GRID_MODULES = [ServerSideRowModelModule, ServerSideRowMod
 export const DOCUMENT_GRID_LOCALE = {
   groupBy: 'Сгруппировать по «${variable}»', ungroupBy: 'Убрать группировку по «${variable}»', ungroupAll: 'Убрать группировку',
   ariaRowGroup: 'Группа документов', ariaRowGroupExpanded: 'Развёрнуто', ariaRowGroupCollapsed: 'Свёрнуто',
-  noRowsToShow: 'Документов не найдено', loadingOoo: 'Загрузка…', pinColumn: 'Закрепить столбец', pinLeft: 'Слева', pinRight: 'Справа', noPin: 'Не закреплять',
+  noRowsToShow: 'Документов не найдено', noMatchingRows: 'По текущему поиску и фильтрам ничего не найдено.', loadingOoo: 'Загрузка…', pinColumn: 'Закрепить столбец', pinLeft: 'Слева', pinRight: 'Справа', noPin: 'Не закреплять',
   autosizeThisColumn: 'Ширина по содержимому', autosizeAllColumns: 'Подобрать ширину всех',
   sortAscending: 'По возрастанию', sortDescending: 'По убыванию', sortUnSort: 'Сбросить сортировку', resetColumns: 'Сбросить столбцы',
   columnFilter: 'Фильтр столбца', columnChooser: 'Выбрать столбцы', chooseColumns: 'Выбрать столбцы',

@@ -114,7 +114,9 @@ lnk(7, 'rk', 'ремонт'); note(7, '1%: негодный РК, добор +1 
 lnk(8, 'pvk', 'ремонт'); note(8, '1%: негодный ПВК теряет зачёт ПВК, но не увеличивает добор РК/УЗК')
 f(9).row.hasUzk = 'да'; note(9, 'назначен УЗК, заявка ещё не создана')
 Object.assign(f(10).row, { connectionType: 'С17', hasRk: 'отменен', hasUzk: 'отменен', rkControlBasis: 'Решение тестового контроля', uzkControlBasis: 'Решение тестового контроля' }); note(10, 'совместная осознанная отмена РК+УЗК для С')
-lnk(11, 'rk', 'годен'); lnk(11, 'uzk', 'годен'); note(11, 'ДЗ-27: два взаимозаменяемых обязательных метода')
+lnk(11, 'rk', 'годен'); lnk(11, 'uzk', 'годен')
+Object.assign(f(11).row, { hasUzk: 'дополнительный', uzkControlBasis: 'Решение DEMO-НК-11: дополнительный УЗК к обязательному РК' })
+note(11, 'обязательный РК и дополнительный УЗК с основанием выполнены')
 lnk(12, 'rk', 'годен'); f(12).row.hasRk = 'дополнительный'; note(12, 'дополнительный РК выполнен, закрывает норму и не предлагается к снятию как обычное лишнее назначение')
 Object.assign(f(13).row, { stamp2K: 'D503', stamp2Z: 'D503', stamp2O: 'D503', stamp2KFact: 'D503', stamp2ZFact: 'D503', stamp2OFact: 'D503' }); note(13, 'стык двух клейм, общий контроль ещё не назначен')
 lnk(14, 'rk', 'годен'); f(14).duplicates.push({ method: 'РК', result: 'ремонт', controlDate: '2026-09-19', conclusionDate: '2026-09-19', conclusion: 'Дубль РК DEMO-14' }); note(14, 'основной РК годен, дубль негоден: контроль дубля и ремонт')
@@ -148,12 +150,16 @@ lnk(41, 'vik', 'годен'); lnk(41, 'pvk', 'годен'); f(41).row.layeredCon
 Object.assign(f(42).row, { hasPvk: 'да', layeredControlAssigned: true }); lnk(42, 'vik', 'годен'); note(42, 'послойный У назначен, ПВК ещё не выполнен, комплекта пока нет')
 lnk(43, 'vik', 'годен'); lnk(43, 'pvk', 'годен'); note(43, 'обычный ПВК на У без послойного назначения')
 lnk(44, 'vik', 'годен'); lnk(44, 'rk', 'годен'); f(44).duplicates.push({ method: 'РК', result: 'годен', controlDate: '2026-09-19', conclusionDate: '2026-09-19', conclusion: 'Дубль РК DEMO-44' }); note(44, 'основной и дублирующий РК годны')
-lnk(45, 'vik', 'годен'); lnk(45, 'pvk', 'годен'); f(45).row.hasPvk = 'отменен'; note(45, 'ПВК отменён после выполнения: собственный факт остаётся в охвате')
+lnk(45, 'vik', 'годен'); lnk(45, 'pvk')
+Object.assign(f(45).row, { hasPvk: 'отменен', pvkControlBasis: 'Решение DEMO-НК-45: отмена ещё не выполненного ПВК' })
+note(45, 'ПВК отменён до выполнения: заявка сохранена, выполненный ВИК не изменён')
 for (let n = 46; n <= 50; n++) {
   Object.assign(f(n).row, { pstoRequired: 'отменен', pstoCancellationDate: '2026-09-14', pstoControlBasis: 'Решение DEMO-ПСТО-10 от 14.09.2026' })
   lnk(n, 'vik', 'годен'); note(n, 'СП-01: у линии намеренно не заполнена категория; ПСТО отменена до начала работ')
 }
-lnk(46, 'rk', 'годен'); lnk(47, 'uzk'); f(48).row.hasPvk = 'дополнительный'; lnk(49, 'pvk', 'годен')
+lnk(46, 'rk', 'годен'); lnk(47, 'uzk')
+Object.assign(f(48).row, { hasPvk: 'дополнительный', pvkControlBasis: 'Решение DEMO-НК-48: дополнительный ПВК' })
+lnk(49, 'pvk', 'годен')
 Object.assign(f(50).row, { testTypes: 'ГИ', testContour: 'DEMO-КОНТУР-10', testDate: '2026-09-20' })
 
 class RollbackCheck extends Error {}

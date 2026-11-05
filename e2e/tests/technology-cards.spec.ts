@@ -125,8 +125,8 @@ test('упрощённый фильтр ТК: причины пропуска р
     (project_title,subtitle_code,line,joint,weld_date,welding_method,connection_type,material_group,d1,d2,t1,t2)
     select $1,'TK','TK-FILTER',joint,weld_date::date,method,connection,'М01',57,159,6,3 from (values
       ('F9891',null,'РАД','С17'),
-      ('F9892','2026-10-01','РАД','Т1'),
-      ('F9893',null,'РАД','Т1'),
+      ('ОП-9892','2026-10-01','РАД','Т1'),
+      ('ОП-9893',null,'РАД','Т1'),
       ('F9894','2026-10-01','РАД','С17'),
       ('F9895','2026-10-01',null,'С17')
     ) fixture(joint,weld_date,method,connection)`, [project]))
@@ -146,19 +146,18 @@ test('упрощённый фильтр ТК: причины пропуска р
   const detailsBefore = calls.filter(name => name.startsWith('getTechnologyCardAssignmentDetails')).length
   await filter.selectOption('excluded')
   const undated = dialog.getByRole('row').filter({ hasText: 'F9891' })
-  const tee = dialog.getByRole('row').filter({ hasText: 'F9892' })
-  const both = dialog.getByRole('row').filter({ hasText: 'F9893' })
+  const tee = dialog.getByRole('row').filter({ hasText: 'ОП-9892' })
+  const both = dialog.getByRole('row').filter({ hasText: 'ОП-9893' })
   await expect(undated).toContainText('Нет даты сварки')
   await expect(undated).not.toContainText('Т-соединений')
-  await expect(tee).toContainText('Подбор ТК для Т-соединений пока не поддерживается')
-  await expect(tee).not.toContainText('Нет даты сварки')
+  await expect(tee).toHaveCount(0)
   await expect(both).toContainText('Нет даты сварки')
-  await expect(both).toContainText('Подбор ТК для Т-соединений пока не поддерживается')
+  await expect(both).not.toContainText('не поддерживается')
   await expect(dialog.getByRole('row').filter({ hasText: 'F9894' })).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('tk-skip-reasons.png') })
   await filter.selectOption('attention')
   await expect(dialog.getByRole('row').filter({ hasText: 'F9895' })).toContainText('Укажите способ сварки')
-  await expect(dialog.getByRole('row').filter({ hasText: 'F9892' })).toHaveCount(0)
+  await expect(tee).toContainText('Нет подходящей ТК')
   await filter.selectOption('changes')
   await expect(dialog.getByRole('row').filter({ hasText: 'F9894' }).getByRole('checkbox')).toBeChecked()
   await expect(apply).toHaveText(selection!)
@@ -378,7 +377,7 @@ test('реестр ТК: UI, история переименования, арх
   await expect.poll(() => calls.slice(count).filter(name => isAccountRefreshRpc(name)).length).toBe(1)
   await expect.poll(() => pending.size).toBe(0)
   expect(calls.slice(count).filter(name => !isAccountRefreshRpc(name))).toEqual([])
-  await page.getByRole('tab', { name: 'Параметры проверки' }).click()
+  await page.getByRole('tab', { name: 'Клейма', exact: true }).click()
   await page.getByRole('tab', { name: 'Технологические карты' }).click()
   expect(calls.filter(value => value.startsWith('getTechnologyCardPage')).length).toBeLessThanOrEqual(11)
   expect(errors).toEqual([])

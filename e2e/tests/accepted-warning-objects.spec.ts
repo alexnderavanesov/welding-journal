@@ -5,7 +5,7 @@ import { rpcName } from '../rpc'
 
 test.afterEach(() => cleanupLineProgramProjects(['E2E exception objects']))
 
-test('согласование переживает 30→50 и 100→50; исключение показывает новое имя и исчезает с объектом', async ({ page }) => {
+test('историческое согласование сохраняется при смене нормы и имени, но не скрывает лишний контроль; удаляется вместе с объектом', async ({ page }) => {
   const seeded = await withLineProgramFixture(async db => {
     const { rows: [line] } = await db.query("insert into line_programs (project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent) values ('E2E exception objects','APPROVED','APPROVED-LINE','II','A',30,10) returning id")
     const { rows: [joint] } = await db.query(`insert into weld_joints (line_program_id,project_title,subtitle_code,line,joint,weld_date,connection_type,category,group_name,weld_control_percent,pvk_control_percent,has_vik,stamp_1_k,has_rk,has_uzk,rk_result,rk_conclusion,uzk_result,uzk_conclusion)
@@ -28,7 +28,9 @@ test('согласование переживает 30→50 и 100→50; иск�
     await editor.getByLabel('Базовый % контроля', { exact: true }).fill(String(percent))
     await editor.getByRole('button', { name: 'Сохранить программу' }).click()
     await expect(editor).toHaveCount(0)
-    await expect(card.getByRole('button', { name: 'Лишнее 0', exact: true })).toBeVisible()
+    // Decision 04.11 №6: old approvals have no effect. Two ordinary methods
+    // on one physical joint leave one excess at both 50% and 100%.
+    await expect(card.getByRole('button', { name: 'Лишнее 1', exact: true })).toBeVisible()
   }
   await program.getByRole('button', { name: 'Настроить', exact: true }).click()
   const editor = page.getByRole('dialog', { name: 'Настройка линии', exact: true })

@@ -1,6 +1,7 @@
 import { useJournalSelectionSummary } from '@/lib/use-journal-selection-summary'
 import { formatJournalNumber } from '@/lib/welding-journal-grid-state'
 import type { JournalSummaryRange, JournalSelectionSnapshot } from '@/lib/journal-selection-summary'
+import { JournalSummaryValue } from './journal-summary-value'
 
 export function JournalSelectionSummary({ ids, identity, ready, range = null, recoverRevision, expired = false, getSnapshot }: { ids: ReadonlySet<number>; identity?: string; ready: boolean; range?: JournalSummaryRange; recoverRevision?: (error: unknown) => boolean; expired?: boolean; getSnapshot?: () => JournalSelectionSnapshot | undefined }) {
   const { summary, error, retry } = useJournalSelectionSummary(ids, identity, ready, range, recoverRevision, expired, getSnapshot)
@@ -10,9 +11,9 @@ export function JournalSelectionSummary({ ids, identity, ready, range = null, re
   if (!summary) return <>{source}<span role="status">Итоги: считаем…</span></>
   return <>
     {source}
-    <span>Стыков: {summary.joints}</span>
+    <span>Стыков: <JournalSummaryValue label="Стыков" value={summary.joints} /></span>
     <span title={summary.missingWdi ? `Не задан WDI у физических стыков: ${summary.missingWdi}. Показана сумма известных значений.` : undefined}>
-      WDI: {summary.wdi === null ? '—' : formatJournalNumber(summary.wdi)}{summary.missingWdi ? '*' : ''}
+      WDI: {summary.wdi === null ? '—' : <JournalSummaryValue label="WDI" value={formatJournalNumber(summary.wdi)} />}{summary.missingWdi ? '*' : ''}
     </span>
     <span title={summary.missingDates ? `Без даты сварки: ${summary.missingDates} записей. Диапазон построен по заполненным датам выбранных записей.` : undefined}>
       Сварка: {summary.weldDate}{summary.missingDates ? '*' : ''}

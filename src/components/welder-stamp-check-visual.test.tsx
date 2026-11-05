@@ -18,7 +18,7 @@ describe('coloured qualification examples', () => {
     expect(legend).toHaveTextContent('не общий допуск команды')
   })
 
-  it('colours the right fields for all twelve examples and never splits dimensions between welders', () => {
+  it('preserves all twelve C/U examples and adds the permitted T example using only pipe geometry', () => {
     render(<WelderStampCheckParameters />)
     const rows = screen.getByRole('table').querySelectorAll('[data-stamp-check-scenario]')
     // Expectations from the agreed rules, including the temporarily retained homogeneous U rule.
@@ -27,8 +27,8 @@ describe('coloured qualification examples', () => {
       ['d1', 't1'], ['d2', 't2'], ['d1', 'd2', 't2'], ['d1', 't1'],
       ['d1', 't1', 'd2', 't2'], ['d1', 't1', 'd2', 't2'], ['d1', 't1', 'd2', 't2'], ['d1', 't1', 'd2', 't2'],
     ]
-    expect(rows).toHaveLength(12)
-    rows.forEach((row, index) => {
+    expect(rows).toHaveLength(13)
+    Array.from(rows).slice(0, 12).forEach((row, index) => {
       const visual = row.querySelector('[data-stamp-check-visual]')!
       const fields = [...visual.querySelectorAll<HTMLElement>('[data-check-fields]')]
       const used = fields.filter(node => node.dataset.checkOwner !== 'unused')
@@ -44,6 +44,15 @@ describe('coloured qualification examples', () => {
         expect(alternative.textContent).toMatch(/\)$/)
       }
       if (index >= 8) expect(visual).toHaveTextContent('И другая группа:')
+    })
+    Array.from(rows).slice(12).forEach((row, index) => {
+      const visual = row.querySelector('[data-stamp-check-visual]')!
+      const fields = [...visual.querySelectorAll<HTMLElement>('[data-check-fields]')]
+      expect(fields.map(node => node.dataset.checkFields)).toEqual(index < 2 ? ['d1', 't1'] : ['d1', 't1', 'd1', 't1'])
+      expect(fields.every(node => node.dataset.checkOwner === 'a')).toBe(true)
+      expect(visual.querySelector('[data-check-owner="b"]')).toBeNull()
+      expect(visual).not.toHaveTextContent('0×0')
+      if (index >= 2) expect(visual).toHaveTextContent('И другая группа:')
     })
   })
 

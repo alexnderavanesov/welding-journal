@@ -39,6 +39,7 @@ import {
   type PstoWorkflowRequestOptionsResult,
   type PstoWorkflowRowsRequest,
   type PstoWorkflowSummary,
+  type PstoWorkflowAvailability,
 } from '@/server/weld-contracts'
 import { attachHeatTreatmentControlRelations } from '@/server/heat-treatment-control-relations'
 import { buildNoRejectedPreHeatTreatmentWhere, buildPreHeatTreatmentEnabledWhere, buildPstoDocumentHistoryWhere, buildPstoExecutionHistoryWhere, buildRelevantPstoRepeatWhere } from '@/server/pre-heat-treatment-policy'
@@ -174,6 +175,25 @@ export async function getPstoWorkflowSummary(): Promise<PstoWorkflowSummary> {
     tvmtRequestCandidateCount: Number(row?.tvmtRequestCandidateCount) || 0,
     tvmtResultCandidateCount: Number(row?.tvmtResultCandidateCount) || 0,
   }
+}
+
+export async function getPstoWorkflowAvailability(): Promise<PstoWorkflowAvailability> {
+  await assertSecurityScope('entry')
+  const { rows: [availability] } = await requireDb().execute<PstoWorkflowAvailability>(buildPstoWorkflowAvailabilityQuery())
+  return availability
+}
+
+export function buildPstoWorkflowAvailabilityQuery() {
+  // One statement keeps every button on the same database snapshot. Each
+  // scope can stop at its first match; retain the full count API above.
+  const available = (scope: keyof PstoWorkflowAvailability) =>
+    sql<boolean>`exists(select 1 from ${weldJoints} where ${buildPstoWorkflowRowsWhere({ scope })})`
+  return sql`select
+    ${available('requestCandidates')} as "requestCandidates",
+    ${available('resultCandidates')} as "resultCandidates",
+    ${available('resultRegistry')} as "resultRegistry",
+    ${available('tvmtRequestCandidates')} as "tvmtRequestCandidates",
+    ${available('tvmtResultCandidates')} as "tvmtResultCandidates"`
 }
 
 type PstoWorkflowRequestOptionRow = {

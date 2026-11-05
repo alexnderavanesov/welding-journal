@@ -141,17 +141,16 @@ describe('topology reuse preserves the full-line semantic matrix', () => {
       missingCandidateRowIds: enabled ? [2, 3] : [1, 2, 3] })
   })
 
-  it('current approvals reserve the pair and displace only ordinary surplus; no reuse across calls', () => {
+  it('retired approvals do not affect current calculations or topology reuse', () => {
     const rows = [row(1, { hasRk: 'да' }), row(2, { hasRk: 'да', hasUzk: 'да' })]
     const approved = new Set<string>()
     const unapproved = structuredClone(summary(rows, approved))
     expect(unapproved.stamps[0].common.duplicateAssignmentRowIds).toEqual([2])
     approved.add(programApprovalKey(rows[1], 'common', true))
+    expect(summary(rows, approved)).toEqual(unapproved)
     expect(summary(rows, approved).stamps[0].common.excessAssignments).toEqual([
-      { rowId: 1, method: 'РК', duplicate: false },
+      { rowId: 2, method: 'УЗК', duplicate: true }, { rowId: 2, method: 'РК', duplicate: false },
     ])
-    expect(buildPercentageLineControlTasks(rows, [], DEFAULT_SYSTEM_INDEX_SETTINGS, approved)
-      .filter(task => task.issue === 'excess').map(task => task.targetRowIds)).toEqual([[1]])
     approved.clear()
     expect(summary(rows, approved)).toEqual(unapproved)
   })

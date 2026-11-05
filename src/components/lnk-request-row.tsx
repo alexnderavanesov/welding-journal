@@ -98,7 +98,7 @@ function LnkRequestRowComponent({
           <span
             key={`${method.requestKey}-existing`}
             className="inline-flex max-w-full flex-wrap items-center gap-1 overflow-visible rounded border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-800"
-            title={`${method.code}: ${String(row[method.requestKey] ?? '')}`}
+
           >
             <span>{method.code}</span>
             <span className="overflow-visible break-all whitespace-normal text-sky-600 [text-overflow:clip]">

@@ -1,4 +1,5 @@
 import type { WeldInput } from '@/lib/weld-fields'
+import { isTConnectionType } from './connection-type'
 import {
   DEFAULT_WDI_CALCULATION_RULES,
   normalizeWdiCalculationRules,
@@ -19,6 +20,7 @@ export function getWdiCalculationDiameter(
   record: Pick<WeldInput, 'connectionType' | 'd1' | 'd2'>,
   rules: WdiCalculationRules = DEFAULT_WDI_CALCULATION_RULES,
 ): number | null {
+  if (isTConnectionType(record.connectionType)) return null
   const diameters = [parsePositiveNumber(record.d1), parsePositiveNumber(record.d2)].filter(
     (value): value is number => value !== null,
   )
@@ -40,6 +42,7 @@ export function calculateTableWdi(
   table: WdiTableSettings | null,
   rules: WdiCalculationRules = DEFAULT_WDI_CALCULATION_RULES,
 ): number | null {
+  if (isTConnectionType(record.connectionType)) return null
   if (!table) return null
   const dimensions = getWdiCalculationDimensions(record, rules)
   if (!dimensions) return null
@@ -53,6 +56,7 @@ export function calculateTableWdi(
 }
 
 export function calculateWdi(record: WeldInput, settings: WdiCalculationSettings): number | null {
+  if (isTConnectionType(record.connectionType)) return null
   const rules = normalizeWdiCalculationRules(settings.wdiCalculationRules)
   if (settings.wdiCalculationMode === 'manual') return parseNullableNumber(record.wdi)
   if (settings.wdiCalculationMode === 'table') return calculateTableWdi(record, settings.wdiTable, rules)
@@ -75,6 +79,7 @@ export function applySystemWdi(record: WeldInput, settings: WdiCalculationSettin
 }
 
 export function getSystemWdiValidationError(record: WeldInput, settings: WdiCalculationSettings) {
+  if (isTConnectionType(record.connectionType)) return parseNullableNumber(record.wdi) === null ? null : 'WDI для соединений Т не применяется.'
   if (!isSystemWdiMode(settings)) return null
   const enteredWdi = parseNullableNumber(record.wdi)
   if (enteredWdi === null) return null

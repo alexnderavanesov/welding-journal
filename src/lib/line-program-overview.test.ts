@@ -1,11 +1,29 @@
 import { describe, expect, it } from 'vitest'
 import { isLineProgramFinished, summarizeLineProgram } from './line-program-overview'
 import type { LineProgramRecord } from './line-program'
+import { calculateLineProgram } from './line-program-calculation'
+import { buildLineProgramDisplay } from './line-program-display'
 
 const line: LineProgramRecord = { id: 1, line: 'L', projectTitle: 'P', subtitleCode: 'S', category: 'II', groupName: 'A', weldControlPercent: 30, pvkControlPercent: 10, configurationIssue: null, version: '1' }
 const row = { id: 1, joint: 'F1', connectionType: 'СШ', weldDate: '2026-09-01', stamp1K: 'A' }
 
 describe('line card overview', () => {
+  it('counts support owner groups, including planned OP, without adding a different repairer', () => {
+    const supportLine = { ...line, family: 'supports' as const }
+    const rows = [
+      { ...row, joint: 'ОП1', connectionType: 'Т1', stamp1K: 'OWNER', hasVik: 'да', vikResult: 'ремонт' },
+      { ...row, id: 2, joint: 'ОП1R1', connectionType: 'Т1', stamp1K: 'REPAIRER' },
+      { ...row, id: 3, joint: 'ОП2', connectionType: 'Т1', stamp1K: 'PLANNED', weldDate: null },
+      { ...row, id: 4, joint: 'ОП3', connectionType: 'Т1', stamp1K: 'EXCLUDED', officiality: 'неофициальный' },
+    ]
+    const groups = calculateLineProgram(rows, 30, 10, undefined, undefined, true)
+    const display = buildLineProgramDisplay(rows, groups, 30, 10, undefined, true)
+    expect(groups.map(group => group.stamp)).toEqual(['OWNER'])
+    expect(display.stampRows.map(group => group.stamp).sort()).toEqual(['OWNER', 'PLANNED'])
+    expect(summarizeLineProgram(rows, supportLine)).toMatchObject({ stamps: 2, joints: 2, calculationJoints: 1 })
+    const ordinary = rows.map(item => ({ ...item, joint: item.joint.replace('ОП', 'F'), connectionType: 'С17' }))
+    expect(summarizeLineProgram(ordinary, line).stamps).toBe(3)
+  })
   const good = { ...row, hasVik: 'да', vikResult: 'годен', hasRk: 'да', rkResult: 'годен', hasPvk: 'да', pvkResult: 'годен' }
   it('finishes only with closed needs and completed saved statuses, ignoring excluded records', () => {
     const complete = summarizeLineProgram([good,
@@ -48,15 +66,15 @@ describe('line card overview', () => {
     expect(waiting.pvk).toEqual(plain.pvk)
     expect(complete.common).toEqual(plain.common)
   })
-  it('additional methods displace ordinary yes but never become excess or duplicates themselves', () => {
+  it('additional methods retain ordinary quota places and never become excess themselves', () => {
     const rows = Array.from({ length: 10 }, (_, i) => ({ ...row, id: i + 1 }))
     const controlled = { ...rows[0], hasRk: 'да', hasPvk: 'да' }
     const additional = { ...rows[1], hasRk: 'дополнительный', hasUzk: 'дополнительный', hasPvk: 'дополнительный', rkResult: 'годен', pvkResult: 'годен' }
     const result = summarizeLineProgram([controlled, additional, ...rows.slice(2)], { ...line, weldControlPercent: 10 })
-    expect(result).toMatchObject({ additional: 1, common: { covered: 1, excess: 1 }, pvk: { covered: 1, excess: 1 } })
-    // A mixed joint remains one place. The other ordinary joint is displaced, not the additional method.
+    expect(result).toMatchObject({ additional: 1, common: { covered: 1, excess: 0 }, pvk: { covered: 1, excess: 0 } })
+    // A mixed joint remains one place. The other ordinary joint keeps its quota place.
     const mixed = summarizeLineProgram([controlled, { ...additional, hasUzk: 'да' }, ...rows.slice(2)], { ...line, weldControlPercent: 10 })
-    expect(mixed).toMatchObject({ additional: 1, common: { covered: 1, excess: 1 }, pvk: { excess: 1 } })
+    expect(mixed).toMatchObject({ additional: 1, common: { covered: 1, excess: 0 }, pvk: { excess: 0 } })
   })
   it('counts physical joints once, but keeps the separate quotas of each stamp', () => {
     const result = summarizeLineProgram([{ ...row, stamp1Z: 'B', stamp1O: 'a', hasRk: 'да' }], line)

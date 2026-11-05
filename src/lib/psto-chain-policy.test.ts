@@ -34,13 +34,13 @@ describe('whole-chain PSTO policy', () => {
       pstoDate: '2026-10-02', heatTreatmentDiagram: 'Д-1', tvmtRequest: 'Т-1', tvmtResult: 'годен', tvmtConclusion: 'ТК-1',
       pstoRepeatCycles: [{ id: 9, weldJointId: 1, sequence: 2, pstoRequest: 'П-2' }] } as WeldRow
     const removed = apply(history, { ...policy, exceptions: new Map() })
-    expect(removed).toMatchObject({ pstoRequired: 'отменен', pstoExceptionBasis: null, pstoRequest: 'П-1', tvmtConclusion: 'ТК-1' })
+    expect(removed).toMatchObject({ pstoRequired: 'да', pstoExceptionBasis: null, pstoRequest: 'П-1', tvmtConclusion: 'ТК-1' })
     expect(removed.pstoRepeatCycles).toBe(history.pstoRepeatCycles)
     expect(apply(removed)).toMatchObject({ ...history, pstoExceptionBasis: decision.basis })
   })
-  it('does not infer performed work from a waiting label, and keeps request-only history', () => {
+  it('does not infer performed work from waiting labels or requests; persistence separately removes request positions', () => {
     expect(apply({ ...row, pstoResult: 'ожидает заявку' }, { ...policy, exceptions: new Map() }).pstoRequired).toBeNull()
-    expect(apply({ ...row, pstoRequest: 'П-1' }, { ...policy, exceptions: new Map() })).toMatchObject({ pstoRequired: 'отменен', pstoRequest: 'П-1' })
+    expect(apply({ ...row, pstoRequest: 'П-1' }, { ...policy, exceptions: new Map() })).toMatchObject({ pstoRequired: null, pstoRequest: 'П-1' })
   })
   it('uses only currently active exceptions, without reviving a closed decision', () => {
     const baseline = { ...policy, programState: 'assigned' as const, exceptions: new Map() }

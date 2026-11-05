@@ -8,8 +8,8 @@ import {
 } from '@/lib/system-rule-catalog'
 
 describe('system rule catalog navigation', () => {
-  it('keeps all eleven mandatory rules with stable semantic deep links', () => {
-    expect(SYSTEM_RULE_CATALOG.map((rule) => rule.code)).toEqual(Array.from({ length: 11 }, (_, i) => `СП-${String(i + 1).padStart(2, '0')}`))
+  it('keeps all mandatory rules including support structure with stable semantic deep links', () => {
+    expect(SYSTEM_RULE_CATALOG.map((rule) => rule.code)).toEqual([...Array.from({ length: 11 }, (_, i) => `СП-${String(i + 1).padStart(2, '0')}`), 'СП-13'])
     for (const rule of SYSTEM_RULE_CATALOG) {
       expect(resolveSystemRuleSettingsHash(`#${getSystemRuleTargetId(rule.code)}`)).toBe(rule)
       expect(rule.condition).not.toBe('')
@@ -45,7 +45,7 @@ describe('system rule catalog navigation', () => {
   )
 
   it('does not reinterpret unrelated settings or malformed links', () => {
-    expect(getSystemRuleSettingsHref('СП-13')).toBeUndefined()
+    expect(getSystemRuleSettingsHref('СП-99')).toBeUndefined()
     expect(resolveSystemRuleSettingsHash('#save-check-setting-dateFormat')).toBeUndefined()
     expect(resolveSystemRuleSettingsHash('#%invalid')).toBeUndefined()
   })

@@ -174,6 +174,64 @@ test('regrouping after another writer refreshes selected totals with the install
   }
 })
 
+for (const report of ['weldingJournal', 'lnk', 'heatTreatment'] as const) test(`${report}: footer keeps its selected snapshot and copies numbers while updates stay on the left`, async ({ page, context, browserName }, info) => {
+  const setWdi = (wdi: number) => withLineProgramFixture(db => db.query(
+    'update weld_joints set wdi=$1 where project_title=$2 and joint=$3', [wdi, project, 'F9800001']).then(() => {}))
+  await setWdi(13.25)
+  try {
+    // LNK/PSTO show welded joints; the journal's original fixture is unwelded.
+    if (report !== 'weldingJournal') await withLineProgramFixture(db => db.query(
+      "update weld_joints set weld_date='2026-10-01',psto_required='да',has_vik='да' where project_title=$1 and joint=$2", [project, 'F9800001']).then(() => {}))
+    if (browserName === 'chromium') await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    if (report === 'weldingJournal') await open(page)
+    else {
+      await page.goto(report === 'lnk' ? '/lnk' : '/psto')
+      await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill(project)
+      await expect(page.locator(`[data-weld-report-grid="${report}"] .journal-grid-frame`)).toHaveAttribute('aria-busy', 'false')
+    }
+    await page.getByRole('checkbox', { name: 'Выбрать стык F9800001', exact: true }).check()
+    const footer = page.locator('[data-journal-footer]'), totals = page.getByLabel('Статистика выделения')
+    await expect(totals.getByText('WDI: 13,3', { exact: true })).toBeVisible()
+    if (report === 'weldingJournal') {
+      await page.locator('.ag-row').filter({ has: page.getByRole('checkbox', { name: 'Выбрать стык F9800001', exact: true }) }).locator('[col-id="isometry"]').click()
+      await expect(totals).toContainText('По области')
+      await expect(totals.getByText('Количество: 1', { exact: true })).toBeVisible()
+      await expect(totals.getByText('WDI: 13,3', { exact: true })).toBeVisible()
+    }
+    // Delegate to the real browser API. WebKit cannot grant clipboard-read via
+    // Playwright; record only a successfully completed native write there.
+    await page.evaluate(() => {
+      const write = navigator.clipboard.writeText.bind(navigator.clipboard)
+      navigator.clipboard.writeText = async text => {
+        await write(text)
+        ;(window as unknown as { lastSummaryCopy: string }).lastSummaryCopy = text
+      }
+    })
+    await setWdi(20)
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect(footer.getByText('Есть обновления', { exact: true })).toBeVisible()
+    await expect(totals.getByText('WDI: 13,3', { exact: true })).toBeVisible()
+    await expect(totals).not.toContainText('Обновите таблицу')
+    await totals.getByRole('button', { name: 'Скопировать WDI: 13,3', exact: true }).click()
+    await expect(page.getByText('Скопировано', { exact: true })).toBeVisible()
+    expect(await page.evaluate(() => (window as unknown as { lastSummaryCopy: string }).lastSummaryCopy)).toBe('13,3')
+    if (browserName === 'chromium') expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('13,3')
+    await expect(page.getByRole('checkbox', { name: 'Выбрать стык F9800001', exact: true })).toBeChecked()
+    await page.screenshot({ path: info.outputPath('footer-copy-stale-snapshot.png') })
+    if (report === 'weldingJournal') {
+      await expect(totals).toContainText('По области')
+      await totals.getByRole('button', { name: 'Скопировать Количество: 1', exact: true }).click()
+      await expect.poll(() => page.evaluate(() => (window as unknown as { lastSummaryCopy: string }).lastSummaryCopy)).toBe('1')
+      await expect(totals.getByText('WDI: 13,3', { exact: true })).toBeVisible()
+    }
+    await footer.getByRole('button', { name: 'Обновить таблицу', exact: true }).click()
+    await expect(totals.getByText('WDI: 20', { exact: true })).toBeVisible()
+  } finally {
+    await withLineProgramFixture(db => db.query(
+      'update weld_joints set wdi=null,weld_date=null,psto_required=null,has_vik=null where project_title=$1 and joint=$2', [project, 'F9800001']).then(() => {}))
+  }
+})
+
 test('installed Safari keeps idle rows after another writer, opens fresh data and preserves a conflicting draft', async ({ page }, info) => {
   test.skip(process.env.JOURNAL_UPDATE_SAFARI !== '1', 'Requires the separate local SafariDriver window')
   test.setTimeout(180_000)

@@ -117,10 +117,12 @@ export async function massFillWeldRowsOrThrow<T extends RowWithId>(
   records: T[],
   expectedVersions: WeldRowVersionTarget[],
   errorMessage = 'Не удалось сохранить часть записей массового заполнения',
+  controlRequestRemovalToken?: string,
 ) {
   const savedRows = await massFillWeldJoints({
     data: {
       records: records.map((record) => normalizeDateFieldsForSave(record, null)),
+      controlRequestRemovalToken,
       expectedVersions,
     },
   })
@@ -133,10 +135,12 @@ export async function replaceWeldRowsOrThrow<T extends RowWithId>(
   deleteIds: number[],
   expectedVersions: WeldRowVersionTarget[],
   errorMessage = 'Не удалось заменить часть записей',
+  controlRequestRemovalToken?: string,
 ) {
   const result = await replaceWeldJoints({
     data: {
       records: records.map((record) => normalizeDateFieldsForSave(record, null)),
+      controlRequestRemovalToken,
       deleteIds,
       expectedVersions,
     },

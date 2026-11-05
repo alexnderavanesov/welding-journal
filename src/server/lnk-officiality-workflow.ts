@@ -1,6 +1,7 @@
 import { asc, sql } from 'drizzle-orm'
 
 import { requireDb } from '@/db'
+import { isTConnectionType } from '@/lib/connection-type'
 import {
   dispatcherAcceptedWarnings,
   weldJoints,
@@ -47,11 +48,12 @@ import {
   prepareServerWeldRecords,
   validateServerWeldRecords,
 } from '@/server/weld-save-validation'
-import { lockWeldLineMemberships } from '@/server/weld-line-membership-lock'
+import { lockSupportWeldLengthMemberships } from './support-weld-length-scope'
 import { assertExpectedInteractiveWeldVersions } from '@/server/weld-row-version'
 import { buildNumberArrayMatch, buildTextArrayMatch } from '@/server/weld-request-utils'
 import { loadWeldWorkflowSettingsFromTransaction } from '@/server/weld-workflow-settings'
 import { prepareRebuiltProgramChainStates, syncRebuiltProgramChainStates } from '@/server/program-chain-rebuild'
+import { synchronizeSupportWeldLengths } from './support-weld-length'
 
 const MAX_OFFICIALITY_TARGETS = 1_000
 export const LNK_OFFICIALITY_CHAIN_SELECT = {
@@ -71,6 +73,8 @@ export const LNK_OFFICIALITY_CHAIN_SELECT = {
   finalStatus: weldJoints.finalStatus,
   d1: weldJoints.d1,
   d2: weldJoints.d2,
+  connectionType: weldJoints.connectionType,
+  weldLength: weldJoints.weldLength,
   hasVik: weldJoints.hasVik,
   hasRk: weldJoints.hasRk,
   hasPvk: weldJoints.hasPvk,
@@ -171,7 +175,9 @@ export async function applyLnkOfficialityChange({
 
   return requireDb().transaction(async (tx) => {
     const targetReferences = await loadTargetRows(tx, data)
-    await lockWeldLineMemberships(tx, targetReferences)
+    const lengthReferences = targetReferences.some(row => isTConnectionType(row.connectionType))
+      ? await loadLineChainRows(tx, targetReferences, false) : targetReferences
+    await lockSupportWeldLengthMemberships(tx, targetReferences, lengthReferences)
     const scopeRows = await loadLineChainRows(tx, targetReferences, true)
     assertTargetsRemainInScope(targetReferences, scopeRows)
     const scopeRowsById = new Map(scopeRows.map((row) => [row.id, row]))
@@ -247,6 +253,10 @@ export async function applyLnkOfficialityChange({
       plan.renames.map(change => change.rowId),
       validationContext.systemIndexSettings,
     )
+    const lengthUpdates = await synchronizeSupportWeldLengths(tx, savedRows, previousRows,
+      { rebuilt: true, settings: validationContext.systemIndexSettings })
+    const lengthsById = new Map(lengthUpdates.map(row => [row.id, row]))
+    for (const row of savedRows) Object.assign(row, lengthsById.get(row.id))
     await insertEarlyCoilDecisions(tx, plan, recordsById, fullAffectedRowsById)
     await refreshEarlyCoilDecisionContextsInTransaction(
       tx,

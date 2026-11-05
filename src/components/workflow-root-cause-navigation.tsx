@@ -1,3 +1,4 @@
+import { overflowTitle } from '@/lib/overflow-title'
 import { ArrowLeft } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -19,7 +20,7 @@ export function WorkflowRootCauseNavigation({
         <ArrowLeft className="mr-2 h-4 w-4" />
         Вернуться к исходному окну
       </Button>
-      <span className="min-w-0 truncate text-xs font-medium text-slate-600" title={actionLabel}>
+      <span className="min-w-0 truncate text-xs font-medium text-slate-600" {...overflowTitle(actionLabel)}>
         {depth > 1 ? `Шаг исправления ${depth}: ` : ''}{actionLabel}
       </span>
     </div>

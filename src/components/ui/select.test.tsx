@@ -6,6 +6,30 @@ import { useWindowEscapeKey } from '@/lib/use-window-escape-key'
 
 afterEach(cleanup)
 
+it('does not repeat option labels or groups in tooltips but retains a reason and truncated text', () => {
+  render(<Select aria-label="Назначение" defaultValue="cancelled">
+    <option value="cancelled">Отменен</option>
+    <option value="same" title="Повтор">Повтор</option>
+    <optgroup label="Группа"><option value="grouped">Значение</option></optgroup>
+    <option value="blocked" disabled title="Нельзя снять выполненный контроль">Недоступно</option>
+  </Select>)
+  fireEvent.click(screen.getByRole('combobox'))
+  const popup = screen.getByRole('listbox')
+  for (const name of ['Отменен', 'Повтор', 'Значение']) {
+    const option = within(popup).getByRole('option', { name })
+    fireEvent.mouseEnter(option)
+    fireEvent.mouseEnter(within(option).getByText(name))
+    expect(option).not.toHaveAttribute('title')
+    expect(option.querySelector('[title]')).toBeNull()
+  }
+  const blocked = within(popup).getByRole('option', { name: 'Недоступно' })
+  expect(blocked).toHaveAttribute('title', 'Нельзя снять выполненный контроль')
+  const text = within(blocked).getByText('Недоступно')
+  Object.defineProperties(text, { clientWidth: { value: 40 }, scrollWidth: { value: 120 } })
+  fireEvent.mouseEnter(text)
+  expect(text).toHaveAttribute('title', 'Недоступно · Нельзя снять выполненный контроль')
+})
+
 it('searches anywhere in a stamp without changing its value until selection', () => {
   const change = vi.fn(), escape = vi.fn()
   function Form() {

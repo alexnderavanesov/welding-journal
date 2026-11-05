@@ -1,4 +1,4 @@
-import type { GridApi } from 'ag-grid-community'
+import type { GridApi, IFilter, IRowNode } from 'ag-grid-community'
 import type { LineProgramRecord } from '@/lib/line-program'
 
 export function currentProgramTarget(api: GridApi<LineProgramRecord>, target: Pick<LineProgramRecord, 'id' | 'version'>) {
@@ -23,4 +23,27 @@ export function revealProgramLine(api: GridApi<LineProgramRecord>, target: Pick<
   for (let parent = node.parent; parent; parent = parent.parent) if (parent.group && parent.level >= 0) ancestors.unshift(parent)
   for (const parent of ancestors) if (!parent.expanded) parent.setExpanded(true, undefined, true)
   return true
+}
+
+/** Keep every compatible column filter. An explicit composition must be fully visible. */
+export async function revealProgramComposition<T>(api: GridApi<T>, ids: readonly string[], current: () => boolean = () => true) {
+  const live = () => current() && !api.isDestroyed()
+  if (!live()) return []
+  const nodes = ids.map(id => api.getRowNode(id)).filter((node): node is IRowNode<T> => !!node?.data)
+  if (nodes.length !== ids.length) return []
+  const cleared: string[] = []
+  for (const column of Object.keys(api.getFilterModel())) {
+    const filter = await api.getColumnFilterInstance<IFilter>(column)
+    if (!live()) return []
+    if (filter && nodes.some(node => !filter.doesFilterPass({ node, data: node.data }))) {
+      await api.setColumnFilterModel(column, null)
+      cleared.push(api.getColumn(column)?.getColDef().headerName ?? column)
+    }
+  }
+  if (!live()) return []
+  if (cleared.length) api.onFilterChanged()
+  const ancestors = new Set<IRowNode<T>>()
+  for (const node of nodes) for (let parent = node.parent; parent; parent = parent.parent) if (parent.group && parent.level >= 0) ancestors.add(parent)
+  for (const parent of [...ancestors].sort((a, b) => a.level - b.level)) if (!parent.expanded) parent.setExpanded(true, undefined, true)
+  return cleared
 }

@@ -1,10 +1,11 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { eq, inArray } from 'drizzle-orm'
 import { requireDb } from '../../src/db'
 import { pstoRepeatCycles, preHeatTreatmentControls, weldJoints } from '../../src/db/schema'
 import { buildSystemDocumentSummaries } from '../../src/lib/system-document-types'
 import { buildPstoRepeatSystemDocumentRow } from '../../src/lib/system-document-virtual-row'
 import type { WeldRow } from '../../src/lib/dispatcher-types'
+import type { PstoWorkflowAvailability } from '../../src/server/weld-contracts'
 import { REQUEST_CONCLUSION_DEFAULT_SETTINGS } from '../../src/lib/request-conclusion-settings'
 import { prepareDocumentCreationIndex } from '../../src/server/document-name-conflicts'
 import { syncSystemDocumentsForWeldChangesInTransaction, upsertSourcedSystemDocumentsInTransaction } from '../../src/server/system-document-index'
@@ -90,6 +91,15 @@ async function snapshot() {
 }
 
 const scenarios = [ ...(['primary', 'pre'] as const).flatMap(kind => methods.map(method => ({ kind, method }))), ...(['tvmt', 'tvmt-repeat'] as const).map(kind => ({ kind, method: methods[0] })) ]
+function nextAvailability(page: Page) {
+  return page.waitForResponse(response => response.url().includes('/_serverFn/') &&
+    /^getPstoWorkflowAvailability(?:_|$)/.test(rpcName(response.url()))).then(async response => {
+    expect(response.ok()).toBe(true)
+    const payload = await deserializeRpcResponse(await response.text()) as { result: PstoWorkflowAvailability; error?: unknown }
+    expect(payload.error).toBeUndefined()
+    return payload.result
+  })
+}
 for (const { kind, method } of scenarios) test(`${kind} ${method.code}: one conclusion preserves separate requests and history`, async ({ page }, info) => {
   const ids = await seed(kind, method)
   const tvmt = kind.startsWith('tvmt')
@@ -100,7 +110,22 @@ for (const { kind, method } of scenarios) test(`${kind} ${method.code}: one conc
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('F8830')
   await expect(page.getByText('Найдено: 2', { exact: true })).toBeVisible()
   await page.locator('[data-weld-report-grid] .ag-header-cell').getByRole('checkbox').check()
+  await expect(page.locator('[data-weld-report-grid] .ag-header-cell').getByRole('checkbox')).toBeChecked()
+  const initialAvailability = kind === 'tvmt-repeat' ? nextAvailability(page) : undefined
+  let availabilityReadAt = 0
   await page.locator('header').getByRole('button', { name: tvmt ? 'ТВМТ' : 'Результат', exact: true }).click()
+  if (initialAvailability) {
+    // Every fixture current cycle awaits TVMT; the old failure is superseded
+    // by repeat #2. The setup joint lacks its prerequisite pre-TO VIK result,
+    // so it cannot independently make the global request flag true.
+    expect((await initialAvailability).requestCandidates).toBe(false)
+    availabilityReadAt = performance.now()
+    await page.keyboard.press('Escape')
+    await page.locator('header').getByRole('button', { name: 'Заявка', exact: true }).click()
+    await expect(page.locator('[data-workflow-menu]').getByRole('button', { name: 'Новая заявка', exact: true })).toBeDisabled()
+    await page.keyboard.press('Escape')
+    await page.locator('header').getByRole('button', { name: 'ТВМТ', exact: true }).click()
+  }
   await page.getByRole('button', { name: tvmt ? 'Внести результаты ТВМТ' : 'Внести результаты', exact: true }).click()
   const title = tvmt ? 'Внесение результатов ТВМТ' : pre ? 'Внесение результатов ЛНК до ТО' : 'Внесение результатов ЛНК'
   const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: title, exact: true }) })
@@ -207,5 +232,17 @@ for (const { kind, method } of scenarios) test(`${kind} ${method.code}: one conc
   // guards must reject an exact transport retry without any stored changes.
   expect(String(rejected.error)).toMatch(/устарел|уже изменен|уже внесен|уже проведен|системное имя уже занято/i)
   expect(await snapshot()).toEqual(after)
+  if (kind === 'tvmt-repeat') {
+    // The newly saved failed TVMT on repeat #2 now permits the next PSTO
+    // request. Reopen the already cached menu without reloading the page.
+    expect(performance.now() - availabilityReadAt, 'Availability must not expire naturally during this check').toBeLessThan(60000)
+    const refreshedAvailability = nextAvailability(page)
+    await page.locator('header').getByRole('button', { name: 'Заявка', exact: true }).click()
+    expect((await refreshedAvailability).requestCandidates).toBe(true)
+    await expect(page.locator('[data-workflow-menu]').getByRole('button', { name: 'Новая заявка', exact: true })).toHaveAttribute('aria-busy', 'false')
+    await expect(page.locator('[data-workflow-menu]').getByRole('button', { name: 'Новая заявка', exact: true })).toBeEnabled()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('[data-workflow-menu]')).toHaveCount(0)
+  }
   expect(errors).toEqual([])
 })

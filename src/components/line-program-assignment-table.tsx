@@ -1,3 +1,5 @@
+import { PROGRAM_BASIS_FIELDS, type ProgramBasisKey } from '@/lib/line-program-workspace'
+import { requiresControlAssignmentBasis } from '@/lib/control-assignment-basis-validation'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select } from '@/components/ui/select'
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, memo, type MouseEvent, type KeyboardEvent } from 'react'
@@ -5,7 +7,7 @@ import type { ColDef, GridApi, ICellRendererParams, ValueGetterParams, SetFilter
 import type { ProgramRemovalHints } from '@/lib/line-program-excess'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { PROGRAM_METHODS, PROGRAM_EDITOR_METHODS, programAssignment, isProgramEditableRow, type ProgramMethod, type ProgramAssignment, PROGRAM_ASSIGNMENT_OPTIONS } from '@/lib/line-program-workspace'
-import { isAngularConnectionType } from '@/lib/connection-type'
+import { isAngularConnectionType, isTConnectionType } from '@/lib/connection-type'
 import { formatDisplayDate } from '@/lib/date-format'
 import { calculateFinalStatus } from '@/lib/weld-status'
 import { getLineProgramOfficialStamps } from '@/lib/line-program-calculation'
@@ -19,42 +21,50 @@ import { assignmentLabel, assignmentColor, removalLabel, ProgramJointMetadata, P
 
 type RowContextMenu = (event: MouseEvent | KeyboardEvent, row: WeldRow) => void
 export type ProgramAssignmentTableProps = {
-  sessionKey?: string; approvedRowIds?: ReadonlySet<number>; removalHints?: ProgramRemovalHints
+  sessionKey?: string; removalHints?: ProgramRemovalHints
   rows: WeldRow[]; selected: Set<number>; draft: Map<number, WeldRow>; busy: boolean
   canSelect: (row: WeldRow) => boolean; onSelect: (id: number, checked: boolean) => void
   onSelectAll: (checked: boolean, visible: WeldRow[]) => void
   onFilterRows?: (rows: WeldRow[]) => void
   onChange: (row: WeldRow, method: ProgramMethod, value: ProgramAssignment) => void
+  onBasisChange?: (row: WeldRow, key: ProgramBasisKey, value: string) => void
   getError: (row: WeldRow, method: ProgramMethod, value: ProgramAssignment) => string
   onContextMenu?: RowContextMenu; focusedMethod?: ProgramMethod; focusedJoint?: number | null
 }
-const AssignmentIdentityContext = createContext<ProgramAssignmentTableProps['approvedRowIds']>(undefined)
 const AssignmentSelectionContext = createContext<Pick<ProgramAssignmentTableProps, 'selected' | 'busy' | 'canSelect' | 'onSelect'>>(null!)
-const AssignmentEditorContext = createContext<Pick<ProgramAssignmentTableProps, 'draft' | 'busy' | 'onChange' | 'getError' | 'focusedJoint' | 'focusedMethod' | 'removalHints'>>(null!)
+const AssignmentEditorContext = createContext<Pick<ProgramAssignmentTableProps, 'draft' | 'busy' | 'onChange' | 'onBasisChange' | 'getError' | 'focusedJoint' | 'focusedMethod' | 'removalHints'>>(null!)
 const AssignmentIdentity = memo(function AssignmentIdentity({ data: row }: ICellRendererParams<WeldRow>) {
-  const approvedRowIds = useContext(AssignmentIdentityContext)
-  return row ? <div><div className="flex flex-wrap items-center gap-x-2 gap-y-0.5"><span className="font-semibold text-sky-800">{String(row.joint)}</span><span className="text-xs text-slate-500">{String(row.connectionType ?? '')}</span><ProgramJointExclusions row={row} />{approvedRowIds?.has(row.id) ? <span className="text-[11px] text-emerald-700" title="Есть сохранённое согласование контроля. Выберите стык, чтобы снять согласование без изменения назначений.">✓ Согласовано</span> : null}</div><ProgramJointMetadata row={row} stacked /></div> : null
+  return row ? <div><div className="flex flex-wrap items-center gap-x-2 gap-y-0.5"><span className="font-semibold text-sky-800">{String(row.joint)}</span><span className="text-xs text-slate-500">{String(row.connectionType ?? '')}</span><ProgramJointExclusions row={row} /></div><ProgramJointMetadata row={row} stacked /></div> : null
 })
 const AssignmentCheckbox = memo(function AssignmentCheckbox({ data: row }: ICellRendererParams<WeldRow>) {
   const { selected, busy, canSelect, onSelect } = useContext(AssignmentSelectionContext)
   return row ? <Checkbox className="program-assignment-checkbox" aria-label={`Выбрать ${row.joint}`} checked={selected.has(row.id)} disabled={busy || !canSelect(row)} onChange={event => onSelect(row.id, event.target.checked)} /> : null
 })
 const AssignmentEditor = memo(function AssignmentEditor({ data: row, colDef }: ICellRendererParams<WeldRow>) {
-  const { draft, busy, onChange, getError, focusedJoint, focusedMethod, removalHints } = useContext(AssignmentEditorContext)
+  const { draft, busy, onChange, onBasisChange, getError, focusedJoint, focusedMethod, removalHints } = useContext(AssignmentEditorContext)
   if (!row) return null
   const method = colDef!.colId as ProgramMethod
+  const basisKey = method === 'Послойный ПВК' ? null : PROGRAM_BASIS_FIELDS[method]
+  const basis = basisKey ? String((draft.get(row.id) ?? row)[basisKey] ?? '') : ''
   const hasRepairHints = row.programRepairRequirements?.some(item => item.method !== 'ВИК')
         const old = programAssignment(row, method), value = programAssignment(draft.get(row.id) ?? row, method), dirty = old !== value
         const options = PROGRAM_ASSIGNMENT_OPTIONS.map(([option, label]) => ({ value: option, label, error: option === value ? '' : getError(row, method, option) }))
-        const unavailable = method === 'Послойный ПВК' && !isAngularConnectionType(row.connectionType)
+        const unavailable = method === 'Послойный ПВК' && !isAngularConnectionType(row.connectionType) || method === 'РК' && isTConnectionType(row.connectionType)
         const removalReason = options.find(option => option.value === '')?.error ?? ''
         const requirement = row.programRepairRequirements?.find(item => item.method === method)
+        const basisRequired = requiresControlAssignmentBasis(value) && (old !== value || !!(basisKey && String(row[basisKey] ?? '').trim()))
         return <div className="flex flex-col gap-0.5">
-          {unavailable ? <span className="flex h-8 items-center text-slate-300">—</span> : <Select aria-label={`${row.joint} · ${method}`} disabled={busy || !isProgramEditableRow(row)} value={value} onChange={event => onChange(row, method, event.target.value as ProgramAssignment)} data-removal-candidate={removalHints?.get(row.id)?.has(method) || undefined} data-program-dirty={dirty || undefined} data-program-required={!!requirement || undefined} title={requirement?.reason || removalHints?.get(row.id)?.get(method) || removalReason || 'Изменить назначение'} className={`program-assignment-select h-8 w-full min-w-0 rounded-md border px-2 text-left text-xs ${removalHints?.get(row.id)?.has(method) ? 'border-dashed border-amber-400 ring-1 ring-inset ring-amber-200' : dirty ? 'border-dashed border-sky-500 bg-sky-50' : requirement ? 'border-amber-400 ring-1 ring-inset ring-amber-200' : 'border-slate-200'} ${assignmentColor(value)} ${focusedJoint === row.id && focusedMethod === method ? 'ring-2 ring-sky-300' : ''}`}>
+          {unavailable ? <span className="flex h-8 items-center text-slate-300">—</span> : <Select aria-label={`${row.joint} · ${method}`} disabled={busy || !isProgramEditableRow(row)} value={value} onChange={event => onChange(row, method, event.target.value as ProgramAssignment)} data-removal-candidate={removalHints?.get(row.id)?.has(method) || undefined} data-program-dirty={dirty || undefined} data-program-required={!!requirement || undefined} data-program-focused={focusedJoint === row.id && focusedMethod === method || undefined} title={requirement?.reason || removalHints?.get(row.id)?.get(method) || removalReason || undefined} className={`program-assignment-select h-8 w-full min-w-0 rounded-md border px-2 text-left text-xs ${removalHints?.get(row.id)?.has(method) ? 'border-dashed border-amber-400 ring-1 ring-inset ring-amber-200' : dirty ? 'border-slate-400' : requirement ? 'border-amber-400 ring-1 ring-inset ring-amber-200' : 'border-slate-200'} ${assignmentColor(value)}`}>
             {options.map(option => <option key={option.value} value={option.value} disabled={!!option.error} title={option.error}>{option.value === '' ? 'Пусто' : option.label}</option>)}
           </Select>}
+          {!unavailable && basisKey && onBasisChange && (requiresControlAssignmentBasis(value) || basis) ? <input
+            aria-label={`${row.joint} · ${method} · Основание к назначению`}
+            placeholder={basisRequired ? 'Основание к назначению *' : 'Основание к назначению'} value={basis} disabled={busy || !isProgramEditableRow(row)}
+            aria-required={basisRequired} aria-invalid={basisRequired && !basis.trim() || undefined}
+            className={`program-assignment-basis h-8 w-full min-w-0 rounded-md border bg-white px-2 text-xs font-normal text-slate-700 placeholder:text-slate-400 ${basisRequired && !basis.trim() ? 'border-amber-400' : 'border-slate-200'}`}
+            onChange={event => onBasisChange(row, basisKey, event.target.value)} /> : null}
           <div data-program-previous-assignment className="flex h-4">{dirty ? <span className="h-4 rounded bg-sky-100 px-1.5 text-[11px] font-semibold leading-4 text-sky-900">было: {assignmentLabel(old)}</span> : null}</div>
-          {hasRepairHints ? <div data-program-repair-hint className="h-4">{requirement ? <span className="block truncate rounded px-1 text-[11px] leading-4 text-amber-800 ring-1 ring-amber-300" title={requirement.reason}>Обязательный метод</span> : null}</div> : null}
+          {hasRepairHints ? <div data-program-repair-hint className="h-4">{requirement ? <span className="block truncate rounded px-1 text-[11px] leading-4 text-amber-800 ring-1 ring-amber-300" title={requirement.reason}>Назначение закреплено</span> : null}</div> : null}
           {!requirement && !unavailable && removalReason ? <span className="sr-only">{removalLabel(row, method)}</span> : null}
         </div>
 
@@ -77,11 +87,11 @@ export function ProgramAssignmentTable(props: ProgramAssignmentTableProps) {
   const selectionContext = useMemo(() => ({ selected: props.selected, busy: props.busy, canSelect: props.canSelect, onSelect: props.onSelect }), [props.selected, props.busy, props.canSelect, props.onSelect])
   // Removal candidates depend on the whole line. A draft in another row must
   // still refresh every editor's availability/hints through this context.
-  const editorContext = useMemo(() => ({ draft: props.draft, busy: props.busy, onChange, getError: props.getError, focusedJoint: props.focusedJoint, focusedMethod: props.focusedMethod, removalHints: props.removalHints }), [props.draft, props.busy, onChange, props.getError, props.focusedJoint, props.focusedMethod, props.removalHints])
+  const editorContext = useMemo(() => ({ draft: props.draft, busy: props.busy, onChange, onBasisChange: props.onBasisChange, getError: props.getError, focusedJoint: props.focusedJoint, focusedMethod: props.focusedMethod, removalHints: props.removalHints }), [props.draft, props.busy, onChange, props.onBasisChange, props.getError, props.focusedJoint, props.focusedMethod, props.removalHints])
   const getRowClass = useCallback(({ data }: { data?: WeldRow }) => data ? rowClass(data, props.focusedJoint === data.id || props.selected.has(data.id)) : '', [props.focusedJoint, props.selected])
   const rowAttributes = useCallback((row: WeldRow) => {
     const status = calculateFinalStatus(row)
-    return { 'data-testid': 'line-program-joint', 'data-row-id': String(row.id), 'data-highlighted': props.focusedJoint === row.id || props.selected.has(row.id) ? 'true' : undefined, 'data-final-status': status, title: `Итоговое состояние: ${status}` }
+    return { 'data-testid': 'line-program-joint', 'data-row-id': String(row.id), 'data-highlighted': props.focusedJoint === row.id || props.selected.has(row.id) ? 'true' : undefined, 'data-final-status': status, 'aria-description': `Итоговое состояние: ${status}` }
   }, [props.focusedJoint, props.selected])
   const columns = useMemo<ColDef<WeldRow>[]>(() => [
     { colId: 'selection', headerName: 'Выбор', width: 76, minWidth: 64, sortable: false, filter: false, enableRowGroup: false, lockVisible: true, cellRenderer: AssignmentCheckbox },
@@ -116,16 +126,16 @@ export function ProgramAssignmentTable(props: ProgramAssignmentTableProps) {
     }
   }, [api, props.focusedJoint, props.rows])
   const eligible = visible.filter(props.canSelect), all = !!eligible.length && eligible.every(row => props.selected.has(row.id)), partly = !all && eligible.some(row => props.selected.has(row.id))
-  return <AssignmentIdentityContext.Provider value={props.approvedRowIds}><AssignmentSelectionContext.Provider value={selectionContext}><AssignmentEditorContext.Provider value={editorContext}><div className="program-assignment-grid" data-testid="assignment-grid">
+  return <AssignmentSelectionContext.Provider value={selectionContext}><AssignmentEditorContext.Provider value={editorContext}><div className="program-assignment-grid" data-testid="assignment-grid">
     <ProgramGrid kind="assignments" sessionKey={props.sessionKey ?? 'assignments'} label="Стыки и назначения всех методов" rows={props.rows} columns={columns} getId={row => String(row.id)} virtual onReady={setApi}
       toolbar={<label className="flex items-center gap-2 text-xs"><Checkbox className="program-assignment-checkbox" aria-label="Выбрать все доступные стыки" ref={element => { if (element) element.indeterminate = partly }} checked={all} disabled={props.busy || !eligible.length} onChange={event => props.onSelectAll(event.target.checked, visible)} />Выбрать доступные в отборе</label>}
       onFilterRows={rows => { setVisible(previous => previous.length === rows.length && previous.every((row, i) => row === rows[i]) ? previous : rows); props.onFilterRows?.(rows) }}
       onRowClick={row => { if (!props.busy && props.canSelect(row)) props.onSelect(row.id, !props.selected.has(row.id)) }} onRowMenu={props.onContextMenu}
       getRowClass={getRowClass} rowAttributes={rowAttributes} />
-  </div></AssignmentEditorContext.Provider></AssignmentSelectionContext.Provider></AssignmentIdentityContext.Provider>
+  </div></AssignmentEditorContext.Provider></AssignmentSelectionContext.Provider>
 }
 
-type ReadProps = { sessionKey?: string; contextLabel?: string; removalHints?: ProgramRemovalHints; rows: WeldRow[]; onAssignment: (id: number, method?: ProgramMethod) => void; onContextMenu?: RowContextMenu }
+type ReadProps = { sessionKey?: string; contextLabel?: string; removalHints?: ProgramRemovalHints; rows: WeldRow[]; onAssignment: (id: number, method?: ProgramMethod) => void; onContextMenu?: RowContextMenu; onReady?: (api: GridApi<WeldRow>) => void }
 const ReadContext = createContext<ReadProps & { toggle: (row: WeldRow) => void }>(null!)
 const ReadExpansionContext = createContext<Set<number>>(new Set())
 const ReadIdentityContent = memo(function ReadIdentityContent({ row, expanded, toggle }: { row: WeldRow; expanded: boolean; toggle: (row: WeldRow) => void }) {
@@ -138,7 +148,7 @@ function ReadIdentity({ data }: ICellRendererParams<WeldRow>) {
 // Expanding one history must not recalculate/decorate every saved row or redraw
 // all result and assignment cells. These callbacks depend only on saved data.
 const readRowClass = ({ data }: { data?: WeldRow }) => data ? rowClass(data) : ''
-const readRowAttributes = (row: WeldRow) => ({ 'data-testid': 'line-program-readonly-joint', 'data-joint': String(row.joint ?? ''), 'data-final-status': calculateFinalStatus(row), title: `Итоговое состояние: ${calculateFinalStatus(row)}` })
+const readRowAttributes = (row: WeldRow) => ({ 'data-testid': 'line-program-readonly-joint', 'data-joint': String(row.joint ?? ''), 'data-final-status': calculateFinalStatus(row), 'aria-description': `Итоговое состояние: ${calculateFinalStatus(row)}` })
 function ReadMetadata({ data }: ICellRendererParams<WeldRow>) { return data ? <ProgramJointMetadata row={data} /> : null }
 function ReadAssignments({ data: row }: ICellRendererParams<WeldRow>) {
   const { removalHints, onAssignment } = useContext(ReadContext)
@@ -146,7 +156,7 @@ function ReadAssignments({ data: row }: ICellRendererParams<WeldRow>) {
   const assignments = PROGRAM_METHODS.filter(method => method !== 'ВИК' && programAssignment(row, method))
   return <div className="flex flex-wrap items-center gap-1" data-testid="assignment-badges">{assignments.length ? [(['РК', 'УЗК'] as const), (['ПВК'] as const), (['Послойный ПВК'] as const)].map((group, index) => <div key={index} className="contents">{group.filter(method => assignments.includes(method)).map(method => {
           const value = programAssignment(row, method)
-          return <button type="button" key={method} data-removal-candidate={removalHints?.get(row.id)?.has(method) || undefined} title={removalHints?.get(row.id)?.get(method)} onClick={() => onAssignment(row.id, method)} aria-label={`Назначение ${row.joint} · ${method}: ${assignmentLabel(value)}`} className={`min-h-6 min-w-6 rounded border ${removalHints?.get(row.id)?.has(method) ? 'border-dashed border-amber-400' : 'border-transparent'} px-1 py-0.5 text-xs hover:ring-1 hover:ring-sky-300 focus-visible:ring-2 focus-visible:ring-sky-600 ${assignmentColor(value)}`}>{method}: {assignmentLabel(value)}</button>
+          return <button type="button" key={method} data-removal-candidate={removalHints?.get(row.id)?.has(method) || undefined} title={removalHints?.get(row.id)?.get(method)} onClick={() => onAssignment(row.id, method)} aria-label={`Назначение ${row.joint} · ${method}: ${assignmentLabel(value)}`} className={`min-h-6 min-w-6 rounded border ${removalHints?.get(row.id)?.has(method) ? 'border-dashed border-amber-400' : 'border-slate-300 hover:border-sky-300'} px-1 py-0.5 text-xs outline-none focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-2 focus-visible:outline-sky-600 ${assignmentColor(value)}`}>{method}: {assignmentLabel(value)}</button>
         })}</div>) : <button type="button" onClick={() => onAssignment(row.id)} aria-label={`Назначение ${row.joint}: нет назначений`} className="min-h-7 min-w-7 justify-self-start rounded px-2 py-1 text-[13px] text-slate-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 hover:bg-sky-50 hover:text-sky-800">—</button>}</div>
 }
 function ReadResults({ data: row }: ICellRendererParams<WeldRow>) {
@@ -170,7 +180,7 @@ export const ProgramReadOnlyTable = memo(function ProgramReadOnlyTable(props: Re
   const toggle = useCallback((row: WeldRow) => setDetails(previous => { const next = new Set(previous); next.has(row.id) ? next.delete(row.id) : next.add(row.id); return next }), [setDetails])
   const actions = useMemo(() => ({ ...props, toggle }), [props.rows, props.onAssignment, props.onContextMenu, props.removalHints, props.sessionKey, props.contextLabel, toggle])
   return <ReadContext.Provider value={actions}><ReadExpansionContext.Provider value={details}><div data-testid="program-joint-scroll">
-    <ProgramGrid kind="joints" sessionKey={sessionKey} label="Назначения и результаты" contextLabel={props.contextLabel} rows={props.rows} columns={readColumns} getId={row => String(row.id)}
+    <ProgramGrid onReady={props.onReady} kind="joints" sessionKey={sessionKey} label="Назначения и результаты" contextLabel={props.contextLabel} rows={props.rows} columns={readColumns} getId={row => String(row.id)}
       detailRenderer={ReadDetails} isExpanded={row => details.has(row.id)} onRowClick={toggle} onRowMenu={props.onContextMenu}
       getRowClass={readRowClass} rowAttributes={readRowAttributes} />
   </div></ReadExpansionContext.Provider></ReadContext.Provider>

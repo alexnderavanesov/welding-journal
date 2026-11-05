@@ -9,7 +9,7 @@ describe('weld card line impact', () => {
   it('shows closing missing work and an additional assignment displacing yes without saving anything', () => {
     expect(calculateProgramCardImpact(rows, { ...rows[0], hasRk: 'да' }, line)).toEqual({ before: { missing: 1, excess: 0 }, after: { missing: 0, excess: 0 } })
     const controlled = rows.map(row => row.id === 1 ? { ...row, hasRk: 'да' } : row)
-    expect(calculateProgramCardImpact(controlled, { ...rows[1], hasRk: 'дополнительный' }, line)).toEqual({ before: { missing: 0, excess: 0 }, after: { missing: 0, excess: 1 } })
+    expect(calculateProgramCardImpact(controlled, { ...rows[1], hasRk: 'дополнительный' }, line)).toEqual({ before: { missing: 0, excess: 0 }, after: { missing: 0, excess: 0 } })
     expect(rows[0]).not.toHaveProperty('hasRk')
   })
   it('excludes supplied factual history/results and rejects a moved line', () => {
@@ -17,7 +17,7 @@ describe('weld card line impact', () => {
     expect(() => calculateProgramCardImpact(rows, { ...rows[0], line: 'other' }, line)).toThrow(/перенесён/)
   })
   it('recalculates inherited repair protection when the source pair changes in the draft', () => {
-    const source = { ...rows[0], hasRk: 'да', hasUzk: 'да', rkResult: 'ремонт' }
+    const source = { ...rows[0], hasRk: 'да', hasUzk: 'дополнительный', rkResult: 'ремонт' }
     const repair = { ...rows[0], id: 11, joint: 'F1R1', hasRk: 'да', hasUzk: 'да' }
     const approved = new Set([programApprovalKey(source, 'common', true)])
     const contextual = attachProgramRepairRequirements([source, ...rows.slice(1), repair], approved)

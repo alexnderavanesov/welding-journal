@@ -22,6 +22,13 @@ export const createEarlyCoilDecision = createServerFn({ method: 'POST' })
     return server.createEarlyCoilDecision({ data })
   })
 
+export const previewControlRequestRemoval = createServerFn({ method: 'POST' })
+  .validator((data: import('./control-request-removal-preview').ControlRequestRemovalPreviewRequest) => data)
+  .handler(async ({ data }) => {
+    const server = await import('./control-request-removal-preview')
+    return server.previewControlRequestRemoval({ data })
+  })
+
 export const createWeldJoint = createServerFn({ method: 'POST' })
   .validator((data: WeldPayload) => data)
   .handler(async ({ data }) => {

@@ -45,7 +45,7 @@ export function buildPercentageLineControlTasks(
       const rejectedRows = stampSummary.rejectedRowIds.map((id) => rowsById.get(id)).filter((row): row is WeldRow => !!row).sort(compareRejectedRows)
       if (!sampleRow) continue
 
-      if (lineSummary.percent > 0 && lineSummary.percent < 100 && stampSummary.officialJointCount > 0 && participatingStampCount > 1 && stampSummary.key !== firstStampSummaryKey) {
+      if (!lineSummary.support && lineSummary.percent > 0 && lineSummary.percent < 100 && stampSummary.officialJointCount > 0 && participatingStampCount > 1 && stampSummary.key !== firstStampSummaryKey) {
         tasks.push(buildNewWelderTask(sampleRow, stampSummary, lineSummary.stamps.length))
       }
 
@@ -70,14 +70,14 @@ export function buildPercentageLineControlTasks(
           row: sampleRow, projectTitle: stampSummary.projectTitle, subtitleCode: stampSummary.subtitleCode,
           line: stampSummary.line, stamp: stampSummary.stamp,
           title: issue === 'missing' ? 'Назначить ПВК по программе линии' : 'Проверить лишний ПВК',
-          details: `Линия ${stampSummary.line}${stampSummary.stamp ? `, клеймо ${stampSummary.stamp}` : ', по всей линии'}. ПВК ${demand.percent}%: расчётная норма ${demand.required}, к закрытию с учётом доступных стыков ${demand.actionableRequired}, зачтено ${demand.coveredRowIds.length}, выполнено ${demand.completedRowIds.length}. ${issue === 'missing' ? 'Доступный недобор' : 'Лишние назначения'}: ${count}. Сопутствующий ПВК, необходимый для послойной замены, защищён.`,
+          details: `${lineSummary.support ? 'Опоры · ' : ''}Линия ${stampSummary.line}${stampSummary.stamp ? `, клеймо ${stampSummary.stamp}` : ', по всей линии'}. ПВК ${demand.percent}%: расчётная норма ${demand.required}, к закрытию с учётом доступных стыков ${demand.actionableRequired}, зачтено ${demand.coveredRowIds.length}, выполнено ${demand.completedRowIds.length}. ${issue === 'missing' ? 'Доступный недобор' : 'Лишние назначения'}: ${count}. ${lineSummary.support ? 'Одна физическая опора с ремонтами занимает одно место; обязательные методы ремонта сохраняются.' : 'Сопутствующий ПВК, необходимый для послойной замены, защищён.'}`,
           targetRowIds: issue === 'missing' ? demand.candidateRowIds : demand.excessRowIds,
           requiredControls: demand.actionableRequired, coveredControls: demand.coveredRowIds.length,
           assignedControls: new Set([...demand.assignedRowIds, ...demand.additionalRowIds]).size, count,
         })
       }
 
-      if (lineSummary.percent > 0 && lineSummary.percent < 100 && stampSummary.rejectedControlRows > 0) {
+      if (!lineSummary.support && lineSummary.percent > 0 && lineSummary.percent < 100 && stampSummary.rejectedControlRows > 0) {
         tasks.push(buildRejectedRowsControlTask(rejectedRows[0] ?? sampleRow, stampSummary))
       }
 
@@ -125,7 +125,7 @@ function buildNewWelderTask(
 }
 
 function buildMissingControlTask(row: WeldRow, summary: PercentageLineStampSummary): PercentageLineControlTask {
-  const title = summary.fullControlRequired
+  const title = summary.support ? 'Назначить УЗК опор по программе линии' : summary.fullControlRequired
     ? 'Назначить 100% контроль по клейму'
     : summary.stamp ? 'Назначить контроль по процентной линии' : 'Назначить 100% контроль линии'
   const detailParts = [
@@ -141,7 +141,8 @@ function buildMissingControlTask(row: WeldRow, summary: PercentageLineStampSumma
   if (summary.missingCandidateJointNames.length > 0) {
     detailParts.push(`Кандидаты без закрытия расчета: ${formatJointList(summary.missingCandidateJointNames)}.`)
   }
-  detailParts.push(
+  if (summary.support) detailParts.push('УЗК и ПВК опор рассчитываются отдельно по официальному клейму. Исходная опора и её ремонты дают один зачёт за назначение или собственный факт. Брак не увеличивает процентную норму; обязательный контроль ремонта сохраняется.')
+  else detailParts.push(
     'Общую потребность закрывают РК/УЗК с «да» или «дополнительный», для У также явно назначенная послойная замена. Один стык учитывается один раз. Обычный ПВК закрывает только самостоятельную норму ПВК. Совместная отмена РК+УЗК учитывается только для С.',
     'Если стык уже имеет негодный результат по любому контролю, он не попадает в кандидаты на новое назначение.',
   )
@@ -176,7 +177,7 @@ function buildExcessControlTask(row: WeldRow, summary: PercentageLineStampSummar
   if (summary.excessCandidateJointNames.length > 0) {
     detailParts.push(`Проверь назначенные стыки: ${formatJointList(summary.excessCandidateJointNames)}.`)
   }
-  detailParts.push('«Доп» закрывает норму и может сделать обычное «да» на другом стыке лишним. Сам «доп» не лишний. Проверьте назначения в программе линии: ненужное «да» можно снять через «Пусто», если нет защищённой истории. Дополнительный контроль сохраняйте только если он действительно нужен.')
+  detailParts.push('«Доп» закрывает недобор, но не вытесняет обычные «да» в пределах нормы. Сам «доп» не лишний. Проверьте назначения в программе линии: ненужное «да» можно снять через «Пусто», если нет защищённой истории. Дополнительный контроль сохраняйте только если он действительно нужен.')
 
   return {
     kind: 'percentage-line-control',

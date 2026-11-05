@@ -7,6 +7,16 @@ import {
 } from '@/server/psto-line-assignment'
 
 describe('PSTO line assignment payload', () => {
+  it('requires a nonblank reason for each new line cancellation, but not for assignment/reactivation/removal', () => {
+    const payload = { identity: { projectTitle: 'P', subtitleCode: 'S', line: 'L' }, expectedVersions: [], cancellationDate: '2026-11-04' }
+    for (const cancellationBasis of [undefined, '', '  ']) {
+      expect(() => normalizePstoLineAssignmentPayload({ ...payload, action: 'cancel', cancellationBasis })).toThrow('основание')
+    }
+    expect(normalizePstoLineAssignmentPayload({ ...payload, action: 'cancel', cancellationBasis: ' ТР № 7 ' }).cancellationBasis).toBe('ТР № 7')
+    for (const action of ['assign', 'reactivate', 'remove'] as const) {
+      expect(normalizePstoLineAssignmentPayload({ ...payload, action }).cancellationBasis).toBe('')
+    }
+  })
   it('normalizes assignment identity without any stage decision', () => {
     expect(normalizePstoLineAssignmentPayload({
       identity: { projectTitle: ' Проект ', subtitleCode: ' 400 ', line: ' L-1 ' },
@@ -26,8 +36,8 @@ describe('PSTO line assignment payload', () => {
       activationDecisions: [{ rowId: 1, disposition: 'movePrimaryToPreHeatTreatment' as const }],
     }
     expect(normalizePstoLineAssignmentPayload(payload).activationDecisions).toEqual(payload.activationDecisions)
-    expect(() => normalizePstoLineAssignmentPayload({ ...payload, action: 'cancel', cancellationDate: '2026-08-10' })).toThrow('целый комплект')
-    expect(normalizePstoLineAssignmentPayload({ ...payload, action: 'cancel', cancellationDate: '2026-08-10', activationDecisions: [{ rowId: 1, disposition: 'movePreHeatTreatmentToPrimary' }] }).activationDecisions).toEqual([{ rowId: 1, disposition: 'movePreHeatTreatmentToPrimary' }])
+    expect(() => normalizePstoLineAssignmentPayload({ ...payload, action: 'cancel', cancellationDate: '2026-08-10', cancellationBasis: 'ТР-1' })).toThrow('целый комплект')
+    expect(normalizePstoLineAssignmentPayload({ ...payload, action: 'cancel', cancellationDate: '2026-08-10', cancellationBasis: 'ТР-1', activationDecisions: [{ rowId: 1, disposition: 'movePreHeatTreatmentToPrimary' }] }).activationDecisions).toEqual([{ rowId: 1, disposition: 'movePreHeatTreatmentToPrimary' }])
     expect(() => normalizePstoLineAssignmentPayload({ ...payload, activationDecisions: [...payload.activationDecisions, ...payload.activationDecisions] })).toThrow('повторный')
     expect(() => normalizePstoLineAssignmentPayload({ ...payload, activationDecisions: [{ rowId: 1, disposition: 'movePrimaryToPreHeatTreatment', ...{ methodCodes: ['ВИК'] } }] })).toThrow('целый комплект')
   })
@@ -96,10 +106,13 @@ describe('PSTO line assignment payload', () => {
         return {
           values: (values: Array<Record<string, unknown>>) => ({
             onConflictDoUpdate: ({ set }: { set: Record<string, unknown> }) => {
-              for (const key of ['vikRequest', 'vikResult', 'rkConclusion', 'pstoRequest', 'pstoResult', 'tvmtResult', 'lnkUpdatedAt']) {
+              for (const key of ['vikRequest', 'vikResult', 'rkConclusion', 'lnkUpdatedAt']) {
                 expect(set).not.toHaveProperty(key)
                 expect(values[0]).not.toHaveProperty(key)
               }
+              // Request fields are written from the locked, hydrated row so a safe removal
+              // can clear them atomically; unrelated NK fields remain untouched.
+              for (const key of ['pstoRequest', 'pstoResult', 'tvmtResult']) expect(set).toHaveProperty(key)
               return { returning: async () => values }
             },
           }),

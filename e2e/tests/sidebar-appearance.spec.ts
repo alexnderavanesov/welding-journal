@@ -23,6 +23,9 @@ test('контурное меню: все разделы, мягкая подс�
     await expect(sidebar).toHaveCSS('width', collapsed ? '64px' : '192px')
     for (const [label, path, icon] of sections) {
       const button = sidebar.getByRole('button', { name: label, exact: true })
+      await button.hover()
+      if (collapsed) await expect(button).toHaveAttribute('title', label)
+      else await expect(button).not.toHaveAttribute('title')
       await expect(button.locator('svg')).toHaveClass(new RegExp(`lucide-${icon}`))
       await expect(button.locator('svg')).toHaveAttribute('stroke-width', '1.5')
       await button.focus()

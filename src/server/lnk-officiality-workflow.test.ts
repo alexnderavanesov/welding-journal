@@ -46,6 +46,8 @@ describe('lnk officiality workflow load shape', () => {
       'revisionActuality',
       'finalStatus',
       'weldDate',
+      'connectionType',
+      'weldLength',
       'pstoDate',
       'rkResult',
       'vikRequestDate',

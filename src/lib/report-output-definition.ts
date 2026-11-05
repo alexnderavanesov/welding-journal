@@ -2,6 +2,8 @@ import * as builders from './report-show-builders'
 import { FIELD_BY_KEY, VISIBLE_FIELDS, type WeldField, type WeldInput } from './weld-fields'
 import type { ReportOutputRequest } from '@/server/weld-contracts'
 
+// cancelledAccepted remains readable for historical output requests. The UI
+// no longer offers that view; new cancellation cannot rewrite performed work.
 export type ReportOutputKind = 'current' | 'system' | 'waitingWeld' | 'waitingRequest' | 'waitingControl' | 'waitingRepair' | 'cancelledAccepted' | 'waitingNk' | 'conclusions' | 'results'
 
 /** Reuse the report definitions for both the bounded preview and the complete file. */

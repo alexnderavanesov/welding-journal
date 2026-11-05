@@ -6,6 +6,9 @@ import { withE2eDatabase } from '../database'
 import { linePrograms, weldJoints } from '../../src/db/schema'
 import { loadRebuildWeldFacts } from '../../src/server/system-document-rebuild-facts'
 
+const exactWeldLength = '123456789.12345678901234567890'
+const changedWeldLength = '123456789.12345678901234567891'
+
 test('компактные факты пересборки совпадают с обычным SELECT, включая ревизию всех полей', async () => {
   await withE2eDatabase(async client => {
     const db = drizzle(client)
@@ -49,11 +52,15 @@ for (const timezone of ['UTC', 'Europe/Moscow', 'America/New_York']) {
           if (column.dataType === 'date') return [[key, new Date('2026-03-08T06:59:59.987Z')]]
           if (column.dataType === 'boolean') return [[key, index % 2 === 0]]
           if (column.dataType === 'number') return [[key, index % 2 === 0 ? 0 : 123456789.123]]
+          // PostgreSQL numeric without mode:'number' is deliberately a decimal
+          // string in Drizzle. It is not an unrestricted text field.
+          if (column.dataType === 'string' && /^numeric(?:\(|$)/.test(column.getSQLType())) return [[key, exactWeldLength]]
           if (column.dataType === 'string') return [[key, `${key}: М05 + М01\nТК «12»  \u00a0<&>`]]
           throw new Error(`Add an independent transport fixture for ${key}`)
         })) as typeof weldJoints.$inferInsert
         const [created] = await db.insert(weldJoints).values(values).returning({ id: weldJoints.id })
         const [ordinary] = await db.select().from(weldJoints).where(eq(weldJoints.id, created.id))
+        expect(ordinary.weldLength).toBe(exactWeldLength)
         const [compact] = await loadRebuildWeldFacts(db as never, [created.id])
         expect(compact.row).toEqual(ordinary)
         const revision = createHash('sha256').update(JSON.stringify(Object.fromEntries(
@@ -61,6 +68,20 @@ for (const timezone of ['UTC', 'Europe/Moscow', 'America/New_York']) {
             .map(key => [key, ordinary[key as keyof typeof ordinary]]),
         ))).digest('base64url')
         expect(compact.revision).toBe(revision)
+
+        // A change beyond JS Number precision must still invalidate the saved
+        // rebuild revision, just as the ordinary full-row SELECT does.
+        await db.update(weldJoints).set({ weldLength: changedWeldLength }).where(eq(weldJoints.id, created.id))
+        const [changedOrdinary] = await db.select().from(weldJoints).where(eq(weldJoints.id, created.id))
+        const [changedCompact] = await loadRebuildWeldFacts(db as never, [created.id])
+        expect(changedOrdinary.weldLength).toBe(changedWeldLength)
+        expect(changedCompact.row).toEqual(changedOrdinary)
+        const changedRevision = createHash('sha256').update(JSON.stringify(Object.fromEntries(
+          Object.keys(changedOrdinary).filter(key => key !== 'dispatcherTasks').sort()
+            .map(key => [key, changedOrdinary[key as keyof typeof changedOrdinary]]),
+        ))).digest('base64url')
+        expect(changedCompact.revision).toBe(changedRevision)
+        expect(changedCompact.revision).not.toBe(compact.revision)
       } finally { await client.query('rollback') }
     })
   })

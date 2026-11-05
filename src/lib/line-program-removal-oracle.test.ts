@@ -30,8 +30,7 @@ it('independent small-state oracle: the whole suggested removal set preserves ev
           expect(method).not.toBe('Послойный ПВК')
           const field = fields[method as keyof typeof fields]
           expect(row[field]).toBe('да')
-          if (method === 'РК') expect(!!row.rkRequest || !!row.rkConclusion).toBe(false)
-          expect(approved.has(programApprovalKey(row, 'common', true))).toBe(false)
+          if (method === 'РК') expect(!!row.rkResult || !!row.rkConclusion).toBe(false)
           next[field] = null
         }
         return next

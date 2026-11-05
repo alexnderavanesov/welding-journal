@@ -148,6 +148,7 @@ test('fresh server rows refresh metadata and history while joint and result valu
     expect(result.rows).toEqual([{ joint: 'F1', has_rk: 'да', vik_result: 'годен' }])
   })
   await editor.getByRole('combobox', { name: 'F2 · РК', exact: true }).selectOption('дополнительный')
+  await editor.getByLabel('F2 · РК · Основание к назначению', { exact: true }).fill('ТР № 10')
   await editor.getByRole('button', { name: 'Проверить изменения', exact: true }).click()
   await expect(editor.getByRole('button', { name: 'Сохранить назначения', exact: true })).toBeVisible()
   const acknowledgement = editor.getByRole('checkbox', { name: /Подтверждаю назначение сверх нормы/ })

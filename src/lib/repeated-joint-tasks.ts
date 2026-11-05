@@ -1,3 +1,4 @@
+import { buildSupportJointCheckTasks } from './repeated-joint-check-tasks'
 import { type WeldInput } from '@/lib/weld-fields'
 import { buildProgramIntegrityTasks } from './coil-restoration'
 import { getJointStatusLabel } from '@/lib/lnk-status'
@@ -68,6 +69,9 @@ type ObsoleteRepeatedJointInfo = {
 type MatchingJointRowsIndex = Map<string, WeldRow[]>
 
 type BuildRepeatedJointTasksOptions = {
+  /** Validate creation from this source without letting another namesake consume
+   * its display task. All rows still participate in chain/history checks. */
+  creationSourceRowId?: number
   pstoPolicies?: ReadonlyMap<string, PstoLinePolicy>
   acceptedProgramControlKeys?: ReadonlySet<string>
   earlyCoilDecisionSourceRowIds?: ReadonlySet<number>
@@ -123,6 +127,7 @@ export function buildRepeatedJointTasks(
   )
   const orphanGoodRenameRowIds = new Set(orphanGoodRenameTasks.map((task) => task.row.id))
   const chainCheckTasks = [
+    ...buildSupportJointCheckTasks(rows, systemIndexSettings),
     ...buildChainActualityCheckTasks(rows, systemIndexSettings),
     ...buildProgramIntegrityTasks(rows, systemIndexSettings),
     ...buildPrimaryLnkStageDebtSystemWarnings(rows, options.controlProcessSettings),
@@ -197,6 +202,7 @@ export function buildRepeatedJointTasks(
   for (const row of rows) {
     // Keep excluded rows in the lookup and integrity audit: an active repair
     // can still inherit their history. Only the demand for new work is paused.
+    if (options.creationSourceRowId !== undefined && row.id !== options.creationSourceRowId) continue
     if (isRevisionNotActual(row.revisionActuality)) continue
     if (obsoleteByRowId.has(row.id)) continue
     if (isRowInBlockedRepeatedJointChain(row, blockedChainKeys, systemIndexSettings)) continue

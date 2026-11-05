@@ -8,7 +8,7 @@ import { PrintableReportPreview } from './printable-report-preview'
 import { downloadPrintableReport } from '@/lib/download-printable-report'
 
 export type LineProgramReportsHandle = { open: (request: ProgramReportRequest) => void }
-export const LineProgramReports = forwardRef<LineProgramReportsHandle, { ids: number[]; context: string; disabled: boolean; children?: ReactNode }>(function LineProgramReports({ ids, context, disabled, children }, ref) {
+export const LineProgramReports = forwardRef<LineProgramReportsHandle, { ids: number[]; family?: 'supports'; context: string; disabled: boolean; children?: ReactNode }>(function LineProgramReports({ ids, family, context, disabled, children }, ref) {
   const [host, setHost] = useState<Element | null>(null)
   const [menuOpen, setMenuOpen] = useState(false), [previewOpen, setPreviewOpen] = useState(false)
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
@@ -38,7 +38,7 @@ export const LineProgramReports = forwardRef<LineProgramReportsHandle, { ids: nu
     if (pending.current) return
     pending.current = true
     const request = ++generation.current
-    selection.current = { ...data, ids: [...data.ids] }
+    selection.current = { ...data, family: data.family ?? family, ids: [...data.ids] }
     if (!retry) returnFocus.current = target
     setMenuOpen(false); setPreviewOpen(true); setReport(null); setBusy(true); setError('')
     try {

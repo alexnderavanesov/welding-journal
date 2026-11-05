@@ -87,7 +87,7 @@ export function WorkflowActionMenuItem({
       <span className="min-w-0 flex-1">
         <span className="block font-medium leading-5">{label}</span>
         {description || detail ? (
-          <span title={detail} className={`mt-0.5 block text-xs font-normal leading-4 text-slate-500 ${description ? 'h-8 overflow-y-auto' : ''}`}>
+          <span  className={`mt-0.5 block text-xs font-normal leading-4 text-slate-500 ${description ? 'h-8 overflow-y-auto' : ''}`}>
             {detail}
           </span>
         ) : null}

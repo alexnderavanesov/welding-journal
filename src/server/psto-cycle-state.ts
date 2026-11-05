@@ -29,6 +29,16 @@ export function getPstoCycleState(row: WeldRow): PstoCycleSnapshot[] {
   return buildPstoCycleTimeline(row, row.pstoRepeatCycles ?? [])
 }
 
+/** Assignment removal has already checked current own facts under parent weld
+ * locks. Keep repeat writes inside the shared cycle-state service. */
+export async function clearPendingPstoRepeatRequests(tx: SystemDocumentSequenceTransaction, ids: readonly number[], kind: 'psto' | 'tvmt') {
+  if (!ids.length) return
+  await tx.update(pstoRepeatCycles).set({
+    ...(kind === 'psto' ? { pstoRequest: null, pstoRequestDate: null, pstoResult: null } : { tvmtRequest: null, tvmtRequestDate: null, tvmtResult: null }),
+    updatedAt: new Date(),
+  }).where(buildNumberArrayMatch(pstoRepeatCycles.id, ids))
+}
+
 export function getPrimaryPstoCyclePersistenceValues(row: WeldRow) {
   return {
     pstoRequest: textOrNull(row.pstoRequest),

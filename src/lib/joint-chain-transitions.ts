@@ -1,4 +1,5 @@
 import type { WeldRow } from '@/lib/dispatcher-types'
+import { isTConnectionType } from './connection-type'
 import type { WeldInput } from '@/lib/weld-fields'
 import {
   findLastIndex,
@@ -56,7 +57,7 @@ export function getCoilTransitionModeForSource({
   sourceRow: WeldRow
   systemIndexSettings?: SystemIndexSettings
 }): JointCoilTransitionMode | null {
-  if (isUnofficialJoint(sourceRow) || officialRejectedRows.at(-1)?.id !== sourceRow.id) return null
+  if (isTConnectionType(sourceRow.connectionType) || isUnofficialJoint(sourceRow) || officialRejectedRows.at(-1)?.id !== sourceRow.id) return null
   const inferredRejectedCount = getRepeatedJointFailureCount(
     parseRepeatedJointName(String(sourceRow.joint ?? ''), systemIndexSettings),
   ) + 1

@@ -12,8 +12,8 @@ describe('authoritative assignment history boundary', () => {
     expect(prepareServerWeldInput(row)).toMatchObject(row)
   })
   it.each([
-    { rkRequest: 'РК-1' },
-    { preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'РК', requestName: 'ДО-1' }] },
+    { rkRequest: 'РК-1', rkConclusion: 'Заключение' },
+    { preHeatTreatmentControls: [{ id: 1, weldJointId: 1, method: 'РК', requestName: 'ДО-1', result: 'годен' }] },
     { duplicateControls: [{ id: 1, weldJointId: 1, method: 'РК' as const, result: 'вырез' as const, conclusion: 'ДУБЛЬ', conclusionDate: '2026-09-01', controlDate: '2026-09-01' }] },
   ])('checks merged partial edits against stored stage history: %o', history => {
     const previous = { id: 1, hasRk: 'да', ...history } as unknown as WeldJoint

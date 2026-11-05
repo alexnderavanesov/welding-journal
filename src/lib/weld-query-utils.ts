@@ -13,6 +13,7 @@ export const LNK_WORKFLOW_REQUEST_SUMMARY_QUERY_KEY = [...LNK_WORKFLOW_QUERY_KEY
 export const LNK_WORKFLOW_ROWS_QUERY_KEY = [...LNK_WORKFLOW_QUERY_KEY, 'rows'] as const
 export const PSTO_WORKFLOW_QUERY_KEY = [...WELD_JOINTS_QUERY_KEY, 'psto-workflow'] as const
 export const PSTO_WORKFLOW_SUMMARY_QUERY_KEY = [...PSTO_WORKFLOW_QUERY_KEY, 'summary'] as const
+export const PSTO_WORKFLOW_AVAILABILITY_QUERY_KEY = [...PSTO_WORKFLOW_QUERY_KEY, 'availability'] as const
 export const PSTO_WORKFLOW_REQUEST_OPTIONS_QUERY_KEY = [...PSTO_WORKFLOW_QUERY_KEY, 'request-options'] as const
 export const PSTO_WORKFLOW_ROWS_QUERY_KEY = [...PSTO_WORKFLOW_QUERY_KEY, 'rows'] as const
 export const DISPATCHER_TASK_SNAPSHOT_QUERY_KEY = ['dispatcher-task-snapshot'] as const
@@ -53,6 +54,18 @@ export function scheduleWeldDataRefresh(
   change?: WeldCacheChange,
   options: WeldInvalidationOptions = {},
 ): void {
+  // A pending read may have started before this commit, including a new search
+  // key with no cached data. Cancel its publication before patching saved rows.
+  // cancelQueries cancels synchronously; its promise only observes settlement.
+  const interruptedWorkflowReads = change ? [
+    { queryKey: LNK_WORKFLOW_ROWS_QUERY_KEY, refreshed: options.refetchLnkWorkflow },
+    { queryKey: PSTO_WORKFLOW_ROWS_QUERY_KEY, refreshed: options.refetchPstoWorkflow },
+  ].flatMap(({ queryKey, refreshed }) => queryClient.getQueryCache()
+    .findAll({ queryKey, fetchStatus: 'fetching' })
+    .map(query => ({ queryKey: query.queryKey, refreshed }))) : []
+  for (const { queryKey } of interruptedWorkflowReads) {
+    void queryClient.cancelQueries({ queryKey, exact: true })
+  }
   if (change) {
     updateCompleteWeldSnapshot(queryClient, change)
     updateLoadedWeldReportContexts(queryClient, change)
@@ -94,6 +107,11 @@ export function scheduleWeldDataRefresh(
   })
   void queryClient.invalidateQueries({ queryKey: DISPATCHER_TASK_SNAPSHOT_QUERY_KEY })
   void queryClient.invalidateQueries({ queryKey: STATISTICS_SERVER_QUERY_KEY })
+  // Only interrupted active pages need another read. Settled/inactive pages
+  // retain the patch, and an explicit family refresh already owns its restart.
+  for (const { queryKey, refreshed } of interruptedWorkflowReads) {
+    if (!refreshed) void queryClient.refetchQueries({ queryKey, exact: true, type: 'active' })
+  }
 }
 
 export function updateLoadedWeldReportContexts(queryClient: QueryClient, change: WeldCacheChange) {

@@ -1,3 +1,4 @@
+import { overflowTitle } from '@/lib/overflow-title'
 import { type ReactNode } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { WeldRow } from '@/lib/dispatcher-types'
@@ -10,7 +11,7 @@ import { calculateFinalStatus, normalizeResultStatus } from '@/lib/weld-status'
 import { getSystemDocumentReferenceForField } from '@/lib/system-document-types'
 import { formatDisplayDate } from '@/lib/date-format'
 import { programDisclosureClass } from './line-program-primitives'
-import { getControlAssignmentHistory } from '@/lib/control-assignment-history'
+import { getControlAssignmentRemovalHistory } from '@/lib/control-assignment-history'
 
 export const assignmentLabel = (value: string) => value === 'дополнительный' ? 'доп' : value || '—'
 export const assignmentColor = (value: string) => value === 'да' ? 'bg-emerald-50 text-emerald-700' : value === 'дополнительный' ? 'bg-sky-50 text-sky-700' : value === 'отменен' ? 'bg-rose-50 text-rose-700' : 'text-slate-500'
@@ -18,12 +19,12 @@ export const assignmentColor = (value: string) => value === 'да' ? 'bg-emerald
 export function removalLabel(row: WeldRow, method: ProgramMethod) {
   if (method === 'Послойный ПВК') return 'Отдельное снятие комплекта'
   const config = LNK_METHODS.find(item => item.code === method)!
-  const history = getControlAssignmentHistory(row, config.enabledKey)
+  const history = getControlAssignmentRemovalHistory(row, config.enabledKey)
   if (history?.includes('НК до ТО')) return 'Есть история НК до ТО'
   if (history?.includes('дубль')) return 'Есть дубль контроля'
   if (row[config.conclusionKey] || row[config.conclusionDateKey]) return 'Есть заключение'
   if (isCompletedLineProgramResult(row[config.resultKey])) return 'Есть результат'
-  if (history) return 'Есть заявка'
+  if (history) return 'Есть выполненная работа'
   if (method === 'ПВК' && row.layeredControlAssigned) return 'Нужен для послойного'
   return 'Снятие недоступно'
 }
@@ -52,7 +53,7 @@ export function ProgramResult({ row, method, onDetails }: { row: WeldRow; method
   }
 
 export function ProgramJointIdentity({ row, onDetails, expanded }: { row: WeldRow; onDetails: () => void; expanded?: boolean }) {
-  return <><div className="flex min-w-0 items-center gap-1"><button type="button" title={String(row.joint || `#${row.id}`)} className={`${programDisclosureClass} min-w-0 text-sky-800`} aria-expanded={expanded} onClick={onDetails}>{expanded !== undefined ? expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" /> : null}<span className="truncate">{String(row.joint || `#${row.id}`)}</span></button><span className="shrink-0 whitespace-nowrap text-xs text-slate-600">{String(row.connectionType ?? '')}</span><ProgramJointExclusions row={row} compact /></div>
+  return <><div className="flex min-w-0 items-center gap-1"><button type="button" {...overflowTitle(String(row.joint || `#${row.id}`))} className={`${programDisclosureClass} min-w-0 text-sky-800`} aria-expanded={expanded} onClick={onDetails}>{expanded !== undefined ? expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" /> : null}<span className="truncate">{String(row.joint || `#${row.id}`)}</span></button><span className="shrink-0 whitespace-nowrap text-xs text-slate-600">{String(row.connectionType ?? '')}</span><ProgramJointExclusions row={row} compact /></div>
         {calculateFinalStatus(row) === 'ошибка' ? <span className="mt-1 block text-xs text-rose-700">Ошибка данных контроля</span> : null}</>
 }
 

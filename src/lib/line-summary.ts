@@ -40,7 +40,14 @@ export type LineSummary = {
 export function buildLineSummary(rows: WeldRow[], unit: StatisticsUnit, systemIndexSettings?: SystemIndexSettings,
   includeRow: (row: WeldRow) => boolean = () => true,
 ): LineSummary {
-  const rowsForSummary = getActualLineRows(rows, systemIndexSettings)
+  return summarizePhysicalLineRows(getActualLineRows(rows, systemIndexSettings), unit, systemIndexSettings, includeRow)
+}
+
+/** Aggregate representatives already resolved with their complete history. */
+export function summarizePhysicalLineRows(rowsForSummary: WeldRow[], unit: StatisticsUnit, systemIndexSettings?: SystemIndexSettings,
+  includeRow: (row: WeldRow) => boolean = () => true,
+  isCompleted: (row: WeldRow) => boolean = row => hasText(row.weldDate),
+): LineSummary {
   const lineRows = new Map<string, LineSummaryRow>()
 
   for (const row of rowsForSummary) {
@@ -74,7 +81,7 @@ export function buildLineSummary(rows: WeldRow[], unit: StatisticsUnit, systemIn
       } satisfies LineSummaryRow)
 
     const jointType = getJointType(row, systemIndexSettings)
-    const completed = hasText(row.weldDate)
+    const completed = isCompleted(row)
     summaryRow.rowIds.push(row.id)
     summaryRow.total += weight
     if (jointType === 'f') summaryRow.totalF += weight
@@ -113,7 +120,7 @@ export function buildLineSummary(rows: WeldRow[], unit: StatisticsUnit, systemIn
   }
 }
 
-function getActualLineRows(
+export function getActualLineRows(
   input: WeldRow[],
   systemIndexSettings?: SystemIndexSettings,
 ) {

@@ -1,5 +1,6 @@
 import { parseJointChainName, normalizeJointChainPart } from './joint-chain'
-import { hasPstoLifecycleData, isPstoCancelledValue, type PstoLineAssignmentState } from './psto-line-assignment'
+import { isPstoCancelledValue, type PstoLineAssignmentState } from './psto-line-assignment'
+import { getControlAssignmentPerformedHistory, getControlAssignmentRemovalHistory } from './control-assignment-history'
 import type { SystemIndexSettings } from './system-index-settings'
 import type { WeldRow } from './dispatcher-types'
 
@@ -35,15 +36,18 @@ export function getPstoChainDecision(policy: PstoLinePolicy | undefined, joint: 
   return policy?.exceptions?.get(getPstoChainRoot(joint, settings))
 }
 
-/** Change the decision, never the facts. Withdrawal of an existing package keeps
- * a cancellation marker; new unrelated joints on an unassigned line stay empty. */
+/** The line policy governs future work. Its withdrawal must not cancel a
+ * performed joint or the TVMT/repeats still required by that joint's own work. */
 export function applyPstoChainPolicy(row: WeldRow, policy: PstoLinePolicy, settings: SystemIndexSettings): WeldRow {
   const state = getPstoProgramState(policy)
   if (state === 'mixed') throw new Error('Назначение ПСТО линии противоречиво. Уточните программу линии перед изменением исключений.')
   const exception = getPstoChainDecision(policy, row.joint, settings)
   const required = exception?.required ?? state === 'assigned'
+  if (!required && getControlAssignmentPerformedHistory(row, 'pstoRequired')) {
+    return { ...row, pstoExceptionBasis: exception?.basis ?? null }
+  }
   const cancelled = !required && (state === 'cancelled' || exception?.required === false ||
-    hasPstoLifecycleData(row) || isPstoCancelledValue(row.pstoRequired))
+    getControlAssignmentRemovalHistory(row, 'pstoRequired') || isPstoCancelledValue(row.pstoRequired))
   return {
     ...row,
     pstoRequired: required ? 'да' : cancelled ? 'отменен' : null,

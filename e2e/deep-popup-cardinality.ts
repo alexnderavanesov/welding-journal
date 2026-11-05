@@ -22,10 +22,11 @@ const lineAt = (index: number) => `LONG-${String(index).padStart(4, '0')}`
 const dates = Array.from({ length: 1000 }, (_, index) => dateAt(index))
 const periods = dates.map(date => `${displayDate(date)} - ${displayDate(date)}`).sort()
 const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
-const flatInput = (value: string) => `${option}:has(span[title=${JSON.stringify(value)}]) input`
+// Labels remain present in DOM; native titles now appear only on overflow.
+const flatInput = (value: string) => `${option}:has(span[data-overflow-title=${JSON.stringify(value)}]) input`
 const dateInput = (label: string) => `${panel} input[aria-label=${JSON.stringify(label)}]`
 const daySelector = `${option} input[aria-label^="День "]`
-const periodSelector = `${option} span[title*=" - "]`
+const periodSelector = `${option} span[data-overflow-title*=" - "]`
 
 export async function setupPopupCardinalityFixture() {
   expect(total).toBe(9000)
@@ -102,7 +103,7 @@ function installCardinalityProbe(target: Target) {
         ready = Boolean(list && list.getAttribute('aria-busy') !== 'true' && fieldset?.getAttribute('aria-busy') !== 'true' && !dialog?.querySelector('[role="alert"]'))
         ready &&= dialog?.querySelector<HTMLInputElement>('input[aria-label="Найти значение фильтра"]')?.value === target.text
         ready &&= document.querySelectorAll(target.selector!).length === target.count
-        ready &&= (target.boundaries ?? []).every(value => dialog?.querySelector(`span[title="${CSS.escape(value)}"]`))
+        ready &&= (target.boundaries ?? []).every(value => dialog?.querySelector(`span[data-overflow-title="${CSS.escape(value)}"]`))
       } else if (target.kind === 'scroll') ready = holder.popupCardinalityScrollDone === true
       else {
         const frame = root?.querySelector('.journal-grid-frame')
@@ -205,7 +206,7 @@ export async function runPopupCardinality(browser: PopupBrowser, facts: Fact[], 
     await assertRows(expected)
   }
   const snapshot = async () => browser.execute(`return [...document.querySelectorAll('.journal-filter-option')].map(e=>{
-    const i=e.querySelector('input');return {value:e.querySelector('span[title]')?.getAttribute('title'),count:Number(e.querySelector('.journal-count')?.textContent),
+    const i=e.querySelector('input');return {value:e.querySelector('span[data-overflow-title]')?.getAttribute('data-overflow-title'),count:Number(e.querySelector('.journal-count')?.textContent),
       label:i?.getAttribute('aria-label'),checked:i?.checked,partial:i?.indeterminate}})`) as Promise<Array<{ value: string; count: number; label: string | null; checked: boolean; partial: boolean }>>
   const assertOptions = async (expected: Array<{ value: string; count: number }>, kind: 'flat' | 'day' | 'period' | 'year' = 'flat') => {
     const all = await snapshot(), rows = all.filter(row => kind === 'day' ? row.label?.startsWith('День ')

@@ -38,7 +38,7 @@ const displayDate = (value: string) => value.split('-').reverse().join('.')
 const matches = (row: PopupFact, item: FieldCase) => (item.field === 'weldDate' ? displayDate(row.weldDate) : row[item.field]).includes(item.fragment)
 const valueSelector = (item: FieldCase, value: string) => item.field === 'weldDate'
   ? `${dialog} input[aria-label="День ${displayDate(value)}"]`
-  : `${dialog} .journal-filter-option:has(span[title=${JSON.stringify(value)}]) input`
+  : `${dialog} .journal-filter-option:has(span[data-overflow-title=${JSON.stringify(value)}]) input`
 
 function choices(facts: PopupFact[], field: PopupField, fragment?: string, collapsedDate = false) {
   const counts = new Map<string, number>()

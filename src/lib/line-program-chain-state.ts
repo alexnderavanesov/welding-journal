@@ -2,6 +2,7 @@ import type { WeldRow } from './dispatcher-types'
 import { formatRepeatedJointName, getRepeatedJointNameFromParsed } from './joint-chain'
 import { parseJointName } from './joint-name'
 import { programJointIdentity } from './line-program-topology'
+import { isUnofficialJoint } from './joint-display'
 import { compareJointChainRows } from './repeated-joint-row-utils'
 import { loadSystemIndexSettings, type SystemIndexSettings } from './system-index-settings'
 
@@ -58,7 +59,7 @@ export function captureProgramChainStates(rows: readonly WeldRow[], settings: Sy
   }
   const unique = (key: string) => {
     const matches = byIdentity.get(key) ?? []
-    const official = matches.filter(row => String(row.officiality ?? '').toLocaleLowerCase('ru') !== 'неофициальный')
+    const official = matches.filter(row => !isUnofficialJoint(row))
     return official.length === 1 ? official[0] : matches.length === 1 ? matches[0] : undefined
   }
   const states = new Map<number, ProgramChainState>()

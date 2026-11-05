@@ -407,7 +407,10 @@ test('переключатели расчёта: единое оформлени
   expect(reads()).toBe(2)
   await methods.getByRole('button', { name: 'РК - УЗК' }).click()
   await details.getByLabel('Состав расчёта РК/УЗК').selectOption('excluded')
-  await expect(details.getByRole('button', { name: 'Открыть все стыки группы' })).toBeVisible()
+  // All three seeded welds are active, official and welded: there are no exclusions.
+  // T-15 keeps this exact empty composition instead of widening it to the whole group.
+  await expect(details.getByText('В этой части расчёта нет стыков.', { exact: true })).toBeVisible()
+  await expect(details.getByRole('button', { name: 'Показать стыки в рабочей таблице' })).toBeDisabled()
   expect(reads()).toBe(3)
   await scope.selectOption('')
   await expect(details).toHaveCount(0)
@@ -509,7 +512,7 @@ test('ПКМ линии и клейма: точная область, черно
   expect(saved.rows.every(row => !row.has_rk)).toBe(true)
 })
 
-test('возможное сокращение: счётчик равен рамкам; заявки всех этапов защищены, отмена сохраняет факты', async ({ page }) => {
+test('возможное сокращение: счётчик равен рамкам; одна заявка снимается, выполненный метод защищён', async ({ page }) => {
   const name = 'UNIFIED-REDUCTION-HISTORY'
   const id = await seed(name, 25, 4)
   await withLineProgramFixture(async db => {
@@ -525,36 +528,50 @@ test('возможное сокращение: счётчик равен рам�
   const program = await openLine(page, name), card = program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
   await expect(program.getByTestId('line-program-card').getByRole('button', { name: 'Лишнее 3', exact: true })).toBeVisible()
   await expect(program.getByTestId('line-program-detail').getByRole('button', { name: 'Лишнее 3', exact: true })).toBeVisible()
-  await expect(card.getByRole('button', { name: 'Возможное сокращение 1', exact: true })).toBeVisible()
-  await card.getByRole('button', { name: 'Возможное сокращение 1', exact: true }).click()
-  await expect(program.getByTestId('line-program-readonly-joint')).toHaveCount(1)
-  await expect(program.locator('[data-removal-candidate="true"]')).toHaveCount(1)
+  await expect(card.getByRole('button', { name: 'Возможное сокращение 3', exact: true })).toBeVisible()
+  await card.getByRole('button', { name: 'Возможное сокращение 3', exact: true }).click()
+  await expect(program.getByTestId('line-program-readonly-joint')).toHaveCount(3)
+  await expect(program.locator('[data-removal-candidate="true"]')).toHaveCount(3)
   await expect(program.getByRole('button', { name: 'Назначение F1 · РК: да', exact: true })).toHaveAttribute('data-removal-candidate', 'true')
   const editor = await openAssignments(page)
   await editor.getByLabel('Стыки в окне назначений').selectOption('')
-  for (const joint of ['F2', 'F3', 'F4']) await expect(editor.getByRole('combobox', { name: `${joint} · РК`, exact: true }).locator('option[value=""]')).toBeDisabled()
-  await expect(editor.locator('[data-removal-candidate="true"]')).toHaveCount(1)
+  for (const joint of ['F1', 'F2', 'F3']) await expect(editor.getByRole('combobox', { name: `${joint} · РК`, exact: true }).locator('option[value=""]')).toBeEnabled()
+  for (const value of ['', 'отменен']) await expect(editor.getByRole('combobox', { name: 'F4 · РК', exact: true }).locator(`option[value="${value}"]`)).toBeDisabled()
+  await expect(editor.locator('[data-removal-candidate="true"]')).toHaveCount(3)
+  const scope = editor.getByLabel('Стыки в окне назначений')
+  await expect(scope).toHaveAttribute('title', '')
+  await scope.click()
+  await editor.getByRole('listbox').getByRole('option', { name: 'Возможно сократить', exact: true }).click()
+  await expect(scope).toHaveValue('reduction:')
+  await expect(editor.getByTestId('line-program-joint')).toHaveCount(3)
+  await expect(editor.getByRole('combobox', { name: 'F4 · РК', exact: true })).toHaveCount(0)
+  const search = editor.getByRole('textbox', { name: 'Поиск стыков в назначениях', exact: true })
+  await search.fill('F2')
+  await expect(editor.getByTestId('line-program-joint')).toHaveCount(1)
+  await search.fill('')
+  await editor.getByRole('checkbox', { name: 'Выбрать F1', exact: true }).check()
+  await scope.selectOption('')
+  await expect(editor.getByRole('button', { name: 'Сбросить выбор', exact: true })).toBeDisabled()
+  await scope.selectOption('reduction:')
   await page.screenshot({ path: 'outputs/line-program-possible-reduction.png' })
-  await editor.getByRole('combobox', { name: 'F1 · РК', exact: true }).selectOption('')
+  for (const [index, joint] of ['F1', 'F2', 'F3'].entries()) {
+    await editor.getByRole('combobox', { name: `${joint} · РК`, exact: true }).selectOption('')
+    await expect(editor.getByTestId('line-program-joint')).toHaveCount(2 - index)
+  }
+  await expect(scope).toHaveValue('reduction:')
   await editor.getByRole('button', { name: 'Проверить изменения' }).click()
   await editor.getByRole('button', { name: 'Сохранить назначения' }).click()
-  await expect(editor.getByText('Назначения сохранены · стыков: 1')).toBeVisible()
+  await expect(editor.getByText('Назначения сохранены · стыков: 3')).toBeVisible()
   await expect(card.getByRole('button', { name: /^Возможное сокращение/ })).toHaveCount(0)
-  await editor.getByRole('combobox', { name: 'F4 · РК', exact: true }).selectOption('отменен')
-  await editor.getByRole('button', { name: 'Проверить изменения' }).click()
-  const agreement = editor.getByRole('checkbox', { name: /Подтверждаю назначение сверх нормы/ })
-  await expect(editor.getByLabel('Проверка изменений')).toBeVisible()
-  if (await agreement.count()) await agreement.check()
-  await editor.getByRole('button', { name: 'Сохранить назначения' }).click()
-  await expect(page.getByText('Отменить назначения?', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Вернуться', exact: true }).click()
-  await withE2eDatabase(async db => expect((await db.query("select has_rk from weld_joints where line_program_id=$1 and joint='F4'", [id])).rows[0].has_rk).toBe('да'))
-  await editor.getByRole('button', { name: 'Сохранить назначения' }).click()
-  await page.getByRole('button', { name: 'Подтвердить отмену', exact: true }).click()
-  await expect(editor.getByText('Назначения сохранены · стыков: 1')).toBeVisible()
+  await scope.selectOption('')
+  await expect(scope.locator('option[value="reduction:"]')).toHaveCount(0)
   await editor.getByLabel('Результат F4').locator('xpath=ancestor::details[1]').locator('summary').click()
-  await expect(editor.getByLabel('Результат F4').getByText('РК: годен · назначение отменено')).toBeVisible()
-  await withE2eDatabase(async db => expect((await db.query("select has_rk,rk_request,rk_result,rk_conclusion from weld_joints where line_program_id=$1 and joint='F4'", [id])).rows[0]).toEqual({ has_rk: 'отменен', rk_request: 'RK-F4', rk_result: 'годен', rk_conclusion: 'CONCLUSION-F4' }))
+  await expect(editor.getByLabel('Результат F4').getByText('РК: годен', { exact: true })).toBeVisible()
+  await withE2eDatabase(async db => {
+    expect((await db.query("select has_rk,rk_request,rk_result,rk_conclusion from weld_joints where line_program_id=$1 and joint='F4'", [id])).rows[0]).toEqual({ has_rk: 'да', rk_request: 'RK-F4', rk_result: 'годен', rk_conclusion: 'CONCLUSION-F4' })
+    expect((await db.query("select has_rk,rk_request from weld_joints where line_program_id=$1 and joint in ('F1','F2','F3')", [id])).rows.every(row => !row.has_rk && !row.rk_request)).toBe(true)
+    expect((await db.query("select p.request_name,p.request_date,p.result from pre_heat_treatment_controls p join weld_joints w on w.id=p.weld_joint_id where w.line_program_id=$1 and w.joint='F3'", [id])).rows).toEqual([{ request_name: null, request_date: null, result: null }])
+  })
 })
 
 test('светлые строки клейм сохраняют явную отметку требования 100% по браку', async ({ page }) => {
@@ -826,7 +843,7 @@ test('единый блок общего НК и ПВК, простой оста
   expect(errors).toEqual([])
 })
 
-test('доп закрывает норму: видимый состав, лишнее да и ручное снятие без потери результатов', async ({ page }) => {
+test('доп закрывает норму без вытеснения да: видимый состав и ручное снятие без потери результатов', async ({ page }) => {
   const name = 'UNIFIED-ADDITIONAL'
   await seed(name, 50, 4)
   await withLineProgramFixture(async db => {
@@ -839,25 +856,28 @@ test('доп закрывает норму: видимый состав, лиш�
   const program = await openLine(page, name), card = program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
   await program.getByRole('button', { name: 'Все стыки линии', exact: true }).click()
   const editor = await openAssignments(page)
-  for (const method of ['РК', 'ПВК']) await editor.getByRole('combobox', { name: 'F3 · ' + method, exact: true }).selectOption('дополнительный')
+  for (const method of ['РК', 'ПВК']) {
+    await editor.getByRole('combobox', { name: 'F3 · ' + method, exact: true }).selectOption('дополнительный')
+    await editor.getByLabel(`F3 · ${method} · Основание к назначению`, { exact: true }).fill('ТР № 10')
+  }
   for (const kind of ['common', 'pvk']) {
     const guidance = editor.getByTestId('assignment-guidance-' + kind)
     await expect(guidance).toContainText('Назначено: 3К назначению: 0')
     await expect(guidance).toContainText('Назначено стыков: 3 = только «да» 2 + только «доп» 1 + совместно 0')
-    await expect(guidance).toContainText('Текущая норма: 2 · Обычных «да» сверх нормы: 1')
+    await expect(guidance).toContainText('Текущая норма: 2 · Обычных «да» сверх нормы: 0')
   }
   await expect(card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'Лишнее 0', exact: true })).toBeVisible()
   for (const method of ['РК', 'ПВК']) {
-    await expect(editor.getByRole('combobox', { name: 'F2 · ' + method, exact: true })).toHaveAttribute('data-removal-candidate', 'true')
+    await expect(editor.getByRole('combobox', { name: 'F2 · ' + method, exact: true })).not.toHaveAttribute('data-removal-candidate', 'true')
     await expect(editor.getByRole('combobox', { name: 'F3 · ' + method, exact: true })).not.toHaveAttribute('data-removal-candidate', 'true')
   }
   await editor.getByRole('button', { name: 'Проверить изменения' }).click()
-  await expect(editor.getByRole('button', { name: 'Сохранить назначения' })).toBeDisabled()
-  await editor.getByRole('checkbox', { name: /Подтверждаю назначение сверх нормы/ }).check()
+  await expect(editor.getByRole('checkbox', { name: /Подтверждаю назначение сверх нормы/ })).toHaveCount(0)
+  await expect(editor.getByRole('button', { name: 'Сохранить назначения' })).toBeEnabled()
   await editor.getByRole('button', { name: 'Сохранить назначения' }).click()
   await expect(editor.getByText('Назначения сохранены · стыков: 1')).toBeVisible()
   for (const method of ['РК', 'ПВК']) {
-    await expect(editor.getByRole('combobox', { name: 'F2 · ' + method, exact: true })).toHaveAttribute('data-removal-candidate', 'true')
+    await expect(editor.getByRole('combobox', { name: 'F2 · ' + method, exact: true })).not.toHaveAttribute('data-removal-candidate', 'true')
     await expect(editor.getByRole('combobox', { name: 'F3 · ' + method, exact: true })).not.toHaveAttribute('data-removal-candidate', 'true')
   }
   for (const width of [1000, 1800]) {
@@ -866,7 +886,7 @@ test('доп закрывает норму: видимый состав, лиш�
   }
   await page.screenshot({ path: 'outputs/line-program-additional-accounting.png' })
   await editor.getByRole('button', { name: 'Вернуться к просмотру' }).click()
-  await expect(card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'Лишнее 2', exact: true })).toBeVisible()
+  await expect(card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'Лишнее 0', exact: true })).toBeVisible()
   await program.getByRole('button', { name: 'По клеймам', exact: true }).click()
   await expect(program.getByTestId('line-program-stamp')).toContainText('назначено 3')
   await program.getByTestId('program-scope-actions').getByRole('button', { name: /^Расчёт/ }).click()
@@ -994,28 +1014,36 @@ test('назначения с компактными результатами: �
   await expect(editor.getByRole('columnheader').locator('.ag-header-cell-text')).toHaveText(['Выбор', 'Стык', 'РК', 'УЗК', 'ПВК', 'Послойный ПВК', 'Результат'])
   await expect(editor.getByRole('button', { name: 'Результаты', exact: true })).toHaveCount(0)
   await expect(editor.getByRole('combobox', { name: 'F1 · РК' }).locator('option[value=""]')).toBeDisabled()
-  await expect(editor.getByRole('combobox', { name: 'F1 · РК' }).locator('option[value="отменен"]')).toBeEnabled()
-  await expect(editor.getByRole('combobox', { name: 'F3 · РК' }).locator('option[value=""]')).toBeDisabled()
-  await expect(editor.getByRole('combobox', { name: 'F2 · РК' }).locator('option[value=""]')).toBeDisabled()
+  await expect(editor.getByRole('combobox', { name: 'F1 · РК' }).locator('option[value="отменен"]')).toBeDisabled()
+  await expect(editor.getByRole('combobox', { name: 'F3 · РК' }).locator('option[value=""]')).toBeEnabled()
+  await expect(editor.getByRole('combobox', { name: 'F2 · РК' }).locator('option[value=""]')).toBeEnabled()
   await editor.getByRole('button', { name: 'УЗК', exact: true }).click()
   await editor.getByRole('checkbox', { name: 'Выбрать F4', exact: true }).check()
   await expect(editor.getByRole('button', { name: 'Проверить изменения' })).toBeDisabled()
+  await expect(editor.getByRole('combobox', { name: 'F4 · УЗК' }).locator('option[value="да"]')).toBeDisabled()
   await editor.getByRole('button', { name: /^Применить к выбранным/ }).click()
-  // Manual assignment follows the card: rejection removes calculated demand, not edit authority.
-  await expect(editor.getByRole('combobox', { name: 'F4 · УЗК' })).toHaveValue('да')
+  // Rejection does not forbid manual control, but a second ordinary Yes is forbidden.
+  await expect(editor.getByRole('combobox', { name: 'F4 · УЗК' })).toHaveValue('')
+  await expect(editor.getByRole('button', { name: 'Проверить изменения' })).toBeDisabled()
+  await editor.getByRole('radio', { name: 'Дополнительный', exact: true }).click()
+  await expect(editor.getByRole('button', { name: /^Применить к выбранным/ })).toBeDisabled()
+  await editor.getByLabel('Основание для выбранных назначений', { exact: true }).fill('ТР-дополнительный УЗК')
+  await editor.getByRole('button', { name: /^Применить к выбранным/ }).click()
+  await expect(editor.getByRole('combobox', { name: 'F4 · УЗК' })).toHaveValue('дополнительный')
   await editor.getByRole('button', { name: 'Проверить изменения' }).click()
   await expect(editor.getByRole('button', { name: 'Сохранить назначения' })).toBeVisible()
   await editor.getByRole('button', { name: 'Сбросить выбор' }).click()
   await editor.getByRole('button', { name: 'Отменить изменения', exact: true }).click()
   await page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Отменить изменения назначений?' }) }).getByRole('button', { name: 'Отменить изменения', exact: true }).click()
   await editor.getByRole('combobox', { name: 'F2 · РК' }).selectOption('отменен')
-  await expect(editor.getByRole('note')).toContainText('сохраняются')
+  await editor.getByLabel('F2 · РК · Основание к назначению', { exact: true }).fill('ТР № 10')
+  await expect(editor.getByRole('note')).toContainText('Сохранённые заявки и другие этапы остаются')
   await editor.getByRole('button', { name: 'Проверить изменения' }).click()
   await expect(editor.getByLabel('Проверка изменений')).toBeVisible()
   const agreement = editor.getByRole('checkbox', { name: /Подтверждаю назначение сверх нормы/ })
   if (await agreement.count()) await agreement.check()
   await editor.getByRole('button', { name: 'Сохранить назначения' }).click()
-  await page.getByRole('button', { name: 'Подтвердить отмену', exact: true }).click()
+  await page.getByRole('button', { name: 'Подтвердить и сохранить', exact: true }).click()
   await expect(editor.getByText('Назначения сохранены · стыков: 1')).toBeVisible()
   expect(await withE2eDatabase(async db => (await db.query("select has_rk, rk_request from weld_joints where line=$1 and joint='F2'", [name])).rows[0])).toEqual({ has_rk: 'отменен', rk_request: 'ACTIONS-PENDING' })
   // A new draft is kept if the operator cancels a context-menu navigation.
@@ -1086,7 +1114,9 @@ test('предел назначений, компактные результат
   await expect(first.getByRole('checkbox')).not.toBeChecked()
   await result.getByText('ВИК: годен').click()
   await expect(first.getByRole('checkbox')).not.toBeChecked()
-  await editor.getByRole('combobox', { name: 'F1 · РК' }).selectOption('отменен')
+  await expect(editor.getByRole('combobox', { name: 'F1 · РК' }).locator('option[value="отменен"]')).toBeDisabled()
+  await editor.getByRole('combobox', { name: 'F1 · РК' }).selectOption('дополнительный')
+  await editor.getByLabel('F1 · РК · Основание к назначению', { exact: true }).fill('ТР № 10')
   await expect(result).toContainText('РК: годен')
   await expect(editor.getByLabel('Результат F4')).toContainText('ВИК: ремонт')
   await expect(editor.getByText(/Не закрывается/)).toHaveCount(0)
@@ -1099,8 +1129,10 @@ test('предел назначений, компактные результат
   await editor.getByTestId('line-program-joint').filter({ has: page.getByText('F4', { exact: true }) }).locator('.ag-cell').nth(1).click({ button: 'right' })
   await page.getByRole('button', { name: 'Показать стык в ЛНК', exact: true }).click()
   await page.getByRole('button', { name: 'Остаться', exact: true }).click()
-  await expect(editor.getByRole('combobox', { name: 'F1 · РК' })).toHaveValue('отменен')
+  await expect(editor.getByRole('combobox', { name: 'F1 · РК' })).toHaveValue('дополнительный')
   await editor.getByRole('combobox', { name: 'F1 · РК' }).selectOption('да')
+  // Undo the entire F1 draft, including its edited basis; only F2 should be saved.
+  await editor.getByLabel('F1 · РК · Основание к назначению', { exact: true }).fill('проект')
   await editor.getByRole('combobox', { name: 'F2 · ПВК' }).selectOption('да')
   await expect(editor.getByTestId('assignment-guidance-common')).toContainText('К назначению: 0')
   await expect(editor.getByTestId('assignment-guidance-pvk')).toContainText('К назначению: 0')
@@ -1357,6 +1389,7 @@ test('планирование до сварки: группа без клейм
   await expect(editor.getByRole('checkbox', { name: 'Выбрать F1', exact: true })).toBeEnabled()
   await expect(editor.getByRole('combobox', { name: 'F2 · Послойный ПВК' })).toBeEnabled()
   await editor.getByRole('combobox', { name: 'F1 · РК' }).selectOption('дополнительный')
+  await editor.getByLabel('F1 · РК · Основание к назначению', { exact: true }).fill('ТР № 10')
   await scope.selectOption('')
   await expect(editor.getByTestId('line-program-joint')).toHaveCount(4)
   for (const joint of ['F1','F2','F3','F4']) await editor.getByRole('checkbox', { name: 'Выбрать ' + joint, exact: true }).check()
@@ -1469,96 +1502,68 @@ test('несколько линий, клейм и историй открыва
   expect(errors).toEqual([])
 })
 
-test('лишнее: согласованные методы и доп отдельно, жёлтые кандидаты только без защищённой истории', async ({ page }) => {
+test('лишнее: Доп не вытесняет обычную норму; старое согласование не скрывает превышение, факты защищены', async ({ page }) => {
   const name = 'UNIFIED-SURPLUS'
   const id = await seed(name, 30, 10)
   await withLineProgramFixture(async db => {
-    await db.query("update weld_joints set has_rk=case when joint='F4' then 'дополнительный' when joint in ('F1','F2','F3','F5','F6') then 'да' end,has_uzk=case when joint in ('F3','F5') then 'да' end,rk_result=case when joint in ('F1','F6') then 'годен' end,rk_conclusion=case when joint in ('F1','F6') then 'FACT-'||joint end where line=$1", [name])
+    await db.query("update weld_joints set has_rk=case when joint='F4' then 'дополнительный' when joint in ('F1','F2','F3','F5','F6') then 'да' end,has_uzk=null,rk_result=case when joint in ('F1','F6') then 'годен' end,rk_conclusion=case when joint in ('F1','F6') then 'FACT-'||joint end where line=$1", [name])
     const source = (await db.query('select id,joint,connection_type as "connectionType",weld_date::text as "weldDate",stamp_1_k as "stamp1K",has_rk as "hasRk",has_uzk as "hasUzk",rk_result as "rkResult" from weld_joints where line=$1 order by id', [name])).rows
     const joint = source.find(row => row.joint === 'F5')
-    const accepted = programExcessEntries(id, source, calculateLineProgram(source, 30, 10)).filter(entry => entry.rowId === joint.id && entry.duplicate)
-    expect(accepted).toHaveLength(1)
-    // Current approvals are owned by the joint; legacy key-only records belong
-    // to the separately tested object-backfill workflow.
-    await db.query("insert into dispatcher_accepted_warnings (key,kind,title,context,weld_joint_id) values ($1,'line-program-control','Согласованы методы','E2E',$2)", [accepted[0].key, joint.id])
+    const accepted = programExcessEntries(id, source, calculateLineProgram(source, 30, 10)).find(entry => entry.rowId === joint.id)!
+    expect(accepted).toBeDefined()
+    await db.query("insert into dispatcher_accepted_warnings (key,kind,title,context,weld_joint_id) values ($1,'line-program-control','Старое согласование','E2E',$2)", [accepted.key, joint.id])
   })
   const program = await openLine(page, name), card = program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')
-  // Six covered joints (five yes + one additional), quota three: three ordinary excess plus one unapproved duplicate.
-  await expect(card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'Лишнее 4', exact: true })).toBeVisible()
+  // Five ordinary joints against quota three: exactly two excess. Additional
+  // F4 closes a deficit when needed, but does not displace a third ordinary joint.
+  await expect(card.getByTestId('line-card-metrics').getByRole('button', { name: 'Лишнее 2', exact: true })).toBeVisible()
   for (const width of [1013, 1600]) {
     await page.setViewportSize({ width, height: 1050 })
-    for (const metric of [program.getByLabel('Итоги раздела').getByTestId('excess-metric')]) {
-      const compact = await metric.getAttribute('data-testid') === 'line-card-metrics'
-      expect(await metric.evaluate(el => el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth)).toBe(true)
-      expect((await metric.boundingBox())!.height).toBeLessThanOrEqual(compact ? (width < 1280 ? 160 : 100) : 80)
-      if (!compact) expect(await metric.evaluate(el => {
-        const excess = el.querySelector('strong')!.getBoundingClientRect()
-        const reduction = el.querySelector('button[aria-label^="Возможное сокращение"] > span:last-child')!.getBoundingClientRect()
-        return Math.abs(excess.right - reduction.right)
-      })).toBeLessThan(1)
-      const more = metric.getByRole('button', { name: 'Ещё показатели контроля' })
-      if (compact) {
-        await expect(more).toHaveText('Ещё')
-        await expect(more).toHaveCSS('border-top-width', '1px')
-      }
-      await more.press('Enter')
-      const details = page.getByRole('dialog', { name: 'Другие показатели контроля' })
-      await expect(details.getByRole('button', { name: 'Согласовано: 1' })).toBeFocused()
-      const box = (await details.boundingBox())!
-      expect(box.x).toBeGreaterThanOrEqual(0)
-      expect(box.x + box.width).toBeLessThanOrEqual(width)
-      await details.press('Escape')
-      await expect(more).toBeFocused()
-    }
+    const metric = program.getByLabel('Итоги раздела').getByTestId('excess-metric')
+    expect(await metric.evaluate(el => el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth)).toBe(true)
+    const more = metric.getByRole('button', { name: 'Ещё показатели контроля' })
+    await more.press('Enter')
+    const details = page.getByRole('dialog', { name: 'Другие показатели контроля' })
+    await expect(details.getByRole('button', { name: 'Дополнительные стыки: 1' })).toBeFocused()
+    await expect(details.getByRole('button', { name: /Согласовано/ })).toHaveCount(0)
+    const box = (await details.boundingBox())!
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(width)
+    await details.press('Escape')
+    await expect(more).toBeFocused()
   }
-  await expect(card.getByRole('button', { name: `Расчёт линии ${name}`, exact: true })).toHaveAttribute('aria-expanded', 'true')
-  const controlDetails = page.getByRole('dialog', { name: 'Другие показатели контроля' })
-  await expect(card.getByRole('button', { name: 'Согласовано: 1', exact: true })).toBeVisible()
-  await expect(card.getByRole('button', { name: 'Дополнительные стыки: 1', exact: true })).toBeVisible()
-  // Real pointer clicks, not only Enter/synthetic clicks: both summary filters
-  // and both line selections must survive focus changes inside the popover.
-  for (const [choice, filter] of [['Согласовано: 1', 'Есть согласованное превышение'], ['Дополнительные стыки: 1', 'Есть дополнительные стыки']]) {
-    await program.getByLabel('Итоги раздела').getByRole('button', { name: 'Ещё показатели контроля' }).click()
-    await controlDetails.getByRole('button', { name: choice, exact: true }).click()
-    await expect(program.getByTestId('line-program-filter')).toContainText(filter)
-    await expect(controlDetails).toHaveCount(0)
-    await program.getByRole('button', { name: 'Сбросить фильтр' }).click()
-  }
-  for (const [choice, joint] of [['Согласовано: 1', 'F5'], ['Дополнительные стыки: 1', 'F4']]) {
-    await card.getByRole('button', { name: choice, exact: true }).click()
-    await expect(program.getByTestId('line-program-readonly-joint')).toHaveCount(1)
-    await expect(program.getByTestId('line-program-readonly-joint').getByRole('button', { name: joint, exact: true })).toBeVisible()
-    await expect(controlDetails).toHaveCount(0)
-  }
-  await expect(program.getByTestId('line-card-metrics').getByRole('button', { name: 'Лишнее 4', exact: true })).toBeVisible()
+  await program.getByLabel('Итоги раздела').getByRole('button', { name: 'Ещё показатели контроля' }).click()
+  await page.getByRole('dialog', { name: 'Другие показатели контроля' }).getByRole('button', { name: 'Дополнительные стыки: 1', exact: true }).click()
+  await expect(program.getByTestId('line-program-filter')).toContainText('Есть дополнительные стыки')
+  await program.getByRole('button', { name: 'Сбросить фильтр' }).click()
+  await expect(card.getByRole('button', { name: /Согласовано/ })).toHaveCount(0)
+  await card.getByTestId('line-card-metrics').getByRole('button', { name: 'Дополнительные стыки: 1', exact: true }).click()
+  await expect(program.getByTestId('line-program-readonly-joint')).toHaveCount(1)
+  await expect(program.getByTestId('line-program-readonly-joint').getByRole('button', { name: 'F4', exact: true })).toBeVisible()
   await card.getByRole('button', { name: 'Учитываемых соединений 10', exact: true }).click()
-  const f3 = program.getByTestId('line-program-readonly-joint').filter({ hasText: 'F3' })
-  await expect(f3.getByRole('button', { name: 'Назначение F3 · УЗК: да', exact: true })).toHaveAttribute('data-removal-candidate', 'true')
-  await expect(f3.getByRole('button', { name: 'Назначение F3 · УЗК: да', exact: true })).toHaveCSS('border-style', 'dashed')
-  // Protected F6 no longer hides the removable F2 alternative: F2 RK + F3 RK/UZK.
-  await expect(program.locator('[data-removal-candidate="true"]')).toHaveCount(3)
-  await expect(card.getByRole('button', { name: 'Возможное сокращение 3', exact: true })).toBeVisible()
+  await expect(program.locator('[data-removal-candidate="true"]')).toHaveCount(2)
+  await expect(card.getByTestId('line-card-metrics').getByRole('button', { name: 'Возможное сокращение 2', exact: true })).toBeVisible()
   const editor = await openAssignments(page)
-  await expect(editor.getByRole('combobox', { name: 'F3 · УЗК' })).toHaveAttribute('data-removal-candidate', 'true')
-  await expect(editor.getByRole('combobox', { name: 'F5 · УЗК' })).not.toHaveAttribute('data-removal-candidate', 'true')
   await expect(editor.getByRole('combobox', { name: 'F6 · РК' }).locator('option[value=""]')).toBeDisabled()
-  await page.screenshot({ path: 'outputs/line-program-excess-hints-20260928.png' })
-  await editor.getByRole('combobox', { name: 'F3 · УЗК' }).selectOption('')
-  await expect(editor.locator('[data-removal-candidate="true"]')).toHaveCount(2)
-  await expect(editor.getByRole('combobox', { name: 'F3 · РК' })).toHaveAttribute('data-removal-candidate', 'true')
-  await editor.getByRole('combobox', { name: 'F3 · РК' }).selectOption('')
-  await expect(editor.locator('[data-removal-candidate="true"]')).toHaveCount(1)
-  await expect(editor.getByRole('combobox', { name: 'F2 · РК' })).toHaveAttribute('data-removal-candidate', 'true')
-  await editor.getByRole('combobox', { name: 'F2 · РК' }).selectOption('')
-  await expect(editor.locator('[data-removal-candidate="true"]')).toHaveCount(0)
+  await expect(editor.getByRole('combobox', { name: 'F4 · РК' })).not.toHaveAttribute('data-removal-candidate', 'true')
+  for (const [joint, remaining] of [['F5', 1], ['F3', 0]] as const) {
+    const rk = editor.getByRole('combobox', { name: `${joint} · РК` })
+    await expect(rk).toHaveAttribute('data-removal-candidate', 'true')
+    await rk.selectOption('')
+    await expect(editor.locator('[data-removal-candidate="true"]')).toHaveCount(remaining)
+  }
   await editor.getByRole('button', { name: 'Проверить изменения' }).click()
   await editor.getByRole('button', { name: 'Сохранить назначения' }).click()
   await expect(editor.getByText('Назначения сохранены · стыков: 2')).toBeVisible()
   await editor.getByRole('button', { name: 'Закрыть назначения' }).click()
-  await expect(card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'Лишнее 1', exact: true })).toBeVisible()
+  await expect(card.getByTestId('line-card-metrics').getByRole('button', { name: 'Лишнее 0', exact: true })).toBeVisible()
   await expect(card.getByRole('button', { name: /^Возможное сокращение/ })).toHaveCount(0)
-  await expect(program.getByTestId('line-card-metrics').getByRole('button', { name: /^Возможное сокращение/ })).toHaveCount(0)
-  await expect(program.getByTestId('line-card-metrics').getByRole('button', { name: 'Лишнее 1', exact: true })).toBeVisible()
+  await withE2eDatabase(async db => {
+    const rows = (await db.query('select joint,has_rk,rk_conclusion from weld_joints where line=$1 order by id', [name])).rows
+    for (const joint of ['F1', 'F2', 'F6']) expect(rows.find(row => row.joint === joint).has_rk).toBe('да')
+    expect(rows.find(row => row.joint === 'F4').has_rk).toBe('дополнительный')
+    for (const joint of ['F1', 'F6']) expect(rows.find(row => row.joint === joint).rk_conclusion).toBe('FACT-' + joint)
+  })
 })
 
 test('просмотр отдельно от назначений: размеры окон, сохранение черновика, виды, цвета и смена раздела', async ({ page }) => {
@@ -1581,11 +1586,11 @@ test('просмотр отдельно от назначений: размер�
   await expect(card).toHaveCount(1)
   await expect(card.filter({ has: page.getByTestId('line-name') })).toHaveClass(/program-line-neutral/)
   const excess = card.getByTestId('line-card-metrics')
-  // Additional F3 closes both quotas: RK now has two excess yes, PVK has one.
-  await expect(excess.getByRole('button', { name: 'Лишнее 3', exact: true })).toBeVisible()
+  // Additional F3 does not displace the ordinary quota: one excess RK, zero excess PVK.
+  await expect(excess.getByRole('button', { name: 'Лишнее 1', exact: true })).toBeVisible()
   await expect(excess.getByRole('button', { name: 'Дополнительные стыки: 1' })).toBeVisible()
   const remainingBox = await card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'К назначению 0', exact: true }).boundingBox()
-  const excessBox = await excess.getByRole('button', { name: 'Лишнее 3', exact: true }).boundingBox()
+  const excessBox = await excess.getByRole('button', { name: 'Лишнее 1', exact: true }).boundingBox()
   expect(excessBox!.height).toBeLessThanOrEqual(40)
   // Narrow native columns may wrap the two method subtotals onto separate lines.
   expect(remainingBox!.height).toBeLessThanOrEqual(60)
@@ -1593,7 +1598,7 @@ test('просмотр отдельно от назначений: размер�
   await card.getByRole('button', { name: `Расчёт линии ${name}` }).click()
   for (const group of [card.getByTestId('line-program-stamp')]) {
     await expect(group.getByRole('button', { name: 'Расчёт закрыт', exact: true, includeHidden: true })).toHaveCSS('color', 'rgb(4, 120, 87)')
-    await expect(group.getByRole('button', { name: 'Лишнее: 3', exact: true, includeHidden: true })).toHaveCSS('font-weight', '400')
+    await expect(group.getByRole('button', { name: 'Лишнее: 1', exact: true, includeHidden: true })).toHaveCSS('font-weight', '400')
   }
   const stamp = card.getByRole('button', { name: 'Клеймо UNIFIED-A', exact: true })
   await stamp.scrollIntoViewIfNeeded()
@@ -1686,7 +1691,8 @@ test('просмотр отдельно от назначений: размер�
       await button.click()
     }
     await editor.getByRole('button', { name: 'РК', exact: true }).click()
-    const geometry = () => editor.getByTestId('line-program-joint').evaluateAll(rows => rows.map(row => ({ height: row.getBoundingClientRect().height, cells: Array.from(row.children).map(cell => { const box = cell.getBoundingClientRect(); return [box.x, box.y, box.width] }) })))
+    // Compare layout within the grid; Playwright may scroll to an offscreen checkbox.
+    const geometry = () => editor.getByTestId('line-program-joint').evaluateAll(rows => rows.map(row => ({ height: row.getBoundingClientRect().height, cells: Array.from(row.children).map(cell => { const box = cell.getBoundingClientRect(); return [box.x, box.y - rows[0].getBoundingClientRect().y, box.width] }) })))
     const before = await geometry(), panelBefore = await editor.boundingBox()
     for (const joint of ['F3', 'F4']) {
       const checkbox = editor.getByRole('checkbox', { name: `Выбрать ${joint}`, exact: true })
@@ -1898,7 +1904,7 @@ test('процентная линия: несколько методов, явн
   await expect(program.getByRole('grid', { name: 'Расчёт по клеймам' }).getByRole('columnheader')).toHaveCount(8)
   await program.getByRole('button', { name: 'Все стыки линии', exact: true }).click()
   const editor = await openAssignments(page)
-  for (const method of ['РК', 'УЗК', 'ПВК']) await editor.getByRole('button', { name: method, exact: true }).click()
+  for (const method of ['РК', 'ПВК']) await editor.getByRole('button', { name: method, exact: true }).click()
   for (const joint of ['F1', 'F3', 'F4']) await editor.getByRole('checkbox', { name: `Выбрать ${joint}`, exact: true }).check()
   await editor.getByRole('button', { name: /^Применить к выбранным/ }).click()
   await editor.getByRole('button', { name: 'Проверить изменения' }).click()
@@ -1907,13 +1913,14 @@ test('процентная линия: несколько методов, явн
   await editor.getByRole('checkbox', { name: /Подтверждаю назначение сверх нормы/ }).check()
   await save.click()
   await expect(editor.getByText('Назначения сохранены · стыков: 3')).toBeVisible()
-  // Approval is attached to the joint object, not encoded line names/percentages.
-  expect(await withE2eDatabase(async db => (await db.query('select count(*)::int as n from dispatcher_accepted_warnings a join weld_joints w on w.id=a.weld_joint_id where a.kind=$1 and w.line_program_id=$2', ['line-program-control', id])).rows[0].n)).toBeGreaterThan(0)
+  // Confirming the ordinary surplus does not create a separate approval.
+  expect(await withE2eDatabase(async db => (await db.query('select count(*)::int as n from dispatcher_accepted_warnings a join weld_joints w on w.id=a.weld_joint_id where a.kind=$1 and w.line_program_id=$2', ['line-program-control', id])).rows[0].n)).toBe(0)
   await editor.getByRole('button', { name: 'Вернуться к просмотру' }).click()
-  await expect(program.getByTestId('line-program-card').getByRole('button', { name: /^Согласовано:/ })).toBeVisible()
+  await expect(program.getByTestId('line-program-card').getByRole('button', { name: /^Согласовано:/ })).toHaveCount(0)
   await expect(program.getByTestId('line-program-readonly-joint').first()).toContainText('РК: да')
   await openAssignments(page)
   await editor.getByRole('combobox', { name: 'F1 · РК', exact: true }).selectOption('дополнительный')
+  await editor.getByLabel('F1 · РК · Основание к назначению', { exact: true }).fill('ТР № 10')
   await expect(editor.getByTestId('line-program-joint').first()).toContainText('было: да')
   await editor.getByRole('button', { name: 'Проверить изменения' }).click()
   await expect(save).toBeVisible()

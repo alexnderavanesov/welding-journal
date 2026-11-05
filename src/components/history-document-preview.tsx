@@ -1,3 +1,4 @@
+import { overflowTitle } from '@/lib/overflow-title'
 import { isTopModalDialog } from '@/lib/modal-layer'
 import { useEffect, useRef, useState } from 'react'
 import { downloadBlob } from '@/lib/generated-document-storage'
@@ -49,7 +50,7 @@ export function HistoryDocumentPreview({ request, onClose }: { request: HistoryD
   return <LargeDialogShell onEscape={onClose} overlayClassName="z-[180] bg-slate-950/30" ariaLabel="Предпросмотр документа" maxWidthClassName="max-w-[1440px]" panelClassName="h-[92vh] md:w-[92vw]">
     <div ref={panel} className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-200 px-4 py-3">
-        <div className="min-w-0 flex-[1_1_240px]"><h2 className="text-xs font-medium text-slate-500">Предпросмотр документа</h2><p className="truncate text-sm font-semibold text-slate-800" title={request.title}>{request.title}</p><p className="text-xs text-slate-500">Для печати скачайте Excel и откройте его на компьютере.</p></div>
+        <div className="min-w-0 flex-[1_1_240px]"><h2 className="text-xs font-medium text-slate-500">Предпросмотр документа</h2><p className="truncate text-sm font-semibold text-slate-800" {...overflowTitle(request.title)}>{request.title}</p><p className="text-xs text-slate-500">Для печати скачайте Excel и откройте его на компьютере.</p></div>
         <Button ref={downloadButton} variant="outline" size="sm" disabled={!snapshot} onClick={() => snapshot && downloadBlob(snapshot.blob, request.fileName)}>Скачать Excel</Button>
         <Button ref={closeButton} aria-label="Закрыть предпросмотр" variant="outline" size="sm" onClick={onClose}>Закрыть</Button>
       </div>

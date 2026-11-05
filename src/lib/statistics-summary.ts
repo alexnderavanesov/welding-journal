@@ -19,6 +19,23 @@ export type StatisticsPeriodPreset = 'all' | 'currentWeek' | 'currentMonth' | 'p
 export type StatisticsControlDynamicsScale = 'day' | 'week' | 'month' | 'quarter' | 'year'
 export type StatisticsControlDynamicsScaleSetting = StatisticsControlDynamicsScale | 'auto'
 
+export type StatisticsFinalStatusReader = (row: WeldRow) => ReturnType<typeof calculateFinalStatusInRows>
+
+/** Reuse status work only while aggregating this unchanged row snapshot.
+ * Keep the exact history scope and object identity; never share across calls
+ * or attach cached state to the caller's rows. */
+export function createStatisticsFinalStatusReader(statusRows: readonly WeldRow[]): StatisticsFinalStatusReader {
+  const context = buildFinalStatusRowsContext(statusRows)
+  const statuses = new WeakMap<WeldRow, ReturnType<typeof calculateFinalStatusInRows>>()
+  return row => {
+    const cached = statuses.get(row)
+    if (cached !== undefined) return cached
+    const status = calculateFinalStatusInRows(row, statusRows, context)
+    statuses.set(row, status)
+    return status
+  }
+}
+
 export type StatisticsMethodSummary = {
   code: string
   requiredRequests: number
@@ -62,6 +79,7 @@ export type StatisticsSummary = {
   weldedShare: number
   good: number
   rejected: number
+  rejectedJointCount: number
   duplicateGood: number
   duplicateRejected: number
   waitingWeld: number
@@ -185,12 +203,13 @@ export function buildStatisticsSummary(
   unit: StatisticsUnit,
   systemIndexSettings?: SystemIndexSettings,
   controlDynamicsScaleSetting: StatisticsControlDynamicsScaleSetting = 'day',
+  statusRows: WeldRow[] = rows,
+  readFinalStatus: StatisticsFinalStatusReader = createStatisticsFinalStatusReader(statusRows),
 ): StatisticsSummary {
-  const finalStatusContext = buildFinalStatusRowsContext(rows)
   const periodRows = rows.filter((row) => isDateInRange(row.weldDate, from, to))
   const pendingWithoutWeldRows = rows.filter((row) => {
     if (hasText(row.weldDate)) return false
-    const status = String(calculateFinalStatusInRows(row, rows, finalStatusContext)).trim().toLowerCase()
+    const status = String(readFinalStatus(row)).trim().toLowerCase()
     return status === 'ожидает сварку' || status === 'ожидает ремонт'
   })
   const weightedRows = getWeightedRows(periodRows, unit)
@@ -199,9 +218,9 @@ export function buildStatisticsSummary(
   const totalRows = sumRows(weightedStatusRows, unit)
   const welded = sumRows(weightedRows.filter((row) => hasText(row.weldDate)), unit)
 
-  const statuses = weightedStatusRows.map((row) => normalizeFinalStatus(calculateFinalStatusInRows(row, rows, finalStatusContext)))
+  const statuses = weightedStatusRows.map((row) => normalizeFinalStatus(readFinalStatus(row)))
   const backlogStatuses = weightedBacklogRows.map((row) =>
-    normalizeFinalStatus(calculateFinalStatusInRows(row, rows, finalStatusContext)),
+    normalizeFinalStatus(readFinalStatus(row)),
   )
   const good = sumRowsByStatus(weightedStatusRows, statuses, unit, 'годен')
   const rejected = sumRowsByStatus(weightedStatusRows, statuses, unit, 'не годен')
@@ -360,6 +379,7 @@ export function buildStatisticsSummary(
     weldedShare: getPercent(welded, totalRows),
     good,
     rejected,
+    rejectedJointCount: periodRows.filter(row => normalizeFinalStatus(readFinalStatus(row)) === 'не годен').length,
     duplicateGood,
     duplicateRejected,
     waitingWeld,
@@ -480,13 +500,14 @@ export function buildStatisticsStateRowIds(
   from: string,
   to: string,
   unit: StatisticsUnit,
+  statusRows: WeldRow[] = rows,
+  readFinalStatus: StatisticsFinalStatusReader = createStatisticsFinalStatusReader(statusRows),
 ): StatisticsStateRowIds {
-  const finalStatusContext = buildFinalStatusRowsContext(rows)
   const periodRows = getWeightedRows(rows.filter((row) => isDateInRange(row.weldDate, from, to)), unit)
   const pendingWithoutWeldRows = getWeightedRows(
     rows.filter((row) => {
       if (hasText(row.weldDate)) return false
-      const status = normalizeFinalStatus(calculateFinalStatusInRows(row, rows, finalStatusContext))
+      const status = normalizeFinalStatus(readFinalStatus(row))
       return status === 'ожидает сварку' || status === 'ожидает ремонт'
     }),
     unit,
@@ -508,7 +529,7 @@ export function buildStatisticsStateRowIds(
   for (const row of periodRows) {
     const id = getStatisticsRowId(row)
     if (id === null) continue
-    const status = normalizeFinalStatus(calculateFinalStatusInRows(row, rows, finalStatusContext))
+    const status = normalizeFinalStatus(readFinalStatus(row))
     if (status === 'годен') result.good.push(id)
     else if (status === 'не годен') result.rejected.push(id)
     else if (status === 'ожидает сварку') result.waitingWeld.push(id)
@@ -523,7 +544,7 @@ export function buildStatisticsStateRowIds(
     const id = getStatisticsRowId(row)
     if (id === null) continue
     result.backlog.push(id)
-    const status = normalizeFinalStatus(calculateFinalStatusInRows(row, rows, finalStatusContext))
+    const status = normalizeFinalStatus(readFinalStatus(row))
     if (status === 'ожидает сварку') result.backlogWaitingWeld.push(id)
     if (status === 'ожидает ремонт') result.backlogWaitingRepair.push(id)
   }
@@ -534,6 +555,15 @@ export function buildStatisticsStateRowIds(
 export function formatStatisticValue(value: number, unit: StatisticsUnit) {
   if (unit === 'wdi') return formatNumber(value)
   return String(Math.round(value))
+}
+
+const generalWdiNumber = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
+export function formatGeneralStatisticValue(value: number, unit: StatisticsUnit) {
+  return unit === 'wdi' ? generalWdiNumber.format(value) : formatStatisticValue(value, unit)
+}
+
+export function formatGeneralRejectedDetail(summary: StatisticsSummary, unit: StatisticsUnit) {
+  return `Негодных стыков: ${summary.rejectedJointCount}${unit === 'wdi' ? ` · ${formatGeneralStatisticValue(summary.rejected, unit)} WDI` : ''}`
 }
 
 export function formatPercent(value: number) {

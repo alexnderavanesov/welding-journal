@@ -1,3 +1,4 @@
+import { overflowTitle } from '@/lib/overflow-title'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DocumentConnectionsDialog } from './document-connections-dialog'
 import { userStorage } from '@/lib/user-storage'
@@ -926,7 +927,6 @@ export function DocumentsPage({
                   value={manualFileName}
                   onChange={(event) => setManualFileName(event.target.value.replace(/\s*\n+\s*/g, ' '))}
                   placeholder={firstDocumentTitle}
-                  title={firstDocumentTitle}
                   className="mt-1 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
                 />
               </label>
@@ -946,7 +946,9 @@ export function DocumentsPage({
                     : 'Сформировать'}
               </Button>
             </div>
-            <div className="mt-1.5 truncate text-[11px] text-slate-400" title={ensureWeldingJournalXlsxFileName(firstDocumentTitle, activeDocumentProfile.label)}>
+            <div className="mt-1.5 truncate text-[11px] text-slate-400" {...(journalDocumentGroups.length > 1
+              ? { title: ensureWeldingJournalXlsxFileName(firstDocumentTitle, activeDocumentProfile.label) }
+              : overflowTitle(ensureWeldingJournalXlsxFileName(firstDocumentTitle, activeDocumentProfile.label)))}>
               {journalDocumentGroups.length > 1
                 ? `Будет сформировано документов «${activeDocumentProfile.label}»: ${journalDocumentGroups.length}. Все документы появятся в истории.`
                 : `Итоговый файл: ${ensureWeldingJournalXlsxFileName(firstDocumentTitle, activeDocumentProfile.label)}`}
@@ -1850,7 +1852,7 @@ function SystemDocumentsPanel({
 
 function DocumentTitleButton({ title, disabled = false, onClick }: { title: string; disabled?: boolean; onClick: () => void }) {
   return <button type="button" data-document-title-button className="group flex w-full min-w-0 items-center gap-2 text-left disabled:cursor-not-allowed disabled:opacity-60" disabled={disabled} onClick={onClick} title={disabled ? 'Для этого вида документа шаблон еще не загружен' : 'Предпросмотр актуального документа'}>
-    <FileSpreadsheet className="h-4 w-4 shrink-0 text-sky-700" /><span className="document-grid-title min-w-0 text-[13px] font-medium text-slate-800 group-hover:text-sky-800">{title}</span>
+    <FileSpreadsheet className="h-4 w-4 shrink-0 text-sky-700" /><span className="document-grid-title min-w-0 text-[13px] font-medium text-slate-800 group-hover:text-sky-800" {...overflowTitle(disabled ? `${title} · Для этого вида документа шаблон еще не загружен` : title)}>{title}</span>
   </button>
 }
 
@@ -1861,7 +1863,7 @@ function DocumentHistoryError({ message, onRetry }: { message: string; onRetry: 
 function DocumentDimensionCell({ values }: { values: string[] }) {
   const text = values.length > 0 ? values.join(', ') : '-'
   return (
-    <span className="truncate text-xs text-slate-600" title={text}>
+    <span className="truncate text-xs text-slate-600" {...overflowTitle(text)}>
       {text}
     </span>
   )
@@ -1997,7 +1999,7 @@ function DocumentMultiFilter({
                     checked={isSelected}
                     onChange={() => toggleValue(option)}
                   />
-                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-700" title={option}>
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-700" {...overflowTitle(option)}>
                     {option}
                   </span>
                 </label>
@@ -2091,7 +2093,7 @@ function SpreadsheetDocumentPreview({
                         key={cell.address}
                         rowSpan={cell.rowSpan}
                         colSpan={cell.columnSpan}
-                        title={cell.value || cell.address}
+                        {...(cell.value ? overflowTitle(cell.value) : { title: cell.address })}
                         className="overflow-hidden px-1 py-1"
                         style={getSpreadsheetPreviewCellStyle(cell.style, scale)}
                       >
@@ -2173,10 +2175,10 @@ function BasePreviewTable({ rows, totalRows }: { rows: WeldRow[]; totalRows: num
         {rows.length > 0 ? (
           rows.map((row) => (
             <tr key={row.id} className="border-t border-slate-100">
-              <td className="truncate px-2 py-2 text-slate-700" title={getCellValue(row, 'line')}>{getCellValue(row, 'line')}</td>
+              <td className="truncate px-2 py-2 text-slate-700" {...overflowTitle(getCellValue(row, 'line'))}>{getCellValue(row, 'line')}</td>
               <td className="truncate px-2 py-2 font-semibold text-slate-900">{getCellValue(row, 'joint')}</td>
               <td className="truncate px-2 py-2 text-slate-700">{formatDate(row.weldDate) || '-'}</td>
-              <td className="truncate px-2 py-2 text-slate-700" title={getCellValue(row, 'weldingMethod')}>{getCellValue(row, 'weldingMethod')}</td>
+              <td className="truncate px-2 py-2 text-slate-700" {...overflowTitle(getCellValue(row, 'weldingMethod'))}>{getCellValue(row, 'weldingMethod')}</td>
               <td className="truncate px-2 py-2 text-slate-700">
                 {getCellValue(row, 'd1')} / {getCellValue(row, 'd2')}
               </td>
@@ -2211,7 +2213,7 @@ function CompactMetricCard({ label, value }: { label: string; value: string | nu
   return (
     <div className="min-w-0 rounded-md border border-slate-200 bg-white px-3 py-2">
       <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
-      <div className="mt-0.5 truncate text-xl font-semibold leading-none tabular-nums text-slate-900" title={String(value)}>{value}</div>
+      <div className="mt-0.5 truncate text-xl font-semibold leading-none tabular-nums text-slate-900" {...overflowTitle(String(value))}>{value}</div>
     </div>
   )
 }

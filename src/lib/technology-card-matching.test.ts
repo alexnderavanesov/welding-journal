@@ -88,7 +88,7 @@ describe('technology card applicability', () => {
   it.each([
     { weldingMethod: 'РАД + РД + НЕИЗВЕСТНО' }, { weldingMethod: 'РАД++РД' },
     { materialGroup: 'M01 + М05' }, { materialGroup: 'М01 + М05 + М11' },
-    { materialGroup: 'М01 +' }, { connectionType: 'Т1' }, { pstoRequired: 'ожидает' },
+    { materialGroup: 'М01 +' }, { connectionType: 'НЕИЗВЕСТНО' }, { pstoRequired: 'ожидает' },
     { d1: -1 }, { d2: Number.NaN }, { t1: 0 }, { t2: '3 мм' },
   ])('does not drop unknown or invalid data: %j', values => {
     const result = check({ ...row, ...values })

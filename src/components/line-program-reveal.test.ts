@@ -35,3 +35,21 @@ describe('explicit program target', () => {
     expect(state.calls.setFilterModel).not.toHaveBeenCalled()
   })
 })
+
+import { revealProgramComposition } from './line-program-reveal'
+it('removes only filters hiding any member of the exact composition, opens parents and ignores stale transitions', async () => {
+  const opened = vi.fn()
+  const parent = { group: true, level: 0, parent: null, expanded: false, setExpanded: opened }
+  const nodes = [1, 2].map(id => ({ id: String(id), data: { id }, parent }))
+  const cleared = vi.fn(), applied = vi.fn()
+  const api = { isDestroyed: () => false, getRowNode: (id: string) => nodes.find(node => node.id === id), getFilterModel: () => ({ good: {}, hidesSecond: {} }),
+    getColumnFilterInstance: async (column: string) => ({ doesFilterPass: ({ data }: { data: { id: number } }) => column === 'good' || data.id === 1 }),
+    setColumnFilterModel: cleared, getColumn: (id: string) => ({ getColDef: () => ({ headerName: id }) }), onFilterChanged: applied } as unknown as GridApi
+  expect(await revealProgramComposition(api, ['1', '2'])).toEqual(['hidesSecond'])
+  expect(cleared).toHaveBeenCalledExactlyOnceWith('hidesSecond', null)
+  expect(applied).toHaveBeenCalledOnce(); expect(opened).toHaveBeenCalledOnce()
+  cleared.mockClear()
+  expect(await revealProgramComposition(api, ['1', '2'], () => false)).toEqual([])
+  expect(await revealProgramComposition(api, ['1', 'missing'])).toEqual([])
+  expect(cleared).not.toHaveBeenCalled()
+})

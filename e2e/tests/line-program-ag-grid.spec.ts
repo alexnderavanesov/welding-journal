@@ -25,6 +25,45 @@ async function scrollToJoint(region: Locator, index: number, count: number) {
   }).toPass({ timeout: 8000 })
 }
 
+async function inspectVerticalScrollOwners(region: Locator) {
+  return region.evaluate(element => {
+    const rect = (box: DOMRect) => ({ left: box.left, top: box.top, right: box.right, bottom: box.bottom, width: box.width, height: box.height })
+    return [...element.querySelectorAll<HTMLElement>('*')]
+      .filter(node => ['auto', 'scroll'].includes(getComputedStyle(node).overflowY) && node.scrollHeight > node.clientHeight + 2)
+      .map(node => {
+        const box = node.getBoundingClientRect()
+        const clipped = { left: Math.max(0, box.left), top: Math.max(0, box.top), right: Math.min(innerWidth, box.right), bottom: Math.min(innerHeight, box.bottom) }
+        const ancestors = []
+        let opacity = 1
+        for (let ancestor: HTMLElement | null = node; ancestor; ancestor = ancestor.parentElement) {
+          const style = getComputedStyle(ancestor), bounds = ancestor.getBoundingClientRect()
+          opacity *= Number(style.opacity)
+          ancestors.push({ tag: ancestor.tagName, className: ancestor.className, rect: rect(bounds), display: style.display, visibility: style.visibility,
+            opacity: style.opacity, pointerEvents: style.pointerEvents, overflowX: style.overflowX, overflowY: style.overflowY })
+          if (ancestor !== node) {
+            if (['hidden', 'clip', 'auto', 'scroll'].includes(style.overflowX)) {
+              clipped.left = Math.max(clipped.left, bounds.left + ancestor.clientLeft)
+              clipped.right = Math.min(clipped.right, bounds.left + ancestor.clientLeft + ancestor.clientWidth)
+            }
+            if (['hidden', 'clip', 'auto', 'scroll'].includes(style.overflowY)) {
+              clipped.top = Math.max(clipped.top, bounds.top + ancestor.clientTop)
+              clipped.bottom = Math.min(clipped.bottom, bounds.top + ancestor.clientTop + ancestor.clientHeight)
+            }
+          }
+        }
+        const width = clipped.right - clipped.left, height = clipped.bottom - clipped.top
+        const points = width > 0 && height > 0 ? [0.1, 0.5, 0.9].flatMap(xRatio => [0.1, 0.5, 0.9].map(yRatio => {
+          const x = clipped.left + width * xRatio, y = clipped.top + height * yRatio
+          const hit = document.elementFromPoint(x, y)
+          return { x, y, tag: hit?.tagName, className: hit?.getAttribute('class'), owned: !!hit && node.contains(hit) }
+        })) : []
+        return { className: node.className, rect: rect(box), clipped, scrollTop: node.scrollTop, scrollHeight: node.scrollHeight, clientHeight: node.clientHeight,
+          painted: width > 0 && height > 0 && opacity > 0 && getComputedStyle(node).visibility === 'visible',
+          hitTestable: points.some(point => point.owned), points, ancestors }
+      })
+  })
+}
+
 async function selectFilterValue(page: Page, column: Locator, value: string) {
   await column.locator('.ag-header-cell-filter-button').click()
   const filter = page.locator('.ag-filter').filter({ visible: true })
@@ -196,9 +235,9 @@ for (const count of [50, 100, 120, 500]) test(`${count} joints under shared stam
   await expect(page.getByLabel('Итоги раздела')).toBeVisible()
   await page.getByLabel('Поиск программы линий').fill(line)
   await page.getByRole('button', { name: `Расчёт линии ${line}`, exact: true }).click()
-  const metrics = await page.context().newCDPSession(page)
-  await metrics.send('Performance.enable')
-  const heap = async () => (await metrics.send('Performance.getMetrics')).metrics.find(metric => metric.name === 'JSHeapUsedSize')!.value
+  const metrics = page.context().browser()?.browserType().name() === 'chromium' ? await page.context().newCDPSession(page) : null
+  await metrics?.send('Performance.enable')
+  const heap = async () => metrics ? (await metrics.send('Performance.getMetrics')).metrics.find(metric => metric.name === 'JSHeapUsedSize')!.value / 1024 / 1024 : null
   const beforeHeap = await heap()
   const started = Date.now()
   await page.getByRole('button', { name: 'Клеймо GRID-A', exact: true }).click()
@@ -211,10 +250,27 @@ for (const count of [50, 100, 120, 500]) test(`${count} joints under shared stam
     await expect(page.locator('[data-program-grid="lines"] > .program-grid-toolbar')).toHaveCount(0)
     await expect(page.locator('[data-program-grid="lines"] .program-stuck-control')).toHaveCount(1)
   }
-  const measurements = await a.evaluate(element => ({ nodes: element.querySelectorAll('*').length, height: element.getBoundingClientRect().height,
-    scrolls: [...element.querySelectorAll<HTMLElement>('*')].filter(node => ['auto', 'scroll'].includes(getComputedStyle(node).overflowY) && node.scrollHeight > node.clientHeight + 2).length }))
-  expect(measurements.scrolls).toBe(0)
-  console.log(JSON.stringify({ workflow: 'AG Grid full stamp list', count, milliseconds: Date.now() - started, ...measurements }))
+  const measurements = await a.evaluate(element => ({ nodes: element.querySelectorAll('*').length, height: element.getBoundingClientRect().height }))
+  const openingMilliseconds = Date.now() - started
+  await expect(page.locator('[data-program-motion]')).toHaveCount(0)
+  await scrollToJoint(a, 1, count)
+  // AG Grid retains a measurable synchronization scrollbar. It must neither
+  // paint a nested scrollbar nor intercept input, including at the right edge.
+  // Check ancestors and actual hit testing: opacity alone does not disable input.
+  const scrollOwners = await inspectVerticalScrollOwners(a)
+  const diagnostic = JSON.stringify({ count, ...measurements, scrollOwners }, null, 2)
+  const wheelRow = a.getByTestId('line-program-readonly-joint').filter({ has: page.getByRole('button', { name: 'F3', exact: true }) })
+  await expect(wheelRow).toBeInViewport()
+  const wheelBox = (await wheelRow.boundingBox())!
+  await page.mouse.move(wheelBox.x + wheelBox.width / 2, wheelBox.y + wheelBox.height / 2)
+  const pageTopBeforeWheel = await page.evaluate(() => window.scrollY)
+  await page.mouse.wheel(0, 240)
+  await expect.poll(() => page.evaluate(() => window.scrollY), { message: `Wheel over joints must scroll the document. ${diagnostic}` }).toBeGreaterThan(pageTopBeforeWheel + 60)
+  expect(scrollOwners.filter(owner => owner.painted), diagnostic).toEqual([])
+  expect(scrollOwners.filter(owner => owner.hitTestable), diagnostic).toEqual([])
+  console.log(JSON.stringify({ workflow: 'AG Grid full stamp list', count, milliseconds: openingMilliseconds, ...measurements,
+    scrolls: scrollOwners.filter(owner => owner.painted || owner.hitTestable).length, pageWheelDelta: await page.evaluate(() => window.scrollY) - pageTopBeforeWheel }))
+  await scrollToJoint(a, 1, count)
   const jointHeader = a.getByRole('columnheader', { name: 'Стык', exact: true })
   await selectFilterValue(page, jointHeader, `F${count}`)
   await expect(a.getByTestId('line-program-readonly-joint')).toHaveCount(1)
@@ -238,7 +294,7 @@ for (const count of [50, 100, 120, 500]) test(`${count} joints under shared stam
   })).toBe(true)
   await expect(sticky).toHaveCSS('position', 'fixed')
   await expect(page.locator('[data-program-grid="lines"] > .program-grid-toolbar')).toHaveCount(0)
-  console.log(JSON.stringify({ workflow: 'AG Grid two expanded shared stamps', count, heapBeforeMiB: beforeHeap / 1024 / 1024, heapAfterMiB: (await heap()) / 1024 / 1024, nodes: await page.locator('[data-program-grid="joints"] *').count() }))
+  console.log(JSON.stringify({ workflow: 'AG Grid two expanded shared stamps', count, heapBeforeMiB: beforeHeap, heapAfterMiB: await heap(), nodes: await page.locator('[data-program-grid="joints"] *').count() }))
   if (count === 120) {
     await scrollToJoint(b, 80, count)
     const historyJoint = b.getByTestId('line-program-readonly-joint').filter({ has: page.getByRole('button', { name: 'F80', exact: true }) })
@@ -401,7 +457,7 @@ for (const count of [50, 100, 120, 500]) test(`${count} joints under shared stam
   }
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
   for (const prefix of ['getLineProgramCalculation_', 'getLineProgramJointPage_']) expect(calls.filter(call => call.startsWith(prefix))).toHaveLength(1)
-  await metrics.detach()
+  await metrics?.detach()
   expect(errors).toEqual([])
   expect(warnings).toEqual([])
   await page.screenshot({ path: `outputs/program-ag-grid-${count}.png` })

@@ -1,3 +1,4 @@
+import { getSupportCompositionIssues } from './support-joint-rules'
 import { isTConnectionType } from '@/lib/connection-type'
 import { isControlEnabledValue, isRecognizedControlAvailabilityValue } from '@/lib/control-availability-values'
 import { normalizeDataListOption, type DataListSettings } from '@/lib/data-list-settings'
@@ -28,7 +29,6 @@ function readWeldProfile(row: TechnologyCardWeld, settings: DataListSettings): W
 
   const connectionType = normalizeDataListOption(row.connectionType)
   if (!connectionType) issue('connectionType', 'missing', 'Укажите тип соединения.')
-  else if (isTConnectionType(connectionType)) issue('connectionType', 'invalid', 'Подбор ТК для Т-стыков пока не поддерживается.')
   else if (!settings.connectionTypes.includes(connectionType)) issue('connectionType', 'invalid', `Тип соединения «${connectionType}» отсутствует в справочнике.`)
 
   const materialGroups = splitWeldMaterialGroups(row.materialGroup)
@@ -36,8 +36,10 @@ function readWeldProfile(row: TechnologyCardWeld, settings: DataListSettings): W
   if (!materialGroups.length) issue('materialGroup', 'missing', 'Укажите группу материалов.')
   else if (groupsError) issue('materialGroup', 'invalid', groupsError)
 
-  const sizes = {} as Record<'d1' | 'd2' | 't1' | 't2', number | null>
-  for (const field of ['d1', 'd2', 't1', 't2'] as const) {
+  for (const error of getSupportCompositionIssues(row)) issue(error.fieldKeys.includes('materialGroup') ? 'materialGroup' : 'weldingMethod', 'invalid', error.message)
+  const support = isTConnectionType(connectionType)
+  const sizes: Record<'d1' | 'd2' | 't1' | 't2', number | null> = { d1: null, d2: null, t1: null, t2: null }
+  for (const field of support ? ['d1', 't1'] as const : ['d1', 'd2', 't1', 't2'] as const) {
     sizes[field] = parseTechnologyCardDimension(row[field])
     if (sizes[field] === null) {
       const empty = !String(row[field] ?? '').trim()
@@ -48,8 +50,8 @@ function readWeldProfile(row: TechnologyCardWeld, settings: DataListSettings): W
   if (!isRecognizedControlAvailabilityValue(row.pstoRequired)) issue('pstoRequired', 'invalid', 'Проверьте назначение ПСТО.')
   return {
     weldingMethods, connectionType, materialGroups,
-    diameter: sizes.d1 !== null && sizes.d2 !== null ? Math.min(sizes.d1, sizes.d2) : null,
-    thickness: sizes.t1 !== null && sizes.t2 !== null ? Math.min(sizes.t1, sizes.t2) : null,
+    diameter: support ? sizes.d1 : sizes.d1 !== null && sizes.d2 !== null ? Math.min(sizes.d1, sizes.d2) : null,
+    thickness: support ? sizes.t1 : sizes.t1 !== null && sizes.t2 !== null ? Math.min(sizes.t1, sizes.t2) : null,
     psto: isControlEnabledValue(row.pstoRequired), issues,
   }
 }
@@ -63,8 +65,9 @@ function compareProfile(card: TechnologyCardRecord, profile: WeldProfile): Techn
   if (setKey(card.weldingMethods) !== setKey(profile.weldingMethods)) issues.push({ field: 'weldingMethods', message: `Способы сварки: ТК — ${card.weldingMethods.join(' + ')}, стык — ${profile.weldingMethods.join(' + ') || 'не указаны'}. Нужен одинаковый набор.` })
   if (card.connectionType !== profile.connectionType) issues.push({ field: 'connectionType', message: `Тип соединения: ТК — ${card.connectionType}, стык — ${profile.connectionType || 'не указан'}.` })
   if (setKey(card.materialGroups) !== setKey(profile.materialGroups)) issues.push({ field: 'materialGroups', message: `Группы материалов: ТК — ${card.materialGroups.join(' + ')}, стык — ${profile.materialGroups.join(' + ') || 'не указаны'}.` })
-  if (profile.diameter !== null && (profile.diameter < card.diameterFrom || profile.diameter > card.diameterTo)) issues.push({ field: 'diameterFrom', message: `Меньший диаметр D${profile.diameter} вне диапазона ТК ${card.diameterFrom}–${card.diameterTo}.` })
-  if (profile.thickness !== null && (profile.thickness < card.thicknessFrom || profile.thickness > card.thicknessTo)) issues.push({ field: 'thicknessFrom', message: `Меньшая толщина T${profile.thickness} вне диапазона ТК ${card.thicknessFrom}–${card.thicknessTo}.` })
+  const support = isTConnectionType(profile.connectionType)
+  if (profile.diameter !== null && (profile.diameter < card.diameterFrom || profile.diameter > card.diameterTo)) issues.push({ field: 'diameterFrom', message: `${support ? 'Диаметр трубы D1 = ' : 'Меньший диаметр D'}${profile.diameter} вне диапазона ТК ${card.diameterFrom}–${card.diameterTo}.` })
+  if (profile.thickness !== null && (profile.thickness < card.thicknessFrom || profile.thickness > card.thicknessTo)) issues.push({ field: 'thicknessFrom', message: `${support ? 'Толщина трубы T1 = ' : 'Меньшая толщина T'}${profile.thickness} вне диапазона ТК ${card.thicknessFrom}–${card.thicknessTo}.` })
   if (card.psto !== 'any' && (card.psto === 'required') !== profile.psto) issues.push({ field: 'psto', message: `ТК ${card.psto === 'required' ? 'требует назначения ПСТО' : 'предназначена для стыков без ПСТО'}; в стыке ПСТО ${profile.psto ? 'назначена' : 'не назначена'}.` })
   return issues
 }

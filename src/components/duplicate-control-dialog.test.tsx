@@ -22,6 +22,25 @@ class IntersectionObserverStub implements IntersectionObserver {
 }
 
 describe('DuplicateControlDialog', () => {
+  it('blocks RK in mixed support selection while retaining the selected method for explicit removal', () => {
+    const rows = [{ id: 1, joint: 'ОП-1R12', connectionType: 'Т1', d1: 57 }, { id: 2, joint: 'S1', connectionType: 'С17', d1: 108 }] as WeldRow[]
+    const props = { draft: { ...createEmptyDuplicateControlDraft(), rowIds: new Set([1, 2]), methods: new Set(['УЗК'] as const), result: 'ремонт' as const },
+      filteredRows: rows, selectedRows: rows, controls: [], saveBlockReason: null, isSaving: false,
+      onClose: vi.fn(), onSave: vi.fn(), onDelete: vi.fn(), onEdit: vi.fn(), onDraftChange: vi.fn(),
+      onToggleRow: vi.fn(), onSetVisibleRowsSelected: vi.fn(), onToggleMethod: vi.fn() }
+    const { rerender } = render(<DuplicateControlDialog {...props} />)
+    expect(screen.getByRole('button', { name: 'РК' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'ремонт' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'вырез' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Добавить дубль' })).toBeEnabled()
+    rerender(<DuplicateControlDialog {...props} draft={{ ...props.draft, methods: new Set(['УЗК', 'РК']) }} />)
+    expect(screen.getByRole('button', { name: 'РК' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Добавить дубль' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'РК' }))
+    expect(props.onToggleMethod).toHaveBeenCalledWith('РК')
+    expect(props.onDraftChange).not.toHaveBeenCalled()
+    expect(props.onSave).not.toHaveBeenCalled()
+  })
   it('coalesces clicks while password/save is pending and allows retry after a failure', async () => {
     let reject!: (error: Error) => void
     const pending = new Promise<void>((_, fail) => { reject = fail })
@@ -126,7 +145,7 @@ describe('DuplicateControlDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Добавить дубль' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('При послойном контроле любой дубль недоступен.')
     expect(screen.getByRole('textbox', { name: 'Заключение' })).toHaveValue('KEEP-DRAFT')
-    fireEvent.click(screen.getByRole('button', { name: 'Добавить дубль' }))
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Добавить дубль' })))
     expect(onSave).toHaveBeenCalledTimes(2)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })

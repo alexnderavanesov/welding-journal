@@ -6,7 +6,8 @@ import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import type { StampSelectOption } from '@/lib/weld-form-utils'
 import { formatDisplayDate } from '@/lib/date-format'
 import { splitWeldMaterialGroups } from '@/lib/weld-material-groups'
-import { getDissimilarStampCompatibilityAssessment } from '@/lib/welder-stamp-compatibility-issues'
+import { isTConnectionType } from '@/lib/connection-type'
+import { getDissimilarStampCompatibilityAssessment, getOfficialStampCompatibilityIssues } from '@/lib/welder-stamp-compatibility-issues'
 import {
   formatWelderStampSuspensionBlockReason,
   getSuspensionOverlapForStamp,
@@ -123,6 +124,13 @@ function getOfficialStampSelectBlockReason(stamp: string, draft: WeldInput, reco
   if (stampRecords.length === 0) return saveCheckSettings.officialRegistry ? hardReason('нет в реестре') : null
 
   const methods = parseOfficialStampWeldingMethods(draft.weldingMethod)
+  if (isTConnectionType(draft.connectionType)) {
+    // A support has one official welder. Do not offer a partially qualified
+    // team member expecting a second stamp to supply the missing method.
+    const candidate = { ...draft, ...Object.fromEntries(officialWelderStampFieldKeys.map(key => [key, ''])), stamp1K: stamp }
+    const issues = getOfficialStampCompatibilityIssues(candidate, stampRecords, { saveCheckSettings })
+    if (issues.length) return hardReason(issues.map(issue => issue.message).join(' '))
+  }
   if (splitWeldMaterialGroups(draft.materialGroup).length === 2) {
     const assessment = getDissimilarStampCompatibilityAssessment({ fieldKey: 'stamp1K', stamp, records: stampRecords }, methods, draft, saveCheckSettings)
     const reasons = assessment.compatibleMethods.size === 0

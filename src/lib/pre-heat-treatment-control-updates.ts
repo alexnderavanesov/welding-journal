@@ -13,6 +13,7 @@ import {
   type PreHeatTreatmentLnkMethodCode,
 } from '@/lib/lnk-control-stage'
 import { assertLnkResultAllowed } from '@/lib/lnk-result-policy'
+import { getLnkMethodFamilyBlockReason } from './lnk-method-family'
 import { isControlEnabledValue } from '@/lib/control-availability-values'
 import type { RkExposureTableSettings } from '@/lib/other-settings'
 import { hasPrimaryPstoHistory } from '@/lib/psto-line-assignment'
@@ -36,6 +37,8 @@ export function getPreHeatTreatmentRequestBlockReason(
   rawMethodCode: string,
 ) {
   const methodCode = normalizeMethodCode(rawMethodCode)
+  const familyReason = getLnkMethodFamilyBlockReason(row, methodCode)
+  if (familyReason) return familyReason
   if (!isPreHeatTreatmentLnkMethodCode(methodCode)) {
     return `${methodCode || 'Выбранный метод'} не выполняется как НК до ТО.`
   }
@@ -68,6 +71,8 @@ export function getPreHeatTreatmentResultBlockReason(
   _saveCheckSettings: SaveCheckSettings = loadSaveCheckSettings(),
 ) {
   const methodCode = normalizeMethodCode(rawMethodCode)
+  const familyReason = getLnkMethodFamilyBlockReason(row, methodCode)
+  if (familyReason) return familyReason
   if (!isPreHeatTreatmentLnkMethodCode(methodCode)) return 'Выберите вид НК до ТО.'
   if (!isPreHeatTreatmentStageEnabled(row)) return 'НК до ТО выключен в настройках.'
   if (!isPreHeatTreatmentLnkAvailable(row)) {

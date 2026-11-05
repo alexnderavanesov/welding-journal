@@ -9,6 +9,20 @@ afterEach(cleanup)
 const stampFields = ['stamp1K', 'stamp1Z', 'stamp1O', 'stamp2K', 'stamp2Z', 'stamp2O',
   'stamp1KFact', 'stamp1ZFact', 'stamp1OFact', 'stamp2KFact', 'stamp2ZFact', 'stamp2OFact'] as const
 
+it('keeps the full fractional support length editable only on the original support', () => {
+  const field = FIELD_BY_KEY.get('weldLength')!
+  const props = { field, draft: { id: 1, joint: 'ОП-1R12', connectionType: 'Т1', weldLength: 600.123456789 },
+    setDraft: vi.fn(), fieldRefs: { current: {} }, suggestionRows: [] }
+  const { rerender } = render(<WeldFormField {...props} />)
+  expect(screen.getByLabelText(field.label)).toHaveAttribute('readonly')
+  expect(screen.getByLabelText(field.label)).toHaveValue('600.123456789')
+  expect(screen.getByLabelText(field.label)).toHaveAttribute('title', expect.stringContaining('исходного ОП'))
+  rerender(<WeldFormField {...props} draft={{ ...props.draft, joint: 'ОП-1' }} />)
+  expect(screen.getByLabelText(field.label)).not.toHaveAttribute('readonly')
+  fireEvent.change(screen.getByLabelText(field.label), { target: { value: '777.987654321' } })
+  expect(props.setDraft).toHaveBeenCalledOnce()
+})
+
 it('does not mistake the empty visible placeholder for an already cleared draft', () => {
   const setDraft = vi.fn()
   render(<WeldFormField field={FIELD_BY_KEY.get('stamp1KFact')!} draft={{ stamp1KFact: 'OLD-MISSING' }}

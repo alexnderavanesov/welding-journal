@@ -1,5 +1,5 @@
 import type { QueryClient, QueryFilters } from '@tanstack/react-query'
-import type { LineProgramRecord } from './line-program'
+import { asSupportLineProgram, type LineProgramRecord } from './line-program'
 import type { LineProgramOverview } from './line-program-overview'
 
 type LineSummary = LineProgramRecord & { overview?: LineProgramOverview; searchStamps?: string[] }
@@ -28,7 +28,17 @@ export async function updateLineProgramSectionCaches(
       !!(query.state.data as LineSnapshot | undefined)?.rows.some(row => row.id === line.id),
   }, previous => previous ? {
     ...previous,
-    rows: previous.rows.map(row => row.id === line.id ? { ...row, ...line } : row),
+    rows: previous.rows.map(row => {
+      if (row.id !== line.id) return row
+      if (row.family === line.family) return { ...row, ...line }
+      if (membershipChanged && row.family === 'supports' && line.family !== 'supports') {
+        // A metadata save returns the ordinary record. Project its version and
+        // percentages for Supports, retaining that family's own facts/counts.
+        const { overview: _overview, searchStamps: _searchStamps, ...metadata } = line
+        return { ...row, ...asSupportLineProgram(metadata) }
+      }
+      return row
+    }),
   } : previous)
 
   if (membershipChanged) {

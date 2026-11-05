@@ -17,7 +17,6 @@ export type WeldingJournalOutputRowsKind =
   | 'waitingRequest'
   | 'waitingControl'
   | 'waitingRepair'
-  | 'cancelledAccepted'
   | 'system'
 
 type UseReportOutputActionsParams = {
@@ -155,11 +154,6 @@ export function useReportOutputActions({
       await openLoadedReport('«Ожидает ремонт»', () => loadWeldingJournalRows('waitingRepair'))
     }
 
-    async function openWeldingJournalCancelledAcceptedReport() {
-      setIsWeldingJournalShowMenuOpen(false)
-      await openLoadedReport('«Отмененные годные»', () => loadWeldingJournalRows('cancelledAccepted'))
-    }
-
     async function openWeldingJournalSystemReport() {
       setIsWeldingJournalShowMenuOpen(false)
       await openLoadedReport('системной версии сварочного журнала', () => loadWeldingJournalRows('system'))
@@ -173,7 +167,6 @@ export function useReportOutputActions({
       openPstoCurrentReport,
       openPstoResultsReport,
       openPstoWaitingRequestReport,
-      openWeldingJournalCancelledAcceptedReport,
       openWeldingJournalCurrentReport,
       openWeldingJournalSystemReport,
       openWeldingJournalWaitingControlReport,

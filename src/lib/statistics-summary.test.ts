@@ -4,10 +4,49 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   buildStatisticsStateRowIds,
   buildStatisticsSummary,
+  createStatisticsFinalStatusReader,
   getCurrentStatisticsWeek,
   getStatisticRatioPercent,
   getStatisticsPeriodPresetSelection,
 } from '@/lib/statistics-summary'
+
+describe('statistics status snapshot', () => {
+  it('keeps the supplied history scope outside the period and leaves input rows untouched', () => {
+    const history: WeldRow = { id: 1, projectTitle: 'Проект', subtitleCode: '400', line: 'L1', joint: 'S2',
+      weldDate: '2026-06-01', officiality: 'неофициальный', hasRk: 'да', rkResult: 'вырез', wdi: '2.5' }
+    const current: WeldRow = { id: 2, projectTitle: 'Проект', subtitleCode: '400', line: 'L1', joint: 'S2',
+      officiality: 'действующий', hasRk: 'да', wdi: '2.5', finalStatus: 'годен' }
+    const rows = [history, current]
+    const unchanged = structuredClone(rows)
+    rows.forEach(Object.freeze)
+    const complete = createStatisticsFinalStatusReader(rows)
+    const isolated = createStatisticsFinalStatusReader([current])
+    expect(complete(current)).toBe('ожидает ремонт')
+    expect(isolated(current)).toBe('ожидает сварку')
+    const summary = buildStatisticsSummary([current], '2026-07-01', '2026-07-31', 'wdi', undefined, 'day', rows, complete)
+    const ids = buildStatisticsStateRowIds([current], '2026-07-01', '2026-07-31', 'wdi', rows, complete)
+    expect(summary).toMatchObject({ backlogTotal: 2.5, backlogWaitingRepair: 2.5, backlogWaitingWeld: 0 })
+    expect(ids).toMatchObject({ backlog: [2], backlogWaitingRepair: [2], backlogWaitingWeld: [] })
+    expect(buildStatisticsSummary([current], '2026-07-01', '2026-07-31', 'wdi')).toMatchObject({
+      backlogWaitingRepair: 0, backlogWaitingWeld: 2.5,
+    })
+    expect(rows).toEqual(unchanged)
+  })
+
+  it('distinguishes separate row objects with the same id and reads current facts in a new snapshot', () => {
+    const good: WeldRow = { id: 7, weldDate: '2026-07-01', hasVik: 'да', vikResult: 'годен' }
+    const rejected: WeldRow = { ...good, vikResult: 'ремонт' }
+    const read = createStatisticsFinalStatusReader([good, rejected])
+    expect(read(good)).toBe('годен')
+    expect(read(rejected)).toBe('не годен')
+    expect(read(good)).toBe('годен')
+    good.vikResult = 'вырез'
+    expect(createStatisticsFinalStatusReader([good])(good)).toBe('не годен')
+    expect(buildStatisticsSummary([good], '', '', 'joints')).toMatchObject({ good: 0, rejected: 1, rejectedJointCount: 1 })
+    good.vikResult = 'годен'
+    expect(buildStatisticsStateRowIds([good], '', '', 'joints')).toMatchObject({ good: [7], rejected: [] })
+  })
+})
 
 describe('getStatisticRatioPercent', () => {
   it('calculates an exact ratio without hiding values above one hundred percent', () => {

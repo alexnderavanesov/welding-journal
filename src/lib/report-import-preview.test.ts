@@ -40,6 +40,42 @@ const buildReportReplaceDataPreview: typeof buildReportReplaceDataPreviewImpl = 
   })
 
 describe('existing rows report import preview', () => {
+  it.each(['massFill', 'replaceData'] as const)('collects T material/method and assignment-basis errors together in %s', async mode => {
+    const keys = ['materialGroup', 'weldingMethod', 'hasUzk'] as const
+    const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
+      activeReport: 'weldingJournal',
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, ...keys.map(key => FIELD_BY_KEY.get(key)!.label)], [[7, 'М01+М05', 'РАД+РД', 'дополнительный']]),
+      rows: [{ id: 7, joint: 'ОП1', connectionType: 'Т1', rowVersion: 'v1' } as WeldRow],
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0].fieldKeys).toEqual(expect.arrayContaining(['materialGroup', 'weldingMethod', 'hasUzk', 'uzkControlBasis']))
+  })
+
+  it.each(['massFill', 'replaceData'] as const)('combines an unrepresentable support length with another field error in %s', async mode => {
+    const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
+      activeReport: 'weldingJournal',
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, FIELD_BY_KEY.get('weldLength')!.label, FIELD_BY_KEY.get('stamp2KFact')!.label], [[7, '1e-16384', 'FACT']]),
+      rows: [{ id: 7, joint: 'ОП-1', connectionType: 'Т1', rowVersion: 'v1', weldLength: null } as WeldRow],
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('технический диапазон хранения')
+    expect(preview.errors[0]?.message).toContain('с индексом 2')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['weldLength', 'stamp2KFact']))
+  })
+  it.each(['massFill', 'replaceData'] as const)('combines separate repair-length and second-stamp errors in %s after merging stored T inputs', async mode => {
+    const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
+      activeReport: 'weldingJournal',
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, FIELD_BY_KEY.get('weldLength')!.label, FIELD_BY_KEY.get('stamp2KFact')!.label], [[7, 100, 'FACT']]),
+      rows: [{ id: 7, joint: 'ОП-1R10', connectionType: 'Т1', rowVersion: 'v1', weldLength: null } as WeldRow],
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
+    })
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('Длина ремонта наследуется')
+    expect(preview.errors[0]?.message).toContain('с индексом 2')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['weldLength', 'stamp2KFact']))
+  })
   it.each(['massFill', 'replaceData'] as const)('allows unrelated and factual corrections of a legacy missing stamp in %s', async mode => {
     const keys = ['isometry', 'weldingJournalNote', 'stamp1KFact', 'stamp1ZFact', 'stamp1OFact', 'stamp2KFact', 'stamp2ZFact', 'stamp2OFact'] as const
     const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
@@ -165,6 +201,16 @@ describe('existing rows report import preview', () => {
     expect(preview.errors[0]?.message).toContain('ЗВ-01')
     expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['hasRk', 'hasUzk', 'joint']))
   })
+  it('reports an invalid pair, missing basis and invalid joint together on the final merged import record', async () => {
+    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', FIELD_BY_KEY.get('hasUzk')!.label, FIELD_BY_KEY.get('hasPvk')!.label], [[7, 'FВ013', 'да', 'дополнительный']])
+    const preview = await buildReportReplaceDataPreview({ activeReport: 'weldingJournal', file,
+      rows: [{ id: 7, joint: 'FВ013', connectionType: 'С17', hasRk: 'да' } as WeldRow],
+      weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [] })
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['hasRk', 'hasUzk', 'hasPvk', 'pvkControlBasis', 'joint']))
+    expect(preview.errors[0]?.message).toContain('РК и УЗК нельзя одновременно')
+    expect(preview.errors[0]?.message).toContain('Основание')
+  })
   it('reports removal of two mandatory repair methods together with an independent invalid joint', async () => {
     const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', FIELD_BY_KEY.get('hasRk')!.label, FIELD_BY_KEY.get('hasUzk')!.label], [[7, 'FВ013R1', '', '']])
     const preview = await buildReportReplaceDataPreview({ activeReport: 'weldingJournal', file,
@@ -194,7 +240,7 @@ describe('existing rows report import preview', () => {
     expect(preview.errors[0]?.fieldKeys).toContain('hasRk')
   })
 
-  it('preserves unchanged historical T assignments when importing another field', async () => {
+  it('blocks invalid stored T family/name and RK assignment even when importing another field', async () => {
     saveDataListSettings({ ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: ['ТШ'] })
     const preview = await buildReportMassFillPreview({
       activeReport: 'weldingJournal',
@@ -202,9 +248,9 @@ describe('existing rows report import preview', () => {
       rows: [{ id: 7, joint: 'F1', connectionType: 'ТШ', hasRk: 'да' } as WeldRow],
       weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
     })
-    expect(preview.errors).toEqual([])
-    // Mass-fill sends a patch: the historical assignment must not be overwritten.
-    expect(preview.validRecords).toEqual([{ id: 7, isometry: 'ISO-2' }])
+    expect(preview.validRecords).toEqual([])
+    expect(preview.errors[0]?.message).toContain('Для Т назначение РК запрещено')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['hasRk', 'joint', 'connectionType']))
   })
 
   it('reports new RK on a T joint together with an independent invalid joint name', async () => {
@@ -241,7 +287,7 @@ describe('existing rows report import preview', () => {
   })
 
   it.each([
-    { rkRequest: 'РК-1' },
+    { rkRequest: 'РК-1', rkConclusionDate: '2026-10-01' },
     { rkResult: 'годен', rkConclusion: 'ЗНК-1' },
   ])('reports an invalid stored joint name alongside protected assignment removal: %o', async history => {
     const file = buildWorkbookFile(
@@ -268,8 +314,8 @@ describe('existing rows report import preview', () => {
       activeReport: 'weldingJournal',
       file,
       rows: [{
-        id: 7, joint: 'F1', hasRk: 'да', hasPvk: 'да', pvkRequest: 'ПВК-1', connectionType: 'С17',
-        preHeatTreatmentControls: [{ id: 1, weldJointId: 7, method: 'РК', requestName: 'Заявка до ТО' }],
+        id: 7, joint: 'F1', hasRk: 'да', hasPvk: 'да', pvkRequest: 'ПВК-1', pvkResult: 'годен', connectionType: 'С17',
+        preHeatTreatmentControls: [{ id: 1, weldJointId: 7, method: 'РК', requestName: 'Заявка до ТО', result: 'ремонт' }],
       } as WeldRow],
       weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
     })

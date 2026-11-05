@@ -12,6 +12,7 @@ import type { WeldReportKind } from './weld-contracts'
 import type { OtherSettings } from '@/lib/other-settings'
 import { getRkExposureSchemeState } from '@/lib/rk-exposure'
 import { mergeJournalRangeSpans } from '@/lib/journal-range-summary'
+import { createSupportLengthSum } from '@/lib/support-length-value'
 import { getReportOrderBy } from './weld-read'
 import { assertJournalContextRevision, assertJournalRevision, journalGroupOrder, journalGroupSql, journalReadContext, journalRouteWhere, journalValueSql, readJournalLeafRows, readJournalPage, summarizeJournalGridSelection, type JournalReadContext } from './journal-grid'
 import { buildNumberArrayMatch } from './weld-request-utils'
@@ -91,7 +92,7 @@ export function journalRangeValue(row: JournalGridRow, key: WeldFieldKey, anchor
   const group = journalGroup(row)
   if (!group && report === 'lnk' && key === 'rkExposureScheme' && settings) return getRkExposureSchemeState(row, settings.rkExposureTable).label
   if (!group) return (report === 'lnk' ? getLnkDisplayValue : report === 'heatTreatment' ? getPstoDisplayValue : getWeldingJournalDisplayValue)(row, key)
-  if (key === anchor) return FIELD_BY_KEY.get(groupBy[group.route.length - 1])?.kind === 'number' ? journalNumericValue(group.key) ?? group.key : group.key || '(Пусто)'
+  if (key === anchor) return groupBy[group.route.length - 1] === 'weldLength' ? group.key : FIELD_BY_KEY.get(groupBy[group.route.length - 1])?.kind === 'number' ? journalNumericValue(group.key) ?? group.key : group.key || '(Пусто)'
   const values: Partial<Record<WeldFieldKey, unknown>> = { line: group.summary.lines, joint: group.summary.joints,
     wdi: group.summary.wdi, weldDate: group.summary.weldDate, projectTitle: group.summary.projectTitle,
     subtitleCode: group.summary.subtitleCode, finalStatus: group.summary.status,
@@ -136,6 +137,8 @@ export async function summarizeJournalGridRange(input: JournalRangeRequest, sign
   signal?.throwIfAborted()
   const context = await journalReadContext({ ...input, route: [], start: 0, end: 100 })
   let count = 0, numericCount = 0, sum = 0
+  const lengthSum = createSupportLengthSum()
+  let hasLength = false, otherSum = 0
   for (const part of mergeJournalRangeParts(input.parts)) {
     signal?.throwIfAborted()
     if (part.route.length === input.groupBy.length && part.columns.length > 0 && part.columns.every(key => isJournalScalarField(key, journalReport(context.request.report)))) {
@@ -146,9 +149,12 @@ export async function summarizeJournalGridRange(input: JournalRangeRequest, sign
       const countValues = columns.map(({ alias }) => sql`count(nullif(${reportTextSql(alias)}, ''))`)
       const numeric = columns.filter(({ key }) => FIELD_BY_KEY.get(key)?.kind === 'number')
       const numericCounts = numeric.map(({ alias }) => sql`count(${alias})`)
-      const sumValues = numeric.map(({ alias }) => sql`coalesce(sum(${alias}::double precision), 0)`)
-      const result = await requireDb().execute<{ count: string; sum: number; rows: number; numericCount: number }>(sql`
+      const length = numeric.find(({ key }) => key === 'weldLength')
+      const sumValues = numeric.filter(({ key }) => key !== 'weldLength').map(({ alias }) => sql`coalesce(sum(${alias}::double precision), 0)`)
+      const result = await requireDb().execute<{ count: string; sum: number; rows: number; numericCount: number; lengthCount: number; lengthSum: string }>(sql`
         select count(*)::int as rows, (${sql.join(countValues, sql` + `)})::text as count, (${sumValues.length ? sql.join(sumValues, sql` + `) : sql`0`}) as sum,
+          ${length ? sql`count(${length.alias})` : sql`0`} as "lengthCount",
+          (${length ? sql`coalesce(sum(${length.alias}::numeric), 0)` : sql`0`})::text as "lengthSum",
           (${numericCounts.length ? sql.join(numericCounts, sql` + `) : sql`0`}) as "numericCount" from (
           select ${sql.join(values, sql`, `)} from ${weldJoints} where ${journalRouteWhere(context, part.route)}
           order by ${sql.join(getReportOrderBy(journalReport(context.request.report), input.sort ?? undefined, context.settings), sql`, `)}
@@ -156,20 +162,27 @@ export async function summarizeJournalGridRange(input: JournalRangeRequest, sign
         ) selected_cells`)
       const row = result.rows[0];
       if (Number(row?.rows) !== part.end - part.start) throw new Error('Диапазон больше текущей выборки. Обновите журнал.')
-      count += Number(row?.count ?? 0); numericCount += Number(row?.numericCount ?? 0); sum += Number(row?.sum ?? 0)
+      count += Number(row?.count ?? 0); numericCount += Number(row?.numericCount ?? 0)
+      const subtotal = Number(row?.sum ?? 0)
+      otherSum += subtotal; sum += subtotal
+      if (Number(row?.lengthCount ?? 0) > 0) { hasLength = lengthSum.add(row.lengthSum) || hasLength; sum += Number(row.lengthSum) }
     } else {
       for await (const rows of pages(context, part, signal)) for (const row of rows) for (const key of part.columns) {
         const value = journalRangeValue(row, key, input.anchor, input.groupBy, journalReport(context.request.report), context.settings)
         if (value == null || String(value).trim() === '') continue
         count++
-        const numeric = FIELD_BY_KEY.get(key)?.kind === 'number' || typeof value === 'number' ? journalNumericValue(value) : null
-        if (numeric !== null) { numericCount++; sum += numeric }
+        const group = journalGroup(row)
+        const field = group && key === input.anchor ? input.groupBy[group.route.length - 1] : key
+        const numeric = FIELD_BY_KEY.get(field)?.kind === 'number' || typeof value === 'number' ? journalNumericValue(value) : null
+        if (field === 'weldLength' && lengthSum.add(value)) { hasLength = true; numericCount++; sum += Number(value) }
+        else if (numeric !== null) { numericCount++; sum += numeric; otherSum += numeric }
       }
     }
   }
   signal?.throwIfAborted()
   await assertJournalContextRevision(context)
-  return { count, numericCount, sum, average: numericCount ? sum / numericCount : null }
+  if (hasLength) lengthSum.add(otherSum)
+  return { count, numericCount, sum, average: numericCount ? sum / numericCount : null, ...(hasLength ? { exactSum: lengthSum.value() } : {}) }
 }
 const escapeCell = (value: string) => /[\t\r\n"]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value
 export async function copyJournalGridRange(input: JournalRangeRequest, signal?: AbortSignal) {

@@ -28,7 +28,7 @@ describe('large affected-line batches', () => {
       const loaded = kind === 'rules'
         ? (await loadProgramRuleContext(db as never, scope, false)).rows
         : await loadProgramChainScopeRows(db as never, scope)
-      expect(db.select).toHaveBeenCalledTimes(kind === 'rules' ? 5 : 2)
+      expect(db.select).toHaveBeenCalledTimes(kind === 'rules' ? 4 : 2)
       expect(loaded).toHaveLength(count)
       expect(loaded[0].id).toBe(1)
       expect(loaded.at(-1)?.id).toBe(count)

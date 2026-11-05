@@ -1,12 +1,12 @@
 import { filterPstoExceptions } from './psto-exception-helpers'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import * as XLSX from 'xlsx'
 import { randomUUID } from 'node:crypto'
 import { createDocumentTemplateFileStore, resolveDocumentTemplateStorageDirectory } from '../../src/server/document-template-files'
 import { lnkRow as lnkGridRow, revealLnkColumn, lnkActionRow } from './lnk-grid-helpers'
 import { documentGridRow, openDocumentGridFilter, revealDocumentColumn } from '../document-grid'
 import { editJournalJoint, revealJournalColumn } from '../journal-grid'
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type BrowserContext, type Locator, type Page, type Request, type Response } from '@playwright/test'
 import { chooseSpecialist } from '../specialist-helpers'
 import { confirmLnkResultChanges } from '../lnk-result-confirmation'
 import { pstoActionRow, pstoRow, revealPstoColumn } from './psto-grid-helpers'
@@ -33,6 +33,72 @@ const testSpecialistIds: number[] = []
 let originalNaming: { value: string; updated_at: Date } | null | undefined
 const historyTemplateStore = createDocumentTemplateFileStore(resolveDocumentTemplateStorageDirectory())
 let historyTemplateKey = ''
+
+type AvailabilityMeasurement = {
+  started: number
+  startedAt: string
+  state: 'pending' | 'finished' | 'failed'
+  headersMs?: number
+  finishedMs?: number
+  status?: number
+  failure?: string | null
+}
+const availabilityCaptures = new WeakMap<BrowserContext, {
+  requests: Map<Request, AvailabilityMeasurement>
+  stop: () => void
+}>()
+
+test.beforeEach(({ context }) => {
+  const requests = new Map<Request, AvailabilityMeasurement>()
+  const onRequest = (request: Request) => {
+    if (!request.url().includes('/_serverFn/') || !rpcName(request.url()).startsWith('getPstoWorkflowAvailability_')) return
+    requests.set(request, { started: performance.now(), startedAt: new Date().toISOString(), state: 'pending' })
+  }
+  const onResponse = (response: Response) => {
+    const measurement = requests.get(response.request())
+    if (measurement) Object.assign(measurement, { headersMs: performance.now() - measurement.started, status: response.status() })
+  }
+  const settle = (request: Request, state: 'finished' | 'failed') => {
+    const measurement = requests.get(request)
+    if (measurement) Object.assign(measurement, { state, finishedMs: performance.now() - measurement.started,
+      failure: request.failure()?.errorText ?? null })
+  }
+  const onFinished = (request: Request) => settle(request, 'finished')
+  const onFailed = (request: Request) => settle(request, 'failed')
+  context.on('request', onRequest)
+  context.on('response', onResponse)
+  context.on('requestfinished', onFinished)
+  context.on('requestfailed', onFailed)
+  availabilityCaptures.set(context, { requests, stop: () => {
+    context.off('request', onRequest)
+    context.off('response', onResponse)
+    context.off('requestfinished', onFinished)
+    context.off('requestfailed', onFailed)
+  } })
+})
+
+test.afterEach(async ({ context }, testInfo) => {
+  const capture = availabilityCaptures.get(context)
+  if (!capture) return
+  capture.stop()
+  availabilityCaptures.delete(context)
+  // Observe only: no retry, extra RPC, waiting for completion or changed timeout.
+  // Pending at test end is recorded explicitly rather than treated as a failure
+  // or as a completed slow query without evidence.
+  const observedAt = performance.now()
+  const timingsPath = testInfo.outputPath('psto-availability-network-timings.json')
+  await writeFile(timingsPath, JSON.stringify({ status: testInfo.status, expectedStatus: testInfo.expectedStatus,
+      requests: [...capture.requests].map(([request, { started, ...measurement }], index) => ({
+        sequence: index + 1, ...measurement,
+        observedMs: measurement.finishedMs ?? observedAt - started,
+        transportTiming: request.timing(),
+      })),
+    }, null, 2))
+  await testInfo.attach('psto-availability-network-timings.json', {
+    contentType: 'application/json',
+    path: timingsPath,
+  })
+})
 
 test.afterEach(async () => {
   if (historyTemplateKey) {
@@ -322,12 +388,12 @@ test('НК до ТО -> ПСТО -> негодная ТВМТ -> повтор ->
   await expect(page.locator('[data-document-history-grid] .ag-header-cell[col-id="stage"]')).toHaveCount(0)
 })
 
-test('официальная отмена сохраняет выполненный цикл и заявку незапущенного повтора', async ({ page }) => {
+test('отмена будущей программы сохраняет выполненное назначение и необходимый повтор', async ({ page }) => {
   await seedCancelledCycleJoint()
   await page.goto('/psto')
   await expect(page.getByText(CANCELLED_CYCLE_JOINT, { exact: true }).first()).toBeVisible()
 
-  let row = await pstoActionRow(page, CANCELLED_CYCLE_JOINT, '__actions')
+  const row = await pstoActionRow(page, CANCELLED_CYCLE_JOINT, '__actions')
   await row.getByRole('button', { name: 'Создать заявку ПСТО на этот стык' }).click()
   await expect(page.getByRole('heading', { name: 'Заявка ПСТО' })).toBeVisible()
   await fillDate(page, 'Дата заявки', '2026-08-08')
@@ -346,16 +412,21 @@ test('официальная отмена сохраняет выполненн�
   await expect(page.getByRole('heading', { name: 'Отмена ПСТО' })).toBeVisible()
   await page.getByLabel(/Дата решения об отмене ПСТО/).fill('2026-08-09')
   await page.getByLabel('Основание отмены ПСТО', { exact: true }).fill('E2E техническое решение')
+  await expect(page.getByText(/Сохраним выполненные назначения: 1. Отменим невыполненные: 0/)).toBeVisible()
   await page.getByRole('button', { name: 'Отменить ПСТО на линии', exact: true }).click()
+  // Every joint remains unchanged here; wait for the policy save itself.
+  await expect(page.getByRole('heading', { name: 'Отмена ПСТО', exact: true })).toBeHidden()
 
   await expectDatabaseWeld(CANCELLED_CYCLE_JOINT, {
-    psto_required: 'отменен',
-    psto_cancellation_date: '2026-08-09',
-    psto_control_basis: 'E2E техническое решение',
+    psto_required: 'да',
+    psto_cancellation_date: null,
+    psto_control_basis: null,
     psto_result: 'проведено',
     tvmt_result: 'не годен',
-    final_status: 'ожидает заявку',
+    final_status: 'ожидает НК',
   })
+  expect(await withE2eDatabase(async db => (await db.query("select psto_assignment,psto_cancellation_date::text from line_programs where project_title='E2E отмена' and line='E2E-L2'")).rows))
+    .toEqual([{ psto_assignment: 'cancelled', psto_cancellation_date: '2026-08-09' }])
   await expectPreControl(CANCELLED_CYCLE_JOINT, {
     method: 'ВИК',
     result: 'годен',
@@ -366,24 +437,22 @@ test('официальная отмена сохраняет выполненн�
 
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Программа ПСТО' })).toBeHidden()
-  row = await pstoActionRow(page, CANCELLED_CYCLE_JOINT, '__actions')
-  const createRequestButton = row.getByRole('button', { name: 'Создать заявку ПСТО на этот стык' })
-  await expect(createRequestButton).toBeDisabled()
-  await expect(createRequestButton).toHaveAttribute(
-    'title',
-    'ПСТО по линии отменена; новые циклы недоступны.',
-  )
+  await runNextAction(page, 'Внести результат ПСТО · цикл 2', CANCELLED_CYCLE_JOINT)
+  await expect(page.getByRole('heading', { name: 'Внесение результатов ПСТО' })).toBeVisible()
+  await page.keyboard.press('Escape')
   await openReport(page, 'Сварочный журнал', '/journal')
   await page.getByRole('button', { name: CANCELLED_CYCLE_JOINT, exact: true }).click()
   const picture = page.getByRole('dialog').filter({
     has: page.getByRole('heading', { name: `Картина стыка ${CANCELLED_CYCLE_JOINT}`, exact: true }),
   })
-  await expect(picture.getByText('Сохранённая заявка; выполнение ПСТО не требуется', { exact: false })).toBeVisible()
-  await expect(picture.getByText(/ПСТО: ожидает ПСТО/)).toHaveCount(0)
+  await expect(picture.getByText('Сохранённая заявка; выполнение ПСТО не требуется', { exact: false })).toHaveCount(0)
+  const psto = picture.locator('section').filter({ has: page.getByRole('heading', { name: 'ПСТО и ТВМТ', exact: true }) })
+  await expect(psto.getByText('Цикл 2', { exact: true })).toBeVisible()
+  await expect(psto.getByText('Ожидает ПСТО', { exact: true })).toBeVisible()
   await expect(picture.getByText('ТВМТ: не годен', { exact: false })).toBeVisible()
 })
 
-test('устаревшее удаление назначения: новая заявка в другом окне ведёт к явной отмене без потери истории', async ({ page }, testInfo) => {
+test('новая заявка в другом окне не запрещает снятие: свежий предпросмотр и отмена без изменений', async ({ page }, testInfo) => {
   const joint = 'F-STALE-HISTORY'
   const line = 'E2E-STALE-HISTORY'
   await withE2eDatabase(async client => {
@@ -412,19 +481,29 @@ test('устаревшее удаление назначения: новая з�
     await expect(other.getByRole('heading', { name: 'Заявка ЛНК до ТО' })).toBeHidden()
 
     let saves = 0
-    page.on('request', request => { if (rpcName(request.url()) === 'savePstoLineAssignment') saves += 1 })
+    page.on('request', request => { if (rpcName(request.url()).startsWith('savePstoLineAssignment_')) saves += 1 })
+    const requestId = await withE2eDatabase(async db => (await db.query(`select d.id from generated_documents d
+      join generated_document_weld_joints a on a.document_id=d.id join weld_joints w on w.id=a.weld_joint_id
+      where w.joint=$1 and d.type='system:lnkRequest'`, [joint])).rows[0]?.id)
+    expect(requestId).toBeTruthy()
     await page.getByRole('button', { name: 'Снять назначение', exact: true }).click()
-    await expect(page.getByText(/История линии изменилась/)).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Снять назначение', exact: true })).toBeDisabled()
-    await expect(page.getByText(/будут удалены|Перенести завершенный НК/)).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: 'Снятие назначения ПСТО', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Снять назначение', exact: true })).toBeEnabled()
+    await expect(page.getByText(/Удалятся только невыполненные позиции заявок/)).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Перейти к отмене оставшейся работы', exact: true })).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath('stale-psto-removal.png') })
-    await page.getByRole('button', { name: 'Перейти к отмене ПСТО', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'Отмена ПСТО', exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Отменить ПСТО на линии', exact: true })).toBeEnabled()
     await page.getByRole('button', { name: 'Отмена', exact: true }).click()
     expect(saves).toBe(0)
     await expectDatabaseWeld(joint, { psto_required: 'да' })
     await expectPreControl(joint, { method: 'ВИК', request_date: '2026-08-25' })
+    expect(await withE2eDatabase(async db => (await db.query('select id from generated_documents where id=$1', [requestId])).rows)).toHaveLength(1)
+    await page.getByRole('button', { name: 'Снять назначение', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Снятие назначения ПСТО', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Снять назначение', exact: true }).click()
+    await expectDatabaseWeld(joint, { psto_required: null })
+    await expectPreControl(joint, { method: 'ВИК', request_name: null, request_date: null, result: null })
+    expect(await withE2eDatabase(async db => (await db.query('select id from generated_documents where id=$1', [requestId])).rows)).toEqual([])
+    expect(saves).toBe(1)
   } finally {
     await other.close()
   }

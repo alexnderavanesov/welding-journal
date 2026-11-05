@@ -48,6 +48,9 @@
 .app-sidebar[data-collapsed="true"] .app-sidebar-label { width: 0; grid-template-rows: 0fr; opacity: 0; }
 .app-sidebar[data-collapsed="true"] .app-sidebar-brand { opacity: 0; }
 .app-sidebar[data-collapsed="true"] .app-sidebar-toggle { right: 2px; }
+/* These simple workspaces use an immediate matching margin, so their sidebar
+   must not cover the content during a breakpoint change or collapse. */
+.app-sidebar[data-animate-width="false"] { transition-property: padding-inline, box-shadow; }
 @media (prefers-reduced-motion: reduce) {
   .app-sidebar, .app-sidebar-item,
   .app-sidebar-label, .app-sidebar-brand, .app-sidebar-toggle { transition: none; }

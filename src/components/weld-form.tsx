@@ -1,3 +1,7 @@
+import { previewControlRequestRemoval } from '@/server/weld-mutations-api'
+import { getClearedControlAssignments } from '@/lib/control-assignment-request-removal'
+import { formatControlRequestRemovals } from '@/lib/control-request-removal-preview'
+import { getExpectedWeldRowVersions } from '@/lib/weld-save-utils'
 import { isTopModalDialog } from '@/lib/modal-layer'
 import { ConfirmActionDialog } from './confirm-action-dialog'
 import { getControlAssignmentCancellations } from '@/lib/control-assignment-history'
@@ -78,12 +82,17 @@ export function WeldForm({
   preSaveDecision,
   onSave,
   onCancel,
-  busy,
+  busy: saving,
   elevated = false,
   onRunRootCauseAction,
 }: WeldFormProps) {
-  const [cancellationDraft, setCancellationDraft] = useState<WeldInput | null>(null)
+  const [checkingRequests, setCheckingRequests] = useState(false)
+  const busy = saving || checkingRequests
+  const checkingRef = useRef(false)
+  const [confirmationText, setConfirmationText] = useState('')
+  const [cancellationDraft, setCancellationDraft] = useState<(WeldInput & { controlRequestRemovalToken?: string }) | null>(null)
   const [draft, setDraft] = useState<WeldInput>(value)
+  const latestDraft = useRef(draft); latestDraft.current = draft
   const otherSettings = useOtherSettings()
   const saveCheckSettings = useSaveCheckSettings()
   const systemIndexSettings = useSystemIndexSettings()
@@ -148,8 +157,8 @@ export function WeldForm({
   const cancellationResultHint = saveBlockReason ? null : getWeldFormCancellationResultHint(validationDraft, value)
   const reactivationResultHint = saveBlockReason ? null : getWeldFormReactivationResultHint(validationDraft, value)
   const saveHint = [cancellationResultHint, reactivationResultHint].filter(Boolean).join('; ') || null
-  const handleSave = () => {
-    if (busy || cancellationDraft) return
+  const handleSave = async () => {
+    if (busy || checkingRef.current || cancellationDraft) return
 
     const currentStampSelectOptions = resolveStampSelectOptions(stampSelectOptions, draft)
     const currentExternalSaveBlockReason = getExternalSaveBlockReason?.(draft) ?? null
@@ -166,8 +175,25 @@ export function WeldForm({
       return
     }
 
-    if (getControlAssignmentCancellations(draft, value).length) { setCancellationDraft(draft); return }
-    onSave(withCalculatedFinalStatus(draft))
+    let token: string | undefined
+    let removalText = ''
+    if (value.id && getClearedControlAssignments(draft, value).length) {
+      checkingRef.current = true; setCheckingRequests(true)
+      try {
+        const preview = await previewControlRequestRemoval({ data: { records: [draft], expectedVersions: getExpectedWeldRowVersions([value as WeldRow]) } })
+        if (latestDraft.current !== draft) { setImmediateSaveBlockReason('Черновик изменился во время проверки заявок. Повторите сохранение.'); return }
+        token = preview.token
+        removalText = formatControlRequestRemovals(preview.removals)
+      } catch (error) { setImmediateSaveBlockReason(error instanceof Error ? error.message : String(error)); return }
+      finally { checkingRef.current = false; setCheckingRequests(false) }
+    }
+    const savedDraft = { ...draft, ...(token ? { controlRequestRemovalToken: token } : {}) }
+    const cancellationText = getControlAssignmentCancellations(draft, value).length ? getWeldFormCancellationResultHint(draft, value) : ''
+    if (removalText || cancellationText) {
+      setConfirmationText([removalText, cancellationText].filter(Boolean).join('\n'))
+      setCancellationDraft(savedDraft); return
+    }
+    onSave(withCalculatedFinalStatus(savedDraft))
   }
   const handleSaveRef = useRef(handleSave)
   handleSaveRef.current = handleSave
@@ -340,7 +366,7 @@ export function WeldForm({
         onCancel={onCancel}
         onSave={handleSave}
       />
-      {cancellationDraft ? <ConfirmActionDialog title="Отменить назначения?" tone="warning" description={getWeldFormCancellationResultHint(cancellationDraft, value)} confirmLabel="Подтвердить отмену и сохранить" cancelLabel="Вернуться к редактированию" onClose={() => setCancellationDraft(null)} onConfirm={() => { setCancellationDraft(null); onSave(withCalculatedFinalStatus(cancellationDraft)) }} /> : null}
+      {cancellationDraft ? <ConfirmActionDialog title="Сохранить изменения назначений?" tone="warning" description={confirmationText} confirmLabel="Подтвердить и сохранить" cancelLabel="Вернуться к редактированию" onClose={() => setCancellationDraft(null)} onConfirm={() => { setCancellationDraft(null); onSave(withCalculatedFinalStatus(cancellationDraft)) }} /> : null}
     </LargeDialogShell>
   )
 }

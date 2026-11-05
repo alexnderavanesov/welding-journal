@@ -33,9 +33,7 @@ describe('assignment removal and cancellation are distinct operations', () => {
     expect(buildMergedDispatcherTaskCodes(persisted, []).allByRowId.get(row.id)).toBeTruthy()
   })
   it.each([
-    { rkRequest: 'РК-1', rkResult: 'ожидает НК' },
     { rkResult: 'годен', rkConclusion: 'ЗНК-1' },
-    { preHeatTreatmentLnkEnabled: false, preHeatTreatmentControls: [{ ...pre, requestName: 'ДО-1' }] },
     { preHeatTreatmentControls: [{ ...pre, result: 'вырез', conclusionName: 'ДО-ЗНК' }] },
     { duplicateControls: [{ ...pre, method: 'РК' as const, result: 'ремонт' as const, conclusion: 'ДУБЛЬ-1', conclusionDate: '2026-09-01', controlDate: '2026-09-01' }] },
   ])('protects only the corresponding method across UI, stages and settings: %o', history => {
@@ -45,8 +43,8 @@ describe('assignment removal and cancellation are distinct operations', () => {
     expect(getProgramAssignmentError(row, { РК: '' }, false)).toContain('нельзя снять')
     expect(getWeldFormSaveBlockReason(next, row, { ...DEFAULT_SAVE_CHECK_SETTINGS, controlHistoryProtection: false })).toContain('нельзя снять')
     expect(getProgramAssignmentError(row, { УЗК: '' })).toBe('')
-    expect(getProgramAssignmentError(row, { РК: 'отменен' })).toBe('')
-    expect(getControlAssignmentCancellations({ ...row, hasRk: 'отменен' }, row)).toEqual(['РК'])
+    expect(getProgramAssignmentError(row, { РК: 'отменен' })).toContain('нельзя отменить')
+    expect(getControlAssignmentCancellations({ ...row, hasRk: 'отменен' }, row)).toEqual([])
     expect(getControlAssignmentCancellations(row, row)).toEqual([])
     expect(getControlAssignmentRemovalReason({ ...row, responsible: 'Иванов' }, row)).toBe('')
   })
@@ -54,20 +52,15 @@ describe('assignment removal and cancellation are distinct operations', () => {
     expect(getProgramAssignmentError({ ...base, rkResult }, { РК: '' })).toBe('')
   })
   it.each([
-    { pstoRequest: 'ПСТО-1' },
     { pstoResult: 'проведено', heatTreatmentDiagram: 'ДИАГРАММА' },
-    { tvmtRequest: 'ТВМТ-1' },
     { tvmtResult: 'не годен', tvmtConclusion: 'ТВМТ-ЗНК' },
-    { pstoRepeatCycles: [{ ...cycle, pstoRequest: 'ПОВТОР-2' }] },
-    { pstoRepeatCycles: [{ ...cycle, tvmtRequest: 'ТВМТ-2' }] },
-    { preHeatTreatmentControls: [{ ...pre, requestName: 'ДО-1' }] },
   ])('protects PSTO assignment across all its stages: %o', history => {
     const row: WeldRow = { ...base, pstoRequired: 'да', ...history }
     expect(getControlAssignmentRemovalReason({ ...row, pstoRequired: null }, row)).toContain('ПСТО')
-    expect(getControlAssignmentRemovalReason({ ...row, pstoRequired: 'отменен' }, row)).toBe('')
+    expect(getControlAssignmentRemovalReason({ ...row, pstoRequired: 'отменен' }, row)).toContain('нельзя отменить')
   })
   it('protects TVMT history in a repeat without blocking an unrelated RK assignment', () => {
-    const row = { ...base, hasTvmt: 'да', pstoRepeatCycles: [{ ...cycle, tvmtRequest: 'ТВМТ-2' }] }
+    const row = { ...base, hasTvmt: 'да', pstoRepeatCycles: [{ ...cycle, tvmtResult: 'не годен', tvmtConclusion: 'ТВМТ-2' }] }
     expect(getControlAssignmentRemovalReason({ ...row, hasTvmt: null }, row)).toContain('ТВМТ')
     expect(getProgramAssignmentError(row, { РК: '' })).toBe('')
   })
@@ -100,13 +93,13 @@ describe('assignment removal and cancellation are distinct operations', () => {
     expect(getCancelledLnkResultDisplay('ожидает НК')).toBe('отменен')
     expect(getCancelledPstoResultDisplay('ожидает заявку')).toBe('отменен')
   })
-  it('retains all PSTO cycles and preheat documents on their original stages; unstarted cancelled repeat is not new demand', () => {
+  it('preserves the performed assignment and required repeat when future line work is cancelled', () => {
     const row: WeldRow = { ...base, pstoRequired: 'да', pstoRequest: 'ПСТО-1', pstoResult: 'проведено', heatTreatmentDiagram: 'ДИАГРАММА-1', tvmtRequest: 'ТВМТ-1', tvmtResult: 'не годен', tvmtConclusion: 'ТВМТ-ЗНК',
       preHeatTreatmentControls: [{ ...pre, requestName: 'ДО-1', result: 'годен', conclusionName: 'ДО-ЗНК' }], pstoRepeatCycles: [{ ...cycle, pstoRequest: 'ПОВТОР-2', pstoResult: 'ожидает' }] }
     const next = buildPstoCancelledRow({ row, cancellationDate: '2026-09-28', cancellationBasis: 'Решение' })
-    expect(next).toEqual({ ...row, pstoRequired: 'отменен', pstoCancellationDate: '2026-09-28', pstoControlBasis: 'Решение' })
+    expect(next).toEqual(row)
     expect(buildPstoCycleTimeline(next, next.pstoRepeatCycles)).toHaveLength(2)
-    expect(getCurrentPstoCycle(next)?.sequence).toBe(1)
-    expect(getPstoTvmtWorkflowState(next)).toBe('complete')
+    expect(getCurrentPstoCycle(next)?.sequence).toBe(2)
+    expect(getPstoTvmtWorkflowState(next)).toBe('waiting-psto')
   })
 })

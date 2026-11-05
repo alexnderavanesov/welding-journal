@@ -1,0 +1,56 @@
+.connection-rules-grid {
+  position: relative;
+  min-width: 0;
+  min-height: 360px;
+  overflow-anchor: none;
+}
+.connection-rules-grid > .program-grid-frame {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+}
+.connection-rules-grid .ag-grid-viewport { overflow-y: hidden; }
+/* The document owns visible scrolling, but AG must still measure its partner. */
+.connection-rules-grid .ag-body-vertical-scroll { opacity: 0 !important; visibility: visible !important; pointer-events: none; }
+
+.connection-rules-grid .connection-rule-cell {
+  align-items: start;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  line-height: 1.55;
+  white-space: normal;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.connection-rules-grid .connection-rule-cell .ag-cell-wrapper,
+.connection-rules-grid .connection-rule-cell .ag-cell-value {
+  white-space: normal;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.connection-rules-grid .connection-rule-text {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.connection-rules-grid .connection-rule-parameter {
+  font-weight: 500;
+  color: #334155;
+}
+.connection-rules-grid .connection-rule-merged {
+  display: flex;
+  align-items: center;
+  text-align: center;
+}
+.connection-rules-popup-layer { position: fixed; inset: 0; z-index: 160; pointer-events: none; }
+.connection-rules-popup-layer > * { pointer-events: auto; }
+.connection-rules-grid .ag-full-width-row {
+  background: #f0f9ff;
+  color: #0c4a6e;
+  font-weight: 600;
+}

@@ -1,25 +1,23 @@
 import type { WeldRow, LineConsistencyTask } from './dispatcher-types'
 import { captureProgramChainStates } from './line-program-chain-state'
 import { programJointIdentity } from './line-program-topology'
-import { programApprovalKey } from './program-control-approval'
 import { loadSystemIndexSettings, type SystemIndexSettings } from './system-index-settings'
-import { normalizeResultStatus } from './weld-status'
 import { normalizeControlAvailabilityStorageText } from './control-availability-values'
-import { isPreHeatTreatmentStageEnabled } from './pre-heat-treatment-policy'
 import { isActiveOfficialWeld } from './control-assignment-eligibility'
+import { isUnofficialJoint } from './joint-display'
 
 export const REPAIR_CONTROL_FIELDS = { ВИК: 'hasVik', ПВК: 'hasPvk', РК: 'hasRk', УЗК: 'hasUzk' } as const
 export type RepairControlMethod = keyof typeof REPAIR_CONTROL_FIELDS
-export type RepairControlRequirement = { method: RepairControlMethod; sourceRowId: number; sourceJoint: string; reason: string }
-const results = { ВИК: 'vikResult', ПВК: 'pvkResult', РК: 'rkResult', УЗК: 'uzkResult' } as const
-const failed = (value: unknown) => ['ремонт', 'вырез'].includes(normalizeResultStatus(value) ?? '')
+export type RepairControlRequirement = { method: RepairControlMethod; sourceRowId: number; sourceJoint: string; reason: string;
+  assignment?: 'да' | 'дополнительный' | 'отменен' }
+const labels = { да: 'Да', дополнительный: 'Дополнительный', отменен: 'Отменен' } as const
 
-/** Component-wise ancestry, scoped to a line. A sibling W branch is not an R ancestor.
+/** Assignments follow the saved immediate parent within the same line.
  * Iteration is over the short physical branch, never over the whole journal per row.
  */
 export function buildProgramRepairRequirements(
   input: readonly WeldRow[],
-  approved: ReadonlySet<string> = new Set(),
+  _approved: ReadonlySet<string> = new Set(),
   settings: SystemIndexSettings = loadSystemIndexSettings(),
 ) {
   const rows = [...new Map(input.map(row => [row.id, row])).values()].sort((a, b) => a.id - b.id)
@@ -30,41 +28,30 @@ export function buildProgramRepairRequirements(
     const state = states.get(row.id)!
     if (state.kind !== 'repair') continue
     const required = new Map<RepairControlMethod, RepairControlRequirement>()
-    const add = (method: RepairControlMethod, source: WeldRow, reason: string) => {
-      if (!required.has(method)) required.set(method, { method, sourceRowId: source.id, sourceJoint: String(source.joint ?? ''), reason })
+    const add = (method: RepairControlMethod, source: WeldRow, reason: string, assignment: RepairControlRequirement['assignment'] = 'да') => {
+      if (!required.has(method)) required.set(method, { method, sourceRowId: source.id, sourceJoint: String(source.joint ?? ''), reason, assignment })
     }
     add('ВИК', row, 'ВИК обязателен как первый метод НК продолжения')
-    const ancestorIds = new Set<number>()
-    let sourceId = state.sourceRowId
-    while (sourceId != null && sourceId !== row.id && !ancestorIds.has(sourceId)) {
-      ancestorIds.add(sourceId)
-      // A coil starts a new physical connection. Its own history is inherited,
-      // but the removed connection's obligations must not reappear on its repair.
-      if (sourceId === state.physicalRootId || states.get(sourceId)?.kind === 'coil') break
-      sourceId = states.get(sourceId)?.sourceRowId ?? null
-    }
-    if (state.physicalRootId != null && state.physicalRootId !== row.id) ancestorIds.add(state.physicalRootId)
-    for (const id of ancestorIds) {
-      const source = byId.get(id)
-      if (!source || programJointIdentity(source, '') !== programJointIdentity(row, '')) continue
-      for (const method of Object.keys(results) as RepairControlMethod[]) {
-        const pre = isPreHeatTreatmentStageEnabled(source) ? source.preHeatTreatmentControls ?? [] : []
-        const failedMethod = failed(source[results[method]]) || pre.some(control => control.method === method && failed(control.result)) ||
-          (source.duplicateControls ?? []).some(control => control.method === method && failed(control.result))
-        if (failedMethod) add(method, source, `Обязателен после негодного ${method} на ${source.joint ?? source.id}`)
-      }
-      const pvkPerformed = normalizeResultStatus(source.pvkResult) === 'годен' ||
-        (isPreHeatTreatmentStageEnabled(source) && (source.preHeatTreatmentControls ?? []).some(control => control.method === 'ПВК' && normalizeResultStatus(control.result) === 'годен'))
-      if (pvkPerformed) add('ПВК', source, `ПВК обязателен по выполненному контролю предшественника ${source.joint ?? source.id}`)
-      if (approved.has(programApprovalKey(source, 'common', true)) &&
-        ['да', 'дополнительный'].includes(normalizeControlAvailabilityStorageText(source.hasRk) ?? '') &&
-        ['да', 'дополнительный'].includes(normalizeControlAvailabilityStorageText(source.hasUzk) ?? '')) {
-        for (const method of ['РК', 'УЗК'] as const) add(method, source, `Обязателен по согласованию РК + УЗК на ${source.joint ?? source.id}`)
+    // Only the saved immediate parent defines inheritance. An unofficial parent
+    // releases it; older failures/approvals must not reintroduce that obligation.
+    const source = state.sourceRowId == null ? undefined : byId.get(state.sourceRowId)
+    if (source && source.id !== row.id && !isUnofficialJoint(source) &&
+      programJointIdentity(source, '') === programJointIdentity(row, '')) {
+      for (const method of ['ПВК', 'РК', 'УЗК'] as const) {
+        const assignment = normalizeControlAvailabilityStorageText(source[REPAIR_CONTROL_FIELDS[method]])
+        if (assignment === 'да' || assignment === 'дополнительный' || assignment === 'отменен') {
+          add(method, source, `${method} = «${labels[assignment]}» унаследован от официального предшественника ${source.joint ?? source.id}; состояние назначения необходимо сохранить`, assignment)
+        }
       }
     }
     result.set(row.id, [...required.values()])
   }
   return result
+}
+
+export function satisfiesProgramRepairRequirement(row: Partial<WeldRow>, requirement: RepairControlRequirement) {
+  const value = normalizeControlAvailabilityStorageText(row[REPAIR_CONTROL_FIELDS[requirement.method]])
+  return requirement.assignment ? value === requirement.assignment : value === 'да' || value === 'дополнительный'
 }
 
 export function attachProgramRepairRequirements(rows: readonly WeldRow[], approved: ReadonlySet<string>, settings?: SystemIndexSettings): WeldRow[] {
@@ -82,9 +69,9 @@ export function getProgramRepairAssignmentIssues(row: Partial<WeldRow>, previous
   return (row.programRepairRequirements ?? []).flatMap(requirement => {
     const field = REPAIR_CONTROL_FIELDS[requirement.method]
     const value = normalizeControlAvailabilityStorageText(row[field])
-    if (value === 'да' || value === 'дополнительный') return []
+    if (satisfiesProgramRepairRequirement(row, requirement)) return []
     if (previous && value === normalizeControlAvailabilityStorageText(previous[field])) return []
-    return [{ fieldKeys: [field], message: `${requirement.reason}. Назначьте ${requirement.method}; снять или отменить обязательный метод нельзя.` }]
+    return [{ fieldKeys: [field], message: `${requirement.reason}. ${requirement.assignment ? `Установите «${labels[requirement.assignment]}»; изменить или снять унаследованное назначение нельзя.` : `Назначьте ${requirement.method}; снять или отменить обязательный метод нельзя.`}` }]
   })
 }
 
@@ -92,12 +79,12 @@ export function buildProgramRepairTasks(rows: readonly WeldRow[], approved: Read
   const requirements = buildProgramRepairRequirements(rows, approved, settings)
   return rows.flatMap(row => {
     if (!isActiveOfficialWeld(row)) return []
-    const missing = (requirements.get(row.id) ?? []).filter(item => !['да', 'дополнительный'].includes(normalizeControlAvailabilityStorageText(row[REPAIR_CONTROL_FIELDS[item.method]]) ?? ''))
+    const missing = (requirements.get(row.id) ?? []).filter(item => !satisfiesProgramRepairRequirement(row, item))
     if (!missing.length) return []
     return [{ kind: 'line-consistency', key: `program-repair:${row.id}:${missing.map(item => item.method).join(',')}`,
       row, line: String(row.line ?? ''), projectTitle: String(row.projectTitle ?? ''), subtitleCode: String(row.subtitleCode ?? ''),
-      fieldKey: 'controlPresence', systemWarningCode: 'СП-08', fieldLabel: 'Обязательные методы ремонта',
-      title: 'Назначить обязательный контроль ремонта', values: missing.map(item => item.method),
+      fieldKey: 'controlPresence', systemWarningCode: 'СП-08', fieldLabel: 'Обязательные назначения ремонта',
+      title: 'Восстановить обязательные назначения ремонта', values: missing.map(item => item.method),
       details: `${missing.map(item => item.reason).join('. ')}. Откройте назначения этого стыка в программе линии.` }]
   })
 }

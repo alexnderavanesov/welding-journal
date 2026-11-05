@@ -168,7 +168,7 @@ describe('document template builder cell clipboard', () => {
       />,
     )
     const dialog = await screen.findByRole('dialog')
-    const sourceCell = within(dialog).getByLabelText('Ячейка A1')
+    const sourceCell = await within(dialog).findByLabelText('Ячейка A1')
     const targetCell = within(dialog).getByLabelText('Ячейка B1')
 
     fireEvent.click(sourceCell)

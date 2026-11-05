@@ -62,7 +62,8 @@ test('cached journal filters preserve complete matches with bounded SQL', async 
     const state = {started:0,duration:-1}
     ;(window as unknown as {journalFilterTiming:typeof state}).journalFilterTiming = state
     const observer = new MutationObserver(() => {
-      if (state.started && document.querySelector(`.journal-filter-option span[title="${value}"]`)) {
+      // The visible value is ready even when it needs no overflow tooltip.
+      if (state.started && [...document.querySelectorAll('.journal-filter-option span')].some(element => element.textContent === value)) {
         state.duration = performance.now()-state.started
         observer.disconnect()
       }

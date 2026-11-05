@@ -20,6 +20,18 @@ function indexed(tasks: RepeatedJointTask[], rows: WeldRow[]) {
 }
 
 describe('line-program rules through dispatcher persistence and virtual fields', () => {
+  it.each(['да', 'дополнительный', 'отменен'])('indexes missing inherited %s and releases it for an unofficial parent', assignment => {
+    const rows = [row(1, { hasPvk: assignment }), row(2, { joint: 'F1R1' })]
+    const tasks = buildProgramRepairTasks(rows, new Set())
+    expect(tasks).toHaveLength(1)
+    const result = indexed(tasks, rows)
+    expect(result.storedIndex).toEqual([{ rowId: 2, taskKey: 'code:СП-08', code: 'СП-08' }])
+    expect(result.virtual.get(2)).toBe('СП-08')
+    rows[1].hasPvk = assignment
+    expect(buildProgramRepairTasks(rows, new Set())).toEqual([])
+    rows[0].officiality = 'неофициальный'; rows[1].hasPvk = null
+    expect(buildProgramRepairTasks(rows, new Set())).toEqual([])
+  })
   it('persists non-disableable SP-03 only on repairs missing required assignments, not the whole line', () => {
     const source = row(1, { hasRk: 'да', hasUzk: 'да', pvkResult: 'ремонт' })
     const rows = [source, row(2, { joint: 'F1R1', hasPvk: 'да', hasRk: 'да' }), row(3)]
@@ -33,7 +45,7 @@ describe('line-program rules through dispatcher persistence and virtual fields',
     rows[1].hasUzk = 'да'
     expect(buildProgramRepairTasks(rows, new Set([programApprovalKey(source, 'common', true)]))).toEqual([])
   })
-  it('keeps joint/method approvals across quotas and names without approving other joints', () => {
+  it('ignores retired approvals across quotas and names, preserving persisted and virtual warnings', () => {
     const rows = [row(1, { lineProgramId: 7, weldControlPercent: 100, hasRk: 'да', hasUzk: 'да', rkResult: 'годен', rkConclusion: 'RK-1', uzkResult: 'годен', uzkConclusion: 'UZ-1' })]
     const accepted = new Set(programExcessEntries(7, rows, calculateLineProgram(rows, 100, 10)).map(entry => entry.key))
     const tasks = (values: WeldRow[], keys = accepted) => buildVisibleDispatcherTasks({ rows: values, acceptedDispatcherWarningKeys: keys,
@@ -41,15 +53,15 @@ describe('line-program rules through dispatcher persistence and virtual fields',
       dispatcherReminderSettings: DEFAULT_DISPATCHER_REMINDER_SETTINGS, welderStamps: [], welderStampSuspensions: [],
     }).repeatedJointTasks.filter(task => task.kind === 'line-consistency' && task.fieldKey === 'controlPresence')
     expect(tasks(rows, new Set())).toHaveLength(1)
-    expect(tasks(rows)).toEqual([])
-    expect(indexed(tasks(rows), rows).virtual.size).toBe(0)
+    expect(tasks(rows)).toHaveLength(1)
+    expect(indexed(tasks(rows), rows).virtual.size).toBe(1)
     // Approval of F1 does not exempt a new joint with the same combination.
     const added = [...rows, { ...rows[0], id: 2, joint: 'F2' }]
     expect(tasks(added)).toHaveLength(1)
-    expect(tasks([{ ...rows[0], weldControlPercent: 50 }])).toEqual([])
-    expect(tasks([{ ...rows[0], hasPvk: 'да' }])).toEqual([])
-    expect(tasks([{ ...rows[0], lineProgramId: 8 }])).toEqual([])
-    expect(tasks([{ ...rows[0], lineProgramId: null }])).toEqual([]) // Approval belongs to the weld ID, not a registry join.
+    expect(tasks([{ ...rows[0], weldControlPercent: 50 }])).toHaveLength(1)
+    expect(tasks([{ ...rows[0], hasPvk: 'да' }])).toHaveLength(1)
+    expect(tasks([{ ...rows[0], lineProgramId: 8 }])).toHaveLength(1)
+    expect(tasks([{ ...rows[0], lineProgramId: null }])).toHaveLength(1) // Approval belongs to the weld ID, not a registry join.
   })
   it('keeps incomplete requirements visible as mandatory SP-02, including a single stored weld', () => {
     const rows = [row(1, { pvkControlPercent: null })]

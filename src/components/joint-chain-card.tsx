@@ -1,3 +1,4 @@
+import { overflowTitle } from '@/lib/overflow-title'
 import { ExternalLink } from 'lucide-react'
 
 import { JointSpoolDateMeta, OfficialityBadge } from '@/components/joint-meta'
@@ -56,7 +57,7 @@ export function JointChainCard({ row, index, isCurrent, onOpenRow, onSelect }: J
         <OfficialityBadge row={row} />
       </div>
 
-      <div className="mt-1 truncate text-xs text-slate-500" title={getJointTitle(row)}>{getJointTitle(row)}</div>
+      <div className="mt-1 truncate text-xs text-slate-500" {...overflowTitle(getJointTitle(row))}>{getJointTitle(row)}</div>
       <div className="mt-1 text-xs text-slate-500"><JointSpoolDateMeta row={row} /></div>
 
       <div className="mt-3 space-y-2.5">

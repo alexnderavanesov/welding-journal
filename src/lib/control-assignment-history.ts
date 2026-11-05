@@ -12,23 +12,39 @@ export const HISTORY_ASSIGNMENTS = [...METHODS, { code: 'ПСТО', enabledKey: 
 
 /** A waiting label is not a started process. History belongs to this method and its own stages. */
 export function getControlAssignmentHistory(row: WeldInput, field: WeldFieldKey): string | null {
+  return getAssignmentHistory(row, field, true, true)
+}
+
+/** Own performed work survives changes to visibility and applies to both NK stages.
+ * Requests alone do not prove execution. Preliminary NK is not performed PSTO. */
+export function getControlAssignmentPerformedHistory(row: WeldInput, field: WeldFieldKey): string | null {
+  return getAssignmentHistory(row, field, false, false)
+}
+
+/** Clearing PSTO must also retain its recorded preliminary package. An explicit
+ * contextual stage transfer is a separate, validated workflow. */
+export function getControlAssignmentRemovalHistory(row: WeldInput, field: WeldFieldKey): string | null {
+  return getAssignmentHistory(row, field, false, true)
+}
+
+function getAssignmentHistory(row: WeldInput, field: WeldFieldKey, includeRequests: boolean, includePrePsto: boolean): string | null {
   const hydrated = row as Partial<WeldRow>
   const method = METHODS.find(method => method.enabledKey === field)
   if (method) {
-    if ([method.requestKey, method.requestDateKey, method.conclusionKey, method.conclusionDateKey].some(key => hasText(row[key])) || resultFact(row[method.resultKey])) return `${method.code}: основной этап`
+    if ([method.conclusionKey, method.conclusionDateKey, ...(method.defectDescriptionKey ? [method.defectDescriptionKey] : []), ...(method.code === 'РК' ? ['rkExposureConfirmedDiameter' as const] : []), ...(includeRequests ? [method.requestKey, method.requestDateKey] : [])].some(key => hasText(row[key])) || resultFact(row[method.resultKey])) return `${method.code}: основной этап`
     if (hydrated.preHeatTreatmentControls?.some(control => control.method === method.code &&
-      ([control.requestName, control.requestDate, control.conclusionName, control.conclusionDate].some(hasText) || resultFact(control.result)))) return `${method.code}: НК до ТО`
+      ([control.conclusionName, control.conclusionDate, control.defectDescription, control.rkExposureConfirmedDiameter, ...(includeRequests ? [control.requestName, control.requestDate] : [])].some(hasText) || resultFact(control.result)))) return `${method.code}: НК до ТО`
     if (hydrated.duplicateControls?.some(control => control.method === method.code &&
       ([control.conclusion, control.conclusionDate, control.controlDate].some(hasText) || resultFact(control.result)))) return `${method.code}: дубль контроля`
     if (field === 'hasTvmt' && hydrated.pstoRepeatCycles?.some(cycle =>
-      [cycle.tvmtRequest, cycle.tvmtRequestDate, cycle.tvmtConclusion, cycle.tvmtConclusionDate].some(hasText) || resultFact(cycle.tvmtResult))) return 'ТВМТ: повторный цикл'
+      [cycle.tvmtConclusion, cycle.tvmtConclusionDate, ...(includeRequests ? [cycle.tvmtRequest, cycle.tvmtRequestDate] : [])].some(hasText) || resultFact(cycle.tvmtResult))) return 'ТВМТ: повторный цикл'
   }
   if (field === 'pstoRequired') {
-    if ([row.pstoRequest, row.pstoRequestDate, row.pstoDate, row.heatTreatmentDiagram, row.tvmtRequest, row.tvmtRequestDate, row.tvmtConclusion, row.tvmtConclusionDate].some(hasText) || resultFact(row.pstoResult) || resultFact(row.tvmtResult)) return 'ПСТО / ТВМТ: основной цикл'
+    if ([row.pstoDate, row.heatTreatmentDiagram, row.tvmtConclusion, row.tvmtConclusionDate, ...(includeRequests ? [row.pstoRequest, row.pstoRequestDate, row.tvmtRequest, row.tvmtRequestDate] : [])].some(hasText) || resultFact(row.pstoResult) || resultFact(row.tvmtResult)) return 'ПСТО / ТВМТ: основной цикл'
     if (hydrated.pstoRepeatCycles?.some(cycle =>
-      [cycle.pstoRequest, cycle.pstoRequestDate, cycle.pstoDate, cycle.heatTreatmentDiagram, cycle.tvmtRequest, cycle.tvmtRequestDate, cycle.tvmtConclusion, cycle.tvmtConclusionDate].some(hasText) || resultFact(cycle.pstoResult) || resultFact(cycle.tvmtResult))) return 'ПСТО / ТВМТ: повторный цикл'
-    if (hydrated.preHeatTreatmentControls?.some(control =>
-      [control.requestName, control.requestDate, control.conclusionName, control.conclusionDate].some(hasText) || resultFact(control.result))) return 'ПСТО: НК до ТО'
+      [cycle.pstoDate, cycle.heatTreatmentDiagram, cycle.tvmtConclusion, cycle.tvmtConclusionDate, ...(includeRequests ? [cycle.pstoRequest, cycle.pstoRequestDate, cycle.tvmtRequest, cycle.tvmtRequestDate] : [])].some(hasText) || resultFact(cycle.pstoResult) || resultFact(cycle.tvmtResult))) return 'ПСТО / ТВМТ: повторный цикл'
+    if (includePrePsto && hydrated.preHeatTreatmentControls?.some(control =>
+      [control.conclusionName, control.conclusionDate, control.defectDescription, control.rkExposureConfirmedDiameter, ...(includeRequests ? [control.requestName, control.requestDate] : [])].some(hasText) || resultFact(control.result))) return 'ПСТО: НК до ТО'
   }
   return null
 }
@@ -39,17 +55,24 @@ export function getControlAssignmentRemovalReason(record: WeldInput, previous?: 
 }
 
 export function getControlAssignmentRemovalIssues(record: WeldInput, previous?: WeldInput): Array<{ fieldKey: WeldFieldKey; message: string }> {
-  if (!previous) return []
   const issues: Array<{ fieldKey: WeldFieldKey; message: string }> = []
   for (const { code, enabledKey } of HISTORY_ASSIGNMENTS) {
-    if (!assigned(previous[enabledKey]) || assigned(record[enabledKey])) continue
-    const history = getControlAssignmentHistory(previous, enabledKey) || getControlAssignmentHistory(record, enabledKey)
-    if (history) issues.push({ fieldKey: enabledKey, message: `${code}: нельзя снять назначение через «Пусто» — есть заявка, результат или заключение (${history}). Для официальной отмены выберите «Отменен»; история сохранится.` })
+    const previousFact = previous && getControlAssignmentPerformedHistory(previous, enabledKey)
+    const currentFact = getControlAssignmentPerformedHistory(record, enabledKey)
+    const cancels = isControlCancelledValue(record[enabledKey]) && (!isControlCancelledValue(previous?.[enabledKey]) || (!previousFact && currentFact))
+    if (cancels && (previousFact || currentFact)) {
+      issues.push({ fieldKey: enabledKey, message: `${code}: нельзя отменить выполненный контроль (${previousFact || currentFact}). Годные и негодные результаты сохраняются; ошибочный результат исправляется в профильном процессе.` })
+      continue
+    }
+    if (!previous || !assigned(previous[enabledKey]) || assigned(record[enabledKey])) continue
+    const history = getControlAssignmentRemovalHistory(previous, enabledKey) || getControlAssignmentRemovalHistory(record, enabledKey)
+    if (history) issues.push({ fieldKey: enabledKey, message: `${code}: нельзя снять назначение через «Пусто» — есть выполненная работа или её реквизиты (${history}). Исправьте ошибочный результат в профильном процессе; снятие не удаляет факты.` })
   }
   return issues
 }
 
 export function getControlAssignmentCancellations(record: WeldInput, previous: WeldInput): string[] {
   return HISTORY_ASSIGNMENTS.filter(({ enabledKey }) => isControlCancelledValue(record[enabledKey]) && !isControlCancelledValue(previous[enabledKey]) &&
+    !getControlAssignmentPerformedHistory(previous, enabledKey) && !getControlAssignmentPerformedHistory(record, enabledKey) &&
     (getControlAssignmentHistory(previous, enabledKey) || getControlAssignmentHistory(record, enabledKey))).map(({ code }) => code)
 }

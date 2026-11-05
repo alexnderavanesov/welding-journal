@@ -5,7 +5,7 @@ import { Check, Info, Link2, SlidersHorizontal, X } from 'lucide-react'
 import { LargeDialogShell } from '@/components/large-dialog-shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { hasLineProgramIdentityChanges, type LineProgramRecord, type LineProgramSaveRequest } from '@/lib/line-program'
+import { getSupportControlPercent, hasLineProgramIdentityChanges, type LineProgramRecord, type LineProgramSaveRequest } from '@/lib/line-program'
 import { useConfirmAction } from '@/lib/confirm-action-context'
 import { DISPATCHER_ACCEPTED_WARNINGS_QUERY_KEY } from '@/lib/dispatcher-accepted-warning-query'
 import { useSecurityGuard } from '@/lib/security-context'
@@ -15,10 +15,14 @@ import { shouldDeferModalEscape } from '@/lib/use-report-modal-escape-key'
 import { saveLineProgram } from '@/server/line-program'
 
 export function LineProgramEditor({ value, onClose, onSaved }: {
-  value: LineProgramSaveRequest; onClose: () => void; onSaved: (line: LineProgramRecord) => void
+  value: LineProgramSaveRequest & Partial<Pick<LineProgramRecord, 'family' | 'inheritedWeldControlPercent' | 'inheritedPvkControlPercent'>>; onClose: () => void; onSaved: (line: LineProgramRecord) => void
 }) {
-  const [draft, setDraft] = useState(value)
-  const [separatePvk, setSeparatePvk] = useState(value.pvkControlPercent !== value.weldControlPercent)
+  const initial = { ...value, ...(value.family === 'supports' ? {
+    weldControlPercent: value.inheritedWeldControlPercent ?? null,
+    pvkControlPercent: value.inheritedPvkControlPercent ?? null,
+  } : {}) }
+  const [draft, setDraft] = useState<LineProgramSaveRequest>(initial)
+  const [separatePvk, setSeparatePvk] = useState(initial.pvkControlPercent !== initial.weldControlPercent)
   const formRef = useRef<HTMLFormElement>(null)
   const { requireEditPassword } = useSecurityGuard()
   const confirmAction = useConfirmAction()
@@ -61,7 +65,7 @@ export function LineProgramEditor({ value, onClose, onSaved }: {
     formRef.current?.querySelector<HTMLElement>('input:not(:disabled)')?.focus()
     return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus() }
   }, [])
-  return <LargeDialogShell onEscape={onClose} escapeDisabled={mutation.isPending} ariaLabel={draft.id ? 'Настройка линии' : 'Новая линия'} maxWidthClassName="max-w-[560px]" maxHeightClassName="max-h-[92dvh]" panelRadiusClassName="rounded-2xl" panelClassName="overflow-hidden">
+  return <LargeDialogShell onEscape={onClose} escapeDisabled={mutation.isPending} ariaLabel={draft.id ? 'Настройка линии' : 'Новая линия'} maxWidthClassName="max-w-[800px]" maxHeightClassName="max-h-[92dvh]" panelRadiusClassName="rounded-2xl" panelClassName="overflow-hidden">
     <form ref={formRef} className="flex max-h-[92dvh] min-h-0 flex-col" onSubmit={(event) => { event.preventDefault(); if (!mutation.isPending) mutation.mutate() }}
       onKeyDown={(event) => {
         if (shouldDeferModalEscape(formRef.current) || mutation.isPending || !formRef.current?.contains(document.activeElement)) return
@@ -119,6 +123,23 @@ export function LineProgramEditor({ value, onClose, onSaved }: {
             </div>
           </div>
           <p className="border-t border-sky-100 pt-3 text-xs leading-5 text-slate-500">Для отдельного ПВК просто введите свой процент. При базовых 100% допустимо 1–100%; иначе — от 0 до базового.</p>
+        </section>
+        <section aria-label="Контроль опор" className="space-y-3 rounded-xl border border-sky-100 bg-sky-50/40 p-4">
+          <h3 className="text-sm font-medium text-slate-700">Опоры: отдельная программа УЗК и ПВК</h3>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {([['supportUzkControlPercent', 'УЗК опор', draft.weldControlPercent], ['supportPvkControlPercent', 'ПВК опор', draft.pvkControlPercent]] as const).map(([key, label, inherited]) => {
+              const own = draft[key] != null, effective = getSupportControlPercent(draft[key], inherited)
+              return <div key={key} className="space-y-2">
+                <label className="block text-sm font-medium text-slate-700">{label}
+                  <Input aria-label={`% ${label}`} type="number" min={0.5} max={100} step="0.001" value={draft[key] ?? ''} placeholder={effective == null ? 'Не настроено' : `${effective}% — наследуется`} disabled={mutation.isPending}
+                    onChange={event => setDraft({ ...draft, [key]: event.target.value === '' ? null : Number(event.target.value) })} />
+                </label>
+                <Button type="button" variant="ghost" size="sm" disabled={mutation.isPending} aria-pressed={!own} onClick={() => setDraft({ ...draft, [key]: null })}>Наследовать</Button>
+                <p className="text-xs leading-5 text-slate-500 sm:whitespace-nowrap">{own ? 'Собственный процент' : 'Меняется вместе с нормой линии'} · действует {effective == null ? 'неизвестно' : `${effective}%`}</p>
+              </div>
+            })}
+          </div>
+          <p className="text-xs leading-5 text-slate-500">Каждый метод — от 0,5 до 100% независимо от другого. При наследовании действует минимум 0,5%. Пустая исходная норма остаётся неизвестной.</p>
         </section>
         <div className="flex items-start gap-2 text-xs leading-5 text-slate-500">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />

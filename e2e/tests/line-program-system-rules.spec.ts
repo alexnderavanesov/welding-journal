@@ -323,12 +323,12 @@ for (const beforeHeatTreatment of [false, true]) for (const date of ['2026-09-10
   })
 }
 
-test('физическая замена, удаление и позднее согласование в БД, индексе и виртуальном поле', async () => {
+test('физическая замена, удаление и наследование назначений в БД, индексе и виртуальном поле', async () => {
   const { stdout, stderr } = await promisify(execFile)(process.execPath, ['--import', 'tsx', 'scripts/verify-line-program-system-rules.ts'], {
     env: { ...process.env, FORCE_COLOR: undefined, DATABASE_URL: E2E_DATABASE_URL, WELDING_ENV_LOADED: '1' },
   })
   expect(stderr).toBe('')
-  expect(JSON.parse(stdout.trim())).toEqual({ physicalReplacement: true, stableIdsAfterDeletion: true, lateApproval: true, repairOnlyPersistedAndVirtual: true, exclusionRestoresRepairTask: true })
+  expect(JSON.parse(stdout.trim())).toEqual({ physicalReplacement: true, stableIdsAfterDeletion: true, inheritedAssignments: true, repairOnlyPersistedAndVirtual: true, exclusionRestoresRepairTask: true })
 })
 
 test('объяснение загружается только по раскрытию, постранично; обязательный ремонт виден и защищён', async ({ page }) => {
@@ -359,7 +359,7 @@ test('объяснение загружается только по раскры
   await expect(explanation.getByRole('button', { name: /^Показать стык .* в журнале$/ })).toHaveCount(5)
   expect(reads()).toBe(2)
   await explanation.getByLabel('Состав расчёта РК/УЗК').selectOption('obligations')
-  await expect(explanation).toContainText('Обязателен после негодного РК на F1')
+  await expect(explanation).toContainText('РК = «Да» унаследован от официального предшественника F1')
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
   expect(reads()).toBe(3)
   await calculation.screenshot({ path: 'outputs/line-program-calculation-details.png' })
@@ -370,7 +370,7 @@ test('объяснение загружается только по раскры
   await dialog.getByLabel('Поиск стыков в назначениях').fill('F1R1')
   const rk = dialog.getByLabel('F1R1 · РК', { exact: true })
   await expect(rk).toHaveClass(/border-amber-400/)
-  await expect(rk).toHaveAttribute('title', /Обязателен после негодного РК/)
+  await expect(rk).toHaveAttribute('title', /унаследован от официального предшественника/)
   await expect(rk.locator('option[value=""]')).toBeDisabled()
   await expect(dialog.getByLabel('F1R1 · ВИК', { exact: true })).toHaveCount(0)
   await withE2eDatabase(async db => {

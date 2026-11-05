@@ -6,6 +6,7 @@ import { weldJoints } from '@/db/schema'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import {
   buildPstoWorkflowRequestOptionsQuery,
+  buildPstoWorkflowAvailabilityQuery,
   buildPstoWorkflowRowsWhere,
   filterPstoWorkflowRows,
   PSTO_WORKFLOW_ROW_SELECT,
@@ -14,6 +15,17 @@ import { normalizePstoWorkflowRowsRequest } from '@/server/weld-contracts'
 import { WELD_TABLE_SELECT } from '@/server/weld-server-shared'
 
 describe('PSTO modal workflow queries', () => {
+  it('uses the complete current-cycle/history scopes for boolean availability without counting rows', () => {
+    const dialect = new PgDialect()
+    const query = dialect.sqlToQuery(buildPstoWorkflowAvailabilityQuery())
+    const scopes = ['requestCandidates', 'resultCandidates', 'resultRegistry', 'tvmtRequestCandidates', 'tvmtResultCandidates'] as const
+    const expected = dialect.sqlToQuery(sql`select ${sql.join(scopes.map(scope =>
+      sql`exists(select 1 from ${weldJoints} where ${buildPstoWorkflowRowsWhere({ scope })}) as ${sql.identifier(scope)}`), sql`, `)}`)
+    expect(query.sql.replace(/\s+/g, ' ').trim()).toBe(expected.sql.replace(/\s+/g, ' ').trim())
+    expect(query.params).toEqual(expected.params)
+    expect(query.sql).not.toMatch(/\bcount\s*\(/i)
+    expect(query.sql).not.toContain('requestRegistry')
+  })
   it('uses a compact projection with workflow-critical fields', () => {
     const keys = Object.keys(PSTO_WORKFLOW_ROW_SELECT)
 

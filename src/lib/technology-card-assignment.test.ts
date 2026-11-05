@@ -35,15 +35,11 @@ describe('explicit journal-wide TK assignment', () => {
     expect(run({ ...row, technologyCardNumber: card.name }).kind).toBe('unchanged')
   })
   it.each([
-    { patch: { weldDate: '' }, undated: true, tee: false },
-    { patch: { weldDate: undefined }, undated: true, tee: false },
-    { patch: { connectionType: 'Т1' }, undated: false, tee: true },
-    { patch: { weldDate: '', connectionType: 'Т1' }, undated: true, tee: true },
-  ])('explains each actual exclusion without changing eligibility: $patch', ({ patch, undated, tee }) => {
+    { weldDate: '' }, { weldDate: undefined }, { weldDate: '', connectionType: 'Т1' },
+  ])('excludes an undated joint in every supported family: %j', patch => {
     const result = classify()({ ...row, ...patch })
     expect(result).toMatchObject({ kind: 'excluded', newName: '', mismatch: false })
-    expect(result.reason.includes('Нет даты сварки')).toBe(undated)
-    expect(result.reason.includes('Подбор ТК для Т-соединений пока не поддерживается.')).toBe(tee)
+    expect(result.reason).toContain('Нет даты сварки')
   })
   it.each([{ d1: null }, { t2: 0 }, { weldingMethod: '' }, { materialGroup: '' }, { weldDate: 'wrong' }])('reports incomplete/invalid profiles without replacement: %j', patch => {
     expect(classify()({ ...row, ...patch, technologyCardNumber: 'ТК №1' }).kind).toBe('incomplete')

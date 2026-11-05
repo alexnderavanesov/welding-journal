@@ -184,7 +184,7 @@ export const DISPATCHER_SETTING_GROUPS: DispatcherSettingGroup[] = [{
 
 export const DISPATCHER_SETTING_HELP: Record<DispatcherSettingId, { meaning: string; example: string }> = {
   'check-technology-card': {
-    meaning: 'Проверяет ТК заваренного стыка по способам сварки, типу соединения, группам материалов, минимальным диаметру и толщине двух сторон и назначению ПСТО. Старые названия остаются связаны с переименованной картой; архив не отменяет прежнее назначение.',
+    meaning: 'Проверяет ТК заваренного соединения по способам сварки, типу, группам материалов и назначению ПСТО. Для С/У используются независимо меньшие диаметр и толщина двух сторон; для однородного и разнородного Т — только D1/T1 трубы. Старые названия остаются связаны с переименованной картой; архив не отменяет прежнее назначение.',
     example: 'ТК пуста и подходят две карты: выберите одну при редактировании стыка. Если параметры заполненной карты не подходят, ДЗ-06 перечислит причины, но не заблокирует сохранение.',
   },
   'percentage-new-welder': {
@@ -277,7 +277,7 @@ export const DISPATCHER_SETTING_HELP: Record<DispatcherSettingId, { meaning: str
   },
   'check-control-history': {
     meaning: 'Находит сохраненный результат или заключение при выключенном назначении соответствующего контроля.',
-    example: 'Назначение РК очищено, но заключение РК осталось. СП-11 попросит вернуть назначение, выбрать «отменен» или удалить результат через отчет.',
+    example: 'Назначение РК очищено, но заключение РК осталось. СП-11 попросит восстановить назначение или исправить ошибочный результат через предусмотренный процесс. Выполненный факт нельзя отменить.',
   },
   'line-control-presence': {
     meaning: 'Один С/У закрывает одно место общей нормы. Два обязательных РК/УЗК/послойной замены на одном стыке дают СП-01, включая 100%-ные линии. Соседние стыки могут иметь разные методы. Неполная программа даёт обязательный СП-01 без переключателя.',
@@ -632,7 +632,7 @@ export function normalizeDispatcherReminderDays(value: unknown, fallback = MIN_D
 
 export function getDispatcherTaskSettingId(task: DispatcherTask): DispatcherSettingId | null {
   // Internal task families drive concrete actions even when several now share an SP code.
-  if (isSystemDispatcherWarningTask(task) && ['СП-01', 'СП-06', 'СП-07', 'СП-08', 'СП-09'].includes(task.systemWarningCode)) return null
+  if (isSystemDispatcherWarningTask(task) && ['СП-01', 'СП-06', 'СП-07', 'СП-08', 'СП-09', 'СП-13'].includes(task.systemWarningCode)) return null
   if (task.kind === 'welder-stamp-expiry') return task.permitKind === 'dls' ? 'welder-dls-expiry' : 'welder-stamp-expiry'
   if (task.kind === 'create') return String(task.row.officiality ?? '').trim().toLowerCase() === 'неофициальный' ? 'repeated-create-official-from-unofficial' : 'repeated-create'
   if (task.kind === 'coil') return 'repeated-coil'

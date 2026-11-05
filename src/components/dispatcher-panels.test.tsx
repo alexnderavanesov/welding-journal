@@ -281,7 +281,7 @@ describe('DispatcherTaskPanel', () => {
     expect(location.querySelector('strong')).toHaveTextContent('330-ATM-16-000')
     expect(within(location).getByText('Проект 1')).toBeInTheDocument()
     const subtitleCode = within(location).getByText('Шифр 1')
-    expect(subtitleCode).toHaveAttribute('title', 'Шифр 1')
+    expect(subtitleCode).not.toHaveAttribute('title')
     expect(subtitleCode).toHaveClass('break-words')
     expect(subtitleCode).not.toHaveClass('sm:truncate')
     expect(queue.querySelector('[data-dispatcher-workspace-task-heading] [data-dispatcher-view-actions]')).not.toBeNull()

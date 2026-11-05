@@ -28,6 +28,15 @@ describe('server operation access boundary', () => {
       expect(() => permissions.forEach(permission => assertPermission(engineer, permission))).toThrow()
     }
   })
+  it('protects PSTO menu availability with the same specialty as its legacy counts', () => {
+    for (const name of ['getPstoWorkflowSummary', 'getPstoWorkflowAvailability']) {
+      const permissions = getOperationPermissions(getOperationPolicy('weld-read-api.ts', name), undefined)
+      expect(permissions).toEqual(['psto.view'])
+      expect(() => permissions.forEach(permission => assertPermission(engineer, permission))).toThrow()
+      const pstoOnly = { ...engineer, permissions: ['psto.view'] as AccessIdentity['permissions'] }
+      expect(() => permissions.forEach(permission => assertPermission(pstoOnly, permission))).not.toThrow()
+    }
+  })
   it('does not let template editors modify DZ or bypass mixed field/query checks', () => {
     expect(() => getOperationPermissions('@settingEdit', { key: 'dispatcher' }).forEach(permission => assertPermission(engineer, permission))).toThrow()
     expect(() => assertReadableQuery(engineer, { columnFilters: { lnkNote: '=private' } })).toThrow()

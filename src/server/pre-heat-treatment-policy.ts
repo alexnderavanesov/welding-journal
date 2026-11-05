@@ -16,15 +16,13 @@ export function buildPreHeatTreatmentEnabledWhere() {
   ), true)`
 }
 
-type CycleSqlFields = Record<'pstoDate' | 'heatTreatmentDiagram' | 'pstoResult' | 'tvmtRequest' |
-  'tvmtRequestDate' | 'tvmtResult' | 'tvmtConclusionDate' | 'tvmtConclusion', SQLWrapper>
+type CycleSqlFields = Record<'pstoDate' | 'heatTreatmentDiagram' | 'pstoResult' |
+  'tvmtResult' | 'tvmtConclusionDate' | 'tvmtConclusion', SQLWrapper>
 
 function buildCycleExecutionWhere(cycle: CycleSqlFields) {
   return sql`(${cycle.pstoDate} is not null
     or nullif(btrim(coalesce(${cycle.heatTreatmentDiagram}, '')), '') is not null
     or lower(btrim(coalesce(${cycle.pstoResult}, ''))) in ('проведено', 'проведено (отменен)', 'да')
-    or nullif(btrim(coalesce(${cycle.tvmtRequest}, '')), '') is not null
-    or ${cycle.tvmtRequestDate} is not null
     or (nullif(btrim(coalesce(${cycle.tvmtResult}, '')), '') is not null
       and lower(btrim(${cycle.tvmtResult})) not like 'ожидает%')
     or ${cycle.tvmtConclusionDate} is not null
@@ -58,10 +56,14 @@ export function buildPstoDocumentHistoryWhere() {
   return sql`(${buildPstoExecutionHistoryWhere()}
     or nullif(btrim(coalesce(${weldJoints.pstoRequest}, '')), '') is not null
     or ${weldJoints.pstoRequestDate} is not null
+    or nullif(btrim(coalesce(${weldJoints.tvmtRequest}, '')), '') is not null
+    or ${weldJoints.tvmtRequestDate} is not null
     or exists (select 1 from ${pstoRepeatCycles}
       where ${pstoRepeatCycles.weldJointId} = ${weldJoints.id}
         and (nullif(btrim(coalesce(${pstoRepeatCycles.pstoRequest}, '')), '') is not null
-          or ${pstoRepeatCycles.pstoRequestDate} is not null)))`
+          or ${pstoRepeatCycles.pstoRequestDate} is not null
+          or nullif(btrim(coalesce(${pstoRepeatCycles.tvmtRequest}, '')), '') is not null
+          or ${pstoRepeatCycles.tvmtRequestDate} is not null)))`
 }
 
 export function buildNoRejectedPreHeatTreatmentWhere({ autoVikForWeldDate = false }: { autoVikForWeldDate?: boolean } = {}) {

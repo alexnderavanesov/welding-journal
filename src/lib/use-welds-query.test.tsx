@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -45,9 +45,11 @@ describe('large weld query load policy', () => {
 
     rerender({ enabled: true })
     await waitFor(() => expect(serverMocks.listWeldFinalStatusContextKeys).toHaveBeenCalledTimes(1))
-    window.dispatchEvent(new Event('focus'))
-    window.dispatchEvent(new Event('online'))
-    await new Promise((resolve) => setTimeout(resolve, 25))
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+      window.dispatchEvent(new Event('online'))
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    })
 
     expect(serverMocks.listWeldFinalStatusContextKeys).toHaveBeenCalledTimes(1)
   })
@@ -63,9 +65,11 @@ describe('large weld query load policy', () => {
       expect(serverMocks.listWeldJointSnapshotPage).toHaveBeenCalledTimes(1)
       expect(serverMocks.listWeldReportContextRows).toHaveBeenCalledTimes(1)
     })
-    window.dispatchEvent(new Event('focus'))
-    window.dispatchEvent(new Event('online'))
-    await new Promise((resolve) => setTimeout(resolve, 25))
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+      window.dispatchEvent(new Event('online'))
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    })
 
     expect(serverMocks.listWeldJointSnapshotPage).toHaveBeenCalledTimes(1)
     expect(serverMocks.listWeldReportContextRows).toHaveBeenCalledTimes(1)

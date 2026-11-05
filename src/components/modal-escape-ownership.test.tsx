@@ -135,7 +135,7 @@ it('lets the first Escape close the request picker and the next close its dialog
 
 it('closes line program settings and control details after focus moves to body', () => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
-  render(<><ProgramViewSettings api={null} /><ProgramControlDetails approved={1} additional={2} onApproved={vi.fn()} onAdditional={vi.fn()} /></>)
+  render(<><ProgramViewSettings api={null} /><ProgramControlDetails additional={2} onAdditional={vi.fn()} /></>)
   for (const name of ['Настроить вид программы линий', 'Ещё показатели контроля']) {
     fireEvent.click(screen.getByRole('button', { name }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()

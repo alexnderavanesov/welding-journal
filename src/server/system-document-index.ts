@@ -848,12 +848,15 @@ export async function removeSourcedSystemDocumentPositionsInTransaction({
   relationIds = [],
   sourcePositions = [],
   weldJointIds = [],
+  documentTypes,
 }: {
   tx: SystemDocumentSequenceTransaction
   sourceKind: SystemDocumentSourceKind
   relationIds?: readonly number[]
   sourcePositions?: readonly Pick<SystemDocumentSourcePosition, 'weldJointId' | 'relationId' | 'sequence' | 'methodCode'>[]
   weldJointIds?: readonly number[]
+  /** Assignment removal changes request positions only, never conclusions. */
+  documentTypes?: readonly SystemDocumentType[]
 }) {
   const removedIds = new Set(relationIds.map(Number).filter((value) => Number.isInteger(value) && value > 0))
   const removedPositionKeys = new Set(sourcePositions.map(getSourcePositionMatchKey))
@@ -897,6 +900,7 @@ export async function removeSourcedSystemDocumentPositionsInTransaction({
     .where(buildNumberArrayMatch(generatedDocumentWeldJoints.weldJointId, candidateIds))
   documentRows.forEach(({ document }) => documentsById.set(document.id, document))
   const changes = [...documentsById.values()].flatMap((document) => {
+    if (documentTypes && !documentTypes.some(type => getSystemDocumentStorageTypes(type).includes(document.type))) return []
     const metadata = parseSystemDocumentMetadata(document.sourceMetadata)
     if (metadata?.sourceKind !== sourceKind) return []
     const remainingPositions = metadata.sourcePositions.filter((position) => {

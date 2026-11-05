@@ -1,4 +1,5 @@
 import { loadDataListSettings } from '@/lib/data-list-settings'
+import { isAngularConnectionType, isTConnectionType } from '@/lib/connection-type'
 import { normalizeWeldMaterialGroups, splitWeldMaterialGroups } from '@/lib/weld-material-groups'
 import type { WeldInput } from '@/lib/weld-fields'
 import type { WelderStampNaksPermit } from '@/lib/welder-stamp-types'
@@ -178,15 +179,17 @@ function parseJointDiameterValue(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-/** Dissimilar materials retain their side even for angular/equal-diameter joints. */
+/** Т uses the pipe's D1/T1; C/U retain each material's own side even at equal
+ * diameters. Multiple Т materials are diagnosed separately by СП-13. */
 export function getOfficialStampMaterialScopes(record: WeldInput) {
   return splitWeldMaterialGroups(record.materialGroup).map((group, index) => {
     const side = index === 0 ? 1 : 2
-    const diameter = parseJointDiameterValue(side === 1 ? record.d1 : record.d2)
-    const thickness = parseJointDiameterValue(side === 1 ? record.t1 : record.t2)
+    const geometrySide = isTConnectionType(record.connectionType) ? 1 : side
+    const diameter = parseJointDiameterValue(geometrySide === 1 ? record.d1 : record.d2)
+    const thickness = parseJointDiameterValue(geometrySide === 1 ? record.t1 : record.t2)
     return {
-      group, side,
-      label: `Материал ${side}: ${group}; D${side} = ${diameter ?? 'не указан'}, T${side} = ${thickness ?? 'не указана'}`,
+      group, side, geometrySide,
+      label: `Материал ${side}: ${group}; D${geometrySide} = ${diameter ?? 'не указан'}, T${geometrySide} = ${thickness ?? 'не указана'}`,
       dimensions: {
         diameters: diameter === null ? [] : [diameter],
         thicknesses: thickness === null ? [] : [thickness],
@@ -199,6 +202,14 @@ export function getOfficialStampMaterialScopes(record: WeldInput) {
 export function getOfficialStampJointDimensionRequirements(
   record: WeldInput,
 ): OfficialStampJointDimensionRequirements {
+  if (isTConnectionType(record.connectionType)) {
+    return {
+      diameters: toUniqueNumbers([parseJointDiameterValue(record.d1)]),
+      thicknesses: toUniqueNumbers([parseJointDiameterValue(record.t1)]),
+      diameterCoverage: 'all',
+      thicknessCoverage: 'all',
+    }
+  }
   const diameters = [
     parseJointDiameterValue(record.d1),
     parseJointDiameterValue(record.d2),
@@ -244,10 +255,6 @@ export function getOfficialStampJointDimensionRequirements(
     diameterCoverage: 'any',
     thicknessCoverage: 'any',
   }
-}
-
-function isAngularConnectionType(value: unknown) {
-  return String(value ?? '').trim().toUpperCase().startsWith('У')
 }
 
 function getSmallerDiameterMaterialIndex(diameters: readonly [number | null, number | null]): 0 | 1 | null {

@@ -47,7 +47,8 @@ for (const percent of [10, 100]) test(`неофициальные и неакт�
   await totals.getByRole('button', { name: 'Ещё показатели контроля' }).click()
   const more = page.getByRole('dialog', { name: 'Другие показатели контроля' })
   await expect(more.getByRole('button', { name: 'Дополнительные стыки: 1', exact: true })).toBeVisible()
-  await expect(more.getByRole('button', { name: 'Согласовано: 1', exact: true })).toBeVisible()
+  // Старые записи согласований сохраняются в истории, но больше не дают отдельный показатель.
+  await expect(more.getByRole('button', { name: /Согласовано/ })).toHaveCount(0)
   await more.press('Escape')
   await card.getByRole('button', { name: `Расчёт линии ${name}`, exact: true }).click()
   const all = program.getByRole('button', { name: 'Все стыки линии', exact: true })
@@ -67,11 +68,10 @@ for (const percent of [10, 100]) test(`неофициальные и неакт�
     await page.screenshot({ path: `outputs/line-program-inactive-${percent}-${width}.png` })
   }
   await page.setViewportSize({ width: 1600, height: 1000 })
-  for (const label of ['Дополнительные стыки: 1', 'Согласовано: 1']) {
-    await card.getByRole('button', { name: label, exact: true }).click()
-    await expect(joints).toHaveCount(1)
-    await expect(joints.first()).toHaveAttribute('data-joint', 'F1')
-  }
+  await expect(card.getByRole('button', { name: /Согласовано/ })).toHaveCount(0)
+  await card.getByRole('button', { name: 'Дополнительные стыки: 1', exact: true }).click()
+  await expect(joints).toHaveCount(1)
+  await expect(joints.first()).toHaveAttribute('data-joint', 'F1')
   await card.getByRole('button', { name: 'Учитываемых соединений 1', exact: true }).click()
   await expect(joints).toHaveCount(4)
   await program.getByRole('button', { name: /^Назначения/ }).last().click()

@@ -15,13 +15,14 @@ export const listWeldingJournalImportScope = createServerFn({ method: 'GET' })
   })
 
 export const massFillWeldJoints = createServerFn({ method: 'POST' })
-  .validator((data: { records: WeldPayload[]; expectedVersions: WeldRowVersionTarget[] }) => data)
+  .validator((data: { records: WeldPayload[]; controlRequestRemovalToken?: string; expectedVersions: WeldRowVersionTarget[] }) => data)
   .handler(async ({ data }) => {
     const server = await import('@/server/weld-import')
     return server.massFillWeldJoints({ data })
   })
 
 type ReplaceWeldJointsRequest = {
+  controlRequestRemovalToken?: string
   records: WeldPayload[]
   deleteIds: number[]
   expectedVersions: WeldRowVersionTarget[]

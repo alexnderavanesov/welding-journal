@@ -142,6 +142,7 @@ export async function createEarlyCoilDecision({
       previousRows: new Map(),
       context: systemContext,
       allowSystemJointNames: true,
+      inheritedControlAssignmentSource: candidate.sourceRow,
     })
     const { insertWeldJointsInBatches } = await import('@/server/weld-mutations')
     const createdRows = await insertWeldJointsInBatches(tx, drafts, processSettings)

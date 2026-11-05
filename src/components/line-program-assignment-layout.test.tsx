@@ -38,8 +38,8 @@ it('keeps mandatory-method hints in a separate stable line for the entire repair
   const repair: WeldRow = { ...source, joint: 'F1R1', programRepairRequirements: [{ method: 'РК', reason: 'Обязателен после негодного РК на F1', sourceRowId: 9, sourceJoint: 'F1' }] }
   const view = render(<ProgramAssignmentTable {...props} rows={[repair]} />)
   expect(view.container.querySelectorAll('[data-program-repair-hint]')).toHaveLength(4)
-  expect(screen.getByText('Обязательный метод')).toHaveAttribute('title', 'Обязателен после негодного РК на F1')
+  expect(screen.getByText('Назначение закреплено')).toHaveAttribute('title', 'Обязателен после негодного РК на F1')
   view.rerender(<ProgramAssignmentTable {...props} rows={[repair]} draft={new Map([[1, { ...repair, hasRk: 'да' }]])} />)
   expect(screen.getByText('было: —')).toBeVisible()
-  expect(screen.getByText('Обязательный метод')).toBeVisible()
+  expect(screen.getByText('Назначение закреплено')).toBeVisible()
 })

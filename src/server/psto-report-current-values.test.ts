@@ -85,7 +85,8 @@ describe('PSTO current report projection', () => {
   it.each(['нет', 'отменен'])('on %s ignores a later request-only repeat and retains the last performed cycle', pstoRequired => {
     const source = row({ pstoRequired, pstoRepeatCycles: [
       { id: 12, weldJointId: 1, sequence: 2, pstoDate: '2026-10-02', pstoResult: 'проведено', tvmtResult: 'годен' },
-      { id: 13, weldJointId: 1, sequence: 3, pstoRequest: 'Сохранённая заявка', pstoRequestDate: '2026-10-05', tvmtResult: 'ожидает' },
+      { id: 13, weldJointId: 1, sequence: 3, pstoRequest: 'Сохранённая заявка', pstoRequestDate: '2026-10-05',
+        tvmtRequest: 'Сохранённая заявка ТВМТ', tvmtRequestDate: '2026-10-06', tvmtResult: 'ожидает' },
     ] })
     const [display] = projectPstoReportDisplayValues([source], ['pstoDate', 'pstoResult', 'tvmtResult'])
     expect(display).toMatchObject({

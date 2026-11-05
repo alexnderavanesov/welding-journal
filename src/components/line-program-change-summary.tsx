@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { WeldRow } from '@/lib/dispatcher-types'
-import { programAssignment, PROGRAM_METHODS, type ProgramChange } from '@/lib/line-program-workspace'
+import { programAssignment, PROGRAM_METHODS, PROGRAM_BASIS_FIELDS, type ProgramChange } from '@/lib/line-program-workspace'
 import { ProgramPagination } from './line-program-primitives'
 
 const label = (value: string) => value || 'Пусто'
@@ -8,8 +8,11 @@ export function ProgramChangeSummary({ changes, rows, draft }: { changes: Progra
   const [page, setPage] = useState(0)
   const entries = changes.flatMap(change => PROGRAM_METHODS.flatMap(method => {
     const before = programAssignment(rows.get(change.id)!, method), after = programAssignment(draft.get(change.id)!, method)
-    return before === after ? [] : [{ id: `${change.id}:${method}`, joint: String(rows.get(change.id)!.joint ?? change.id), method, before, after }]
-  }))
+    return before === after ? [] : [{ id: `${change.id}:${method}`, joint: String(rows.get(change.id)!.joint ?? change.id), method: String(method), before, after }]
+  }).concat(Object.entries(PROGRAM_BASIS_FIELDS).flatMap(([method, field]) => {
+    const before = String(rows.get(change.id)![field] ?? ''), after = String(draft.get(change.id)![field] ?? '')
+    return before === after ? [] : [{ id: `${change.id}:${field}`, joint: String(rows.get(change.id)!.joint ?? change.id), method: `${method} · основание`, before, after }]
+  })))
   const removed = entries.filter(e => !e.after).length, cancelled = entries.filter(e => e.after === 'отменен').length
   const added = entries.filter(e => !e.before && e.after && e.after !== 'отменен').length
   const changed = entries.length - removed - cancelled - added

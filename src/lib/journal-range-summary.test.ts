@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { journalRangeSummaryChunks, mergeJournalRangeSpans, type JournalRangeSpan } from './journal-range-summary'
 
 describe('journal range totals', () => {
+  it('adds L as exact decimals, deduplicates overlapping cells and retains ordinary numeric values in a mixed selection', () => {
+    const spans: JournalRangeSpan[] = [{ fieldKey: 'weldLength', first: 0, last: 1 },
+      { fieldKey: 'weldLength', first: 1, last: 1 }, { fieldKey: 'd1', first: 0, last: 0 }]
+    const values = ['600.123456789123456789', '0.000000000000000001']
+    const result = journalRangeSummaryChunks(spans, (index, field) => field === 'weldLength' ? values[index] : 57).next()
+    expect(result).toMatchObject({ done: true, value: { count: 3, numericCount: 3, exactSum: '657.12345678912345679' } })
+  })
   it('merges reversed/overlapping selections without retaining a key per selected cell', () => {
     expect(mergeJournalRangeSpans([
       { fieldKey: 'd1', first: 5, last: 10 }, { fieldKey: 'd1', first: 0, last: 7 },

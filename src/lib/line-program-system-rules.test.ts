@@ -26,7 +26,7 @@ describe('agreed line program rules, 30 September 2026', () => {
   })
 
   it('does not create a percentage group for a welder who only repaired another welder’s joint', () => {
-    expect(calculateLineProgram([joint(1, { rkResult: 'ремонт' }), joint(2, { joint: 'F1R1', stamp1K: 'B', hasRk: 'да', rkResult: 'годен' })], 10, 0).map(group => group.stamp)).toEqual(['A'])
+    expect(calculateLineProgram([joint(1, { hasRk: 'да', rkResult: 'ремонт' }), joint(2, { joint: 'F1R1', stamp1K: 'B', hasRk: 'да', rkResult: 'годен' })], 10, 0).map(group => group.stamp)).toEqual(['A'])
   })
 
   it.each(['vikResult', 'pvkResult'] as const)('%s does not create extra RK/UZK places', field => {

@@ -4,13 +4,18 @@ import {
   REPEATED_JOINT_CLEARED_FIELD_KEYS as repeatedJointClearedFieldKeys,
 } from '@/lib/report-config'
 import type { WeldDraft, WeldRow } from '@/lib/dispatcher-types'
-import { buildProgramRepairRequirements, REPAIR_CONTROL_FIELDS } from './line-program-repair-requirements'
-import { parseRepeatedJointName } from './joint-chain'
+import { parseJointName } from './joint-name'
+import { isTConnectionType } from './connection-type'
+import { normalizeSupportWeldLength } from './support-length-value'
 import { loadSystemIndexSettings, type SystemIndexSettings } from './system-index-settings'
 
 export function buildRepeatedJointDraft(sourceRow: WeldRow, targetJoint: string, context: {
   rows?: readonly WeldRow[]; approved?: ReadonlySet<string>; settings?: SystemIndexSettings
 } = {}): WeldInput {
+  const settings = context.settings ?? loadSystemIndexSettings()
+  if (isTConnectionType(sourceRow.connectionType) && parseJointName(targetJoint, settings).segments.some(segment => segment.suffix !== 'R')) {
+    throw new Error('Для Т разрешены только ремонты R; вырез и катушка запрещены.')
+  }
   const draft = { ...sourceRow } as WeldDraft & Pick<
     WeldRow,
     'duplicateControls' | 'preHeatTreatmentControls' | 'pstoRepeatCycles'
@@ -27,13 +32,10 @@ export function buildRepeatedJointDraft(sourceRow: WeldRow, targetJoint: string,
   draft.layeredControlAssigned = false
   restoreRepeatedJointControlAvailability(draft, sourceRow)
   draft.joint = targetJoint
-  const settings = context.settings ?? loadSystemIndexSettings()
-  if (parseRepeatedJointName(targetJoint, settings).segments.length) {
-    const requirements = buildProgramRepairRequirements([
-      ...(context.rows ?? [sourceRow]), { ...draft, id: -1 },
-    ], context.approved, settings).get(-1) ?? []
-    for (const requirement of requirements) draft[REPAIR_CONTROL_FIELDS[requirement.method]] = 'да'
-  }
+  if (isTConnectionType(draft.connectionType)) draft.weldLength = normalizeSupportWeldLength(sourceRow.weldLength)
+  // Copy assignment states/bases exactly; a rejected additional method remains
+  // Additional and cancellation remains cancellation. VIK is always mandatory.
+  draft.hasVik = 'да'
   draft.officiality = null
   draft.createdAt = new Date().toISOString()
   draft.finalStatus = calculateFinalStatus(draft)
@@ -43,6 +45,8 @@ export function buildRepeatedJointDraft(sourceRow: WeldRow, targetJoint: string,
 function restoreRepeatedJointControlAvailability(draft: WeldInput, sourceRow: WeldInput) {
   draft.pstoRequired = sourceRow.pstoRequired
   for (const method of LNK_METHODS) {
-    draft[method.enabledKey] = sourceRow[method.enabledKey]
+    draft[method.enabledKey] = isTConnectionType(sourceRow.connectionType) && method.code === 'РК'
+      ? null
+      : sourceRow[method.enabledKey]
   }
 }

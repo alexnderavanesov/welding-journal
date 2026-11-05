@@ -379,7 +379,7 @@ describe('buildPercentageLineSummaries', () => {
     expect(fullControlStamp.requiredControls).toBe(1)
   })
 
-  it('additional control and C cancellation both displace ordinary yes from the rounded allowance', () => {
+  it('only C cancellation consumes an ordinary quota place; additional does not displace yes', () => {
     const rows = [
       ...Array.from({ length: 6 }, (_, index) => makeRow(index + 1, { joint: `S${index + 1}`, weldControlPercent: '25', hasRk: 'да' })),
       makeRow(7, { joint: 'S7', weldControlPercent: '25', hasRk: 'дополнительный' }),
@@ -394,8 +394,8 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.additionalAssignedControls).toBe(1)
     expect(stamp.cancelledAssignedControls).toBe(1)
     expect(stamp.normalAssignedControls).toBe(6)
-    expect(stamp.excessControls).toBe(3)
-    expect(stamp.excessCandidateJointNames).toEqual(['S6', 'S5', 'S4'])
+    expect(stamp.excessControls).toBe(2)
+    expect(stamp.excessCandidateJointNames).toEqual(['S6', 'S5'])
   })
 
   it('counts additional RK toward the rounded norm and integer surcharge', () => {
@@ -455,8 +455,8 @@ describe('buildPercentageLineSummaries', () => {
     expect(stamp.assignedControls).toBe(2)
     expect(stamp.additionalAssignedControls).toBe(1)
     expect(stamp.additionalAssignedJointNames).toEqual(['S2'])
-    expect(stamp.excessControls).toBe(1)
-    expect(stamp.excessCandidateRowIds).toEqual([1])
+    expect(stamp.excessControls).toBe(0)
+    expect(stamp.excessCandidateRowIds).toEqual([])
   })
 
   it('keeps actual per-stamp quotas without the removed theoretical potential', () => {

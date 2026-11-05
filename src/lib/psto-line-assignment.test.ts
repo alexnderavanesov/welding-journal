@@ -143,9 +143,7 @@ describe('PSTO line assignment', () => {
     })
 
     expect(next).toMatchObject({
-      pstoRequired: 'отменен',
-      pstoCancellationDate: '2026-08-09',
-      pstoControlBasis: 'ТР №7',
+      pstoRequired: 'да',
       pstoRequest: 'Заявка ПСТО',
       pstoResult: 'проведено',
       tvmtRequest: 'Заявка ТВМТ',
@@ -240,8 +238,7 @@ describe('PSTO line assignment', () => {
     const row = makeRow({ officiality: 'неофициальный', preHeatTreatmentControls: controls, rkRequest: 'MAIN-RK', rkResult: 'ремонт', lnkDefectDescription: '100-200', rkExposureConfirmedDiameter: 219 })
     const input = { row, controls, cancellationDate: '2026-08-09', cancellationBasis: 'Решение' }
     const next = target === 'cancelled' ? buildPstoMovedToCancelledLineRow(input) : buildPstoMovedToUnassignedLineRow(input)
-    const { pstoRequired, pstoControlBasis, pstoCancellationDate, ...facts } = row
-    expect(next).toEqual({ ...facts, pstoRequired: target === 'cancelled' ? 'отменен' : null, pstoControlBasis: target === 'cancelled' ? 'Решение' : null, pstoCancellationDate: target === 'cancelled' ? '2026-08-09' : null })
+    expect(next).toEqual(row)
   })
 
   it('does not inspect or alter duplicate controls when removing PSTO', () => {

@@ -3,6 +3,7 @@ import { getControlWorkflowAccess } from './control-workflow-access'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { isPreHeatTreatmentStageEnabled, type PreHeatTreatmentPolicyRow } from '@/lib/pre-heat-treatment-policy'
 import { LNK_METHODS } from '@/lib/lnk-report-config'
+import { getLnkMethodFamilyBlockReason } from './lnk-method-family'
 import type { WeldFieldKey, WeldInput } from '@/lib/weld-fields'
 import {
   getPstoTvmtWorkflowLabel,
@@ -345,6 +346,8 @@ export function getPrimaryLnkRequestAccess(
   methodCode: string,
   settings?: PrimaryLnkStageAccessSettings,
 ): { status: 'ready' | 'blocked'; reason: string; debt: null } {
+  const familyReason = getLnkMethodFamilyBlockReason(row, methodCode)
+  if (familyReason) return { status: 'blocked', reason: familyReason, debt: null }
   if (settings && settings.preHeatTreatmentLnkEnabled !== isPreHeatTreatmentStageEnabled(row)) {
     row = { ...row, preHeatTreatmentLnkEnabled: settings.preHeatTreatmentLnkEnabled } as WeldInput
   }

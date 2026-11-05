@@ -45,6 +45,14 @@ describe('physical statistics bounded loading', () => {
     expect(state.tables).toHaveLength(tab === 'general' || tab === 'welders' ? 8 : 7)
     expect(state.tables.filter(table => table === weldJointProgramStates)).toHaveLength(tab === 'general' ? 1 : 0)
   })
+  it.each([1, 1000, 200000])('loads support welder totals for %i operations in nine fixed reads', async count => {
+    state.rows = Array.from({ length: count }, (_, i) => ({ id: i + 1, joint: `ОП${i + 1}`, line: 'L',
+      connectionType: 'Т1', weldDate: '2026-10-01', weldLength: '100.123456789', stamp1KFact: `T${i % 1000}` })) as WeldRow[]
+    const result = await computeStatisticsServerResult({ tab: 'supports' })
+    expect(state.tables).toHaveLength(9)
+    expect(result.supportSummary?.welders).toHaveLength(Math.min(count, 1000))
+    expect(result.supportSummary?.welders?.reduce((total, row) => total + row.total, 0)).toBe(count)
+  }, 20_000)
   it('aggregates 200000 joints into 1000 welders without per-welder reads or losing their joint links', async () => {
     state.rows = Array.from({ length: 200000 }, (_, index) => ({
       id: index + 1, joint: `F${index + 1}`, line: `L${index % 1000}`, weldDate: '2026-09-01',

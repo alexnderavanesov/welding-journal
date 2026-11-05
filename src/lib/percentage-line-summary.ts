@@ -1,3 +1,5 @@
+import { isTConnectionType } from './connection-type'
+import { getSupportControlPercent } from './line-program'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import type { SystemIndexSettings } from '@/lib/system-index-settings'
 import { calculateFinalStatus, normalizeFinalStatus } from '@/lib/weld-status'
@@ -17,6 +19,7 @@ export type PercentageLineStampSummary = {
   subtitleCode: string
   line: string
   percent: number
+  support?: boolean
   officialJointCount: number
   baseRequiredControls: number
   additionalRequiredControls: number
@@ -69,6 +72,7 @@ export type PercentageLineSummary = {
   subtitleCode: string
   line: string
   percent: number
+  support?: boolean
   rowCount: number
   rows: WeldRow[]
   stamps: PercentageLineStampSummary[]
@@ -89,12 +93,13 @@ export function buildPercentageLineSummaries(
   const lines = new Map<string, WeldRow[]>()
   for (const row of rows) {
     if (!String(row.line ?? '').trim()) continue
-    const key = getLineProgramIdentityKey(row)
+    const key = isTConnectionType(row.connectionType) ? encodeIdentityKey([getLineProgramIdentityKey(row), 'supports']) : getLineProgramIdentityKey(row)
     const group = lines.get(key) ?? []
     group.push(row)
     lines.set(key, group)
   }
   return [...lines].flatMap(([lineKey, allRows]) => {
+    const support = isTConnectionType(allRows[0].connectionType)
     const metadataRows = allRows.filter(row => String(row.revisionActuality ?? '').trim().toLowerCase() !== 'не актуален')
     if (!metadataRows.length) return []
     for (const field of ['category', 'groupName'] as const) {
@@ -103,21 +108,21 @@ export function buildPercentageLineSummaries(
       const values = new Set(metadataRows.map((row) => String(row[field] ?? '').trim().toLocaleLowerCase('ru')))
       if (values.size !== 1 || values.has('')) return []
     }
-    const percents = new Set(metadataRows.map((row) => parseLineProgramPercent(row.weldControlPercent)))
+    const percents = new Set(metadataRows.map((row) => parseLineProgramPercent(support ? getSupportControlPercent(row.supportUzkControlPercent, parseLineProgramPercent(row.weldControlPercent)) : row.weldControlPercent)))
     const pvkPercents = new Set(metadataRows.map((row) => parseLineProgramPercent(
-      row.pvkControlPercent === undefined ? row.weldControlPercent : row.pvkControlPercent,
+      support ? getSupportControlPercent(row.supportPvkControlPercent, parseLineProgramPercent(row.pvkControlPercent === undefined ? row.weldControlPercent : row.pvkControlPercent)) : row.pvkControlPercent === undefined ? row.weldControlPercent : row.pvkControlPercent,
     )))
     if (percents.size !== 1 || percents.has(null) || pvkPercents.size !== 1 || pvkPercents.has(null)) return []
     const percent = [...percents][0]!
     const pvkPercent = [...pvkPercents][0]!
-    if (percent === 100 ? pvkPercent < 1 : pvkPercent > percent) return []
+    if (!support && (percent === 100 ? pvkPercent < 1 : pvkPercent > percent)) return []
     const sample = allRows[0]
     const group = {
-      lineKey, projectTitle: String(sample.projectTitle ?? '').trim(),
+      lineKey, support, projectTitle: String(sample.projectTitle ?? '').trim(),
       subtitleCode: String(sample.subtitleCode ?? '').trim(), line: String(sample.line ?? '').trim(), percent,
     }
     const rowById = new Map(allRows.map((row) => [row.id, row]))
-    const { calculations, calculationRows } = calculateLineProgramDetails(allRows, percent, pvkPercent, systemIndexSettings, approved)
+    const { calculations, calculationRows } = calculateLineProgramDetails(allRows, percent, pvkPercent, systemIndexSettings, approved, support)
     if (!calculationRows.length && !calculations.length) return []
     const stamps = calculations.map((stamp) => toSummary(group, stamp, rowById)).sort((a, b) =>
       b.officialJointCount - a.officialJointCount || b.excessControls - a.excessControls || a.stamp.localeCompare(b.stamp, 'ru', { numeric: true }))
@@ -129,7 +134,7 @@ export function buildPercentageLineSummaries(
 }
 
 function toSummary(
-  group: Pick<PercentageLineSummary, 'lineKey' | 'projectTitle' | 'subtitleCode' | 'line' | 'percent'>,
+  group: Pick<PercentageLineSummary, 'lineKey' | 'projectTitle' | 'subtitleCode' | 'line' | 'percent' | 'support'>,
   stamp: LineProgramStampCalculation,
   rows: ReadonlyMap<number, WeldRow>,
 ): PercentageLineStampSummary {

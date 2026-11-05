@@ -1,4 +1,3 @@
-import { isTConnectionType } from '@/lib/connection-type'
 import { parseDateLikeToIso } from '@/lib/date-format'
 import type { DataListSettings } from '@/lib/data-list-settings'
 import { checkTechnologyCardApplicability, createTechnologyCardMatcher } from '@/lib/technology-card-matching'
@@ -56,7 +55,6 @@ export function createTechnologyCardAssignmentClassifier(snapshot: TechnologyCar
       line: row.line ?? '', joint: row.joint ?? '', oldName: name, newName: '', mismatch: false }
     const skipReasons: string[] = []
     if (!String(row.weldDate ?? '').trim()) skipReasons.push('Нет даты сварки: массовый подбор выполняется только для заваренных стыков.')
-    if (isTConnectionType(row.connectionType)) skipReasons.push('Подбор ТК для Т-соединений пока не поддерживается.')
     if (skipReasons.length) {
       return { ...base, kind: 'excluded', reason: skipReasons.join(' ') }
     }

@@ -300,10 +300,17 @@ test('both quota bars track column width beyond the previous 160px cap and shrin
     const column = overview.locator(`.ag-header-cell[col-id="${key}"]`)
     const bar = page.getByTestId('line-program-card').first().locator(`.ag-cell[col-id="${key}"] [role="progressbar"]`)
     const resizeTo = async (width: number) => {
-      const bounds = (await column.boundingBox())!, handle = (await column.locator('.ag-header-cell-resize').boundingBox())!
-      const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2
+      const handle = column.locator('.ag-header-cell-resize')
+      // The viewport change asynchronously relays out flex columns. Waiting for
+      // the actual handle avoids dragging/reordering the adjacent header instead.
+      await handle.hover()
+      const { x, y, columnWidth } = await handle.evaluate(element => {
+        const grip = element.getBoundingClientRect(), header = element.closest('.ag-header-cell')!.getBoundingClientRect()
+        return { x: grip.x + grip.width / 2, y: grip.y + grip.height / 2, columnWidth: header.width }
+      })
       await page.mouse.move(x, y); await page.mouse.down()
-      await page.mouse.move(x + width - bounds.width, y, { steps: 10 }); await page.mouse.up()
+      await page.mouse.move(x + width - columnWidth, y, { steps: 10 }); await page.mouse.up()
+      await expect.poll(async () => Math.abs((await column.boundingBox())!.width - width)).toBeLessThanOrEqual(1)
       await expect.poll(async () => (await bar.boundingBox())!.width).toBeGreaterThan(width - 45)
     }
     await resizeTo(380)

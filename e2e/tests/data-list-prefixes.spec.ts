@@ -3,7 +3,7 @@ import { withE2eDatabase } from '../database'
 import { deserializeRpcResponse, serializeRpcData, siblingRpcUrl } from '../rpc'
 import { DEFAULT_DATA_LIST_SETTINGS, type DataListSettings } from '../../src/lib/data-list-settings'
 
-test('справочники: классы С/У и группы М проверяются в форме и на сервере, старые значения сохраняются', async ({ page, baseURL }) => {
+test('справочники: классы С/У/Т и группы М проверяются в форме и на сервере, старые значения сохраняются', async ({ page, baseURL }) => {
   test.skip(process.env.E2E_USE_PRODUCTION_BUILD !== '1', 'Uses the production RPC manifest')
   const snapshot = await withE2eDatabase(async db => (await db.query("select value,updated_at from app_settings where key='data-list'")).rows[0])
   const stored = () => withE2eDatabase(async db => {
@@ -24,10 +24,10 @@ test('справочники: классы С/У и группы М провер
     await page.getByRole('button', { name: 'Данные', exact: true }).click()
     const connections = page.getByRole('region', { name: 'Тип соединения', exact: true })
     const materials = page.getByRole('region', { name: 'Группа материалов', exact: true })
-    await expect(connections.getByText(/Первая буква — кириллическая «С» или «У»/)).toBeVisible()
+    await expect(connections.getByText(/Первая буква — кириллическая «С», «У» или «Т»/)).toBeVisible()
     await expect(materials.getByText(/Первая буква — только кириллическая «М»/)).toBeVisible()
     const initial = await stored()
-    for (const [section, value] of [[connections, 'Т1'], [connections, 'C2'], [materials, 'Н01'], [materials, 'M02']] as const) {
+    for (const [section, value] of [[connections, 'Н1'], [connections, 'C2'], [materials, 'Н01'], [materials, 'M02']] as const) {
       await section.getByLabel('Новое значение').fill(value)
       await expect(section.getByRole('button', { name: 'Добавить', exact: true })).toBeDisabled()
       await section.getByLabel('Новое значение').press('Enter')
@@ -35,7 +35,7 @@ test('справочники: классы С/У и группы М провер
     }
     expect(await stored()).toEqual(initial)
     for (const [section, key, value] of [
-      [connections, 'connectionTypes', 'С2'], [connections, 'connectionTypes', 'У17'], [materials, 'materialGroups', 'М02'],
+      [connections, 'connectionTypes', 'С2'], [connections, 'connectionTypes', 'У17'], [connections, 'connectionTypes', 'Т4'], [materials, 'materialGroups', 'М02'],
     ] as const) {
       await section.getByLabel('Новое значение').fill(value.toLowerCase())
       await section.getByRole('button', { name: 'Добавить', exact: true }).click()
@@ -49,7 +49,7 @@ test('справочники: классы С/У и группы М провер
     const before = await stored()
     const auditCount = () => withE2eDatabase(async db => (await db.query('select count(*)::int as count from audit_operations')).rows[0].count)
     const countBefore = await auditCount()
-    for (const [connection, material] of [['Т1', 'Н01'], ['C2', 'M02']]) {
+    for (const [connection, material] of [['Н1', 'Н01'], ['C2', 'M02']]) {
       const result = await save({ ...before.value,
         connectionTypes: [...before.value.connectionTypes, 'С3', connection],
         materialGroups: [...before.value.materialGroups, 'М123', material],

@@ -92,13 +92,14 @@ it('keeps the preview open when printing fails and permits retry', async () => {
   const failed = screen.getByTitle('Полный отчёт для печати') as HTMLIFrameElement
   vi.spyOn(failed.contentWindow!, 'focus').mockImplementation(() => {})
   vi.spyOn(failed.contentWindow!, 'print').mockImplementation(() => { throw new Error('Unsupported') })
-  fireEvent.load(failed)
+  await act(async () => { fireEvent.load(failed) })
   expect(screen.getByRole('alert')).toHaveTextContent('Не удалось открыть печать')
   fireEvent.click(screen.getByRole('button', { name: 'Печать / Сохранить PDF' }))
   const retried = screen.getByTitle('Полный отчёт для печати') as HTMLIFrameElement
-  vi.spyOn(retried.contentWindow!, 'focus').mockImplementation(() => {})
-  const print = vi.spyOn(retried.contentWindow!, 'print').mockImplementation(() => {})
-  fireEvent.load(retried)
+  const target = retried.contentWindow!
+  vi.spyOn(target, 'focus').mockImplementation(() => {})
+  const print = vi.spyOn(target, 'print').mockImplementation(() => target.dispatchEvent(new Event('afterprint')))
+  await act(async () => { fireEvent.load(retried) })
   expect(print).toHaveBeenCalledOnce()
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   expect(mocks.report).toHaveBeenCalledOnce()

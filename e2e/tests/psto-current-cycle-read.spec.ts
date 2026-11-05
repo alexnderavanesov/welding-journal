@@ -8,6 +8,9 @@ import { toHeatTreatmentReportRow } from '../../src/lib/report-control-state'
 import { prepareReportRows } from '../../src/lib/use-report-rows'
 import { buildWeldColumnValueFilter } from '../../src/lib/weld-column-choice-filter'
 import { attachHeatTreatmentControlRelations } from '../../src/server/heat-treatment-control-relations'
+import { hasPstoDocumentHistory } from '../../src/lib/psto-cycle'
+import { getCurrentPstoCycle } from '../../src/lib/tvmt-cycle'
+import { buildPstoDocumentHistoryWhere } from '../../src/server/pre-heat-treatment-policy'
 import { buildPstoCurrentReportValueSql } from '../../src/server/psto-report-current-values'
 import { listColumnFilterOptions, normalizeWeldColumnFilterOptionsRequest } from '../../src/server/weld-read'
 import { assertSafeE2eDatabaseUrl, withE2eDatabase } from '../database'
@@ -236,4 +239,49 @@ test('ПСТО current SQL: correlated cycles, sparse facts, cancellation and gr
   expect(sourceFacts(after)).toEqual(sourceFacts(sourceRows))
   expect(await storedCycles()).toEqual(cyclesBefore)
   expect(await storedPreControls()).toEqual(preControlsBefore)
+})
+
+test('ПСТО current SQL: заявка ТВМТ без выполнения не вытесняет выполненный цикл и остаётся в истории', async () => {
+  // Earlier data may retain a completed cycle on an unassigned line. A later
+  // request with no execution must stay historical; this test does not cancel
+  // performed work or bypass the current assignment workflow's protection.
+  const ids = await withLineProgramFixture(async db => {
+    const { rows } = await db.query<{ id: number; joint: string }>(`insert into weld_joints
+      (project_title,subtitle_code,line,joint,connection_type,weld_date,officiality,revision_actuality,psto_required,
+        psto_request,psto_request_date,psto_result,psto_date,heat_treatment_diagram,tvmt_request,tvmt_request_date,tvmt_result,tvmt_conclusion,tvmt_conclusion_date)
+      values ($1,'CURRENT-SQL','CURRENT-SQL-LINE','SQL-TVMT-HISTORY-1','С17','2026-06-01','действующий','актуальная','нет',
+        'PRIMARY','2026-07-01','проведено','2026-07-03','D-PRIMARY','TVMT-PRIMARY','2026-07-04','годен','C-PRIMARY','2026-07-05'),
+        ($1,'CURRENT-SQL','CURRENT-SQL-LINE','SQL-TVMT-HISTORY-2','С17','2026-06-01','действующий','актуальная','отменен',
+        null,null,null,null,null,'ONLY-TVMT-HISTORY','2026-08-04',null,null,null)
+      returning id,joint`, [project])
+    const primary = rows.find(row => row.joint === 'SQL-TVMT-HISTORY-1')!
+    await db.query(`insert into psto_repeat_cycles(weld_joint_id,sequence,psto_request,psto_request_date,tvmt_request,tvmt_request_date)
+      values($1,2,'REQUEST-ONLY-REPEAT','2026-08-01','TVMT-REQUEST-ONLY-REPEAT','2026-08-04')`, [primary.id])
+    return rows.map(row => row.id)
+  })
+  const db = requireDb()
+  const stored = await db.select().from(weldJoints).where(inArray(weldJoints.id, ids)).orderBy(asc(weldJoints.joint))
+  const hydrated = await attachHeatTreatmentControlRelations(stored, db)
+  expect(getCurrentPstoCycle(hydrated[0])?.sequence).toBe(1)
+  expect(hydrated.map(row => hasPstoDocumentHistory(row))).toEqual([true, true])
+  const selectedFields = ['pstoRequest', 'pstoDate', 'tvmtRequest', 'tvmtResult'] as const
+  const expected = [
+    ['SQL-TVMT-HISTORY-1', 'PRIMARY', '2026-07-03', 'TVMT-PRIMARY', 'годен'],
+    ['SQL-TVMT-HISTORY-2', '', '', 'ONLY-TVMT-HISTORY', ''],
+  ]
+  const prepared = prepareReportRows(hydrated.map(toHeatTreatmentReportRow), [], undefined, undefined, undefined, true, true)
+  expect(prepared.map(row => [row.joint, ...selectedFields.map(field => String(getPstoDisplayValue(row, field) ?? ''))])).toEqual(expected)
+  const { rows: actual } = await db.execute<{ joint: string; history: boolean } & Record<(typeof selectedFields)[number], string>>(sql`
+    select ${weldJoints.joint}, ${buildPstoDocumentHistoryWhere()} as history,
+      ${sql.join(selectedFields.map(field => sql`${buildPstoCurrentReportValueSql(field)!} as ${sql.identifier(field)}`), sql`, `)}
+    from ${weldJoints} where ${weldJoints.projectTitle} = ${project} order by ${weldJoints.joint}`)
+  expect(actual.map(row => row.history)).toEqual([true, true])
+  expect(actual.map(row => [row.joint, ...selectedFields.map(field => row[field])])).toEqual(expected)
+  const options = await listColumnFilterOptions(normalizeWeldColumnFilterOptionsRequest({ report: 'heatTreatment', projectTitle: project,
+    fieldKey: 'tvmtRequest' }))
+  expect(Object.fromEntries(options.map(option => [option.value, option.count]))).toEqual({ 'TVMT-PRIMARY': 1, 'ONLY-TVMT-HISTORY': 1 })
+  // Reading the current state never deletes the unperformed historical request.
+  const repeats = await db.select().from(pstoRepeatCycles).where(inArray(pstoRepeatCycles.weldJointId, ids))
+  expect(repeats).toHaveLength(1)
+  expect(repeats[0]).toMatchObject({ sequence: 2, pstoRequest: 'REQUEST-ONLY-REPEAT', tvmtRequest: 'TVMT-REQUEST-ONLY-REPEAT', pstoResult: null, pstoDate: null })
 })

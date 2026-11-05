@@ -20,13 +20,13 @@ test.afterEach(async ({ page }) => {
 })
 const stored = () => withE2eDatabase(async db => JSON.parse((await db.query('select value from app_settings where key=$1', [key])).rows[0].value))
 
-test('системные значения, дополнительные списки и ровные кнопки во всём разделе данных', async ({ page }) => {
+test('списки без системных меток, удаляемые типы соединений и ровные кнопки', async ({ page }) => {
   const calls: string[] = [], errors: string[] = []
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/settings')
   await page.getByRole('button', { name: 'Данные', exact: true }).click()
-  const expected = [['Способ сварки', ['РАД', 'РД'], 'МП'], ['Тип соединения', ['С17', 'У19'], 'ТШ'], ['Группа материалов', ['М01', 'М05', 'М11'], 'М02'], ['Вид испытаний', [], 'ГИ']] as const
+  const expected = [['Способ сварки', ['РАД', 'РД'], 'МП'], ['Тип соединения', [], 'ТШ'], ['Группа материалов', ['М01', 'М05', 'М11'], 'М02'], ['Вид испытаний', [], 'ГИ']] as const
   for (const [name, system, custom] of expected) {
     const section = page.getByRole('region', { name, exact: true })
     await expect(section.getByRole('button', { name: `Удалить ${custom}`, exact: true })).toBeVisible()
@@ -41,6 +41,8 @@ test('системные значения, дополнительные спис
     expect(Math.abs(inputBox!.y - buttonBox!.y)).toBeLessThanOrEqual(1)
     expect(inputBox!.height).toBe(buttonBox!.height)
   }
+  await expect(page.getByText('Системное', { exact: true })).toHaveCount(0)
+  for (const value of ['С17', 'У19', 'Т', 'Т1', 'Т3', 'Т4Д']) await expect(page.getByRole('button', { name: `Удалить ${value}`, exact: true })).toBeVisible()
   expect(calls.filter(call => call.startsWith('saveAppSetting_'))).toHaveLength(0)
   expect((await stored()).connectionTypes).toEqual(['ТШ']) // Reading old settings must not write to the database.
   const material = page.getByRole('region', { name: 'Группа материалов', exact: true })
@@ -62,7 +64,7 @@ test('системные значения, дополнительные спис
   expect(errors).toEqual([])
 })
 
-test('сервер сохраняет системные значения даже при прямой попытке убрать их из настройки', async ({ page }) => {
+test('сервер сохраняет обязательные способы и материалы, но позволяет убрать неиспользуемые типы соединений', async ({ page }) => {
   const revision = await withE2eDatabase(async db => (await db.query('select updated_at from app_settings where key=$1', [key])).rows[0].updated_at.toISOString())
   await page.goto('/settings')
   await page.getByRole('button', { name: 'Данные', exact: true }).click()
@@ -78,7 +80,7 @@ test('сервер сохраняет системные значения даж
   // Replay a real wire request with the current version, omitting the fixed
   // codes by replacing them with already-present custom values. The server,
   // not the browser normalizer or stale-version guard, must restore the codes.
-  for (const [system, custom] of [['РАД', 'МП'], ['РД', 'МП'], ['С17', 'ТШ'], ['У19', 'ТШ'], ['М01', 'М02'], ['М05', 'М02'], ['М11', 'М02']]) {
+  for (const [system, custom] of [['РАД', 'МП'], ['РД', 'МП'], ['С17', 'ТШ'], ['У19', 'ТШ'], ['Т', 'ТШ'], ['Т1', 'ТШ'], ['Т3', 'ТШ'], ['Т4Д', 'ТШ'], ['М01', 'М02'], ['М05', 'М02'], ['М11', 'М02']]) {
     expect(body).toContain(`"${system}"`)
     body = body.replaceAll(`"${system}"`, `"${custom}"`)
   }
@@ -86,6 +88,6 @@ test('сервер сохраняет системные значения даж
   const headers = await request.allHeaders(); delete headers['content-length']
   const response = await page.request.post(request.url(), { headers, data: body })
   expect(response.ok()).toBe(true)
-  const expected = { weldingTypes: ['РАД', 'РД', 'МП'], connectionTypes: ['С17', 'У19', 'ТШ'], materialGroups: ['М01', 'М05', 'М11', 'М02', 'М03'], testTypes: ['ГИ', 'ПИ'] }
+  const expected = { connectionTypesVersion: 1, weldingTypes: ['РАД', 'РД', 'МП'], connectionTypes: ['ТШ'], materialGroups: ['М01', 'М05', 'М11', 'М02', 'М03'], testTypes: ['ГИ', 'ПИ'] }
   expect(await stored()).toEqual(expected)
 })

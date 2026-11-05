@@ -479,3 +479,38 @@ it.each([false, true])('keeps one datasource and waits for every surviving refre
     expect(refreshCells).toHaveBeenCalledExactlyOnceWith({ rowNodes: [expect.objectContaining({ group: true })], force: true })
   } finally { view.unmount(); vi.useRealTimers() }
 })
+
+it('preserves completed cell totals on expiry without querying, and clears them for a changed range', async () => {
+  vi.useFakeTimers()
+  let datasource!: IServerSideDatasource<WeldRow>, index: number | null = 0
+  const api = { isDestroyed: () => false, setGridOption: (_key: string, value: IServerSideDatasource<WeldRow>) => { datasource = value },
+    clearCellSelection: vi.fn(), getRowGroupColumns: () => [], forEachNode: () => {},
+    getServerSideGroupLevelState: () => [{ route: [], rowCount: 2, lastRowIndexKnown: true }], getDisplayedRowCount: () => 2,
+    getCellRanges: () => index === null ? [] : [{ startRow: { rowIndex: index }, endRow: { rowIndex: index },
+      columns: [{ isVisible: () => true, getColId: () => 'wdi' }] }],
+  } as unknown as GridApi<WeldRow>
+  const source: JournalServerSource = { identity: 'range', columnFilters: {}, sort: null, rowsChanged: vi.fn(),
+    load: vi.fn().mockResolvedValue({ rows: [], rowCount: 2, revision: 1 }) }
+  const summarize = vi.mocked(summarizeJournalGridRange).mockReset().mockResolvedValue({ count: 1, numericCount: 1, sum: 8.05, average: 8.05 })
+  const view = renderHook(({ expired }) => useJournalServerGrid({ api, source: { ...source, revisionExpired: expired }, selected: new Set(), anchor: 'line', ready: true }),
+    { initialProps: { expired: false } })
+  try {
+    await act(async () => datasource.getRows({ request: { rowGroupCols: [], groupKeys: [], startRow: 0, endRow: 100 },
+      success: vi.fn(), fail: vi.fn() } as unknown as IServerSideGetRowsParams<WeldRow>))
+    await act(async () => vi.advanceTimersByTimeAsync(300))
+    expect(view.result.current.summary.sum).toBe(8.05)
+    view.rerender({ expired: true })
+    expect(view.result.current.summary.sum).toBe(8.05)
+    expect(view.result.current.rangeState).toBe('')
+    index = 1
+    act(() => view.result.current.updateRange())
+    expect(view.result.current.summary.count).toBe(0)
+    expect(view.result.current.rangeState).toBe('Итоги: —')
+    index = null
+    act(() => view.result.current.updateRange())
+    expect(view.result.current.summaryRange).toBeNull()
+    expect(view.result.current.rangeState).toBe('')
+    await act(async () => vi.advanceTimersByTimeAsync(1000))
+    expect(summarize).toHaveBeenCalledOnce()
+  } finally { view.unmount(); vi.useRealTimers() }
+})

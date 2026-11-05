@@ -8,13 +8,18 @@ export type LineProgramProperties = {
   groupName: string | null
   weldControlPercent: number | null
   pvkControlPercent: number | null
+  supportUzkControlPercent?: number | null
+  supportPvkControlPercent?: number | null
 }
 export type LineProgramRecord = LineProgramIdentity & LineProgramProperties & {
   id: number
   configurationIssue: string | null
   version: string
+  family?: 'supports'
+  inheritedWeldControlPercent?: number | null
+  inheritedPvkControlPercent?: number | null
 }
-export type LineProgramTab = 'lines' | 'full' | 'percentage'
+export type LineProgramTab = 'lines' | 'full' | 'percentage' | 'supports'
 export type LineProgramListRequest = { tab?: LineProgramTab; search?: string; page?: number; pageSize?: number }
 export type LineProgramSaveRequest = LineProgramIdentity & LineProgramProperties & { id?: number; version?: string }
 
@@ -50,6 +55,11 @@ export function normalizeLineProgramSaveRequest(data: LineProgramSaveRequest): L
   }
   const weldControlPercent = readPercent(data.weldControlPercent, 'Базовый процент')
   const pvkControlPercent = readPercent(data.pvkControlPercent, 'Процент ПВК')
+  const readSupportPercent = (value: unknown, label: string) => {
+    const parsed = readPercent(value, label)
+    if (parsed != null && parsed < 0.5) throw new Error(`${label}: собственное значение должно быть от 0,5 до 100%.`)
+    return parsed
+  }
   if (weldControlPercent != null && pvkControlPercent != null &&
       (weldControlPercent === 100 ? pvkControlPercent < 1 : pvkControlPercent > weldControlPercent)) {
     throw new Error(weldControlPercent === 100 ? 'При базовых 100% процент ПВК должен быть от 1 до 100.' :
@@ -57,7 +67,24 @@ export function normalizeLineProgramSaveRequest(data: LineProgramSaveRequest): L
   }
   return { ...identity, id: data.id, version: data.version,
     category: String(data.category ?? '').trim() || null, groupName: String(data.groupName ?? '').trim() || null,
-    weldControlPercent, pvkControlPercent }
+    weldControlPercent, pvkControlPercent,
+    ...(Object.hasOwn(data, 'supportUzkControlPercent') ? { supportUzkControlPercent: readSupportPercent(data.supportUzkControlPercent, 'УЗК опор') } : {}),
+    ...(Object.hasOwn(data, 'supportPvkControlPercent') ? { supportPvkControlPercent: readSupportPercent(data.supportPvkControlPercent, 'ПВК опор') } : {}),
+  }
+}
+
+export function getSupportControlPercent(own: number | null | undefined, inherited: number | null): number | null {
+  return own == null ? inherited == null ? null : Math.max(0.5, inherited) : own
+}
+
+/** A view projection only; ordinary metadata remains unchanged in storage. */
+export function asSupportLineProgram(line: LineProgramRecord): LineProgramRecord {
+  if (line.family === 'supports') return line
+  const weldControlPercent = getSupportControlPercent(line.supportUzkControlPercent, line.weldControlPercent)
+  const pvkControlPercent = getSupportControlPercent(line.supportPvkControlPercent, line.pvkControlPercent)
+  const missing = [!line.category?.trim() && 'категория', !line.groupName?.trim() && 'группа', weldControlPercent == null && 'процент УЗК опор', pvkControlPercent == null && 'процент ПВК опор'].filter(Boolean)
+  return { ...line, family: 'supports', inheritedWeldControlPercent: line.weldControlPercent, inheritedPvkControlPercent: line.pvkControlPercent, weldControlPercent, pvkControlPercent,
+    configurationIssue: missing.length ? `СП-01: не настроены ${missing.join(', ')}.` : line.configurationIssue?.includes('противореч') ? line.configurationIssue : null }
 }
 
 /** Pure validation, shared by imports and interactive writes. All conflicting fields are retained. */

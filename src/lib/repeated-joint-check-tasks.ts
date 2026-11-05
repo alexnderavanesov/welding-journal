@@ -1,4 +1,6 @@
+import { getSupportJointRuleIssues } from './support-joint-rules'
 import { FIELD_BY_KEY, type WeldFieldKey } from '@/lib/weld-fields'
+import { isTConnectionType } from './connection-type'
 import {
   LNK_METHODS,
   OFFICIAL_WELDER_STAMP_FIELD_KEYS,
@@ -137,6 +139,13 @@ export function buildLnkResultRuleCheckTasks(
   return tasks
 }
 
+export function buildSupportJointCheckTasks(rows: WeldRow[], settings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS): RepeatedJointCheckTask[] {
+  return rows.flatMap(row => {
+    const issues = getSupportJointRuleIssues(row, undefined, settings)
+    return issues.length ? [{ ...createJointChainCheckTask(row, `support-parameters:${row.id}`, 'проверить параметры опоры', issues.map(issue => issue.message).join('\n'), settings), systemWarningCode: 'СП-13' as const }] : []
+  })
+}
+
 export function buildLnkChronologyCheckTasks(
   rows: WeldRow[],
   systemIndexSettings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
@@ -205,6 +214,7 @@ export function buildJointCoreDataCheckTasks(
     const missingMaterialGroup = hasWeldDate && !hasText(row.materialGroup)
     const missingConnectionType = hasWeldDate && !hasText(row.connectionType)
     const missingWeldingMethod = hasWeldDate && !hasText(row.weldingMethod)
+    const missingSupportLength = hasWeldDate && isTConnectionType(row.connectionType) && !hasText(row.weldLength)
     if (missingMaterialGroup) {
       issueKeys.push('missing-material-group')
     }
@@ -221,6 +231,10 @@ export function buildJointCoreDataCheckTasks(
     })
     if (missingRequiredFieldsReason) {
       issues.push(`при заполненной дате сварки ${missingRequiredFieldsReason}`)
+    }
+    if (missingSupportLength) {
+      issueKeys.push('missing-support-length')
+      issues.push('при заполненной дате сварки Т не указана длина шва, мм')
     }
 
     if (issues.length === 0) return []

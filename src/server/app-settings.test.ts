@@ -5,9 +5,9 @@ import { describe, expect, it } from 'vitest'
 import { assertAppSettingVersion } from '@/server/app-settings'
 
 describe('app setting concurrency', () => {
-  it('normalizes the system data codes under the validation lock before a direct settings write', () => {
+  it('checks data-list changes and current usage under the validation lock before a direct settings write', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/server/app-settings.ts'), 'utf8')
-    const normalization = source.indexOf('prepareAppSettingValue(prepareDataListSettingsChange(')
+    const normalization = source.indexOf('prepareAppSettingValue(await prepareDataListSettingsChangeInTransaction(')
     expect(normalization).toBeGreaterThan(source.indexOf("await lockWeldValidationSettings(tx, 'exclusive')"))
     expect(normalization).toBeGreaterThan(source.indexOf('assertAppSettingVersion(current?.updatedAt.toISOString() ?? null, expectedUpdatedAt)'))
     expect(normalization).toBeLessThan(source.indexOf('.insert(appSettings)'))

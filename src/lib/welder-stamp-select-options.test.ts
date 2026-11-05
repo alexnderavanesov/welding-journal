@@ -62,6 +62,37 @@ function stampRecord(value: string, archived: boolean, weldType = 'РАД'): Wel
   }
 }
 
+describe('custom welding methods use the same qualification and combination rules', () => {
+  const options = { weldingTypes: ['РАД', 'РД', 'МП'], saveCheckSettings: { ...DEFAULT_SAVE_CHECK_SETTINGS, officialDls: true } }
+  const row = { stamp1K: 'AAAA', weldingMethod: 'МП', connectionType: 'С17', materialGroup: 'M01',
+    d1: '57', d2: '57', t1: '3', t2: '3', weldDate: '2026-07-15' } as WeldInput
+  function qualified(value: string, method: string) {
+    const stamp = stampRecord(value, false, method)
+    stamp.dlsPermits = stamp.naksPermits.map(permit => ({ ...permit, number: 'ДЛС' }))
+    return stamp
+  }
+  it('requires MP in both NAKS and DLS and checks its range and dates', () => {
+    const mp = qualified('AAAA', 'МП')
+    expect(getOfficialStampCompatibilityIssues(row, [mp], options)).toEqual([])
+    expect(getOfficialStampCompatibilityIssues(row, [qualified('AAAA', 'РАД')], options)).toEqual([
+      expect.objectContaining({ reason: 'weld-type', method: 'МП' }),
+    ])
+    const noDls = { ...mp, dlsPermits: qualified('AAAA', 'РАД').dlsPermits }
+    expect(getOfficialStampCompatibilitySaveBlockReason(row, [noDls], options)).toContain('ДЛС на способ сварки МП')
+    expect(getOfficialStampCompatibilitySaveBlockReason({ ...row, d1: '1001', d2: '1001' }, [mp], options)).toContain('диаметр')
+    expect(getOfficialStampCompatibilitySaveBlockReason({ ...row, weldDate: '2027-01-01' }, [mp], options)).toContain('сроку действия')
+  })
+  it('covers RAD+MP by the team for C/U and requires both in the single T welder', () => {
+    const rad = qualified('AAAA', 'РАД'), mp = qualified('BBBB', 'МП')
+    const combined = { ...row, weldingMethod: 'РАД+МП', stamp1Z: 'BBBB' }
+    for (const connectionType of ['С17', 'У19']) {
+      expect(getOfficialStampCompatibilityIssues({ ...combined, connectionType }, [rad, mp], options)).toEqual([])
+    }
+    expect(getOfficialStampCompatibilitySaveBlockReason({ ...row, weldingMethod: 'РАД+МП', connectionType: 'Т4' }, [rad], options)).toContain('МП')
+    expect(getOfficialStampCompatibilityIssues({ ...row, weldingMethod: 'РАД+МП', connectionType: 'Т4' }, [qualified('AAAA', 'РАД+МП')], options)).toEqual([])
+  })
+})
+
 function suspensionRecord(value: string): WelderStampSuspensionRecord {
   return {
     id: 1,

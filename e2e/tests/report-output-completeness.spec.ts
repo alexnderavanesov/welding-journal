@@ -155,7 +155,7 @@ async function invalidateDerivedIndexes(client: Parameters<Parameters<typeof wit
 }
 
 for (const [path, options] of [
-  ['/journal', ['Текущая версия', 'Системная версия', 'Ожидает сварку', 'Ожидает заявки', 'Ожидает контроль', 'Ожидает ремонт', 'Отмененные годные результаты']],
+  ['/journal', ['Текущая версия', 'Системная версия', 'Ожидает сварку', 'Ожидает заявки', 'Ожидает контроль', 'Ожидает ремонт']],
   ['/lnk', ['Текущая версия', 'Ожидание заявки', 'Ожидание НК', 'Показать заключения']],
   ['/psto', ['Текущая версия', 'Ожидает заявку ПСТО', 'Результаты ПСТО']],
 ] as const) {
@@ -189,6 +189,11 @@ for (const [path, options] of [
     const show = page.locator('header').getByRole('button', { name: 'Показать', exact: true })
     for (const option of options) {
       await show.click()
+      if (path === '/journal' && option === 'Текущая версия') {
+        // Per the agreed future-work-only cancellation rule, performed work
+        // stays performed; the retired cancelled-good report is not an action.
+        await expect(page.getByRole('button', { name: 'Отмененные годные результаты', exact: true })).toHaveCount(0)
+      }
       await page.getByRole('button', { name: option, exact: true }).click()
       const modal = page.getByRole('dialog', { name: 'Предпросмотр отчёта' })
       const frame = modal.frameLocator('iframe')

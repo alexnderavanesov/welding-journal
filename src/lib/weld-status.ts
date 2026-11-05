@@ -122,7 +122,7 @@ export function getFinalStatusErrorReason(record: WeldInput) {
     return `${code}: результат «${String(resultValue).trim()}» заполнен, но назначение ${code} = ${enabledText}`
   })
 
-  return `${details.join('; ')}. В назначении контроля выберите «да», «отменен» или «дополнительный», либо очистите результат.`
+  return `${details.join('; ')}. Восстановите нужное назначение «да» или «дополнительный» либо исправьте ошибочные данные через профильный отчёт. Выполненный контроль отменить нельзя.`
 }
 
 export function normalizeResultStatus(value: unknown) {

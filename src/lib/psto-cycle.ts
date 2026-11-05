@@ -67,7 +67,7 @@ export function buildPstoCycleTimeline(
 
 export function hasPrimaryPstoCycle(row: WeldInput) {
   if (isControlCancelledValue(row.pstoRequired)) {
-    return hasPstoExecutionHistory(row, []) || hasText(row.pstoRequest) || hasText(row.pstoRequestDate)
+    return hasPstoDocumentHistory(row, [])
   }
   return (
     isControlEnabledValue(row.pstoRequired) ||
@@ -92,8 +92,6 @@ export function hasPstoExecutionHistory(
     isCompletedPstoResult(row.pstoResult) ||
     hasText(row.pstoDate) ||
     hasText(row.heatTreatmentDiagram) ||
-    hasText(row.tvmtRequest) ||
-    hasText(row.tvmtRequestDate) ||
     hasFinalTvmtResult(row.tvmtResult) ||
     hasText(row.tvmtConclusionDate) ||
     hasText(row.tvmtConclusion) ||
@@ -103,8 +101,9 @@ export function hasPstoExecutionHistory(
 
 /** A request is visible history, but is not evidence of performed heat treatment. */
 export function hasPstoDocumentHistory(row: WeldInput, repeatCycles: readonly PstoRepeatCycleRecord[] = getRowRepeatCycles(row)) {
-  return hasPstoExecutionHistory(row, repeatCycles) || hasText(row.pstoRequest) || hasText(row.pstoRequestDate) ||
-    repeatCycles.some(cycle => hasText(cycle.pstoRequest) || hasText(cycle.pstoRequestDate))
+  return hasPstoExecutionHistory(row, repeatCycles) ||
+    [row.pstoRequest, row.pstoRequestDate, row.tvmtRequest, row.tvmtRequestDate].some(hasText) ||
+    repeatCycles.some(cycle => [cycle.pstoRequest, cycle.pstoRequestDate, cycle.tvmtRequest, cycle.tvmtRequestDate].some(hasText))
 }
 
 export function getRetainedPstoRequestNote(row: WeldInput): string | undefined {
@@ -116,7 +115,7 @@ export function getRetainedPstoRequestNote(row: WeldInput): string | undefined {
 
 export function getRetainedPstoCycleLabel(row: WeldInput, cycle: PstoCycleSnapshot): string | undefined {
   if (!isControlEnabledValue(row.pstoRequired) && !hasPstoCycleExecutionHistory(cycle) &&
-      (hasText(cycle.pstoRequest) || hasText(cycle.pstoRequestDate))) {
+      [cycle.pstoRequest, cycle.pstoRequestDate, cycle.tvmtRequest, cycle.tvmtRequestDate].some(hasText)) {
     return 'Сохранённая заявка; выполнение ПСТО не требуется'
   }
   return undefined
@@ -139,8 +138,6 @@ export function hasPstoCycleExecutionHistory(
     isCompletedPstoResult(cycle.pstoResult) ||
     hasText(cycle.pstoDate) ||
     hasText(cycle.heatTreatmentDiagram) ||
-    hasText(cycle.tvmtRequest) ||
-    hasText(cycle.tvmtRequestDate) ||
     hasFinalTvmtResult(cycle.tvmtResult) ||
     hasText(cycle.tvmtConclusionDate) ||
     hasText(cycle.tvmtConclusion)

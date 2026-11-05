@@ -19,6 +19,7 @@ import type { RowWithId } from '@/lib/lnk-report-mutation-types'
 import { isSameRequestDocument } from '@/lib/request-document-identity'
 import type { ControlProcessSettings } from '@/lib/control-process-settings'
 import { canCreatePrimaryLnkRequest } from '@/lib/lnk-control-stage'
+import { getLnkMethodFamilyBlockReason } from './lnk-method-family'
 
 export type LnkRequestManagerAction = 'rename' | 'delete'
 
@@ -105,6 +106,8 @@ export function buildLnkRequestCorrectionRow({
   }
 
   if (requestName) {
+    const familyReason = getLnkMethodFamilyBlockReason(record, method.code)
+    if (familyReason) throw new Error(familyReason)
     const proposedRecord = { ...record } as RowWithId
     proposedRecord[method.requestKey] = requestName
     if (requestDate !== undefined) {

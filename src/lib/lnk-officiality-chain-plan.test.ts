@@ -4,6 +4,30 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { buildLnkOfficialityChainPlan } from '@/lib/lnk-officiality-chain-plan'
 
 describe('buildLnkOfficialityChainPlan', () => {
+  it('includes both missing methods inherited from yes and additional after restoration', () => {
+    const source = row({ id: 1, joint: 'S1', officiality: 'неофициальный', rkResult: 'ремонт', hasRk: 'да', hasUzk: 'дополнительный' })
+    const replacement = row({ id: 2, joint: 'S1', hasVik: 'да' })
+    const plan = buildLnkOfficialityChainPlan([source, replacement], [1], 'official')
+    expect(plan.missingControlAssignments).toEqual([{ rowId: 2, joint: 'S1R1', methods: ['РК', 'УЗК'] }])
+  })
+  it('previews newly missing RK after restoration without assigning it or suppressing SP-08', () => {
+    const source = row({ id: 1, joint: 'S1', officiality: 'неофициальный', rkResult: 'ремонт', hasRk: 'да' })
+    const replacement = row({ id: 2, joint: 'S1', hasVik: 'да', hasRk: null })
+    const plan = buildLnkOfficialityChainPlan([source, replacement], [1], 'official')
+    expect(plan.missingControlAssignments).toContainEqual({ rowId: 2, joint: 'S1R1', methods: ['РК'] })
+    expect(replacement.hasRk).toBeNull()
+    expect(buildLnkOfficialityChainPlan([source, { ...replacement, hasRk: 'да' }], [1], 'official').missingControlAssignments).toEqual([])
+    expect(plan.planKey).not.toBe(buildLnkOfficialityChainPlan([source, { ...replacement, hasRk: 'да' }], [1], 'official').planKey)
+  })
+  it('rebuilds supports past R10 without applying C/U repair or coil limits', () => {
+    const rows = Array.from({ length: 13 }, (_, index) => row({ id: index + 1,
+      joint: index ? `ОП-1R${index}` : 'ОП-1', connectionType: 'Т1', d1: 57, uzkResult: 'ремонт' }))
+    const plan = buildLnkOfficialityChainPlan(rows, [3], 'unofficial')
+    expect(plan.renames).toHaveLength(10)
+    expect(plan.renames.at(-1)).toMatchObject({ rowId: 13, targetJoint: 'ОП-1R11' })
+    expect(plan.renames.every(change => !/[WY]/.test(change.targetJoint))).toBe(true)
+    expect(plan.earlyCoilDecisions).toEqual([])
+  })
   it.each(['годен', 'ремонт', 'вырез', 'ожидает НК', ''])('blocks becoming unofficial when any duplicate exists: %s', result => {
     const source = row({ rkResult: 'ремонт', duplicateControls: [{ id: 30, weldJointId: 1, method: 'УЗК', result }] as WeldRow['duplicateControls'] })
     expect(() => buildLnkOfficialityChainPlan([source], [1], 'unofficial')).toThrow('есть дубль-контроль')

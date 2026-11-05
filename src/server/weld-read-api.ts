@@ -19,6 +19,7 @@ import type {
   PstoWorkflowRequestOptionsRequest,
   PstoWorkflowRequestOptionsResult,
   PstoWorkflowSummary,
+  PstoWorkflowAvailability,
   WeldPageRequest,
   WeldPageResult,
   WeldReportSummaryRequest,
@@ -59,6 +60,12 @@ export const getPstoWorkflowSummary = createServerFn({ method: 'GET' })
   .handler(async (): Promise<PstoWorkflowSummary> => {
     const server = await import('@/server/psto-workflow-context')
     return server.getPstoWorkflowSummary()
+  })
+
+export const getPstoWorkflowAvailability = createServerFn({ method: 'GET' })
+  .handler(async (): Promise<PstoWorkflowAvailability> => {
+    const server = await import('@/server/psto-workflow-context')
+    return server.getPstoWorkflowAvailability()
   })
 
 export const getPstoWorkflowRequestOptions = createServerFn({ method: 'POST' })
@@ -200,6 +207,7 @@ export type {
   PstoWorkflowRequestOptionsResult,
   PstoWorkflowRowScope,
   PstoWorkflowSummary,
+  PstoWorkflowAvailability,
   WeldPageRequest,
   WeldPageResult,
   WeldPageSize,

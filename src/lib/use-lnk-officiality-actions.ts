@@ -45,7 +45,7 @@ export function useLnkOfficialityActions({
     const officiality = draft.officiality as 'official' | 'unofficial'
     try {
       const plan = await previewMutation.mutateAsync({ records: selectedRows, officiality })
-      if (plan.renames.length > 0 || plan.earlyCoilDecisions.length > 0) {
+      if (plan.renames.length > 0 || plan.earlyCoilDecisions.length > 0 || plan.missingControlAssignments?.length) {
         const renameText = plan.renames
           .slice(0, 8)
           .map((change) => `${change.currentJoint} -> ${change.targetJoint}`)
@@ -54,12 +54,14 @@ export function useLnkOfficialityActions({
         const coilText = plan.earlyCoilDecisions
           .map((decision) => decision.targetJoints.join(' + '))
           .join('; ')
+        const missingText = (plan.missingControlAssignments ?? []).map(item =>
+          `${item.joint}: потребуется назначить ${item.methods.join(', ')}.`).join('\n')
         const confirmed = await confirmAction({
           title: 'Изменить официальность и перестроить цепочку',
           itemName: `Будет изменено стыков: ${plan.officialityChanges.length}`,
-          description: renameText
+          description: [renameText
             ? `Переименование продолжения: ${renameText}${hiddenRenameCount > 0 ? `; и еще ${hiddenRenameCount}` : ''}.`
-            : 'Названия продолжения цепочки менять не потребуется.',
+            : 'Названия продолжения цепочки менять не потребуется.', missingText ? `${missingText}\nНазначения автоматически не изменятся. Недостающий обязательный контроль будет показан в СП-08.` : ''].filter(Boolean).join('\n'),
           warning: coilText
             ? `Катушка ${coilText} перестанет быть автоматической и будет сохранена как явно принятая досрочная катушка. Данные катушки не удаляются.`
             : 'Все перечисленные изменения выполнятся вместе. Данные, контроль и документы останутся у тех же записей.',

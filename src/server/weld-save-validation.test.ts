@@ -97,11 +97,11 @@ describe('validateServerWeldRecords', () => {
     expect(() => validateServerWeldRecords({ records: [{ ...previous, weldingJournalNote: 'История' }], previousRows, context: rules })).not.toThrow()
   })
   it('rebuilds mandatory repair controls from trusted scope, ignoring spoofed client chain/requirements', () => {
-    const root = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1', hasVik: 'да', rkResult: 'ремонт' } as WeldRow
+    const root = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1', hasVik: 'да', hasRk: 'да', rkResult: 'ремонт' } as WeldRow
     const repair = { ...root, id: 2, joint: 'F1R1', rkResult: null, hasRk: 'да' } as WeldJoint
     const rules = { ...context, programRules: { rows: [root, repair], approved: new Set<string>() } }
     const forged = { ...repair, hasRk: null, programRepairRequirements: [], programChainState: { kind: 'primary', weldJointId: 2, physicalRootId: 2, sourceRowId: null, coilParentId: null, coilSide: null, replacedByCoil: false } } as WeldInput
-    expect(() => validateServerWeldRecords({ records: [forged], previousRows: new Map([[2, repair]]), context: rules, allowSystemJointNames: true })).toThrow('Обязателен после негодного РК на F1')
+    expect(() => validateServerWeldRecords({ records: [forged], previousRows: new Map([[2, repair]]), context: rules, allowSystemJointNames: true })).toThrow('унаследован от официального предшественника F1')
     const legacy = { ...repair, hasRk: null }
     expect(() => validateServerWeldRecords({ records: [{ ...legacy, weldingJournalNote: 'Дозаполнение примечания' }], previousRows: new Map([[2, legacy]]), context: { ...rules, programRules: { ...rules.programRules, rows: [root, legacy] } }, allowSystemJointNames: true })).not.toThrow()
   })
@@ -291,7 +291,7 @@ describe('validateServerWeldRecords', () => {
     expect(rows.get(stored.id)).toEqual(expect.objectContaining({ id: stored.id, joint: 'F5' }))
   })
 
-  it('blocks removing an assigned method while its pre-TO position still exists', () => {
+  it('blocks removing or cancelling an assigned method with its own performed pre-TO work', () => {
     const previous = {
       id: 41,
       joint: 'F41',
@@ -302,7 +302,7 @@ describe('validateServerWeldRecords', () => {
         weldJointId: 41,
         method: 'РК',
         requestName: 'Заявка РК до ТО',
-        result: 'ожидает НК',
+        result: 'годен',
       }],
     } as unknown as WeldJoint
     const record = { ...previous, hasRk: null } as unknown as WeldInput
@@ -313,7 +313,7 @@ describe('validateServerWeldRecords', () => {
       { ...record, hasRk: 'отменен' },
       previous,
       context,
-    )).toBe('')
+    )).toContain('нельзя отменить')
   })
 
   it('allows incomplete welding data with mandatory SP-03 follow-up: material group', () => {

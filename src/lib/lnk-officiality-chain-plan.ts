@@ -1,3 +1,4 @@
+import { buildProgramRepairTasks } from './line-program-repair-requirements'
 import { getDispatcherTaskSettingId } from '@/lib/dispatcher-settings'
 import { getUnofficialDuplicateControlBlockReason } from '@/lib/duplicate-control-officiality'
 import type {
@@ -57,6 +58,7 @@ export type LnkOfficialityChainPlan = {
   renames: RepeatedJointRenameChange[]
   earlyCoilDecisions: LnkOfficialityEarlyCoilDecision[]
   affectedRowIds: number[]
+  missingControlAssignments?: { rowId: number; joint: string; methods: string[] }[]
   planKey: string
 }
 
@@ -210,6 +212,15 @@ export function buildLnkOfficialityChainPlan(
     ...renames.map((change) => change.rowId),
     ...earlyCoilDecisions.map((decision) => decision.sourceRowId),
   ])].sort((left, right) => left - right)
+  const beforeMissing = new Map(buildProgramRepairTasks(rows, new Set(), settings).map(task => [task.row.id, new Set(task.values)]))
+  const missingControlAssignments = officiality === 'official'
+    ? buildProgramRepairTasks(workingRows.map(({ programChainState: _state, ...row }) => row), new Set(), settings)
+      .filter(task => affectedChainKeys.has(getJointChainConsistencyKey(task.row, settings) ?? ''))
+      .flatMap(task => {
+        const methods = task.values.filter(method => !beforeMissing.get(task.row.id)?.has(method))
+        return methods.length ? [{ rowId: task.row.id, joint: String(task.row.joint ?? task.row.id), methods }] : []
+      })
+    : []
   const planBody = {
     officiality,
     officialityChanges: officialityChanges.map(({ rowId, previousOfficiality, nextOfficiality }) => ({
@@ -219,6 +230,7 @@ export function buildLnkOfficialityChainPlan(
     })),
     renames,
     earlyCoilDecisions,
+    missingControlAssignments,
   }
 
   return {
@@ -227,6 +239,7 @@ export function buildLnkOfficialityChainPlan(
     renames,
     earlyCoilDecisions,
     affectedRowIds,
+    missingControlAssignments,
     planKey: JSON.stringify(planBody),
   }
 }

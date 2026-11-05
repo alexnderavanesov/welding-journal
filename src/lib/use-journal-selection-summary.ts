@@ -28,5 +28,8 @@ export function useJournalSelectionSummary(ids: ReadonlySet<number>, identity: s
     return () => { clearTimeout(timer); controller.abort() }
   }, [basis, identity, revision, ready, attempt, recoverRevision, expired, getSnapshot])
   const current = ready && state?.basis === basis && state.identity === identity && state.revision === revision && state.attempt === attempt ? state : undefined
-  return { summary: expired ? undefined : current?.summary, error: expired ? 'Обновите таблицу для актуальных итогов.' : range?.error ?? current?.error, retry: () => setAttempt(value => value + 1) }
+  // A notice does not change the displayed revision or its unchanged selection.
+  // Keep only an already completed result for that exact basis; never query new
+  // totals against an expired revision or reuse them for another selection.
+  return { summary: current?.summary, error: expired ? current?.summary ? undefined : 'Итоги: —' : range?.error ?? current?.error, retry: () => setAttempt(value => value + 1) }
 }

@@ -122,7 +122,7 @@ export function installPopupProbe(target: PopupProbeTarget) {
         if (target.options) {
           const values = [...(dialog?.querySelectorAll('.journal-filter-option') ?? [])].filter(option => !target.date ||
             (option.querySelector('input')?.getAttribute('aria-label') ?? '').startsWith(target.dateCollapsed ? 'Год ' : 'День ')).map(option => ({
-            value: option.querySelector('span[title]')?.getAttribute('title') ?? '', count: Number(option.querySelector('.journal-count')?.textContent),
+            value: option.querySelector('span[data-overflow-title]')?.getAttribute('data-overflow-title') ?? '', count: Number(option.querySelector('.journal-count')?.textContent),
           }))
           const sorted = (items: Array<{ value: string; count: number }>) => items.slice().sort((a, b) => a.value.localeCompare(b.value))
           ready &&= JSON.stringify(sorted(values)) === JSON.stringify(sorted(target.options))

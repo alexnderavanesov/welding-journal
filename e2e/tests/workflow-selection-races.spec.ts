@@ -68,10 +68,25 @@ for (const report of ['lnk', 'psto'] as const) for (const mode of ['request', 'r
     const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: title, exact: true }) })
     const count = (n: number) => dialog.getByRole('button', { name: `Выбрано: ${n}`, exact: true })
     const row = (joint: string) => dialog.getByRole('checkbox', { name: `Выбрать стык SELECTION-RACE ${joint}`, exact: true })
+    let firstOpening = true
     const open = async () => {
+      // This barrier observes only the cold availability query, never the held
+      // candidate response. The pending click and close-before-load race remain.
+      const availability = report === 'psto' && firstOpening
+        ? page.waitForResponse(response => rpcName(response.url()).startsWith('getPstoWorkflowAvailability_'))
+        : undefined
       await page.locator('header').getByRole('button', { name: mode === 'request' ? 'Заявка' : 'Результат', exact: true }).click()
       await page.getByRole('button', { name: mode === 'request' ? 'Новая заявка' : 'Внести результаты', exact: true }).click()
+      if (availability) {
+        const response = await availability
+        await response.finished()
+        expect(response.ok()).toBe(true)
+        await test.info().attach('psto-initial-availability-timing', {
+          body: JSON.stringify(response.request().timing()), contentType: 'application/json',
+        })
+      }
       await expect(dialog).toBeVisible()
+      firstOpening = false
     }
     try {
       await page.goto(`/${report}`)

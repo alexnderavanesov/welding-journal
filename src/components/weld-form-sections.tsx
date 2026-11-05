@@ -17,6 +17,7 @@ import { parseOfficialStampWeldingMethods, normalizeStampForCompare } from '@/li
 import { FIELD_BY_KEY, type WeldField, type WeldFieldKey, type WeldInput } from '@/lib/weld-fields'
 import { WeldLineProgramFields, WeldLayeredControlField } from '@/components/weld-line-program-fields'
 import { WeldLineProgramImpact } from '@/components/weld-line-program-impact'
+import { isTConnectionType } from '@/lib/connection-type'
 
 export type WeldFormTab = 'joint' | 'control' | 'weldingMaterials' | 'workClosure'
 const EMPTY_FIELD_STATUS_KEYS = new Set<WeldFieldKey>()
@@ -63,6 +64,9 @@ export function WeldFormSections({
   fieldStatusKeys = EMPTY_FIELD_STATUS_KEYS,
   fieldStatusLabel = 'Изменено',
 }: WeldFormSectionsProps) {
+  const support = isTConnectionType(draft.connectionType)
+  const supportHidden = new Set(['d2', 't2', 'wdi', 'hasRk', 'stamp2K', 'stamp2Z', 'stamp2O', 'stamp2KFact', 'stamp2ZFact', 'stamp2OFact'])
+  fieldsByGroup = fieldsByGroup.map(group => ({ ...group, fields: group.fields.filter(field => support ? !supportHidden.has(field.key) : field.key !== 'weldLength') })).filter(group => group.fields.length)
   const controlAvailabilityFields = fieldsByGroup.flatMap(({ fields }) => fields.filter((field) => yesEmptyFieldKeys.has(field.key)))
   const workClosureFieldsByGroup = fieldsByGroup
     .filter((group) => secondaryWeldFormSectionNames.has(group.section))
@@ -173,7 +177,7 @@ export function WeldFormSections({
                     controlPickerLayout="row"
                   />
                 </div>
-                {field.key === 'hasPvk' ? <WeldLayeredControlField draft={draft} setDraft={setDraft} /> : null}
+                {field.key === 'hasPvk' && !support ? <WeldLayeredControlField draft={draft} setDraft={setDraft} /> : null}
               </Fragment>
             ))}
           </div>
@@ -323,7 +327,6 @@ function WeldFormTabButton({
           className={`rounded px-1.5 py-0.5 text-[10px] leading-none ${
             active ? 'bg-sky-100 text-sky-800' : 'bg-sky-50 text-sky-700'
           }`}
-          title={`${statusLabel}: ${statusCount}`}
         >
           {statusLabel} {statusCount}
         </span>

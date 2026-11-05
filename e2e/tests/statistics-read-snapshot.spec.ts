@@ -20,7 +20,10 @@ for (const tab of ['general', 'lineSummary'] as const) test(`${tab}: стати�
     const result = await computeStatisticsServerResult(input)
     return tab === 'general' ? result.generalProgressSummary : result.lineSummary
   }
-  expect(await read()).toMatchObject({ total: 1, completed: 1 })
+  // General production now excludes the current rejected joint. Line summary
+  // still measures welding dates; both must read a coherent physical topology.
+  const beforeReplacement = { total: 1, completed: tab === 'general' ? 0 : 1 }
+  expect(await read()).toMatchObject(beforeReplacement)
 
   const replaceWithCoil = () => withLineProgramFixture(async db => {
     // Two valid database states: one physical connection, then two welded
@@ -37,6 +40,6 @@ for (const tab of ['general', 'lineSummary'] as const) test(`${tab}: стати�
   })
   const snapshot = await readAcrossCommittedWrite(read,
     statement => statement.includes('from "weld_joints"') && statement.includes('"connection_type"'), replaceWithCoil)
-  expect(snapshot).toMatchObject({ total: 1, completed: 1 })
+  expect(snapshot).toMatchObject(beforeReplacement)
   expect(await read()).toMatchObject({ total: 2, completed: 2 })
 })

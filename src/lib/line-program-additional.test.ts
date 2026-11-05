@@ -16,7 +16,7 @@ const line = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', category:
 const row = (id: number, patch: Partial<WeldRow> = {}): WeldRow => ({ ...line, id, joint: 'F' + id, connectionType: 'С17', weldDate: '2026-09-01', stamp1K: 'A', ...patch })
 
 describe('additional control counts toward demand once per joint (28 September clarification)', () => {
-  it.each([1, 2, 3])('at quota two, two yes plus an additional joint %s produce one removable yes, never an additional candidate', additionalId => {
+  it.each([1, 2, 3])('at quota two, two yes plus an additional joint %s produce no excess (4 November decision)', additionalId => {
     const rows = [1, 2, 3, 4].map(id => row(id, { hasRk: id === additionalId ? 'дополнительный' : id < 4 ? 'да' : null, hasPvk: id === additionalId ? 'дополнительный' : id < 4 ? 'да' : null }))
     const groups = calculateLineProgram(rows, 50, 50)
     const hints = getProgramRemovalHints(1, rows, groups, new Set())
@@ -25,11 +25,11 @@ describe('additional control counts toward demand once per joint (28 September c
       expect(demand.required).toBe(2)
       expect(demand.coveredRowIds).toHaveLength(3)
       expect(demand.missing).toBe(0)
-      expect(demand.excessRowIds).toHaveLength(1)
+      expect(demand.excessRowIds).toHaveLength(0)
       expect(demand.excessRowIds).not.toContain(additionalId)
       expect(getProgramDemandAccounting(demand)).toMatchObject({ assignments: { yesOnly: 2, additionalOnly: 1, mixed: 0, total: 3 }, coverage: { yesOnly: 2, additionalOnly: 1, mixed: 0, total: 3, other: 0 } })
     }
-    expect(hints.has(additionalId)).toBe(false)
+    expect(hints.size).toBe(0)
     const after = rows.map(row => applyProgramPatch(row, Object.fromEntries([...(hints.get(row.id)?.keys() ?? [])].map(method => [method, '']))))
     for (const kind of ['common', 'pvk'] as const) expect(calculateLineProgram(after, 50, 50)[0][kind]).toMatchObject({ required: 2, missing: 0, excessRowIds: [] })
   })
@@ -37,7 +37,7 @@ describe('additional control counts toward demand once per joint (28 September c
   it('does not suggest removing yes from a mixed joint just to leave the same additional coverage', () => {
     const rows = [row(1, { hasRk: 'да' }), row(2, { hasRk: 'да' }), row(3, { hasRk: 'да', hasUzk: 'дополнительный' }), row(4)]
     const groups = calculateLineProgram(rows, 50, 50)
-    expect(groups[0].common.excessRowIds).toEqual([2])
+    expect(groups[0].common.excessRowIds).toEqual([])
     expect(groups[0].common.duplicateAssignmentRowIds).toEqual([])
     expect(getProgramRemovalHints(1, rows, groups, new Set()).has(3)).toBe(false)
     expect(getProgramDemandAccounting(groups[0].common).assignments).toMatchObject({ yesOnly: 2, additionalOnly: 0, mixed: 1, total: 3 })
@@ -52,12 +52,11 @@ describe('additional control counts toward demand once per joint (28 September c
     expect(calculateLineProgram(rows, 10, 0).every(group => !group.common.excessRowIds.length)).toBe(true)
   })
 
-  it('the shared server preview exposes a displaced yes and preserves all factual history', () => {
+  it('the shared server preview keeps ordinary quota places alongside additional and preserves factual history', () => {
     const rows = [row(1, { hasRk: 'да' }), row(2, { hasRk: 'да' }), row(3, { vikResult: 'годен', vikConclusion: 'VIK-3' }), row(4)]
-    const preview = previewProgramChanges(rows, [{ id: 3, values: { РК: 'дополнительный' } }], line)
+    const preview = previewProgramChanges(rows, [{ id: 3, values: { rkControlBasis: 'ТР-1', РК: 'дополнительный' } }], line)
     expect(preview.errors).toEqual([])
-    expect(preview.newExcess).toHaveLength(1)
-    expect(preview.newExcess[0]).toMatchObject({ rowId: 2, kind: 'common', duplicate: false })
+    expect(preview.newExcess).toHaveLength(0)
     expect(preview.records[0]).toMatchObject({ hasRk: 'дополнительный', vikResult: 'годен', vikConclusion: 'VIK-3' })
   })
 

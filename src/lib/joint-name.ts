@@ -80,6 +80,7 @@ export function validateJointNameStructure(
   }
 
   const tail = normalized.slice(prefixMatch[1].length)
+  if (prefixMatch[1].toLocaleUpperCase('ru') === 'ОП' && !tail) return 'После ОП укажите основу номера опоры, например ОП-44.'
   const segmentPattern = getSystemChainSegmentPattern(settings)
   const firstSystemSegment = tail.search(new RegExp(`${segmentPattern}\\d+`, 'i'))
   if (firstSystemSegment === -1) {
@@ -155,7 +156,7 @@ function getJointPatterns(settings: SystemIndexSettings) {
   if (!jointPatterns || values.some((value, index) => value !== jointPatterns!.values[index])) {
     const segment = getSystemChainSegmentPattern(settings)
     jointPatterns = { values,
-      prefix: new RegExp(`^([${escapeRegExp(settings.shopJoint)}${escapeRegExp(settings.fieldJoint)}](?:[A-Z])?\\d+)`, 'i'),
+      prefix: new RegExp(`^(ОП|[${escapeRegExp(settings.shopJoint)}${escapeRegExp(settings.fieldJoint)}](?:[A-Z])?\\d+)`, 'i'),
       firstSegment: new RegExp(`${segment}\\d+`, 'i'),
       // matchAll clones this regex and does not advance its lastIndex.
       segments: new RegExp(`(${segment})(\\d+)`, 'gi'),
@@ -166,8 +167,8 @@ function getJointPatterns(settings: SystemIndexSettings) {
 
 function getJointNameStartRequirement(settings: SystemIndexSettings) {
   if (settings.allowLeadingLetterIndex) {
-    return `начинаться с ${getSystemIndexPrefixText(settings)}; после него допускается одна латинская буква, затем номер, например ${settings.shopJoint}13 или ${settings.fieldJoint}B05`
+    return `начинаться с ${getSystemIndexPrefixText(settings)}; после него допускается одна латинская буква, затем номер, например ${settings.shopJoint}13 или ${settings.fieldJoint}B05; для опор — с кириллического ОП`
   }
 
-  return `начинаться с ${getSystemIndexPrefixText(settings)} и порядкового номера, например ${getSystemIndexExampleText(settings)}`
+  return `начинаться с ${getSystemIndexPrefixText(settings)} и порядкового номера, например ${getSystemIndexExampleText(settings)}; для опор — с кириллического ОП`
 }

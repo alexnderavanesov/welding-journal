@@ -7,7 +7,6 @@ import { programApprovalKey } from './program-control-approval'
 import { getProgramRemovalHints, projectProgramExcess } from './line-program-excess'
 import { buildPercentageLineControlTasks } from './percentage-line-tasks'
 import { previewProgramChanges } from './line-program-workspace'
-import { getProgramApprovalOptions } from './program-approval-actions'
 import { parseDispatcherTaskIndexPayload, serializeDispatcherTaskIndexPayload } from './dispatcher-task-index-payload'
 import { buildDispatcherTaskCodeIndexRows, buildMergedDispatcherTaskCodes } from './dispatcher-task-row-codes'
 import { buildProgramRepairRequirements, buildProgramRepairTasks } from './line-program-repair-requirements'
@@ -27,7 +26,7 @@ describe('independent precommit counterexamples from the agreed plan', () => {
     { revisionActuality: 'не актуален' },
     { officiality: 'неофициальный', revisionActuality: 'не актуален' },
   ])('suspends only active repair warnings while excluded: %j', excluded => {
-    const root = row(1, { uzkResult: 'ремонт' })
+    const root = row(1, { hasUzk: 'да', uzkResult: 'ремонт' })
     const repair = row(2, { joint: 'F1R1', ...excluded })
     const tasks = buildProgramRepairTasks([root, repair], new Set())
     expect(tasks).toEqual([])
@@ -54,28 +53,11 @@ describe('independent precommit counterexamples from the agreed plan', () => {
     expect(buildProgramRepairRequirements([root, unofficial, newRow], approved).get(3)?.map(item => item.method).sort()).toEqual((pair ? ['ВИК', 'РК', 'УЗК'] : ['ВИК', 'УЗК']).sort())
   })
 
-  it('attributes quota surplus to the ordinary joint when another joint requires an approved pair', () => {
-    // Plan §8/14: both approved methods are necessary independently of the percentage.
-    // Two connections at 10% require one place. The pair covers that place;
-    // the unprotected assignment is the only removable surplus.
-    const rows = [row(1, { hasRk: 'да' }), row(2, { hasRk: 'да', hasUzk: 'да' })]
-    const approved = new Set([programApprovalKey(rows[1], 'common', true)])
-    const groups = calculateLineProgram(rows, 10, 0, undefined, approved)
-    const visible = projectProgramExcess(1, rows, groups, approved)
-    expect(visible[0].common.excessAssignments).toEqual([{ rowId: 1, method: 'РК', duplicate: false }])
-    expect([...getProgramRemovalHints(1, rows, groups, approved).keys()]).toEqual([1])
-    const program = { id: 1, weldControlPercent: 10, pvkControlPercent: 0 }
-    expect(getProgramApprovalOptions(rows, program, [{ rowId: 2, key: [...approved][0], version: '1' }]).approve
-      .map(option => [option.rowId, option.duplicate])).toEqual([[1, false]])
-    const preview = previewProgramChanges([{ ...rows[0], hasRk: null }, rows[1]], [{ id: 1, values: { РК: 'да' } }], program, undefined, approved)
-    expect(preview.newExcess.map(entry => [entry.rowId, entry.method])).toEqual([[1, 'РК']])
-    const tasks = buildPercentageLineControlTasks(rows, [], undefined, approved).filter(task => task.issue === 'excess')
-    expect(tasks.map(task => task.targetRowIds)).toEqual([[1]])
-    const saved = parseDispatcherTaskIndexPayload(serializeDispatcherTaskIndexPayload(tasks)).tasks
-    expect(saved).toEqual(tasks)
-    const indexed = buildDispatcherTaskCodeIndexRows(saved, rows)
-    expect(indexed).toEqual([1, 2].map(rowId => ({ rowId, taskKey: 'code:СП-01', code: 'СП-01' })))
-    expect([...buildMergedDispatcherTaskCodes(indexed, []).allByRowId]).toEqual([[1, 'СП-01'], [2, 'СП-01']])
+  it('a justified additional pair does not displace another ordinary quota assignment', () => {
+    const rows = [row(1, { hasRk: 'да' }), row(2, { hasRk: 'да', hasUzk: 'дополнительный' })]
+    const groups = calculateLineProgram(rows, 10, 0)
+    expect(groups[0].common.excessAssignments).toEqual([])
+    expect(getProgramRemovalHints(1, rows, groups, new Set()).size).toBe(0)
   })
 
   it('reports incomplete physical history after both sides of a completed coil have been deleted', () => {

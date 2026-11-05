@@ -107,6 +107,17 @@ test('компактная завершённая линия: все стыки,
   const visible=()=>card.locator('[data-testid="line-program-readonly-joint"]:visible')
   await expect(visible().first()).toBeVisible(); expect(await visible().count()).toBeLessThanOrEqual(50)
   expect((await visible().first().boundingBox())!.height).toBeLessThanOrEqual(44)
+  const assignmentBadge = visible().first().getByTestId('assignment-badges').getByRole('button').first()
+  await expect(assignmentBadge).toHaveCSS('border-width', '1px')
+  await expect(assignmentBadge).not.toHaveCSS('border-color', 'rgba(0, 0, 0, 0)')
+  await assignmentBadge.hover()
+  await expect(assignmentBadge).toHaveCSS('border-color', 'rgb(125, 211, 252)')
+  await expect(assignmentBadge).toHaveCSS('box-shadow', 'none')
+  expect(await assignmentBadge.evaluate(element => {
+    const badge = element.getBoundingClientRect(), cell = element.closest('.ag-cell')!.getBoundingClientRect()
+    return badge.top >= cell.top && badge.bottom <= cell.bottom && badge.left >= cell.left && badge.right <= cell.right
+  })).toBe(true)
+  await assignmentBadge.screenshot({ path: 'outputs/line-program-assignment-badge-border.png' })
   const scroll = card.locator('[data-testid="program-joint-scroll"]:visible')
   await scroll.evaluate(element => window.scrollBy(0, element.getBoundingClientRect().top - 100))
   const pageBefore = await page.evaluate(() => window.scrollY)
@@ -147,7 +158,7 @@ test('компактная завершённая линия: все стыки,
   expect(errors).toEqual([])
 })
 
-test('назначения: без ВИК, три клейма, стабильные строки и общие тонкие границы выделения', async ({ page }) => {
+test('назначения: без ВИК, три клейма, стабильные строки и общие тонкие границы выделения', async ({ page }, testInfo) => {
   const name = 'DENSE-ASSIGNMENT-LAYOUT', id = await seed(name, 4)
   await withLineProgramFixture(db => db.query(`update weld_joints set has_rk=null,rk_result=null,pvk_result=null,
     stamp_1_k='ABC12345',stamp_1_z='Q8245678',stamp_1_o='XYZ45678'
@@ -164,6 +175,10 @@ test('назначения: без ВИК, три клейма, стабильн
   const modal = page.getByRole('dialog', { name: `Назначения · ${name}` })
   const rows = modal.getByTestId('line-program-joint')
   await expect(rows).toHaveCount(4)
+  await expect(rows.locator('[title^="Итоговое состояние"]')).toHaveCount(0)
+  expect(await rows.evaluateAll(elements => elements.every(row => !row.hasAttribute('title') && !!row.getAttribute('aria-description')))).toBe(true)
+  await expect(modal.getByRole('group', { name: 'Фильтр стыков' }).locator('[title]')).toHaveCount(0)
+  await expect(modal.getByRole('button', { name: 'Вернуться к просмотру' })).not.toHaveAttribute('title')
   await expect(modal.getByRole('columnheader').locator('.ag-header-cell-text')).toHaveText(['Выбор', 'Стык', 'РК', 'УЗК', 'ПВК', 'Послойный ПВК', 'Результат'])
   await expect(modal.getByRole('button', { name: 'ВИК', exact: true })).toHaveCount(0)
   await expect(modal.getByRole('combobox', { name: / · ВИК$/ })).toHaveCount(0)
@@ -191,18 +206,41 @@ test('назначения: без ВИК, три клейма, стабильн
     await modal.getByRole('combobox', { name: 'F1 · РК', exact: true }).selectOption('да')
     await stable(before)
     await modal.getByRole('combobox', { name: 'F2 · УЗК', exact: true }).selectOption('дополнительный')
-    await stable(before)
+    // The new mandatory basis adds an editor only to this row. Once present,
+    // typing must keep geometry and focus stable, with no global error banner.
+    const basis = modal.getByLabel('F2 · УЗК · Основание к назначению', { exact: true })
+    await expect(basis).toBeVisible()
+    await expect(modal.getByRole('alert')).toHaveCount(0)
+    await basis.fill('ТР № 10')
+    let basisGeometry = ''
+    await expect.poll(async () => { const current = JSON.stringify(await geometry()); const settled = current === basisGeometry; basisGeometry = current; return settled }).toBe(true)
+    const withBasis = await geometry()
+    await basis.pressSequentially('а')
+    await expect(basis).toBeFocused()
+    await stable(withBasis)
+    await expect(basis).toHaveCSS('box-shadow', 'none')
+    await expect(basis).toHaveCSS('border-width', '1px')
+    await expect(basis).toHaveCSS('border-color', 'rgb(100, 116, 139)')
+    await basis.screenshot({ path: `outputs/assignment-controls-2026-11-04/${testInfo.project.name}-basis-${width}.png` })
     if (width === 1600) {
-      // Edited fields keep their dashed border without a lingering pointer ring.
+      // Hover and pointer focus use the same thin border; no clipped outer ring.
       for (const joint of ['F3', 'F1']) {
         const field = modal.getByRole('combobox', { name: `${joint} · РК`, exact: true })
-        await field.focus()
+        await field.hover()
+        await expect(field).toHaveCSS('border-color', joint === 'F1' ? 'rgb(148, 163, 184)' : 'rgb(125, 211, 252)')
+        const hoveredBorder = await field.evaluate(element => getComputedStyle(element).borderColor)
+        await field.click()
+        await expect(field).toHaveAttribute('aria-expanded', 'true')
+        const cancelled = page.getByRole('listbox', { name: `${joint} · РК`, exact: true }).getByRole('option', { name: 'Отменен', exact: true })
+        await cancelled.hover()
+        await expect(cancelled).not.toHaveAttribute('title')
+        await expect(cancelled.locator('[title]')).toHaveCount(0)
+        await expect(field).toHaveCSS('border-color', hoveredBorder)
         await expect(field).toHaveCSS('border-radius', '6px')
         await expect(field).toHaveCSS('outline-style', 'none')
-        if (joint === 'F1') await expect(field).toHaveCSS('box-shadow', 'rgba(0, 0, 0, 0) 0px 0px 0px 0px')
-        else await expect(field).toHaveCSS('box-shadow', /rgb\(186, 230, 253\) 0px 0px 0px 2px/)
+        await expect(field).toHaveCSS('box-shadow', 'rgba(0, 0, 0, 0) 0px 0px 0px 0px')
         await expect(field).toHaveCSS('border-width', '1px')
-        await expect(field).toHaveCSS('border-style', joint === 'F1' ? 'dashed' : 'solid')
+        await expect(field).toHaveCSS('border-style', 'solid')
       }
       const edited = modal.getByRole('combobox', { name: 'F1 · РК', exact: true })
       await edited.selectOption('отменен')
@@ -214,7 +252,17 @@ test('назначения: без ВИК, три клейма, стабильн
       await page.keyboard.press('Tab')
       await page.keyboard.press('Shift+Tab')
       await expect(edited).toBeFocused()
-      await expect(edited).toHaveCSS('box-shadow', /rgb\(186, 230, 253\) 0px 0px 0px 2px/)
+      await expect(edited).toHaveCSS('box-shadow', 'rgba(0, 0, 0, 0) 0px 0px 0px 0px')
+      await expect(edited).toHaveCSS('outline-width', '1px')
+      await expect(edited).toHaveCSS('outline-offset', '-3px')
+      const cancelledBasis = modal.getByLabel('F1 · РК · Основание к назначению', { exact: true })
+      await page.keyboard.press('Tab')
+      await expect(cancelledBasis).toBeFocused()
+      await expect(cancelledBasis).toHaveCSS('outline-style', 'none')
+      await expect(cancelledBasis).toHaveCSS('border-width', '1px')
+      await expect(cancelledBasis).toHaveCSS('border-color', 'rgb(100, 116, 139)')
+      await expect(cancelledBasis).toHaveCSS('box-shadow', 'none')
+      await rows.first().screenshot({ path: `outputs/assignment-controls-2026-11-04/${testInfo.project.name}-cancelled-keyboard.png` })
       await edited.selectOption('да')
       const checkbox = modal.getByRole('checkbox', { name: 'Выбрать F1', exact: true })
       const all = modal.getByRole('checkbox', { name: 'Выбрать все доступные стыки', exact: true })
@@ -231,11 +279,11 @@ test('назначения: без ВИК, три клейма, стабильн
       for (const control of await rows.getByRole('checkbox').all()) await expect(control).toBeChecked()
       await all.uncheck()
       for (const control of await rows.getByRole('checkbox').all()) await expect(control).not.toBeChecked()
-      await stable(before)
+      await stable(withBasis)
     }
     // Select adjacent rows, then a disjoint pair. No outlines overlap the shared border.
     for (const joint of ['F1', 'F2', 'F3']) await modal.getByRole('checkbox', { name: `Выбрать ${joint}`, exact: true }).check()
-    await stable(before)
+    await stable(withBasis)
     await expect(modal.locator('.ag-header').first()).toHaveCSS('box-shadow', 'none')
     for (const [index, row] of (await rows.all()).slice(0, 3).entries()) {
       await expect(row).toHaveAttribute('data-highlighted', 'true')
@@ -247,7 +295,7 @@ test('назначения: без ВИК, три клейма, стабильн
       })).toEqual({ top: index ? '0px' : '1px', bottom: '1px', left: '1px', right: '1px', color: 'rgb(125, 211, 252)', pointer: 'none', inset: '0px' })
     }
     await modal.getByRole('checkbox', { name: 'Выбрать F2', exact: true }).uncheck()
-    await stable(before)
+    await stable(withBasis)
     await expect(rows.nth(1)).not.toHaveAttribute('data-highlighted', 'true')
     await expect(rows.nth(1)).not.toHaveClass(/program-joint-highlighted/)
     await expect(rows.nth(1)).toHaveCSS('box-shadow', 'none')
@@ -265,6 +313,7 @@ test('назначения: без ВИК, три клейма, стабильн
     await expectAssignmentDialogFitsViewport(modal)
     if (width === 1600) await modal.screenshot({ path: 'outputs/line-program-assignment-polish.png' })
     await modal.getByRole('combobox', { name: 'F1 · РК', exact: true }).selectOption('')
+    await basis.fill('')
     await modal.getByRole('combobox', { name: 'F2 · УЗК', exact: true }).selectOption('')
     for (const joint of ['F1', 'F3']) await modal.getByRole('checkbox', { name: `Выбрать ${joint}`, exact: true }).uncheck()
     await stable(before)
@@ -710,8 +759,10 @@ test('ФИО под клеймом: одинаковая высота при р�
   for (const [stamp, fullName] of [['DENSE-FIO-A', longName], ['DENSE-FIO-B', 'ФИО не указано'], ['DENSE-FIO-C', 'Ли Ян']]) {
     const label = rows.filter({ has: page.getByRole('button', { name: `Клеймо ${stamp}`, exact: true }) }).getByTestId('line-program-welder-name')
     await expect(label).toHaveText(fullName)
-    await expect(label).toHaveAttribute('title', fullName)
     await expect(label).toBeVisible()
+    await label.hover()
+    if (fullName === longName) await expect(label).toHaveAttribute('title', fullName)
+    else await expect(label).not.toHaveAttribute('title')
   }
   for (const width of [1840, 1600, 1000, 390]) {
     await page.setViewportSize({ width, height: 1000 })
@@ -839,8 +890,13 @@ test('компактные фильтры отделяют ошибки и ис�
   await card.getByTestId('program-scope-actions').getByRole('button',{name:/^Назначения/}).click()
   const modal=page.getByRole('dialog',{name:`Назначения · ${name}`})
   await modal.getByRole('combobox',{name:'F3 · УЗК',exact:true}).selectOption('дополнительный')
+  // 04.11, question 7: a new manual additional assignment needs its basis.
+  await expect(modal.getByRole('button', { name: 'Проверить изменения', exact: true })).toBeDisabled()
+  const basis = modal.getByRole('textbox', { name: 'F3 · УЗК · Основание к назначению', exact: true })
+  await basis.fill('Письмо о дополнительном УЗК № DENSE-3')
   await modal.locator('[data-program-filter="good"]').click();await expect(modal.getByTestId('line-program-joint')).toHaveCount(1)
   await modal.locator('[data-program-filter="all"]').click();await expect(modal.getByRole('combobox',{name:'F3 · УЗК',exact:true})).toHaveValue('дополнительный')
+  await expect(basis).toHaveValue('Письмо о дополнительном УЗК № DENSE-3')
   await expect(modal.getByText('было: —')).toBeVisible()
   await expect(modal.getByRole('combobox',{name:'F5 · РК',exact:true})).toBeDisabled()
   for(const width of [1600,1000,390]){
@@ -862,5 +918,6 @@ test('компактные фильтры отделяют ошибки и ис�
   await expect(modal).toBeHidden()
   await card.getByTestId('program-scope-actions').getByRole('button',{name:/^Назначения/}).click()
   await expect(modal.getByRole('combobox',{name:'F3 · УЗК',exact:true})).toHaveValue('дополнительный')
+  await expect(basis).toHaveValue('Письмо о дополнительном УЗК № DENSE-3')
   await expectAssignmentDialogFitsViewport(modal)
 })

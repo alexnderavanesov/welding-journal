@@ -6,7 +6,7 @@ const legacyKey = ['line-program', 'section'] as const
 const sectionKey = ['line-program', 'section', 'percentage', 'STAMP'] as const
 const pageKey = ['line-program', 'page', 'percentage', 'STAMP', 0] as const
 const listKeys = [legacyKey, sectionKey, pageKey]
-type Summary = Required<Parameters<typeof updateLineProgramSectionCaches>[1]>
+type Summary = Parameters<typeof updateLineProgramSectionCaches>[1] & Required<Pick<Parameters<typeof updateLineProgramSectionCaches>[1], 'overview' | 'searchStamps'>>
 const line: Summary = {
   id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L1', category: 'II', groupName: 'A',
   weldControlPercent: 30, pvkControlPercent: 10, configurationIssue: null, version: 'before', searchStamps: ['STAMP'],
@@ -38,6 +38,42 @@ function observe<T>(queryKey: QueryKey, queryFn: () => Promise<T>) {
 }
 
 describe('line program section and page cache reconciliation', () => {
+  it('projects saved metadata into Supports without copying ordinary counts or stamps', async () => {
+    const supportKey = ['line-program', 'section', 'supports', 'STAMP']
+    const support = { ...line, family: 'supports' as const,
+      weldControlPercent: 100, pvkControlPercent: 0.5,
+      inheritedWeldControlPercent: 30, inheritedPvkControlPercent: 10,
+      supportUzkControlPercent: 100, supportPvkControlPercent: 0.5,
+      searchStamps: ['SUPPORT'], overview: { ...line.overview, joints: 60 } }
+    const snapshot = { rows: [support, other], total: 2, page: 0 }
+    client.setQueryData(supportKey, snapshot)
+    client.setQueryData(pageKey, { rows: [line] })
+    const savedMetadata = { ...saved, supportUzkControlPercent: 25, supportPvkControlPercent: 80 }
+    await updateLineProgramSectionCaches(client, savedMetadata, { membershipChanged: true })
+    const result = client.getQueryData<typeof snapshot>(supportKey)!
+    expect(result.rows[0]).toEqual({ ...support, version: 'after',
+      weldControlPercent: 25, pvkControlPercent: 80,
+      supportUzkControlPercent: 25, supportPvkControlPercent: 80 })
+    expect(result.rows[0].overview).toBe(support.overview)
+    expect(result.rows[0].searchStamps).toBe(support.searchStamps)
+    expect(result.rows[1]).toBe(other)
+    expect(client.getQueryData(pageKey)).toEqual({ rows: [savedMetadata] })
+    expect(client.getQueryState(supportKey)?.isInvalidated).toBe(true)
+
+    // Resetting own percentages must reveal the ordinary 30/10 inheritance,
+    // while a support assignment summary must not leak into the ordinary view.
+    await updateLineProgramSectionCaches(client, { ...savedMetadata,
+      version: 'inherited', supportUzkControlPercent: null, supportPvkControlPercent: null }, { membershipChanged: true })
+    const inherited = client.getQueryData<typeof snapshot>(supportKey)!.rows[0]
+    expect(inherited).toMatchObject({ version: 'inherited', weldControlPercent: 30, pvkControlPercent: 10,
+      inheritedWeldControlPercent: 30, inheritedPvkControlPercent: 10,
+      supportUzkControlPercent: null, supportPvkControlPercent: null })
+    expect(inherited.overview).toBe(support.overview)
+    const ordinary = client.getQueryData(pageKey)
+    await updateLineProgramSectionCaches(client, { ...inherited, overview: { ...support.overview, additional: 2 } })
+    expect(client.getQueryData(pageKey)).toBe(ordinary)
+  })
+
   it('patches only containing snapshots, preserving legacy, page metadata and unrelated row fields', async () => {
     const snapshot = { rows: [{ ...line, displayHint: 'keep' }, other], total: 61, page: 1, pageSize: 30,
       hasMore: true, context: { tab: 'percentage', search: 'STAMP' } }

@@ -181,7 +181,7 @@ export type DispatcherTask = RepeatedJointTask | WelderStampExpiryTask
 export function isSystemDispatcherWarningTask(
   task: { kind?: string; systemWarningCode?: string },
 ): task is (RepeatedJointCheckTask | LineConsistencyTask) & { systemWarningCode: import('./system-rule-catalog').SystemRuleCode } {
-  return (task.kind === 'check' || task.kind === 'line-consistency') && /^СП-(0[1-9]|1[0-2])$/.test(task.systemWarningCode ?? '')
+  return (task.kind === 'check' || task.kind === 'line-consistency') && /^СП-(0[1-9]|1[0-3])$/.test(task.systemWarningCode ?? '')
 }
 
 export type RepeatedJointTaskGroup = {

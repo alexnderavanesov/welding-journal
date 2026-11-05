@@ -39,6 +39,21 @@ describe('final merged technology card writes', () => {
     await prepareTechnologyCardWeldWrites(tx, records, new Map([[3, { ...row, id: 3 }]]))
     expect(records.map(item => item.technologyCardNumber)).toEqual(['Неизвестная', undefined, undefined])
   })
+  it('auto-assigns support cards from final merged D1/T1 and the single group in the same bounded write path', async () => {
+    const supportCard = { ...card, name: 'ТК-ОП', connectionType: 'Т1', materialGroups: ['М05'], weldingMethods: ['РД'] }
+    const settings = { ...DEFAULT_DATA_LIST_SETTINGS, connectionTypes: [...DEFAULT_DATA_LIST_SETTINGS.connectionTypes, 'Т1'] }
+    vi.mocked(loadTechnologyCardMatcher).mockResolvedValue(createTechnologyCardMatcher([supportCard], settings))
+    const support = { ...row, joint: 'ОП-1', connectionType: 'Т1', materialGroup: 'М05', weldingMethod: 'РД', d2: null, t2: null }
+    const records: WeldInput[] = [
+      { ...support, id: 1 }, { ...support, id: 2, technologyCardNumber: 'Назначена ранее' },
+      { ...support, id: 3 }, { ...support, id: 4, materialGroup: 'М01' },
+    ]
+    await prepareTechnologyCardWeldWrites(tx, records, new Map([[1, { ...support, id: 1, weldDate: null }], [3, { ...support, id: 3 }]]))
+    expect(records.map(value => value.technologyCardNumber)).toEqual([supportCard.name, 'Назначена ранее', undefined, undefined])
+    expect(loadTechnologyCardMatcher).toHaveBeenCalledOnce()
+    expect(markTechnologyCardsUsed).toHaveBeenCalledOnce()
+    expect(records.every(value => value.weldingElectrodes === 'Сохранить' && value.d2 === null && value.t2 === null)).toBe(true)
+  })
   it.each([{ ...card, revision: 3 }, { ...card, archived: true }, { ...card, name: 'Переименована' }])('rejects a stale selected card before saving', async current => {
     vi.mocked(resolveTechnologyCardNames).mockResolvedValue(new Map([[card.name, current]]))
     await expect(prepareTechnologyCardWeldWrites(tx, [{ ...row, technologyCardNumber: card.name, technologyCardSelection: { id: 1, revision: 2 } }], new Map([[10, row]]))).rejects.toThrow('уже изменена или архивирована')

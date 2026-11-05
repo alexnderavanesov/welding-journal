@@ -3,14 +3,16 @@ import { X } from 'lucide-react'
 import { type DataListSettings, useDataListSettings } from '@/lib/data-list-settings'
 
 type WeldFormWeldingMethodFieldProps = {
+  single?: boolean
   value?: string | null
   inputRef?: Ref<HTMLButtonElement>
   onChange: (value: string | null) => void
 }
 
-export function WeldFormWeldingMethodField({ value, inputRef, onChange }: WeldFormWeldingMethodFieldProps) {
+export function WeldFormWeldingMethodField({ value, inputRef, onChange, single }: WeldFormWeldingMethodFieldProps) {
   return (
     <WeldFormMultiDataListField
+      single={single}
       listKey="weldingTypes"
       ariaLabel="Способ сварки"
       value={value}
@@ -30,12 +32,13 @@ function WeldFormMultiDataListField({
   value,
   inputRef,
   onChange,
+  single = false,
 }: WeldFormWeldingMethodFieldProps & {
   listKey: Extract<keyof DataListSettings, 'weldingTypes' | 'testTypes'>
   ariaLabel: string
 }) {
   const settings = useDataListSettings()
-  const options = settings[listKey]
+  const options = [...new Set([...settings[listKey], ...String(value ?? '').split(/[+,;]/).map(part => part.trim()).filter(Boolean)])]
   const separator = listKey === 'weldingTypes' ? '+' : ', '
   const selectedMethods = getSelectedMultiValues(value, options, listKey)
   const stableLayout = listKey === 'weldingTypes'
@@ -56,9 +59,11 @@ function WeldFormMultiDataListField({
               key={option}
               ref={index === 0 ? inputRef : undefined}
               type="button"
+              disabled={single && !selected && selectedMethods.length > 0}
+              title={single && !selected && selectedMethods.length > 0 ? 'Для Т разрешён один способ сварки. Сначала снимите выбранный.' : undefined}
               onClick={() => onChange(toggleMultiValue(value, option, options, listKey, separator))}
               className={[
-                'shrink-0 whitespace-nowrap rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400',
+                'disabled:cursor-not-allowed disabled:opacity-40 shrink-0 whitespace-nowrap rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400',
                 stableLayout ? 'h-8' : 'py-1.5',
                 selected
                   ? 'border-sky-300 bg-sky-100 text-sky-900 shadow-sm'

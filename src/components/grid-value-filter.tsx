@@ -1,3 +1,4 @@
+import { overflowTitle } from '@/lib/overflow-title'
 import { Check, ChevronRight, Minus, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode, type RefObject } from 'react'
 import { formatDisplayDate, parseDateLikeToIso } from '@/lib/date-format'
@@ -78,7 +79,7 @@ export function GridFilterValue({ option, selectedValues, onToggleValues, ariaLa
       // subsequent keyboard commands inside this filter after choosing a value.
       onClick={event => event.currentTarget.focus({ preventScroll: true })} onChange={() => onToggleValues(option.values)} />
     <span className="journal-filter-check" aria-hidden="true">{partial ? <Minus size={12} /> : <Check size={12} />}</span>
-    <span className="min-w-0 flex-1 truncate" title={option.label}>{option.displayLabel || option.label || '(Пусто)'}</span>
+    <span className="min-w-0 flex-1 truncate" {...overflowTitle(option.label)}>{option.displayLabel || option.label || '(Пусто)'}</span>
     <span className="journal-count">{option.count}</span>
   </label>
 }

@@ -1,3 +1,4 @@
+import { overflowTitle } from '@/lib/overflow-title'
 import { Select } from '@/components/ui/select'
 import { useMemo, useRef, useState } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
@@ -199,7 +200,7 @@ export function DispatcherWorkspaceDialog({
               {codeOptions.map((option) => (
                 <button key={option.code} type="button" onClick={() => chooseCode(option.code)} aria-pressed={selectedCode === option.code}
                   className={`flex w-full items-start justify-between gap-2.5 rounded-lg border-l-[3px] px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${selectedCode === option.code ? 'border-sky-500 bg-sky-50 text-slate-900' : 'border-transparent text-slate-800 hover:bg-slate-50'}`}>
-                  <span className="flex min-w-0 flex-col gap-0.5" title={`${option.code} · ${option.label}`}>
+                  <span className="flex min-w-0 flex-col gap-0.5" {...overflowTitle(`${option.code} · ${option.label}`)}>
                     <span className="text-xs font-semibold text-violet-700">{option.code}</span>
                     <span className="break-words text-sm font-medium leading-5">{option.label}</span>
                   </span>
@@ -349,8 +350,8 @@ function DispatcherWorkspaceTaskRow({
         <strong className="block font-semibold leading-5 text-slate-900">{title.joint}</strong>
         {isLineTask ? (
           <span className="mt-0.5 block min-w-0 text-xs leading-4 text-slate-500">
-            {projectTitle ? <span className="block break-words" title={projectTitle}>{projectTitle}</span> : null}
-            {subtitleCode ? <span className="block break-words text-slate-500" title={subtitleCode}>{subtitleCode}</span> : null}
+            {projectTitle ? <span className="block break-words" >{projectTitle}</span> : null}
+            {subtitleCode ? <span className="block break-words text-slate-500" >{subtitleCode}</span> : null}
           </span>
         ) : locationDetail ? <span className="block text-xs text-slate-500">{locationDetail}</span> : null}
       </div>
