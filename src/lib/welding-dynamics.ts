@@ -87,10 +87,6 @@ export type WeldingDynamicsSummary = {
 const FACTUAL_STAMP_KEYS = [
   'stamp1KFact',
   'stamp1ZFact',
-  'stamp1OFact',
-  'stamp2KFact',
-  'stamp2ZFact',
-  'stamp2OFact',
 ] as const satisfies readonly (keyof WeldRow)[]
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
@@ -864,8 +860,8 @@ function getBucketKey(date: string, from: string, unit: WeldingDynamicsUnit) {
 function getFactualStamps(row: WeldRow) {
   const stamps = new Set<string>()
   for (const key of FACTUAL_STAMP_KEYS) {
-    const value = String(row[key] ?? '').trim()
-    if (value) stamps.add(value)
+    const value = String(row[key] ?? '').trim().toUpperCase()
+    if (value && value !== 'ПУСТО') stamps.add(value)
   }
   return stamps
 }

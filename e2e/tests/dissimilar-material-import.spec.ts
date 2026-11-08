@@ -38,10 +38,10 @@ async function seed() {
     const rows = (await db.query<{ id: number }>(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,
       category,group_name,weld_control_percent,pvk_control_percent,officiality,revision_actuality,
       connection_type,material_group,welding_method,d1,t1,d2,t2,weld_date,has_vik,vik_result,
-      stamp_1_k,stamp_1_z,stamp_1_o,stamp_1_k_fact,stamp_1_z_fact,stamp_1_o_fact,isometry)
+      stamp_1_k,stamp_1_z,stamp_1_k_fact,stamp_1_z_fact,isometry)
       select $1,$2,'IMPORT',$3,'F9988'||n,'II','Б(а)',0,0,null,null,
         'С17',case when n=1 then 'М01 + М05' else 'М05 + М01' end,'РАД',57,3,159,8,'2026-07-01','да','ожидает заявку',
-        $4,$4,$4,$4,$4,$4,'ISO-OLD-'||n from generate_series(1,2) n returning id`, [program.id, project, line, stamp])).rows
+        $4,$4,$4,$4,'ISO-OLD-'||n from generate_series(1,2) n returning id`, [program.id, project, line, stamp])).rows
     return rows.map(row => row.id)
   })
   await markDispatcherTaskIndexDirty(requireDb(), { scopes: [{ projectTitle: project, subtitleCode: 'IMPORT', line }] })
@@ -184,7 +184,7 @@ test('Excel: material pairs, simultaneous errors, atomic refusal and final merge
   for (const [label, value] of [['D1', '57'], ['T1', '3'], ['D2', '159'], ['T2', '8']]) {
     await expect(editor.getByRole('textbox', { name: label, exact: true })).toHaveValue(value)
   }
-  await expect(editor.getByRole('combobox', { name: 'Корень_1', exact: true })).toHaveValue(stamp)
+  await expect(editor.getByRole('combobox', { name: 'Клеймо_1', exact: true })).toHaveValue(stamp)
   await editor.getByRole('button', { name: 'Отмена', exact: true }).click()
   expect(errors).toEqual([])
 })

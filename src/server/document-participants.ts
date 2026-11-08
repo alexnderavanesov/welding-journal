@@ -26,7 +26,7 @@ export async function loadDocumentTemplateParticipants(input: { rowIds: number[]
     const participants: TemplateParticipant[] = []
     if (kinds.includes('welder')) {
       const stamps = await tx.execute<{ stamp: string }>(sql`select distinct btrim(s.stamp) as stamp from ${weldJoints}
-        cross join lateral unnest(array[${weldJoints.stamp1K}, ${weldJoints.stamp1Z}, ${weldJoints.stamp1O}, ${weldJoints.stamp2K}, ${weldJoints.stamp2Z}, ${weldJoints.stamp2O}]) s(stamp)
+        cross join lateral unnest(array[${weldJoints.stamp1K}, ${weldJoints.stamp1Z}]) s(stamp)
         where ${buildNumberArrayMatch(weldJoints.id, rowIds)} and btrim(coalesce(s.stamp, '')) <> ''`)
       const registry = await tx.select({ id: welderStamps.id, welderName: welderStamps.welderName, naksStamp: welderStamps.naksStamp, internalStamp: welderStamps.internalStamp }).from(welderStamps).orderBy(asc(welderStamps.id))
       participants.push(...buildWelderParticipants(stamps.rows.map(row => row.stamp), registry.map(row => ({ id: row.id, welderName: row.welderName ?? '', naksStamp: row.naksStamp ?? '', internalStamp: row.internalStamp ?? '' }))))

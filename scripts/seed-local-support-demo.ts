@@ -40,7 +40,7 @@ function add(line: string, joint: string, note: string, overrides: Partial<WeldR
     element1: 'Труба', element2: 'Опора', d1: 108, t1: 6, weldLength: '600.125', weldDate: date(12),
     materialCertificateNumber1: 'ДЕМО-СЕРТ-ОП-01', materialCertificateNumber2: 'ДЕМО-СЕРТ-ОП-02',
     weldingElectrodes: 'УОНИ-13/55', weldingElectrodesCertificateNumber: 'ДЕМО-Э-ОП-01',
-    stamp1K: STAMP, stamp1Z: STAMP, stamp1O: STAMP, stamp1KFact: STAMP, stamp1ZFact: STAMP, stamp1OFact: STAMP,
+    stamp1K: STAMP, stamp1KFact: STAMP,
     hasVik: 'да', hasPvk: 'да', hasUzk: 'да', vikControlBasis: 'Демонстрационная программа',
     pvkControlBasis: 'Демонстрационная программа', uzkControlBasis: 'Демонстрационная программа',
     pstoRequired: heat ? 'да' : null, pstoControlBasis: heat ? 'Демонстрационная программа ПСТО' : null,
@@ -52,7 +52,7 @@ function add(line: string, joint: string, note: string, overrides: Partial<WeldR
   return fixture
 }
 function unwelded(f: Fixture) {
-  Object.assign(f.row, { weldDate: null, stamp1K: null, stamp1Z: null, stamp1O: null, stamp1KFact: null, stamp1ZFact: null, stamp1OFact: null, technologyCardNumber: null })
+  Object.assign(f.row, { weldDate: null, stamp1K: null, stamp1KFact: null, technologyCardNumber: null })
   return f
 }
 type Method = 'vik' | 'pvk' | 'uzk'
@@ -92,7 +92,7 @@ completeNk(add('ОП-НК', 'ОП-08', 'Однородное Т, РАД: одн�
 add('ОП-НК', 'ОП-09', 'Сварено, но L ещё не измерена: ожидается СП-03, запись можно дополнить.', { weldLength: null })
 nk(add('ОП-НК', 'ОП-10', 'ВИК дал ремонт; диспетчер предложит создать ОП-10R1.'), 'vik', 'ремонт')
 
-const repairStamp = { stamp1K: REPAIR_STAMP, stamp1Z: REPAIR_STAMP, stamp1O: REPAIR_STAMP, stamp1KFact: REPAIR_STAMP, stamp1ZFact: REPAIR_STAMP, stamp1OFact: REPAIR_STAMP }
+const repairStamp = { stamp1K: REPAIR_STAMP, stamp1KFact: REPAIR_STAMP, }
 const root = nk(nk(add('ОП-РЕМОНТ', 'ОП-11', 'Исходная опора: УЗК дал ремонт. История продолжается в R1 и R2.', { d1: 57 }), 'vik', 'годен'), 'pvk', 'годен', 14)
 nk(root, 'uzk', 'ремонт', 15)
 const r1 = nk(nk(add('ОП-РЕМОНТ', 'ОП-11R1', 'Первый ремонт выполнен другим сварщиком; повторный УЗК снова дал ремонт.', { ...repairStamp, d1: 57, weldDate: date(19) }), 'vik', 'годен', 19), 'pvk', 'годен', 20)

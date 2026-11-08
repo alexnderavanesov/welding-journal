@@ -5,7 +5,7 @@ import type { WeldRow } from '@/lib/dispatcher-types'
 import { ProgramAssignmentTable } from './line-program-assignment-table'
 
 afterEach(cleanup)
-const source: WeldRow = { id: 1, joint: 'F1', connectionType: 'У19', hasVik: 'да', vikResult: 'годен', weldDate: '2026-09-01', stamp1K: 'D503', stamp1Z: 'D504', stamp1O: 'D505' }
+const source: WeldRow = { id: 1, joint: 'F1', connectionType: 'У19', hasVik: 'да', vikResult: 'годен', weldDate: '2026-09-01', stamp1K: 'D503', stamp1Z: 'D504', }
 const props = { rows: [source], selected: new Set<number>(), draft: new Map<number, WeldRow>(), busy: false, canSelect: () => true, onSelect: vi.fn(), onSelectAll: vi.fn(), onChange: vi.fn(), getError: () => '' }
 
 it('omits the invariant VIK assignment without hiding saved VIK results or any participant stamp', () => {
@@ -14,7 +14,7 @@ it('omits the invariant VIK assignment without hiding saved VIK results or any p
   expect(screen.queryByRole('combobox', { name: 'F1 · ВИК' })).not.toBeInTheDocument()
   expect(screen.queryByText('ВИК обязателен')).not.toBeInTheDocument()
   const metadata = screen.getByTestId('program-joint-metadata')
-  for (const stamp of ['D503', 'D504', 'D505']) expect(within(metadata).getByText(stamp)).toBeVisible()
+  for (const stamp of ['D503', 'D504']) expect(within(metadata).getByText(stamp)).toBeVisible()
   fireEvent.click(screen.getByText('годен', { exact: true }).closest('summary')!)
   expect(screen.getByText('ВИК: годен')).toBeVisible()
 })

@@ -103,7 +103,7 @@ test('сводки всех страниц текущего отбора, отд
   await expect(show).toBeFocused()
   await expect(program.getByLabel('Поиск программы линий')).toHaveValue('FOLLOW-REPORT-')
   const id = await seed('FOLLOW-STAMP')
-  await withLineProgramFixture(db => db.query("update weld_joints set stamp_2_k='SECOND-K' where line_program_id=$1", [id]))
+  await withLineProgramFixture(db => db.query("update weld_joints set stamp_1_z='SECOND-K' where line_program_id=$1", [id]))
   await page.reload()
   await program.getByLabel('Поиск программы линий').fill('FOLLOW-STAMP')
   await expect(program.locator('[data-testid="line-program-card"], [data-testid="line-program-detail"]')).toHaveCount(1)
@@ -122,7 +122,7 @@ test('сводки всех страниц текущего отбора, отд
 test('ПКМ: печатная сводка выбранного клейма, всей линии и её клейм без лишних загрузок', async ({ page }) => {
   const name = 'FOLLOW-SCOPED', id = await seed(name, 3)
   await seed('FOLLOW-OUTSIDE', 2)
-  await withLineProgramFixture(db => db.query("update weld_joints set stamp_1_k=case when joint='F1' then 'FOLLOW-K' else 'SECOND-K' end, stamp_2_k=case when joint='F1' then 'SECOND-K' else null end where line_program_id=$1", [id]))
+  await withLineProgramFixture(db => db.query("update weld_joints set stamp_1_k=case when joint='F1' then 'FOLLOW-K' else 'SECOND-K' end, stamp_1_z=case when joint='F1' then 'SECOND-K' else null end where line_program_id=$1", [id]))
   const calls: string[] = [], errors: string[] = []
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
   page.on('pageerror', error => errors.push(error.message))

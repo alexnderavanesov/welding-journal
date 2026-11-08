@@ -9,7 +9,7 @@ test.skip(!enabled, 'Explicit local performance comparison')
 test.use({ trace: 'off', video: 'off', actionTimeout: 10000 })
 test.beforeAll(async () => { if (enabled) {
   test.setTimeout(180000); await seedSmoothnessFixture()
-  await withLineProgramFixture(db => db.query("update weld_joints set stamp_1_k='Q000',stamp_1_z='Q000',stamp_1_o='Q000' where line='SM-0001' and project_title='E2E smoothness 2026-11-05'"))
+  await withLineProgramFixture(db => db.query("update weld_joints set stamp_1_k='Q000',stamp_1_z='Q000' where line='SM-0001' and project_title='E2E smoothness 2026-11-05'"))
 } })
 test.afterAll(async () => { if (enabled) { test.setTimeout(180000); await cleanupSmoothnessFixture() } })
 

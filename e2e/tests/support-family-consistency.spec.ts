@@ -36,7 +36,7 @@ test('support-only lines and statistics include legacy spellings, with the same 
       const program = (await db.query(`insert into line_programs(project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
         values($1,'FAMILY',$2,'II','Б(а)',20,20) returning id`, [project, line])).rows[0]
       const row = (await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,connection_type,weld_date,
-        officiality,revision_actuality,has_vik,weld_length,stamp_1_k,stamp_1_z_fact)
+        officiality,revision_actuality,has_vik,weld_length,stamp_1_k,stamp_1_k_fact)
         values($1,$2,'FAMILY',$3,$4,$5,'2026-10-01','действующий','актуальная','да',$6,'FAMILY-STAMP','FAMILY-STAMP') returning id`,
       [program.id, project, line, `${support ? 'ОП' : 'F'}${index + 1}`, type, support ? '100.1' : null])).rows[0]
       rows.push({ id: row.id, line, support })

@@ -18,10 +18,6 @@ export const percentageControlFieldKeys = new Set<WeldFieldKey>(['hasRk', 'hasUz
 export const factualWelderStampFieldKeys = new Set<WeldFieldKey>([
   'stamp1KFact',
   'stamp1ZFact',
-  'stamp1OFact',
-  'stamp2KFact',
-  'stamp2ZFact',
-  'stamp2OFact',
 ])
 
 export const secondaryWeldFormSectionNames = new Set(['Испытания', 'Код работ', 'Закрытие'])

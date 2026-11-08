@@ -43,7 +43,7 @@ async function seed() {
       from generate_series(1,7) n`, [program, project])
     // Independent counterexamples, not one row whose first error masks the rest.
     const rows = (await db.query('select id from weld_joints where project_title=$1 order by id', [project])).rows
-    await db.query("update weld_joints set joint='ОП-8',connection_type='Т1',material_group='М01 + М05',welding_method='РАД+РД',stamp_2_k_fact='OLD' where id=$1", [rows[0].id])
+    await db.query("update weld_joints set joint='ОП-8',connection_type='Т1',material_group='М01 + М05',welding_method='РАД+РД',stamp_1_z_fact='OLD' where id=$1", [rows[0].id])
     await db.query("update weld_joints set weld_date='2999-01-01',stamp_1_k='MISSING' where id=$1", [rows[1].id])
     await db.query("update weld_joints set joint='F3R2',d1=57,d2=57,uzk_result='ремонт',has_uzk='да' where id=$1", [rows[2].id])
     await db.query("update weld_joints set weld_date='2026-07-01',stamp_1_k=null where id=$1", [rows[3].id])

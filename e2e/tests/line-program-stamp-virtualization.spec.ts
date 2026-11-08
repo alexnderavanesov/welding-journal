@@ -15,10 +15,9 @@ async function prepare(page: Page, options: { stamps?: number; firstBranchJoints
     await db.query(`insert into weld_joints
       (line_program_id,project_title,subtitle_code,line,joint,weld_date,connection_type,officiality,revision_actuality,
       welding_method,material_group,d1,d2,t1,t2,category,group_name,weld_control_percent,pvk_control_percent,
-      stamp_1_k,stamp_1_z,stamp_1_o,has_vik,vik_result,psto_required)
+      stamp_1_k,stamp_1_z,has_vik,vik_result,psto_required)
       select $1,$2,'STAMP-WINDOW',$3,'F'||(s*1000+n),'2026-10-01','С17','действующий','актуальная',
-      'РД','М01',108,108,4,4,'II','Б(а)',10,10,'V'||lpad(s::text,3,'0'),'V'||lpad(s::text,3,'0'),
-      'V'||lpad(s::text,3,'0'),'да','годен','нет'
+      'РД','М01',108,108,4,4,'II','Б(а)',10,10,'V'||lpad(s::text,3,'0'),'V'||lpad(s::text,3,'0'),'да','годен','нет'
       from generate_series(0,$4::integer-1) s cross join lateral generate_series(1,case when s=0 then $5::integer else $6::integer end) n`,
     [program.id, project, line, stamps, firstBranchJoints, otherBranchJoints])
     await db.query(`insert into weld_joint_program_states(weld_joint_id,kind,physical_root_id)

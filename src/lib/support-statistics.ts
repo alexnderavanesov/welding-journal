@@ -94,13 +94,11 @@ function buildSupportWelderStatistics(rows: WeldRow[], from: string, to: string,
   const identity = buildWelderIdentityLookup(stamps), stats = new Map<string, SupportWelderStatisticsRow>()
   for (const row of rows) {
     const date = parseDateLikeToIso(row.weldDate)
-    const rawStamp = [row.stamp1KFact, row.stamp1ZFact, row.stamp1OFact]
-      .map(value => String(value ?? '').trim()).find(Boolean)
-    if (!date || from && date < from || to && date > to || !rawStamp) continue
+    const rawStamp = String(row.stamp1KFact ?? '').trim()
+    if (!date || from && date < from || to && date > to || !rawStamp || rawStamp.toLocaleLowerCase('ru') === 'пусто') continue
     const owner = identity(rawStamp), key = owner.stamp.toLocaleUpperCase('ru')
     const item = stats.get(key) ?? { ...owner, total: 0, good: 0, waitingRequest: 0, waitingControl: 0, rejected: 0, defectPercent: 0 }
-    // T has one factual welder. Legacy layer/second-welder fields cannot multiply
-    // or fractionally reduce that welder's work; each welded record counts once.
+    // T has one factual welder; each welded record counts once.
     item.total++
     const status = normalizeFinalStatus(calculateFinalStatusInRows(row, rows, context))
     if (status === 'годен') item.good++
@@ -112,7 +110,7 @@ function buildSupportWelderStatistics(rows: WeldRow[], from: string, to: string,
   return [...stats.values()].map(item => ({ ...item, defectPercent: item.good + item.rejected ? item.rejected / (item.good + item.rejected) * 100 : 0 }))
     .sort((a, b) => a.defectPercent - b.defectPercent || b.total - a.total || a.stamp.localeCompare(b.stamp, 'ru', { numeric: true }))
 }
-export const SUPPORT_WELDER_STATISTICS_NOTE = 'По фактическому клейму заполненных слоёв: все сваренные записи Т за выбранный период, включая ремонты и неофициальные записи. Пустой корень не исключает сварку, если клеймо указано в заполнении или облицовке. Одна сварка — одна единица. Процент брака — среди записей с итогом «годен» или «не годен»; ожидание в знаменатель не входит. Записи без фактического клейма в таблицу сварщиков не включаются.'
+export const SUPPORT_WELDER_STATISTICS_NOTE = 'По полю «Клеймо_1 - факт»: все сваренные записи Т за выбранный период, включая ремонты и неофициальные записи. Одна сварка — одна единица. Процент брака — среди записей с итогом «годен» или «не годен»; ожидание в знаменатель не входит. Записи без фактического клейма в таблицу сварщиков не включаются.'
 
 export function formatSupportLength(value: string | null, missing = 0, display?: { unit: 'mm' | 'm'; decimals: number }) {
   if (value === null) return 'Не указана'

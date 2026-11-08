@@ -20,14 +20,14 @@ import { validateServerWeldRecords, type ServerWeldValidationContext } from '@/s
 const base: WeldInput = {
   id: 1, joint: 'S1', projectTitle: 'P1', subtitleCode: 'C1', line: 'L1', officiality: 'действующий',
   weldDate: '2026-07-01', weldingMethod: 'РД', connectionType: 'СШ', materialGroup: 'M01',
-  d1: 108, d2: 108, t1: 4, t2: 4, stamp1K: 'A1', stamp1Z: 'A1', stamp1O: 'A1',
-  stamp1KFact: 'A1', stamp1ZFact: 'A1', stamp1OFact: 'A1',
+  d1: 108, d2: 108, t1: 4, t2: 4, stamp1K: 'A1', stamp1Z: 'A1',
+  stamp1KFact: 'A1', stamp1ZFact: 'A1',
 }
 
 describe('every stored-data ZV / DZ pair', () => {
   it.each([false, true])('permits factual-only welding, indexes SP-03 and validates later official backfill (import=%s)', importMode => {
     const { context } = fixture('officialNaksDate')
-    const record = { ...base, stamp1K: null, stamp1Z: null, stamp1O: null }
+    const record = { ...base, stamp1K: null, stamp1Z: null, }
     const before = structuredClone(record)
     expect(getWeldFormSaveBlockReason(record, {}, context.saveCheckSettings)).toBeNull()
     expect(() => validateServerWeldRecords({ records: [record], previousRows: new Map(), context, importMode })).not.toThrow()
@@ -41,7 +41,7 @@ describe('every stored-data ZV / DZ pair', () => {
     const index = buildDispatcherTaskCodeIndexRows(stored, [record as WeldRow])
     expect(index).toContainEqual({ rowId: 1, taskKey: 'code:СП-03', code: 'СП-03' })
     expect(buildMergedDispatcherTaskCodes(index, []).allByRowId.get(1)).toContain('СП-03')
-    const backfill = { ...record, stamp1K: 'A1', stamp1Z: 'A1', stamp1O: 'A1' }
+    const backfill = { ...record, stamp1K: 'A1', stamp1Z: 'A1', }
     const save = () => validateServerWeldRecords({ records: [backfill], previousRows: new Map([[1, record as WeldJoint]]), context, importMode })
     expect(save).toThrow('СП-02') // Permit expired before the actual welding date.
     context.welderStamps[0].naksPermits[0].validTo = '2026-07-02'

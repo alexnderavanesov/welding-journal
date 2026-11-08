@@ -32,7 +32,8 @@ it('filters shared values in both original family columns, combining filters wit
     api.onFilterChanged()
   })
   expect(matched(api)).toEqual([row])
-  expect(screen.getByText(`Найдено 1 из ${CONNECTION_RULES.length}`)).toBeVisible()
+  // AG Grid emits filter/model events asynchronously after updating its rows.
+  await waitFor(() => expect(screen.getByText(`Найдено 1 из ${CONNECTION_RULES.length}`)).toBeVisible())
   await act(async () => {
     await api.setColumnFilterModel('t', { values: [row.c] })
     api.onFilterChanged()

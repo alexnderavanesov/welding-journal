@@ -120,7 +120,6 @@ const PREVIEW_FIELD_KEYS = [
   'wdi',
   'stamp1K',
   'stamp1Z',
-  'stamp1O',
   'hasVik',
   'hasRk',
 ] as const

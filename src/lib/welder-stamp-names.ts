@@ -1,24 +1,16 @@
 import type { WeldInput } from '@/lib/weld-fields'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
-export type TemplateStampNameFieldKey = 'stamp1K' | 'stamp1Z' | 'stamp1O' | 'stamp2K' | 'stamp2Z' | 'stamp2O'
+export type TemplateStampNameFieldKey = 'stamp1K' | 'stamp1Z'
 
 const OFFICIAL_STAMP_KEYS: TemplateStampNameFieldKey[] = [
   'stamp1K',
   'stamp1Z',
-  'stamp1O',
-  'stamp2K',
-  'stamp2Z',
-  'stamp2O',
 ]
 
 export const STAMP_NAME_TEMPLATE_FIELDS: Array<{ label: string; key: TemplateStampNameFieldKey }> = [
-  { label: 'Корень_1', key: 'stamp1K' },
-  { label: 'Заполнение_1', key: 'stamp1Z' },
-  { label: 'Облицовка_1', key: 'stamp1O' },
-  { label: 'Корень_2', key: 'stamp2K' },
-  { label: 'Заполнение_2', key: 'stamp2Z' },
-  { label: 'Облицовка_2', key: 'stamp2O' },
+  { label: 'Клеймо_1', key: 'stamp1K' },
+  { label: 'Клеймо_2', key: 'stamp1Z' },
 ]
 
 export function getWelderNamesForOfficialStamps(record: WeldInput, welderStamps: WelderStampRecord[]) {

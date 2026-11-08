@@ -151,17 +151,17 @@ test('создание: дата сварки и фактические клей
     await editor.getByRole('textbox', { name, exact: true }).fill(value)
   }
   await editor.getByLabel('Дата сварки', { exact: true }).fill('2026-09-01')
-  for (const label of ['Корень_1 - факт', 'Заполнение_1 - факт', 'Облицовка_1 - факт']) {
+  for (const label of ['Клеймо_1 - факт', 'Клеймо_2 - факт']) {
     await editor.getByRole('combobox', { name: label, exact: true }).selectOption(stamp)
   }
-  await expect(editor.getByRole('combobox', { name: 'Корень_1', exact: true })).toHaveValue('')
+  await expect(editor.getByRole('combobox', { name: 'Клеймо_1', exact: true })).toHaveValue('')
   await expect(editor.getByRole('button', { name: 'Сохранить', exact: true })).toBeEnabled()
   await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
   await expect(editor).toBeHidden()
   const saved = await withE2eDatabase(async db => (await db.query(`select id, weld_date::text,
-    stamp_1_k, stamp_1_z, stamp_1_o, stamp_1_k_fact, stamp_1_z_fact, stamp_1_o_fact
+    stamp_1_k, stamp_1_z, stamp_1_k_fact, stamp_1_z_fact
     from weld_joints where project_title=$1 and joint='F981'`, [project])).rows[0])
-  expect(saved).toMatchObject({ weld_date: '2026-09-01', stamp_1_k: null, stamp_1_z: null, stamp_1_o: null,
-    stamp_1_k_fact: stamp, stamp_1_z_fact: stamp, stamp_1_o_fact: stamp })
+  expect(saved).toMatchObject({ weld_date: '2026-09-01', stamp_1_k: null, stamp_1_z: null,
+    stamp_1_k_fact: stamp, stamp_1_z_fact: stamp })
   expect(errors).toEqual([])
 })

@@ -50,11 +50,11 @@ async function seed() {
       select $1,'MIX','MIX-L'||lpad(n::text,4,'0'),'II','Б(а)',0,0 from generate_series(1,1000) n`, [project])
     await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,isometry,weld_date,
       officiality,revision_actuality,connection_type,material_group,welding_method,d1,t1,d2,t2,category,group_name,
-      weld_control_percent,pvk_control_percent,stamp_1_k,stamp_1_z,stamp_1_o,stamp_1_k_fact,stamp_1_z_fact,stamp_1_o_fact,
+      weld_control_percent,pvk_control_percent,stamp_1_k,stamp_1_z,stamp_1_k_fact,stamp_1_z_fact,
       has_vik,psto_required,vik_request,vik_request_date,technology_card_number)
       select p.id,p.project_title,p.subtitle_code,p.line,'F'||lpad(n::text,6,'0'),'MIX-ISO','2026-09-01',
         'действующий','актуальная','С17',case when n between 10001 and 10003 then 'М01 + М05' else 'М01' end,
-        'РАД',108,6,108,8,'II','Б(а)',0,0,'MIX1','MIX1','MIX1','MIX1','MIX1','MIX1','да','нет',
+        'РАД',108,6,108,8,'II','Б(а)',0,0,'MIX1','MIX1','MIX1','MIX1','да','нет',
         case when n<=400 then ($2::text[])[(n-1)%200+1] end,case when n<=400 then date '2026-09-02' end,
         case when n between 10001 and 10003 then 'MIX ТК 2' when n%40=0 then null else 'MIX ТК 1' end
       from generate_series(1,200000) n join line_programs p on p.project_title=$1 and p.line='MIX-L'||lpad(((n-1)/200+1)::text,4,'0')`, [project, names])
@@ -274,7 +274,7 @@ test('200k, five browser clients, mixed reads/writes/import/documents under expl
           const values: Record<string, string | number> = { projectTitle: project, subtitleCode: 'MIX', line: 'MIX-L1000',
             joint: `F${300001 + round * 20 + i}`, category: 'II', groupName: 'Б(а)', weldControlPercent: 0,
             weldDate: '2026-09-01', weldingMethod: 'РАД', connectionType: 'С17', materialGroup: 'М01',
-            d1: 108, d2: 108, t1: 6, t2: 8, stamp1KFact: 'MIX1', stamp1ZFact: 'MIX1', stamp1OFact: 'MIX1' }
+            d1: 108, d2: 108, t1: 6, t2: 8, stamp1KFact: 'MIX1', stamp1ZFact: 'MIX1' }
           return fields.map(field => values[field.key] ?? '')
         })
         const csv = '\uFEFF' + [fields.map(field => field.label), ...rows].map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\r\n')

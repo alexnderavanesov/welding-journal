@@ -66,29 +66,29 @@ describe('existing rows report import preview', () => {
   it.each(['massFill', 'replaceData'] as const)('combines an unrepresentable support length with another field error in %s', async mode => {
     const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
       activeReport: 'weldingJournal',
-      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, FIELD_BY_KEY.get('weldLength')!.label, FIELD_BY_KEY.get('stamp2KFact')!.label], [[7, '1e-16384', 'FACT']]),
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, FIELD_BY_KEY.get('weldLength')!.label, FIELD_BY_KEY.get('stamp1ZFact')!.label], [[7, '1e-16384', 'FACT']]),
       rows: [{ id: 7, joint: 'ОП-1', connectionType: 'Т1', rowVersion: 'v1', weldLength: null } as WeldRow],
       weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
     })
     expect(preview.validRecords).toEqual([])
     expect(preview.errors[0]?.message).toContain('технический диапазон хранения')
-    expect(preview.errors[0]?.message).toContain('с индексом 2')
-    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['weldLength', 'stamp2KFact']))
+    expect(preview.errors[0]?.message).toContain('Клеймо_2')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['weldLength', 'stamp1ZFact']))
   })
   it.each(['massFill', 'replaceData'] as const)('combines separate repair-length and second-stamp errors in %s after merging stored T inputs', async mode => {
     const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
       activeReport: 'weldingJournal',
-      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, FIELD_BY_KEY.get('weldLength')!.label, FIELD_BY_KEY.get('stamp2KFact')!.label], [[7, 100, 'FACT']]),
+      file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, FIELD_BY_KEY.get('weldLength')!.label, FIELD_BY_KEY.get('stamp1ZFact')!.label], [[7, 100, 'FACT']]),
       rows: [{ id: 7, joint: 'ОП-1R10', connectionType: 'Т1', rowVersion: 'v1', weldLength: null } as WeldRow],
       weldFormStampSelectOptions: {}, welderStamps: [], welderStampSuspensions: [],
     })
     expect(preview.validRecords).toEqual([])
     expect(preview.errors[0]?.message).toContain('Длина ремонта наследуется')
-    expect(preview.errors[0]?.message).toContain('с индексом 2')
-    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['weldLength', 'stamp2KFact']))
+    expect(preview.errors[0]?.message).toContain('Клеймо_2')
+    expect(preview.errors[0]?.fieldKeys).toEqual(expect.arrayContaining(['weldLength', 'stamp1ZFact']))
   })
   it.each(['massFill', 'replaceData'] as const)('allows unrelated and factual corrections of a legacy missing stamp in %s', async mode => {
-    const keys = ['isometry', 'weldingJournalNote', 'stamp1KFact', 'stamp1ZFact', 'stamp1OFact', 'stamp2KFact', 'stamp2ZFact', 'stamp2OFact'] as const
+    const keys = ['isometry', 'weldingJournalNote', 'stamp1KFact', 'stamp1ZFact'] as const
     const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
       activeReport: 'weldingJournal',
       file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, ...keys.map(key => FIELD_BY_KEY.get(key)!.label)], [[7, ...keys.map(key => key.startsWith('stamp') ? 'FACT' : 'Corrected')]]),
@@ -160,15 +160,14 @@ describe('existing rows report import preview', () => {
     const preview = await (mode === 'massFill' ? buildReportMassFillPreview : buildReportReplaceDataPreview)({
       activeReport: 'weldingJournal',
       file: buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Дата сварки'], [[7, 'F1', '01.09.2026']]),
-      rows: [{ id: 7, joint: 'F1', stamp1KFact: 'FCT1', stamp1ZFact: 'FCT1', stamp1OFact: 'FCT1' } as WeldRow],
-      weldFormStampSelectOptions: Object.fromEntries(['stamp1KFact', 'stamp1ZFact', 'stamp1OFact'].map(key => [key, [{ value: 'FCT1' }]])),
+      rows: [{ id: 7, joint: 'F1', stamp1KFact: 'FCT1', stamp1ZFact: 'FCT1', } as WeldRow],
+      weldFormStampSelectOptions: Object.fromEntries(['stamp1KFact', 'stamp1ZFact'].map(key => [key, [{ value: 'FCT1' }]])),
       welderStamps: [], welderStampSuspensions: [],
     })
     expect(preview.errors).toEqual([])
     expect(preview.validRecords).toHaveLength(1)
     expect(preview.validRecords[0].stamp1K).toBeFalsy()
     expect(preview.validRecords[0].stamp1Z).toBeFalsy()
-    expect(preview.validRecords[0].stamp1O).toBeFalsy()
   })
 
   it.each(['massFill', 'replaceData'] as const)('collects SP-05 and an independent name error on the final merged %s row', async mode => {
@@ -2261,7 +2260,7 @@ describe('existing rows report import preview', () => {
   })
 
   it('points existing row validation errors to the exact changed import field', async () => {
-    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Корень_1', 'Марка стали 1'], [[7, 'S1', 'BAD', '09Г2С']])
+    const file = buildWorkbookFile([MASS_FILL_ROW_ID_HEADER, 'Стык', 'Клеймо_1', 'Марка стали 1'], [[7, 'S1', 'BAD', '09Г2С']])
     const preview = await buildReportMassFillPreview({
       activeReport: 'weldingJournal',
       file,

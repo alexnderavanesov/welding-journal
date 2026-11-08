@@ -21,8 +21,7 @@ const BASE_SECTIONS: Array<{ section: string; fieldKeys: WeldFieldKey[] }> = [
   {
     section: 'Клейма',
     fieldKeys: [
-      'stamp1K', 'stamp1Z', 'stamp1O', 'stamp1KFact', 'stamp1ZFact', 'stamp1OFact',
-      'stamp2K', 'stamp2Z', 'stamp2O', 'stamp2KFact', 'stamp2ZFact', 'stamp2OFact',
+      'stamp1K', 'stamp1KFact', 'stamp1Z', 'stamp1ZFact',
     ],
   },
   {

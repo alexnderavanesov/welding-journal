@@ -8,6 +8,22 @@ import {
 } from '@/lib/welding-dynamics'
 
 describe('buildWeldingDynamics', () => {
+  it('counts factual stamps case-insensitively and excludes empty sentinels without losing production', () => {
+    const rows = [
+      row({ id: 1, weldDate: '2026-07-01', stamp1KFact: ' abc ', stamp1ZFact: 'ABC' }),
+      row({ id: 2, weldDate: '2026-07-01', stamp1KFact: 'AbC' }),
+      row({ id: 3, weldDate: '2026-07-02', stamp1KFact: ' Пусто ', stamp1ZFact: 'ПУСТО' }),
+      row({ id: 4, weldDate: '2026-07-02' }),
+    ]
+    const summary = buildWeldingDynamics(rows, '2026-07-01', '2026-07-02', 'joints')
+    expect(summary.totalValue).toBe(4)
+    expect(summary.totalWelders).toBe(1)
+    expect(summary.welderShiftCount).toBe(1)
+    expect(summary.buckets.map(bucket => ({ value: bucket.value, welders: bucket.welderCount, shifts: bucket.welderShiftCount })))
+      .toEqual([{ value: 2, welders: 1, shifts: 1 }, { value: 2, welders: 0, shifts: 0 }])
+    expect(summary.buckets[0].valuePerWelderShift).toBe(2)
+    expect(summary.buckets[1].valuePerWelderShift).toBe(0)
+  })
   it('keeps dimension colors stable when the surrounding group order changes', () => {
     const original = getStableWeldingDynamicsColorIndex('Проект Альфа', 6)
     expect(getStableWeldingDynamicsColorIndex('Проект Альфа', 6)).toBe(original)
@@ -25,8 +41,8 @@ describe('buildWeldingDynamics', () => {
 
   it('groups a short period by days and counts factual welders', () => {
     const rows = [
-      row({ id: 1, weldDate: '2026-07-01', wdi: '1,5', stamp1KFact: 'F1', stamp1ZFact: 'F1', stamp1OFact: 'F2', stamp1K: 'OFF1' }),
-      row({ id: 2, weldDate: '2026-07-01', wdi: '2', stamp1KFact: 'F2', stamp1ZFact: 'F3', stamp1OFact: 'F3', stamp1K: 'OFF2' }),
+      row({ id: 1, weldDate: '2026-07-01', wdi: '1,5', stamp1KFact: 'F1', stamp1ZFact: 'F1', stamp1K: 'OFF1' }),
+      row({ id: 2, weldDate: '2026-07-01', wdi: '2', stamp1KFact: 'F2', stamp1ZFact: 'F3', stamp1K: 'OFF2' }),
       row({ id: 3, weldDate: '2026-07-02', wdi: '3', stamp1K: 'OFF3' }),
     ]
 
@@ -62,7 +78,7 @@ describe('buildWeldingDynamics', () => {
   it('calculates production per welder-shift from daily factual stamp participation', () => {
     const rows = [
       row({ id: 1, weldDate: '2026-07-01', wdi: '2', stamp1KFact: 'F1' }),
-      row({ id: 2, weldDate: '2026-07-01', wdi: '4', stamp1KFact: 'F1', stamp1OFact: 'F2' }),
+      row({ id: 2, weldDate: '2026-07-01', wdi: '4', stamp1KFact: 'F1', stamp1ZFact: 'F2' }),
       row({ id: 3, weldDate: '2026-07-02', wdi: '4', stamp1KFact: 'F1' }),
     ]
 
@@ -288,7 +304,7 @@ describe('buildWeldingDynamics', () => {
   it('counts welders and welder-shifts separately for every material group', () => {
     const rows = [
       row({ id: 1, joint: 'S1', weldDate: '2026-07-01', materialGroup: 'М01', wdi: '2', stamp1KFact: 'F1' }),
-      row({ id: 2, joint: 'F2', weldDate: '2026-07-01', materialGroup: 'М01', wdi: '4', stamp1KFact: 'F1', stamp1OFact: 'F2' }),
+      row({ id: 2, joint: 'F2', weldDate: '2026-07-01', materialGroup: 'М01', wdi: '4', stamp1KFact: 'F1', stamp1ZFact: 'F2' }),
       row({ id: 3, joint: 'F3', weldDate: '2026-07-02', materialGroup: 'М01', wdi: '3', stamp1KFact: 'F1' }),
       row({ id: 4, joint: 'F4', weldDate: '2026-07-02', materialGroup: 'М11', wdi: '5', stamp1KFact: 'F1' }),
     ]
@@ -462,15 +478,9 @@ function row(values: Partial<WeldRow>): WeldRow {
     materialGroup: values.materialGroup ?? '',
     stamp1K: values.stamp1K ?? '',
     stamp1Z: values.stamp1Z ?? '',
-    stamp1O: values.stamp1O ?? '',
-    stamp2K: values.stamp2K ?? '',
-    stamp2Z: values.stamp2Z ?? '',
-    stamp2O: values.stamp2O ?? '',
+
     stamp1KFact: values.stamp1KFact ?? '',
     stamp1ZFact: values.stamp1ZFact ?? '',
-    stamp1OFact: values.stamp1OFact ?? '',
-    stamp2KFact: values.stamp2KFact ?? '',
-    stamp2ZFact: values.stamp2ZFact ?? '',
-    stamp2OFact: values.stamp2OFact ?? '',
+
   } as WeldRow
 }

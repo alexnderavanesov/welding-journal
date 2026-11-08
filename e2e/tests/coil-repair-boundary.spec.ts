@@ -30,13 +30,13 @@ test('ремонт катушки наследует её УЗК, но не РК
     const { rows: [program] } = await db.query(`insert into line_programs(project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
       values ($1,'COIL',$2,'II','A',10,0) returning id`, [project, line])
     const { rows } = await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,weld_date,connection_type,
-      category,group_name,weld_control_percent,pvk_control_percent,officiality,stamp_1_k,stamp_1_z,stamp_1_o,material_group,welding_method,d1,d2,t1,t2,wdi,
+      category,group_name,weld_control_percent,pvk_control_percent,officiality,stamp_1_k,stamp_1_z,material_group,welding_method,d1,d2,t1,t2,wdi,
       has_vik,vik_result,vik_request,vik_request_date,vik_conclusion,vik_conclusion_date)
       select $1,$2,'COIL',$3,case when n=1 then 'F811' else 'F811Y'||(n-1) end,
-        case when n=1 then date '2026-09-01' else date '2026-09-04' end,'С17','II','A',10,0,'действующий','A','A','A','M01','РД',108,108,4,4,0.42,
+        case when n=1 then date '2026-09-01' else date '2026-09-04' end,'С17','II','A',10,0,'действующий','A','A','M01','РД',108,108,4,4,0.42,
         'да','годен','CB-VIK-R',case when n=1 then date '2026-09-01' else date '2026-09-04' end,'CB-VIK-C',case when n=1 then date '2026-09-02' else date '2026-09-05' end
       from generate_series(1,3) n returning id,joint`, [program.id, project, line])
-    await db.query(`update weld_joints set stamp_1_k_fact=stamp_1_k,stamp_1_z_fact=stamp_1_z,stamp_1_o_fact=stamp_1_o where project_title=$1`, [project])
+    await db.query(`update weld_joints set stamp_1_k_fact=stamp_1_k,stamp_1_z_fact=stamp_1_z where project_title=$1`, [project])
     await db.query(`update weld_joints set has_rk='да',rk_result='вырез',rk_request='CB-RK-R',rk_request_date='2026-09-02',rk_conclusion='CB-RK-C',rk_conclusion_date='2026-09-03',
       has_pvk='да',pvk_result='годен',pvk_request='CB-PVK-R',pvk_request_date='2026-09-02',pvk_conclusion='CB-PVK-C',pvk_conclusion_date='2026-09-02'
       where project_title=$1 and joint='F811'`, [project])

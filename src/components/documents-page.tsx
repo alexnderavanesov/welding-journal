@@ -511,7 +511,6 @@ export function DocumentsPage({
     }
   }, [])
 
-
   useEffect(() => {
     if (!isPreviewFullscreen) return
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -731,7 +730,6 @@ export function DocumentsPage({
       ),
     )
   }
-
 
   return (
     <div className="w-full min-w-0 space-y-5">
@@ -2191,7 +2189,7 @@ function BasePreviewTable({ rows, totalRows }: { rows: WeldRow[]; totalRows: num
                 {getCellValue(row, 'd1')} / {getCellValue(row, 'd2')}
               </td>
               <td className="truncate px-2 py-2 text-slate-700">
-                {[row.stamp1KFact, row.stamp1ZFact, row.stamp1OFact, row.stamp2KFact, row.stamp2ZFact, row.stamp2OFact]
+                {[row.stamp1KFact, row.stamp1ZFact]
                   .map((value) => String(value ?? '').trim())
                   .filter(Boolean)
                   .join(', ') || '-'}

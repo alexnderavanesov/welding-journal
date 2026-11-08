@@ -158,10 +158,10 @@ test('компактная завершённая линия: все стыки,
   expect(errors).toEqual([])
 })
 
-test('назначения: без ВИК, три клейма, стабильные строки и общие тонкие границы выделения', async ({ page }, testInfo) => {
+test('назначения: без ВИК, два клейма, стабильные строки и общие тонкие границы выделения', async ({ page }, testInfo) => {
   const name = 'DENSE-ASSIGNMENT-LAYOUT', id = await seed(name, 4)
   await withLineProgramFixture(db => db.query(`update weld_joints set has_rk=null,rk_result=null,pvk_result=null,
-    stamp_1_k='ABC12345',stamp_1_z='Q8245678',stamp_1_o='XYZ45678'
+    stamp_1_k='ABC12345',stamp_1_z='Q8245678'
     where line_program_id=$1`, [id]))
   const calls: string[] = [], errors: string[] = []
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
@@ -301,7 +301,7 @@ test('назначения: без ВИК, три клейма, стабильн
     await expect(rows.nth(1)).toHaveCSS('box-shadow', 'none')
     // Removing the middle row restores the top edge of the next selected row.
     expect(await rows.nth(2).evaluate(element => getComputedStyle(element, '::before').borderTopWidth)).toBe('1px')
-    for (const stamp of ['ABC12345', 'Q8245678', 'XYZ45678']) await expect(rows.first().getByTestId('program-joint-metadata').getByText(stamp, { exact: true })).toBeVisible()
+    for (const stamp of ['ABC12345', 'Q8245678']) await expect(rows.first().getByTestId('program-joint-metadata').getByText(stamp, { exact: true })).toBeVisible()
     expect(await rows.first().getByTestId('program-joint-metadata').evaluate(element => {
       const cell = element.closest('.ag-cell')!.getBoundingClientRect()
       return [...element.querySelectorAll('span')].every(span => { const rect = span.getBoundingClientRect(); return rect.left >= cell.left && rect.right <= cell.right })

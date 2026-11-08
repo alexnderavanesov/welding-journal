@@ -1073,7 +1073,7 @@ test('назначения с компактными результатами: �
   expect(errors).toEqual([])
 })
 
-test('предел назначений, компактные результаты и четыре клейма без дополнительных запросов', async ({ page }) => {
+test('предел назначений, компактные результаты и два клейма без дополнительных запросов', async ({ page }) => {
   const name = 'UNIFIED-DEFICIT-RESULTS'
   await seed(name, 100, 5)
   await withLineProgramFixture(async db => {
@@ -1085,7 +1085,7 @@ test('предел назначений, компактные результат
       rk_conclusion=case when joint='F1' then 'SUMMARY-RK' else null end,
       rk_conclusion_date=case when joint='F1' then date '2026-09-03' else null end
       where line=$1`, [name])
-    await db.query("update weld_joints set stamp_1_z='UNIFIED-B',stamp_1_o='UNIFIED-A',stamp_2_k='UNIFIED-C',stamp_2_z='UNIFIED-D',stamp_2_o='UNIFIED-B' where line=$1 and joint='F1'", [name])
+    await db.query("update weld_joints set stamp_1_z='UNIFIED-B' where line=$1 and joint='F1'", [name])
     await db.query("update weld_joints set stamp_1_z='UNIFIED-E' where line=$1 and joint='F2'", [name])
   })
   const calls: string[] = [], errors: string[] = []
@@ -1095,7 +1095,8 @@ test('предел назначений, компактные результат
   await expect(card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'К назначению 1', exact: true })).toBeVisible()
   await expect(card.getByText(/Не закрывается/)).toHaveCount(0)
   await expect(card.getByRole('progressbar', { name: 'РК - УЗК · зачтено / нужно' })).toHaveAttribute('aria-valuenow', '100')
-  await expect(card.getByRole('progressbar', { name: 'ПВК · зачтено / нужно' })).toHaveAttribute('aria-valuenow', '80')
+  // Three official participants A/B/E: A and B meet their quota, E still needs F2.
+  await expect(card.getByRole('progressbar', { name: 'ПВК · зачтено / нужно' })).toHaveAttribute('aria-valuenow', '67')
   await card.filter({ has: page.getByTestId('line-name') }).getByRole('button', { name: 'К назначению 1', exact: true }).click()
   const candidates = program.getByTestId('line-program-readonly-joint')
   await expect(candidates).toHaveCount(1)
@@ -1106,7 +1107,7 @@ test('предел назначений, компактные результат
   await expect(editor.getByTestId('assignment-guidance-pvk')).toContainText('К назначению: 1')
   await expect(editor.getByRole('columnheader').locator('.ag-header-cell-text')).toHaveText(['Выбор', 'Стык', 'РК', 'УЗК', 'ПВК', 'Послойный ПВК', 'Результат'])
   const first = editor.getByTestId('line-program-joint').filter({ has: page.getByText('F1', { exact: true }) })
-  await expect(first.getByTestId('program-joint-metadata')).toContainText('UNIFIED-A, UNIFIED-B, UNIFIED-C, UNIFIED-D')
+  await expect(first.getByTestId('program-joint-metadata')).toContainText('UNIFIED-A, UNIFIED-B')
   const result = first.getByLabel('Результат F1')
   await expect(result).toContainText('РК: годен')
   await expect(first.getByRole('checkbox')).not.toBeChecked()
@@ -1306,7 +1307,7 @@ test('сводка всех клейм, послойный черновик и �
   await withLineProgramFixture(async db => {
     await db.query("update line_programs set pvk_control_percent=30 where line=$1", [name])
     await db.query("update weld_joints set weld_date='2026-09-01',stamp_1_k='UNIFIED-A',stamp_1_k_fact='UNIFIED-A',pvk_control_percent=30,has_rk=case when joint in ('F2','F5') then 'да' end,has_uzk=case when joint='F3' then 'да' end,has_pvk=case when joint in ('F2','F3','F5') then 'да' end,connection_type=case when joint='F4' then 'У17' else 'СШ' end where line=$1", [name])
-    await db.query("update weld_joints set stamp_1_o='UNIFIED-B' where line=$1 and joint='F1'", [name])
+    await db.query("update weld_joints set stamp_1_z='UNIFIED-B' where line=$1 and joint='F1'", [name])
   })
   const calls: string[] = [], errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))

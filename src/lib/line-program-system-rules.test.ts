@@ -103,21 +103,21 @@ describe('agreed line program rules, 30 September 2026', () => {
     expect(group.common.required).toBe(2)
   })
 
-  it('uses all three unique official stamps and protects assignments needed by any one of them', () => {
-    const rows: WeldRow[] = line(10).map(row => ({ ...row, stamp1Z: 'B', stamp1O: 'C' }))
+  it('uses both unique official stamps and protects assignments needed by any one of them', () => {
+    const rows: WeldRow[] = line(10).map(row => ({ ...row, stamp1Z: 'B', }))
     rows[0].rkResult = 'ремонт'; rows[1].hasRk = 'да'; rows[2].hasUzk = 'да'
     for (const group of calculateLineProgram(rows, 10, 0)) {
       expect(group.common).toMatchObject({ required: 3, coveredRowIds: [1, 2, 3], missing: 0, excessRowIds: [] })
     }
-    rows[0].stamp1O = null
-    const third = calculation(rows, 10, 0, 'C')
-    expect(third).toMatchObject({ rejectedRowIds: [], common: { required: 1, coveredRowIds: [2, 3], excessRowIds: [] } })
-    expect(third.rowIds).toHaveLength(9)
+    rows[0].stamp1Z = null
+    const second = calculation(rows, 10, 0, 'B')
+    expect(second).toMatchObject({ rejectedRowIds: [], common: { required: 1, coveredRowIds: [2, 3], excessRowIds: [] } })
+    expect(second.rowIds).toHaveLength(9)
   })
 
   it('deduplicates stamps, input IDs and event sources, independently of input order', () => {
     const rows = line(10)
-    rows[0] = joint(1, { rkResult: 'ремонт', stamp1Z: 'A', stamp1O: 'A' })
+    rows[0] = joint(1, { rkResult: 'ремонт', stamp1Z: 'A', })
     const expected = calculateLineProgram(rows, 10, 0)
     expect(calculateLineProgram([...rows].reverse().concat(rows[0]), 10, 0)).toEqual(expected)
     expect(expected).toHaveLength(1)

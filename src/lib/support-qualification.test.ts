@@ -16,7 +16,7 @@ import type { WelderStampNaksPermit, WelderStampRecord } from './welder-stamp-ty
 
 const checks = { ...DEFAULT_SAVE_CHECK_SETTINGS, officialDls: true }
 const row: WeldInput = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'ОП-1',
-  connectionType: 'Т1', materialGroup: 'М05', weldingMethod: 'РД', stamp1K: 'AAAA', stamp1Z: 'AAAA',
+  connectionType: 'Т1', materialGroup: 'М05', weldingMethod: 'РД', stamp1K: 'AAAA',
   d1: '57', t1: '6', d2: null, t2: null, weldDate: '2026-07-01' }
 function permit(group: string, method: string, override: Partial<WelderStampNaksPermit> = {}): WelderStampNaksPermit {
   return { id: `${group}:${method}`, weldType: method, materialGroups: group,

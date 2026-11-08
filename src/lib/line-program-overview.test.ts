@@ -77,7 +77,7 @@ describe('line card overview', () => {
     expect(mixed).toMatchObject({ additional: 1, common: { covered: 1, excess: 0 }, pvk: { excess: 0 } })
   })
   it('counts physical joints once, but keeps the separate quotas of each stamp', () => {
-    const result = summarizeLineProgram([{ ...row, stamp1Z: 'B', stamp1O: 'a', hasRk: 'да' }], line)
+    const result = summarizeLineProgram([{ ...row, stamp1Z: 'B', hasRk: 'да' }], line)
     expect(result).toEqual({ joints: 1, journalRows: 1, calculationJoints: 1, stamps: 2, additional: 0, approved: 0, reducible: 0, pending: 1, rejected: 0, unfinishedChains: 1,
       common: { required: 2, actionableRequired: 2, covered: 2, missing: 0, excess: 0 }, pvk: { required: 2, actionableRequired: 2, covered: 0, missing: 2, excess: 0 } })
   })

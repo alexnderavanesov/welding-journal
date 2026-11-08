@@ -19,16 +19,8 @@ export const REPEATED_JOINT_CLEARED_FIELD_KEYS = new Set<WeldFieldKey>([
   'responsible',
   'stamp1K',
   'stamp1Z',
-  'stamp1O',
-  'stamp2K',
-  'stamp2Z',
-  'stamp2O',
   'stamp1KFact',
   'stamp1ZFact',
-  'stamp1OFact',
-  'stamp2KFact',
-  'stamp2ZFact',
-  'stamp2OFact',
   ...LNK_METHODS.flatMap((method) => [
     method.requestKey,
     method.requestDateKey,
@@ -195,12 +187,12 @@ export const WELD_STAMP_COMPLETION_GROUPS = [
   {
     index: 1,
     reason: 'дозаполнить клейма_1',
-    fields: ['stamp1K', 'stamp1Z', 'stamp1O', 'stamp1KFact', 'stamp1ZFact', 'stamp1OFact'],
+    fields: ['stamp1K', 'stamp1KFact'],
   },
   {
     index: 2,
     reason: 'дозаполнить клейма_2',
-    fields: ['stamp2K', 'stamp2Z', 'stamp2O', 'stamp2KFact', 'stamp2ZFact', 'stamp2OFact'],
+    fields: ['stamp1Z', 'stamp1ZFact'],
   },
 ] as const satisfies ReadonlyArray<{ index: 1 | 2; reason: string; fields: readonly WeldFieldKey[] }>
 

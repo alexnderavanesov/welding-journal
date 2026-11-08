@@ -75,10 +75,10 @@ async function seed(stage: Stage) {
     for (const joint of ['F881', 'F882']) {
       const row = (await db.query<{ id: number; joint: string }>(`insert into weld_joints
         (line_program_id,project_title,subtitle_code,line,joint,weld_date,connection_type,material_group,welding_method,
-        officiality,revision_actuality,d1,d2,t1,t2,wdi,stamp_1_k,stamp_1_z,stamp_1_o,stamp_1_k_fact,stamp_1_z_fact,stamp_1_o_fact,
+        officiality,revision_actuality,d1,d2,t1,t2,wdi,stamp_1_k,stamp_1_z,stamp_1_k_fact,stamp_1_z_fact,
         has_vik,has_rk,has_uzk,has_pvk,psto_required,category,group_name,weld_control_percent,pvk_control_percent)
         values ($1,$2,'CTX',$3,$4,'2026-09-01','С17','M01','РД','действующий','актуальная',108,108,4,4,0.42,
-        $5,$5,$5,$5,$5,$5,'да','да','да','да',$6,'II','A',100,100) returning id,joint`,
+        $5,$5,$5,$5,'да','да','да','да',$6,'II','A',100,100) returning id,joint`,
       [lines.find(line => line.line === SOURCE)!.id, PROJECT, SOURCE, joint, STAMP, stage === 'primary' ? null : 'да'])).rows[0]!
       rows.push(row)
       for (const method of METHODS) {
@@ -538,10 +538,10 @@ test('цепочка на назначенную линию: подтвержд�
   const childId = await withE2eDatabase(async db => {
     await db.query("update weld_joints set rk_result='ремонт',lnk_defect_description='Дефект',final_status='не годен' where id=$1", [fixture.moved.id])
     return (await db.query(`insert into weld_joints(project_title,subtitle_code,line,line_program_id,joint,weld_date,connection_type,material_group,welding_method,
-      officiality,revision_actuality,d1,d2,t1,t2,wdi,stamp_1_k,stamp_1_z,stamp_1_o,stamp_1_k_fact,stamp_1_z_fact,stamp_1_o_fact,
+      officiality,revision_actuality,d1,d2,t1,t2,wdi,stamp_1_k,stamp_1_z,stamp_1_k_fact,stamp_1_z_fact,
       has_vik,has_rk,has_uzk,has_pvk,category,group_name,weld_control_percent,pvk_control_percent)
       select project_title,subtitle_code,line,line_program_id,'F881R1','2026-09-06',connection_type,material_group,welding_method,
-      officiality,revision_actuality,d1,d2,t1,t2,wdi,stamp_1_k,stamp_1_z,stamp_1_o,stamp_1_k_fact,stamp_1_z_fact,stamp_1_o_fact,
+      officiality,revision_actuality,d1,d2,t1,t2,wdi,stamp_1_k,stamp_1_z,stamp_1_k_fact,stamp_1_z_fact,
       has_vik,has_rk,has_uzk,has_pvk,category,group_name,weld_control_percent,pvk_control_percent
       from weld_joints where id=$1 returning id`, [fixture.moved.id])).rows[0].id as number
   })

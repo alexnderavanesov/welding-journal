@@ -7,6 +7,8 @@ import {
   WELD_STAMP_COMPLETION_GROUPS,
 } from '@/lib/report-config'
 import { hasText, isEnabledControlValue } from '@/lib/report-value-utils'
+import { getStampSelectValue } from '@/lib/weld-form-value-utils'
+import { emptyToNull } from '@/lib/weld-import-parsers'
 import {
   formatDisplayDate,
   getDateInputValidationReason,
@@ -367,9 +369,11 @@ export function buildIncompleteWelderStampGroupTasks(
   systemIndexSettings: SystemIndexSettings = DEFAULT_SYSTEM_INDEX_SETTINGS,
 ): RepeatedJointCheckTask[] {
   const tasks: RepeatedJointCheckTask[] = []
-  const allStampFields = WELD_STAMP_COMPLETION_GROUPS.flatMap((group) => group.fields)
   for (const row of rows) {
-    const filledStampFields = allStampFields.filter((fieldKey) => hasText(row[fieldKey]))
+    const groups = isTConnectionType(row.connectionType) ? WELD_STAMP_COMPLETION_GROUPS.slice(0, 1) : WELD_STAMP_COMPLETION_GROUPS
+    const allStampFields = groups.flatMap(group => group.fields)
+    // Match the card's empty stamp and the import/storage empty placeholder.
+    const filledStampFields = allStampFields.filter((fieldKey) => emptyToNull(getStampSelectValue(row[fieldKey])) !== null)
     const hasWeldDate = hasText(row.weldDate)
     const joint = String(row.joint ?? '').trim() || '-'
     const officialityText = isUnofficialJoint(row) ? ' (неофициальный)' : ''
@@ -385,35 +389,15 @@ export function buildIncompleteWelderStampGroupTasks(
           systemIndexSettings,
         ),
       )
-      continue
     }
 
-    if (hasWeldDate && filledStampFields.length === 0) {
-      const weldDateText = formatDisplayDate(row.weldDate) || '-'
-      const group = WELD_STAMP_COMPLETION_GROUPS[0]
-      tasks.push(
-        createJointChainCheckTask(
-          row,
-          `${getJointChainConsistencyKey(row, systemIndexSettings) ?? row.id}:weld-stamp-completion-empty-${group.index}:${row.id}`,
-          group.reason,
-          `Стык ${joint}${officialityText}: дата сварки ${weldDateText} заполнена, но клейма не заполнены. Нужно дозаполнить группу клейма_${group.index}.`,
-          systemIndexSettings,
-        ),
-      )
-      continue
-    }
-
-    for (const group of WELD_STAMP_COMPLETION_GROUPS) {
-      const filledFields = group.fields.filter((fieldKey) => hasText(row[fieldKey]))
-      const emptyRequiredFirstGroup = hasWeldDate && group.index === 1 && filledFields.length === 0
-      if ((!emptyRequiredFirstGroup && filledFields.length === 0) || filledFields.length === group.fields.length) continue
-
-      const missingFields = group.fields.filter((fieldKey) => !hasText(row[fieldKey]))
+    for (const group of groups) {
+      const filledFields = group.fields.filter((fieldKey) => filledStampFields.includes(fieldKey))
+      if (filledFields.length === 0 || filledFields.length === group.fields.length) continue
+      const missingFields = group.fields.filter((fieldKey) => !filledStampFields.includes(fieldKey))
       const filledText = filledFields.map(formatWeldStampCompletionFieldLabel).join(', ')
       const missingText = missingFields.map(formatWeldStampCompletionFieldLabel).join(', ')
-      const details = emptyRequiredFirstGroup
-        ? `Стык ${joint}${officialityText}: дата сварки заполнена, но группа клейма_1 пустая. Нужно указать хотя бы корневое клеймо и дозаполнить группу.`
-        : `Стык ${joint}${officialityText}: в группе клейма_${group.index} заполнено ${filledText}, но не заполнено ${missingText}. Если в группе заполнено хотя бы одно клеймо, нужно дозаполнить остальные поля этой группы.`
+      const details = `Стык ${joint}${officialityText}: в паре клейма_${group.index} заполнено ${filledText}, но не заполнено ${missingText}. Дозаполните пару. Напоминание не запрещает сохранение.`
       tasks.push(
         createJointChainCheckTask(
           row,

@@ -17,7 +17,7 @@ const saved = (id: number) => withE2eDatabase(async db => (await db.query('selec
 const registry = () => withE2eDatabase(async db => (await db.query('select * from technology_cards where name=$1', [name])).rows[0])
 const base: WeldInput = { projectTitle: project, subtitleCode: 'MAT', line: 'L', category: 'II', groupName: 'Б(а)', weldControlPercent: 0,
   weldingMethod: 'РАД', connectionType: 'С17', materialGroup: 'М01', d1: 57, d2: 159, t1: 6, t2: 3,
-  stamp1KFact: 'TKA1', stamp1ZFact: 'TKA1', stamp1OFact: 'TKA1' }
+  stamp1KFact: 'TKA1', stamp1ZFact: 'TKA1' }
 test.afterEach(async ({ page }) => {
   await page.close(); await cleanupLineProgramProjects([project])
   await withLineProgramFixture(db => db.query('delete from technology_cards where name=$1', [name]))

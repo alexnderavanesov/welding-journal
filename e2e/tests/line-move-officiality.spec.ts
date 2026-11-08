@@ -29,8 +29,8 @@ async function seed() {
     // The mistaken rejected primary set was already cleared by the operator;
     // an earlier good pre-TO set and unofficiality remain. No performed PSTO.
     const { rows: [row] } = await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,officiality,weld_date,
-      connection_type,material_group,welding_method,d1,d2,t1,t2,wdi,stamp_1_k,stamp_1_z,stamp_1_o,stamp_1_k_fact,stamp_1_z_fact,stamp_1_o_fact,has_vik,psto_required)
-      values ($1,$2,'U',$3,$4,'неофициальный','2026-09-01','С17','M01','РД',108,108,4,4,0.42,$5,$5,$5,$5,$5,$5,'да','да') returning id`,
+      connection_type,material_group,welding_method,d1,d2,t1,t2,wdi,stamp_1_k,stamp_1_z,stamp_1_k_fact,stamp_1_z_fact,has_vik,psto_required)
+      values ($1,$2,'U',$3,$4,'неофициальный','2026-09-01','С17','M01','РД',108,108,4,4,0.42,$5,$5,$5,$5,'да','да') returning id`,
     [lines.find(line => line.line === sourceLine).id, project, sourceLine, joint, stamp])
     await db.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,request_name,request_date,result,conclusion_name,conclusion_date,defect_description)
       values ($1,'ВИК','MO-PRE','2026-09-01','годен','MO-PRE-C','2026-09-02','ДНО')`, [row.id])

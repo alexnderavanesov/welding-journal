@@ -386,7 +386,7 @@ describe('dispatcher data quality tasks', () => {
 
   it('audits an unknown official stamp through DЗ-18 even when the registry is empty', () => {
     const tasks = buildWelderStampCompatibilityCheckTasks([
-      row({ stamp1K: 'ABC1', stamp1Z: 'ABC1', stamp1O: 'ABC1' }),
+      row({ stamp1K: 'ABC1', stamp1Z: 'ABC1', }),
     ], [])
 
     expect(tasks).toHaveLength(1)
@@ -394,24 +394,9 @@ describe('dispatcher data quality tasks', () => {
     expect(tasks[0].details).toContain('ABC1')
   })
 
-  it('requires the first stamp group through DЗ-19 when only the second group is filled', () => {
-    const tasks = buildIncompleteWelderStampGroupTasks([
-      row({
-        stamp1K: '',
-        stamp1Z: '',
-        stamp1O: '',
-        stamp2K: 'B2',
-        stamp2Z: 'B2',
-        stamp2O: 'B2',
-        stamp2KFact: 'B2',
-        stamp2ZFact: 'B2',
-        stamp2OFact: 'B2',
-      }),
-    ])
-
-    expect(tasks).toHaveLength(1)
-    expect(getDispatcherTaskCode(tasks[0])).toBe('СП-03')
-    expect(tasks[0].details).toContain('группа клейма_1 пустая')
+  it('allows an unused first pair when the second is complete', () => {
+    const tasks = buildIncompleteWelderStampGroupTasks([row({ stamp1Z: 'OFF', stamp1ZFact: 'FACT' })])
+    expect(tasks).toEqual([])
   })
 
   it('checks the official repair limit through SP-05', () => {

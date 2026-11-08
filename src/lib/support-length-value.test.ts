@@ -52,9 +52,9 @@ describe('exact decimal support length', () => {
     for (const value of ['1e131072', '1e-16384']) {
       expect(getSupportWeldLengthError(value)).toBe(SUPPORT_LENGTH_STORAGE_LIMIT_REASON)
       expect(isPositiveSupportWeldLength(value)).toBe(false)
-      const issues = getSupportJointRuleIssues({ joint: 'ОП-1', connectionType: 'Т1', weldLength: value, stamp2KFact: 'A' })
+      const issues = getSupportJointRuleIssues({ joint: 'ОП-1', connectionType: 'Т1', weldLength: value, stamp1ZFact: 'SECOND' })
       expect(issues.map(issue => issue.message).join(' ')).toContain(SUPPORT_LENGTH_STORAGE_LIMIT_REASON)
-      expect(issues.flatMap(issue => issue.fieldKeys)).toEqual(expect.arrayContaining(['weldLength', 'stamp2KFact']))
+      expect(issues.flatMap(issue => issue.fieldKeys)).toEqual(expect.arrayContaining(['weldLength', 'stamp1ZFact']))
     }
   })
 })

@@ -19,8 +19,8 @@ const cases: { fields: Partial<WeldRow>; common: number; pvk: number; candidate:
   { fields: { duplicateControls: [{ id: 92, weldJointId: 1, method: 'УЗК', result: 'годен' }] as WeldRow['duplicateControls'] }, common: 0, pvk: 0, candidate: 1, pvkCandidate: 1, source: 0 },
 ]
 
-it('independent three-welder matrix: facts, cancellations, exclusions and candidate caps agree in 4800 combinations', () => {
-  const memberships = [['ABC', 'A', 'BC'], ['AAB', 'BCC', 'ABC'], ['AAA', 'BBB', 'CCC']]
+it('independent three-welder line matrix with at most two participants per joint: facts, cancellations, exclusions and candidate caps agree in 4800 combinations', () => {
+  const memberships = [['AB', 'A', 'BC'], ['AA', 'BC', 'AC'], ['AA', 'BB', 'CC']]
   const exclusions = [{}, { officiality: 'неофициальный' }, { revisionActuality: 'не актуален' },
     { officiality: 'неофициальный', revisionActuality: 'не актуален' }]
   let checked = 0
@@ -30,7 +30,7 @@ it('independent three-welder matrix: facts, cancellations, exclusions and candid
       const rows: WeldRow[] = contributions.map((entry, index) => ({
         id: index + 1, joint: `F${index + 1}`, line: 'MATRIX', connectionType: 'С17',
         weldDate: '2026-09-01', officiality: 'действующий', revisionActuality: 'актуальная', hasVik: 'да',
-        stamp1K: owners[index][0], stamp1Z: owners[index][1], stamp1O: owners[index][2],
+        stamp1K: owners[index][0], stamp1Z: owners[index][1],
         ...entry.fields, ...(index === 0 ? flags : {}),
         duplicateControls: entry.fields.duplicateControls?.map(control => ({ ...control, weldJointId: index + 1 })),
       }))

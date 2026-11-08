@@ -23,10 +23,6 @@ export const OFFICIAL_STAMP_VALIDATION_FIELD_KEYS = [
   't2',
   'stamp1K',
   'stamp1Z',
-  'stamp1O',
-  'stamp2K',
-  'stamp2Z',
-  'stamp2O',
 ] as const satisfies readonly WeldFieldKey[]
 
 type OfficialStampValidationRecord = Partial<Record<WeldFieldKey, unknown>>

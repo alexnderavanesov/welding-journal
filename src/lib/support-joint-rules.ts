@@ -52,15 +52,8 @@ export function getSupportJointRuleIssues(
   if (previous?.id && isSupportRepair(previous, settings) && normalizeSupportWeldLength(record.weldLength) !== normalizeSupportWeldLength(previous.weldLength)) {
     add(['weldLength'], SUPPORT_REPAIR_LENGTH_REASON)
   }
-  for (const [label, keys] of [
-    ['Официальные', ['stamp1K', 'stamp1Z', 'stamp1O']],
-    ['Фактические', ['stamp1KFact', 'stamp1ZFact', 'stamp1OFact']],
-  ] as const) {
-    const filled = keys.filter(key => stamp(record[key]))
-    if (new Set(filled.map(key => stamp(record[key]))).size > 1) add([...filled], `${label} клейма заполненных слоёв Т должны совпадать; пустые слои разрешены.`)
-  }
-  const second = (['stamp2K', 'stamp2Z', 'stamp2O', 'stamp2KFact', 'stamp2ZFact', 'stamp2OFact'] as const).filter(key => stamp(record[key]))
-  if (second.length) add([...second], 'Для Т все поля клейм с индексом 2 должны быть пустыми, даже при повторе того же клейма.')
+  const second = (['stamp1Z', 'stamp1ZFact'] as const).filter(key => stamp(record[key]))
+  if (second.length) add([...second], 'Для Т разрешена только первая пара клейм. Клеймо_2 и Клеймо_2 - факт должны быть пустыми.')
   const rk = normalizeControlAvailabilityStorageText(record.hasRk)
   if (rk && rk !== 'пусто') add(['hasRk'], 'Для Т назначение РК запрещено.')
   const rkFields = (['rkRequest', 'rkRequestDate', 'rkResult', 'rkConclusionDate', 'rkConclusion',

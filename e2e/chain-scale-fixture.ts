@@ -22,12 +22,12 @@ export async function seedChainScaleBackground() {
     await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,isometry,
       weld_date,officiality,revision_actuality,connection_type,material_group,welding_method,d1,d2,t1,t2,
       category,group_name,weld_control_percent,pvk_control_percent,technology_card_number,
-      stamp_1_k,stamp_1_z,stamp_1_o,stamp_1_k_fact,stamp_1_z_fact,stamp_1_o_fact,
+      stamp_1_k,stamp_1_z,stamp_1_k_fact,stamp_1_z_fact,
       has_vik,vik_result,vik_conclusion,vik_conclusion_date,has_rk,rk_result,rk_conclusion,rk_conclusion_date,psto_required)
       select p.id,p.project_title,p.subtitle_code,p.line,'S'||lpad(((n-1)/8+1)::text,6,'0')||
         (array['','R1','R1W1','R1W2','Y1','Y1R1','Y2','Y2R1'])[(n-1)%8+1],n::text,
         '2026-09-01'::date+(n-1)%8,'действующий','актуальная','С17','М01','РД',108,108,4,4,
-        'II','Б(а)',0,0,$1,'AUDS','AUDS','AUDS','AUDS','AUDS','AUDS',
+        'II','Б(а)',0,0,$1,'AUDS','AUDS','AUDS','AUDS',
         'да','годен','SCALE-VIK-'||n,'2026-09-01'::date+(n-1)%8,'да',
         (array['ремонт','вырез','вырез','вырез','ремонт','годен','ремонт','годен'])[(n-1)%8+1],
         'SCALE-RK-'||n,'2026-09-01'::date+(n-1)%8,'нет'

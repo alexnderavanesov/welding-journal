@@ -135,7 +135,7 @@ test('форма: номера сторон, максимум две групп�
   await expect(groups.getByRole('button', { name: 'М05', exact: true })).toHaveText('М051')
   await expect(groups.getByRole('button', { name: 'М01', exact: true })).toHaveText('М012')
   await expect(groups.getByRole('button', { name: 'М11', exact: true })).toBeDisabled()
-  await editor.getByRole('combobox', { name: 'Корень_1', exact: true }).selectOption(stampCode)
+  await editor.getByRole('combobox', { name: 'Клеймо_1', exact: true }).selectOption(stampCode)
   await expect(editor.getByRole('button', { name: 'Сохранить', exact: true })).toBeEnabled()
   await groups.scrollIntoViewIfNeeded()
   await editor.screenshot({ path: '/private/tmp/weld-material-sides.png' })

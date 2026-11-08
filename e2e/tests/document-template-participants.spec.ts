@@ -81,7 +81,7 @@ test('participant template config, exact roster, historic performers, categories
     expect(popupBounds.x).toBeGreaterThanOrEqual(8)
     expect(popupBounds.x + popupBounds.width).toBeLessThanOrEqual(page.viewportSize()!.width - 8)
     await fieldSearch.fill('официальному клейму')
-    await expect(page.getByRole('listbox').getByRole('option')).toHaveCount(6)
+    await expect(page.getByRole('listbox').getByRole('option')).toHaveCount(2)
     await expect(fieldPicker).toHaveValue(initialField)
     await popup.screenshot({ path: info.outputPath('field-search.png') })
     await fieldSearch.fill('поле которого нет')

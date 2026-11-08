@@ -21,7 +21,7 @@ const name = 'E2E ТК №12'
 const parameters = { name, weldingMethods: ['РАД'], connectionType: 'С17', materialGroups: ['М01'], diameterFrom: 57, diameterTo: 159, thicknessFrom: 3, thicknessTo: 8, psto: 'any' }
 const base: WeldInput = { projectTitle: project, subtitleCode: 'TK', line: 'TK-LINE', category: 'II', groupName: 'Б(а)', weldControlPercent: 0,
   weldingMethod: 'РАД', connectionType: 'С17', materialGroup: 'М01', d1: 57, d2: 159, t1: 6, t2: 3,
-  stamp1KFact: 'TKA1', stamp1ZFact: 'TKA1', stamp1OFact: 'TKA1', weldingElectrodes: 'Не изменять электроды', fillerWire: 'Не изменять проволоку' }
+  stamp1KFact: 'TKA1', stamp1ZFact: 'TKA1', weldingElectrodes: 'Не изменять электроды', fillerWire: 'Не изменять проволоку' }
 
 test.afterEach(async ({ page }) => {
   await page.close()

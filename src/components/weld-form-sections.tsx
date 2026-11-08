@@ -71,7 +71,7 @@ export function WeldFormSections({
   fieldStatusLabel = 'Изменено',
 }: WeldFormSectionsProps) {
   const support = isTConnectionType(draft.connectionType)
-  const supportHidden = new Set(['d2', 't2', 'wdi', 'hasRk', 'stamp2K', 'stamp2Z', 'stamp2O', 'stamp2KFact', 'stamp2ZFact', 'stamp2OFact'])
+  const supportHidden = new Set(['d2', 't2', 'wdi', 'hasRk', 'stamp1Z', 'stamp1ZFact'])
   fieldsByGroup = fieldsByGroup.map(group => ({ ...group, fields: group.fields.filter(field => support ? !supportHidden.has(field.key) : field.key !== 'weldLength') })).filter(group => group.fields.length)
   const controlAvailabilityFields = fieldsByGroup.flatMap(({ fields }) => fields.filter((field) => yesEmptyFieldKeys.has(field.key)))
   const workClosureFieldsByGroup = fieldsByGroup
@@ -283,7 +283,7 @@ export function WeldFormSections({
                   {section === 'Клейма' ? (
                     <OfficialStampDiagnostics draft={calculationDraft} stampSelectOptions={stampSelectOptions} stampCompatibilityReason={stampCompatibilityReason} />
                   ) : null}
-                  <div className="grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
+                  <div className={`grid grid-cols-1 gap-x-3 gap-y-4 md:grid-cols-2${section === 'Клейма' ? '' : ' xl:grid-cols-3'}`}>
                     {fields.map((field) => (
                       <WeldFormField
                         allowTechnologyCardAutoAssignment={allowTechnologyCardAutoAssignment}
@@ -567,7 +567,7 @@ function StampAutofillButton({
   const state = useMemo(() => getWeldStampAutofillState(draft), [draft])
   const isDisabled = Boolean(state.disabledReason)
   const helpText =
-    'Заполняется по полям Корень_1 и Корень_2: клеймо из корня переносится в заполнение, облицовку и фактические поля своего индекса.'
+    'Официальное клеймо копируется только в пустое фактическое поле своей пары. Уже введённые фактические клейма сохраняются.'
   const title = state.disabledReason ? `${state.disabledReason} ${helpText}` : `${helpText} Будет заполнено полей: ${state.changedFieldsCount}.`
 
   function handleAutofill() {
@@ -589,7 +589,7 @@ function StampAutofillButton({
       className="h-7 border-emerald-200 bg-white px-2.5 text-xs text-emerald-800 shadow-sm shadow-emerald-100 hover:bg-emerald-50 hover:text-emerald-950 disabled:bg-slate-100 disabled:text-slate-400"
     >
       <UserRoundCheck className="mr-1.5 h-3.5 w-3.5" />
-      Заполнить клейма
+      Заполнить фактические
     </Button>
   )
 }

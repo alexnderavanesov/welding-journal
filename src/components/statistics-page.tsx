@@ -245,7 +245,6 @@ const EMPTY_LINE_SUMMARY: LineSummary = {
   remaining: 0,
 }
 
-
 const jointFilterOptions: Array<[WelderStatisticsJointFilter, string]> = [
   ['all', 'Все'],
   ['f', 'F поле'],
@@ -2424,7 +2423,7 @@ function mergeStatisticRowIds(groups: number[][]) {
 }
 
 const WELDER_GROUP_BREAKDOWN_TOOLTIP =
-  'Разбивка по группам материалов показывает расчетную долю работы этого фактического клейма в выбранной единице отчета. Если стык варили несколько сварщиков, система распределяет вклад по слоям: для одного комплекта Корень/Заполнение/Облицовка = 40% / 30% / 30%, для двух комплектов = 20% / 15% / 15% на каждый комплект.'
+  'Разбивка по группам материалов показывает расчетную долю работы этого фактического клейма в выбранной единице отчета. Одно уникальное фактическое клеймо получает 100% объёма, два разных — по 50%. Повтор одного клейма не удваивает объём. Правило действует и для прошлых периодов; без фактического клейма объём не распределяется по сварщикам.'
 
 function WeldersStatisticsPanel({
   jointFilter,
@@ -2505,7 +2504,7 @@ function WeldersStatisticsPanel({
           wrapLabel
           icon={Activity}
           label="Объем работ"
-          value={formatStatisticValue(summary.total, unit)}
+          value={formatWelderStatisticValue(summary.total, unit)}
           detail={unit === 'joints' ? 'Расчетный вклад в стыках' : 'Расчетный вклад в WDI'}
           accent="blue"
           actionTitle="Открыть стыки сварщиков в журнале"
@@ -2527,8 +2526,8 @@ function WeldersStatisticsPanel({
           wrapLabel
           icon={ClipboardCheck}
           label="Проконтролировано"
-          value={formatStatisticValue(controlled, unit)}
-          detail={`${formatStatisticValue(summary.good, unit)} годен · ${formatStatisticValue(summary.rejected, unit)} не годен`}
+          value={formatWelderStatisticValue(controlled, unit)}
+          detail={`${formatWelderStatisticValue(summary.good, unit)} годен · ${formatWelderStatisticValue(summary.rejected, unit)} не годен`}
           accent="green"
           actionTitle="Открыть проконтролированные стыки"
           onClick={onOpenRows && controlledRowIds.length > 0 ? () => onOpenRows(controlledRowIds, `Показаны проконтролированные стыки сварщиков: ${controlledRowIds.length}.`) : undefined}
@@ -2540,7 +2539,7 @@ function WeldersStatisticsPanel({
           icon={Gauge}
           label="% брака"
           value={formatPercent(summary.defectPercent)}
-          detail={`${formatStatisticValue(summary.rejected, unit)} не годен из ${formatStatisticValue(controlled, unit)} проконтролированных`}
+          detail={`${formatWelderStatisticValue(summary.rejected, unit)} не годен из ${formatWelderStatisticValue(controlled, unit)} проконтролированных`}
           accent="amber"
           actionTitle="Открыть негодные стыки"
           onClick={onOpenRows && rejectedRowIds.length > 0 ? () => onOpenRows(rejectedRowIds, `Показаны негодные стыки сварщиков: ${rejectedRowIds.length}.`) : undefined}
@@ -2637,7 +2636,7 @@ function WelderRankingPanel({ onOpenRows, rows, sortMode, unit }: { onOpenRows?:
                   <span className={cn('absolute inset-y-0 left-0 rounded', rankingMode === 'defect' ? 'bg-rose-200' : rankingMode === 'average' ? 'bg-indigo-200' : 'bg-sky-200')} style={{ width: `${value > 0 ? Math.max(2, (value / maxValue) * 100) : 0}%` }} />
                   <span className="relative flex h-full items-center justify-end px-2 text-xs font-semibold tabular-nums text-slate-800">{rankingMode === 'defect' ? formatPercent(value) : formatAverageStatisticValue(value)}</span>
                 </span>
-                <span className="hidden w-32 shrink-0 text-right text-xs text-slate-500 sm:block">{rankingMode === 'defect' ? `из ${formatStatisticValue(controlled, unit)}` : `${formatPercent(row.defectPercent)} брака`}</span>
+                <span className="hidden w-32 shrink-0 text-right text-xs text-slate-500 sm:block">{rankingMode === 'defect' ? `из ${formatWelderStatisticValue(controlled, unit)}` : `${formatPercent(row.defectPercent)} брака`}</span>
                 {rowIds.length > 0 ? <ArrowUpRight className="h-4 w-4 shrink-0 text-sky-600" /> : null}
               </>
             )
@@ -2695,7 +2694,7 @@ function WelderStatisticsGrid({ rows, expandedStamps, jointFilter, onOpenRows, o
       metric('Не годен', 'rejected', 'fRejected', 'sRejected'), {
         colId: 'defect', headerName: '% брака', minWidth: 135, initialFlex: 1, cellClass: 'statistics-cell statistics-number',
         valueGetter: ({ data }) => data?.defectPercent,
-        cellRenderer: ({ data }: ICellRendererParams<WelderStatisticsRow>) => data && <div>{formatPercent(data.defectPercent)} <span className="text-xs text-slate-400">из {formatStatisticValue(data.good + data.rejected, unit)}</span></div>,
+        cellRenderer: ({ data }: ICellRendererParams<WelderStatisticsRow>) => data && <div>{formatPercent(data.defectPercent)} <span className="text-xs text-slate-400">из {formatWelderStatisticValue(data.good + data.rejected, unit)}</span></div>,
       }] satisfies ColDef<WelderStatisticsRow>[]).map(column => ({ ...column, sortable: false }))
   }, [expandedStamps, jointFilter, onOpenRows, onToggle, unit])
   const detail = useMemo(() => ({ data }: ICellRendererParams<WelderStatisticsRow>) => data &&
@@ -2722,33 +2721,33 @@ function WelderStatisticsDetails({ jointFilter, onOpenRows, row, unit }: { joint
         <section>
           <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Выработка</div>
           <div className="grid grid-cols-2 gap-2">
-            <WelderSummaryCard label={`В смену, ${unitLabel}`} value={formatStatisticValue(averagePerActiveDay, unit)} detail={activeDays > 0 ? `${activeDays} дн. работы` : 'нет дней работы'} />
-            <WelderSummaryCard label="Всего" value={formatStatisticValue(row.total, unit)} f={row.fTotal} groupMetric="total" groups={row.materialGroups} s={row.sTotal} jointFilter={jointFilter} unit={unit} />
+            <WelderSummaryCard label={`В смену, ${unitLabel}`} value={formatWelderStatisticValue(averagePerActiveDay, unit)} detail={activeDays > 0 ? `${activeDays} дн. работы` : 'нет дней работы'} />
+            <WelderSummaryCard label="Всего" value={formatWelderStatisticValue(row.total, unit)} f={row.fTotal} groupMetric="total" groups={row.materialGroups} s={row.sTotal} jointFilter={jointFilter} unit={unit} />
           </div>
         </section>
         <section>
           <div className="mb-2 text-xs font-semibold uppercase text-slate-400">Качество и очередь</div>
           <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
-            <WelderSummaryCard accent="green" label="Годен" value={formatStatisticValue(row.good, unit)} f={row.fGood} groupMetric="good" groups={row.materialGroups} s={row.sGood} jointFilter={jointFilter} unit={unit} />
-            <WelderSummaryCard accent="blue" label="Без заявки" value={formatStatisticValue(row.waitingRequest, unit)} f={row.fWaitingRequest} groupMetric="waitingRequest" groups={row.materialGroups} s={row.sWaitingRequest} jointFilter={jointFilter} unit={unit} />
-            <WelderSummaryCard accent="indigo" label="Ожидает НК" value={formatStatisticValue(row.waitingControl, unit)} f={row.fWaitingControl} groupMetric="waitingControl" groups={row.materialGroups} s={row.sWaitingControl} jointFilter={jointFilter} unit={unit} />
-            <WelderSummaryCard accent="rose" label="Не годен" value={formatStatisticValue(row.rejected, unit)} f={row.fRejected} groupMetric="rejected" groups={row.materialGroups} s={row.sRejected} jointFilter={jointFilter} unit={unit} />
-            <WelderSummaryCard align="center" label="% брака" value={formatPercent(row.defectPercent)} detail={`из ${formatStatisticValue(controlled, unit)}`} style={getDefectCardStyle(row.defectPercent)} />
+            <WelderSummaryCard accent="green" label="Годен" value={formatWelderStatisticValue(row.good, unit)} f={row.fGood} groupMetric="good" groups={row.materialGroups} s={row.sGood} jointFilter={jointFilter} unit={unit} />
+            <WelderSummaryCard accent="blue" label="Без заявки" value={formatWelderStatisticValue(row.waitingRequest, unit)} f={row.fWaitingRequest} groupMetric="waitingRequest" groups={row.materialGroups} s={row.sWaitingRequest} jointFilter={jointFilter} unit={unit} />
+            <WelderSummaryCard accent="indigo" label="Ожидает НК" value={formatWelderStatisticValue(row.waitingControl, unit)} f={row.fWaitingControl} groupMetric="waitingControl" groups={row.materialGroups} s={row.sWaitingControl} jointFilter={jointFilter} unit={unit} />
+            <WelderSummaryCard accent="rose" label="Не годен" value={formatWelderStatisticValue(row.rejected, unit)} f={row.fRejected} groupMetric="rejected" groups={row.materialGroups} s={row.sRejected} jointFilter={jointFilter} unit={unit} />
+            <WelderSummaryCard align="center" label="% брака" value={formatPercent(row.defectPercent)} detail={`из ${formatWelderStatisticValue(controlled, unit)}`} style={getDefectCardStyle(row.defectPercent)} />
           </div>
         </section>
       </div>
       <div className="bg-sky-50/25 p-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div><div className="text-sm font-semibold text-slate-900">Динамика по дням</div><div className="text-xs text-slate-500">Фактическое клеймо {row.stamp}, {unitDescription}. Нажмите на день, чтобы открыть стыки.</div></div>
-          <span className="rounded-md border border-sky-100 bg-white px-2 py-1 text-xs font-medium text-sky-800">{formatStatisticValue(row.total, unit)} {unitLabel}</span>
+          <span className="rounded-md border border-sky-100 bg-white px-2 py-1 text-xs font-medium text-sky-800">{formatWelderStatisticValue(row.total, unit)} {unitLabel}</span>
         </div>
         {row.daily.length > 0 ? (
           <div className="overflow-x-auto pb-1">
             <div className="flex min-w-max items-end gap-2 rounded-md border border-slate-100 bg-white/80 px-3 py-3">
               {row.daily.map((bucket) => {
                 const height = Math.max(12, (bucket.total / maxDaily) * 92)
-                const title = `${formatDisplayDate(bucket.date)}: ${formatStatisticValue(bucket.total, unit)} ${unitLabel}; стыков ${bucket.joints}`
-                const content = <><div className="flex h-24 w-8 items-end rounded-md border border-sky-100 bg-white px-1"><div className="w-full rounded-t bg-sky-300 shadow-sm" style={{ height }} /></div><div className="text-[11px] font-semibold leading-3 text-slate-700">{formatDisplayDate(bucket.date).slice(0, 5)}</div><div className="text-[11px] leading-3 text-sky-700">{formatStatisticValue(bucket.total, unit)}</div></>
+                const title = `${formatDisplayDate(bucket.date)}: ${formatWelderStatisticValue(bucket.total, unit)} ${unitLabel}; стыков ${bucket.joints}`
+                const content = <><div className="flex h-24 w-8 items-end rounded-md border border-sky-100 bg-white px-1"><div className="w-full rounded-t bg-sky-300 shadow-sm" style={{ height }} /></div><div className="text-[11px] font-semibold leading-3 text-slate-700">{formatDisplayDate(bucket.date).slice(0, 5)}</div><div className="text-[11px] leading-3 text-sky-700">{formatWelderStatisticValue(bucket.total, unit)}</div></>
                 return onOpenRows && bucket.rowIds.length > 0 ? (
                   <button type="button" key={bucket.date} className="grid w-12 justify-items-center gap-1 rounded py-1 hover:bg-sky-50" title={`${title}. Открыть стыки`} onClick={() => onOpenRows(bucket.rowIds, `Показаны стыки сварщика ${row.stamp} за ${formatDisplayDate(bucket.date)}: ${bucket.rowIds.length}.`)}>{content}</button>
                 ) : <div key={bucket.date} className="grid w-12 justify-items-center gap-1" title={title}>{content}</div>
@@ -2822,11 +2821,11 @@ function WelderSummaryCard({
         <div className="mt-2 grid grid-cols-2 gap-1">
           <span className="flex items-center justify-between gap-1 rounded border border-slate-200/80 bg-white px-1.5 py-0.5 text-[11px] font-medium text-slate-500 shadow-[0_1px_0_rgba(15,23,42,0.03)]">
             <span className="text-slate-500">F</span>
-            <span className="tabular-nums text-slate-800">{formatStatisticValue(f, unit)}</span>
+            <span className="tabular-nums text-slate-800">{formatWelderStatisticValue(f, unit)}</span>
           </span>
           <span className="flex items-center justify-between gap-1 rounded border border-slate-200/80 bg-white px-1.5 py-0.5 text-[11px] font-medium text-slate-500 shadow-[0_1px_0_rgba(15,23,42,0.03)]">
             <span className="text-slate-500">S</span>
-            <span className="tabular-nums text-slate-800">{formatStatisticValue(s, unit)}</span>
+            <span className="tabular-nums text-slate-800">{formatWelderStatisticValue(s, unit)}</span>
           </span>
         </div>
       ) : null}
@@ -2839,7 +2838,7 @@ function WelderSummaryCard({
             >
               <span className="min-w-0 truncate font-semibold text-slate-800">{group.key}</span>
               <span className="shrink-0 tabular-nums text-slate-700">
-                {formatStatisticValue(group.value, unit ?? 'joints')} {groupUnitLabel}
+                {formatWelderStatisticValue(group.value, unit ?? 'joints')} {groupUnitLabel}
               </span>
             </div>
           ))}
@@ -2879,17 +2878,16 @@ function WelderValueWithSplit({
 }) {
   return (
     <div className="flex flex-col items-end gap-1">
-      <span>{formatStatisticValue(total, unit)}</span>
+      <span>{formatWelderStatisticValue(total, unit)}</span>
       {jointFilter === 'all' ? (
         <span className="flex flex-wrap justify-end gap-1 text-[11px] font-normal text-slate-500">
-          <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">F: {formatStatisticValue(f, unit)}</span>
-          <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">S: {formatStatisticValue(s, unit)}</span>
+          <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">F: {formatWelderStatisticValue(f, unit)}</span>
+          <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">S: {formatWelderStatisticValue(s, unit)}</span>
         </span>
       ) : null}
     </div>
   )
 }
-
 
 function LineSummaryPanel({
   onOpenRows,
@@ -3375,32 +3373,32 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
     const controlled = welderSummary.good + welderSummary.rejected
     return {
       title: 'Статистика сварщиков',
-      subtitle: 'Расчет выполнен по фактическим клеймам. Вклад распределяется между сварщиками по выполненным слоям.',
+      subtitle: 'Расчет выполнен по фактическим клеймам: один уникальный сварщик получает 100% объёма, два разных — по 50%.',
       meta: [...baseMeta, { label: 'Тип стыка', value: getJointFilterLabel(jointFilter) }],
       metrics: [
         { label: 'Сварщиков', value: String(welderSummary.totalWelders), detail: 'Уникальные фактические клейма', tone: 'blue' },
         {
           label: 'Всего работ',
-          value: formatStatisticValue(welderSummary.total, unit),
+          value: formatWelderStatisticValue(welderSummary.total, unit),
           detail: unitLabel,
           tone: 'slate',
         },
         {
           label: 'Годен',
-          value: formatStatisticValue(welderSummary.good, unit),
-          detail: `Ожидает заявку ${formatStatisticValue(welderSummary.waitingRequest, unit)}`,
+          value: formatWelderStatisticValue(welderSummary.good, unit),
+          detail: `Ожидает заявку ${formatWelderStatisticValue(welderSummary.waitingRequest, unit)}`,
           tone: 'green',
         },
         {
           label: 'Проконтролировано',
-          value: formatStatisticValue(controlled, unit),
+          value: formatWelderStatisticValue(controlled, unit),
           detail: 'Годные + негодные',
           tone: 'blue',
         },
         {
           label: '% брака',
           value: formatPercent(welderSummary.defectPercent),
-          detail: `${formatStatisticValue(welderSummary.rejected, unit)} не годен`,
+          detail: `${formatWelderStatisticValue(welderSummary.rejected, unit)} не годен`,
           tone: welderSummary.defectPercent > 25 ? 'rose' : welderSummary.defectPercent >= 5 ? 'amber' : 'green',
         },
       ],
@@ -3427,14 +3425,14 @@ function buildStatisticsPrintableReport(input: StatisticsPrintableReportInput): 
           rows: welderSummary.rows.map((row) => [
             row.stamp,
             row.welderName || '—',
-            formatStatisticValue(row.total, unit),
-            formatStatisticValue(row.good, unit),
-            formatStatisticValue(row.waitingRequest, unit),
-            formatStatisticValue(row.waitingControl, unit),
-            formatStatisticValue(row.rejected, unit),
+            formatWelderStatisticValue(row.total, unit),
+            formatWelderStatisticValue(row.good, unit),
+            formatWelderStatisticValue(row.waitingRequest, unit),
+            formatWelderStatisticValue(row.waitingControl, unit),
+            formatWelderStatisticValue(row.rejected, unit),
             formatPercent(row.defectPercent),
             row.materialGroups
-              .map((group) => `${group.key}: ${formatStatisticValue(group.total, unit)}`)
+              .map((group) => `${group.key}: ${formatWelderStatisticValue(group.total, unit)}`)
               .join('; ') || '—',
           ]),
         },
@@ -3523,8 +3521,15 @@ function getWeldingDynamicsBucketText(bucketUnitLabel: string) {
   return 'по годам'
 }
 
+// Welder totals are contributions: two participants each own half a joint.
+function formatWelderStatisticValue(value: number, unit: StatisticsUnit) {
+  return unit === 'joints' ? formatAverageStatisticValue(value) : formatStatisticValue(value, unit)
+}
+
+const averageStatisticFormatter = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 })
+
 function formatAverageStatisticValue(value: number) {
-  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(Number.isFinite(value) ? value : 0)
+  return averageStatisticFormatter.format(Number.isFinite(value) ? value : 0)
 }
 
 function formatValuePerWelderShift(value: number, welderShiftCount: number) {

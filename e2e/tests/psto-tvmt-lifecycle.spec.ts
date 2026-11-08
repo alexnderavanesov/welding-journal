@@ -595,6 +595,8 @@ test('позднее назначение ПСТО сохраняет факти
     vik_conclusion_date: '2026-08-03',
     vik_conclusion: 'Заключение ВИК основное E2E-3',
     final_status: 'годен',
+    stamp_1_k: 'E2E-K3', stamp_1_k_fact: 'E2E-K3',
+    stamp_1_z: null, stamp_1_z_fact: null,
   })
   await expectPreControl(LATE_ASSIGNMENT_JOINT, {
     method: 'ВИК',
@@ -606,7 +608,10 @@ test('позднее назначение ПСТО сохраняет факти
   await expect(completedRow.getByText('Создать заявку основного НК', { exact: true })).toHaveCount(0)
   await revealPstoColumn(page, 'dispatcherTasks')
   const tasks = completedRow.locator('[col-id="dispatcherTasks"]')
-  await expect(tasks.getByText(/СП-03/)).toBeVisible()
+  await expect(tasks).toBeVisible()
+  // The first pair is complete and the second unused; removed layer fields
+  // no longer create SP-03. Finishing historical stages must also clear SP-06.
+  await expect(tasks.getByText(/СП-03|СП-06/)).toHaveCount(0)
   await expect(tasks.getByText('СП-04', { exact: false })).toHaveCount(0)
 })
 

@@ -17,8 +17,7 @@ beforeEach(() => {
 })
 
 describe('legacy incompatible official stamp: unrelated corrections agreed on 27 October', () => {
-  for (const key of ['isometry', 'spool', 'weldingJournalNote', 'stamp1KFact', 'stamp1ZFact', 'stamp1OFact',
-    'stamp2KFact', 'stamp2ZFact', 'stamp2OFact'] as const) {
+  for (const key of ['isometry', 'spool', 'weldingJournalNote', 'stamp1KFact', 'stamp1ZFact'] as const) {
     it(`allows ${key} without hiding the existing qualification issue`, () => {
       const result = prepare({ ...previous, [key]: 'CORRECTED' })
       expect(result[key]).toBe('CORRECTED')
@@ -32,8 +31,7 @@ describe('legacy incompatible official stamp: unrelated corrections agreed on 27
   const critical: Array<[WeldFieldKey, string | number]> = [
     ['weldDate', '2026-07-02'], ['connectionType', 'С18'], ['weldingMethod', 'РАД'], ['materialGroup', 'М05'],
     ['d1', 159], ['d2', 159], ['t1', 8], ['t2', 8],
-    ['stamp1K', 'OTHER'], ['stamp1Z', 'OTHER'], ['stamp1O', 'OTHER'],
-    ['stamp2K', 'OTHER'], ['stamp2Z', 'OTHER'], ['stamp2O', 'OTHER'],
+    ['stamp1K', 'OTHER'], ['stamp1Z', 'OTHER'],
   ]
   it.each(critical)('still rejects a changed qualification input %s', (key, value) => {
     expect(() => prepare({ ...previous, [key]: value })).toThrow(/СП-02/)

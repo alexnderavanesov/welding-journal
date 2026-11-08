@@ -15,7 +15,7 @@ import {
   isSystemImportField,
   stripIgnoredImportFields,
 } from './report-import-template'
-import { FIELD_BY_KEY } from './weld-fields'
+import { FIELD_BY_KEY, FIELD_BY_LABEL, normalizeHeader } from './weld-fields'
 import { CONTROL_BASIS_FIELD_KEYS, CONTROL_BASIS_SUMMARY_FIELD_KEY } from './control-assignment-basis'
 
 const WORK_CODE_AND_ACCEPTANCE_KEYS = [
@@ -53,6 +53,15 @@ const WELDING_MATERIAL_KEYS = [
 ] as const
 
 describe('welding journal import template', () => {
+  it('offers exactly four current stamp headers and no legacy header aliases', () => {
+    const fields = getReportImportTemplateFields('weldingJournal').filter(field => field.group === 'Клейма')
+    expect(fields.map(field => field.label)).toEqual(['Клеймо_1', 'Клеймо_1 - факт', 'Клеймо_2', 'Клеймо_2 - факт'])
+    for (const label of ['Корень_1', 'Заполнение_1', 'Облицовка_1', 'Корень_2', 'Заполнение_2', 'Облицовка_2']) {
+      expect(FIELD_BY_LABEL.has(normalizeHeader(label))).toBe(false)
+      expect(FIELD_BY_LABEL.has(normalizeHeader(label + ' - факт'))).toBe(false)
+    }
+  })
+
   afterEach(() => {
     saveOtherSettings(DEFAULT_OTHER_SETTINGS)
     saveSaveCheckSettings(DEFAULT_SAVE_CHECK_SETTINGS)
@@ -215,7 +224,7 @@ describe('welding journal import template', () => {
 
     saveSaveCheckSettings(withoutOfficialChecks)
     expect(getReportImportCellKind('weldingJournal', 'stamp1K')).toBe('checked')
-    expect(getReportImportCellKind('weldingJournal', 'stamp2O')).toBe('checked')
+    expect(getReportImportCellKind('weldingJournal', 'stamp1Z')).toBe('checked')
   })
 
   it('uses the current checks for yellow cells in all three templates', () => {
@@ -239,7 +248,7 @@ describe('welding journal import template', () => {
       buildReplaceDataTemplateXlsxBytes('weldingJournal', [row]),
     ]) {
       const payload = new TextDecoder().decode(bytes)
-      const column = findTemplateHeaderColumn(payload, 'Корень_1')
+      const column = findTemplateHeaderColumn(payload, 'Клеймо_1')
       expect(column).toBeTruthy()
       expect(payload).toContain(`<c r="${column}2" s="3"/>`)
     }
@@ -251,7 +260,7 @@ describe('welding journal import template', () => {
       buildReplaceDataTemplateXlsxBytes('weldingJournal', [row]),
     ]) {
       const payload = new TextDecoder().decode(bytes)
-      const column = findTemplateHeaderColumn(payload, 'Корень_1')
+      const column = findTemplateHeaderColumn(payload, 'Клеймо_1')
       expect(column).toBeTruthy()
       expect(payload).toContain(`<c r="${column}2" s="3"/>`)
     }

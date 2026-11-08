@@ -17,14 +17,14 @@ export async function seedDispatcherLargeLineFixture(count: 50000 | 250000) {
       select distinct $1,'S',line,'II','Б(а)',100,'assigned' from large_line_seed`, [LARGE_LINE_PROJECT])
     await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,isometry,weld_date,connection_type,
       officiality,revision_actuality,category,group_name,weld_control_percent,welding_method,material_group,d1,d2,t1,t2,wdi,
-      stamp_1_k,stamp_1_z,stamp_1_o,stamp_1_k_fact,stamp_1_z_fact,stamp_1_o_fact,
+      stamp_1_k,stamp_1_z,stamp_1_k_fact,stamp_1_z_fact,
       has_vik,vik_request,vik_request_date,vik_result,vik_conclusion,vik_conclusion_date,
       has_rk,rk_request,rk_request_date,rk_result,rk_conclusion,rk_conclusion_date,
       psto_required,pre_heat_treatment_required,psto_request,psto_request_date,psto_date,psto_result,heat_treatment_diagram,
       tvmt_request,tvmt_request_date,tvmt_result,tvmt_conclusion,tvmt_conclusion_date,welding_journal_note)
       select p.id,$1,'S',s.line,'F'||lpad(s.n::text,9,'0'),'ISO-'||s.n,'2026-08-01','С17',
       'действующий','актуальная','II','Б(а)',100,'РД','М01',108,108,4,4,0.42,
-      s.stamp,s.stamp,s.stamp,s.stamp,s.stamp,s.stamp,
+      s.stamp,s.stamp,s.stamp,s.stamp,
       'да','V-'||s.n,'2026-09-01','годен','VC-'||s.n,'2026-09-02',
       'да','R-'||s.n,'2026-09-01',case when s.n%31=0 then 'ремонт' else 'годен' end,'RC-'||s.n,'2026-09-02',
       'да',true,'P-'||s.n,'2026-08-22','2026-08-23','проведено','PC-'||s.n,

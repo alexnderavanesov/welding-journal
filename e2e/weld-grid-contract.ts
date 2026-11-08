@@ -554,7 +554,7 @@ export function registerWeldGridContract(report: GridReport) {
     }
   })
 
-  test(name(`прокрутка ${isWorkflow ? 'всех профильных' : '111'} столбцов без фоновых запросов и лишних DOM-строк`), async ({ page }, info) => {
+  test(name(`прокрутка ${isWorkflow ? 'всех профильных' : 'всех доступных'} столбцов без фоновых запросов и лишних DOM-строк`), async ({ page }, info) => {
     const calls: string[] = []
     page.on('request', request => { const name = rpcName(request.url()); if (name) calls.push(name) })
     await page.goto(profile.route)

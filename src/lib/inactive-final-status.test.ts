@@ -7,7 +7,7 @@ import { buildWelderStatisticsSummary } from './welder-statistics-summary'
 import { buildSupportStatistics } from './support-statistics'
 import { buildWeldingJournalWaitingRepairRows } from './welding-journal-report-rows'
 
-const base: WeldRow = { id: 1, joint: 'F1', weldDate: '2026-11-01', hasVik: 'да', wdi: '2', stamp1KFact: 'AA', stamp1ZFact: 'AA', stamp1OFact: 'AA' }
+const base: WeldRow = { id: 1, joint: 'F1', weldDate: '2026-11-01', hasVik: 'да', wdi: '2', stamp1KFact: 'AA', stamp1ZFact: 'AA', }
 
 it.each<[string, Partial<WeldRow>, string]>([
   ['request', {}, 'ожидает заявку'],

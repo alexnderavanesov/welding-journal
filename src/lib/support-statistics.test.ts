@@ -7,6 +7,19 @@ import { captureProgramChainStates } from './line-program-chain-state'
 const row = (id: number, joint: string, weldDate: string, vikResult = 'годен', extra: Partial<WeldRow> = {}): WeldRow => ({ id, joint, weldDate, vikResult, hasVik: 'да', connectionType: 'Т', projectTitle: 'P', subtitleCode: 'S', line: 'L', weldLength: 600, ...extra })
 
 describe('support production statistics', () => {
+  it('excludes empty factual stamp sentinels while preserving support volume', () => {
+    const rows = [
+      row(1, 'ОП1', '2026-10-01', 'годен', { stamp1KFact: ' Пусто ' }),
+      row(2, 'ОП2', '2026-10-01', 'годен', { stamp1KFact: 'ПУСТО' }),
+      row(3, 'ОП3', '2026-10-01', 'годен', { stamp1KFact: 'ABC' }),
+      row(4, 'ОП4', '2026-10-01', 'годен'),
+    ]
+    const summary = buildSupportStatistics(rows, '', '')
+    expect(summary).toMatchObject({ physical: 4, produced: 4, lengthMm: '2400' })
+    expect(summary.welders).toEqual([expect.objectContaining({ stamp: 'ABC', total: 1, good: 1 })])
+    expect(buildSupportStatisticsReport(summary, 'Весь период', 'Все проекты').tables?.[1].rows)
+      .toEqual([['ABC', '', 1, 1, 0, 0, 0, 0]])
+  })
   it('counts a physical OP in the last repair month and each full repair length in its own month', () => {
     const rows = [row(1, 'ОП1', '2026-09-01', 'ремонт'), row(2, 'ОП1R1', '2026-09-20', 'ремонт'), row(3, 'ОП1R2', '2026-10-03')]
     expect(buildSupportStatistics(rows, '', '')).toMatchObject({ physical: 1, produced: 1, rejected: 0, lengthMm: '600', repairs: 2, repairLengthMm: '1200',
@@ -45,7 +58,7 @@ describe('support production statistics', () => {
     }
   })
   it('keeps supports outside existing production counts and applies project/period before summary output', () => {
-    const rows = [row(1, 'ОП1', '2026-10-01'), row(2, 'ОП2', '2026-10-01', 'годен', { projectTitle: 'Other' }), row(3, 'F1', '2026-10-01', 'годен', { connectionType: 'С17', wdi: 5, stamp1KFact: 'A', stamp1ZFact: 'A', stamp1OFact: 'A' })]
+    const rows = [row(1, 'ОП1', '2026-10-01'), row(2, 'ОП2', '2026-10-01', 'годен', { projectTitle: 'Other' }), row(3, 'F1', '2026-10-01', 'годен', { connectionType: 'С17', wdi: 5, stamp1KFact: 'A', stamp1ZFact: 'A', })]
     const calculate = (tab: 'general' | 'supports' | 'lineSummary' | 'welders') => buildStatisticsServerResult({ rows, welderStamps: [], systemIndexSettings: DEFAULT_SYSTEM_INDEX_SETTINGS, request: { tab, from: '', to: '', unit: 'joints', projectFilter: 'p' } })
     expect(calculate('supports').supportSummary).toMatchObject({ physical: 1, produced: 1, lengthMm: '600' })
     expect(calculate('general').summary.welded).toBe(1)
@@ -70,7 +83,7 @@ it('formats only the final length sum: metres with two decimals or whole millime
 it('counts each T welding operation for its factual welder, with repairs, waiting and unofficial work', () => {
   const rows = [
     row(1, 'ОП1', '2026-09-01', 'ремонт', { stamp1KFact: 'A' }),
-    row(2, 'ОП1R1', '2026-10-01', 'годен', { stamp1KFact: 'B', stamp1ZFact: 'OLD', stamp1OFact: 'OLD', stamp2KFact: 'OLD' }),
+    row(2, 'ОП1R1', '2026-10-01', 'годен', { stamp1KFact: 'B', stamp1ZFact: 'OLD', }),
     row(3, 'ОП2', '2026-10-01', '', { stamp1KFact: 'A' }),
     row(4, 'ОП3', '2026-10-01', '', { stamp1KFact: 'A', vikRequest: 'V1' }),
     row(5, 'ОП4', '2026-10-01', 'ремонт', { stamp1KFact: 'A', officiality: 'неофициальный' }),
@@ -92,13 +105,13 @@ it('counts each T welding operation for its factual welder, with repairs, waitin
   ])
 })
 
-it('counts the factual welder from any filled first-welder layer when other layers are empty', () => {
+it('counts only the first factual stamp for T, without fallback to a forbidden second stamp', () => {
   const rows = [
-    row(1, 'ОП1', '2026-10-01', 'годен', { stamp1KFact: ' ', stamp1ZFact: 'A' }),
-    row(2, 'ОП2', '2026-10-01', 'ремонт', { stamp1OFact: 'A' }),
-    row(3, 'ОП3', '2026-10-01', '', { stamp1ZFact: 'A', stamp1OFact: 'A' }),
-    // An invalid legacy second-welder-only stamp cannot supply the first welder.
-    row(4, 'ОП4', '2026-10-01', 'годен', { stamp2KFact: 'B' }),
+    row(1, 'ОП1', '2026-10-01', 'годен', { stamp1KFact: 'A' }),
+    row(2, 'ОП2', '2026-10-01', 'ремонт', { stamp1KFact: 'A' }),
+    row(3, 'ОП3', '2026-10-01', '', { stamp1KFact: 'A' }),
+    // A forbidden second stamp must not supply the first welder.
+    row(4, 'ОП4', '2026-10-01', 'годен', { stamp1ZFact: 'A' }),
   ]
   const summary = buildSupportStatistics(rows, '', '')
   expect(summary.welders).toEqual([

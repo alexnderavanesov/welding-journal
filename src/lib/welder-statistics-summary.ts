@@ -3,18 +3,11 @@ import { getStatisticalMaterialGroup } from '@/lib/weld-material-groups'
 import type { WeldRow } from '@/lib/dispatcher-types'
 import { parseJointChainName } from '@/lib/joint-chain'
 import type { StatisticsUnit } from '@/lib/statistics-summary'
-import type { WeldFieldKey } from '@/lib/weld-fields'
 import { buildFinalStatusRowsContext, calculateFinalStatusInRows, normalizeFinalStatus } from '@/lib/weld-status'
 import { getConfiguredBaseJointType, type SystemIndexSettings } from '@/lib/system-index-settings'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 export type WelderStatisticsJointFilter = 'all' | 'f' | 's'
-
-type WelderStampPart = {
-  key: WeldFieldKey
-  singleWeight: number
-  doubleWeight: number
-}
 
 export type WelderStatisticsBucket = {
   date: string
@@ -106,18 +99,6 @@ export type WelderStatisticsSummary = {
   sRejected: number
 }
 
-const indexOneFactStampParts: WelderStampPart[] = [
-  { key: 'stamp1KFact', singleWeight: 0.4, doubleWeight: 0.2 },
-  { key: 'stamp1ZFact', singleWeight: 0.3, doubleWeight: 0.15 },
-  { key: 'stamp1OFact', singleWeight: 0.3, doubleWeight: 0.15 },
-]
-
-const indexTwoFactStampParts: WelderStampPart[] = [
-  { key: 'stamp2KFact', singleWeight: 0, doubleWeight: 0.2 },
-  { key: 'stamp2ZFact', singleWeight: 0, doubleWeight: 0.15 },
-  { key: 'stamp2OFact', singleWeight: 0, doubleWeight: 0.15 },
-]
-
 export function buildWelderStatisticsSummary(
   rows: WeldRow[],
   welderStamps: WelderStampRecord[],
@@ -140,19 +121,18 @@ export function buildWelderStatisticsSummary(
     const rowWeight = getRowWeight(row, unit)
     if (rowWeight <= 0) continue
 
-    const hasSecondWelder = indexTwoFactStampParts.some((part) => hasText(row[part.key]))
-    const parts = hasSecondWelder ? [...indexOneFactStampParts, ...indexTwoFactStampParts] : indexOneFactStampParts
     const status = normalizeFinalStatus(calculateFinalStatusInRows(row, rows, finalStatusContext)) ?? ''
     const jointType = getJointType(row, systemIndexSettings)
-
-    for (const part of parts) {
-      const rawStamp = String(row[part.key] ?? '').trim()
-      if (!rawStamp) continue
-
-      const stamp = getWelderStampLabel(rawStamp, stampLabels)
-      const welderName = getWelderName(rawStamp, stamp, welderNames)
-      const partWeight = hasSecondWelder ? part.doubleWeight : part.singleWeight
-      addWelderStat(stats, stamp, welderName, rowWeight * partWeight, status, jointType, row)
+    const uniqueStamps = new Map<string, string>()
+    for (const raw of [row.stamp1KFact, row.stamp1ZFact]) {
+      const value = String(raw ?? '').trim()
+      if (!value || value.toLocaleLowerCase('ru') === 'пусто') continue
+      const stamp = getWelderStampLabel(value, stampLabels)
+      uniqueStamps.set(normalizeStamp(stamp), stamp)
+    }
+    for (const stamp of uniqueStamps.values()) {
+      const welderName = getWelderName(stamp, stamp, welderNames)
+      addWelderStat(stats, stamp, welderName, rowWeight / uniqueStamps.size, status, jointType, row)
     }
   }
 
@@ -247,8 +227,9 @@ function addWelderStat(
   jointType: 'f' | 's' | null,
   sourceRow: WeldRow,
 ) {
+  const key = normalizeStamp(stamp)
   const row =
-    stats.get(stamp) ??
+    stats.get(key) ??
     ({
       stamp,
       welderName,
@@ -307,7 +288,7 @@ function addWelderStat(
     if (jointType === 's') row.sRejected += value
   }
   addWelderDetail(row, sourceRow, value, status)
-  stats.set(stamp, row)
+  stats.set(key, row)
 }
 
 function toSortedRowIds(rowIds: ReadonlySet<number>) {
@@ -452,10 +433,6 @@ function parseDateForStatistics(value: unknown) {
   if (parsed) return parsed
   const match = String(value ?? '').trim().match(/^(\d{4})-(\d{2})-(\d{2})/)
   return match ? `${match[1]}-${match[2]}-${match[3]}` : null
-}
-
-function hasText(value: unknown) {
-  return String(value ?? '').trim().length > 0
 }
 
 function displayValue(value: unknown, fallback = 'Без группы') {

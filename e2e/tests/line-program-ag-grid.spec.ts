@@ -224,8 +224,8 @@ for (const count of [50, 100, 120, 500]) test(`${count} joints under shared stam
   await withLineProgramFixture(async db => {
     const { rows: [program] } = await db.query(`insert into line_programs(project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
       values ($1,'GRID',$2,'II','A',100,10) returning id`, [project, line])
-    await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,weld_date,officiality,revision_actuality,connection_type,stamp_1_k,stamp_1_z,stamp_1_o,has_vik,vik_result)
-      select $1,$2,'GRID',$3,'F'||n,'2026-09-01','действующий','актуальная','С17','GRID-A','GRID-B','GRID-C','да','годен' from generate_series(1,$4::int) n`, [program.id, project, line, count])
+    await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,weld_date,officiality,revision_actuality,connection_type,stamp_1_k,stamp_1_z,has_vik,vik_result)
+      select $1,$2,'GRID',$3,'F'||n,'2026-09-01','действующий','актуальная','С17','GRID-A','GRID-B','да','годен' from generate_series(1,$4::int) n`, [program.id, project, line, count])
   })
   const calls: string[] = [], errors: string[] = [], warnings: string[] = []
   page.on('request', request => { if (request.url().includes('/_serverFn/')) calls.push(rpcName(request.url())) })
@@ -312,13 +312,24 @@ for (const count of [50, 100, 120, 500]) test(`${count} joints under shared stam
     // back under the stationary pointer after Playwright dispatches the move.
     await expect(b.locator('[data-program-motion]')).toHaveCount(0)
     const firstHover = b.getByTestId('line-program-readonly-joint').filter({ has: page.getByRole('button', { name: 'F79', exact: true }) })
-    await firstHover.hover()
     const secondHover = b.getByTestId('line-program-readonly-joint').filter({ has: page.getByRole('button', { name: 'F80', exact: true }) })
-    await secondHover.hover()
+    await scrollToJoint(b, 79, count)
+    // Locator.hover also invokes scrollIntoView, including AG's hidden viewport.
+    // That is a second navigation request, not an ordinary pointer movement.
+    // Put both rows on screen, then exercise native hover without that scroll.
+    await expect(firstHover).toBeInViewport()
+    await expect(secondHover).toBeInViewport()
+    const hoverPageTop = await page.evaluate(() => window.scrollY)
+    const firstBox = (await firstHover.boundingBox())!
+    await page.mouse.move(firstBox.x + firstBox.width / 2, firstBox.y + firstBox.height / 2)
+    await expect.poll(() => firstHover.evaluate(element => element.matches(':hover'))).toBe(true)
+    const secondBox = (await secondHover.boundingBox())!
+    await page.mouse.move(secondBox.x + secondBox.width / 2, secondBox.y + secondBox.height / 2)
     await expect.poll(() => firstHover.evaluate(element => element.matches(':hover'))).toBe(false)
     await expect.poll(() => secondHover.evaluate(element => element.matches(':hover'))).toBe(true)
     await expect(firstHover).not.toHaveClass(/ag-row-hover/)
     await expect(secondHover).toHaveCSS('background-color', 'rgba(209, 250, 229, 0.6)')
+    expect(await page.evaluate(() => window.scrollY)).toBe(hoverPageTop)
     // Sample animation frames during actual wheel scrolling; report scope instead of treating total test time as FPS.
     await page.evaluate(() => {
       const state = { times: [] as number[], drift: [] as number[], running: true, last: performance.now() }
@@ -373,7 +384,25 @@ for (const count of [50, 100, 120, 500]) test(`${count} joints under shared stam
     await page.mouse.move(handle.x + handle.width / 2, handle.y + 10)
     await page.mouse.down(); await page.mouse.move(handle.x + 40, handle.y + 10); await page.mouse.up()
     await expect.poll(async () => (await column.boundingBox())!.width).toBeGreaterThan(before + 20)
-    const scrollPositions = () => page.evaluate(() => [document.scrollingElement?.scrollTop ?? 0, ...[...document.querySelectorAll<HTMLElement>('*')].filter(element => element.scrollTop > 0).map(element => element.scrollTop)])
+    const scrollPositions = () => page.evaluate(() => [document.scrollingElement?.scrollTop ?? 0,
+      ...[...document.querySelectorAll<HTMLElement>('*')].filter(element => {
+        if (element.scrollTop <= 0) return false
+        // The invisible AG synchronizer adjusts by the horizontal scrollbar's
+        // height after resize. It cannot scroll the page or receive input.
+        // Retain every painted/input-capable owner in this no-jump assertion.
+        const sync = element.closest('.ag-body-vertical-scroll')
+        return !sync || getComputedStyle(sync).opacity !== '0' || getComputedStyle(sync).pointerEvents !== 'none'
+      }).map(element => element.scrollTop)])
+    // A column resize can still remeasure wrapped rows in the outer stamp
+    // grid after its width has changed. Finish that layout before measuring
+    // whether opening/editing the filter itself moves any scroll owner.
+    let lastScrollPositions: number[] = [], stableScrollSamples = 0
+    await expect.poll(async () => {
+      const current = await scrollPositions()
+      stableScrollSamples = JSON.stringify(current) === JSON.stringify(lastScrollPositions) ? stableScrollSamples + 1 : 0
+      lastScrollPositions = current
+      return stableScrollSamples
+    }, { intervals: [50] }).toBeGreaterThanOrEqual(3)
     const beforeFilterScroll = await scrollPositions()
     await column.locator('.ag-header-cell-filter-button').click()
     const filter = page.locator('.ag-filter').filter({ visible: true })

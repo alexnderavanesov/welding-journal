@@ -32,7 +32,7 @@ describe('Т/ОП: mandatory physical shape independent of optional name setting
     expect(getSupportJointRuleIssues({ ...legacy, id: 8 }, legacy)).toHaveLength(2)
     expect(getSupportJointRuleIssues(legacy, { ...legacy, id: undefined })).toHaveLength(2)
     expect(getSupportJointRuleIssues(legacy, { ...legacy, materialGroup: 'М01', weldingMethod: 'РД' })).toHaveLength(2)
-    expect(getWeldFormSaveBlockReason({ ...legacy, stamp2KFact: 'A' }, legacy)).toContain('с индексом 2')
+    expect(getWeldFormSaveBlockReason({ ...legacy, stamp1ZFact: 'OTHER' }, legacy)).toContain('Клеймо_2')
     expect(getWeldFormSaveBlockReason({ ...legacy, materialGroup: 'М01', weldingMethod: 'РД' }, legacy)).toBeNull()
   })
   it('rejects both material heterogeneity and combined methods, including an unsaved C → T draft', () => {
@@ -62,12 +62,14 @@ describe('Т/ОП: mandatory physical shape independent of optional name setting
       .some(issue => issue.message.includes('Сохранённое соединение нельзя переводить'))).toBe(true)
     expect(getSupportJointRuleIssues({ ...previous, connectionType: 'Т3' }, previous)).toEqual([])
   })
-  it('checks official and factual groups separately, without requiring every layer', () => {
-    const row = { joint: 'ОП13', connectionType: 'Т', stamp1K: 'А', stamp1Z: 'А', stamp1KFact: 'Б', stamp1OFact: 'Б' }
+  it('allows different official/factual first stamps and rejects either second field even for a duplicate', () => {
+    const row = { joint: 'ОП13', connectionType: 'Т', stamp1K: 'А', stamp1KFact: 'Б' }
     expect(getSupportJointRuleIssues(row)).toEqual([])
-    const issues = getSupportJointRuleIssues({ ...row, stamp1Z: 'Б', stamp2O: 'А', stamp2KFact: 'Б', weldLength: -2, hasRk: 'да' })
-    expect(issues).toHaveLength(4)
-    expect(issues.flatMap(item => item.fieldKeys)).toEqual(expect.arrayContaining(['stamp1K', 'stamp1Z', 'stamp2O', 'stamp2KFact', 'weldLength', 'hasRk']))
+    for (const second of [{ stamp1Z: 'А' }, { stamp1ZFact: 'Б' }, { stamp1Z: 'В', stamp1ZFact: 'Г' }]) {
+      const issues = getSupportJointRuleIssues({ ...row, ...second, weldLength: -2, hasRk: 'да' })
+      expect(issues).toHaveLength(3)
+      expect(issues.flatMap(item => item.fieldKeys)).toEqual(expect.arrayContaining([...Object.keys(second), 'weldLength', 'hasRk']))
+    }
   })
   it('keeps entered fractional length and inherits its full value on every repair', () => {
     const row = { id: 1, joint: 'ОП13', connectionType: 'Т', weldLength: 600.123456, stamp1K: 'A' }

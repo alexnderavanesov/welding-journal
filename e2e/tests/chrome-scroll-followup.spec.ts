@@ -139,4 +139,30 @@ test('Chrome PSTO and document settings scroll attribution', async ({ page, brow
     expect(sample.interaction.amplitude).toBe(mode === 'psto' ? 1600 : 98)
     expect(sample.requests.filter((request: { name: string }) => request.name !== 'refreshAccountActivity_createServerFn_handler')).toEqual([])
   }
+  if (process.env.CHROME_FACET_READY_MEASUREMENTS === '1') {
+    expect(mode).toBe('psto')
+    const errors: string[] = [], samples: { query: string; readyMs: number }[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    await surface.locator('.ag-header-cell[col-id="joint"] .ag-header-cell-filter-button').click()
+    const dialog = page.getByRole('dialog', { name: 'Фильтр: Стык', exact: true })
+    await expect(dialog.getByRole('checkbox').first()).toBeVisible()
+    try {
+      for (let round = 0; round < 5; round++) for (const query of ['000000000001', String(count).padStart(12, '0')]) {
+        const started = performance.now()
+        await dialog.getByLabel('Найти значение фильтра').fill(query)
+        // Observe the matching result itself: expect's retry cadence must not
+        // turn crossing its polling boundary into an apparent 500 ms slowdown.
+        await expect.poll(async () => ({
+          count: await dialog.getByRole('checkbox').count(),
+          matching: await dialog.getByRole('checkbox', { name: new RegExp(query) }).count(),
+        }), { intervals: [16] }).toEqual({ count: 1, matching: 1 })
+        const readyMs = performance.now() - started
+        samples.push({ query, readyMs })
+      }
+      await dialog.getByRole('button', { name: 'Закрыть фильтр', exact: true }).click()
+      expect(errors).toEqual([])
+    } finally {
+      await writeFile(info.outputPath('facet-readiness.json'), JSON.stringify({ count, pollingIntervalMs: 16, samples, errors }, null, 2))
+    }
+  }
 })

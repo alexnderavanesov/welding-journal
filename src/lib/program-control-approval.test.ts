@@ -9,7 +9,7 @@ const row: WeldRow = { id: 17, lineProgramId: 4, line: 'L1', joint: 'F1', connec
 describe('persistent approval of required method combinations', () => {
   it.each([[30, 50], [100, 50], [50, 30], [30, 100]])('retains %s → %s legacy key without suppressing current diagnostics', (before, after) => {
     const approved = new Set(programExcessEntries(4, [row], calculateLineProgram([row], before, 10)).map(entry => entry.key))
-    const changed = { ...row, line: 'Renamed', joint: 'F99', stamp1K: 'B', stamp2K: 'C' }
+    const changed = { ...row, line: 'Renamed', joint: 'F99', stamp1K: 'B', }
     const groups = calculateLineProgram([changed], after, 10)
     expect(new Set(partitionProgramExcess(programExcessEntries(4, [changed], groups), approved).pending.map(entry => entry.key)).size).toBe(1)
     expect(getProgramRemovalHints(4, [changed], groups, approved).size).toBe(1)

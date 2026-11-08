@@ -26,7 +26,7 @@ it('keeps the actual welder detail chart and opens exact daily/all-joint sets af
   const data = buildStatisticsServerResult({
     rows: [1, 2, 3].map(id => ({ id, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: `F${id}`,
       weldDate: id === 3 ? '2026-09-02' : '2026-09-01', materialGroup: 'М01',
-      stamp1KFact: 'AB12', stamp1ZFact: 'AB12', stamp1OFact: 'AB12',
+      stamp1KFact: 'AB12', stamp1ZFact: 'AB12',
     })), welderStamps: [], systemIndexSettings: DEFAULT_SYSTEM_INDEX_SETTINGS,
     request: { tab: 'welders', unit: 'joints', from: '', to: '' },
   })
@@ -47,4 +47,21 @@ it('keeps the actual welder detail chart and opens exact daily/all-joint sets af
   await grid.findByText('Динамика по дням', { exact: true })
   fireEvent.click(grid.getByTitle(/02.09.2026:.*Открыть стыки/))
   expect(open).toHaveBeenLastCalledWith([3], expect.stringContaining('02.09.2026'))
+})
+
+it('shows a half-joint contribution in the welder table, cards and daily detail without rounding it to one', async () => {
+  localStorage.clear()
+  const data = buildStatisticsServerResult({
+    rows: [{ id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1', weldDate: '2026-09-01',
+      materialGroup: 'М01', stamp1KFact: 'PAIR-A', stamp1ZFact: 'PAIR-B' }],
+    welderStamps: [], systemIndexSettings: DEFAULT_SYSTEM_INDEX_SETTINGS,
+    request: { tab: 'welders', unit: 'joints', from: '', to: '' },
+  })
+  mocks.query.mockReturnValue({ data, isSuccess: true, isPlaceholderData: false, fetchStatus: 'idle' })
+  const { container } = render(<StatisticsPage fixedTab="welders" />)
+  const grid = within(container.querySelector<HTMLElement>('[data-statistics-grid="welders"]')!)
+  expect(grid.getAllByText('0,5', { exact: true }).length).toBeGreaterThanOrEqual(2)
+  fireEvent.click(await grid.findByRole('button', { name: 'Подробности сварщика PAIR-A' }))
+  expect(grid.getByTitle(/01.09.2026: 0,5 /)).toBeVisible()
+  expect(grid.getAllByText('F: 0,5', { exact: true }).length).toBeGreaterThan(0)
 })

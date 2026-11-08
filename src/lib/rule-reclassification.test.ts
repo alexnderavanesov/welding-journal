@@ -27,7 +27,7 @@ describe('agreed rule classification', () => {
   })
 
   it('allows factual welding with temporarily empty official stamps, even with a weld date', () => {
-    expect(getRequiredRootStampMessage({ joint: 'S1', weldDate: '2026-10-01', stamp1KFact: 'FACT', stamp1ZFact: 'FACT', stamp1OFact: 'FACT' })).toBeNull()
+    expect(getRequiredRootStampMessage({ joint: 'S1', weldDate: '2026-10-01', stamp1KFact: 'FACT', stamp1ZFact: 'FACT', })).toBeNull()
     expect(normalizeSaveCheckSettings({ requiredRootStampWithWeldDate: true }).requiredRootStampWithWeldDate).toBe(false)
   })
 })

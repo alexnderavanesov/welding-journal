@@ -90,11 +90,11 @@ test('UI: no-op/FIO preserve joint indexes; permit edit refreshes complete conte
     // with A1. It has no changed alias, so reference selection alone is insufficient.
     await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,weld_date,
       connection_type,material_group,welding_method,d1,d2,t1,t2,category,group_name,weld_control_percent,pvk_control_percent,
-      stamp_1_k,stamp_1_z,stamp_1_o,stamp_1_k_fact,stamp_1_z_fact,stamp_1_o_fact,
+      stamp_1_k,stamp_1_z,stamp_1_k_fact,stamp_1_z_fact,
       has_vik,vik_result,vik_request,vik_request_date,vik_conclusion,vik_conclusion_date)
       select p.id,$1,'SCOPED',p.line,case when p.line='A 1' then 'F981R1' else 'F981' end,'2026-07-01',
         'С17','М01','РАД',case when p.line='C1' then 80 else 108 end,case when p.line='C1' then 80 else 108 end,6,6,'II','Б(а)',0,0,
-        v.stamp,v.stamp,v.stamp,v.stamp,v.stamp,v.stamp,'да',
+        v.stamp,v.stamp,v.stamp,v.stamp,'да',
         case when p.line='A1' then 'ремонт' else 'годен' end,'VIK-SCOPE','2026-07-01','VIK-SCOPE-C','2026-07-01'
       from line_programs p cross join lateral (select case when p.line in ('A1','C1') then $2 else 'MISS' end stamp) v
       where p.project_title=$1`, [project, code])

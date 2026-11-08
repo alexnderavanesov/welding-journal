@@ -45,7 +45,7 @@ describe('validateServerWeldRecords', () => {
     expect(() => validate({ weldingJournalNote: null, fillerWire: 'Wire' })).not.toThrow()
     expect(() => validate({ materialGroup: 'М01 + М11', weldingJournalNote: null })).toThrow('СП-13')
     expect(() => validate({ weldingMethod: 'РАД+МП' })).toThrow('СП-13')
-    expect(() => validate({ stamp2KFact: 'A' })).toThrow('с индексом 2')
+    expect(() => validate({ stamp1ZFact: 'FACT' })).toThrow('Клеймо_2')
     expect(previous.weldingJournalNote).toBe('Old')
   })
   it.each([false, true])('inherits the physical R/W requirement, keeps new Y/independent roots off (import=%s)', importMode => {

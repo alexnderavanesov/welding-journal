@@ -73,7 +73,7 @@ describe('filterWeldRowsByColumns', () => {
     const rows = [
       row({ joint: 'S1', stamp1K: 'ABC1' }),
       row({ joint: 'S2', stamp1Z: 'ABC1' }),
-      row({ joint: 'S3', stamp2O: 'ABC1' }),
+      row({ joint: 'S3', stamp1K: 'ABC1', stamp1Z: 'ABC1' }),
       row({ joint: 'S4', stamp1K: 'ARCH' }),
       row({ joint: 'S5', line: '330-02', stamp1K: 'ABC1' }),
       row({ joint: 'S6', stamp1KFact: 'ABC1' }),

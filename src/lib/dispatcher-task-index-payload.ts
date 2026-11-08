@@ -2,9 +2,9 @@ import type { JointChainContinuation, RepeatedJointTask } from '@/lib/dispatcher
 
 // Increment when dispatcher rules change in a way that requires existing rows
 // to be recalculated without a corresponding database mutation.
-// Recover v83 snapshots that could remain falsely fresh after a legacy DLS
-// fallback setting changed without invalidating the dispatcher.
-export const DISPATCHER_TASK_CALCULATION_VERSION = 84
+// Rebuild pair reminders, including local v85 snapshots created before the
+// pre-commit fix for empty factual placeholders.
+export const DISPATCHER_TASK_CALCULATION_VERSION = 86
 export const DISPATCHER_TASK_PAGE_SIZE = 100
 
 type DispatcherTaskIndexPayload = {

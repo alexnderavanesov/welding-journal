@@ -84,14 +84,14 @@ describe('bounded complete dispatcher contexts', () => {
 })
 
 describe('registry reference selection', () => {
-  it('selects all six official fields once and includes both FK decision owners before a cascade', async () => {
+  it('selects both official fields once and includes both FK decision owners before a cascade', async () => {
     const execute = vi.fn().mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ ...scope, unsafe: false }] })
     expect(await loadWelderStampDispatcherScopes({ execute } as never, [' ab12 ', 'CD34', 'AB12'], [7, 9])).toEqual([scope])
     expect(execute).toHaveBeenCalledTimes(2)
     const lock = dialect.sqlToQuery(execute.mock.calls[0][0]), query = dialect.sqlToQuery(execute.mock.calls[1][0])
     expect(lock.sql).toContain('for update')
     expect(lock.params).toContainEqual([7, 9])
-    for (const field of ['stamp_1_k', 'stamp_1_z', 'stamp_1_o', 'stamp_2_k', 'stamp_2_z', 'stamp_2_o']) expect(query.sql).toContain(`"${field}"`)
+    for (const field of ['stamp_1_k', 'stamp_1_z']) expect(query.sql).toContain(`"${field}"`)
     expect(query.sql).not.toContain('_fact')
     expect(query.sql).not.toContain('weld_date')
     expect(query.sql).not.toContain('officiality')

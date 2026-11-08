@@ -21,7 +21,7 @@ const card: WelderStampRecord = {
 }
 
 function profile(overrides: Partial<WelderQualificationProfile> = {}): WelderQualificationProfile {
-  return { stamp1K: 'AB12', stamp1Z: '', stamp1O: '', stamp2K: '', stamp2Z: '', stamp2O: '',
+  return { stamp1K: 'AB12', stamp1Z: '',
     weldingMethod: 'РАД', materialGroup: 'М01', connectionType: 'С17', d1: '100', d2: '100', t1: '5', t2: '5',
     weldDate: '2026-07-01', ...overrides }
 }
@@ -58,7 +58,7 @@ describe('bounded registry qualification profiles', () => {
     expect(query.sql).toContain('select distinct')
     expect(query.params).toContain(MAX_WELDER_QUALIFICATION_PROFILES + 1)
     expect(WELDER_QUALIFICATION_PROFILE_FIELDS).toEqual([
-      'stamp1K', 'stamp1Z', 'stamp1O', 'stamp2K', 'stamp2Z', 'stamp2O',
+      'stamp1K', 'stamp1Z',
       'weldingMethod', 'materialGroup', 'connectionType', 'd1', 'd2', 't1', 't2', 'weldDate',
     ])
     for (const field of WELDER_QUALIFICATION_PROFILE_FIELDS) expect(query.sql).toContain(`as "${field}"`)
@@ -163,7 +163,7 @@ describe('bounded registry qualification profiles', () => {
     const other = { ...card, id: 2, naksStamp: 'CD34', naksPermits: [{ ...card.naksPermits[0], weldType: 'РД', materialGroups: 'М01, М05' }] }
     const both = { ...card, naksPermits: [{ ...card.naksPermits[0], materialGroups: 'М01, М05' }] }
     const reduced = { ...other, naksPermits: [{ ...other.naksPermits[0], materialGroups: 'М01' }] }
-    expect(await loadWelderQualificationImpactScopes(database([profile({ stamp1K: 'CD34', stamp2O: 'AB12', weldingMethod: 'РАД, РД', materialGroup: 'М01 + М05' })]).tx,
+    expect(await loadWelderQualificationImpactScopes(database([profile({ stamp1K: 'CD34', weldingMethod: 'РАД, РД', materialGroup: 'М01 + М05' })]).tx,
       { ...input([both, reduced]), before: [both, other], officialAliases: ['CD34'] })).toEqual([scope])
     const duplicate = { ...card, id: 2 }
     expect(await loadWelderQualificationImpactScopes(database([profile({ d1: '300', d2: '300' })]).tx,
@@ -181,7 +181,7 @@ describe('bounded registry qualification profiles', () => {
       { ...input([{ ...combined, naksPermits: [...combined.naksPermits].reverse() }]), before: [combined] })).toEqual([scope])
   })
 
-  it.each(['stamp1K', 'stamp1Z', 'stamp1O', 'stamp2K', 'stamp2Z', 'stamp2O'] as const)(
+  it.each(['stamp1K', 'stamp1Z'] as const)(
     'detects qualification changes in official position %s', async field => {
       const db = database([profile({ stamp1K: '', [field]: 'AB12', d1: '300', d2: '300' })])
       expect(await loadWelderQualificationImpactScopes(db.tx, input())).toEqual([scope])

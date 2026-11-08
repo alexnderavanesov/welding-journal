@@ -40,7 +40,7 @@ function registryDatabase(options: { scopes?: Array<{ projectTitle: string; subt
     const query = new PgDialect().sqlToQuery(statement)
     if (query.sql.includes('qualification_use_profiles')) {
       events.push('profiles')
-      return { rows: options.profiles ?? [{ stamp1K: 'AB12', stamp1Z: '', stamp1O: '', stamp2K: '', stamp2Z: '', stamp2O: '',
+      return { rows: options.profiles ?? [{ stamp1K: 'AB12', stamp1Z: '',
         weldingMethod: 'РАД', materialGroup: 'М01', connectionType: 'С17', d1: '300', d2: '300', t1: '5', t2: '5', weldDate: '2026-07-01' }] }
     }
     if (query.sql.includes('changed_qualification_profiles')) { events.push('qualification-scopes'); return { rows: scopes } }
@@ -80,7 +80,7 @@ describe('registry save invalidation', () => {
     const query = new PgDialect().sqlToQuery(db.execute.mock.calls[0][0])
     expect(query.sql).toContain('limit 1')
     expect(query.sql).toContain('"weld_date" >= a.date')
-    for (const suffix of ['1_k', '1_z', '1_o', '2_k', '2_z', '2_o']) {
+    for (const suffix of ['1_k', '1_z']) {
       expect(query.sql).toContain(`"stamp_${suffix}"`)
       expect(query.sql).toContain(`"stamp_${suffix}_fact"`)
     }

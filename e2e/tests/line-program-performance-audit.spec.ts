@@ -14,10 +14,10 @@ for (const count of [50, 100, 500]) test(`${count} joints: assignment opening, i
     const { rows: [program] } = await db.query(`insert into line_programs(project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent)
       values($1,'PERF',$2,'II','Б(а)',10,10) returning id`, [project, line])
     await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,weld_date,
-      officiality,revision_actuality,connection_type,stamp_1_k,stamp_1_z,stamp_1_o,has_vik,vik_result,
+      officiality,revision_actuality,connection_type,stamp_1_k,stamp_1_z,has_vik,vik_result,
       vik_request,vik_request_date,vik_conclusion,vik_conclusion_date,psto_required,psto_result,psto_date,heat_treatment_diagram)
       select $1,$2,'PERF',$3,'F'||lpad(n::text,4,'0'),'2026-09-01','действующий','актуальная','С17',
-        'AUDIT-A','AUDIT-B','AUDIT-C','да','годен','AUDIT-VIK','2026-09-03','AUDIT-VIK-C','2026-09-03',
+        'AUDIT-A','AUDIT-B','да','годен','AUDIT-VIK','2026-09-03','AUDIT-VIK-C','2026-09-03',
         'да','проведено','2026-09-02','AUDIT-PSTO' from generate_series(1,$4::int) n`, [program.id, project, line, count])
     await db.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,request_name,request_date,conclusion_name,conclusion_date,result)
       select id,m,'AUDIT-PRE','2026-09-01','AUDIT-PRE-'||m,'2026-09-01','годен'

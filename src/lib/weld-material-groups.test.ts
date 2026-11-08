@@ -22,7 +22,7 @@ describe('ordered material groups', () => {
     expect(getWeldMaterialGroupsError('М01, М05', ['М01', 'М05'])).toBeTruthy()
   })
   it('merges only statistical categories without doubling values or changing/exporting reordered joint data', () => {
-    const rows = ['М05 + М01', 'М01 + М05', 'М01'].map((materialGroup, index) => ({ id: index + 1, joint: `F${index + 1}`, materialGroup, weldDate: '2026-07-01', wdi: '10', stamp1KFact: 'AAAA', stamp1ZFact: 'AAAA', stamp1OFact: 'AAAA' }))
+    const rows = ['М05 + М01', 'М01 + М05', 'М01'].map((materialGroup, index) => ({ id: index + 1, joint: `F${index + 1}`, materialGroup, weldDate: '2026-07-01', wdi: '10', stamp1KFact: 'AAAA', stamp1ZFact: 'AAAA', }))
     const before = structuredClone(rows)
     const dynamics = buildWeldingDynamics(rows, '2026-07-01', '2026-07-01', 'wdi')
     expect(dynamics.totalValue).toBe(30)

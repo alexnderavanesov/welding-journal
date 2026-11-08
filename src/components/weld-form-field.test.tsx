@@ -6,8 +6,8 @@ import { FIELD_BY_KEY, type WeldFieldKey, type WeldInput } from '@/lib/weld-fiel
 
 afterEach(cleanup)
 
-const stampFields = ['stamp1K', 'stamp1Z', 'stamp1O', 'stamp2K', 'stamp2Z', 'stamp2O',
-  'stamp1KFact', 'stamp1ZFact', 'stamp1OFact', 'stamp2KFact', 'stamp2ZFact', 'stamp2OFact'] as const
+const stampFields = ['stamp1K', 'stamp1Z',
+  'stamp1KFact', 'stamp1ZFact'] as const
 
 it('keeps the full fractional support length editable only on the original support', () => {
   const field = FIELD_BY_KEY.get('weldLength')!

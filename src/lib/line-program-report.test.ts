@@ -8,7 +8,7 @@ import type { WeldRow } from './dispatcher-types'
 import type { LineProgramRecord } from './line-program'
 
 const line: LineProgramRecord = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: '<L1>', category: 'II', groupName: 'A', weldControlPercent: 30, pvkControlPercent: 0, version: '1', configurationIssue: null }
-const rows: WeldRow[] = [{ id: 1, line: line.line, joint: 'F1', weldDate: '2026-09-01', connectionType: 'С17', stamp1K: 'A', stamp2K: 'B', hasRk: 'да' }]
+const rows: WeldRow[] = [{ id: 1, line: line.line, joint: 'F1', weldDate: '2026-09-01', connectionType: 'С17', stamp1K: 'A', stamp1Z: 'B', hasRk: 'да' }]
 const data = () => [{ line, overview: summarizeLineProgram(rows, line), stamps: buildLineProgramDisplay(rows, calculateLineProgram(rows, 30, 0), 30, 0).stampRows }]
 describe('program printed summaries', () => {
   it.each(['lines', 'stamps'] as const)('retains physical-history warning in the %s report even with zero assignment debt', mode => {
@@ -41,8 +41,8 @@ describe('program printed summaries', () => {
     const program = { ...line, weldControlPercent: percent, pvkControlPercent: pvkPercent }
     const joints = [
       { ...rows[0], hasRk: null },
-      { ...rows[0], id: 2, joint: 'F2', stamp1K: 'B', stamp2K: null, hasRk: null },
-      { ...rows[0], id: 3, joint: 'F3', stamp1K: null, stamp2K: null, weldDate: null, hasRk: null },
+      { ...rows[0], id: 2, joint: 'F2', stamp1K: 'B', hasRk: null },
+      { ...rows[0], id: 3, joint: 'F3', stamp1K: null, stamp1Z: null, weldDate: null, hasRk: null },
     ]
     const item = { line: program, overview: summarizeLineProgram(joints, program), stamps: buildLineProgramDisplay(joints, calculateLineProgram(joints, percent, pvkPercent), percent, pvkPercent).stampRows }
     const report = buildLineProgramReport([item], 'stamps', 'Выбранное клеймо', ' a ')

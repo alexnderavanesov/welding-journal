@@ -5,7 +5,25 @@ import { buildWelderStatisticsSummary } from '@/lib/welder-statistics-summary'
 import type { WelderStampRecord } from '@/lib/welder-stamp-types'
 
 describe('buildWelderStatisticsSummary', () => {
-  it('splits WDI between fact stamps of one welder set as 40/30/30', () => {
+  it('uses one factual identity across rows and pairs regardless of stamp case', () => {
+    const rows = [
+      { id: 1, stamp1KFact: ' abc ' },
+      { id: 2, stamp1KFact: 'ABC', stamp1ZFact: 'OTHER' },
+      { id: 3, stamp1KFact: 'AbC', stamp1ZFact: 'abc' },
+    ].map(row => ({ ...row, weldDate: '2026-07-01', wdi: '3', hasVik: 'да', vikResult: 'годен' })) as WeldRow[]
+
+    for (const [unit, factor] of [['joints', 1], ['wdi', 3]] as const) {
+      const summary = buildWelderStatisticsSummary(rows, [], '', '', unit)
+      expect(summary.totalWelders).toBe(2)
+      expect(summary.total).toBe(3 * factor)
+      expect(summary.rows.find(row => row.stamp === 'abc')).toMatchObject({
+        total: 2.5 * factor, good: 2.5 * factor, rowIds: [1, 2, 3],
+        daily: [{ total: 2.5 * factor, joints: 3, rowIds: [1, 2, 3] }],
+      })
+      expect(summary.rows.find(row => row.stamp === 'OTHER')?.total).toBe(0.5 * factor)
+    }
+  })
+  it('splits historical WDI equally between two distinct factual stamps', () => {
     const rows = [
       {
         id: 1,
@@ -13,7 +31,7 @@ describe('buildWelderStatisticsSummary', () => {
         wdi: '10',
         stamp1KFact: 'ROOT',
         stamp1ZFact: 'FILL',
-        stamp1OFact: 'FILL',
+
         hasVik: 'да',
         vikResult: 'годен',
       },
@@ -21,23 +39,20 @@ describe('buildWelderStatisticsSummary', () => {
 
     const summary = buildWelderStatisticsSummary(rows, [], '2026-07-01', '2026-07-31', 'wdi')
 
-    expect(summary.rows.find((row) => row.stamp === 'ROOT')?.total).toBe(4)
-    expect(summary.rows.find((row) => row.stamp === 'FILL')?.total).toBe(6)
+    expect(summary.rows.find((row) => row.stamp === 'ROOT')?.total).toBe(5)
+    expect(summary.rows.find((row) => row.stamp === 'FILL')?.total).toBe(5)
     expect(summary.good).toBe(10)
   })
 
-  it('splits WDI between two fact welder sets as 20/15/15 + 20/15/15', () => {
+  it('preserves total rejected WDI and defect denominator with two welders', () => {
     const rows = [
       {
         id: 1,
         weldDate: '2026-07-01',
         wdi: '10',
         stamp1KFact: 'A111',
-        stamp1ZFact: 'A111',
-        stamp1OFact: 'A111',
-        stamp2KFact: 'B222',
-        stamp2ZFact: 'B222',
-        stamp2OFact: 'B222',
+        stamp1ZFact: 'B222',
+
         hasRk: 'да',
         rkResult: 'вырез',
       },
@@ -58,7 +73,7 @@ describe('buildWelderStatisticsSummary', () => {
         weldDate: '2026-07-01',
         stamp1KFact: '1111',
         stamp1ZFact: '1111',
-        stamp1OFact: '1111',
+
         hasVik: 'да',
         vikRequest: 'Заявка-001',
       },
@@ -84,7 +99,7 @@ describe('buildWelderStatisticsSummary', () => {
         weldDate: '2026-07-01',
         stamp1KFact: '7777',
         stamp1ZFact: '7777',
-        stamp1OFact: '7777',
+
         hasVik: 'да',
       },
     ] as WeldRow[]
@@ -106,7 +121,7 @@ describe('buildWelderStatisticsSummary', () => {
         weldDate: '2026-07-01',
         stamp1KFact: 'ARCH',
         stamp1ZFact: 'ARCH',
-        stamp1OFact: 'ARCH',
+
         hasVik: 'да',
       },
     ] as WeldRow[]
@@ -132,7 +147,7 @@ describe('buildWelderStatisticsSummary', () => {
         weldDate: '2026-07-01',
         stamp1KFact: 'ABC1',
         stamp1ZFact: 'ABC1',
-        stamp1OFact: 'ABC1',
+
         hasVik: 'да',
         vikResult: 'годен',
       },
@@ -142,7 +157,7 @@ describe('buildWelderStatisticsSummary', () => {
         weldDate: '2026-07-02',
         stamp1KFact: 'ABC1',
         stamp1ZFact: 'ABC1',
-        stamp1OFact: 'ABC1',
+
         hasRk: 'да',
         rkResult: 'вырез',
       },
@@ -166,7 +181,7 @@ describe('buildWelderStatisticsSummary', () => {
         materialGroup: 'M01',
         stamp1KFact: 'ABC1',
         stamp1ZFact: 'ABC1',
-        stamp1OFact: 'ABC1',
+
         hasVik: 'да',
         vikResult: 'годен',
       },
@@ -177,7 +192,7 @@ describe('buildWelderStatisticsSummary', () => {
         materialGroup: 'M05',
         stamp1KFact: 'ABC1',
         stamp1ZFact: 'ABC1',
-        stamp1OFact: 'ABC1',
+
         hasRk: 'да',
         rkResult: 'ремонт',
       },

@@ -60,10 +60,6 @@ const BASE_WELDING_JOURNAL_FIELD_KEYS: WeldFieldKey[] = [
   'weldDate',
   'stamp1KFact',
   'stamp1ZFact',
-  'stamp1OFact',
-  'stamp2KFact',
-  'stamp2ZFact',
-  'stamp2OFact',
   'responsible',
 ]
 

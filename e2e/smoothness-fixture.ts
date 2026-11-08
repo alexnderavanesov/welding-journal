@@ -9,12 +9,12 @@ export async function seedSmoothnessFixture() {
       select 'Q'||lpad((n-1)::text,3,'0'),'SMI'||lpad(n::text,4,'0'),'Сварщик плавности '||lpad(n::text,4,'0'),'РД','М01','10','1000','1','50','2026-01-01','2027-12-31','[]','[]'
       from generate_series(1,1000) n`)
     await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,weld_date,connection_type,
-      officiality,revision_actuality,welding_method,material_group,d1,d2,t1,t2,weld_length,wdi,stamp_1_k,stamp_1_z,stamp_1_o,stamp_1_k_fact,stamp_1_z_fact,stamp_1_o_fact,
+      officiality,revision_actuality,welding_method,material_group,d1,d2,t1,t2,weld_length,wdi,stamp_1_k,stamp_1_z,stamp_1_k_fact,stamp_1_z_fact,
       has_vik,vik_request,vik_request_date,vik_result,vik_conclusion,vik_conclusion_date,psto_required,psto_request,psto_request_date,psto_result,psto_date,heat_treatment_diagram,tvmt_request,tvmt_result)
       select p.id,p.project_title,p.subtitle_code,p.line,case when n%5=0 then 'ОП' else 'F' end||lpad(n::text,4,'0'),date '2026-10-01'+(n%28),
       case when n%5=0 then 'Т1' when n%5=1 then 'У19' else 'С17' end,'действующий','актуальная','РД','М01',108,108,4,4,
       case when n%5=0 then 600.123 end,case when n%5<>0 then 0.42 end,
-      s.naks_stamp,s.naks_stamp,s.naks_stamp,s.naks_stamp,s.naks_stamp,s.naks_stamp,
+      s.naks_stamp,case when n%5<>0 then s.naks_stamp end,s.naks_stamp,case when n%5<>0 then s.naks_stamp end,
       'да','SM-V-'||p.line,date '2026-10-01',case when n%7=0 then 'ожидает НК' else 'годен' end,
       case when n%7<>0 then 'SM-C-'||p.line end,case when n%7<>0 then date '2026-10-02' end,
       'да','SM-P-'||p.line,date '2026-10-01','проведено',date '2026-10-02','SM-D-'||p.line,'SM-TV-'||p.line,'годен'

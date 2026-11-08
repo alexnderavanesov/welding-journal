@@ -99,10 +99,10 @@ describe('shared calculation explanations and zero-weight repair assignments', (
     expect(display.stampRows.find(group => group.stamp === 'B')).toMatchObject({ count: 0, reducible: 1, common: { required: 0, missing: 0, excess: 1 } })
     expect(explain(rows, { stamp: 'B', list: 'reduction' }, percent).rows.map(row => row.id)).toEqual([2])
   })
-  it('protects shared coverage required by the third stamp', () => {
-    const rows = [row(1, { hasRk: 'да', stamp1Z: 'B', stamp2K: 'C' }), row(2, { hasUzk: 'да' })]
+  it('protects shared coverage required by the second stamp', () => {
+    const rows = [row(1, { hasRk: 'да', stamp1Z: 'B', }), row(2, { hasUzk: 'да' })]
     const result = explain(rows, { stamp: 'A', list: 'protected' })
-    expect(result.rows.find(row => row.id === 1)?.reason).toContain('B, C')
+    expect(result.rows.find(row => row.id === 1)?.reason).toContain('B')
     expect(explain(rows, { list: 'reduction' }).rows.map(row => row.id)).toEqual([2])
   })
   it('ignores retired approvals and protects inherited assignments without them', () => {

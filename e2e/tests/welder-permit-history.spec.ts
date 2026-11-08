@@ -89,9 +89,9 @@ test('UI: диапазоны, сроки и архив допуска обнов
       select $1,'HISTORY',line,'II','Б(а)',0,0 from unnest(array['H1','H2']) line`, [project])
     return (await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,weld_date,
       connection_type,material_group,welding_method,d1,d2,t1,t2,category,group_name,weld_control_percent,pvk_control_percent,
-      stamp_1_k,stamp_1_z,stamp_1_o,stamp_1_k_fact,stamp_1_z_fact,stamp_1_o_fact,has_vik)
+      stamp_1_k,stamp_1_z,stamp_1_k_fact,stamp_1_z_fact,has_vik)
       select p.id,$1,'HISTORY',p.line,v.joint,v.date::date,'С17','М01 + М05','РАД',v.d,v.d,6,8,'II','Б(а)',0,0,
-        $2,$2,$2,$2,$2,$2,'да'
+        $2,$2,$2,$2,'да'
       from (values ('F971','H1','2026-07-01',108),('F972','H1','2026-08-01',108),('F973','H2','2026-07-01',57)) v(joint,line,date,d)
       join line_programs p on p.project_title=$1 and p.line=v.line returning id,joint`, [project, code])).rows
   })

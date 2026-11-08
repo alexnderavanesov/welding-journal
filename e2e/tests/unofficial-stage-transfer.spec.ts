@@ -34,8 +34,8 @@ async function seed() {
       'да','годен','STAGE-UZK-R','2026-09-02',$3,'2026-09-03',
       'да','годен','STAGE-PVK-R','2026-09-01','STAGE-PVK-C','2026-09-01','не годен') returning id`, [project, line, title])
     await db.query(`update weld_joints set welding_method='РД',material_group='M01',d1=108,d2=108,t1=4,t2=4,wdi=0.42,
-      stamp_1_k='STAGE-A',stamp_1_z='STAGE-A',stamp_1_o='STAGE-A',
-      stamp_1_k_fact='STAGE-A',stamp_1_z_fact='STAGE-A',stamp_1_o_fact='STAGE-A',
+      stamp_1_k='STAGE-A',stamp_1_z='STAGE-A',
+      stamp_1_k_fact='STAGE-A',stamp_1_z_fact='STAGE-A',
       has_rk='да',rk_result='ремонт',rk_request='STAGE-RK-R',rk_request_date='2026-09-02',
       rk_conclusion='STAGE-RK-C',rk_conclusion_date='2026-09-03' where id=$1`, [row.id])
     await db.query(`insert into pre_heat_treatment_controls(weld_joint_id,method,result,request_name,request_date,conclusion_name,conclusion_date)
@@ -55,7 +55,6 @@ async function snapshot(id: number) {
     documents: (await db.query(`select d.* from generated_documents d join generated_document_weld_joints a on a.document_id=d.id where a.weld_joint_id=$1 order by d.id`, [id])).rows,
   }))
 }
-
 
 for (const officiality of ['действующий', 'неофициальный']) {
   test(`смены этапа нет в документах и реестрах обоих этапов: ${officiality}`, async ({ page }) => {

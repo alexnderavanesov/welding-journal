@@ -67,9 +67,9 @@ test('wide reports: native scrolling and resizing with flat rows and three expan
             scrollWidth: viewport.scrollWidth, clientWidth: viewport.clientWidth,
             rows: element.querySelectorAll('.ag-row').length, cells: element.querySelectorAll('.ag-cell').length }
         })
-        // PSTO has its own smaller field set (65 columns in the current full
-        // view); it must not inherit the journal's 118-column expectation.
-        expect(geometry.columnCount).toBeGreaterThan(60)
+        // Removing eight stamp fields reduces the full PSTO view from 65 to
+        // 57 columns. It remains a wide view; journal/LNK still exceed 100.
+        expect(geometry.columnCount).toBeGreaterThanOrEqual(route === 'psto' ? 57 : 100)
         expect(geometry.scrollWidth).toBeGreaterThan(geometry.clientWidth * 5)
         surfaces.push({ route, grouped, ...geometry })
         for (let round = 0; round < 3; round++) {

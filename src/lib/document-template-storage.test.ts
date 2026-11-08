@@ -297,7 +297,7 @@ describe('document template storage', () => {
 
   it('uses welder names for exact official stamp template fields', async () => {
     const template = createXlsxTemplate([
-      ['{{Корень_1ФИО сварщика}}', '{{Заполнение_1ФИО сварщика}}', '{{Облицовка_2ФИО сварщика}}', '{{Корень_2 ФИО сварщика}}'],
+      ['{{Клеймо_1ФИО сварщика}}', '{{Клеймо_2ФИО сварщика}}', '{{Клеймо_1 - факт}}', '{{Клеймо_2 - факт}}'],
     ])
     const blob = await createWeldingJournalBlobFromTemplate(
       template,
@@ -307,10 +307,7 @@ describe('document template storage', () => {
           stamp1KFact: 'FACT-A1',
           stamp1Z: 'B1',
           stamp1ZFact: 'FACT-B1',
-          stamp2O: 'C1',
-          stamp2OFact: 'FACT-C1',
-          stamp2K: '',
-          stamp2KFact: 'FACT-D1',
+
         },
       ] as WeldInput[],
       {
@@ -331,12 +328,12 @@ describe('document template storage', () => {
 
     expect(worksheet.A1?.v).toBe('Иванов И.И.')
     expect(worksheet.B1?.v).toBe('Петров П.П.')
-    expect(worksheet.C1?.v).toBe('Сидоров С.С.')
-    expect(worksheet.D1?.v).toBe('')
+    expect(worksheet.C1?.v).toBe('FACT-A1')
+    expect(worksheet.D1?.v).toBe('FACT-B1')
   })
 
   it('prefers exact NAKS stamp owner over another welder internal stamp alias', async () => {
-    const template = createXlsxTemplate([['{{Заполнение_1ФИО сварщика}}']])
+    const template = createXlsxTemplate([['{{Клеймо_2ФИО сварщика}}']])
     const blob = await createWeldingJournalBlobFromTemplate(
       template,
       [{ stamp1Z: 'ARCH', stamp1ZFact: 'ABC1' }] as WeldInput[],
@@ -1105,8 +1102,6 @@ describe('document template storage', () => {
             { field: 'stamp1K', prefix: '(', suffix: ')', lineBreakAfter: true },
             { field: '__welderName:stamp1Z', lineBreakAfter: true },
             { field: 'stamp1Z', prefix: '(', suffix: ')', lineBreakAfter: true },
-            { field: '__welderName:stamp2K', lineBreakAfter: true },
-            { field: 'stamp2K', prefix: '(', suffix: ')' },
           ],
         },
       ],
@@ -1118,8 +1113,8 @@ describe('document template storage', () => {
         joint: 'S1',
         connectionType: 'C17',
         stamp1K: 'ABC1',
-        stamp1Z: 'ABC1',
-        stamp2K: 'ABC3',
+        stamp1Z: 'ABC3',
+
       }],
       {
         welderStamps: [
@@ -1215,7 +1210,7 @@ describe('document template storage', () => {
           mode: 'row',
           parts: [
             { field: 'stamp1K', lineBreakAfter: true },
-            { field: 'stamp2K' },
+            { field: 'stamp1Z' },
           ],
         },
         { cell: 'D2', mode: 'row', field: 'weldingMethod' },
@@ -1223,8 +1218,8 @@ describe('document template storage', () => {
     }
 
     const blob = await createWeldingJournalBlobFromTemplate(template, [
-      { joint: 'S1', stamp1K: 'ABC1', stamp2K: 'ABC3', weldingMethod: 'РАД+РД' },
-      { joint: 'S2', stamp1K: 'ABC1', stamp2K: 'ABC3', weldingMethod: 'РАД+РД' },
+      { joint: 'S1', stamp1K: 'ABC1', stamp1Z: 'ABC3', weldingMethod: 'РАД+РД' },
+      { joint: 'S2', stamp1K: 'ABC1', stamp1Z: 'ABC3', weldingMethod: 'РАД+РД' },
     ])
     const generatedData = await readBlobAsArrayBuffer(blob)
     const workbook = XLSX.read(generatedData, { type: 'array', cellStyles: true })
@@ -1276,15 +1271,15 @@ describe('document template storage', () => {
           mode: 'row',
           parts: [
             { field: 'stamp1K', lineBreakAfter: true },
-            { field: 'stamp2K' },
+            { field: 'stamp1Z' },
           ],
         },
       ],
     }
 
     const blob = await createWeldingJournalBlobFromTemplate(template, [
-      { line: 'LIN-1', stamp1K: 'ABC1', stamp2K: 'ABC3' },
-      { line: 'LIN-1', stamp1K: 'ABC1', stamp2K: 'ABC3' },
+      { line: 'LIN-1', stamp1K: 'ABC1', stamp1Z: 'ABC3' },
+      { line: 'LIN-1', stamp1K: 'ABC1', stamp1Z: 'ABC3' },
     ])
     const generatedData = await readBlobAsArrayBuffer(blob)
     const sheetXml = readXlsxFileText(generatedData, 'xl/worksheets/sheet1.xml')

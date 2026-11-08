@@ -44,8 +44,8 @@ const existingTargetRows = writeTargets.reduce((sum, target) => sum + (target.mo
 export const qualifiedWriteRecord = {
   projectTitle: writeProject, subtitleCode: 'WRITE', connectionType: 'С17', weldingMethod: 'РАД', materialGroup: 'М01',
   weldDate: '2026-10-01', d1: 108, d2: 108, t1: 6, t2: 6,
-  stamp1K: writeStamp, stamp1Z: writeStamp, stamp1O: writeStamp,
-  stamp1KFact: writeStamp, stamp1ZFact: writeStamp, stamp1OFact: writeStamp,
+  stamp1K: writeStamp, stamp1Z: writeStamp,
+  stamp1KFact: writeStamp, stamp1ZFact: writeStamp,
   technologyCardNumber: card,
 }
 

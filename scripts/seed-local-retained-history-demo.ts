@@ -54,7 +54,7 @@ try {
       isometry: 'DEMO-ISO-TO', sheet: 1, revisionNumber: 0, officiality: 'действующий', revisionActuality: null,
       connectionType: 'С17', materialGroup: 'М01', material1: '20', material2: '20', element1: 'Труба', element2: 'Труба',
       d1: 108, d2: 108, t1: 4, t2: 4, weldingMethod: 'РД', weldingElectrodes: 'УОНИ-13/55',
-      stamp1K: STAMP, stamp1Z: STAMP, stamp1O: STAMP, stamp1KFact: STAMP, stamp1ZFact: STAMP, stamp1OFact: STAMP,
+      stamp1K: STAMP, stamp1Z: STAMP, stamp1KFact: STAMP, stamp1ZFact: STAMP,
       hasVik: 'да', vikControlBasis: 'Проект',
       weldingJournalNote: 'Демонстрационный пример по просьбе пользователя: стык на Л2 без ПСТО, сохранён годный ВИК «До ТО» с прежней линии. Основной ВИК ещё не выполнен. Историю можно посмотреть в «Картине стыка».',
     }

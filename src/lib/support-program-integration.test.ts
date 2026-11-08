@@ -67,7 +67,7 @@ describe('support quotas integrated with live settings and dispatcher', () => {
     expect(buildLineConsistencyTasks([{ ...rows[0], supportPvkControlPercent: null }]).map(getDispatcherTaskCode)).toEqual(['СП-01'])
   })
   it('publishes mandatory structural SP-13 and missing length SP-03 without changing stored facts', () => {
-    const invalid = row(1, { stamp1Z: 'B', stamp2K: 'A', weldLength: -1 })
+    const invalid = row(1, { stamp1Z: 'B', weldLength: -1 })
     const tasks = buildSupportJointCheckTasks([invalid])
     expect(tasks).toHaveLength(1)
     expect(getDispatcherTaskCode(tasks[0])).toBe('СП-13')
@@ -75,6 +75,6 @@ describe('support quotas integrated with live settings and dispatcher', () => {
     const missing = row(2, { weldLength: null })
     expect(buildSupportJointCheckTasks([missing])).toEqual([])
     expect(indexed(buildJointCoreDataCheckTasks([missing]), [missing]).get(2)).toBe('СП-03')
-    expect(invalid).toMatchObject({ stamp1Z: 'B', stamp2K: 'A', weldLength: -1 })
+    expect(invalid).toMatchObject({ stamp1Z: 'B', weldLength: -1 })
   })
 })

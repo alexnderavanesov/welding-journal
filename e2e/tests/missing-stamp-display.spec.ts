@@ -5,17 +5,17 @@ import { cleanupLineProgramProjects, withLineProgramFixture } from '../line-prog
 import { editJournalJoint, journalRow } from '../journal-grid'
 
 const project = 'E2E stored missing stamp display'
-const fields = ['stamp1K', 'stamp1Z', 'stamp1O', 'stamp2K', 'stamp2Z', 'stamp2O',
-  'stamp1KFact', 'stamp1ZFact', 'stamp1OFact', 'stamp2KFact', 'stamp2ZFact', 'stamp2OFact'] as const
-const columns = ['stamp_1_k', 'stamp_1_z', 'stamp_1_o', 'stamp_2_k', 'stamp_2_z', 'stamp_2_o',
-  'stamp_1_k_fact', 'stamp_1_z_fact', 'stamp_1_o_fact', 'stamp_2_k_fact', 'stamp_2_z_fact', 'stamp_2_o_fact']
+const fields = ['stamp1K', 'stamp1Z',
+  'stamp1KFact', 'stamp1ZFact'] as const
+const columns = ['stamp_1_k', 'stamp_1_z',
+  'stamp_1_k_fact', 'stamp_1_z_fact']
 
 test.afterEach(async ({ context }) => {
   await Promise.all(context.pages().map(page => page.close()))
   await cleanupLineProgramProjects([project])
 })
 
-test('all 12 fields show missing stored stamps; explicit clearing persists and reopening shows empty values', async ({ page }) => {
+test('all four fields show missing stored stamps; explicit clearing persists and reopening shows empty values', async ({ page }) => {
   const id = await withLineProgramFixture(async db => (await db.query<{ id: number }>(`
     insert into weld_joints(project_title,subtitle_code,line,joint,connection_type,welding_method,material_group,
       d1,d2,t1,t2,officiality,revision_actuality,${columns.join(',')})

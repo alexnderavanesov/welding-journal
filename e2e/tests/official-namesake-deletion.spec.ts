@@ -47,7 +47,7 @@ async function seed() {
         case when n<=2 then 'не годен' when n=3 then 'ожидает НК' else 'годен' end
       from (select name,ordinality::int as n from unnest(array['S63','S63W1','S63W1R1','S63W1R1']) with ordinality as t(name,ordinality)) t
       returning id`, [project, line, program.id, stamp])
-    await db.query(`update weld_joints set stamp_1_z=$1,stamp_1_o=$1,stamp_1_k_fact=$1,stamp_1_z_fact=$1,stamp_1_o_fact=$1,
+    await db.query(`update weld_joints set stamp_1_z=$1,stamp_1_k_fact=$1,stamp_1_z_fact=$1,
       technology_card_number=$2,category='II',group_name='Б(а)',weld_control_percent=10,pvk_control_percent=0 where project_title=$2`, [stamp, project])
     await db.query(`insert into dispatcher_task_index_state(id,source_revision,computed_revision,full_rebuild,updated_at)
       values (1,1,-1,true,now()) on conflict (id) do update

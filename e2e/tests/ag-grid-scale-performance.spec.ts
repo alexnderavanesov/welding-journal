@@ -154,7 +154,8 @@ test('five sections at the exact scale: openings, groups, full facets and native
         })
         surfaces.push({ name, ...geometry })
         if (/^(journal|lnk|psto):/.test(name)) {
-          expect(geometry.columns).toBeGreaterThan(60)
+          // Full PSTO has 57 columns after the eight retired stamp fields.
+          expect(geometry.columns).toBeGreaterThanOrEqual(name.startsWith('psto:') ? 57 : 100)
           expect(geometry.scrollWidth).toBeGreaterThan(geometry.clientWidth * 5)
         }
         for (let round = 0; round < 3; round++) {

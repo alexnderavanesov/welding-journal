@@ -1,3 +1,4 @@
+import { simplifyStoredStampTemplates } from './welder-stamp-template-transition'
 import { eq, sql } from 'drizzle-orm'
 import { appSettings } from '@/db/schema'
 import { DATA_RELEASE_KEY, DATA_RELEASE_VALUE, REQUIRED_SCHEMA_TIME, isCompletedTransition } from '@/lib/release-contract'
@@ -35,7 +36,8 @@ export async function prepareReleaseData(tx: SystemDocumentSequenceTransaction) 
   const warnings = await backfillAcceptedWarningObjects(tx, true)
   const pstoPrograms = await initializePstoLinePrograms(tx)
   const preHeatTreatment = await initializePreHeatTreatmentMode(tx)
+  const stampTemplates = await simplifyStoredStampTemplates(tx)
   await tx.insert(appSettings).values({ key: DATA_RELEASE_KEY, value: DATA_RELEASE_VALUE })
     .onConflictDoUpdate({ target: appSettings.key, set: { value: DATA_RELEASE_VALUE, updatedAt: new Date() } })
-  return { skipped: false, transition, warnings, pstoPrograms, preHeatTreatment }
+  return { skipped: false, transition, warnings, pstoPrograms, preHeatTreatment, stampTemplates }
 }

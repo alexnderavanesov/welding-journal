@@ -56,11 +56,11 @@ async function seed(page: Page) {
       select $1,'SEARCH','SEARCH-L'||lpad(n::text,4,'0'),'II','Б(а)',0,0 from generate_series(1,1000) n`, [project])
     await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,isometry,weld_date,
       officiality,revision_actuality,connection_type,material_group,welding_method,d1,t1,d2,t2,category,group_name,
-      weld_control_percent,pvk_control_percent,stamp_1_k,stamp_1_z,stamp_1_o,stamp_1_k_fact,stamp_1_z_fact,stamp_1_o_fact,
+      weld_control_percent,pvk_control_percent,stamp_1_k,stamp_1_z,stamp_1_k_fact,stamp_1_z_fact,
       has_vik,psto_required,technology_card_number)
       select p.id,p.project_title,p.subtitle_code,p.line,'F'||lpad(n::text,6,'0'),'SEARCH-ISO','2026-09-01',
         'действующий','актуальная','С17','М01','РАД',108,6,108,8,'II','Б(а)',0,0,
-        'SRC1','SRC1','SRC1','SRC1','SRC1','SRC1','да','да','SEARCH-CARD'
+        'SRC1','SRC1','SRC1','SRC1','да','да','SEARCH-CARD'
       from generate_series(1,200000) n join line_programs p on p.project_title=$1
         and p.line='SEARCH-L'||lpad(((n-1)/200+1)::text,4,'0')`, [project])
     await db.query('analyze weld_joints')

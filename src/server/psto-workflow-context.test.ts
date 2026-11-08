@@ -49,7 +49,9 @@ describe('PSTO modal workflow queries', () => {
       'weldingElectrodesCertificateNumber',
       'createdAt',
     ]))
-    expect(keys.length).toBeLessThanOrEqual(Object.keys(WELD_TABLE_SELECT).length / 2)
+    // Absolute projection bound stays stable when unrelated journal columns are removed.
+    expect(keys.length).toBeLessThanOrEqual(72)
+    expect(keys.length).toBeLessThan(Object.keys(WELD_TABLE_SELECT).length)
   })
 
   it('normalizes ids so equivalent requests share a cache key', () => {

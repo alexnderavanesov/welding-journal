@@ -8,7 +8,7 @@ import type { WelderStampRecord } from './welder-stamp-types'
 
 const row: WeldRow = { id: 1, projectTitle: 'P', subtitleCode: 'S', line: 'L', joint: 'F1',
   weldingMethod: 'РАД', materialGroup: 'М01', connectionType: 'С17', d1: 108, d2: 57, t1: 6, t2: 4,
-  weldDate: '2026-07-01', stamp1K: 'AB12', stamp1Z: 'AB12', stamp1O: 'AB12' }
+  weldDate: '2026-07-01', stamp1K: 'AB12', stamp1Z: 'AB12', }
 const permit = { id: 'n1', weldType: 'РАД', materialGroups: 'М01', diameterFrom: '1', diameterTo: '500',
   thicknessFrom: '1', thicknessTo: '20', validFrom: '2026-01-01', validTo: '2026-12-31', note: '', archived: false }
 const stamp: WelderStampRecord = { naksStamp: 'AB12', internalStamp: '', welderName: 'Сварщик',
@@ -35,7 +35,7 @@ describe('per-calculation compatibility reuse', () => {
 
   it('keeps team positions, raw spellings, material sides, dates, archived permits and suspensions exact', () => {
     const rows = [row,
-      { ...row, stamp1K: 'cd34', stamp2K: 'AB12', weldingMethod: 'РАД + РД' },
+      { ...row, stamp1K: 'cd34', weldingMethod: 'РАД + РД' },
       { ...row, stamp1K: ' ab12 ' }, { ...row, weldDate: '' },
       { ...row, connectionType: 'У19', materialGroup: 'М05 + М01' },
       { ...row, connectionType: 'У19', materialGroup: 'М01 + М05' },

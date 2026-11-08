@@ -7,16 +7,19 @@ import {
 } from '@/lib/weld-row-stamps'
 
 describe('weld row stamps', () => {
+  it('keeps both distinct official stamps', () => {
+    expect(getOfficialWeldRowStamps(weldRow({ stamp1K: 'A', stamp1Z: 'B' }))).toEqual(['A', 'B'])
+  })
   it('finds the exact official stamp field without case sensitivity', () => {
-    const row = weldRow({ stamp1K: 'K-1', stamp2Z: 'Welder-77' })
+    const row = weldRow({ stamp1K: 'K-1', stamp1Z: 'WELDER-77' })
 
-    expect(findOfficialWeldRowStampField(row, ' welder-77 ')).toBe('stamp2Z')
+    expect(findOfficialWeldRowStampField(row, ' welder-77 ')).toBe('stamp1Z')
   })
 
-  it('keeps distinct official stamps and does not duplicate different casing', () => {
-    const row = weldRow({ stamp1K: 'K-1', stamp1Z: 'k-1', stamp2K: 'K-2' })
+  it('deduplicates different casing of the same official stamp', () => {
+    const row = weldRow({ stamp1K: 'K-1', stamp1Z: 'k-1', })
 
-    expect(getOfficialWeldRowStamps(row)).toEqual(['K-1', 'K-2'])
+    expect(getOfficialWeldRowStamps(row)).toEqual(['K-1'])
   })
 })
 

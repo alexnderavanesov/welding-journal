@@ -538,10 +538,6 @@ export function buildPercentageLineStampWhere(filter: NonNullable<ReturnType<typ
     or(
       eq(weldJoints.stamp1K, stamp),
       eq(weldJoints.stamp1Z, stamp),
-      eq(weldJoints.stamp1O, stamp),
-      eq(weldJoints.stamp2K, stamp),
-      eq(weldJoints.stamp2Z, stamp),
-      eq(weldJoints.stamp2O, stamp),
     ) ?? sql`false`,
   ) ?? sql`false`
 }

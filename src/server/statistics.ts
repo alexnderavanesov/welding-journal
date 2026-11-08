@@ -88,10 +88,6 @@ const STATISTICS_GENERAL_ROW_SELECT = {
   materialGroup: weldJoints.materialGroup,
   stamp1KFact: weldJoints.stamp1KFact,
   stamp1ZFact: weldJoints.stamp1ZFact,
-  stamp1OFact: weldJoints.stamp1OFact,
-  stamp2KFact: weldJoints.stamp2KFact,
-  stamp2ZFact: weldJoints.stamp2ZFact,
-  stamp2OFact: weldJoints.stamp2OFact,
   vikConclusion: weldJoints.vikConclusion,
   vikConclusionDate: weldJoints.vikConclusionDate,
   rkConclusion: weldJoints.rkConclusion,
@@ -111,10 +107,6 @@ const STATISTICS_WELDER_ROW_SELECT = {
   materialGroup: weldJoints.materialGroup,
   stamp1KFact: weldJoints.stamp1KFact,
   stamp1ZFact: weldJoints.stamp1ZFact,
-  stamp1OFact: weldJoints.stamp1OFact,
-  stamp2KFact: weldJoints.stamp2KFact,
-  stamp2ZFact: weldJoints.stamp2ZFact,
-  stamp2OFact: weldJoints.stamp2OFact,
 }
 
 const STATISTICS_LINE_ROW_SELECT = {

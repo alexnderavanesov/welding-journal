@@ -124,13 +124,13 @@ describe('compact joint rows preserve meaningful details', () => {
     expect(screen.getByText('ВИК: не годен')).toHaveClass('text-rose-700')
   })
 
-  it('shows four distinct stamps from both sets and saved results independently of a draft', () => {
-    const source = { ...row, stamp1K: 'D1', stamp1Z: 'D2', stamp1O: 'D1', stamp2K: 'D3', stamp2Z: 'D4', stamp2O: 'D2', weldDate: '2026-09-01' }
+  it('shows both official stamps and saved results independently of a draft', () => {
+    const source = { ...row, stamp1K: 'D1', stamp1Z: 'D2', weldDate: '2026-09-01' }
     const onSelect = vi.fn()
     mountContent(<ProgramAssignmentTable rows={[source]} selected={new Set()} draft={new Map([[1, { ...source, hasRk: 'отменен', rkResult: null }]])} busy={false} canSelect={() => true} onSelect={onSelect} onSelectAll={vi.fn()} onChange={vi.fn()} getError={() => ''} />)
     const metadata = screen.getByTestId('program-joint-metadata')
     expect(within(metadata).getByText('01.09.2026')).toBeVisible()
-    for (const stamp of ['D1', 'D2', 'D3', 'D4']) expect(within(metadata).getByText(stamp)).toBeVisible()
+    for (const stamp of ['D1', 'D2']) expect(within(metadata).getByText(stamp)).toBeVisible()
     expect(screen.getByLabelText('Результат F1')).toHaveTextContent('РК: ремонт')
     expect(screen.getByRole('combobox', { name: 'F1 · РК' })).toHaveValue('отменен')
     fireEvent.click(screen.getByText('ВИК: годен'))

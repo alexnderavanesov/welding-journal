@@ -41,7 +41,7 @@ describe('dissimilar weld qualifications', () => {
         it(`${connectionType}: ${pair.join('/')} reverse=${reverse}, ${weldingMethod}, welders=${people}: common and separate permits agree`, () => {
           const materials = reverse ? [...pair].reverse() : pair
           const record = { ...row, connectionType, materialGroup: materials.join(' + '), weldingMethod,
-            stamp1Z: people === 2 ? 'BBBB' : 'AAAA', stamp1O: 'AAAA' }
+            stamp1Z: people === 2 ? 'BBBB' : 'AAAA', }
           const methods = weldingMethod.split('+')
           const makeTeam = (separate: boolean) => Array.from({ length: people }, (_, index) => {
             const ownMethods = people === 2 && methods.length === 2 ? [methods[index]] : methods

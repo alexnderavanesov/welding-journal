@@ -67,7 +67,7 @@ test('сначала клеймо: поздний ввод даты, спосо�
     { field: 'd2', invalid: 159, reason: /СП-02.*159/s },
     { field: 't1', invalid: 20, reason: /СП-02.*20/s },
     { field: 't2', invalid: 20, reason: /СП-02.*20/s },
-    ...(['stamp1K', 'stamp1Z', 'stamp1O', 'stamp2K', 'stamp2Z', 'stamp2O'] as const)
+    ...(['stamp1K', 'stamp1Z'] as const)
       .map(field => ({ field, invalid: 'UNKNOWN-QEO', reason: /СП-02.*UNKNOWN-QEO/s })),
   ]
   let number = 91000
@@ -96,10 +96,10 @@ test('сначала клеймо: поздний ввод даты, спосо�
   }
 })
 
-test('прямое создание и импорт: все шесть официальных полей проверяются, фактические не запрещают сохранение', async () => {
+test('прямое создание и импорт: оба официальных поля проверяются, фактические не запрещают сохранение', async () => {
   let number = 92000
-  const official = ['stamp1K', 'stamp1Z', 'stamp1O', 'stamp2K', 'stamp2Z', 'stamp2O'] as const
-  const factual = ['stamp1KFact', 'stamp1ZFact', 'stamp1OFact', 'stamp2KFact', 'stamp2ZFact', 'stamp2OFact'] as const
+  const official = ['stamp1K', 'stamp1Z'] as const
+  const factual = ['stamp1KFact', 'stamp1ZFact'] as const
   for (const field of official) {
     const data = { ...qualified, joint: `F${number++}`, [field]: 'UNKNOWN-QEO' }
     await expect(createWeldJoint({ data })).rejects.toThrow(/СП-02.*UNKNOWN-QEO/s)
@@ -111,7 +111,7 @@ test('прямое создание и импорт: все шесть офиц�
   const created = await createWeldJoint({ data: {
     ...qualified, joint: `F${number++}`, ...Object.fromEntries(factual.map(field => [field, 'UNKNOWN-QEO'])),
   } })
-  expect((await stored(created.id)).record.stamp_2_o_fact).toBe('UNKNOWN-QEO')
+  expect((await stored(created.id)).record.stamp_1_z_fact).toBe('UNKNOWN-QEO')
 })
 
 test('поздний тип соединения повторно проверяет клеймо старой записи после утраты реестрового допуска', async () => {
@@ -156,7 +156,7 @@ for (const mode of ['Массовое заполнение', 'Замена да�
   expect(await (await downloading).failure()).toBeNull()
   const apply = dialog.getByRole('button', { name: mode === 'Замена данных' ? /^Заменить/ : /^Заполнить/ })
   const upload = async (qualifying: boolean) => {
-    const keys = ['isometry', 'weldingJournalNote', 'stamp1KFact', 'stamp1ZFact', 'stamp1OFact', 'stamp2KFact', 'stamp2ZFact', 'stamp2OFact'] as const
+    const keys = ['isometry', 'weldingJournalNote', 'stamp1KFact', 'stamp1ZFact'] as const
     const headers = ['ID записи', '__Версия записи', ...keys.map(key => FIELD_BY_KEY.get(key)!.label), ...(qualifying ? ['D2'] : [])]
     const values = [row.id, before.version, ...keys.map(key => key.startsWith('stamp') ? factualStamp : 'CORRECTED-EXCEL'), ...(qualifying ? [159] : [])]
     const workbook = XLSX.utils.book_new()
@@ -174,8 +174,7 @@ for (const mode of ['Массовое заполнение', 'Замена да�
   await apply.click()
   await expect(dialog).toBeHidden()
   expect((await stored(row.id)).record).toMatchObject({ isometry: 'CORRECTED-EXCEL', welding_journal_note: 'CORRECTED-EXCEL', stamp_1_k: stamp,
-    d2: null, stamp_1_k_fact: factualStamp, stamp_1_z_fact: factualStamp, stamp_1_o_fact: factualStamp,
-    stamp_2_k_fact: factualStamp, stamp_2_z_fact: factualStamp, stamp_2_o_fact: factualStamp })
+    d2: null, stamp_1_k_fact: factualStamp, stamp_1_z_fact: factualStamp })
   await expectLegacyStampTask(row.id)
 })
 
@@ -187,14 +186,14 @@ test('старое клеймо: несвязанные серверные пр�
   for (const [index, entry] of entries.entries()) {
     const row = rows[index]
     const before = await stored(row.id)
-    const record = { id: row.id, isometry: entry, weldingJournalNote: 'Уточнение факта', stamp2OFact: 'FACT-UNKNOWN' }
+    const record = { id: row.id, isometry: entry, weldingJournalNote: 'Уточнение факта', stamp1ZFact: 'FACT-UNKNOWN' }
     const expectedVersions = [{ id: row.id, version: before.version }]
     if (entry === 'single') await updateWeldJoint({ data: { ...record, expectedVersion: before.version } })
     else if (entry === 'bulk') await updateWeldJoints({ data: { records: [record], expectedVersions } })
     else if (entry === 'mass') await massFillWeldJoints({ data: { records: [record], expectedVersions } })
     else await replaceWeldJoints({ data: { records: [record], deleteIds: [], expectedVersions } })
     const after = (await stored(row.id)).record
-    expect(after).toMatchObject({ isometry: entry, welding_journal_note: 'Уточнение факта', stamp_2_o_fact: 'FACT-UNKNOWN', stamp_1_k: stamp })
+    expect(after).toMatchObject({ isometry: entry, welding_journal_note: 'Уточнение факта', stamp_1_z_fact: 'FACT-UNKNOWN', stamp_1_k: stamp })
     for (const key of ['weld_date', 'connection_type', 'welding_method', 'material_group', 'd1', 'd2', 't1', 't2']) expect(after[key]).toEqual(before.record[key])
     await expectLegacyStampTask(row.id)
   }
@@ -209,9 +208,9 @@ test('UI: несвязанные и все фактические клейма �
   await page.goto('/journal')
   await editJournalJoint(page, row.id)
   const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
-  await expect(dialog.getByRole('combobox', { name: 'Корень_1', exact: true })).toHaveValue(stamp)
+  await expect(dialog.getByRole('combobox', { name: 'Клеймо_1', exact: true })).toHaveValue(stamp)
   await dialog.getByRole('textbox', { name: 'Изометрия', exact: true }).fill('CORRECTED-LEGACY')
-  const fields = ['stamp1KFact', 'stamp1ZFact', 'stamp1OFact', 'stamp2KFact', 'stamp2ZFact', 'stamp2OFact'] as const
+  const fields = ['stamp1KFact', 'stamp1ZFact'] as const
   for (const field of fields) {
     const label = FIELD_BY_KEY.get(field)!.label
     await dialog.getByRole('combobox', { name: label, exact: true }).click()
@@ -224,12 +223,11 @@ test('UI: несвязанные и все фактические клейма �
   await save.click()
   await expect(dialog).toBeHidden()
   expect((await stored(row.id)).record).toMatchObject({ isometry: 'CORRECTED-LEGACY', stamp_1_k: stamp,
-    stamp_1_k_fact: factualStamp, stamp_1_z_fact: factualStamp, stamp_1_o_fact: factualStamp,
-    stamp_2_k_fact: factualStamp, stamp_2_z_fact: factualStamp, stamp_2_o_fact: factualStamp })
+    stamp_1_k_fact: factualStamp, stamp_1_z_fact: factualStamp })
   await expectLegacyStampTask(row.id)
   await page.reload()
   await editJournalJoint(page, row.id)
-  await expect(dialog.getByRole('combobox', { name: 'Корень_1', exact: true })).toHaveValue(stamp)
+  await expect(dialog.getByRole('combobox', { name: 'Клеймо_1', exact: true })).toHaveValue(stamp)
   for (const field of fields) await expect(dialog.getByRole('combobox', { name: FIELD_BY_KEY.get(field)!.label, exact: true })).toHaveValue(factualStamp)
   await dialog.getByRole('textbox', { name: 'D2', exact: true }).fill('159')
   await expect(save).toBeDisabled()
@@ -245,7 +243,7 @@ test('UI: клеймо сохраняется до заполнения пара
   await editJournalJoint(page, created.id)
   const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
   const save = dialog.getByRole('button', { name: 'Сохранить', exact: true })
-  await expect(dialog.getByRole('combobox', { name: 'Корень_1', exact: true })).toHaveValue(stamp)
+  await expect(dialog.getByRole('combobox', { name: 'Клеймо_1', exact: true })).toHaveValue(stamp)
   await dialog.getByLabel('Дата сварки', { exact: true }).fill('2026-09-01')
   await dialog.getByRole('textbox', { name: 'D1', exact: true }).fill('57')
   await expect(save).toBeDisabled()
@@ -260,7 +258,7 @@ test('UI: клеймо сохраняется до заполнения пара
   await editJournalJoint(page, created.id)
   await expect(dialog.getByLabel('Дата сварки', { exact: true })).toHaveValue('2026-07-01')
   await expect(dialog.getByRole('textbox', { name: 'D1', exact: true })).toHaveValue('57')
-  await expect(dialog.getByRole('combobox', { name: 'Корень_1', exact: true })).toHaveValue(stamp)
+  await expect(dialog.getByRole('combobox', { name: 'Клеймо_1', exact: true })).toHaveValue(stamp)
 })
 
 const createWeldJoint = asE2eOwner(raw_createWeldJoint, 'welding.edit')
@@ -269,3 +267,69 @@ const updateWeldJoints = asE2eOwner(raw_updateWeldJoints, 'welding.view')
 const importWeldJoints = asE2eOwner(raw_importWeldJoints, 'welding.import')
 const massFillWeldJoints = asE2eOwner(raw_massFillWeldJoints, 'welding.import')
 const replaceWeldJoints = asE2eOwner(raw_replaceWeldJoints, 'welding.view')
+
+test('неполные пары сохраняются, а сохранённый и виртуальный диспетчер дают одинаковые напоминания', async () => {
+  const keys = ['stamp1K', 'stamp1KFact', 'stamp1Z', 'stamp1ZFact'] as const
+  const ids: number[] = []
+  for (let mask = 0; mask < 16; mask++) {
+    const values = Object.fromEntries(keys.map((key, i) => [key, mask & (1 << i) ? (i % 2 ? 'DIFFERENT-FACT' : stamp) : null]))
+    const saved = await createWeldJoint({ data: { ...qualified, joint: `F${96000 + mask}`, ...values, ...(mask === 0 ? { weldDate: null } : {}) } })
+    ids.push(saved.id)
+  }
+  await ensureDispatcherTaskIndexFresh()
+  const persisted = await withE2eDatabase(async db => (await db.query('select weld_joint_id,code from dispatcher_row_tasks where weld_joint_id=any($1::int[])', [ids])).rows)
+  const visible = await attachDispatcherTaskCodesToPage(ids.map(id => ({ id, dispatcherTasks: '' })))
+  for (let mask = 0; mask < 16; mask++) {
+    const incomplete = [0, 2].some(offset => Boolean(mask & (1 << offset)) !== Boolean(mask & (2 << offset)))
+    expect(persisted.some(task => task.weld_joint_id === ids[mask] && task.code === 'СП-03')).toBe(incomplete)
+    expect(visible.find(row => row.id === ids[mask])?.dispatcherTasks.includes('СП-03')).toBe(incomplete)
+  }
+  const first = ids[1], before = await stored(first)
+  await massFillWeldJoints({ data: { records: [{ id: first, stamp1KFact: 'DIFFERENT-FACT' }], expectedVersions: [{ id: first, version: before.version }] } })
+  await ensureDispatcherTaskIndexFresh()
+  expect((await attachDispatcherTaskCodesToPage([{ id: first, dispatcherTasks: '' }]))[0].dispatcherTasks).not.toContain('СП-03')
+  await expect(updateWeldJoint({ data: { id: first, expectedVersion: before.version, stamp1KFact: null } })).rejects.toThrow()
+  expect((await stored(first)).record.stamp_1_k_fact).toBe('DIFFERENT-FACT')
+})
+
+test('пустой фактический заполнитель сохраняется без запрета и не скрывает СП-03', async () => {
+  const half = await createWeldJoint({ data: { ...qualified, joint: 'F97901', stamp1KFact: ' Пусто ' } })
+  const empty = await createWeldJoint({ data: { ...scope, joint: 'F97902', connectionType: 'С17', stamp1KFact: 'Пусто' } })
+  const check = async (id: number, incomplete: boolean) => {
+    await ensureDispatcherTaskIndexFresh()
+    expect(await withE2eDatabase(async db => (await db.query(
+      "select exists(select 1 from dispatcher_row_tasks where weld_joint_id=$1 and code='СП-03') present", [id])).rows[0].present)).toBe(incomplete)
+    const [visible] = await attachDispatcherTaskCodesToPage([{ id, dispatcherTasks: '' }])
+    expect(visible.dispatcherTasks.includes('СП-03')).toBe(incomplete)
+  }
+  expect((await stored(half.id)).record.stamp_1_k_fact).toBe('Пусто')
+  await check(half.id, true)
+  await check(empty.id, false)
+  const before = await stored(half.id)
+  // Mass-fill cannot overwrite stored text, even when the card renders its
+  // placeholder as empty. Correct it through the ordinary edit workflow.
+  await expect(massFillWeldJoints({ data: { records: [{ id: half.id, stamp1KFact: 'ACTUAL-FACT' }], expectedVersions: [{ id: half.id, version: before.version }] } }))
+    .rejects.toThrow('недоступно для этого режима')
+  expect(await stored(half.id)).toEqual(before)
+  await updateWeldJoint({ data: { id: half.id, stamp1KFact: 'ACTUAL-FACT', expectedVersion: before.version } })
+  await check(half.id, false)
+})
+
+test('UI: четыре поля образуют пары, заполнение факта сохраняет введённое отличающееся клеймо', async ({ page }) => {
+  await withLineProgramFixture(db => db.query('insert into welder_stamps(naks_stamp,welder_name) values($1,$2)', [factualStamp, 'Фактический сварщик']))
+  const row = await createWeldJoint({ data: { ...qualified, joint: 'F98001', stamp1Z: stamp, stamp1KFact: factualStamp } })
+  await page.goto('/journal')
+  await editJournalJoint(page, row.id)
+  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Редактирование стыка', exact: true }) })
+  const fields = dialog.getByRole('combobox', { name: /^Клеймо_[12]( - факт)?$/ })
+  await expect(fields).toHaveCount(4)
+  expect(await fields.evaluateAll(elements => elements.map(element => element.getAttribute('aria-label') || (element as HTMLSelectElement).labels?.[0]?.textContent))).toEqual(['Клеймо_1', 'Клеймо_1 - факт', 'Клеймо_2', 'Клеймо_2 - факт'])
+  await expect(dialog.getByRole('button', { name: 'Сохранить', exact: true })).toBeEnabled()
+  await dialog.getByRole('button', { name: 'Заполнить фактические', exact: true }).click()
+  await expect(dialog.getByRole('combobox', { name: 'Клеймо_1 - факт', exact: true })).toHaveValue(factualStamp)
+  await expect(dialog.getByRole('combobox', { name: 'Клеймо_2 - факт', exact: true })).toHaveValue(stamp)
+  await expect(dialog.getByRole('button', { name: 'Заполнить фактические', exact: true })).toBeDisabled()
+  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  expect((await stored(row.id)).record).toMatchObject({ stamp_1_k: stamp, stamp_1_k_fact: factualStamp, stamp_1_z: stamp, stamp_1_z_fact: stamp })
+})

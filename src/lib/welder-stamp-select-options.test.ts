@@ -549,7 +549,7 @@ describe('welder stamp select options', () => {
     const row = {
       stamp1K: 'AAAA',
       stamp1Z: 'BBBB',
-      stamp1O: 'BBBB',
+
       weldingMethod: 'РАД+РД',
       d1: '11',
       d2: '11',
@@ -618,7 +618,7 @@ describe('welder stamp select options', () => {
     const row = {
       stamp1K: 'AAAA',
       stamp1Z: 'AAAA',
-      stamp1O: 'AAAA',
+
       weldingMethod: 'РАД+РД',
       d1: '11',
       d2: '11',
@@ -627,7 +627,7 @@ describe('welder stamp select options', () => {
 
     const blockReason = getOfficialStampCompatibilitySaveBlockReason(row, [rootStamp])
 
-    expect(blockReason).toContain('Корень_1')
+    expect(blockReason).toContain('Клеймо_1')
     expect(blockReason).toContain('РД')
   })
 
@@ -813,7 +813,7 @@ describe('welder stamp select options', () => {
     const row = {
       stamp1K: 'AAAA',
       stamp1Z: 'AAAA',
-      stamp1O: 'AAAA',
+
       weldingMethod: 'РАД',
       d1: '11',
       d2: '11',
@@ -1108,7 +1108,7 @@ describe('welder stamp select options', () => {
 
     const blockReason = getOfficialStampCompatibilitySaveBlockReason(row, [allowedStamp, blockedStamp])
 
-    expect(blockReason).toContain('Заполнение_1')
+    expect(blockReason).toContain('Клеймо_2')
     expect(blockReason).toContain('группу материалов M01')
   })
 
@@ -1126,7 +1126,7 @@ describe('welder stamp select options', () => {
 
     const blockReason = getOfficialStampCompatibilitySaveBlockReason(row, [stamp])
 
-    expect(blockReason).toContain('Корень_1')
+    expect(blockReason).toContain('Клеймо_1')
     expect(blockReason).toContain('РАД')
   })
 
@@ -1293,7 +1293,7 @@ describe('welder stamp select options', () => {
     const row = {
       stamp1K: 'AAAA',
       stamp1Z: 'BBBB',
-      stamp1O: 'BBBB',
+
       weldingMethod: 'РАД+РД',
       materialGroup: 'M01',
       d1: '11',
@@ -1303,7 +1303,7 @@ describe('welder stamp select options', () => {
 
     const blockReason = getOfficialStampCompatibilitySaveBlockReason(row, [rootStamp, fillStamp])
 
-    expect(blockReason).toContain('Заполнение_1')
+    expect(blockReason).toContain('Клеймо_2')
     expect(blockReason).toContain('группу материалов M01')
   })
 

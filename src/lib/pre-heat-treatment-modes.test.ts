@@ -71,9 +71,8 @@ describe('missing preliminary document planner', () => {
   })
 })
 
-
 it('counts preliminary waiting in line and welder summaries, including stage subtotals', () => {
-  const base = { connectionType: 'С17', hasPvk: null, stamp1K: 'A', stamp1KFact: 'A', stamp1ZFact: 'A', stamp1OFact: 'A', weldControlPercent: 10, category: 'II', groupName: 'A' }
+  const base = { connectionType: 'С17', hasPvk: null, stamp1K: 'A', stamp1KFact: 'A', stamp1ZFact: 'A', weldControlPercent: 10, category: 'II', groupName: 'A' }
   const rows = [row({ ...base }), row({ ...base, id: 2, joint: 'F2', preHeatTreatmentControls: [{ id: 2, weldJointId: 2, method: 'ВИК', requestName: 'R', requestDate: '2026-11-01' }] })]
   const program = buildLineProgramDisplay(rows, calculateLineProgram(rows, 10, 10), 10, 10)
   expect(program.summary.incompleteStages).toEqual({ welding: 0, request: 1, control: 1, other: 0 })

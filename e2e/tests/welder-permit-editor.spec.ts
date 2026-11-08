@@ -31,11 +31,11 @@ test('изменение допуска через UI на 200000 стыков: 
       select $1,'QUAL','QUAL-'||n,'II','Б(а)',0,0 from generate_series(1,1000) n`, [project])
     await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,weld_date,connection_type,material_group,
       welding_method,d1,t1,d2,t2,category,group_name,weld_control_percent,pvk_control_percent,
-      stamp_1_k,stamp_1_z,stamp_1_o,stamp_1_k_fact,stamp_1_z_fact,stamp_1_o_fact,
+      stamp_1_k,stamp_1_z,stamp_1_k_fact,stamp_1_z_fact,
       has_vik,vik_result,vik_request,vik_request_date,vik_conclusion,vik_conclusion_date)
       select p.id,p.project_title,p.subtitle_code,p.line,'F'||n,'2026-07-01','С17',
       case when p.line='QUAL-1' and n<=2 or p.line='QUAL-2' and n=1 then 'М01 + М05' else 'М01' end,
-      'РАД',108,6,108,8,'II','Б(а)',0,0,'EPA3','EPA3','EPA3','EPA3','EPA3','EPA3',
+      'РАД',108,6,108,8,'II','Б(а)',0,0,'EPA3','EPA3','EPA3','EPA3',
       'да','годен','VIK-QUAL','2026-07-01','VIK-QUAL-C','2026-07-01'
       from line_programs p cross join generate_series(1,200) n where p.project_title=$1`, [project])
     await db.query('analyze weld_joints')

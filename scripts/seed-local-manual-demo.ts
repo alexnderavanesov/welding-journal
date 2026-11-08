@@ -58,7 +58,7 @@ const fixtures: Fixture[] = Array.from({ length: 50 }, (_, offset) => {
     responsible: 'Мастер тестового участка', technologyCardNumber: `ТК-DEMO-${n % 2 + 1}`,
     ...(n % 2 ? { weldingElectrodes: 'УОНИ-13/55', weldingElectrodesCertificateNumber: 'DEMO-Э-001' }
       : { fillerWire: 'Св-08Г2С', fillerWireCertificateNumber: 'DEMO-П-001', shieldingGas: 'Аргон', shieldingGasCertificateNumber: 'DEMO-Г-001' }),
-    stamp1K: stamp, stamp1Z: stamp, stamp1O: stamp, stamp1KFact: stamp, stamp1ZFact: stamp, stamp1OFact: stamp,
+    stamp1K: stamp, stamp1Z: stamp, stamp1KFact: stamp, stamp1ZFact: stamp,
     hasVik: 'да', vikControlBasis: 'Проект', pstoRequired: withPsto ? 'да' : null,
     pstoControlBasis: withPsto ? 'Проект, термообработка после сварки' : null,
   } }
@@ -103,7 +103,7 @@ function psto(n: number, stage: 'request' | 'done' | 'tvmt-request' | 'tvmt-good
 }
 
 for (const n of [1, 2]) {
-  Object.assign(f(n).row, { weldDate: null, stamp1K: null, stamp1Z: null, stamp1O: null, stamp1KFact: null, stamp1ZFact: null, stamp1OFact: null })
+  Object.assign(f(n).row, { weldDate: null, stamp1K: null, stamp1Z: null, stamp1KFact: null, stamp1ZFact: null, })
   note(n, 'сборка, сварка ещё не выполнена')
 }
 note(3, 'сварен, ожидает заявку ВИК'); lnk(4, 'vik'); note(4, 'заявка ВИК создана, результат ожидается')
@@ -118,7 +118,7 @@ lnk(11, 'rk', 'годен'); lnk(11, 'uzk', 'годен')
 Object.assign(f(11).row, { hasUzk: 'дополнительный', uzkControlBasis: 'Решение DEMO-НК-11: дополнительный УЗК к обязательному РК' })
 note(11, 'обязательный РК и дополнительный УЗК с основанием выполнены')
 lnk(12, 'rk', 'годен'); f(12).row.hasRk = 'дополнительный'; note(12, 'дополнительный РК выполнен, закрывает норму и не предлагается к снятию как обычное лишнее назначение')
-Object.assign(f(13).row, { stamp2K: 'D503', stamp2Z: 'D503', stamp2O: 'D503', stamp2KFact: 'D503', stamp2ZFact: 'D503', stamp2OFact: 'D503' }); note(13, 'стык двух клейм, общий контроль ещё не назначен')
+Object.assign(f(13).row, {       }); note(13, 'стык двух клейм, общий контроль ещё не назначен')
 lnk(14, 'rk', 'годен'); f(14).duplicates.push({ method: 'РК', result: 'ремонт', controlDate: '2026-09-19', conclusionDate: '2026-09-19', conclusion: 'Дубль РК DEMO-14' }); note(14, 'основной РК годен, дубль негоден: контроль дубля и ремонт')
 lnk(15, 'vik', 'ремонт'); note(15, 'негодный ВИК, требуется ремонт и повторный стык')
 note(16, 'ПСТО назначена; НК до ТО ещё не начат'); pre(17, 'vik'); note(17, 'ожидание результата ВИК до ТО')
@@ -195,7 +195,7 @@ try {
     })).returning()
     if (!apply) {
       // Match the already enabled local setting only inside the rollback test.
-      const value = JSON.stringify({ preHeatTreatmentMode: 'allPsto' as const,  pvkGoodOnly: false })
+      const value = JSON.stringify({ preHeatTreatmentMode: 'allPsto' as const, pvkGoodOnly: false })
       await tx.insert(schema.appSettings).values({ key: 'control-processes', value })
         .onConflictDoUpdate({ target: schema.appSettings.key, set: { value } })
     }

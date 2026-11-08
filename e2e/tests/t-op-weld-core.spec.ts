@@ -20,7 +20,7 @@ import { deserializeRpcResponse, serializeRpcData, siblingRpcUrl } from '../rpc'
 const project = 'E2E T OP weld core', stamp = 'TOP1', cardName = 'E2E T OP TK'
 const scope = { projectTitle: project, subtitleCode: 'TOP', line: 'TOP-CORE' }
 const base: WeldPayload = { ...scope, connectionType: 'Т1', weldingMethod: 'РД', materialGroup: 'М05',
-  d1: 57, t1: 6, weldLength: '600.123456789123456789', weldDate: '2026-07-01', stamp1K: stamp, stamp1Z: stamp, stamp1O: stamp }
+  d1: 57, t1: 6, weldLength: '600.123456789123456789', weldDate: '2026-07-01', stamp1K: stamp }
 const create = asE2eOwner(rawCreate, 'welding.edit'), update = asE2eOwner(rawUpdate, 'welding.edit')
 const batch = asE2eOwner(rawBatch, 'welding.edit'), continuation = asE2eOwner(rawContinue, 'welding.edit')
 const importRows = asE2eOwner(rawImport, 'welding.import'), mass = asE2eOwner(rawMass, 'welding.import'), replace = asE2eOwner(rawReplace, 'welding.import')
@@ -74,7 +74,7 @@ test('UI: создание Т/ОП, одна геометрия и дробна�
   await editor.getByRole('textbox', { name: 'Стык', exact: true }).fill('ОП-UI')
   await editor.getByRole('combobox', { name: 'Тип соединения', exact: true }).selectOption('Т1')
   for (const [label, value] of [['D1', '57'], ['T1', '6'], ['Длина шва, мм', '600.123456789123456789']]) await editor.getByLabel(label, { exact: true }).fill(value)
-  for (const label of ['D2', 'T2', 'WDI', 'Корень_2', 'Заполнение_2', 'Облицовка_2']) await expect(editor.getByLabel(label, { exact: true })).toHaveCount(0)
+  for (const label of ['D2', 'T2', 'WDI', 'Клеймо_2', 'Клеймо_2 - факт']) await expect(editor.getByLabel(label, { exact: true })).toHaveCount(0)
   await editor.getByRole('button', { name: 'Сохранить', exact: true }).click()
   await expect(editor).toBeHidden()
   const record = await withE2eDatabase(async db => (await db.query('select id,weld_length::text,d2,t2,wdi from weld_joints where project_title=$1 and joint=$2', [project, 'ОП-UI'])).rows[0])
@@ -91,16 +91,16 @@ test('сервер: семейство, один сварщик и все одн
   const peer = await create({ data: { ...base, joint: 'ОП-2' } })
   const before = await stored(original.id), peerBefore = await stored(peer.id)
   await expect(update({ data: { id: original.id, expectedVersion: before.version, joint: 'S1', connectionType: 'С17' } })).rejects.toThrow('Сохранённое соединение нельзя переводить')
-  const invalid = { id: original.id, weldLength: -10, stamp2KFact: stamp }
+  const invalid = { id: original.id, weldLength: -10, stamp1ZFact: stamp }
   for (const write of [
     () => batch({ data: { records: [{ id: peer.id, isometry: 'ROLLBACK' }, invalid], expectedVersions: [{ id: original.id, version: before.version }, { id: peer.id, version: peerBefore.version }] } }),
     () => replace({ data: { records: [invalid], deleteIds: [peer.id], expectedVersions: [{ id: original.id, version: before.version }, { id: peer.id, version: peerBefore.version }] } }),
-    () => importRows({ data: { records: [{ ...base, joint: 'ОП-3' }, { ...base, joint: 'ОП-4', weldLength: -10, stamp2KFact: stamp }] } }),
-  ]) await expect(write()).rejects.toThrow(/Длина шва должна.*с индексом 2/s)
+    () => importRows({ data: { records: [{ ...base, joint: 'ОП-3' }, { ...base, joint: 'ОП-4', weldLength: -10, stamp1ZFact: stamp }] } }),
+  ]) await expect(write()).rejects.toThrow(/Длина шва должна.*Клеймо_2/s)
   expect(await stored(original.id)).toEqual(before)
   expect(await stored(peer.id)).toEqual(peerBefore)
   expect(await withE2eDatabase(async db => (await db.query('select count(*)::int n from weld_joints where project_title=$1', [project])).rows[0].n)).toBe(2)
-  await expect(mass({ data: { records: [{ id: original.id, stamp2KFact: stamp }], expectedVersions: [{ id: original.id, version: before.version }] } })).rejects.toThrow('с индексом 2')
+  await expect(mass({ data: { records: [{ id: original.id, stamp1ZFact: stamp }], expectedVersions: [{ id: original.id, version: before.version }] } })).rejects.toThrow('Клеймо_2')
 })
 
 test('ТК и допуск: одна группа и один способ по D1/T1, первый ввод даты', async () => {
@@ -253,8 +253,7 @@ test('L: сохранённая физическая связь охватыва
   const namesake = await create({ data: { ...base, ...movedScope, joint: 'ОП-CHAIN', weldLength: '321' } })
   // СП-03 also covers incomplete stamp groups. Complete this independent part
   // of the fixture so the task's appearance/removal isolates the missing L.
-  await withLineProgramFixture(db => db.query(`update weld_joints set stamp_1_k_fact=stamp_1_k,
-    stamp_1_z_fact=stamp_1_z,stamp_1_o_fact=stamp_1_o where id=any($1::int[])`, [[...rows.map(row => row.id), namesake.id]]))
+  await withLineProgramFixture(db => db.query(`update weld_joints set stamp_1_k_fact=stamp_1_k where id=any($1::int[])`, [[...rows.map(row => row.id), namesake.id]]))
   await ensureDispatcherTaskIndexFresh()
   const stale = await stored(last.id), facts = await chainFacts()
   const chainLengths = () => withE2eDatabase(async db => (await db.query('select weld_length::text from weld_joints where id=any($1::int[]) order by id', [rows.map(row => row.id)])).rows.map(row => row.weld_length))
@@ -426,9 +425,9 @@ async function seedChain(repairs: number) {
     await db.query(`update weld_joints set vik_result='годен',vik_request='TOP-V',vik_request_date='2026-07-01',vik_conclusion='TOP-VC',vik_conclusion_date='2026-07-01',
       uzk_result='ремонт',uzk_request='TOP-U',uzk_request_date='2026-07-01',uzk_conclusion='TOP-UC',uzk_conclusion_date='2026-07-01',final_status='не годен' where id=$1`, [original.id])
     await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,connection_type,welding_method,material_group,d1,t1,weld_length,weld_date,
-      stamp_1_k,stamp_1_z,stamp_1_o,has_vik,has_uzk,vik_result,vik_request,vik_request_date,vik_conclusion,vik_conclusion_date,uzk_result,uzk_request,uzk_request_date,uzk_conclusion,uzk_conclusion_date,final_status)
+      stamp_1_k,stamp_1_z,has_vik,has_uzk,vik_result,vik_request,vik_request_date,vik_conclusion,vik_conclusion_date,uzk_result,uzk_request,uzk_request_date,uzk_conclusion,uzk_conclusion_date,final_status)
       select line_program_id,project_title,subtitle_code,line,joint||'R'||n,'Т1',welding_method,material_group,d1,t1,weld_length,weld_date,
-      stamp_1_k,stamp_1_z,stamp_1_o,'да','да',vik_result,vik_request,vik_request_date,vik_conclusion,vik_conclusion_date,uzk_result,uzk_request,uzk_request_date,uzk_conclusion,uzk_conclusion_date,final_status
+      stamp_1_k,stamp_1_z,'да','да',vik_result,vik_request,vik_request_date,vik_conclusion,vik_conclusion_date,uzk_result,uzk_request,uzk_request_date,uzk_conclusion,uzk_conclusion_date,final_status
       from weld_joints cross join generate_series(1,$2::int) n where id=$1`, [original.id, repairs])
   })
   await ensureDispatcherTaskIndexFresh()

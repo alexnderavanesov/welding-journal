@@ -69,8 +69,8 @@ test('списки: пустая дата, архив и отстранение 
   await page.goto('/')
   await page.getByRole('searchbox', { name: 'Быстрый поиск по отчету' }).fill('F8800')
   await editJournalJoint(page, id)
-  const dialog = page.getByRole('dialog'), official = dialog.getByLabel('Корень_1', { exact: true })
-  const factual = dialog.getByLabel('Корень_1 - факт', { exact: true }), date = dialog.getByLabel('Дата сварки', { exact: true })
+  const dialog = page.getByRole('dialog'), official = dialog.getByLabel('Клеймо_1', { exact: true })
+  const factual = dialog.getByLabel('Клеймо_1 - факт', { exact: true }), date = dialog.getByLabel('Дата сварки', { exact: true })
   await expect(official.locator(`option[value="${ARCHIVED}"]`)).toHaveText(`${ARCHIVED} (в архиве)`)
   await expect(factual.locator(`option[value="${ARCHIVED}"]`)).toHaveText(`${ARCHIVED} (в архиве)`)
   await official.selectOption(ARCHIVED)
@@ -93,14 +93,14 @@ test('списки: пустая дата, архив и отстранение 
     .toEqual({ stamp_1_k: ARCHIVED, stamp_1_k_fact: ARCHIVED, weld_date: null })
 })
 
-test('клейма: поиск по части, архив внизу и сохранение во всех 12 полях', async ({ page }, info) => {
+test('клейма: поиск по части, архив внизу и сохранение во всех четырёх полях', async ({ page }, info) => {
   const id = await seed(), errors: string[] = [], searchRequests: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/journal')
   await editJournalJoint(page, id)
   const dialog = page.getByRole('dialog')
-  const labels = [...OFFICIAL_WELDER_STAMP_FIELD_KEYS, ...FACTUAL_WELDER_STAMP_FIELD_KEYS].map(key => FIELD_BY_KEY.get(key)!.label)
-  expect(labels).toHaveLength(12)
+  const labels = (['stamp1K', 'stamp1KFact', 'stamp1Z', 'stamp1ZFact'] as const).map(key => FIELD_BY_KEY.get(key)!.label)
+  expect(labels).toHaveLength(4)
   let searching = false
   page.on('request', request => {
     if (searching && request.url().includes('/_serverFn/')) searchRequests.push(rpcName(request.url()))
@@ -151,7 +151,7 @@ test('клейма: поиск по части, архив внизу и сох�
   await expect(first).toHaveValue('')
   await dialog.getByRole('button', { name: 'Отмена', exact: true }).click()
   await page.getByRole('button', { name: 'Новый стык', exact: true }).click()
-  for (const label of [labels[0], labels[6]]) {
+  for (const label of [labels[0], labels[1]]) {
     const select = dialog.getByRole('combobox', { name: label, exact: true })
     await select.click()
     await dialog.getByRole('combobox', { name: `Поиск: ${label}`, exact: true }).fill('wa2')
@@ -162,13 +162,13 @@ test('клейма: поиск по части, архив внизу и сох�
   expect(errors).toEqual([])
 })
 
-test('архивация: все 12 полей, статусы стыка, граница даты, пустая дата, внутреннее клеймо и атомарность', async ({ page }) => {
+test('архивация: все четыре поля, статусы стыка, граница даты, пустая дата, внутреннее клеймо и атомарность', async ({ page }) => {
   const id = await seed()
   const state = await registry(page)
   const target = state.stamps.find(record => record.naksStamp === ACTIVE)!
   const candidate = { ...state, stamps: state.stamps.map(record => record.id === target.id ? { ...record, archived: true, archivedAt: '2026-08-01' } : record) }
-  const keys = ['stamp_1_k','stamp_1_z','stamp_1_o','stamp_2_k','stamp_2_z','stamp_2_o',
-    'stamp_1_k_fact','stamp_1_z_fact','stamp_1_o_fact','stamp_2_k_fact','stamp_2_z_fact','stamp_2_o_fact']
+  const keys = ['stamp_1_k','stamp_1_z',
+    'stamp_1_k_fact','stamp_1_z_fact']
   for (const [index, key] of keys.entries()) {
     await withLineProgramFixture(async db => {
       await db.query(`update weld_joints set ${keys.filter(field => field !== key).map(field => `${field}=null`).join(',')},${key}=$2,weld_date=$3,
@@ -194,7 +194,7 @@ test('архивация: все 12 полей, статусы стыка, гр�
 
 test('кнопка архива не сообщает об успехе при стыке сегодняшней даты; после очистки даты архив доступен', async ({ page }) => {
   const id = await seed()
-  await withLineProgramFixture(async db => { await db.query('update weld_joints set weld_date=$2,stamp_2_o_fact=$3 where id=$1', [id, getTodayIsoDate(), 'ВН-ФАКТ']) })
+  await withLineProgramFixture(async db => { await db.query('update weld_joints set weld_date=$2,stamp_1_z_fact=$3 where id=$1', [id, getTodayIsoDate(), 'ВН-ФАКТ']) })
   await registry(page)
   await page.getByRole('button', { name: /Фильтры и поиск/ }).click()
   await page.getByRole('textbox', { name: 'Поиск', exact: true }).fill(ACTIVE)

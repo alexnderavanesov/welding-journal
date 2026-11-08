@@ -34,15 +34,15 @@ it('searches anywhere in a stamp without changing its value until selection', ()
   const change = vi.fn(), escape = vi.fn()
   function Form() {
     useWindowEscapeKey(true, escape)
-    return <Select searchable aria-label="Корень_1" defaultValue="LIVE" onChange={change}>
+    return <Select searchable aria-label="Клеймо_1" defaultValue="LIVE" onChange={change}>
       <option value="">Пусто</option><option value="LIVE">LIVE</option><option value="ABC0">ABC0</option>
       <option value="BAD0" disabled title="не подходит по диаметру">BAD0</option>
     </Select>
   }
   render(<Form />)
-  const select = screen.getByRole('combobox', { name: 'Корень_1' })
+  const select = screen.getByRole('combobox', { name: 'Клеймо_1' })
   fireEvent.click(select)
-  const search = screen.getByRole('combobox', { name: 'Поиск: Корень_1' })
+  const search = screen.getByRole('combobox', { name: 'Поиск: Клеймо_1' })
   expect(search).toHaveFocus()
   fireEvent.change(search, { target: { value: '0' } })
   expect(within(screen.getByRole('listbox')).getAllByRole('option').map(option => option.textContent)).toEqual(['ABC0', 'BAD0'])
@@ -58,15 +58,15 @@ it('searches anywhere in a stamp without changing its value until selection', ()
   expect(change).toHaveBeenCalledOnce()
   expect(select).toHaveFocus()
   fireEvent.click(select)
-  fireEvent.change(screen.getByRole('combobox', { name: 'Поиск: Корень_1' }), { target: { value: 'unknown' } })
+  fireEvent.change(screen.getByRole('combobox', { name: 'Поиск: Клеймо_1' }), { target: { value: 'unknown' } })
   expect(screen.getByText('Ничего не найдено')).toBeVisible()
-  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Поиск: Корень_1' }), { key: 'Enter' })
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Поиск: Клеймо_1' }), { key: 'Enter' })
   expect(select).toHaveValue('ABC0')
-  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Поиск: Корень_1' }), { key: 'Escape' })
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Поиск: Клеймо_1' }), { key: 'Escape' })
   expect(escape).not.toHaveBeenCalled()
   expect(screen.queryByRole('listbox')).toBeNull()
   fireEvent.click(select)
-  expect(screen.getByRole('combobox', { name: 'Поиск: Корень_1' })).toHaveValue('')
+  expect(screen.getByRole('combobox', { name: 'Поиск: Клеймо_1' })).toHaveValue('')
   fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'Пусто' }))
   expect(select).toHaveValue('')
 })
@@ -89,7 +89,7 @@ it('can search groups in the wide field picker without selecting until confirmed
     <optgroup label="Общее"><option value="project">Проект</option></optgroup>
     <optgroup label="ФИО по официальному клейму">
       <option value="blocked" disabled>Облицовка_1 ФИО сварщика</option>
-      <option value="root">Корень_1 ФИО сварщика</option>
+      <option value="root">Клеймо_1 ФИО сварщика</option>
     </optgroup>
   </Select>)
   const select = screen.getByRole('combobox', { name: 'Поле' })

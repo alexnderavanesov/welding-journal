@@ -5,12 +5,12 @@ import { summarizeLineGridRows, summarizeWelderGridRows } from './statistics-gri
 
 it('keeps the selected welder contribution, detail IDs and a weighted defect denominator', () => {
   const source = buildWelderStatisticsSummary([
-    { id: 1, joint: 'F1', weldDate: '2026-07-01', wdi: '10', stamp1KFact: 'ROOT', stamp1ZFact: 'FILL', stamp1OFact: 'FILL', hasVik: 'да', vikResult: 'годен' },
-    { id: 2, joint: 'S1', weldDate: '2026-07-01', wdi: '30', stamp1KFact: 'ROOT', stamp1ZFact: 'OTHER', stamp1OFact: 'OTHER', hasRk: 'да', rkResult: 'ремонт' },
+    { id: 1, joint: 'F1', weldDate: '2026-07-01', wdi: '10', stamp1KFact: 'ROOT', stamp1ZFact: 'FILL', hasVik: 'да', vikResult: 'годен' },
+    { id: 2, joint: 'S1', weldDate: '2026-07-01', wdi: '30', stamp1KFact: 'ROOT', stamp1ZFact: 'OTHER', hasRk: 'да', rkResult: 'ремонт' },
   ], [], '2026-07-01', '2026-07-31', 'wdi')
   const root = source.rows.find(row => row.stamp === 'ROOT')!
-  expect(summarizeWelderGridRows(source, [root])).toMatchObject({ totalWelders: 1, total: 16,
-    good: 4, rejected: 12, fTotal: 4, sTotal: 12, defectPercent: 75, rows: [{ rowIds: [1, 2] }] })
+  expect(summarizeWelderGridRows(source, [root])).toMatchObject({ totalWelders: 1, total: 20,
+    good: 5, rejected: 15, fTotal: 5, sTotal: 15, defectPercent: 75, rows: [{ rowIds: [1, 2] }] })
   expect(summarizeWelderGridRows(source, [root]).rows[0]).toBe(root)
   expect(summarizeWelderGridRows(source, []).defectPercent).toBe(0)
   expect(summarizeWelderGridRows(source, []).total).toBe(0)

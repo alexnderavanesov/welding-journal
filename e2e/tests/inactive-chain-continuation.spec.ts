@@ -32,7 +32,7 @@ async function seed(withUnofficialRepair = false) {
     const { rows: [line] } = await db.query(`insert into line_programs(project_title,subtitle_code,line,category,group_name,weld_control_percent,pvk_control_percent) values ($1,'U',$2,'II','A',10,0) returning id`, [project, lineName])
     const { rows } = await db.query(`insert into weld_joints(line_program_id,project_title,subtitle_code,line,joint,officiality,revision_actuality,weld_date,connection_type,material_group,welding_method,d1,d2,t1,t2,wdi,stamp_1_k,stamp_1_k_fact,has_vik,vik_result,vik_request,vik_request_date,vik_conclusion,vik_conclusion_date,has_uzk,uzk_result,uzk_request,uzk_request_date,uzk_conclusion,uzk_conclusion_date,final_status)
       select $1,$2,'U',$3,case when n=1 then $4 else $4||'R1' end,case when n=1 then 'действующий' else 'неофициальный' end,null,'2026-09-01','С17','M01','РД',108,108,4,4,0.42,'A','A','да','годен','IC-VIK','2026-09-01','IC-VIK-C','2026-09-02','да',case when n=1 then 'ремонт' else 'вырез' end,'IC-UZK','2026-09-02','IC-UZK-C','2026-09-03','не годен' from generate_series(1,$5::int) n returning id,joint`, [line.id, project, lineName, joint, withUnofficialRepair ? 2 : 1])
-    await db.query(`update weld_joints set stamp_1_k=$1,stamp_1_z=$1,stamp_1_o=$1,stamp_1_k_fact=$1,stamp_1_z_fact=$1,stamp_1_o_fact=$1 where project_title=$2`, [stamp, project])
+    await db.query(`update weld_joints set stamp_1_k=$1,stamp_1_z=$1,stamp_1_k_fact=$1,stamp_1_z_fact=$1 where project_title=$2`, [stamp, project])
     return rows as Array<{ id: number; joint: string }>
   })
 }

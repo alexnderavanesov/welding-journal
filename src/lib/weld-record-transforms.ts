@@ -65,9 +65,9 @@ export function withAutoVikForWeldDate<T extends WeldInput>(record: T): T {
 }
 
 export function getRequiredRootStampMessage(record: WeldInput) {
-  if (['stamp1KFact', 'stamp1ZFact', 'stamp1OFact', 'stamp2KFact', 'stamp2ZFact', 'stamp2OFact'].some(key => !isEmptyWeldStamp(record[key as keyof WeldInput]))) return null
-  if (emptyToNull(record.weldDate) === null || !isEmptyWeldStamp(record.stamp1K)) return null
-  return 'укажите Корень_1: при заполненной дате сварки должно быть указано хотя бы одно клеймо.'
+  if (emptyToNull(record.weldDate) === null) return null
+  if (['stamp1K', 'stamp1Z', 'stamp1KFact', 'stamp1ZFact'].some(key => !isEmptyWeldStamp(record[key as keyof WeldInput]))) return null
+  return 'укажите хотя бы одно официальное или фактическое клеймо при заполненной дате сварки.'
 }
 
 function isEmptyWeldStamp(value: unknown) {

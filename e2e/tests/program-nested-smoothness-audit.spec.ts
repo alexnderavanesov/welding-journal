@@ -65,12 +65,12 @@ test('one versus ten expanded stamp branches: scrolling, resizing and idle after
       await db.query(`insert into weld_joints
         (line_program_id,project_title,subtitle_code,line,joint,weld_date,connection_type,officiality,
         revision_actuality,welding_method,material_group,d1,d2,t1,t2,wdi,category,group_name,
-        weld_control_percent,pvk_control_percent,stamp_1_k,stamp_1_z,stamp_1_o,
-        stamp_1_k_fact,stamp_1_z_fact,stamp_1_o_fact,has_vik,vik_request,vik_request_date,
+        weld_control_percent,pvk_control_percent,stamp_1_k,stamp_1_z,
+        stamp_1_k_fact,stamp_1_z_fact,has_vik,vik_request,vik_request_date,
         vik_result,vik_conclusion,vik_conclusion_date,psto_required)
         select $1,$2,'SM-NESTED',$3,'F'||lpad(n::text,4,'0'),'2026-10-01','С17','действующий',
         'актуальная','РД','М01',108,108,4,4,0.42,'II','Б(а)',10,10,
-        stamp,stamp,stamp,stamp,stamp,stamp,'да','SM-NESTED-V','2026-10-01',
+        stamp,stamp,stamp,stamp,'да','SM-NESTED-V','2026-10-01',
         'годен','SM-NESTED-C','2026-10-02','нет'
         from generate_series(1,1000) n
         cross join lateral (select ($4::text[])[1+(n-1)/100] as stamp) selected_stamp`,
